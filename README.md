@@ -99,28 +99,39 @@ Always provide subagents with:
 - Relevant file paths and context
 - Constraints and requirements
 - Expected output format
+- All the information in this file and other project-specific CLAUDE.md files
 
-# Development Best Practices
+## Development Best Practices
 
-## Implementation Standards
+### Implementation Standards
 
 - NEVER add TODO comments or stubs - always write production-ready implementations
 - NEVER defer implementation of features or components
 
-## Code Quality
+## Planning
+
+- Create implementation plans in `./plans/PLAN-XXXX-description.md`
+- Never use ~/.claude for plans
+- Always reference plans by their project-relative path
+
+### Documentation
+
+- When creating markdown files, and adding code blocks, ALWAYS specify the language for syntax highlighting (e.g., ```typescript, ```python or, if no language, ```text)
+
+### Code Quality
 
 - No file should exceed 400 lines. Refactor by breaking up large files into smaller modules
 - Ensure no errors or warnings from IDE diagnostics before completing tasks
-- Prefer internal tools over CLI tools when possible (but use `rg` over `grep` and `fd` over `find` when CLI is needed, e.g. piped sequences)
+- ALWAYS Prefer internal tools over CLI tools when possible (but use `rg` over `grep` and `fd` over `find` when CLI is needed, e.g. piped sequences)
 
-## Dependency Management
+### Dependency Management
 
 - NEVER add dependencies manually by editing package.json, Cargo.toml, pyproject.toml, or equivalent
 - ALWAYS use package managers (npm, cargo, uv, etc.) for dependency management
 
-## Progress Tracking
+### Progress Tracking
 
-- Record progress in CLAUDE.md when completing significant tasks
+- Record progress in CLAUDE.md when working on significant tasks
 - Reference phases/tasks found in project documentation
 - When tasks are complete, remove detailed progress records to keep CLAUDE.md concise
 EOF
