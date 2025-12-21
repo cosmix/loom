@@ -37,105 +37,46 @@ Subagents can run in parallel (up to 10 concurrent). A single prompt like "refac
 
 - [Claude Code CLI](https://code.claude.com/docs/en/overview) installed and configured
 
-### Install Agents & Skills
+### Quick Install
 
 ```bash
-# Clone this repository
 git clone https://github.com/YOUR_USERNAME/claude-code-setup.git
 cd claude-code-setup
-
-# Install to user-level (available in all projects)
-cp -r agents ~/.claude/
-cp -r skills ~/.claude/
-
-# OR install to a specific project (team-shared via git)
-cp -r agents /path/to/your/project/.claude/
-cp -r skills /path/to/your/project/.claude/
+bash install.sh
 ```
 
-### Configure CLAUDE.md
+The installer will:
 
-Add these rules to your user-level CLAUDE.md to enable intelligent agent orchestration and enforce development best practices:
+- Copy agents and skills to `~/.claude/`
+- Append orchestration rules to `~/.claude/CLAUDE.md`
+- Back up any existing files (as `*.bak.<timestamp>`)
+
+### Manual Install
+
+If you prefer to install manually or to a specific project:
 
 ```bash
-# Create or append to your CLAUDE.md
-cat >> ~/.claude/CLAUDE.md << 'EOF'
+# User-level (available in all projects)
+cp -r agents ~/.claude/
+cp -r skills ~/.claude/
+cat CLAUDE.template.md >> ~/.claude/CLAUDE.md
 
-# Agent Orchestration Rules
-
-## Delegation Strategy
-
-- ALWAYS delegate work to specialist agents when the task matches their expertise
-- Use the `tech-lead` agent for complex multi-domain projects requiring coordination
-- Provide thorough context to each subagent to allow them to do their job properly
-
-## When to Use Senior vs Standard Agents
-
-- **Senior (opus)**: Planning, architecture, debugging, design patterns, code review, strategic decisions
-- **Standard (sonnet)**: Implementation, boilerplate, well-defined tasks, routine operations
-
-## Parallel Execution
-
-When tasks are INDEPENDENT, spawn agents IN PARALLEL:
-
-- Different files or components with no shared dependencies
-- Separate analyses or reviews
-- Multiple skill applications to different areas
-- Research tasks that don't depend on each other
-
-## Sequential Execution
-
-Use sequential execution when:
-
-- Task B depends on Task A's output
-- Shared state or resources require coordination
-- Order matters (e.g., schema before data, interface before implementation)
-
-## Context Passing
-
-Always provide subagents with:
-
-- Clear objective and scope
-- Relevant file paths and context
-- Constraints and requirements
-- Expected output format
-- All the information in this file and other project-specific CLAUDE.md files
-
-## Development Best Practices
-
-### Implementation Standards
-
-- NEVER add TODO comments or stubs - always write production-ready implementations
-- NEVER defer implementation of features or components
-
-## Planning
-
-- Create implementation plans in `./plans/PLAN-XXXX-description.md`
-- Never use ~/.claude for plans
-- Always reference plans by their project-relative path
-
-### Documentation
-
-- When creating markdown files, and adding code blocks, ALWAYS specify the language for syntax highlighting (e.g., ```typescript, ```python or, if no language, ```text)
-
-### Code Quality
-
-- No file should exceed 400 lines. Refactor by breaking up large files into smaller modules
-- Ensure no errors or warnings from IDE diagnostics before completing tasks
-- ALWAYS Prefer internal tools over CLI tools when possible (but use `rg` over `grep` and `fd` over `find` when CLI is needed, e.g. piped sequences)
-
-### Dependency Management
-
-- NEVER add dependencies manually by editing package.json, Cargo.toml, pyproject.toml, or equivalent
-- ALWAYS use package managers (npm, cargo, uv, etc.) for dependency management
-
-### Progress Tracking
-
-- Record progress in CLAUDE.md when working on significant tasks
-- Reference phases/tasks found in project documentation
-- When tasks are complete, remove detailed progress records to keep CLAUDE.md concise
-EOF
+# Project-level (team-shared via git)
+cp -r agents /path/to/your/project/.claude/
+cp -r skills /path/to/your/project/.claude/
+cat CLAUDE.template.md >> /path/to/your/project/CLAUDE.md
 ```
+
+### What Gets Installed
+
+The [`CLAUDE.template.md`](CLAUDE.template.md) configuration includes:
+
+- **Agent orchestration** - When to use senior (opus) vs standard (sonnet) agents
+- **Parallel/sequential execution** - Guidelines for spawning agents efficiently
+- **Context passing** - What information to provide subagents
+- **Development standards** - Implementation, planning, documentation, code quality
+- **Dependency management** - Always use package managers, never edit manifests manually
+- **Progress tracking** - How to record and clean up task progress
 
 ### Verify Installation
 
