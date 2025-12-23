@@ -6,8 +6,8 @@ A comprehensive collection of hierarchical AI agents and reusable skills for Cla
 
 This project provides:
 
-- **20 Specialized Agents** - Senior (opus) and Standard (sonnet) pairs across 9 domains, plus Tech Lead and Doc Editor
-- **46 Reusable Skills** - Modular capabilities that agents can leverage
+- **19 Specialized Agents** - Senior (opus) and Standard (sonnet) pairs across 8 domains, plus Security Engineer, Tech Lead, and Doc Editor
+- **48 Reusable Skills** - Modular capabilities that agents can leverage
 
 ## Why Agents + Skills?
 
@@ -129,7 +129,7 @@ Each domain has two agents with distinct responsibilities:
 | Domain               | Senior (opus)                    | Standard (sonnet)         |
 | -------------------- | -------------------------------- | ------------------------- |
 | Software Engineering | `senior-software-engineer`       | `software-engineer`       |
-| Security             | `senior-security-engineer`       | `security-engineer`       |
+| Security             | `security-engineer` (single agent) | —                       |
 | Machine Learning     | `senior-ml-engineer`             | `ml-engineer`             |
 | Infrastructure       | `senior-infrastructure-engineer` | `infrastructure-engineer` |
 | Product Design       | `senior-product-designer`        | `product-designer`        |
@@ -227,11 +227,13 @@ Skills provide modular capabilities that agents can invoke. They are loaded dyna
 
 ### Security
 
-| Skill             | Description                                |
-| ----------------- | ------------------------------------------ |
-| `security-audit`  | Comprehensive vulnerability assessment     |
-| `dependency-scan` | CVE scanning and license compliance        |
-| `auth`            | OAuth2, JWT, RBAC/ABAC, session management |
+| Skill             | Description                                      |
+| ----------------- | ------------------------------------------------ |
+| `security-audit`  | Comprehensive vulnerability assessment           |
+| `security-scan`   | Quick routine checks (secrets, deps, SAST)       |
+| `threat-model`    | STRIDE/DREAD analysis, secure architecture       |
+| `dependency-scan` | CVE scanning and license compliance              |
+| `auth`            | OAuth2, JWT, RBAC/ABAC, session management       |
 
 ### Reliability & Operations
 

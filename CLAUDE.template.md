@@ -74,3 +74,33 @@ Always provide subagents with:
 - Record progress in the project CLAUDE.md when working on significant tasks
 - Reference phases/tasks found in project documentation
 - When tasks are complete, remove detailed progress records to keep CLAUDE.md concise
+
+## Security Practices
+
+### Routine Security Checks
+
+Run security scans frequently during development using the `security-scan` skill:
+
+- **Before commits**: Check for hardcoded secrets
+- **After dependency updates**: Run `npm audit`, `pip-audit`, etc.
+- **During PR review**: Quick vulnerability scan
+
+### When to Involve Security Engineer
+
+Use the `security-engineer` agent (opus) for:
+
+- Threat modeling new features or systems
+- Security architecture decisions
+- Comprehensive security audits
+- Incident response and CVE analysis
+- Compliance-related questions
+
+### Security Skills Reference
+
+| Skill | Use Case |
+|-------|----------|
+| `security-scan` | Quick routine checks (pre-commit, PR review) |
+| `threat-model` | Architecture planning, STRIDE/DREAD analysis |
+| `security-audit` | Comprehensive vulnerability assessment |
+| `dependency-scan` | CVE scanning, license compliance |
+| `auth` | Authentication/authorization implementation |
