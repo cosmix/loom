@@ -127,6 +127,31 @@ install_claude_md() {
     ok "CLAUDE.md installed"
 }
 
+cleanup_backups() {
+    local backups=()
+
+    # Find all backups created during this installation
+    while IFS= read -r -d '' file; do
+        backups+=("$file")
+    done < <(find "$CLAUDE_DIR" -maxdepth 2 -name "*.bak.${TIMESTAMP}" -print0 2>/dev/null)
+
+    if [[ ${#backups[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    echo ""
+    echo -en "   ${BOLD}delete backup files? [y/N]${NC} "
+    read -r response
+    if [[ "$response" =~ ^[Yy]$ ]]; then
+        for backup in "${backups[@]}"; do
+            rm -rf "$backup"
+        done
+        ok "backups deleted"
+    else
+        info "backups kept at ~/.claude/*.bak.${TIMESTAMP}"
+    fi
+}
+
 print_summary() {
     echo ""
     echo -e "${GREEN}done.${NC}"
@@ -135,8 +160,6 @@ print_summary() {
     echo -e "  agents/      ${DIM}specialized subagents${NC}"
     echo -e "  skills/      ${DIM}reusable capabilities${NC}"
     echo -e "  CLAUDE.md    ${DIM}orchestration rules${NC}"
-    echo ""
-    echo -e "${DIM}backups saved as *.bak.${TIMESTAMP}${NC}"
     echo ""
     echo -e "run ${CYAN}claude${NC} to start"
     echo ""
@@ -151,6 +174,7 @@ main() {
     install_skills
     install_claude_md
     print_summary
+    cleanup_backups
 }
 
 main "$@"

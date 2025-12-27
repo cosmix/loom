@@ -1,5 +1,52 @@
 # Claude Code Rules
 
+---
+
+## ⚠️ MANDATORY RULES (ALL AGENTS MUST FOLLOW)
+
+These rules are **NON-NEGOTIABLE** and apply to the main agent AND all subagents. Violations are unacceptable.
+
+### 1. NEVER Use CLI Commands for File Operations
+
+**DO NOT USE** these commands under any circumstances:
+
+- `cat`, `head`, `tail` → Use the **Read** tool
+- `grep`, `rg`, `ag` → Use the **Grep** tool
+- `find`, `ls`, `fd` → Use the **Glob** tool
+- `sed`, `awk` → Use the **Edit** tool
+- `echo >`, `cat <<EOF`, `printf >` → Use the **Write** tool
+- `curl`, `wget` (for fetching) → Use the **WebFetch** tool
+
+**WHY THIS MATTERS**: Native tools are faster, provide better output formatting, handle errors gracefully, and integrate properly with the Claude Code system. CLI commands bypass these benefits and produce inferior results.
+
+**THE ONLY EXCEPTIONS**:
+
+- Actual shell operations: `git`, `npm`, `docker`, `make`, `cargo`, etc.
+- Complex piped sequences that genuinely require shell orchestration
+- When the user explicitly requests CLI usage
+
+**WHEN YOU MUST USE CLI** (for allowed operations):
+
+- ALWAYS use `rg` over `grep`
+- ALWAYS use `fd` over `find`
+
+### 2. No Incomplete Code
+
+- **NEVER** leave TODO/FIXME comments
+- **NEVER** create placeholder stubs or deferred implementations
+- **NEVER** write "implement later" or similar comments
+- Every piece of code you write must be complete and production-ready
+
+### 3. Quality Gates
+
+Before marking any task complete:
+
+- Zero IDE diagnostics errors/warnings
+- All tests pass
+- No linting errors
+
+---
+
 ## Agent Orchestration
 
 ### Delegation Strategy
@@ -101,15 +148,15 @@ ALWAYS do these:
 
 **NEVER use CLI commands when native tools exist.** Native tools are faster, safer, and provide better output.
 
-| Task                | WRONG (CLI)           | RIGHT (Native Tool)     |
-| ------------------- | --------------------- | ----------------------- |
-| Read file           | `cat`, `head`, `tail` | `Read` tool             |
-| Search file content | `grep`, `rg`          | `Grep` tool             |
-| Find files          | `find`, `ls`, `fd`    | `Glob` tool             |
-| Edit file           | `sed`, `awk`          | `Edit` tool             |
-| Create file         | `echo >`, `cat <<EOF` | `Write` tool            |
-| Fetch web content   | `curl`, `wget`        | `WebFetch` tool         |
-| Search the web      | -                     | `WebSearch` tool        |
+| Task                | WRONG (CLI)           | RIGHT (Native Tool) |
+| ------------------- | --------------------- | ------------------- |
+| Read file           | `cat`, `head`, `tail` | `Read` tool         |
+| Search file content | `grep`, `rg`          | `Grep` tool         |
+| Find files          | `find`, `ls`, `fd`    | `Glob` tool         |
+| Edit file           | `sed`, `awk`          | `Edit` tool         |
+| Create file         | `echo >`, `cat <<EOF` | `Write` tool        |
+| Fetch web content   | `curl`, `wget`        | `WebFetch` tool     |
+| Search the web      | -                     | `WebSearch` tool    |
 
 **Only use CLI for:**
 
