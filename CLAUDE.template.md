@@ -45,6 +45,105 @@ Before marking any task complete:
 - All tests pass
 - No linting errors
 
+### 4. Context Management & Session Continuity (NON-NEGOTIABLE)
+
+**YOU MUST TERMINATE THE CURRENT TASK WHEN CONTEXT UTILIZATION APPROACHES 85%.** This is absolute and non-negotiable.
+
+**Continuous Session Recording Requirements:**
+
+Throughout EVERY session, you MUST maintain a `## Session State` section in the project's `CLAUDE.md` file (create if it doesn't exist) with:
+
+1. **Work Completed**: Detailed list of what was accomplished this session
+2. **Files Modified**: Every file created, edited, or deleted with brief description of changes
+3. **Documentation Read**: Full paths to all documentation, specs, or reference files consulted
+4. **Key Decisions Made**: Technical decisions and their rationale
+5. **Current State**: Where you stopped, what's in progress
+6. **Next Steps**: Explicit, actionable items for continuation
+7. **Blockers/Issues**: Any unresolved problems or questions
+
+**Update Frequency**: Update `CLAUDE.md` after EVERY significant action (file read, code change, decision). Do NOT batch updates.
+
+**At 85% Context Utilization**:
+
+1. IMMEDIATELY stop current work
+2. Write comprehensive handoff notes to `CLAUDE.md`
+3. Ensure all work in progress is saved and documented
+4. List exact next steps with file paths and line numbers where relevant
+5. Inform the user that context limit is approaching and task must be paused
+6. DO NOT attempt to "finish quickly" - stop and document
+7. If there is additional context left, attempt completion of the task. DO NOT, UNDER ANY CIRCUMSTANCES START A NEW TASK.
+
+**On Task Completion (CLEANUP REQUIRED)**:
+
+When a task is FULLY completed (not paused due to context limits):
+
+1. **Remove the `## Session State` section entirely** - it served its purpose
+2. **Keep only permanent project knowledge** in CLAUDE.md:
+   - Architecture decisions that affect future work
+   - Non-obvious patterns or conventions discovered
+   - Known issues or technical debt to track
+3. **Do NOT leave stale session data** - old "Work Completed", "Files Modified", etc. from finished tasks pollute the file
+4. **CLAUDE.md should be concise** - if it exceeds ~100 lines, prune aggressively
+
+**Lifecycle**: Task starts → Create Session State → Update continuously → Task completes → DELETE Session State (keep only permanent learnings)
+
+**Session State Format** (in project CLAUDE.md):
+
+```markdown
+## Session State (Last Updated: [timestamp])
+**Completed**: [items with file:line refs] | **Modified**: [files + changes]
+**Docs Read**: [paths] | **Decisions**: [decision: rationale]
+**Current**: [where stopped] | **Next**: [actionable items] | **Blockers**: [issues]
+```
+
+### 5. Dependency Management (Package Managers ONLY)
+
+**NEVER manually edit dependency files.** This includes:
+
+- `package.json` / `package-lock.json` (Node.js)
+- `Cargo.toml` / `Cargo.lock` (Rust)
+- `pyproject.toml` / `requirements.txt` / `poetry.lock` (Python)
+- `go.mod` / `go.sum` (Go)
+- `Gemfile` / `Gemfile.lock` (Ruby)
+- `pom.xml` / `build.gradle` (Java)
+- Any other dependency manifest
+
+**ALWAYS use the appropriate package manager command:**
+
+| Language | WRONG                                     | RIGHT                             |
+| -------- | ----------------------------------------- | --------------------------------- |
+| Node.js  | Edit package.json to add `"lodash": "^4"` | `npm install lodash`              |
+| Rust     | Edit Cargo.toml to add `serde = "1.0"`    | `cargo add serde`                 |
+| Python   | Edit pyproject.toml or requirements.txt   | `uv add package` or `pip install` |
+| Go       | Edit go.mod to add require statement      | `go get package@version`          |
+
+**WHY THIS MATTERS**: Package managers handle version resolution, lock file updates, transitive dependencies, and integrity checks. Manual edits bypass these safeguards and cause dependency hell.
+
+**THE ONLY EXCEPTION**: Editing non-dependency sections of these files (scripts, metadata, configuration) is allowed.
+
+### 6. Subagent Context Passing (MANDATORY)
+
+**Subagents are BLIND to your context.** They do NOT see:
+
+- CLAUDE.md files (global or project)
+- Previous conversation history
+- Files you've read
+- Decisions you've made
+
+**YOU MUST include in EVERY subagent prompt:**
+
+1. **Full verbatim contents** of `~/.claude/CLAUDE.md` (user rules)
+2. **Full verbatim contents** of project `CLAUDE.md` (project rules)
+3. **Relevant file contents** - do not just pass paths, pass the actual content if the subagent needs it
+4. **Complete context** about the task, constraints, and expectations
+5. **Expected output format** with explicit examples
+
+**WRONG**: `"Fix the bug in auth.ts following our conventions"` (subagent has no idea what conventions are)
+
+**RIGHT**: Paste full CLAUDE.md contents + actual file contents + specific task details + expected output format
+
+**Verification**: Before spawning, confirm you included full rule documents. Summarize if too large, but NEVER omit entirely.
+
 ---
 
 ## Agent Orchestration
@@ -77,177 +176,51 @@ Use sequential execution when:
 - Shared state or resources require coordination
 - Order matters (e.g., schema before data, interface before implementation)
 
-### Context Passing
-
-**CRITICAL**: Subagents do NOT automatically inherit CLAUDE.md rules. You MUST explicitly pass them.
-
-Always provide subagents with:
-
-- **Full contents of `~/.claude/CLAUDE.md`** (user rules) - copy verbatim into prompt
-- **Full contents of project `CLAUDE.md`** (project rules) - copy verbatim into prompt
-- Clear objective and scope
-- Relevant file paths and context
-- Constraints and requirements
-- Expected output format
-
-Example subagent prompt structure:
-
-```text
-## Rules (MUST FOLLOW)
-[Paste contents of ~/.claude/CLAUDE.md here]
-[Paste contents of project CLAUDE.md here]
-
-## Task
-[Your specific task description]
-```
+**Context Passing**: See Mandatory Rule #6 - subagents are BLIND, you MUST paste full CLAUDE.md contents and file contents.
 
 ## Development Best Practices
 
-### Banned Anti-Patterns
+### Banned Patterns
 
-NEVER use these:
-
-- CLI for file ops: `cat`, `head`, `tail`, `grep`, `find`, `sed`, `awk`, `echo >` (use native tools)
-- TODO/FIXME comments, placeholder stubs, or deferred implementations
 - Empty catch blocks, swallowed exceptions, bare `except` in Python
-- Magic numbers without named constants
-- Nested ternaries or deep conditionals (max 3 levels)
-- Console.log/print in committed code
-- `any` in TypeScript
-- Default exports (use named exports)
-- Functions/classes exceeding 50 lines
-- Commented-out code
-- Secrets, credentials, or .env values in code
+- Magic numbers without named constants; nested ternaries (max 3 levels)
+- Console.log/print in committed code; `any` in TypeScript; default exports
+- Functions >50 lines; commented-out code; secrets in code
 
-ALWAYS do these:
+### Required Patterns
 
-- Early returns and guard clauses to reduce nesting
-- Descriptive names; self-documenting code
-- Validate inputs at boundaries; fail fast
+- Early returns/guard clauses; descriptive names; validate at boundaries
+- Specific error types with context; distinguish recoverable vs unrecoverable errors
+- Plans in `./plans/PLAN-XXXX-description.md`; no time estimates
+- Language tags on code blocks (`typescript`, `python`, `text`)
 
-### Error Handling
+### Code Quality (STRICT)
 
-- Create specific error types, not generic exceptions
-- Preserve error context when wrapping (use `from e` in Python, `cause` in JS)
-- Log errors with context (request IDs, relevant state)
-- Distinguish recoverable vs unrecoverable errors
-- Never expose internal error details to users
+**Size Limits**: Files 400 lines, functions 50 lines, classes 300 lines - refactor if exceeded
 
-### Planning
+**Before Commit**: Zero IDE errors/warnings, all tests pass, no lint errors, code formatted
 
-- Create implementation plans in `./plans/PLAN-XXXX-description.md`
-- Never use ~/.claude for plans
-- Always reference plans by their project-relative path
-- Never provide time estimates for tasks
-
-### Documentation
-
-- When creating markdown files and adding code blocks, ALWAYS specify the language for syntax highlighting (e.g., `typescript`, `python`, or if no language applies, `text`)
-
-### Tool Usage (CRITICAL)
-
-**NEVER use CLI commands when native tools exist.** Native tools are faster, safer, and provide better output.
-
-| Task                | WRONG (CLI)           | RIGHT (Native Tool) |
-| ------------------- | --------------------- | ------------------- |
-| Read file           | `cat`, `head`, `tail` | `Read` tool         |
-| Search file content | `grep`, `rg`          | `Grep` tool         |
-| Find files          | `find`, `ls`, `fd`    | `Glob` tool         |
-| Edit file           | `sed`, `awk`          | `Edit` tool         |
-| Create file         | `echo >`, `cat <<EOF` | `Write` tool        |
-| Fetch web content   | `curl`, `wget`        | `WebFetch` tool     |
-| Search the web      | -                     | `WebSearch` tool    |
-
-**Only use CLI for:**
-
-- Actual shell operations (git, npm, docker, make, etc.)
-- Piped command sequences where multiple tools chain together
-- When CLI is explicitly required by the task
-
-**When CLI is necessary:**
-
-- Use `rg` instead of `grep`
-- Use `fd` instead of `find`
-
-**Fallbacks when native tools fail:**
-
-- If `WebFetch`/`WebSearch` fail (blocked, restricted), use `curl` or `wget` as fallback
-
-### Code Quality
-
-- No file should exceed 400 lines. Refactor by breaking up large files into smaller modules
-- Ensure no errors or warnings from IDE diagnostics before completing tasks
-
-### Dependency Management
-
-- NEVER add dependencies manually by editing package.json, Cargo.toml, pyproject.toml, or equivalent
-- ALWAYS use package managers (npm, cargo, uv, etc.) for dependency management
-
-### Progress Tracking
-
-- Record progress in the project CLAUDE.md when working on significant tasks
-- Reference phases/tasks found in project documentation
-- When tasks are complete, remove detailed progress records to keep CLAUDE.md concise
+**Self-Review**: No hardcoded values, error/edge cases handled, no dead code, no security vulns
 
 ## Task Execution Workflow
 
-For non-trivial tasks, follow these phases using appropriate subagents:
+**1. Discovery & Planning**: Review codebase, CLAUDE.md, `./plans/`. Use `senior-*` or `tech-lead` for complex planning.
 
-### 1. Discovery & Planning
+**2. Architecture & Design**: Senior agents (opus) for design decisions → produce specs. Standard agents (sonnet) implement.
 
-- Review codebase patterns, project CLAUDE.md, and existing plans in `./plans/`
-- Use `senior-software-engineer` or `tech-lead` for complex planning
-- Break work into atomic subtasks with clear inputs, outputs, and acceptance criteria
-- Use `senior-infrastructure-engineer` if new services/databases/cloud resources needed
+**3. Implementation**: Senior for algorithms/debugging; Standard for boilerplate. Parallel when independent. Test after each change.
 
-### 2. Architecture & Design
+**4. Quality Assurance**: `qa-engineer` for tests (65-80% unit, 15-25% integration, 5-10% e2e). `security-engineer` for auth/user data/APIs.
 
-- Use senior agents (`senior-software-engineer`, `senior-data-engineer`, `senior-ml-engineer`, `senior-infrastructure-engineer`) for design decisions
-- Senior agents produce specifications; standard agents implement
-- Document architectural decisions and rationale
+**5. Completion**: Update docs. **Clean up CLAUDE.md** (delete Session State). **At 85% context: STOP and write handoff notes.**
 
-### 3. Implementation
-
-- **Senior (opus)**: Complex algorithms, debugging, design patterns
-- **Standard (sonnet)**: Well-defined implementation, boilerplate
-- Parallel when independent; sequential when dependencies exist
-- Run tests/lints after each significant change; verify zero IDE errors
-
-### 4. Quality Assurance
-
-- Use `qa-engineer` for unit/integration tests (pyramid: 65-80% unit, 15-25% integration, 5-10% e2e)
-- Use Playwright MCP for web e2e tests (request from user if unavailable)
-- Use `security-engineer` for security review; never skip for user data, auth, or external APIs
-- Provide remediation plans to parent agent for resolution
-
-### 5. Completion
-
-- Update documentation with `technical-writer`; include verified examples
-- Record progress in CLAUDE.md; remove extraneous detail when complete
-- When context < 25%: write detailed handoff notes, list blockers, end task cleanly
-
-### Escalation & Rollback
-
-- **Escalate** when: multi-domain architecture, unclear patterns, security/performance implications, scope creep
-- **Rollback**: Fix failing tests before proceeding; block on security issues; never commit broken code
+**Escalation**: Multi-domain architecture, unclear patterns, security implications, scope creep.
+**Rollback**: Fix failing tests first; block on security issues; never commit broken code.
 
 ## Decision Framework
 
-When making technical decisions, evaluate:
-
-- **Reversibility**: Prefer reversible decisions; be careful with irreversible ones
-- **Blast radius**: How many components does this change affect?
-- **Consistency**: Align with existing patterns unless compelling reason to deviate
-- **Simplicity**: Choose the simplest solution that meets requirements
-- **Testability**: Can this be validated with automated tests?
+Evaluate: **Reversibility** (prefer reversible) | **Blast radius** (components affected) | **Consistency** (match existing patterns) | **Simplicity** (minimum needed) | **Testability**
 
 ## Red Flags
 
-Stop and reassess when you encounter:
-
-- Tasks that seem simple but hide complexity
-- Circular dependencies between components
-- Unclear ownership of shared resources
-- Missing or outdated documentation
-- Scope creep during implementation
-- Multiple valid approaches with unclear trade-offs
+Stop and reassess: Hidden complexity, circular dependencies, unclear ownership, outdated docs, scope creep, unclear trade-offs.
