@@ -144,6 +144,20 @@ When a task is FULLY completed (not paused due to context limits):
 
 **Verification**: Before spawning, confirm you included full rule documents. Summarize if too large, but NEVER omit entirely.
 
+### 7. Pre-Completion Verification Loop (MANDATORY)
+
+**A task is NOT complete until verified through iterative review.**
+
+**THE LOOP**: `Run tests → Check diagnostics → Lint → Self-review diff → Fix issues → REPEAT until all pass`
+
+**EXIT ONLY WHEN ALL TRUE**: Tests 100% green | Zero diagnostics (warnings count) | Linter clean | Self-review finds nothing | Confident it works
+
+**SELF-REVIEW**: Does it accomplish the request? Edge cases handled? Regressions? Security? Debug code removed? Readable?
+
+**MINDSET**: Assume bugs exist. Be your harshest critic. Investigate uncertainty. Never rush to "done."
+
+**FORBIDDEN**: Single-pass completion | Ignoring warnings | Skipping tests for "small changes" | Assuming correctness
+
 ---
 
 ## Agent Orchestration
@@ -212,7 +226,9 @@ Use sequential execution when:
 
 **4. Quality Assurance**: `qa-engineer` for tests (65-80% unit, 15-25% integration, 5-10% e2e). `security-engineer` for auth/user data/APIs.
 
-**5. Completion**: Update docs. **Clean up CLAUDE.md** (delete Session State). **At 85% context: STOP and write handoff notes.**
+**5. Verification**: Execute Rule #7 loop. Iterate until ALL checks pass. Do NOT proceed until satisfied.
+
+**6. Completion**: Update docs. **Clean up CLAUDE.md** (delete Session State). **At 85% context: STOP and write handoff notes.**
 
 **Escalation**: Multi-domain architecture, unclear patterns, security implications, scope creep.
 **Rollback**: Fix failing tests first; block on security issues; never commit broken code.
