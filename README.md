@@ -78,16 +78,17 @@ curl -fsSL \
   https://raw.githubusercontent.com/cosmix/claude-flux/main/install.sh | bash
 ```
 
-Initialize Flux in your project:
+Initialize Flux with a plan and execute:
 
 ```bash
 cd /path/to/project
-flux init
-flux status
+flux init doc/plans/my-plan.md   # Initialize with a plan
+flux run                          # Execute stages automatically
+flux status                       # Check progress
 ```
 
-Start Claude Code. It will automatically detect the Flux configuration and
-check for pending work.
+Flux will create git worktrees for parallel stages and spawn Claude Code
+sessions automatically to execute your plan.
 
 ## How It Works
 
@@ -104,12 +105,13 @@ This creates continuity across sessions without manual intervention.
 
 ### Core Concepts
 
-| Concept     | Description                                          |
-| ----------- | ---------------------------------------------------- |
-| **Runner**  | An agent instance with a specific role               |
-| **Track**   | A unit of work like a feature, bug fix, or refactor  |
-| **Signal**  | A message telling a runner what work needs attention |
-| **Handoff** | Structured state snapshot for session transitions    |
+| Concept      | Description                                        |
+| ------------ | -------------------------------------------------- |
+| **Plan**     | Parent container for stages, lives in `doc/plans/` |
+| **Stage**    | A unit of work within a plan, with dependencies    |
+| **Session**  | A Claude Code instance executing a stage           |
+| **Worktree** | Git worktree for parallel stage isolation          |
+| **Handoff**  | Context dump when session exhausts context         |
 
 ### Context Thresholds
 
@@ -123,14 +125,17 @@ Agents monitor their context usage and act accordingly:
 
 ### State Persistence
 
-All state lives in `.work/` as markdown files:
+All state lives in `.work/` as structured files:
 
 ```text
 .work/
-├── runners/      # Agent instance states (se-001.md, tl-001.md)
-├── tracks/       # Work unit details (feature-auth.md)
-├── signals/      # Pending work items
-└── handoffs/     # Session transition documents
+├── config.toml          # Active plan, settings
+├── execution-graph.toml # Stage dependency DAG
+├── stages/              # Stage state files
+├── sessions/            # Session state files
+├── signals/             # Stage assignments
+├── handoffs/            # Context dumps
+└── worktrees/           # Worktree metadata
 ```
 
 This git-friendly format enables version control, team collaboration, and
@@ -288,100 +293,193 @@ be configured for Claude to access them directly. Check the
 
 ## Flux CLI Reference
 
-### Initialization and Health
+### Primary Commands
+
+These commands cover 90% of typical usage:
 
 ```bash
-flux init                    # Initialize .work/ directory in current project
-flux status                  # Show dashboard with runners, tracks, signals
+# Initialize Flux with a plan
+flux init <plan-path>
+# Example: flux init doc/plans/PLAN-auth.md
+# - Parses plan, extracts stages and dependencies
+# - Creates execution graph in .work/
+# - Sets up .work/ directory structure
+
+# Execute stages (creates worktrees, spawns sessions)
+flux run [--stage <id>] [--manual]
+# - Creates git worktrees for ready parallel stages
+# - Spawns Claude sessions (unless --manual)
+# - Monitors progress, triggers dependent stages
+# - --stage: run only specific stage
+# - --manual: don't spawn sessions, just prepare signals
+
+# Check plan progress and session health
+flux status
+# Shows: plan progress, stage states, session health, context levels
+
+# Human verification gate
+flux verify <stage-id>
+# - Runs acceptance criteria
+# - Human approves/rejects
+# - Triggers dependent stages if approved
+
+# Resume from handoff
+flux resume <stage-id>
+# - Creates new session with handoff context
+# - Continues from where previous session left off
+
+# Merge completed stage to main
+flux merge <stage-id>
+# - Merges worktree branch to main
+# - Removes worktree on success
+# - If conflicts, prints resolution instructions
+
+# Attach to running session
+flux attach <stage-id>
+# - Attaches terminal to running Claude session
+# - Human can observe, type, intervene
+# - Detach returns control to Flux
+```
+
+### Secondary Commands
+
+Power user commands for fine-grained control:
+
+```bash
+# Session management
+flux sessions [list|kill <id>]
+
+# Worktree management
+flux worktree [list|clean]
+
+# View/edit execution graph
+flux graph [show|edit]
+
+# Force stage state transitions
+flux stage <id> [complete|block|reset]
+```
+
+### Utility Commands
+
+```bash
 flux validate                # Check state file integrity
 flux doctor                  # Diagnose configuration issues
+flux self-update             # Update Flux CLI, agents, skills, and config
 ```
 
-### Track Management
+## Plan Document Format
 
-Tracks represent units of work (features, bugs, refactors).
+Plans live in `doc/plans/` and contain structured YAML metadata embedded in
+markdown comments:
 
-```bash
-flux track new "Feature Name"     # Create new work track
-flux track list                   # List all tracks
-flux track show <id>              # View track details
-flux track close <id>             # Close completed track
+````markdown
+# PLAN-0001: User Authentication
+
+## Problem Statement
+
+We need to implement JWT-based authentication...
+
+## Solution Approach
+
+...
+
+<!-- FLUX METADATA - Do not edit manually -->
+
+```yaml
+flux:
+  version: 1
+  stages:
+    - id: stage-1
+      name: "JWT Token Service"
+      description: "Implement core JWT token generation and validation"
+      dependencies: []
+      parallel_group: null
+      acceptance:
+        - "cargo test auth::token"
+        - "cargo clippy -- -D warnings"
+      files:
+        - "src/auth/token.rs"
+        - "src/auth/mod.rs"
+
+    - id: stage-2
+      name: "Refresh Token Logic"
+      description: "Add refresh token rotation and storage"
+      dependencies: ["stage-1"]
+      parallel_group: null
+      acceptance:
+        - "cargo test auth::refresh"
+      files:
+        - "src/auth/refresh.rs"
 ```
+````
 
-### Runner Management
+<!-- END FLUX METADATA -->
 
-Runners are agent instances assigned to work.
+````
 
-```bash
-flux runner create <name> -t <type>    # Create runner with role type
-flux runner list                       # List all runners
-flux runner assign <runner> <track>    # Assign runner to track
-flux runner release <runner>           # Release runner from current track
-```
+### Metadata Fields
 
-Runner types map to agent roles:
-
-| Type                       | Example IDs    | Role                    |
-| -------------------------- | -------------- | ----------------------- |
-| `software-engineer`        | se-001, se-002 | Implementation          |
-| `senior-software-engineer` | sse-001        | Architecture, design    |
-| `tech-lead`                | tl-001         | Cross-team coordination |
-| `security-engineer`        | sec-001        | Security review, audit  |
-
-### Signal Management
-
-Signals tell runners what work needs attention.
-
-```bash
-flux signal set <runner> <type> <message>   # Send signal to runner
-flux signal show                            # View all pending signals
-flux signal clear <id>                      # Clear/complete signal
-```
-
-Signal types: `start`, `review`, `debug`, `test`, `document`
-
-### Self-Update
-
-```bash
-flux self-update              # Update Flux CLI, agents, skills, and config
-```
+- **version**: Flux metadata schema version (currently 1)
+- **stages**: List of work stages with dependencies
+  - **id**: Unique stage identifier (e.g., "stage-1")
+  - **name**: Human-readable stage name
+  - **description**: What this stage accomplishes
+  - **dependencies**: List of stage IDs that must complete first
+  - **parallel_group**: Optional group name for stages that can run in parallel
+  - **acceptance**: List of commands to verify stage completion
+  - **files**: Files this stage will modify (for git worktree setup)
 
 ## Workflow Example
 
-A complete example from initialization to autonomous handoff:
+A complete example from plan creation to execution:
 
 ```bash
-# 1. Initialize Flux in your project
+# 1. Create a plan document (or use Claude in plan mode)
+# Write to doc/plans/PLAN-auth.md with FLUX METADATA block
+
+# 2. Initialize Flux with the plan
 cd /path/to/project
-flux init
+flux init doc/plans/PLAN-auth.md
+# Output: Initialized .work/ directory structure with plan from doc/plans/PLAN-auth.md
 
-# 2. Create a track for your work
-flux track new "User Authentication"
-# Output: Created track: user-authentication (t-001)
+# 3. Run stages (creates worktrees, spawns sessions)
+flux run
+# Output: Creating worktree for stage-1...
+#         Spawning Claude session for stage-1...
+#         Running all ready stages...
 
-# 3. Create and assign a runner
-flux runner create auth-impl -t software-engineer
-# Output: Created runner: se-001
-
-flux runner assign se-001 user-authentication
-
-# 4. Signal the runner to start work
-flux signal set se-001 start "Implement JWT auth with refresh tokens"
-
-# 5. Check status
+# 4. Monitor progress
 flux status
-# Shows: se-001 assigned to t-001 with pending start signal
+# Shows:
+#   Stages:   2
+#   Sessions: 1
+#   stage-1: Running (session: sess-001, context: 45%)
+#   stage-2: Blocked (waiting on: stage-1)
 
-# 6. Start Claude Code - it picks up the signal automatically
-claude
-# Claude reads .work/, sees the signal, begins work
+# 5. Attach to observe a running stage
+flux attach stage-1
+# (Opens tmux session showing Claude working on stage-1)
 
-# When context reaches 75%, Claude:
+# 6. Verify completed stages (human approval gate)
+flux verify stage-1
+# Output: Running acceptance criteria...
+#         All acceptance criteria passed!
+#         Approve this stage? (y/n): y
+#         Stage approved! Transitioning to Verified status...
+#         Triggered 1 dependent stage: stage-2
+
+# 7. Merge completed work to main
+flux merge stage-1
+# Output: Merging worktree branch flux/stage-1 to main...
+#         Merge successful!
+#         Removing worktree...
+
+# When context reaches 75%, Claude automatically:
 # - Creates handoff in .work/handoffs/
-# - Updates signal with next steps
-# - Prompts to start fresh session
-# - New session loads signal + handoff, continues seamlessly
-```
+# - Updates session state
+# - Exits gracefully
+# - flux run or flux resume continues seamlessly
+````
 
 ## Agent Hierarchy
 
@@ -400,11 +498,10 @@ Agents are organized by domain with two tiers:
 
 Special agents:
 
-| Agent               | Model | Purpose                              |
-| ------------------- | ----- | ------------------------------------ |
-| `tech-lead`         | opus  | Cross-team coordination, planning    |
-| `security-engineer` | opus  | Security review, threat modeling     |
-| `doc-editor`        | haiku | Markdown formatting, doc consistency |
+| Agent               | Model | Purpose                           |
+| ------------------- | ----- | --------------------------------- |
+| `tech-lead`         | opus  | Cross-team coordination, planning |
+| `security-engineer` | opus  | Security review, threat modeling  |
 
 ### When to Use Each Tier
 

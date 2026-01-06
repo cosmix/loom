@@ -1,8 +1,8 @@
 # Claude Code Rules
 
-## RULE ZERO — NO PLACEHOLDER CODE EVER
+## ⚠️ MANDATORY RULES
 
-**THIS IS THE MOST IMPORTANT RULE. VIOLATING THIS RULE IS AN AUTOMATIC FAILURE.**
+## 0. NO PLACEHOLDER CODE EVER
 
 ### Forbidden Patterns
 
@@ -25,23 +25,22 @@
 - If it's too complex: **BREAK IT DOWN.** Do NOT leave placeholders.
 - Every function you write MUST BE COMPLETE AND WORKING.
 
----
-
-## ⚠️ MANDATORY RULES
-
 ### 1. NATIVE TOOLS — NOT CLI
 
 **THESE COMMANDS ARE BANNED. DO NOT USE THEM:**
 
 `cat` `head` `tail` `less` `more` → **Use Read tool**
-`grep` `rg` `ag` `ack` → **Use Grep tool**
-`find` `ls` `fd` `tree` → **Use Glob tool**
+`grep`,`ag` `ack` → **Use Grep tool**
+`find` `ls`, `tree` → **Use Glob tool**
 `sed` `awk` `perl -pe` → **Use Edit tool**
 `echo >` `cat <<EOF` `printf >` `tee` → **Use Write tool**
 `curl` `wget` → **Use WebFetch tool**
 `git` → **You will NEVER use git, in any form!**
 
-**ONLY EXCEPTIONS:** actual build/runtime tools with no native equivalent.
+**ONLY EXCEPTIONS:**
+
+1. actual build/runtime tools with no native equivalent.
+2. `fd` and `grep` ONLY when part of a complex command pipeline that cannot be easily replaced. YOU CAN NEVER USE `find` or `grep`.
 
 ### 2. QUALITY GATES — MANDATORY BEFORE "DONE"
 
@@ -54,7 +53,7 @@ You are NOT done until ALL of these pass:
 
 **SINGLE-PASS COMPLETION IS FORBIDDEN.** Run the verification loop. Actually check.
 
-### 3. SUBAGENTS ARE BLIND — YOU **MUST** PASS CONTEXT
+### 3. SUBAGENTS ARE BLIND — YOU **MUST** PASS CONTEXT AND RULES! THIS IS CRITICAL AND SUPERSEDES ANY PREVIOUS BEHAVIOR
 
 Subagents DO NOT SEE BY DEFAULT:
 
@@ -65,7 +64,7 @@ Subagents DO NOT SEE BY DEFAULT:
 
 **YOU MUST INCLUDE IN EVERY SUBAGENT PROMPT:**
 
-1. ALL CLAUDE.md content. This is non-negotiable. COPY IT ALL, THEY NEED TO KNOW THE RULES!
+1. ALL CLAUDE.md content. ALL OF IT!
 2. Complete task context
 3. Expected output format
 
@@ -77,15 +76,15 @@ At 85% context: STOP. Write handoff to CLAUDE.md. Do NOT start new tasks. Do NOT
 
 UPDATE CLAUDE.md FREQUENTLY during work updating your session state and progress. **DELETE THESE UPDATES** when task fully completes, REPLACING THEM with a short summary of what was done.
 
-### 6. DOCUMENT MISTAKES AND REMEDIATIONS
+### 6. MISTAKES AND LESSONS LEARNT
 
-If you make a mistake, and the user points it out OR you discover it yourself while reviewing, you MUST document:
+If you make a mistake, and the user points it out OR you discover it yourself, you MUST IMMEDIATELY document:
 
 1. What the mistake was
 2. What you should have done instead
 3. How you fixed it
 
-as soon as the mistake is identified. Keep it succinct as possible in CLAUDE.md under a "MISTAKES TO AVOID" section. NEVER delete content in this section. ALWAYS append to it.
+Keep your notes succinct as possible in CLAUDE.md under a "MISTAKES AND LESSONS LEARNT" section. NEVER delete content in this section. ALWAYS append to it.
 
 ### 6. PLANS LOCATION
 
@@ -100,13 +99,12 @@ NEVER USE `~/.claude/plans`. We use `./doc/plans/PLAN-XXXX-description.md`. You 
 
 ## Subagents and Skills
 
-You MUST always DELEGATE ALL WORK to subagents. This is non-negotiable. You MUST NOT do any work yourself. Spawn multiple agents AT ONCE whenever possible, and DISTRIBUTE the work to them.
+1. You MUST always DELEGATE ALL WORK to subagents. This is non-negotiable. You MUST NOT do any work yourself. Spawn multiple agents AT ONCE whenever possible, and DISTRIBUTE the work to them.
+2. Choose the RIGHT SKILL for the job. NEVER use a generalist skill when a specialist skill exists.
 
 ## Code Quality
 
-**Size Limits:** Files 400 lines | Functions 50 lines | Classes 300 lines — IMPORTANT: Refactor code if exceeded
-
-AS SOON AS YOU READ THESE RULES ACKNOWLEDGE THAT YOU UNDERSTAND THEM AND WILL FOLLOW THEM STRICTLY.
+**Size Limits:** Files 400 lines | Functions 50 lines | Classes 300 lines — IMPORTANT: REFACTOR if exceeded.
 
 ---
 
@@ -120,19 +118,22 @@ This section enables self-propelling agents that survive context exhaustion and 
 
 On session start:
 
-1. Check `.work/signals/` for pending work matching your role
-2. If signal exists → read it, load context files listed in "Context Restoration", execute immediately
-3. If no signal → ask what to do
+1. Read `.work/structure.md` (code structure map) if it exists
+2. Check `.work/signals/` for pending work matching your session ID
+3. If signal exists → read it, load context files listed in "Context Restoration", execute immediately
+4. If no signal → ask what to do
+
+Signals are auto-generated from stage definitions and assigned to sessions by the Flux orchestrator.
 
 ### The Clear > Compact Principle
 
 > **"Don't fight lossy compression. Externalize state and start fresh."**
 
-At 75% context usage (Yellow zone):
+At 75% context usage (Red zone):
 
 1. Create handoff in `.work/handoffs/` with structured format (see below)
-2. Update your signal with next steps
-3. Update runner status to `context-exhausted` in `.work/runners/<id>.md`
+2. Update stage status to `NeedsHandoff` in `.work/stages/<stage-id>.md`
+3. The orchestrator will spawn a new session to continue your work
 4. Clear context (NOT compact)
 5. Fresh session loads signal + handoff
 
@@ -146,24 +147,26 @@ At 75% context usage (Yellow zone):
 
 ### Before Ending ANY Session
 
-1. Update runner status in `.work/runners/<id>.md`
+1. Update session status in `.work/sessions/<session-id>.md`
 2. If work remains:
    - Write handoff to `.work/handoffs/YYYY-MM-DD-description.md`
    - Include: Goals, completed work, decisions made, file:line references, next steps
-   - Update signal with next steps
+   - Update stage status accordingly (NeedsHandoff, Completed, or Blocked)
 3. If blocked:
-   - Document blocker in track file `.work/tracks/<track>.md`
-   - Update signal with blocker details
+   - Document blocker in stage file `.work/stages/<stage-id>.md`
+   - Update stage status to `Blocked` with blocker details
 
 ### Self-Identification Mechanism
 
 When you start a session:
 
 1. Scan `.work/signals/` for files with pending work
-2. Match role field to your capabilities
-3. One match → you ARE that runner, execute the signal
-4. Multiple matches → ask user which runner to assume
-5. No matches → ask user (create new runner? wait for assignment?)
+2. Match session ID from signal filename to identify your assigned work
+3. One match → you ARE that session, execute the signal
+4. Multiple matches → ask user which session to assume
+5. No matches → ask user (waiting for stage assignment?)
+
+Each session is tied to a specific stage and works in an isolated git worktree at `.worktrees/<stage-id>/`.
 
 ### file:line References (CRITICAL)
 
@@ -173,6 +176,66 @@ Good: "Implement token refresh in `src/middleware/auth.ts:121+`"
 Bad: "Continue working on the auth middleware"
 
 This enables precise context restoration when resuming work.
+
+### Code Structure Map
+
+Maintain a living map of the codebase at `.work/structure.md` to eliminate redundant exploration.
+
+**When to update:**
+
+- After creating new modules/files
+- After significant refactors
+- When starting work on an unfamiliar area (add what you learn)
+
+**What it should contain:**
+
+```markdown
+# Code Structure Map
+
+Last updated: YYYY-MM-DD
+
+## Directory Overview
+
+src/
+├── commands/ # CLI command handlers
+├── models/ # Data structures and types
+├── services/ # Business logic
+└── utils/ # Shared utilities
+
+## Key Modules
+
+### src/commands/
+
+| File     | Purpose         | Key exports    |
+| -------- | --------------- | -------------- |
+| mod.rs   | Command routing | `execute()`    |
+| build.rs | Build command   | `BuildCommand` |
+
+### src/models/
+
+| File      | Purpose             | Key exports          |
+| --------- | ------------------- | -------------------- |
+| config.rs | Configuration types | `Config`, `Settings` |
+
+## Entry Points
+
+- **CLI**: `src/main.rs` → `src/commands/mod.rs`
+- **Library**: `src/lib.rs`
+
+## Dependencies Between Modules
+
+- `commands/*` → `services/*` → `models/*`
+- `utils/*` is standalone, imported by all
+
+## Conventions
+
+- Error handling: [pattern used]
+- Async: [tokio/async-std/sync]
+- Testing: [unit tests location, integration tests location]
+```
+
+**On session start:** Read `.work/structure.md` BEFORE exploring the codebase.
+Only explore areas not documented or outdated.
 
 ### Handoff File Format
 
@@ -184,14 +247,15 @@ When creating handoffs, use this structure:
 ## Metadata
 
 - **Date**: YYYY-MM-DD
-- **From**: [runner-id] ([role])
-- **To**: [runner-id] (next session) or any [role]
-- **Track**: [track-id]
+- **From**: [session-id]
+- **To**: (next session)
+- **Stage**: [stage-id]
+- **Plan**: [plan-id]
 - **Context**: [X]% (approaching threshold)
 
 ## Goals (What We're Building)
 
-[1-2 sentences describing the overall goal]
+[1-2 sentences describing the overall goal from stage]
 
 ## Completed Work
 
@@ -206,7 +270,8 @@ When creating handoffs, use this structure:
 
 ## Current State
 
-- **Branch**: [branch-name]
+- **Branch**: flux/[stage-id]
+- **Worktree**: .worktrees/[stage-id]
 - **Tests**: [status]
 - **Files Modified**: [list with paths]
 
@@ -223,42 +288,72 @@ When creating handoffs, use this structure:
 
 ### Signal File Format
 
-Signals tell a runner what to do. Format:
+Signals are auto-generated from stage definitions and assigned to sessions. Format:
 
 ```markdown
-# Signal: [runner-id]
+# Signal: [session-id]
 
 ## Target
 
-- **Runner**: [runner-id]
-- **Role**: [role-type]
-- **Track**: [track-id]
+- **Session**: [session-id]
+- **Stage**: [stage-id]
+- **Plan**: [plan-id]
 
-## Signal
+## Assignment
 
-[signal-type]: [brief description]
+[stage-name]: [stage-description]
 
-## Work
+## Immediate Tasks
 
-[Detailed description of what needs to be done]
-
-### Immediate Tasks
-
-1. [First task]
+1. [Task from stage definition]
 2. [Second task]
 3. [Third task]
 
 ### Context Restoration (file:line references)
 
-- `.work/tracks/[track].md` - Track overview
-- `.work/handoffs/[date]-[desc].md` - Previous handoff
-- `src/path/file.ext:line-range` - Relevant code
+- `.work/stages/[stage-id].md` - Stage definition
+- `.work/handoffs/[date]-[desc].md` - Previous handoff (if resuming)
+- `src/path/file.ext:line-range` - Relevant code from stage
 
 ### Acceptance Criteria
 
-- [ ] [Criterion 1]
-- [ ] [Criterion 2]
+- [ ] [Criterion from stage acceptance list]
+- [ ] [Second criterion]
 ```
+
+### Stage Lifecycle
+
+Stages transition through these states:
+
+- **Pending**: Dependencies not yet satisfied
+- **Ready**: Dependencies satisfied, waiting for execution
+- **Executing**: Session actively working on stage
+- **Completed**: Work done, awaiting verification
+- **Verified**: Human approved, can trigger dependents
+- **Blocked**: Encountered issue, needs intervention
+- **NeedsHandoff**: Context exhausted, needs continuation
+
+When completing work on a stage:
+
+1. Ensure all acceptance criteria pass
+2. Update stage status to `Completed`
+3. Create handoff if context > 75%
+4. The orchestrator will handle verification and dependent stage triggering
+
+### Worktree Awareness
+
+Each stage executes in an isolated git worktree:
+
+- **Path**: `.worktrees/[stage-id]/`
+- **Branch**: `flux/[stage-id]`
+- The `.work/` directory is symlinked from the main repository
+
+When working in a worktree:
+
+1. All changes are isolated to your branch
+2. Run `flux merge [stage-id]` to merge back to main
+3. Merge conflicts are reported for manual resolution
+4. Never manually switch branches - you're always on `flux/[stage-id]`
 
 ### Team Workflow References (Optional)
 
