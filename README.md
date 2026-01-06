@@ -1,138 +1,251 @@
-# Claude Code Agent & Skills Library
+# Claude Flux
 
-A comprehensive collection of hierarchical AI agents and reusable skills for Claude Code CLI, designed to optimize performance across software engineering, security, machine learning, infrastructure, product design, analytics, QA, data engineering, and technical writing domains.
+Claude Flux is a self-propelling agent orchestration system for Claude Code.
+It combines a state management CLI, specialized AI agents, and reusable skills
+to create workflows that survive context exhaustion, session crashes, and
+manual handoffs. When context runs low, agents externalize their state and
+signal fresh sessions to continue seamlessly.
 
-## Overview
+## The Problem
 
-This project provides:
+AI agent sessions hit hard limits:
 
-- **19 Specialized Agents** - Senior (opus) and Standard (sonnet) pairs across 8 domains, plus Security Engineer, Tech Lead, and Doc Editor
-- **48 Reusable Skills** - Modular capabilities that agents can leverage
+- **Context exhaustion** - Long tasks exceed the context window, forcing lossy
+  summarization or manual restarts
+- **Lost state** - When sessions end, work-in-progress vanishes unless manually
+  documented
+- **Manual handoffs** - Resuming work requires re-explaining context,
+  decisions, and next steps
+- **No coordination** - Multiple agents cannot easily pass work between each
+  other
+
+## The Solution
+
+Flux solves these problems with three integrated components:
+
+| Component    | Purpose                                          |
+| ------------ | ------------------------------------------------ |
+| **Flux CLI** | Manages persistent work state across sessions    |
+| **Agents**   | 19 specialized AI agents organized by domain     |
+| **Skills**   | 56 reusable knowledge modules loaded dynamically |
+
+Together, they implement the **Signal Principle**: _"If you have a signal,
+answer it."_ Agents check for pending signals on startup and resume work
+automatically.
 
 ## Why Agents + Skills?
 
-Claude Code's power comes from combining **agents** (specialized subagents with focused expertise) and **skills** (reusable knowledge modules). This architecture provides:
+Claude Code's power comes from combining **agents** (specialized subagents with
+focused expertise) and **skills** (reusable knowledge modules). This
+architecture provides:
 
 ### Context Efficiency
 
-Each subagent runs in its own context window. Instead of one massive conversation that hits context limits, work is distributed across multiple focused agents. This means:
+Each subagent runs in its own context window. Instead of one massive
+conversation that hits context limits, work is distributed across multiple
+focused agents. This means:
 
-- **Larger projects**: Break down 50-file refactors into parallel subagent tasks
-- **Preserved context**: The main conversation stays clean while subagents handle details
-- **Better results**: Each agent focuses on its specialty without context pollution
+- **Larger projects**: Break down 50-file refactors into parallel subagent
+  tasks
+- **Preserved context**: The main conversation stays clean while subagents
+  handle details
+- **Better results**: Each agent focuses on its specialty without context
+  pollution
 
 ### Versatility Through Composition
 
-Skills are loaded dynamically based on the task. A `software-engineer` agent working on a Python API can automatically load `python`, `api-design`, and `testing` skills—getting specialized knowledge without bloating every conversation.
+Skills are loaded dynamically based on the task. A `software-engineer` agent
+working on a Python API can automatically load `python`, `api-design`, and
+`testing` skills--getting specialized knowledge without bloating every
+conversation.
 
 ### Parallel Execution
 
-Subagents can run in parallel (up to 10 concurrent). A single prompt like "refactor authentication across all services" can spawn multiple agents working simultaneously on different files, dramatically reducing total time.
+Subagents can run in parallel (up to 10 concurrent). A single prompt like
+"refactor authentication across all services" can spawn multiple agents working
+simultaneously on different files, dramatically reducing total time.
 
-> **Learn more**: [Subagents Documentation](https://code.claude.com/docs/en/sub-agents) · [Agent Skills Blog Post](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills)
+> **Learn more**:
+> [Subagents Documentation](https://code.claude.com/docs/en/sub-agents) -
+> [Agent Skills Blog Post](https://claude.com/blog/skills)
+
+## Quick Start
+
+Install everything with one command:
+
+```bash
+curl -fsSL \
+  https://raw.githubusercontent.com/cosmix/claude-flux/main/install.sh | bash
+```
+
+Initialize Flux in your project:
+
+```bash
+cd /path/to/project
+flux init
+flux status
+```
+
+Start Claude Code. It will automatically detect the Flux configuration and
+check for pending work.
+
+## How It Works
+
+### The Signal Principle
+
+On every session start, agents:
+
+1. Check `.work/signals/` for pending work matching their role
+2. If a signal exists, load context from referenced files and execute
+   immediately
+3. If no signal, ask the user what to do
+
+This creates continuity across sessions without manual intervention.
+
+### Core Concepts
+
+| Concept     | Description                                          |
+| ----------- | ---------------------------------------------------- |
+| **Runner**  | An agent instance with a specific role               |
+| **Track**   | A unit of work like a feature, bug fix, or refactor  |
+| **Signal**  | A message telling a runner what work needs attention |
+| **Handoff** | Structured state snapshot for session transitions    |
+
+### Context Thresholds
+
+Agents monitor their context usage and act accordingly:
+
+| Level  | Usage  | Action                                       |
+| ------ | ------ | -------------------------------------------- |
+| Green  | < 60%  | Normal operation                             |
+| Yellow | 60-74% | Consider creating handoff soon               |
+| Red    | >= 75% | Create handoff immediately, then start fresh |
+
+### State Persistence
+
+All state lives in `.work/` as markdown files:
+
+```text
+.work/
+├── runners/      # Agent instance states (se-001.md, tl-001.md)
+├── tracks/       # Work unit details (feature-auth.md)
+├── signals/      # Pending work items
+└── handoffs/     # Session transition documents
+```
+
+This git-friendly format enables version control, team collaboration, and
+manual inspection.
+
+## How the CLAUDE.md Configuration Works
+
+The CLAUDE.md instructions you add to `~/.claude/CLAUDE.md` become part of
+Claude's system context. They guide Claude to:
+
+1. **Recognize delegation opportunities** - When you ask for a complex task,
+   Claude checks if specialist agents can handle parts of it
+
+2. **Choose the right agent tier** - Senior agents (opus) for
+   architecture/debugging, standard agents (sonnet) for implementation
+
+3. **Parallelize independent work** - Claude spawns multiple subagents
+   simultaneously when tasks don't depend on each other
+
+4. **Manage context efficiently** - Instead of trying to do everything in one
+   context window, Claude distributes work across focused subagents
+
+### Example: Multi-File Refactoring
+
+Without orchestration rules, Claude might try to refactor 20 files sequentially
+in one context, eventually hitting limits.
+
+With orchestration rules, Claude will:
+
+1. Use tech-lead to analyze the refactoring scope
+2. Spawn senior-software-engineer to design the approach
+3. Spawn multiple software-engineer agents IN PARALLEL to refactor different
+   files
+4. Each agent loads relevant skills (python, refactoring, testing)
+5. Results merge back without exhausting main context
 
 ## Installation
 
-### Prerequisites
-
-- [Claude Code CLI](https://code.claude.com/docs/en/overview) installed and configured
-
-### Quick Install
-
-**One-liner (recommended):**
+### Quick Install (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/cosmix/cluade-flux/main/install.sh | bash
+curl -fsSL \
+  https://raw.githubusercontent.com/cosmix/claude-flux/main/install.sh | bash
 ```
 
-**Or clone and install:**
+### Clone and Install
 
 ```bash
-git clone https://github.com/cosmix/cluade-flux.git
-cd cluade-flux
+git clone https://github.com/cosmix/claude-flux.git
+cd claude-flux
 bash install.sh
 ```
 
-The installer will:
-
-- Copy agents and skills to `~/.claude/`
-- Append orchestration rules to `~/.claude/CLAUDE.md`
-- Back up any existing files (as `*.bak.<timestamp>`)
-
 ### Manual Install
 
-If you prefer to install manually or to a specific project:
-
 ```bash
-# User-level (available in all projects)
+# Copy agents and skills
 cp -r agents ~/.claude/
 cp -r skills ~/.claude/
+
+# Install configuration
 cat CLAUDE.template.md >> ~/.claude/CLAUDE.md
 
-# Project-level (team-shared via git)
-cp -r agents /path/to/your/project/.claude/
-cp -r skills /path/to/your/project/.claude/
-cat CLAUDE.template.md >> /path/to/your/project/CLAUDE.md
+# Download Flux CLI for your platform
+# Linux x86_64 (glibc):
+FLUX_URL="https://github.com/cosmix/claude-flux/releases/latest/download"
+curl -fsSL "$FLUX_URL/flux-x86_64-unknown-linux-gnu" -o ~/.local/bin/flux
+chmod +x ~/.local/bin/flux
+
+# macOS Apple Silicon:
+curl -fsSL "$FLUX_URL/flux-aarch64-apple-darwin" -o ~/.local/bin/flux
+chmod +x ~/.local/bin/flux
 ```
 
 ### What Gets Installed
 
+The installation places these components:
+
+| Location              | Contents                              |
+| --------------------- | ------------------------------------- |
+| `~/.claude/agents/`   | 19 specialized AI agents              |
+| `~/.claude/skills/`   | 56 reusable knowledge modules         |
+| `~/.claude/CLAUDE.md` | Orchestration rules and configuration |
+| `~/.local/bin/flux`   | Flux CLI binary                       |
+
 The [`CLAUDE.template.md`](CLAUDE.template.md) configuration includes:
 
-- **Agent orchestration** - When to use senior (opus) vs standard (sonnet) agents
-- **Parallel/sequential execution** - Guidelines for spawning agents efficiently
+- **Agent orchestration** - When to use senior (opus) vs standard (sonnet)
+  agents
+- **Parallel/sequential execution** - Guidelines for spawning agents
+  efficiently
 - **Context passing** - What information to provide subagents
-- **Development standards** - Implementation, planning, documentation, code quality
-- **Dependency management** - Always use package managers, never edit manifests manually
+- **Development standards** - Implementation, planning, documentation, code
+  quality
+- **Dependency management** - Always use package managers, never edit manifests
+  manually
 - **Progress tracking** - How to record and clean up task progress
 
 ### Verify Installation
 
-Start a Claude Code session and check that agents and skills are loaded:
-
 ```bash
+# Check Flux CLI
+flux --version
+flux doctor
+
+# Start Claude Code and verify agents are available
 claude
-
-# Inside Claude Code, ask:
-> What agents are available?
-> What skills do you have access to?
-```
-
-> **Official Documentation**:
->
-> - [Subagents Guide](https://code.claude.com/docs/en/sub-agents)
-> - [Skills Introduction](https://claude.com/blog/skills)
-> - [Claude Code Best Practices](https://www.anthropic.com/engineering/claude-code-best-practices)
-
-## How the CLAUDE.md Configuration Works
-
-The CLAUDE.md instructions you add to `~/.claude/CLAUDE.md` become part of Claude's system context. They guide Claude to:
-
-1. **Recognize delegation opportunities** - When you ask for a complex task, Claude checks if specialist agents can handle parts of it
-
-2. **Choose the right agent tier** - Senior agents (opus) for architecture/debugging, standard agents (sonnet) for implementation
-
-3. **Parallelize independent work** - Claude spawns multiple subagents simultaneously when tasks don't depend on each other
-
-4. **Manage context efficiently** - Instead of trying to do everything in one context window, Claude distributes work across focused subagents
-
-### Example: Multi-File Refactoring
-
-Without orchestration rules, Claude might try to refactor 20 files sequentially in one context, eventually hitting limits.
-
-With orchestration rules, Claude will:
-
-```text
-1. Use tech-lead to analyze the refactoring scope
-2. Spawn senior-software-engineer to design the approach
-3. Spawn multiple software-engineer agents IN PARALLEL to refactor different files
-4. Each agent loads relevant skills (python, refactoring, testing)
-5. Results merge back without exhausting main context
+> What agents and skills are available?
 ```
 
 ## Project Specifications (Workflows)
 
-Your project-specific workflows and specifications should be documented in your project's `CLAUDE.md` file. This ensures Claude understands your team's processes and can follow them automatically.
+Your project-specific workflows and specifications should be documented in your
+project's `CLAUDE.md` file. This ensures Claude understands your team's
+processes and can follow them automatically.
 
 ### Adding Workflows to CLAUDE.md
 
@@ -162,7 +275,9 @@ Alternatively, reference external documentation:
 - API contracts: [Confluence page](https://confluence.company.com/api-specs)
 ```
 
-**Note:** External sources may require MCP (Model Context Protocol) servers to be configured for Claude to access them directly. Check the [MCP documentation](https://modelcontextprotocol.io) for integration details.
+**Note:** External sources may require MCP (Model Context Protocol) servers to
+be configured for Claude to access them directly. Check the
+[MCP documentation](https://modelcontextprotocol.io) for integration details.
 
 ### Best Practices
 
@@ -171,214 +286,148 @@ Alternatively, reference external documentation:
 - Include links to detailed documentation for complex workflows
 - Document team-specific conventions and standards
 
-## Flux CLI: Enabling Agent Orchestration
+## Flux CLI Reference
 
-Flux is a command-line tool for managing persistent work state across AI agent sessions. It implements the **Signal Principle**: _"If you have a signal, answer it"_ — enabling agents to resume work automatically without manual context restoration.
-
-### What Flux Does
-
-Flux provides structured work state management:
-
-- **Runners**: Individual agent instances (e.g., `se-001`, `tl-001`) with specific roles
-- **Tracks**: Grouped units of work (features, bugs, refactors)
-- **Signals**: Pending work items that need attention
-- **State Persistence**: All state stored in `.work/` directory as markdown files (git-friendly)
-
-When you start Claude, it reads the `.work/` state and automatically picks up any signals assigned to it, enabling true self-propelling workflows.
-
-### Installing Flux
-
-Flux is installed automatically by `install.sh`. The binary is placed in `~/.local/bin/` (or `/usr/local/bin/` if `~/.local/bin/` doesn't exist).
-
-**Manual Installation:**
-
-1. Download the latest binary for your platform from [GitHub Releases](https://github.com/cosmix/cluade-flux/releases)
-2. Make it executable: `chmod +x flux`
-3. Move to your PATH: `mv flux ~/.local/bin/` or `mv flux /usr/local/bin/`
-
-### Updating
-
-To update flux and all configuration files to the latest version:
+### Initialization and Health
 
 ```bash
-flux self-update
+flux init                    # Initialize .work/ directory in current project
+flux status                  # Show dashboard with runners, tracks, signals
+flux validate                # Check state file integrity
+flux doctor                  # Diagnose configuration issues
 ```
 
-This will:
+### Track Management
 
-- Check GitHub for the latest release
-- Download and replace the flux binary
-- Update agents and skills in `~/.claude/`
-- Update `~/.claude/CLAUDE.md` with the latest template
-
-### Commands Reference
-
-#### Initialization and Health
+Tracks represent units of work (features, bugs, refactors).
 
 ```bash
-flux init                          # Initialize .work/ directory in current project
-flux status                        # Show dashboard with runners, tracks, signals
-flux validate                      # Check state integrity
-flux doctor                        # Diagnose configuration issues
+flux track new "Feature Name"     # Create new work track
+flux track list                   # List all tracks
+flux track show <id>              # View track details
+flux track close <id>             # Close completed track
 ```
 
-#### Track Management
+### Runner Management
+
+Runners are agent instances assigned to work.
 
 ```bash
-flux track new "Feature Name"      # Create new work track
-flux track list                    # List all tracks
-flux track show <id>               # View track details
-flux track close <id>              # Close completed track
-```
-
-#### Runner Management
-
-```bash
-flux runner create <name> -t <type>    # Create runner (types: se-001, sse-001, tl-001, etc.)
+flux runner create <name> -t <type>    # Create runner with role type
 flux runner list                       # List all runners
 flux runner assign <runner> <track>    # Assign runner to track
 flux runner release <runner>           # Release runner from current track
 ```
 
-**Runner Types:**
+Runner types map to agent roles:
 
-- `software-engineer` (se-001, se-002, ...)
-- `senior-software-engineer` (sse-001, sse-002, ...)
-- `tech-lead` (tl-001)
-- `security-engineer` (sec-001)
-- And more matching your agent hierarchy
+| Type                       | Example IDs    | Role                    |
+| -------------------------- | -------------- | ----------------------- |
+| `software-engineer`        | se-001, se-002 | Implementation          |
+| `senior-software-engineer` | sse-001        | Architecture, design    |
+| `tech-lead`                | tl-001         | Cross-team coordination |
+| `security-engineer`        | sec-001        | Security review, audit  |
 
-#### Signal Management
+### Signal Management
+
+Signals tell runners what work needs attention.
 
 ```bash
-flux signal set <runner> <type> <message>  # Send signal to runner
-flux signal show                           # View all pending signals
-flux signal clear <id>                     # Clear/complete signal
+flux signal set <runner> <type> <message>   # Send signal to runner
+flux signal show                            # View all pending signals
+flux signal clear <id>                      # Clear/complete signal
 ```
 
-**Signal Types:**
+Signal types: `start`, `review`, `debug`, `test`, `document`
 
-- `start`: Begin new work
-- `review`: Code review request
-- `debug`: Investigation needed
-- `test`: Testing required
-- `document`: Documentation task
-
-### Workflow Example
+### Self-Update
 
 ```bash
-# Initialize flux in your project
+flux self-update              # Update Flux CLI, agents, skills, and config
+```
+
+## Workflow Example
+
+A complete example from initialization to autonomous handoff:
+
+```bash
+# 1. Initialize Flux in your project
 cd /path/to/project
 flux init
 
-# Create a new feature track
+# 2. Create a track for your work
 flux track new "User Authentication"
 # Output: Created track: user-authentication (t-001)
 
-# Create a runner and assign it
+# 3. Create and assign a runner
 flux runner create auth-impl -t software-engineer
 # Output: Created runner: se-001
 
 flux runner assign se-001 user-authentication
-flux signal set se-001 start "Implement JWT-based authentication with refresh tokens"
 
-# Check status
+# 4. Signal the runner to start work
+flux signal set se-001 start "Implement JWT auth with refresh tokens"
+
+# 5. Check status
 flux status
-# Output shows:
-# - Runner se-001 assigned to track t-001
-# - Pending signal: start for se-001
+# Shows: se-001 assigned to t-001 with pending start signal
 
-# In another terminal, start Claude
+# 6. Start Claude Code - it picks up the signal automatically
 claude
-# Claude reads .work/ state, sees the signal, and begins work automatically
+# Claude reads .work/, sees the signal, begins work
+
+# When context reaches 75%, Claude:
+# - Creates handoff in .work/handoffs/
+# - Updates signal with next steps
+# - Prompts to start fresh session
+# - New session loads signal + handoff, continues seamlessly
 ```
-
-### Integration with Agent Workflows
-
-Flux works seamlessly with the agent hierarchy:
-
-1. **Tech Lead** creates tracks and assigns runners
-2. **Senior Engineers** design architecture and create implementation signals
-3. **Standard Engineers** execute implementation work
-4. **Security Engineer** reviews security-sensitive changes
-5. **QA Engineers** validate functionality
-
-Each agent checks for signals on startup and can create new signals for other agents, enabling true autonomous orchestration.
-
-### State Persistence
-
-All Flux state lives in `.work/` as markdown files:
-
-```text
-.work/
-├── runners/
-│   ├── se-001.md          # Runner state
-│   └── tl-001.md
-├── tracks/
-│   ├── t-001.md           # Track details
-│   └── t-002.md
-└── signals/
-    └── s-001.md           # Pending signals
-```
-
-This git-friendly format means:
-
-- State survives across sessions
-- Team can collaborate on work state
-- Full audit trail in version control
-- Easy manual editing if needed
 
 ## Agent Hierarchy
 
-Each domain has two agents with distinct responsibilities:
+Agents are organized by domain with two tiers:
 
-| Domain               | Senior (opus)                      | Standard (sonnet)         |
-| -------------------- | ---------------------------------- | ------------------------- |
-| Software Engineering | `senior-software-engineer`         | `software-engineer`       |
-| Security             | `security-engineer` (single agent) | —                         |
-| Machine Learning     | `senior-ml-engineer`               | `ml-engineer`             |
-| Infrastructure       | `senior-infrastructure-engineer`   | `infrastructure-engineer` |
-| Product Design       | `senior-product-designer`          | `product-designer`        |
-| Analytics            | `senior-data-analyst`              | `data-analyst`            |
-| Quality Assurance    | `senior-qa-engineer`               | `qa-engineer`             |
-| Data Engineering     | `senior-data-engineer`             | `data-engineer`           |
-| Technical Writing    | `senior-technical-writer`          | `technical-writer`        |
+| Domain               | Senior (opus)              | Standard (sonnet)   |
+| -------------------- | -------------------------- | ------------------- |
+| Software Engineering | `senior-software-engineer` | `software-engineer` |
+| Machine Learning     | `senior-ml-engineer`       | `ml-engineer`       |
+| Infrastructure       | `senior-infra-engineer`    | `infra-engineer`    |
+| Product Design       | `senior-product-designer`  | `product-designer`  |
+| Analytics            | `senior-data-analyst`      | `data-analyst`      |
+| Quality Assurance    | `senior-qa-engineer`       | `qa-engineer`       |
+| Data Engineering     | `senior-data-engineer`     | `data-engineer`     |
+| Technical Writing    | `senior-technical-writer`  | `technical-writer`  |
 
-### Special Agents
+Special agents:
 
-| Agent        | Model | Purpose                                                            |
-| ------------ | ----- | ------------------------------------------------------------------ |
-| `tech-lead`  | opus  | Cross-functional coordination, project planning, work distribution |
-| `doc-editor` | haiku | Markdown linting, formatting fixes, documentation consistency      |
+| Agent               | Model | Purpose                              |
+| ------------------- | ----- | ------------------------------------ |
+| `tech-lead`         | opus  | Cross-team coordination, planning    |
+| `security-engineer` | opus  | Security review, threat modeling     |
+| `doc-editor`        | haiku | Markdown formatting, doc consistency |
 
-### When to Use Senior Agents (opus)
+### When to Use Each Tier
 
-Use senior agents for higher-level thinking and complex work:
+**Senior agents (opus)** for higher-level work:
 
-- **Planning** - System design, project architecture, implementation strategies
-- **Architecture** - Component design, API contracts, data modeling decisions
-- **Difficult Algorithms** - Complex logic, optimization problems, novel solutions
-- **Design Patterns** - Selecting and applying appropriate patterns
-- **Debugging** - Root cause analysis of complex issues
-- **Code Review** - Evaluating design decisions and code quality
-- **Strategic Decisions** - Technology selection, trade-off analysis
+- System design and architecture
+- Complex debugging and root cause analysis
+- Design pattern selection
+- Code review and strategic decisions
 
-### When to Use Standard Agents (sonnet)
+**Standard agents (sonnet)** for implementation:
 
-Use standard agents for implementation and routine work:
-
-- **Boilerplate Code** - Standard implementations when detailed specs for them exist, CRUD operations
-- **Well-Defined Components** - Fleshing out specs that are already designed
-- **Routine Tasks** - Following established patterns and conventions
-- **Standard Configurations** - Writing configs, manifests, pipelines
-- **Data Processing** - ETL, preprocessing, standard transformations
-- **Documentation** - Writing docs for implemented features
+- Well-specified feature implementation
+- Following established patterns
+- Routine configurations and data processing
+- Documentation for implemented features
 
 ## Skills Library
 
-Skills provide modular capabilities that agents can invoke. They are loaded dynamically based on the task context.
+Skills are knowledge modules loaded dynamically based on task context. Agents
+automatically load relevant skills without explicit invocation.
 
-### Language Expertise
+### Languages
 
 | Skill        | Description                                         |
 | ------------ | --------------------------------------------------- |
@@ -389,38 +438,21 @@ Skills provide modular capabilities that agents can invoke. They are loaded dyna
 
 ### Code Quality
 
-| Skill           | Description                                                    |
-| --------------- | -------------------------------------------------------------- |
-| `code-review`   | Comprehensive code reviews for correctness and maintainability |
-| `refactoring`   | Restructure code without changing behavior                     |
-| `testing`       | Create unit, integration, and e2e test suites                  |
-| `documentation` | Generate technical docs, API references, READMEs               |
+| Skill           | Description                                |
+| --------------- | ------------------------------------------ |
+| `code-review`   | Comprehensive reviews for correctness      |
+| `refactoring`   | Restructure code without changing behavior |
+| `testing`       | Unit, integration, and e2e test suites     |
+| `documentation` | Technical docs, API references, READMEs    |
 
 ### Development
 
-| Skill             | Description                                          |
-| ----------------- | ---------------------------------------------------- |
-| `api-design`      | Design RESTful APIs, GraphQL schemas, RPC interfaces |
-| `database-design` | Design schemas, relationships, indexes, migrations   |
-| `git-workflow`    | Branching strategies, commits, conflict resolution   |
-| `debugging`       | Systematic bug diagnosis and resolution              |
-
-### Documentation
-
-| Skill               | Description                                     |
-| ------------------- | ----------------------------------------------- |
-| `technical-writing` | Clear prose, audience-aware docs, structure     |
-| `diagramming`       | Mermaid diagrams, architecture, sequences, ERDs |
-| `api-documentation` | OpenAPI specs, endpoint docs, SDK documentation |
-| `md-tables`         | Markdown table alignment and spacing fixes      |
-
-### QA & Testing
-
-| Skill                 | Description                                      |
-| --------------------- | ------------------------------------------------ |
-| `test-strategy`       | Test pyramid, coverage goals, what/when to test  |
-| `e2e-testing`         | Playwright/Cypress patterns, fixtures, selectors |
-| `performance-testing` | Load testing, benchmarking, profiling            |
+| Skill             | Description                                   |
+| ----------------- | --------------------------------------------- |
+| `api-design`      | RESTful APIs, GraphQL schemas, RPC interfaces |
+| `database-design` | Schemas, relationships, indexes, migrations   |
+| `git-workflow`    | Branching strategies, commits, conflicts      |
+| `debugging`       | Systematic bug diagnosis and resolution       |
 
 ### Infrastructure
 
@@ -429,7 +461,15 @@ Skills provide modular capabilities that agents can invoke. They are loaded dyna
 | `docker`     | Dockerfiles and docker-compose optimization |
 | `kubernetes` | K8s deployments, services, configurations   |
 | `terraform`  | Infrastructure as Code for cloud resources  |
-| `ci-cd`      | CI/CD pipeline design and implementation    |
+| `ci-cd`      | Pipeline design and implementation          |
+| `crossplane` | Kubernetes-native infrastructure management |
+| `fluxcd`     | GitOps continuous delivery                  |
+| `argocd`     | Declarative GitOps for Kubernetes           |
+| `kustomize`  | Kubernetes configuration customization      |
+| `karpenter`  | Kubernetes node autoscaling                 |
+| `istio`      | Service mesh configuration                  |
+| `grafana`    | Observability dashboards                    |
+| `prometheus` | Metrics and alerting                        |
 
 ### Security
 
@@ -441,26 +481,26 @@ Skills provide modular capabilities that agents can invoke. They are loaded dyna
 | `dependency-scan` | CVE scanning and license compliance        |
 | `auth`            | OAuth2, JWT, RBAC/ABAC, session management |
 
-### Reliability & Operations
+### Reliability
 
 | Skill                   | Description                                    |
 | ----------------------- | ---------------------------------------------- |
 | `error-handling`        | Error types, recovery strategies, propagation  |
-| `logging-observability` | Structured logging, tracing, metrics, alerts   |
+| `logging-observability` | Structured logging, tracing, metrics           |
 | `concurrency`           | Async patterns, parallelism, race conditions   |
 | `caching`               | Cache strategies, invalidation, Redis patterns |
 | `code-migration`        | Version upgrades, framework migrations         |
 | `rate-limiting`         | Throttling, backpressure, API quotas           |
 
-### Architecture Patterns
+### Architecture
 
-| Skill             | Description                                    |
-| ----------------- | ---------------------------------------------- |
-| `event-driven`    | Message queues, pub/sub, event sourcing, CQRS  |
-| `feature-flags`   | Rollouts, A/B testing, kill switches           |
-| `background-jobs` | Job queues, schedulers, workers, idempotency   |
-| `webhooks`        | Design, verification, retry logic, idempotency |
-| `serialization`   | JSON/protobuf/msgpack, schema evolution        |
+| Skill             | Description                                   |
+| ----------------- | --------------------------------------------- |
+| `event-driven`    | Message queues, pub/sub, event sourcing, CQRS |
+| `feature-flags`   | Rollouts, A/B testing, kill switches          |
+| `background-jobs` | Job queues, schedulers, workers, idempotency  |
+| `webhooks`        | Design, verification, retry logic             |
+| `serialization`   | JSON/protobuf/msgpack, schema evolution       |
 
 ### Data
 
@@ -471,6 +511,23 @@ Skills provide modular capabilities that agents can invoke. They are loaded dyna
 | `data-validation`    | Schema validation, sanitization, contracts |
 | `search`             | Elasticsearch, full-text search, indexing  |
 
+### Documentation
+
+| Skill               | Description                               |
+| ------------------- | ----------------------------------------- |
+| `technical-writing` | Clear prose, audience-aware docs          |
+| `diagramming`       | Mermaid diagrams, architecture, sequences |
+| `api-documentation` | OpenAPI specs, endpoint docs              |
+| `md-tables`         | Markdown table alignment and formatting   |
+
+### QA
+
+| Skill                 | Description                           |
+| --------------------- | ------------------------------------- |
+| `test-strategy`       | Test pyramid, coverage goals          |
+| `e2e-testing`         | Playwright/Cypress patterns, fixtures |
+| `performance-testing` | Load testing, benchmarking, profiling |
+
 ### AI/ML
 
 | Skill                | Description                               |
@@ -480,43 +537,17 @@ Skills provide modular capabilities that agents can invoke. They are loaded dyna
 
 ### Frontend
 
-| Skill           | Description                                   |
-| --------------- | --------------------------------------------- |
-| `accessibility` | WCAG compliance, a11y testing, screen readers |
-| `i18n`          | Internationalization, translations, RTL       |
-| `react`         | React patterns, hooks, state management       |
-
-## Usage
-
-### Using Agents
-
-Agents are automatically invoked by Claude Code when tasks match their descriptions. You can also explicitly request them:
-
-```text
-Use the senior-software-engineer agent to design the architecture
-```
-
-```text
-Have the ml-engineer preprocess this dataset
-```
-
-### Using Skills
-
-Skills are model-invoked based on context. Claude will automatically use relevant skills when appropriate:
-
-```text
-Use the python skill for this implementation
-```
-
-```text
-Apply the e2e-testing skill to write Playwright tests
-```
+| Skill           | Description                             |
+| --------------- | --------------------------------------- |
+| `accessibility` | WCAG compliance, a11y testing           |
+| `i18n`          | Internationalization, translations, RTL |
+| `react`         | React patterns, hooks, state management |
 
 ## Customization
 
-### Adding New Agents
+### Adding Agents
 
-Create a new `.md` file in `agents/`:
+Create a new `.md` file in `~/.claude/agents/`:
 
 ```markdown
 ---
@@ -529,9 +560,9 @@ model: sonnet
 Your agent's system prompt here.
 ```
 
-### Adding New Skills
+### Adding Skills
 
-Create a new directory in `skills/` with a `SKILL.md`:
+Create a new directory in `~/.claude/skills/` with a `SKILL.md`:
 
 ```markdown
 ---
@@ -560,7 +591,6 @@ Concrete examples.
 - [Claude Code Documentation](https://code.claude.com/docs/en/overview)
 - [Subagents Deep Dive](https://code.claude.com/docs/en/sub-agents)
 - [Agent Skills Introduction](https://claude.com/blog/skills)
-- [Building Agents with Claude Agent SDK](https://www.anthropic.com/engineering/building-agents-with-the-claude-agent-sdk)
 - [Claude Code Best Practices](https://www.anthropic.com/engineering/claude-code-best-practices)
 
 ## License

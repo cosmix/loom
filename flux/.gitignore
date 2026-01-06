@@ -13,3 +13,8 @@
 # OS files
 .DS_Store
 Thumbs.db
+
+# Signing keys - NEVER commit private keys
+keys/*.key
+keys/flux.key
+*.key
