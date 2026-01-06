@@ -10,7 +10,9 @@ mod tests {
     use crate::commands::self_update::client::{
         create_http_client, HTTP_CONNECT_TIMEOUT_SECS, HTTP_REQUEST_TIMEOUT_SECS,
     };
-    use crate::commands::self_update::signature::{compute_sha256_checksum, verify_binary_signature};
+    use crate::commands::self_update::signature::{
+        compute_sha256_checksum, verify_binary_signature,
+    };
     use crate::commands::self_update::zip::{
         safe_extract_path, LimitedReader, MAX_COMPRESSION_RATIO, MAX_TOTAL_EXTRACTED_SIZE,
         MAX_UNCOMPRESSED_SIZE, MAX_ZIP_SIZE,

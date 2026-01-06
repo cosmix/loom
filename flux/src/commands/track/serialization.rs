@@ -59,49 +59,52 @@ pub fn track_to_markdown(track: &Track) -> Result<String> {
 pub fn track_from_markdown(content: &str) -> Result<Track> {
     let doc = MarkdownDocument::parse(content)?;
 
-    let id = doc.get_frontmatter("id")
+    let id = doc
+        .get_frontmatter("id")
         .ok_or_else(|| anyhow::anyhow!("Missing 'id' in frontmatter"))?
         .clone();
 
-    let name = doc.get_frontmatter("name")
+    let name = doc
+        .get_frontmatter("name")
         .ok_or_else(|| anyhow::anyhow!("Missing 'name' in frontmatter"))?
         .clone();
 
-    let status_str = doc.get_frontmatter("status")
+    let status_str = doc
+        .get_frontmatter("status")
         .ok_or_else(|| anyhow::anyhow!("Missing 'status' in frontmatter"))?;
     let status = status_from_string(status_str)?;
 
     let assigned_runner = doc.get_frontmatter("assigned_runner").cloned();
     let parent_track = doc.get_frontmatter("parent_track").cloned();
 
-    let created_at = doc.get_frontmatter("created_at")
+    let created_at = doc
+        .get_frontmatter("created_at")
         .ok_or_else(|| anyhow::anyhow!("Missing 'created_at' in frontmatter"))?;
     let created_at = parse_datetime(created_at)?;
 
-    let updated_at = doc.get_frontmatter("updated_at")
+    let updated_at = doc
+        .get_frontmatter("updated_at")
         .ok_or_else(|| anyhow::anyhow!("Missing 'updated_at' in frontmatter"))?;
     let updated_at = parse_datetime(updated_at)?;
 
-    let closed_at = doc.get_frontmatter("closed_at")
+    let closed_at = doc
+        .get_frontmatter("closed_at")
         .map(|s| parse_datetime(s))
         .transpose()?;
 
-    let description = doc.get_section("Description")
-        .map(|s| s.trimmed_content());
+    let description = doc.get_section("Description").map(|s| s.trimmed_content());
 
-    let child_tracks = doc.get_section("Child Tracks")
+    let child_tracks = doc
+        .get_section("Child Tracks")
         .map(|s| {
             s.trimmed_content()
                 .lines()
-                .filter_map(|line| {
-                    line.trim().strip_prefix("- ").map(|s| s.to_string())
-                })
+                .filter_map(|line| line.trim().strip_prefix("- ").map(|s| s.to_string()))
                 .collect()
         })
         .unwrap_or_default();
 
-    let close_reason = doc.get_section("Close Reason")
-        .map(|s| s.trimmed_content());
+    let close_reason = doc.get_section("Close Reason").map(|s| s.trimmed_content());
 
     Ok(Track {
         id,

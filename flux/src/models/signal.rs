@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Signal {
@@ -21,12 +21,7 @@ pub enum SignalStatus {
 }
 
 impl Signal {
-    pub fn new(
-        target_runner: String,
-        signal_type: String,
-        message: String,
-        priority: u8,
-    ) -> Self {
+    pub fn new(target_runner: String, signal_type: String, message: String, priority: u8) -> Self {
         let now = Utc::now();
         let id = Self::generate_id(&target_runner);
 

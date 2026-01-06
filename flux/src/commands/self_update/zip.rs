@@ -174,7 +174,9 @@ pub(crate) fn download_and_extract_zip(url: &str, dest_dir: &Path) -> Result<()>
         // Track total size with overflow protection
         total_uncompressed_size = total_uncompressed_size
             .checked_add(file.size())
-            .ok_or_else(|| anyhow::anyhow!("Total uncompressed size overflow - possible zip bomb"))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!("Total uncompressed size overflow - possible zip bomb")
+            })?;
 
         if total_uncompressed_size > MAX_TOTAL_EXTRACTED_SIZE {
             bail!(

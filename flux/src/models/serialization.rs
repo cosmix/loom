@@ -61,8 +61,7 @@ pub trait MarkdownSerializable: Sized {
                 .with_context(|| format!("Failed to create directory {}", parent.display()))?;
         }
 
-        fs::write(path, content)
-            .with_context(|| format!("Failed to write {}", path.display()))?;
+        fs::write(path, content).with_context(|| format!("Failed to write {}", path.display()))?;
         Ok(())
     }
 }
@@ -73,8 +72,7 @@ impl MarkdownSerializable for Runner {
     }
 
     fn to_markdown(&self) -> String {
-        runner_to_markdown(self)
-            .expect("Runner serialization should not fail")
+        runner_to_markdown(self).expect("Runner serialization should not fail")
     }
 }
 
@@ -84,8 +82,7 @@ impl MarkdownSerializable for Track {
     }
 
     fn to_markdown(&self) -> String {
-        track_to_markdown(self)
-            .expect("Track serialization should not fail")
+        track_to_markdown(self).expect("Track serialization should not fail")
     }
 }
 
@@ -141,10 +138,7 @@ mod tests {
         let temp_dir = TempDir::new().expect("Should create temp dir");
         let file_path = temp_dir.path().join("tracks").join("test-track.md");
 
-        let track = Track::new(
-            "test-track".to_string(),
-            Some("Description".to_string()),
-        );
+        let track = Track::new("test-track".to_string(), Some("Description".to_string()));
         track.save(&file_path).expect("Should save track");
 
         let loaded = Track::load(&file_path).expect("Should load track");

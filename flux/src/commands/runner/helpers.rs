@@ -12,8 +12,7 @@ pub fn generate_runner_id(work_dir: &WorkDir, runner_type: &str) -> Result<Strin
     let prefix = role_prefix(runner_type);
     let runners_dir = work_dir.runners_dir();
 
-    let entries = fs::read_dir(&runners_dir)
-        .with_context(|| "Failed to read runners directory")?;
+    let entries = fs::read_dir(&runners_dir).with_context(|| "Failed to read runners directory")?;
 
     let mut max_num = 0;
     for entry in entries {
@@ -22,7 +21,10 @@ pub fn generate_runner_id(work_dir: &WorkDir, runner_type: &str) -> Result<Strin
 
         if let Some(filename) = path.file_stem().and_then(|s| s.to_str()) {
             if filename.starts_with(prefix) {
-                if let Some(num_str) = filename.strip_prefix(prefix).and_then(|s| s.strip_prefix('-')) {
+                if let Some(num_str) = filename
+                    .strip_prefix(prefix)
+                    .and_then(|s| s.strip_prefix('-'))
+                {
                     if let Ok(num) = num_str.parse::<u32>() {
                         max_num = max_num.max(num);
                     }
@@ -51,7 +53,8 @@ pub fn role_prefix(runner_type: &str) -> &'static str {
 
 /// Load a runner from a file path
 pub fn load_runner(path: &PathBuf) -> Result<Runner> {
-    let filename = path.file_name()
+    let filename = path
+        .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("runner file");
 

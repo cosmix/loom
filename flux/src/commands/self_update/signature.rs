@@ -15,7 +15,10 @@ pub(crate) const MINISIGN_PUBLIC_KEY: &str =
 /// Verify the cryptographic signature of downloaded binary content.
 /// Uses minisign signature format for verification.
 /// Returns Ok(()) if signature is valid, Err with detailed message otherwise.
-pub(crate) fn verify_binary_signature(binary_content: &[u8], signature_content: &str) -> Result<()> {
+pub(crate) fn verify_binary_signature(
+    binary_content: &[u8],
+    signature_content: &str,
+) -> Result<()> {
     let public_key = PublicKey::from_base64(MINISIGN_PUBLIC_KEY)
         .map_err(|e| anyhow::anyhow!("Invalid embedded public key: {e}"))?;
 

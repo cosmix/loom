@@ -32,8 +32,7 @@ pub fn slug_from_name(name: &str) -> String {
 /// Find a track file by ID or name slug
 pub fn find_track_file(work_dir: &WorkDir, id_or_name: &str) -> Result<PathBuf> {
     let tracks_dir = work_dir.tracks_dir();
-    let entries = fs::read_dir(&tracks_dir)
-        .context("Failed to read tracks directory")?;
+    let entries = fs::read_dir(&tracks_dir).context("Failed to read tracks directory")?;
 
     let slug = slug_from_name(id_or_name);
     let slug_path = tracks_dir.join(format!("{slug}.md"));

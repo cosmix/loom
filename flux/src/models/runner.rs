@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 use super::constants::DEFAULT_CONTEXT_LIMIT;
 
@@ -44,7 +44,11 @@ impl Runner {
 
     fn generate_id(name: &str) -> String {
         let timestamp = Utc::now().timestamp();
-        format!("runner-{}-{}", name.to_lowercase().replace(' ', "-"), timestamp)
+        format!(
+            "runner-{}-{}",
+            name.to_lowercase().replace(' ', "-"),
+            timestamp
+        )
     }
 
     pub fn assign_to_track(&mut self, track_id: String) {

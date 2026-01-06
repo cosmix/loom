@@ -7,7 +7,7 @@ use std::fs;
 
 use crate::fs::work_dir::WorkDir;
 use crate::models::track::{Track, TrackStatus};
-use crate::validation::{validate_name, validate_description};
+use crate::validation::{validate_description, validate_name};
 
 use helpers::{find_track_file, format_datetime, format_status, slug_from_name};
 use serialization::{track_from_markdown, track_to_markdown};
@@ -32,8 +32,7 @@ pub fn create(name: String, description: Option<String>) -> Result<()> {
     }
 
     let markdown = track_to_markdown(&track)?;
-    fs::write(&track_path, markdown)
-        .context("Failed to write track file")?;
+    fs::write(&track_path, markdown).context("Failed to write track file")?;
 
     println!(
         "{} Created track: {} ({})",
@@ -52,8 +51,7 @@ pub fn list(show_archived: bool) -> Result<()> {
     work_dir.load()?;
 
     let tracks_dir = work_dir.tracks_dir();
-    let entries = fs::read_dir(&tracks_dir)
-        .context("Failed to read tracks directory")?;
+    let entries = fs::read_dir(&tracks_dir).context("Failed to read tracks directory")?;
 
     let mut tracks = Vec::new();
 
@@ -65,7 +63,8 @@ pub fn list(show_archived: bool) -> Result<()> {
             continue;
         }
 
-        let filename = path.file_name()
+        let filename = path
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown");
 
@@ -79,12 +78,7 @@ pub fn list(show_archived: bool) -> Result<()> {
                 }
             }
             Err(e) => {
-                eprintln!(
-                    "{} Failed to parse {}: {}",
-                    "!".yellow(),
-                    filename,
-                    e
-                );
+                eprintln!("{} Failed to parse {}: {}", "!".yellow(), filename, e);
             }
         }
     }
@@ -109,17 +103,12 @@ pub fn list(show_archived: bool) -> Result<()> {
 
     for track in tracks {
         let status_str = format_status(&track.status);
-        let runner_str = track.assigned_runner
-            .as_deref()
-            .unwrap_or("-");
+        let runner_str = track.assigned_runner.as_deref().unwrap_or("-");
         let updated_str = format_datetime(&track.updated_at);
 
         println!(
             "{:<35} {:<20} {:<15} {}",
-            track.id,
-            status_str,
-            runner_str,
-            updated_str
+            track.id, status_str, runner_str, updated_str
         );
     }
 
@@ -135,8 +124,7 @@ pub fn show(id: String) -> Result<()> {
     work_dir.load()?;
 
     let track_path = find_track_file(&work_dir, &id)?;
-    let content = fs::read_to_string(&track_path)
-        .context("Failed to read track file")?;
+    let content = fs::read_to_string(&track_path).context("Failed to read track file")?;
 
     let track = track_from_markdown(&content)?;
 
@@ -154,11 +142,23 @@ pub fn show(id: String) -> Result<()> {
     }
 
     if !track.child_tracks.is_empty() {
-        println!("{:<15} {}", "Children:".bold(), track.child_tracks.join(", "));
+        println!(
+            "{:<15} {}",
+            "Children:".bold(),
+            track.child_tracks.join(", ")
+        );
     }
 
-    println!("{:<15} {}", "Created:".bold(), format_datetime(&track.created_at));
-    println!("{:<15} {}", "Updated:".bold(), format_datetime(&track.updated_at));
+    println!(
+        "{:<15} {}",
+        "Created:".bold(),
+        format_datetime(&track.created_at)
+    );
+    println!(
+        "{:<15} {}",
+        "Updated:".bold(),
+        format_datetime(&track.updated_at)
+    );
 
     if let Some(closed_at) = track.closed_at {
         println!("{:<15} {}", "Closed:".bold(), format_datetime(&closed_at));
@@ -189,8 +189,7 @@ pub fn close(id: String, reason: Option<String>) -> Result<()> {
     work_dir.load()?;
 
     let track_path = find_track_file(&work_dir, &id)?;
-    let content = fs::read_to_string(&track_path)
-        .context("Failed to read track file")?;
+    let content = fs::read_to_string(&track_path).context("Failed to read track file")?;
 
     let mut track = track_from_markdown(&content)?;
 
@@ -201,8 +200,7 @@ pub fn close(id: String, reason: Option<String>) -> Result<()> {
     track.close(reason);
 
     let markdown = track_to_markdown(&track)?;
-    fs::write(&track_path, markdown)
-        .context("Failed to write track file")?;
+    fs::write(&track_path, markdown).context("Failed to write track file")?;
 
     println!(
         "{} Closed track: {} ({})",

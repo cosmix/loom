@@ -1,9 +1,11 @@
-use clap::{Parser, Subcommand};
 use anyhow::Result;
-use flux::commands::{init, status, track, runner, signal, self_update};
-use flux::validation::{
-    clap_id_validator, clap_name_validator, clap_description_validator, clap_message_validator,
+use clap::{Parser, Subcommand};
+use flux::commands::{
+    attach, graph, init, merge, resume, run, self_update, sessions, stage, status, verify,
+    worktree_cmd,
 };
+use flux::validation::{clap_description_validator, clap_id_validator};
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(name = "flux")]
@@ -16,34 +18,80 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Initialize .work/ directory
-    Init,
+    /// Initialize .work/ directory with optional plan
+    Init {
+        /// Path to the plan file
+        plan_path: Option<String>,
+    },
+
+    /// Run stages from a plan
+    Run {
+        /// Specific stage ID to run
+        #[arg(short, long, value_parser = clap_id_validator)]
+        stage: Option<String>,
+
+        /// Enable manual approval for each stage
+        #[arg(short, long)]
+        manual: bool,
+
+        /// Maximum number of parallel sessions (default: 4)
+        #[arg(short = 'p', long)]
+        max_parallel: Option<usize>,
+    },
 
     /// Show dashboard with context health
     Status,
 
-    /// Check integrity of work directory
-    Validate,
-
-    /// Diagnose issues with work directory
-    Doctor,
-
-    /// Manage tracks (conversation threads)
-    Track {
-        #[command(subcommand)]
-        command: TrackCommands,
+    /// Verify a stage is complete
+    Verify {
+        /// Stage ID to verify (alphanumeric, dash, underscore only; max 128 characters)
+        #[arg(value_parser = clap_id_validator)]
+        stage_id: String,
     },
 
-    /// Manage runners (AI agents)
-    Runner {
-        #[command(subcommand)]
-        command: RunnerCommands,
+    /// Resume work on a stage
+    Resume {
+        /// Stage ID to resume (alphanumeric, dash, underscore only; max 128 characters)
+        #[arg(value_parser = clap_id_validator)]
+        stage_id: String,
     },
 
-    /// Manage signals (inter-agent communication)
-    Signal {
+    /// Merge a completed stage
+    Merge {
+        /// Stage ID to merge (alphanumeric, dash, underscore only; max 128 characters)
+        #[arg(value_parser = clap_id_validator)]
+        stage_id: String,
+    },
+
+    /// Attach to a running stage or session
+    Attach {
+        /// Stage ID or session ID (alphanumeric, dash, underscore only; max 128 characters)
+        #[arg(value_parser = clap_id_validator)]
+        stage_or_session_id: String,
+    },
+
+    /// Manage active sessions
+    Sessions {
         #[command(subcommand)]
-        command: SignalCommands,
+        command: SessionsCommands,
+    },
+
+    /// Manage git worktrees
+    Worktree {
+        #[command(subcommand)]
+        command: WorktreeCommands,
+    },
+
+    /// Manage the execution graph
+    Graph {
+        #[command(subcommand)]
+        command: GraphCommands,
+    },
+
+    /// Manage individual stages
+    Stage {
+        #[command(subcommand)]
+        command: StageCommands,
     },
 
     /// Update flux and configuration files
@@ -51,123 +99,61 @@ enum Commands {
 }
 
 #[derive(Subcommand)]
-enum TrackCommands {
-    /// Create a new track
-    New {
-        /// Name of the track (max 64 characters)
-        #[arg(value_parser = clap_name_validator)]
-        name: String,
+enum SessionsCommands {
+    /// List all active sessions
+    List,
 
-        /// Description of the track (max 500 characters)
-        #[arg(short, long, value_parser = clap_description_validator)]
-        description: Option<String>,
-    },
-
-    /// List all tracks
-    List {
-        /// Show archived tracks
-        #[arg(short, long)]
-        archived: bool,
-    },
-
-    /// Show details of a specific track
-    Show {
-        /// Track ID or name (max 64 characters)
-        #[arg(value_parser = clap_name_validator)]
-        id: String,
-    },
-
-    /// Close a track
-    Close {
-        /// Track ID or name (max 64 characters)
-        #[arg(value_parser = clap_name_validator)]
-        id: String,
-
-        /// Reason for closing (max 500 characters)
-        #[arg(short, long, value_parser = clap_description_validator)]
-        reason: Option<String>,
+    /// Kill a specific session
+    Kill {
+        /// Session ID to kill (alphanumeric, dash, underscore only; max 128 characters)
+        #[arg(value_parser = clap_id_validator)]
+        session_id: String,
     },
 }
 
 #[derive(Subcommand)]
-enum RunnerCommands {
-    /// Create a new runner
-    Create {
-        /// Runner name (max 64 characters)
-        #[arg(value_parser = clap_name_validator)]
-        name: String,
+enum WorktreeCommands {
+    /// List all worktrees
+    List,
 
-        /// Runner type (e.g., sonnet, opus) (max 64 characters)
-        #[arg(short, long, value_parser = clap_name_validator)]
-        runner_type: String,
-    },
-
-    /// List all runners
-    List {
-        /// Show inactive runners
-        #[arg(short, long)]
-        inactive: bool,
-    },
-
-    /// Assign runner to track
-    Assign {
-        /// Runner ID (alphanumeric, dash, underscore only; max 128 characters)
-        #[arg(value_parser = clap_id_validator)]
-        runner: String,
-
-        /// Track ID (alphanumeric, dash, underscore only; max 128 characters)
-        #[arg(value_parser = clap_id_validator)]
-        track: String,
-    },
-
-    /// Release runner from track
-    Release {
-        /// Runner ID (alphanumeric, dash, underscore only; max 128 characters)
-        #[arg(value_parser = clap_id_validator)]
-        runner: String,
-    },
-
-    /// Archive a runner
-    Archive {
-        /// Runner ID (alphanumeric, dash, underscore only; max 128 characters)
-        #[arg(value_parser = clap_id_validator)]
-        runner: String,
-    },
+    /// Clean up unused worktrees
+    Clean,
 }
 
 #[derive(Subcommand)]
-enum SignalCommands {
-    /// Set a signal for a runner
-    Set {
-        /// Target runner ID (alphanumeric, dash, underscore only; max 128 characters)
+enum GraphCommands {
+    /// Show the execution graph
+    Show,
+
+    /// Edit the execution graph
+    Edit,
+}
+
+#[derive(Subcommand)]
+enum StageCommands {
+    /// Mark a stage as complete
+    Complete {
+        /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
         #[arg(value_parser = clap_id_validator)]
-        runner: String,
-
-        /// Signal type (max 64 characters)
-        #[arg(value_parser = clap_name_validator)]
-        signal_type: String,
-
-        /// Signal message (max 1000 characters)
-        #[arg(value_parser = clap_message_validator)]
-        message: String,
-
-        /// Priority (1-5)
-        #[arg(short, long, default_value = "3")]
-        priority: u8,
+        stage_id: String,
     },
 
-    /// Show signals for a runner
-    Show {
-        /// Runner ID (optional, shows all if not specified; max 128 characters)
+    /// Block a stage with a reason
+    Block {
+        /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
         #[arg(value_parser = clap_id_validator)]
-        runner: Option<String>,
+        stage_id: String,
+
+        /// Reason for blocking (max 500 characters)
+        #[arg(value_parser = clap_description_validator)]
+        reason: String,
     },
 
-    /// Clear a signal
-    Clear {
-        /// Signal ID (alphanumeric, dash, underscore only; max 128 characters)
+    /// Reset a stage to not-started
+    Reset {
+        /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
         #[arg(value_parser = clap_id_validator)]
-        id: String,
+        stage_id: String,
     },
 }
 
@@ -175,51 +161,35 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Init => init::execute(),
+        Commands::Init { plan_path } => init::execute(plan_path.map(PathBuf::from)),
+        Commands::Run {
+            stage,
+            manual,
+            max_parallel,
+        } => run::execute(stage, manual, max_parallel),
         Commands::Status => status::execute(),
-        Commands::Validate => status::validate(),
-        Commands::Doctor => status::doctor(),
-        Commands::Track { command } => match command {
-            TrackCommands::New { name, description } => {
-                track::create(name, description)
-            }
-            TrackCommands::List { archived } => {
-                track::list(archived)
-            }
-            TrackCommands::Show { id } => {
-                track::show(id)
-            }
-            TrackCommands::Close { id, reason } => {
-                track::close(id, reason)
-            }
+        Commands::Verify { stage_id } => verify::execute(stage_id),
+        Commands::Resume { stage_id } => resume::execute(stage_id),
+        Commands::Merge { stage_id } => merge::execute(stage_id),
+        Commands::Attach {
+            stage_or_session_id,
+        } => attach::execute(stage_or_session_id),
+        Commands::Sessions { command } => match command {
+            SessionsCommands::List => sessions::list(),
+            SessionsCommands::Kill { session_id } => sessions::kill(session_id),
         },
-        Commands::Runner { command } => match command {
-            RunnerCommands::Create { name, runner_type } => {
-                runner::create(name, runner_type)
-            }
-            RunnerCommands::List { inactive } => {
-                runner::list(inactive)
-            }
-            RunnerCommands::Assign { runner, track } => {
-                runner::assign(runner, track)
-            }
-            RunnerCommands::Release { runner } => {
-                runner::release(runner)
-            }
-            RunnerCommands::Archive { runner } => {
-                runner::archive(runner)
-            }
+        Commands::Worktree { command } => match command {
+            WorktreeCommands::List => worktree_cmd::list(),
+            WorktreeCommands::Clean => worktree_cmd::clean(),
         },
-        Commands::Signal { command } => match command {
-            SignalCommands::Set { runner, signal_type, message, priority } => {
-                signal::set(runner, signal_type, message, priority)
-            }
-            SignalCommands::Show { runner } => {
-                signal::show(runner)
-            }
-            SignalCommands::Clear { id } => {
-                signal::clear(id)
-            }
+        Commands::Graph { command } => match command {
+            GraphCommands::Show => graph::show(),
+            GraphCommands::Edit => graph::edit(),
+        },
+        Commands::Stage { command } => match command {
+            StageCommands::Complete { stage_id } => stage::complete(stage_id),
+            StageCommands::Block { stage_id, reason } => stage::block(stage_id, reason),
+            StageCommands::Reset { stage_id } => stage::reset(stage_id),
         },
         Commands::SelfUpdate => self_update::execute(),
     }

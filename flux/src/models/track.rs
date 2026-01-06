@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Track {
@@ -46,7 +46,11 @@ impl Track {
 
     fn generate_id(name: &str) -> String {
         let timestamp = Utc::now().timestamp();
-        format!("track-{}-{}", name.to_lowercase().replace(' ', "-"), timestamp)
+        format!(
+            "track-{}-{}",
+            name.to_lowercase().replace(' ', "-"),
+            timestamp
+        )
     }
 
     pub fn assign_runner(&mut self, runner_id: String) {

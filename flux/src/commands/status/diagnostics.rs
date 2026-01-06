@@ -1,9 +1,9 @@
-use anyhow::Result;
 use crate::fs::work_dir::WorkDir;
 use crate::parser::markdown::MarkdownDocument;
+use anyhow::Result;
 use colored::Colorize;
-use std::fs;
 use std::collections::HashSet;
+use std::fs;
 
 pub fn check_directory_structure(work_dir: &WorkDir) -> Result<usize> {
     let mut issues = 0;
@@ -52,12 +52,12 @@ pub fn check_parsing_errors(work_dir: &WorkDir) -> Result<usize> {
             let entry = entry?;
             let path = entry.path();
 
-            if path.is_file() && path.extension().is_some_and(|e| e == "md")
-            {
+            if path.is_file() && path.extension().is_some_and(|e| e == "md") {
                 if let Ok(content) = fs::read_to_string(&path) {
                     if MarkdownDocument::parse(&content).is_err() {
-                        let file_name = path.file_name()
-                            .ok_or_else(|| anyhow::anyhow!("Path has no file name: {}", path.display()))?;
+                        let file_name = path.file_name().ok_or_else(|| {
+                            anyhow::anyhow!("Path has no file name: {}", path.display())
+                        })?;
                         println!(
                             "{} Invalid {} file: {:?}",
                             "WARNING:".yellow().bold(),
@@ -103,13 +103,9 @@ pub fn check_stuck_runners(work_dir: &WorkDir) -> Result<usize> {
                             println!(
                                 "{} Runner '{}' is Active but has no signals",
                                 "INFO:".cyan().bold(),
-                                doc.get_frontmatter("name")
-                                    .unwrap_or(&id.clone())
+                                doc.get_frontmatter("name").unwrap_or(&id.clone())
                             );
-                            println!(
-                                "  {} May be stuck or waiting for input",
-                                "Note:".cyan()
-                            );
+                            println!("  {} May be stuck or waiting for input", "Note:".cyan());
                             issues += 1;
                         }
                     }
@@ -136,8 +132,7 @@ fn collect_signal_targets(work_dir: &WorkDir) -> Result<HashSet<String>> {
         if path.is_file() && path.extension().is_some_and(|e| e == "md") {
             if let Ok(content) = fs::read_to_string(&path) {
                 if let Ok(doc) = MarkdownDocument::parse(&content) {
-                    if let Some(target) = doc.get_frontmatter("target_runner")
-                    {
+                    if let Some(target) = doc.get_frontmatter("target_runner") {
                         targets.insert(target.clone());
                     }
                 }
@@ -163,9 +158,7 @@ pub fn check_orphaned_tracks(work_dir: &WorkDir) -> Result<usize> {
         if path.is_file() && path.extension().is_some_and(|e| e == "md") {
             if let Ok(content) = fs::read_to_string(&path) {
                 if let Ok(doc) = MarkdownDocument::parse(&content) {
-                    let assigned_runner = doc.get_frontmatter(
-                        "assigned_runner"
-                    );
+                    let assigned_runner = doc.get_frontmatter("assigned_runner");
                     let status = doc.get_frontmatter("status");
 
                     if let Some(status) = status {

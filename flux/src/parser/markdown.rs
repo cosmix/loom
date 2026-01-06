@@ -47,10 +47,7 @@ impl MarkdownDocument {
 
         for line in &lines[1..end_idx] {
             if let Some((key, value)) = line.split_once(':') {
-                frontmatter.insert(
-                    key.trim().to_string(),
-                    value.trim().to_string(),
-                );
+                frontmatter.insert(key.trim().to_string(), value.trim().to_string());
             }
         }
 

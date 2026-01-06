@@ -6,8 +6,8 @@ use colored::Colorize;
 use std::fs;
 
 use crate::fs::work_dir::WorkDir;
-use crate::models::runner::RunnerStatus;
 use crate::models::runner::Runner;
+use crate::models::runner::RunnerStatus;
 use crate::validation::{validate_id, validate_name};
 
 use helpers::{find_runner_file, generate_runner_id, load_runner, truncate};
@@ -37,7 +37,11 @@ pub fn create(name: String, runner_type: String) -> Result<()> {
     println!("  {} {}", "ID:".bold(), id.cyan());
     println!("  {} {}", "Name:".bold(), name);
     println!("  {} {}", "Type:".bold(), runner_type);
-    println!("  {} {}", "File:".bold(), format!(".work/runners/{id}.md").dimmed());
+    println!(
+        "  {} {}",
+        "File:".bold(),
+        format!(".work/runners/{id}.md").dimmed()
+    );
 
     Ok(())
 }
@@ -48,8 +52,7 @@ pub fn list(show_inactive: bool) -> Result<()> {
     work_dir.load()?;
 
     let runners_dir = work_dir.runners_dir();
-    let entries = fs::read_dir(&runners_dir)
-        .context("Failed to read runners directory")?;
+    let entries = fs::read_dir(&runners_dir).context("Failed to read runners directory")?;
 
     let mut runners = Vec::new();
     for entry in entries {
@@ -64,10 +67,12 @@ pub fn list(show_inactive: bool) -> Result<()> {
                     }
                 }
                 Err(e) => {
-                    let filename = path.file_name()
+                    let filename = path
+                        .file_name()
                         .and_then(|n| n.to_str())
                         .unwrap_or("unknown");
-                    eprintln!("{} {}: {}",
+                    eprintln!(
+                        "{} {}: {}",
                         "Warning: Failed to parse".yellow(),
                         filename,
                         e
@@ -86,7 +91,8 @@ pub fn list(show_inactive: bool) -> Result<()> {
 
     println!("\n{}", "Runners".bold().underline());
     println!();
-    println!("{:<12} {:<25} {:<25} {:<10} {:<20} {:<10}",
+    println!(
+        "{:<12} {:<25} {:<25} {:<10} {:<20} {:<10}",
         "ID".bold(),
         "Name".bold(),
         "Type".bold(),
@@ -104,7 +110,8 @@ pub fn list(show_inactive: bool) -> Result<()> {
             RunnerStatus::Archived => "Archived".red().to_string(),
         };
 
-        let track_str = runner.assigned_track
+        let track_str = runner
+            .assigned_track
             .as_ref()
             .map(|t| t.cyan().to_string())
             .unwrap_or_else(|| "-".dimmed().to_string());
@@ -119,7 +126,8 @@ pub fn list(show_inactive: bool) -> Result<()> {
             context_str.green()
         };
 
-        println!("{:<12} {:<25} {:<25} {:<10} {:<20} {:<10}",
+        println!(
+            "{:<12} {:<25} {:<25} {:<10} {:<20} {:<10}",
             runner.id.cyan(),
             truncate(&runner.name, 25),
             truncate(&runner.runner_type, 25),
@@ -204,8 +212,7 @@ pub fn archive(runner_id: String) -> Result<()> {
     runner.archive();
 
     let archive_dir = work_dir.archive_dir().join("runners");
-    fs::create_dir_all(&archive_dir)
-        .context("Failed to create archive/runners directory")?;
+    fs::create_dir_all(&archive_dir).context("Failed to create archive/runners directory")?;
 
     let archive_path = archive_dir.join(format!("{runner_id}.md"));
     let markdown = runner_to_markdown(&runner)?;
@@ -218,7 +225,11 @@ pub fn archive(runner_id: String) -> Result<()> {
 
     println!("{}", "Runner archived successfully!".green().bold());
     println!("  {} {}", "Runner:".bold(), runner_id.cyan());
-    println!("  {} {}", "Archived to:".bold(), format!(".work/archive/runners/{runner_id}.md").dimmed());
+    println!(
+        "  {} {}",
+        "Archived to:".bold(),
+        format!(".work/archive/runners/{runner_id}.md").dimmed()
+    );
 
     Ok(())
 }

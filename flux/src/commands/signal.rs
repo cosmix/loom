@@ -1,17 +1,12 @@
-use anyhow::{Result, Context, bail};
 use crate::fs::work_dir::WorkDir;
-use crate::validation::{validate_id, validate_name, validate_message};
+use crate::validation::{validate_id, validate_message, validate_name};
+use anyhow::{bail, Context, Result};
 use colored::Colorize;
 use std::fs;
 use std::path::PathBuf;
 
 /// Set a signal for a runner
-pub fn set(
-    runner_id: String,
-    signal_type: String,
-    message: String,
-    priority: u8,
-) -> Result<()> {
+pub fn set(runner_id: String, signal_type: String, message: String, priority: u8) -> Result<()> {
     // Validate inputs before any file operations
     validate_id(&runner_id).context("Invalid runner ID")?;
     validate_name(&signal_type).context("Invalid signal type")?;
@@ -22,13 +17,24 @@ pub fn set(
 
     let (runner_type, assigned_track) = get_runner_info(&work_dir, &runner_id)?;
 
-    let markdown = signal_to_markdown(&runner_id, &runner_type, assigned_track.as_deref(), &signal_type, &message, priority);
+    let markdown = signal_to_markdown(
+        &runner_id,
+        &runner_type,
+        assigned_track.as_deref(),
+        &signal_type,
+        &message,
+        priority,
+    );
 
     let signal_path = work_dir.signals_dir().join(format!("{runner_id}.md"));
     fs::write(&signal_path, markdown)
         .with_context(|| format!("Failed to write signal file for runner {runner_id}"))?;
 
-    println!("{} Signal set for runner {}", "✓".green().bold(), runner_id.cyan().bold());
+    println!(
+        "{} Signal set for runner {}",
+        "✓".green().bold(),
+        runner_id.cyan().bold()
+    );
     println!("  Type: {}", signal_type.yellow());
     println!("  Priority: {priority}");
     println!("  Message: {message}");
@@ -70,7 +76,11 @@ pub fn clear(signal_id: String) -> Result<()> {
     fs::remove_file(&signal_path)
         .with_context(|| format!("Failed to remove signal file for runner {signal_id}"))?;
 
-    println!("{} Signal cleared for runner {}", "✓".green().bold(), signal_id.cyan().bold());
+    println!(
+        "{} Signal cleared for runner {}",
+        "✓".green().bold(),
+        signal_id.cyan().bold()
+    );
 
     Ok(())
 }
@@ -85,8 +95,7 @@ fn get_runner_info(work_dir: &WorkDir, runner_id: &str) -> Result<(String, Optio
     let content = fs::read_to_string(&runner_path)
         .with_context(|| format!("Failed to read runner file: {runner_id}"))?;
 
-    let runner_type = extract_field(&content, "Role")
-        .unwrap_or_else(|| "unknown".to_string());
+    let runner_type = extract_field(&content, "Role").unwrap_or_else(|| "unknown".to_string());
 
     let assigned_track = extract_field(&content, "Track");
 
@@ -171,7 +180,11 @@ fn show_single_signal(work_dir: &WorkDir, runner_id: &str) -> Result<()> {
     let signal_path = work_dir.signals_dir().join(format!("{runner_id}.md"));
 
     if !signal_path.exists() {
-        println!("{} No signal found for runner {}", "i".blue().bold(), runner_id.cyan());
+        println!(
+            "{} No signal found for runner {}",
+            "i".blue().bold(),
+            runner_id.cyan()
+        );
         return Ok(());
     }
 
@@ -188,8 +201,7 @@ fn show_single_signal(work_dir: &WorkDir, runner_id: &str) -> Result<()> {
 fn show_all_signals(work_dir: &WorkDir) -> Result<()> {
     let signals_dir = work_dir.signals_dir();
 
-    let entries = fs::read_dir(&signals_dir)
-        .context("Failed to read signals directory")?;
+    let entries = fs::read_dir(&signals_dir).context("Failed to read signals directory")?;
 
     let mut signal_files: Vec<PathBuf> = entries
         .filter_map(|e| e.ok())

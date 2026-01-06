@@ -1,6 +1,6 @@
-use anyhow::{Result, Context, bail};
-use std::path::{Path, PathBuf};
+use anyhow::{bail, Context, Result};
 use std::fs;
+use std::path::{Path, PathBuf};
 
 pub struct WorkDir {
     root: PathBuf,
@@ -17,15 +17,10 @@ impl WorkDir {
             bail!(".work directory already exists");
         }
 
-        fs::create_dir_all(&self.root)
-            .context("Failed to create .work directory")?;
+        fs::create_dir_all(&self.root).context("Failed to create .work directory")?;
 
         let subdirs = [
-            "runners",
-            "tracks",
-            "signals",
-            "handoffs",
-            "archive",
+            "runners", "tracks", "signals", "handoffs", "archive", "stages", "sessions",
         ];
 
         for subdir in &subdirs {
@@ -51,11 +46,7 @@ impl WorkDir {
 
     fn validate_structure(&self) -> Result<()> {
         let required_dirs = [
-            "runners",
-            "tracks",
-            "signals",
-            "handoffs",
-            "archive",
+            "runners", "tracks", "signals", "handoffs", "archive", "stages", "sessions",
         ];
 
         for dir in &required_dirs {
@@ -78,13 +69,14 @@ This directory is managed by Flux CLI and contains:
 - `signals/` - Inter-agent communication
 - `handoffs/` - Context handoff records
 - `archive/` - Archived entities
+- `stages/` - Stage definitions and status
+- `sessions/` - Active session tracking
 
 Do not manually edit these files unless you know what you're doing.
 "#;
 
         let readme_path = self.root.join("README.md");
-        fs::write(readme_path, readme_content)
-            .context("Failed to create README.md")?;
+        fs::write(readme_path, readme_content).context("Failed to create README.md")?;
 
         Ok(())
     }
@@ -107,6 +99,14 @@ Do not manually edit these files unless you know what you're doing.
 
     pub fn archive_dir(&self) -> PathBuf {
         self.root.join("archive")
+    }
+
+    pub fn stages_dir(&self) -> PathBuf {
+        self.root.join("stages")
+    }
+
+    pub fn sessions_dir(&self) -> PathBuf {
+        self.root.join("sessions")
     }
 
     pub fn root(&self) -> &Path {

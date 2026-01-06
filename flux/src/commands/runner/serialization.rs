@@ -8,9 +8,7 @@ use crate::parser::markdown::MarkdownDocument;
 
 /// Convert a Runner to markdown format
 pub fn runner_to_markdown(runner: &Runner) -> Result<String> {
-    let assigned_track = runner.assigned_track
-        .as_deref()
-        .unwrap_or("");
+    let assigned_track = runner.assigned_track.as_deref().unwrap_or("");
 
     let status_str = match runner.status {
         RunnerStatus::Idle => "idle",
@@ -29,7 +27,7 @@ pub fn runner_to_markdown(runner: &Runner) -> Result<String> {
     };
 
     let markdown = format!(
-r#"---
+        r#"---
 id: {}
 name: {}
 runner_type: {}
@@ -85,22 +83,25 @@ last_active: {}
 
 /// Parse a Runner from markdown content
 pub fn runner_from_markdown(content: &str) -> Result<Runner> {
-    let doc = MarkdownDocument::parse(content)
-        .context("Failed to parse markdown document")?;
+    let doc = MarkdownDocument::parse(content).context("Failed to parse markdown document")?;
 
-    let id = doc.get_frontmatter(frontmatter::ID)
+    let id = doc
+        .get_frontmatter(frontmatter::ID)
         .ok_or_else(|| anyhow::anyhow!("Missing '{}' in frontmatter", frontmatter::ID))?
         .to_string();
 
-    let name = doc.get_frontmatter(frontmatter::NAME)
+    let name = doc
+        .get_frontmatter(frontmatter::NAME)
         .ok_or_else(|| anyhow::anyhow!("Missing '{}' in frontmatter", frontmatter::NAME))?
         .to_string();
 
-    let runner_type = doc.get_frontmatter(frontmatter::RUNNER_TYPE)
+    let runner_type = doc
+        .get_frontmatter(frontmatter::RUNNER_TYPE)
         .ok_or_else(|| anyhow::anyhow!("Missing '{}' in frontmatter", frontmatter::RUNNER_TYPE))?
         .to_string();
 
-    let status_str = doc.get_frontmatter(frontmatter::STATUS)
+    let status_str = doc
+        .get_frontmatter(frontmatter::STATUS)
         .ok_or_else(|| anyhow::anyhow!("Missing '{}' in frontmatter", frontmatter::STATUS))?;
 
     let status = match status_str.as_str() {
@@ -111,7 +112,8 @@ pub fn runner_from_markdown(content: &str) -> Result<Runner> {
         _ => bail!("Invalid status: {status_str}"),
     };
 
-    let assigned_track_str = doc.get_frontmatter(frontmatter::ASSIGNED_TRACK)
+    let assigned_track_str = doc
+        .get_frontmatter(frontmatter::ASSIGNED_TRACK)
         .map(|s| s.to_string());
     let assigned_track = if assigned_track_str.as_deref() == Some("") {
         None
@@ -119,21 +121,35 @@ pub fn runner_from_markdown(content: &str) -> Result<Runner> {
         assigned_track_str
     };
 
-    let context_tokens = doc.get_frontmatter(frontmatter::CONTEXT_TOKENS)
+    let context_tokens = doc
+        .get_frontmatter(frontmatter::CONTEXT_TOKENS)
         .and_then(|s| s.parse::<u32>().ok())
         .unwrap_or(0);
 
-    let context_limit = doc.get_frontmatter(frontmatter::CONTEXT_LIMIT)
+    let context_limit = doc
+        .get_frontmatter(frontmatter::CONTEXT_LIMIT)
         .and_then(|s| s.parse::<u32>().ok())
         .unwrap_or(DEFAULT_CONTEXT_LIMIT);
 
-    let created_at = doc.get_frontmatter(frontmatter::CREATED_AT)
+    let created_at = doc
+        .get_frontmatter(frontmatter::CREATED_AT)
         .and_then(|s| s.parse::<DateTime<Utc>>().ok())
-        .ok_or_else(|| anyhow::anyhow!("Missing or invalid '{}' in frontmatter", frontmatter::CREATED_AT))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Missing or invalid '{}' in frontmatter",
+                frontmatter::CREATED_AT
+            )
+        })?;
 
-    let last_active = doc.get_frontmatter(frontmatter::LAST_ACTIVE)
+    let last_active = doc
+        .get_frontmatter(frontmatter::LAST_ACTIVE)
         .and_then(|s| s.parse::<DateTime<Utc>>().ok())
-        .ok_or_else(|| anyhow::anyhow!("Missing or invalid '{}' in frontmatter", frontmatter::LAST_ACTIVE))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Missing or invalid '{}' in frontmatter",
+                frontmatter::LAST_ACTIVE
+            )
+        })?;
 
     Ok(Runner {
         id,
