@@ -26,7 +26,7 @@ use signature::{compute_sha256_checksum, verify_binary_signature};
 use zip::download_and_extract_zip;
 
 // Repository and version constants
-const GITHUB_REPO: &str = "cosmix/cluade-flux";
+const GITHUB_REPO: &str = "cosmix/claude-flux";
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 // Download size limits (exported for tests)
@@ -249,7 +249,7 @@ fn download_and_save(url: &str, dest: &std::path::Path) -> Result<()> {
     let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S");
     let full_content = format!(
         "# ───────────────────────────────────────────────────────────\n\
-         # cluade-flux | updated {timestamp}\n\
+         # claude-flux | updated {timestamp}\n\
          # ───────────────────────────────────────────────────────────\n\n\
          {content}"
     );

@@ -15,7 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_DIR="$HOME/.claude"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-GITHUB_REPO="cosmix/cluade-flux"
+GITHUB_REPO="cosmix/claude-flux"
 GITHUB_RELEASES="https://github.com/${GITHUB_REPO}/releases/latest/download"
 
 print_banner() {
@@ -125,7 +125,7 @@ install_claude_md_remote() {
 
     {
         echo "# ───────────────────────────────────────────────────────────"
-        echo "# cluade-flux | installed $(date '+%Y-%m-%d %H:%M:%S')"
+        echo "# claude-flux | installed $(date '+%Y-%m-%d %H:%M:%S')"
         echo "# ───────────────────────────────────────────────────────────"
         echo ""
         cat "$temp_file"
@@ -214,7 +214,7 @@ install_claude_md() {
 
     {
         echo "# ───────────────────────────────────────────────────────────"
-        echo "# cluade-flux | installed $(date '+%Y-%m-%d %H:%M:%S')"
+        echo "# claude-flux | installed $(date '+%Y-%m-%d %H:%M:%S')"
         echo "# ───────────────────────────────────────────────────────────"
         echo ""
         cat "$SCRIPT_DIR/CLAUDE.template.md"
