@@ -253,6 +253,23 @@ claude
 > What agents and skills are available?
 ```
 
+### Shell Completions
+
+Enable tab completion for loom commands:
+
+```bash
+# Bash (add to ~/.bashrc)
+eval "$(loom completions bash)"
+
+# Zsh (add to ~/.zshrc)
+eval "$(loom completions zsh)"
+
+# Fish (add to ~/.config/fish/config.fish)
+loom completions fish > ~/.config/fish/completions/loom.fish
+```
+
+Completions are dynamic - they read current project state for stage IDs, session IDs, and plan files.
+
 ## Project Specifications (Workflows)
 
 Your project-specific workflows and specifications should be documented in your
@@ -313,12 +330,16 @@ loom init <plan-path>
 # - Sets up .work/ directory structure
 
 # Execute stages (creates worktrees, spawns sessions)
-loom run [--stage <id>] [--manual]
+loom run [--stage <id>] [--manual] [--max-parallel <n>] [--watch] [--attach] [--foreground]
 # - Creates git worktrees for ready parallel stages
 # - Spawns Claude sessions (unless --manual)
 # - Monitors progress, triggers dependent stages
 # - --stage: run only specific stage
 # - --manual: don't spawn sessions, just prepare signals
+# - --max-parallel: max parallel sessions (default: 4)
+# - --watch: continuous mode - keep running until all stages terminal
+# - --attach: attach to existing orchestrator session
+# - --foreground: run orchestrator in foreground
 
 # Check plan progress and session health
 loom status
@@ -336,17 +357,23 @@ loom resume <stage-id>
 # - Continues from where previous session left off
 
 # Merge completed stage to main
-loom merge <stage-id>
+loom merge <stage-id> [--force]
 # - Merges worktree branch to main
 # - Removes worktree on success
 # - If conflicts, prints resolution instructions
+# - --force: merge even if stage not complete or has active sessions
 
 # Attach to running session
-loom attach <stage-id|session-id>
+loom attach [target]
+loom attach list
+loom attach all [--gui] [--detach]
 # - Attaches terminal to running Claude session (via tmux)
 # - Human can observe, type, intervene
 # - Detach with Ctrl+B D
-# - Use 'loom sessions list' to see available sessions
+# - list: list all attachable sessions
+# - all: attach to all sessions in unified view
+#   - --gui: open separate terminal windows
+#   - --detach: detach other clients first
 ```
 
 ### Secondary Commands
@@ -364,7 +391,33 @@ loom worktree [list|clean]
 loom graph [show|edit]
 
 # Force stage state transitions
-loom stage <id> [complete|block|reset]
+loom stage complete <stage-id> [--session <id>] [--no-verify]
+loom stage block <stage-id> <reason>
+loom stage reset <stage-id> [--hard] [--kill-session]
+loom stage hold <stage-id>
+loom stage release <stage-id>
+loom stage waiting <stage-id>
+loom stage resume <stage-id>
+# - complete: mark stage complete, auto-verify if acceptance passes
+#   - --session: mark associated session complete too
+#   - --no-verify: skip acceptance criteria (marks Completed, not Verified)
+#   - When acceptance passes: auto-transitions to Verified, triggers dependents
+#   - When acceptance fails: stays Completed for manual review
+# - block: block stage with reason
+# - reset: reset to ready state
+#   - --hard: also git reset --hard in worktree
+#   - --kill-session: kill associated session
+# - hold: prevent stage from auto-executing (even when ready)
+# - release: allow held stage to execute
+# - waiting: mark as waiting for user input (used by hooks)
+# - resume: resume from waiting state (used by hooks)
+
+# Clean up resources
+loom clean [--all] [--worktrees] [--sessions] [--state]
+# - --all: remove all loom resources
+# - --worktrees: remove worktrees and branches only
+# - --sessions: kill tmux sessions only
+# - --state: remove .work/ only
 ```
 
 ### Utility Commands
@@ -461,10 +514,11 @@ loom init doc/plans/PLAN-auth.md
 # Output: Initialized .work/ directory structure with plan from doc/plans/PLAN-auth.md
 
 # 3. Run stages (creates worktrees, spawns sessions)
-loom run
-# Output: Creating worktree for stage-1...
+loom run --watch
+# Output: Running in watch mode (continuous execution)...
+#         Creating worktree for stage-1...
 #         Spawning Claude session for stage-1...
-#         Running all ready stages...
+# Watch mode keeps running, auto-spawning ready stages as dependencies complete
 
 # 4. Monitor progress
 loom status
@@ -478,7 +532,9 @@ loom status
 loom attach stage-1
 # (Opens tmux session showing Claude working on stage-1)
 
-# 6. Verify completed stages (human approval gate)
+# 6. Verify completed stages (only needed if auto-verification failed)
+# With --watch mode, stages auto-verify when acceptance passes.
+# Manual verify is only needed when acceptance failed or --no-verify was used.
 loom verify stage-1
 # Output: Running acceptance criteria...
 #         All acceptance criteria passed!
@@ -497,6 +553,15 @@ loom merge stage-1
 # - Updates session state
 # - Exits gracefully
 # - loom run or loom resume continues seamlessly
+
+# 8. (Optional) Hold a stage to prevent auto-execution
+loom stage hold stage-3
+# Stage 'stage-3' held
+# The stage will not auto-execute. Use 'loom stage release stage-3' to unlock.
+
+# Release when ready
+loom stage release stage-3
+# Stage 'stage-3' released
 ```
 
 ## Agent Hierarchy
@@ -707,7 +772,6 @@ Concrete examples.
 - [Subagents Deep Dive](https://code.claude.com/docs/en/sub-agents)
 - [Agent Skills Introduction](https://claude.com/blog/skills)
 - [Claude Code Best Practices](https://www.anthropic.com/engineering/claude-code-best-practices)
-- [loom CLI Detailed Reference](loom/README.md)
 
 ## License
 

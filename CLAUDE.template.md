@@ -48,7 +48,8 @@
 You are NOT done until ALL of these pass:
 
 - ✅ Zero IDE diagnostics (errors AND warnings)
-- ✅ All tests pass
+- ✅ You have written extensive tests covering ALL new and changed code AND THEY ALL PASS.
+- ✅ Your tests are NOT one-off, here-doc-based tests. They are real test files, added to the codebase, using the project's framework.
 - ✅ No linting errors
 - ✅ You have thoroughly reviewed your work, both from a correctness AND
   a security standpoint and found nothing wrong! Follow project specific
@@ -58,19 +59,17 @@ You are NOT done until ALL of these pass:
 
 ### 3. SUBAGENTS ARE BLIND — PASS CONTEXT AND RULES
 
-⚠️ CRITICAL: When delegating ANY task to a subagent, you must INJECT the following text directly into their prompt as the FIRST few lines of their instructions. Do not summarize it. Paste it verbatim.
+⚠️ CRITICAL: When delegating ANY task to a subagent, you must INJECT the following text directly into their prompt as the FIRST few lines of their instructions. Do not summarize it. Paste it verbatim:
 
-[BEGIN SUBAGENT INSTRUCTIONS]
+```markdown
+** READ CLAUDE.md (both the user/global and project!) IMMEDIATELY AND FOLLOW ALL ITS RULES. **
+```
 
-- Read CLAUDE.md immediately upon starting.
+then add your task description etc. This ensures subagents know the rules.
 
+### 4. CONTEXT LIMIT — 75% = STOP -- ALWAYS
 
-  ... task specific instructions!
-[END SUBAGENT INSTRUCTIONS]
-
-### 4. CONTEXT LIMIT — 85% = STOP -- ALWAYS
-
-At 85% context: STOP. Write handoff to CLAUDE.md. Do NOT start new tasks.
+At 75% context: STOP. Write handoff to CLAUDE.md. Do NOT start new tasks.
 Do NOT "finish quickly." Let the user know you are at context limit and need
 to hand off.
 
@@ -83,38 +82,198 @@ with a short summary of what was done.
 ### 6. MISTAKES AND LESSONS LEARNT
 
 If you make a mistake, and the user points it out OR you discover it
-yourself, you MUST IMMEDIATELY document:
+yourself, you MUST IMMEDIATELY document in CLAUDE.md:
 
 1. What the mistake was
 2. What you should have done instead
 3. How you fixed it
 
-Keep your notes succinct as possible in CLAUDE.md under a "MISTAKES AND
+Keep your notes succinct as possible under a "MISTAKES AND
 LESSONS LEARNT" section. NEVER delete content in this section. ALWAYS append
 to it.
 
-### 6. PLANS LOCATION
+### 6. PLANS — LOCATION AND WORKFLOW
 
-NEVER USE `~/.claude/plans`. We use
+**Location:** NEVER USE `~/.claude/plans`. We use
 `./doc/plans/PLAN-XXXX-description.md`. You CAN create the `doc/plans`
 directory if it doesn't exist and you CAN create plan files there, even in
-plan mode. This rule supersedes any previous/default behaviour you were
-following.
+plan mode. This rule supersedes any previous/default behaviour.
+
+#### STOP IMMEDIATELY AFTER PLANNING — DO NOT IMPLEMENT
+
+When you write a plan to `doc/plans/`, your job is **DONE**. Do NOT proceed
+to implementation. EVER, EVEN IF YOU THINK THE USER 'APPROVED' THE PLAN.
+
+**The Planning Workflow:**
+
+1. **Research** — Explore codebase, understand patterns, identify constraints
+2. **Design** — Break work into stages with dependencies and acceptance criteria
+3. **Write** — Save plan to `doc/plans/PLAN-XXXX-description.md`
+4. **STOP** — Present plan to user and wait for approval
+
+**What "done" looks like in planning mode:**
+
+```text
+✅ Plan written to doc/plans/PLAN-0042-new-feature.md
+✅ Stages defined with clear dependencies
+✅ Acceptance criteria specified for each stage
+✅ Files/scope identified per stage
+
+Ready for your review. When approved, run:
+  loom init doc/plans/PLAN-0042-new-feature.md
+  loom run
+```
+
+**BANNED after writing a plan:**
+
+- Starting implementation of any stage
+- Creating files described in the plan
+- Modifying existing code per the plan
+- "Let me just do the first stage quickly"
+- "I'll implement the simple parts now"
+
+**If the user asks you to implement:** Remind them to use `loom init` and
+`loom run` instead. The orchestrator will spawn sessions for each stage.
 
 ### 7. DEPENDENCIES — PACKAGE MANAGERS ONLY
 
 **NEVER** manually edit package.json, Cargo.toml, pyproject.toml, go.mod, etc.
-**ALWAYS** use: `npm install`, `cargo add`, `uv add`, `go get`
+**ALWAYS** use: `bun install`, `cargo add`, `uv add`, `go get` etc.
 
 ---
 
 ## Subagents and Skills
 
-1. You MUST always DELEGATE ALL WORK to subagents. This is non-negotiable.
-   You MUST NOT do any work yourself. Spawn multiple agents AT ONCE whenever
+### Core Rules
+
+1. **DELEGATE ALL WORK** to subagents. This is non-negotiable. You MUST NOT
+   do implementation work yourself. Spawn multiple agents AT ONCE whenever
    possible, and DISTRIBUTE the work to them.
-2. Choose the RIGHT SKILL for the job. NEVER use a generalist skill when
+2. **Choose the RIGHT SKILL** for the job. NEVER use a generalist skill when
    a specialist skill exists.
+3. **ALWAYS inject rules** into subagent prompts (see Rule 3 above).
+
+### Parallelization Patterns
+
+**PARALLEL: Similar changes across many files**
+
+When making the same type of change to multiple files (e.g., adding a field,
+updating imports, renaming a pattern):
+
+1. Divide files into disjoint sets
+2. Spawn one subagent per set
+3. Each file belongs to EXACTLY ONE subagent
+
+```text
+Task: Add `created_at` field to 12 model files
+
+Subagent 1: user.rs, profile.rs, session.rs, token.rs
+Subagent 2: order.rs, payment.rs, invoice.rs, refund.rs
+Subagent 3: product.rs, category.rs, inventory.rs, review.rs
+```
+
+**PARALLEL: Features in different modules**
+
+When implementing independent features that touch different parts of the
+codebase:
+
+```text
+Task: Add logging, caching, and rate limiting
+
+Subagent 1: Logging → src/logging/*, tests/logging/*
+Subagent 2: Caching → src/cache/*, tests/cache/*
+Subagent 3: Rate limiting → src/ratelimit/*, tests/ratelimit/*
+```
+
+**PARALLEL: Independent acceptance criteria**
+
+When verifying multiple unrelated checks:
+
+```text
+Subagent 1: Run unit tests
+Subagent 2: Run integration tests
+Subagent 3: Run linter
+Subagent 4: Run type checker
+```
+
+### Serialization Patterns
+
+**SERIAL: Shared file conflicts**
+
+When two or more subagents would likely modify the SAME file, serialize:
+
+```text
+❌ BAD: Both touch src/lib.rs
+  Subagent 1: Add module A → modifies src/lib.rs
+  Subagent 2: Add module B → modifies src/lib.rs
+
+✅ GOOD: Serialize
+  Subagent 1: Add module A → modifies src/lib.rs
+  (wait for completion)
+  Subagent 2: Add module B → modifies src/lib.rs
+```
+
+**SERIAL: Dependency chains**
+
+When output of one task is input to another:
+
+```text
+❌ BAD: Parallel with dependency
+  Subagent 1: Create User struct
+  Subagent 2: Implement UserService (needs User struct)
+
+✅ GOOD: Serialize
+  Subagent 1: Create User struct
+  (wait for completion)
+  Subagent 2: Implement UserService
+```
+
+**SERIAL: Shared state modifications**
+
+When tasks modify shared configuration, schemas, or central registries:
+
+```text
+❌ BAD: Both modify Cargo.toml
+  Subagent 1: Add serde dependency
+  Subagent 2: Add tokio dependency
+
+✅ GOOD: Single subagent or serialize
+  Subagent 1: Add serde AND tokio dependencies
+```
+
+### Decision Flowchart
+
+```text
+Will subagents touch the same files?
+├─ YES → SERIALIZE (or combine into one subagent)
+└─ NO → Does task B depend on task A's output?
+        ├─ YES → SERIALIZE
+        └─ NO → PARALLELIZE
+```
+
+### Subagent Prompt Template
+
+```text
+** READ CLAUDE.md IMMEDIATELY AND FOLLOW ALL ITS RULES. **
+
+## Your Assignment
+[Describe the specific task]
+
+## Files You Own (ONLY modify these)
+- path/to/file1.rs
+- path/to/file2.rs
+
+## Files You May Read (but NOT modify)
+- path/to/shared/types.rs
+
+## Acceptance Criteria
+- [ ] Specific criterion 1
+- [ ] Specific criterion 2
+
+## Constraints
+- Do NOT modify files outside your ownership list
+- Do NOT add dependencies without asking
+```
 
 ## Code Quality
 
@@ -515,6 +674,18 @@ When completing work on a stage:
 2. Update stage status to `Completed`
 3. Create handoff if context > 75%
 4. The orchestrator will handle verification and dependent stage triggering
+
+### Stage Completion
+
+When you complete work on your assigned stage:
+
+1. Ensure all code is committed to your worktree branch
+2. Run `loom stage complete <stage-id>` to mark completion
+3. This runs acceptance criteria automatically
+4. If criteria pass, stage is marked complete
+5. If criteria fail, review errors and fix before retrying
+
+**DO NOT wait for the Stop hook** - explicitly mark completion when done.
 
 ### Worktree Awareness
 
