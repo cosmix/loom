@@ -2,22 +2,23 @@
 //! Usage: loom graph [show|edit]
 
 use anyhow::{bail, Result};
+use colored::{ColoredString, Colorize};
 use std::collections::{HashMap, HashSet};
 
 use crate::models::stage::StageStatus;
 use crate::verify::transitions::list_all_stages;
 
-/// Status indicator character for display
-fn status_indicator(status: &StageStatus) -> &'static str {
+/// Status indicator with color for display
+fn status_indicator(status: &StageStatus) -> ColoredString {
     match status {
-        StageStatus::Verified => "[V]",
-        StageStatus::Executing => "[*]",
-        StageStatus::Ready => "[>]",
-        StageStatus::Pending => "[.]",
-        StageStatus::WaitingForInput => "[?]",
-        StageStatus::Blocked => "[!]",
-        StageStatus::Completed => "[+]",
-        StageStatus::NeedsHandoff => "[H]",
+        StageStatus::Verified => "✓".green().bold(),
+        StageStatus::Executing => "●".blue().bold(),
+        StageStatus::Ready => "▶".cyan().bold(),
+        StageStatus::Pending => "○".white().dimmed(),
+        StageStatus::WaitingForInput => "?".magenta().bold(),
+        StageStatus::Blocked => "✗".red().bold(),
+        StageStatus::Completed => "✔".green(),
+        StageStatus::NeedsHandoff => "⟳".yellow().bold(),
     }
 }
 
@@ -114,7 +115,7 @@ impl<'a> GraphRenderContext<'a> {
 }
 
 /// Build a visual representation of the dependency graph
-fn build_graph_display(stages: &[crate::models::stage::Stage]) -> Result<String> {
+pub fn build_graph_display(stages: &[crate::models::stage::Stage]) -> Result<String> {
     if stages.is_empty() {
         return Ok("(no stages found - run 'loom init <plan>' to create stages)".to_string());
     }
@@ -150,6 +151,7 @@ fn build_graph_display(stages: &[crate::models::stage::Stage]) -> Result<String>
 
 /// Show the execution graph
 pub fn show() -> Result<()> {
+    println!();
     println!("Execution Graph:");
     println!("================");
     println!();
@@ -163,9 +165,26 @@ pub fn show() -> Result<()> {
     let graph_display = build_graph_display(&stages)?;
     println!("{graph_display}");
 
-    // Print legend
+    // Print legend with colored symbols
     println!();
-    println!("Legend: [V] verified  [*] executing  [>] ready  [.] pending  [?] waiting-for-input  [!] blocked  [+] completed  [H] needs-handoff");
+    print!("Legend: ");
+    print!("{} ", "✓".green().bold());
+    print!("verified  ");
+    print!("{} ", "●".blue().bold());
+    print!("executing  ");
+    print!("{} ", "▶".cyan().bold());
+    print!("ready  ");
+    print!("{} ", "○".white().dimmed());
+    print!("pending  ");
+    print!("{} ", "?".magenta().bold());
+    print!("waiting  ");
+    print!("{} ", "✗".red().bold());
+    print!("blocked  ");
+    print!("{} ", "✔".green());
+    print!("completed  ");
+    print!("{} ", "⟳".yellow().bold());
+    println!("handoff");
+    println!();
 
     Ok(())
 }
@@ -231,14 +250,32 @@ mod tests {
 
     #[test]
     fn test_status_indicator() {
-        assert_eq!(status_indicator(&StageStatus::Verified), "[V]");
-        assert_eq!(status_indicator(&StageStatus::Executing), "[*]");
-        assert_eq!(status_indicator(&StageStatus::Ready), "[>]");
-        assert_eq!(status_indicator(&StageStatus::Pending), "[.]");
-        assert_eq!(status_indicator(&StageStatus::WaitingForInput), "[?]");
-        assert_eq!(status_indicator(&StageStatus::Blocked), "[!]");
-        assert_eq!(status_indicator(&StageStatus::Completed), "[+]");
-        assert_eq!(status_indicator(&StageStatus::NeedsHandoff), "[H]");
+        // Test that indicators contain the expected Unicode symbols
+        // (colored strings include ANSI codes, so we check the base character)
+        assert!(status_indicator(&StageStatus::Verified)
+            .to_string()
+            .contains('✓'));
+        assert!(status_indicator(&StageStatus::Executing)
+            .to_string()
+            .contains('●'));
+        assert!(status_indicator(&StageStatus::Ready)
+            .to_string()
+            .contains('▶'));
+        assert!(status_indicator(&StageStatus::Pending)
+            .to_string()
+            .contains('○'));
+        assert!(status_indicator(&StageStatus::WaitingForInput)
+            .to_string()
+            .contains('?'));
+        assert!(status_indicator(&StageStatus::Blocked)
+            .to_string()
+            .contains('✗'));
+        assert!(status_indicator(&StageStatus::Completed)
+            .to_string()
+            .contains('✔'));
+        assert!(status_indicator(&StageStatus::NeedsHandoff)
+            .to_string()
+            .contains('⟳'));
     }
 
     #[test]
@@ -250,10 +287,15 @@ mod tests {
 
     #[test]
     fn test_build_graph_display_single_stage() {
-        let stages = vec![create_test_stage("stage-1", "First Stage", StageStatus::Ready, vec![])];
+        let stages = vec![create_test_stage(
+            "stage-1",
+            "First Stage",
+            StageStatus::Ready,
+            vec![],
+        )];
 
         let output = build_graph_display(&stages).unwrap();
-        assert!(output.contains("[>]"));
+        assert!(output.contains('▶')); // Ready indicator
         assert!(output.contains("First Stage"));
         assert!(output.contains("stage-1"));
     }
@@ -274,9 +316,9 @@ mod tests {
         assert!(output.contains("Third"));
 
         // Check status indicators
-        assert!(output.contains("[V]")); // Verified
-        assert!(output.contains("[*]")); // Executing
-        assert!(output.contains("[.]")); // Pending
+        assert!(output.contains('✓')); // Verified
+        assert!(output.contains('●')); // Executing
+        assert!(output.contains('○')); // Pending
     }
 
     #[test]
@@ -308,7 +350,12 @@ mod tests {
         let stages = vec![
             create_test_stage("root-1", "Root One", StageStatus::Ready, vec![]),
             create_test_stage("root-2", "Root Two", StageStatus::Executing, vec![]),
-            create_test_stage("child", "Child", StageStatus::Pending, vec!["root-1", "root-2"]),
+            create_test_stage(
+                "child",
+                "Child",
+                StageStatus::Pending,
+                vec!["root-1", "root-2"],
+            ),
         ];
 
         let output = build_graph_display(&stages).unwrap();
@@ -325,21 +372,32 @@ mod tests {
             create_test_stage("s2", "Executing Stage", StageStatus::Executing, vec![]),
             create_test_stage("s3", "Ready Stage", StageStatus::Ready, vec![]),
             create_test_stage("s4", "Pending Stage", StageStatus::Pending, vec![]),
-            create_test_stage("s5", "WaitingForInput Stage", StageStatus::WaitingForInput, vec![]),
+            create_test_stage(
+                "s5",
+                "WaitingForInput Stage",
+                StageStatus::WaitingForInput,
+                vec![],
+            ),
             create_test_stage("s6", "Blocked Stage", StageStatus::Blocked, vec![]),
             create_test_stage("s7", "Completed Stage", StageStatus::Completed, vec![]),
-            create_test_stage("s8", "NeedsHandoff Stage", StageStatus::NeedsHandoff, vec![]),
+            create_test_stage(
+                "s8",
+                "NeedsHandoff Stage",
+                StageStatus::NeedsHandoff,
+                vec![],
+            ),
         ];
 
         let output = build_graph_display(&stages).unwrap();
 
-        assert!(output.contains("[V]"));
-        assert!(output.contains("[*]"));
-        assert!(output.contains("[>]"));
-        assert!(output.contains("[.]"));
-        assert!(output.contains("[?]"));
-        assert!(output.contains("[!]"));
-        assert!(output.contains("[+]"));
-        assert!(output.contains("[H]"));
+        // Check all Unicode status indicators are present
+        assert!(output.contains('✓')); // Verified
+        assert!(output.contains('●')); // Executing
+        assert!(output.contains('▶')); // Ready
+        assert!(output.contains('○')); // Pending
+        assert!(output.contains('?')); // WaitingForInput
+        assert!(output.contains('✗')); // Blocked
+        assert!(output.contains('✔')); // Completed
+        assert!(output.contains('⟳')); // NeedsHandoff
     }
 }
