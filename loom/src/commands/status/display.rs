@@ -164,8 +164,17 @@ pub fn display_stages(work_dir: &WorkDir) -> Result<()> {
 
         for stage in matching {
             let padded_id = format!("{:width$}", stage.id, width = max_id_len);
-            let held_indicator = if stage.held { " [HELD]".yellow() } else { "".normal() };
-            println!("    {}  {}{}", padded_id.dimmed(), stage.name, held_indicator);
+            let held_indicator = if stage.held {
+                " [HELD]".yellow()
+            } else {
+                "".normal()
+            };
+            println!(
+                "    {}  {}{}",
+                padded_id.dimmed(),
+                stage.name,
+                held_indicator
+            );
         }
         println!();
     }

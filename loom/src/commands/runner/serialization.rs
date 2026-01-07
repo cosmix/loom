@@ -20,11 +20,7 @@ pub fn runner_to_markdown(runner: &Runner) -> Result<String> {
     let created_date = runner.created_at.format("%Y-%m-%d").to_string();
     let context_pct = runner.context_health();
 
-    let track_display = if runner.assigned_track.is_some() {
-        runner.assigned_track.as_ref().unwrap().as_str()
-    } else {
-        "none"
-    };
+    let track_display = runner.assigned_track.as_deref().unwrap_or("none");
 
     let markdown = format!(
         r#"---

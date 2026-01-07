@@ -53,7 +53,7 @@ pub fn execute(stage_id: String) -> Result<()> {
         return Ok(());
     }
 
-    stage.mark_executing();
+    stage.try_mark_executing()?;
     save_stage(&stage, work_dir.root())?;
 
     println!("\nStage status updated to Executing");

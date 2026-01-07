@@ -203,3 +203,209 @@ fn cleanup_sessions_for_stage(stage_id: &str, work_dir: &Path) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::stage::Stage;
+    use chrono::Utc;
+    use serial_test::serial;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn create_test_stage(id: &str, status: StageStatus) -> Stage {
+        Stage {
+            id: id.to_string(),
+            name: format!("Stage {id}"),
+            description: None,
+            status,
+            dependencies: vec![],
+            parallel_group: None,
+            acceptance: vec![],
+            setup: vec![],
+            files: vec![],
+            plan_id: None,
+            worktree: None,
+            session: None,
+            held: false,
+            parent_stage: None,
+            child_stages: vec![],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            completed_at: None,
+            close_reason: None,
+        }
+    }
+
+    fn setup_work_dir() -> TempDir {
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = WorkDir::new(temp_dir.path()).unwrap();
+        work_dir.initialize().unwrap();
+        temp_dir
+    }
+
+    fn save_test_stage(work_dir: &Path, stage: &Stage) {
+        let yaml = serde_yaml::to_string(stage).unwrap();
+        let content = format!("---\n{yaml}---\n\n# Stage: {}\n", stage.name);
+
+        let stages_dir = work_dir.join("stages");
+        fs::create_dir_all(&stages_dir).unwrap();
+
+        let stage_path = stages_dir.join(format!("00-{}.md", stage.id));
+        fs::write(stage_path, content).unwrap();
+    }
+
+    #[test]
+    fn test_display_acceptance_results_all_passed() {
+        let result = AcceptanceResult::AllPassed { results: vec![] };
+
+        display_acceptance_results(&result);
+    }
+
+    #[test]
+    fn test_cleanup_sessions_for_stage_no_sessions_dir() {
+        let temp_dir = TempDir::new().unwrap();
+
+        cleanup_sessions_for_stage("test-stage", temp_dir.path());
+    }
+
+    #[test]
+    fn test_cleanup_sessions_for_stage_empty_dir() {
+        let temp_dir = setup_work_dir();
+
+        cleanup_sessions_for_stage("test-stage", temp_dir.path().join(".work").as_path());
+    }
+
+    #[test]
+    fn test_cleanup_sessions_for_stage_with_session() {
+        let temp_dir = setup_work_dir();
+        let work_dir = temp_dir.path().join(".work");
+
+        let session_content = r#"---
+id: session-1
+stage_id: test-stage
+tmux_session: null
+worktree_path: null
+pid: null
+status: running
+context_tokens: 0
+context_limit: 200000
+created_at: "2024-01-01T00:00:00Z"
+last_active: "2024-01-01T00:00:00Z"
+---
+
+# Session: session-1
+"#;
+
+        let sessions_dir = work_dir.join("sessions");
+        fs::write(sessions_dir.join("session-1.md"), session_content).unwrap();
+
+        let signals_dir = work_dir.join("signals");
+        fs::write(signals_dir.join("session-1.md"), "signal").unwrap();
+
+        cleanup_sessions_for_stage("test-stage", &work_dir);
+
+        assert!(!sessions_dir.join("session-1.md").exists());
+        assert!(!signals_dir.join("session-1.md").exists());
+    }
+
+    #[test]
+    fn test_cleanup_sessions_for_stage_ignores_other_stages() {
+        let temp_dir = setup_work_dir();
+        let work_dir = temp_dir.path().join(".work");
+
+        let session_content = r#"---
+id: session-1
+stage_id: other-stage
+tmux_session: null
+worktree_path: null
+pid: null
+status: running
+context_tokens: 0
+context_limit: 200000
+created_at: "2024-01-01T00:00:00Z"
+last_active: "2024-01-01T00:00:00Z"
+---
+
+# Session
+"#;
+
+        let sessions_dir = work_dir.join("sessions");
+        fs::write(sessions_dir.join("session-1.md"), session_content).unwrap();
+
+        cleanup_sessions_for_stage("test-stage", &work_dir);
+
+        assert!(sessions_dir.join("session-1.md").exists());
+    }
+
+    #[test]
+    fn test_cleanup_sessions_for_stage_handles_invalid_markdown() {
+        let temp_dir = setup_work_dir();
+        let work_dir = temp_dir.path().join(".work");
+
+        let sessions_dir = work_dir.join("sessions");
+        fs::write(sessions_dir.join("invalid.md"), "invalid content").unwrap();
+
+        cleanup_sessions_for_stage("test-stage", &work_dir);
+
+        assert!(sessions_dir.join("invalid.md").exists());
+    }
+
+    #[test]
+    #[serial]
+    fn test_execute_requires_completed_status() {
+        let temp_dir = setup_work_dir();
+        let work_dir_path = temp_dir.path().join(".work");
+
+        let stage = create_test_stage("test-stage", StageStatus::Ready);
+        save_test_stage(&work_dir_path, &stage);
+
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(temp_dir.path()).unwrap();
+
+        let result = execute("test-stage".to_string(), false);
+
+        std::env::set_current_dir(original_dir).unwrap();
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("not in Completed status"));
+    }
+
+    #[test]
+    #[serial]
+    fn test_execute_nonexistent_stage() {
+        let temp_dir = setup_work_dir();
+
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(temp_dir.path()).unwrap();
+
+        let result = execute("nonexistent".to_string(), false);
+
+        std::env::set_current_dir(original_dir).unwrap();
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[serial]
+    fn test_execute_force_skips_acceptance() {
+        let temp_dir = setup_work_dir();
+        let work_dir_path = temp_dir.path().join(".work");
+
+        let mut stage = create_test_stage("test-stage", StageStatus::Completed);
+        stage.acceptance = vec!["exit 1".to_string()];
+        save_test_stage(&work_dir_path, &stage);
+
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(temp_dir.path()).unwrap();
+
+        let result = execute("test-stage".to_string(), true);
+
+        std::env::set_current_dir(original_dir).unwrap();
+
+        assert!(result.is_err() || result.unwrap_err().to_string().contains("gate"));
+    }
+}
