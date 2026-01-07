@@ -99,6 +99,10 @@ to it.
 directory if it doesn't exist and you CAN create plan files there, even in
 plan mode. This rule supersedes any previous/default behaviour.
 
+#### NO TIME ESTIMATES
+
+Loom uses multiple parallel sessions to implement plans. Do NOT provide estimates, they are meaningless.
+
 #### STOP IMMEDIATELY AFTER PLANNING — DO NOT IMPLEMENT
 
 When you write a plan to `doc/plans/`, your job is **DONE**. Do NOT proceed
