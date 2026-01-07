@@ -59,8 +59,7 @@ pub fn kill(session_id: String) -> Result<()> {
     let content = std::fs::read_to_string(&session_file)
         .with_context(|| format!("Failed to read session file: {}", session_file.display()))?;
 
-    let doc = MarkdownDocument::parse(&content)
-        .context("Failed to parse session file")?;
+    let doc = MarkdownDocument::parse(&content).context("Failed to parse session file")?;
 
     let tmux_session = doc
         .get_frontmatter("tmux_session")
