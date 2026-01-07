@@ -15,7 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_DIR="$HOME/.claude"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-GITHUB_REPO="cosmix/claude-flux"
+GITHUB_REPO="cosmix/claude-loom"
 GITHUB_RELEASES="https://github.com/${GITHUB_REPO}/releases/latest/download"
 
 print_banner() {
@@ -72,7 +72,7 @@ download_file() {
 download_and_extract_zip() {
 	local url="$1"
 	local dest_dir="$2"
-	local temp_zip="/tmp/flux_temp_$$.zip"
+	local temp_zip="/tmp/loom_temp_$$.zip"
 
 	download_file "$url" "$temp_zip" || return 1
 
@@ -125,7 +125,7 @@ install_claude_md_remote() {
 
 	{
 		echo "# ───────────────────────────────────────────────────────────"
-		echo "# claude-flux | installed $(date '+%Y-%m-%d %H:%M:%S')"
+		echo "# claude-loom | installed $(date '+%Y-%m-%d %H:%M:%S')"
 		echo "# ───────────────────────────────────────────────────────────"
 		echo ""
 		cat "$temp_file"
@@ -223,7 +223,7 @@ install_claude_md() {
 
 	{
 		echo "# ───────────────────────────────────────────────────────────"
-		echo "# claude-flux | installed $(date '+%Y-%m-%d %H:%M:%S')"
+		echo "# claude-loom | installed $(date '+%Y-%m-%d %H:%M:%S')"
 		echo "# ───────────────────────────────────────────────────────────"
 		echo ""
 		cat "$SCRIPT_DIR/CLAUDE.template.md"
@@ -232,42 +232,74 @@ install_claude_md() {
 	ok "CLAUDE.md installed"
 }
 
-install_flux_local() {
-	step "installing flux CLI"
+install_hooks() {
+	step "installing hooks"
+
+	local hooks_dir="$CLAUDE_DIR/hooks"
+	mkdir -p "$hooks_dir"
+
+	# Copy loom hooks
+	if [[ -d "$SCRIPT_DIR/hooks" ]]; then
+		for hook in "$SCRIPT_DIR/hooks"/*.sh; do
+			if [[ -f "$hook" ]]; then
+				cp "$hook" "$hooks_dir/"
+				chmod +x "$hooks_dir/$(basename "$hook")"
+			fi
+		done
+	fi
+
+	# Copy hooks.json template if it exists
+	if [[ -f "$SCRIPT_DIR/.claude/hooks.json" ]]; then
+		cp "$SCRIPT_DIR/.claude/hooks.json" "$hooks_dir/hooks.json.template"
+		info "hooks configuration template saved to $hooks_dir/hooks.json.template"
+	fi
+
+	local count
+	count=$(find "$hooks_dir" -name "*.sh" 2>/dev/null | wc -l | tr -d ' ')
+	ok "$count hooks installed"
+
+	info "configure hooks in Claude Code settings or project .claude.json:"
+	info "  PreToolUse  → ask-user-pre.sh  (notifies when Claude asks questions)"
+	info "  PostToolUse → ask-user-post.sh (resumes after user responds)"
+	info "  Stop        → flux-stop.sh     (signals stage completion)"
+}
+
+install_loom_local() {
+	step "installing loom CLI"
 
 	local install_dir="$HOME/.local/bin"
-	local flux_bin="$install_dir/flux"
-	local local_flux="$SCRIPT_DIR/flux/target/release/flux"
+	local loom_bin="$install_dir/loom"
+	local local_loom="$SCRIPT_DIR/loom/target/release/loom"
 
 	# Check for local binary first
-	if [[ -x "$local_flux" ]]; then
+	if [[ -x "$local_loom" ]]; then
 		# Create install directory if needed
 		if [[ ! -d "$install_dir" ]]; then
 			mkdir -p "$install_dir"
 			info "created $install_dir"
 		fi
 
-		cp "$local_flux" "$flux_bin"
-		chmod +x "$flux_bin"
-		ok "flux CLI installed from local build"
+		cp "$local_loom" "$loom_bin"
+		chmod +x "$loom_bin"
+		ok "loom CLI installed from local build"
 
 		# Check if ~/.local/bin is in PATH
 		if [[ ":$PATH:" != *":$install_dir:"* ]]; then
-			info "add $install_dir to your PATH to use flux"
+			info "add $install_dir to your PATH to use loom"
 		fi
 		return 0
 	fi
 
 	# No local binary, fall back to download
 	info "no local build found, downloading from GitHub..."
-	install_flux_remote
+	install_loom_remote
 }
 
-install_flux_remote() {
-	step "installing flux CLI"
+install_loom_remote() {
+	step "installing loom CLI"
 
 	local install_dir="$HOME/.local/bin"
-	local flux_bin="$install_dir/flux"
+	local loom_bin="$install_dir/loom"
 
 	# Create install directory if needed
 	if [[ ! -d "$install_dir" ]]; then
@@ -286,17 +318,17 @@ install_flux_remote() {
 		x86_64)
 			# Detect libc type
 			if ldd --version 2>&1 | grep -q musl; then
-				target="flux-x86_64-unknown-linux-musl"
+				target="loom-x86_64-unknown-linux-musl"
 			else
-				target="flux-x86_64-unknown-linux-gnu"
+				target="loom-x86_64-unknown-linux-gnu"
 			fi
 			;;
 		aarch64 | arm64)
-			target="flux-aarch64-unknown-linux-gnu"
+			target="loom-aarch64-unknown-linux-gnu"
 			;;
 		*)
 			warn "unsupported architecture: $arch"
-			info "flux CLI not installed"
+			info "loom CLI not installed"
 			return 0
 			;;
 		esac
@@ -304,55 +336,55 @@ install_flux_remote() {
 	Darwin)
 		case "$arch" in
 		x86_64)
-			target="flux-x86_64-apple-darwin"
+			target="loom-x86_64-apple-darwin"
 			;;
 		arm64 | aarch64)
-			target="flux-aarch64-apple-darwin"
+			target="loom-aarch64-apple-darwin"
 			;;
 		*)
 			warn "unsupported architecture: $arch"
-			info "flux CLI not installed"
+			info "loom CLI not installed"
 			return 0
 			;;
 		esac
 		;;
 	*)
 		warn "unsupported platform: $os (only Linux and macOS are supported)"
-		info "flux CLI not installed"
+		info "loom CLI not installed"
 		return 0
 		;;
 	esac
 
-	# Download flux binary
+	# Download loom binary
 	local download_url="${GITHUB_RELEASES}/$target"
 	info "downloading $target"
 
 	if command -v curl &>/dev/null; then
-		if ! curl -fsSL "$download_url" -o "$flux_bin"; then
-			warn "failed to download flux CLI"
+		if ! curl -fsSL "$download_url" -o "$loom_bin"; then
+			warn "failed to download loom CLI"
 			info "you can manually install from: $download_url"
 			return 0
 		fi
 	elif command -v wget &>/dev/null; then
-		if ! wget -q "$download_url" -O "$flux_bin"; then
-			warn "failed to download flux CLI"
+		if ! wget -q "$download_url" -O "$loom_bin"; then
+			warn "failed to download loom CLI"
 			info "you can manually install from: $download_url"
 			return 0
 		fi
 	else
-		warn "curl or wget required to download flux"
+		warn "curl or wget required to download loom"
 		info "install curl or wget, then download from: $download_url"
 		return 0
 	fi
 
 	# Make executable
-	chmod +x "$flux_bin"
+	chmod +x "$loom_bin"
 
-	ok "flux CLI installed to $install_dir"
+	ok "loom CLI installed to $install_dir"
 
 	# Check if ~/.local/bin is in PATH
 	if [[ ":$PATH:" != *":$install_dir:"* ]]; then
-		info "add $install_dir to your PATH to use flux"
+		info "add $install_dir to your PATH to use loom"
 	fi
 }
 
@@ -388,10 +420,15 @@ print_summary() {
 	echo -e "${DIM}installed to ~/.claude/${NC}"
 	echo -e "  agents/      ${DIM}specialized subagents${NC}"
 	echo -e "  skills/      ${DIM}reusable capabilities${NC}"
+	echo -e "  hooks/       ${DIM}Claude Code event hooks${NC}"
 	echo -e "  CLAUDE.md    ${DIM}orchestration rules${NC}"
 	echo ""
 	echo -e "${DIM}installed to ~/.local/bin/${NC}"
-	echo -e "  flux         ${DIM}project context manager${NC}"
+	echo -e "  loom         ${DIM}project context manager${NC}"
+	echo ""
+	echo -e "${YELLOW}note:${NC} configure hooks in your project's .claude.json"
+	echo -e "      see ~/.claude/hooks/hooks.json.template for example config"
+	echo -e "      hooks enable: stage completion, user question detection"
 	echo ""
 	echo -e "run ${CYAN}claude${NC} to start"
 	echo ""
@@ -407,7 +444,7 @@ main() {
 		install_agents_remote
 		install_skills_remote
 		install_claude_md_remote
-		install_flux_remote
+		install_loom_remote
 	else
 		check_requirements
 		confirm_overwrites
@@ -415,7 +452,8 @@ main() {
 		install_agents
 		install_skills
 		install_claude_md
-		install_flux_local
+		install_hooks
+		install_loom_local
 		cleanup_backups
 	fi
 
