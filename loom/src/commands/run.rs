@@ -5,55 +5,56 @@ use std::time::Duration;
 
 use crate::fs::work_dir::WorkDir;
 use crate::orchestrator::{Orchestrator, OrchestratorConfig, OrchestratorResult};
-use crate::plan::parser::parse_plan;
 use crate::plan::graph::ExecutionGraph;
+use crate::plan::parser::parse_plan;
+use crate::plan::schema::StageDefinition;
 
 const ORCHESTRATOR_SESSION: &str = "loom-orchestrator";
 
 /// Execute plan stages via worktrees/sessions
-/// Usage: loom run [--stage <id>] [--manual] [--max-parallel <n>]
+/// Usage: loom run [--stage <id>] [--manual] [--max-parallel <n>] [--watch]
 pub fn execute(
     stage_id: Option<String>,
     manual: bool,
     max_parallel: Option<usize>,
+    watch: bool,
 ) -> Result<()> {
     // 1. Load .work/ directory
     let work_dir = WorkDir::new(".")?;
     work_dir.load()?;
 
-    // 2. Get active plan from config
-    let plan_path = read_active_plan_path(&work_dir)?;
+    // 2. Build execution graph - prefer .work/stages/ files, fall back to plan file
+    let graph = build_execution_graph(&work_dir)?;
 
-    // 3. Parse plan and build execution graph
-    let parsed_plan = parse_plan(&plan_path)
-        .with_context(|| format!("Failed to parse plan: {}", plan_path.display()))?;
-
-    let graph = ExecutionGraph::build(parsed_plan.stages)
-        .context("Failed to build execution graph")?;
-
-    // 4. Configure orchestrator
+    // 3. Configure orchestrator
     let config = OrchestratorConfig {
         max_parallel_sessions: max_parallel.unwrap_or(4),
         poll_interval: Duration::from_secs(5),
         manual_mode: manual,
+        watch_mode: watch,
         tmux_prefix: "loom".to_string(),
         work_dir: work_dir.root().to_path_buf(),
         repo_root: std::env::current_dir()?,
         status_update_interval: Duration::from_secs(30),
     };
 
-    // 5. Create and run orchestrator
+    // 4. Create and run orchestrator
     let mut orchestrator = Orchestrator::new(config, graph);
 
     let result = if let Some(id) = stage_id {
         println!("Running single stage: {id}");
         orchestrator.run_single(&id)?
     } else {
-        println!("Running all ready stages...");
+        if watch {
+            println!("Running in watch mode (continuous execution)...");
+            println!("Press Ctrl+C to stop.\n");
+        } else {
+            println!("Running all ready stages...");
+        }
         orchestrator.run()?
     };
 
-    // 6. Print results
+    // 5. Print results
     print_result(&result);
 
     if result.is_success() {
@@ -69,6 +70,7 @@ pub fn execute_background(
     stage_id: Option<String>,
     manual: bool,
     max_parallel: Option<usize>,
+    watch: bool,
 ) -> Result<()> {
     // Check if orchestrator session already exists
     let check_output = Command::new("tmux")
@@ -77,10 +79,10 @@ pub fn execute_background(
 
     if let Ok(output) = check_output {
         if output.status.success() {
-            println!("Orchestrator is already running in tmux session '{ORCHESTRATOR_SESSION}'");
+            println!("Orchestrator is already running.");
             println!();
-            println!("To attach:  tmux attach -t {ORCHESTRATOR_SESSION}");
-            println!("To kill:    tmux kill-session -t {ORCHESTRATOR_SESSION}");
+            println!("To attach:  loom attach orch");
+            println!("To stop:    loom clean --sessions");
             return Ok(());
         }
     }
@@ -96,6 +98,9 @@ pub fn execute_background(
     if let Some(n) = max_parallel {
         loom_cmd.push_str(&format!(" --max-parallel {n}"));
     }
+    if watch {
+        loom_cmd.push_str(" --watch");
+    }
 
     // Get current directory for tmux session
     let cwd = std::env::current_dir()?;
@@ -104,10 +109,12 @@ pub fn execute_background(
     let status = Command::new("tmux")
         .args([
             "new-session",
-            "-d",                           // Detached
-            "-s", ORCHESTRATOR_SESSION,     // Session name
-            "-c", &cwd.to_string_lossy(),   // Working directory
-            &loom_cmd,                      // Command to run
+            "-d", // Detached
+            "-s",
+            ORCHESTRATOR_SESSION, // Session name
+            "-c",
+            &cwd.to_string_lossy(), // Working directory
+            &loom_cmd,              // Command to run
         ])
         .status()
         .context("Failed to create tmux session for orchestrator")?;
@@ -136,8 +143,8 @@ pub fn attach_orchestrator() -> Result<()> {
 
     match check_output {
         Ok(output) if output.status.success() => {
-            println!("Attaching to orchestrator session...");
-            println!("(Press Ctrl+B, D to detach)\n");
+            println!("Attaching to orchestrator...");
+            println!("(Press Ctrl+B then D to return to your terminal)\n");
 
             // Attach to the session
             #[cfg(unix)]
@@ -171,8 +178,19 @@ pub fn attach_orchestrator() -> Result<()> {
     }
 }
 
-/// Read the active plan path from config.toml
-fn read_active_plan_path(work_dir: &WorkDir) -> Result<PathBuf> {
+/// Build execution graph from .work/stages/ files or fall back to plan file
+fn build_execution_graph(work_dir: &WorkDir) -> Result<ExecutionGraph> {
+    let stages_dir = work_dir.root().join("stages");
+
+    // First try to load from .work/stages/ files
+    if stages_dir.exists() {
+        let stages = load_stages_from_work_dir(&stages_dir)?;
+        if !stages.is_empty() {
+            return ExecutionGraph::build(stages).context("Failed to build execution graph from stage files");
+        }
+    }
+
+    // Fall back to reading from plan file
     let config_path = work_dir.root().join("config.toml");
 
     if !config_path.exists() {
@@ -195,12 +213,103 @@ fn read_active_plan_path(work_dir: &WorkDir) -> Result<PathBuf> {
 
     if !path.exists() {
         bail!(
-            "Plan file not found: {}\nThe plan may have been moved or deleted.",
+            "Plan file not found: {}\nThe plan may have been moved or deleted.\n\nNote: Stage files in .work/stages/ can be used instead of the plan file.",
             path.display()
         );
     }
 
-    Ok(path)
+    let parsed_plan = parse_plan(&path)
+        .with_context(|| format!("Failed to parse plan: {}", path.display()))?;
+
+    ExecutionGraph::build(parsed_plan.stages).context("Failed to build execution graph")
+}
+
+/// Load stage definitions from .work/stages/ directory
+fn load_stages_from_work_dir(stages_dir: &PathBuf) -> Result<Vec<StageDefinition>> {
+    let mut stages = Vec::new();
+
+    for entry in std::fs::read_dir(stages_dir)
+        .with_context(|| format!("Failed to read stages directory: {}", stages_dir.display()))?
+    {
+        let entry = entry?;
+        let path = entry.path();
+
+        // Skip non-markdown files
+        if path.extension().and_then(|s| s.to_str()) != Some("md") {
+            continue;
+        }
+
+        // Read and parse the stage file
+        let content = std::fs::read_to_string(&path)
+            .with_context(|| format!("Failed to read stage file: {}", path.display()))?;
+
+        // Extract YAML frontmatter
+        let frontmatter = match extract_stage_frontmatter(&content) {
+            Ok(fm) => fm,
+            Err(e) => {
+                eprintln!("Warning: Could not parse {}: {}", path.display(), e);
+                continue;
+            }
+        };
+
+        // Convert to StageDefinition
+        let stage_def = StageDefinition {
+            id: frontmatter.id,
+            name: frontmatter.name,
+            description: frontmatter.description,
+            dependencies: frontmatter.dependencies,
+            parallel_group: frontmatter.parallel_group,
+            acceptance: frontmatter.acceptance,
+            setup: frontmatter.setup,
+            files: frontmatter.files,
+        };
+
+        stages.push(stage_def);
+    }
+
+    Ok(stages)
+}
+
+/// Stage frontmatter data extracted from .work/stages/*.md files
+#[derive(Debug, serde::Deserialize)]
+struct StageFrontmatter {
+    id: String,
+    name: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    dependencies: Vec<String>,
+    #[serde(default)]
+    parallel_group: Option<String>,
+    #[serde(default)]
+    acceptance: Vec<String>,
+    #[serde(default)]
+    setup: Vec<String>,
+    #[serde(default)]
+    files: Vec<String>,
+}
+
+/// Extract YAML frontmatter from stage markdown file
+fn extract_stage_frontmatter(content: &str) -> Result<StageFrontmatter> {
+    let lines: Vec<&str> = content.lines().collect();
+
+    if lines.is_empty() || !lines[0].trim().starts_with("---") {
+        bail!("No frontmatter delimiter found");
+    }
+
+    let mut end_idx = None;
+    for (idx, line) in lines.iter().enumerate().skip(1) {
+        if line.trim().starts_with("---") {
+            end_idx = Some(idx);
+            break;
+        }
+    }
+
+    let end_idx = end_idx.ok_or_else(|| anyhow::anyhow!("Frontmatter not properly closed"))?;
+
+    let yaml_content = lines[1..end_idx].join("\n");
+
+    serde_yaml::from_str(&yaml_content).context("Failed to parse stage YAML frontmatter")
 }
 
 /// Print orchestrator result summary
@@ -229,7 +338,10 @@ fn print_result(result: &OrchestratorResult) {
         println!("\nRun 'loom resume <stage-id>' to continue these stages.");
     }
 
-    println!("\nTotal sessions spawned: {}", result.total_sessions_spawned);
+    println!(
+        "\nTotal sessions spawned: {}",
+        result.total_sessions_spawned
+    );
 
     if result.is_success() {
         println!("\n✓ All stages completed successfully!");
