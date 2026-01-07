@@ -1,6 +1,6 @@
-# Claude Flux
+# Claude loom
 
-Claude Flux is a self-propelling agent orchestration system for Claude Code.
+Claude loom is a self-propelling agent orchestration system for Claude Code.
 It combines a state management CLI, specialized AI agents, and reusable skills
 to create workflows that survive context exhaustion, session crashes, and
 manual handoffs. When context runs low, agents externalize their state and
@@ -21,11 +21,11 @@ AI agent sessions hit hard limits:
 
 ## The Solution
 
-Flux solves these problems with three integrated components:
+loom solves these problems with three integrated components:
 
 | Component    | Purpose                                          |
 | ------------ | ------------------------------------------------ |
-| **Flux CLI** | Manages persistent work state across sessions    |
+| **loom CLI** | Manages persistent work state across sessions    |
 | **Agents**   | 19 specialized AI agents organized by domain     |
 | **Skills**   | 56 reusable knowledge modules loaded dynamically |
 
@@ -75,19 +75,19 @@ Install everything with one command:
 
 ```bash
 curl -fsSL \
-  https://raw.githubusercontent.com/cosmix/claude-flux/main/install.sh | bash
+  https://raw.githubusercontent.com/cosmix/claude-loom/main/install.sh | bash
 ```
 
-Initialize Flux with a plan and execute:
+Initialize loom with a plan and execute:
 
 ```bash
 cd /path/to/project
-flux init doc/plans/my-plan.md   # Initialize with a plan
-flux run                          # Execute stages automatically
-flux status                       # Check progress
+loom init doc/plans/my-plan.md   # Initialize with a plan
+loom run                          # Execute stages automatically
+loom status                       # Check progress
 ```
 
-Flux will create git worktrees for parallel stages and spawn Claude Code
+loom will create git worktrees for parallel stages and spawn Claude Code
 sessions automatically to execute your plan.
 
 ## How It Works
@@ -129,7 +129,7 @@ All state lives in `.work/` as structured files:
 
 ```text
 project/
-├── .work/                    # Flux state (version controlled)
+├── .work/                    # loom state (version controlled)
 │   ├── config.toml           # Active plan, settings
 │   ├── execution-graph.toml  # Stage dependency DAG
 │   ├── stages/               # Stage state files
@@ -185,14 +185,14 @@ With orchestration rules, Claude will:
 
 ```bash
 curl -fsSL \
-  https://raw.githubusercontent.com/cosmix/claude-flux/main/install.sh | bash
+  https://raw.githubusercontent.com/cosmix/claude-loom/main/install.sh | bash
 ```
 
 ### Clone and Install
 
 ```bash
-git clone https://github.com/cosmix/claude-flux.git
-cd claude-flux
+git clone https://github.com/cosmix/claude-loom.git
+cd claude-loom
 bash install.sh
 ```
 
@@ -206,15 +206,15 @@ cp -r skills ~/.claude/
 # Install configuration
 cat CLAUDE.template.md >> ~/.claude/CLAUDE.md
 
-# Download Flux CLI for your platform
+# Download loom CLI for your platform
 # Linux x86_64 (glibc):
-FLUX_URL="https://github.com/cosmix/claude-flux/releases/latest/download"
-curl -fsSL "$FLUX_URL/flux-x86_64-unknown-linux-gnu" -o ~/.local/bin/flux
-chmod +x ~/.local/bin/flux
+loom_URL="https://github.com/cosmix/claude-loom/releases/latest/download"
+curl -fsSL "$loom_URL/loom-x86_64-unknown-linux-gnu" -o ~/.local/bin/loom
+chmod +x ~/.local/bin/loom
 
 # macOS Apple Silicon:
-curl -fsSL "$FLUX_URL/flux-aarch64-apple-darwin" -o ~/.local/bin/flux
-chmod +x ~/.local/bin/flux
+curl -fsSL "$loom_URL/loom-aarch64-apple-darwin" -o ~/.local/bin/loom
+chmod +x ~/.local/bin/loom
 ```
 
 ### What Gets Installed
@@ -226,7 +226,7 @@ The installation places these components:
 | `~/.claude/agents/`   | 19 specialized AI agents              |
 | `~/.claude/skills/`   | 56 reusable knowledge modules         |
 | `~/.claude/CLAUDE.md` | Orchestration rules and configuration |
-| `~/.local/bin/flux`   | Flux CLI binary                       |
+| `~/.local/bin/loom`   | loom CLI binary                       |
 
 The [`CLAUDE.template.md`](CLAUDE.template.md) configuration includes:
 
@@ -244,9 +244,9 @@ The [`CLAUDE.template.md`](CLAUDE.template.md) configuration includes:
 ### Verify Installation
 
 ```bash
-# Check Flux CLI
-flux --version
-flux --help
+# Check loom CLI
+loom --version
+loom --help
 
 # Start Claude Code and verify agents are available
 claude
@@ -298,22 +298,22 @@ be configured for Claude to access them directly. Check the
 - Include links to detailed documentation for complex workflows
 - Document team-specific conventions and standards
 
-## Flux CLI Reference
+## loom CLI Reference
 
 ### Primary Commands
 
 These commands cover 90% of typical usage:
 
 ```bash
-# Initialize Flux with a plan
-flux init <plan-path>
-# Example: flux init doc/plans/PLAN-auth.md
+# Initialize loom with a plan
+loom init <plan-path>
+# Example: loom init doc/plans/PLAN-auth.md
 # - Parses plan, extracts stages and dependencies
 # - Creates execution graph in .work/
 # - Sets up .work/ directory structure
 
 # Execute stages (creates worktrees, spawns sessions)
-flux run [--stage <id>] [--manual]
+loom run [--stage <id>] [--manual]
 # - Creates git worktrees for ready parallel stages
 # - Spawns Claude sessions (unless --manual)
 # - Monitors progress, triggers dependent stages
@@ -321,32 +321,32 @@ flux run [--stage <id>] [--manual]
 # - --manual: don't spawn sessions, just prepare signals
 
 # Check plan progress and session health
-flux status
+loom status
 # Shows: plan progress, stage states, session health, context levels
 
 # Human verification gate
-flux verify <stage-id>
+loom verify <stage-id>
 # - Runs acceptance criteria
 # - Human approves/rejects
 # - Triggers dependent stages if approved
 
 # Resume from handoff
-flux resume <stage-id>
+loom resume <stage-id>
 # - Creates new session with handoff context
 # - Continues from where previous session left off
 
 # Merge completed stage to main
-flux merge <stage-id>
+loom merge <stage-id>
 # - Merges worktree branch to main
 # - Removes worktree on success
 # - If conflicts, prints resolution instructions
 
 # Attach to running session
-flux attach <stage-id|session-id>
+loom attach <stage-id|session-id>
 # - Attaches terminal to running Claude session (via tmux)
 # - Human can observe, type, intervene
 # - Detach with Ctrl+B D
-# - Use 'flux sessions list' to see available sessions
+# - Use 'loom sessions list' to see available sessions
 ```
 
 ### Secondary Commands
@@ -355,22 +355,22 @@ Power user commands for fine-grained control:
 
 ```bash
 # Session management
-flux sessions [list|kill <id>]
+loom sessions [list|kill <id>]
 
 # Worktree management
-flux worktree [list|clean]
+loom worktree [list|clean]
 
 # View/edit execution graph
-flux graph [show|edit]
+loom graph [show|edit]
 
 # Force stage state transitions
-flux stage <id> [complete|block|reset]
+loom stage <id> [complete|block|reset]
 ```
 
 ### Utility Commands
 
 ```bash
-flux self-update             # Update Flux CLI, agents, skills, and config
+loom self-update             # Update loom CLI, agents, skills, and config
 ```
 
 ## Plan Document Format
@@ -391,10 +391,10 @@ We need to implement JWT-based authentication...
 
 ---
 
-<!-- FLUX METADATA -->
+<!-- loom METADATA -->
 
 ```yaml
-flux:
+loom:
   version: 1
   stages:
     - id: stage-1-jwt
@@ -430,14 +430,14 @@ flux:
         - "src/middleware/auth.rs"
 ```
 
-<!-- END FLUX METADATA -->
+<!-- END loom METADATA -->
 ````
 
 ### Metadata Fields
 
 | Field            | Required | Description                                |
 | ---------------- | -------- | ------------------------------------------ |
-| `version`        | Yes      | Flux metadata schema version (currently 1) |
+| `version`        | Yes      | loom metadata schema version (currently 1) |
 | `stages`         | Yes      | List of work stages with dependencies      |
 | `id`             | Yes      | Unique stage identifier (kebab-case)       |
 | `name`           | Yes      | Human-readable stage name                  |
@@ -453,21 +453,21 @@ A complete example from plan creation to execution:
 
 ```bash
 # 1. Create a plan document (or use Claude in plan mode)
-# Write to doc/plans/PLAN-auth.md with FLUX METADATA block
+# Write to doc/plans/PLAN-auth.md with loom METADATA block
 
-# 2. Initialize Flux with the plan
+# 2. Initialize loom with the plan
 cd /path/to/project
-flux init doc/plans/PLAN-auth.md
+loom init doc/plans/PLAN-auth.md
 # Output: Initialized .work/ directory structure with plan from doc/plans/PLAN-auth.md
 
 # 3. Run stages (creates worktrees, spawns sessions)
-flux run
+loom run
 # Output: Creating worktree for stage-1...
 #         Spawning Claude session for stage-1...
 #         Running all ready stages...
 
 # 4. Monitor progress
-flux status
+loom status
 # Shows:
 #   Stages:   2
 #   Sessions: 1
@@ -475,11 +475,11 @@ flux status
 #   stage-2: Blocked (waiting on: stage-1)
 
 # 5. Attach to observe a running stage
-flux attach stage-1
+loom attach stage-1
 # (Opens tmux session showing Claude working on stage-1)
 
 # 6. Verify completed stages (human approval gate)
-flux verify stage-1
+loom verify stage-1
 # Output: Running acceptance criteria...
 #         All acceptance criteria passed!
 #         Approve this stage? (y/n): y
@@ -487,8 +487,8 @@ flux verify stage-1
 #         Triggered 1 dependent stage: stage-2
 
 # 7. Merge completed work to main
-flux merge stage-1
-# Output: Merging worktree branch flux/stage-1 to main...
+loom merge stage-1
+# Output: Merging worktree branch loom/stage-1 to main...
 #         Merge successful!
 #         Removing worktree...
 
@@ -496,7 +496,7 @@ flux merge stage-1
 # - Creates handoff in .work/handoffs/
 # - Updates session state
 # - Exits gracefully
-# - flux run or flux resume continues seamlessly
+# - loom run or loom resume continues seamlessly
 ```
 
 ## Agent Hierarchy
@@ -578,7 +578,7 @@ automatically load relevant skills without explicit invocation.
 | `terraform`  | Infrastructure as Code for cloud resources  |
 | `ci-cd`      | Pipeline design and implementation          |
 | `crossplane` | Kubernetes-native infrastructure management |
-| `fluxcd`     | GitOps continuous delivery                  |
+| `loomcd`     | GitOps continuous delivery                  |
 | `argocd`     | Declarative GitOps for Kubernetes           |
 | `kustomize`  | Kubernetes configuration customization      |
 | `karpenter`  | Kubernetes node autoscaling                 |
@@ -701,24 +701,13 @@ Key principles.
 Concrete examples.
 ```
 
-## Upgrading from v1.x
-
-If you are upgrading from Flux v1.x (manual track/runner/signal workflow), see
-the [Migration Guide](MIGRATION.md) for:
-
-- Breaking changes summary
-- Command mapping (old to new)
-- Data migration steps
-- Converting tracks to stages
-- Updated CLAUDE.md configuration
-
 ## Further Reading
 
 - [Claude Code Documentation](https://code.claude.com/docs/en/overview)
 - [Subagents Deep Dive](https://code.claude.com/docs/en/sub-agents)
 - [Agent Skills Introduction](https://claude.com/blog/skills)
 - [Claude Code Best Practices](https://www.anthropic.com/engineering/claude-code-best-practices)
-- [Flux CLI Detailed Reference](flux/README.md)
+- [loom CLI Detailed Reference](loom/README.md)
 
 ## License
 
