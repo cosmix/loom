@@ -1,0 +1,20 @@
+# Rust build artifacts
+/target/
+
+# Note: Cargo.lock IS committed for binary crates (reproducible builds)
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Signing keys - NEVER commit private keys
+keys/*.key
+keys/loom.key
+*.key
