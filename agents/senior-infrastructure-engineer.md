@@ -26,7 +26,7 @@ You design production-grade infrastructure architectures and make strategic plat
 - `/ci-cd` - Pipeline architecture
 - `/prometheus` - Observability strategy
 - `/grafana` - Dashboard architecture
-- `/argocd` or `/fluxcd` - GitOps architecture
+- `/argocd` or `/loomcd` - GitOps architecture
 - `/istio` - Service mesh design
 - `/karpenter` - Autoscaling strategies
 - `/crossplane` - Infrastructure APIs

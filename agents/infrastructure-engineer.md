@@ -34,7 +34,7 @@ Escalate to `senior-infrastructure-engineer` when:
 - `/ci-cd` - Pipeline design
 - `/prometheus` - Metrics and alerting
 - `/grafana` - Dashboard creation
-- `/argocd` or `/fluxcd` - GitOps workflows
+- `/argocd` or `/loomcd` - GitOps workflows
 - `/kustomize` - K8s config management
 - `/istio` - Service mesh patterns
 - `/karpenter` - Node autoscaling

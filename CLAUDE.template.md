@@ -58,20 +58,15 @@ You are NOT done until ALL of these pass:
 
 ### 3. SUBAGENTS ARE BLIND — PASS CONTEXT AND RULES
 
-This is critical and supersedes any previous behavior.
+⚠️ CRITICAL: When delegating ANY task to a subagent, you must INJECT the following text directly into their prompt as the FIRST few lines of their instructions. Do not summarize it. Paste it verbatim.
 
-Subagents DO NOT SEE BY DEFAULT:
+[BEGIN SUBAGENT INSTRUCTIONS]
 
-- This CLAUDE.md file
-- The project CLAUDE.md file
-- Your conversation history
-- Files you've read
+- Read CLAUDE.md immediately upon starting.
 
-**YOU MUST INCLUDE IN EVERY SUBAGENT PROMPT:**
 
-1. ALL CLAUDE.md content. ALL OF IT!
-2. Complete task context
-3. Expected output format
+  ... task specific instructions!
+[END SUBAGENT INSTRUCTIONS]
 
 ### 4. CONTEXT LIMIT — 85% = STOP -- ALWAYS
 
@@ -128,12 +123,12 @@ IMPORTANT: REFACTOR if exceeded.
 
 ---
 
-## Work Orchestration (Flux)
+## Work Orchestration (loom)
 
 This section enables self-propelling agents that survive context exhaustion
 and crashes.
 
-### Creating Flux Plans
+### Creating loom Plans
 
 Plans define parallelizable work with dependencies. All stages, metadata, and
 the execution graph are contained in a **single markdown file**.
@@ -146,34 +141,40 @@ the execution graph are contained in a **single markdown file**.
 # PLAN: [Descriptive Title]
 
 ## Overview
+
 [What this plan accomplishes - 2-3 sentences]
 
 ## Current State
+
 [Analysis of existing code, problems to solve]
 
 ## Proposed Changes
+
 [Detailed description of the implementation approach]
 
 ## Stages
 
 ### Stage 1: [Name]
+
 [Detailed description of what this stage accomplishes]
 
 **Files:** `src/path/*.ext`
 
 **Acceptance Criteria:**
+
 - [ ] Tests pass
 - [ ] No lint errors
 
 ### Stage 2: [Name]
+
 [Description - depends on Stage 1]
 
 ---
 
-<!-- FLUX METADATA - Do not edit manually -->
+<!-- loom METADATA - Do not edit manually -->
 
 ```yaml
-flux:
+loom:
   version: 1
   stages:
     - id: stage-1-short-id
@@ -197,20 +198,20 @@ flux:
         - "src/other/*.py"
 ```
 
-<!-- END FLUX METADATA -->
+<!-- END loom METADATA -->
 ````
 
 #### Stage Definition Schema
 
-| Field            | Required | Description                                       |
-| ---------------- | -------- | ------------------------------------------------- |
-| `id`             | Yes      | Unique identifier (alphanumeric, dash, underscore)|
-| `name`           | Yes      | Human-readable stage name                         |
-| `description`    | No       | What this stage accomplishes                      |
-| `dependencies`   | Yes      | Array of stage IDs that must complete first       |
-| `parallel_group` | No       | Stages in same group can run simultaneously       |
-| `acceptance`     | No       | Shell commands that must pass (exit 0)            |
-| `files`          | No       | Glob patterns for files this stage modifies       |
+| Field            | Required | Description                                        |
+| ---------------- | -------- | -------------------------------------------------- |
+| `id`             | Yes      | Unique identifier (alphanumeric, dash, underscore) |
+| `name`           | Yes      | Human-readable stage name                          |
+| `description`    | No       | What this stage accomplishes                       |
+| `dependencies`   | Yes      | Array of stage IDs that must complete first        |
+| `parallel_group` | No       | Stages in same group can run simultaneously        |
+| `acceptance`     | No       | Shell commands that must pass (exit 0)             |
+| `files`          | No       | Glob patterns for files this stage modifies        |
 
 **Note:** Use `dependencies: []` for stages with no dependencies.
 
@@ -224,7 +225,7 @@ flux:
 #### Example: Parallel Execution
 
 ```yaml
-flux:
+loom:
   version: 1
   stages:
     # These two have no deps - run in PARALLEL
@@ -276,11 +277,11 @@ acceptance:
 #### Workflow
 
 1. **Create plan:** Write `doc/plans/PLAN-001-feature.md` with full structure
-2. **Initialize:** `flux init doc/plans/PLAN-001-feature.md`
-3. **Execute:** `flux run` (spawns parallel sessions for ready stages)
-4. **Monitor:** `flux status` or `flux attach <stage-id>`
-5. **Verify:** `flux verify <stage-id>` (runs acceptance criteria)
-6. **Merge:** `flux merge <stage-id>` (merges completed stage to main)
+2. **Initialize:** `loom init doc/plans/PLAN-001-feature.md`
+3. **Execute:** `loom run` (spawns parallel sessions for ready stages)
+4. **Monitor:** `loom status` or `loom attach <stage-id>`
+5. **Verify:** `loom verify <stage-id>` (runs acceptance criteria)
+6. **Merge:** `loom merge <stage-id>` (merges completed stage to main)
 
 ### The Signal Principle
 
@@ -295,7 +296,7 @@ On session start:
 4. If no signal → ask what to do
 
 Signals are auto-generated from stage definitions and assigned to sessions
-by the Flux orchestrator.
+by the loom orchestrator.
 
 ### The Clear > Compact Principle
 
@@ -445,7 +446,7 @@ When creating handoffs, use this structure:
 
 ## Current State
 
-- **Branch**: flux/[stage-id]
+- **Branch**: loom/[stage-id]
 - **Worktree**: .worktrees/[stage-id]
 - **Tests**: [status]
 - **Files Modified**: [list with paths]
@@ -520,15 +521,15 @@ When completing work on a stage:
 Each stage executes in an isolated git worktree:
 
 - **Path**: `.worktrees/[stage-id]/`
-- **Branch**: `flux/[stage-id]`
+- **Branch**: `loom/[stage-id]`
 - The `.work/` directory is symlinked from the main repository
 
 When working in a worktree:
 
 1. All changes are isolated to your branch
-2. Run `flux merge [stage-id]` to merge back to main
+2. Run `loom merge [stage-id]` to merge back to main
 3. Merge conflicts are reported for manual resolution
-4. Never manually switch branches - you're always on `flux/[stage-id]`
+4. Never manually switch branches - you're always on `loom/[stage-id]`
 
 ### Team Workflow References (Optional)
 
