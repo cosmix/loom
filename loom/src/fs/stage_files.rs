@@ -75,9 +75,7 @@ pub fn find_stage_file(stages_dir: &Path, stage_id: &str) -> Result<Option<PathB
 /// # Returns
 /// The stage ID if parseable, None otherwise
 pub fn extract_stage_id(filename: &str) -> Option<String> {
-    let stem = Path::new(filename)
-        .file_stem()
-        .and_then(|s| s.to_str())?;
+    let stem = Path::new(filename).file_stem().and_then(|s| s.to_str())?;
 
     // Check for prefixed format: XX-{stage_id}
     if let Some(suffix) = stem.strip_prefix(|c: char| c.is_ascii_digit()) {
@@ -113,8 +111,7 @@ pub fn compute_stage_depths(stages: &[StageDependencies]) -> Result<HashMap<Stri
     let mut depths: HashMap<String, usize> = HashMap::new();
 
     // Build adjacency information
-    let stage_set: std::collections::HashSet<&str> =
-        stages.iter().map(|s| s.id.as_str()).collect();
+    let stage_set: std::collections::HashSet<&str> = stages.iter().map(|s| s.id.as_str()).collect();
 
     // Iteratively compute depths
     // A stage's depth = max(depth of dependencies) + 1, or 0 if no dependencies
@@ -272,10 +269,7 @@ mod tests {
 
     #[test]
     fn test_extract_stage_id_without_prefix() {
-        assert_eq!(
-            extract_stage_id("stage-1.md"),
-            Some("stage-1".to_string())
-        );
+        assert_eq!(extract_stage_id("stage-1.md"), Some("stage-1".to_string()));
         assert_eq!(
             extract_stage_id("my-stage.md"),
             Some("my-stage".to_string())

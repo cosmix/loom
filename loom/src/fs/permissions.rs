@@ -1,7 +1,7 @@
 //! Claude Code permissions management for loom
 //!
 //! Ensures that `.claude/settings.local.json` has the necessary permissions
-//! for loom to operate without constant user approval prompts.
+//! and hooks for loom to operate without constant user approval prompts.
 
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
@@ -11,32 +11,78 @@ use std::path::Path;
 /// Loom permissions for the MAIN REPO context
 /// .work/ is within repo root so no explicit Read/Write permissions needed
 pub const LOOM_PERMISSIONS: &[&str] = &[
-    // Loom CLI commands
-    "Bash(loom *)",
-    "Bash(loom)",
+    // Loom CLI commands (use :* for prefix matching)
+    "Bash(loom:*)",
     // Tmux for session management
-    "Bash(tmux *)",
+    "Bash(tmux:*)",
 ];
+
+/// Generate hooks configuration for loom
+/// Hooks reference scripts at ~/.claude/hooks/ (installed by install.sh)
+fn loom_hooks_config() -> Value {
+    json!({
+        "PreToolUse": [
+            {
+                "matcher": "AskUserQuestion",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "~/.claude/hooks/ask-user-pre.sh"
+                    }
+                ]
+            }
+        ],
+        "PostToolUse": [
+            {
+                "matcher": "AskUserQuestion",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "~/.claude/hooks/ask-user-post.sh"
+                    }
+                ]
+            }
+        ],
+        "Stop": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "~/.claude/hooks/flux-stop.sh"
+                    }
+                ]
+            }
+        ]
+    })
+}
 
 /// Loom permissions for WORKTREE context
-/// Uses parent traversal because .work is symlinked to ../../.work
+/// Includes both .work/** (symlink path as seen by Claude) and ../../.work/** (parent traversal)
+/// The symlink at .worktrees/stage-X/.work -> ../../.work means Claude sees paths as .work/**
+/// but the actual files are accessed via parent traversal
 pub const LOOM_PERMISSIONS_WORKTREE: &[&str] = &[
-    // Read/write access to work directory via parent (worktree is at .worktrees/stage-X/)
+    // Read/write access via symlink path (how Claude sees and requests the paths)
+    "Read(.work/**)",
+    "Write(.work/**)",
+    // Read/write access via parent traversal (alternative direct access pattern)
     "Read(../../.work/**)",
     "Write(../../.work/**)",
-    // Loom CLI commands
-    "Bash(loom *)",
-    "Bash(loom)",
+    // Read access to CLAUDE.md files (subagents need to read these explicitly)
+    "Read(.claude/**)",
+    "Read(~/.claude/**)",
+    // Loom CLI commands (use :* for prefix matching)
+    "Bash(loom:*)",
     // Tmux for session management
-    "Bash(tmux *)",
+    "Bash(tmux:*)",
 ];
 
-/// Ensure `.claude/settings.local.json` has loom permissions configured
+/// Ensure `.claude/settings.local.json` has loom permissions and hooks configured
 ///
 /// This function:
 /// 1. Creates `.claude/` directory if it doesn't exist
 /// 2. Creates `settings.local.json` if it doesn't exist
 /// 3. Merges loom permissions into existing file without duplicates
+/// 4. Configures loom hooks (referencing ~/.claude/hooks/*.sh)
 ///
 /// Since worktrees symlink `.claude/` to the main repo, these permissions
 /// automatically propagate to all loom sessions.
@@ -46,8 +92,12 @@ pub fn ensure_loom_permissions(repo_root: &Path) -> Result<()> {
 
     // Create .claude directory if needed
     if !claude_dir.exists() {
-        fs::create_dir_all(&claude_dir)
-            .with_context(|| format!("Failed to create .claude directory at {}", claude_dir.display()))?;
+        fs::create_dir_all(&claude_dir).with_context(|| {
+            format!(
+                "Failed to create .claude directory at {}",
+                claude_dir.display()
+            )
+        })?;
     }
 
     // Load existing settings or create new
@@ -62,7 +112,8 @@ pub fn ensure_loom_permissions(repo_root: &Path) -> Result<()> {
     };
 
     // Ensure settings is an object
-    let settings_obj = settings.as_object_mut()
+    let settings_obj = settings
+        .as_object_mut()
         .ok_or_else(|| anyhow::anyhow!("settings.local.json must be a JSON object"))?;
 
     // Get or create permissions object
@@ -70,15 +121,15 @@ pub fn ensure_loom_permissions(repo_root: &Path) -> Result<()> {
         .entry("permissions")
         .or_insert_with(|| json!({}));
 
-    let permissions_obj = permissions.as_object_mut()
+    let permissions_obj = permissions
+        .as_object_mut()
         .ok_or_else(|| anyhow::anyhow!("permissions must be a JSON object"))?;
 
     // Get or create allow array
-    let allow = permissions_obj
-        .entry("allow")
-        .or_insert_with(|| json!([]));
+    let allow = permissions_obj.entry("allow").or_insert_with(|| json!([]));
 
-    let allow_arr = allow.as_array_mut()
+    let allow_arr = allow
+        .as_array_mut()
         .ok_or_else(|| anyhow::anyhow!("permissions.allow must be a JSON array"))?;
 
     // Collect existing permissions as strings for deduplication
@@ -88,28 +139,95 @@ pub fn ensure_loom_permissions(repo_root: &Path) -> Result<()> {
         .collect();
 
     // Add missing loom permissions
-    let mut added_count = 0;
+    let mut added_permissions = 0;
     for permission in LOOM_PERMISSIONS {
         if !existing.contains(*permission) {
             allow_arr.push(json!(permission));
-            added_count += 1;
+            added_permissions += 1;
         }
     }
 
-    // Write back if we added any permissions
-    if added_count > 0 {
+    // Configure hooks (only if not already present)
+    let hooks_configured = configure_loom_hooks(settings_obj)?;
+
+    // Write back if we made any changes
+    if added_permissions > 0 || hooks_configured {
         let content = serde_json::to_string_pretty(&settings)
             .context("Failed to serialize settings to JSON")?;
 
         fs::write(&settings_path, content)
             .with_context(|| format!("Failed to write {}", settings_path.display()))?;
 
-        println!("  Updated .claude/settings.local.json with {} loom permission(s)", added_count);
+        if added_permissions > 0 {
+            println!(
+                "  Updated .claude/settings.local.json with {added_permissions} loom permission(s)"
+            );
+        }
+        if hooks_configured {
+            println!("  Configured loom hooks in .claude/settings.local.json");
+        }
     } else {
-        println!("  Claude Code permissions already configured");
+        println!("  Claude Code permissions and hooks already configured");
     }
 
     Ok(())
+}
+
+/// Configure loom hooks in settings object
+/// Returns true if hooks were added/updated, false if already configured
+fn configure_loom_hooks(settings_obj: &mut serde_json::Map<String, Value>) -> Result<bool> {
+    let loom_hooks = loom_hooks_config();
+
+    // Check if hooks already exist
+    if let Some(existing_hooks) = settings_obj.get("hooks") {
+        // Check if loom hooks are already configured by looking for our specific hooks
+        if let Some(hooks_obj) = existing_hooks.as_object() {
+            // Check for Stop hook with flux-stop.sh as marker
+            if let Some(stop_hooks) = hooks_obj.get("Stop") {
+                if let Some(stop_arr) = stop_hooks.as_array() {
+                    for hook_entry in stop_arr {
+                        if let Some(hooks) = hook_entry.get("hooks").and_then(|h| h.as_array()) {
+                            for hook in hooks {
+                                if let Some(cmd) = hook.get("command").and_then(|c| c.as_str()) {
+                                    if cmd.contains("flux-stop.sh") {
+                                        // Loom hooks already configured
+                                        return Ok(false);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Merge loom hooks into existing hooks or create new
+    let hooks = settings_obj.entry("hooks").or_insert_with(|| json!({}));
+
+    let hooks_obj = hooks
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("hooks must be a JSON object"))?;
+
+    // Add each hook type from loom config
+    if let Some(loom_hooks_obj) = loom_hooks.as_object() {
+        for (event_name, event_hooks) in loom_hooks_obj {
+            let event_arr = hooks_obj
+                .entry(event_name)
+                .or_insert_with(|| json!([]))
+                .as_array_mut()
+                .ok_or_else(|| anyhow::anyhow!("hooks.{event_name} must be an array"))?;
+
+            // Add loom hooks to the array
+            if let Some(new_hooks) = event_hooks.as_array() {
+                for hook in new_hooks {
+                    event_arr.push(hook.clone());
+                }
+            }
+        }
+    }
+
+    Ok(true)
 }
 
 /// Create `.claude/settings.local.json` for a worktree with worktree-specific permissions
@@ -123,15 +241,20 @@ pub fn create_worktree_settings(worktree_path: &Path) -> Result<()> {
 
     // Create .claude directory if needed
     if !claude_dir.exists() {
-        fs::create_dir_all(&claude_dir)
-            .with_context(|| format!("Failed to create .claude directory at {}", claude_dir.display()))?;
+        fs::create_dir_all(&claude_dir).with_context(|| {
+            format!(
+                "Failed to create .claude directory at {}",
+                claude_dir.display()
+            )
+        })?;
     }
 
-    // Generate settings with worktree-specific permissions
+    // Generate settings with worktree-specific permissions and hooks
     let settings = json!({
         "permissions": {
             "allow": LOOM_PERMISSIONS_WORKTREE
-        }
+        },
+        "hooks": loom_hooks_config()
     });
 
     let content = serde_json::to_string_pretty(&settings)
@@ -162,9 +285,8 @@ mod tests {
         let settings: Value = serde_json::from_str(&content).unwrap();
 
         let allow = settings["permissions"]["allow"].as_array().unwrap();
-        assert!(allow.iter().any(|v| v == "Bash(loom *)"));
-        assert!(allow.iter().any(|v| v == "Bash(loom)"));
-        assert!(allow.iter().any(|v| v == "Bash(tmux *)"));
+        assert!(allow.iter().any(|v| v == "Bash(loom:*)"));
+        assert!(allow.iter().any(|v| v == "Bash(tmux:*)"));
     }
 
     #[test]
@@ -178,14 +300,15 @@ mod tests {
         let existing = json!({
             "permissions": {
                 "allow": ["Read(src/**)"],
-                "deny": ["Bash(rm -rf *)"]
+                "deny": ["Bash(rm -rf:*)"]
             },
             "other_setting": true
         });
         fs::write(
             claude_dir.join("settings.local.json"),
             serde_json::to_string_pretty(&existing).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
 
         ensure_loom_permissions(repo_root).unwrap();
 
@@ -197,12 +320,12 @@ mod tests {
         assert!(allow.iter().any(|v| v == "Read(src/**)"));
 
         // Check loom CLI permissions added
-        assert!(allow.iter().any(|v| v == "Bash(loom *)"));
-        assert!(allow.iter().any(|v| v == "Bash(tmux *)"));
+        assert!(allow.iter().any(|v| v == "Bash(loom:*)"));
+        assert!(allow.iter().any(|v| v == "Bash(tmux:*)"));
 
         // Check deny list preserved
         let deny = settings["permissions"]["deny"].as_array().unwrap();
-        assert!(deny.iter().any(|v| v == "Bash(rm -rf *)"));
+        assert!(deny.iter().any(|v| v == "Bash(rm -rf:*)"));
 
         // Check other settings preserved
         assert_eq!(settings["other_setting"], true);
@@ -218,13 +341,14 @@ mod tests {
         // Create existing settings with some loom permissions already
         let existing = json!({
             "permissions": {
-                "allow": ["Bash(loom *)", "Bash(tmux *)"]
+                "allow": ["Bash(loom:*)", "Bash(tmux:*)"]
             }
         });
         fs::write(
             claude_dir.join("settings.local.json"),
             serde_json::to_string_pretty(&existing).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
 
         ensure_loom_permissions(repo_root).unwrap();
 
@@ -233,29 +357,120 @@ mod tests {
 
         let allow = settings["permissions"]["allow"].as_array().unwrap();
 
-        // Count occurrences of Bash(loom *) - should be exactly 1
-        let loom_count = allow.iter().filter(|v| *v == "Bash(loom *)").count();
+        // Count occurrences of Bash(loom:*) - should be exactly 1
+        let loom_count = allow.iter().filter(|v| *v == "Bash(loom:*)").count();
         assert_eq!(loom_count, 1);
     }
 
     #[test]
     fn test_loom_permissions_constant() {
         // Main repo only needs CLI permissions (.work/ is within repo root)
-        assert!(LOOM_PERMISSIONS.contains(&"Bash(loom *)"));
-        assert!(LOOM_PERMISSIONS.contains(&"Bash(loom)"));
-        assert!(LOOM_PERMISSIONS.contains(&"Bash(tmux *)"));
+        assert!(LOOM_PERMISSIONS.contains(&"Bash(loom:*)"));
+        assert!(LOOM_PERMISSIONS.contains(&"Bash(tmux:*)"));
         // Main repo should NOT have parent traversal permissions
         assert!(!LOOM_PERMISSIONS.iter().any(|p| p.contains("../../")));
     }
 
     #[test]
     fn test_worktree_permissions_constant() {
-        // Worktree needs parent traversal for .work access
+        // Worktree needs .work/** via symlink (how Claude sees the paths)
+        assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Read(.work/**)"));
+        assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Write(.work/**)"));
+        // Worktree also needs parent traversal for direct access
         assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Read(../../.work/**)"));
         assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Write(../../.work/**)"));
+        // Worktree needs CLAUDE.md access for subagents
+        assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Read(.claude/**)"));
+        assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Read(~/.claude/**)"));
         // Worktree also needs CLI permissions
-        assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Bash(loom *)"));
-        assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Bash(loom)"));
-        assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Bash(tmux *)"));
+        assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Bash(loom:*)"));
+        assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Bash(tmux:*)"));
+    }
+
+    #[test]
+    fn test_hooks_config_structure() {
+        let hooks = loom_hooks_config();
+        let hooks_obj = hooks.as_object().unwrap();
+
+        // Check PreToolUse hook
+        let pre_tool = hooks_obj.get("PreToolUse").unwrap().as_array().unwrap();
+        assert_eq!(pre_tool.len(), 1);
+        assert_eq!(pre_tool[0]["matcher"], "AskUserQuestion");
+        assert!(pre_tool[0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap()
+            .contains("ask-user-pre.sh"));
+
+        // Check PostToolUse hook
+        let post_tool = hooks_obj.get("PostToolUse").unwrap().as_array().unwrap();
+        assert_eq!(post_tool.len(), 1);
+        assert_eq!(post_tool[0]["matcher"], "AskUserQuestion");
+        assert!(post_tool[0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap()
+            .contains("ask-user-post.sh"));
+
+        // Check Stop hook
+        let stop = hooks_obj.get("Stop").unwrap().as_array().unwrap();
+        assert_eq!(stop.len(), 1);
+        assert!(stop[0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap()
+            .contains("flux-stop.sh"));
+    }
+
+    #[test]
+    fn test_ensure_loom_permissions_adds_hooks() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path();
+
+        ensure_loom_permissions(repo_root).unwrap();
+
+        let settings_path = repo_root.join(".claude/settings.local.json");
+        let content = fs::read_to_string(&settings_path).unwrap();
+        let settings: Value = serde_json::from_str(&content).unwrap();
+
+        // Check hooks are configured
+        let hooks = settings.get("hooks").expect("hooks should be present");
+        let hooks_obj = hooks.as_object().unwrap();
+
+        assert!(hooks_obj.contains_key("PreToolUse"));
+        assert!(hooks_obj.contains_key("PostToolUse"));
+        assert!(hooks_obj.contains_key("Stop"));
+    }
+
+    #[test]
+    fn test_hooks_not_duplicated_on_rerun() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path();
+
+        // Run twice
+        ensure_loom_permissions(repo_root).unwrap();
+        ensure_loom_permissions(repo_root).unwrap();
+
+        let settings_path = repo_root.join(".claude/settings.local.json");
+        let content = fs::read_to_string(&settings_path).unwrap();
+        let settings: Value = serde_json::from_str(&content).unwrap();
+
+        // Should still have exactly one Stop hook entry
+        let stop_hooks = settings["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(stop_hooks.len(), 1);
+    }
+
+    #[test]
+    fn test_worktree_settings_includes_hooks() {
+        let temp_dir = TempDir::new().unwrap();
+        let worktree_path = temp_dir.path();
+
+        create_worktree_settings(worktree_path).unwrap();
+
+        let settings_path = worktree_path.join(".claude/settings.local.json");
+        let content = fs::read_to_string(&settings_path).unwrap();
+        let settings: Value = serde_json::from_str(&content).unwrap();
+
+        // Check hooks are present
+        let hooks = settings.get("hooks").expect("hooks should be present");
+        let hooks_obj = hooks.as_object().unwrap();
+        assert!(hooks_obj.contains_key("Stop"));
     }
 }

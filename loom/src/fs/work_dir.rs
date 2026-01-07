@@ -52,7 +52,9 @@ impl WorkDir {
         for dir in &required_dirs {
             let path = self.root.join(dir);
             if !path.exists() {
-                bail!("Missing required directory: {dir}");
+                // Auto-create missing directories instead of failing
+                fs::create_dir(&path)
+                    .with_context(|| format!("Failed to create missing directory: {dir}"))?;
             }
         }
 
