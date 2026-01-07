@@ -61,21 +61,8 @@ pub fn create_worktree(stage_id: &str, repo_root: &Path) -> Result<Worktree> {
         }
     }
 
-    // Create symlink to main .work/ directory using relative path
-    // Worktree is at .worktrees/{stage_id}/, so relative path to .work is ../../.work
-    let main_work_dir = repo_root.join(".work");
-    let worktree_work_link = worktree_path.join(".work");
-    let relative_work_path = Path::new("../../.work");
-
-    if main_work_dir.exists() && !worktree_work_link.exists() {
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(relative_work_path, &worktree_work_link)
-            .with_context(|| "Failed to create .work symlink in worktree")?;
-
-        #[cfg(windows)]
-        std::os::windows::fs::symlink_dir(relative_work_path, &worktree_work_link)
-            .with_context(|| "Failed to create .work symlink in worktree")?;
-    }
+    // Create symlink to main .work/ directory
+    ensure_work_symlink(&worktree_path, repo_root)?;
 
     // Set up .claude/ directory for worktree with worktree-specific permissions
     // We create a real directory (not symlink) and:
@@ -113,6 +100,27 @@ pub fn create_worktree(stage_id: &str, repo_root: &Path) -> Result<Worktree> {
     worktree.mark_active();
 
     Ok(worktree)
+}
+
+/// Creates or restores the .work symlink in a worktree.
+///
+/// Used during worktree creation and merge failure recovery.
+/// The symlink points from .worktrees/{stage_id}/.work to ../../.work (the main repo's .work/).
+pub fn ensure_work_symlink(worktree_path: &Path, repo_root: &Path) -> Result<()> {
+    let main_work_dir = repo_root.join(".work");
+    let worktree_work_link = worktree_path.join(".work");
+    let relative_work_path = Path::new("../../.work");
+
+    if main_work_dir.exists() && !worktree_work_link.exists() {
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(relative_work_path, &worktree_work_link)
+            .with_context(|| "Failed to create .work symlink in worktree")?;
+
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(relative_work_path, &worktree_work_link)
+            .with_context(|| "Failed to create .work symlink in worktree")?;
+    }
+    Ok(())
 }
 
 /// Remove a worktree
@@ -270,11 +278,7 @@ pub fn get_or_create_worktree(stage_id: &str, repo_root: &Path) -> Result<Worktr
             // Verify it's actually tracked by git worktree list
             if is_valid_git_worktree(&worktree_path, repo_root)? {
                 // Valid worktree exists, return it
-                let mut worktree = Worktree::new(
-                    stage_id.to_string(),
-                    worktree_path,
-                    branch_name,
-                );
+                let mut worktree = Worktree::new(stage_id.to_string(), worktree_path, branch_name);
                 worktree.mark_active();
                 return Ok(worktree);
             }
@@ -285,8 +289,12 @@ pub fn get_or_create_worktree(stage_id: &str, repo_root: &Path) -> Result<Worktr
         let _ = clean_worktrees(repo_root);
 
         // Now remove the directory
-        std::fs::remove_dir_all(&worktree_path)
-            .with_context(|| format!("Failed to remove invalid worktree directory: {}", worktree_path.display()))?;
+        std::fs::remove_dir_all(&worktree_path).with_context(|| {
+            format!(
+                "Failed to remove invalid worktree directory: {}",
+                worktree_path.display()
+            )
+        })?;
     }
 
     // Create new worktree

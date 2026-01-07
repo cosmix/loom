@@ -12,8 +12,8 @@ pub mod worktree;
 // Re-export commonly used types and functions
 pub use worktree::{
     check_git_available, check_worktree_support, clean_worktrees, create_worktree,
-    get_or_create_worktree, get_worktree_path, list_worktrees, remove_worktree, worktree_exists,
-    WorktreeInfo,
+    ensure_work_symlink, get_or_create_worktree, get_worktree_path, list_worktrees,
+    remove_worktree, worktree_exists, WorktreeInfo,
 };
 
 pub use merge::{
