@@ -1,13 +1,13 @@
 //! Handoff file generation for session context exhaustion
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use chrono::Utc;
-use std::path::{Path, PathBuf};
 use std::fs;
+use std::path::{Path, PathBuf};
 
+use crate::git::branch::current_branch;
 use crate::models::session::Session;
 use crate::models::stage::Stage;
-use crate::git::branch::current_branch;
 
 /// Content for generating a handoff file
 #[derive(Debug, Clone)]
@@ -125,8 +125,12 @@ pub fn generate_handoff(
     // Ensure handoffs directory exists
     let handoffs_dir = work_dir.join("handoffs");
     if !handoffs_dir.exists() {
-        fs::create_dir_all(&handoffs_dir)
-            .with_context(|| format!("Failed to create handoffs directory: {}", handoffs_dir.display()))?;
+        fs::create_dir_all(&handoffs_dir).with_context(|| {
+            format!(
+                "Failed to create handoffs directory: {}",
+                handoffs_dir.display()
+            )
+        })?;
     }
 
     // Get next sequential number for this stage
@@ -165,7 +169,10 @@ fn format_handoff_markdown(content: &HandoffContent) -> Result<String> {
     if let Some(plan_id) = &content.plan_id {
         md.push_str(&format!("- **Plan**: {plan_id}\n"));
     }
-    md.push_str(&format!("- **Context**: {:.1}% (approaching threshold)\n\n", content.context_percent));
+    md.push_str(&format!(
+        "- **Context**: {:.1}% (approaching threshold)\n\n",
+        content.context_percent
+    ));
 
     // Goals
     md.push_str("## Goals (What We're Building)\n\n");
@@ -261,8 +268,12 @@ fn get_next_handoff_number(stage_id: &str, work_dir: &Path) -> Result<u32> {
     }
 
     // Read directory entries
-    let entries = fs::read_dir(&handoffs_dir)
-        .with_context(|| format!("Failed to read handoffs directory: {}", handoffs_dir.display()))?;
+    let entries = fs::read_dir(&handoffs_dir).with_context(|| {
+        format!(
+            "Failed to read handoffs directory: {}",
+            handoffs_dir.display()
+        )
+    })?;
 
     let mut max_number = 0u32;
     let prefix = format!("{stage_id}-handoff-");
@@ -300,8 +311,12 @@ pub fn find_latest_handoff(stage_id: &str, work_dir: &Path) -> Result<Option<Pat
     }
 
     // Read directory entries
-    let entries = fs::read_dir(&handoffs_dir)
-        .with_context(|| format!("Failed to read handoffs directory: {}", handoffs_dir.display()))?;
+    let entries = fs::read_dir(&handoffs_dir).with_context(|| {
+        format!(
+            "Failed to read handoffs directory: {}",
+            handoffs_dir.display()
+        )
+    })?;
 
     let mut max_number = 0u32;
     let mut latest_path: Option<PathBuf> = None;
@@ -394,9 +409,10 @@ mod tests {
             .with_context_percent(80.0)
             .with_goals("Implement authentication".to_string())
             .with_completed_work(vec!["Created login form".to_string()])
-            .with_decisions(vec![
-                ("Use JWT tokens".to_string(), "Industry standard".to_string()),
-            ])
+            .with_decisions(vec![(
+                "Use JWT tokens".to_string(),
+                "Industry standard".to_string(),
+            )])
             .with_next_steps(vec!["Add token refresh".to_string()]);
 
         let markdown = format_handoff_markdown(&content).unwrap();
@@ -413,9 +429,10 @@ mod tests {
     #[test]
     fn test_format_handoff_markdown_escapes_pipes() {
         let content = HandoffContent::new("session-1".to_string(), "stage-1".to_string())
-            .with_decisions(vec![
-                ("Choice with | pipe".to_string(), "Reason with | pipe".to_string()),
-            ]);
+            .with_decisions(vec![(
+                "Choice with | pipe".to_string(),
+                "Reason with | pipe".to_string(),
+            )]);
 
         let markdown = format_handoff_markdown(&content).unwrap();
 
