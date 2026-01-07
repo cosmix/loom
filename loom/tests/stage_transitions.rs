@@ -35,7 +35,11 @@ fn test_stage_transition_workflow() {
     let stages = list_all_stages(work_dir).expect("Should list stages");
     assert_eq!(stages.len(), 3);
 
-    // Complete and verify stage 1
+    // Complete and verify stage 1 (following proper state machine)
+    let stage1 = transition_stage("stage-1", StageStatus::Executing, work_dir)
+        .expect("Should start executing stage 1");
+    assert_eq!(stage1.status, StageStatus::Executing);
+
     let stage1 = transition_stage("stage-1", StageStatus::Completed, work_dir)
         .expect("Should complete stage 1");
     assert_eq!(stage1.status, StageStatus::Completed);
@@ -56,7 +60,9 @@ fn test_stage_transition_workflow() {
     let stage3 = load_stage("stage-3", work_dir).expect("Should load stage 3");
     assert_eq!(stage3.status, StageStatus::Pending);
 
-    // Complete and verify stage 2
+    // Complete and verify stage 2 (following proper state machine)
+    transition_stage("stage-2", StageStatus::Executing, work_dir)
+        .expect("Should start executing stage 2");
     transition_stage("stage-2", StageStatus::Completed, work_dir).expect("Should complete stage 2");
     transition_stage("stage-2", StageStatus::Verified, work_dir).expect("Should verify stage 2");
 
@@ -101,7 +107,11 @@ fn test_multiple_dependencies_all_satisfied() {
     let stage3 = load_stage("stage-3", work_dir).expect("Should load stage 3");
     assert_eq!(stage3.status, StageStatus::Pending);
 
-    // Verify stage 2 - now both dependencies are satisfied
+    // Complete and verify stage 2 (following proper state machine)
+    transition_stage("stage-2", StageStatus::Ready, work_dir).expect("Should mark stage 2 ready");
+    transition_stage("stage-2", StageStatus::Executing, work_dir)
+        .expect("Should start executing stage 2");
+    transition_stage("stage-2", StageStatus::Completed, work_dir).expect("Should complete stage 2");
     transition_stage("stage-2", StageStatus::Verified, work_dir).expect("Should verify stage 2");
 
     let triggered = trigger_dependents("stage-2", work_dir).expect("Should trigger dependents");

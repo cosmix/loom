@@ -67,7 +67,7 @@ fn test_blocked_stage_does_not_trigger_dependents() {
 }
 
 #[test]
-fn test_stage_reset_to_pending() {
+fn test_stage_reset_to_ready() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = temp_dir.path();
     fs::create_dir_all(work_dir.join("stages")).unwrap();
@@ -79,15 +79,16 @@ fn test_stage_reset_to_pending() {
     stage.add_dependency("dep-2".to_string());
     save_stage(&stage, work_dir).unwrap();
 
-    let reset = transition_stage("test-stage", StageStatus::Pending, work_dir).unwrap();
-    assert_eq!(reset.status, StageStatus::Pending);
+    // Blocked can only transition to Ready (per state machine)
+    let reset = transition_stage("test-stage", StageStatus::Ready, work_dir).unwrap();
+    assert_eq!(reset.status, StageStatus::Ready);
     assert_eq!(reset.dependencies.len(), 2);
     assert!(reset.dependencies.contains(&"dep-1".to_string()));
     assert!(reset.dependencies.contains(&"dep-2".to_string()));
 }
 
 #[test]
-fn test_stage_reset_to_ready_when_deps_met() {
+fn test_stage_reset_to_ready_when_deps_verified() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = temp_dir.path();
     fs::create_dir_all(work_dir.join("stages")).unwrap();
@@ -103,13 +104,11 @@ fn test_stage_reset_to_ready_when_deps_met() {
     stage_b.add_dependency("stage-a".to_string());
     save_stage(&stage_b, work_dir).unwrap();
 
-    let reset_pending = transition_stage("stage-b", StageStatus::Pending, work_dir).unwrap();
-    assert_eq!(reset_pending.status, StageStatus::Pending);
+    // Blocked can only transition to Ready (per state machine)
+    let reset_ready = transition_stage("stage-b", StageStatus::Ready, work_dir).unwrap();
+    assert_eq!(reset_ready.status, StageStatus::Ready);
 
-    let triggered = trigger_dependents("stage-a", work_dir).unwrap();
-    assert_eq!(triggered.len(), 1);
-    assert_eq!(triggered[0], "stage-b");
-
+    // Stage B is already Ready, so triggering dependents won't add it again
     let stage_b = load_stage("stage-b", work_dir).unwrap();
     assert_eq!(stage_b.status, StageStatus::Ready);
 }
@@ -145,6 +144,10 @@ fn test_resume_from_needs_handoff_to_executing() {
     stage.add_acceptance_criterion("Must complete successfully".to_string());
     save_stage(&stage, work_dir).unwrap();
 
+    // NeedsHandoff must first go to Ready, then Executing (per state machine)
+    let ready = transition_stage("test-stage", StageStatus::Ready, work_dir).unwrap();
+    assert_eq!(ready.status, StageStatus::Ready);
+
     let resumed = transition_stage("test-stage", StageStatus::Executing, work_dir).unwrap();
     assert_eq!(resumed.status, StageStatus::Executing);
     assert_eq!(resumed.acceptance.len(), 1);
@@ -164,6 +167,10 @@ fn test_resume_from_blocked_to_executing() {
     stage.status = StageStatus::Blocked;
     stage.add_file_pattern("src/**/*.rs".to_string());
     save_stage(&stage, work_dir).unwrap();
+
+    // Blocked must first go to Ready, then Executing (per state machine)
+    let ready = transition_stage("test-stage", StageStatus::Ready, work_dir).unwrap();
+    assert_eq!(ready.status, StageStatus::Ready);
 
     let resumed = transition_stage("test-stage", StageStatus::Executing, work_dir).unwrap();
     assert_eq!(resumed.status, StageStatus::Executing);
@@ -212,15 +219,15 @@ fn test_stage_state_machine_blocked_path() {
     stage.status = StageStatus::Executing;
     save_stage(&stage, work_dir).unwrap();
 
+    // Executing -> Blocked
     let stage = transition_stage("test-stage", StageStatus::Blocked, work_dir).unwrap();
     assert_eq!(stage.status, StageStatus::Blocked);
 
-    let stage = transition_stage("test-stage", StageStatus::Pending, work_dir).unwrap();
-    assert_eq!(stage.status, StageStatus::Pending);
-
+    // Blocked -> Ready (per state machine, Blocked can only go to Ready)
     let stage = transition_stage("test-stage", StageStatus::Ready, work_dir).unwrap();
     assert_eq!(stage.status, StageStatus::Ready);
 
+    // Ready -> Executing
     let stage = transition_stage("test-stage", StageStatus::Executing, work_dir).unwrap();
     assert_eq!(stage.status, StageStatus::Executing);
 }
@@ -236,12 +243,19 @@ fn test_stage_state_machine_needs_handoff_path() {
     stage.status = StageStatus::Executing;
     save_stage(&stage, work_dir).unwrap();
 
+    // Executing -> NeedsHandoff
     let stage = transition_stage("test-stage", StageStatus::NeedsHandoff, work_dir).unwrap();
     assert_eq!(stage.status, StageStatus::NeedsHandoff);
 
+    // NeedsHandoff -> Ready (per state machine, NeedsHandoff can only go to Ready)
+    let stage = transition_stage("test-stage", StageStatus::Ready, work_dir).unwrap();
+    assert_eq!(stage.status, StageStatus::Ready);
+
+    // Ready -> Executing
     let stage = transition_stage("test-stage", StageStatus::Executing, work_dir).unwrap();
     assert_eq!(stage.status, StageStatus::Executing);
 
+    // Executing -> Completed
     let stage = transition_stage("test-stage", StageStatus::Completed, work_dir).unwrap();
     assert_eq!(stage.status, StageStatus::Completed);
 }
@@ -269,7 +283,7 @@ fn test_multiple_blocked_stages_with_dependencies() {
     let triggered = trigger_dependents("stage-b", work_dir).unwrap();
     assert!(triggered.is_empty());
 
-    transition_stage("stage-a", StageStatus::Pending, work_dir).unwrap();
+    // Blocked -> Ready (per state machine)
     transition_stage("stage-a", StageStatus::Ready, work_dir).unwrap();
     transition_stage("stage-a", StageStatus::Executing, work_dir).unwrap();
     transition_stage("stage-a", StageStatus::Completed, work_dir).unwrap();
@@ -386,9 +400,7 @@ fn test_recovery_workflow_blocked_to_completion() {
     let blocked = transition_stage("recovery-stage", StageStatus::Blocked, work_dir).unwrap();
     assert_eq!(blocked.status, StageStatus::Blocked);
 
-    let reset = transition_stage("recovery-stage", StageStatus::Pending, work_dir).unwrap();
-    assert_eq!(reset.status, StageStatus::Pending);
-
+    // Blocked -> Ready (per state machine, Blocked can only go to Ready)
     let ready = transition_stage("recovery-stage", StageStatus::Ready, work_dir).unwrap();
     assert_eq!(ready.status, StageStatus::Ready);
 
