@@ -6,11 +6,11 @@ on:
       - main
       - master
     paths:
-      - "flux/**"
+      - "loom/**"
       - ".github/workflows/ci.yml"
   pull_request:
     paths:
-      - "flux/**"
+      - "loom/**"
       - ".github/workflows/ci.yml"
 
 env:
@@ -36,14 +36,14 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            flux/target/
-          key: ${{ runner.os }}-cargo-check-${{ hashFiles('flux/Cargo.lock') }}
+            loom/target/
+          key: ${{ runner.os }}-cargo-check-${{ hashFiles('loom/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-check-
             ${{ runner.os }}-cargo-
 
       - name: Run cargo check
-        working-directory: flux
+        working-directory: loom
         run: cargo check --all-targets
 
   test:
@@ -65,14 +65,14 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            flux/target/
-          key: ${{ runner.os }}-cargo-test-${{ hashFiles('flux/Cargo.lock') }}
+            loom/target/
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('loom/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-test-
             ${{ runner.os }}-cargo-
 
       - name: Run tests
-        working-directory: flux
+        working-directory: loom
         run: cargo test --all-targets
 
   clippy:
@@ -96,14 +96,14 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            flux/target/
-          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('flux/Cargo.lock') }}
+            loom/target/
+          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('loom/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-clippy-
             ${{ runner.os }}-cargo-
 
       - name: Run clippy
-        working-directory: flux
+        working-directory: loom
         run: cargo clippy --all-targets -- -D warnings
 
   fmt:
@@ -119,7 +119,7 @@ jobs:
           components: rustfmt
 
       - name: Check formatting
-        working-directory: flux
+        working-directory: loom
         run: cargo fmt --check
 
   audit:
@@ -136,5 +136,5 @@ jobs:
         run: cargo install cargo-audit --locked
 
       - name: Run security audit
-        working-directory: flux
+        working-directory: loom
         run: cargo audit

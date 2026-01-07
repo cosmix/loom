@@ -26,15 +26,15 @@ jobs:
           - name: linux-x86_64
             target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            binary_name: flux-linux-x86_64
+            binary_name: loom-linux-x86_64
           - name: darwin-x86_64
             target: x86_64-apple-darwin
             os: macos-13
-            binary_name: flux-darwin-x86_64
+            binary_name: loom-darwin-x86_64
           - name: darwin-arm64
             target: aarch64-apple-darwin
             os: macos-latest
-            binary_name: flux-darwin-arm64
+            binary_name: loom-darwin-arm64
 
     runs-on: ${{ matrix.os }}
 
@@ -55,27 +55,27 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            flux/target/
-          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('flux/Cargo.lock') }}
+            loom/target/
+          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('loom/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-${{ matrix.target }}-
             ${{ runner.os }}-cargo-
 
       - name: Build release binary
-        working-directory: flux
+        working-directory: loom
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Strip binary (Linux)
         if: runner.os == 'Linux'
-        run: strip flux/target/${{ matrix.target }}/release/flux
+        run: strip loom/target/${{ matrix.target }}/release/loom
 
       - name: Strip binary (macOS)
         if: runner.os == 'macOS'
-        run: strip flux/target/${{ matrix.target }}/release/flux
+        run: strip loom/target/${{ matrix.target }}/release/loom
 
       - name: Rename binary
         run: |
-          cp flux/target/${{ matrix.target }}/release/flux ${{ matrix.binary_name }}
+          cp loom/target/${{ matrix.target }}/release/loom ${{ matrix.binary_name }}
           chmod +x ${{ matrix.binary_name }}
 
       - name: Upload artifact
@@ -109,7 +109,7 @@ jobs:
           for dir in artifacts/*/; do
             cp "$dir"* release/ 2>/dev/null || true
           done
-          chmod +x release/flux-*
+          chmod +x release/loom-*
           ls -la release/
 
       - name: Install minisign
@@ -132,10 +132,10 @@ jobs:
           echo "$MINISIGN_PRIVATE_KEY" > "$KEYFILE"
 
           cd release
-          for binary in flux-*; do
+          for binary in loom-*; do
             if [ -f "$binary" ] && [ ! "${binary##*.}" = "minisig" ]; then
               echo "Signing $binary..."
-              minisign -Sm "$binary" -s "$KEYFILE" -t "Flux release binary"
+              minisign -Sm "$binary" -s "$KEYFILE" -t "loom release binary"
             fi
           done
 
@@ -146,7 +146,7 @@ jobs:
       - name: Generate SHA256 checksums
         run: |
           cd release
-          sha256sum flux-* > SHA256SUMS.txt
+          sha256sum loom-* > SHA256SUMS.txt
           echo "=== SHA256SUMS.txt ==="
           cat SHA256SUMS.txt
 
@@ -182,36 +182,36 @@ jobs:
         id: release_notes
         run: |
           cat > release_notes.md << 'RELEASE_NOTES_EOF'
-          ## Flux ${{ steps.version.outputs.version }}
+          ## loom ${{ steps.version.outputs.version }}
 
           ### Installation
 
           **Linux (x86_64):**
           ```bash
-          curl -sL https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/flux-linux-x86_64 -o flux
-          chmod +x flux
-          sudo mv flux /usr/local/bin/
+          curl -sL https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/loom-linux-x86_64 -o loom
+          chmod +x loom
+          sudo mv loom /usr/local/bin/
           ```
 
           **macOS (Apple Silicon):**
           ```bash
-          curl -sL https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/flux-darwin-arm64 -o flux
-          chmod +x flux
-          sudo mv flux /usr/local/bin/
+          curl -sL https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/loom-darwin-arm64 -o loom
+          chmod +x loom
+          sudo mv loom /usr/local/bin/
           ```
 
           **macOS (Intel):**
           ```bash
-          curl -sL https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/flux-darwin-x86_64 -o flux
-          chmod +x flux
-          sudo mv flux /usr/local/bin/
+          curl -sL https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/loom-darwin-x86_64 -o loom
+          chmod +x loom
+          sudo mv loom /usr/local/bin/
           ```
 
           ### Verify Signature
 
           Download the `.minisig` file alongside the binary and verify:
           ```bash
-          minisign -Vm flux-linux-x86_64 -P <PUBLIC_KEY>
+          minisign -Vm loom-linux-x86_64 -P <PUBLIC_KEY>
           ```
 
           ### Checksums
@@ -225,19 +225,19 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || !inputs.dry_run }}
         uses: softprops/action-gh-release@v2
         with:
-          name: Flux ${{ steps.version.outputs.version }}
+          name: loom ${{ steps.version.outputs.version }}
           tag_name: ${{ steps.version.outputs.tag }}
           draft: true
           prerelease: false
           generate_release_notes: true
           body_path: release_notes.md
           files: |
-            release/flux-linux-x86_64
-            release/flux-linux-x86_64.minisig
-            release/flux-darwin-x86_64
-            release/flux-darwin-x86_64.minisig
-            release/flux-darwin-arm64
-            release/flux-darwin-arm64.minisig
+            release/loom-linux-x86_64
+            release/loom-linux-x86_64.minisig
+            release/loom-darwin-x86_64
+            release/loom-darwin-x86_64.minisig
+            release/loom-darwin-arm64
+            release/loom-darwin-arm64.minisig
             release/SHA256SUMS.txt
             release/CLAUDE.template.md
             release/agents.zip
