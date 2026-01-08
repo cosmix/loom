@@ -117,17 +117,30 @@ impl Recovery for Orchestrator {
                 if let Some(stage_id) = &session.stage_id {
                     // Load the stage
                     if let Ok(mut stage) = self.load_stage(stage_id) {
-                        // Only recover if stage was Executing or Blocked due to crash
-                        if matches!(stage.status, StageStatus::Executing | StageStatus::Blocked) {
+                        // Recover if stage was Executing, NeedsHandoff, or Blocked due to crash
+                        if matches!(
+                            stage.status,
+                            StageStatus::Executing | StageStatus::NeedsHandoff | StageStatus::Blocked
+                        ) {
                             println!(
                                 "  Recovering orphaned stage: {} (was {:?})",
                                 stage_id, stage.status
                             );
 
-                            // Reset stage to Ready
-                            stage.status = StageStatus::Ready;
+                            // Reset stage to Ready using validated transition
+                            // NeedsHandoff -> Ready and Blocked -> Ready are valid transitions
+                            // Executing -> Ready is not valid, so we go through Blocked first
+                            if stage.status == StageStatus::Executing {
+                                // Executing -> Blocked -> Ready
+                                stage.status = StageStatus::Blocked;
+                            }
+                            // Now Blocked/NeedsHandoff -> Ready is valid
+                            if stage.try_mark_ready().is_err() {
+                                // Fallback: directly set status if transition fails
+                                stage.status = StageStatus::Ready;
+                            }
                             stage.session = None;
-                            stage.close_reason = None;
+                            stage.close_reason = Some("Session crashed/orphaned".to_string());
                             stage.updated_at = chrono::Utc::now();
                             self.save_stage(&stage)?;
 
