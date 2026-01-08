@@ -112,9 +112,7 @@ pub fn spawn_session(
     if let Some(logs_dir) = &config.logs_dir {
         if let Err(e) = enable_tmux_logging(&session_name, logs_dir, &stage.id) {
             // Log the error but don't fail session creation
-            eprintln!(
-                "Warning: Failed to enable tmux logging for session '{session_name}': {e}"
-            );
+            eprintln!("Warning: Failed to enable tmux logging for session '{session_name}': {e}");
         }
     }
 
@@ -239,12 +237,9 @@ fn enable_tmux_logging(
     }
 
     let log_path = logs_dir.join(format!("{stage_id}.log"));
-    let log_path_str = log_path.to_str().ok_or_else(|| {
-        anyhow!(
-            "Log path contains invalid UTF-8: {}",
-            log_path.display()
-        )
-    })?;
+    let log_path_str = log_path
+        .to_str()
+        .ok_or_else(|| anyhow!("Log path contains invalid UTF-8: {}", log_path.display()))?;
 
     // Use tmux pipe-pane to capture session output
     // The -o flag opens output pipe (as opposed to closing with empty command)
@@ -268,7 +263,11 @@ fn enable_tmux_logging(
 ///
 /// Returns the tail of the log file, useful for crash reports.
 /// Returns None if the log file doesn't exist or is empty.
-pub fn get_session_log_tail(logs_dir: &std::path::Path, stage_id: &str, lines: usize) -> Option<String> {
+pub fn get_session_log_tail(
+    logs_dir: &std::path::Path,
+    stage_id: &str,
+    lines: usize,
+) -> Option<String> {
     let log_path = logs_dir.join(format!("{stage_id}.log"));
 
     if !log_path.exists() {
@@ -362,22 +361,28 @@ pub fn generate_crash_report(
 ) -> Result<PathBuf> {
     // Ensure crashes directory exists
     if !crashes_dir.exists() {
-        std::fs::create_dir_all(crashes_dir)
-            .with_context(|| format!("Failed to create crashes directory: {}", crashes_dir.display()))?;
+        std::fs::create_dir_all(crashes_dir).with_context(|| {
+            format!(
+                "Failed to create crashes directory: {}",
+                crashes_dir.display()
+            )
+        })?;
     }
 
     // Get log tail if we have a stage_id and it's not already set
     let log_tail = report.log_tail.clone().or_else(|| {
-        report.stage_id.as_ref().and_then(|stage_id| {
-            get_session_log_tail(logs_dir, stage_id, 100)
-        })
+        report
+            .stage_id
+            .as_ref()
+            .and_then(|stage_id| get_session_log_tail(logs_dir, stage_id, 100))
     });
 
     // Determine log path
     let log_path = report.log_path.clone().or_else(|| {
-        report.stage_id.as_ref().map(|stage_id| {
-            logs_dir.join(format!("{stage_id}.log"))
-        })
+        report
+            .stage_id
+            .as_ref()
+            .map(|stage_id| logs_dir.join(format!("{stage_id}.log")))
     });
 
     // Generate filename with timestamp
@@ -393,7 +398,10 @@ pub fn generate_crash_report(
     // Build the crash report content
     let mut content = String::new();
     content.push_str("---\n");
-    content.push_str(&format!("detected_at: \"{}\"\n", report.detected_at.to_rfc3339()));
+    content.push_str(&format!(
+        "detected_at: \"{}\"\n",
+        report.detected_at.to_rfc3339()
+    ));
     content.push_str(&format!("session_id: \"{}\"\n", report.session_id));
     if let Some(stage_id) = &report.stage_id {
         content.push_str(&format!("stage_id: \"{stage_id}\"\n"));
@@ -404,7 +412,10 @@ pub fn generate_crash_report(
     if let Some(code) = report.exit_code {
         content.push_str(&format!("exit_code: {code}\n"));
     }
-    content.push_str(&format!("reason: \"{}\"\n", report.reason.replace('"', "\\\"")));
+    content.push_str(&format!(
+        "reason: \"{}\"\n",
+        report.reason.replace('"', "\\\"")
+    ));
     if let Some(path) = &log_path {
         content.push_str(&format!("log_file: \"{}\"\n", path.display()));
     }
@@ -412,7 +423,10 @@ pub fn generate_crash_report(
 
     content.push_str("# Crash Report\n\n");
     content.push_str("## Summary\n\n");
-    content.push_str(&format!("- **Detected**: {}\n", report.detected_at.to_rfc3339()));
+    content.push_str(&format!(
+        "- **Detected**: {}\n",
+        report.detected_at.to_rfc3339()
+    ));
     content.push_str(&format!("- **Session**: `{}`\n", report.session_id));
     if let Some(stage_id) = &report.stage_id {
         content.push_str(&format!("- **Stage**: `{stage_id}`\n"));
@@ -683,10 +697,7 @@ mod tests {
 
         assert_eq!(config.max_parallel_sessions, 8);
         assert_eq!(config.tmux_prefix, "custom");
-        assert_eq!(
-            config.logs_dir,
-            Some(std::path::PathBuf::from("/tmp/logs"))
-        );
+        assert_eq!(config.logs_dir, Some(std::path::PathBuf::from("/tmp/logs")));
     }
 
     #[test]

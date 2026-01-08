@@ -299,10 +299,7 @@ pub fn add_worktrees_to_global_trust(repo_root: &Path) -> Result<()> {
             .with_context(|| format!("Failed to read {}", global_settings_path.display()))?;
 
         serde_json::from_str(&content).with_context(|| {
-            format!(
-                "Failed to parse {} as JSON",
-                global_settings_path.display()
-            )
+            format!("Failed to parse {} as JSON", global_settings_path.display())
         })?
     } else {
         json!({})

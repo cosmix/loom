@@ -269,8 +269,9 @@ impl Monitor {
                     if let Ok(is_alive) = self.check_tmux_session_alive(tmux_name) {
                         if !is_alive {
                             // Generate crash report
-                            let crash_report_path = self.handle_session_crash(session, "Tmux session no longer running");
-                            
+                            let crash_report_path = self
+                                .handle_session_crash(session, "Tmux session no longer running");
+
                             events.push(MonitorEvent::SessionCrashed {
                                 session_id: session.id.clone(),
                                 stage_id: session.stage_id.clone(),
@@ -288,8 +289,9 @@ impl Monitor {
             if previous_status != Some(current_status) {
                 if current_status == &SessionStatus::Crashed {
                     // Generate crash report
-                    let crash_report_path = self.handle_session_crash(session, "Session marked as crashed");
-                    
+                    let crash_report_path =
+                        self.handle_session_crash(session, "Session marked as crashed");
+
                     events.push(MonitorEvent::SessionCrashed {
                         session_id: session.id.clone(),
                         stage_id: session.stage_id.clone(),
@@ -377,7 +379,7 @@ impl Monitor {
 
     /// Handle session crash by generating a crash report
     ///
-    /// Called when a session crash is detected. 
+    /// Called when a session crash is detected.
     /// Creates a CrashReport and generates the crash report file.
     fn handle_session_crash(&self, session: &Session, reason: &str) -> Option<PathBuf> {
         let mut report = CrashReport::new(
@@ -394,14 +396,17 @@ impl Monitor {
         // Generate the crash report
         let crashes_dir = self.config.work_dir.join("crashes");
         let logs_dir = self.config.work_dir.join("logs");
-        
+
         match generate_crash_report(&report, &crashes_dir, &logs_dir) {
             Ok(path) => {
                 eprintln!("Generated crash report: {}", path.display());
                 Some(path)
             }
             Err(e) => {
-                eprintln!("Failed to generate crash report for session '{}': {}", session.id, e);
+                eprintln!(
+                    "Failed to generate crash report for session '{}': {}",
+                    session.id, e
+                );
                 None
             }
         }

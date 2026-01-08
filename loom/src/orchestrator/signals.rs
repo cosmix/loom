@@ -184,10 +184,14 @@ fn format_signal_content(
 
     // Worktree context - self-contained signal
     content.push_str("## Worktree Context\n\n");
-    content.push_str("You are in an **isolated git worktree**. This signal contains everything you need:\n\n");
+    content.push_str(
+        "You are in an **isolated git worktree**. This signal contains everything you need:\n\n",
+    );
     content.push_str("- **Your stage assignment and acceptance criteria are below** - this file is self-contained\n");
     content.push_str("- **Access `.work/` via symlink** for handoffs and structure map\n");
-    content.push_str("- **Commit to your worktree branch** - it will be merged after verification\n\n");
+    content.push_str(
+        "- **Commit to your worktree branch** - it will be merged after verification\n\n",
+    );
 
     // Add reminder to follow CLAUDE.md rules
     content.push_str("## Execution Rules\n\n");
@@ -203,7 +207,9 @@ fn format_signal_content(
     content.push_str(&format!("- **Session**: {}\n", session.id));
     content.push_str(&format!("- **Stage**: {}\n", stage.id));
     if let Some(plan_id) = &stage.plan_id {
-        content.push_str(&format!("- **Plan**: {plan_id} (reference only - content embedded below)\n"));
+        content.push_str(&format!(
+            "- **Plan**: {plan_id} (reference only - content embedded below)\n"
+        ));
     }
     content.push_str(&format!("- **Worktree**: {}\n", worktree.path.display()));
     content.push_str(&format!("- **Branch**: {}\n", worktree.branch));
@@ -383,7 +389,9 @@ fn parse_signal_content(session_id: &str, content: &str) -> Result<SignalContent
                 if let Some(file) = trimmed.strip_prefix("- `") {
                     if let Some(f) = file
                         .strip_suffix("` - Stage definition")
-                        .or_else(|| file.strip_suffix("` - **READ THIS FIRST** - Previous session handoff"))
+                        .or_else(|| {
+                            file.strip_suffix("` - **READ THIS FIRST** - Previous session handoff")
+                        })
                         .or_else(|| file.strip_suffix("` - Previous handoff"))
                         .or_else(|| file.strip_suffix("` - Codebase structure map (if exists)"))
                         .or_else(|| file.strip_suffix("` - Relevant code to modify"))

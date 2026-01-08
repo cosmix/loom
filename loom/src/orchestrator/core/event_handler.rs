@@ -29,7 +29,12 @@ pub(super) trait EventHandler: Persistence {
     fn on_stage_completed(&mut self, stage_id: &str) -> Result<()>;
 
     /// Handle session crash
-    fn on_session_crashed(&mut self, session_id: &str, stage_id: Option<String>, crash_report_path: Option<PathBuf>) -> Result<()>;
+    fn on_session_crashed(
+        &mut self,
+        session_id: &str,
+        stage_id: Option<String>,
+        crash_report_path: Option<PathBuf>,
+    ) -> Result<()>;
 
     /// Handle context exhaustion (needs handoff)
     fn on_needs_handoff(&mut self, session_id: &str, stage_id: &str) -> Result<()>;
@@ -107,7 +112,12 @@ impl EventHandler for Orchestrator {
         Ok(())
     }
 
-    fn on_session_crashed(&mut self, session_id: &str, stage_id: Option<String>, crash_report_path: Option<PathBuf>) -> Result<()> {
+    fn on_session_crashed(
+        &mut self,
+        session_id: &str,
+        stage_id: Option<String>,
+        crash_report_path: Option<PathBuf>,
+    ) -> Result<()> {
         // Check if we've already reported this crash to avoid duplicate messages
         if self.reported_crashes.contains(session_id) {
             return Ok(());
@@ -127,14 +137,17 @@ impl EventHandler for Orchestrator {
 
             clear_status_line();
             eprintln!("Session '{session_id}' crashed for stage '{sid}'");
-            
+
             if let Some(path) = crash_report_path {
                 eprintln!("Crash report generated: {}", path.display());
-                stage.close_reason = Some(format!("Session crashed - see crash report at {}", path.display()));
+                stage.close_reason = Some(format!(
+                    "Session crashed - see crash report at {}",
+                    path.display()
+                ));
             } else {
                 stage.close_reason = Some("Session crashed".to_string());
             }
-            
+
             stage.status = StageStatus::Blocked;
             self.save_stage(&stage)?;
 

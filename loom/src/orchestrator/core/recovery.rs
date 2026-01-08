@@ -128,7 +128,9 @@ impl Recovery for Orchestrator {
                         // Recover if stage was Executing, NeedsHandoff, or Blocked due to crash
                         if matches!(
                             stage.status,
-                            StageStatus::Executing | StageStatus::NeedsHandoff | StageStatus::Blocked
+                            StageStatus::Executing
+                                | StageStatus::NeedsHandoff
+                                | StageStatus::Blocked
                         ) {
                             clear_status_line();
                             eprintln!(

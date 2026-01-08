@@ -1,8 +1,12 @@
 use crate::fs::work_dir::WorkDir;
-use crate::handoff::{find_latest_handoff, load_handoff_content};
+use crate::handoff::{
+    continue_session, find_latest_handoff, load_handoff_content, prepare_continuation,
+    ContinuationConfig,
+};
 use crate::models::stage::StageStatus;
+use crate::models::worktree::Worktree;
 use crate::verify::transitions::{load_stage, save_stage};
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use std::io::{stdin, stdout, Write};
 
 /// Resume failed/blocked stages with handoff context
@@ -53,23 +57,65 @@ pub fn execute(stage_id: String) -> Result<()> {
         return Ok(());
     }
 
-    stage.try_mark_executing()?;
-    save_stage(&stage, work_dir.root())?;
+    // Prepare continuation context
+    let context = prepare_continuation(&stage_id, work_dir.root())
+        .context("Failed to prepare continuation context")?;
 
-    println!("\nStage status updated to Executing");
+    // Create continuation configuration with auto_spawn enabled
+    let config = ContinuationConfig {
+        auto_spawn: true,
+        ..Default::default()
+    };
 
-    if let Some(worktree) = &stage.worktree {
-        let project_root = work_dir.root().parent().unwrap_or(work_dir.root());
-        let worktree_path = project_root.join(".worktrees").join(worktree);
-        println!("\nManual session start required:");
-        println!("  cd {}", worktree_path.display());
+    // Check if we have a worktree to spawn the session in
+    if let Some(worktree_id) = &stage.worktree {
+        // Create worktree object for the continuation
+        let worktree = Worktree::new(
+            worktree_id.clone(),
+            context.worktree_path.clone(),
+            context.branch.clone(),
+        );
+
+        // Spawn the tmux session with handoff context
+        let session = continue_session(
+            &context.stage,
+            context.handoff_path.as_deref(),
+            &worktree,
+            &config,
+            work_dir.root(),
+        )
+        .context("Failed to spawn continuation session")?;
+
+        // Update stage status to Executing
+        stage.try_mark_executing()?;
+        save_stage(&stage, work_dir.root())?;
+
+        println!("\n✓ Stage status updated to Executing");
+        println!(
+            "✓ Spawned tmux session: {}",
+            session.tmux_session.as_ref().unwrap_or(&"none".to_string())
+        );
+        println!("\nTo attach to the session:");
+        println!(
+            "  tmux attach -t {}",
+            session.tmux_session.as_ref().unwrap_or(&"none".to_string())
+        );
+
         if let Some(ref path) = handoff_path {
-            println!("  # Review handoff: {}", path.display());
+            println!("\nHandoff context loaded from: {}", path.display());
         }
-        println!("  # Continue work on stage");
     } else {
-        println!("\nNo worktree assigned to this stage.");
-        println!("Work can be resumed in the main directory.");
+        // No worktree assigned - just update the status
+        stage.try_mark_executing()?;
+        save_stage(&stage, work_dir.root())?;
+
+        println!("\n✓ Stage status updated to Executing");
+        println!("\n⚠️  No worktree assigned to this stage.");
+        println!("Work can be resumed manually in the main directory.");
+
+        if let Some(ref path) = handoff_path {
+            println!("\nHandoff available at: {}", path.display());
+        }
     }
 
     Ok(())
