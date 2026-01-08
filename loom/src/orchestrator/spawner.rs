@@ -1,7 +1,9 @@
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use shell_escape::escape;
 use std::borrow::Cow;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::models::session::Session;
@@ -13,6 +15,7 @@ use crate::models::worktree::Worktree;
 pub struct SpawnerConfig {
     pub max_parallel_sessions: usize,
     pub tmux_prefix: String,
+    pub logs_dir: Option<std::path::PathBuf>,
 }
 
 impl Default for SpawnerConfig {
@@ -20,6 +23,7 @@ impl Default for SpawnerConfig {
         Self {
             max_parallel_sessions: 4,
             tmux_prefix: "loom".to_string(),
+            logs_dir: None,
         }
     }
 }
@@ -102,6 +106,16 @@ pub fn spawn_session(
     if !create_output.status.success() {
         let stderr = String::from_utf8_lossy(&create_output.stderr);
         return Err(anyhow!("Failed to create tmux session: {stderr}"));
+    }
+
+    // Enable tmux logging if logs_dir is configured
+    if let Some(logs_dir) = &config.logs_dir {
+        if let Err(e) = enable_tmux_logging(&session_name, logs_dir, &stage.id) {
+            // Log the error but don't fail session creation
+            eprintln!(
+                "Warning: Failed to enable tmux logging for session '{session_name}': {e}"
+            );
+        }
     }
 
     // Build the initial prompt that instructs Claude Code to read the signal file
@@ -207,6 +221,241 @@ fn kill_session_by_name(session_name: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Enable tmux logging for a session
+///
+/// Uses `tmux pipe-pane` to capture all session output to a log file.
+/// The log file is named `{stage_id}.log` and stored in the logs directory.
+fn enable_tmux_logging(
+    session_name: &str,
+    logs_dir: &std::path::Path,
+    stage_id: &str,
+) -> Result<()> {
+    // Ensure logs directory exists
+    if !logs_dir.exists() {
+        std::fs::create_dir_all(logs_dir)
+            .with_context(|| format!("Failed to create logs directory: {}", logs_dir.display()))?;
+    }
+
+    let log_path = logs_dir.join(format!("{stage_id}.log"));
+    let log_path_str = log_path.to_str().ok_or_else(|| {
+        anyhow!(
+            "Log path contains invalid UTF-8: {}",
+            log_path.display()
+        )
+    })?;
+
+    // Use tmux pipe-pane to capture session output
+    // The -o flag opens output pipe (as opposed to closing with empty command)
+    // We use 'cat >> file' to append output to the log file
+    let pipe_command = format!("cat >> {log_path_str}");
+
+    let output = Command::new("tmux")
+        .args(["pipe-pane", "-o", "-t", session_name, &pipe_command])
+        .output()
+        .context("Failed to enable tmux logging")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!("Failed to enable tmux pipe-pane: {stderr}"));
+    }
+
+    Ok(())
+}
+
+/// Get the last N lines from a session log file
+///
+/// Returns the tail of the log file, useful for crash reports.
+/// Returns None if the log file doesn't exist or is empty.
+pub fn get_session_log_tail(logs_dir: &std::path::Path, stage_id: &str, lines: usize) -> Option<String> {
+    let log_path = logs_dir.join(format!("{stage_id}.log"));
+
+    if !log_path.exists() {
+        return None;
+    }
+
+    let content = std::fs::read_to_string(&log_path).ok()?;
+    if content.is_empty() {
+        return None;
+    }
+
+    let all_lines: Vec<&str> = content.lines().collect();
+    let start = all_lines.len().saturating_sub(lines);
+    let tail_lines: Vec<&str> = all_lines[start..].to_vec();
+
+    Some(tail_lines.join("\n"))
+}
+
+/// Content for a crash report
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrashReport {
+    /// When the crash was detected
+    pub detected_at: DateTime<Utc>,
+    /// Session ID that crashed
+    pub session_id: String,
+    /// Stage ID associated with the crash
+    pub stage_id: Option<String>,
+    /// Tmux session name
+    pub tmux_session: Option<String>,
+    /// Exit code if available
+    pub exit_code: Option<i32>,
+    /// Error message or crash reason
+    pub reason: String,
+    /// Last N lines from the tmux log
+    pub log_tail: Option<String>,
+    /// Path to the full tmux log file
+    pub log_path: Option<PathBuf>,
+}
+
+impl CrashReport {
+    /// Create a new crash report
+    pub fn new(session_id: String, stage_id: Option<String>, reason: String) -> Self {
+        Self {
+            detected_at: Utc::now(),
+            session_id,
+            stage_id,
+            tmux_session: None,
+            exit_code: None,
+            reason,
+            log_tail: None,
+            log_path: None,
+        }
+    }
+
+    /// Set the tmux session name
+    pub fn with_tmux_session(mut self, tmux_session: String) -> Self {
+        self.tmux_session = Some(tmux_session);
+        self
+    }
+
+    /// Set the exit code
+    pub fn with_exit_code(mut self, exit_code: i32) -> Self {
+        self.exit_code = Some(exit_code);
+        self
+    }
+
+    /// Set the log tail from captured tmux output
+    pub fn with_log_tail(mut self, log_tail: String) -> Self {
+        self.log_tail = Some(log_tail);
+        self
+    }
+
+    /// Set the path to the full log file
+    pub fn with_log_path(mut self, log_path: PathBuf) -> Self {
+        self.log_path = Some(log_path);
+        self
+    }
+}
+
+/// Generate a crash report file in the crashes directory
+///
+/// Creates a markdown file with crash diagnostics including:
+/// - Timestamp and session/stage info
+/// - Crash reason
+/// - Last N lines of tmux log output
+/// - Path to full log file for detailed investigation
+pub fn generate_crash_report(
+    report: &CrashReport,
+    crashes_dir: &Path,
+    logs_dir: &Path,
+) -> Result<PathBuf> {
+    // Ensure crashes directory exists
+    if !crashes_dir.exists() {
+        std::fs::create_dir_all(crashes_dir)
+            .with_context(|| format!("Failed to create crashes directory: {}", crashes_dir.display()))?;
+    }
+
+    // Get log tail if we have a stage_id and it's not already set
+    let log_tail = report.log_tail.clone().or_else(|| {
+        report.stage_id.as_ref().and_then(|stage_id| {
+            get_session_log_tail(logs_dir, stage_id, 100)
+        })
+    });
+
+    // Determine log path
+    let log_path = report.log_path.clone().or_else(|| {
+        report.stage_id.as_ref().map(|stage_id| {
+            logs_dir.join(format!("{stage_id}.log"))
+        })
+    });
+
+    // Generate filename with timestamp
+    let timestamp = report.detected_at.format("%Y%m%d-%H%M%S");
+    let filename = if let Some(stage_id) = &report.stage_id {
+        format!("{timestamp}-{stage_id}.md")
+    } else {
+        format!("{timestamp}-{}.md", report.session_id)
+    };
+
+    let crash_path = crashes_dir.join(&filename);
+
+    // Build the crash report content
+    let mut content = String::new();
+    content.push_str("---\n");
+    content.push_str(&format!("detected_at: \"{}\"\n", report.detected_at.to_rfc3339()));
+    content.push_str(&format!("session_id: \"{}\"\n", report.session_id));
+    if let Some(stage_id) = &report.stage_id {
+        content.push_str(&format!("stage_id: \"{stage_id}\"\n"));
+    }
+    if let Some(tmux) = &report.tmux_session {
+        content.push_str(&format!("tmux_session: \"{tmux}\"\n"));
+    }
+    if let Some(code) = report.exit_code {
+        content.push_str(&format!("exit_code: {code}\n"));
+    }
+    content.push_str(&format!("reason: \"{}\"\n", report.reason.replace('"', "\\\"")));
+    if let Some(path) = &log_path {
+        content.push_str(&format!("log_file: \"{}\"\n", path.display()));
+    }
+    content.push_str("---\n\n");
+
+    content.push_str("# Crash Report\n\n");
+    content.push_str("## Summary\n\n");
+    content.push_str(&format!("- **Detected**: {}\n", report.detected_at.to_rfc3339()));
+    content.push_str(&format!("- **Session**: `{}`\n", report.session_id));
+    if let Some(stage_id) = &report.stage_id {
+        content.push_str(&format!("- **Stage**: `{stage_id}`\n"));
+    }
+    if let Some(tmux) = &report.tmux_session {
+        content.push_str(&format!("- **Tmux Session**: `{tmux}`\n"));
+    }
+    if let Some(code) = report.exit_code {
+        content.push_str(&format!("- **Exit Code**: {code}\n"));
+    }
+    content.push_str(&format!("- **Reason**: {}\n", report.reason));
+    content.push('\n');
+
+    if let Some(tail) = &log_tail {
+        content.push_str("## Last 100 Lines of Log\n\n");
+        content.push_str("```\n");
+        content.push_str(tail);
+        if !tail.ends_with('\n') {
+            content.push('\n');
+        }
+        content.push_str("```\n\n");
+    } else {
+        content.push_str("## Log Output\n\n");
+        content.push_str("*No log output captured. Tmux logging may not have been enabled.*\n\n");
+    }
+
+    if let Some(path) = &log_path {
+        if path.exists() {
+            content.push_str("## Full Log File\n\n");
+            content.push_str(&format!("See full output at: `{}`\n", path.display()));
+        }
+    }
+
+    content.push_str("\n## Recovery\n\n");
+    content.push_str("This stage has been marked as blocked. To retry:\n\n");
+    content.push_str("1. Investigate the crash cause using the log output above\n");
+    content.push_str("2. Fix any issues in the codebase or configuration\n");
+    content.push_str("3. Run `loom resume <stage-id>` to retry the stage\n");
+
+    std::fs::write(&crash_path, &content)
+        .with_context(|| format!("Failed to write crash report: {}", crash_path.display()))?;
+
+    Ok(crash_path)
 }
 
 /// Set an environment variable in a tmux session
@@ -429,10 +678,63 @@ mod tests {
         let config = SpawnerConfig {
             max_parallel_sessions: 8,
             tmux_prefix: "custom".to_string(),
+            logs_dir: Some(std::path::PathBuf::from("/tmp/logs")),
         };
 
         assert_eq!(config.max_parallel_sessions, 8);
         assert_eq!(config.tmux_prefix, "custom");
+        assert_eq!(
+            config.logs_dir,
+            Some(std::path::PathBuf::from("/tmp/logs"))
+        );
+    }
+
+    #[test]
+    fn test_get_session_log_tail_nonexistent() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let result = get_session_log_tail(temp.path(), "nonexistent-stage", 100);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_session_log_tail_empty_file() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let log_path = temp.path().join("empty-stage.log");
+        std::fs::write(&log_path, "").unwrap();
+
+        let result = get_session_log_tail(temp.path(), "empty-stage", 100);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_session_log_tail_small_file() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let log_path = temp.path().join("test-stage.log");
+        std::fs::write(&log_path, "line1\nline2\nline3").unwrap();
+
+        let result = get_session_log_tail(temp.path(), "test-stage", 100);
+        assert!(result.is_some());
+        let content = result.unwrap();
+        assert!(content.contains("line1"));
+        assert!(content.contains("line2"));
+        assert!(content.contains("line3"));
+    }
+
+    #[test]
+    fn test_get_session_log_tail_truncates() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let log_path = temp.path().join("big-stage.log");
+        let lines: Vec<String> = (1..=100).map(|i| format!("line{i}")).collect();
+        std::fs::write(&log_path, lines.join("\n")).unwrap();
+
+        let result = get_session_log_tail(temp.path(), "big-stage", 10);
+        assert!(result.is_some());
+        let content = result.unwrap();
+        // Should only have the last 10 lines (line91-line100)
+        assert!(!content.contains("line1\n"));
+        assert!(!content.contains("line90\n"));
+        assert!(content.contains("line91"));
+        assert!(content.contains("line100"));
     }
 
     #[test]

@@ -20,7 +20,8 @@ impl WorkDir {
         fs::create_dir_all(&self.root).context("Failed to create .work directory")?;
 
         let subdirs = [
-            "runners", "tracks", "signals", "handoffs", "archive", "stages", "sessions",
+            "runners", "tracks", "signals", "handoffs", "archive", "stages", "sessions", "logs",
+            "crashes",
         ];
 
         for subdir in &subdirs {
@@ -57,7 +58,8 @@ impl WorkDir {
 
     fn validate_structure(&self) -> Result<()> {
         let required_dirs = [
-            "runners", "tracks", "signals", "handoffs", "archive", "stages", "sessions",
+            "runners", "tracks", "signals", "handoffs", "archive", "stages", "sessions", "logs",
+            "crashes",
         ];
 
         for dir in &required_dirs {
@@ -84,6 +86,7 @@ This directory is managed by loom CLI and contains:
 - `archive/` - Archived entities
 - `stages/` - Stage definitions and status
 - `sessions/` - Active session tracking
+- `logs/` - Tmux session logs and crash reports
 
 Do not manually edit these files unless you know what you're doing.
 "#;
@@ -165,6 +168,14 @@ src/
 
     pub fn sessions_dir(&self) -> PathBuf {
         self.root.join("sessions")
+    }
+
+    pub fn logs_dir(&self) -> PathBuf {
+        self.root.join("logs")
+    }
+
+    pub fn crashes_dir(&self) -> PathBuf {
+        self.root.join("crashes")
     }
 
     pub fn root(&self) -> &Path {

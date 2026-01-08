@@ -85,6 +85,7 @@ impl StageExecutor for Orchestrator {
             let spawner_config = SpawnerConfig {
                 max_parallel_sessions: self.config.max_parallel_sessions,
                 tmux_prefix: self.config.tmux_prefix.clone(),
+                logs_dir: Some(self.config.work_dir.join("logs")),
             };
 
             let spawned = spawn_session(&stage, &worktree, &spawner_config, session, &signal_path)
