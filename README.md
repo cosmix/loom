@@ -179,69 +179,6 @@ With orchestration rules, Claude will:
 4. Each agent loads relevant skills (python, refactoring, testing)
 5. Results merge back without exhausting main context
 
-## System Requirements
-
-### Linux: File Descriptor Limits
-
-Running multiple concurrent Claude Code sessions requires sufficient file descriptors. The default limit (`ulimit -n 1024`) is too low and can cause tmux to crash under load.
-
-**Check your current limit:**
-
-```bash
-ulimit -n
-```
-
-**Increase temporarily (current session):**
-
-```bash
-ulimit -n 65536
-```
-
-**Increase permanently** - add to `~/.bashrc` or `~/.zshrc`:
-
-```bash
-ulimit -n 65536
-```
-
-**Or system-wide** - add to `/etc/security/limits.conf`:
-
-```
-*               soft    nofile          65536
-*               hard    nofile          65536
-```
-
-Then log out and back in.
-
-### tmux Configuration
-
-loom uses tmux for session management. For stability, especially with tmux 3.3-3.4,
-add these settings to `~/.tmux.conf`:
-
-```bash
-# Recommended settings for loom
-set -g default-terminal "screen-256color"
-set -sg escape-time 10
-```
-
-After editing, reload the configuration:
-
-```bash
-tmux source-file ~/.tmux.conf
-```
-
-### Verifying System Readiness
-
-```bash
-# Check file descriptor limit
-ulimit -n  # Should be >= 65536
-
-# Check tmux version
-tmux -V    # 3.2+ recommended
-
-# If tmux is running, check its FD limit
-cat /proc/$(pgrep -x tmux)/limits | grep "open files"
-```
-
 ## Installation
 
 ### Quick Install (Recommended)
