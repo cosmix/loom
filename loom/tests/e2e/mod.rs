@@ -3,6 +3,8 @@
 //! This module provides test utilities and fixtures for integration testing
 //! the loom orchestration system.
 
+pub mod context_variables;
+pub mod criteria_validation;
 pub mod fixtures;
 pub mod handoff;
 pub mod helpers;
