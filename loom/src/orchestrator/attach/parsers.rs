@@ -72,6 +72,18 @@ pub fn session_from_markdown(content: &str) -> Result<Session> {
         .and_then(|s| s.parse::<DateTime<Utc>>().ok())
         .ok_or_else(|| anyhow!("Missing or invalid 'last_active' in session frontmatter"))?;
 
+    // Parse merge session fields (with defaults for backward compatibility)
+    let session_type = doc
+        .get_frontmatter("session_type")
+        .map(|s| match s.as_str() {
+            "merge" => crate::models::session::SessionType::Merge,
+            _ => crate::models::session::SessionType::Stage,
+        })
+        .unwrap_or_default();
+
+    let merge_source_branch = doc.get_frontmatter("merge_source_branch").cloned();
+    let merge_target_branch = doc.get_frontmatter("merge_target_branch").cloned();
+
     Ok(Session {
         id,
         stage_id,
@@ -83,6 +95,9 @@ pub fn session_from_markdown(content: &str) -> Result<Session> {
         context_limit,
         created_at,
         last_active,
+        session_type,
+        merge_source_branch,
+        merge_target_branch,
     })
 }
 

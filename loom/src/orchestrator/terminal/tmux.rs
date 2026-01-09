@@ -145,6 +145,94 @@ impl TerminalBackend for TmuxBackend {
         Ok(session)
     }
 
+    fn spawn_merge_session(
+        &self,
+        stage: &Stage,
+        session: Session,
+        signal_path: &Path,
+        repo_root: &Path,
+    ) -> Result<Session> {
+        // Use a distinct prefix for merge sessions
+        let session_name = format!("{}-merge-{}", self.prefix, stage.id);
+        let repo_path = repo_root.to_str().ok_or_else(|| {
+            anyhow!(
+                "Repository path contains invalid UTF-8: {}",
+                repo_root.display()
+            )
+        })?;
+
+        // Check if session already exists (zombie-aware check)
+        ensure_session_fresh(&session_name)?;
+
+        // Create tmux session in detached mode with main repository as working directory
+        let create_output = Command::new("tmux")
+            .args(["new-session", "-d", "-s", &session_name, "-c", repo_path])
+            .output()
+            .context("Failed to create tmux session for merge")?;
+
+        if !create_output.status.success() {
+            let stderr = String::from_utf8_lossy(&create_output.stderr);
+            return Err(anyhow!("Failed to create tmux merge session: {stderr}"));
+        }
+
+        // Configure session for stability
+        configure_session_for_stability(&session_name)?;
+
+        // Enable pipe-pane logging
+        let log_dir = signal_path
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.join("logs"))
+            .unwrap_or_else(|| std::path::PathBuf::from(".work/logs"));
+        let log_path = log_dir.join(format!("merge-{}.log", stage.id));
+        enable_pane_logging(&session_name, &log_path)?;
+
+        // Build the initial prompt for merge resolution
+        let signal_path_str = signal_path.to_string_lossy();
+        let initial_prompt = format!(
+            "Read the signal file at {signal_path_str} and execute the assigned stage work. \
+             This file contains your assignment, tasks, acceptance criteria, \
+             and context files to read."
+        );
+
+        // Derive work_dir from signal_path
+        let work_dir = signal_path
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| ".work".to_string());
+
+        // Set environment variables - include merge-specific variables
+        set_tmux_environment(&session_name, "loom_SESSION_ID", &session.id)?;
+        set_tmux_environment(&session_name, "loom_STAGE_ID", &stage.id)?;
+        set_tmux_environment(&session_name, "loom_WORK_DIR", &work_dir)?;
+        set_tmux_environment(&session_name, "loom_SESSION_TYPE", "merge")?;
+
+        // Build and send the claude command
+        let escaped_prompt = escape(Cow::Borrowed(&initial_prompt));
+        let claude_command = format!("claude {escaped_prompt}");
+
+        if let Err(e) = send_keys_debounced(&session_name, &claude_command, TMUX_DEBOUNCE_MS) {
+            let _ = kill_session_by_name(&session_name);
+            return Err(anyhow!("Failed to send 'claude' command for merge: {e}"));
+        }
+
+        // Get the PID
+        let pid = get_tmux_session_pid(&session_name)?;
+
+        // Update session
+        // Note: For merge sessions, we don't set worktree_path since we're in the main repo
+        let mut session = session;
+        session.set_tmux_session(session_name.clone());
+        session.assign_to_stage(stage.id.clone());
+        if let Some(pid) = pid {
+            session.set_pid(pid);
+        }
+        session.try_mark_running()?;
+
+        Ok(session)
+    }
+
     fn kill_session(&self, session: &Session) -> Result<()> {
         let session_name = session
             .tmux_session

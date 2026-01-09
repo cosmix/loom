@@ -61,6 +61,25 @@ pub trait TerminalBackend: Send + Sync {
         signal_path: &Path,
     ) -> Result<Session>;
 
+    /// Spawn a Claude Code session for merge conflict resolution
+    ///
+    /// Unlike regular stage sessions that run in isolated worktrees, merge sessions
+    /// run in the main repository to resolve conflicts. The session will work in
+    /// `repo_root` with the merge signal file guiding conflict resolution.
+    ///
+    /// # Arguments
+    /// * `stage` - The stage whose merge is being resolved
+    /// * `session` - A merge session (created with `Session::new_merge`)
+    /// * `signal_path` - Path to the merge signal file
+    /// * `repo_root` - Path to the main repository (not a worktree)
+    fn spawn_merge_session(
+        &self,
+        stage: &Stage,
+        session: Session,
+        signal_path: &Path,
+        repo_root: &Path,
+    ) -> Result<Session>;
+
     /// Kill a running session
     fn kill_session(&self, session: &Session) -> Result<()>;
 

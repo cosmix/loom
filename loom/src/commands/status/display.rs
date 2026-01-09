@@ -385,6 +385,9 @@ fn parse_session_from_doc(doc: &MarkdownDocument) -> Option<Session> {
         context_limit,
         created_at: chrono::Utc::now(),
         last_active: chrono::Utc::now(),
+        session_type: crate::models::session::SessionType::default(),
+        merge_source_branch: None,
+        merge_target_branch: None,
     })
 }
 

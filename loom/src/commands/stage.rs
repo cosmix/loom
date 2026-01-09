@@ -437,6 +437,7 @@ pub fn release(stage_id: String) -> Result<()> {
 mod tests {
     use super::*;
     use crate::fs::work_dir::WorkDir;
+    use crate::models::session::SessionType;
     use crate::models::stage::Stage;
     use chrono::Utc;
     use serial_test::serial;
@@ -537,6 +538,9 @@ last_active: "2024-01-01T00:00:00Z"
             context_limit: 200000,
             created_at: Utc::now(),
             last_active: Utc::now(),
+            session_type: SessionType::default(),
+            merge_source_branch: None,
+            merge_target_branch: None,
         };
 
         let content = session_to_markdown(&session);
@@ -634,6 +638,9 @@ last_active: "2024-01-01T00:00:00Z"
             context_limit: 200000,
             created_at: Utc::now(),
             last_active: Utc::now(),
+            session_type: SessionType::default(),
+            merge_source_branch: None,
+            merge_target_branch: None,
         };
 
         let session_content = session_to_markdown(&session);
