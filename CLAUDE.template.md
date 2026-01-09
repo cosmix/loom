@@ -58,9 +58,31 @@ On any mistake: append to "MISTAKES AND LESSONS LEARNT" section (what, should-ha
 ### 8. PLANS — WRITE THEN STOP
 
 **Location:** `./doc/plans/PLAN-XXXX-description.md` (NEVER `~/.claude/plans`)
-**Workflow:** Research → Design → Write plan → **STOP**
+
+**Workflow:**
+1. Research → Design
+2. **ASK:** "Is this a loom plan?"
+   - **Yes** → Include loom YAML metadata (see LOOM PLAN FORMAT section)
+   - **No** → Skip loom metadata
+3. **ALWAYS include execution diagram** (ASCII tree showing stage dependencies)
+4. Write plan → **STOP**
+
 **BANNED after plan:** Any implementation. Tell user: `loom init <plan> && loom run`
 **NO TIME ESTIMATES** — meaningless with parallel sessions.
+
+**Execution Diagram Example:**
+```
+┌─────────────────────────────────────────────────┐
+│              EXECUTION DIAGRAM                  │
+├─────────────────────────────────────────────────┤
+│  [stage-a] ──┬──► [stage-b] ──► [stage-d]       │
+│              │                                  │
+│              └──► [stage-c] ──────┘             │
+│                                                 │
+│  Legend: ──► = depends on                       │
+│  Parallel: stage-b, stage-c (same dependencies) │
+└─────────────────────────────────────────────────┘
+```
 
 ### 9. DEPENDENCIES
 
