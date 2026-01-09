@@ -7,6 +7,7 @@ pub mod fixtures;
 pub mod handoff;
 pub mod helpers;
 pub mod manual_mode;
+pub mod merge;
 pub mod parallel;
 pub mod sequential;
 pub mod sessions;
