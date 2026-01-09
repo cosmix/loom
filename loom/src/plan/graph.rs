@@ -392,6 +392,7 @@ mod tests {
             acceptance: vec![],
             setup: vec![],
             files: vec![],
+            auto_merge: None,
         }
     }
 

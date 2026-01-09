@@ -34,6 +34,7 @@ mod tests {
             repo_root: PathBuf::from("/tmp/test-repo"),
             status_update_interval: Duration::from_secs(30),
             backend_type: crate::orchestrator::terminal::BackendType::Native,
+            auto_merge: false,
         }
     }
 
@@ -47,6 +48,7 @@ mod tests {
             acceptance: vec![],
             setup: vec![],
             files: vec![],
+            auto_merge: None,
         }];
 
         ExecutionGraph::build(stages).unwrap()
@@ -59,6 +61,7 @@ mod tests {
         assert_eq!(config.poll_interval, Duration::from_secs(5));
         assert!(!config.manual_mode);
         assert!(!config.watch_mode);
+        assert!(!config.auto_merge);
     }
 
     #[test]

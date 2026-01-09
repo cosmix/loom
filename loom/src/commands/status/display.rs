@@ -225,6 +225,7 @@ fn parse_stage_from_doc(doc: &MarkdownDocument) -> Option<Stage> {
         updated_at: chrono::Utc::now(),
         completed_at: None,
         close_reason: None,
+        auto_merge: None,
     })
 }
 

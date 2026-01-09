@@ -263,6 +263,7 @@ impl DaemonServer {
             repo_root,
             status_update_interval: Duration::from_secs(30),
             backend_type: BackendType::Native,
+            auto_merge: false,
         };
 
         // Create and run orchestrator
@@ -428,6 +429,7 @@ impl DaemonServer {
             acceptance: fm.acceptance,
             setup: fm.setup,
             files: fm.files,
+            auto_merge: None,
         })
     }
 

@@ -185,6 +185,7 @@ pub fn stage_from_markdown(content: &str) -> Result<Stage> {
         updated_at,
         completed_at,
         close_reason,
+        auto_merge: None,
     })
 }
 

@@ -462,6 +462,7 @@ mod tests {
             updated_at: Utc::now(),
             completed_at: None,
             close_reason: None,
+            auto_merge: None,
         }
     }
 

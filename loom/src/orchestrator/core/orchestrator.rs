@@ -32,6 +32,8 @@ pub struct OrchestratorConfig {
     pub status_update_interval: Duration,
     /// Terminal backend to use for spawning sessions
     pub backend_type: BackendType,
+    /// Enable automatic merge when stages complete (default: false)
+    pub auto_merge: bool,
 }
 
 impl Default for OrchestratorConfig {
@@ -45,6 +47,7 @@ impl Default for OrchestratorConfig {
             repo_root: PathBuf::from("."),
             status_update_interval: Duration::from_secs(30),
             backend_type: BackendType::Native,
+            auto_merge: false,
         }
     }
 }

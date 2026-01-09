@@ -13,6 +13,8 @@ pub struct LoomMetadata {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoomConfig {
     pub version: u32,
+    #[serde(default)]
+    pub auto_merge: Option<bool>,
     pub stages: Vec<StageDefinition>,
 }
 
@@ -33,6 +35,8 @@ pub struct StageDefinition {
     pub setup: Vec<String>,
     #[serde(default)]
     pub files: Vec<String>,
+    #[serde(default)]
+    pub auto_merge: Option<bool>,
 }
 
 /// Validation error with context
@@ -194,6 +198,7 @@ mod tests {
         LoomMetadata {
             loom: LoomConfig {
                 version: 1,
+                auto_merge: None,
                 stages: vec![
                     StageDefinition {
                         id: "stage-1".to_string(),
@@ -204,6 +209,7 @@ mod tests {
                         acceptance: vec![],
                         setup: vec![],
                         files: vec![],
+                        auto_merge: None,
                     },
                     StageDefinition {
                         id: "stage-2".to_string(),
@@ -214,6 +220,7 @@ mod tests {
                         acceptance: vec!["cargo test".to_string()],
                         setup: vec!["source .venv/bin/activate".to_string()],
                         files: vec!["src/*.rs".to_string()],
+                        auto_merge: None,
                     },
                 ],
             },
@@ -243,6 +250,7 @@ mod tests {
         let metadata = LoomMetadata {
             loom: LoomConfig {
                 version: 1,
+                auto_merge: None,
                 stages: vec![],
             },
         };
@@ -260,6 +268,7 @@ mod tests {
         let metadata = LoomMetadata {
             loom: LoomConfig {
                 version: 1,
+                auto_merge: None,
                 stages: vec![StageDefinition {
                     id: "".to_string(),
                     name: "Test".to_string(),
@@ -269,6 +278,7 @@ mod tests {
                     acceptance: vec![],
                     setup: vec![],
                     files: vec![],
+                    auto_merge: None,
                 }],
             },
         };
@@ -286,6 +296,7 @@ mod tests {
         let metadata = LoomMetadata {
             loom: LoomConfig {
                 version: 1,
+                auto_merge: None,
                 stages: vec![StageDefinition {
                     id: "stage-1".to_string(),
                     name: "".to_string(),
@@ -295,6 +306,7 @@ mod tests {
                     acceptance: vec![],
                     setup: vec![],
                     files: vec![],
+                    auto_merge: None,
                 }],
             },
         };
@@ -312,6 +324,7 @@ mod tests {
         let metadata = LoomMetadata {
             loom: LoomConfig {
                 version: 1,
+                auto_merge: None,
                 stages: vec![StageDefinition {
                     id: "stage-1".to_string(),
                     name: "Stage One".to_string(),
@@ -321,6 +334,7 @@ mod tests {
                     acceptance: vec![],
                     setup: vec![],
                     files: vec![],
+                    auto_merge: None,
                 }],
             },
         };
@@ -339,6 +353,7 @@ mod tests {
         let metadata = LoomMetadata {
             loom: LoomConfig {
                 version: 1,
+                auto_merge: None,
                 stages: vec![StageDefinition {
                     id: "stage-1".to_string(),
                     name: "Stage One".to_string(),
@@ -348,6 +363,7 @@ mod tests {
                     acceptance: vec![],
                     setup: vec![],
                     files: vec![],
+                    auto_merge: None,
                 }],
             },
         };
@@ -365,6 +381,7 @@ mod tests {
         let metadata = LoomMetadata {
             loom: LoomConfig {
                 version: 2,
+                auto_merge: None,
                 stages: vec![
                     StageDefinition {
                         id: "".to_string(),
@@ -375,6 +392,7 @@ mod tests {
                         acceptance: vec![],
                         setup: vec![],
                         files: vec![],
+                        auto_merge: None,
                     },
                     StageDefinition {
                         id: "stage-2".to_string(),
@@ -385,6 +403,7 @@ mod tests {
                         acceptance: vec![],
                         setup: vec![],
                         files: vec![],
+                        auto_merge: None,
                     },
                 ],
             },
@@ -427,6 +446,7 @@ name: Test Stage
         assert_eq!(stage.acceptance.len(), 0);
         assert_eq!(stage.setup.len(), 0);
         assert_eq!(stage.files.len(), 0);
+        assert_eq!(stage.auto_merge, None);
     }
 
     #[test]
@@ -434,6 +454,7 @@ name: Test Stage
         let metadata = LoomMetadata {
             loom: LoomConfig {
                 version: 1,
+                auto_merge: None,
                 stages: vec![
                     StageDefinition {
                         id: "stage-1".to_string(),
@@ -444,6 +465,7 @@ name: Test Stage
                         acceptance: vec![],
                         setup: vec![],
                         files: vec![],
+                        auto_merge: None,
                     },
                     StageDefinition {
                         id: "stage-2".to_string(),
@@ -454,6 +476,7 @@ name: Test Stage
                         acceptance: vec![],
                         setup: vec![],
                         files: vec![],
+                        auto_merge: None,
                     },
                     StageDefinition {
                         id: "stage-3".to_string(),
@@ -464,6 +487,7 @@ name: Test Stage
                         acceptance: vec![],
                         setup: vec![],
                         files: vec![],
+                        auto_merge: None,
                     },
                 ],
             },
@@ -477,6 +501,7 @@ name: Test Stage
         let metadata = LoomMetadata {
             loom: LoomConfig {
                 version: 1,
+                auto_merge: None,
                 stages: vec![StageDefinition {
                     id: "../etc/passwd".to_string(),
                     name: "Malicious Stage".to_string(),
@@ -486,6 +511,7 @@ name: Test Stage
                     acceptance: vec![],
                     setup: vec![],
                     files: vec![],
+                    auto_merge: None,
                 }],
             },
         };
@@ -503,6 +529,7 @@ name: Test Stage
         let metadata = LoomMetadata {
             loom: LoomConfig {
                 version: 1,
+                auto_merge: None,
                 stages: vec![StageDefinition {
                     id: "stage/with/slashes".to_string(),
                     name: "Stage".to_string(),
@@ -512,6 +539,7 @@ name: Test Stage
                     acceptance: vec![],
                     setup: vec![],
                     files: vec![],
+                    auto_merge: None,
                 }],
             },
         };
@@ -529,6 +557,7 @@ name: Test Stage
         let metadata = LoomMetadata {
             loom: LoomConfig {
                 version: 1,
+                auto_merge: None,
                 stages: vec![StageDefinition {
                     id: "stage.with.dots".to_string(),
                     name: "Stage".to_string(),
@@ -538,6 +567,7 @@ name: Test Stage
                     acceptance: vec![],
                     setup: vec![],
                     files: vec![],
+                    auto_merge: None,
                 }],
             },
         };
@@ -555,6 +585,7 @@ name: Test Stage
         let metadata = LoomMetadata {
             loom: LoomConfig {
                 version: 1,
+                auto_merge: None,
                 stages: vec![StageDefinition {
                     id: "..".to_string(),
                     name: "Stage".to_string(),
@@ -564,6 +595,7 @@ name: Test Stage
                     acceptance: vec![],
                     setup: vec![],
                     files: vec![],
+                    auto_merge: None,
                 }],
             },
         };
@@ -577,6 +609,7 @@ name: Test Stage
         let metadata = LoomMetadata {
             loom: LoomConfig {
                 version: 1,
+                auto_merge: None,
                 stages: vec![StageDefinition {
                     id: "CON".to_string(),
                     name: "Stage".to_string(),
@@ -586,6 +619,7 @@ name: Test Stage
                     acceptance: vec![],
                     setup: vec![],
                     files: vec![],
+                    auto_merge: None,
                 }],
             },
         };
@@ -601,6 +635,7 @@ name: Test Stage
         let metadata = LoomMetadata {
             loom: LoomConfig {
                 version: 1,
+                auto_merge: None,
                 stages: vec![StageDefinition {
                     id: "stage-1".to_string(),
                     name: "Stage One".to_string(),
@@ -610,6 +645,7 @@ name: Test Stage
                     acceptance: vec![],
                     setup: vec![],
                     files: vec![],
+                    auto_merge: None,
                 }],
             },
         };
@@ -628,6 +664,7 @@ name: Test Stage
         let metadata = LoomMetadata {
             loom: LoomConfig {
                 version: 1,
+                auto_merge: None,
                 stages: vec![StageDefinition {
                     id: long_id,
                     name: "Stage".to_string(),
@@ -637,6 +674,7 @@ name: Test Stage
                     acceptance: vec![],
                     setup: vec![],
                     files: vec![],
+                    auto_merge: None,
                 }],
             },
         };
@@ -652,6 +690,7 @@ name: Test Stage
         let metadata = LoomMetadata {
             loom: LoomConfig {
                 version: 1,
+                auto_merge: None,
                 stages: vec![StageDefinition {
                     id: "stage with spaces".to_string(),
                     name: "Stage".to_string(),
@@ -661,6 +700,7 @@ name: Test Stage
                     acceptance: vec![],
                     setup: vec![],
                     files: vec![],
+                    auto_merge: None,
                 }],
             },
         };
@@ -720,6 +760,7 @@ name: Test Stage
         let metadata = LoomMetadata {
             loom: LoomConfig {
                 version: 1,
+                auto_merge: None,
                 stages: vec![StageDefinition {
                     id: "stage-1".to_string(),
                     name: "Stage One".to_string(),
@@ -729,6 +770,7 @@ name: Test Stage
                     acceptance: vec!["".to_string()],
                     setup: vec![],
                     files: vec![],
+                    auto_merge: None,
                 }],
             },
         };
@@ -747,6 +789,7 @@ name: Test Stage
         let metadata = LoomMetadata {
             loom: LoomConfig {
                 version: 1,
+                auto_merge: None,
                 stages: vec![StageDefinition {
                     id: "stage-1".to_string(),
                     name: "Stage One".to_string(),
@@ -759,6 +802,7 @@ name: Test Stage
                     ],
                     setup: vec![],
                     files: vec![],
+                    auto_merge: None,
                 }],
             },
         };
@@ -772,6 +816,7 @@ name: Test Stage
         let metadata = LoomMetadata {
             loom: LoomConfig {
                 version: 1,
+                auto_merge: None,
                 stages: vec![StageDefinition {
                     id: "stage-1".to_string(),
                     name: "Stage One".to_string(),
@@ -781,6 +826,7 @@ name: Test Stage
                     acceptance: vec!["".to_string(), "   ".to_string(), "cargo test".to_string()],
                     setup: vec![],
                     files: vec![],
+                    auto_merge: None,
                 }],
             },
         };
@@ -794,5 +840,47 @@ name: Test Stage
             .filter(|e| e.message.contains("acceptance criterion"))
             .collect();
         assert_eq!(acceptance_errors.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_auto_merge_plan_level() {
+        let yaml = r#"
+loom:
+  version: 1
+  auto_merge: true
+  stages:
+    - id: stage-1
+      name: "Test Stage"
+"#;
+        let metadata: LoomMetadata = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(metadata.loom.auto_merge, Some(true));
+    }
+
+    #[test]
+    fn test_parse_auto_merge_stage_level() {
+        let yaml = r#"
+loom:
+  version: 1
+  stages:
+    - id: stage-1
+      name: "Test Stage"
+      auto_merge: false
+"#;
+        let metadata: LoomMetadata = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(metadata.loom.stages[0].auto_merge, Some(false));
+    }
+
+    #[test]
+    fn test_auto_merge_defaults_to_none() {
+        let yaml = r#"
+loom:
+  version: 1
+  stages:
+    - id: stage-1
+      name: "Test Stage"
+"#;
+        let metadata: LoomMetadata = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(metadata.loom.auto_merge, None);
+        assert_eq!(metadata.loom.stages[0].auto_merge, None);
     }
 }

@@ -240,6 +240,7 @@ fn create_stage_from_definition(
         updated_at: now,
         completed_at: None,
         close_reason: None,
+        auto_merge: stage_def.auto_merge,
     }
 }
 
@@ -482,7 +483,11 @@ mod tests {
     /// Helper to create a minimal valid plan file
     fn create_test_plan(dir: &Path, stages: Vec<StageDefinition>) -> PathBuf {
         let metadata = LoomMetadata {
-            loom: LoomConfig { version: 1, stages },
+            loom: LoomConfig {
+            version: 1,
+            auto_merge: None,
+            stages,
+        },
         };
 
         let yaml = serde_yaml::to_string(&metadata).unwrap();
@@ -506,6 +511,7 @@ mod tests {
             acceptance: vec!["cargo test".to_string()],
             setup: vec![],
             files: vec!["src/*.rs".to_string()],
+            auto_merge: None,
         };
 
         let stage = create_stage_from_definition(&stage_def, "plan-001");
@@ -529,6 +535,7 @@ mod tests {
             acceptance: vec![],
             setup: vec!["cargo build".to_string()],
             files: vec![],
+            auto_merge: None,
         };
 
         let stage = create_stage_from_definition(&stage_def, "plan-002");
@@ -561,6 +568,7 @@ mod tests {
             updated_at: Utc::now(),
             completed_at: None,
             close_reason: None,
+            auto_merge: None,
         };
 
         let content = serialize_stage_to_markdown(&stage).unwrap();
@@ -592,6 +600,7 @@ mod tests {
             updated_at: Utc::now(),
             completed_at: None,
             close_reason: None,
+            auto_merge: None,
         };
 
         let content = serialize_stage_to_markdown(&stage).unwrap();
@@ -636,6 +645,7 @@ mod tests {
             acceptance: vec![],
             setup: vec![],
             files: vec![],
+            auto_merge: None,
         };
 
         let plan_path = create_test_plan(temp_dir.path(), vec![stage_def]);
@@ -668,6 +678,7 @@ mod tests {
                 acceptance: vec!["cargo test".to_string()],
                 setup: vec![],
                 files: vec![],
+                auto_merge: None,
             },
             StageDefinition {
                 id: "stage-2".to_string(),
@@ -678,6 +689,7 @@ mod tests {
                 acceptance: vec![],
                 setup: vec![],
                 files: vec![],
+                auto_merge: None,
             },
         ];
 

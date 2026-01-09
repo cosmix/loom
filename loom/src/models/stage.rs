@@ -25,6 +25,8 @@ pub struct Stage {
     pub updated_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
     pub close_reason: Option<String>,
+    #[serde(default)]
+    pub auto_merge: Option<bool>,
 }
 
 /// Status of a stage in the execution lifecycle.
@@ -184,6 +186,7 @@ impl Stage {
             updated_at: now,
             completed_at: None,
             close_reason: None,
+            auto_merge: None,
         }
     }
 
@@ -752,5 +755,14 @@ mod tests {
         assert_eq!(format!("{}", StageStatus::Blocked), "Blocked");
         assert_eq!(format!("{}", StageStatus::Completed), "Completed");
         assert_eq!(format!("{}", StageStatus::NeedsHandoff), "NeedsHandoff");
+    }
+
+    #[test]
+    fn test_stage_auto_merge_field() {
+        let mut stage = Stage::new("Test".to_string(), None);
+        assert_eq!(stage.auto_merge, None);
+
+        stage.auto_merge = Some(true);
+        assert_eq!(stage.auto_merge, Some(true));
     }
 }

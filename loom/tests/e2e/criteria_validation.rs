@@ -16,13 +16,18 @@ fn create_valid_stage(id: &str, name: &str) -> StageDefinition {
         acceptance: vec![],
         setup: vec![],
         files: vec![],
+        auto_merge: None,
     }
 }
 
 /// Helper to create minimal valid metadata with given stages
 fn create_metadata(stages: Vec<StageDefinition>) -> LoomMetadata {
     LoomMetadata {
-        loom: LoomConfig { version: 1, stages },
+        loom: LoomConfig {
+            version: 1,
+            auto_merge: None,
+            stages,
+        },
     }
 }
 
@@ -418,6 +423,7 @@ fn test_unsupported_version_rejected() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 2,
+            auto_merge: None,
             stages: vec![create_valid_stage("stage-1", "Test")],
         },
     };
@@ -437,6 +443,7 @@ fn test_empty_stages_rejected() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
+            auto_merge: None,
             stages: vec![],
         },
     };
@@ -493,6 +500,7 @@ fn test_multiple_errors_accumulated() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 2, // Invalid version
+            auto_merge: None,
             stages: vec![
                 create_valid_stage("", ""), // Empty ID and name
                 {

@@ -94,6 +94,7 @@ fn execute_foreground(
         repo_root: std::env::current_dir()?,
         status_update_interval: Duration::from_secs(30),
         backend_type: BackendType::Native,
+        auto_merge: false,
     };
 
     // Create and run orchestrator
@@ -212,6 +213,7 @@ fn load_stages_from_work_dir(stages_dir: &PathBuf) -> Result<Vec<StageDefinition
             acceptance: frontmatter.acceptance,
             setup: frontmatter.setup,
             files: frontmatter.files,
+            auto_merge: None,
         };
 
         stages.push(stage_def);
@@ -339,7 +341,11 @@ mod tests {
 
     fn create_test_plan(dir: &Path, stages: Vec<StageDefinition>) -> PathBuf {
         let metadata = LoomMetadata {
-            loom: LoomConfig { version: 1, stages },
+            loom: LoomConfig {
+            version: 1,
+            auto_merge: None,
+            stages,
+        },
         };
 
         let yaml = serde_yaml::to_string(&metadata).unwrap();
@@ -365,6 +371,7 @@ mod tests {
             acceptance: vec![],
             setup: vec![],
             files: vec![],
+            auto_merge: None,
         };
 
         let plan_path = create_test_plan(temp_dir.path(), vec![stage_def]);
