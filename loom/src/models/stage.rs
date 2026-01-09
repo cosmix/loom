@@ -34,13 +34,13 @@ pub struct Stage {
 /// - `Queued` → `Executing` (when session spawns)
 /// - `Executing` → `Completed` | `Blocked` | `NeedsHandoff` | `WaitingForInput`
 /// - `WaitingForInput` → `Executing` (when input provided)
-/// - `Completed` → `Verified` (after human approval)
 /// - `Blocked` → `Queued` (when unblocked)
 /// - `NeedsHandoff` → `Queued` (when new session resumes)
+/// - `Completed` is a terminal state
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum StageStatus {
     /// Stage is waiting for upstream dependencies to complete.
-    /// Cannot be executed until all dependencies reach Verified status.
+    /// Cannot be executed until all dependencies reach Completed status.
     #[serde(rename = "waiting-for-deps", alias = "pending")]
     WaitingForDeps,
 
@@ -62,17 +62,13 @@ pub enum StageStatus {
     #[serde(rename = "blocked")]
     Blocked,
 
-    /// Stage work is done, awaiting human verification.
-    #[serde(rename = "completed")]
+    /// Stage work is done; terminal state.
+    #[serde(rename = "completed", alias = "verified")]
     Completed,
 
     /// Session hit context limit; needs new session to continue.
     #[serde(rename = "needs-handoff", alias = "needshandoff")]
     NeedsHandoff,
-
-    /// Human verified and approved; terminal state.
-    #[serde(rename = "verified")]
-    Verified,
 }
 
 impl std::fmt::Display for StageStatus {
@@ -85,7 +81,6 @@ impl std::fmt::Display for StageStatus {
             StageStatus::Blocked => write!(f, "Blocked"),
             StageStatus::Completed => write!(f, "Completed"),
             StageStatus::NeedsHandoff => write!(f, "NeedsHandoff"),
-            StageStatus::Verified => write!(f, "Verified"),
         }
     }
 }
@@ -97,10 +92,10 @@ impl StageStatus {
     /// - `WaitingForDeps` -> `Queued` (when dependencies satisfied)
     /// - `Queued` -> `Executing` (when session spawned)
     /// - `Executing` -> `Completed` | `Blocked` | `NeedsHandoff` | `WaitingForInput`
-    /// - `Completed` -> `Verified` (after human approval)
     /// - `Blocked` -> `Queued` (when unblocked)
     /// - `NeedsHandoff` -> `Queued` (when resumed)
     /// - `WaitingForInput` -> `Executing` (when input provided)
+    /// - `Completed` is a terminal state
     ///
     /// # Arguments
     /// * `new_status` - The target status to transition to
@@ -124,10 +119,9 @@ impl StageStatus {
                     | StageStatus::WaitingForInput
             ),
             StageStatus::WaitingForInput => matches!(new_status, StageStatus::Executing),
-            StageStatus::Completed => matches!(new_status, StageStatus::Verified),
+            StageStatus::Completed => false, // Terminal state
             StageStatus::Blocked => matches!(new_status, StageStatus::Queued),
             StageStatus::NeedsHandoff => matches!(new_status, StageStatus::Queued),
-            StageStatus::Verified => false, // Terminal state
         }
     }
 
@@ -158,10 +152,9 @@ impl StageStatus {
                 StageStatus::WaitingForInput,
             ],
             StageStatus::WaitingForInput => vec![StageStatus::Executing],
-            StageStatus::Completed => vec![StageStatus::Verified],
+            StageStatus::Completed => vec![], // Terminal state
             StageStatus::Blocked => vec![StageStatus::Queued],
             StageStatus::NeedsHandoff => vec![StageStatus::Queued],
-            StageStatus::Verified => vec![],
         }
     }
 }
@@ -289,14 +282,6 @@ impl Stage {
         Ok(())
     }
 
-    /// Mark the stage as verified with validation.
-    ///
-    /// # Returns
-    /// `Ok(())` if the transition succeeded, `Err` if invalid
-    pub fn try_mark_verified(&mut self) -> Result<()> {
-        self.try_transition(StageStatus::Verified)
-    }
-
     /// Mark the stage as needing handoff with validation.
     ///
     /// # Returns
@@ -343,16 +328,6 @@ impl Stage {
         self.status = StageStatus::Completed;
         self.completed_at = Some(Utc::now());
         self.close_reason = reason;
-        self.updated_at = Utc::now();
-    }
-
-    // Deprecated: Use try_mark_verified for validated transitions
-    #[deprecated(
-        since = "0.2.0",
-        note = "Use try_mark_verified for validated transitions"
-    )]
-    pub fn mark_verified(&mut self) {
-        self.status = StageStatus::Verified;
         self.updated_at = Utc::now();
     }
 
@@ -439,7 +414,6 @@ mod tests {
         let status = StageStatus::WaitingForDeps;
         assert!(!status.can_transition_to(&StageStatus::Executing));
         assert!(!status.can_transition_to(&StageStatus::Completed));
-        assert!(!status.can_transition_to(&StageStatus::Verified));
         assert!(!status.can_transition_to(&StageStatus::Blocked));
         assert!(!status.can_transition_to(&StageStatus::NeedsHandoff));
         assert!(!status.can_transition_to(&StageStatus::WaitingForInput));
@@ -456,7 +430,6 @@ mod tests {
         let status = StageStatus::Queued;
         assert!(!status.can_transition_to(&StageStatus::WaitingForDeps));
         assert!(!status.can_transition_to(&StageStatus::Completed));
-        assert!(!status.can_transition_to(&StageStatus::Verified));
         assert!(!status.can_transition_to(&StageStatus::Blocked));
         assert!(!status.can_transition_to(&StageStatus::NeedsHandoff));
     }
@@ -475,7 +448,6 @@ mod tests {
         let status = StageStatus::Executing;
         assert!(!status.can_transition_to(&StageStatus::WaitingForDeps));
         assert!(!status.can_transition_to(&StageStatus::Queued));
-        assert!(!status.can_transition_to(&StageStatus::Verified));
     }
 
     #[test]
@@ -490,23 +462,17 @@ mod tests {
         assert!(!status.can_transition_to(&StageStatus::WaitingForDeps));
         assert!(!status.can_transition_to(&StageStatus::Queued));
         assert!(!status.can_transition_to(&StageStatus::Completed));
-        assert!(!status.can_transition_to(&StageStatus::Verified));
     }
 
     #[test]
-    fn test_completed_can_transition_to_verified() {
-        let status = StageStatus::Completed;
-        assert!(status.can_transition_to(&StageStatus::Verified));
-    }
-
-    #[test]
-    fn test_completed_cannot_transition_to_other_states() {
+    fn test_completed_is_terminal_state() {
         let status = StageStatus::Completed;
         assert!(!status.can_transition_to(&StageStatus::WaitingForDeps));
         assert!(!status.can_transition_to(&StageStatus::Queued));
         assert!(!status.can_transition_to(&StageStatus::Executing));
         assert!(!status.can_transition_to(&StageStatus::Blocked));
         assert!(!status.can_transition_to(&StageStatus::NeedsHandoff));
+        assert!(!status.can_transition_to(&StageStatus::WaitingForInput));
     }
 
     #[test]
@@ -521,7 +487,6 @@ mod tests {
         assert!(!status.can_transition_to(&StageStatus::WaitingForDeps));
         assert!(!status.can_transition_to(&StageStatus::Executing));
         assert!(!status.can_transition_to(&StageStatus::Completed));
-        assert!(!status.can_transition_to(&StageStatus::Verified));
     }
 
     #[test]
@@ -536,19 +501,6 @@ mod tests {
         assert!(!status.can_transition_to(&StageStatus::WaitingForDeps));
         assert!(!status.can_transition_to(&StageStatus::Executing));
         assert!(!status.can_transition_to(&StageStatus::Completed));
-        assert!(!status.can_transition_to(&StageStatus::Verified));
-    }
-
-    #[test]
-    fn test_verified_is_terminal_state() {
-        let status = StageStatus::Verified;
-        assert!(!status.can_transition_to(&StageStatus::WaitingForDeps));
-        assert!(!status.can_transition_to(&StageStatus::Queued));
-        assert!(!status.can_transition_to(&StageStatus::Executing));
-        assert!(!status.can_transition_to(&StageStatus::Completed));
-        assert!(!status.can_transition_to(&StageStatus::Blocked));
-        assert!(!status.can_transition_to(&StageStatus::NeedsHandoff));
-        assert!(!status.can_transition_to(&StageStatus::WaitingForInput));
     }
 
     #[test]
@@ -558,7 +510,6 @@ mod tests {
             StageStatus::Queued,
             StageStatus::Executing,
             StageStatus::Completed,
-            StageStatus::Verified,
             StageStatus::Blocked,
             StageStatus::NeedsHandoff,
             StageStatus::WaitingForInput,
@@ -585,13 +536,13 @@ mod tests {
     }
 
     #[test]
-    fn test_try_transition_invalid_verified_to_waiting_for_deps() {
-        let status = StageStatus::Verified;
+    fn test_try_transition_invalid_completed_to_waiting_for_deps() {
+        let status = StageStatus::Completed;
         let result = status.try_transition(StageStatus::WaitingForDeps);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("Invalid stage status transition"));
-        assert!(err.contains("Verified"));
+        assert!(err.contains("Completed"));
         assert!(err.contains("WaitingForDeps"));
     }
 
@@ -616,8 +567,8 @@ mod tests {
     }
 
     #[test]
-    fn test_valid_transitions_verified() {
-        let transitions = StageStatus::Verified.valid_transitions();
+    fn test_valid_transitions_completed() {
+        let transitions = StageStatus::Completed.valid_transitions();
         assert!(transitions.is_empty());
     }
 
@@ -635,10 +586,10 @@ mod tests {
 
     #[test]
     fn test_stage_try_transition_invalid() {
-        let mut stage = create_test_stage(StageStatus::Verified);
+        let mut stage = create_test_stage(StageStatus::Completed);
         let result = stage.try_transition(StageStatus::WaitingForDeps);
         assert!(result.is_err());
-        assert_eq!(stage.status, StageStatus::Verified); // Status unchanged
+        assert_eq!(stage.status, StageStatus::Completed); // Status unchanged
     }
 
     #[test]
@@ -667,7 +618,7 @@ mod tests {
 
     #[test]
     fn test_stage_try_mark_queued_invalid() {
-        let mut stage = create_test_stage(StageStatus::Verified);
+        let mut stage = create_test_stage(StageStatus::Completed);
         let result = stage.try_mark_queued();
         assert!(result.is_err());
     }
@@ -696,21 +647,6 @@ mod tests {
         let result = stage.try_complete(None);
         assert!(result.is_err());
         assert_eq!(stage.status, StageStatus::WaitingForDeps);
-    }
-
-    #[test]
-    fn test_stage_try_mark_verified_valid() {
-        let mut stage = create_test_stage(StageStatus::Completed);
-        let result = stage.try_mark_verified();
-        assert!(result.is_ok());
-        assert_eq!(stage.status, StageStatus::Verified);
-    }
-
-    #[test]
-    fn test_stage_try_mark_verified_invalid() {
-        let mut stage = create_test_stage(StageStatus::Executing);
-        let result = stage.try_mark_verified();
-        assert!(result.is_err());
     }
 
     #[test]
@@ -753,13 +689,12 @@ mod tests {
         assert!(stage.try_mark_executing().is_ok());
         assert_eq!(stage.status, StageStatus::Executing);
 
-        // Executing -> Completed
+        // Executing -> Completed (terminal state)
         assert!(stage.try_complete(None).is_ok());
         assert_eq!(stage.status, StageStatus::Completed);
 
-        // Completed -> Verified
-        assert!(stage.try_mark_verified().is_ok());
-        assert_eq!(stage.status, StageStatus::Verified);
+        // Completed is terminal, no further transitions allowed
+        assert!(stage.try_mark_queued().is_err());
     }
 
     #[test]
@@ -817,6 +752,5 @@ mod tests {
         assert_eq!(format!("{}", StageStatus::Blocked), "Blocked");
         assert_eq!(format!("{}", StageStatus::Completed), "Completed");
         assert_eq!(format!("{}", StageStatus::NeedsHandoff), "NeedsHandoff");
-        assert_eq!(format!("{}", StageStatus::Verified), "Verified");
     }
 }

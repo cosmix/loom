@@ -172,17 +172,17 @@ pub fn validate_stage_status(stage_id: &str, work_dir: &Path, force: bool) -> Re
     let stage = load_stage(stage_id, work_dir)
         .with_context(|| format!("Failed to load stage: {stage_id}"))?;
 
-    let status_ok = matches!(stage.status, StageStatus::Completed | StageStatus::Verified);
+    let status_ok = matches!(stage.status, StageStatus::Completed);
 
     if !status_ok {
         if force {
             println!(
-                "Warning: Stage '{}' is in '{:?}' status (not Completed/Verified). Proceeding due to --force.",
+                "Warning: Stage '{}' is in '{:?}' status (not Completed). Proceeding due to --force.",
                 stage_id, stage.status
             );
         } else {
             bail!(
-                "Stage '{}' is in '{:?}' status. Only Completed or Verified stages can be merged.\n\
+                "Stage '{}' is in '{:?}' status. Only Completed stages can be merged.\n\
                  \n\
                  To mark the stage as complete, run:\n\
                    loom stage complete {}\n\

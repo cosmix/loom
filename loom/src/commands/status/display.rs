@@ -135,8 +135,7 @@ pub fn display_stages(work_dir: &WorkDir) -> Result<()> {
 
     // Group stages by status in logical order
     let status_order = [
-        (StageStatus::Verified, "✓", "Verified"),
-        (StageStatus::Completed, "●", "Completed"),
+        (StageStatus::Completed, "✓", "Completed"),
         (StageStatus::Executing, "▶", "Executing"),
         (StageStatus::Queued, "○", "Ready"),
         (StageStatus::WaitingForInput, "?", "Waiting for Input"),
@@ -156,7 +155,7 @@ pub fn display_stages(work_dir: &WorkDir) -> Result<()> {
 
         let header = format!("{icon} {label} ({})", matching.len());
         let colored_header = match status {
-            StageStatus::Verified | StageStatus::Completed => header.green(),
+            StageStatus::Completed => header.green(),
             StageStatus::Executing => header.blue(),
             StageStatus::Queued => header.cyan(),
             StageStatus::WaitingForInput => header.magenta(),
@@ -197,7 +196,7 @@ fn parse_stage_from_doc(doc: &MarkdownDocument) -> Option<Stage> {
         "blocked" => StageStatus::Blocked,
         "completed" => StageStatus::Completed,
         "needs-handoff" => StageStatus::NeedsHandoff,
-        "verified" => StageStatus::Verified,
+        "verified" => StageStatus::Completed, // Map legacy "verified" to Completed for backwards compatibility
         _ => return None,
     };
 

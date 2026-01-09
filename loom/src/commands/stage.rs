@@ -80,13 +80,11 @@ pub fn complete(stage_id: String, session_id: Option<String>, no_verify: bool) -
         cleanup_session_resources(&stage_id, sid, work_dir);
     }
 
-    // Auto-verify if all criteria passed, otherwise mark as Completed
+    // Mark as Completed if all criteria passed
     if all_passed {
-        // Must transition through Completed before Verified (state machine requirement)
         stage.try_complete(None)?;
-        stage.try_mark_verified()?;
         save_stage(&stage, work_dir)?;
-        println!("Stage '{stage_id}' verified!");
+        println!("Stage '{stage_id}' completed!");
 
         // Trigger dependent stages
         let triggered = trigger_dependents(&stage_id, work_dir)
@@ -880,7 +878,7 @@ last_active: "2024-01-01T00:00:00Z"
         assert!(result.is_ok(), "complete() failed: {:?}", result.err());
 
         let loaded_stage = load_stage("test-stage", &work_dir_path).unwrap();
-        assert_eq!(loaded_stage.status, StageStatus::Verified);
+        assert_eq!(loaded_stage.status, StageStatus::Completed);
     }
 
     #[test]

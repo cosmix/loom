@@ -44,9 +44,9 @@ fn test_stage_transition_workflow() {
         .expect("Should complete stage 1");
     assert_eq!(stage1.status, StageStatus::Completed);
 
-    let stage1 = transition_stage("stage-1", StageStatus::Verified, work_dir)
+    let stage1 = transition_stage("stage-1", StageStatus::Completed, work_dir)
         .expect("Should verify stage 1");
-    assert_eq!(stage1.status, StageStatus::Verified);
+    assert_eq!(stage1.status, StageStatus::Completed);
 
     // Trigger dependents - should mark stage 2 as Ready
     let triggered = trigger_dependents("stage-1", work_dir).expect("Should trigger dependents");
@@ -64,7 +64,7 @@ fn test_stage_transition_workflow() {
     transition_stage("stage-2", StageStatus::Executing, work_dir)
         .expect("Should start executing stage 2");
     transition_stage("stage-2", StageStatus::Completed, work_dir).expect("Should complete stage 2");
-    transition_stage("stage-2", StageStatus::Verified, work_dir).expect("Should verify stage 2");
+    transition_stage("stage-2", StageStatus::Completed, work_dir).expect("Should verify stage 2");
 
     // Trigger dependents - should mark stage 3 as Ready
     let triggered = trigger_dependents("stage-2", work_dir).expect("Should trigger dependents");
@@ -83,7 +83,7 @@ fn test_multiple_dependencies_all_satisfied() {
     // Create stage 1
     let mut stage1 = Stage::new("Stage 1".to_string(), None);
     stage1.id = "stage-1".to_string();
-    stage1.status = StageStatus::Verified;
+    stage1.status = StageStatus::Completed;
     save_stage(&stage1, work_dir).expect("Should save stage 1");
 
     // Create stage 2
@@ -112,7 +112,7 @@ fn test_multiple_dependencies_all_satisfied() {
     transition_stage("stage-2", StageStatus::Executing, work_dir)
         .expect("Should start executing stage 2");
     transition_stage("stage-2", StageStatus::Completed, work_dir).expect("Should complete stage 2");
-    transition_stage("stage-2", StageStatus::Verified, work_dir).expect("Should verify stage 2");
+    transition_stage("stage-2", StageStatus::Completed, work_dir).expect("Should verify stage 2");
 
     let triggered = trigger_dependents("stage-2", work_dir).expect("Should trigger dependents");
     assert_eq!(triggered.len(), 1);
@@ -130,7 +130,7 @@ fn test_parallel_stages() {
     // Create stage 1 (foundation)
     let mut stage1 = Stage::new("Stage 1".to_string(), None);
     stage1.id = "stage-1".to_string();
-    stage1.status = StageStatus::Verified;
+    stage1.status = StageStatus::Completed;
     save_stage(&stage1, work_dir).expect("Should save stage 1");
 
     // Create stages 2 and 3 (both depend on stage 1, can run in parallel)

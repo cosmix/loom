@@ -56,9 +56,9 @@ fn test_sequential_plan_stage_order() {
 
     // Complete and verify stage 1
     complete_stage("stage-1", work_dir).expect("Should complete stage 1");
-    let verified_stage1 = transition_stage("stage-1", StageStatus::Verified, work_dir)
+    let verified_stage1 = transition_stage("stage-1", StageStatus::Completed, work_dir)
         .expect("Should verify stage 1");
-    assert_eq!(verified_stage1.status, StageStatus::Verified);
+    assert_eq!(verified_stage1.status, StageStatus::Completed);
 
     // Trigger dependents
     let triggered = trigger_dependents("stage-1", work_dir).expect("Should trigger dependents");
@@ -108,7 +108,7 @@ fn test_sequential_plan_full_completion() {
 
     // Complete stage 1
     complete_stage("stage-1", work_dir).expect("Should complete stage 1");
-    transition_stage("stage-1", StageStatus::Verified, work_dir).expect("Should verify stage 1");
+    transition_stage("stage-1", StageStatus::Completed, work_dir).expect("Should verify stage 1");
     trigger_dependents("stage-1", work_dir).expect("Should trigger dependents");
 
     // Verify stage 2 is Ready, stage 3 still Pending
@@ -120,7 +120,7 @@ fn test_sequential_plan_full_completion() {
 
     // Complete stage 2
     complete_stage("stage-2", work_dir).expect("Should complete stage 2");
-    transition_stage("stage-2", StageStatus::Verified, work_dir).expect("Should verify stage 2");
+    transition_stage("stage-2", StageStatus::Completed, work_dir).expect("Should verify stage 2");
     trigger_dependents("stage-2", work_dir).expect("Should trigger dependents");
 
     // Verify stage 3 is now Ready
@@ -129,7 +129,7 @@ fn test_sequential_plan_full_completion() {
 
     // Complete stage 3
     complete_stage("stage-3", work_dir).expect("Should complete stage 3");
-    transition_stage("stage-3", StageStatus::Verified, work_dir).expect("Should verify stage 3");
+    transition_stage("stage-3", StageStatus::Completed, work_dir).expect("Should verify stage 3");
 
     // Verify all stages are Verified
     let stages = list_all_stages(work_dir).expect("Should list all stages");
@@ -138,7 +138,7 @@ fn test_sequential_plan_full_completion() {
     for stage in stages {
         assert_eq!(
             stage.status,
-            StageStatus::Verified,
+            StageStatus::Completed,
             "Stage {} should be Verified",
             stage.id
         );
@@ -187,7 +187,7 @@ fn test_dependency_chain_respected() {
 
     // Complete stage A
     complete_stage("stage-a", work_dir).expect("Should complete stage A");
-    transition_stage("stage-a", StageStatus::Verified, work_dir).expect("Should verify stage A");
+    transition_stage("stage-a", StageStatus::Completed, work_dir).expect("Should verify stage A");
 
     let triggered = trigger_dependents("stage-a", work_dir).expect("Should trigger dependents");
     assert_eq!(triggered.len(), 1);
@@ -205,7 +205,7 @@ fn test_dependency_chain_respected() {
 
     // Complete stage B
     complete_stage("stage-b", work_dir).expect("Should complete stage B");
-    transition_stage("stage-b", StageStatus::Verified, work_dir).expect("Should verify stage B");
+    transition_stage("stage-b", StageStatus::Completed, work_dir).expect("Should verify stage B");
 
     let triggered = trigger_dependents("stage-b", work_dir).expect("Should trigger dependents");
     assert_eq!(triggered.len(), 1);
@@ -220,7 +220,7 @@ fn test_dependency_chain_respected() {
 
     // Complete stage C
     complete_stage("stage-c", work_dir).expect("Should complete stage C");
-    transition_stage("stage-c", StageStatus::Verified, work_dir).expect("Should verify stage C");
+    transition_stage("stage-c", StageStatus::Completed, work_dir).expect("Should verify stage C");
 
     let triggered = trigger_dependents("stage-c", work_dir).expect("Should trigger dependents");
     assert_eq!(triggered.len(), 1);

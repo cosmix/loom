@@ -4,7 +4,6 @@ use anyhow::Result;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
-use crate::commands::merge;
 use crate::models::stage::StageStatus;
 use crate::orchestrator::monitor::MonitorEvent;
 use crate::orchestrator::signals::remove_signal;
@@ -28,9 +27,6 @@ pub(super) trait EventHandler: Persistence {
     /// Handle stage completion
     fn on_stage_completed(&mut self, stage_id: &str) -> Result<()>;
 
-    /// Handle stage verification - triggers automatic merge
-    fn on_stage_verified(&mut self, stage_id: &str) -> Result<()>;
-
     /// Handle session crash
     fn on_session_crashed(
         &mut self,
@@ -52,9 +48,6 @@ impl EventHandler for Orchestrator {
             match event {
                 MonitorEvent::StageCompleted { stage_id } => {
                     self.on_stage_completed(&stage_id)?;
-                }
-                MonitorEvent::StageVerified { stage_id } => {
-                    self.on_stage_verified(&stage_id)?;
                 }
                 MonitorEvent::StageBlocked { stage_id, reason } => {
                     clear_status_line();
@@ -127,37 +120,6 @@ impl EventHandler for Orchestrator {
         Ok(())
     }
 
-    fn on_stage_verified(&mut self, stage_id: &str) -> Result<()> {
-        clear_status_line();
-        eprintln!("Stage '{stage_id}' verified - triggering auto-merge");
-
-        // Check if worktree exists before attempting merge
-        let worktree_path = self.config.repo_root.join(".worktrees").join(stage_id);
-        if !worktree_path.exists() {
-            eprintln!(
-                "  Worktree not found at {} - skipping merge",
-                worktree_path.display()
-            );
-            return Ok(());
-        }
-
-        // Attempt to merge the verified stage
-        // Use force=false to respect safety checks (stage status validation, no active sessions)
-        match merge::execute(stage_id.to_string(), false) {
-            Ok(()) => {
-                eprintln!("  Auto-merge successful for stage '{stage_id}'");
-            }
-            Err(e) => {
-                // Log the error but don't fail the orchestrator
-                // Merge failures (e.g., conflicts) require manual intervention
-                eprintln!("  Auto-merge failed for stage '{stage_id}': {e}");
-                eprintln!("  Run 'loom merge {stage_id}' manually to resolve");
-            }
-        }
-
-        Ok(())
-    }
-
     fn on_session_crashed(
         &mut self,
         session_id: &str,
@@ -176,7 +138,7 @@ impl EventHandler for Orchestrator {
             let mut stage = self.load_stage(&sid)?;
 
             // Don't override terminal states - stage may have completed before tmux died
-            if matches!(stage.status, StageStatus::Completed | StageStatus::Verified) {
+            if matches!(stage.status, StageStatus::Completed) {
                 // Stage already completed successfully, just clean up
                 return Ok(());
             }
