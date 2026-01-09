@@ -4,8 +4,10 @@
 //! - Worktree creation/removal for parallel stage execution
 //! - Branch management for stage isolation
 //! - Merge operations for integrating completed work
+//! - Cleanup utilities for successful merges
 
 pub mod branch;
+pub mod cleanup;
 pub mod merge;
 pub mod worktree;
 
@@ -24,6 +26,11 @@ pub use branch::{
     branch_exists, branch_name_for_stage, cleanup_merged_branches, create_branch, current_branch,
     default_branch, delete_branch, is_branch_merged, list_branches, list_loom_branches,
     stage_id_from_branch, BranchInfo,
+};
+
+pub use cleanup::{
+    cleanup_after_merge, cleanup_branch, cleanup_multiple_stages, cleanup_worktree, needs_cleanup,
+    prune_worktrees, CleanupConfig, CleanupResult,
 };
 
 /// Initialize git module - check prerequisites
