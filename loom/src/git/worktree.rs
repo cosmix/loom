@@ -4,6 +4,7 @@
 //! Worktrees are created in .worktrees/{stage_id}/ directories.
 
 use anyhow::{bail, Context, Result};
+use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -91,21 +92,33 @@ pub fn create_worktree(stage_id: &str, repo_root: &Path) -> Result<Worktree> {
                 .with_context(|| "Failed to create CLAUDE.md symlink in worktree")?;
         }
 
-        // Symlink settings.local.json from main repo so permissions are shared
-        // This means tool approvals (e.g., "go vet") propagate across all sessions
+        // Create settings.local.json with trust and auto-accept settings merged with main repo settings
+        // This ensures:
+        // 1. hasTrustDialogAccepted: true - skips the "Yes, proceed / No, exit" prompt
+        // 2. permissions.defaultMode: "acceptEdits" - auto-accepts file edits without prompting
+        // 3. All permissions from main repo are inherited
         let main_settings = main_claude_dir.join("settings.local.json");
-        if main_settings.exists() {
-            let worktree_settings = worktree_claude_dir.join("settings.local.json");
-            let relative_settings = Path::new("../../../.claude/settings.local.json");
+        let worktree_settings = worktree_claude_dir.join("settings.local.json");
+        create_worktree_settings(&main_settings, &worktree_settings)?;
+    }
 
-            #[cfg(unix)]
-            std::os::unix::fs::symlink(relative_settings, &worktree_settings)
-                .with_context(|| "Failed to create settings.local.json symlink in worktree")?;
+    // Symlink project-root CLAUDE.md (distinct from .claude/CLAUDE.md)
+    // This ensures Claude Code instances in worktrees have access to project instructions
+    // without needing to read from the main repo outside the worktree
+    let main_root_claude_md = repo_root.join("CLAUDE.md");
+    let worktree_root_claude_md = worktree_path.join("CLAUDE.md");
 
-            #[cfg(windows)]
-            std::os::windows::fs::symlink_file(relative_settings, &worktree_settings)
-                .with_context(|| "Failed to create settings.local.json symlink in worktree")?;
-        }
+    if main_root_claude_md.exists() && !worktree_root_claude_md.exists() {
+        // Relative path from .worktrees/{stage_id}/CLAUDE.md to ../../CLAUDE.md
+        let relative_root_claude_md = Path::new("../../CLAUDE.md");
+
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(relative_root_claude_md, &worktree_root_claude_md)
+            .with_context(|| "Failed to create root CLAUDE.md symlink in worktree")?;
+
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(relative_root_claude_md, &worktree_root_claude_md)
+            .with_context(|| "Failed to create root CLAUDE.md symlink in worktree")?;
     }
 
     let mut worktree = Worktree::new(stage_id.to_string(), worktree_path, branch_name);
@@ -135,6 +148,53 @@ pub fn ensure_work_symlink(worktree_path: &Path, repo_root: &Path) -> Result<()>
     Ok(())
 }
 
+/// Create settings.local.json for a worktree with trust and auto-accept settings.
+///
+/// This function:
+/// 1. Reads the main repo's settings.local.json (if it exists)
+/// 2. Sets `hasTrustDialogAccepted: true` to skip the trust prompt
+/// 3. Sets `permissions.defaultMode: "acceptEdits"` to auto-accept file edits
+/// 4. Writes the merged result to the worktree
+///
+/// This solves two issues:
+/// - Issue 9: Eliminates the "Yes, proceed / No, exit" prompt on session start
+/// - Issue 10: Enables auto-accept edits for seamless operation
+fn create_worktree_settings(main_settings: &Path, worktree_settings: &Path) -> Result<()> {
+    // Start with main repo settings or empty object
+    let mut settings: Value = if main_settings.exists() {
+        let content = std::fs::read_to_string(main_settings)
+            .with_context(|| "Failed to read main repo settings.local.json")?;
+        serde_json::from_str(&content).unwrap_or_else(|_| json!({}))
+    } else {
+        json!({})
+    };
+
+    // Ensure settings is an object
+    let obj = settings
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("settings.local.json must be a JSON object"))?;
+
+    // Set hasTrustDialogAccepted to skip the trust prompt
+    obj.insert("hasTrustDialogAccepted".to_string(), json!(true));
+
+    // Ensure permissions object exists and set defaultMode to acceptEdits
+    let permissions = obj
+        .entry("permissions")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("permissions must be a JSON object"))?;
+
+    permissions.insert("defaultMode".to_string(), json!("acceptEdits"));
+
+    // Write the merged settings
+    let content = serde_json::to_string_pretty(&settings)
+        .with_context(|| "Failed to serialize settings")?;
+    std::fs::write(worktree_settings, content)
+        .with_context(|| "Failed to write worktree settings.local.json")?;
+
+    Ok(())
+}
+
 /// Remove a worktree
 ///
 /// Runs: git worktree remove .worktrees/{stage_id}
@@ -158,6 +218,12 @@ pub fn remove_worktree(stage_id: &str, repo_root: &Path, force: bool) -> Result<
     } else if claude_dir.is_symlink() {
         // Handle legacy symlink case
         std::fs::remove_file(&claude_dir).ok();
+    }
+
+    // Remove the root CLAUDE.md symlink
+    let root_claude_md = worktree_path.join("CLAUDE.md");
+    if root_claude_md.exists() || root_claude_md.is_symlink() {
+        std::fs::remove_file(&root_claude_md).ok(); // Ignore errors
     }
 
     let mut args = vec!["worktree", "remove"];
