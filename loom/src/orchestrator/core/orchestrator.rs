@@ -11,6 +11,7 @@ use crate::models::worktree::Worktree;
 use crate::orchestrator::monitor::{Monitor, MonitorConfig, MonitorEvent};
 use crate::orchestrator::terminal::tmux::check_tmux_available;
 use crate::plan::ExecutionGraph;
+use crate::utils::{cleanup_terminal, install_terminal_panic_hook};
 
 use super::event_handler::EventHandler;
 use super::persistence::Persistence;
@@ -93,6 +94,9 @@ impl Orchestrator {
 
     /// Main run loop - executes until all stages complete or error
     pub fn run(&mut self) -> Result<OrchestratorResult> {
+        // Install panic hook to restore terminal on panic
+        install_terminal_panic_hook();
+
         if !self.config.manual_mode && self.config.backend_type == BackendType::Tmux {
             check_tmux_available()
                 .context("tmux is required when using tmux backend. Use --manual to set up sessions yourself, or use --backend=native.")?;
@@ -224,6 +228,9 @@ impl Orchestrator {
             std::thread::sleep(self.config.poll_interval);
         }
 
+        // Restore terminal state before returning (clears \r-based status line)
+        cleanup_terminal();
+
         Ok(OrchestratorResult {
             completed_stages,
             failed_stages,
@@ -234,6 +241,9 @@ impl Orchestrator {
 
     /// Run a single stage by ID (for `loom run --stage <id>`)
     pub fn run_single(&mut self, stage_id: &str) -> Result<OrchestratorResult> {
+        // Install panic hook to restore terminal on panic
+        install_terminal_panic_hook();
+
         let node = self
             .graph
             .get_node(stage_id)
@@ -297,6 +307,9 @@ impl Orchestrator {
 
             std::thread::sleep(self.config.poll_interval);
         }
+
+        // Restore terminal state before returning
+        cleanup_terminal();
 
         Ok(OrchestratorResult {
             completed_stages: if completed {

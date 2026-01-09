@@ -1,4 +1,54 @@
+use std::io::{self, Write};
 use std::path::Path;
+use std::sync::Once;
+
+/// ANSI escape codes for terminal control
+const CURSOR_SHOW: &str = "\x1B[?25h";
+const ATTR_RESET: &str = "\x1B[0m";
+const CLEAR_LINE: &str = "\r\x1B[K";
+
+static PANIC_HOOK_INSTALLED: Once = Once::new();
+
+/// Restore terminal to a clean state.
+///
+/// This function:
+/// - Shows the cursor (if hidden)
+/// - Resets text attributes (colors, bold, etc.)
+/// - Clears the current line (removes partial output from \r updates)
+/// - Moves cursor to a new line
+/// - Flushes stdout to ensure all escape codes are written
+///
+/// Call this before exiting to prevent leaving terminal in a weird state.
+pub fn cleanup_terminal() {
+    let mut stdout = io::stdout();
+
+    // Build cleanup sequence:
+    // 1. Clear current line (in case of \r-based status updates)
+    // 2. Show cursor
+    // 3. Reset attributes
+    // 4. Ensure we're on a new line
+    let cleanup = format!("{CLEAR_LINE}{CURSOR_SHOW}{ATTR_RESET}\n");
+
+    // Ignore errors - we're cleaning up, best effort
+    let _ = stdout.write_all(cleanup.as_bytes());
+    let _ = stdout.flush();
+}
+
+/// Install a panic hook that restores terminal state before panicking.
+///
+/// This ensures the terminal is usable even if the program panics.
+/// Safe to call multiple times - only installs once.
+pub fn install_terminal_panic_hook() {
+    PANIC_HOOK_INSTALLED.call_once(|| {
+        let default_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |panic_info| {
+            // Restore terminal first
+            cleanup_terminal();
+            // Then call the default panic handler
+            default_hook(panic_info);
+        }));
+    });
+}
 
 /// Display a path relative to work_dir, or just filename if outside.
 /// This prevents exposing full system paths to users.

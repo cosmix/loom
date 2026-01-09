@@ -6,6 +6,7 @@ use crate::commands::graph::build_graph_display;
 use crate::daemon::{read_message, write_message, DaemonServer, Request, Response, StageInfo};
 use crate::fs::work_dir::WorkDir;
 use crate::models::worktree::WorktreeStatus;
+use crate::utils::{cleanup_terminal, install_terminal_panic_hook};
 use crate::verify::transitions::list_all_stages;
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -41,6 +42,9 @@ pub fn execute() -> Result<()> {
 
 /// Execute live-updating dashboard by subscribing to daemon
 fn execute_live(work_path: &std::path::Path) -> Result<()> {
+    // Install panic hook to restore terminal on panic
+    install_terminal_panic_hook();
+
     let socket_path = work_path.join("orchestrator.sock");
 
     let mut stream =
@@ -73,6 +77,8 @@ fn execute_live(work_path: &std::path::Path) -> Result<()> {
         if let Some(ref mut s) = stream {
             let _ = write_message(s, &Request::Unsubscribe);
         }
+        // Restore terminal to clean state before exiting
+        cleanup_terminal();
         std::process::exit(0);
     })
     .context("Failed to set Ctrl+C handler")?;
@@ -122,6 +128,9 @@ fn execute_live(work_path: &std::path::Path) -> Result<()> {
 
     // Clean up: send unsubscribe before exiting
     let _ = write_message(&mut stream, &Request::Unsubscribe);
+
+    // Restore terminal state
+    cleanup_terminal();
 
     Ok(())
 }
