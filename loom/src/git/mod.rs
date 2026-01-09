@@ -22,8 +22,8 @@ pub use merge::{
 
 pub use branch::{
     branch_exists, branch_name_for_stage, cleanup_merged_branches, create_branch, current_branch,
-    default_branch, delete_branch, list_branches, list_loom_branches, stage_id_from_branch,
-    BranchInfo,
+    default_branch, delete_branch, is_branch_merged, list_branches, list_loom_branches,
+    stage_id_from_branch, BranchInfo,
 };
 
 /// Initialize git module - check prerequisites
