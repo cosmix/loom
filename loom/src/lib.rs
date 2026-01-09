@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod completions;
+pub mod daemon;
 pub mod fs;
 pub mod git;
 pub mod handoff;
