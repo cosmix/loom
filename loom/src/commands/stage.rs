@@ -72,8 +72,8 @@ pub fn complete(stage_id: String, session_id: Option<String>, no_verify: bool) -
         all_passed = true;
     }
 
-    // Always try to kill the tmux session for this stage (even without session_id)
-    cleanup_tmux_for_stage(&stage_id);
+    // Cleanup terminal resources based on backend type
+    cleanup_terminal_for_stage(&stage_id, session_id.as_deref(), work_dir);
 
     // Cleanup session resources (update session status, remove signal)
     if let Some(ref sid) = session_id {
@@ -107,6 +107,59 @@ pub fn complete(stage_id: String, session_id: Option<String>, no_verify: bool) -
     Ok(())
 }
 
+/// Clean up terminal resources for a stage based on backend type
+///
+/// This function determines the backend type by checking the session's tmux_session field.
+/// If tmux_session is present, it uses tmux backend cleanup. Otherwise, it's native backend
+/// which doesn't require cleanup (processes are killed via PID by the orchestrator).
+fn cleanup_terminal_for_stage(stage_id: &str, session_id: Option<&str>, work_dir: &Path) {
+    // Try to determine backend type from session data
+    let backend_type = if let Some(sid) = session_id {
+        detect_backend_from_session(sid, work_dir)
+    } else {
+        // No session ID - try tmux cleanup as best effort (backwards compatibility)
+        BackendType::Tmux
+    };
+
+    match backend_type {
+        BackendType::Tmux => {
+            cleanup_tmux_for_stage(stage_id);
+        }
+        BackendType::Native => {
+            // Native backend cleanup is handled by orchestrator via PID
+            // No additional cleanup needed here
+        }
+    }
+}
+
+/// Detect backend type from session file
+fn detect_backend_from_session(session_id: &str, work_dir: &Path) -> BackendType {
+    let session_path = work_dir.join("sessions").join(format!("{session_id}.md"));
+
+    if !session_path.exists() {
+        // Default to tmux for backwards compatibility
+        return BackendType::Tmux;
+    }
+
+    match fs::read_to_string(&session_path) {
+        Ok(content) => {
+            if let Ok(session) = session_from_markdown(&content) {
+                // If tmux_session field is present, it's tmux backend
+                if session.tmux_session.is_some() {
+                    return BackendType::Tmux;
+                }
+                // If pid is present but no tmux_session, it's native backend
+                if session.pid.is_some() {
+                    return BackendType::Native;
+                }
+            }
+            // Default to tmux for backwards compatibility
+            BackendType::Tmux
+        }
+        Err(_) => BackendType::Tmux, // Default to tmux for backwards compatibility
+    }
+}
+
 /// Kill tmux session for a stage (best-effort, doesn't require session_id)
 fn cleanup_tmux_for_stage(stage_id: &str) {
     let tmux_name = format!("loom-{stage_id}");
@@ -124,6 +177,13 @@ fn cleanup_tmux_for_stage(stage_id: &str) {
             eprintln!("Warning: failed to kill tmux session '{tmux_name}': {e}");
         }
     }
+}
+
+/// Backend type enum (local copy to avoid circular dependency)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BackendType {
+    Native,
+    Tmux,
 }
 
 /// Find session ID for a stage by scanning .work/sessions/

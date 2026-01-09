@@ -2,9 +2,9 @@
 //! Usage: loom sessions [list|kill <id>]
 
 use anyhow::{bail, Context, Result};
-use std::process::Command;
 
-use crate::parser::markdown::MarkdownDocument;
+use crate::models::session::Session;
+use crate::orchestrator::terminal::{create_backend, BackendType};
 
 /// List all sessions
 pub fn list() -> Result<()> {
@@ -55,45 +55,33 @@ pub fn kill(session_id: String) -> Result<()> {
         bail!("Session '{session_id}' not found");
     }
 
-    // Read session file and extract tmux_session from frontmatter
+    // Read session file and parse it
     let content = std::fs::read_to_string(&session_file)
         .with_context(|| format!("Failed to read session file: {}", session_file.display()))?;
 
-    let doc = MarkdownDocument::parse(&content).context("Failed to parse session file")?;
+    // Parse session from markdown YAML frontmatter
+    let session = parse_session_from_markdown(&content)
+        .context("Failed to parse session from markdown")?;
 
-    let tmux_session = doc
-        .get_frontmatter("tmux_session")
-        .filter(|s| !s.is_empty() && s.as_str() != "null" && s.as_str() != "~")
-        .map(|s| s.to_string());
+    // Detect backend type from session metadata
+    let backend_type = detect_backend_type(&session);
 
-    // Kill the tmux session if it exists
-    if let Some(ref tmux_name) = tmux_session {
-        println!("Killing tmux session: {tmux_name}");
+    // Kill the session using the appropriate backend
+    if let Some(backend_type) = backend_type {
+        println!("Detected backend: {backend_type}");
+        let backend = create_backend(backend_type)
+            .with_context(|| format!("Failed to create {backend_type} backend"))?;
 
-        // Check if session exists before killing
-        let has_session = Command::new("tmux")
-            .args(["has-session", "-t", tmux_name])
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-
-        if has_session {
-            let kill_result = Command::new("tmux")
-                .args(["kill-session", "-t", tmux_name])
-                .output()
-                .context("Failed to execute tmux kill-session")?;
-
-            if kill_result.status.success() {
-                println!("  Tmux session '{tmux_name}' killed successfully");
-            } else {
-                let stderr = String::from_utf8_lossy(&kill_result.stderr);
-                println!("  Warning: Failed to kill tmux session: {stderr}");
-            }
+        // Check if session is alive
+        if backend.is_session_alive(&session)? {
+            println!("Killing session using {backend_type} backend...");
+            backend.kill_session(&session)?;
+            println!("  Session killed successfully");
         } else {
-            println!("  Tmux session '{tmux_name}' not found (already terminated?)");
+            println!("  Session already terminated");
         }
     } else {
-        println!("  No tmux session associated with this session");
+        println!("  No backend information found (session may not have been spawned)");
     }
 
     // Remove the session file
@@ -111,4 +99,97 @@ pub fn kill(session_id: String) -> Result<()> {
 
     println!("\nSession '{session_id}' killed successfully");
     Ok(())
+}
+
+/// Parse session from markdown with YAML frontmatter
+fn parse_session_from_markdown(content: &str) -> Result<Session> {
+    let yaml_content = content
+        .strip_prefix("---\n")
+        .and_then(|s| s.split_once("\n---"))
+        .map(|(yaml, _)| yaml)
+        .ok_or_else(|| anyhow::anyhow!("Invalid session file format: missing frontmatter"))?;
+
+    serde_yaml::from_str(yaml_content).context("Failed to parse session YAML")
+}
+
+/// Detect backend type from session metadata
+///
+/// If tmux_session is set, returns Tmux.
+/// If only pid is set, returns Native.
+fn detect_backend_type(session: &Session) -> Option<BackendType> {
+    if session.tmux_session.is_some() {
+        Some(BackendType::Tmux)
+    } else if session.pid.is_some() {
+        Some(BackendType::Native)
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_detect_backend_type_tmux() {
+        let mut session = Session::new();
+        session.tmux_session = Some("loom-stage-1".to_string());
+
+        assert_eq!(detect_backend_type(&session), Some(BackendType::Tmux));
+    }
+
+    #[test]
+    fn test_detect_backend_type_native() {
+        let mut session = Session::new();
+        session.pid = Some(12345);
+
+        assert_eq!(detect_backend_type(&session), Some(BackendType::Native));
+    }
+
+    #[test]
+    fn test_detect_backend_type_tmux_takes_precedence() {
+        let mut session = Session::new();
+        session.tmux_session = Some("loom-stage-1".to_string());
+        session.pid = Some(12345);
+
+        // Tmux takes precedence if both are set
+        assert_eq!(detect_backend_type(&session), Some(BackendType::Tmux));
+    }
+
+    #[test]
+    fn test_detect_backend_type_none() {
+        let session = Session::new();
+
+        assert_eq!(detect_backend_type(&session), None);
+    }
+
+    #[test]
+    fn test_parse_session_from_markdown_valid() {
+        let content = r#"---
+id: session-1
+stage_id: stage-1
+tmux_session: loom-stage-1
+status: running
+context_tokens: 0
+context_limit: 200000
+created_at: 2024-01-01T00:00:00Z
+last_active: 2024-01-01T00:00:00Z
+---
+
+# Session: session-1
+"#;
+
+        let session = parse_session_from_markdown(content).unwrap();
+        assert_eq!(session.id, "session-1");
+        assert_eq!(session.stage_id, Some("stage-1".to_string()));
+        assert_eq!(session.tmux_session, Some("loom-stage-1".to_string()));
+    }
+
+    #[test]
+    fn test_parse_session_from_markdown_invalid() {
+        let content = "Invalid content without frontmatter";
+
+        let result = parse_session_from_markdown(content);
+        assert!(result.is_err());
+    }
 }

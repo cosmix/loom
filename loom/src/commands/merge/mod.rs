@@ -15,9 +15,10 @@ mod validation;
 pub use execute::{execute, worktree_path};
 
 // Re-export validation functions that may be useful externally
+#[allow(deprecated)]
 pub use validation::{
-    check_active_tmux_session, extract_frontmatter_field, find_tmux_session_for_stage,
-    validate_stage_status,
+    check_active_session, check_active_tmux_session, extract_frontmatter_field,
+    find_tmux_session_for_stage, validate_stage_status,
 };
 
 // Re-export helpers that may be useful externally

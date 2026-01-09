@@ -17,7 +17,7 @@ use super::helpers::{
     auto_commit_changes, ensure_work_gitignored, get_uncommitted_files, has_uncommitted_changes,
     pop_stash, remove_loom_dirs_from_branch, stash_changes,
 };
-use super::validation::{check_active_tmux_session, validate_stage_status};
+use super::validation::{check_active_session, validate_stage_status};
 
 use crate::fs::stage_files::find_stage_file;
 
@@ -72,8 +72,8 @@ pub fn execute(stage_id: String, force: bool) -> Result<()> {
     // Safety check 1: Validate stage status
     validate_stage_status(&stage_id, &work_dir, force)?;
 
-    // Safety check 2: Check for active tmux sessions
-    check_active_tmux_session(&stage_id, &work_dir, force)?;
+    // Safety check 2: Check for active sessions (both tmux and native)
+    check_active_session(&stage_id, &work_dir, force)?;
 
     println!("Worktree path: {}", worktree_path.display());
     println!("Branch to merge: loom/{stage_id}");
