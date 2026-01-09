@@ -11,13 +11,12 @@ use crate::verify::transitions::list_all_stages;
 /// Status indicator with color for display
 fn status_indicator(status: &StageStatus) -> ColoredString {
     match status {
-        StageStatus::Verified => "✓".green().bold(),
+        StageStatus::Completed => "✓".green().bold(),
         StageStatus::Executing => "●".blue().bold(),
         StageStatus::Queued => "▶".cyan().bold(),
         StageStatus::WaitingForDeps => "○".white().dimmed(),
         StageStatus::WaitingForInput => "?".magenta().bold(),
         StageStatus::Blocked => "✗".red().bold(),
-        StageStatus::Completed => "✔".green(),
         StageStatus::NeedsHandoff => "⟳".yellow().bold(),
     }
 }
@@ -169,7 +168,7 @@ pub fn show() -> Result<()> {
     println!();
     print!("Legend: ");
     print!("{} ", "✓".green().bold());
-    print!("verified  ");
+    print!("completed  ");
     print!("{} ", "●".blue().bold());
     print!("executing  ");
     print!("{} ", "▶".cyan().bold());
@@ -180,8 +179,6 @@ pub fn show() -> Result<()> {
     print!("waiting  ");
     print!("{} ", "✗".red().bold());
     print!("blocked  ");
-    print!("{} ", "✔".green());
-    print!("completed  ");
     print!("{} ", "⟳".yellow().bold());
     println!("handoff");
     println!();
@@ -252,7 +249,7 @@ mod tests {
     fn test_status_indicator() {
         // Test that indicators contain the expected Unicode symbols
         // (colored strings include ANSI codes, so we check the base character)
-        assert!(status_indicator(&StageStatus::Verified)
+        assert!(status_indicator(&StageStatus::Completed)
             .to_string()
             .contains('✓'));
         assert!(status_indicator(&StageStatus::Executing)
@@ -270,9 +267,6 @@ mod tests {
         assert!(status_indicator(&StageStatus::Blocked)
             .to_string()
             .contains('✗'));
-        assert!(status_indicator(&StageStatus::Completed)
-            .to_string()
-            .contains('✔'));
         assert!(status_indicator(&StageStatus::NeedsHandoff)
             .to_string()
             .contains('⟳'));
@@ -303,7 +297,7 @@ mod tests {
     #[test]
     fn test_build_graph_display_linear_chain() {
         let stages = vec![
-            create_test_stage("stage-1", "First", StageStatus::Verified, vec![]),
+            create_test_stage("stage-1", "First", StageStatus::Completed, vec![]),
             create_test_stage("stage-2", "Second", StageStatus::Executing, vec!["stage-1"]),
             create_test_stage(
                 "stage-3",
@@ -321,7 +315,7 @@ mod tests {
         assert!(output.contains("Third"));
 
         // Check status indicators
-        assert!(output.contains('✓')); // Verified
+        assert!(output.contains('✓')); // Completed
         assert!(output.contains('●')); // Executing
         assert!(output.contains('○')); // Pending
     }
@@ -330,7 +324,7 @@ mod tests {
     fn test_build_graph_display_diamond_pattern() {
         // Diamond: A -> B, A -> C, B -> D, C -> D
         let stages = vec![
-            create_test_stage("a", "Stage A", StageStatus::Verified, vec![]),
+            create_test_stage("a", "Stage A", StageStatus::Completed, vec![]),
             create_test_stage("b", "Stage B", StageStatus::Completed, vec!["a"]),
             create_test_stage("c", "Stage C", StageStatus::Completed, vec!["a"]),
             create_test_stage("d", "Stage D", StageStatus::Queued, vec!["b", "c"]),
@@ -373,7 +367,7 @@ mod tests {
     #[test]
     fn test_build_graph_display_all_statuses() {
         let stages = vec![
-            create_test_stage("s1", "Verified Stage", StageStatus::Verified, vec![]),
+            create_test_stage("s1", "Completed Stage", StageStatus::Completed, vec![]),
             create_test_stage("s2", "Executing Stage", StageStatus::Executing, vec![]),
             create_test_stage("s3", "Ready Stage", StageStatus::Queued, vec![]),
             create_test_stage("s4", "Pending Stage", StageStatus::WaitingForDeps, vec![]),
@@ -384,9 +378,8 @@ mod tests {
                 vec![],
             ),
             create_test_stage("s6", "Blocked Stage", StageStatus::Blocked, vec![]),
-            create_test_stage("s7", "Completed Stage", StageStatus::Completed, vec![]),
             create_test_stage(
-                "s8",
+                "s7",
                 "NeedsHandoff Stage",
                 StageStatus::NeedsHandoff,
                 vec![],
@@ -396,13 +389,12 @@ mod tests {
         let output = build_graph_display(&stages).unwrap();
 
         // Check all Unicode status indicators are present
-        assert!(output.contains('✓')); // Verified
+        assert!(output.contains('✓')); // Completed
         assert!(output.contains('●')); // Executing
         assert!(output.contains('▶')); // Ready
         assert!(output.contains('○')); // Pending
         assert!(output.contains('?')); // WaitingForInput
         assert!(output.contains('✗')); // Blocked
-        assert!(output.contains('✔')); // Completed
         assert!(output.contains('⟳')); // NeedsHandoff
     }
 }

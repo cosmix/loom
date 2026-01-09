@@ -72,7 +72,7 @@ impl Recovery for Orchestrator {
             // Load the stage and sync status
             if let Ok(stage) = self.load_stage(stage_id) {
                 match stage.status {
-                    StageStatus::Completed | StageStatus::Verified => {
+                    StageStatus::Completed => {
                         // Mark as completed in graph (ignore errors for stages not in graph)
                         let _ = self.graph.mark_completed(stage_id);
                     }
@@ -230,9 +230,7 @@ impl Recovery for Orchestrator {
                     // Need to check the actual stage file for held status
                     if let Ok(stage) = self.load_stage(&node.id) {
                         match stage.status {
-                            StageStatus::Verified
-                            | StageStatus::Blocked
-                            | StageStatus::Completed => {
+                            StageStatus::Blocked | StageStatus::Completed => {
                                 continue;
                             }
                             StageStatus::Queued | StageStatus::WaitingForDeps if stage.held => {

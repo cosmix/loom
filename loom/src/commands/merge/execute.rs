@@ -28,7 +28,7 @@ use super::validation::{check_active_session, validate_stage_status};
 
 use crate::fs::stage_files::find_stage_file;
 
-/// Update stage status to Verified after successful merge
+/// Update stage status to Completed after successful merge
 fn mark_stage_merged(stage_id: &str, work_dir: &std::path::Path) -> Result<()> {
     let stages_dir = work_dir.join("stages");
 
@@ -38,12 +38,12 @@ fn mark_stage_merged(stage_id: &str, work_dir: &std::path::Path) -> Result<()> {
         return Ok(());
     }
 
-    // Transition to Verified status (if not already)
+    // Transition to Completed status (if not already)
     let stage = load_stage(stage_id, work_dir)?;
-    if stage.status != StageStatus::Verified {
-        crate::verify::transitions::transition_stage(stage_id, StageStatus::Verified, work_dir)
+    if stage.status != StageStatus::Completed {
+        crate::verify::transitions::transition_stage(stage_id, StageStatus::Completed, work_dir)
             .with_context(|| format!("Failed to update stage status for: {stage_id}"))?;
-        println!("Updated stage status to Verified");
+        println!("Updated stage status to Completed");
     }
 
     Ok(())

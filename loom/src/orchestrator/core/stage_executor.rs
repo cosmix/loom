@@ -50,7 +50,7 @@ impl StageExecutor for Orchestrator {
         // Skip if stage is already executing or completed
         if matches!(
             stage.status,
-            StageStatus::Executing | StageStatus::Completed | StageStatus::Verified
+            StageStatus::Executing | StageStatus::Completed
         ) {
             return Ok(());
         }

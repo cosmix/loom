@@ -17,7 +17,7 @@ fn test_parallel_stages_triggered_together() {
     // Create foundation stage
     let mut foundation = Stage::new("Foundation".to_string(), None);
     foundation.id = "foundation".to_string();
-    foundation.status = StageStatus::Verified;
+    foundation.status = StageStatus::Completed;
     save_stage(&foundation, work_dir).unwrap();
 
     // Create parallel stages depending on foundation
@@ -36,7 +36,7 @@ fn test_parallel_stages_triggered_together() {
 
     // Verify foundation stage is Ready, A/B/C are Pending
     let foundation = load_stage("foundation", work_dir).unwrap();
-    assert_eq!(foundation.status, StageStatus::Verified);
+    assert_eq!(foundation.status, StageStatus::Completed);
 
     for id in ["stage-a", "stage-b", "stage-c"] {
         let stage = load_stage(id, work_dir).unwrap();
@@ -73,7 +73,7 @@ fn test_parallel_group_isolation() {
     // Create foundation stage
     let mut foundation = Stage::new("Foundation".to_string(), None);
     foundation.id = "foundation".to_string();
-    foundation.status = StageStatus::Verified;
+    foundation.status = StageStatus::Completed;
     save_stage(&foundation, work_dir).unwrap();
 
     // Create frontend parallel group (A, B)
@@ -131,7 +131,7 @@ fn test_diamond_dependency_pattern() {
     // A (top)
     let mut stage_a = Stage::new("Stage A".to_string(), None);
     stage_a.id = "stage-a".to_string();
-    stage_a.status = StageStatus::Verified;
+    stage_a.status = StageStatus::Completed;
     save_stage(&stage_a, work_dir).unwrap();
 
     // B (depends on A)
@@ -176,7 +176,7 @@ fn test_diamond_dependency_pattern() {
 
     // Complete B only
     complete_stage("stage-b", work_dir).unwrap();
-    transition_stage("stage-b", StageStatus::Verified, work_dir).unwrap();
+    transition_stage("stage-b", StageStatus::Completed, work_dir).unwrap();
     let triggered = trigger_dependents("stage-b", work_dir).unwrap();
     assert_eq!(triggered.len(), 0);
 
@@ -186,7 +186,7 @@ fn test_diamond_dependency_pattern() {
 
     // Complete C
     complete_stage("stage-c", work_dir).unwrap();
-    transition_stage("stage-c", StageStatus::Verified, work_dir).unwrap();
+    transition_stage("stage-c", StageStatus::Completed, work_dir).unwrap();
     let triggered = trigger_dependents("stage-c", work_dir).unwrap();
     assert_eq!(triggered.len(), 1);
     assert_eq!(triggered[0], "stage-d");
@@ -206,7 +206,7 @@ fn test_fan_out_fan_in() {
     // A
     let mut stage_a = Stage::new("Stage A".to_string(), None);
     stage_a.id = "stage-a".to_string();
-    stage_a.status = StageStatus::Verified;
+    stage_a.status = StageStatus::Completed;
     save_stage(&stage_a, work_dir).unwrap();
 
     // B, C, D all depend on A
@@ -256,7 +256,7 @@ fn test_fan_out_fan_in() {
     // Complete B and C
     for id in ["stage-b", "stage-c"] {
         complete_stage(id, work_dir).unwrap();
-        transition_stage(id, StageStatus::Verified, work_dir).unwrap();
+        transition_stage(id, StageStatus::Completed, work_dir).unwrap();
         trigger_dependents(id, work_dir).unwrap();
     }
 
@@ -266,7 +266,7 @@ fn test_fan_out_fan_in() {
 
     // Complete D
     complete_stage("stage-d", work_dir).unwrap();
-    transition_stage("stage-d", StageStatus::Verified, work_dir).unwrap();
+    transition_stage("stage-d", StageStatus::Completed, work_dir).unwrap();
     let triggered = trigger_dependents("stage-d", work_dir).unwrap();
     assert_eq!(triggered.len(), 1);
     assert_eq!(triggered[0], "stage-e");

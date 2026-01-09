@@ -43,10 +43,6 @@ pub enum MonitorEvent {
     StageCompleted {
         stage_id: String,
     },
-    /// Stage was verified (approved by human reviewer)
-    StageVerified {
-        stage_id: String,
-    },
     StageBlocked {
         stage_id: String,
         reason: String,
@@ -222,11 +218,6 @@ impl Monitor {
                                 .close_reason
                                 .clone()
                                 .unwrap_or_else(|| "Unknown reason".to_string()),
-                        });
-                    }
-                    StageStatus::Verified => {
-                        events.push(MonitorEvent::StageVerified {
-                            stage_id: stage.id.clone(),
                         });
                     }
                     StageStatus::NeedsHandoff => {
@@ -848,28 +839,6 @@ Test content
         }
     }
 
-    #[test]
-    fn test_stage_verified_event() {
-        let mut monitor = Monitor::new(MonitorConfig::default());
-
-        let mut stage = Stage::new("test".to_string(), Some("Test stage".to_string()));
-        stage.id = "stage-1".to_string();
-        stage.status = StageStatus::Completed;
-
-        // First poll - stage appears as Completed
-        monitor.detect_stage_changes(&[stage.clone()]);
-
-        // Stage is verified - should generate StageVerified event
-        stage.status = StageStatus::Verified;
-        let events = monitor.detect_stage_changes(&[stage]);
-        assert_eq!(events.len(), 1);
-
-        if let MonitorEvent::StageVerified { stage_id } = &events[0] {
-            assert_eq!(stage_id, "stage-1");
-        } else {
-            panic!("Expected StageVerified event, got {:?}", events[0]);
-        }
-    }
 
     #[test]
     fn test_is_merge_session_with_merge_signal() {

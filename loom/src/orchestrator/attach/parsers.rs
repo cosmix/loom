@@ -132,7 +132,7 @@ pub fn stage_from_markdown(content: &str) -> Result<Stage> {
         "blocked" => StageStatus::Blocked,
         "completed" => StageStatus::Completed,
         "needs_handoff" => StageStatus::NeedsHandoff,
-        "verified" => StageStatus::Verified,
+        "verified" => StageStatus::Completed, // Map legacy "verified" to Completed for backwards compatibility
         _ => bail!("Invalid stage status: {status_str}"),
     };
 

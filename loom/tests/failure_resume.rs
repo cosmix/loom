@@ -95,7 +95,7 @@ fn test_stage_reset_to_ready_when_deps_verified() {
 
     let mut stage_a = Stage::new("Stage A".to_string(), None);
     stage_a.id = "stage-a".to_string();
-    stage_a.status = StageStatus::Verified;
+    stage_a.status = StageStatus::Completed;
     save_stage(&stage_a, work_dir).unwrap();
 
     let mut stage_b = Stage::new("Stage B".to_string(), None);
@@ -204,8 +204,8 @@ fn test_stage_state_machine_valid_transitions() {
     assert_eq!(stage.status, StageStatus::Completed);
     assert!(stage.completed_at.is_some());
 
-    let stage = transition_stage("test-stage", StageStatus::Verified, work_dir).unwrap();
-    assert_eq!(stage.status, StageStatus::Verified);
+    let stage = transition_stage("test-stage", StageStatus::Completed, work_dir).unwrap();
+    assert_eq!(stage.status, StageStatus::Completed);
 }
 
 #[test]
@@ -287,7 +287,7 @@ fn test_multiple_blocked_stages_with_dependencies() {
     transition_stage("stage-a", StageStatus::Queued, work_dir).unwrap();
     transition_stage("stage-a", StageStatus::Executing, work_dir).unwrap();
     transition_stage("stage-a", StageStatus::Completed, work_dir).unwrap();
-    transition_stage("stage-a", StageStatus::Verified, work_dir).unwrap();
+    transition_stage("stage-a", StageStatus::Completed, work_dir).unwrap();
 
     let triggered = trigger_dependents("stage-a", work_dir).unwrap();
     assert!(triggered.is_empty());
@@ -367,7 +367,7 @@ fn test_cascading_failure_does_not_propagate() {
     let work_dir = temp_dir.path();
     fs::create_dir_all(work_dir.join("stages")).unwrap();
 
-    let stage_1 = create_test_stage("stage-1", "Stage 1", StageStatus::Verified);
+    let stage_1 = create_test_stage("stage-1", "Stage 1", StageStatus::Completed);
     save_stage(&stage_1, work_dir).unwrap();
 
     let mut stage_2 = create_test_stage("stage-2", "Stage 2", StageStatus::Executing);
@@ -411,8 +411,8 @@ fn test_recovery_workflow_blocked_to_completion() {
     assert_eq!(completed.status, StageStatus::Completed);
     assert!(completed.completed_at.is_some());
 
-    let verified = transition_stage("recovery-stage", StageStatus::Verified, work_dir).unwrap();
-    assert_eq!(verified.status, StageStatus::Verified);
+    let verified = transition_stage("recovery-stage", StageStatus::Completed, work_dir).unwrap();
+    assert_eq!(verified.status, StageStatus::Completed);
 }
 
 #[test]
@@ -421,7 +421,7 @@ fn test_parallel_stages_one_blocked_one_succeeds() {
     let work_dir = temp_dir.path();
     fs::create_dir_all(work_dir.join("stages")).unwrap();
 
-    let stage_1 = create_test_stage("stage-1", "Stage 1", StageStatus::Verified);
+    let stage_1 = create_test_stage("stage-1", "Stage 1", StageStatus::Completed);
     save_stage(&stage_1, work_dir).unwrap();
 
     let mut stage_2a = create_test_stage("stage-2a", "Stage 2A", StageStatus::WaitingForDeps);
@@ -446,7 +446,7 @@ fn test_parallel_stages_one_blocked_one_succeeds() {
 
     transition_stage("stage-2b", StageStatus::Executing, work_dir).unwrap();
     transition_stage("stage-2b", StageStatus::Completed, work_dir).unwrap();
-    transition_stage("stage-2b", StageStatus::Verified, work_dir).unwrap();
+    transition_stage("stage-2b", StageStatus::Completed, work_dir).unwrap();
 
     let triggered = trigger_dependents("stage-2b", work_dir).unwrap();
     assert!(triggered.is_empty());

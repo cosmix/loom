@@ -3,8 +3,7 @@ use crate::models::stage::StageStatus;
 use crate::parser::markdown::MarkdownDocument;
 use crate::verify::transitions::load_stage;
 use crate::verify::{
-    human_gate, run_acceptance, transition_stage, trigger_dependents, AcceptanceResult, GateConfig,
-    GateDecision,
+    human_gate, run_acceptance, trigger_dependents, AcceptanceResult, GateConfig, GateDecision,
 };
 use anyhow::{bail, Context, Result};
 use std::fs;
@@ -75,12 +74,10 @@ pub fn execute(stage_id: String, force: bool) -> Result<()> {
     match decision {
         GateDecision::Approved => {
             println!();
-            println!("Stage approved! Transitioning to Verified status...");
+            println!("Stage approved! Remaining in Completed status...");
 
-            transition_stage(&stage_id, StageStatus::Verified, work_dir.root())
-                .with_context(|| format!("Failed to transition stage '{stage_id}' to Verified"))?;
-
-            // Clean up session files for this verified stage
+            // Stage is already Completed, no transition needed
+            // Clean up session files for this completed stage
             cleanup_sessions_for_stage(&stage_id, work_dir.root());
 
             let triggered = trigger_dependents(&stage_id, work_dir.root())
