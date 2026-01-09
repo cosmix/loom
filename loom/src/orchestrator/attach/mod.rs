@@ -1,7 +1,8 @@
 //! Session attachment functionality for loom orchestrator.
 //!
-//! This module provides functionality to attach to running tmux sessions,
+//! This module provides functionality to attach to running sessions,
 //! list attachable sessions, and manage multi-session views.
+//! Supports both tmux and native terminal backends.
 
 mod gui;
 mod list;
@@ -16,15 +17,28 @@ use anyhow::{anyhow, Context, Result};
 use crate::fs::stage_files::find_stage_file;
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::Stage;
+use crate::orchestrator::terminal::BackendType;
 
 // Re-export public API
 pub use gui::{spawn_gui_windows, TerminalEmulator};
 pub use list::{format_attachable_list, list_attachable};
 pub use overview::{
-    attach_overview_session, create_overview_session, create_tiled_overview,
-    print_many_sessions_warning, print_overview_instructions, print_tiled_instructions,
+    attach_native_all, attach_overview_session, create_overview_session, create_tiled_overview,
+    print_many_sessions_warning, print_native_instructions, print_overview_instructions,
+    print_tiled_instructions,
 };
-pub use single::{attach_by_session, attach_by_stage, print_attach_instructions};
+pub use single::{
+    attach_by_session, attach_by_stage, print_attach_instructions, print_native_attach_info,
+};
+
+/// Backend information for an attachable session
+#[derive(Debug, Clone)]
+pub enum SessionBackend {
+    /// tmux backend - has a tmux session name
+    Tmux { session_name: String },
+    /// Native backend - has a process ID
+    Native { pid: u32 },
+}
 
 /// Information about an attachable session
 #[derive(Debug, Clone)]
@@ -32,9 +46,46 @@ pub struct AttachableSession {
     pub session_id: String,
     pub stage_id: Option<String>,
     pub stage_name: Option<String>,
-    pub tmux_session: String,
+    /// Backend-specific information for attaching
+    pub backend: SessionBackend,
     pub status: SessionStatus,
     pub context_percent: f64,
+}
+
+impl AttachableSession {
+    /// Get the tmux session name if this is a tmux session
+    pub fn tmux_session(&self) -> Option<&str> {
+        match &self.backend {
+            SessionBackend::Tmux { session_name } => Some(session_name),
+            SessionBackend::Native { .. } => None,
+        }
+    }
+
+    /// Get the PID if this is a native session
+    pub fn pid(&self) -> Option<u32> {
+        match &self.backend {
+            SessionBackend::Tmux { .. } => None,
+            SessionBackend::Native { pid } => Some(*pid),
+        }
+    }
+
+    /// Get the backend type
+    pub fn backend_type(&self) -> BackendType {
+        match &self.backend {
+            SessionBackend::Tmux { .. } => BackendType::Tmux,
+            SessionBackend::Native { .. } => BackendType::Native,
+        }
+    }
+
+    /// Check if this is a tmux session
+    pub fn is_tmux(&self) -> bool {
+        matches!(self.backend, SessionBackend::Tmux { .. })
+    }
+
+    /// Check if this is a native session
+    pub fn is_native(&self) -> bool {
+        matches!(self.backend, SessionBackend::Native { .. })
+    }
 }
 
 /// Load a session from .work/sessions/{id}.md
@@ -106,8 +157,14 @@ pub(crate) fn find_session_for_stage(work_dir: &Path, stage_id: &str) -> Result<
 }
 
 /// Check if a session can be attached to
+///
+/// A session is attachable if:
+/// - It has a tmux_session (tmux backend) OR a pid (native backend)
+/// - It is in Running or Paused state
 pub(crate) fn is_attachable(session: &Session) -> bool {
-    if session.tmux_session.is_none() {
+    // Must have either tmux session or PID
+    let has_backend = session.tmux_session.is_some() || session.pid.is_some();
+    if !has_backend {
         return false;
     }
 
@@ -115,6 +172,31 @@ pub(crate) fn is_attachable(session: &Session) -> bool {
         session.status,
         SessionStatus::Running | SessionStatus::Paused
     )
+}
+
+/// Determine the backend type for a session
+///
+/// If tmux_session is set, returns Tmux.
+/// If only pid is set, returns Native.
+pub(crate) fn detect_backend_type(session: &Session) -> Option<BackendType> {
+    if session.tmux_session.is_some() {
+        Some(BackendType::Tmux)
+    } else if session.pid.is_some() {
+        Some(BackendType::Native)
+    } else {
+        None
+    }
+}
+
+/// Create a SessionBackend from a Session
+pub(crate) fn session_backend(session: &Session) -> Option<SessionBackend> {
+    if let Some(ref tmux_session) = session.tmux_session {
+        Some(SessionBackend::Tmux {
+            session_name: tmux_session.clone(),
+        })
+    } else {
+        session.pid.map(|pid| SessionBackend::Native { pid })
+    }
 }
 
 /// Format session status for display
@@ -166,12 +248,79 @@ pub(crate) fn window_name_for_session(session: &AttachableSession) -> String {
 /// Build the tmux attach command string
 ///
 /// Uses `env -u TMUX` to allow nested tmux sessions (running inside overview windows)
-pub(crate) fn attach_command(tmux_session: &str, detach_existing: bool) -> String {
+pub(crate) fn tmux_attach_command(tmux_session: &str, detach_existing: bool) -> String {
     if detach_existing {
         format!("env -u TMUX tmux attach -d -t {tmux_session}")
     } else {
         format!("env -u TMUX tmux attach -t {tmux_session}")
     }
+}
+
+/// Build the attach command string for any session backend
+///
+/// For tmux sessions, uses tmux attach.
+/// For native sessions, this returns a message since we can't "attach" in the same way.
+pub(crate) fn attach_command_for_session(
+    session: &AttachableSession,
+    detach_existing: bool,
+) -> String {
+    match &session.backend {
+        SessionBackend::Tmux { session_name } => tmux_attach_command(session_name, detach_existing),
+        SessionBackend::Native { pid } => {
+            // For native sessions, we focus the window instead
+            // This command is used in overview windows, so we just show status
+            format!("echo 'Native session (PID: {pid}) - use window focus to attach'; sleep 3600")
+        }
+    }
+}
+
+/// Focus a window by process ID using wmctrl or xdotool
+///
+/// This is the core implementation that attempts to focus a terminal window.
+/// Returns the window ID on success, or None if focusing failed.
+///
+/// Tries wmctrl first (more reliable), then falls back to xdotool.
+pub(crate) fn try_focus_window_by_pid(pid: u32) -> Option<String> {
+    use std::process::Command;
+
+    // Try wmctrl first (more reliable for window management)
+    if which::which("wmctrl").is_ok() {
+        // Get window list and find the one matching our PID
+        if let Ok(output) = Command::new("wmctrl").arg("-l").arg("-p").output() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 3 {
+                    if let Ok(window_pid) = parts[2].parse::<u32>() {
+                        if window_pid == pid {
+                            let window_id = parts[0];
+                            if Command::new("wmctrl")
+                                .args(["-i", "-a", window_id])
+                                .output()
+                                .is_ok()
+                            {
+                                return Some(window_id.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Try xdotool as fallback
+    if which::which("xdotool").is_ok() {
+        if let Ok(output) = Command::new("xdotool")
+            .args(["search", "--pid", &pid.to_string(), "windowactivate"])
+            .output()
+        {
+            if output.status.success() {
+                return Some(format!("xdotool-{pid}"));
+            }
+        }
+    }
+
+    None
 }
 
 #[cfg(test)]
@@ -185,7 +334,9 @@ mod tests {
                 session_id: "session-1".to_string(),
                 stage_id: Some("stage-1".to_string()),
                 stage_name: Some("models".to_string()),
-                tmux_session: "loom-session-1".to_string(),
+                backend: SessionBackend::Tmux {
+                    session_name: "loom-session-1".to_string(),
+                },
                 status: SessionStatus::Running,
                 context_percent: 45.0,
             },
@@ -193,7 +344,9 @@ mod tests {
                 session_id: "session-2".to_string(),
                 stage_id: Some("stage-2".to_string()),
                 stage_name: Some("api".to_string()),
-                tmux_session: "loom-session-2".to_string(),
+                backend: SessionBackend::Tmux {
+                    session_name: "loom-session-2".to_string(),
+                },
                 status: SessionStatus::Paused,
                 context_percent: 23.5,
             },
@@ -203,12 +356,14 @@ mod tests {
 
         assert!(output.contains("SESSION"));
         assert!(output.contains("STAGE"));
+        assert!(output.contains("BACKEND"));
         assert!(output.contains("STATUS"));
         assert!(output.contains("CONTEXT"));
         assert!(output.contains("session-1"));
         assert!(output.contains("session-2"));
         assert!(output.contains("models"));
         assert!(output.contains("api"));
+        assert!(output.contains("tmux"));
         assert!(output.contains("running"));
         assert!(output.contains("paused"));
         assert!(output.contains("45%"));
@@ -221,7 +376,9 @@ mod tests {
             session_id: "very-long-session-identifier-name".to_string(),
             stage_id: Some("stage-1".to_string()),
             stage_name: Some("very-long-stage-name-that-exceeds-limit".to_string()),
-            tmux_session: "loom-session-1".to_string(),
+            backend: SessionBackend::Tmux {
+                session_name: "loom-session-1".to_string(),
+            },
             status: SessionStatus::Running,
             context_percent: 75.8,
         }];
@@ -244,7 +401,9 @@ mod tests {
             session_id: "test".to_string(),
             stage_id: None,
             stage_name: None,
-            tmux_session: "loom-test".to_string(),
+            backend: SessionBackend::Tmux {
+                session_name: "loom-test".to_string(),
+            },
             status: SessionStatus::Running,
             context_percent: 75.5,
         };
@@ -253,7 +412,7 @@ mod tests {
     }
 
     #[test]
-    fn test_attachable_filter() {
+    fn test_attachable_filter_tmux() {
         use crate::models::session::Session;
 
         let mut running_session = Session::new();
@@ -272,15 +431,97 @@ mod tests {
         spawning_session.status = SessionStatus::Spawning;
         spawning_session.tmux_session = Some("tmux-4".to_string());
 
-        let mut no_tmux_session = Session::new();
-        no_tmux_session.status = SessionStatus::Running;
-        no_tmux_session.tmux_session = None;
+        let mut no_backend_session = Session::new();
+        no_backend_session.status = SessionStatus::Running;
+        no_backend_session.tmux_session = None;
+        no_backend_session.pid = None;
 
         assert!(is_attachable(&running_session));
         assert!(is_attachable(&paused_session));
         assert!(!is_attachable(&completed_session));
         assert!(!is_attachable(&spawning_session));
-        assert!(!is_attachable(&no_tmux_session));
+        assert!(!is_attachable(&no_backend_session));
+    }
+
+    #[test]
+    fn test_attachable_filter_native() {
+        use crate::models::session::Session;
+
+        let mut running_native = Session::new();
+        running_native.status = SessionStatus::Running;
+        running_native.pid = Some(12345);
+
+        let mut paused_native = Session::new();
+        paused_native.status = SessionStatus::Paused;
+        paused_native.pid = Some(12346);
+
+        let mut completed_native = Session::new();
+        completed_native.status = SessionStatus::Completed;
+        completed_native.pid = Some(12347);
+
+        assert!(is_attachable(&running_native));
+        assert!(is_attachable(&paused_native));
+        assert!(!is_attachable(&completed_native));
+    }
+
+    #[test]
+    fn test_detect_backend_type() {
+        use crate::models::session::Session;
+
+        let mut tmux_session = Session::new();
+        tmux_session.tmux_session = Some("loom-test".to_string());
+        assert_eq!(detect_backend_type(&tmux_session), Some(BackendType::Tmux));
+
+        let mut native_session = Session::new();
+        native_session.pid = Some(12345);
+        assert_eq!(
+            detect_backend_type(&native_session),
+            Some(BackendType::Native)
+        );
+
+        let no_backend = Session::new();
+        assert_eq!(detect_backend_type(&no_backend), None);
+
+        // tmux takes precedence if both are set
+        let mut both = Session::new();
+        both.tmux_session = Some("loom-test".to_string());
+        both.pid = Some(12345);
+        assert_eq!(detect_backend_type(&both), Some(BackendType::Tmux));
+    }
+
+    #[test]
+    fn test_session_backend_methods() {
+        let tmux_session = AttachableSession {
+            session_id: "test".to_string(),
+            stage_id: None,
+            stage_name: None,
+            backend: SessionBackend::Tmux {
+                session_name: "loom-test".to_string(),
+            },
+            status: SessionStatus::Running,
+            context_percent: 50.0,
+        };
+
+        assert!(tmux_session.is_tmux());
+        assert!(!tmux_session.is_native());
+        assert_eq!(tmux_session.tmux_session(), Some("loom-test"));
+        assert_eq!(tmux_session.pid(), None);
+        assert_eq!(tmux_session.backend_type(), BackendType::Tmux);
+
+        let native_session = AttachableSession {
+            session_id: "test".to_string(),
+            stage_id: None,
+            stage_name: None,
+            backend: SessionBackend::Native { pid: 12345 },
+            status: SessionStatus::Running,
+            context_percent: 50.0,
+        };
+
+        assert!(!native_session.is_tmux());
+        assert!(native_session.is_native());
+        assert_eq!(native_session.tmux_session(), None);
+        assert_eq!(native_session.pid(), Some(12345));
+        assert_eq!(native_session.backend_type(), BackendType::Native);
     }
 
     #[test]
@@ -322,5 +563,35 @@ mod tests {
     fn test_print_attach_instructions_long_name() {
         // Should not panic with a very long session name
         print_attach_instructions("this-is-a-very-long-tmux-session-name-that-exceeds-32-chars");
+    }
+
+    #[test]
+    fn test_format_attachable_list_native_sessions() {
+        let sessions = vec![
+            AttachableSession {
+                session_id: "session-1".to_string(),
+                stage_id: Some("stage-1".to_string()),
+                stage_name: Some("models".to_string()),
+                backend: SessionBackend::Native { pid: 12345 },
+                status: SessionStatus::Running,
+                context_percent: 45.0,
+            },
+            AttachableSession {
+                session_id: "session-2".to_string(),
+                stage_id: Some("stage-2".to_string()),
+                stage_name: Some("api".to_string()),
+                backend: SessionBackend::Tmux {
+                    session_name: "loom-session-2".to_string(),
+                },
+                status: SessionStatus::Running,
+                context_percent: 30.0,
+            },
+        ];
+
+        let output = format_attachable_list(&sessions);
+
+        assert!(output.contains("BACKEND"));
+        assert!(output.contains("native"));
+        assert!(output.contains("tmux"));
     }
 }

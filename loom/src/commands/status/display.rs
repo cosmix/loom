@@ -8,6 +8,7 @@ use crate::models::keys::frontmatter;
 use crate::models::runner::{Runner, RunnerStatus};
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
+use crate::orchestrator::terminal::BackendType;
 use crate::parser::markdown::MarkdownDocument;
 
 pub fn load_runners(work_dir: &WorkDir) -> Result<(Vec<Runner>, usize)> {
@@ -225,12 +226,71 @@ fn parse_stage_from_doc(doc: &MarkdownDocument) -> Option<Stage> {
     })
 }
 
+/// Check if a session is orphaned (status says running/spawning but backend says otherwise)
+fn is_session_orphaned(session: &Session) -> bool {
+    // Only check for orphaned sessions if status indicates active
+    if !matches!(
+        session.status,
+        SessionStatus::Spawning | SessionStatus::Running
+    ) {
+        return false;
+    }
+
+    // Detect backend type from session properties
+    let backend_type = if session.tmux_session.is_some() {
+        Some(BackendType::Tmux)
+    } else if session.pid.is_some() {
+        Some(BackendType::Native)
+    } else {
+        None
+    };
+
+    match backend_type {
+        Some(BackendType::Tmux) => {
+            // For tmux backend, check if tmux session exists
+            if let Some(tmux_name) = &session.tmux_session {
+                !tmux_session_exists(tmux_name)
+            } else {
+                false
+            }
+        }
+        Some(BackendType::Native) => {
+            // For native backend, check if PID is alive
+            if let Some(pid) = session.pid {
+                !is_pid_alive(pid)
+            } else {
+                false
+            }
+        }
+        None => {
+            // No backend information - not orphaned
+            false
+        }
+    }
+}
+
 fn tmux_session_exists(session_name: &str) -> bool {
     std::process::Command::new("tmux")
         .args(["has-session", "-t", session_name])
         .output()
         .map(|output| output.status.success())
         .unwrap_or(false)
+}
+
+fn is_pid_alive(pid: u32) -> bool {
+    // On Unix systems, check if /proc/<pid> exists
+    #[cfg(unix)]
+    {
+        std::path::Path::new(&format!("/proc/{pid}")).exists()
+    }
+
+    // Fallback for non-Unix systems (Windows)
+    #[cfg(not(unix))]
+    {
+        // On Windows, we could use sysinfo or similar
+        // For now, assume alive (conservative approach)
+        true
+    }
 }
 
 pub fn display_sessions(work_dir: &WorkDir) -> Result<()> {
@@ -258,14 +318,7 @@ pub fn display_sessions(work_dir: &WorkDir) -> Result<()> {
     if !sessions.is_empty() {
         println!("\n{}", "Active Sessions".bold());
         for session in sessions {
-            let is_orphaned = matches!(
-                session.status,
-                SessionStatus::Spawning | SessionStatus::Running
-            ) && session
-                .tmux_session
-                .as_ref()
-                .map(|tmux_name| !tmux_session_exists(tmux_name))
-                .unwrap_or(false);
+            let is_orphaned = is_session_orphaned(&session);
 
             let status_color = if is_orphaned {
                 "orphaned".red()
@@ -330,4 +383,73 @@ fn parse_session_from_doc(doc: &MarkdownDocument) -> Option<Session> {
         created_at: chrono::Utc::now(),
         last_active: chrono::Utc::now(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_session_orphaned_with_tmux_backend() {
+        let mut session = Session::new();
+        session.status = SessionStatus::Running;
+        session.set_tmux_session("test-session".to_string());
+
+        // This will call tmux has-session, which will likely fail in test environment
+        // but the logic path is exercised
+        let _result = is_session_orphaned(&session);
+        // We don't assert the result since it depends on tmux availability
+    }
+
+    #[test]
+    fn test_is_session_orphaned_with_native_backend() {
+        let mut session = Session::new();
+        session.status = SessionStatus::Running;
+        session.set_pid(std::process::id());
+
+        // Should detect current process as alive
+        assert!(!is_session_orphaned(&session));
+
+        // Test with non-existent PID
+        session.set_pid(999999);
+        assert!(is_session_orphaned(&session));
+    }
+
+    #[test]
+    fn test_is_session_orphaned_terminal_states() {
+        let mut session = Session::new();
+        session.set_pid(999999);
+
+        // Terminal states should not be considered orphaned
+        session.status = SessionStatus::Completed;
+        assert!(!is_session_orphaned(&session));
+
+        session.status = SessionStatus::Crashed;
+        assert!(!is_session_orphaned(&session));
+
+        session.status = SessionStatus::ContextExhausted;
+        assert!(!is_session_orphaned(&session));
+    }
+
+    #[test]
+    fn test_is_session_orphaned_no_backend_info() {
+        let mut session = Session::new();
+        session.status = SessionStatus::Running;
+        // No tmux_session or pid set
+
+        // Should not be considered orphaned if backend info is missing
+        assert!(!is_session_orphaned(&session));
+    }
+
+    #[test]
+    fn test_is_pid_alive_current_process() {
+        let current_pid = std::process::id();
+        assert!(is_pid_alive(current_pid));
+    }
+
+    #[test]
+    fn test_is_pid_alive_non_existent() {
+        // PID 999999 is very unlikely to exist
+        assert!(!is_pid_alive(999999));
+    }
 }

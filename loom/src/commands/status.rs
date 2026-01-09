@@ -3,10 +3,12 @@ mod display;
 mod validation;
 
 use crate::commands::graph::build_graph_display;
+use crate::daemon::{read_message, write_message, DaemonServer, Request, Response, StageInfo};
 use crate::fs::work_dir::WorkDir;
 use crate::verify::transitions::list_all_stages;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use colored::Colorize;
+use std::os::unix::net::UnixStream;
 
 use diagnostics::{
     check_directory_structure, check_orphaned_tracks, check_parsing_errors, check_stuck_runners,
@@ -19,11 +21,231 @@ pub fn execute() -> Result<()> {
     let work_dir = WorkDir::new(".")?;
     work_dir.load()?;
 
+    // Check if daemon is running and use live mode if available
+    let work_path = work_dir.root();
+    if DaemonServer::is_running(work_path) {
+        return execute_live(work_path);
+    }
+
+    // Fall back to static display
+    println!(
+        "\n{}",
+        "Daemon not running. Showing static status.".dimmed()
+    );
+    execute_static(&work_dir)
+}
+
+/// Execute live-updating dashboard by subscribing to daemon
+fn execute_live(work_path: &std::path::Path) -> Result<()> {
+    let socket_path = work_path.join("orchestrator.sock");
+
+    let mut stream =
+        UnixStream::connect(&socket_path).context("Failed to connect to daemon socket")?;
+
+    // Send subscribe request
+    write_message(&mut stream, &Request::SubscribeStatus)
+        .context("Failed to send SubscribeStatus request")?;
+
+    // Wait for acknowledgment
+    let response: Response =
+        read_message(&mut stream).context("Failed to read subscription response")?;
+
+    match response {
+        Response::Ok => {}
+        Response::Error { message } => {
+            anyhow::bail!("Daemon returned error: {message}");
+        }
+        _ => {
+            anyhow::bail!("Unexpected response from daemon");
+        }
+    }
+
+    // Set up Ctrl+C handler
+    let stream_for_signal = stream
+        .try_clone()
+        .context("Failed to clone stream for signal handler")?;
+    ctrlc::set_handler(move || {
+        let mut stream = stream_for_signal.try_clone().ok();
+        if let Some(ref mut s) = stream {
+            let _ = write_message(s, &Request::Unsubscribe);
+        }
+        std::process::exit(0);
+    })
+    .context("Failed to set Ctrl+C handler")?;
+
+    println!("\n{}", "Live Status Dashboard".bold().blue());
+    println!(
+        "{}",
+        "Press Ctrl+C to exit (daemon will continue running)".dimmed()
+    );
+    println!("{}", "=".repeat(50));
+
+    // Loop receiving status updates
+    loop {
+        let response: Response = match read_message(&mut stream) {
+            Ok(resp) => resp,
+            Err(e) => {
+                eprintln!("\n{}", "Connection to daemon lost".red());
+                eprintln!("{}", format!("Error: {e}").dimmed());
+                break;
+            }
+        };
+
+        match response {
+            Response::StatusUpdate {
+                stages_executing,
+                stages_pending,
+                stages_completed,
+                stages_blocked,
+            } => {
+                render_live_status(
+                    work_path,
+                    &stages_executing,
+                    &stages_pending,
+                    &stages_completed,
+                    &stages_blocked,
+                );
+            }
+            Response::Error { message } => {
+                eprintln!("\n{}", format!("Daemon error: {message}").red());
+                break;
+            }
+            _ => {
+                // Ignore unexpected messages
+            }
+        }
+    }
+
+    // Clean up: send unsubscribe before exiting
+    let _ = write_message(&mut stream, &Request::Unsubscribe);
+
+    Ok(())
+}
+
+/// Render live status update (clear screen and redraw)
+fn render_live_status(
+    work_dir: &std::path::Path,
+    executing: &[StageInfo],
+    pending: &[String],
+    completed: &[String],
+    blocked: &[String],
+) {
+    // Clear screen using ANSI escape codes
+    print!("\x1B[2J\x1B[1;1H");
+
+    println!("\n{}", "Live Status Dashboard".bold().blue());
+    println!(
+        "{}",
+        "Press Ctrl+C to exit (daemon will continue running)".dimmed()
+    );
+    println!("{}", "=".repeat(50));
+
+    // Show execution graph first (read from stage files)
+    if let Ok(stages) = list_all_stages(work_dir) {
+        if !stages.is_empty() {
+            println!("\n{}", "Execution Graph".bold());
+            if let Ok(graph_display) = build_graph_display(&stages) {
+                for line in graph_display.lines() {
+                    println!("  {line}");
+                }
+            }
+            // Compact legend
+            println!();
+            print!("  {} ", "Legend:".dimmed());
+            print!("{} ", "✓".green().bold());
+            print!("verified  ");
+            print!("{} ", "●".blue().bold());
+            print!("executing  ");
+            print!("{} ", "▶".cyan().bold());
+            print!("ready  ");
+            print!("{} ", "○".white().dimmed());
+            print!("pending  ");
+            print!("{} ", "✔".green());
+            print!("completed  ");
+            print!("{} ", "✗".red().bold());
+            print!("blocked  ");
+            print!("{} ", "⟳".yellow().bold());
+            println!("handoff");
+        }
+    }
+
+    println!("{}", "─".repeat(50));
+
+    let total = executing.len() + pending.len() + completed.len() + blocked.len();
+    println!("\n{}", format!("Summary: {total} stages").bold());
+
+    if !executing.is_empty() {
+        println!(
+            "\n{}",
+            format!("● Executing ({})", executing.len()).blue().bold()
+        );
+        for stage in executing {
+            let pid_info = stage
+                .session_pid
+                .map(|pid| format!(" [PID: {pid}]"))
+                .unwrap_or_default();
+            let elapsed = chrono::Utc::now()
+                .signed_duration_since(stage.started_at)
+                .num_seconds();
+            let time_info = format_elapsed(elapsed);
+            println!(
+                "    {}  {}{}  {}",
+                stage.id.dimmed(),
+                stage.name,
+                pid_info.dimmed(),
+                time_info.dimmed()
+            );
+        }
+    }
+
+    if !pending.is_empty() {
+        println!(
+            "\n{}",
+            format!("○ Pending ({})", pending.len()).white().dimmed()
+        );
+        for stage_id in pending {
+            println!("    {}", stage_id.dimmed());
+        }
+    }
+
+    if !completed.is_empty() {
+        println!("\n{}", format!("✔ Completed ({})", completed.len()).green());
+        for stage_id in completed {
+            println!("    {}", stage_id.dimmed());
+        }
+    }
+
+    if !blocked.is_empty() {
+        println!(
+            "\n{}",
+            format!("✗ Blocked ({})", blocked.len()).red().bold()
+        );
+        for stage_id in blocked {
+            println!("    {stage_id}");
+        }
+    }
+
+    println!();
+}
+
+/// Format elapsed time in human-readable format
+fn format_elapsed(seconds: i64) -> String {
+    if seconds < 60 {
+        format!("{seconds}s")
+    } else if seconds < 3600 {
+        format!("{}m {}s", seconds / 60, seconds % 60)
+    } else {
+        format!("{}h {}m", seconds / 3600, (seconds % 3600) / 60)
+    }
+}
+
+/// Show static status dashboard (original implementation)
+fn execute_static(work_dir: &WorkDir) -> Result<()> {
     println!();
     println!("{}", "Loom Status Dashboard".bold().blue());
     println!("{}", "=".repeat(50));
 
-    let (runners, runner_count) = load_runners(&work_dir)?;
+    let (runners, runner_count) = load_runners(work_dir)?;
     let track_count = count_files(&work_dir.tracks_dir())?;
     let signal_count = count_files(&work_dir.signals_dir())?;
     let handoff_count = count_files(&work_dir.handoffs_dir())?;
@@ -49,16 +271,16 @@ pub fn execute() -> Result<()> {
     }
 
     if stage_count > 0 {
-        display_stages(&work_dir)?;
+        display_stages(work_dir)?;
     }
 
     if session_count > 0 {
-        display_sessions(&work_dir)?;
+        display_sessions(work_dir)?;
     }
 
     // Show execution graph if stages exist
     if stage_count > 0 {
-        display_execution_graph(&work_dir)?;
+        display_execution_graph(work_dir)?;
     }
 
     println!();

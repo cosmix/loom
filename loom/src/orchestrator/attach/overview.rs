@@ -1,16 +1,23 @@
 //! Multi-session overview functionality.
 //!
-//! Functions to create and manage tmux overview sessions with multiple
-//! loom sessions visible in windows or panes.
+//! Functions to create and manage multi-session views.
+//! For tmux: creates tmux overview sessions with multiple windows or panes.
+//! For native: focuses all terminal windows sequentially.
+
+use std::process::Command;
 
 use anyhow::{anyhow, bail, Context, Result};
 
-use super::{attach_command, window_name_for_session, AttachableSession};
+use super::{
+    attach_command_for_session, try_focus_window_by_pid, window_name_for_session,
+    AttachableSession, SessionBackend,
+};
 
 /// Create a tmux overview session with windows for each loom session
 ///
-/// Each window runs `tmux attach -t <loom-session>` to connect to the
-/// actual loom session. The overview session is named "loom-overview".
+/// Each window runs the appropriate attach command for its backend:
+/// - Tmux sessions: `tmux attach -t <loom-session>`
+/// - Native sessions: displays info about the native session
 ///
 /// Uses `env -u TMUX` to handle running from within another tmux session.
 pub fn create_overview_session(
@@ -20,17 +27,17 @@ pub fn create_overview_session(
     let overview_name = "loom-overview";
 
     // Kill existing overview session if it exists (ignore errors)
-    let _ = std::process::Command::new("tmux")
+    let _ = Command::new("tmux")
         .args(["kill-session", "-t", overview_name])
         .output();
 
     // Create the overview session with first loom session's window
     let first = &sessions[0];
     let first_window_name = window_name_for_session(first);
-    let first_attach_cmd = attach_command(&first.tmux_session, detach_existing);
+    let first_attach_cmd = attach_command_for_session(first, detach_existing);
 
     // Use `env -u TMUX` to unset TMUX env var, allowing nested session creation
-    let output = std::process::Command::new("env")
+    let output = Command::new("env")
         .args([
             "-u",
             "TMUX",
@@ -56,9 +63,9 @@ pub fn create_overview_session(
     // Add remaining sessions as new windows
     for session in sessions.iter().skip(1) {
         let window_name = window_name_for_session(session);
-        let attach_cmd = attach_command(&session.tmux_session, detach_existing);
+        let attach_cmd = attach_command_for_session(session, detach_existing);
 
-        let output = std::process::Command::new("tmux")
+        let output = Command::new("tmux")
             .args([
                 "new-window",
                 "-t",
@@ -105,7 +112,7 @@ pub fn attach_overview_session(overview_name: &str) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-        let error = std::process::Command::new("tmux")
+        let error = Command::new("tmux")
             .arg("attach")
             .arg("-t")
             .arg(overview_name)
@@ -115,7 +122,7 @@ pub fn attach_overview_session(overview_name: &str) -> Result<()> {
 
     #[cfg(not(unix))]
     {
-        let status = std::process::Command::new("tmux")
+        let status = Command::new("tmux")
             .arg("attach")
             .arg("-t")
             .arg(overview_name)
@@ -133,6 +140,7 @@ pub fn attach_overview_session(overview_name: &str) -> Result<()> {
 ///
 /// Creates a single tmux window with split panes for each session.
 /// All sessions are visible simultaneously in a grid layout.
+/// Works with both tmux and native sessions.
 pub fn create_tiled_overview(
     sessions: &[AttachableSession],
     layout: &str,
@@ -141,16 +149,16 @@ pub fn create_tiled_overview(
     let overview_name = "loom-overview";
 
     // Kill existing overview session if it exists
-    let _ = std::process::Command::new("tmux")
+    let _ = Command::new("tmux")
         .args(["kill-session", "-t", overview_name])
         .output();
 
     // Create the overview session with first loom session
     let first = &sessions[0];
-    let first_attach_cmd = attach_command(&first.tmux_session, detach_existing);
+    let first_attach_cmd = attach_command_for_session(first, detach_existing);
 
     // Use `env -u TMUX` to unset TMUX env var, allowing nested session creation
-    let output = std::process::Command::new("env")
+    let output = Command::new("env")
         .args([
             "-u",
             "TMUX",
@@ -173,9 +181,9 @@ pub fn create_tiled_overview(
 
     // Split window for remaining sessions
     for session in sessions.iter().skip(1) {
-        let attach_cmd = attach_command(&session.tmux_session, detach_existing);
+        let attach_cmd = attach_command_for_session(session, detach_existing);
 
-        let output = std::process::Command::new("tmux")
+        let output = Command::new("tmux")
             .args(["split-window", "-t", overview_name, "sh", "-c", &attach_cmd])
             .output()
             .with_context(|| format!("Failed to split pane for {}", session.session_id))?;
@@ -194,7 +202,7 @@ pub fn create_tiled_overview(
             "vertical" => "even-vertical",
             _ => "tiled",
         };
-        let _ = std::process::Command::new("tmux")
+        let _ = Command::new("tmux")
             .args(["select-layout", "-t", overview_name, tmux_layout])
             .output();
     }
@@ -223,4 +231,62 @@ pub fn print_many_sessions_warning(count: usize) {
         eprintln!("\nWarning: {count} sessions may result in small panes.");
         eprintln!("Consider using 'loom attach all --gui' for separate windows.\n");
     }
+}
+
+/// Attach to all native sessions by focusing their windows
+///
+/// This is the native backend equivalent of tmux overview.
+/// It attempts to focus each terminal window in sequence.
+pub fn attach_native_all(sessions: &[AttachableSession]) -> Result<()> {
+    let native_sessions: Vec<_> = sessions.iter().filter(|s| s.is_native()).collect();
+
+    if native_sessions.is_empty() {
+        bail!("No native sessions to attach to");
+    }
+
+    print_native_instructions(native_sessions.len());
+
+    let mut focused = 0;
+    let mut failed = 0;
+
+    for session in &native_sessions {
+        if let SessionBackend::Native { pid } = &session.backend {
+            let stage_display = session
+                .stage_name
+                .as_ref()
+                .or(session.stage_id.as_ref())
+                .map(|s| s.as_str())
+                .unwrap_or(&session.session_id);
+
+            if focus_window_by_pid_quiet(*pid) {
+                println!("  Focused: {stage_display} (PID: {pid})");
+                focused += 1;
+            } else {
+                eprintln!("  Could not focus: {stage_display} (PID: {pid})");
+                failed += 1;
+            }
+        }
+    }
+
+    println!("\nFocused {focused} of {} windows.", native_sessions.len());
+    if failed > 0 {
+        println!("Tip: Install wmctrl or xdotool for better window focusing.");
+    }
+
+    Ok(())
+}
+
+/// Print instructions for native session attachment
+pub fn print_native_instructions(session_count: usize) {
+    println!("\n┌─────────────────────────────────────────────────────────┐");
+    println!("│  loom Native Sessions: {session_count} session(s)                       │");
+    println!("│                                                         │");
+    println!("│  Native sessions run in separate terminal windows.      │");
+    println!("│  Attempting to focus each window...                     │");
+    println!("└─────────────────────────────────────────────────────────┘\n");
+}
+
+/// Focus a window by PID (quiet version for batch operations)
+fn focus_window_by_pid_quiet(pid: u32) -> bool {
+    try_focus_window_by_pid(pid).is_some()
 }

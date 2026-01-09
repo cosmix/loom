@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 use loom::commands::{
-    attach, clean, graph, init, merge, resume, run, self_update, sessions, stage, status, verify,
-    worktree_cmd,
+    attach, clean, graph, init, merge, resume, run, self_update, sessions, stage, status, stop,
+    verify, worktree_cmd,
 };
 use loom::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use loom::validation::{clap_description_validator, clap_id_validator};
@@ -96,7 +96,7 @@ enum Commands {
         command: Option<AttachCommands>,
 
         /// Stage ID or session ID (for direct attach without subcommand)
-        #[arg(value_parser = clap_id_validator, conflicts_with = "command")]
+        #[arg(value_parser = clap_id_validator)]
         target: Option<String>,
     },
 
@@ -145,6 +145,9 @@ enum Commands {
         #[arg(long)]
         state: bool,
     },
+
+    /// Stop the running daemon
+    Stop,
 
     /// Generate shell completion script
     Completions {
@@ -289,6 +292,9 @@ enum AttachCommands {
 
     /// List all attachable sessions
     List,
+
+    /// Stream daemon logs in real-time
+    Logs,
 }
 
 fn main() -> Result<()> {
@@ -305,7 +311,7 @@ fn main() -> Result<()> {
             watch,
         } => {
             if attach {
-                run::attach_orchestrator()
+                attach::execute_logs()
             } else if foreground {
                 run::execute(stage, manual, max_parallel, watch)
             } else {
@@ -327,6 +333,7 @@ fn main() -> Result<()> {
                 _,
             ) => attach::execute_all(gui, detach, windows, layout),
             (Some(AttachCommands::List), _) => attach::list(),
+            (Some(AttachCommands::Logs), _) => attach::execute_logs(),
             (None, Some(target)) => attach::execute(target),
             (None, None) => attach::list(),
         },
@@ -366,6 +373,7 @@ fn main() -> Result<()> {
             sessions,
             state,
         } => clean::execute(all, worktrees, sessions, state),
+        Commands::Stop => stop::execute(),
         Commands::Completions { shell } => {
             let shell = Shell::from_str(&shell)?;
             let mut cmd = Cli::command();

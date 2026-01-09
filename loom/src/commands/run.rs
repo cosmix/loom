@@ -1,45 +1,96 @@
 use anyhow::{bail, Context, Result};
 use std::path::PathBuf;
-use std::process::Command;
 use std::time::Duration;
 
+use crate::daemon::DaemonServer;
 use crate::fs::work_dir::WorkDir;
+use crate::orchestrator::terminal::BackendType;
 use crate::orchestrator::{Orchestrator, OrchestratorConfig, OrchestratorResult};
 use crate::plan::graph::ExecutionGraph;
 use crate::plan::parser::parse_plan;
 use crate::plan::schema::StageDefinition;
 
-const ORCHESTRATOR_SESSION: &str = "loom-orchestrator";
-
-/// Execute plan stages via worktrees/sessions
-/// Usage: loom run [--stage <id>] [--manual] [--max-parallel <n>] [--watch]
+/// Execute plan stages in foreground (for --foreground flag)
+/// Usage: loom run --foreground [--stage <id>] [--manual] [--max-parallel <n>] [--watch]
 pub fn execute(
     stage_id: Option<String>,
     manual: bool,
     max_parallel: Option<usize>,
     watch: bool,
 ) -> Result<()> {
-    // 1. Load .work/ directory
+    // Load .work/ directory
     let work_dir = WorkDir::new(".")?;
     work_dir.load()?;
 
-    // 2. Build execution graph - prefer .work/stages/ files, fall back to plan file
-    let graph = build_execution_graph(&work_dir)?;
+    // Run orchestrator in foreground mode
+    execute_foreground(stage_id, manual, max_parallel, watch, &work_dir)
+}
 
-    // 3. Configure orchestrator
+/// Execute orchestrator in background (daemon mode)
+/// Usage: loom run [--stage <id>] [--manual] [--max-parallel <n>] [--watch]
+pub fn execute_background(
+    stage_id: Option<String>,
+    manual: bool,
+    max_parallel: Option<usize>,
+    watch: bool,
+) -> Result<()> {
+    // Load .work/ directory
+    let work_dir = WorkDir::new(".")?;
+    work_dir.load()?;
+
+    // Warn if configuration parameters are provided but ignored
+    if stage_id.is_some() || manual || max_parallel.is_some() || watch {
+        eprintln!("Warning: Configuration parameters (--stage, --manual, --max-parallel, --watch) are not yet supported in daemon mode.");
+        eprintln!("The daemon will use default configuration. Use --foreground for custom configuration.\n");
+    }
+
+    // Check if daemon is already running
+    if DaemonServer::is_running(work_dir.root()) {
+        println!("Orchestrator daemon is already running.");
+        println!();
+        println!("To check status:  loom status");
+        println!("To stop daemon:   loom stop");
+        return Ok(());
+    }
+
+    // Start the daemon
+    let daemon = DaemonServer::new(work_dir.root());
+    daemon.start()?;
+
+    println!("Orchestrator daemon started.");
+    println!();
+    println!("To monitor progress:  loom status");
+    println!("To stop daemon:       loom stop");
+
+    Ok(())
+}
+
+/// Execute orchestrator in foreground mode (for debugging)
+fn execute_foreground(
+    stage_id: Option<String>,
+    manual: bool,
+    max_parallel: Option<usize>,
+    watch: bool,
+    work_dir: &WorkDir,
+) -> Result<()> {
+    // Build execution graph - prefer .work/stages/ files, fall back to plan file
+    let graph = build_execution_graph(work_dir)?;
+
+    // Configure orchestrator
     let config = OrchestratorConfig {
         max_parallel_sessions: max_parallel.unwrap_or(4),
         poll_interval: Duration::from_secs(5),
         manual_mode: manual,
         watch_mode: watch,
-        tmux_prefix: "loom".to_string(),
         work_dir: work_dir.root().to_path_buf(),
         repo_root: std::env::current_dir()?,
         status_update_interval: Duration::from_secs(30),
+        backend_type: BackendType::Native,
     };
 
-    // 4. Create and run orchestrator
-    let mut orchestrator = Orchestrator::new(config, graph);
+    // Create and run orchestrator
+    let mut orchestrator =
+        Orchestrator::new(config, graph).context("Failed to create orchestrator")?;
 
     let result = if let Some(id) = stage_id {
         println!("Running single stage: {id}");
@@ -54,127 +105,13 @@ pub fn execute(
         orchestrator.run()?
     };
 
-    // 5. Print results
+    // Print results
     print_result(&result);
 
     if result.is_success() {
         Ok(())
     } else {
         bail!("Orchestration completed with failures")
-    }
-}
-
-/// Execute orchestrator in a background tmux session
-/// Usage: loom run --background
-pub fn execute_background(
-    stage_id: Option<String>,
-    manual: bool,
-    max_parallel: Option<usize>,
-    watch: bool,
-) -> Result<()> {
-    // Check if orchestrator session already exists
-    let check_output = Command::new("tmux")
-        .args(["has-session", "-t", ORCHESTRATOR_SESSION])
-        .output();
-
-    if let Ok(output) = check_output {
-        if output.status.success() {
-            println!("Orchestrator is already running.");
-            println!();
-            println!("To attach:  loom attach orch");
-            println!("To stop:    loom clean --sessions");
-            return Ok(());
-        }
-    }
-
-    // Build the loom run command to execute in tmux (must use --foreground!)
-    let mut loom_cmd = String::from("loom run --foreground");
-    if let Some(ref id) = stage_id {
-        loom_cmd.push_str(&format!(" --stage {id}"));
-    }
-    if manual {
-        loom_cmd.push_str(" --manual");
-    }
-    if let Some(n) = max_parallel {
-        loom_cmd.push_str(&format!(" --max-parallel {n}"));
-    }
-    if watch {
-        loom_cmd.push_str(" --watch");
-    }
-
-    // Get current directory for tmux session
-    let cwd = std::env::current_dir()?;
-
-    // Create new tmux session with orchestrator
-    let status = Command::new("tmux")
-        .args([
-            "new-session",
-            "-d", // Detached
-            "-s",
-            ORCHESTRATOR_SESSION, // Session name
-            "-c",
-            &cwd.to_string_lossy(), // Working directory
-            &loom_cmd,              // Command to run
-        ])
-        .status()
-        .context("Failed to create tmux session for orchestrator")?;
-
-    if !status.success() {
-        bail!("Failed to start orchestrator in tmux session");
-    }
-
-    println!("Orchestrator started in background.");
-    println!();
-    println!("To view orchestrator:   loom run --attach");
-    println!("To view stage sessions: loom attach <stage-id>");
-    println!("To list sessions:       loom sessions list");
-    println!("To check status:        loom status");
-    println!("To stop orchestrator:   loom clean --sessions");
-
-    Ok(())
-}
-
-/// Attach to the running orchestrator tmux session
-pub fn attach_orchestrator() -> Result<()> {
-    // Check if orchestrator session exists
-    let check_output = Command::new("tmux")
-        .args(["has-session", "-t", ORCHESTRATOR_SESSION])
-        .output();
-
-    match check_output {
-        Ok(output) if output.status.success() => {
-            println!("Attaching to orchestrator...");
-            println!("(Press Ctrl+B then D to return to your terminal)\n");
-
-            // Attach to the session
-            #[cfg(unix)]
-            {
-                use std::os::unix::process::CommandExt;
-                let error = Command::new("tmux")
-                    .args(["attach", "-t", ORCHESTRATOR_SESSION])
-                    .exec();
-                bail!("Failed to attach to orchestrator: {error}");
-            }
-
-            #[cfg(not(unix))]
-            {
-                let status = Command::new("tmux")
-                    .args(["attach", "-t", ORCHESTRATOR_SESSION])
-                    .status()
-                    .context("Failed to attach to orchestrator")?;
-                if !status.success() {
-                    bail!("Failed to attach to orchestrator");
-                }
-                Ok(())
-            }
-        }
-        _ => {
-            println!("No orchestrator is currently running.");
-            println!();
-            println!("To start the orchestrator:  loom run");
-            println!("To check status:            loom status");
-            Ok(())
-        }
     }
 }
 

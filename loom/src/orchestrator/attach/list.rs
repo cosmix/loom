@@ -6,12 +6,14 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use super::{format_status, is_attachable, load_session, load_stage, AttachableSession};
+use super::{
+    format_status, is_attachable, load_session, load_stage, session_backend, AttachableSession,
+};
 
 /// List all sessions that can be attached to
 ///
 /// - Reads .work/sessions/ for session files
-/// - Filters to Running or Paused sessions with tmux_session set
+/// - Filters to Running or Paused sessions with a backend (tmux_session or pid)
 /// - Returns list with context health information
 pub fn list_attachable(work_dir: &Path) -> Result<Vec<AttachableSession>> {
     let sessions_dir = work_dir.join("sessions");
@@ -48,7 +50,12 @@ pub fn list_attachable(work_dir: &Path) -> Result<Vec<AttachableSession>> {
                     continue;
                 }
 
-                let tmux_session = session.tmux_session.clone().unwrap();
+                // Get backend from session (tmux or native)
+                let backend = match session_backend(&session) {
+                    Some(b) => b,
+                    None => continue, // Skip sessions without a backend
+                };
+
                 let context_percent = session.context_health() as f64;
 
                 let (stage_id, stage_name) = if let Some(ref sid) = session.stage_id {
@@ -64,7 +71,7 @@ pub fn list_attachable(work_dir: &Path) -> Result<Vec<AttachableSession>> {
                     session_id: session.id,
                     stage_id,
                     stage_name,
-                    tmux_session,
+                    backend,
                     status: session.status,
                     context_percent,
                 });
@@ -82,9 +89,11 @@ pub fn list_attachable(work_dir: &Path) -> Result<Vec<AttachableSession>> {
 
 /// Generate the formatted table for `loom attach list`
 pub fn format_attachable_list(sessions: &[AttachableSession]) -> String {
+    use super::SessionBackend;
+
     let mut output = String::new();
 
-    output.push_str("SESSION          STAGE              STATUS      CONTEXT\n");
+    output.push_str("SESSION          STAGE              BACKEND  STATUS      CONTEXT\n");
 
     for session in sessions {
         let stage_display = session
@@ -107,8 +116,13 @@ pub fn format_attachable_list(sessions: &[AttachableSession]) -> String {
             session.session_id.clone()
         };
 
+        let backend_display = match &session.backend {
+            SessionBackend::Tmux { .. } => "tmux",
+            SessionBackend::Native { .. } => "native",
+        };
+
         output.push_str(&format!(
-            "{session_display:<16} {stage_display:<18} {status_display:<11} {:>3.0}%\n",
+            "{session_display:<16} {stage_display:<18} {backend_display:<8} {status_display:<11} {:>3.0}%\n",
             session.context_percent
         ));
     }
