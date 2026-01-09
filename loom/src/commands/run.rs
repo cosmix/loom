@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use colored::Colorize;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -40,16 +41,32 @@ pub fn execute_background(
 
     // Warn if configuration parameters are provided but ignored
     if stage_id.is_some() || manual || max_parallel.is_some() || watch {
-        eprintln!("Warning: Configuration parameters (--stage, --manual, --max-parallel, --watch) are not yet supported in daemon mode.");
-        eprintln!("The daemon will use default configuration. Use --foreground for custom configuration.\n");
+        println!(
+            "{} Configuration parameters not yet supported in daemon mode",
+            "⚠".yellow().bold()
+        );
+        println!(
+            "  {} Use {} for custom configuration\n",
+            "→".dimmed(),
+            "--foreground".cyan()
+        );
     }
 
     // Check if daemon is already running
     if DaemonServer::is_running(work_dir.root()) {
-        println!("Orchestrator daemon is already running.");
+        println!(
+            "{} Daemon is already running",
+            "─".dimmed()
+        );
         println!();
-        println!("To check status:  loom status");
-        println!("To stop daemon:   loom stop");
+        println!(
+            "  {}  Check status",
+            "loom status".cyan()
+        );
+        println!(
+            "  {}  Stop daemon",
+            "loom stop".cyan()
+        );
         return Ok(());
     }
 
@@ -57,10 +74,19 @@ pub fn execute_background(
     let daemon = DaemonServer::new(work_dir.root());
     daemon.start()?;
 
-    println!("Orchestrator daemon started.");
+    println!(
+        "{} Daemon started",
+        "✓".green().bold()
+    );
     println!();
-    println!("To monitor progress:  loom status");
-    println!("To stop daemon:       loom stop");
+    println!(
+        "  {}  Monitor progress",
+        "loom status".cyan()
+    );
+    println!(
+        "  {}  Stop daemon",
+        "loom stop".cyan()
+    );
 
     Ok(())
 }
@@ -93,14 +119,29 @@ fn execute_foreground(
         Orchestrator::new(config, graph).context("Failed to create orchestrator")?;
 
     let result = if let Some(id) = stage_id {
-        println!("Running single stage: {id}");
+        println!(
+            "{} Running single stage: {}",
+            "→".cyan().bold(),
+            id.bold()
+        );
         orchestrator.run_single(&id)?
     } else {
         if watch {
-            println!("Running in watch mode (continuous execution)...");
-            println!("Press Ctrl+C to stop.\n");
+            println!(
+                "{} Running in watch mode {}",
+                "→".cyan().bold(),
+                "(continuous execution)".dimmed()
+            );
+            println!(
+                "  {} Press {} to stop\n",
+                "→".dimmed(),
+                "Ctrl+C".bold()
+            );
         } else {
-            println!("Running all ready stages...");
+            println!(
+                "{} Running all ready stages...",
+                "→".cyan().bold()
+            );
         }
         orchestrator.run()?
     };
@@ -252,37 +293,86 @@ fn extract_stage_frontmatter(content: &str) -> Result<StageFrontmatter> {
 
 /// Print orchestrator result summary
 fn print_result(result: &OrchestratorResult) {
-    println!("\n=== Orchestration Complete ===\n");
+    println!();
+    println!(
+        "{}",
+        "╭──────────────────────────────────────╮".cyan()
+    );
+    println!(
+        "{}",
+        "│       Orchestration Complete         │".cyan().bold()
+    );
+    println!(
+        "{}",
+        "╰──────────────────────────────────────╯".cyan()
+    );
 
     if !result.completed_stages.is_empty() {
-        println!("✓ Completed stages:");
+        println!(
+            "\n{} {}",
+            "Completed".green().bold(),
+            format!("({})", result.completed_stages.len()).dimmed()
+        );
+        println!("{}", "─".repeat(40).dimmed());
         for stage in &result.completed_stages {
-            println!("  - {stage}");
+            println!(
+                "  {} {}",
+                "✓".green().bold(),
+                stage
+            );
         }
     }
 
     if !result.failed_stages.is_empty() {
-        println!("\n✗ Failed stages:");
+        println!(
+            "\n{} {}",
+            "Failed".red().bold(),
+            format!("({})", result.failed_stages.len()).dimmed()
+        );
+        println!("{}", "─".repeat(40).dimmed());
         for stage in &result.failed_stages {
-            println!("  - {stage}");
+            println!(
+                "  {} {}",
+                "✗".red().bold(),
+                stage
+            );
         }
     }
 
     if !result.needs_handoff.is_empty() {
-        println!("\n⚠ Stages needing handoff:");
+        println!(
+            "\n{} {}",
+            "Needs Handoff".yellow().bold(),
+            format!("({})", result.needs_handoff.len()).dimmed()
+        );
+        println!("{}", "─".repeat(40).dimmed());
         for stage in &result.needs_handoff {
-            println!("  - {stage}");
+            println!(
+                "  {} {}",
+                "⚠".yellow().bold(),
+                stage
+            );
         }
-        println!("\nRun 'loom resume <stage-id>' to continue these stages.");
+        println!(
+            "\n  {} Run {} to continue",
+            "→".dimmed(),
+            "loom resume <stage-id>".cyan()
+        );
     }
 
+    // Summary
+    println!();
+    println!("{}", "═".repeat(40).dimmed());
     println!(
-        "\nTotal sessions spawned: {}",
-        result.total_sessions_spawned
+        "Sessions spawned: {}",
+        result.total_sessions_spawned.to_string().bold()
     );
 
     if result.is_success() {
-        println!("\n✓ All stages completed successfully!");
+        println!(
+            "\n{} All stages completed successfully!",
+            "✓".green().bold()
+        );
     }
 }
 

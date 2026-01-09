@@ -3,20 +3,30 @@
 use crate::daemon::DaemonServer;
 use crate::fs::work_dir::WorkDir;
 use anyhow::{Context, Result};
+use colored::Colorize;
 
 /// Execute the stop command to gracefully shut down the daemon
 pub fn execute() -> Result<()> {
     let work_dir = WorkDir::new(".")?;
 
     if !DaemonServer::is_running(work_dir.root()) {
-        println!("Daemon is not running.");
+        println!(
+            "{} Daemon is not running",
+            "─".dimmed()
+        );
         return Ok(());
     }
 
-    println!("Stopping daemon...");
+    println!(
+        "{} Stopping daemon...",
+        "→".cyan().bold()
+    );
     DaemonServer::stop(work_dir.root()).context("Failed to stop daemon")?;
 
-    println!("Daemon stopped.");
+    println!(
+        "{} Daemon stopped",
+        "✓".green().bold()
+    );
     Ok(())
 }
 

@@ -5,6 +5,7 @@ use crate::models::stage::{Stage, StageStatus};
 use crate::plan::parser::parse_plan;
 use anyhow::{Context, Result};
 use chrono::Utc;
+use colored::Colorize;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -16,6 +17,13 @@ use std::process::Command;
 /// * `clean` - If true, clean up stale resources before initialization
 pub fn execute(plan_path: Option<PathBuf>, clean: bool) -> Result<()> {
     let repo_root = std::env::current_dir()?;
+
+    // Print header
+    print_header();
+
+    // Cleanup section
+    println!("\n{}", "Cleanup".bold());
+    println!("{}", "─".repeat(40).dimmed());
 
     // Always prune stale git worktrees (non-destructive)
     prune_stale_worktrees(&repo_root)?;
@@ -29,31 +37,99 @@ pub fn execute(plan_path: Option<PathBuf>, clean: bool) -> Result<()> {
         cleanup_worktrees_directory(&repo_root)?;
     }
 
+    // Initialize section
+    println!("\n{}", "Initialize".bold());
+    println!("{}", "─".repeat(40).dimmed());
+
     let work_dir = WorkDir::new(".")?;
     work_dir.initialize()?;
+    println!(
+        "  {} Directory structure created {}",
+        "✓".green().bold(),
+        ".work/".dimmed()
+    );
 
     // Ensure Claude Code permissions are configured for loom directories
     ensure_loom_permissions(&repo_root)?;
+    println!(
+        "  {} Permissions configured",
+        "✓".green().bold()
+    );
 
     // Add .worktrees/ to Claude Code's global trusted directories
     // This prevents the "trust this folder?" prompt when spawning worktree sessions
     add_worktrees_to_global_trust(&repo_root)?;
+    println!(
+        "  {} Worktrees directory trusted",
+        "✓".green().bold()
+    );
 
     if let Some(path) = plan_path {
-        initialize_with_plan(&work_dir, &path)?;
-        println!(
-            "Initialized .work/ directory structure with plan from {}",
-            path.display()
-        );
+        let stage_count = initialize_with_plan(&work_dir, &path)?;
+        print_summary(Some(&path), stage_count);
     } else {
-        println!("Initialized .work/ directory structure");
+        print_summary(None, 0);
     }
 
     Ok(())
 }
 
+/// Print the loom init header
+fn print_header() {
+    println!();
+    println!(
+        "{}",
+        "╭──────────────────────────────────────╮".cyan()
+    );
+    println!(
+        "{}",
+        "│       Initializing Loom...           │".cyan().bold()
+    );
+    println!(
+        "{}",
+        "╰──────────────────────────────────────╯".cyan()
+    );
+}
+
+/// Print the final summary
+fn print_summary(plan_path: Option<&Path>, stage_count: usize) {
+    println!();
+    println!("{}", "═".repeat(40).dimmed());
+
+    if let Some(path) = plan_path {
+        println!(
+            "{} Initialized from {}",
+            "✓".green().bold(),
+            path.display().to_string().cyan()
+        );
+        println!(
+            "  {} stage{} ready for execution",
+            stage_count.to_string().bold(),
+            if stage_count == 1 { "" } else { "s" }
+        );
+    } else {
+        println!(
+            "{} Empty workspace initialized",
+            "✓".green().bold()
+        );
+    }
+
+    println!();
+    println!("{}", "Next steps:".bold());
+    println!(
+        "  {}  Start execution",
+        "loom run".cyan()
+    );
+    println!(
+        "  {}  View dashboard",
+        "loom status".cyan()
+    );
+    println!();
+}
+
 /// Initialize with a plan file
-fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<()> {
+/// Returns the number of stages created
+fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<usize> {
     // Validate plan file exists
     if !plan_path.exists() {
         anyhow::bail!("Plan file does not exist: {}", plan_path.display());
@@ -62,6 +138,12 @@ fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<()> {
     // Parse the plan file to extract stages
     let parsed_plan = parse_plan(plan_path)
         .with_context(|| format!("Failed to parse plan file: {}", plan_path.display()))?;
+
+    println!(
+        "  {} Plan parsed: {}",
+        "✓".green().bold(),
+        parsed_plan.name.bold()
+    );
 
     // Create config.toml to track the active plan
     let config_content = format!(
@@ -74,6 +156,11 @@ fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<()> {
 
     let config_path = work_dir.root().join("config.toml");
     fs::write(&config_path, config_content).context("Failed to write config.toml")?;
+    println!(
+        "  {} Config saved {}",
+        "✓".green().bold(),
+        "config.toml".dimmed()
+    );
 
     // Compute topological depths for all stages
     let stage_deps: Vec<StageDependencies> = parsed_plan
@@ -93,6 +180,23 @@ fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<()> {
         fs::create_dir_all(&stages_dir).context("Failed to create stages directory")?;
     }
 
+    // Stages section
+    let stage_count = parsed_plan.stages.len();
+    println!(
+        "\n{} {}",
+        "Stages".bold(),
+        format!("({stage_count})").dimmed()
+    );
+    println!("{}", "─".repeat(40).dimmed());
+
+    // Find the longest stage ID for alignment
+    let max_id_len = parsed_plan
+        .stages
+        .iter()
+        .map(|s| s.id.len())
+        .max()
+        .unwrap_or(0);
+
     for stage_def in &parsed_plan.stages {
         let stage = create_stage_from_definition(stage_def, &parsed_plan.id);
         let depth = depths.get(&stage.id).copied().unwrap_or(0);
@@ -104,12 +208,23 @@ fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<()> {
         fs::write(&stage_path, content)
             .with_context(|| format!("Failed to write stage file: {}", stage_path.display()))?;
 
-        println!("  Created stage: {} ({})", stage.name, stage_path.display());
+        // Status indicator based on dependencies
+        let status_indicator = if stage_def.dependencies.is_empty() {
+            "●".green() // Ready to run
+        } else {
+            "○".yellow() // Waiting for deps
+        };
+
+        println!(
+            "  {}  {:width$}  {}",
+            status_indicator,
+            stage.id.dimmed(),
+            stage.name,
+            width = max_id_len
+        );
     }
 
-    println!("  Total stages created: {}", parsed_plan.stages.len());
-
-    Ok(())
+    Ok(stage_count)
 }
 
 /// Create a Stage from a StageDefinition
@@ -195,8 +310,6 @@ fn serialize_stage_to_markdown(stage: &Stage) -> Result<String> {
 
 /// Prune stale git worktrees that have been deleted but are still registered
 fn prune_stale_worktrees(repo_root: &Path) -> Result<()> {
-    println!("Pruning stale git worktrees...");
-
     let output = Command::new("git")
         .args(["worktree", "prune"])
         .current_dir(repo_root)
@@ -204,14 +317,25 @@ fn prune_stale_worktrees(repo_root: &Path) -> Result<()> {
 
     match output {
         Ok(result) if result.status.success() => {
-            println!("  Stale worktrees pruned");
+            println!(
+                "  {} Stale worktrees pruned",
+                "✓".green().bold()
+            );
         }
         Ok(result) => {
             let stderr = String::from_utf8_lossy(&result.stderr);
-            eprintln!("  Warning: Failed to prune worktrees: {}", stderr.trim());
+            println!(
+                "  {} Worktree prune: {}",
+                "⚠".yellow().bold(),
+                stderr.trim().dimmed()
+            );
         }
         Err(e) => {
-            eprintln!("  Warning: Failed to prune worktrees: {e}");
+            println!(
+                "  {} Worktree prune: {}",
+                "⚠".yellow().bold(),
+                e.to_string().dimmed()
+            );
         }
     }
 
@@ -220,8 +344,6 @@ fn prune_stale_worktrees(repo_root: &Path) -> Result<()> {
 
 /// Kill any orphaned loom sessions from previous runs
 fn cleanup_orphaned_tmux_sessions() -> Result<()> {
-    println!("Cleaning up orphaned loom sessions...");
-
     // List all tmux sessions with loom- prefix
     let output = Command::new("tmux")
         .args(["list-sessions", "-F", "#{session_name}"])
@@ -238,18 +360,28 @@ fn cleanup_orphaned_tmux_sessions() -> Result<()> {
         }
         Ok(_) => {
             // tmux returns non-zero when no sessions exist
-            println!("  No sessions to clean up");
+            println!(
+                "  {} No orphaned sessions",
+                "✓".green().bold()
+            );
             return Ok(());
         }
         Err(_) => {
             // tmux might not be installed, which is fine
-            println!("  No sessions to clean up");
+            println!(
+                "  {} Sessions check skipped {}",
+                "─".dimmed(),
+                "(tmux not available)".dimmed()
+            );
             return Ok(());
         }
     };
 
     if sessions.is_empty() {
-        println!("  No orphaned sessions found");
+        println!(
+            "  {} No orphaned sessions",
+            "✓".green().bold()
+        );
         return Ok(());
     }
 
@@ -264,20 +396,31 @@ fn cleanup_orphaned_tmux_sessions() -> Result<()> {
             }
             Ok(result) => {
                 let stderr = String::from_utf8_lossy(&result.stderr);
-                eprintln!(
-                    "  Warning: Failed to kill session '{}': {}",
+                println!(
+                    "  {} Failed to kill '{}': {}",
+                    "⚠".yellow().bold(),
                     session_name,
-                    stderr.trim()
+                    stderr.trim().dimmed()
                 );
             }
             Err(e) => {
-                eprintln!("  Warning: Failed to kill session '{session_name}': {e}");
+                println!(
+                    "  {} Failed to kill '{}': {}",
+                    "⚠".yellow().bold(),
+                    session_name,
+                    e.to_string().dimmed()
+                );
             }
         }
     }
 
     if killed_count > 0 {
-        println!("  Killed {killed_count} orphaned session(s)");
+        println!(
+            "  {} Cleaned {} orphaned session{}",
+            "✓".green().bold(),
+            killed_count.to_string().bold(),
+            if killed_count == 1 { "" } else { "s" }
+        );
     }
 
     Ok(())
@@ -291,14 +434,17 @@ fn cleanup_work_directory(repo_root: &Path) -> Result<()> {
         return Ok(());
     }
 
-    println!("Removing old .work/ directory...");
     fs::remove_dir_all(&work_dir).with_context(|| {
         format!(
             "Failed to remove .work/ directory at {}",
             work_dir.display()
         )
     })?;
-    println!("  Old .work/ directory removed");
+    println!(
+        "  {} Removed old {}",
+        "✓".green().bold(),
+        ".work/".dimmed()
+    );
 
     Ok(())
 }
@@ -310,8 +456,6 @@ fn cleanup_worktrees_directory(repo_root: &Path) -> Result<()> {
     if !worktrees_dir.exists() {
         return Ok(());
     }
-
-    println!("Removing old .worktrees/ directory...");
 
     // First, try to remove each worktree properly via git
     if let Ok(entries) = fs::read_dir(&worktrees_dir) {
@@ -353,7 +497,11 @@ fn cleanup_worktrees_directory(repo_root: &Path) -> Result<()> {
         })?;
     }
 
-    println!("  Old .worktrees/ directory removed");
+    println!(
+        "  {} Removed old {}",
+        "✓".green().bold(),
+        ".worktrees/".dimmed()
+    );
 
     Ok(())
 }
