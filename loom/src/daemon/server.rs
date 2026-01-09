@@ -600,6 +600,7 @@ impl DaemonServer {
     /// - Whether the worktree directory exists
     /// - Whether there are merge conflicts
     /// - Whether a merge is in progress
+    /// - Whether the branch was manually merged outside of loom
     fn detect_worktree_status(stage_id: &str, repo_root: &Path) -> Option<WorktreeStatus> {
         let worktree_path = repo_root.join(".worktrees").join(stage_id);
 
@@ -636,7 +637,31 @@ impl DaemonServer {
             return Some(WorktreeStatus::Merging);
         }
 
+        // Check if the branch was manually merged outside loom
+        // This detects when users run `git merge loom/stage-id` manually
+        if Self::is_manually_merged(stage_id, repo_root) {
+            return Some(WorktreeStatus::Merged);
+        }
+
         Some(WorktreeStatus::Active)
+    }
+
+    /// Check if a loom branch has been manually merged into the default branch.
+    ///
+    /// This is used to detect merges performed outside of loom (e.g., via CLI).
+    /// When detected, the orchestrator can trigger cleanup of the worktree.
+    fn is_manually_merged(stage_id: &str, repo_root: &Path) -> bool {
+        use crate::git::{default_branch, is_branch_merged};
+
+        // Get the default branch (main/master)
+        let target_branch = match default_branch(repo_root) {
+            Ok(branch) => branch,
+            Err(_) => return false,
+        };
+
+        // Check if the loom branch has been merged into the target branch
+        let branch_name = format!("loom/{stage_id}");
+        is_branch_merged(&branch_name, &target_branch, repo_root).unwrap_or_default()
     }
 
     /// Check if there are unmerged paths (merge conflicts) in the worktree
@@ -1051,4 +1076,50 @@ session: ~
             _ => panic!("Expected StatusUpdate response"),
         }
     }
+
+    #[test]
+    fn test_detect_worktree_status_no_worktree() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let repo_root = temp_dir.path();
+
+        // When worktree doesn't exist, should return None
+        let status = DaemonServer::detect_worktree_status("nonexistent-stage", repo_root);
+        assert!(status.is_none());
+    }
+
+    #[test]
+    fn test_detect_worktree_status_active() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let repo_root = temp_dir.path();
+
+        // Create a worktree directory (without git operations)
+        let worktree_path = repo_root.join(".worktrees").join("test-stage");
+        fs::create_dir_all(&worktree_path).expect("Failed to create worktree dir");
+
+        // Create a .git file pointing to a gitdir (simulating a worktree)
+        let git_file = worktree_path.join(".git");
+        fs::write(&git_file, "gitdir: /nonexistent/path").expect("Failed to write .git file");
+
+        // Since this is not a real git repo, is_manually_merged will return false
+        // and there's no MERGE_HEAD, so status should be Active
+        let status = DaemonServer::detect_worktree_status("test-stage", repo_root);
+        assert_eq!(status, Some(WorktreeStatus::Active));
+    }
+
+    #[test]
+    fn test_is_manually_merged_no_git_repo() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let repo_root = temp_dir.path();
+
+        // When not in a git repo, is_manually_merged should gracefully return false
+        let result = DaemonServer::is_manually_merged("test-stage", repo_root);
+        assert!(!result);
+    }
+
+    // Note: Testing is_manually_merged with a real git repo and merged branches
+    // requires complex setup and is better suited for e2e tests.
+    // The function:
+    // 1. Gets the default branch (main/master)
+    // 2. Checks if loom/{stage_id} is in `git branch --merged {target}`
+    // 3. Returns true if the branch has been merged, false otherwise
 }

@@ -220,6 +220,39 @@ pub fn branch_name_for_stage(stage_id: &str) -> String {
     format!("loom/{stage_id}")
 }
 
+/// Check if a branch has been fully merged into a target branch
+///
+/// This is used to detect manual merges performed outside loom.
+/// If a loom branch has been merged into the target branch (e.g., main),
+/// we can detect this and trigger cleanup.
+///
+/// # Arguments
+/// * `branch` - The branch to check (e.g., "loom/stage-1")
+/// * `target` - The target branch to check against (e.g., "main")
+/// * `repo_root` - Path to the git repository root
+///
+/// # Returns
+/// * `Ok(true)` if the branch has been merged into target
+/// * `Ok(false)` if the branch has not been merged
+/// * `Err` if git command fails
+pub fn is_branch_merged(branch: &str, target: &str, repo_root: &Path) -> Result<bool> {
+    let output = Command::new("git")
+        .args(["branch", "--merged", target, "--list", branch])
+        .current_dir(repo_root)
+        .output()
+        .with_context(|| format!("Failed to check if branch {branch} is merged into {target}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("git branch --merged failed: {stderr}");
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(stdout
+        .lines()
+        .any(|line| line.trim().trim_start_matches('*').trim() == branch))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -255,4 +288,11 @@ mod tests {
         assert_eq!(branch_name_for_stage("stage-1"), "loom/stage-1");
         assert_eq!(branch_name_for_stage("my-feature"), "loom/my-feature");
     }
+
+    // Note: is_branch_merged requires a real git repository with branches
+    // to test properly. The function relies on `git branch --merged` output.
+    // Integration tests for this function should be in e2e tests.
+    //
+    // The function checks if branch appears in `git branch --merged target --list branch`
+    // output, which indicates the branch has been fully merged into target.
 }
