@@ -9,13 +9,14 @@ use crate::models::session::Session;
 use crate::models::stage::StageStatus;
 use crate::models::worktree::Worktree;
 use crate::orchestrator::monitor::{Monitor, MonitorConfig, MonitorEvent};
-use crate::orchestrator::spawner::check_tmux_available;
+use crate::orchestrator::terminal::tmux::check_tmux_available;
 use crate::plan::ExecutionGraph;
 
 use super::event_handler::EventHandler;
 use super::persistence::Persistence;
 use super::recovery::Recovery;
 use super::stage_executor::StageExecutor;
+use crate::orchestrator::terminal::{create_backend, BackendType, TerminalBackend};
 
 /// Configuration for the orchestrator
 #[derive(Debug, Clone)]
@@ -25,11 +26,12 @@ pub struct OrchestratorConfig {
     pub manual_mode: bool,
     /// Watch mode: continuously spawn ready stages until all are terminal
     pub watch_mode: bool,
-    pub tmux_prefix: String,
     pub work_dir: PathBuf,
     pub repo_root: PathBuf,
     /// How often to print status updates during polling (default: 30 seconds)
     pub status_update_interval: Duration,
+    /// Terminal backend to use for spawning sessions
+    pub backend_type: BackendType,
 }
 
 impl Default for OrchestratorConfig {
@@ -39,10 +41,10 @@ impl Default for OrchestratorConfig {
             poll_interval: Duration::from_secs(5),
             manual_mode: false,
             watch_mode: false,
-            tmux_prefix: "loom".to_string(),
             work_dir: PathBuf::from(".work"),
             repo_root: PathBuf::from("."),
             status_update_interval: Duration::from_secs(30),
+            backend_type: BackendType::Native,
         }
     }
 }
@@ -56,11 +58,13 @@ pub struct Orchestrator {
     pub(super) monitor: Monitor,
     /// Track reported crashes to avoid duplicate messages
     pub(super) reported_crashes: HashSet<String>,
+    /// Terminal backend for spawning sessions
+    pub(super) backend: Box<dyn TerminalBackend>,
 }
 
 impl Orchestrator {
     /// Create a new orchestrator from config and execution graph
-    pub fn new(config: OrchestratorConfig, graph: ExecutionGraph) -> Self {
+    pub fn new(config: OrchestratorConfig, graph: ExecutionGraph) -> Result<Self> {
         let monitor_config = MonitorConfig {
             poll_interval: config.poll_interval,
             work_dir: config.work_dir.clone(),
@@ -69,21 +73,26 @@ impl Orchestrator {
 
         let monitor = Monitor::new(monitor_config);
 
-        Self {
+        // Create the terminal backend based on config
+        let backend =
+            create_backend(config.backend_type).context("Failed to create terminal backend")?;
+
+        Ok(Self {
             config,
             graph,
             active_sessions: HashMap::new(),
             active_worktrees: HashMap::new(),
             monitor,
             reported_crashes: HashSet::new(),
-        }
+            backend,
+        })
     }
 
     /// Main run loop - executes until all stages complete or error
     pub fn run(&mut self) -> Result<OrchestratorResult> {
-        if !self.config.manual_mode {
+        if !self.config.manual_mode && self.config.backend_type == BackendType::Tmux {
             check_tmux_available()
-                .context("tmux is required for automatic session spawning. Use --manual to set up sessions yourself.")?;
+                .context("tmux is required when using tmux backend. Use --manual to set up sessions yourself, or use --backend=native.")?;
         }
 
         // Sync graph with existing stage states and recover orphaned sessions
@@ -234,7 +243,9 @@ impl Orchestrator {
             });
         }
 
-        check_tmux_available().context("tmux is required for single stage execution")?;
+        if self.config.backend_type == BackendType::Tmux {
+            check_tmux_available().context("tmux is required when using tmux backend")?;
+        }
 
         let mut completed = false;
         let mut failed = false;

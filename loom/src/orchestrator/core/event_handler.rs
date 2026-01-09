@@ -7,7 +7,6 @@ use std::path::PathBuf;
 use crate::models::stage::StageStatus;
 use crate::orchestrator::monitor::MonitorEvent;
 use crate::orchestrator::signals::remove_signal;
-use crate::orchestrator::spawner::kill_session;
 
 use super::persistence::Persistence;
 use super::Orchestrator;
@@ -104,7 +103,7 @@ impl EventHandler for Orchestrator {
 
         if let Some(session) = self.active_sessions.remove(stage_id) {
             remove_signal(&session.id, &self.config.work_dir)?;
-            let _ = kill_session(&session);
+            let _ = self.backend.kill_session(&session);
         }
 
         self.active_worktrees.remove(stage_id);

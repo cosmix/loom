@@ -5,7 +5,6 @@ use std::io::{self, Write};
 
 use crate::models::session::Session;
 use crate::models::stage::StageStatus;
-use crate::orchestrator::spawner::session_is_running;
 use crate::parser::frontmatter::extract_yaml_frontmatter;
 use crate::plan::graph::NodeStatus;
 
@@ -111,14 +110,8 @@ impl Recovery for Orchestrator {
                 Err(_) => continue,
             };
 
-            // Check if session has a tmux session name
-            let tmux_name = match &session.tmux_session {
-                Some(name) => name.clone(),
-                None => continue,
-            };
-
-            // Check if tmux session is still running
-            let is_running = session_is_running(&tmux_name).unwrap_or(false);
+            // Check if session is still running (works for both native and tmux)
+            let is_running = self.backend.is_session_alive(&session).unwrap_or(false);
 
             if !is_running {
                 // Orphaned session - get stage ID and reset it

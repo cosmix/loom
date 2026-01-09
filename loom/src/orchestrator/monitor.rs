@@ -12,7 +12,8 @@ use crate::handoff::{generate_handoff, HandoffContent};
 use crate::models::constants::{CONTEXT_CRITICAL_THRESHOLD, CONTEXT_WARNING_THRESHOLD};
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
-use crate::orchestrator::spawner::{generate_crash_report, session_is_running, CrashReport};
+use crate::orchestrator::spawner::{generate_crash_report, CrashReport};
+use crate::orchestrator::terminal::tmux::session_is_running;
 use crate::parser::frontmatter::extract_yaml_frontmatter;
 
 /// Configuration for the monitor
@@ -247,6 +248,42 @@ impl Monitor {
         events
     }
 
+    /// Check if a session is still alive by checking its process
+    ///
+    /// First checks the PID if available (works for both native and tmux sessions).
+    /// Falls back to checking tmux session if PID check fails or is unavailable.
+    ///
+    /// # Arguments
+    /// * `session` - The session to check for liveness
+    ///
+    /// # Returns
+    /// `Ok(Some(true))` if the session appears to be alive
+    /// `Ok(Some(false))` if the session is dead
+    /// `Ok(None)` if the session has no trackable process (no PID or tmux session)
+    fn check_session_alive(&self, session: &Session) -> Result<Option<bool>> {
+        // First check PID if available (works for both native and tmux sessions)
+        if let Some(pid) = session.pid {
+            let output = std::process::Command::new("kill")
+                .arg("-0")
+                .arg(pid.to_string())
+                .output()
+                .context("Failed to check if process is alive")?;
+
+            if output.status.success() {
+                return Ok(Some(true));
+            }
+            // PID is dead, but let's also check tmux in case PID tracking was lost
+        }
+
+        // Fall back to tmux check if available
+        if let Some(tmux_name) = &session.tmux_session {
+            return check_tmux_session_alive(tmux_name).map(Some);
+        }
+
+        // No PID and no tmux session - cannot track liveness
+        Ok(None)
+    }
+
     /// Detect session status changes and context levels
     fn detect_session_changes(&mut self, sessions: &[Session]) -> Vec<MonitorEvent> {
         let mut events = Vec::new();
@@ -265,25 +302,33 @@ impl Monitor {
             if previous_status == Some(&SessionStatus::Running)
                 && current_status == &SessionStatus::Running
             {
-                if let Some(tmux_name) = &session.tmux_session {
-                    if let Ok(is_alive) = self.check_tmux_session_alive(tmux_name) {
-                        if !is_alive {
-                            // Generate crash report
-                            let crash_report_path = self
-                                .handle_session_crash(session, "Tmux session no longer running");
+                // Check if session is still alive (PID or tmux)
+                if let Ok(Some(is_alive)) = self.check_session_alive(session) {
+                    if !is_alive {
+                        // Generate crash report
+                        let reason = if session.pid.is_some() {
+                            "Process no longer running"
+                        } else if session.tmux_session.is_some() {
+                            "Tmux session no longer running"
+                        } else {
+                            "Session no longer running"
+                        };
 
-                            events.push(MonitorEvent::SessionCrashed {
-                                session_id: session.id.clone(),
-                                stage_id: session.stage_id.clone(),
-                                crash_report_path,
-                            });
+                        let crash_report_path = self.handle_session_crash(session, reason);
 
-                            self.last_session_states
-                                .insert(session.id.clone(), SessionStatus::Crashed);
-                            continue;
-                        }
+                        events.push(MonitorEvent::SessionCrashed {
+                            session_id: session.id.clone(),
+                            stage_id: session.stage_id.clone(),
+                            crash_report_path,
+                        });
+
+                        self.last_session_states
+                            .insert(session.id.clone(), SessionStatus::Crashed);
+                        continue;
                     }
                 }
+                // If check_session_alive returns Ok(None), the session has no trackable
+                // process, so we skip liveness checking
             }
 
             if previous_status != Some(current_status) {
@@ -349,11 +394,6 @@ impl Monitor {
         events
     }
 
-    /// Check if a tmux session is still running
-    fn check_tmux_session_alive(&self, tmux_name: &str) -> Result<bool> {
-        session_is_running(tmux_name)
-    }
-
     /// Handle critical context by generating a handoff file
     ///
     /// Called when a session reaches critical context threshold.
@@ -411,6 +451,19 @@ impl Monitor {
             }
         }
     }
+}
+
+/// Check if a tmux session is still running
+///
+/// This is a standalone helper function that wraps the terminal tmux module's session_is_running.
+///
+/// # Arguments
+/// * `tmux_name` - The tmux session name to check
+///
+/// # Returns
+/// `Ok(true)` if the tmux session is running, `Ok(false)` if not
+fn check_tmux_session_alive(tmux_name: &str) -> Result<bool> {
+    session_is_running(tmux_name)
 }
 
 /// Context health level for a session

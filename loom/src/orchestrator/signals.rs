@@ -2,6 +2,7 @@ use anyhow::{bail, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::handoff::git_handoff::{format_git_history_markdown, GitHistory};
 use crate::models::session::Session;
 use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
@@ -24,6 +25,7 @@ pub struct SignalContent {
     pub acceptance_criteria: Vec<String>,
     pub context_files: Vec<String>,
     pub files_to_modify: Vec<String>,
+    pub git_history: Option<GitHistory>,
 }
 
 #[derive(Debug, Default)]
@@ -39,6 +41,7 @@ pub fn generate_signal(
     worktree: &Worktree,
     dependencies_status: &[DependencyStatus],
     handoff_file: Option<&str>,
+    git_history: Option<&GitHistory>,
     work_dir: &Path,
 ) -> Result<PathBuf> {
     let signals_dir = work_dir.join("signals");
@@ -48,8 +51,14 @@ pub fn generate_signal(
     }
 
     let signal_path = signals_dir.join(format!("{}.md", session.id));
-    let content =
-        format_signal_content(session, stage, worktree, dependencies_status, handoff_file);
+    let content = format_signal_content(
+        session,
+        stage,
+        worktree,
+        dependencies_status,
+        handoff_file,
+        git_history,
+    );
 
     fs::write(&signal_path, content)
         .with_context(|| format!("Failed to write signal file: {}", signal_path.display()))?;
@@ -177,6 +186,7 @@ fn format_signal_content(
     worktree: &Worktree,
     dependencies_status: &[DependencyStatus],
     handoff_file: Option<&str>,
+    git_history: Option<&GitHistory>,
 ) -> String {
     let mut content = String::new();
 
@@ -255,6 +265,12 @@ fn format_signal_content(
         content.push_str(&format!("- `{file}` - Relevant code to modify\n"));
     }
     content.push('\n');
+
+    // Git History from previous session (if resuming)
+    if let Some(history) = git_history {
+        content.push_str(&format_git_history_markdown(history));
+        content.push('\n');
+    }
 
     content.push_str("## Acceptance Criteria\n\n");
     if stage.acceptance.is_empty() {
@@ -425,6 +441,7 @@ fn parse_signal_content(session_id: &str, content: &str) -> Result<SignalContent
         acceptance_criteria,
         context_files,
         files_to_modify,
+        git_history: None, // Git history is informational, not parsed back
     })
 }
 
@@ -474,7 +491,7 @@ mod tests {
         let stage = create_test_stage();
         let worktree = create_test_worktree();
 
-        let result = generate_signal(&session, &stage, &worktree, &[], None, &work_dir);
+        let result = generate_signal(&session, &stage, &worktree, &[], None, None, &work_dir);
 
         assert!(result.is_ok());
         let signal_path = result.unwrap();
@@ -504,7 +521,7 @@ mod tests {
             status: "completed".to_string(),
         }];
 
-        let result = generate_signal(&session, &stage, &worktree, &deps, None, &work_dir);
+        let result = generate_signal(&session, &stage, &worktree, &deps, None, None, &work_dir);
 
         assert!(result.is_ok());
         let signal_path = result.unwrap();
@@ -531,6 +548,7 @@ mod tests {
             &worktree,
             &[],
             Some("2026-01-06-previous-work"),
+            None,
             &work_dir,
         );
 
@@ -548,7 +566,7 @@ mod tests {
         let stage = create_test_stage();
         let worktree = create_test_worktree();
 
-        let content = format_signal_content(&session, &stage, &worktree, &[], None);
+        let content = format_signal_content(&session, &stage, &worktree, &[], None, None);
 
         assert!(content.contains("# Signal: session-test-123"));
         assert!(content.contains("## Worktree Context"));
@@ -632,7 +650,7 @@ mod tests {
         let stage = create_test_stage();
         let worktree = create_test_worktree();
 
-        generate_signal(&session, &stage, &worktree, &[], None, &work_dir).unwrap();
+        generate_signal(&session, &stage, &worktree, &[], None, None, &work_dir).unwrap();
 
         let result = read_signal("session-test-123", &work_dir);
         assert!(result.is_ok());
@@ -657,7 +675,7 @@ mod tests {
         let stage = create_test_stage();
         let worktree = create_test_worktree();
 
-        generate_signal(&session, &stage, &worktree, &[], None, &work_dir).unwrap();
+        generate_signal(&session, &stage, &worktree, &[], None, None, &work_dir).unwrap();
 
         let updates = SignalUpdates {
             add_tasks: Some(vec!["New task 1".to_string(), "New task 2".to_string()]),
@@ -671,5 +689,48 @@ mod tests {
         let content = fs::read_to_string(signal_path).unwrap();
         assert!(content.contains("New task 1"));
         assert!(content.contains("New task 2"));
+    }
+
+    #[test]
+    fn test_generate_signal_with_git_history() {
+        use crate::handoff::git_handoff::{CommitInfo, GitHistory};
+
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path().join(".work");
+        fs::create_dir_all(&work_dir).unwrap();
+
+        let session = create_test_session();
+        let stage = create_test_stage();
+        let worktree = create_test_worktree();
+
+        let git_history = GitHistory {
+            branch: "loom/stage-1".to_string(),
+            base_branch: "main".to_string(),
+            commits: vec![CommitInfo {
+                hash: "abc1234".to_string(),
+                message: "Add feature".to_string(),
+            }],
+            uncommitted_changes: vec!["M src/test.rs".to_string()],
+        };
+
+        let result = generate_signal(
+            &session,
+            &stage,
+            &worktree,
+            &[],
+            None,
+            Some(&git_history),
+            &work_dir,
+        );
+
+        assert!(result.is_ok());
+        let signal_path = result.unwrap();
+        let content = fs::read_to_string(&signal_path).unwrap();
+
+        assert!(content.contains("## Git History"));
+        assert!(content.contains("**Branch**: loom/stage-1 (from main)"));
+        assert!(content.contains("abc1234"));
+        assert!(content.contains("Add feature"));
+        assert!(content.contains("M src/test.rs"));
     }
 }

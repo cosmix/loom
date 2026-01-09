@@ -32,23 +32,26 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::fs::stage_files::find_stage_file;
+use crate::handoff::generator::find_latest_handoff;
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::models::worktree::Worktree;
 use crate::orchestrator::signals::{generate_signal, DependencyStatus};
-use crate::orchestrator::spawner::{spawn_session, SpawnerConfig};
+use crate::orchestrator::terminal::{create_backend, BackendType};
 
 /// Configuration for session continuation
 #[derive(Debug, Clone)]
 pub struct ContinuationConfig {
-    pub spawner_config: SpawnerConfig,
+    /// Backend type for spawning sessions
+    pub backend_type: BackendType,
+    /// Whether to automatically spawn a terminal session
     pub auto_spawn: bool,
 }
 
 impl Default for ContinuationConfig {
     fn default() -> Self {
         Self {
-            spawner_config: SpawnerConfig::default(),
+            backend_type: BackendType::Native,
             auto_spawn: true,
         }
     }
@@ -123,20 +126,18 @@ pub fn continue_session(
         worktree,
         &dependencies_status,
         handoff_file.as_deref(),
+        None, // git_history will be extracted from worktree in future enhancement
         work_dir,
     )
     .context("Failed to generate signal for continuation")?;
 
-    // Spawn tmux session if auto_spawn is enabled
+    // Spawn terminal session if auto_spawn is enabled
     if config.auto_spawn {
-        session = spawn_session(
-            stage,
-            worktree,
-            &config.spawner_config,
-            session,
-            &signal_path,
-        )
-        .context("Failed to spawn tmux session for continuation")?;
+        let backend = create_backend(config.backend_type)
+            .context("Failed to create terminal backend for continuation")?;
+        session = backend
+            .spawn_session(stage, worktree, session, &signal_path)
+            .context("Failed to spawn session for continuation")?;
     }
 
     // Verify session ID consistency (signal file uses this ID)
@@ -168,7 +169,7 @@ pub fn prepare_continuation(stage_id: &str, work_dir: &Path) -> Result<Continuat
     let stage = load_stage(work_dir, stage_id)?;
 
     // Find the latest handoff for this stage (if any)
-    let handoff_path = find_latest_handoff_for_stage(work_dir, stage_id)?;
+    let handoff_path = find_latest_handoff(stage_id, work_dir)?;
 
     // Get worktree information
     let (worktree_path, branch) = if let Some(worktree_id) = &stage.worktree {
@@ -256,50 +257,6 @@ fn extract_yaml_frontmatter(content: &str) -> Result<serde_yaml::Value> {
     serde_yaml::from_str(&yaml_content).context("Failed to parse YAML frontmatter")
 }
 
-/// Find the latest handoff file for a given stage
-///
-/// Searches .work/handoffs/ for markdown files that reference the stage_id.
-/// Returns the most recently modified handoff file if any exist.
-fn find_latest_handoff_for_stage(work_dir: &Path, stage_id: &str) -> Result<Option<PathBuf>> {
-    let handoffs_dir = work_dir.join("handoffs");
-
-    if !handoffs_dir.exists() {
-        return Ok(None);
-    }
-
-    let mut matching_handoffs = Vec::new();
-
-    for entry in fs::read_dir(&handoffs_dir).context("Failed to read handoffs directory")? {
-        let entry = entry?;
-        let path = entry.path();
-
-        if path.extension().and_then(|s| s.to_str()) != Some("md") {
-            continue;
-        }
-
-        // Read the file and check if it references this stage_id
-        if let Ok(content) = fs::read_to_string(&path) {
-            if content.contains(&format!("**Track**: {stage_id}"))
-                || content.contains(&format!("**Stage**: {stage_id}"))
-            {
-                if let Ok(metadata) = entry.metadata() {
-                    if let Ok(modified) = metadata.modified() {
-                        matching_handoffs.push((path, modified));
-                    }
-                }
-            }
-        }
-    }
-
-    if matching_handoffs.is_empty() {
-        return Ok(None);
-    }
-
-    // Sort by modification time (most recent first)
-    matching_handoffs.sort_by(|a, b| b.1.cmp(&a.1));
-
-    Ok(Some(matching_handoffs[0].0.clone()))
-}
 
 /// Load worktree path from worktree ID
 ///
@@ -432,9 +389,10 @@ Test the continuation feature.
 "#
         );
 
+        // Use the standard handoff naming pattern: {stage_id}-handoff-{NNN}.md
         let handoff_path = work_dir
             .join("handoffs")
-            .join(format!("2026-01-06-{stage_id}.md"));
+            .join(format!("{stage_id}-handoff-001.md"));
         fs::write(&handoff_path, handoff_content).unwrap();
         handoff_path
     }
@@ -442,8 +400,7 @@ Test the continuation feature.
     #[test]
     fn test_continuation_config_default() {
         let config = ContinuationConfig::default();
-        assert_eq!(config.spawner_config.max_parallel_sessions, 4);
-        assert_eq!(config.spawner_config.tmux_prefix, "loom");
+        assert_eq!(config.backend_type, BackendType::Native);
         assert!(config.auto_spawn);
     }
 
@@ -536,7 +493,7 @@ Test the continuation feature.
         let handoff_path = create_test_handoff(stage_id, &work_dir);
 
         let config = ContinuationConfig {
-            spawner_config: SpawnerConfig::default(),
+            backend_type: BackendType::Native,
             auto_spawn: false,
         };
 
@@ -566,7 +523,7 @@ Test the continuation feature.
         let worktree = create_test_worktree(stage_id, project_root);
 
         let config = ContinuationConfig {
-            spawner_config: SpawnerConfig::default(),
+            backend_type: BackendType::Native,
             auto_spawn: false,
         };
 
@@ -589,7 +546,7 @@ Test the continuation feature.
         let worktree = create_test_worktree(stage_id, project_root);
 
         let config = ContinuationConfig {
-            spawner_config: SpawnerConfig::default(),
+            backend_type: BackendType::Native,
             auto_spawn: false,
         };
 

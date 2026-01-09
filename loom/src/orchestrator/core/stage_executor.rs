@@ -6,7 +6,6 @@ use crate::git;
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::signals::{generate_signal, DependencyStatus};
-use crate::orchestrator::spawner::{spawn_session, SpawnerConfig};
 
 use super::persistence::Persistence;
 use super::Orchestrator;
@@ -74,6 +73,7 @@ impl StageExecutor for Orchestrator {
             &worktree,
             &deps,
             None,
+            None, // git_history will be extracted from worktree in future enhancement
             &self.config.work_dir,
         )
         .context("Failed to generate signal file")?;
@@ -82,13 +82,9 @@ impl StageExecutor for Orchestrator {
         let original_session_id = session.id.clone();
 
         let spawned_session = if !self.config.manual_mode {
-            let spawner_config = SpawnerConfig {
-                max_parallel_sessions: self.config.max_parallel_sessions,
-                tmux_prefix: self.config.tmux_prefix.clone(),
-                logs_dir: Some(self.config.work_dir.join("logs")),
-            };
-
-            let spawned = spawn_session(&stage, &worktree, &spawner_config, session, &signal_path)
+            let spawned = self
+                .backend
+                .spawn_session(&stage, &worktree, session, &signal_path)
                 .with_context(|| format!("Failed to spawn session for stage: {stage_id}"))?;
 
             // Print confirmation that stage was started

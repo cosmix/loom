@@ -30,10 +30,10 @@ mod tests {
             poll_interval: Duration::from_millis(100),
             manual_mode: true,
             watch_mode: false,
-            tmux_prefix: "test".to_string(),
             work_dir: PathBuf::from("/tmp/test-work"),
             repo_root: PathBuf::from("/tmp/test-repo"),
             status_update_interval: Duration::from_secs(30),
+            backend_type: crate::orchestrator::terminal::BackendType::Native,
         }
     }
 
@@ -59,7 +59,6 @@ mod tests {
         assert_eq!(config.poll_interval, Duration::from_secs(5));
         assert!(!config.manual_mode);
         assert!(!config.watch_mode);
-        assert_eq!(config.tmux_prefix, "loom");
     }
 
     #[test]
@@ -102,7 +101,7 @@ mod tests {
     fn test_running_session_count() {
         let config = create_test_config();
         let graph = create_simple_graph();
-        let orchestrator = Orchestrator::new(config, graph);
+        let orchestrator = Orchestrator::new(config, graph).expect("Failed to create orchestrator");
 
         assert_eq!(orchestrator.running_session_count(), 0);
     }
