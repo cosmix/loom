@@ -4,9 +4,12 @@ use anyhow::Result;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
+use crate::git::branch::default_branch;
 use crate::models::stage::StageStatus;
+use crate::orchestrator::auto_merge::{attempt_auto_merge, is_auto_merge_enabled, AutoMergeResult};
 use crate::orchestrator::monitor::MonitorEvent;
 use crate::orchestrator::signals::remove_signal;
+use crate::verify::transitions::load_stage;
 
 use super::persistence::Persistence;
 use super::Orchestrator;
@@ -117,6 +120,9 @@ impl EventHandler for Orchestrator {
 
         self.active_worktrees.remove(stage_id);
 
+        // Attempt auto-merge if enabled
+        self.try_auto_merge(stage_id);
+
         Ok(())
     }
 
@@ -199,5 +205,73 @@ impl EventHandler for Orchestrator {
         eprintln!("  3. If issues remain, run: loom merge {stage_id}");
 
         Ok(())
+    }
+}
+
+impl Orchestrator {
+    fn try_auto_merge(&self, stage_id: &str) {
+        // Load the stage to check auto_merge setting
+        let stage = match load_stage(stage_id, &self.config.work_dir) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Warning: Failed to load stage for auto-merge check: {e}");
+                return;
+            }
+        };
+
+        // Check if auto-merge is enabled for this stage
+        // TODO: In the future, load plan_auto_merge from config file
+        let plan_auto_merge = None;
+
+        if !is_auto_merge_enabled(&stage, self.config.auto_merge, plan_auto_merge) {
+            return;
+        }
+
+        // Get target branch (default branch of the repo)
+        let target_branch = default_branch(&self.config.repo_root)
+            .unwrap_or_else(|_| "main".to_string());
+
+        clear_status_line();
+        eprintln!("Auto-merging stage '{stage_id}'...");
+
+        match attempt_auto_merge(
+            &stage,
+            &self.config.repo_root,
+            &self.config.work_dir,
+            &target_branch,
+            self.backend.as_ref(),
+        ) {
+            Ok(AutoMergeResult::Success { files_changed, insertions, deletions, .. }) => {
+                clear_status_line();
+                eprintln!(
+                    "Stage '{stage_id}' merged: {files_changed} files, +{insertions} -{deletions}"
+                );
+            }
+            Ok(AutoMergeResult::FastForward { .. }) => {
+                clear_status_line();
+                eprintln!("Stage '{stage_id}' merged (fast-forward)");
+            }
+            Ok(AutoMergeResult::AlreadyUpToDate { .. }) => {
+                clear_status_line();
+                eprintln!("Stage '{stage_id}' already up to date");
+            }
+            Ok(AutoMergeResult::ConflictResolutionSpawned { session_id, conflicting_files }) => {
+                clear_status_line();
+                eprintln!(
+                    "Stage '{stage_id}' has {} conflict(s). Spawned resolution session: {session_id}",
+                    conflicting_files.len()
+                );
+            }
+            Ok(AutoMergeResult::NoWorktree) => {
+                // Nothing to merge - this is fine
+            }
+            Ok(AutoMergeResult::Disabled) => {
+                // Should not reach here
+            }
+            Err(e) => {
+                clear_status_line();
+                eprintln!("Auto-merge failed for '{stage_id}': {e}");
+            }
+        }
     }
 }
