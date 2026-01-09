@@ -6,7 +6,12 @@
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
+
+/// Embedded loom stop hook script
+/// This script enforces commit and stage completion in loom worktrees
+const LOOM_STOP_HOOK: &str = include_str!("../../resources/hooks/loom-stop.sh");
 
 /// Loom permissions for the MAIN REPO context
 /// Includes worktree permissions so settings.local.json can be symlinked to worktrees
@@ -28,7 +33,7 @@ pub const LOOM_PERMISSIONS: &[&str] = &[
 ];
 
 /// Generate hooks configuration for loom
-/// Hooks reference scripts at ~/.claude/hooks/ (installed by install.sh)
+/// Hooks reference scripts at ~/.claude/hooks/ (installed by loom init)
 fn loom_hooks_config() -> Value {
     json!({
         "PreToolUse": [
@@ -58,12 +63,61 @@ fn loom_hooks_config() -> Value {
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "~/.claude/hooks/flux-stop.sh"
+                        "command": "~/.claude/hooks/loom-stop.sh"
                     }
                 ]
             }
         ]
     })
+}
+
+/// Install the loom stop hook to ~/.claude/hooks/
+///
+/// This creates the hook script that enforces commit and stage completion
+/// in loom worktrees before allowing Claude to stop.
+///
+/// # Returns
+/// - `Ok(true)` if the hook was installed or updated
+/// - `Ok(false)` if the hook already exists and is up to date
+/// - `Err` if installation failed
+pub fn install_loom_hooks() -> Result<bool> {
+    let home_dir = dirs::home_dir().context("Failed to determine home directory")?;
+    let hooks_dir = home_dir.join(".claude/hooks");
+    let hook_path = hooks_dir.join("loom-stop.sh");
+
+    // Create hooks directory if needed
+    if !hooks_dir.exists() {
+        fs::create_dir_all(&hooks_dir).with_context(|| {
+            format!(
+                "Failed to create hooks directory at {}",
+                hooks_dir.display()
+            )
+        })?;
+    }
+
+    // Check if hook already exists with same content
+    if hook_path.exists() {
+        let existing_content = fs::read_to_string(&hook_path)
+            .with_context(|| format!("Failed to read existing hook at {}", hook_path.display()))?;
+
+        if existing_content == LOOM_STOP_HOOK {
+            return Ok(false); // Already up to date
+        }
+    }
+
+    // Write the hook script
+    fs::write(&hook_path, LOOM_STOP_HOOK)
+        .with_context(|| format!("Failed to write hook to {}", hook_path.display()))?;
+
+    // Make executable (chmod +x)
+    let mut perms = fs::metadata(&hook_path)
+        .with_context(|| format!("Failed to get metadata for {}", hook_path.display()))?
+        .permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&hook_path, perms)
+        .with_context(|| format!("Failed to set permissions on {}", hook_path.display()))?;
+
+    Ok(true)
 }
 
 /// Loom permissions for WORKTREE context
@@ -89,14 +143,21 @@ pub const LOOM_PERMISSIONS_WORKTREE: &[&str] = &[
 /// Ensure `.claude/settings.local.json` has loom permissions and hooks configured
 ///
 /// This function:
-/// 1. Creates `.claude/` directory if it doesn't exist
-/// 2. Creates `settings.local.json` if it doesn't exist
-/// 3. Merges loom permissions into existing file without duplicates
-/// 4. Configures loom hooks (referencing ~/.claude/hooks/*.sh)
+/// 1. Installs loom hook scripts to ~/.claude/hooks/
+/// 2. Creates `.claude/` directory if it doesn't exist
+/// 3. Creates `settings.local.json` if it doesn't exist
+/// 4. Merges loom permissions into existing file without duplicates
+/// 5. Configures loom hooks (referencing ~/.claude/hooks/*.sh)
 ///
 /// Since worktrees symlink `.claude/` to the main repo, these permissions
 /// automatically propagate to all loom sessions.
 pub fn ensure_loom_permissions(repo_root: &Path) -> Result<()> {
+    // First, install loom hooks to ~/.claude/hooks/
+    let hooks_installed = install_loom_hooks()?;
+    if hooks_installed {
+        println!("  Installed loom-stop.sh hook to ~/.claude/hooks/");
+    }
+
     let claude_dir = repo_root.join(".claude");
     let settings_path = claude_dir.join("settings.local.json");
 
@@ -192,14 +253,14 @@ fn configure_loom_hooks(settings_obj: &mut serde_json::Map<String, Value>) -> Re
     if let Some(existing_hooks) = settings_obj.get("hooks") {
         // Check if loom hooks are already configured by looking for our specific hooks
         if let Some(hooks_obj) = existing_hooks.as_object() {
-            // Check for Stop hook with flux-stop.sh as marker
+            // Check for Stop hook with loom-stop.sh as marker
             if let Some(stop_hooks) = hooks_obj.get("Stop") {
                 if let Some(stop_arr) = stop_hooks.as_array() {
                     for hook_entry in stop_arr {
                         if let Some(hooks) = hook_entry.get("hooks").and_then(|h| h.as_array()) {
                             for hook in hooks {
                                 if let Some(cmd) = hook.get("command").and_then(|c| c.as_str()) {
-                                    if cmd.contains("flux-stop.sh") {
+                                    if cmd.contains("loom-stop.sh") {
                                         // Loom hooks already configured
                                         return Ok(false);
                                     }
@@ -496,7 +557,7 @@ mod tests {
         assert!(stop[0]["hooks"][0]["command"]
             .as_str()
             .unwrap()
-            .contains("flux-stop.sh"));
+            .contains("loom-stop.sh"));
     }
 
     #[test]
@@ -552,5 +613,35 @@ mod tests {
         let hooks = settings.get("hooks").expect("hooks should be present");
         let hooks_obj = hooks.as_object().unwrap();
         assert!(hooks_obj.contains_key("Stop"));
+    }
+
+    #[test]
+    fn test_embedded_loom_stop_hook_is_valid() {
+        // Verify the embedded hook script is non-empty and has correct shebang
+        assert!(!LOOM_STOP_HOOK.is_empty());
+        assert!(LOOM_STOP_HOOK.starts_with("#!/usr/bin/env bash"));
+        // Check for key functions that should exist
+        assert!(LOOM_STOP_HOOK.contains("detect_loom_worktree"));
+        assert!(LOOM_STOP_HOOK.contains("check_git_clean"));
+        assert!(LOOM_STOP_HOOK.contains("get_stage_status"));
+        assert!(LOOM_STOP_HOOK.contains("block_with_reason"));
+    }
+
+    #[test]
+    fn test_install_loom_hooks_creates_hook_file() {
+        // This test modifies ~/.claude/hooks/ which is a real directory
+        // We'll verify the hook content matches what we expect
+        let result = install_loom_hooks();
+        assert!(result.is_ok());
+
+        let home_dir = dirs::home_dir().expect("should have home dir");
+        let hook_path = home_dir.join(".claude/hooks/loom-stop.sh");
+
+        if hook_path.exists() {
+            let content = fs::read_to_string(&hook_path).unwrap();
+            // Verify the hook has the expected content
+            assert!(content.contains("detect_loom_worktree"));
+            assert!(content.contains("LOOM WORKTREE EXIT BLOCKED"));
+        }
     }
 }
