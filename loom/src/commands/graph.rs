@@ -3,9 +3,9 @@
 
 use anyhow::{bail, Result};
 use colored::{ColoredString, Colorize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::models::stage::StageStatus;
+use crate::models::stage::{Stage, StageStatus};
 use crate::verify::transitions::list_all_stages;
 
 /// Status indicator with color for display
@@ -21,174 +21,144 @@ fn status_indicator(status: &StageStatus) -> ColoredString {
     }
 }
 
-/// Context for rendering the graph (reduces function arguments)
-struct GraphRenderContext<'a> {
-    stage_map: HashMap<&'a str, &'a crate::models::stage::Stage>,
-    dependents: HashMap<&'a str, Vec<&'a str>>,
-    visited: HashSet<String>,
-    output: String,
-}
+/// Compute the topological level for each stage.
+/// Level = max(levels of all dependencies) + 1, with roots at level 0.
+fn compute_stage_levels(stages: &[Stage]) -> HashMap<String, usize> {
+    let stage_map: HashMap<&str, &Stage> = stages.iter().map(|s| (s.id.as_str(), s)).collect();
+    let mut levels: HashMap<String, usize> = HashMap::new();
 
-impl<'a> GraphRenderContext<'a> {
-    fn new(stages: &'a [crate::models::stage::Stage]) -> Self {
-        let stage_map: HashMap<&str, &crate::models::stage::Stage> =
-            stages.iter().map(|s| (s.id.as_str(), s)).collect();
-
-        let mut dependents: HashMap<&str, Vec<&str>> = HashMap::new();
-        for stage in stages {
-            for dep in &stage.dependencies {
-                dependents
-                    .entry(dep.as_str())
-                    .or_default()
-                    .push(stage.id.as_str());
-            }
-        }
-
-        Self {
-            stage_map,
-            dependents,
-            visited: HashSet::new(),
-            output: String::new(),
-        }
-    }
-
-    /// Format additional dependencies not shown in tree structure
-    fn format_extra_deps(&self, stage: &crate::models::stage::Stage, tree_parent: Option<&str>) -> String {
-        if stage.dependencies.len() <= 1 {
-            return String::new();
-        }
-
-        // Get deps that aren't the tree parent (those are "hidden" in the tree view)
-        let extra_deps: Vec<_> = stage
-            .dependencies
-            .iter()
-            .filter(|d| tree_parent != Some(d.as_str()))
-            .collect();
-
-        if extra_deps.is_empty() {
-            return String::new();
-        }
-
-        // Format each dep with its status indicator
-        let dep_strs: Vec<String> = extra_deps
-            .iter()
-            .map(|dep_id| {
-                if let Some(dep_stage) = self.stage_map.get(dep_id.as_str()) {
-                    let ind = status_indicator(&dep_stage.status);
-                    format!("{ind}{dep_id}")
-                } else {
-                    format!("?{dep_id}")
-                }
-            })
-            .collect();
-
-        format!(" ← also: {}", dep_strs.join(", "))
-    }
-
-    fn render_stage(
-        &mut self,
+    fn get_level(
         stage_id: &str,
-        indent: usize,
-        is_last: bool,
-        prefix: &str,
-        tree_parent: Option<&str>,
-    ) {
-        if self.visited.contains(stage_id) {
-            return;
+        stage_map: &HashMap<&str, &Stage>,
+        levels: &mut HashMap<String, usize>,
+        visiting: &mut HashSet<String>,
+    ) -> usize {
+        if let Some(&level) = levels.get(stage_id) {
+            return level;
         }
-        self.visited.insert(stage_id.to_string());
 
-        let Some(stage) = self.stage_map.get(stage_id) else {
-            return;
+        // Cycle detection - treat as level 0 to avoid infinite recursion
+        if visiting.contains(stage_id) {
+            return 0;
+        }
+        visiting.insert(stage_id.to_string());
+
+        let stage = match stage_map.get(stage_id) {
+            Some(s) => s,
+            None => return 0,
         };
 
-        let indicator = status_indicator(&stage.status);
-        let connector = if indent == 0 {
-            ""
-        } else if is_last {
-            "`-- "
+        let level = if stage.dependencies.is_empty() {
+            0
         } else {
-            "|-- "
+            stage
+                .dependencies
+                .iter()
+                .map(|dep| get_level(dep, stage_map, levels, visiting))
+                .max()
+                .unwrap_or(0)
+                + 1
         };
 
-        // Show extra dependencies that aren't visible in the tree structure
-        let extra_deps = self.format_extra_deps(stage, tree_parent);
+        visiting.remove(stage_id);
+        levels.insert(stage_id.to_string(), level);
+        level
+    }
 
-        self.output.push_str(&format!(
-            "{prefix}{connector}{indicator} {} ({}){extra_deps}\n",
-            stage.name, stage.id
-        ));
+    for stage in stages {
+        let mut visiting = HashSet::new();
+        get_level(&stage.id, &stage_map, &mut levels, &mut visiting);
+    }
 
-        // Get children (stages that depend on this one)
-        let children: Vec<&str> = self
-            .dependents
-            .get(stage_id)
-            .map(|v| v.as_slice())
-            .unwrap_or(&[])
-            .iter()
-            .filter(|&&child_id| {
-                // Only show a child here if all its dependencies are visited
-                // or this is its only/first dependency in our traversal
-                if let Some(child) = self.stage_map.get(child_id) {
-                    child
-                        .dependencies
-                        .iter()
-                        .filter(|dep| *dep != stage_id)
-                        .all(|dep| self.visited.contains(dep))
-                } else {
-                    false
-                }
-            })
-            .copied()
-            .collect();
+    levels
+}
 
-        let child_count = children.len();
-        for (i, child_id) in children.into_iter().enumerate() {
-            let child_is_last = i == child_count - 1;
-            let new_prefix = if indent == 0 {
-                String::new()
-            } else {
-                format!("{prefix}{}   ", if is_last { " " } else { "|" })
-            };
-
-            self.render_stage(child_id, indent + 1, child_is_last, &new_prefix, Some(stage_id));
-        }
+/// Sort stages by status priority (executing first, then ready, then others)
+fn status_priority(status: &StageStatus) -> u8 {
+    match status {
+        StageStatus::Executing => 0,
+        StageStatus::Queued => 1,
+        StageStatus::WaitingForInput => 2,
+        StageStatus::NeedsHandoff => 3,
+        StageStatus::WaitingForDeps => 4,
+        StageStatus::Blocked => 5,
+        StageStatus::Completed => 6,
     }
 }
 
-/// Build a visual representation of the dependency graph
-pub fn build_graph_display(stages: &[crate::models::stage::Stage]) -> Result<String> {
+/// Format dependencies with their status indicators
+fn format_dependencies(stage: &Stage, stage_map: &HashMap<&str, &Stage>) -> String {
+    if stage.dependencies.is_empty() {
+        return String::new();
+    }
+
+    let dep_strs: Vec<String> = stage
+        .dependencies
+        .iter()
+        .map(|dep_id| {
+            if let Some(dep_stage) = stage_map.get(dep_id.as_str()) {
+                let ind = status_indicator(&dep_stage.status);
+                format!("{ind}{dep_id}")
+            } else {
+                format!("?{dep_id}")
+            }
+        })
+        .collect();
+
+    format!(" ← {}", dep_strs.join(", "))
+}
+
+/// Build a visual representation of the dependency graph using layered levels
+pub fn build_graph_display(stages: &[Stage]) -> Result<String> {
     if stages.is_empty() {
         return Ok("(no stages found - run 'loom init <plan>' to create stages)".to_string());
     }
 
-    // Find root stages (no dependencies)
-    let root_ids: Vec<&str> = stages
-        .iter()
-        .filter(|s| s.dependencies.is_empty())
-        .map(|s| s.id.as_str())
-        .collect();
+    let stage_map: HashMap<&str, &Stage> = stages.iter().map(|s| (s.id.as_str(), s)).collect();
+    let levels = compute_stage_levels(stages);
 
-    let mut ctx = GraphRenderContext::new(stages);
-
-    // Start rendering from root stages
-    let root_count = root_ids.len();
-    for (i, root_id) in root_ids.iter().enumerate() {
-        ctx.render_stage(root_id, 0, i == root_count - 1, "", None);
+    // Group stages by level (BTreeMap for sorted keys)
+    let mut by_level: BTreeMap<usize, Vec<&Stage>> = BTreeMap::new();
+    for stage in stages {
+        let level = levels.get(&stage.id).copied().unwrap_or(0);
+        by_level.entry(level).or_default().push(stage);
     }
 
-    // Handle any unvisited stages (in case of disconnected components or cycles)
-    for stage in stages {
-        if !ctx.visited.contains(&stage.id) {
+    // Sort stages within each level by status priority, then by id
+    for stages_in_level in by_level.values_mut() {
+        stages_in_level.sort_by(|a, b| {
+            status_priority(&a.status)
+                .cmp(&status_priority(&b.status))
+                .then_with(|| a.id.cmp(&b.id))
+        });
+    }
+
+    let mut output = String::new();
+
+    for (level, stages_in_level) in &by_level {
+        // Level header
+        let header = if *level == 0 {
+            "Level 0 (no dependencies):".to_string()
+        } else {
+            format!("Level {level}:")
+        };
+        output.push_str(&header);
+        output.push('\n');
+
+        // Render each stage in this level
+        for stage in stages_in_level {
             let indicator = status_indicator(&stage.status);
-            ctx.output.push_str(&format!(
-                "{indicator} {} ({}) [disconnected]\n",
+            let deps = format_dependencies(stage, &stage_map);
+            output.push_str(&format!(
+                "  {indicator} {} ({}){deps}\n",
                 stage.name, stage.id
             ));
         }
+
+        output.push('\n');
     }
 
-    Ok(ctx.output)
+    Ok(output)
 }
 
 /// Show the execution graph
@@ -335,6 +305,7 @@ mod tests {
         assert!(output.contains('▶')); // Ready indicator
         assert!(output.contains("First Stage"));
         assert!(output.contains("stage-1"));
+        assert!(output.contains("Level 0"), "Single stage should be at level 0");
     }
 
     #[test]
@@ -361,6 +332,14 @@ mod tests {
         assert!(output.contains('✓')); // Completed
         assert!(output.contains('●')); // Executing
         assert!(output.contains('○')); // Pending
+
+        // Check level structure for linear chain
+        assert!(output.contains("Level 0"), "Should have level 0");
+        assert!(output.contains("Level 1:"), "Should have level 1");
+        assert!(output.contains("Level 2:"), "Should have level 2");
+
+        // Second should show dependency on First
+        assert!(output.contains("← "), "Should show dependency arrows");
     }
 
     #[test]
@@ -381,21 +360,20 @@ mod tests {
         assert!(output.contains("Stage C"));
         assert!(output.contains("Stage D"));
 
-        // D should appear after both B and C (since it depends on both)
-        let pos_a = output.find("Stage A").unwrap();
-        let pos_d = output.find("Stage D").unwrap();
-        assert!(pos_a < pos_d);
+        // Check level structure: A at level 0, B and C at level 1, D at level 2
+        assert!(output.contains("Level 0"), "Should have level 0 header");
+        assert!(output.contains("Level 1:"), "Should have level 1 header");
+        assert!(output.contains("Level 2:"), "Should have level 2 header");
 
-        // D should show its extra dependency (the one not in the tree)
-        // D appears under C (last visited), so B should be shown as "also"
+        // D should show ALL its dependencies (both b and c)
         assert!(
-            output.contains("← also:"),
-            "Diamond node should show extra dependencies"
+            output.contains("← ") && output.contains("b") && output.contains("c"),
+            "Diamond node D should show all dependencies"
         );
     }
 
     #[test]
-    fn test_build_graph_display_shows_blocking_deps() {
+    fn test_build_graph_display_shows_all_deps() {
         // Simulate the user's scenario: integration-tests depends on 3 stages,
         // one of which is still executing
         let stages = vec![
@@ -434,21 +412,29 @@ mod tests {
 
         let output = build_graph_display(&stages).unwrap();
 
-        // integration-tests should show its extra dependencies
+        // integration-tests should be present at level 2
         assert!(
             output.contains("integration-tests"),
             "Integration tests stage should be present"
         );
+
+        // Should show ALL dependencies with "←" (not "← also:")
         assert!(
-            output.contains("← also:"),
-            "Multi-dep stage should show extra dependencies"
+            output.contains("← "),
+            "Multi-dep stage should show dependencies"
         );
-        // The output should show the blocking dependency (complete-refactor with ● indicator)
-        // This helps users understand WHY a stage is pending
+
+        // The output should show all dependencies including the blocking one
+        // (complete-refactor with ● indicator)
         assert!(
-            output.contains("complete-refactor") || output.contains("merge-completed"),
-            "Extra deps should include blocking stages"
+            output.contains("complete-refactor") && output.contains("merge-completed") && output.contains("context-vars"),
+            "Should show all dependencies for integration-tests"
         );
+
+        // Verify level structure for this complex graph
+        assert!(output.contains("Level 0"), "Should have level 0");
+        assert!(output.contains("Level 1:"), "Should have level 1");
+        assert!(output.contains("Level 2:"), "Should have level 2");
     }
 
     #[test]
@@ -466,9 +452,20 @@ mod tests {
 
         let output = build_graph_display(&stages).unwrap();
 
+        // All stages present
         assert!(output.contains("Root One"));
         assert!(output.contains("Root Two"));
         assert!(output.contains("Child"));
+
+        // Both roots at level 0, child at level 1
+        assert!(output.contains("Level 0"), "Should have level 0");
+        assert!(output.contains("Level 1:"), "Should have level 1");
+
+        // Child should show both dependencies
+        assert!(
+            output.contains("root-1") && output.contains("root-2"),
+            "Child should show both parent dependencies"
+        );
     }
 
     #[test]
@@ -503,5 +500,44 @@ mod tests {
         assert!(output.contains('?')); // WaitingForInput
         assert!(output.contains('✗')); // Blocked
         assert!(output.contains('⟳')); // NeedsHandoff
+    }
+
+    #[test]
+    fn test_build_graph_display_status_sorting() {
+        // Stages with different statuses at same level - should be sorted by priority
+        let stages = vec![
+            create_test_stage("a", "Completed A", StageStatus::Completed, vec![]),
+            create_test_stage("b", "Executing B", StageStatus::Executing, vec![]),
+            create_test_stage("c", "Ready C", StageStatus::Queued, vec![]),
+        ];
+
+        let output = build_graph_display(&stages).unwrap();
+
+        // Executing should appear before Ready, which should appear before Completed
+        let pos_exec = output.find("Executing B").unwrap();
+        let pos_ready = output.find("Ready C").unwrap();
+        let pos_completed = output.find("Completed A").unwrap();
+
+        assert!(
+            pos_exec < pos_ready && pos_ready < pos_completed,
+            "Stages should be sorted by status priority: executing < ready < completed"
+        );
+    }
+
+    #[test]
+    fn test_compute_stage_levels() {
+        let stages = vec![
+            create_test_stage("a", "A", StageStatus::Completed, vec![]),
+            create_test_stage("b", "B", StageStatus::Completed, vec!["a"]),
+            create_test_stage("c", "C", StageStatus::Completed, vec!["a"]),
+            create_test_stage("d", "D", StageStatus::Completed, vec!["b", "c"]),
+        ];
+
+        let levels = compute_stage_levels(&stages);
+
+        assert_eq!(levels.get("a"), Some(&0));
+        assert_eq!(levels.get("b"), Some(&1));
+        assert_eq!(levels.get("c"), Some(&1));
+        assert_eq!(levels.get("d"), Some(&2));
     }
 }
