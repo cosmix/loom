@@ -5,6 +5,36 @@ use std::io::{Read, Write};
 
 use crate::models::worktree::WorktreeStatus;
 
+/// Configuration parameters for daemon mode.
+///
+/// These parameters control how the daemon executes stages,
+/// matching the CLI flags available with `loom run`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DaemonConfig {
+    /// Run only this specific stage (maps to --stage)
+    pub stage_id: Option<String>,
+    /// Manual mode - don't auto-start stages (maps to --manual)
+    pub manual_mode: bool,
+    /// Maximum concurrent stages (maps to --max-parallel)
+    pub max_parallel: Option<usize>,
+    /// Watch mode - monitor for changes (maps to --watch)
+    pub watch_mode: bool,
+    /// Auto-merge completed stages (maps to --auto-merge)
+    pub auto_merge: bool,
+}
+
+impl Default for DaemonConfig {
+    fn default() -> Self {
+        Self {
+            stage_id: None,
+            manual_mode: false,
+            max_parallel: None,
+            watch_mode: true,
+            auto_merge: false,
+        }
+    }
+}
+
 /// Client request to daemon
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Request {
@@ -18,6 +48,8 @@ pub enum Request {
     Unsubscribe,
     /// Ping to check if daemon is alive
     Ping,
+    /// Start orchestration with specific configuration
+    StartWithConfig(DaemonConfig),
 }
 
 /// Daemon response to client
@@ -37,6 +69,8 @@ pub enum Response {
         line: String,
     },
     Pong,
+    /// Acknowledgment that configuration was applied
+    ConfigApplied,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -185,5 +219,61 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("too large"));
+    }
+
+    #[test]
+    fn test_daemon_config_default() {
+        let config = DaemonConfig::default();
+
+        assert!(config.stage_id.is_none());
+        assert!(!config.manual_mode);
+        assert!(config.max_parallel.is_none());
+        assert!(config.watch_mode);
+        assert!(!config.auto_merge);
+    }
+
+    #[test]
+    fn test_write_and_read_start_with_config() {
+        let mut buffer = Vec::new();
+        let config = DaemonConfig {
+            stage_id: Some("stage-1".to_string()),
+            manual_mode: true,
+            max_parallel: Some(2),
+            watch_mode: false,
+            auto_merge: true,
+        };
+        let request = Request::StartWithConfig(config);
+
+        write_message(&mut buffer, &request).expect("Failed to write message");
+
+        let mut cursor = Cursor::new(buffer);
+        let decoded: Request = read_message(&mut cursor).expect("Failed to read message");
+
+        match decoded {
+            Request::StartWithConfig(config) => {
+                assert_eq!(config.stage_id, Some("stage-1".to_string()));
+                assert!(config.manual_mode);
+                assert_eq!(config.max_parallel, Some(2));
+                assert!(!config.watch_mode);
+                assert!(config.auto_merge);
+            }
+            _ => panic!("Expected StartWithConfig request"),
+        }
+    }
+
+    #[test]
+    fn test_write_and_read_config_applied() {
+        let mut buffer = Vec::new();
+        let response = Response::ConfigApplied;
+
+        write_message(&mut buffer, &response).expect("Failed to write message");
+
+        let mut cursor = Cursor::new(buffer);
+        let decoded: Response = read_message(&mut cursor).expect("Failed to read message");
+
+        match decoded {
+            Response::ConfigApplied => {}
+            _ => panic!("Expected ConfigApplied response"),
+        }
     }
 }

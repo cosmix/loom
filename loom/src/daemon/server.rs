@@ -843,6 +843,15 @@ impl DaemonServer {
                     write_message(&mut stream, &Response::Ok)?;
                     break;
                 }
+                Request::StartWithConfig(_config) => {
+                    // Stub for stage-2-daemon-server to implement config application
+                    write_message(
+                        &mut stream,
+                        &Response::Error {
+                            message: "StartWithConfig not yet implemented".to_string(),
+                        },
+                    )?;
+                }
             }
         }
 
