@@ -12,6 +12,7 @@ use crate::handoff::{generate_handoff, HandoffContent};
 use crate::models::constants::{CONTEXT_CRITICAL_THRESHOLD, CONTEXT_WARNING_THRESHOLD};
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
+use crate::orchestrator::signals::read_merge_signal;
 use crate::orchestrator::spawner::{generate_crash_report, CrashReport};
 use crate::orchestrator::terminal::tmux::session_is_running;
 use crate::parser::frontmatter::extract_yaml_frontmatter;
@@ -70,6 +71,11 @@ pub enum MonitorEvent {
     },
     /// Stage resumed execution after user input
     StageResumedExecution {
+        stage_id: String,
+    },
+    /// Merge session completed (conflict resolution session finished)
+    MergeSessionCompleted {
+        session_id: String,
         stage_id: String,
     },
 }
@@ -284,6 +290,14 @@ impl Monitor {
         Ok(None)
     }
 
+    /// Check if a session is a merge session (has a merge signal file)
+    fn is_merge_session(&self, session_id: &str) -> bool {
+        matches!(
+            read_merge_signal(session_id, &self.config.work_dir),
+            Ok(Some(_))
+        )
+    }
+
     /// Detect session status changes and context levels
     fn detect_session_changes(&mut self, sessions: &[Session]) -> Vec<MonitorEvent> {
         let mut events = Vec::new();
@@ -305,7 +319,22 @@ impl Monitor {
                 // Check if session is still alive (PID or tmux)
                 if let Ok(Some(is_alive)) = self.check_session_alive(session) {
                     if !is_alive {
-                        // Generate crash report
+                        // Check if this is a merge session that completed
+                        if self.is_merge_session(&session.id) {
+                            // Merge session completed - emit completion event
+                            if let Some(stage_id) = &session.stage_id {
+                                events.push(MonitorEvent::MergeSessionCompleted {
+                                    session_id: session.id.clone(),
+                                    stage_id: stage_id.clone(),
+                                });
+
+                                self.last_session_states
+                                    .insert(session.id.clone(), SessionStatus::Completed);
+                                continue;
+                            }
+                        }
+
+                        // Regular session crashed - generate crash report
                         let reason = if session.pid.is_some() {
                             "Process no longer running"
                         } else if session.tmux_session.is_some() {
@@ -332,7 +361,18 @@ impl Monitor {
             }
 
             if previous_status != Some(current_status) {
-                if current_status == &SessionStatus::Crashed {
+                // Check for session status transitions
+                if current_status == &SessionStatus::Completed {
+                    // Check if this is a merge session that completed
+                    if self.is_merge_session(&session.id) {
+                        if let Some(stage_id) = &session.stage_id {
+                            events.push(MonitorEvent::MergeSessionCompleted {
+                                session_id: session.id.clone(),
+                                stage_id: stage_id.clone(),
+                            });
+                        }
+                    }
+                } else if current_status == &SessionStatus::Crashed {
                     // Generate crash report
                     let crash_report_path =
                         self.handle_session_crash(session, "Session marked as crashed");
@@ -797,5 +837,105 @@ Test content
         } else {
             panic!("Expected SessionNeedsHandoff event");
         }
+    }
+
+    #[test]
+    fn test_is_merge_session_with_merge_signal() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path().to_path_buf();
+        let signals_dir = work_dir.join("signals");
+        std::fs::create_dir_all(&signals_dir).unwrap();
+
+        // Create a merge signal file
+        let merge_signal_content = r#"# Merge Signal: session-merge-123
+
+## Merge Context
+
+You are resolving a **merge conflict** in the main repository.
+
+## Target
+
+- **Session**: session-merge-123
+- **Stage**: stage-1
+- **Source Branch**: loom/stage-1
+- **Target Branch**: main
+
+## Conflicting Files
+
+- `src/main.rs`
+"#;
+        std::fs::write(
+            signals_dir.join("session-merge-123.md"),
+            merge_signal_content,
+        )
+        .unwrap();
+
+        let config = MonitorConfig {
+            work_dir,
+            ..Default::default()
+        };
+        let monitor = Monitor::new(config);
+
+        assert!(monitor.is_merge_session("session-merge-123"));
+        assert!(!monitor.is_merge_session("nonexistent-session"));
+    }
+
+    #[test]
+    fn test_is_merge_session_with_regular_signal() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path().to_path_buf();
+        let signals_dir = work_dir.join("signals");
+        std::fs::create_dir_all(&signals_dir).unwrap();
+
+        // Create a regular (non-merge) signal file
+        let regular_signal_content = r#"# Signal: session-regular-123
+
+## Worktree Context
+
+You are in an **isolated git worktree**.
+
+## Target
+
+- **Session**: session-regular-123
+- **Stage**: stage-1
+"#;
+        std::fs::write(
+            signals_dir.join("session-regular-123.md"),
+            regular_signal_content,
+        )
+        .unwrap();
+
+        let config = MonitorConfig {
+            work_dir,
+            ..Default::default()
+        };
+        let monitor = Monitor::new(config);
+
+        // Regular signal should not be detected as a merge session
+        assert!(!monitor.is_merge_session("session-regular-123"));
+    }
+
+    #[test]
+    fn test_merge_session_completed_event() {
+        // Test that MergeSessionCompleted event can be created and compared
+        let event1 = MonitorEvent::MergeSessionCompleted {
+            session_id: "session-1".to_string(),
+            stage_id: "stage-1".to_string(),
+        };
+        let event2 = MonitorEvent::MergeSessionCompleted {
+            session_id: "session-1".to_string(),
+            stage_id: "stage-1".to_string(),
+        };
+        let event3 = MonitorEvent::MergeSessionCompleted {
+            session_id: "session-2".to_string(),
+            stage_id: "stage-1".to_string(),
+        };
+
+        assert_eq!(event1, event2);
+        assert_ne!(event1, event3);
     }
 }

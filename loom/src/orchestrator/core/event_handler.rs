@@ -37,6 +37,9 @@ pub(super) trait EventHandler: Persistence {
 
     /// Handle context exhaustion (needs handoff)
     fn on_needs_handoff(&mut self, session_id: &str, stage_id: &str) -> Result<()>;
+
+    /// Handle merge session completion
+    fn on_merge_session_completed(&mut self, session_id: &str, stage_id: &str) -> Result<()>;
 }
 
 impl EventHandler for Orchestrator {
@@ -92,6 +95,12 @@ impl EventHandler for Orchestrator {
                 MonitorEvent::StageResumedExecution { stage_id } => {
                     clear_status_line();
                     eprintln!("Stage '{stage_id}' resumed execution after user input");
+                }
+                MonitorEvent::MergeSessionCompleted {
+                    session_id,
+                    stage_id,
+                } => {
+                    self.on_merge_session_completed(&session_id, &stage_id)?;
                 }
             }
         }
@@ -169,6 +178,25 @@ impl EventHandler for Orchestrator {
         let mut stage = self.load_stage(stage_id)?;
         stage.try_mark_needs_handoff()?;
         self.save_stage(&stage)?;
+
+        Ok(())
+    }
+
+    fn on_merge_session_completed(&mut self, session_id: &str, stage_id: &str) -> Result<()> {
+        clear_status_line();
+        eprintln!("Merge session '{session_id}' completed for stage '{stage_id}'");
+
+        // Remove the merge signal file
+        remove_signal(session_id, &self.config.work_dir)?;
+
+        // Clean up the active session
+        self.active_sessions.remove(stage_id);
+
+        // Log next steps for the user
+        eprintln!("Merge conflicts should be resolved. To complete:");
+        eprintln!("  1. Verify the merge was successful: git status");
+        eprintln!("  2. If merge is complete, run: loom verify {stage_id}");
+        eprintln!("  3. If issues remain, run: loom merge {stage_id}");
 
         Ok(())
     }
