@@ -48,7 +48,7 @@ fn test_manual_mode_creates_signals() {
     let work_dir = create_work_dir_structure(temp_dir.path());
 
     let session = create_test_session("session-abc123", "stage-1");
-    let mut stage = create_test_stage("stage-1", "First Stage", StageStatus::Ready);
+    let mut stage = create_test_stage("stage-1", "First Stage", StageStatus::Queued);
     stage.add_acceptance_criterion("cargo test".to_string());
     stage.add_file_pattern("src/*.rs".to_string());
 
@@ -78,7 +78,7 @@ fn test_signal_file_format() {
     let work_dir = create_work_dir_structure(temp_dir.path());
 
     let session = create_test_session("session-test-456", "stage-2");
-    let mut stage = create_test_stage("stage-2", "Second Stage", StageStatus::Ready);
+    let mut stage = create_test_stage("stage-2", "Second Stage", StageStatus::Queued);
     stage.description = Some("Implement the feature".to_string());
     stage.add_acceptance_criterion("cargo test passes".to_string());
     stage.add_acceptance_criterion("cargo clippy passes".to_string());
@@ -127,10 +127,10 @@ fn test_signal_not_created_for_pending_stages() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = create_work_dir_structure(temp_dir.path());
 
-    let stage1 = create_test_stage("stage-pending", "Pending Stage", StageStatus::Pending);
+    let stage1 = create_test_stage("stage-pending", "Pending Stage", StageStatus::WaitingForDeps);
     save_stage(&stage1, &work_dir).unwrap();
 
-    let mut stage2 = create_test_stage("stage-ready", "Ready Stage", StageStatus::Ready);
+    let mut stage2 = create_test_stage("stage-ready", "Ready Stage", StageStatus::Queued);
     stage2.add_acceptance_criterion("Complete work".to_string());
     save_stage(&stage2, &work_dir).unwrap();
 
@@ -159,13 +159,13 @@ fn test_manual_mode_no_tmux_sessions() {
     let work_dir = create_work_dir_structure(temp_dir.path());
 
     let session = create_test_session("session-manual-test", "stage-manual");
-    let stage = create_test_stage("stage-manual", "Manual Stage", StageStatus::Ready);
+    let stage = create_test_stage("stage-manual", "Manual Stage", StageStatus::Queued);
     let worktree = create_test_worktree("stage-manual");
 
     generate_signal(&session, &stage, &worktree, &[], None, None, &work_dir).unwrap();
 
     assert!(session.tmux_session.is_none());
-    assert_eq!(stage.status, StageStatus::Ready);
+    assert_eq!(stage.status, StageStatus::Queued);
 }
 
 #[test]
@@ -174,7 +174,7 @@ fn test_signal_includes_context_restoration() {
     let work_dir = create_work_dir_structure(temp_dir.path());
 
     let session = create_test_session("session-context", "stage-context");
-    let mut stage = create_test_stage("stage-context", "Context Stage", StageStatus::Ready);
+    let mut stage = create_test_stage("stage-context", "Context Stage", StageStatus::Queued);
     stage.add_file_pattern("src/orchestrator/*.rs".to_string());
     stage.add_file_pattern("src/models/stage.rs".to_string());
 
@@ -207,7 +207,7 @@ fn test_signal_includes_handoff_reference() {
     let stage = create_test_stage(
         "stage-with-handoff",
         "Stage With Handoff",
-        StageStatus::Ready,
+        StageStatus::Queued,
     );
     let worktree = create_test_worktree("stage-with-handoff");
 
@@ -235,7 +235,7 @@ fn test_signal_acceptance_criteria_format() {
     let work_dir = create_work_dir_structure(temp_dir.path());
 
     let session = create_test_session("session-acceptance", "stage-acceptance");
-    let mut stage = create_test_stage("stage-acceptance", "Acceptance Test", StageStatus::Ready);
+    let mut stage = create_test_stage("stage-acceptance", "Acceptance Test", StageStatus::Queued);
     stage.add_acceptance_criterion("All unit tests pass".to_string());
     stage.add_acceptance_criterion("Integration tests pass".to_string());
     stage.add_acceptance_criterion("No linting errors".to_string());
@@ -259,7 +259,7 @@ fn test_signal_with_dependencies_status() {
     let work_dir = create_work_dir_structure(temp_dir.path());
 
     let session = create_test_session("session-deps", "stage-with-deps");
-    let mut stage = create_test_stage("stage-with-deps", "Stage With Deps", StageStatus::Ready);
+    let mut stage = create_test_stage("stage-with-deps", "Stage With Deps", StageStatus::Queued);
     stage.add_dependency("stage-dep-1".to_string());
     stage.add_dependency("stage-dep-2".to_string());
 
@@ -299,7 +299,7 @@ fn test_signal_default_tasks_when_none_provided() {
     let stage = create_test_stage(
         "stage-default-tasks",
         "Stage Default Tasks",
-        StageStatus::Ready,
+        StageStatus::Queued,
     );
     let worktree = create_test_worktree("stage-default-tasks");
 
@@ -320,15 +320,15 @@ fn test_multiple_signals_can_coexist() {
     let work_dir = create_work_dir_structure(temp_dir.path());
 
     let session1 = create_test_session("session-1", "stage-1");
-    let stage1 = create_test_stage("stage-1", "Stage 1", StageStatus::Ready);
+    let stage1 = create_test_stage("stage-1", "Stage 1", StageStatus::Queued);
     let worktree1 = create_test_worktree("stage-1");
 
     let session2 = create_test_session("session-2", "stage-2");
-    let stage2 = create_test_stage("stage-2", "Stage 2", StageStatus::Ready);
+    let stage2 = create_test_stage("stage-2", "Stage 2", StageStatus::Queued);
     let worktree2 = create_test_worktree("stage-2");
 
     let session3 = create_test_session("session-3", "stage-3");
-    let stage3 = create_test_stage("stage-3", "Stage 3", StageStatus::Ready);
+    let stage3 = create_test_stage("stage-3", "Stage 3", StageStatus::Queued);
     let worktree3 = create_test_worktree("stage-3");
 
     generate_signal(&session1, &stage1, &worktree1, &[], None, None, &work_dir).unwrap();
@@ -352,7 +352,7 @@ fn test_signal_worktree_information() {
     let stage = create_test_stage(
         "stage-worktree-info",
         "Worktree Info Stage",
-        StageStatus::Ready,
+        StageStatus::Queued,
     );
     let worktree = create_test_worktree("stage-worktree-info");
 
