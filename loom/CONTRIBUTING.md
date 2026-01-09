@@ -49,8 +49,8 @@ Users can verify downloaded binaries:
 # Linux: apt install minisign
 
 # Download binary and signature
-curl -LO https://github.com/OWNER/REPO/releases/download/vX.Y.Z/loom-x86_64-unknown-linux-gnu
-curl -LO https://github.com/OWNER/REPO/releases/download/vX.Y.Z/loom-x86_64-unknown-linux-gnu.minisig
+curl -LO https://github.com/cosmix/loom/releases/download/vX.Y.Z/loom-x86_64-unknown-linux-gnu
+curl -LO https://github.com/cosmix/loom/releases/download/vX.Y.Z/loom-x86_64-unknown-linux-gnu.minisig
 
 # Verify signature
 minisign -Vm loom-x86_64-unknown-linux-gnu -P 'RWTxxxxxx...'
