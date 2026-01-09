@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/anthropics/claude-code/main/schemas/settings.json",
+  "_comment": "Reference: Loom hooks configuration. Installed automatically by 'loom init'.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/loom-stop.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
