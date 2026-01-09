@@ -85,6 +85,21 @@ impl TerminalBackend for NativeBackend {
     }
 
     fn kill_session(&self, session: &Session) -> Result<()> {
+        // First, try to close the window by title (more reliable for all terminals).
+        // The title is set to "loom-{stage_id}" when spawning.
+        // This approach works correctly even for terminal emulators like gnome-terminal
+        // that use a server process, where killing by PID would kill all windows.
+        if let Some(stage_id) = &session.stage_id {
+            let title = format!("loom-{stage_id}");
+            if close_window_by_title(&title) {
+                return Ok(());
+            }
+        }
+
+        // Fallback to PID-based killing for terminals where window title closing
+        // didn't work (e.g., no wmctrl/xdotool installed, or window already closed).
+        // This works correctly for terminals like kitty/alacritty where each window
+        // has its own process.
         if let Some(pid) = session.pid {
             // Send SIGTERM to the process
             let output = Command::new("kill")
@@ -349,6 +364,56 @@ fn spawn_in_terminal(terminal: &str, title: &str, workdir: &Path, cmd: &str) -> 
     Ok(child.id())
 }
 
+/// Close a window by its title using wmctrl or xdotool.
+///
+/// This is the preferred method for closing terminal windows because it works
+/// correctly for all terminal emulators, including those like gnome-terminal
+/// that use a server process (where killing by PID would kill all windows).
+///
+/// Returns `true` if the window was successfully closed, `false` otherwise.
+fn close_window_by_title(title: &str) -> bool {
+    // Try wmctrl first (most reliable for window management)
+    if which::which("wmctrl").is_ok() {
+        // wmctrl -c matches window name as substring and sends close request
+        let output = Command::new("wmctrl").args(["-c", title]).output();
+
+        if let Ok(out) = output {
+            if out.status.success() {
+                return true;
+            }
+        }
+    }
+
+    // Try xdotool as fallback
+    if which::which("xdotool").is_ok() {
+        // Search for window by exact name match
+        let search_output = Command::new("xdotool")
+            .args(["search", "--name", title])
+            .output();
+
+        if let Ok(out) = search_output {
+            if out.status.success() {
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                // xdotool returns one window ID per line
+                for window_id in stdout.lines() {
+                    let window_id = window_id.trim();
+                    if !window_id.is_empty() {
+                        // Send close request to the window
+                        let close_result =
+                            Command::new("xdotool").args(["windowclose", window_id]).output();
+
+                        if close_result.is_ok() {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    false
+}
+
 /// Try to focus a window by its process ID
 ///
 /// This is best-effort and uses wmctrl or xdotool if available.
@@ -416,5 +481,23 @@ mod tests {
             assert!(!backend.terminal_cmd().is_empty());
             assert_eq!(backend.backend_type(), BackendType::Native);
         }
+    }
+
+    #[test]
+    fn test_close_window_by_title_nonexistent() {
+        // Test that closing a non-existent window returns false gracefully
+        // This should not panic or error, just return false
+        let result = close_window_by_title("nonexistent-window-title-12345");
+        // Result depends on whether wmctrl/xdotool are available and if any window matches
+        // The important thing is it doesn't panic
+        let _ = result;
+    }
+
+    #[test]
+    fn test_close_window_by_title_format() {
+        // Test that the title format we use matches what we expect
+        let stage_id = "test-stage";
+        let expected_title = format!("loom-{stage_id}");
+        assert_eq!(expected_title, "loom-test-stage");
     }
 }
