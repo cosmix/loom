@@ -142,7 +142,7 @@ install_hooks_remote() {
 	mkdir -p "$hooks_dir"
 
 	# Download individual hook scripts
-	local hooks=("ask-user-pre.sh" "ask-user-post.sh" "flux-stop.sh")
+	local hooks=("ask-user-pre.sh" "ask-user-post.sh" "loom-stop.sh")
 	local downloaded=0
 
 	for hook in "${hooks[@]}"; do
