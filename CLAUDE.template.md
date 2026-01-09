@@ -16,10 +16,12 @@
 | Banned                | Use Instead |
 | --------------------- | ----------- |
 | `cat`, `head`, `tail` | Read tool   |
-| `grep`, `rg`, `ag`    | Grep tool   |
+| `grep`, `ag`          | Grep tool   |
 | `find`, `ls`          | Glob tool   |
 | `sed`, `awk`          | Edit tool   |
 | `echo >`, `tee`       | Write tool  |
+
+IMPORTANT! NEVER `grep` or `find`. If you need to use a cli tool (e.g. as part of a piped sequence) use `rg` or `fd`!
 
 ### 3. QUALITY GATES
 
@@ -59,7 +61,7 @@ On any mistake: append to "MISTAKES AND LESSONS LEARNT" section. NEVER delete.
 ### 10. CODE SIZE LIMITS
 
 - File: 400 lines | Function: 50 lines | Class: 300 lines
-- Exceed = REFACTOR immediately
+- Exceed = REFACTOR immediately! DON'T WAIT.
 
 ### 11. COMMIT AND COMPLETE (HOOK-ENFORCED)
 
@@ -87,11 +89,13 @@ loom stage complete <stage-id>
 
 **The hook cannot be bypassed. Fix the issue to proceed.**
 
----
+### 12. NO CLAUDE OR CLAUDE CODE ATTRIBUTION
+
+**You are NOT allowed to mention Claude, Claude Code, or any other AI system, open source or proprietary, in any code, git commit mesages, documentation, comments or any other output. EVER.**
 
 ## DELEGATION
 
-Delegate implementation to subagents. Spawn multiple in PARALLEL when possible.
+ALWAYS delegate implementation to subagents. Spawn multiple in PARALLEL when possible. PROVIDE DETAILED INSTRUCTIONS AND RULES!
 
 **Parallelization:** Same files or dependent output? SERIAL. Otherwise? PARALLEL.
 
@@ -161,7 +165,7 @@ Also: `Blocked`, `NeedsHandoff`, `WaitingForInput`
 
 ## 🚨 BEFORE ENDING SESSION (HOOK WILL ENFORCE)
 
-```
+```text
 ┌───────────────────────────────────────────────────────────┐
 │  IN LOOM WORKTREE? The Stop hook WILL block you if:       │
 │                                                           │
