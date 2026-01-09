@@ -106,83 +106,6 @@ pub fn check_context_threshold(session: &Session) -> ContextLevel {
     ThresholdConfig::default().check_level(session)
 }
 
-/// Determine if a session should create a handoff based on context usage.
-///
-/// Returns true when context is at Red level (>= 75% by default).
-///
-/// # Arguments
-/// * `session` - The session to check
-///
-/// # Returns
-/// True if the session should create a handoff immediately
-///
-/// # Examples
-/// ```
-/// use loom::models::session::Session;
-/// use loom::handoff::detector::should_handoff;
-///
-/// let mut session = Session::new();
-/// session.context_tokens = 160_000;
-/// session.context_limit = 200_000;
-///
-/// assert!(should_handoff(&session));
-/// ```
-pub fn should_handoff(session: &Session) -> bool {
-    matches!(check_context_threshold(session), ContextLevel::Red)
-}
-
-/// Generate a human-readable context status message.
-///
-/// # Arguments
-/// * `session` - The session to describe
-///
-/// # Returns
-/// A formatted string like "Context: 72% (Yellow - consider handoff soon)"
-///
-/// # Examples
-/// ```
-/// use loom::models::session::Session;
-/// use loom::handoff::detector::context_status_message;
-///
-/// let mut session = Session::new();
-/// session.context_tokens = 144_000;
-/// session.context_limit = 200_000;
-///
-/// let msg = context_status_message(&session);
-/// assert!(msg.contains("72%"));
-/// assert!(msg.contains("Yellow"));
-/// ```
-pub fn context_status_message(session: &Session) -> String {
-    if session.context_limit == 0 {
-        return "Context: 0% (Green - healthy)".to_string();
-    }
-
-    let usage_percent = (session.context_tokens as f32 / session.context_limit as f32) * 100.0;
-    let level = check_context_threshold(session);
-
-    let (level_str, advice) = match level {
-        ContextLevel::Green => ("Green", "healthy"),
-        ContextLevel::Yellow => ("Yellow", "consider handoff soon"),
-        ContextLevel::Red => ("Red", "handoff required"),
-    };
-
-    format!("Context: {usage_percent:.0}% ({level_str} - {advice})")
-}
-
-/// Calculate the raw context usage percentage.
-///
-/// # Arguments
-/// * `session` - The session to calculate usage for
-///
-/// # Returns
-/// Usage percentage as a float (0.0 to 100.0)
-pub fn context_usage_percent(session: &Session) -> f32 {
-    if session.context_limit == 0 {
-        return 0.0;
-    }
-
-    (session.context_tokens as f32 / session.context_limit as f32) * 100.0
-}
 
 #[cfg(test)]
 mod tests {
@@ -223,61 +146,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_should_handoff() {
-        assert!(!should_handoff(&create_test_session(50_000, 200_000)));
-        assert!(!should_handoff(&create_test_session(130_000, 200_000)));
-        assert!(should_handoff(&create_test_session(160_000, 200_000)));
-        assert!(should_handoff(&create_test_session(150_000, 200_000)));
-    }
-
-    #[test]
-    fn test_context_status_message_green() {
-        let session = create_test_session(50_000, 200_000);
-        let msg = context_status_message(&session);
-        assert!(msg.contains("25%"));
-        assert!(msg.contains("Green"));
-        assert!(msg.contains("healthy"));
-    }
-
-    #[test]
-    fn test_context_status_message_yellow() {
-        let session = create_test_session(130_000, 200_000);
-        let msg = context_status_message(&session);
-        assert!(msg.contains("65%"));
-        assert!(msg.contains("Yellow"));
-        assert!(msg.contains("consider handoff soon"));
-    }
-
-    #[test]
-    fn test_context_status_message_red() {
-        let session = create_test_session(160_000, 200_000);
-        let msg = context_status_message(&session);
-        assert!(msg.contains("80%"));
-        assert!(msg.contains("Red"));
-        assert!(msg.contains("handoff required"));
-    }
-
-    #[test]
-    fn test_context_status_message_zero_limit() {
-        let session = create_test_session(100, 0);
-        let msg = context_status_message(&session);
-        assert!(msg.contains("0%"));
-        assert!(msg.contains("Green"));
-    }
-
-    #[test]
-    fn test_context_usage_percent() {
-        assert_eq!(
-            context_usage_percent(&create_test_session(100_000, 200_000)),
-            50.0
-        );
-        assert_eq!(context_usage_percent(&create_test_session(100, 0)), 0.0);
-        assert_eq!(
-            context_usage_percent(&create_test_session(200_000, 200_000)),
-            100.0
-        );
-    }
 
     #[test]
     fn test_threshold_config_default() {
@@ -369,6 +237,5 @@ mod tests {
             check_context_threshold(&create_test_session(0, 200_000)),
             ContextLevel::Green
         );
-        assert_eq!(context_usage_percent(&create_test_session(0, 200_000)), 0.0);
     }
 }

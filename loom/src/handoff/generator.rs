@@ -1,13 +1,14 @@
 //! Handoff file generation for session context exhaustion
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use chrono::Utc;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::git::branch::current_branch;
 use crate::models::session::Session;
 use crate::models::stage::Stage;
+
+use super::git_handoff::{format_git_history_markdown, GitHistory};
 
 /// Content for generating a handoff file
 #[derive(Debug, Clone)]
@@ -24,6 +25,7 @@ pub struct HandoffContent {
     pub files_modified: Vec<String>,
     pub next_steps: Vec<String>,
     pub learnings: Vec<String>,
+    pub git_history: Option<GitHistory>,
 }
 
 impl HandoffContent {
@@ -42,6 +44,7 @@ impl HandoffContent {
             files_modified: Vec::new(),
             next_steps: Vec::new(),
             learnings: Vec::new(),
+            git_history: None,
         }
     }
 
@@ -102,6 +105,12 @@ impl HandoffContent {
     /// Set plan ID
     pub fn with_plan_id(mut self, plan_id: Option<String>) -> Self {
         self.plan_id = plan_id;
+        self
+    }
+
+    /// Set git history
+    pub fn with_git_history(mut self, history: Option<GitHistory>) -> Self {
+        self.git_history = history;
         self
     }
 }
@@ -232,6 +241,12 @@ fn format_handoff_markdown(content: &HandoffContent) -> Result<String> {
     }
     md.push('\n');
 
+    // Git History (if available)
+    if let Some(history) = &content.git_history {
+        md.push_str(&format_git_history_markdown(history));
+        md.push('\n');
+    }
+
     // Next Steps
     md.push_str("## Next Steps (Prioritized)\n\n");
     if content.next_steps.is_empty() {
@@ -345,45 +360,6 @@ pub fn find_latest_handoff(stage_id: &str, work_dir: &Path) -> Result<Option<Pat
     Ok(latest_path)
 }
 
-/// Detect current branch from a repository path
-///
-/// Helper function to get the current branch for handoff content.
-pub fn detect_current_branch(repo_path: &Path) -> Result<String> {
-    current_branch(repo_path)
-        .with_context(|| format!("Failed to detect current branch in {}", repo_path.display()))
-}
-
-/// Get modified files from git status
-///
-/// Helper function to populate files_modified in handoff content.
-pub fn get_modified_files(repo_path: &Path) -> Result<Vec<String>> {
-    use std::process::Command;
-
-    let output = Command::new("git")
-        .args(["status", "--porcelain"])
-        .current_dir(repo_path)
-        .output()
-        .with_context(|| "Failed to run git status")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("git status failed: {stderr}");
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let files: Vec<String> = stdout
-        .lines()
-        .filter(|line| !line.is_empty())
-        .map(|line| {
-            // Parse git status --porcelain format: "XY filename"
-            // Take everything after the status code (first 3 chars)
-            line.get(3..).unwrap_or(line).trim().to_string()
-        })
-        .collect();
-
-    Ok(files)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -401,6 +377,7 @@ mod tests {
         assert_eq!(content.context_percent, 75.5);
         assert_eq!(content.goals, "Build feature X");
         assert_eq!(content.next_steps.len(), 2);
+        assert!(content.git_history.is_none());
     }
 
     #[test]
@@ -439,6 +416,38 @@ mod tests {
         // Should escape pipes in table cells
         assert!(markdown.contains(r"Choice with \| pipe"));
         assert!(markdown.contains(r"Reason with \| pipe"));
+    }
+
+    #[test]
+    fn test_format_handoff_markdown_with_git_history() {
+        use super::super::git_handoff::{CommitInfo, GitHistory};
+
+        let git_history = GitHistory {
+            branch: "loom/test-stage".to_string(),
+            base_branch: "main".to_string(),
+            commits: vec![
+                CommitInfo {
+                    hash: "abc1234".to_string(),
+                    message: "Add new feature".to_string(),
+                },
+                CommitInfo {
+                    hash: "def5678".to_string(),
+                    message: "Fix bug".to_string(),
+                },
+            ],
+            uncommitted_changes: vec!["M src/file.rs".to_string()],
+        };
+
+        let content = HandoffContent::new("session-abc".to_string(), "stage-xyz".to_string())
+            .with_git_history(Some(git_history));
+
+        let markdown = format_handoff_markdown(&content).unwrap();
+
+        assert!(markdown.contains("## Git History"));
+        assert!(markdown.contains("**Branch**: loom/test-stage (from main)"));
+        assert!(markdown.contains("abc1234"));
+        assert!(markdown.contains("Add new feature"));
+        assert!(markdown.contains("M src/file.rs"));
     }
 
     #[test]

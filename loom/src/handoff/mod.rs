@@ -1,14 +1,10 @@
 pub mod detector;
 pub mod generator;
+pub mod git_handoff;
 
-pub use detector::{
-    check_context_threshold, context_status_message, context_usage_percent, should_handoff,
-    ContextLevel, ThresholdConfig,
-};
-pub use generator::{
-    detect_current_branch, find_latest_handoff, generate_handoff, get_modified_files,
-    HandoffContent,
-};
+pub use detector::{check_context_threshold, ContextLevel, ThresholdConfig};
+pub use generator::{find_latest_handoff, generate_handoff, HandoffContent};
+pub use git_handoff::{format_git_history_markdown, CommitInfo, GitHistory};
 
 // Re-export continuation types from orchestrator (where they live due to spawner/signal dependencies)
 pub use crate::orchestrator::continuation::{
