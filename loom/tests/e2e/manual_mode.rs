@@ -108,10 +108,8 @@ fn test_signal_file_format() {
         .acceptance_criteria
         .contains(&"cargo clippy passes".to_string()));
 
-    assert!(signal_content
-        .context_files
-        .iter()
-        .any(|f| f.contains("structure.md")));
+    // Note: context_files is populated from ## Context Restoration section,
+    // which is only present in fallback mode. New format embeds content directly.
 
     assert_eq!(signal_content.files_to_modify.len(), 2);
     assert!(signal_content
@@ -127,7 +125,11 @@ fn test_signal_not_created_for_pending_stages() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = create_work_dir_structure(temp_dir.path());
 
-    let stage1 = create_test_stage("stage-pending", "Pending Stage", StageStatus::WaitingForDeps);
+    let stage1 = create_test_stage(
+        "stage-pending",
+        "Pending Stage",
+        StageStatus::WaitingForDeps,
+    );
     save_stage(&stage1, &work_dir).unwrap();
 
     let mut stage2 = create_test_stage("stage-ready", "Ready Stage", StageStatus::Queued);
@@ -169,7 +171,7 @@ fn test_manual_mode_no_tmux_sessions() {
 }
 
 #[test]
-fn test_signal_includes_context_restoration() {
+fn test_signal_includes_files_to_modify() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = create_work_dir_structure(temp_dir.path());
 
@@ -185,14 +187,14 @@ fn test_signal_includes_context_restoration() {
     let signal_path = work_dir.join("signals").join("session-context.md");
     let content = fs::read_to_string(&signal_path).unwrap();
 
-    assert!(content.contains("## Context Restoration"));
-    assert!(content.contains(".work/structure.md"));
+    // Signal should include Files to Modify section with file patterns
+    assert!(content.contains("## Files to Modify"));
     assert!(content.contains("src/orchestrator/*.rs"));
     assert!(content.contains("src/models/stage.rs"));
 }
 
 #[test]
-fn test_signal_includes_handoff_reference() {
+fn test_signal_includes_embedded_handoff() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = create_work_dir_structure(temp_dir.path());
 
@@ -225,8 +227,9 @@ fn test_signal_includes_handoff_reference() {
     let signal_path = work_dir.join("signals").join("session-with-handoff.md");
     let content = fs::read_to_string(&signal_path).unwrap();
 
-    assert!(content.contains("## Context Restoration"));
-    assert!(content.contains(&format!(".work/handoffs/{handoff_file}.md")));
+    // Handoff content should be embedded directly in the signal
+    assert!(content.contains("## Previous Session Handoff"));
+    assert!(content.contains("# Previous work handoff content"));
 }
 
 #[test]
