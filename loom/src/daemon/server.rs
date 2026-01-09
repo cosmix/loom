@@ -13,6 +13,7 @@ use std::time::Duration;
 use crate::models::worktree::WorktreeStatus;
 use crate::orchestrator::terminal::BackendType;
 use crate::orchestrator::{Orchestrator, OrchestratorConfig};
+use crate::parser::frontmatter::extract_yaml_frontmatter;
 use crate::plan::graph::ExecutionGraph;
 use crate::plan::parser::parse_plan;
 use crate::plan::schema::StageDefinition;
@@ -567,7 +568,7 @@ impl DaemonServer {
                                             worktree_status,
                                         });
                                     }
-                                    "pending" | "ready" => {
+                                    "waiting-for-deps" | "pending" | "queued" | "ready" => {
                                         stages_pending.push(id);
                                     }
                                     "completed" | "verified" => {
@@ -655,53 +656,48 @@ impl DaemonServer {
     }
 
     /// Parse stage frontmatter to extract id, name, status, and session.
+    ///
+    /// Uses proper YAML parsing via serde_yaml for robustness. This handles
+    /// all YAML formats correctly (quoted strings, flow style, multiline values, etc.)
     fn parse_stage_frontmatter(content: &str) -> Option<(String, String, String, Option<String>)> {
-        // Find YAML frontmatter
-        if !content.starts_with("---") {
-            return None;
-        }
+        // Use proper YAML parsing instead of line-by-line string matching
+        let yaml = extract_yaml_frontmatter(content).ok()?;
 
-        let end_idx = content[3..].find("---")?;
-        let yaml_content = &content[3..3 + end_idx];
+        // Extract required fields
+        let id = yaml
+            .get("id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())?;
 
-        let mut id = None;
-        let mut name = None;
-        let mut status = None;
-        let mut session = None;
+        let name = yaml
+            .get("name")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())?;
 
-        for line in yaml_content.lines() {
-            let line = line.trim();
-            if let Some(value) = line.strip_prefix("id:") {
-                id = Some(value.trim().trim_matches('"').to_string());
-            } else if let Some(value) = line.strip_prefix("name:") {
-                name = Some(value.trim().trim_matches('"').to_string());
-            } else if let Some(value) = line.strip_prefix("status:") {
-                status = Some(value.trim().trim_matches('"').to_lowercase());
-            } else if let Some(value) = line.strip_prefix("session:") {
-                let value = value.trim().trim_matches('"');
-                if value != "null" && value != "~" && !value.is_empty() {
-                    session = Some(value.to_string());
-                }
-            }
-        }
+        let status = yaml
+            .get("status")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_lowercase())?;
 
-        Some((id?, name?, status?, session))
+        // Extract optional session field
+        let session = yaml
+            .get("session")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty() && *s != "null" && *s != "~")
+            .map(|s| s.to_string());
+
+        Some((id, name, status, session))
     }
 
     /// Get the started_at timestamp from stage content.
+    ///
+    /// Extracts the `updated_at` field from YAML frontmatter using proper parsing.
     fn get_stage_started_at(content: &str) -> chrono::DateTime<chrono::Utc> {
-        // Try to parse updated_at from frontmatter
-        if let Some(after_start) = content.strip_prefix("---") {
-            if let Some(end_idx) = after_start.find("---") {
-                let yaml_content = &after_start[..end_idx];
-                for line in yaml_content.lines() {
-                    let line = line.trim();
-                    if let Some(value) = line.strip_prefix("updated_at:") {
-                        let value = value.trim().trim_matches('"');
-                        if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(value) {
-                            return dt.with_timezone(&chrono::Utc);
-                        }
-                    }
+        // Use proper YAML parsing
+        if let Ok(yaml) = extract_yaml_frontmatter(content) {
+            if let Some(updated_at) = yaml.get("updated_at").and_then(|v| v.as_str()) {
+                if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(updated_at) {
+                    return dt.with_timezone(&chrono::Utc);
                 }
             }
         }
@@ -709,6 +705,8 @@ impl DaemonServer {
     }
 
     /// Get session PID from session file.
+    ///
+    /// Extracts the `pid` field from session YAML frontmatter using proper parsing.
     fn get_session_pid(sessions_dir: &Path, session_id: Option<&str>) -> Option<u32> {
         let session_id = session_id?;
 
@@ -732,20 +730,11 @@ impl DaemonServer {
             found_content?
         };
 
-        // Parse PID from frontmatter
-        if let Some(after_start) = content.strip_prefix("---") {
-            if let Some(end_idx) = after_start.find("---") {
-                let yaml_content = &after_start[..end_idx];
-                for line in yaml_content.lines() {
-                    let line = line.trim();
-                    if let Some(value) = line.strip_prefix("pid:") {
-                        return value.trim().parse().ok();
-                    }
-                }
-            }
-        }
-
-        None
+        // Parse PID from frontmatter using proper YAML parsing
+        let yaml = extract_yaml_frontmatter(&content).ok()?;
+        yaml.get("pid")
+            .and_then(|v| v.as_u64())
+            .and_then(|v| u32::try_from(v).ok())
     }
 
     /// Handle a client connection.
