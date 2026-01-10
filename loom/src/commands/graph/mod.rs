@@ -40,8 +40,8 @@ pub fn show() -> Result<()> {
     }
 
     let stages = list_all_stages(&work_dir)?;
-    let graph_display = build_graph_display(&stages)?;
-    println!("{graph_display}");
+    let tree_display = build_tree_display(&stages);
+    println!("{tree_display}");
 
     // Print legend with colored symbols
     println!();
