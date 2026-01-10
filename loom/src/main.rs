@@ -335,6 +335,17 @@ enum StageCommands {
         force: bool,
     },
 
+    /// Complete merge conflict resolution and mark stage as completed
+    ///
+    /// Use this after resolving merge conflicts for a stage in MergeConflict status.
+    /// Verifies there are no remaining unmerged files and the merge is complete,
+    /// then transitions the stage to Completed with merged=true.
+    MergeComplete {
+        /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
+        #[arg(value_parser = clap_id_validator)]
+        stage_id: String,
+    },
+
     /// Manage stage outputs (structured values passed to dependent stages)
     Output {
         #[command(subcommand)]
@@ -697,6 +708,7 @@ fn main() -> Result<()> {
             StageCommands::Release { stage_id } => stage::release(stage_id),
             StageCommands::Skip { stage_id, reason } => stage::skip(stage_id, reason),
             StageCommands::Retry { stage_id, force } => stage::retry(stage_id, force),
+            StageCommands::MergeComplete { stage_id } => stage::merge_complete(stage_id),
             StageCommands::Output { command } => match command {
                 OutputCommands::Set {
                     stage_id,

@@ -84,6 +84,22 @@ pub struct BaseConflictSignalContent {
     pub conflicting_files: Vec<String>,
 }
 
+/// Content for a merge conflict resolution signal (stage MergeConflict status)
+///
+/// This signal is generated when a stage transitions to MergeConflict status
+/// because progressive merge detected conflicts. Unlike MergeSignalContent which
+/// is for auto-merge conflicts, this is specifically for stages in MergeConflict
+/// status that need dedicated resolution sessions.
+#[derive(Debug, Clone)]
+pub struct MergeConflictSignalContent {
+    pub session_id: String,
+    pub stage_id: String,
+    /// The target branch to merge into (usually "main" or base_branch from config)
+    pub merge_point: String,
+    /// Files with merge conflicts
+    pub conflicting_files: Vec<String>,
+}
+
 #[derive(Debug, Default)]
 pub struct SignalUpdates {
     pub add_tasks: Option<Vec<String>>,

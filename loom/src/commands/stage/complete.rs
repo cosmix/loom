@@ -119,9 +119,9 @@ pub fn complete(stage_id: String, session_id: Option<String>, no_verify: bool) -
                     println!("      - {file}");
                 }
                 println!();
-                println!("    Stage will remain active for conflict resolution.");
-                println!("    Resolve conflicts and run: loom merge {stage_id}");
-                stage.merge_conflict = true;
+                println!("    Stage transitioning to MergeConflict status.");
+                println!("    Resolve conflicts and run: loom stage merge-complete {stage_id}");
+                stage.try_mark_merge_conflict()?;
                 save_stage(&stage, work_dir)?;
                 // Don't trigger dependents when there's a conflict
                 return Ok(());
