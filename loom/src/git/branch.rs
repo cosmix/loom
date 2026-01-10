@@ -215,6 +215,29 @@ pub fn stage_id_from_branch(branch_name: &str) -> Option<String> {
     branch_name.strip_prefix("loom/").map(String::from)
 }
 
+/// Check if a commit is an ancestor of a branch.
+///
+/// Uses `git merge-base --is-ancestor` to check if the given commit
+/// is reachable from the branch head.
+///
+/// # Arguments
+/// * `commit_sha` - The commit SHA to check
+/// * `branch` - The branch name to check against
+/// * `repo_root` - Path to the git repository root
+///
+/// # Returns
+/// * `Ok(true)` if the commit is an ancestor of (or equal to) the branch head
+/// * `Ok(false)` if the commit is not an ancestor
+/// * `Err` if the git command fails (e.g., invalid commit/branch)
+pub fn is_ancestor_of(commit_sha: &str, branch: &str, repo_root: &Path) -> Result<bool> {
+    let status = Command::new("git")
+        .args(["merge-base", "--is-ancestor", commit_sha, branch])
+        .current_dir(repo_root)
+        .status()
+        .with_context(|| format!("Failed to check if {commit_sha} is ancestor of {branch}"))?;
+    Ok(status.success())
+}
+
 /// Generate loom branch name from stage ID
 pub fn branch_name_for_stage(stage_id: &str) -> String {
     format!("loom/{stage_id}")
@@ -289,10 +312,101 @@ mod tests {
         assert_eq!(branch_name_for_stage("my-feature"), "loom/my-feature");
     }
 
-    // Note: is_branch_merged requires a real git repository with branches
-    // to test properly. The function relies on `git branch --merged` output.
-    // Integration tests for this function should be in e2e tests.
+    // Note: is_branch_merged and is_ancestor_of require a real git repository
+    // with branches to test properly. These functions rely on git commands.
+    // Integration tests for these functions should be in e2e tests.
     //
-    // The function checks if branch appears in `git branch --merged target --list branch`
+    // is_branch_merged checks if branch appears in `git branch --merged target --list branch`
     // output, which indicates the branch has been fully merged into target.
+    //
+    // is_ancestor_of uses `git merge-base --is-ancestor` to check commit ancestry.
+
+    #[test]
+    fn test_is_ancestor_of() {
+        use std::process::Command;
+        use tempfile::TempDir;
+
+        // Create a temporary git repository for testing
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+
+        // Initialize git repo
+        Command::new("git")
+            .args(["init"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        // Configure git user for commits
+        Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        // Create initial commit
+        std::fs::write(repo_path.join("file1.txt"), "content1").unwrap();
+        Command::new("git")
+            .args(["add", "file1.txt"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "Initial commit"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        // Get first commit SHA
+        let output = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+        let first_commit = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+        // Create second commit
+        std::fs::write(repo_path.join("file2.txt"), "content2").unwrap();
+        Command::new("git")
+            .args(["add", "file2.txt"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "Second commit"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        // Get second commit SHA (current HEAD)
+        let output = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+        let second_commit = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+        // Get current branch name
+        let output = Command::new("git")
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+        let branch_name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+        // Test: first commit should be an ancestor of current branch
+        assert!(is_ancestor_of(&first_commit, &branch_name, repo_path).unwrap());
+
+        // Test: second commit (HEAD) should be an ancestor of itself
+        assert!(is_ancestor_of(&second_commit, &branch_name, repo_path).unwrap());
+
+        // Test: second commit should NOT be an ancestor of first commit
+        // (we need to use the first commit as the "branch" here)
+        assert!(!is_ancestor_of(&second_commit, &first_commit, repo_path).unwrap());
+    }
 }

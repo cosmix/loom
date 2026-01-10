@@ -177,6 +177,9 @@ mod tests {
             base_branch: None,
             base_merged_from: vec![],
             outputs: vec![],
+            completed_commit: None,
+            merged: false,
+            merge_conflict: false,
         }
     }
 

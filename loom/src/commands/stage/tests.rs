@@ -44,6 +44,9 @@ fn create_test_stage(id: &str, status: StageStatus) -> Stage {
         base_branch: None,
         base_merged_from: vec![],
         outputs: vec![],
+        completed_commit: None,
+        merged: false,
+        merge_conflict: false,
     }
 }
 

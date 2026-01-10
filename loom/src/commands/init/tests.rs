@@ -108,6 +108,9 @@ fn test_serialize_stage_to_markdown_minimal() {
         base_branch: None,
         base_merged_from: vec![],
         outputs: vec![],
+        completed_commit: None,
+        merged: false,
+        merge_conflict: false,
     };
 
     let content = serialize_stage_to_markdown(&stage).unwrap();
@@ -148,6 +151,9 @@ fn test_serialize_stage_to_markdown_with_all_fields() {
         base_branch: None,
         base_merged_from: vec![],
         outputs: vec![],
+        completed_commit: None,
+        merged: false,
+        merge_conflict: false,
     };
 
     let content = serialize_stage_to_markdown(&stage).unwrap();

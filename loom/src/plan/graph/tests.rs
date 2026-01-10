@@ -138,3 +138,73 @@ fn test_is_complete_with_skipped() {
     // Graph should be considered complete
     assert!(graph.is_complete());
 }
+
+#[test]
+fn test_leaf_stages() {
+    // Linear chain: a -> b -> c
+    // Leaf stage is "c" (nothing depends on it)
+    let stages = vec![
+        make_stage("a", vec![], None),
+        make_stage("b", vec!["a"], None),
+        make_stage("c", vec!["b"], None),
+    ];
+
+    let graph = ExecutionGraph::build(stages).unwrap();
+    let leaves = graph.leaf_stages();
+
+    assert_eq!(leaves.len(), 1);
+    assert!(leaves.contains(&"c"));
+}
+
+#[test]
+fn test_leaf_stages_diamond() {
+    // Diamond pattern: a -> b, a -> c, b -> d, c -> d
+    // Leaf stage is "d" (nothing depends on it)
+    let stages = vec![
+        make_stage("a", vec![], None),
+        make_stage("b", vec!["a"], None),
+        make_stage("c", vec!["a"], None),
+        make_stage("d", vec!["b", "c"], None),
+    ];
+
+    let graph = ExecutionGraph::build(stages).unwrap();
+    let leaves = graph.leaf_stages();
+
+    assert_eq!(leaves.len(), 1);
+    assert!(leaves.contains(&"d"));
+}
+
+#[test]
+fn test_leaf_stages_multiple_leaves() {
+    // Multiple leaves: a -> b, a -> c (both b and c are leaves)
+    let stages = vec![
+        make_stage("a", vec![], None),
+        make_stage("b", vec!["a"], None),
+        make_stage("c", vec!["a"], None),
+    ];
+
+    let graph = ExecutionGraph::build(stages).unwrap();
+    let leaves = graph.leaf_stages();
+
+    assert_eq!(leaves.len(), 2);
+    assert!(leaves.contains(&"b"));
+    assert!(leaves.contains(&"c"));
+}
+
+#[test]
+fn test_leaf_stages_all_independent() {
+    // All independent stages (no dependencies) - all are leaves
+    let stages = vec![
+        make_stage("a", vec![], None),
+        make_stage("b", vec![], None),
+        make_stage("c", vec![], None),
+    ];
+
+    let graph = ExecutionGraph::build(stages).unwrap();
+    let leaves = graph.leaf_stages();
+
+    assert_eq!(leaves.len(), 3);
+    assert!(leaves.contains(&"a"));
+    assert!(leaves.contains(&"b"));
+    assert!(leaves.contains(&"c"));
+}

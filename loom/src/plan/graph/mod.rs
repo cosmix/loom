@@ -242,6 +242,20 @@ impl ExecutionGraph {
             .all(|n| n.status == NodeStatus::Completed || n.status == NodeStatus::Skipped)
     }
 
+    /// Get all leaf stages (stages with no dependents).
+    ///
+    /// Leaf stages are stages that no other stage depends on. These are typically
+    /// the final stages in an execution plan that produce the ultimate outputs.
+    /// In the DAG representation, these are nodes with no outgoing edges
+    /// (no other nodes list them as dependencies).
+    pub fn leaf_stages(&self) -> Vec<&str> {
+        self.nodes
+            .keys()
+            .filter(|id| self.edges.get(*id).is_none_or(|deps| deps.is_empty()))
+            .map(|s| s.as_str())
+            .collect()
+    }
+
     /// Update the outputs for a stage node.
     ///
     /// This is called when syncing stage state from disk to the graph,

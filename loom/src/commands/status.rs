@@ -1,5 +1,6 @@
 mod diagnostics;
 mod display;
+pub mod merge_status;
 mod validation;
 
 use crate::commands::graph::build_tree_display;

@@ -37,6 +37,9 @@ impl Stage {
             base_branch: None,
             base_merged_from: Vec::new(),
             outputs: Vec::new(),
+            completed_commit: None,
+            merged: false,
+            merge_conflict: false,
         }
     }
 

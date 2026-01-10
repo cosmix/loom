@@ -69,6 +69,15 @@ pub struct Stage {
     /// Structured outputs from this stage for dependent stages
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub outputs: Vec<StageOutput>,
+    /// SHA of HEAD commit when stage completed
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completed_commit: Option<String>,
+    /// Whether stage has been merged to merge point (set by progressive merge)
+    #[serde(default)]
+    pub merged: bool,
+    /// Whether stage has unresolved merge conflicts
+    #[serde(default)]
+    pub merge_conflict: bool,
 }
 
 /// Status of a stage in the execution lifecycle.
