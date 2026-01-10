@@ -3,7 +3,7 @@ use colored::Colorize;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::daemon::DaemonServer;
+use crate::daemon::{DaemonConfig, DaemonServer};
 use crate::fs::work_dir::WorkDir;
 use crate::orchestrator::terminal::BackendType;
 use crate::orchestrator::{Orchestrator, OrchestratorConfig, OrchestratorResult};
@@ -29,25 +29,26 @@ pub fn execute(
 }
 
 /// Execute orchestrator in background (daemon mode)
-/// Usage: loom run [--stage <id>] [--manual] [--max-parallel <n>] [--watch]
+/// Usage: loom run [--stage <id>] [--manual] [--max-parallel <n>] [--watch] [--auto-merge]
 pub fn execute_background(
     stage_id: Option<String>,
     manual: bool,
     max_parallel: Option<usize>,
-    watch: bool,
+    _watch: bool, // Daemon always runs in watch mode; CLI flag is accepted but ignored
+    auto_merge: bool,
 ) -> Result<()> {
     // Load .work/ directory
     let work_dir = WorkDir::new(".")?;
     work_dir.load()?;
 
-    // Warn if configuration parameters are provided but ignored
-    if stage_id.is_some() || manual || max_parallel.is_some() || watch {
+    // Stage filtering is not yet supported in daemon mode (stage_id is stored but not used)
+    if stage_id.is_some() {
         println!(
-            "{} Configuration parameters not yet supported in daemon mode",
+            "{} Stage filtering (--stage) not yet supported in daemon mode",
             "⚠".yellow().bold()
         );
         println!(
-            "  {} Use {} for custom configuration\n",
+            "  {} Use {} for single-stage execution\n",
             "→".dimmed(),
             "--foreground".cyan()
         );
@@ -62,11 +63,23 @@ pub fn execute_background(
         return Ok(());
     }
 
-    // Start the daemon
-    let daemon = DaemonServer::new(work_dir.root());
+    // Build daemon configuration from CLI arguments
+    let daemon_config = DaemonConfig {
+        stage_id: stage_id.clone(),
+        manual_mode: manual,
+        max_parallel,
+        watch_mode: true, // Daemon always runs in watch mode (ignores CLI flag)
+        auto_merge,
+    };
+
+    // Start the daemon with configuration
+    let daemon = DaemonServer::with_config(work_dir.root(), daemon_config);
     daemon.start()?;
 
     println!("{} Daemon started", "✓".green().bold());
+    if auto_merge {
+        println!("  {} Auto-merge enabled", "→".dimmed());
+    }
     println!();
     println!("  {}  Monitor progress", "loom status".cyan());
     println!("  {}  Stop daemon", "loom stop".cyan());

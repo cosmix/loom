@@ -1,4 +1,4 @@
-use super::protocol::{read_message, write_message, Request, Response, StageInfo};
+use super::protocol::{read_message, write_message, DaemonConfig, Request, Response, StageInfo};
 use anyhow::{Context, Result};
 use std::fs;
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
@@ -27,13 +27,14 @@ pub struct DaemonServer {
     pid_path: PathBuf,
     log_path: PathBuf,
     work_dir: PathBuf,
+    config: DaemonConfig,
     shutdown_flag: Arc<AtomicBool>,
     status_subscribers: Arc<Mutex<Vec<UnixStream>>>,
     log_subscribers: Arc<Mutex<Vec<UnixStream>>>,
 }
 
 impl DaemonServer {
-    /// Create a new daemon server.
+    /// Create a new daemon server with default configuration.
     ///
     /// # Arguments
     /// * `work_dir` - The .work/ directory path
@@ -41,11 +42,24 @@ impl DaemonServer {
     /// # Returns
     /// A new `DaemonServer` instance
     pub fn new(work_dir: &Path) -> Self {
+        Self::with_config(work_dir, DaemonConfig::default())
+    }
+
+    /// Create a new daemon server with custom configuration.
+    ///
+    /// # Arguments
+    /// * `work_dir` - The .work/ directory path
+    /// * `config` - The daemon configuration
+    ///
+    /// # Returns
+    /// A new `DaemonServer` instance
+    pub fn with_config(work_dir: &Path, config: DaemonConfig) -> Self {
         Self {
             socket_path: work_dir.join("orchestrator.sock"),
             pid_path: work_dir.join("orchestrator.pid"),
             log_path: work_dir.join("orchestrator.log"),
             work_dir: work_dir.to_path_buf(),
+            config,
             shutdown_flag: Arc::new(AtomicBool::new(false)),
             status_subscribers: Arc::new(Mutex::new(Vec::new())),
             log_subscribers: Arc::new(Mutex::new(Vec::new())),
@@ -233,17 +247,22 @@ impl DaemonServer {
     /// Returns a join handle for the orchestrator thread.
     fn spawn_orchestrator(&self) -> Option<JoinHandle<()>> {
         let work_dir = self.work_dir.clone();
+        let daemon_config = self.config.clone();
         let shutdown_flag = Arc::clone(&self.shutdown_flag);
 
         Some(thread::spawn(move || {
-            if let Err(e) = Self::run_orchestrator(&work_dir, shutdown_flag) {
+            if let Err(e) = Self::run_orchestrator(&work_dir, &daemon_config, shutdown_flag) {
                 eprintln!("Orchestrator error: {e}");
             }
         }))
     }
 
     /// Run the orchestrator loop (static method for thread).
-    fn run_orchestrator(work_dir: &Path, shutdown_flag: Arc<AtomicBool>) -> Result<()> {
+    fn run_orchestrator(
+        work_dir: &Path,
+        daemon_config: &DaemonConfig,
+        shutdown_flag: Arc<AtomicBool>,
+    ) -> Result<()> {
         // Build execution graph from stage files
         let graph = Self::build_execution_graph(work_dir)?;
 
@@ -253,17 +272,17 @@ impl DaemonServer {
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| PathBuf::from("."));
 
-        // Configure orchestrator
+        // Configure orchestrator using daemon config
         let config = OrchestratorConfig {
-            max_parallel_sessions: 4,
+            max_parallel_sessions: daemon_config.max_parallel.unwrap_or(4),
             poll_interval: Duration::from_secs(5),
-            manual_mode: false,
-            watch_mode: true, // Keep running until all stages complete
+            manual_mode: daemon_config.manual_mode,
+            watch_mode: daemon_config.watch_mode,
             work_dir: work_dir.to_path_buf(),
             repo_root,
             status_update_interval: Duration::from_secs(30),
             backend_type: BackendType::Native,
-            auto_merge: false,
+            auto_merge: daemon_config.auto_merge,
         };
 
         // Create and run orchestrator
@@ -842,6 +861,15 @@ impl DaemonServer {
                 Request::Unsubscribe => {
                     write_message(&mut stream, &Response::Ok)?;
                     break;
+                }
+                Request::StartWithConfig(_config) => {
+                    // Stub for stage-2-daemon-server to implement config application
+                    write_message(
+                        &mut stream,
+                        &Response::Error {
+                            message: "StartWithConfig not yet implemented".to_string(),
+                        },
+                    )?;
                 }
             }
         }

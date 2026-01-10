@@ -324,7 +324,7 @@ fn main() -> Result<()> {
             } else if foreground {
                 run::execute(stage, manual, max_parallel, watch, auto_merge)
             } else {
-                run::execute_background(stage, manual, max_parallel, watch)
+                run::execute_background(stage, manual, max_parallel, watch, auto_merge)
             }
         }
         Commands::Status => status::execute(),
