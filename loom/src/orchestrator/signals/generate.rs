@@ -13,7 +13,8 @@ use crate::models::session::Session;
 use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
 
-use super::format::format_signal_content;
+use super::cache::SignalMetrics;
+use super::format::{format_signal_content, format_signal_with_metrics};
 use super::types::{DependencyStatus, EmbeddedContext};
 
 pub fn generate_signal(
@@ -232,4 +233,48 @@ pub(super) fn extract_plan_overview(plan_content: &str) -> Option<String> {
     } else {
         Some(trimmed.to_string())
     }
+}
+
+/// Generate a signal file with metrics about section sizes
+///
+/// Returns both the signal path and metrics about the signal's structure.
+/// Use this for debugging KV-cache efficiency and token usage.
+pub fn generate_signal_with_metrics(
+    session: &Session,
+    stage: &Stage,
+    worktree: &Worktree,
+    dependencies_status: &[DependencyStatus],
+    handoff_file: Option<&str>,
+    git_history: Option<&GitHistory>,
+    work_dir: &Path,
+) -> Result<(PathBuf, SignalMetrics)> {
+    let signals_dir = work_dir.join("signals");
+
+    if !signals_dir.exists() {
+        fs::create_dir_all(&signals_dir).context("Failed to create signals directory")?;
+    }
+
+    // Build embedded context by reading files, including task state and session memory for recitation
+    let embedded_context = build_embedded_context_with_session(
+        work_dir,
+        handoff_file,
+        &stage.id,
+        Some(&session.id),
+    );
+
+    let signal_path = signals_dir.join(format!("{}.md", session.id));
+    let formatted = format_signal_with_metrics(
+        session,
+        stage,
+        worktree,
+        dependencies_status,
+        handoff_file,
+        git_history,
+        &embedded_context,
+    );
+
+    fs::write(&signal_path, &formatted.content)
+        .with_context(|| format!("Failed to write signal file: {}", signal_path.display()))?;
+
+    Ok((signal_path, formatted.metrics))
 }

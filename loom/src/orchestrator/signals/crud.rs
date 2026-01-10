@@ -27,9 +27,13 @@ pub fn update_signal(session_id: &str, updates: SignalUpdates, work_dir: &Path) 
                 .join("\n");
 
             if let Some(pos) = updated_content.find("## Immediate Tasks") {
+                // Find the next section, or append at the end if this is the last section
                 if let Some(next_section) = updated_content[pos..].find("\n\n## ") {
                     let insert_pos = pos + next_section;
                     updated_content.insert_str(insert_pos, &format!("\n{task_section}"));
+                } else {
+                    // No next section - append at the end of the file
+                    updated_content.push_str(&format!("\n{task_section}\n"));
                 }
             }
         }

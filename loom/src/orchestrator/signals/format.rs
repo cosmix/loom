@@ -4,9 +4,133 @@ use crate::models::session::Session;
 use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
 
+use super::cache::{generate_stable_prefix, SignalMetrics};
 use super::types::{DependencyStatus, EmbeddedContext};
 
+/// Result of formatting a signal with structured sections
+pub struct FormattedSignal {
+    /// The complete signal content
+    pub content: String,
+    /// Metrics about the signal sections
+    pub metrics: SignalMetrics,
+}
+
+/// Format signal content using structured sections for KV-cache efficiency
+///
+/// Signal sections (Manus pattern):
+/// 1. STABLE PREFIX - Fixed header that never changes (cached by KV-cache)
+/// 2. SEMI-STABLE - Changes per stage (knowledge map, facts, learnings)
+/// 3. DYNAMIC - Changes per session (current task, handoff, dependencies)
+/// 4. RECITATION - At end for maximum attention (memory, immediate tasks)
 pub fn format_signal_content(
+    session: &Session,
+    stage: &Stage,
+    worktree: &Worktree,
+    dependencies_status: &[DependencyStatus],
+    handoff_file: Option<&str>,
+    git_history: Option<&GitHistory>,
+    embedded_context: &EmbeddedContext,
+) -> String {
+    let formatted = format_signal_with_metrics(
+        session,
+        stage,
+        worktree,
+        dependencies_status,
+        handoff_file,
+        git_history,
+        embedded_context,
+    );
+    formatted.content
+}
+
+/// Format signal content with metrics about section sizes
+pub fn format_signal_with_metrics(
+    session: &Session,
+    stage: &Stage,
+    worktree: &Worktree,
+    dependencies_status: &[DependencyStatus],
+    handoff_file: Option<&str>,
+    git_history: Option<&GitHistory>,
+    embedded_context: &EmbeddedContext,
+) -> FormattedSignal {
+    // Build each section separately for metrics
+    let header = format!("# Signal: {}\n\n", session.id);
+    let stable_prefix = generate_stable_prefix();
+    let semi_stable = format_semi_stable_section(embedded_context);
+    let dynamic = format_dynamic_section(
+        session,
+        stage,
+        worktree,
+        dependencies_status,
+        handoff_file,
+        git_history,
+        embedded_context,
+    );
+    let recitation = format_recitation_section(stage, embedded_context);
+
+    // Combine stable prefix with header for hash (header is session-specific but tiny)
+    let stable_with_header = format!("{header}{stable_prefix}");
+
+    let metrics = SignalMetrics::from_sections(
+        &stable_with_header,
+        &semi_stable,
+        &dynamic,
+        &recitation,
+    );
+
+    let content = format!("{stable_with_header}{semi_stable}{dynamic}{recitation}");
+
+    FormattedSignal { content, metrics }
+}
+
+/// SEMI-STABLE section: Changes per stage, not per session
+/// Contains knowledge map references, facts, and learnings from learning loop
+fn format_semi_stable_section(embedded_context: &EmbeddedContext) -> String {
+    let mut content = String::new();
+
+    // Embed structure.md content if available (semi-stable - same for all sessions on this stage)
+    if let Some(structure_content) = &embedded_context.structure_content {
+        content.push_str("## Codebase Structure\n\n");
+        content.push_str("<structure-map>\n");
+        content.push_str(structure_content);
+        content.push_str("\n</structure-map>\n\n");
+    }
+
+    // Embed knowledge summary (curated entry points, patterns, conventions)
+    if let Some(knowledge_summary) = &embedded_context.knowledge_summary {
+        content.push_str("<knowledge>\n");
+        content.push_str(knowledge_summary);
+        content.push_str("\n</knowledge>\n\n");
+    }
+
+    // Embed facts for this stage (semi-stable - facts accumulate but rarely change)
+    if let Some(facts_content) = &embedded_context.facts_content {
+        content.push_str("## Known Facts\n\n");
+        content.push_str("These facts were recorded by previous stages or this stage. High-confidence facts from other stages are included.\n\n");
+        content.push_str(facts_content);
+        content.push('\n');
+        content.push_str(
+            "To add a new fact: `loom fact set <key> <value> [--confidence high|medium|low]`\n\n",
+        );
+    }
+
+    // Embed learnings from learning loop (semi-stable - accumulated wisdom)
+    if let Some(learnings_content) = &embedded_context.learnings_content {
+        content.push_str("## Recent Learnings\n\n");
+        content.push_str("**REVIEW THESE BEFORE STARTING** - Lessons from previous sessions:\n\n");
+        content.push_str(learnings_content);
+        content.push_str("To record a new learning:\n");
+        content.push_str("- `loom learn mistake \"description\" [--correction \"fix\"]`\n");
+        content.push_str("- `loom learn pattern \"description\"`\n");
+        content.push_str("- `loom learn convention \"description\"`\n\n");
+    }
+
+    content
+}
+
+/// DYNAMIC section: Changes per session
+/// Contains current task, handoff, dependencies, git history
+fn format_dynamic_section(
     session: &Session,
     stage: &Stage,
     worktree: &Worktree,
@@ -17,64 +141,7 @@ pub fn format_signal_content(
 ) -> String {
     let mut content = String::new();
 
-    content.push_str(&format!("# Signal: {}\n\n", session.id));
-
-    // Worktree context - self-contained signal with strict isolation
-    content.push_str("## Worktree Context\n\n");
-    content.push_str(
-        "You are in an **isolated git worktree**. This signal contains everything you need:\n\n",
-    );
-    content.push_str("- **Your stage assignment and acceptance criteria are below** - this file is self-contained\n");
-    content.push_str("- **All context (plan overview, handoff, structure map) is embedded below** - reading main repo files is **FORBIDDEN**\n");
-    content.push_str(
-        "- **Commit to your worktree branch** - it will be merged after verification\n\n",
-    );
-
-    // Explicit isolation boundaries
-    content.push_str("**Isolation Boundaries (STRICT):**\n\n");
-    content.push_str("- You are **CONFINED** to this worktree - do not access files outside it\n");
-    content.push_str(
-        "- All context you need is embedded below - reading main repo files is **FORBIDDEN**\n",
-    );
-    content
-        .push_str("- Git commands must target THIS worktree only - no `git -C`, no `cd ../..`\n\n");
-
-    // Path boundaries subsection
-    content.push_str("### Path Boundaries\n\n");
-    content.push_str("| Type | Paths |\n");
-    content.push_str("|------|-------|\n");
-    content
-        .push_str("| **ALLOWED** | `.` (this worktree), `.work/` (symlink to orchestration) |\n");
-    content.push_str(
-        "| **FORBIDDEN** | `../..`, absolute paths to main repo, any path outside worktree |\n\n",
-    );
-
-    // Add reminder to follow CLAUDE.md rules
-    content.push_str("## Execution Rules\n\n");
-    content.push_str("Follow your `~/.claude/CLAUDE.md` and project `CLAUDE.md` rules (both are symlinked into this worktree). Key reminders:\n\n");
-    content.push_str("**Worktree Isolation (CRITICAL):**\n");
-    content.push_str(
-        "- **STAY IN THIS WORKTREE** - never read files from main repo or other worktrees\n",
-    );
-    content.push_str(
-        "- **All context is embedded above** - you have everything you need in this signal\n",
-    );
-    content.push_str("- **No path escaping** - do not use `../..`, `cd` to parent directories, or absolute paths outside worktree\n\n");
-    content.push_str("**Delegation & Efficiency:**\n");
-    content.push_str(
-        "- **Use PARALLEL subagents** - spawn multiple appropriate subagents concurrently when tasks are independent\n",
-    );
-    content.push_str("- **Use Skills** - invoke relevant skills wherever applicable\n");
-    content.push_str("- **Use TodoWrite** to plan and track progress\n\n");
-    content.push_str("**Completion:**\n");
-    content.push_str("- **Verify acceptance criteria** before marking stage complete\n");
-    content.push_str("- **Create handoff** if context exceeds 75%\n\n");
-    content.push_str("**Git Staging (CRITICAL):**\n");
-    content
-        .push_str("- **ALWAYS use `git add <specific-files>`** - stage only files you modified\n");
-    content.push_str("- **NEVER use `git add -A` or `git add .`** - these include `.work` which must NOT be committed\n");
-    content.push_str("- `.work` is a symlink to shared orchestration state - never stage it\n\n");
-
+    // Target section (session-specific)
     content.push_str("## Target\n\n");
     content.push_str(&format!("- **Session**: {}\n", session.id));
     content.push_str(&format!("- **Stage**: {}\n", stage.id));
@@ -95,6 +162,7 @@ pub fn format_signal_content(
         content.push_str("\n</plan-overview>\n\n");
     }
 
+    // Assignment section
     content.push_str("## Assignment\n\n");
     content.push_str(&format!("{}: ", stage.name));
     if let Some(desc) = &stage.description {
@@ -104,19 +172,7 @@ pub fn format_signal_content(
     }
     content.push_str("\n\n");
 
-    content.push_str("## Immediate Tasks\n\n");
-    let tasks = extract_tasks_from_stage(stage);
-    if tasks.is_empty() {
-        content.push_str("1. Review stage acceptance criteria below\n");
-        content.push_str("2. Implement required changes\n");
-        content.push_str("3. Verify all acceptance criteria are met\n");
-    } else {
-        for (i, task) in tasks.iter().enumerate() {
-            content.push_str(&format!("{}. {task}\n", i + 1));
-        }
-    }
-    content.push('\n');
-
+    // Dependencies status (dynamic - status changes)
     if !dependencies_status.is_empty() {
         content.push_str("## Dependencies Status\n\n");
         content.push_str(&format_dependency_table(dependencies_status));
@@ -158,27 +214,13 @@ pub fn format_signal_content(
         ));
     }
 
-    // Embed structure.md content if available
-    if let Some(structure_content) = &embedded_context.structure_content {
-        content.push_str("## Codebase Structure\n\n");
-        content.push_str("<structure-map>\n");
-        content.push_str(structure_content);
-        content.push_str("\n</structure-map>\n\n");
-    }
-
-    // Embed knowledge summary if available (curated entry points, patterns, conventions)
-    if let Some(knowledge_summary) = &embedded_context.knowledge_summary {
-        content.push_str("<knowledge>\n");
-        content.push_str(knowledge_summary);
-        content.push_str("\n</knowledge>\n\n");
-    }
-
     // Git History from previous session (if resuming)
     if let Some(history) = git_history {
         content.push_str(&format_git_history_markdown(history));
         content.push('\n');
     }
 
+    // Acceptance Criteria (stage-specific but part of dynamic for ordering)
     content.push_str("## Acceptance Criteria\n\n");
     if stage.acceptance.is_empty() {
         content.push_str("- [ ] Implementation complete\n");
@@ -190,6 +232,7 @@ pub fn format_signal_content(
     }
     content.push('\n');
 
+    // Files to modify
     if !stage.files.is_empty() {
         content.push_str("## Files to Modify\n\n");
         for file in &stage.files {
@@ -198,32 +241,35 @@ pub fn format_signal_content(
         content.push('\n');
     }
 
-    // Embed facts for recitation (Manus pattern)
-    if let Some(facts_content) = &embedded_context.facts_content {
-        content.push_str("## Known Facts\n\n");
-        content.push_str("These facts were recorded by previous stages or this stage. High-confidence facts from other stages are included.\n\n");
-        content.push_str(facts_content);
-        content.push('\n');
-        content.push_str(
-            "To add a new fact: `loom fact set <key> <value> [--confidence high|medium|low]`\n\n",
-        );
-    }
+    content
+}
 
-    // Embed learnings for attention optimization
-    if let Some(learnings_content) = &embedded_context.learnings_content {
-        content.push_str("## Recent Learnings\n\n");
-        content.push_str("**REVIEW THESE BEFORE STARTING** - Lessons from previous sessions:\n\n");
-        content.push_str(learnings_content);
-        content.push_str("To record a new learning:\n");
-        content.push_str("- `loom learn mistake \"description\" [--correction \"fix\"]`\n");
-        content.push_str("- `loom learn pattern \"description\"`\n");
-        content.push_str("- `loom learn convention \"description\"`\n\n");
-    }
+/// RECITATION section: At end for maximum attention (Manus pattern)
+/// Contains immediate tasks, task progression, and session memory
+fn format_recitation_section(
+    stage: &Stage,
+    embedded_context: &EmbeddedContext,
+) -> String {
+    let mut content = String::new();
 
     // Task progression section (if task state is available)
     if let Some(task_state) = &embedded_context.task_state {
         content.push_str(&format_task_progression(task_state));
     }
+
+    // Immediate tasks - recited at end for attention
+    content.push_str("## Immediate Tasks\n\n");
+    let tasks = extract_tasks_from_stage(stage);
+    if tasks.is_empty() {
+        content.push_str("1. Review stage acceptance criteria above\n");
+        content.push_str("2. Implement required changes\n");
+        content.push_str("3. Verify all acceptance criteria are met\n");
+    } else {
+        for (i, task) in tasks.iter().enumerate() {
+            content.push_str(&format!("{}. {task}\n", i + 1));
+        }
+    }
+    content.push('\n');
 
     // Embed session memory at the END for maximum attention (Manus recitation pattern)
     // Recent notes, decisions, and questions stay in agent's working memory
@@ -261,11 +307,11 @@ fn format_task_progression(task_state: &crate::checkpoints::TaskState) -> String
 
     for task in &task_state.tasks {
         let status = if task_state.completed_tasks.contains_key(&task.id) {
-            "✅ Completed"
+            "Completed"
         } else if task_state.is_task_unlocked(&task.id) {
-            "🔓 Unlocked"
+            "Unlocked"
         } else {
-            "🔒 Locked"
+            "Locked"
         };
 
         let instruction = task.instruction.replace('|', "\\|");
