@@ -98,40 +98,102 @@ fn test_orchestrator_creation_with_config() {
     assert_eq!(orchestrator.running_session_count(), 0);
 }
 
+/// Integration test: Verify manual mode sets up sessions without spawning Claude
+///
+/// In manual mode, `run()` should:
+/// 1. Create worktrees and signal files for ready stages
+/// 2. Track sessions in `active_sessions` (so `running_session_count()` reflects them)
+/// 3. NOT spawn actual Claude processes - just print setup instructions
+/// 4. Exit immediately after setting up the first batch of stages
+///
+/// This test verifies the manual mode behavior by checking that after calling
+/// `run()`, sessions are tracked, worktrees exist, but no Claude is spawned.
 #[test]
+#[ignore] // Integration test - requires git repo, run with --ignored
 fn test_orchestrator_with_manual_mode() {
-    let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path();
+    use crate::helpers::create_temp_git_repo;
+
+    // Create a git repo (required for worktree creation)
+    let temp_dir = create_temp_git_repo().expect("Should create git repo");
+    let repo_root = temp_dir.path();
+
+    // Create .work directory structure
+    let work_dir = repo_root.join(".work");
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
     std::fs::create_dir_all(work_dir.join("sessions")).unwrap();
+    std::fs::create_dir_all(work_dir.join("signals")).unwrap();
 
-    // Create a stage file - start as WaitingForDeps to avoid immediate spawning
+    // Create a stage file with Queued status (ready to execute)
     let mut stage = Stage::new("Test Stage".to_string(), None);
     stage.id = "stage-1".to_string();
-    stage.status = StageStatus::WaitingForDeps;
-    save_stage(&stage, work_dir).expect("Should save stage");
+    stage.status = StageStatus::Queued; // Already queued, ready for execution
+    save_stage(&stage, &work_dir).expect("Should save stage");
 
+    // Build execution graph - stage with no deps becomes Queued automatically
     let stage_defs = vec![create_stage_def("stage-1", "Test Stage", vec![])];
-
     let graph = ExecutionGraph::build(stage_defs).expect("Should build execution graph");
+
+    // Verify the graph has the stage as Queued (ready)
+    let ready = graph.ready_stages();
+    assert_eq!(ready.len(), 1, "Stage should be ready in the graph");
+    assert_eq!(ready[0].id, "stage-1");
 
     let config = OrchestratorConfig {
         max_parallel_sessions: 4,
         poll_interval: Duration::from_millis(50),
-        manual_mode: true, // Manual mode exits after first batch
+        manual_mode: true, // Key: manual mode - sets up but doesn't spawn
         watch_mode: false,
-        work_dir: work_dir.to_path_buf(),
-        repo_root: temp_dir.path().to_path_buf(),
+        work_dir: work_dir.clone(),
+        repo_root: repo_root.to_path_buf(),
         status_update_interval: Duration::from_secs(30),
         backend_type: BackendType::Native,
         auto_merge: false,
     };
 
-    let orchestrator = Orchestrator::new(config, graph).expect("Should create orchestrator");
+    let mut orchestrator = Orchestrator::new(config, graph).expect("Should create orchestrator");
 
-    // In manual mode, the orchestrator is ready to run
-    // The test verifies configuration is applied correctly
-    assert_eq!(orchestrator.running_session_count(), 0);
+    // Initially no sessions running
+    assert_eq!(
+        orchestrator.running_session_count(),
+        0,
+        "No sessions should be running initially"
+    );
+
+    // Run the orchestrator - in manual mode it sets up sessions and exits immediately
+    let result = orchestrator.run().expect("Orchestrator run should succeed");
+
+    // Verify: one stage was "started" (set up)
+    assert_eq!(
+        result.total_sessions_spawned, 1,
+        "Should have set up 1 stage"
+    );
+
+    // Verify: session is tracked in active_sessions
+    // In manual mode, sessions ARE tracked but Claude is not actually spawned
+    assert_eq!(
+        orchestrator.running_session_count(),
+        1,
+        "Session should be tracked (manual mode still tracks sessions)"
+    );
+
+    // Verify: worktree was created
+    let worktrees_dir = repo_root.join(".worktrees");
+    assert!(
+        worktrees_dir.exists(),
+        "Worktrees directory should be created"
+    );
+
+    // Verify: signal file was created
+    let signals_dir = work_dir.join("signals");
+    let signal_files: Vec<_> = std::fs::read_dir(&signals_dir)
+        .expect("Should read signals dir")
+        .filter_map(|e| e.ok())
+        .collect();
+    assert_eq!(
+        signal_files.len(),
+        1,
+        "Signal file should be created for the session"
+    );
 }
 
 #[test]
@@ -304,25 +366,65 @@ fn test_work_dir_and_repo_root_configuration() {
     assert_eq!(config.repo_root, repo_root);
 }
 
-/// Integration test: Verify orchestrator respects max_parallel_sessions
+/// Integration test: Verify orchestrator respects max_parallel_sessions at runtime
 ///
-/// This test verifies that the max_parallel_sessions configuration is stored
-/// correctly and would limit concurrent sessions when the orchestrator runs.
-/// Note: Full execution requires a git repo, so we test configuration only.
+/// This test verifies that when 5 ready stages exist and max_parallel_sessions=2,
+/// only 2 stages start executing at once. This tests the actual runtime behavior,
+/// not just configuration storage.
 #[test]
 #[ignore] // Integration test - run with --ignored
 fn test_orchestrator_respects_max_parallel_sessions() {
+    use std::process::Command;
+
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path();
+    let repo_root = temp_dir.path();
+    let work_dir = repo_root.join(".work");
+
+    // Initialize a git repository (required for worktree creation)
+    let git_init = Command::new("git")
+        .args(["init"])
+        .current_dir(repo_root)
+        .output()
+        .expect("Failed to run git init");
+    assert!(git_init.status.success(), "git init failed");
+
+    // Configure git user for commits (required for initial commit)
+    Command::new("git")
+        .args(["config", "user.email", "test@example.com"])
+        .current_dir(repo_root)
+        .output()
+        .expect("Failed to configure git email");
+    Command::new("git")
+        .args(["config", "user.name", "Test User"])
+        .current_dir(repo_root)
+        .output()
+        .expect("Failed to configure git name");
+
+    // Create an initial commit (worktree creation requires at least one commit)
+    std::fs::write(repo_root.join("README.md"), "# Test Project").unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(repo_root)
+        .output()
+        .expect("Failed to git add");
+    let git_commit = Command::new("git")
+        .args(["commit", "-m", "Initial commit"])
+        .current_dir(repo_root)
+        .output()
+        .expect("Failed to git commit");
+    assert!(git_commit.status.success(), "git commit failed");
+
+    // Create work directories
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
     std::fs::create_dir_all(work_dir.join("sessions")).unwrap();
+    std::fs::create_dir_all(work_dir.join("signals")).unwrap();
 
-    // Create multiple parallel stages (WaitingForDeps so they won't try to spawn)
+    // Create 5 stages without dependencies - all will be Queued (ready to execute)
     for i in 1..=5 {
         let mut stage = Stage::new(format!("Stage {i}"), None);
         stage.id = format!("stage-{i}");
-        stage.status = StageStatus::WaitingForDeps;
-        save_stage(&stage, work_dir).expect("Should save stage");
+        stage.status = StageStatus::Queued; // Ready to execute
+        save_stage(&stage, &work_dir).expect("Should save stage");
     }
 
     let stage_defs: Vec<StageDefinition> = (1..=5)
@@ -331,44 +433,107 @@ fn test_orchestrator_respects_max_parallel_sessions() {
 
     let graph = ExecutionGraph::build(stage_defs).expect("Should build execution graph");
 
+    // Verify all 5 stages are ready (Queued status in graph)
+    let ready_before = graph.ready_stages();
+    assert_eq!(
+        ready_before.len(),
+        5,
+        "All 5 stages should be ready (Queued) before run"
+    );
+
     let config = OrchestratorConfig {
         max_parallel_sessions: 2, // Limit to 2 parallel
         poll_interval: Duration::from_millis(50),
-        manual_mode: true, // Exit after first batch
+        manual_mode: true, // Exit after first batch - does not actually spawn Claude
         watch_mode: false,
-        work_dir: work_dir.to_path_buf(),
-        repo_root: temp_dir.path().to_path_buf(),
+        work_dir: work_dir.clone(),
+        repo_root: repo_root.to_path_buf(),
         status_update_interval: Duration::from_secs(30),
         backend_type: BackendType::Native,
         auto_merge: false,
     };
 
-    // Verify the configuration is correctly set
-    assert_eq!(config.max_parallel_sessions, 2);
+    let mut orchestrator = Orchestrator::new(config, graph).expect("Should create orchestrator");
 
-    let orchestrator = Orchestrator::new(config, graph).expect("Should create orchestrator");
+    // Verify initial state
+    assert_eq!(
+        orchestrator.running_session_count(),
+        0,
+        "No sessions should be running before run()"
+    );
 
-    // Verify orchestrator was created with correct settings
-    assert_eq!(orchestrator.running_session_count(), 0);
+    // Run the orchestrator - in manual mode it starts stages and exits
+    let result = orchestrator.run().expect("Orchestrator run should succeed");
+
+    // Verify that exactly 2 sessions were spawned (respecting max_parallel_sessions)
+    assert_eq!(
+        result.total_sessions_spawned, 2,
+        "Should spawn exactly 2 sessions (max_parallel_sessions limit)"
+    );
+
+    // Verify that exactly 2 sessions are now active
+    assert_eq!(
+        orchestrator.running_session_count(),
+        2,
+        "Should have exactly 2 active sessions after run"
+    );
 }
 
-/// Integration test: Verify auto-merge flag is passed through config
+/// Integration test: Verify auto-merge configuration cascade
+///
+/// Tests that `is_auto_merge_enabled()` correctly prioritizes:
+/// 1. Stage-level `auto_merge` setting (highest priority)
+/// 2. Plan-level `auto_merge` setting
+/// 3. Orchestrator config `auto_merge` setting (lowest priority)
 #[test]
 #[ignore] // Integration test - run with --ignored
-fn test_auto_merge_flag_in_config() {
+fn test_daemon_respects_auto_merge() {
+    use loom::models::stage::Stage;
+    use loom::orchestrator::auto_merge::is_auto_merge_enabled;
+
+    // Create a test stage
+    let mut stage = Stage::new("Test Stage".to_string(), None);
+    stage.id = "stage-1".to_string();
+
+    // Test 1: Stage override = None, Plan = None -> uses orchestrator config
+    stage.auto_merge = None;
+    assert!(
+        is_auto_merge_enabled(&stage, true, None),
+        "Should use orchestrator config (true) when no overrides"
+    );
+    assert!(
+        !is_auto_merge_enabled(&stage, false, None),
+        "Should use orchestrator config (false) when no overrides"
+    );
+
+    // Test 2: Stage override = None, Plan = Some -> uses plan config
+    stage.auto_merge = None;
+    assert!(
+        is_auto_merge_enabled(&stage, false, Some(true)),
+        "Plan override (true) should take precedence over orchestrator (false)"
+    );
+    assert!(
+        !is_auto_merge_enabled(&stage, true, Some(false)),
+        "Plan override (false) should take precedence over orchestrator (true)"
+    );
+
+    // Test 3: Stage override = Some -> uses stage config (highest priority)
+    stage.auto_merge = Some(true);
+    assert!(
+        is_auto_merge_enabled(&stage, false, Some(false)),
+        "Stage override (true) should take precedence over everything"
+    );
+    stage.auto_merge = Some(false);
+    assert!(
+        !is_auto_merge_enabled(&stage, true, Some(true)),
+        "Stage override (false) should take precedence over everything"
+    );
+
+    // Test 4: Verify orchestrator config flows through to OrchestratorConfig
     let temp_dir = TempDir::new().unwrap();
     let work_dir = temp_dir.path();
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
 
-    let mut stage = Stage::new("Test Stage".to_string(), None);
-    stage.id = "stage-1".to_string();
-    stage.status = StageStatus::Queued;
-    save_stage(&stage, work_dir).expect("Should save stage");
-
-    let stage_defs = vec![create_stage_def("stage-1", "Test Stage", vec![])];
-    let graph = ExecutionGraph::build(stage_defs).expect("Should build execution graph");
-
-    // Test with auto_merge enabled
     let config = OrchestratorConfig {
         auto_merge: true,
         manual_mode: true,
@@ -377,11 +542,103 @@ fn test_auto_merge_flag_in_config() {
         ..Default::default()
     };
 
-    assert!(config.auto_merge, "auto_merge should be enabled");
+    assert!(config.auto_merge, "auto_merge should be enabled in config");
 
+    let stage_defs = vec![create_stage_def("stage-1", "Test Stage", vec![])];
+    let graph = ExecutionGraph::build(stage_defs).expect("Should build execution graph");
     let orchestrator = Orchestrator::new(config, graph).expect("Should create orchestrator");
-    assert!(
-        orchestrator.running_session_count() == 0,
-        "No sessions running initially"
+    assert_eq!(orchestrator.running_session_count(), 0);
+}
+
+/// Integration test: Verify --stage flag causes only specified stage to run
+///
+/// When calling `orchestrator.run_single(stage_id)`, only that specific stage
+/// should be started, while other ready stages remain untouched.
+#[test]
+#[ignore] // Integration test - requires git repo, run with --ignored
+fn test_daemon_respects_stage_id() {
+    use crate::helpers::create_temp_git_repo;
+    use loom::verify::transitions::load_stage;
+
+    // Create a git repo (required for worktree creation)
+    let temp_dir = create_temp_git_repo().expect("Should create git repo");
+    let repo_root = temp_dir.path();
+
+    // Create .work directory structure
+    let work_dir = repo_root.join(".work");
+    std::fs::create_dir_all(work_dir.join("stages")).unwrap();
+    std::fs::create_dir_all(work_dir.join("sessions")).unwrap();
+    std::fs::create_dir_all(work_dir.join("signals")).unwrap();
+
+    // Create 3 stages - all without dependencies (all become Queued)
+    for (id, name) in [
+        ("stage-1", "First Stage"),
+        ("stage-2", "Second Stage"),
+        ("stage-3", "Third Stage"),
+    ] {
+        let mut stage = Stage::new(name.to_string(), None);
+        stage.id = id.to_string();
+        stage.status = StageStatus::Queued;
+        save_stage(&stage, &work_dir).expect("Should save stage");
+    }
+
+    // Build execution graph
+    let stage_defs = vec![
+        create_stage_def("stage-1", "First Stage", vec![]),
+        create_stage_def("stage-2", "Second Stage", vec![]),
+        create_stage_def("stage-3", "Third Stage", vec![]),
+    ];
+    let graph = ExecutionGraph::build(stage_defs).expect("Should build execution graph");
+
+    // Verify all 3 stages are ready
+    let ready = graph.ready_stages();
+    assert_eq!(ready.len(), 3, "All 3 stages should be ready");
+
+    let config = OrchestratorConfig {
+        max_parallel_sessions: 4,
+        poll_interval: Duration::from_millis(50),
+        manual_mode: true, // Key: exits immediately after setup
+        watch_mode: false,
+        work_dir: work_dir.clone(),
+        repo_root: repo_root.to_path_buf(),
+        status_update_interval: Duration::from_secs(30),
+        backend_type: BackendType::Native,
+        auto_merge: false,
+    };
+
+    let mut orchestrator = Orchestrator::new(config, graph).expect("Should create orchestrator");
+
+    // Run ONLY stage-2 (not stage-1 or stage-3)
+    let result = orchestrator
+        .run_single("stage-2")
+        .expect("run_single should succeed");
+
+    // Verify only 1 session was spawned
+    assert_eq!(
+        result.total_sessions_spawned, 1,
+        "Should spawn exactly 1 session for the specified stage"
+    );
+
+    // Verify stage-2 is now Executing
+    let stage_2 = load_stage("stage-2", &work_dir).expect("Should load stage-2");
+    assert_eq!(
+        stage_2.status,
+        StageStatus::Executing,
+        "stage-2 should be Executing"
+    );
+
+    // Verify stage-1 and stage-3 are still Queued (untouched)
+    let stage_1 = load_stage("stage-1", &work_dir).expect("Should load stage-1");
+    assert_eq!(
+        stage_1.status,
+        StageStatus::Queued,
+        "stage-1 should still be Queued (not started)"
+    );
+
+    let stage_3 = load_stage("stage-3", &work_dir).expect("Should load stage-3");
+    assert_eq!(
+        stage_3.status,
+        StageStatus::Queued,
+        "stage-3 should still be Queued (not started)"
     );
 }
