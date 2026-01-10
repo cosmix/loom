@@ -11,6 +11,7 @@
 mod display;
 mod indicators;
 mod levels;
+mod tree;
 
 #[cfg(test)]
 mod tests;
@@ -24,6 +25,7 @@ use crate::verify::transitions::list_all_stages;
 pub use display::build_graph_display;
 pub use indicators::{status_indicator, status_priority};
 pub use levels::compute_stage_levels;
+pub use tree::build_tree_display;
 
 /// Show the execution graph
 pub fn show() -> Result<()> {
@@ -38,8 +40,8 @@ pub fn show() -> Result<()> {
     }
 
     let stages = list_all_stages(&work_dir)?;
-    let graph_display = build_graph_display(&stages)?;
-    println!("{graph_display}");
+    let tree_display = build_tree_display(&stages);
+    println!("{tree_display}");
 
     // Print legend with colored symbols
     println!();
