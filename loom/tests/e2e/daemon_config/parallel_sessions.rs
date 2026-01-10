@@ -130,6 +130,7 @@ fn test_orchestrator_respects_max_parallel_sessions() {
         status_update_interval: Duration::from_secs(30),
         backend_type: BackendType::Native,
         auto_merge: false,
+        base_branch: None,
     };
 
     let mut orchestrator = Orchestrator::new(config, graph).expect("Should create orchestrator");

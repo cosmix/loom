@@ -35,6 +35,7 @@ fn test_cleanup_temp_branch_after_completion() {
         &["stage-a".to_string(), "stage-b".to_string()],
         &graph,
         repo_root,
+        None,
     )
     .expect("Should succeed");
 

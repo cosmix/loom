@@ -47,7 +47,7 @@ pub struct MergeConflictInfo {
 ///
 /// # Logic
 ///
-/// - Empty deps → `ResolvedBase::Main`
+/// - Empty deps → `ResolvedBase::Main` (uses init_base_branch if provided, else default_branch)
 /// - Single dep with existing branch → `ResolvedBase::Branch("loom/{dep}")`
 /// - Single dep, branch missing + dep Completed → `ResolvedBase::Main` (fallback)
 /// - Single dep, branch missing + dep not Completed → Error (scheduling bug)
@@ -59,6 +59,7 @@ pub struct MergeConflictInfo {
 /// * `dependencies` - The stage's dependency list
 /// * `graph` - The execution graph (for checking dependency status)
 /// * `repo_root` - Path to the git repository root
+/// * `init_base_branch` - Optional base branch from config.toml (for stages with no deps)
 ///
 /// # Returns
 ///
@@ -69,11 +70,14 @@ pub fn resolve_base_branch(
     dependencies: &[String],
     graph: &ExecutionGraph,
     repo_root: &Path,
+    init_base_branch: Option<&str>,
 ) -> Result<ResolvedBase> {
-    // Empty deps → use main branch
+    // Empty deps → use init_base_branch if provided, otherwise fall back to default
     if dependencies.is_empty() {
-        let main = default_branch(repo_root)?;
-        return Ok(ResolvedBase::Main(main));
+        let base = init_base_branch
+            .map(String::from)
+            .unwrap_or_else(|| default_branch(repo_root).unwrap_or_else(|_| "main".to_string()));
+        return Ok(ResolvedBase::Main(base));
     }
 
     // Single dependency case
@@ -450,7 +454,7 @@ mod tests {
 
         let graph = build_test_graph(vec![("stage-1", vec![])]);
 
-        let result = resolve_base_branch("stage-1", &[], &graph, repo_root).unwrap();
+        let result = resolve_base_branch("stage-1", &[], &graph, repo_root, None).unwrap();
 
         assert_eq!(result, ResolvedBase::Main("main".to_string()));
     }
@@ -467,7 +471,7 @@ mod tests {
         graph.mark_completed("dep-1").unwrap();
 
         let result =
-            resolve_base_branch("stage-1", &["dep-1".to_string()], &graph, repo_root).unwrap();
+            resolve_base_branch("stage-1", &["dep-1".to_string()], &graph, repo_root, None).unwrap();
 
         assert_eq!(result, ResolvedBase::Branch("loom/dep-1".to_string()));
     }
@@ -484,7 +488,7 @@ mod tests {
         graph.mark_completed("dep-1").unwrap();
 
         let result =
-            resolve_base_branch("stage-1", &["dep-1".to_string()], &graph, repo_root).unwrap();
+            resolve_base_branch("stage-1", &["dep-1".to_string()], &graph, repo_root, None).unwrap();
 
         // Should fall back to main
         assert_eq!(result, ResolvedBase::Main("main".to_string()));
@@ -498,7 +502,7 @@ mod tests {
         // No branch, dep not completed
         let graph = build_test_graph(vec![("dep-1", vec![]), ("stage-1", vec!["dep-1"])]);
 
-        let result = resolve_base_branch("stage-1", &["dep-1".to_string()], &graph, repo_root);
+        let result = resolve_base_branch("stage-1", &["dep-1".to_string()], &graph, repo_root, None);
 
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -530,6 +534,7 @@ mod tests {
             &["dep-1".to_string(), "dep-2".to_string()],
             &graph,
             repo_root,
+            None,
         )
         .unwrap();
 
@@ -565,6 +570,7 @@ mod tests {
             &["dep-1".to_string(), "dep-2".to_string()],
             &graph,
             repo_root,
+            None,
         );
 
         assert!(result.is_err());
@@ -595,6 +601,7 @@ mod tests {
             &["dep-1".to_string(), "dep-2".to_string()],
             &graph,
             repo_root,
+            None,
         )
         .unwrap();
 
@@ -623,6 +630,7 @@ mod tests {
             &["dep-1".to_string(), "dep-2".to_string()],
             &graph,
             repo_root,
+            None,
         )
         .unwrap();
 

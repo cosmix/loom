@@ -35,6 +35,7 @@ fn test_orchestrator_creation_with_config() {
         status_update_interval: Duration::from_secs(5),
         backend_type: BackendType::Native,
         auto_merge: false,
+        base_branch: None,
     };
 
     let orchestrator = Orchestrator::new(config.clone(), graph);
@@ -266,6 +267,7 @@ fn test_daemon_respects_stage_id() {
         status_update_interval: Duration::from_secs(30),
         backend_type: BackendType::Native,
         auto_merge: false,
+        base_branch: None,
     };
 
     let mut orchestrator = Orchestrator::new(config, graph).expect("Should create orchestrator");

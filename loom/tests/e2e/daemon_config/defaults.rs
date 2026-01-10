@@ -34,6 +34,7 @@ fn test_orchestrator_config_custom_values() {
         status_update_interval: Duration::from_secs(60),
         backend_type: BackendType::Native,
         auto_merge: true,
+        base_branch: None,
     };
 
     assert_eq!(config.max_parallel_sessions, 8);

@@ -35,6 +35,7 @@ mod tests {
             status_update_interval: Duration::from_secs(30),
             backend_type: crate::orchestrator::terminal::BackendType::Native,
             auto_merge: false,
+            base_branch: None,
         }
     }
 

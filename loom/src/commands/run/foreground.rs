@@ -10,6 +10,29 @@ use crate::orchestrator::{Orchestrator, OrchestratorConfig, OrchestratorResult};
 
 use super::graph_loader::build_execution_graph;
 
+/// Parse base_branch from config.toml
+fn parse_base_branch_from_config(work_dir: &WorkDir) -> Result<Option<String>> {
+    let config_path = work_dir.root().join("config.toml");
+
+    if !config_path.exists() {
+        return Ok(None);
+    }
+
+    let config_content = std::fs::read_to_string(&config_path)
+        .context("Failed to read config.toml")?;
+
+    let config: toml::Value = toml::from_str(&config_content)
+        .context("Failed to parse config.toml")?;
+
+    let base_branch = config
+        .get("plan")
+        .and_then(|p| p.get("base_branch"))
+        .and_then(|b| b.as_str())
+        .map(String::from);
+
+    Ok(base_branch)
+}
+
 /// Execute plan stages in foreground (for --foreground flag)
 /// Usage: loom run --foreground [--stage <id>] [--manual] [--max-parallel <n>] [--watch] [--auto-merge]
 pub fn execute(
@@ -36,6 +59,9 @@ fn execute_foreground(
 ) -> Result<()> {
     let graph = build_execution_graph(work_dir)?;
 
+    // Parse config.toml to extract base_branch
+    let base_branch = parse_base_branch_from_config(work_dir)?;
+
     let config = OrchestratorConfig {
         max_parallel_sessions: max_parallel.unwrap_or(4),
         poll_interval: Duration::from_secs(5),
@@ -46,6 +72,7 @@ fn execute_foreground(
         status_update_interval: Duration::from_secs(30),
         backend_type: BackendType::Native,
         auto_merge,
+        base_branch,
     };
 
     let mut orchestrator =

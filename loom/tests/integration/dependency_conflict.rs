@@ -35,6 +35,7 @@ fn test_multi_dep_conflict_returns_error() {
         &["stage-a".to_string(), "stage-b".to_string()],
         &graph,
         repo_root,
+        None,
     );
 
     assert!(
@@ -73,6 +74,7 @@ fn test_conflict_error_contains_helpful_info() {
         &["dep-x".to_string(), "dep-y".to_string()],
         &graph,
         repo_root,
+        None,
     );
 
     assert!(result.is_err());
@@ -108,6 +110,7 @@ fn test_retry_after_manual_conflict_resolution() {
         &["stage-a".to_string(), "stage-b".to_string()],
         &graph,
         repo_root,
+        None,
     );
     assert!(first_attempt.is_err(), "First attempt should fail due to conflict");
 

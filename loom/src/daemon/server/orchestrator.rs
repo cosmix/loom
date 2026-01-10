@@ -16,6 +16,29 @@ use crate::plan::graph::ExecutionGraph;
 use crate::plan::parser::parse_plan;
 use crate::plan::schema::StageDefinition;
 
+/// Parse base_branch from config.toml
+fn parse_base_branch_from_config(work_dir: &Path) -> Result<Option<String>> {
+    let config_path = work_dir.join("config.toml");
+
+    if !config_path.exists() {
+        return Ok(None);
+    }
+
+    let config_content = fs::read_to_string(&config_path)
+        .context("Failed to read config.toml")?;
+
+    let config: toml::Value = toml::from_str(&config_content)
+        .context("Failed to parse config.toml")?;
+
+    let base_branch = config
+        .get("plan")
+        .and_then(|p| p.get("base_branch"))
+        .and_then(|b| b.as_str())
+        .map(String::from);
+
+    Ok(base_branch)
+}
+
 /// Spawn the orchestrator thread to execute stages.
 ///
 /// Returns a join handle for the orchestrator thread.
@@ -46,6 +69,9 @@ fn run_orchestrator(
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
 
+    // Parse base_branch from config.toml
+    let base_branch = parse_base_branch_from_config(work_dir).ok().flatten();
+
     // Configure orchestrator using daemon config
     let config = OrchestratorConfig {
         max_parallel_sessions: daemon_config.max_parallel.unwrap_or(4),
@@ -57,6 +83,7 @@ fn run_orchestrator(
         status_update_interval: Duration::from_secs(30),
         backend_type: BackendType::Native,
         auto_merge: daemon_config.auto_merge,
+        base_branch,
     };
 
     // Create and run orchestrator

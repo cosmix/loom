@@ -35,6 +35,8 @@ pub struct OrchestratorConfig {
     pub backend_type: BackendType,
     /// Enable automatic merge when stages complete (default: false)
     pub auto_merge: bool,
+    /// Base branch to use for stages with no dependencies (from config.toml)
+    pub base_branch: Option<String>,
 }
 
 impl Default for OrchestratorConfig {
@@ -49,6 +51,7 @@ impl Default for OrchestratorConfig {
             status_update_interval: Duration::from_secs(30),
             backend_type: BackendType::Native,
             auto_merge: false,
+            base_branch: None,
         }
     }
 }

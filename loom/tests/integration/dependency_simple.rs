@@ -32,6 +32,7 @@ fn test_simple_chain_b_inherits_from_a() {
         &["stage-a".to_string()],
         &graph,
         repo_root,
+        None,
     )
     .expect("Failed to resolve base branch");
 
@@ -55,7 +56,7 @@ fn test_no_dependencies_uses_main() {
 
     let graph = build_test_graph(vec![("standalone", vec![])]);
 
-    let result = resolve_base_branch("standalone", &[], &graph, repo_root)
+    let result = resolve_base_branch("standalone", &[], &graph, repo_root, None)
         .expect("Failed to resolve");
 
     assert_eq!(result, ResolvedBase::Main("main".to_string()));
@@ -78,6 +79,7 @@ fn test_scheduling_error_when_dep_not_completed() {
         &["stage-a".to_string()],
         &graph,
         repo_root,
+        None,
     );
 
     assert!(result.is_err());
@@ -134,6 +136,7 @@ fn test_worktree_inherits_full_git_history() {
         &["stage-a".to_string()],
         &graph,
         repo_root,
+        None,
     )
     .expect("Failed to resolve");
 
@@ -169,6 +172,7 @@ fn test_dep_already_merged_fallback_to_main() {
         &["stage-a".to_string()],
         &graph,
         repo_root,
+        None,
     )
     .expect("Failed to resolve base branch");
 

@@ -11,6 +11,21 @@ use chrono::Utc;
 use colored::Colorize;
 use std::fs;
 use std::path::Path;
+use std::process::Command;
+
+/// Get the current git branch name
+fn get_current_branch() -> Result<String> {
+    let output = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+        .context("Failed to execute git rev-parse")?;
+
+    if !output.status.success() {
+        anyhow::bail!("git rev-parse failed: {}", String::from_utf8_lossy(&output.stderr));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
 
 /// Initialize with a plan file
 /// Returns the number of stages created
@@ -28,12 +43,16 @@ pub fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<usiz
         parsed_plan.name.bold()
     );
 
+    let base_branch = get_current_branch()
+        .context("Failed to get current git branch")?;
+
     let config_content = format!(
-        "# loom Configuration\n# Generated from plan: {}\n\n[plan]\nsource_path = \"{}\"\nplan_id = \"{}\"\nplan_name = \"{}\"\n",
+        "# loom Configuration\n# Generated from plan: {}\n\n[plan]\nsource_path = \"{}\"\nplan_id = \"{}\"\nplan_name = \"{}\"\nbase_branch = \"{}\"\n",
         plan_path.display(),
         plan_path.display(),
         parsed_plan.id,
-        parsed_plan.name
+        parsed_plan.name,
+        base_branch
     );
 
     let config_path = work_dir.root().join("config.toml");

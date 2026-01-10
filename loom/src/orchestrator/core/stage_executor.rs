@@ -66,6 +66,7 @@ impl StageExecutor for Orchestrator {
             &stage.dependencies,
             &self.graph,
             &self.config.repo_root,
+            self.config.base_branch.as_deref(),
         ) {
             Ok(resolved) => resolved,
             Err(e) => {

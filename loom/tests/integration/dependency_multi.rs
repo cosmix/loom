@@ -35,6 +35,7 @@ fn test_multiple_deps_c_gets_merged_base() {
         &["stage-a".to_string(), "stage-b".to_string()],
         &graph,
         repo_root,
+        None,
     )
     .expect("Failed to resolve base branch");
 
@@ -142,6 +143,7 @@ fn test_diamond_pattern() {
         &["stage-b".to_string(), "stage-c".to_string()],
         &graph,
         repo_root,
+        None,
     )
     .expect("Failed to resolve base branch");
 
@@ -195,6 +197,7 @@ fn test_multiple_deps_some_already_merged() {
         &["stage-a".to_string(), "stage-b".to_string()],
         &graph,
         repo_root,
+        None,
     )
     .expect("Failed to resolve base branch");
 
@@ -230,6 +233,7 @@ fn test_all_deps_already_merged_fallback_to_main() {
         &["stage-a".to_string(), "stage-b".to_string()],
         &graph,
         repo_root,
+        None,
     )
     .expect("Failed to resolve base branch");
 

@@ -58,6 +58,7 @@ fn test_orchestrator_with_manual_mode() {
         status_update_interval: Duration::from_secs(30),
         backend_type: BackendType::Native,
         auto_merge: false,
+        base_branch: None,
     };
 
     let mut orchestrator =
