@@ -1,4 +1,5 @@
 use crate::handoff::git_handoff::{format_git_history_markdown, GitHistory};
+use crate::handoff::schema::HandoffV2;
 use crate::models::session::Session;
 use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
@@ -123,7 +124,13 @@ pub fn format_signal_content(
     }
 
     // Embed handoff content if available (previous session context)
-    if let Some(handoff_content) = &embedded_context.handoff_content {
+    if let Some(parsed) = &embedded_context.parsed_handoff {
+        // V2 structured handoff: show structured summary
+        content.push_str("## Previous Session Handoff (Structured)\n\n");
+        content.push_str(&format_structured_handoff(parsed));
+        content.push('\n');
+    } else if let Some(handoff_content) = &embedded_context.handoff_content {
+        // V1 prose handoff: embed raw content
         content.push_str("## Previous Session Handoff\n\n");
         content.push_str(
             "**READ THIS CAREFULLY** - This contains context from the previous session:\n\n",
@@ -239,4 +246,111 @@ pub(super) fn extract_tasks_from_description(description: &str) -> Vec<String> {
     }
 
     tasks
+}
+
+/// Format a V2 structured handoff for inclusion in signals
+fn format_structured_handoff(handoff: &HandoffV2) -> String {
+    let mut content = String::new();
+
+    content.push_str(&format!(
+        "**Previous Session**: {} | **Context**: {:.1}%\n\n",
+        handoff.session_id, handoff.context_percent
+    ));
+
+    // Completed tasks
+    if !handoff.completed_tasks.is_empty() {
+        content.push_str("### Completed Tasks\n\n");
+        for task in &handoff.completed_tasks {
+            content.push_str(&format!("- {}\n", task.description));
+            if !task.files.is_empty() {
+                for file in &task.files {
+                    content.push_str(&format!("  - `{file}`\n"));
+                }
+            }
+        }
+        content.push('\n');
+    }
+
+    // Key decisions
+    if !handoff.key_decisions.is_empty() {
+        content.push_str("### Key Decisions\n\n");
+        content.push_str("| Decision | Rationale |\n");
+        content.push_str("|----------|----------|\n");
+        for decision in &handoff.key_decisions {
+            let dec_escaped = decision.decision.replace('|', "\\|");
+            let rat_escaped = decision.rationale.replace('|', "\\|");
+            content.push_str(&format!("| {dec_escaped} | {rat_escaped} |\n"));
+        }
+        content.push('\n');
+    }
+
+    // Discovered facts
+    if !handoff.discovered_facts.is_empty() {
+        content.push_str("### Discovered Facts\n\n");
+        for fact in &handoff.discovered_facts {
+            content.push_str(&format!("- {fact}\n"));
+        }
+        content.push('\n');
+    }
+
+    // Open questions
+    if !handoff.open_questions.is_empty() {
+        content.push_str("### Open Questions\n\n");
+        for question in &handoff.open_questions {
+            content.push_str(&format!("- {question}\n"));
+        }
+        content.push('\n');
+    }
+
+    // Next actions (prioritized)
+    if !handoff.next_actions.is_empty() {
+        content.push_str("### Next Actions (Prioritized)\n\n");
+        for (i, action) in handoff.next_actions.iter().enumerate() {
+            content.push_str(&format!("{}. {action}\n", i + 1));
+        }
+        content.push('\n');
+    }
+
+    // Git state
+    if handoff.branch.is_some() || !handoff.commits.is_empty() || !handoff.uncommitted_files.is_empty()
+    {
+        content.push_str("### Git State\n\n");
+        if let Some(branch) = &handoff.branch {
+            content.push_str(&format!("- **Branch**: {branch}\n"));
+        }
+        if !handoff.commits.is_empty() {
+            content.push_str("- **Commits**:\n");
+            for commit in &handoff.commits {
+                content.push_str(&format!("  - `{}` {}\n", commit.hash, commit.message));
+            }
+        }
+        if !handoff.uncommitted_files.is_empty() {
+            content.push_str("- **Uncommitted Changes**:\n");
+            for file in &handoff.uncommitted_files {
+                content.push_str(&format!("  - {file}\n"));
+            }
+        }
+        content.push('\n');
+    }
+
+    // Files read for context
+    if !handoff.files_read.is_empty() {
+        content.push_str("### Files Read for Context\n\n");
+        for file_ref in &handoff.files_read {
+            let ref_str = file_ref.to_ref_string();
+            content.push_str(&format!("- `{ref_str}` - {}\n", file_ref.purpose));
+        }
+        content.push('\n');
+    }
+
+    // Files modified
+    if !handoff.files_modified.is_empty() {
+        content.push_str("### Files Modified\n\n");
+        for file in &handoff.files_modified {
+            content.push_str(&format!("- `{file}`\n"));
+        }
+        content.push('\n');
+    }
+
+    content
 }

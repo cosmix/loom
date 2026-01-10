@@ -1,10 +1,13 @@
 use crate::handoff::git_handoff::GitHistory;
+use crate::handoff::schema::HandoffV2;
 
 /// Embedded context to include directly in signals so agents don't need to read from main repo
 #[derive(Debug, Clone, Default)]
 pub struct EmbeddedContext {
     /// Content of the handoff file (if resuming from a previous session)
     pub handoff_content: Option<String>,
+    /// Parsed V2 handoff data (if available)
+    pub parsed_handoff: Option<HandoffV2>,
     /// Content of structure.md (codebase structure map)
     pub structure_content: Option<String>,
     /// Plan overview extracted from the plan file

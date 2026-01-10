@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use crate::fs::stage_files::find_stage_file;
 use crate::handoff::generator::find_latest_handoff;
+use crate::handoff::schema::{HandoffV2, ParsedHandoff};
 use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
 
@@ -58,6 +59,33 @@ pub fn load_handoff_content(handoff_path: &Path) -> Result<String> {
 
     fs::read_to_string(handoff_path)
         .with_context(|| format!("Failed to read handoff file: {}", handoff_path.display()))
+}
+
+/// Load and parse a handoff file, returning V2 structured data if available
+///
+/// # Arguments
+/// * `handoff_path` - Path to the handoff markdown file
+///
+/// # Returns
+/// ParsedHandoff which is either V2 structured data or V1 fallback content
+pub fn load_and_parse_handoff(handoff_path: &Path) -> Result<ParsedHandoff> {
+    let content = load_handoff_content(handoff_path)?;
+    Ok(ParsedHandoff::parse(&content))
+}
+
+/// Load handoff as V2 structured data if possible, otherwise return None
+///
+/// This is useful when you specifically need V2 data and want to handle
+/// V1 fallback separately.
+///
+/// # Arguments
+/// * `handoff_path` - Path to the handoff markdown file
+///
+/// # Returns
+/// Some(HandoffV2) if the file contains valid V2 data, None otherwise
+pub fn load_handoff_v2(handoff_path: &Path) -> Result<Option<HandoffV2>> {
+    let parsed = load_and_parse_handoff(handoff_path)?;
+    Ok(parsed.as_v2().cloned())
 }
 
 /// Load a stage from .work/stages/

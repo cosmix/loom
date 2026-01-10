@@ -157,6 +157,7 @@ fn test_format_signal_content_with_embedded_context() {
     let worktree = create_test_worktree();
     let embedded_context = EmbeddedContext {
         handoff_content: Some("# Handoff\nPrevious session completed tasks A and B.".to_string()),
+        parsed_handoff: None,
         structure_content: Some("# Structure\nsrc/\n  main.rs\n  lib.rs".to_string()),
         plan_overview: Some("# Plan Title\n\n## Overview\nThis plan does X.".to_string()),
         facts_content: None,

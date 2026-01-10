@@ -1,6 +1,7 @@
 //! Handoff content data structures and builder methods.
 
 use crate::handoff::git_handoff::GitHistory;
+use crate::handoff::schema::{CommitRef, CompletedTask, HandoffV2, KeyDecision};
 
 /// Content for generating a handoff file
 #[derive(Debug, Clone)]
@@ -104,5 +105,59 @@ impl HandoffContent {
     pub fn with_git_history(mut self, history: Option<GitHistory>) -> Self {
         self.git_history = history;
         self
+    }
+
+    /// Convert to HandoffV2 structured format
+    pub fn to_v2(&self) -> HandoffV2 {
+        // Convert completed_work strings to CompletedTask structs
+        let completed_tasks: Vec<CompletedTask> = self
+            .completed_work
+            .iter()
+            .map(|work| CompletedTask::new(work.clone()))
+            .collect();
+
+        // Convert decisions tuples to KeyDecision structs
+        let key_decisions: Vec<KeyDecision> = self
+            .decisions
+            .iter()
+            .map(|(decision, rationale)| KeyDecision::new(decision.clone(), rationale.clone()))
+            .collect();
+
+        // Convert git history commits if available
+        let commits: Vec<CommitRef> = self
+            .git_history
+            .as_ref()
+            .map(|h| {
+                h.commits
+                    .iter()
+                    .map(|c| CommitRef::new(c.hash.clone(), c.message.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // Get uncommitted files from git history
+        let uncommitted_files: Vec<String> = self
+            .git_history
+            .as_ref()
+            .map(|h| h.uncommitted_changes.clone())
+            .unwrap_or_default();
+
+        // Learnings become discovered_facts in V2
+        let discovered_facts = self.learnings.clone();
+
+        HandoffV2::new(&self.session_id, &self.stage_id)
+            .with_context_percent(self.context_percent)
+            .with_completed_tasks(completed_tasks)
+            .with_key_decisions(key_decisions)
+            .with_discovered_facts(discovered_facts)
+            .with_next_actions(self.next_steps.clone())
+            .with_branch(
+                self.current_branch
+                    .clone()
+                    .unwrap_or_else(|| "unknown".to_string()),
+            )
+            .with_commits(commits)
+            .with_uncommitted_files(uncommitted_files)
+            .with_files_modified(self.files_modified.clone())
     }
 }

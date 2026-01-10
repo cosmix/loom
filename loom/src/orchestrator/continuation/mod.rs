@@ -15,7 +15,10 @@ mod yaml_parse;
 #[cfg(test)]
 mod tests;
 
-pub use context::{load_handoff_content, prepare_continuation, ContinuationContext};
+pub use context::{
+    load_and_parse_handoff, load_handoff_content, load_handoff_v2, prepare_continuation,
+    ContinuationContext,
+};
 pub use session_io::{save_session, session_to_markdown};
 pub use yaml_parse::{extract_yaml_frontmatter, parse_stage_from_markdown};
 

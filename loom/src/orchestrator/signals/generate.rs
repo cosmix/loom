@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::fs::facts::FactsStore;
 use crate::fs::knowledge::KnowledgeDir;
 use crate::handoff::git_handoff::GitHistory;
+use crate::handoff::schema::ParsedHandoff;
 use crate::models::session::Session;
 use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
@@ -59,7 +60,20 @@ pub(super) fn build_embedded_context(
     if let Some(handoff_name) = handoff_file {
         let handoff_path = work_dir.join("handoffs").join(format!("{handoff_name}.md"));
         if handoff_path.exists() {
-            context.handoff_content = fs::read_to_string(&handoff_path).ok();
+            if let Ok(content) = fs::read_to_string(&handoff_path) {
+                // Try to parse as V2, fall back to V1
+                match ParsedHandoff::parse(&content) {
+                    ParsedHandoff::V2(handoff) => {
+                        context.parsed_handoff = Some(handoff);
+                        // Still store full content for human-readable sections
+                        context.handoff_content = Some(content);
+                    }
+                    ParsedHandoff::V1Fallback(_) => {
+                        // V1 format: just store the raw content
+                        context.handoff_content = Some(content);
+                    }
+                }
+            }
         }
     }
 
