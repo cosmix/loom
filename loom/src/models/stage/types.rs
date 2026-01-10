@@ -83,21 +83,30 @@ pub struct Stage {
 /// Status of a stage in the execution lifecycle.
 ///
 /// State machine transitions:
-/// - `WaitingForDeps` -> `Queued` (when all dependencies complete)
+/// - `WaitingForDeps` -> `Queued` (when all dependencies are Completed AND merged)
 /// - `Queued` -> `Executing` | `Blocked` (when session spawns, or pre-execution failure)
 /// - `Executing` -> `Completed` | `Blocked` | `NeedsHandoff` | `WaitingForInput`
 /// - `WaitingForInput` -> `Executing` (when input provided)
 /// - `Blocked` -> `Queued` (when unblocked)
 /// - `NeedsHandoff` -> `Queued` (when new session resumes)
-/// - `Completed` is a terminal state
+/// - `Completed` is terminal for work, but stage may still be pending merge
+///
+/// # Scheduling Invariant
+///
+/// A stage transitions to `Queued` only when ALL dependencies have BOTH:
+/// - `status == Completed` (work is done)
+/// - `merged == true` (changes merged to main)
+///
+/// This ensures dependent stages can use main as their base, containing all
+/// dependency work. See also [`crate::plan::graph::NodeStatus`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum StageStatus {
-    /// Stage is waiting for upstream dependencies to complete.
-    /// Cannot be executed until all dependencies reach Completed status.
+    /// Stage is waiting for upstream dependencies to complete AND merge.
+    /// Cannot be executed until all dependencies are Completed with `merged: true`.
     #[serde(rename = "waiting-for-deps", alias = "pending")]
     WaitingForDeps,
 
-    /// Stage dependencies are satisfied; queued for execution.
+    /// Stage dependencies are satisfied and merged; queued for execution.
     /// Orchestrator will pick from Queued stages to spawn sessions.
     #[serde(rename = "queued", alias = "ready")]
     Queued,
@@ -115,7 +124,8 @@ pub enum StageStatus {
     #[serde(rename = "blocked")]
     Blocked,
 
-    /// Stage work is done; terminal state.
+    /// Stage work is done. May still need merging before dependents can run.
+    /// See `merged` field on Stage for merge status.
     #[serde(rename = "completed", alias = "verified")]
     Completed,
 

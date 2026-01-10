@@ -16,7 +16,7 @@ pub use worktree::{
     check_git_available, check_worktree_support, clean_worktrees, cleanup_all_temp_branches,
     cleanup_temp_branch, create_worktree, ensure_work_symlink, get_or_create_worktree,
     get_worktree_path, list_worktrees, remove_worktree, resolve_base_branch, worktree_exists,
-    MergeConflictInfo, ResolvedBase, WorktreeInfo,
+    ResolvedBase, WorktreeInfo,
 };
 
 pub use merge::{

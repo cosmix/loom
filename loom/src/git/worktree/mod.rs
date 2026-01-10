@@ -18,10 +18,7 @@ mod parser;
 mod settings;
 
 // Re-export all public items for backwards compatibility
-pub use base::{
-    cleanup_all_temp_branches, cleanup_temp_branch, resolve_base_branch, MergeConflictInfo,
-    ResolvedBase,
-};
+pub use base::{cleanup_all_temp_branches, cleanup_temp_branch, resolve_base_branch, ResolvedBase};
 pub use checks::{check_git_available, check_worktree_support, get_worktree_path, worktree_exists};
 pub use operations::{
     clean_worktrees, create_worktree, get_or_create_worktree, list_worktrees, remove_worktree,

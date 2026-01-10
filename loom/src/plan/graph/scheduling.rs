@@ -5,24 +5,36 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::nodes::{NodeStatus, StageNode};
 
-/// Update which stages are ready (all deps satisfied)
+/// Update which stages are ready (all deps satisfied AND merged).
+///
+/// A stage transitions from `WaitingForDeps` to `Queued` when:
+/// - It has no dependencies, OR
+/// - All dependencies have BOTH `status == Completed` AND `merged == true`
+///
+/// This ensures dependent stages can use the merge point (main) as their base,
+/// which contains all dependency work.
 pub fn update_ready_status(nodes: &mut HashMap<String, StageNode>) {
+    // Stages with no dependencies are immediately ready
     for node in nodes.values_mut() {
         if node.status == NodeStatus::WaitingForDeps && node.dependencies.is_empty() {
             node.status = NodeStatus::Queued;
         }
     }
 
-    // Also check if dependencies are completed
-    let completed: HashSet<_> = nodes
+    // Collect stages that are completed AND merged - only these satisfy dependencies
+    let completed_and_merged: HashSet<_> = nodes
         .values()
-        .filter(|n| n.status == NodeStatus::Completed)
+        .filter(|n| n.status == NodeStatus::Completed && n.merged)
         .map(|n| n.id.clone())
         .collect();
 
     for node in nodes.values_mut() {
         if node.status == NodeStatus::WaitingForDeps {
-            let deps_satisfied = node.dependencies.iter().all(|d| completed.contains(d));
+            // All deps must be completed AND merged
+            let deps_satisfied = node
+                .dependencies
+                .iter()
+                .all(|d| completed_and_merged.contains(d));
             if deps_satisfied {
                 node.status = NodeStatus::Queued;
             }
