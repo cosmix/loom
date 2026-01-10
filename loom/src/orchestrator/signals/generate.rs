@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::fs::facts::FactsStore;
 use crate::handoff::git_handoff::GitHistory;
 use crate::models::session::Session;
 use crate::models::stage::Stage;
@@ -26,7 +27,7 @@ pub fn generate_signal(
     }
 
     // Build embedded context by reading files
-    let embedded_context = build_embedded_context(work_dir, handoff_file);
+    let embedded_context = build_embedded_context(work_dir, handoff_file, &stage.id);
 
     let signal_path = signals_dir.join(format!("{}.md", session.id));
     let content = format_signal_content(
@@ -45,10 +46,11 @@ pub fn generate_signal(
     Ok(signal_path)
 }
 
-/// Build embedded context by reading handoff, structure.md, and plan overview files
+/// Build embedded context by reading handoff, structure.md, plan overview, and facts files
 pub(super) fn build_embedded_context(
     work_dir: &Path,
     handoff_file: Option<&str>,
+    stage_id: &str,
 ) -> EmbeddedContext {
     let mut context = EmbeddedContext::default();
 
@@ -68,6 +70,11 @@ pub(super) fn build_embedded_context(
 
     // Read plan overview from config.toml and the plan file
     context.plan_overview = read_plan_overview(work_dir);
+
+    // Read relevant facts for this stage
+    if let Ok(facts_store) = FactsStore::load(work_dir) {
+        context.facts_content = facts_store.format_for_signal(stage_id);
+    }
 
     context
 }

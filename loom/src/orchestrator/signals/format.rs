@@ -32,22 +32,32 @@ pub fn format_signal_content(
     // Explicit isolation boundaries
     content.push_str("**Isolation Boundaries (STRICT):**\n\n");
     content.push_str("- You are **CONFINED** to this worktree - do not access files outside it\n");
-    content.push_str("- All context you need is embedded below - reading main repo files is **FORBIDDEN**\n");
-    content.push_str("- Git commands must target THIS worktree only - no `git -C`, no `cd ../..`\n\n");
+    content.push_str(
+        "- All context you need is embedded below - reading main repo files is **FORBIDDEN**\n",
+    );
+    content
+        .push_str("- Git commands must target THIS worktree only - no `git -C`, no `cd ../..`\n\n");
 
     // Path boundaries subsection
     content.push_str("### Path Boundaries\n\n");
     content.push_str("| Type | Paths |\n");
     content.push_str("|------|-------|\n");
-    content.push_str("| **ALLOWED** | `.` (this worktree), `.work/` (symlink to orchestration) |\n");
-    content.push_str("| **FORBIDDEN** | `../..`, absolute paths to main repo, any path outside worktree |\n\n");
+    content
+        .push_str("| **ALLOWED** | `.` (this worktree), `.work/` (symlink to orchestration) |\n");
+    content.push_str(
+        "| **FORBIDDEN** | `../..`, absolute paths to main repo, any path outside worktree |\n\n",
+    );
 
     // Add reminder to follow CLAUDE.md rules
     content.push_str("## Execution Rules\n\n");
     content.push_str("Follow your `~/.claude/CLAUDE.md` and project `CLAUDE.md` rules (both are symlinked into this worktree). Key reminders:\n\n");
     content.push_str("**Worktree Isolation (CRITICAL):**\n");
-    content.push_str("- **STAY IN THIS WORKTREE** - never read files from main repo or other worktrees\n");
-    content.push_str("- **All context is embedded above** - you have everything you need in this signal\n");
+    content.push_str(
+        "- **STAY IN THIS WORKTREE** - never read files from main repo or other worktrees\n",
+    );
+    content.push_str(
+        "- **All context is embedded above** - you have everything you need in this signal\n",
+    );
     content.push_str("- **No path escaping** - do not use `../..`, `cd` to parent directories, or absolute paths outside worktree\n\n");
     content.push_str("**Delegation & Efficiency:**\n");
     content.push_str(
@@ -59,7 +69,8 @@ pub fn format_signal_content(
     content.push_str("- **Verify acceptance criteria** before marking stage complete\n");
     content.push_str("- **Create handoff** if context exceeds 75%\n\n");
     content.push_str("**Git Staging (CRITICAL):**\n");
-    content.push_str("- **ALWAYS use `git add <specific-files>`** - stage only files you modified\n");
+    content
+        .push_str("- **ALWAYS use `git add <specific-files>`** - stage only files you modified\n");
     content.push_str("- **NEVER use `git add -A` or `git add .`** - these include `.work` which must NOT be committed\n");
     content.push_str("- `.work` is a symlink to shared orchestration state - never stage it\n\n");
 
@@ -159,6 +170,17 @@ pub fn format_signal_content(
             content.push_str(&format!("- {file}\n"));
         }
         content.push('\n');
+    }
+
+    // Embed facts for recitation (Manus pattern)
+    if let Some(facts_content) = &embedded_context.facts_content {
+        content.push_str("## Known Facts\n\n");
+        content.push_str("These facts were recorded by previous stages or this stage. High-confidence facts from other stages are included.\n\n");
+        content.push_str(facts_content);
+        content.push('\n');
+        content.push_str(
+            "To add a new fact: `loom fact set <key> <value> [--confidence high|medium|low]`\n\n",
+        );
     }
 
     content

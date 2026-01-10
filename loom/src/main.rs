@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 use loom::commands::{
-    attach, clean, diagnose, graph, init, merge, resume, run, self_update, sessions, stage, status,
-    stop, worktree_cmd,
+    attach, clean, diagnose, fact, graph, init, merge, resume, run, self_update, sessions, stage,
+    status, stop, worktree_cmd,
 };
 use loom::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use loom::validation::{clap_description_validator, clap_id_validator};
@@ -119,6 +119,12 @@ enum Commands {
     Stage {
         #[command(subcommand)]
         command: StageCommands,
+    },
+
+    /// Manage shared facts across stages
+    Fact {
+        #[command(subcommand)]
+        command: FactCommands,
     },
 
     /// Update loom and configuration files
@@ -306,6 +312,39 @@ enum StageCommands {
 }
 
 #[derive(Subcommand)]
+enum FactCommands {
+    /// Set a fact (key-value pair shared across stages)
+    Set {
+        /// Fact key (alphanumeric, dash, underscore only; max 64 characters)
+        key: String,
+
+        /// Fact value (max 500 characters)
+        value: String,
+
+        /// Stage ID that owns this fact (auto-detected from worktree if not provided)
+        #[arg(short, long, value_parser = clap_id_validator)]
+        stage: Option<String>,
+
+        /// Confidence level: low, medium (default), high
+        #[arg(short, long)]
+        confidence: Option<String>,
+    },
+
+    /// Get a fact by key
+    Get {
+        /// Fact key to retrieve
+        key: String,
+    },
+
+    /// List facts (optionally filtered by stage)
+    List {
+        /// Filter by stage ID
+        #[arg(short, long, value_parser = clap_id_validator)]
+        stage: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
 enum AttachCommands {
     /// Attach to all running sessions in a unified tmux view
     All {
@@ -404,6 +443,16 @@ fn main() -> Result<()> {
             StageCommands::Release { stage_id } => stage::release(stage_id),
             StageCommands::Skip { stage_id, reason } => stage::skip(stage_id, reason),
             StageCommands::Retry { stage_id, force } => stage::retry(stage_id, force),
+        },
+        Commands::Fact { command } => match command {
+            FactCommands::Set {
+                key,
+                value,
+                stage,
+                confidence,
+            } => fact::set(key, value, stage, confidence),
+            FactCommands::Get { key } => fact::get(key),
+            FactCommands::List { stage } => fact::list(stage),
         },
         Commands::SelfUpdate => self_update::execute(),
         Commands::Clean {
