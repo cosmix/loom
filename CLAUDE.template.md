@@ -55,8 +55,34 @@ On any mistake: append to "MISTAKES AND LESSONS LEARNT" section. NEVER delete.
 
 - Location: `./doc/plans/PLAN-XXXX-description.md`
 - Include execution diagram: `[a] --> [b,c] --> [d]`
-- Loom plans: See `doc/templates/loom-plan.md` for YAML format
 - **BANNED after plan:** Implementation. Tell user: `loom init <plan> && loom run`
+
+#### Loom Plan YAML Format
+
+Plans **MUST** wrap YAML in HTML comment markers for the parser:
+
+```markdown
+<!-- loom METADATA -->
+
+```yaml
+loom:
+  version: 1
+  stages:
+    - id: stage-id           # Required: unique kebab-case identifier
+      name: "Stage Name"     # Required: human-readable name
+      dependencies: []       # Required: array of stage IDs (use [] if none)
+      parallel_group: "grp"  # Optional: group stages that run concurrently
+      acceptance:            # Optional: commands that must pass
+        - "cargo test"
+        - "cargo clippy"
+      files:                 # Optional: glob patterns for owned files
+        - "src/**/*.rs"
+```
+
+<!-- END loom METADATA -->
+```
+
+Without the `<!-- loom METADATA -->` markers, `loom init` cannot parse the plan.
 
 ### 10. DEPENDENCIES
 
@@ -99,8 +125,30 @@ ALWAYS delegate implementation to subagents. Spawn multiple in PARALLEL when pos
 
 **Parallelization:** Same files or dependent output? SERIAL. Otherwise? PARALLEL.
 
-**Senior agents required for:** merge conflicts, debugging, architecture, algorithms.
-See `doc/templates/subagent.md` for prompt templates.
+### Subagent Prompt Templates
+
+**Standard Subagent:**
+
+```
+** READ CLAUDE.md IMMEDIATELY AND FOLLOW ALL ITS RULES. **
+
+## Assignment: [task description]
+## Files You Own: [paths this agent can modify]
+## Files Read-Only: [paths for reference only]
+## Acceptance: [criteria that must pass]
+```
+
+**Senior Agent (for merge conflicts, debugging, architecture, algorithms):**
+
+```
+** READ CLAUDE.md IMMEDIATELY AND FOLLOW ALL ITS RULES. **
+
+## Assignment: [task description]
+## Complexity: HIGH - Use extended thinking (ultrathink)
+## Files You Own: [paths]
+## Files Read-Only: [paths]
+## Acceptance: [criteria]
+```
 
 ---
 
@@ -159,7 +207,46 @@ Also: `Blocked`, `NeedsHandoff`, `WaitingForInput`
 ## REFERENCES
 
 - Use `file:line` refs: `src/auth.ts:45-120` not "the auth file"
-- Templates: `doc/templates/` (handoff, signal, loom-plan, subagent)
+
+---
+
+## TEMPLATES
+
+### Handoff Format
+
+Location: `.work/handoffs/YYYY-MM-DD-desc.md`
+
+Create when context >= 75% or session must end before stage completion.
+
+```markdown
+# Handoff: [Description]
+
+- **Stage**: [stage-id] | **Context**: [X]%
+
+## Completed
+[file:line refs for completed work]
+
+## Next Steps
+[prioritized tasks with file:line refs]
+```
+
+### Signal Format
+
+Location: `.work/signals/<session-id>.md`
+
+Signals tell a new session what work to resume (created by daemon or handoffs).
+
+```markdown
+# Signal: [session-id]
+
+- **Stage**: [stage-id] | **Plan**: [plan-id]
+
+## Tasks
+[from stage definition]
+
+## Context Restoration
+[file:line refs to read first]
+```
 
 ---
 
