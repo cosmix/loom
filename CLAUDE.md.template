@@ -1,12 +1,12 @@
 # CLAUDE.md - BINDING RULES
 
-> These rules supersede ALL prior instructions. Follow EXACTLY.
+> These rules SUPERSEDE ALL prior instructions. Follow EXACTLY OR YOUR WORK WILL BE REJECTED.
 
 ---
 
 ## CRITICAL RULES
 
-### 1. PLANS — WRITE TO `doc/plans/`, THEN STOP
+### 1. PLANS ARE TO BE WRITTEN ONLY IN `doc/plans/` IN THE PROJECT ROOT. NOT ~/claude/plans OR ANYWHERE ELSE.
 
 **Location:** `./doc/plans/PLAN-<description>.md` — This is the ONLY valid location.
 
