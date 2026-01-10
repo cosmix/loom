@@ -161,6 +161,7 @@ fn test_format_signal_content_with_embedded_context() {
         plan_overview: Some("# Plan Title\n\n## Overview\nThis plan does X.".to_string()),
         facts_content: None,
         learnings_content: None,
+        memory_content: None,
     };
 
     let content = format_signal_content(
@@ -203,6 +204,7 @@ fn test_format_signal_content_with_facts() {
             "| Key | Value | Source | Confidence |\n|-----|-------|--------|------------|\n| auth_pattern | JWT tokens | implement-auth | high |\n".to_string(),
         ),
         learnings_content: None,
+        memory_content: None,
     };
 
     let content = format_signal_content(

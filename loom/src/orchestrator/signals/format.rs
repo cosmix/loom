@@ -183,8 +183,7 @@ pub fn format_signal_content(
         );
     }
 
-    // Embed learnings at the END for attention optimization (recency bias)
-    // This ensures agents are reminded of lessons right before starting work
+    // Embed learnings for attention optimization
     if let Some(learnings_content) = &embedded_context.learnings_content {
         content.push_str("## Recent Learnings\n\n");
         content.push_str("**REVIEW THESE BEFORE STARTING** - Lessons from previous sessions:\n\n");
@@ -193,6 +192,18 @@ pub fn format_signal_content(
         content.push_str("- `loom learn mistake \"description\" [--correction \"fix\"]`\n");
         content.push_str("- `loom learn pattern \"description\"`\n");
         content.push_str("- `loom learn convention \"description\"`\n\n");
+    }
+
+    // Embed session memory at the END for maximum attention (Manus recitation pattern)
+    // Recent notes, decisions, and questions stay in agent's working memory
+    if let Some(memory_content) = &embedded_context.memory_content {
+        content.push_str("## Session Memory\n\n");
+        content.push_str("**YOUR WORKING MEMORY** - Notes and decisions from this session:\n\n");
+        content.push_str(memory_content);
+        content.push_str("To record to memory:\n");
+        content.push_str("- `loom memory note \"observation\"`\n");
+        content.push_str("- `loom memory decision \"choice\" --context \"rationale\"`\n");
+        content.push_str("- `loom memory question \"open question\"`\n\n");
     }
 
     content

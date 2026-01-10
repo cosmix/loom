@@ -114,6 +114,12 @@ pub fn format_handoff_markdown(content: &HandoffContent) -> Result<String> {
             md.push_str(&format!("- {learning}\n"));
         }
     }
+    md.push('\n');
+
+    // Session Memory (if available)
+    if let Some(memory) = &content.memory_content {
+        md.push_str(memory);
+    }
 
     Ok(md)
 }

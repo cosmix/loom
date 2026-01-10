@@ -13,6 +13,8 @@ pub struct EmbeddedContext {
     pub facts_content: Option<String>,
     /// Recent learnings for recitation (formatted as markdown)
     pub learnings_content: Option<String>,
+    /// Recent memory entries for recitation (Manus pattern - keeps context in attention)
+    pub memory_content: Option<String>,
 }
 
 #[derive(Debug, Clone)]

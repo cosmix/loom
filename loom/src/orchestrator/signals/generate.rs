@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::fs::facts::FactsStore;
 use crate::fs::learnings::format_learnings_for_signal;
+use crate::fs::memory::format_memory_for_signal;
 use crate::handoff::git_handoff::GitHistory;
 use crate::models::session::Session;
 use crate::models::stage::Stage;
@@ -27,8 +28,13 @@ pub fn generate_signal(
         fs::create_dir_all(&signals_dir).context("Failed to create signals directory")?;
     }
 
-    // Build embedded context by reading files
-    let embedded_context = build_embedded_context(work_dir, handoff_file, &stage.id);
+    // Build embedded context by reading files, including session memory for recitation
+    let embedded_context = build_embedded_context_with_session(
+        work_dir,
+        handoff_file,
+        &stage.id,
+        Some(&session.id),
+    );
 
     let signal_path = signals_dir.join(format!("{}.md", session.id));
     let content = format_signal_content(
@@ -47,11 +53,12 @@ pub fn generate_signal(
     Ok(signal_path)
 }
 
-/// Build embedded context by reading handoff, structure.md, plan overview, and facts files
-pub(super) fn build_embedded_context(
+/// Build embedded context with optional session ID for memory recitation
+pub(super) fn build_embedded_context_with_session(
     work_dir: &Path,
     handoff_file: Option<&str>,
     stage_id: &str,
+    session_id: Option<&str>,
 ) -> EmbeddedContext {
     let mut context = EmbeddedContext::default();
 
@@ -79,6 +86,12 @@ pub(super) fn build_embedded_context(
 
     // Read recent learnings for recitation (last 3 per category)
     context.learnings_content = format_learnings_for_signal(work_dir, 3);
+
+    // Read recent memory entries for recitation (Manus pattern - last 10 entries)
+    // This keeps important session context in the attention window
+    if let Some(sid) = session_id {
+        context.memory_content = format_memory_for_signal(work_dir, sid, 10);
+    }
 
     context
 }

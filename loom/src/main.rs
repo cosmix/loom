@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 use loom::commands::{
-    attach, clean, diagnose, fact, graph, init, learn, merge, resume, run, self_update, sessions,
-    stage, status, stop, worktree_cmd,
+    attach, clean, diagnose, fact, graph, init, learn, memory, merge, resume, run, self_update,
+    sessions, stage, status, stop, worktree_cmd,
 };
 use loom::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use loom::validation::{clap_description_validator, clap_id_validator};
@@ -131,6 +131,12 @@ enum Commands {
     Learn {
         #[command(subcommand)]
         command: LearnCommands,
+    },
+
+    /// Manage session memory journal (notes, decisions, questions)
+    Memory {
+        #[command(subcommand)]
+        command: MemoryCommands,
     },
 
     /// Update loom and configuration files
@@ -397,6 +403,74 @@ enum LearnCommands {
 }
 
 #[derive(Subcommand)]
+enum MemoryCommands {
+    /// Record a note in the session memory
+    Note {
+        /// The note text
+        text: String,
+
+        /// Session ID (auto-detected from worktree if not provided)
+        #[arg(short, long, value_parser = clap_id_validator)]
+        session: Option<String>,
+    },
+
+    /// Record a decision with optional rationale
+    Decision {
+        /// The decision text
+        text: String,
+
+        /// Context or rationale for the decision
+        #[arg(short, long)]
+        context: Option<String>,
+
+        /// Session ID (auto-detected from worktree if not provided)
+        #[arg(short, long, value_parser = clap_id_validator)]
+        session: Option<String>,
+    },
+
+    /// Record an open question
+    Question {
+        /// The question text
+        text: String,
+
+        /// Session ID (auto-detected from worktree if not provided)
+        #[arg(short, long, value_parser = clap_id_validator)]
+        session: Option<String>,
+    },
+
+    /// Search memory entries
+    Query {
+        /// Search term
+        search: String,
+
+        /// Session ID to search (searches all if not provided)
+        #[arg(short, long, value_parser = clap_id_validator)]
+        session: Option<String>,
+    },
+
+    /// List memory entries from a session
+    List {
+        /// Session ID (auto-detected if not provided)
+        #[arg(short, long, value_parser = clap_id_validator)]
+        session: Option<String>,
+
+        /// Filter by entry type (note, decision, question)
+        #[arg(short = 't', long)]
+        entry_type: Option<String>,
+    },
+
+    /// Show full memory journal
+    Show {
+        /// Session ID (auto-detected if not provided)
+        #[arg(short, long, value_parser = clap_id_validator)]
+        session: Option<String>,
+    },
+
+    /// List all memory journals
+    Sessions,
+}
+
+#[derive(Subcommand)]
 enum AttachCommands {
     /// Attach to all running sessions in a unified tmux view
     All {
@@ -519,6 +593,19 @@ fn main() -> Result<()> {
                 source,
             } => learn::guidance(description, human, source),
             LearnCommands::List { category } => learn::list(category),
+        },
+        Commands::Memory { command } => match command {
+            MemoryCommands::Note { text, session } => memory::note(text, session),
+            MemoryCommands::Decision {
+                text,
+                context,
+                session,
+            } => memory::decision(text, context, session),
+            MemoryCommands::Question { text, session } => memory::question(text, session),
+            MemoryCommands::Query { search, session } => memory::query(search, session),
+            MemoryCommands::List { session, entry_type } => memory::list(session, entry_type),
+            MemoryCommands::Show { session } => memory::show(session),
+            MemoryCommands::Sessions => memory::sessions(),
         },
         Commands::SelfUpdate => self_update::execute(),
         Commands::Clean {
