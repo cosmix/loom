@@ -2,7 +2,7 @@
 
 use anyhow::{bail, Context, Result};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use uuid::Uuid;
 
@@ -81,9 +81,9 @@ pub fn execute(stage_id: &str) -> Result<()> {
 
     match tmux_result {
         Ok(status) if status.success() => {
-            println!("Diagnosis session '{}' started in tmux.", session_id);
+            println!("Diagnosis session '{session_id}' started in tmux.");
             println!();
-            println!("To attach: tmux attach -t {}", session_id);
+            println!("To attach: tmux attach -t {session_id}");
             println!("Signal file: {}", signal_path.display());
         }
         _ => {
@@ -101,7 +101,7 @@ pub fn execute(stage_id: &str) -> Result<()> {
 }
 
 /// Load crash report for a stage if it exists
-fn load_crash_report(stage_id: &str, work_dir: &PathBuf) -> Option<String> {
+fn load_crash_report(stage_id: &str, work_dir: &Path) -> Option<String> {
     let crashes_dir = work_dir.join("crashes");
     if !crashes_dir.exists() {
         return None;
@@ -127,7 +127,7 @@ fn load_crash_report(stage_id: &str, work_dir: &PathBuf) -> Option<String> {
 /// Get git status from stage's worktree if it exists
 fn get_worktree_git_status(
     stage: &crate::models::stage::Stage,
-    work_dir: &PathBuf,
+    work_dir: &Path,
 ) -> Option<String> {
     let wt = stage.worktree.as_ref()?;
     let worktree_path = work_dir.parent()?.join(".worktrees").join(wt);
@@ -147,7 +147,7 @@ fn get_worktree_git_status(
 /// Get git diff from stage's worktree if it exists
 fn get_worktree_git_diff(
     stage: &crate::models::stage::Stage,
-    work_dir: &PathBuf,
+    work_dir: &Path,
 ) -> Option<String> {
     let wt = stage.worktree.as_ref()?;
     let worktree_path = work_dir.parent()?.join(".worktrees").join(wt);
@@ -171,7 +171,7 @@ fn generate_diagnosis_signal(
     crash_report: Option<&str>,
     git_status: Option<&str>,
     git_diff: Option<&str>,
-    work_dir: &PathBuf,
+    work_dir: &Path,
 ) -> Result<PathBuf> {
     let signals_dir = work_dir.join("signals");
 
@@ -179,7 +179,7 @@ fn generate_diagnosis_signal(
         fs::create_dir_all(&signals_dir).context("Failed to create signals directory")?;
     }
 
-    let signal_path = signals_dir.join(format!("{}.md", session_id));
+    let signal_path = signals_dir.join(format!("{session_id}.md"));
     let content = format_diagnosis_signal(session_id, stage, crash_report, git_status, git_diff);
 
     fs::write(&signal_path, content)
@@ -198,7 +198,7 @@ fn format_diagnosis_signal(
 ) -> String {
     let mut content = String::new();
 
-    content.push_str(&format!("# Diagnosis Signal: {}\n\n", session_id));
+    content.push_str(&format!("# Diagnosis Signal: {session_id}\n\n"));
 
     // Context
     content.push_str("## Diagnosis Context\n\n");
@@ -218,11 +218,11 @@ fn format_diagnosis_signal(
 
     // Target information
     content.push_str("## Target\n\n");
-    content.push_str(&format!("- **Session**: {}\n", session_id));
+    content.push_str(&format!("- **Session**: {session_id}\n"));
     content.push_str(&format!("- **Stage**: {}\n", stage.id));
     content.push_str(&format!("- **Status**: {}\n", stage.status));
     if let Some(reason) = &stage.close_reason {
-        content.push_str(&format!("- **Block Reason**: {}\n", reason));
+        content.push_str(&format!("- **Block Reason**: {reason}\n"));
     }
     content.push('\n');
 
@@ -230,14 +230,14 @@ fn format_diagnosis_signal(
     content.push_str("## Stage Context\n\n");
     content.push_str(&format!("**{}**\n\n", stage.name));
     if let Some(desc) = &stage.description {
-        content.push_str(&format!("{}\n\n", desc));
+        content.push_str(&format!("{desc}\n\n"));
     }
 
     // Acceptance criteria
     if !stage.acceptance.is_empty() {
         content.push_str("### Acceptance Criteria\n\n");
         for criterion in &stage.acceptance {
-            content.push_str(&format!("- [ ] {}\n", criterion));
+            content.push_str(&format!("- [ ] {criterion}\n"));
         }
         content.push('\n');
     }
@@ -254,7 +254,7 @@ fn format_diagnosis_signal(
         if !failure_info.evidence.is_empty() {
             content.push_str("\n### Evidence\n\n");
             for evidence in &failure_info.evidence {
-                content.push_str(&format!("- {}\n", evidence));
+                content.push_str(&format!("- {evidence}\n"));
             }
             content.push('\n');
         }
@@ -297,10 +297,10 @@ fn format_diagnosis_signal(
         content.push_str("## Retry History\n\n");
         content.push_str(&format!("- **Retry Count**: {}\n", stage.retry_count));
         if let Some(max) = stage.max_retries {
-            content.push_str(&format!("- **Max Retries**: {}\n", max));
+            content.push_str(&format!("- **Max Retries**: {max}\n"));
         }
         if let Some(last_failure) = stage.last_failure_at {
-            content.push_str(&format!("- **Last Failure**: {}\n", last_failure));
+            content.push_str(&format!("- **Last Failure**: {last_failure}\n"));
         }
         content.push('\n');
     }

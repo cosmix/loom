@@ -1,75 +1,11 @@
-//! E2E tests for context exhaustion detection and handoff automation
+//! Handoff generation tests
 
-use loom::handoff::detector::{check_context_threshold, ContextLevel};
 use loom::handoff::generator::{generate_handoff, HandoffContent};
-use loom::models::constants::{CONTEXT_WARNING_THRESHOLD, DEFAULT_CONTEXT_LIMIT};
-use loom::models::session::{Session, SessionStatus};
-use loom::models::stage::{Stage, StageStatus};
+use loom::models::constants::DEFAULT_CONTEXT_LIMIT;
+use loom::models::session::Session;
+use loom::models::stage::Stage;
 use std::fs;
 use tempfile::TempDir;
-
-#[test]
-fn test_context_threshold_detection() {
-    let mut session = Session::new();
-    session.context_limit = 200_000;
-
-    // Below threshold (50%)
-    session.context_tokens = 100_000;
-    assert!(!session.is_context_exhausted());
-    assert_eq!(check_context_threshold(&session), ContextLevel::Green);
-
-    // Just below threshold (74%)
-    session.context_tokens = 148_000;
-    assert!(!session.is_context_exhausted());
-    assert_eq!(check_context_threshold(&session), ContextLevel::Yellow);
-
-    // At threshold (75%)
-    session.context_tokens = 150_000;
-    assert!(session.is_context_exhausted());
-    assert_eq!(check_context_threshold(&session), ContextLevel::Red);
-
-    // Above threshold (80%)
-    session.context_tokens = 160_000;
-    assert!(session.is_context_exhausted());
-    assert_eq!(check_context_threshold(&session), ContextLevel::Red);
-
-    // Well above threshold (90%)
-    session.context_tokens = 180_000;
-    assert!(session.is_context_exhausted());
-    assert_eq!(check_context_threshold(&session), ContextLevel::Red);
-}
-
-#[test]
-fn test_context_health_calculation() {
-    let mut session = Session::new();
-    session.context_limit = 200_000;
-
-    // 50% usage
-    session.context_tokens = 100_000;
-    let health = session.context_health();
-    assert!((health - 50.0).abs() < 0.01);
-
-    // 25% usage
-    session.context_tokens = 50_000;
-    let health = session.context_health();
-    assert!((health - 25.0).abs() < 0.01);
-
-    // 75% usage
-    session.context_tokens = 150_000;
-    let health = session.context_health();
-    assert!((health - 75.0).abs() < 0.01);
-
-    // 100% usage
-    session.context_tokens = 200_000;
-    let health = session.context_health();
-    assert!((health - 100.0).abs() < 0.01);
-
-    // Zero limit edge case
-    session.context_limit = 0;
-    session.context_tokens = 100;
-    let health = session.context_health();
-    assert_eq!(health, 0.0);
-}
 
 #[test]
 fn test_handoff_generation() {
@@ -180,28 +116,6 @@ fn test_handoff_file_naming() {
 }
 
 #[test]
-fn test_session_marks_context_exhausted() {
-    let mut session = Session::new();
-    session.context_limit = DEFAULT_CONTEXT_LIMIT;
-    session.status = SessionStatus::Running;
-
-    // Simulate gradual context usage increase
-    session.context_tokens = 100_000; // 50%
-    assert!(!session.is_context_exhausted());
-    assert_eq!(session.status, SessionStatus::Running);
-
-    // Increase to warning threshold
-    session.context_tokens = 150_000; // 75%
-    assert!(session.is_context_exhausted());
-
-    // Manually mark session as context exhausted
-    session
-        .try_mark_context_exhausted()
-        .expect("Should transition to ContextExhausted");
-    assert_eq!(session.status, SessionStatus::ContextExhausted);
-}
-
-#[test]
 fn test_handoff_includes_required_fields() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = temp_dir.path();
@@ -242,54 +156,6 @@ fn test_handoff_includes_required_fields() {
 
     // Verify content
     assert!(handoff_content.contains("Test all required fields"));
-}
-
-#[test]
-fn test_context_threshold_validation() {
-    let mut session = Session::new();
-    session.context_limit = DEFAULT_CONTEXT_LIMIT;
-
-    // Test the constant is correct
-    assert_eq!(CONTEXT_WARNING_THRESHOLD, 0.75);
-
-    // Test boundary conditions
-    let threshold_tokens = (DEFAULT_CONTEXT_LIMIT as f32 * CONTEXT_WARNING_THRESHOLD) as u32;
-
-    // Just below threshold
-    session.context_tokens = threshold_tokens - 1;
-    assert!(!session.is_context_exhausted());
-
-    // Exactly at threshold
-    session.context_tokens = threshold_tokens;
-    assert!(session.is_context_exhausted());
-
-    // Just above threshold
-    session.context_tokens = threshold_tokens + 1;
-    assert!(session.is_context_exhausted());
-}
-
-#[test]
-fn test_should_handoff_function() {
-    let mut session = Session::new();
-    session.context_limit = 200_000;
-
-    // Green zone - should not handoff
-    session.context_tokens = 50_000; // 25%
-    assert!(!session.is_context_exhausted());
-
-    session.context_tokens = 100_000; // 50%
-    assert!(!session.is_context_exhausted());
-
-    // Yellow zone - should not handoff yet
-    session.context_tokens = 130_000; // 65%
-    assert!(!session.is_context_exhausted());
-
-    // Red zone - should handoff
-    session.context_tokens = 150_000; // 75%
-    assert!(session.is_context_exhausted());
-
-    session.context_tokens = 180_000; // 90%
-    assert!(session.is_context_exhausted());
 }
 
 #[test]
@@ -362,59 +228,6 @@ fn test_multiple_stages_different_handoffs() {
     // Verify each handoff is for the correct stage
     assert!(handoff1.to_string_lossy().contains(&stage1.id));
     assert!(handoff2.to_string_lossy().contains(&stage2.id));
-}
-
-#[test]
-fn test_context_exhausted_triggers_stage_needs_handoff() {
-    let mut session = Session::new();
-    let mut stage = Stage::new("test-stage".to_string(), None);
-
-    // Initial states
-    session.status = SessionStatus::Running;
-    stage.status = StageStatus::Executing;
-
-    // Simulate context exhaustion
-    session.context_limit = DEFAULT_CONTEXT_LIMIT;
-    session.context_tokens = 160_000; // 80%
-
-    assert!(session.is_context_exhausted());
-
-    // Update statuses using validated transitions
-    session
-        .try_mark_context_exhausted()
-        .expect("Should transition to ContextExhausted");
-    stage
-        .try_mark_needs_handoff()
-        .expect("Should transition to NeedsHandoff");
-
-    assert_eq!(session.status, SessionStatus::ContextExhausted);
-    assert_eq!(stage.status, StageStatus::NeedsHandoff);
-}
-
-#[test]
-fn test_context_usage_percent_function() {
-    let mut session = Session::new();
-    session.context_limit = 200_000;
-
-    session.context_tokens = 0;
-    assert_eq!(session.context_health(), 0.0);
-
-    session.context_tokens = 50_000;
-    assert_eq!(session.context_health(), 25.0);
-
-    session.context_tokens = 100_000;
-    assert_eq!(session.context_health(), 50.0);
-
-    session.context_tokens = 150_000;
-    assert_eq!(session.context_health(), 75.0);
-
-    session.context_tokens = 200_000;
-    assert_eq!(session.context_health(), 100.0);
-
-    // Zero limit edge case
-    session.context_limit = 0;
-    session.context_tokens = 1000;
-    assert_eq!(session.context_health(), 0.0);
 }
 
 #[test]
