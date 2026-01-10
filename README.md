@@ -420,6 +420,7 @@ loom merge <stage-id> [--force]
 # - When auto-merge succeeds: worktree branch merged to main, worktree removed
 # - When conflicts occur: loom spawns a Claude Code session to resolve them
 # - If that session terminates before completion, use this to restart it
+# - After conflicts are resolved, use 'loom worktree remove' to clean up
 # - --force: merge even if stage not complete or has active sessions
 
 # Attach to running session or view logs
@@ -446,7 +447,11 @@ Power user commands for fine-grained control:
 loom sessions [list|kill <id>]
 
 # Worktree management
-loom worktree [list|clean]
+loom worktree [list|clean|remove <stage-id>]
+# - list: list all worktrees
+# - clean: clean up unused worktrees
+# - remove: remove specific worktree and branch after merge conflict resolution
+#           (use this after resolving conflicts instead of loom merge)
 
 # View/edit execution graph
 loom graph [show|edit]
