@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::fs::knowledge::KnowledgeDir;
 use crate::handoff::git_handoff::GitHistory;
 use crate::models::session::Session;
 use crate::models::stage::Stage;
@@ -45,7 +46,7 @@ pub fn generate_signal(
     Ok(signal_path)
 }
 
-/// Build embedded context by reading handoff, structure.md, and plan overview files
+/// Build embedded context by reading handoff, structure.md, knowledge, and plan overview files
 pub(super) fn build_embedded_context(
     work_dir: &Path,
     handoff_file: Option<&str>,
@@ -68,6 +69,12 @@ pub(super) fn build_embedded_context(
 
     // Read plan overview from config.toml and the plan file
     context.plan_overview = read_plan_overview(work_dir);
+
+    // Read knowledge summary if knowledge directory exists
+    let knowledge = KnowledgeDir::new(work_dir);
+    if knowledge.exists() {
+        context.knowledge_summary = knowledge.generate_summary().ok().filter(|s| !s.is_empty());
+    }
 
     context
 }

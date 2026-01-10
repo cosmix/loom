@@ -159,6 +159,7 @@ fn test_format_signal_content_with_embedded_context() {
         handoff_content: Some("# Handoff\nPrevious session completed tasks A and B.".to_string()),
         structure_content: Some("# Structure\nsrc/\n  main.rs\n  lib.rs".to_string()),
         plan_overview: Some("# Plan Title\n\n## Overview\nThis plan does X.".to_string()),
+        knowledge_summary: None,
     };
 
     let content = format_signal_content(

@@ -136,6 +136,13 @@ pub fn format_signal_content(
         content.push_str("\n</structure-map>\n\n");
     }
 
+    // Embed knowledge summary if available (curated entry points, patterns, conventions)
+    if let Some(knowledge_summary) = &embedded_context.knowledge_summary {
+        content.push_str("<knowledge>\n");
+        content.push_str(knowledge_summary);
+        content.push_str("\n</knowledge>\n\n");
+    }
+
     // Git History from previous session (if resuming)
     if let Some(history) = git_history {
         content.push_str(&format_git_history_markdown(history));

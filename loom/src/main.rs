@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 use loom::commands::{
-    attach, clean, diagnose, graph, init, merge, resume, run, self_update, sessions, stage, status,
-    stop, worktree_cmd,
+    attach, clean, diagnose, graph, init, knowledge, merge, resume, run, self_update, sessions,
+    stage, status, stop, worktree_cmd,
 };
 use loom::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use loom::validation::{clap_description_validator, clap_id_validator};
@@ -119,6 +119,12 @@ enum Commands {
     Stage {
         #[command(subcommand)]
         command: StageCommands,
+    },
+
+    /// Manage curated codebase knowledge
+    Knowledge {
+        #[command(subcommand)]
+        command: KnowledgeCommands,
     },
 
     /// Update loom and configuration files
@@ -306,6 +312,32 @@ enum StageCommands {
 }
 
 #[derive(Subcommand)]
+enum KnowledgeCommands {
+    /// Show knowledge summary or a specific file
+    Show {
+        /// File to show (entry-points, patterns, conventions)
+        #[arg(value_name = "FILE")]
+        file: Option<String>,
+    },
+
+    /// Update (append to) a knowledge file
+    Update {
+        /// File to update (entry-points, patterns, conventions)
+        file: String,
+
+        /// Content to append (markdown format)
+        #[arg(value_parser = clap_description_validator)]
+        content: String,
+    },
+
+    /// Initialize the knowledge directory
+    Init,
+
+    /// List all knowledge files
+    List,
+}
+
+#[derive(Subcommand)]
 enum AttachCommands {
     /// Attach to all running sessions in a unified tmux view
     All {
@@ -404,6 +436,12 @@ fn main() -> Result<()> {
             StageCommands::Release { stage_id } => stage::release(stage_id),
             StageCommands::Skip { stage_id, reason } => stage::skip(stage_id, reason),
             StageCommands::Retry { stage_id, force } => stage::retry(stage_id, force),
+        },
+        Commands::Knowledge { command } => match command {
+            KnowledgeCommands::Show { file } => knowledge::show(file),
+            KnowledgeCommands::Update { file, content } => knowledge::update(file, content),
+            KnowledgeCommands::Init => knowledge::init(),
+            KnowledgeCommands::List => knowledge::list(),
         },
         Commands::SelfUpdate => self_update::execute(),
         Commands::Clean {

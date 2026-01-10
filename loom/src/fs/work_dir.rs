@@ -87,6 +87,7 @@ This directory is managed by loom CLI and contains:
 - `stages/` - Stage definitions and status
 - `sessions/` - Active session tracking
 - `logs/` - Tmux session logs and crash reports
+- `knowledge/` - Curated codebase knowledge (entry points, patterns, conventions)
 
 Do not manually edit these files unless you know what you're doing.
 "#;
@@ -176,6 +177,10 @@ src/
 
     pub fn crashes_dir(&self) -> PathBuf {
         self.root.join("crashes")
+    }
+
+    pub fn knowledge_dir(&self) -> PathBuf {
+        self.root.join("knowledge")
     }
 
     pub fn root(&self) -> &Path {
