@@ -314,7 +314,7 @@ fn parse_stage_from_markdown(content: &str) -> Result<Stage> {
 ///
 /// Creates a markdown file with YAML frontmatter containing the stage data
 /// followed by a markdown body with stage details.
-fn serialize_stage_to_markdown(stage: &Stage) -> Result<String> {
+pub fn serialize_stage_to_markdown(stage: &Stage) -> Result<String> {
     let yaml = serde_yaml::to_string(stage).context("Failed to serialize Stage to YAML")?;
 
     let mut content = String::new();
