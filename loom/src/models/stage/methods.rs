@@ -33,6 +33,7 @@ impl Stage {
             max_retries: None,
             last_failure_at: None,
             failure_info: None,
+            resolved_base: None,
         }
     }
 
@@ -83,6 +84,11 @@ impl Stage {
 
     pub fn set_worktree(&mut self, worktree_id: Option<String>) {
         self.worktree = worktree_id;
+        self.updated_at = Utc::now();
+    }
+
+    pub fn set_resolved_base(&mut self, base: Option<String>) {
+        self.resolved_base = base;
         self.updated_at = Utc::now();
     }
 

@@ -60,8 +60,50 @@ impl StageExecutor for Orchestrator {
             return Ok(());
         }
 
-        let worktree = git::get_or_create_worktree(stage_id, &self.config.repo_root, None)
-            .with_context(|| format!("Failed to get or create worktree for stage: {stage_id}"))?;
+        // Resolve the base branch for worktree creation
+        let resolved = match git::resolve_base_branch(
+            stage_id,
+            &stage.dependencies,
+            &self.graph,
+            &self.config.repo_root,
+        ) {
+            Ok(resolved) => resolved,
+            Err(e) => {
+                let err_msg = e.to_string();
+
+                // Check for merge conflict - mark stage as Blocked
+                if err_msg.contains("Merge conflict") {
+                    eprintln!(
+                        "Stage '{stage_id}' blocked due to merge conflict: {err_msg}"
+                    );
+                    let mut blocked_stage = self.load_stage(stage_id)?;
+                    if blocked_stage.try_mark_blocked().is_ok() {
+                        self.save_stage(&blocked_stage)?;
+                    }
+                    return Ok(());
+                }
+
+                // Check for scheduling error - skip stage, will retry next cycle
+                if err_msg.contains("Scheduling error") {
+                    eprintln!(
+                        "Stage '{stage_id}' skipped due to scheduling error (will retry): {err_msg}"
+                    );
+                    return Ok(());
+                }
+
+                // Other errors - propagate
+                return Err(e).with_context(|| {
+                    format!("Failed to resolve base branch for stage: {stage_id}")
+                });
+            }
+        };
+
+        let worktree = git::get_or_create_worktree(
+            stage_id,
+            &self.config.repo_root,
+            Some(resolved.branch_name()),
+        )
+        .with_context(|| format!("Failed to get or create worktree for stage: {stage_id}"))?;
 
         let session = Session::new();
 
@@ -115,6 +157,7 @@ impl StageExecutor for Orchestrator {
         let mut updated_stage = stage;
         updated_stage.assign_session(spawned_session.id.clone());
         updated_stage.set_worktree(Some(worktree.id.clone()));
+        updated_stage.set_resolved_base(Some(resolved.branch_name().to_string()));
 
         // Transition through Queued if currently WaitingForDeps (WaitingForDeps -> Queued -> Executing)
         if updated_stage.status == StageStatus::WaitingForDeps {
