@@ -47,6 +47,7 @@ impl ExecutionGraph {
                 files: stage.files.clone(),
                 auto_merge: stage.auto_merge,
                 outputs: Vec::new(),
+                merged: false,
             };
             nodes.insert(stage.id.clone(), node);
 
@@ -267,6 +268,52 @@ impl ExecutionGraph {
     ) {
         if let Some(node) = self.nodes.get_mut(stage_id) {
             node.outputs = outputs;
+        }
+    }
+
+    /// Mark a stage as merged to the merge point.
+    ///
+    /// This is called after progressive merge verifies and merges a completed stage.
+    /// After marking as merged, dependent stages may become ready for scheduling.
+    pub fn mark_merged(&mut self, stage_id: &str) -> Result<Vec<String>> {
+        let node = self
+            .nodes
+            .get_mut(stage_id)
+            .ok_or_else(|| anyhow::anyhow!("Stage not found: {stage_id}"))?;
+
+        if node.status != NodeStatus::Completed {
+            bail!(
+                "Cannot mark '{}' as merged: status is {:?}, expected Completed",
+                stage_id,
+                node.status
+            );
+        }
+
+        node.merged = true;
+
+        // Get dependents that might now be ready
+        let dependents = self.edges.get(stage_id).cloned().unwrap_or_default();
+
+        // Update ready status for all nodes
+        self.update_ready_status();
+
+        // Return newly ready stages
+        let newly_ready: Vec<String> = dependents
+            .into_iter()
+            .filter(|id| {
+                self.nodes
+                    .get(id)
+                    .is_some_and(|n| n.status == NodeStatus::Queued)
+            })
+            .collect();
+
+        Ok(newly_ready)
+    }
+
+    /// Set the merged status for a stage node (used during state sync from disk).
+    pub fn set_node_merged(&mut self, stage_id: &str, merged: bool) {
+        if let Some(node) = self.nodes.get_mut(stage_id) {
+            node.merged = merged;
         }
     }
 }

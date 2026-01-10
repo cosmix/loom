@@ -74,6 +74,19 @@ fn test_mark_completed() {
     graph.mark_executing("a").unwrap();
     let newly_ready = graph.mark_completed("a").unwrap();
 
+    // With the new scheduling invariant, completion alone doesn't satisfy deps.
+    // Stage "b" won't be ready until "a" is also merged.
+    assert!(
+        newly_ready.is_empty(),
+        "Completion alone should not make deps ready"
+    );
+    assert_eq!(
+        graph.get_node("b").unwrap().status,
+        NodeStatus::WaitingForDeps
+    );
+
+    // Now mark as merged - this should make "b" ready
+    let newly_ready = graph.mark_merged("a").unwrap();
     assert_eq!(newly_ready, vec!["b"]);
     assert_eq!(graph.get_node("b").unwrap().status, NodeStatus::Queued);
 }

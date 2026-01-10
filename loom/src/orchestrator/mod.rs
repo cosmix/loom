@@ -3,6 +3,7 @@ pub mod auto_merge;
 pub mod continuation;
 pub mod core;
 pub mod monitor;
+pub mod progressive_merge;
 pub mod retry;
 pub mod signals;
 pub mod skip;
@@ -17,6 +18,10 @@ pub use attach::{
     spawn_gui_windows, AttachableSession, SessionBackend, TerminalEmulator,
 };
 pub use auto_merge::{attempt_auto_merge, is_auto_merge_enabled, AutoMergeResult};
+pub use progressive_merge::{
+    get_merge_point, merge_completed_stage, merge_completed_stage_with_timeout, MergeLock,
+    ProgressiveMergeResult,
+};
 pub use continuation::{
     continue_session, load_handoff_content, prepare_continuation, ContinuationConfig,
     ContinuationContext,

@@ -1,6 +1,10 @@
-//! Cleanup tests for temporary branches
+//! Cleanup tests for temporary branches (legacy)
 //!
-//! Tests for: Cleanup of temp branches after stage completion
+//! Tests for: Cleanup of temp branches after stage completion.
+//!
+//! Note: With progressive merge, temp branches are no longer created by
+//! resolve_base_branch(). These tests verify cleanup of any existing
+//! legacy temp branches.
 
 use serial_test::serial;
 use std::process::Command;
@@ -11,24 +15,28 @@ use loom::git::worktree::{resolve_base_branch, ResolvedBase};
 
 use super::helpers::*;
 
-/// Test 7: Cleanup temp branch after completion
+/// Test: Multi-dep stages with all deps merged use main, not temp branch
+///
+/// With progressive merge, when all dependencies are completed AND merged,
+/// the dependent stage uses main as its base (since all work is there).
 #[test]
 #[serial]
-fn test_cleanup_temp_branch_after_completion() {
+fn test_multi_dep_all_merged_uses_main() {
     let temp_dir = init_test_repo();
     let repo_root = temp_dir.path();
 
-    create_branch_with_file("loom/stage-a", "a.txt", "A", repo_root);
-    create_branch_with_file("loom/stage-b", "b.txt", "B", repo_root);
-
+    // Create branches but we'll mark deps as merged (simulating progressive merge)
     let mut graph = build_test_graph(vec![
         ("stage-a", vec![]),
         ("stage-b", vec![]),
         ("stage-c", vec!["stage-a", "stage-b"]),
     ]);
 
+    // Mark both deps as completed AND merged
     complete_stage(&mut graph, "stage-a");
+    graph.mark_merged("stage-a").expect("Should mark merged");
     complete_stage(&mut graph, "stage-b");
+    graph.mark_merged("stage-b").expect("Should mark merged");
 
     let result = resolve_base_branch(
         "stage-c",
@@ -39,20 +47,17 @@ fn test_cleanup_temp_branch_after_completion() {
     )
     .expect("Should succeed");
 
-    assert!(matches!(result, ResolvedBase::TempMerge(_)));
-
+    // All deps merged - use main as base (no temp branch created)
     assert!(
-        branch_exists("loom/_base/stage-c", repo_root).expect("Failed to check branch"),
-        "Temp branch should exist before cleanup"
+        matches!(result, ResolvedBase::Main(_)),
+        "Expected Main, got {:?}",
+        result
     );
 
-    let cleaned = cleanup_base_branch("stage-c", repo_root).expect("Failed to cleanup");
-
-    assert!(cleaned, "Should have deleted the branch");
-
+    // No temp branch should exist
     assert!(
         !branch_exists("loom/_base/stage-c", repo_root).expect("Failed to check branch"),
-        "Temp branch should not exist after cleanup"
+        "No temp branch should be created when deps are merged"
     );
 }
 

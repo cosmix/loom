@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::orchestrator::{get_merge_point, merge_completed_stage, ProgressiveMergeResult};
 use crate::verify::transitions::{load_stage, save_stage, trigger_dependents};
 
 use super::session::{
@@ -85,6 +86,54 @@ pub fn complete(stage_id: String, session_id: Option<String>, no_verify: bool) -
     save_stage(&stage, work_dir)?;
 
     if all_passed {
+        // Attempt progressive merge into the merge point (base_branch)
+        let repo_root = std::env::current_dir().context("Failed to get current directory")?;
+        let merge_point = get_merge_point(work_dir)?;
+
+        println!("Attempting progressive merge into '{merge_point}'...");
+        match merge_completed_stage(&stage, &repo_root, &merge_point) {
+            Ok(ProgressiveMergeResult::Success { files_changed }) => {
+                println!("  ✓ Merged {files_changed} file(s) into '{merge_point}'");
+                stage.merged = true;
+                save_stage(&stage, work_dir)?;
+            }
+            Ok(ProgressiveMergeResult::FastForward) => {
+                println!("  ✓ Fast-forward merge into '{merge_point}'");
+                stage.merged = true;
+                save_stage(&stage, work_dir)?;
+            }
+            Ok(ProgressiveMergeResult::AlreadyMerged) => {
+                println!("  ✓ Already up to date with '{merge_point}'");
+                stage.merged = true;
+                save_stage(&stage, work_dir)?;
+            }
+            Ok(ProgressiveMergeResult::NoBranch) => {
+                println!("  → No branch to merge (already cleaned up)");
+                stage.merged = true;
+                save_stage(&stage, work_dir)?;
+            }
+            Ok(ProgressiveMergeResult::Conflict { conflicting_files }) => {
+                println!("  ✗ Merge conflict detected!");
+                println!("    Conflicting files:");
+                for file in &conflicting_files {
+                    println!("      - {file}");
+                }
+                println!();
+                println!("    Stage will remain active for conflict resolution.");
+                println!("    Resolve conflicts and run: loom merge {stage_id}");
+                stage.merge_conflict = true;
+                save_stage(&stage, work_dir)?;
+                // Don't trigger dependents when there's a conflict
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("  ✗ Progressive merge failed: {e}");
+                eprintln!("    Stage completed but merge skipped. Run manually:");
+                eprintln!("    loom merge {stage_id}");
+                // Continue with completion even if merge fails
+            }
+        }
+
         println!("Stage '{stage_id}' completed!");
 
         // Trigger dependent stages
