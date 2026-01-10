@@ -26,3 +26,11 @@ logs/
 *.tmp
 *.temp
 .cache/
+
+# loom workspace (created by `loom init`)
+.work/
+
+# Rust build artifacts
+target/
+.worktrees/
+ changes

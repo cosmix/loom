@@ -1,0 +1,258 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (skip release creation)"
+        required: false
+        default: false
+        type: boolean
+
+env:
+  CARGO_TERM_COLOR: always
+  MINISIGN_VERSION: "0.11"
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            binary_name: loom-linux-x86_64
+          - name: darwin-x86_64
+            target: x86_64-apple-darwin
+            os: macos-13
+            binary_name: loom-darwin-x86_64
+          - name: darwin-arm64
+            target: aarch64-apple-darwin
+            os: macos-latest
+            binary_name: loom-darwin-arm64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            loom/target/
+          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('loom/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.target }}-
+            ${{ runner.os }}-cargo-
+
+      - name: Build release binary
+        working-directory: loom
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Strip binary (Linux)
+        if: runner.os == 'Linux'
+        run: strip loom/target/${{ matrix.target }}/release/loom
+
+      - name: Strip binary (macOS)
+        if: runner.os == 'macOS'
+        run: strip loom/target/${{ matrix.target }}/release/loom
+
+      - name: Rename binary
+        run: |
+          cp loom/target/${{ matrix.target }}/release/loom ${{ matrix.binary_name }}
+          chmod +x ${{ matrix.binary_name }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary_name }}
+          path: ${{ matrix.binary_name }}
+          if-no-files-found: error
+
+  sign-and-release:
+    name: Sign and Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release directory
+        run: |
+          mkdir -p release
+          for dir in artifacts/*/; do
+            cp "$dir"* release/ 2>/dev/null || true
+          done
+          chmod +x release/loom-*
+          ls -la release/
+
+      - name: Install minisign
+        run: |
+          curl -sL "https://github.com/jedisct1/minisign/releases/download/${MINISIGN_VERSION}/minisign-${MINISIGN_VERSION}-linux.tar.gz" -o minisign.tar.gz
+          tar -xzf minisign.tar.gz
+          sudo mv minisign-linux/x86_64/minisign /usr/local/bin/
+          rm -rf minisign.tar.gz minisign-linux
+          minisign -v
+
+      - name: Sign binaries
+        env:
+          MINISIGN_PRIVATE_KEY: ${{ secrets.MINISIGN_PRIVATE_KEY }}
+        run: |
+          set -e
+
+          KEYFILE=$(mktemp)
+          trap 'rm -f "$KEYFILE"' EXIT
+
+          echo "$MINISIGN_PRIVATE_KEY" > "$KEYFILE"
+
+          cd release
+          for binary in loom-*; do
+            if [ -f "$binary" ] && [ ! "${binary##*.}" = "minisig" ]; then
+              echo "Signing $binary..."
+              minisign -Sm "$binary" -s "$KEYFILE" -t "loom release binary"
+            fi
+          done
+
+          rm -f "$KEYFILE"
+
+          ls -la
+
+      - name: Generate SHA256 checksums
+        run: |
+          cd release
+          sha256sum loom-* > SHA256SUMS.txt
+          echo "=== SHA256SUMS.txt ==="
+          cat SHA256SUMS.txt
+
+      - name: Package additional assets
+        run: |
+          cp CLAUDE.md.template release/
+          cd agents && zip -r ../release/agents.zip . && cd ..
+          cd skills && zip -r ../release/skills.zip . && cd ..
+
+      - name: Add asset checksums
+        run: |
+          cd release
+          sha256sum CLAUDE.md.template agents.zip skills.zip >> SHA256SUMS.txt
+          echo "=== Final SHA256SUMS.txt ==="
+          cat SHA256SUMS.txt
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="dev-$(date +%Y%m%d-%H%M%S)"
+            TAG="dev-build"
+          else
+            TAG_NAME=${GITHUB_REF#refs/tags/}
+            VERSION=${TAG_NAME#v}
+            TAG=$TAG_NAME
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION, Tag: $TAG"
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          cat > release_notes.md << 'RELEASE_NOTES_EOF'
+          ## loom ${{ steps.version.outputs.version }}
+
+          ### Installation
+
+          **Linux (x86_64):**
+          ```bash
+          curl -sL https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/loom-linux-x86_64 -o loom
+          chmod +x loom
+          sudo mv loom /usr/local/bin/
+          ```
+
+          **macOS (Apple Silicon):**
+          ```bash
+          curl -sL https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/loom-darwin-arm64 -o loom
+          chmod +x loom
+          sudo mv loom /usr/local/bin/
+          ```
+
+          **macOS (Intel):**
+          ```bash
+          curl -sL https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/loom-darwin-x86_64 -o loom
+          chmod +x loom
+          sudo mv loom /usr/local/bin/
+          ```
+
+          ### Verify Signature
+
+          Download the `.minisig` file alongside the binary and verify:
+          ```bash
+          minisign -Vm loom-linux-x86_64 -P <PUBLIC_KEY>
+          ```
+
+          ### Checksums
+
+          See `SHA256SUMS.txt` for SHA256 checksums of all release artifacts.
+
+          ### What's Changed
+          RELEASE_NOTES_EOF
+
+      - name: Create GitHub Release (Draft)
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.dry_run }}
+        uses: softprops/action-gh-release@v2
+        with:
+          name: loom ${{ steps.version.outputs.version }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          draft: true
+          prerelease: false
+          generate_release_notes: true
+          body_path: release_notes.md
+          files: |
+            release/loom-linux-x86_64
+            release/loom-linux-x86_64.minisig
+            release/loom-darwin-x86_64
+            release/loom-darwin-x86_64.minisig
+            release/loom-darwin-arm64
+            release/loom-darwin-arm64.minisig
+            release/SHA256SUMS.txt
+            release/CLAUDE.md.template
+            release/agents.zip
+            release/skills.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary (Dry Run)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          echo "=== DRY RUN - Release would include these files ==="
+          ls -la release/
+          echo ""
+          echo "=== SHA256SUMS.txt ==="
+          cat release/SHA256SUMS.txt
+          echo ""
+          echo "=== Release Notes ==="
+          cat release_notes.md
