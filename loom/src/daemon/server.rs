@@ -75,17 +75,36 @@ impl DaemonServer {
     /// `true` if a daemon is running, `false` otherwise
     pub fn is_running(work_dir: &Path) -> bool {
         let pid_path = work_dir.join("orchestrator.pid");
+        let socket_path = work_dir.join("orchestrator.sock");
+
+        // Both PID file and socket must exist for daemon to be considered running
+        if !socket_path.exists() {
+            // No socket means daemon is not ready to accept connections
+            // Clean up stale PID file if it exists
+            if pid_path.exists() {
+                if let Some(pid) = Self::read_pid(work_dir) {
+                    let pid_exists = unsafe { libc::kill(pid as i32, 0) == 0 };
+                    if !pid_exists {
+                        let _ = fs::remove_file(&pid_path);
+                    }
+                }
+            }
+            return false;
+        }
 
         if let Some(pid) = Self::read_pid(work_dir) {
             // Check if process exists by sending signal 0
             let pid_exists = unsafe { libc::kill(pid as i32, 0) == 0 };
             if !pid_exists {
-                // PID file exists but process is dead, clean up stale file
-                let _ = fs::remove_file(pid_path);
+                // PID file exists but process is dead, clean up stale files
+                let _ = fs::remove_file(&pid_path);
+                let _ = fs::remove_file(&socket_path);
                 return false;
             }
             true
         } else {
+            // Socket exists but no PID file - clean up stale socket
+            let _ = fs::remove_file(&socket_path);
             false
         }
     }

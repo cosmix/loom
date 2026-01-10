@@ -11,6 +11,7 @@ use crate::verify::transitions::list_all_stages;
 use anyhow::{Context, Result};
 use colored::Colorize;
 use std::os::unix::net::UnixStream;
+use std::time::Duration;
 
 use diagnostics::{
     check_directory_structure, check_orphaned_tracks, check_parsing_errors, check_stuck_runners,
@@ -29,16 +30,32 @@ pub fn execute() -> Result<()> {
     // Check if daemon is running and use live mode if available
     let work_path = work_dir.root();
     if DaemonServer::is_running(work_path) {
-        return execute_live(work_path);
+        match execute_live(work_path) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                // Connection failed or daemon unresponsive - fall back to static
+                eprintln!(
+                    "{}",
+                    format!("Could not connect to daemon: {e}").yellow()
+                );
+                println!(
+                    "{}",
+                    "Falling back to static status display.".dimmed()
+                );
+            }
+        }
+    } else {
+        println!(
+            "\n{}",
+            "Daemon not running. Showing static status.".dimmed()
+        );
     }
 
-    // Fall back to static display
-    println!(
-        "\n{}",
-        "Daemon not running. Showing static status.".dimmed()
-    );
     execute_static(&work_dir)
 }
+
+/// Connection timeout for daemon socket (2 seconds)
+const SOCKET_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Execute live-updating dashboard by subscribing to daemon
 fn execute_live(work_path: &std::path::Path) -> Result<()> {
@@ -49,6 +66,35 @@ fn execute_live(work_path: &std::path::Path) -> Result<()> {
 
     let mut stream =
         UnixStream::connect(&socket_path).context("Failed to connect to daemon socket")?;
+
+    // Set read/write timeouts to prevent hanging
+    stream
+        .set_read_timeout(Some(SOCKET_TIMEOUT))
+        .context("Failed to set read timeout")?;
+    stream
+        .set_write_timeout(Some(SOCKET_TIMEOUT))
+        .context("Failed to set write timeout")?;
+
+    // Ping first to verify daemon is responsive
+    write_message(&mut stream, &Request::Ping).context("Failed to send Ping request")?;
+
+    let ping_response: Response =
+        read_message(&mut stream).context("Failed to read Ping response")?;
+
+    match ping_response {
+        Response::Pong => {}
+        Response::Error { message } => {
+            anyhow::bail!("Daemon returned error on ping: {message}");
+        }
+        _ => {
+            anyhow::bail!("Unexpected response from daemon (expected Pong)");
+        }
+    }
+
+    // Now that we know daemon is responsive, remove timeout for streaming
+    stream
+        .set_read_timeout(None)
+        .context("Failed to clear read timeout")?;
 
     // Send subscribe request
     write_message(&mut stream, &Request::SubscribeStatus)
