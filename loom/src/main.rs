@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 use loom::commands::{
-    attach, clean, diagnose, fact, graph, init, merge, resume, run, self_update, sessions, stage,
-    status, stop, worktree_cmd,
+    attach, clean, diagnose, fact, graph, init, learn, merge, resume, run, self_update, sessions,
+    stage, status, stop, worktree_cmd,
 };
 use loom::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use loom::validation::{clap_description_validator, clap_id_validator};
@@ -125,6 +125,12 @@ enum Commands {
     Fact {
         #[command(subcommand)]
         command: FactCommands,
+    },
+
+    /// Record and list learnings (mistakes, patterns, conventions)
+    Learn {
+        #[command(subcommand)]
+        command: LearnCommands,
     },
 
     /// Update loom and configuration files
@@ -345,6 +351,52 @@ enum FactCommands {
 }
 
 #[derive(Subcommand)]
+enum LearnCommands {
+    /// Record a mistake and optional correction
+    Mistake {
+        /// Description of the mistake
+        description: String,
+
+        /// Correction or fix for the mistake
+        #[arg(short, long)]
+        correction: Option<String>,
+    },
+
+    /// Record an architectural pattern discovered
+    Pattern {
+        /// Description of the pattern
+        description: String,
+    },
+
+    /// Record a coding convention learned
+    Convention {
+        /// Description of the convention
+        description: String,
+    },
+
+    /// Record human guidance (requires --human flag)
+    Guidance {
+        /// Description of the guidance
+        description: String,
+
+        /// Confirm this is from a human operator (required)
+        #[arg(long)]
+        human: bool,
+
+        /// Source of the guidance (e.g., "code review", "slack")
+        #[arg(short, long)]
+        source: Option<String>,
+    },
+
+    /// List recorded learnings
+    List {
+        /// Filter by category (mistake, pattern, convention, guidance)
+        #[arg(short, long)]
+        category: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
 enum AttachCommands {
     /// Attach to all running sessions in a unified tmux view
     All {
@@ -453,6 +505,20 @@ fn main() -> Result<()> {
             } => fact::set(key, value, stage, confidence),
             FactCommands::Get { key } => fact::get(key),
             FactCommands::List { stage } => fact::list(stage),
+        },
+        Commands::Learn { command } => match command {
+            LearnCommands::Mistake {
+                description,
+                correction,
+            } => learn::mistake(description, correction),
+            LearnCommands::Pattern { description } => learn::pattern(description),
+            LearnCommands::Convention { description } => learn::convention(description),
+            LearnCommands::Guidance {
+                description,
+                human,
+                source,
+            } => learn::guidance(description, human, source),
+            LearnCommands::List { category } => learn::list(category),
         },
         Commands::SelfUpdate => self_update::execute(),
         Commands::Clean {

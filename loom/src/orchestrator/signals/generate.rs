@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::fs::facts::FactsStore;
+use crate::fs::learnings::format_learnings_for_signal;
 use crate::handoff::git_handoff::GitHistory;
 use crate::models::session::Session;
 use crate::models::stage::Stage;
@@ -75,6 +76,9 @@ pub(super) fn build_embedded_context(
     if let Ok(facts_store) = FactsStore::load(work_dir) {
         context.facts_content = facts_store.format_for_signal(stage_id);
     }
+
+    // Read recent learnings for recitation (last 3 per category)
+    context.learnings_content = format_learnings_for_signal(work_dir, 3);
 
     context
 }

@@ -4,6 +4,7 @@ pub mod diagnose;
 pub mod fact;
 pub mod graph;
 pub mod init;
+pub mod learn;
 pub mod merge;
 pub mod resume;
 pub mod run;
