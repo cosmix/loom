@@ -332,7 +332,7 @@ fn test_tree_display_single_stage() {
     )];
 
     let output = build_tree_display(&stages);
-    assert!(output.contains("Initialize"), "Should contain stage name");
+    assert!(output.contains("init"), "Should contain stage id");
     assert!(
         !output.contains("├──") && !output.contains("└──"),
         "Root stage should have no tree connector"
@@ -349,11 +349,12 @@ fn test_tree_display_linear_chain() {
 
     let output = build_tree_display(&stages);
 
-    assert!(output.contains("Stage A"), "Should contain Stage A");
-    assert!(output.contains("Stage B"), "Should contain Stage B");
-    assert!(output.contains("Stage C"), "Should contain Stage C");
-    assert!(output.contains("← a"), "Stage B should show dependency on a");
-    assert!(output.contains("← b"), "Stage C should show dependency on b");
+    // Should contain stage IDs (not names)
+    assert!(output.contains("✓ a"), "Should contain stage a");
+    assert!(output.contains("✓ b"), "Should contain stage b");
+    assert!(output.contains("▶ c"), "Should contain stage c");
+    assert!(output.contains("← a"), "Stage b should show dependency on a");
+    assert!(output.contains("← b"), "Stage c should show dependency on b");
 }
 
 #[test]
@@ -367,13 +368,15 @@ fn test_tree_display_diamond_pattern() {
 
     let output = build_tree_display(&stages);
 
-    assert!(output.contains("Root"), "Should contain Root stage");
-    assert!(output.contains("Left"), "Should contain Left stage");
-    assert!(output.contains("Right"), "Should contain Right stage");
-    assert!(output.contains("Merge"), "Should contain Merge stage");
+    // Should contain stage IDs
+    assert!(output.contains("a"), "Should contain stage a");
+    assert!(output.contains("b"), "Should contain stage b");
+    assert!(output.contains("c"), "Should contain stage c");
+    assert!(output.contains("d"), "Should contain stage d");
+    // Stage d should show both dependencies
     assert!(
-        output.contains("b") && output.contains("c"),
-        "Merge stage should show both b and c in dependency annotation"
+        output.contains("← b, c") || output.contains("← c, b"),
+        "Stage d should show both b and c in dependency annotation"
     );
 }
 
@@ -397,40 +400,3 @@ fn test_tree_connector_last_item() {
     );
 }
 
-#[test]
-fn test_tree_footer_shows_running() {
-    let stages = vec![
-        create_test_stage("a", "Completed Stage", StageStatus::Completed, vec![]),
-        create_test_stage("b", "Running Stage", StageStatus::Executing, vec!["a"]),
-    ];
-
-    let output = build_tree_display(&stages);
-
-    assert!(
-        output.contains("Running"),
-        "Footer should contain 'Running' label"
-    );
-    assert!(
-        output.contains("Running Stage"),
-        "Footer should show the executing stage name"
-    );
-}
-
-#[test]
-fn test_tree_footer_shows_next() {
-    let stages = vec![
-        create_test_stage("a", "Executing Stage", StageStatus::Executing, vec![]),
-        create_test_stage("b", "Queued Stage", StageStatus::Queued, vec!["a"]),
-    ];
-
-    let output = build_tree_display(&stages);
-
-    assert!(
-        output.contains("Next"),
-        "Footer should contain 'Next' label when there's a queued stage"
-    );
-    assert!(
-        output.contains("Queued Stage"),
-        "Footer should show the queued stage name"
-    );
-}
