@@ -137,6 +137,12 @@ pub enum StageStatus {
     /// Terminal state - does NOT satisfy dependencies.
     #[serde(rename = "skipped")]
     Skipped,
+
+    /// Stage completed work but has merge conflicts to resolve.
+    /// Transitions from Executing when progressive merge detects conflicts.
+    /// Spawns a conflict resolution session to handle the merge.
+    #[serde(rename = "merge-conflict")]
+    MergeConflict,
 }
 
 impl std::fmt::Display for StageStatus {
@@ -150,6 +156,7 @@ impl std::fmt::Display for StageStatus {
             StageStatus::Completed => write!(f, "Completed"),
             StageStatus::NeedsHandoff => write!(f, "NeedsHandoff"),
             StageStatus::Skipped => write!(f, "Skipped"),
+            StageStatus::MergeConflict => write!(f, "MergeConflict"),
         }
     }
 }

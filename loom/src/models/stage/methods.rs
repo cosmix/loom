@@ -193,6 +193,33 @@ impl Stage {
         Ok(())
     }
 
+    /// Mark the stage as having merge conflicts.
+    ///
+    /// This sets both the status to MergeConflict and the merge_conflict flag.
+    /// The stage work is complete but cannot be merged due to conflicts.
+    ///
+    /// # Returns
+    /// `Ok(())` if the transition succeeded, `Err` if invalid
+    pub fn try_mark_merge_conflict(&mut self) -> Result<()> {
+        self.try_transition(StageStatus::MergeConflict)?;
+        self.merge_conflict = true;
+        Ok(())
+    }
+
+    /// Complete merge conflict resolution and mark stage as completed.
+    ///
+    /// This clears the merge_conflict flag and marks the stage as merged.
+    ///
+    /// # Returns
+    /// `Ok(())` if the transition succeeded, `Err` if invalid
+    pub fn try_complete_merge(&mut self) -> Result<()> {
+        self.try_transition(StageStatus::Completed)?;
+        self.merge_conflict = false;
+        self.merged = true;
+        self.completed_at = Some(Utc::now());
+        Ok(())
+    }
+
     pub fn hold(&mut self) {
         if !self.held {
             self.held = true;

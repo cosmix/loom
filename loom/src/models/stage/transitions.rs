@@ -8,10 +8,11 @@ impl StageStatus {
     /// Valid transitions:
     /// - `WaitingForDeps` -> `Queued` | `Skipped` (when dependencies satisfied or user skips)
     /// - `Queued` -> `Executing` | `Skipped` | `Blocked` (when session spawns, user skips, or pre-execution failure)
-    /// - `Executing` -> `Completed` | `Blocked` | `NeedsHandoff` | `WaitingForInput`
+    /// - `Executing` -> `Completed` | `Blocked` | `NeedsHandoff` | `WaitingForInput` | `MergeConflict`
     /// - `Blocked` -> `Queued` | `Skipped` (when unblocked or user skips)
     /// - `NeedsHandoff` -> `Queued` (when resumed)
     /// - `WaitingForInput` -> `Executing` (when input provided)
+    /// - `MergeConflict` -> `Completed` | `Blocked` (when conflicts resolved or resolution fails)
     /// - `Completed` is a terminal state
     /// - `Skipped` is a terminal state
     ///
@@ -42,6 +43,7 @@ impl StageStatus {
                     | StageStatus::Blocked
                     | StageStatus::NeedsHandoff
                     | StageStatus::WaitingForInput
+                    | StageStatus::MergeConflict
             ),
             StageStatus::WaitingForInput => matches!(new_status, StageStatus::Executing),
             StageStatus::Completed => false, // Terminal state
@@ -50,6 +52,9 @@ impl StageStatus {
             }
             StageStatus::NeedsHandoff => matches!(new_status, StageStatus::Queued),
             StageStatus::Skipped => false, // Terminal state
+            StageStatus::MergeConflict => {
+                matches!(new_status, StageStatus::Completed | StageStatus::Blocked)
+            }
         }
     }
 
@@ -80,12 +85,14 @@ impl StageStatus {
                 StageStatus::Blocked,
                 StageStatus::NeedsHandoff,
                 StageStatus::WaitingForInput,
+                StageStatus::MergeConflict,
             ],
             StageStatus::WaitingForInput => vec![StageStatus::Executing],
             StageStatus::Completed => vec![], // Terminal state
             StageStatus::Blocked => vec![StageStatus::Queued, StageStatus::Skipped],
             StageStatus::NeedsHandoff => vec![StageStatus::Queued],
             StageStatus::Skipped => vec![], // Terminal state
+            StageStatus::MergeConflict => vec![StageStatus::Completed, StageStatus::Blocked],
         }
     }
 }
