@@ -60,7 +60,7 @@ impl StageExecutor for Orchestrator {
             return Ok(());
         }
 
-        let worktree = git::get_or_create_worktree(stage_id, &self.config.repo_root)
+        let worktree = git::get_or_create_worktree(stage_id, &self.config.repo_root, None)
             .with_context(|| format!("Failed to get or create worktree for stage: {stage_id}"))?;
 
         let session = Session::new();

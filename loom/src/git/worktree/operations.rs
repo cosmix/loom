@@ -18,7 +18,15 @@ use super::settings::{
 ///
 /// Creates: .worktrees/{stage_id}/ with branch loom/{stage_id}
 /// Also creates symlink .worktrees/{stage_id}/.work -> main .work/
-pub fn create_worktree(stage_id: &str, repo_root: &Path) -> Result<Worktree> {
+///
+/// If `base_branch` is Some(branch), the new branch is created from that branch:
+///   git worktree add -b loom/{stage_id} .worktrees/{stage_id} {branch}
+/// If `base_branch` is None, the new branch is created from HEAD (current behavior).
+pub fn create_worktree(
+    stage_id: &str,
+    repo_root: &Path,
+    base_branch: Option<&str>,
+) -> Result<Worktree> {
     let worktree_path = repo_root.join(".worktrees").join(stage_id);
     let branch_name = format!("loom/{stage_id}");
 
@@ -35,10 +43,17 @@ pub fn create_worktree(stage_id: &str, repo_root: &Path) -> Result<Worktree> {
     }
 
     // Create the worktree with a new branch
-    // git worktree add .worktrees/{stage_id} -b loom/{stage_id}
+    // If base_branch is Some: git worktree add -b loom/{stage_id} .worktrees/{stage_id} {base_branch}
+    // If base_branch is None: git worktree add -b loom/{stage_id} .worktrees/{stage_id} (from HEAD)
+    let mut args = vec!["worktree", "add", "-b", &branch_name];
+    let worktree_path_str = worktree_path.to_string_lossy();
+    args.push(&worktree_path_str);
+    if let Some(base) = base_branch {
+        args.push(base);
+    }
+
     let output = Command::new("git")
-        .args(["worktree", "add", "-b", &branch_name])
-        .arg(&worktree_path)
+        .args(&args)
         .current_dir(repo_root)
         .output()
         .with_context(|| "Failed to execute git worktree add")?;
@@ -152,8 +167,15 @@ pub fn clean_worktrees(repo_root: &Path) -> Result<()> {
 /// If the directory exists but is not a valid worktree, removes it and recreates.
 /// Otherwise, creates a new worktree.
 ///
+/// If `base_branch` is Some(branch), new worktrees will branch from that branch.
+/// If `base_branch` is None, new worktrees will branch from HEAD.
+///
 /// This function is idempotent and safe to call multiple times for the same stage.
-pub fn get_or_create_worktree(stage_id: &str, repo_root: &Path) -> Result<Worktree> {
+pub fn get_or_create_worktree(
+    stage_id: &str,
+    repo_root: &Path,
+    base_branch: Option<&str>,
+) -> Result<Worktree> {
     let worktree_path = repo_root.join(".worktrees").join(stage_id);
     let branch_name = format!("loom/{stage_id}");
 
@@ -185,5 +207,5 @@ pub fn get_or_create_worktree(stage_id: &str, repo_root: &Path) -> Result<Worktr
     }
 
     // Create new worktree
-    create_worktree(stage_id, repo_root)
+    create_worktree(stage_id, repo_root, base_branch)
 }
