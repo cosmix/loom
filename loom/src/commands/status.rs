@@ -2,7 +2,7 @@ mod diagnostics;
 mod display;
 mod validation;
 
-use crate::commands::graph::build_graph_display;
+use crate::commands::graph::build_tree_display;
 use crate::daemon::{read_message, write_message, DaemonServer, Request, Response, StageInfo};
 use crate::fs::work_dir::WorkDir;
 use crate::models::worktree::WorktreeStatus;
@@ -197,10 +197,9 @@ fn render_live_status(
     if let Ok(stages) = list_all_stages(work_dir) {
         if !stages.is_empty() {
             println!("\n{}", "Execution Graph".bold());
-            if let Ok(graph_display) = build_graph_display(&stages) {
-                for line in graph_display.lines() {
-                    println!("  {line}");
-                }
+            let tree_display = build_tree_display(&stages);
+            for line in tree_display.lines() {
+                println!("  {line}");
             }
             // Compact legend
             println!();
@@ -370,8 +369,8 @@ fn display_execution_graph(work_dir: &WorkDir) -> Result<()> {
     }
 
     println!("\n{}", "Execution Graph".bold());
-    let graph_display = build_graph_display(&stages)?;
-    for line in graph_display.lines() {
+    let tree_display = build_tree_display(&stages);
+    for line in tree_display.lines() {
         println!("  {line}");
     }
 
