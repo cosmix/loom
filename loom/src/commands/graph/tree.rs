@@ -23,13 +23,31 @@ fn compute_connector(index: usize, total: usize) -> &'static str {
     }
 }
 
-/// Format dependency annotation right-aligned
-fn format_dep_annotation(deps: &[String], max_width: usize, current_width: usize) -> String {
+/// Format dependency annotation right-aligned with colored dependency IDs
+fn format_dep_annotation(
+    deps: &[String],
+    max_width: usize,
+    current_width: usize,
+    stage_map: &HashMap<&str, &Stage>,
+) -> String {
     if deps.is_empty() {
         return String::new();
     }
     let padding = max_width.saturating_sub(current_width) + 10;
-    format!("{:width$}← {}", "", deps.join(", "), width = padding)
+
+    // Color each dependency ID with its stage color
+    let colored_deps: Vec<String> = deps
+        .iter()
+        .map(|dep| {
+            if stage_map.contains_key(dep.as_str()) {
+                format!("{}", dep.color(stage_color(dep)))
+            } else {
+                dep.clone()
+            }
+        })
+        .collect();
+
+    format!("{:width$}← {}", "", colored_deps.join(", "), width = padding)
 }
 
 /// Render footer showing currently running and next ready stages
@@ -39,13 +57,18 @@ fn render_footer(stages: &[Stage], stage_map: &HashMap<&str, &Stage>) -> String 
     // Find currently executing stage
     if let Some(executing) = stages.iter().find(|s| s.status == StageStatus::Executing) {
         let colored_name = executing.name.color(stage_color(&executing.id));
-        footer.push_str(&format!("{} Running:  {colored_name}\n", "▶".cyan().bold()));
+        let colored_id = executing.id.color(stage_color(&executing.id));
+        footer.push_str(&format!(
+            "{} Running:  {colored_name} ({colored_id})\n",
+            "▶".cyan().bold()
+        ));
     }
 
     // Find next queued stage
     if let Some(queued) = stages.iter().find(|s| s.status == StageStatus::Queued) {
         let colored_name = queued.name.color(stage_color(&queued.id));
-        let incomplete_deps: Vec<&str> = queued
+        let colored_id = queued.id.color(stage_color(&queued.id));
+        let incomplete_deps: Vec<String> = queued
             .dependencies
             .iter()
             .filter(|dep| {
@@ -53,14 +76,17 @@ fn render_footer(stages: &[Stage], stage_map: &HashMap<&str, &Stage>) -> String 
                     .get(dep.as_str())
                     .is_none_or(|s| s.status != StageStatus::Completed)
             })
-            .map(|s| s.as_str())
+            .map(|dep| format!("{}", dep.color(stage_color(dep))))
             .collect();
 
         if incomplete_deps.is_empty() {
-            footer.push_str(&format!("{} Next:     {colored_name}\n", "○".white().dimmed()));
+            footer.push_str(&format!(
+                "{} Next:     {colored_name} ({colored_id})\n",
+                "○".white().dimmed()
+            ));
         } else {
             footer.push_str(&format!(
-                "{} Next:     {colored_name} (blocked by: {})\n",
+                "{} Next:     {colored_name} ({colored_id}) (blocked by: {})\n",
                 "○".white().dimmed(),
                 incomplete_deps.join(", ")
             ));
@@ -95,9 +121,11 @@ pub fn build_tree_display(stages: &[Stage]) -> String {
     for (index, stage) in sorted_stages.iter().enumerate() {
         let connector = compute_connector(index, total_stages);
         let indicator = status_indicator(&stage.status);
-        let deps = format_dep_annotation(&stage.dependencies, max_name_width, stage.name.len());
+        let display_width = stage.name.len() + stage.id.len() + 3; // " (id)"
+        let deps = format_dep_annotation(&stage.dependencies, max_name_width + 20, display_width, &stage_map);
         let colored_name = stage.name.color(stage_color(&stage.id));
-        output.push_str(&format!("{connector}{indicator} {colored_name}{deps}\n"));
+        let colored_id = stage.id.color(stage_color(&stage.id));
+        output.push_str(&format!("{connector}{indicator} {colored_name} ({colored_id}){deps}\n"));
     }
 
     output.push_str(&"─".repeat(50));
