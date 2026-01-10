@@ -125,10 +125,7 @@ fn load_crash_report(stage_id: &str, work_dir: &Path) -> Option<String> {
 }
 
 /// Get git status from stage's worktree if it exists
-fn get_worktree_git_status(
-    stage: &crate::models::stage::Stage,
-    work_dir: &Path,
-) -> Option<String> {
+fn get_worktree_git_status(stage: &crate::models::stage::Stage, work_dir: &Path) -> Option<String> {
     let wt = stage.worktree.as_ref()?;
     let worktree_path = work_dir.parent()?.join(".worktrees").join(wt);
 
@@ -145,10 +142,7 @@ fn get_worktree_git_status(
 }
 
 /// Get git diff from stage's worktree if it exists
-fn get_worktree_git_diff(
-    stage: &crate::models::stage::Stage,
-    work_dir: &Path,
-) -> Option<String> {
+fn get_worktree_git_diff(stage: &crate::models::stage::Stage, work_dir: &Path) -> Option<String> {
     let wt = stage.worktree.as_ref()?;
     let worktree_path = work_dir.parent()?.join(".worktrees").join(wt);
 

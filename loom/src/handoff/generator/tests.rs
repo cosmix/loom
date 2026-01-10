@@ -5,8 +5,8 @@ use tempfile::TempDir;
 
 use super::content::HandoffContent;
 use super::formatter::format_handoff_markdown;
-use super::numbering::{find_latest_handoff, get_next_handoff_number};
 use super::generate_handoff;
+use super::numbering::{find_latest_handoff, get_next_handoff_number};
 use crate::models::session::Session;
 use crate::models::stage::Stage;
 

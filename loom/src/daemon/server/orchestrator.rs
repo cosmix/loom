@@ -118,8 +118,7 @@ pub(super) fn build_execution_graph(work_dir: &Path) -> Result<ExecutionGraph> {
         anyhow::bail!("No active plan. Run 'loom init <plan-path>' first.");
     }
 
-    let config_content =
-        fs::read_to_string(&config_path).context("Failed to read config.toml")?;
+    let config_content = fs::read_to_string(&config_path).context("Failed to read config.toml")?;
 
     let config: toml::Value =
         toml::from_str(&config_content).context("Failed to parse config.toml")?;
@@ -139,8 +138,8 @@ pub(super) fn build_execution_graph(work_dir: &Path) -> Result<ExecutionGraph> {
         );
     }
 
-    let parsed_plan = parse_plan(&path)
-        .with_context(|| format!("Failed to parse plan: {}", path.display()))?;
+    let parsed_plan =
+        parse_plan(&path).with_context(|| format!("Failed to parse plan: {}", path.display()))?;
 
     ExecutionGraph::build(parsed_plan.stages).context("Failed to build execution graph")
 }
@@ -217,8 +216,8 @@ fn extract_stage_frontmatter(content: &str) -> Result<StageDefinition> {
         files: Vec<String>,
     }
 
-    let fm: StageFrontmatter = serde_yaml::from_str(&yaml_content)
-        .context("Failed to parse stage YAML frontmatter")?;
+    let fm: StageFrontmatter =
+        serde_yaml::from_str(&yaml_content).context("Failed to parse stage YAML frontmatter")?;
 
     Ok(StageDefinition {
         id: fm.id,

@@ -156,9 +156,7 @@ fn test_format_signal_content_with_embedded_context() {
     let stage = create_test_stage();
     let worktree = create_test_worktree();
     let embedded_context = EmbeddedContext {
-        handoff_content: Some(
-            "# Handoff\nPrevious session completed tasks A and B.".to_string(),
-        ),
+        handoff_content: Some("# Handoff\nPrevious session completed tasks A and B.".to_string()),
         structure_content: Some("# Structure\nsrc/\n  main.rs\n  lib.rs".to_string()),
         plan_overview: Some("# Plan Title\n\n## Overview\nThis plan does X.".to_string()),
     };
@@ -427,8 +425,7 @@ fn test_generate_merge_signal_empty_conflicts() {
     let session = create_test_session();
     let stage = create_test_stage();
 
-    let result =
-        generate_merge_signal(&session, &stage, "loom/stage-1", "main", &[], &work_dir);
+    let result = generate_merge_signal(&session, &stage, "loom/stage-1", "main", &[], &work_dir);
 
     assert!(result.is_ok());
     let signal_path = result.unwrap();
@@ -444,13 +441,8 @@ fn test_format_merge_signal_content_sections() {
     let stage = create_test_stage();
     let conflicting_files = vec!["src/test.rs".to_string()];
 
-    let content = format_merge_signal_content(
-        &session,
-        &stage,
-        "loom/stage-1",
-        "main",
-        &conflicting_files,
-    );
+    let content =
+        format_merge_signal_content(&session, &stage, "loom/stage-1", "main", &conflicting_files);
 
     // Check all required sections are present
     assert!(content.contains("# Merge Signal:"));

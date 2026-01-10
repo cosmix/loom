@@ -1,8 +1,10 @@
 //! Tests for daemon server module.
 
-use super::core::DaemonServer;
-use super::status::{collect_status, detect_worktree_status, is_manually_merged, parse_stage_frontmatter};
 use super::super::protocol::Response;
+use super::core::DaemonServer;
+use super::status::{
+    collect_status, detect_worktree_status, is_manually_merged, parse_stage_frontmatter,
+};
 use crate::models::worktree::WorktreeStatus;
 use std::fs;
 use std::sync::atomic::Ordering;
@@ -163,8 +165,7 @@ status: pending
 session: ~
 ---
 "#;
-    fs::write(stages_dir.join("stage-pending.md"), pending_stage)
-        .expect("Failed to write stage");
+    fs::write(stages_dir.join("stage-pending.md"), pending_stage).expect("Failed to write stage");
 
     // Create an executing stage
     let executing_stage = r#"---

@@ -90,8 +90,7 @@ fn test_create_and_read_session_file() {
 
     create_session_file(work_dir, &session).expect("Should create session file");
 
-    let loaded =
-        read_session_file(work_dir, "test-session-1").expect("Should read session file");
+    let loaded = read_session_file(work_dir, "test-session-1").expect("Should read session file");
 
     assert_eq!(loaded.id, session.id);
     assert_eq!(loaded.status, session.status);
@@ -106,8 +105,7 @@ fn test_create_signal_file() {
 
     let signal_content = "# Signal: test-signal\n\nTest signal content";
 
-    create_signal_file(work_dir, "test-signal", signal_content)
-        .expect("Should create signal file");
+    create_signal_file(work_dir, "test-signal", signal_content).expect("Should create signal file");
 
     let signal_path = work_dir
         .join(".work")

@@ -21,12 +21,8 @@ use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
 
 // Re-exports
-pub use helpers::{
-    check_tmux_available, clear_session_history, enable_pane_logging, send_keys,
-};
-pub use query::{
-    get_tmux_session_info, is_agent_running, list_tmux_sessions, session_is_running,
-};
+pub use helpers::{check_tmux_available, clear_session_history, enable_pane_logging, send_keys};
+pub use query::{get_tmux_session_info, is_agent_running, list_tmux_sessions, session_is_running};
 pub use session_ops::kill_session_by_name;
 pub use types::{TmuxSessionInfo, TMUX_DEBOUNCE_MS};
 

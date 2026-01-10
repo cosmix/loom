@@ -126,10 +126,7 @@ fn test_skipped_does_not_satisfy_deps() {
 
 #[test]
 fn test_is_complete_with_skipped() {
-    let stages = vec![
-        make_stage("a", vec![], None),
-        make_stage("b", vec![], None),
-    ];
+    let stages = vec![make_stage("a", vec![], None), make_stage("b", vec![], None)];
 
     let mut graph = ExecutionGraph::build(stages).unwrap();
 

@@ -34,14 +34,8 @@ pub fn execute() -> Result<()> {
             Ok(()) => return Ok(()),
             Err(e) => {
                 // Connection failed or daemon unresponsive - fall back to static
-                eprintln!(
-                    "{}",
-                    format!("Could not connect to daemon: {e}").yellow()
-                );
-                println!(
-                    "{}",
-                    "Falling back to static status display.".dimmed()
-                );
+                eprintln!("{}", format!("Could not connect to daemon: {e}").yellow());
+                println!("{}", "Falling back to static status display.".dimmed());
             }
         }
     } else {

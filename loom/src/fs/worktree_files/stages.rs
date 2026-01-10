@@ -29,7 +29,10 @@ pub(crate) fn archive_stage_file(stage_id: &str, work_dir: &Path) -> Result<()> 
 }
 
 /// Find a stage file by stage ID (handles depth prefix)
-pub fn find_stage_file_by_id(stages_dir: &Path, stage_id: &str) -> Result<Option<std::path::PathBuf>> {
+pub fn find_stage_file_by_id(
+    stages_dir: &Path,
+    stage_id: &str,
+) -> Result<Option<std::path::PathBuf>> {
     if !stages_dir.exists() {
         return Ok(None);
     }

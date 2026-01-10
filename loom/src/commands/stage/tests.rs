@@ -2,9 +2,7 @@
 
 use super::complete::cleanup_terminal_for_stage;
 use super::session::{find_session_for_stage, session_from_markdown, session_to_markdown};
-use super::state::{
-    block, hold, ready, release, reset, resume_from_waiting, waiting,
-};
+use super::state::{block, hold, ready, release, reset, resume_from_waiting, waiting};
 use super::*;
 use crate::fs::work_dir::WorkDir;
 use crate::models::session::{Session, SessionStatus, SessionType};

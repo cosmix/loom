@@ -136,7 +136,10 @@ pub(super) fn format_merge_signal_content(
     content
 }
 
-pub(super) fn parse_merge_signal_content(session_id: &str, content: &str) -> Result<MergeSignalContent> {
+pub(super) fn parse_merge_signal_content(
+    session_id: &str,
+    content: &str,
+) -> Result<MergeSignalContent> {
     let mut stage_id = String::new();
     let mut source_branch = String::new();
     let mut target_branch = String::new();

@@ -90,16 +90,13 @@ fn test_multiple_errors_accumulated() {
         loom: LoomConfig {
             version: 2,
             auto_merge: None,
-            stages: vec![
-                create_valid_stage("", ""),
-                {
-                    let mut s = create_valid_stage("stage-2", "Stage Two");
-                    s.dependencies.push("nonexistent".to_string());
-                    s.dependencies.push("stage-2".to_string());
-                    s.acceptance.push("".to_string());
-                    s
-                },
-            ],
+            stages: vec![create_valid_stage("", ""), {
+                let mut s = create_valid_stage("stage-2", "Stage Two");
+                s.dependencies.push("nonexistent".to_string());
+                s.dependencies.push("stage-2".to_string());
+                s.acceptance.push("".to_string());
+                s
+            }],
         },
     };
 

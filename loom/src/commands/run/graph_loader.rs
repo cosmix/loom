@@ -60,4 +60,3 @@ fn load_graph_from_plan_file(work_dir: &WorkDir) -> Result<ExecutionGraph> {
 
     ExecutionGraph::build(parsed_plan.stages).context("Failed to build execution graph")
 }
-

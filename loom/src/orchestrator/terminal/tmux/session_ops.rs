@@ -35,14 +35,7 @@ pub fn kill_session_by_name(session_name: &str) -> Result<()> {
 /// Create a new detached tmux session
 pub fn create_session(session_name: &str, working_dir: &str) -> Result<()> {
     let create_output = Command::new("tmux")
-        .args([
-            "new-session",
-            "-d",
-            "-s",
-            session_name,
-            "-c",
-            working_dir,
-        ])
+        .args(["new-session", "-d", "-s", session_name, "-c", working_dir])
         .output()
         .context("Failed to create tmux session")?;
 

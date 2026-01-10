@@ -11,8 +11,7 @@ fn test_simple_sequential_plan_is_valid() {
     let content = simple_sequential_plan();
     let path = PathBuf::from("test-plan.md");
 
-    let parsed =
-        parse_plan_content(&content, &path).expect("Should parse simple sequential plan");
+    let parsed = parse_plan_content(&content, &path).expect("Should parse simple sequential plan");
 
     assert_eq!(parsed.name, "Simple Sequential Test");
     assert_eq!(parsed.stages.len(), 2);

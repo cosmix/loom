@@ -13,9 +13,13 @@ pub fn detect_cycles(nodes: &HashMap<String, StageNode>) -> Result<()> {
 
     for node_id in nodes.keys() {
         if !visited.contains(node_id) {
-            if let Some(cycle) =
-                dfs_detect_cycle(nodes, node_id, &mut visited, &mut rec_stack, &mut cycle_path)
-            {
+            if let Some(cycle) = dfs_detect_cycle(
+                nodes,
+                node_id,
+                &mut visited,
+                &mut rec_stack,
+                &mut cycle_path,
+            ) {
                 bail!("Circular dependency detected: {}", cycle.join(" -> "));
             }
         }

@@ -91,8 +91,11 @@ pub fn display_stages(work_dir: &WorkDir) -> Result<()> {
                     })
                     .unwrap_or("error");
 
-                format!(" [{}] ({}/{} retries)", failure_label, stage.retry_count, max)
-                    .red()
+                format!(
+                    " [{}] ({}/{} retries)",
+                    failure_label, stage.retry_count, max
+                )
+                .red()
             } else {
                 "".normal()
             };

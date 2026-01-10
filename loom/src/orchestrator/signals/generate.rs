@@ -46,7 +46,10 @@ pub fn generate_signal(
 }
 
 /// Build embedded context by reading handoff, structure.md, and plan overview files
-pub(super) fn build_embedded_context(work_dir: &Path, handoff_file: Option<&str>) -> EmbeddedContext {
+pub(super) fn build_embedded_context(
+    work_dir: &Path,
+    handoff_file: Option<&str>,
+) -> EmbeddedContext {
     let mut context = EmbeddedContext::default();
 
     // Read handoff content if specified
