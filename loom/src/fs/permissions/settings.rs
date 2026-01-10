@@ -11,17 +11,21 @@ use super::hooks::{configure_loom_hooks, install_loom_hooks, loom_hooks_config};
 /// Ensure `.claude/settings.local.json` has loom permissions and hooks configured
 ///
 /// This function:
-/// 1. Installs loom hook scripts to ~/.claude/hooks/
-/// 2. Creates `.claude/` directory if it doesn't exist
-/// 3. Creates `settings.local.json` if it doesn't exist
-/// 4. Merges loom permissions into existing file without duplicates
-/// 5. Configures loom hooks (referencing ~/.claude/hooks/*.sh)
+/// 1. Removes legacy flux-stop.sh hooks that conflict with loom
+/// 2. Installs loom hook scripts to ~/.claude/hooks/
+/// 3. Creates `.claude/` directory if it doesn't exist
+/// 4. Creates `settings.local.json` if it doesn't exist
+/// 5. Merges loom permissions into existing file without duplicates
+/// 6. Configures loom hooks (referencing ~/.claude/hooks/*.sh)
 ///
 /// Since worktrees symlink `.claude/` to the main repo, these permissions
 /// automatically propagate to all loom sessions.
 pub fn ensure_loom_permissions(repo_root: &Path) -> Result<()> {
-    // First, install loom hooks to ~/.claude/hooks/
-    let hooks_installed = install_loom_hooks()?;
+    // Install loom hooks to ~/.claude/hooks/ (also removes legacy flux hooks)
+    let (hooks_installed, removed_legacy) = install_loom_hooks()?;
+    if removed_legacy {
+        println!("  Removed legacy flux-stop.sh hook");
+    }
     if hooks_installed {
         println!("  Installed loom-stop.sh hook to ~/.claude/hooks/");
     }
