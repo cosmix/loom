@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use colored::{Color, Colorize};
 
-use crate::models::stage::Stage;
+use crate::models::stage::{Stage, StageStatus};
 
 use super::colors::color_by_index;
 use super::indicators::status_indicator;
@@ -50,6 +50,51 @@ fn format_dep_annotation(
     format!("{:width$}← {}", "", colored_deps.join(", "), width = padding)
 }
 
+/// Format base branch info for a stage
+fn format_base_branch_info(stage: &Stage, color_map: &HashMap<&str, Color>) -> Option<String> {
+    let base_branch = stage.base_branch.as_ref()?;
+
+    let base_info = if stage.base_merged_from.is_empty() {
+        // Single dependency - show which stage it inherited from
+        if let Some(dep_id) = stage.dependencies.first() {
+            let colored_dep = if let Some(&color) = color_map.get(dep_id.as_str()) {
+                format!("{}", dep_id.color(color))
+            } else {
+                dep_id.clone()
+            };
+            format!(
+                "  {} {} {}",
+                "Base:".dimmed(),
+                base_branch.cyan(),
+                format!("(inherited from {colored_dep})").dimmed()
+            )
+        } else {
+            format!("  {} {}", "Base:".dimmed(), base_branch.cyan())
+        }
+    } else {
+        // Multiple dependencies - show merged sources
+        let colored_sources: Vec<String> = stage
+            .base_merged_from
+            .iter()
+            .map(|dep| {
+                if let Some(&color) = color_map.get(dep.as_str()) {
+                    format!("{}", dep.color(color))
+                } else {
+                    dep.clone()
+                }
+            })
+            .collect();
+        format!(
+            "  {} {} {}",
+            "Base:".dimmed(),
+            base_branch.cyan(),
+            format!("(merged from: {})", colored_sources.join(", ")).dimmed()
+        )
+    };
+
+    Some(base_info)
+}
+
 /// Build a vertical tree display of stages
 pub fn build_tree_display(stages: &[Stage]) -> String {
     if stages.is_empty() {
@@ -85,6 +130,13 @@ pub fn build_tree_display(stages: &[Stage]) -> String {
         let color = color_by_index(index);
         let colored_id = stage.id.color(color);
         output.push_str(&format!("{connector}{indicator} {colored_id}{deps}\n"));
+
+        // Show base branch info for executing or queued stages with base branch set
+        if matches!(stage.status, StageStatus::Executing | StageStatus::Queued) {
+            if let Some(base_info) = format_base_branch_info(stage, &color_map) {
+                output.push_str(&format!("{base_info}\n"));
+            }
+        }
     }
 
     output

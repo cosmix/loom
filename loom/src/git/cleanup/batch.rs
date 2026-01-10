@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::Command;
 
+use super::base::cleanup_base_branch;
 use super::branch::cleanup_branch;
 use super::config::{CleanupConfig, CleanupResult};
 use super::worktree::cleanup_worktree;
@@ -71,7 +72,25 @@ pub fn cleanup_after_merge(
         }
     }
 
-    // Phase 3: Prune stale worktree references
+    // Phase 3: Delete the base branch (if it exists)
+    let base_branch_name = format!("loom/_base/{stage_id}");
+    match cleanup_base_branch(stage_id, repo_root) {
+        Ok(deleted) => {
+            result.base_branch_deleted = deleted;
+            if config.verbose && deleted {
+                println!("  Deleted base branch: {base_branch_name}");
+            }
+        }
+        Err(e) => {
+            let msg = format!("Failed to delete base branch: {e}");
+            if config.verbose {
+                eprintln!("  Warning: {msg}");
+            }
+            result.warnings.push(msg);
+        }
+    }
+
+    // Phase 4: Prune stale worktree references
     if config.prune_worktrees {
         if let Err(e) = prune_worktrees(repo_root) {
             let msg = format!("Failed to prune worktrees: {e}");
@@ -124,6 +143,7 @@ pub fn cleanup_multiple_stages(
             cleanup_after_merge(stage_id, repo_root, config).unwrap_or_else(|e| CleanupResult {
                 worktree_removed: false,
                 branch_deleted: false,
+                base_branch_deleted: false,
                 warnings: vec![e.to_string()],
             });
         results.push(((*stage_id).to_string(), result));

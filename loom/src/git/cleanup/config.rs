@@ -51,6 +51,8 @@ pub struct CleanupResult {
     pub worktree_removed: bool,
     /// Whether the branch was successfully deleted
     pub branch_deleted: bool,
+    /// Whether the base branch was successfully deleted (if it existed)
+    pub base_branch_deleted: bool,
     /// Errors that occurred (non-fatal)
     pub warnings: Vec<String>,
 }
@@ -63,6 +65,6 @@ impl CleanupResult {
 
     /// Check if cleanup made any progress
     pub fn any_cleanup_done(&self) -> bool {
-        self.worktree_removed || self.branch_deleted
+        self.worktree_removed || self.branch_deleted || self.base_branch_deleted
     }
 }

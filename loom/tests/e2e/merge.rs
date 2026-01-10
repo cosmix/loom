@@ -32,6 +32,8 @@ fn create_test_stage(id: &str, auto_merge: Option<bool>) -> Stage {
         max_retries: None,
         last_failure_at: None,
         failure_info: None,
+        base_branch: None,
+        base_merged_from: vec![],
     }
 }
 

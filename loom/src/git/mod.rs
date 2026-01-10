@@ -29,8 +29,9 @@ pub use branch::{
 };
 
 pub use cleanup::{
-    cleanup_after_merge, cleanup_branch, cleanup_multiple_stages, cleanup_worktree, needs_cleanup,
-    prune_worktrees, CleanupConfig, CleanupResult,
+    base_branch_exists, cleanup_after_merge, cleanup_all_base_branches, cleanup_base_branch,
+    cleanup_branch, cleanup_multiple_stages, cleanup_worktree, needs_cleanup, prune_worktrees,
+    CleanupConfig, CleanupResult,
 };
 
 /// Initialize git module - check prerequisites

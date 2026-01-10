@@ -39,6 +39,14 @@ pub struct Stage {
     /// Detailed failure information if stage is blocked due to failure
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure_info: Option<FailureInfo>,
+    /// Base branch used for this stage's worktree
+    /// Either inherited from a single dependency (e.g., "loom/dep-stage")
+    /// or a merged base branch (e.g., "loom/_base/stage-id")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_branch: Option<String>,
+    /// Dependencies that were merged to create the base branch (if multiple deps)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub base_merged_from: Vec<String>,
 }
 
 /// Status of a stage in the execution lifecycle.

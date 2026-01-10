@@ -190,6 +190,8 @@ pub fn stage_from_markdown(content: &str) -> Result<Stage> {
         max_retries: None,
         last_failure_at: None,
         failure_info: None,
+        base_branch: None,
+        base_merged_from: Vec::new(),
     })
 }
 
