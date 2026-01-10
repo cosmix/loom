@@ -50,6 +50,29 @@ loom:
 
 Stage definitions become agent signals: `description` → tasks, `acceptance` → criteria, `files` → scope.
 
+#### Parallelization Strategy
+
+Maximize parallel execution at TWO levels:
+
+**Within one session (subagents):** Use parallel subagents for tasks with NO file overlap.
+
+**Across sessions (loom stages):** When tasks WILL touch the same files, create SEPARATE STAGES:
+- Each stage runs in its own worktree (independent Claude Code instance)
+- Loom orchestrates merging branches after completion
+- This turns file conflicts into manageable merge operations
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  SAME FILES?                                                │
+│    NO  → Same stage, parallel subagents (or single stage)   │
+│    YES → Separate stages, loom merges later                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Example:** Adding auth + adding logging both touch `src/api/handler.ts`:
+- BAD: One stage with both tasks → subagents conflict
+- GOOD: Two stages (`add-auth`, `add-logging`) → loom merges branches
+
 ### 2. NO PLACEHOLDERS
 
 **BANNED:** `TODO`, `FIXME`, `pass`, stubs, empty bodies, pseudocode
