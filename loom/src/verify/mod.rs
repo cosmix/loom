@@ -10,4 +10,7 @@ pub use criteria::{
     DEFAULT_COMMAND_TIMEOUT,
 };
 pub use gates::{human_gate, GateConfig, GateDecision};
-pub use transitions::{serialize_stage_to_markdown, transition_stage, trigger_dependents};
+pub use transitions::{
+    list_all_stages, load_stage, save_stage, serialize_stage_to_markdown, transition_stage,
+    trigger_dependents,
+};
