@@ -18,20 +18,37 @@ pub fn format_signal_content(
 
     content.push_str(&format!("# Signal: {}\n\n", session.id));
 
-    // Worktree context - self-contained signal
+    // Worktree context - self-contained signal with strict isolation
     content.push_str("## Worktree Context\n\n");
     content.push_str(
         "You are in an **isolated git worktree**. This signal contains everything you need:\n\n",
     );
     content.push_str("- **Your stage assignment and acceptance criteria are below** - this file is self-contained\n");
-    content.push_str("- **All context (plan overview, handoff, structure map) is embedded below** - no need to read from main repo\n");
+    content.push_str("- **All context (plan overview, handoff, structure map) is embedded below** - reading main repo files is **FORBIDDEN**\n");
     content.push_str(
         "- **Commit to your worktree branch** - it will be merged after verification\n\n",
     );
 
+    // Explicit isolation boundaries
+    content.push_str("**Isolation Boundaries (STRICT):**\n\n");
+    content.push_str("- You are **CONFINED** to this worktree - do not access files outside it\n");
+    content.push_str("- All context you need is embedded below - reading main repo files is **FORBIDDEN**\n");
+    content.push_str("- Git commands must target THIS worktree only - no `git -C`, no `cd ../..`\n\n");
+
+    // Path boundaries subsection
+    content.push_str("### Path Boundaries\n\n");
+    content.push_str("| Type | Paths |\n");
+    content.push_str("|------|-------|\n");
+    content.push_str("| **ALLOWED** | `.` (this worktree), `.work/` (symlink to orchestration) |\n");
+    content.push_str("| **FORBIDDEN** | `../..`, absolute paths to main repo, any path outside worktree |\n\n");
+
     // Add reminder to follow CLAUDE.md rules
     content.push_str("## Execution Rules\n\n");
     content.push_str("Follow your `~/.claude/CLAUDE.md` and project `CLAUDE.md` rules (both are symlinked into this worktree). Key reminders:\n\n");
+    content.push_str("**Worktree Isolation (CRITICAL):**\n");
+    content.push_str("- **STAY IN THIS WORKTREE** - never read files from main repo or other worktrees\n");
+    content.push_str("- **All context is embedded above** - you have everything you need in this signal\n");
+    content.push_str("- **No path escaping** - do not use `../..`, `cd` to parent directories, or absolute paths outside worktree\n\n");
     content.push_str("**Delegation & Efficiency:**\n");
     content.push_str(
         "- **Use PARALLEL subagents** - spawn multiple appropriate subagents concurrently when tasks are independent\n",

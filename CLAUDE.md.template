@@ -116,27 +116,62 @@ If you must use CLI search, use `rg` or `fd` — never `grep` or `find`.
 
 Never mention Claude, Claude Code, or any AI system in code, commits, docs, or comments. EVER.
 
+### 8. WORKTREE ISOLATION
+
+When executing in a loom worktree, you MUST stay within your worktree boundaries. Worktree isolation prevents merge conflicts and ensures clean parallel execution.
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  ⚠️ WORKTREE ISOLATION - ENFORCED                                  │
+│                                                                    │
+│  You are in: .worktrees/<stage-id>/                                │
+│  Your branch: loom/<stage-id>                                      │
+│                                                                    │
+│  STAY IN YOUR WORKTREE. DO NOT ESCAPE.                             │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+**FORBIDDEN — These operations MUST NEVER be used:**
+
+| Operation | Example | Why Forbidden |
+|-----------|---------|---------------|
+| `git -C <path>` | `git -C ../.. status` | Operates on main repo |
+| `git --work-tree=<path>` | `git --work-tree=/path/to/main` | Escapes worktree |
+| `git --git-dir=<path>` | `git --git-dir=../../.git` | Accesses main repo git |
+| `cd` outside worktree | `cd ../..`, `cd /home/user/project` | Escapes worktree context |
+| `../../` relative paths | `cat ../../src/main.rs` | Reads from main repo |
+| Reading main repo files | Any file outside `.worktrees/<stage-id>/` | Creates implicit dependencies |
+
+**ALLOWED — These operations are safe:**
+
+- All git commands in current directory (your worktree)
+- Reading `.work/` directory (symlink to shared state — this is intentional)
+- Reading any file within your worktree (`.worktrees/<stage-id>/**`)
+- Writing to files within your worktree
+
+**If you need context from the main repo:** Your signal file (`.work/signals/<session-id>.md`) contains all embedded context you need. DO NOT read from the main repo — use the signal.
+
 ---
 
 ## STANDARD RULES
 
-### 8. QUALITY GATES
+### 9. QUALITY GATES
 
 Before completion: zero lint errors, tests passing, self-reviewed for security.
 
-### 9. DEPENDENCIES
+### 10. DEPENDENCIES
 
 Never hand-edit manifests. Use: `bun add`, `cargo add`, `uv add`, `go get`
 
-### 10. CODE SIZE LIMITS
+### 11. CODE SIZE LIMITS
 
 File: 400 lines | Function: 50 lines | Class: 300 lines — Exceed = refactor immediately.
 
-### 11. SESSION STATE
+### 12. SESSION STATE
 
 Update `CLAUDE.md` during work. On completion, replace updates with summary.
 
-### 12. MISTAKES LOG
+### 13. MISTAKES LOG
 
 On any mistake: append to "MISTAKES AND LESSONS LEARNT" section. Never delete.
 
