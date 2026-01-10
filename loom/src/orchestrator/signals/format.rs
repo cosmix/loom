@@ -183,6 +183,18 @@ pub fn format_signal_content(
         );
     }
 
+    // Embed learnings at the END for attention optimization (recency bias)
+    // This ensures agents are reminded of lessons right before starting work
+    if let Some(learnings_content) = &embedded_context.learnings_content {
+        content.push_str("## Recent Learnings\n\n");
+        content.push_str("**REVIEW THESE BEFORE STARTING** - Lessons from previous sessions:\n\n");
+        content.push_str(learnings_content);
+        content.push_str("To record a new learning:\n");
+        content.push_str("- `loom learn mistake \"description\" [--correction \"fix\"]`\n");
+        content.push_str("- `loom learn pattern \"description\"`\n");
+        content.push_str("- `loom learn convention \"description\"`\n\n");
+    }
+
     content
 }
 

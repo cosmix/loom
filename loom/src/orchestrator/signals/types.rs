@@ -11,6 +11,8 @@ pub struct EmbeddedContext {
     pub plan_overview: Option<String>,
     /// Relevant facts for this stage (formatted as markdown table)
     pub facts_content: Option<String>,
+    /// Recent learnings for recitation (formatted as markdown)
+    pub learnings_content: Option<String>,
 }
 
 #[derive(Debug, Clone)]
