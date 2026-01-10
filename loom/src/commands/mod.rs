@@ -6,6 +6,8 @@ pub mod fact;
 pub mod graph;
 pub mod init;
 pub mod knowledge;
+pub mod learn;
+pub mod memory;
 pub mod merge;
 pub mod resume;
 pub mod run;

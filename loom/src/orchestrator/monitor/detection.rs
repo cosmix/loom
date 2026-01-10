@@ -178,6 +178,14 @@ impl Detection {
             if previous_context_health != Some(&current_context_health) {
                 match current_context_health {
                     ContextHealth::Yellow => {
+                        // Auto-summarize memory at warning threshold (60%)
+                        if let Err(e) = handlers.handle_context_warning(session) {
+                            eprintln!(
+                                "Failed to auto-summarize memory for session '{}': {}",
+                                session.id, e
+                            );
+                        }
+
                         events.push(MonitorEvent::SessionContextWarning {
                             session_id: session.id.clone(),
                             usage_percent: context_usage_percent(

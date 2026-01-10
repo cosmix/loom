@@ -163,6 +163,8 @@ fn test_format_signal_content_with_embedded_context() {
         facts_content: None,
         knowledge_summary: None,
         task_state: None,
+        learnings_content: None,
+        memory_content: None,
     };
 
     let content = format_signal_content(
@@ -207,6 +209,8 @@ fn test_format_signal_content_with_facts() {
         ),
         knowledge_summary: None,
         task_state: None,
+        learnings_content: None,
+        memory_content: None,
     };
 
     let content = format_signal_content(

@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 
 use crate::fs::facts::FactsStore;
 use crate::fs::knowledge::KnowledgeDir;
+use crate::fs::learnings::format_learnings_for_signal;
+use crate::fs::memory::format_memory_for_signal;
 use crate::fs::task_state::read_task_state_if_exists;
 use crate::handoff::git_handoff::GitHistory;
 use crate::handoff::schema::ParsedHandoff;
@@ -29,8 +31,13 @@ pub fn generate_signal(
         fs::create_dir_all(&signals_dir).context("Failed to create signals directory")?;
     }
 
-    // Build embedded context by reading files, including task state for this stage
-    let embedded_context = build_embedded_context_with_stage(work_dir, handoff_file, Some(&stage.id));
+    // Build embedded context by reading files, including task state and session memory for recitation
+    let embedded_context = build_embedded_context_with_session(
+        work_dir,
+        handoff_file,
+        &stage.id,
+        Some(&session.id),
+    );
 
     let signal_path = signals_dir.join(format!("{}.md", session.id));
     let content = format_signal_content(
@@ -49,21 +56,31 @@ pub fn generate_signal(
     Ok(signal_path)
 }
 
-/// Build embedded context by reading handoff, structure.md, knowledge, facts, plan overview, and task state files
-#[allow(dead_code)]
-pub(super) fn build_embedded_context(
+/// Build embedded context with optional session ID for memory recitation
+pub(super) fn build_embedded_context_with_session(
     work_dir: &Path,
     handoff_file: Option<&str>,
     stage_id: &str,
+    session_id: Option<&str>,
 ) -> EmbeddedContext {
-    build_embedded_context_with_stage(work_dir, handoff_file, Some(stage_id))
+    build_embedded_context_with_stage_and_session(work_dir, handoff_file, Some(stage_id), session_id)
 }
 
-/// Build embedded context with optional stage-specific task state
+/// Build embedded context with optional stage-specific task state (no session memory)
 pub fn build_embedded_context_with_stage(
     work_dir: &Path,
     handoff_file: Option<&str>,
     stage_id: Option<&str>,
+) -> EmbeddedContext {
+    build_embedded_context_with_stage_and_session(work_dir, handoff_file, stage_id, None)
+}
+
+/// Build embedded context with both stage and session info for full recitation
+pub fn build_embedded_context_with_stage_and_session(
+    work_dir: &Path,
+    handoff_file: Option<&str>,
+    stage_id: Option<&str>,
+    session_id: Option<&str>,
 ) -> EmbeddedContext {
     let mut context = EmbeddedContext::default();
 
@@ -115,6 +132,15 @@ pub fn build_embedded_context_with_stage(
         if let Ok(Some(task_state)) = read_task_state_if_exists(work_dir, stage_id) {
             context.task_state = Some(task_state);
         }
+    }
+
+    // Read recent learnings for recitation (last 3 per category)
+    context.learnings_content = format_learnings_for_signal(work_dir, 3);
+
+    // Read recent memory entries for recitation (Manus pattern - last 10 entries)
+    // This keeps important session context in the attention window
+    if let Some(sid) = session_id {
+        context.memory_content = format_memory_for_signal(work_dir, sid, 10);
     }
 
     context

@@ -19,6 +19,8 @@ pub struct HandoffContent {
     pub next_steps: Vec<String>,
     pub learnings: Vec<String>,
     pub git_history: Option<GitHistory>,
+    /// Memory content from session journal (for handoff)
+    pub memory_content: Option<String>,
 }
 
 impl HandoffContent {
@@ -38,6 +40,7 @@ impl HandoffContent {
             next_steps: Vec::new(),
             learnings: Vec::new(),
             git_history: None,
+            memory_content: None,
         }
     }
 
@@ -104,6 +107,12 @@ impl HandoffContent {
     /// Set git history
     pub fn with_git_history(mut self, history: Option<GitHistory>) -> Self {
         self.git_history = history;
+        self
+    }
+
+    /// Set memory content from session journal
+    pub fn with_memory_content(mut self, content: Option<String>) -> Self {
+        self.memory_content = content;
         self
     }
 

@@ -19,6 +19,10 @@ pub struct EmbeddedContext {
     pub knowledge_summary: Option<String>,
     /// Task state for the stage (if tasks are defined)
     pub task_state: Option<TaskState>,
+    /// Recent learnings for recitation (formatted as markdown)
+    pub learnings_content: Option<String>,
+    /// Recent memory entries for recitation (Manus pattern - keeps context in attention)
+    pub memory_content: Option<String>,
 }
 
 /// Information about a task's lock status

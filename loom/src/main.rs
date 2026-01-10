@@ -2,8 +2,8 @@ use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 use loom::checkpoints::CheckpointStatus;
 use loom::commands::{
-    attach, checkpoint, clean, diagnose, fact, graph, init, knowledge, merge, resume, run,
-    self_update, sessions, stage, status, stop, worktree_cmd,
+    attach, checkpoint, clean, diagnose, fact, graph, init, knowledge, learn, memory, merge,
+    resume, run, self_update, sessions, stage, status, stop, worktree_cmd,
 };
 use loom::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use loom::validation::{clap_description_validator, clap_id_validator};
@@ -132,6 +132,18 @@ enum Commands {
     Knowledge {
         #[command(subcommand)]
         command: KnowledgeCommands,
+    },
+
+    /// Record and list learnings (mistakes, patterns, conventions)
+    Learn {
+        #[command(subcommand)]
+        command: LearnCommands,
+    },
+
+    /// Manage session memory journal (notes, decisions, questions)
+    Memory {
+        #[command(subcommand)]
+        command: MemoryCommands,
     },
 
     /// Update loom and configuration files
@@ -417,6 +429,120 @@ enum KnowledgeCommands {
 }
 
 #[derive(Subcommand)]
+enum LearnCommands {
+    /// Record a mistake and optional correction
+    Mistake {
+        /// Description of the mistake
+        description: String,
+
+        /// Correction or fix for the mistake
+        #[arg(short, long)]
+        correction: Option<String>,
+    },
+
+    /// Record an architectural pattern discovered
+    Pattern {
+        /// Description of the pattern
+        description: String,
+    },
+
+    /// Record a coding convention learned
+    Convention {
+        /// Description of the convention
+        description: String,
+    },
+
+    /// Record human guidance (requires --human flag)
+    Guidance {
+        /// Description of the guidance
+        description: String,
+
+        /// Confirm this is from a human operator (required)
+        #[arg(long)]
+        human: bool,
+
+        /// Source of the guidance (e.g., "code review", "slack")
+        #[arg(short, long)]
+        source: Option<String>,
+    },
+
+    /// List recorded learnings
+    List {
+        /// Filter by category (mistake, pattern, convention, guidance)
+        #[arg(short, long)]
+        category: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum MemoryCommands {
+    /// Record a note in the session memory
+    Note {
+        /// The note text
+        text: String,
+
+        /// Session ID (auto-detected from worktree if not provided)
+        #[arg(short, long, value_parser = clap_id_validator)]
+        session: Option<String>,
+    },
+
+    /// Record a decision with optional rationale
+    Decision {
+        /// The decision text
+        text: String,
+
+        /// Context or rationale for the decision
+        #[arg(short, long)]
+        context: Option<String>,
+
+        /// Session ID (auto-detected from worktree if not provided)
+        #[arg(short, long, value_parser = clap_id_validator)]
+        session: Option<String>,
+    },
+
+    /// Record an open question
+    Question {
+        /// The question text
+        text: String,
+
+        /// Session ID (auto-detected from worktree if not provided)
+        #[arg(short, long, value_parser = clap_id_validator)]
+        session: Option<String>,
+    },
+
+    /// Search memory entries
+    Query {
+        /// Search term
+        search: String,
+
+        /// Session ID to search (searches all if not provided)
+        #[arg(short, long, value_parser = clap_id_validator)]
+        session: Option<String>,
+    },
+
+    /// List memory entries from a session
+    List {
+        /// Session ID (auto-detected if not provided)
+        #[arg(short, long, value_parser = clap_id_validator)]
+        session: Option<String>,
+
+        /// Filter by entry type (note, decision, question)
+        #[arg(short = 't', long)]
+        entry_type: Option<String>,
+    },
+
+    /// Show full memory journal
+    Show {
+        /// Session ID (auto-detected if not provided)
+        #[arg(short, long, value_parser = clap_id_validator)]
+        session: Option<String>,
+    },
+
+    /// List all memory journals
+    Sessions,
+}
+
+#[derive(Subcommand)]
 enum AttachCommands {
     /// Attach to all running sessions in a unified tmux view
     All {
@@ -531,6 +657,33 @@ fn main() -> Result<()> {
             KnowledgeCommands::Update { file, content } => knowledge::update(file, content),
             KnowledgeCommands::Init => knowledge::init(),
             KnowledgeCommands::List => knowledge::list(),
+        },
+        Commands::Learn { command } => match command {
+            LearnCommands::Mistake {
+                description,
+                correction,
+            } => learn::mistake(description, correction),
+            LearnCommands::Pattern { description } => learn::pattern(description),
+            LearnCommands::Convention { description } => learn::convention(description),
+            LearnCommands::Guidance {
+                description,
+                human,
+                source,
+            } => learn::guidance(description, human, source),
+            LearnCommands::List { category } => learn::list(category),
+        },
+        Commands::Memory { command } => match command {
+            MemoryCommands::Note { text, session } => memory::note(text, session),
+            MemoryCommands::Decision {
+                text,
+                context,
+                session,
+            } => memory::decision(text, context, session),
+            MemoryCommands::Question { text, session } => memory::question(text, session),
+            MemoryCommands::Query { search, session } => memory::query(search, session),
+            MemoryCommands::List { session, entry_type } => memory::list(session, entry_type),
+            MemoryCommands::Show { session } => memory::show(session),
+            MemoryCommands::Sessions => memory::sessions(),
         },
         Commands::SelfUpdate => self_update::execute(),
         Commands::Clean {
