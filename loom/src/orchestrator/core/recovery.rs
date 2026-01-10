@@ -101,6 +101,12 @@ impl Recovery for Orchestrator {
             // NOTE: We use stage.id (from YAML frontmatter) for graph operations,
             // not stage_id (from filename), because the graph is built using frontmatter IDs.
             if let Ok(mut stage) = self.load_stage(stage_id) {
+                // Always sync outputs to the graph so they're available for dependent stages
+                if !stage.outputs.is_empty() {
+                    self.graph
+                        .set_node_outputs(&stage.id, stage.outputs.clone());
+                }
+
                 match stage.status {
                     StageStatus::Completed => {
                         // Mark as completed in graph (ignore errors for stages not in graph)

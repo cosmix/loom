@@ -1,7 +1,7 @@
 use anyhow::Result;
 use chrono::Utc;
 
-use super::types::{Stage, StageStatus};
+use super::types::{Stage, StageOutput, StageStatus};
 
 impl Stage {
     pub fn new(name: String, description: Option<String>) -> Self {
@@ -36,6 +36,7 @@ impl Stage {
             resolved_base: None,
             base_branch: None,
             base_merged_from: Vec::new(),
+            outputs: Vec::new(),
         }
     }
 
@@ -201,5 +202,67 @@ impl Stage {
             self.held = false;
             self.updated_at = Utc::now();
         }
+    }
+
+    /// Add or update an output for this stage.
+    ///
+    /// If an output with the same key already exists, it will be replaced.
+    ///
+    /// # Arguments
+    /// * `output` - The output to add or update
+    ///
+    /// # Returns
+    /// `true` if the output was added, `false` if it replaced an existing output
+    pub fn set_output(&mut self, output: StageOutput) -> bool {
+        self.updated_at = Utc::now();
+
+        // Check if an output with this key already exists
+        if let Some(existing) = self.outputs.iter_mut().find(|o| o.key == output.key) {
+            *existing = output;
+            false
+        } else {
+            self.outputs.push(output);
+            true
+        }
+    }
+
+    /// Get an output by key.
+    ///
+    /// # Arguments
+    /// * `key` - The key of the output to retrieve
+    ///
+    /// # Returns
+    /// The output if found, None otherwise
+    pub fn get_output(&self, key: &str) -> Option<&StageOutput> {
+        self.outputs.iter().find(|o| o.key == key)
+    }
+
+    /// Remove an output by key.
+    ///
+    /// # Arguments
+    /// * `key` - The key of the output to remove
+    ///
+    /// # Returns
+    /// `true` if an output was removed, `false` if no output with that key existed
+    pub fn remove_output(&mut self, key: &str) -> bool {
+        let len_before = self.outputs.len();
+        self.outputs.retain(|o| o.key != key);
+        if self.outputs.len() != len_before {
+            self.updated_at = Utc::now();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Check if an output key already exists in this stage.
+    ///
+    /// # Arguments
+    /// * `key` - The key to check
+    ///
+    /// # Returns
+    /// `true` if the key exists, `false` otherwise
+    pub fn has_output(&self, key: &str) -> bool {
+        self.outputs.iter().any(|o| o.key == key)
     }
 }

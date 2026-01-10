@@ -274,11 +274,13 @@ fn test_signal_with_dependencies_status() {
             stage_id: "stage-dep-1".to_string(),
             name: "First Dependency".to_string(),
             status: "Verified".to_string(),
+            outputs: Vec::new(),
         },
         DependencyStatus {
             stage_id: "stage-dep-2".to_string(),
             name: "Second Dependency".to_string(),
             status: "Verified".to_string(),
+            outputs: Vec::new(),
         },
     ];
 

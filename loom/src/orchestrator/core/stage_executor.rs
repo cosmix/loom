@@ -188,16 +188,17 @@ fn get_dependency_status(
         .dependencies
         .iter()
         .map(|dep_id| {
-            let status = if let Some(node) = graph.get_node(dep_id) {
-                format!("{:?}", node.status)
+            let (status, outputs) = if let Some(node) = graph.get_node(dep_id) {
+                (format!("{:?}", node.status), node.outputs.clone())
             } else {
-                "Unknown".to_string()
+                ("Unknown".to_string(), Vec::new())
             };
 
             DependencyStatus {
                 stage_id: dep_id.clone(),
                 name: dep_id.clone(),
                 status,
+                outputs,
             }
         })
         .collect()

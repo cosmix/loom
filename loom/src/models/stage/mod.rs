@@ -5,4 +5,4 @@ mod types;
 #[cfg(test)]
 mod tests;
 
-pub use types::{Stage, StageStatus};
+pub use types::{Stage, StageOutput, StageStatus};

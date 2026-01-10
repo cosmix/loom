@@ -193,6 +193,7 @@ pub fn stage_from_markdown(content: &str) -> Result<Stage> {
         resolved_base: None,
         base_branch: None,
         base_merged_from: Vec::new(),
+        outputs: Vec::new(),
     })
 }
 

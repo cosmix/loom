@@ -161,5 +161,6 @@ pub(crate) fn create_stage_from_definition(stage_def: &StageDefinition, plan_id:
         resolved_base: None,
         base_branch: None,
         base_merged_from: Vec::new(),
+        outputs: Vec::new(),
     }
 }

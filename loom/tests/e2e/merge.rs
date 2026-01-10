@@ -35,6 +35,7 @@ fn create_test_stage(id: &str, auto_merge: Option<bool>) -> Stage {
         resolved_base: None,
         base_branch: None,
         base_merged_from: vec![],
+        outputs: vec![],
     }
 }
 

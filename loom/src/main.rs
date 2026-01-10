@@ -303,6 +303,62 @@ enum StageCommands {
         #[arg(long)]
         force: bool,
     },
+
+    /// Manage stage outputs (structured values passed to dependent stages)
+    Output {
+        #[command(subcommand)]
+        command: OutputCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum OutputCommands {
+    /// Set an output value for a stage
+    Set {
+        /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
+        #[arg(value_parser = clap_id_validator)]
+        stage_id: String,
+
+        /// Output key (alphanumeric, dash, underscore only; max 64 characters)
+        #[arg(value_parser = clap_id_validator)]
+        key: String,
+
+        /// Output value (JSON or plain string)
+        value: String,
+
+        /// Description of the output
+        #[arg(short, long, value_parser = clap_description_validator)]
+        description: Option<String>,
+    },
+
+    /// Get a specific output value
+    Get {
+        /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
+        #[arg(value_parser = clap_id_validator)]
+        stage_id: String,
+
+        /// Output key to retrieve
+        #[arg(value_parser = clap_id_validator)]
+        key: String,
+    },
+
+    /// List all outputs for a stage
+    List {
+        /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
+        #[arg(value_parser = clap_id_validator)]
+        stage_id: String,
+    },
+
+    /// Remove an output from a stage
+    Remove {
+        /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
+        #[arg(value_parser = clap_id_validator)]
+        stage_id: String,
+
+        /// Output key to remove
+        #[arg(value_parser = clap_id_validator)]
+        key: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -404,6 +460,17 @@ fn main() -> Result<()> {
             StageCommands::Release { stage_id } => stage::release(stage_id),
             StageCommands::Skip { stage_id, reason } => stage::skip(stage_id, reason),
             StageCommands::Retry { stage_id, force } => stage::retry(stage_id, force),
+            StageCommands::Output { command } => match command {
+                OutputCommands::Set {
+                    stage_id,
+                    key,
+                    value,
+                    description,
+                } => stage::output_set(stage_id, key, value, description),
+                OutputCommands::Get { stage_id, key } => stage::output_get(stage_id, key),
+                OutputCommands::List { stage_id } => stage::output_list(stage_id),
+                OutputCommands::Remove { stage_id, key } => stage::output_remove(stage_id, key),
+            },
         },
         Commands::SelfUpdate => self_update::execute(),
         Commands::Clean {

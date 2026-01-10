@@ -1,5 +1,6 @@
 //! Graph node types for the execution graph
 
+use crate::models::stage::StageOutput;
 use serde::{Deserialize, Serialize};
 
 /// A node in the execution graph
@@ -25,6 +26,9 @@ pub struct StageNode {
     /// Whether to auto-merge after completion
     #[serde(default)]
     pub auto_merge: Option<bool>,
+    /// Structured outputs from this stage for dependent stages
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub outputs: Vec<StageOutput>,
 }
 
 /// Status of a node in the execution graph.

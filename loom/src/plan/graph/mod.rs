@@ -46,6 +46,7 @@ impl ExecutionGraph {
                 setup: stage.setup.clone(),
                 files: stage.files.clone(),
                 auto_merge: stage.auto_merge,
+                outputs: Vec::new(),
             };
             nodes.insert(stage.id.clone(), node);
 
@@ -239,5 +240,19 @@ impl ExecutionGraph {
         self.nodes
             .values()
             .all(|n| n.status == NodeStatus::Completed || n.status == NodeStatus::Skipped)
+    }
+
+    /// Update the outputs for a stage node.
+    ///
+    /// This is called when syncing stage state from disk to the graph,
+    /// to ensure dependency outputs are available for signal generation.
+    pub fn set_node_outputs(
+        &mut self,
+        stage_id: &str,
+        outputs: Vec<crate::models::stage::StageOutput>,
+    ) {
+        if let Some(node) = self.nodes.get_mut(stage_id) {
+            node.outputs = outputs;
+        }
     }
 }

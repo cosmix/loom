@@ -81,6 +81,7 @@ fn test_generate_signal_with_dependencies() {
         stage_id: "stage-0".to_string(),
         name: "Setup models".to_string(),
         status: "completed".to_string(),
+        outputs: Vec::new(),
     }];
 
     let result = generate_signal(&session, &stage, &worktree, &deps, None, None, &work_dir);

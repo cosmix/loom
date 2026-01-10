@@ -110,6 +110,18 @@ pub fn format_signal_content(
         content.push_str("## Dependencies Status\n\n");
         content.push_str(&format_dependency_table(dependencies_status));
         content.push('\n');
+
+        // Include outputs from completed dependencies
+        let deps_with_outputs: Vec<_> = dependencies_status
+            .iter()
+            .filter(|d| !d.outputs.is_empty())
+            .collect();
+
+        if !deps_with_outputs.is_empty() {
+            content.push_str("## Dependency Outputs\n\n");
+            content.push_str(&format_dependency_outputs(&deps_with_outputs));
+            content.push('\n');
+        }
     }
 
     // Embed handoff content if available (previous session context)
@@ -183,6 +195,42 @@ pub fn format_dependency_table(deps: &[DependencyStatus]) -> String {
     }
 
     table
+}
+
+/// Format outputs from dependency stages for inclusion in signals.
+///
+/// This produces a clear, structured format that agents can easily parse:
+/// ```text
+/// ### From stage-name
+///
+/// - **key**: value
+///   > Description of what this output represents
+/// ```
+fn format_dependency_outputs(deps: &[&DependencyStatus]) -> String {
+    let mut content = String::new();
+
+    for dep in deps {
+        content.push_str(&format!("### From {}\n\n", dep.name));
+
+        for output in &dep.outputs {
+            // Format value based on type
+            let value_str = match &output.value {
+                serde_json::Value::String(s) => format!("`\"{s}\"`"),
+                serde_json::Value::Null => "`null`".to_string(),
+                serde_json::Value::Bool(b) => format!("`{b}`"),
+                serde_json::Value::Number(n) => format!("`{n}`"),
+                serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+                    let json = serde_json::to_string(&output.value).unwrap_or_default();
+                    format!("```json\n{json}\n```")
+                }
+            };
+
+            content.push_str(&format!("- **{}**: {}\n", output.key, value_str));
+            content.push_str(&format!("  > {}\n\n", output.description));
+        }
+    }
+
+    content
 }
 
 fn extract_tasks_from_stage(stage: &Stage) -> Vec<String> {

@@ -1,7 +1,22 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::models::failure::FailureInfo;
+
+/// A structured output from a completed stage that can be passed to dependent stages.
+///
+/// Outputs allow stages to communicate computed values, discovered paths, or
+/// configuration decisions to downstream stages via signals.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct StageOutput {
+    /// Unique key for this output within the stage (e.g., "jwt_secret_location")
+    pub key: String,
+    /// The output value (can be string, number, boolean, array, or object)
+    pub value: Value,
+    /// Human-readable description of what this output represents
+    pub description: String,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Stage {
@@ -51,6 +66,9 @@ pub struct Stage {
     /// Dependencies that were merged to create the base branch (if multiple deps)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub base_merged_from: Vec<String>,
+    /// Structured outputs from this stage for dependent stages
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub outputs: Vec<StageOutput>,
 }
 
 /// Status of a stage in the execution lifecycle.

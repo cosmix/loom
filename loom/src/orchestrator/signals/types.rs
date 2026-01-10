@@ -1,5 +1,6 @@
 use crate::handoff::git_handoff::GitHistory;
 use crate::handoff::schema::HandoffV2;
+use crate::models::stage::StageOutput;
 
 /// Embedded context to include directly in signals so agents don't need to read from main repo
 #[derive(Debug, Clone, Default)]
@@ -19,6 +20,8 @@ pub struct DependencyStatus {
     pub stage_id: String,
     pub name: String,
     pub status: String,
+    /// Outputs from the completed dependency stage
+    pub outputs: Vec<StageOutput>,
 }
 
 #[derive(Debug, Clone)]
