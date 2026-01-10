@@ -6,8 +6,8 @@ use serial_test::serial;
 use std::fs;
 use std::process::Command;
 
-use loom::git::worktree::{resolve_base_branch, ResolvedBase};
 use loom::git::create_worktree;
+use loom::git::worktree::{resolve_base_branch, ResolvedBase};
 
 use super::helpers::*;
 
@@ -20,21 +20,12 @@ fn test_simple_chain_b_inherits_from_a() {
 
     create_branch_with_file("loom/stage-a", "a_file.txt", "Content from A", repo_root);
 
-    let mut graph = build_test_graph(vec![
-        ("stage-a", vec![]),
-        ("stage-b", vec!["stage-a"]),
-    ]);
+    let mut graph = build_test_graph(vec![("stage-a", vec![]), ("stage-b", vec!["stage-a"])]);
 
     complete_stage(&mut graph, "stage-a");
 
-    let result = resolve_base_branch(
-        "stage-b",
-        &["stage-a".to_string()],
-        &graph,
-        repo_root,
-        None,
-    )
-    .expect("Failed to resolve base branch");
+    let result = resolve_base_branch("stage-b", &["stage-a".to_string()], &graph, repo_root, None)
+        .expect("Failed to resolve base branch");
 
     assert_eq!(result, ResolvedBase::Branch("loom/stage-a".to_string()));
 
@@ -56,8 +47,8 @@ fn test_no_dependencies_uses_main() {
 
     let graph = build_test_graph(vec![("standalone", vec![])]);
 
-    let result = resolve_base_branch("standalone", &[], &graph, repo_root, None)
-        .expect("Failed to resolve");
+    let result =
+        resolve_base_branch("standalone", &[], &graph, repo_root, None).expect("Failed to resolve");
 
     assert_eq!(result, ResolvedBase::Main("main".to_string()));
 }
@@ -69,18 +60,9 @@ fn test_scheduling_error_when_dep_not_completed() {
     let temp_dir = init_test_repo();
     let repo_root = temp_dir.path();
 
-    let graph = build_test_graph(vec![
-        ("stage-a", vec![]),
-        ("stage-b", vec!["stage-a"]),
-    ]);
+    let graph = build_test_graph(vec![("stage-a", vec![]), ("stage-b", vec!["stage-a"])]);
 
-    let result = resolve_base_branch(
-        "stage-b",
-        &["stage-a".to_string()],
-        &graph,
-        repo_root,
-        None,
-    );
+    let result = resolve_base_branch("stage-b", &["stage-a".to_string()], &graph, repo_root, None);
 
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
@@ -124,21 +106,12 @@ fn test_worktree_inherits_full_git_history() {
         .output()
         .expect("Failed to checkout main");
 
-    let mut graph = build_test_graph(vec![
-        ("stage-a", vec![]),
-        ("stage-b", vec!["stage-a"]),
-    ]);
+    let mut graph = build_test_graph(vec![("stage-a", vec![]), ("stage-b", vec!["stage-a"])]);
 
     complete_stage(&mut graph, "stage-a");
 
-    let result = resolve_base_branch(
-        "stage-b",
-        &["stage-a".to_string()],
-        &graph,
-        repo_root,
-        None,
-    )
-    .expect("Failed to resolve");
+    let result = resolve_base_branch("stage-b", &["stage-a".to_string()], &graph, repo_root, None)
+        .expect("Failed to resolve");
 
     let worktree = create_worktree("stage-b", repo_root, Some(result.branch_name()))
         .expect("Failed to create worktree");
@@ -160,21 +133,12 @@ fn test_dep_already_merged_fallback_to_main() {
     merge_into_main("loom/stage-a", repo_root);
     delete_branch("loom/stage-a", repo_root);
 
-    let mut graph = build_test_graph(vec![
-        ("stage-a", vec![]),
-        ("stage-b", vec!["stage-a"]),
-    ]);
+    let mut graph = build_test_graph(vec![("stage-a", vec![]), ("stage-b", vec!["stage-a"])]);
 
     complete_stage(&mut graph, "stage-a");
 
-    let result = resolve_base_branch(
-        "stage-b",
-        &["stage-a".to_string()],
-        &graph,
-        repo_root,
-        None,
-    )
-    .expect("Failed to resolve base branch");
+    let result = resolve_base_branch("stage-b", &["stage-a".to_string()], &graph, repo_root, None)
+        .expect("Failed to resolve base branch");
 
     assert_eq!(result, ResolvedBase::Main("main".to_string()));
 

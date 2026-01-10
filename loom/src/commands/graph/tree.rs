@@ -58,7 +58,12 @@ fn format_dep_annotation(
         })
         .collect();
 
-    format!("{:width$}← {}", "", colored_deps.join(", "), width = padding)
+    format!(
+        "{:width$}← {}",
+        "",
+        colored_deps.join(", "),
+        width = padding
+    )
 }
 
 /// Format base branch info for a stage
@@ -150,7 +155,12 @@ pub fn build_tree_display(stages: &[Stage]) -> String {
 
         let connector = compute_connector(level, index_in_level, level_size, is_last_level);
         let indicator = status_indicator(&stage.status);
-        let deps = format_dep_annotation(&stage.dependencies, max_id_width, stage.id.len(), &color_map);
+        let deps = format_dep_annotation(
+            &stage.dependencies,
+            max_id_width,
+            stage.id.len(),
+            &color_map,
+        );
         let color = color_by_index(global_index);
         let colored_id = stage.id.color(color);
         output.push_str(&format!("{connector}{indicator} {colored_id}{deps}\n"));

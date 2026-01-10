@@ -471,7 +471,8 @@ mod tests {
         graph.mark_completed("dep-1").unwrap();
 
         let result =
-            resolve_base_branch("stage-1", &["dep-1".to_string()], &graph, repo_root, None).unwrap();
+            resolve_base_branch("stage-1", &["dep-1".to_string()], &graph, repo_root, None)
+                .unwrap();
 
         assert_eq!(result, ResolvedBase::Branch("loom/dep-1".to_string()));
     }
@@ -488,7 +489,8 @@ mod tests {
         graph.mark_completed("dep-1").unwrap();
 
         let result =
-            resolve_base_branch("stage-1", &["dep-1".to_string()], &graph, repo_root, None).unwrap();
+            resolve_base_branch("stage-1", &["dep-1".to_string()], &graph, repo_root, None)
+                .unwrap();
 
         // Should fall back to main
         assert_eq!(result, ResolvedBase::Main("main".to_string()));
@@ -502,7 +504,8 @@ mod tests {
         // No branch, dep not completed
         let graph = build_test_graph(vec![("dep-1", vec![]), ("stage-1", vec!["dep-1"])]);
 
-        let result = resolve_base_branch("stage-1", &["dep-1".to_string()], &graph, repo_root, None);
+        let result =
+            resolve_base_branch("stage-1", &["dep-1".to_string()], &graph, repo_root, None);
 
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();

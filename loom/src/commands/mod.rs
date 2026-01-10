@@ -1,6 +1,7 @@
 pub mod attach;
 pub mod clean;
 pub mod diagnose;
+pub mod fact;
 pub mod graph;
 pub mod init;
 pub mod knowledge;

@@ -106,8 +106,12 @@ pub fn build_test_graph(stages: Vec<(&str, Vec<&str>)>) -> ExecutionGraph {
 
 /// Test helper: Mark stage as completed in graph
 pub fn complete_stage(graph: &mut ExecutionGraph, stage_id: &str) {
-    graph.mark_executing(stage_id).expect("Failed to mark executing");
-    graph.mark_completed(stage_id).expect("Failed to mark completed");
+    graph
+        .mark_executing(stage_id)
+        .expect("Failed to mark executing");
+    graph
+        .mark_completed(stage_id)
+        .expect("Failed to mark completed");
 }
 
 /// Test helper: Verify worktree contains file from dependency branch

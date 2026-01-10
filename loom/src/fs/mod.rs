@@ -1,3 +1,4 @@
+pub mod facts;
 pub mod knowledge;
 pub mod permissions;
 pub mod stage_files;

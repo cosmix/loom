@@ -74,9 +74,7 @@ impl StageExecutor for Orchestrator {
 
                 // Check for merge conflict - mark stage as Blocked
                 if err_msg.contains("Merge conflict") {
-                    eprintln!(
-                        "Stage '{stage_id}' blocked due to merge conflict: {err_msg}"
-                    );
+                    eprintln!("Stage '{stage_id}' blocked due to merge conflict: {err_msg}");
                     let mut blocked_stage = self.load_stage(stage_id)?;
                     if blocked_stage.try_mark_blocked().is_ok() {
                         self.save_stage(&blocked_stage)?;

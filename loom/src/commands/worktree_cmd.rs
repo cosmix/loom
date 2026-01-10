@@ -109,7 +109,11 @@ pub fn remove(stage_id: String) -> Result<()> {
             stage_id
         );
         println!("    {} Worktree not found", "─".dimmed());
-        println!("    {} Branch '{}' does not exist", "─".dimmed(), branch_name);
+        println!(
+            "    {} Branch '{}' does not exist",
+            "─".dimmed(),
+            branch_name
+        );
 
         // Still mark as merged in case stage status wasn't updated
         mark_stage_merged(&stage_id, &work_dir)?;
@@ -135,10 +139,7 @@ pub fn remove(stage_id: String) -> Result<()> {
             format!(".worktrees/{stage_id}").dimmed()
         );
     } else if worktree_exists {
-        println!(
-            "  {} Worktree not found (already removed)",
-            "─".dimmed()
-        );
+        println!("  {} Worktree not found (already removed)", "─".dimmed());
     }
 
     if result.branch_deleted {
@@ -148,19 +149,12 @@ pub fn remove(stage_id: String) -> Result<()> {
             branch_name.dimmed()
         );
     } else if branch_exists {
-        println!(
-            "  {} Branch not found (already deleted)",
-            "─".dimmed()
-        );
+        println!("  {} Branch not found (already deleted)", "─".dimmed());
     }
 
     // Report any warnings
     for warning in &result.warnings {
-        println!(
-            "  {} {}",
-            "⚠".yellow().bold(),
-            warning.dimmed()
-        );
+        println!("  {} {}", "⚠".yellow().bold(), warning.dimmed());
     }
 
     // Mark stage as merged

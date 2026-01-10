@@ -353,8 +353,14 @@ fn test_tree_display_linear_chain() {
     assert!(output.contains("✓ a"), "Should contain stage a");
     assert!(output.contains("✓ b"), "Should contain stage b");
     assert!(output.contains("▶ c"), "Should contain stage c");
-    assert!(output.contains("← a"), "Stage b should show dependency on a");
-    assert!(output.contains("← b"), "Stage c should show dependency on b");
+    assert!(
+        output.contains("← a"),
+        "Stage b should show dependency on a"
+    );
+    assert!(
+        output.contains("← b"),
+        "Stage c should show dependency on b"
+    );
 }
 
 #[test]
@@ -399,4 +405,3 @@ fn test_tree_connector_last_item() {
         "Tree should not end with ├── connector"
     );
 }
-

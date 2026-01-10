@@ -18,11 +18,11 @@ fn parse_base_branch_from_config(work_dir: &WorkDir) -> Result<Option<String>> {
         return Ok(None);
     }
 
-    let config_content = std::fs::read_to_string(&config_path)
-        .context("Failed to read config.toml")?;
+    let config_content =
+        std::fs::read_to_string(&config_path).context("Failed to read config.toml")?;
 
-    let config: toml::Value = toml::from_str(&config_content)
-        .context("Failed to parse config.toml")?;
+    let config: toml::Value =
+        toml::from_str(&config_content).context("Failed to parse config.toml")?;
 
     let base_branch = config
         .get("plan")

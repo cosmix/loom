@@ -5,9 +5,9 @@
 use serial_test::serial;
 use std::process::Command;
 
-use loom::git::worktree::{resolve_base_branch, ResolvedBase};
 use loom::git::branch_exists;
 use loom::git::cleanup::cleanup_base_branch;
+use loom::git::worktree::{resolve_base_branch, ResolvedBase};
 
 use super::helpers::*;
 
@@ -46,8 +46,7 @@ fn test_cleanup_temp_branch_after_completion() {
         "Temp branch should exist before cleanup"
     );
 
-    let cleaned = cleanup_base_branch("stage-c", repo_root)
-        .expect("Failed to cleanup");
+    let cleaned = cleanup_base_branch("stage-c", repo_root).expect("Failed to cleanup");
 
     assert!(cleaned, "Should have deleted the branch");
 
@@ -86,8 +85,8 @@ fn test_cleanup_all_temp_branches() {
     assert!(branch_exists("loom/_base/stage-2", repo_root).unwrap());
     assert!(branch_exists("loom/_base/stage-3", repo_root).unwrap());
 
-    let deleted = loom::git::cleanup::cleanup_all_base_branches(repo_root)
-        .expect("Failed to cleanup all");
+    let deleted =
+        loom::git::cleanup::cleanup_all_base_branches(repo_root).expect("Failed to cleanup all");
 
     assert_eq!(deleted.len(), 3, "Should delete all 3 temp branches");
 

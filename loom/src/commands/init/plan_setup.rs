@@ -21,7 +21,10 @@ fn get_current_branch() -> Result<String> {
         .context("Failed to execute git rev-parse")?;
 
     if !output.status.success() {
-        anyhow::bail!("git rev-parse failed: {}", String::from_utf8_lossy(&output.stderr));
+        anyhow::bail!(
+            "git rev-parse failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -43,8 +46,7 @@ pub fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<usiz
         parsed_plan.name.bold()
     );
 
-    let base_branch = get_current_branch()
-        .context("Failed to get current git branch")?;
+    let base_branch = get_current_branch().context("Failed to get current git branch")?;
 
     let config_content = format!(
         "# loom Configuration\n# Generated from plan: {}\n\n[plan]\nsource_path = \"{}\"\nplan_id = \"{}\"\nplan_name = \"{}\"\nbase_branch = \"{}\"\n",

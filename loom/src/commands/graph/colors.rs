@@ -22,10 +22,26 @@ const STAGE_COLORS: [Color; 16] = [
     Color::BrightBlue,
     Color::BrightMagenta,
     Color::BrightCyan,
-    Color::TrueColor { r: 255, g: 165, b: 0 }, // Orange
-    Color::TrueColor { r: 128, g: 0, b: 128 },   // Purple
-    Color::TrueColor { r: 0, g: 128, b: 128 },   // Teal
-    Color::TrueColor { r: 255, g: 192, b: 203 }, // Pink
+    Color::TrueColor {
+        r: 255,
+        g: 165,
+        b: 0,
+    }, // Orange
+    Color::TrueColor {
+        r: 128,
+        g: 0,
+        b: 128,
+    }, // Purple
+    Color::TrueColor {
+        r: 0,
+        g: 128,
+        b: 128,
+    }, // Teal
+    Color::TrueColor {
+        r: 255,
+        g: 192,
+        b: 203,
+    }, // Pink
 ];
 
 /// Deterministically assign a color to a stage based on its ID
@@ -69,10 +85,7 @@ mod tests {
 
         // Note: We can't guarantee they're different due to hash collisions,
         // but we can verify they're both valid colors
-        let valid_colors: Vec<String> = STAGE_COLORS
-            .iter()
-            .map(|c| format!("{:?}", c))
-            .collect();
+        let valid_colors: Vec<String> = STAGE_COLORS.iter().map(|c| format!("{:?}", c)).collect();
 
         assert!(valid_colors.contains(&format!("{:?}", color1)));
         assert!(valid_colors.contains(&format!("{:?}", color2)));

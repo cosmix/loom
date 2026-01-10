@@ -159,6 +159,7 @@ fn test_format_signal_content_with_embedded_context() {
         handoff_content: Some("# Handoff\nPrevious session completed tasks A and B.".to_string()),
         structure_content: Some("# Structure\nsrc/\n  main.rs\n  lib.rs".to_string()),
         plan_overview: Some("# Plan Title\n\n## Overview\nThis plan does X.".to_string()),
+        facts_content: None,
         knowledge_summary: None,
     };
 
@@ -187,6 +188,36 @@ fn test_format_signal_content_with_embedded_context() {
     assert!(content.contains("<structure-map>"));
     assert!(content.contains("src/"));
     assert!(content.contains("</structure-map>"));
+}
+
+#[test]
+fn test_format_signal_content_with_facts() {
+    let session = create_test_session();
+    let stage = create_test_stage();
+    let worktree = create_test_worktree();
+    let embedded_context = EmbeddedContext {
+        handoff_content: None,
+        structure_content: None,
+        plan_overview: None,
+        facts_content: Some(
+            "| Key | Value | Source | Confidence |\n|-----|-------|--------|------------|\n| auth_pattern | JWT tokens | implement-auth | high |\n".to_string(),
+        ),
+    };
+
+    let content = format_signal_content(
+        &session,
+        &stage,
+        &worktree,
+        &[],
+        None,
+        None,
+        &embedded_context,
+    );
+
+    assert!(content.contains("## Known Facts"));
+    assert!(content.contains("auth_pattern"));
+    assert!(content.contains("JWT tokens"));
+    assert!(content.contains("loom fact set"));
 }
 
 #[test]

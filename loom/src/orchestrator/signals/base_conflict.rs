@@ -88,9 +88,8 @@ fn format_base_conflict_signal_content(
 
     // Context - explain the situation
     content.push_str("## Context\n\n");
-    content.push_str(
-        "You are resolving a **base branch merge conflict** in the main repository.\n\n",
-    );
+    content
+        .push_str("You are resolving a **base branch merge conflict** in the main repository.\n\n");
     content.push_str(&format!(
         "Stage `{}` depends on multiple completed stages. Before it can start, loom must merge \
          all dependency branches into a base branch (`{}`). This merge has conflicts.\n\n",

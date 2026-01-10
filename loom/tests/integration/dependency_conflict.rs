@@ -6,8 +6,8 @@ use serial_test::serial;
 use std::fs;
 use std::process::Command;
 
-use loom::git::worktree::resolve_base_branch;
 use loom::git::create_worktree;
+use loom::git::worktree::resolve_base_branch;
 
 use super::helpers::*;
 
@@ -38,10 +38,7 @@ fn test_multi_dep_conflict_returns_error() {
         None,
     );
 
-    assert!(
-        result.is_err(),
-        "Should fail due to merge conflict"
-    );
+    assert!(result.is_err(), "Should fail due to merge conflict");
 
     let err_msg = result.unwrap_err().to_string();
     assert!(
@@ -112,7 +109,10 @@ fn test_retry_after_manual_conflict_resolution() {
         repo_root,
         None,
     );
-    assert!(first_attempt.is_err(), "First attempt should fail due to conflict");
+    assert!(
+        first_attempt.is_err(),
+        "First attempt should fail due to conflict"
+    );
 
     Command::new("git")
         .args(["checkout", "main"])
@@ -164,8 +164,14 @@ fn test_retry_after_manual_conflict_resolution() {
     let worktree = create_worktree("stage-c", repo_root, Some("loom/_base/stage-c"))
         .expect("Failed to create worktree after conflict resolution");
 
-    let content = fs::read_to_string(worktree.path.join("shared.txt"))
-        .expect("Failed to read shared.txt");
-    assert!(content.contains("Line from A"), "Should have content from A");
-    assert!(content.contains("Line from B"), "Should have content from B");
+    let content =
+        fs::read_to_string(worktree.path.join("shared.txt")).expect("Failed to read shared.txt");
+    assert!(
+        content.contains("Line from A"),
+        "Should have content from A"
+    );
+    assert!(
+        content.contains("Line from B"),
+        "Should have content from B"
+    );
 }

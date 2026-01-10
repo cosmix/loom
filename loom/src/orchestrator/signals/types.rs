@@ -9,6 +9,8 @@ pub struct EmbeddedContext {
     pub structure_content: Option<String>,
     /// Plan overview extracted from the plan file
     pub plan_overview: Option<String>,
+    /// Relevant facts for this stage (formatted as markdown table)
+    pub facts_content: Option<String>,
     /// Knowledge summary from .work/knowledge/ files
     pub knowledge_summary: Option<String>,
 }
