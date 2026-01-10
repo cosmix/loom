@@ -23,47 +23,51 @@
 
 IMPORTANT! NEVER `grep` or `find`. If you need to use a cli tool (e.g. as part of a piped sequence) use `rg` or `fd`!
 
-### 3. QUALITY GATES
+### 3. NO CLAUDE OR CLAUDE CODE ATTRIBUTION
 
-All must pass before completion:
+**You are NOT allowed to mention Claude, Claude Code, or any other AI system, open source or proprietary, in any code, git commit mesages, documentation, comments or any other output. EVER.**
+
+### 4. QUALITY GATES
+
+ALL MUST PASS before completion:
 
 - Zero IDE diagnostics and lint errors
 - Tests written AND passing
 - Self-reviewed for correctness and security
 
-### 4. SUBAGENT INJECTION
+### 5. SUBAGENT INJECTION
 
 First line of EVERY subagent prompt: `** READ CLAUDE.md IMMEDIATELY AND FOLLOW ALL ITS RULES. **`
 
-### 5. CONTEXT @ 75% = STOP
+### 6. CONTEXT @ 75% = STOP
 
 At 75%: STOP. Write handoff to `.work/handoffs/`. No new tasks.
 
-### 6. SESSION STATE
+### 7. SESSION STATE
 
 Update `CLAUDE.md` during work. On completion, replace updates with summary.
 
-### 7. MISTAKES LOG
+### 8. MISTAKES LOG
 
 On any mistake: append to "MISTAKES AND LESSONS LEARNT" section. NEVER delete.
 
-### 8. PLANS
+### 9. PLANS
 
 - Location: `./doc/plans/PLAN-XXXX-description.md`
 - Include execution diagram: `[a] --> [b,c] --> [d]`
 - Loom plans: See `doc/templates/loom-plan.md` for YAML format
 - **BANNED after plan:** Implementation. Tell user: `loom init <plan> && loom run`
 
-### 9. DEPENDENCIES
+### 10. DEPENDENCIES
 
 **NEVER** hand-edit manifests. Use: `bun add`, `cargo add`, `uv add`, `go get`
 
-### 10. CODE SIZE LIMITS
+### 11. CODE SIZE LIMITS
 
 - File: 400 lines | Function: 50 lines | Class: 300 lines
 - Exceed = REFACTOR immediately! DON'T WAIT.
 
-### 11. COMMIT AND COMPLETE (HOOK-ENFORCED)
+### 12. COMMIT AND COMPLETE (HOOK-ENFORCED)
 
 > 🛡️ **ENFORCED BY STOP HOOK** — `loom-stop.sh` BLOCKS session exit until completed.
 
@@ -88,10 +92,6 @@ loom stage complete <stage-id>
 - If genuinely stuck: `loom stage block <stage-id> --reason "why"`
 
 **The hook cannot be bypassed. Fix the issue to proceed.**
-
-### 12. NO CLAUDE OR CLAUDE CODE ATTRIBUTION
-
-**You are NOT allowed to mention Claude, Claude Code, or any other AI system, open source or proprietary, in any code, git commit mesages, documentation, comments or any other output. EVER.**
 
 ## DELEGATION
 
