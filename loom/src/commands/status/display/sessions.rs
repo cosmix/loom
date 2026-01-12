@@ -6,6 +6,7 @@ use crate::fs::work_dir::WorkDir;
 use crate::models::constants::DEFAULT_CONTEXT_LIMIT;
 use crate::models::keys::frontmatter;
 use crate::models::session::{Session, SessionStatus};
+use crate::orchestrator::terminal::native::check_pid_alive;
 use crate::orchestrator::terminal::BackendType;
 use crate::parser::markdown::MarkdownDocument;
 
@@ -117,23 +118,11 @@ pub fn is_session_orphaned(session: &Session) -> bool {
     match backend_type {
         Some(BackendType::Native) => {
             if let Some(pid) = session.pid {
-                !is_pid_alive(pid)
+                !check_pid_alive(pid)
             } else {
                 false
             }
         }
         None => false,
-    }
-}
-
-pub fn is_pid_alive(pid: u32) -> bool {
-    #[cfg(unix)]
-    {
-        std::path::Path::new(&format!("/proc/{pid}")).exists()
-    }
-
-    #[cfg(not(unix))]
-    {
-        true
     }
 }

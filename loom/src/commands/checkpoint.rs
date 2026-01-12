@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::checkpoints::{Checkpoint, CheckpointStatus};
+use crate::commands::common::find_work_dir;
 use crate::fs::checkpoints::{checkpoint_exists, write_checkpoint};
 use crate::fs::task_state::write_task_state;
 use crate::verify::task_verification::{run_task_verifications, summarize_verifications};
@@ -152,23 +153,6 @@ fn create_checkpoint_only(
     let checkpoint_path = write_checkpoint(work_dir, session_id, &checkpoint)?;
     println!("✓ Checkpoint created: {}", checkpoint_path.display());
     Ok(())
-}
-
-/// Find the .work directory (current dir or parents)
-fn find_work_dir() -> Result<PathBuf> {
-    let mut current = std::env::current_dir()?;
-
-    loop {
-        let work_path = current.join(".work");
-        if work_path.exists() && work_path.is_dir() {
-            return Ok(work_path);
-        }
-
-        match current.parent() {
-            Some(parent) => current = parent.to_path_buf(),
-            None => bail!("Could not find .work directory. Are you in a loom workspace?"),
-        }
-    }
 }
 
 /// Get the current session ID from environment or context

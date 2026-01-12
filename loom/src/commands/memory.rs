@@ -12,6 +12,7 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use std::env;
 
+use crate::commands::common::{detect_session_from_signals, truncate_for_display};
 use crate::fs::memory::{
     append_entry, list_journals, query_entries, read_journal, validate_content, MemoryEntry,
     MemoryEntryType,
@@ -29,55 +30,13 @@ fn get_work_dir() -> Result<std::path::PathBuf> {
     Ok(work_dir)
 }
 
-/// Try to detect the current session ID from the worktree
-fn detect_session_id() -> Option<String> {
-    // Check environment variable first (set by loom when spawning)
-    if let Ok(session_id) = env::var("LOOM_SESSION_ID") {
-        return Some(session_id);
-    }
-
-    // Try to detect from signal file in .work/signals/
-    let cwd = env::current_dir().ok()?;
-    let signals_dir = cwd.join(".work").join("signals");
-
-    if !signals_dir.exists() {
-        return None;
-    }
-
-    // Find most recent signal file
-    let mut most_recent: Option<(String, std::time::SystemTime)> = None;
-
-    for entry in std::fs::read_dir(&signals_dir).ok()? {
-        let entry = entry.ok()?;
-        let path = entry.path();
-
-        if path.extension().is_some_and(|ext| ext == "md") {
-            if let Some(stem) = path.file_stem() {
-                let session_id = stem.to_string_lossy().to_string();
-                let metadata = entry.metadata().ok()?;
-                let modified = metadata.modified().ok()?;
-
-                match &most_recent {
-                    None => most_recent = Some((session_id, modified)),
-                    Some((_, prev_time)) if modified > *prev_time => {
-                        most_recent = Some((session_id, modified));
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    most_recent.map(|(id, _)| id)
-}
-
 /// Record a note in the memory journal
 pub fn note(text: String, session_id: Option<String>) -> Result<()> {
     validate_content(&text)?;
 
     let work_dir = get_work_dir()?;
     let session = session_id
-        .or_else(detect_session_id)
+        .or_else(|| detect_session_from_signals(&work_dir).ok())
         .ok_or_else(|| anyhow::anyhow!("No session ID provided or detected. Use --session <id>"))?;
 
     let entry = MemoryEntry::new(MemoryEntryType::Note, text.clone());
@@ -102,7 +61,7 @@ pub fn decision(text: String, context: Option<String>, session_id: Option<String
 
     let work_dir = get_work_dir()?;
     let session = session_id
-        .or_else(detect_session_id)
+        .or_else(|| detect_session_from_signals(&work_dir).ok())
         .ok_or_else(|| anyhow::anyhow!("No session ID provided or detected. Use --session <id>"))?;
 
     let entry = match context {
@@ -127,7 +86,7 @@ pub fn question(text: String, session_id: Option<String>) -> Result<()> {
 
     let work_dir = get_work_dir()?;
     let session = session_id
-        .or_else(detect_session_id)
+        .or_else(|| detect_session_from_signals(&work_dir).ok())
         .ok_or_else(|| anyhow::anyhow!("No session ID provided or detected. Use --session <id>"))?;
 
     let entry = MemoryEntry::new(MemoryEntryType::Question, text.clone());
@@ -218,9 +177,7 @@ pub fn list(session_id: Option<String>, entry_type: Option<String>) -> Result<()
 
     let session = match session_id {
         Some(id) => id,
-        None => detect_session_id().ok_or_else(|| {
-            anyhow::anyhow!("No session ID provided or detected. Use --session <id>")
-        })?,
+        None => detect_session_from_signals(&work_dir)?,
     };
 
     let journal = read_journal(&work_dir, &session)?;
@@ -303,9 +260,7 @@ pub fn show(session_id: Option<String>) -> Result<()> {
 
     let session = match session_id {
         Some(id) => id,
-        None => detect_session_id().ok_or_else(|| {
-            anyhow::anyhow!("No session ID provided or detected. Use --session <id>")
-        })?,
+        None => detect_session_from_signals(&work_dir)?,
     };
 
     let journal = read_journal(&work_dir, &session)?;
@@ -402,33 +357,4 @@ pub fn sessions() -> Result<()> {
     }
 
     Ok(())
-}
-
-/// Truncate a string for display
-fn truncate_for_display(s: &str, max_len: usize) -> String {
-    let single_line: String = s.lines().collect::<Vec<_>>().join(" ");
-
-    if single_line.len() <= max_len {
-        single_line
-    } else {
-        format!("{}…", &single_line[..max_len - 1])
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_truncate_for_display() {
-        assert_eq!(truncate_for_display("short", 10), "short");
-        assert_eq!(
-            truncate_for_display("this is a longer string", 10),
-            "this is a…"
-        );
-        assert_eq!(
-            truncate_for_display("line1\nline2\nline3", 20),
-            "line1 line2 line3"
-        );
-    }
 }

@@ -13,11 +13,16 @@ use super::nodes::{NodeStatus, StageNode};
 ///
 /// This ensures dependent stages can use the merge point (main) as their base,
 /// which contains all dependency work.
-pub fn update_ready_status(nodes: &mut HashMap<String, StageNode>) {
+///
+/// Returns the list of stages that became ready.
+pub fn update_ready_status(nodes: &mut HashMap<String, StageNode>) -> Vec<String> {
+    let mut newly_ready = Vec::new();
+
     // Stages with no dependencies are immediately ready
     for node in nodes.values_mut() {
         if node.status == NodeStatus::WaitingForDeps && node.dependencies.is_empty() {
             node.status = NodeStatus::Queued;
+            newly_ready.push(node.id.clone());
         }
     }
 
@@ -37,9 +42,12 @@ pub fn update_ready_status(nodes: &mut HashMap<String, StageNode>) {
                 .all(|d| completed_and_merged.contains(d));
             if deps_satisfied {
                 node.status = NodeStatus::Queued;
+                newly_ready.push(node.id.clone());
             }
         }
     }
+
+    newly_ready
 }
 
 /// Get a topologically sorted list of stages

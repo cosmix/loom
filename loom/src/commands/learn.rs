@@ -12,6 +12,7 @@ use chrono::Utc;
 use colored::Colorize;
 use std::env;
 
+use crate::commands::common::{detect_stage_id, truncate_for_display};
 use crate::fs::learnings::{
     append_learning, read_learnings, validate_description, Learning, LearningCategory,
 };
@@ -26,30 +27,6 @@ fn get_work_dir() -> Result<std::path::PathBuf> {
     }
 
     Ok(work_dir)
-}
-
-/// Try to detect the current stage ID from the worktree branch
-fn detect_stage_id() -> Option<String> {
-    let output = std::process::Command::new("git")
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-    // Worktree branches are named loom/<stage-id>
-    if let Some(stage_id) = branch.strip_prefix("loom/") {
-        // Filter out special branches like _base
-        if !stage_id.starts_with('_') {
-            return Some(stage_id.to_string());
-        }
-    }
-
-    None
 }
 
 /// Record a mistake learning
@@ -225,66 +202,4 @@ pub fn list(category: Option<String>) -> Result<()> {
     }
 
     Ok(())
-}
-
-/// Truncate a string for display
-fn truncate_for_display(s: &str, max_len: usize) -> String {
-    let single_line: String = s.lines().collect::<Vec<_>>().join(" ");
-
-    if single_line.len() <= max_len {
-        single_line
-    } else {
-        format!("{}…", &single_line[..max_len - 1])
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::fs::learnings::init_learnings_dir;
-    use tempfile::TempDir;
-
-    fn setup_test_env() -> (TempDir, std::path::PathBuf) {
-        let temp_dir = TempDir::new().unwrap();
-        let work_dir = temp_dir.path().to_path_buf();
-
-        // Create .work directory and initialize learnings
-        std::fs::create_dir_all(&work_dir).unwrap();
-        init_learnings_dir(&work_dir).unwrap();
-
-        (temp_dir, work_dir)
-    }
-
-    #[test]
-    fn test_truncate_for_display() {
-        assert_eq!(truncate_for_display("short", 10), "short");
-        assert_eq!(
-            truncate_for_display("this is a longer string", 10),
-            "this is a…"
-        );
-        assert_eq!(
-            truncate_for_display("line1\nline2\nline3", 20),
-            "line1 line2 line3"
-        );
-    }
-
-    #[test]
-    fn test_detect_stage_id_format() {
-        let parse_branch = |branch: &str| -> Option<String> {
-            branch.strip_prefix("loom/").and_then(|s| {
-                if !s.starts_with('_') {
-                    Some(s.to_string())
-                } else {
-                    None
-                }
-            })
-        };
-
-        assert_eq!(
-            parse_branch("loom/implement-auth"),
-            Some("implement-auth".to_string())
-        );
-        assert_eq!(parse_branch("loom/_base"), None);
-        assert_eq!(parse_branch("main"), None);
-    }
 }

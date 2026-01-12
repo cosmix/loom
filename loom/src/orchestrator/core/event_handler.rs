@@ -279,7 +279,11 @@ impl EventHandler for Orchestrator {
                 eprintln!("Crash report generated: {}", path.display());
             }
 
-            stage.status = StageStatus::Blocked;
+            // Transition to Blocked status with validation
+            if let Err(e) = stage.try_mark_blocked() {
+                eprintln!("Warning: Failed to transition stage to Blocked: {e}");
+                eprintln!("Current status: {:?}", stage.status);
+            }
             self.save_stage(&stage)?;
 
             self.graph.mark_blocked(&sid)?;

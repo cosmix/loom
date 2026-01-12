@@ -21,36 +21,62 @@ use super::session::{cleanup_session_resources, find_session_for_stage};
 /// Mark a stage as complete, optionally running acceptance criteria.
 /// If acceptance criteria pass, auto-verifies the stage and triggers dependents.
 /// If --no-verify is used or criteria fail, marks as CompletedWithFailures for retry.
-/// If --force is used, bypasses state machine and marks stage as Completed from any state.
+/// If --force-unsafe is used, bypasses state machine and marks stage as Completed from any state.
 pub fn complete(
     stage_id: String,
     session_id: Option<String>,
     no_verify: bool,
-    force: bool,
+    force_unsafe: bool,
+    assume_merged: bool,
 ) -> Result<()> {
     let work_dir = Path::new(".work");
 
     let mut stage = load_stage(&stage_id, work_dir)?;
 
-    // Handle --force: bypass state machine and mark as completed directly
-    if force {
+    // Handle --force-unsafe: bypass state machine and mark as completed directly
+    if force_unsafe {
+        eprintln!();
+        eprintln!("⚠️  WARNING: Using --force-unsafe bypasses state machine validation!");
+        eprintln!("⚠️  This can corrupt dependency tracking and cause unexpected behavior.");
+        eprintln!("⚠️  Use only for manual recovery scenarios.");
+        eprintln!();
+
         println!(
             "Force-completing stage '{}' (was: {:?})",
             stage_id, stage.status
         );
+
+        // INTENTIONAL STATE MACHINE BYPASS: This is a manual recovery command
+        // that allows administrators to force completion from any state.
+        // This is the ONLY place where direct status assignment is acceptable.
         stage.status = StageStatus::Completed;
-        stage.merged = true; // Assume manual merge was done
+
+        // Only set merged=true if explicitly requested via --assume-merged
+        if assume_merged {
+            stage.merged = true;
+            println!("  → Stage marked as merged (manual merge assumed)");
+        } else {
+            stage.merged = false;
+            eprintln!();
+            eprintln!("⚠️  WARNING: Stage NOT marked as merged (--assume-merged not provided).");
+            eprintln!("⚠️  Dependent stages will NOT be automatically triggered.");
+            eprintln!("⚠️  If you manually merged the branch, re-run with --assume-merged to trigger dependents.");
+            eprintln!();
+        }
+
         save_stage(&stage, work_dir)?;
         println!("Stage '{stage_id}' force-completed!");
 
-        // Trigger dependent stages
-        let triggered = trigger_dependents(&stage_id, work_dir)
-            .context("Failed to trigger dependent stages")?;
+        // Only trigger dependent stages if merged=true (i.e., --assume-merged was used)
+        if stage.merged {
+            let triggered = trigger_dependents(&stage_id, work_dir)
+                .context("Failed to trigger dependent stages")?;
 
-        if !triggered.is_empty() {
-            println!("Triggered {} dependent stage(s):", triggered.len());
-            for dep_id in &triggered {
-                println!("  → {dep_id}");
+            if !triggered.is_empty() {
+                println!("Triggered {} dependent stage(s):", triggered.len());
+                for dep_id in &triggered {
+                    println!("  → {dep_id}");
+                }
             }
         }
         return Ok(());

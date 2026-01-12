@@ -3,9 +3,9 @@
 //! Provides commands to verify integrity of various loom resources,
 //! particularly learning files that need protection from corruption.
 
-use anyhow::{bail, Context, Result};
-use std::path::PathBuf;
+use anyhow::{Context, Result};
 
+use crate::commands::common::{detect_session_from_sessions, find_work_dir};
 use crate::fs::learnings::{verify_learnings, VerificationIssue, VerificationResult};
 
 /// Execute the `loom verify learnings` command.
@@ -22,7 +22,7 @@ pub fn learnings(session_id: Option<String>) -> Result<()> {
     // If no session ID provided, try to detect from current worktree
     let session_id = match session_id {
         Some(id) => id,
-        None => detect_session_id(&work_dir)?,
+        None => detect_session_from_sessions(&work_dir)?,
     };
 
     let result = verify_learnings(&work_dir, &session_id)
@@ -72,83 +72,10 @@ pub fn learnings(session_id: Option<String>) -> Result<()> {
     }
 }
 
-/// Detect the current session ID from worktree context.
-///
-/// Looks for active session files in .work/sessions/ that match the current
-/// worktree, or falls back to checking environment variables.
-fn detect_session_id(work_dir: &std::path::Path) -> Result<String> {
-    // First, try to get from environment (set by hooks)
-    if let Ok(session_id) = std::env::var("LOOM_SESSION_ID") {
-        return Ok(session_id);
-    }
-
-    // Try to detect from current worktree by looking at active sessions
-    let sessions_dir = work_dir.join("sessions");
-    if sessions_dir.exists() {
-        // Get current working directory to determine which worktree we're in
-        let cwd = std::env::current_dir()?;
-
-        // Check if we're in a worktree by looking for .worktrees in the path
-        if let Some(stage_id) = extract_stage_from_worktree_path(&cwd) {
-            // Look for a session file that matches this stage
-            for entry in std::fs::read_dir(&sessions_dir)? {
-                let entry = entry?;
-                let path = entry.path();
-                if path.extension().is_some_and(|e| e == "md") {
-                    let content = std::fs::read_to_string(&path)?;
-                    // Check if session is for this stage and is active
-                    if content.contains(&format!("stage: {stage_id}"))
-                        && content.contains("status: Active")
-                    {
-                        if let Some(session_id) = path.file_stem().and_then(|s| s.to_str()) {
-                            return Ok(session_id.to_string());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    anyhow::bail!(
-        "Could not detect session ID. Please provide --session <session-id> explicitly, \
-         or set LOOM_SESSION_ID environment variable."
-    )
-}
-
-/// Extract stage ID from a worktree path like `.worktrees/stage-name/...`
-fn extract_stage_from_worktree_path(path: &std::path::Path) -> Option<String> {
-    let path_str = path.to_string_lossy();
-    if let Some(idx) = path_str.find(".worktrees/") {
-        let after_worktrees = &path_str[idx + ".worktrees/".len()..];
-        // Take everything up to the next path separator
-        let stage_id = after_worktrees.split(std::path::MAIN_SEPARATOR).next()?;
-        if !stage_id.is_empty() {
-            return Some(stage_id.to_string());
-        }
-    }
-    None
-}
-
-/// Find the .work directory (current dir or parents)
-fn find_work_dir() -> Result<PathBuf> {
-    let mut current = std::env::current_dir()?;
-
-    loop {
-        let work_path = current.join(".work");
-        if work_path.exists() && work_path.is_dir() {
-            return Ok(work_path);
-        }
-
-        match current.parent() {
-            Some(parent) => current = parent.to_path_buf(),
-            None => bail!("Could not find .work directory. Are you in a loom workspace?"),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::common::extract_stage_from_worktree_path;
     use crate::fs::learnings::{
         append_learning, create_snapshot, init_learnings_dir, Learning, LearningCategory,
     };

@@ -5,10 +5,10 @@
 
 use anyhow::{bail, Context, Result};
 use std::path::Path;
-use std::process::Command;
 
 use crate::fs::stage_files::find_stage_file;
 use crate::models::stage::StageStatus;
+use crate::orchestrator::terminal::native::check_pid_alive;
 use crate::verify::transitions::load_stage;
 
 /// Find the session for a stage by checking session files
@@ -89,16 +89,6 @@ pub fn extract_frontmatter_field(content: &str, field: &str) -> Option<String> {
     None
 }
 
-/// Check if a native session (by PID) is still running
-fn is_native_session_alive(pid: u32) -> bool {
-    Command::new("kill")
-        .arg("-0")
-        .arg(pid.to_string())
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
-}
-
 /// Find active session for a stage, checking native backend
 ///
 /// Returns session_id if an active session is found.
@@ -135,7 +125,7 @@ fn find_active_session_for_stage(stage_id: &str, work_dir: &Path) -> Result<Opti
             // Check for native session (by PID)
             if let Some(pid_str) = extract_frontmatter_field(&content, "pid") {
                 if let Ok(pid) = pid_str.parse::<u32>() {
-                    if is_native_session_alive(pid) {
+                    if check_pid_alive(pid) {
                         // Return session ID as the identifier
                         let session_id = extract_frontmatter_field(&content, "id")
                             .unwrap_or_else(|| format!("pid-{pid}"));
@@ -382,14 +372,14 @@ status: running
     }
 
     #[test]
-    fn test_is_native_session_alive_current_process() {
+    fn test_check_pid_alive_current_process() {
         let current_pid = std::process::id();
-        assert!(is_native_session_alive(current_pid));
+        assert!(check_pid_alive(current_pid));
     }
 
     #[test]
-    fn test_is_native_session_alive_nonexistent() {
+    fn test_check_pid_alive_nonexistent() {
         // PID 99999 is very unlikely to exist
-        assert!(!is_native_session_alive(99999));
+        assert!(!check_pid_alive(99999));
     }
 }

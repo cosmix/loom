@@ -9,6 +9,7 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use std::env;
 
+use crate::commands::common::detect_stage_id;
 use crate::fs::facts::{validate_fact_key, validate_fact_value, Confidence, FactsStore};
 
 /// Get the .work directory, handling worktree symlinks
@@ -137,58 +138,4 @@ pub fn list(stage_id: Option<String>) -> Result<()> {
     }
 
     Ok(())
-}
-
-/// Try to detect the current stage ID from the worktree branch
-fn detect_stage_id() -> Option<String> {
-    // Check if we're in a worktree by looking at the branch name
-    let output = std::process::Command::new("git")
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-    // Worktree branches are named loom/<stage-id>
-    if let Some(stage_id) = branch.strip_prefix("loom/") {
-        // Filter out special branches like _base
-        if !stage_id.starts_with('_') {
-            return Some(stage_id.to_string());
-        }
-    }
-
-    None
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_detect_stage_id_format() {
-        // Test the branch parsing logic directly
-        let parse_branch = |branch: &str| -> Option<String> {
-            branch.strip_prefix("loom/").and_then(|s| {
-                if !s.starts_with('_') {
-                    Some(s.to_string())
-                } else {
-                    None
-                }
-            })
-        };
-
-        assert_eq!(
-            parse_branch("loom/implement-auth"),
-            Some("implement-auth".to_string())
-        );
-        assert_eq!(
-            parse_branch("loom/stage-123"),
-            Some("stage-123".to_string())
-        );
-        assert_eq!(parse_branch("loom/_base"), None);
-        assert_eq!(parse_branch("main"), None);
-        assert_eq!(parse_branch("feature/test"), None);
-    }
 }

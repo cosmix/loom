@@ -242,15 +242,19 @@ impl Recovery for Orchestrator {
                             );
 
                             // Reset stage to Ready using validated transition
-                            // NeedsHandoff -> Ready and Blocked -> Ready are valid transitions
-                            // Executing -> Ready is not valid, so we go through Blocked first
+                            // NeedsHandoff -> Queued and Blocked -> Queued are valid transitions
+                            // Executing -> Queued is not valid, so we go through Blocked first
                             if stage.status == StageStatus::Executing {
-                                // Executing -> Blocked -> Ready
-                                stage.status = StageStatus::Blocked;
+                                // Executing -> Blocked (intermediate step for recovery)
+                                if let Err(e) = stage.try_mark_blocked() {
+                                    eprintln!("Warning: Failed to transition Executing -> Blocked during recovery: {e}");
+                                }
                             }
-                            // Now Blocked/NeedsHandoff -> Ready is valid
-                            if stage.try_mark_queued().is_err() {
-                                // Fallback: directly set status if transition fails
+                            // Now Blocked/NeedsHandoff -> Queued is valid
+                            if let Err(e) = stage.try_mark_queued() {
+                                // Log a warning that validation was bypassed for recovery
+                                eprintln!("Warning: State transition validation failed during orphaned session recovery: {e}");
+                                eprintln!("         Bypassing validation for recovery (was: {:?})", stage.status);
                                 stage.status = StageStatus::Queued;
                             }
                             stage.session = None;

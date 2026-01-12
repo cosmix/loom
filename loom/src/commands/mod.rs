@@ -1,6 +1,7 @@
 pub mod attach;
 pub mod checkpoint;
 pub mod clean;
+pub mod common;
 pub mod diagnose;
 pub mod fact;
 pub mod graph;

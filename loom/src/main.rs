@@ -268,9 +268,15 @@ enum StageCommands {
         #[arg(long)]
         no_verify: bool,
 
-        /// Force completion from any state, bypassing state machine checks
-        #[arg(long)]
-        force: bool,
+        /// UNSAFE: Force completion from any state, bypassing state machine validation.
+        /// WARNING: This can corrupt dependency tracking. Use only for recovery.
+        #[arg(long = "force-unsafe")]
+        force_unsafe: bool,
+
+        /// When using --force-unsafe, also mark stage as merged (assumes manual merge was done).
+        /// Without this, dependent stages will NOT be triggered.
+        #[arg(long = "assume-merged", requires = "force_unsafe")]
+        assume_merged: bool,
     },
 
     /// Block a stage with a reason
@@ -734,8 +740,9 @@ fn main() -> Result<()> {
                 stage_id,
                 session,
                 no_verify,
-                force,
-            } => stage::complete(stage_id, session, no_verify, force),
+                force_unsafe,
+                assume_merged,
+            } => stage::complete(stage_id, session, no_verify, force_unsafe, assume_merged),
             StageCommands::Block { stage_id, reason } => stage::block(stage_id, reason),
             StageCommands::Reset {
                 stage_id,

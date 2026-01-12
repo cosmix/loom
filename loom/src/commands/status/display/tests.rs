@@ -1,7 +1,8 @@
-use super::sessions::{is_pid_alive, is_session_orphaned};
+use super::sessions::is_session_orphaned;
 use super::stages::parse_stage_from_markdown;
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::StageStatus;
+use crate::orchestrator::terminal::native::check_pid_alive;
 
 #[test]
 fn test_is_session_orphaned_with_native_backend() {
@@ -39,14 +40,14 @@ fn test_is_session_orphaned_no_backend_info() {
 }
 
 #[test]
-fn test_is_pid_alive_current_process() {
+fn test_check_pid_alive_current_process() {
     let current_pid = std::process::id();
-    assert!(is_pid_alive(current_pid));
+    assert!(check_pid_alive(current_pid));
 }
 
 #[test]
-fn test_is_pid_alive_non_existent() {
-    assert!(!is_pid_alive(999999));
+fn test_check_pid_alive_non_existent() {
+    assert!(!check_pid_alive(999999));
 }
 
 #[test]

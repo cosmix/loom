@@ -81,19 +81,34 @@ impl ExecutionGraph {
 
         // Update initial ready status
         let mut graph = graph;
-        scheduling::update_ready_status(&mut graph.nodes);
+        let _ = scheduling::update_ready_status(&mut graph.nodes);
 
         Ok(graph)
     }
 
-    /// Update which stages are ready (all deps satisfied)
-    pub fn update_ready_status(&mut self) {
-        scheduling::update_ready_status(&mut self.nodes);
+    /// Update which stages are ready (all deps satisfied and merged).
+    ///
+    /// # Returns
+    ///
+    /// A vector of stage IDs that transitioned from `WaitingForDeps` to `Queued`.
+    /// Callers should persist these stages to disk to keep the file state synchronized
+    /// with the graph state.
+    ///
+    /// # Graph/File State Synchronization
+    ///
+    /// The execution graph tracks scheduling decisions in memory, but stage files on
+    /// disk are the persistent source of truth. After calling this method, callers
+    /// should write the returned stage IDs back to their files (e.g., via
+    /// `Orchestrator::sync_specific_stages_to_files()`).
+    pub fn update_ready_status(&mut self) -> Vec<String> {
+        scheduling::update_ready_status(&mut self.nodes)
     }
 
-    /// Force update of ready status for all nodes (useful after recovery)
-    pub fn refresh_ready_status(&mut self) {
-        self.update_ready_status();
+    /// Force update of ready status for all nodes (useful after recovery).
+    ///
+    /// Returns the list of stages that became ready.
+    pub fn refresh_ready_status(&mut self) -> Vec<String> {
+        self.update_ready_status()
     }
 
     /// Get all stages that are ready to execute
@@ -136,7 +151,13 @@ impl ExecutionGraph {
         Ok(())
     }
 
-    /// Mark a stage as completed and update dependent stages
+    /// Mark a stage as completed and update dependent stages.
+    ///
+    /// # Returns
+    ///
+    /// A vector of stage IDs that became ready (transitioned to `Queued`) as a result
+    /// of this stage completing. Note that stages only become ready when ALL their
+    /// dependencies are both completed AND merged.
     pub fn mark_completed(&mut self, stage_id: &str) -> Result<Vec<String>> {
         let node = self
             .nodes
@@ -145,21 +166,8 @@ impl ExecutionGraph {
 
         node.status = NodeStatus::Completed;
 
-        // Get dependents that might now be ready
-        let dependents = self.edges.get(stage_id).cloned().unwrap_or_default();
-
-        // Update ready status for all nodes
-        self.update_ready_status();
-
-        // Return newly ready stages
-        let newly_ready: Vec<String> = dependents
-            .into_iter()
-            .filter(|id| {
-                self.nodes
-                    .get(id)
-                    .is_some_and(|n| n.status == NodeStatus::Queued)
-            })
-            .collect();
+        // Update ready status for all nodes - this returns stages that became ready
+        let newly_ready = self.update_ready_status();
 
         Ok(newly_ready)
     }
@@ -275,6 +283,12 @@ impl ExecutionGraph {
     ///
     /// This is called after progressive merge verifies and merges a completed stage.
     /// After marking as merged, dependent stages may become ready for scheduling.
+    ///
+    /// # Returns
+    ///
+    /// A vector of stage IDs that became ready (transitioned to `Queued`) as a result
+    /// of this stage being merged. Since stages require dependencies to be both completed
+    /// AND merged, this merge operation may unblock waiting dependent stages.
     pub fn mark_merged(&mut self, stage_id: &str) -> Result<Vec<String>> {
         let node = self
             .nodes
@@ -291,21 +305,8 @@ impl ExecutionGraph {
 
         node.merged = true;
 
-        // Get dependents that might now be ready
-        let dependents = self.edges.get(stage_id).cloned().unwrap_or_default();
-
-        // Update ready status for all nodes
-        self.update_ready_status();
-
-        // Return newly ready stages
-        let newly_ready: Vec<String> = dependents
-            .into_iter()
-            .filter(|id| {
-                self.nodes
-                    .get(id)
-                    .is_some_and(|n| n.status == NodeStatus::Queued)
-            })
-            .collect();
+        // Update ready status for all nodes - this returns stages that became ready
+        let newly_ready = self.update_ready_status();
 
         Ok(newly_ready)
     }

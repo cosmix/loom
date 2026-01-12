@@ -453,7 +453,7 @@ fn test_complete_with_passing_acceptance() {
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
-    let result = complete("test-stage".to_string(), None, false, false);
+    let result = complete("test-stage".to_string(), None, false, false, false);
 
     std::env::set_current_dir(original_dir).unwrap();
 
@@ -477,7 +477,7 @@ fn test_complete_with_no_verify_flag() {
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
-    let result = complete("test-stage".to_string(), None, true, false);
+    let result = complete("test-stage".to_string(), None, true, false, false);
 
     std::env::set_current_dir(original_dir).unwrap();
 

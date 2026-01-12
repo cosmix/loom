@@ -11,7 +11,7 @@ pub fn block(stage_id: String, reason: String) -> Result<()> {
     let work_dir = Path::new(".work");
 
     let mut stage = load_stage(&stage_id, work_dir)?;
-    stage.status = StageStatus::Blocked;
+    stage.try_mark_blocked()?;
     stage.close_reason = Some(reason.clone());
     stage.updated_at = chrono::Utc::now();
     save_stage(&stage, work_dir)?;
@@ -22,10 +22,19 @@ pub fn block(stage_id: String, reason: String) -> Result<()> {
 }
 
 /// Reset a stage to pending
+///
+/// NOTE: This is a manual recovery command that intentionally bypasses state machine validation.
+/// WaitingForDeps has no incoming transitions because it's the initial state. For recovery scenarios,
+/// we allow direct assignment to reset stages to their initial state.
 pub fn reset(stage_id: String, hard: bool, _kill_session: bool) -> Result<()> {
     let work_dir = Path::new(".work");
 
     let mut stage = load_stage(&stage_id, work_dir)?;
+
+    // INTENTIONAL STATE MACHINE BYPASS: WaitingForDeps is the initial state
+    // and has no valid incoming transitions. This manual recovery command
+    // allows resetting stages to their initial state for recovery scenarios.
+    eprintln!("Warning: Bypassing state machine to reset stage to initial state (was: {:?})", stage.status);
     stage.status = StageStatus::WaitingForDeps;
     stage.completed_at = None;
     stage.close_reason = None;
