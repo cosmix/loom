@@ -71,7 +71,7 @@ pub fn generate_stable_prefix() -> String {
         "You are in an **isolated git worktree**. This signal contains everything you need:\n\n",
     );
     content.push_str("- **Your stage assignment and acceptance criteria are below** - this file is self-contained\n");
-    content.push_str("- **All context (plan overview, handoff, structure map) is embedded below** - reading main repo files is **FORBIDDEN**\n");
+    content.push_str("- **All context (plan overview, handoff, knowledge) is embedded below** - reading main repo files is **FORBIDDEN**\n");
     content.push_str(
         "- **Commit to your worktree branch** - it will be merged after verification\n\n",
     );

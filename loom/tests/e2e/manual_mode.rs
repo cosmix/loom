@@ -314,7 +314,7 @@ fn test_signal_default_tasks_when_none_provided() {
     let content = fs::read_to_string(&signal_path).unwrap();
 
     assert!(content.contains("## Immediate Tasks"));
-    assert!(content.contains("1. Review stage acceptance criteria below"));
+    assert!(content.contains("1. Review stage acceptance criteria above"));
     assert!(content.contains("2. Implement required changes"));
     assert!(content.contains("3. Verify all acceptance criteria are met"));
 }

@@ -10,8 +10,6 @@ pub struct EmbeddedContext {
     pub handoff_content: Option<String>,
     /// Parsed V2 handoff data (if available)
     pub parsed_handoff: Option<HandoffV2>,
-    /// Content of structure.md (codebase structure map)
-    pub structure_content: Option<String>,
     /// Plan overview extracted from the plan file
     pub plan_overview: Option<String>,
     /// Relevant facts for this stage (formatted as markdown table)

@@ -310,7 +310,7 @@ fn format_recovery_signal(
     signal.push_str("## Worktree Context\n\n");
     signal.push_str("You are in an **isolated git worktree**. This signal contains everything you need:\n\n");
     signal.push_str("- **Your stage assignment and acceptance criteria are below** - this file is self-contained\n");
-    signal.push_str("- **All context (plan overview, handoff, structure map) is embedded below** - reading main repo files is **FORBIDDEN**\n");
+    signal.push_str("- **All context (plan overview, handoff, knowledge) is embedded below** - reading main repo files is **FORBIDDEN**\n");
     signal.push_str("- **Commit to your worktree branch** - it will be merged after verification\n\n");
 
     // Target information
@@ -349,14 +349,6 @@ fn format_recovery_signal(
             signal.push_str(&format!("- {}\n", file));
         }
         signal.push_str("\n");
-    }
-
-    // Embedded context - structure map
-    if let Some(ref structure) = embedded_context.structure_content {
-        signal.push_str("## Codebase Structure\n\n");
-        signal.push_str("<structure-map>\n");
-        signal.push_str(structure);
-        signal.push_str("\n</structure-map>\n\n");
     }
 
     // Embedded context - handoff

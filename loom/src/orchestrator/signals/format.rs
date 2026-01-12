@@ -88,14 +88,6 @@ pub fn format_signal_with_metrics(
 fn format_semi_stable_section(embedded_context: &EmbeddedContext) -> String {
     let mut content = String::new();
 
-    // Embed structure.md content if available (semi-stable - same for all sessions on this stage)
-    if let Some(structure_content) = &embedded_context.structure_content {
-        content.push_str("## Codebase Structure\n\n");
-        content.push_str("<structure-map>\n");
-        content.push_str(structure_content);
-        content.push_str("\n</structure-map>\n\n");
-    }
-
     // Embed knowledge summary (curated entry points, patterns, conventions)
     if let Some(knowledge_summary) = &embedded_context.knowledge_summary {
         content.push_str("<knowledge>\n");

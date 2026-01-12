@@ -70,7 +70,6 @@ pub fn parse_signal_content(session_id: &str, content: &str) -> Result<SignalCon
                             file.strip_suffix("` - **READ THIS FIRST** - Previous session handoff")
                         })
                         .or_else(|| file.strip_suffix("` - Previous handoff"))
-                        .or_else(|| file.strip_suffix("` - Codebase structure map (if exists)"))
                         .or_else(|| file.strip_suffix("` - Relevant code to modify"))
                         .or_else(|| file.strip_suffix("` - Relevant code"))
                         .or_else(|| file.strip_suffix('`'))

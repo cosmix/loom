@@ -106,12 +106,6 @@ pub fn build_embedded_context_with_stage_and_session(
         }
     }
 
-    // Read structure.md if it exists
-    let structure_path = work_dir.join("structure.md");
-    if structure_path.exists() {
-        context.structure_content = fs::read_to_string(&structure_path).ok();
-    }
-
     // Read plan overview from config.toml and the plan file
     context.plan_overview = read_plan_overview(work_dir);
 
