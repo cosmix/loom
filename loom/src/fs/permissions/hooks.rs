@@ -10,6 +10,11 @@ use super::constants::{LOOM_GLOBAL_HOOKS, LOOM_WORKTREE_HOOKS};
 /// Generate hooks configuration for loom
 /// Hooks reference scripts at ~/.claude/hooks/ (installed by loom init)
 pub fn loom_hooks_config() -> Value {
+    // Get home directory for full path expansion (~ may not work in all contexts)
+    let hooks_dir = dirs::home_dir()
+        .map(|h| h.join(".claude/hooks").display().to_string())
+        .unwrap_or_else(|| "~/.claude/hooks".to_string());
+
     json!({
         "PreToolUse": [
             {
@@ -17,7 +22,7 @@ pub fn loom_hooks_config() -> Value {
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "~/.claude/hooks/ask-user-pre.sh"
+                        "command": format!("{}/ask-user-pre.sh", hooks_dir)
                     }
                 ]
             }
@@ -28,17 +33,18 @@ pub fn loom_hooks_config() -> Value {
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "~/.claude/hooks/ask-user-post.sh"
+                        "command": format!("{}/ask-user-post.sh", hooks_dir)
                     }
                 ]
             }
         ],
         "Stop": [
             {
+                "matcher": "*",
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "~/.claude/hooks/commit-guard.sh"
+                        "command": format!("{}/commit-guard.sh", hooks_dir)
                     }
                 ]
             }

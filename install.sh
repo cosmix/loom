@@ -141,13 +141,25 @@ install_hooks_remote() {
 	local hooks_dir="$CLAUDE_DIR/hooks"
 	mkdir -p "$hooks_dir"
 
-	# Download individual hook scripts
-	local hooks=("ask-user-pre.sh" "ask-user-post.sh" "loom-stop.sh")
+	# Download global hooks (run in main repo and worktrees)
+	local global_hooks=("ask-user-pre.sh" "ask-user-post.sh" "commit-guard.sh")
 	local downloaded=0
 
-	for hook in "${hooks[@]}"; do
+	for hook in "${global_hooks[@]}"; do
 		if download_file "${GITHUB_RELEASES}/$hook" "$hooks_dir/$hook" 2>/dev/null; then
 			chmod +x "$hooks_dir/$hook"
+			((downloaded++))
+		fi
+	done
+
+	# Download worktree-specific hooks to loom/ subdirectory
+	local loom_hooks_dir="$hooks_dir/loom"
+	mkdir -p "$loom_hooks_dir"
+
+	local worktree_hooks=("session-start.sh" "post-tool-use.sh" "pre-compact.sh" "session-end.sh" "learning-validator.sh" "subagent-stop.sh")
+	for hook in "${worktree_hooks[@]}"; do
+		if download_file "${GITHUB_RELEASES}/$hook" "$loom_hooks_dir/$hook" 2>/dev/null; then
+			chmod +x "$loom_hooks_dir/$hook"
 			((downloaded++))
 		fi
 	done
@@ -261,20 +273,38 @@ install_hooks() {
 	step "installing hooks"
 
 	local hooks_dir="$CLAUDE_DIR/hooks"
-	mkdir -p "$hooks_dir"
+	local loom_hooks_dir="$hooks_dir/loom"
+	mkdir -p "$hooks_dir" "$loom_hooks_dir"
 
-	# Copy loom hooks
+	# Global hooks (run in main repo and worktrees)
+	local global_hooks=("ask-user-pre.sh" "ask-user-post.sh" "commit-guard.sh")
+	# Worktree-specific hooks (managed by loom for worktree sessions)
+	local worktree_hooks=("session-start.sh" "post-tool-use.sh" "pre-compact.sh" "session-end.sh" "learning-validator.sh" "subagent-stop.sh")
+
+	local count=0
+
+	# Install global hooks to ~/.claude/hooks/
 	if [[ -d "$SCRIPT_DIR/hooks" ]]; then
-		for hook in "$SCRIPT_DIR/hooks"/*.sh; do
+		for hook_name in "${global_hooks[@]}"; do
+			local hook="$SCRIPT_DIR/hooks/$hook_name"
 			if [[ -f "$hook" ]]; then
 				cp "$hook" "$hooks_dir/"
-				chmod +x "$hooks_dir/$(basename "$hook")"
+				chmod +x "$hooks_dir/$hook_name"
+				((count++))
+			fi
+		done
+
+		# Install worktree hooks to ~/.claude/hooks/loom/
+		for hook_name in "${worktree_hooks[@]}"; do
+			local hook="$SCRIPT_DIR/hooks/$hook_name"
+			if [[ -f "$hook" ]]; then
+				cp "$hook" "$loom_hooks_dir/"
+				chmod +x "$loom_hooks_dir/$hook_name"
+				((count++))
 			fi
 		done
 	fi
 
-	local count
-	count=$(find "$hooks_dir" -name "*.sh" 2>/dev/null | wc -l | tr -d ' ')
 	ok "$count hooks installed"
 }
 
