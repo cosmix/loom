@@ -101,9 +101,7 @@ pub fn resolve_base_branch(
         let base = init_base_branch
             .map(String::from)
             .unwrap_or_else(|| default_branch(repo_root).unwrap_or_else(|_| "main".to_string()));
-        eprintln!(
-            "[resolve_base_branch] All deps merged, using base: {base}"
-        );
+        eprintln!("[resolve_base_branch] All deps merged, using base: {base}");
         return Ok(ResolvedBase::Main(base));
     }
 

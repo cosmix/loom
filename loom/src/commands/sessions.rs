@@ -63,7 +63,10 @@ pub fn kill(session_ids: Vec<String>, stage: Option<String>) -> Result<()> {
             return Ok(());
         }
 
-        println!("Found {} session(s) for stage '{stage_id}'", stage_sessions.len());
+        println!(
+            "Found {} session(s) for stage '{stage_id}'",
+            stage_sessions.len()
+        );
         ids_to_kill.extend(stage_sessions);
     }
 
@@ -89,9 +92,7 @@ pub fn kill(session_ids: Vec<String>, stage: Option<String>) -> Result<()> {
     if failure_count == 0 {
         println!("Successfully killed {success_count} session(s)");
     } else {
-        println!(
-            "Killed {success_count} session(s), {failure_count} failed"
-        );
+        println!("Killed {success_count} session(s), {failure_count} failed");
     }
 
     if failure_count > 0 {
@@ -151,7 +152,9 @@ fn kill_single_session(work_dir: &std::path::Path, session_id: &str) -> Result<(
     println!("  Session file removed");
 
     // Also remove the signal file if it exists
-    let signal_file = work_dir.join("signals").join(format!("{actual_session_id}.md"));
+    let signal_file = work_dir
+        .join("signals")
+        .join(format!("{actual_session_id}.md"));
     if signal_file.exists() {
         std::fs::remove_file(&signal_file)
             .with_context(|| format!("Failed to remove signal file: {}", signal_file.display()))?;

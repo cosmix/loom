@@ -250,8 +250,12 @@ pub fn find_worktree_by_prefix(repo_root: &Path, id: &str) -> Result<Option<Path
     }
 
     // Scan for prefix matches
-    let entries = fs::read_dir(&worktrees_dir)
-        .with_context(|| format!("Failed to read worktrees directory: {}", worktrees_dir.display()))?;
+    let entries = fs::read_dir(&worktrees_dir).with_context(|| {
+        format!(
+            "Failed to read worktrees directory: {}",
+            worktrees_dir.display()
+        )
+    })?;
 
     let mut matches: Vec<PathBuf> = Vec::new();
 

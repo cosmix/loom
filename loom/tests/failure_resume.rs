@@ -421,7 +421,9 @@ fn test_parallel_stages_one_blocked_one_succeeds() {
     let work_dir = temp_dir.path();
     fs::create_dir_all(work_dir.join("stages")).unwrap();
 
-    let stage_1 = create_test_stage("stage-1", "Stage 1", StageStatus::Completed);
+    // Stage 1 must be Completed AND merged for dependents to be triggered
+    let mut stage_1 = create_test_stage("stage-1", "Stage 1", StageStatus::Completed);
+    stage_1.merged = true;
     save_stage(&stage_1, work_dir).unwrap();
 
     let mut stage_2a = create_test_stage("stage-2a", "Stage 2A", StageStatus::WaitingForDeps);

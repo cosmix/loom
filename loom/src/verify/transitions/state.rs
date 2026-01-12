@@ -109,7 +109,7 @@ pub fn trigger_dependents(completed_stage_id: &str, work_dir: &Path) -> Result<V
 ///
 /// # Returns
 /// `true` if all dependencies are Completed with merged=true, `false` otherwise
-pub(crate) fn are_all_dependencies_satisfied(stage: &Stage, work_dir: &Path) -> Result<bool> {
+pub fn are_all_dependencies_satisfied(stage: &Stage, work_dir: &Path) -> Result<bool> {
     if stage.dependencies.is_empty() {
         return Ok(true);
     }

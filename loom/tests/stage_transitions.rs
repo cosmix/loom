@@ -40,13 +40,13 @@ fn test_stage_transition_workflow() {
         .expect("Should start executing stage 1");
     assert_eq!(stage1.status, StageStatus::Executing);
 
-    let stage1 = transition_stage("stage-1", StageStatus::Completed, work_dir)
+    let mut stage1 = transition_stage("stage-1", StageStatus::Completed, work_dir)
         .expect("Should complete stage 1");
     assert_eq!(stage1.status, StageStatus::Completed);
 
-    let stage1 = transition_stage("stage-1", StageStatus::Completed, work_dir)
-        .expect("Should verify stage 1");
-    assert_eq!(stage1.status, StageStatus::Completed);
+    // Set merged = true (required for dependents to be triggered)
+    stage1.merged = true;
+    save_stage(&stage1, work_dir).expect("Should save stage 1 with merged=true");
 
     // Trigger dependents - should mark stage 2 as Ready
     let triggered = trigger_dependents("stage-1", work_dir).expect("Should trigger dependents");
@@ -63,8 +63,11 @@ fn test_stage_transition_workflow() {
     // Complete and verify stage 2 (following proper state machine)
     transition_stage("stage-2", StageStatus::Executing, work_dir)
         .expect("Should start executing stage 2");
-    transition_stage("stage-2", StageStatus::Completed, work_dir).expect("Should complete stage 2");
-    transition_stage("stage-2", StageStatus::Completed, work_dir).expect("Should verify stage 2");
+    let mut stage2 = transition_stage("stage-2", StageStatus::Completed, work_dir)
+        .expect("Should complete stage 2");
+    // Set merged = true (required for dependents to be triggered)
+    stage2.merged = true;
+    save_stage(&stage2, work_dir).expect("Should save stage 2 with merged=true");
 
     // Trigger dependents - should mark stage 3 as Ready
     let triggered = trigger_dependents("stage-2", work_dir).expect("Should trigger dependents");
@@ -80,10 +83,11 @@ fn test_multiple_dependencies_all_satisfied() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = temp_dir.path();
 
-    // Create stage 1
+    // Create stage 1 (Completed AND merged)
     let mut stage1 = Stage::new("Stage 1".to_string(), None);
     stage1.id = "stage-1".to_string();
     stage1.status = StageStatus::Completed;
+    stage1.merged = true;
     save_stage(&stage1, work_dir).expect("Should save stage 1");
 
     // Create stage 2
@@ -100,7 +104,7 @@ fn test_multiple_dependencies_all_satisfied() {
     stage3.add_dependency("stage-2".to_string());
     save_stage(&stage3, work_dir).expect("Should save stage 3");
 
-    // Verify stage 1 - should not trigger stage 3 yet
+    // Verify stage 1 - should not trigger stage 3 yet (stage 2 not complete)
     let triggered = trigger_dependents("stage-1", work_dir).expect("Should trigger dependents");
     assert_eq!(triggered.len(), 0);
 
@@ -111,8 +115,11 @@ fn test_multiple_dependencies_all_satisfied() {
     transition_stage("stage-2", StageStatus::Queued, work_dir).expect("Should mark stage 2 ready");
     transition_stage("stage-2", StageStatus::Executing, work_dir)
         .expect("Should start executing stage 2");
-    transition_stage("stage-2", StageStatus::Completed, work_dir).expect("Should complete stage 2");
-    transition_stage("stage-2", StageStatus::Completed, work_dir).expect("Should verify stage 2");
+    let mut stage2 = transition_stage("stage-2", StageStatus::Completed, work_dir)
+        .expect("Should complete stage 2");
+    // Set merged = true (required for dependents to be triggered)
+    stage2.merged = true;
+    save_stage(&stage2, work_dir).expect("Should save stage 2 with merged=true");
 
     let triggered = trigger_dependents("stage-2", work_dir).expect("Should trigger dependents");
     assert_eq!(triggered.len(), 1);
@@ -127,10 +134,11 @@ fn test_parallel_stages() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = temp_dir.path();
 
-    // Create stage 1 (foundation)
+    // Create stage 1 (foundation - Completed AND merged)
     let mut stage1 = Stage::new("Stage 1".to_string(), None);
     stage1.id = "stage-1".to_string();
     stage1.status = StageStatus::Completed;
+    stage1.merged = true;
     save_stage(&stage1, work_dir).expect("Should save stage 1");
 
     // Create stages 2 and 3 (both depend on stage 1, can run in parallel)
