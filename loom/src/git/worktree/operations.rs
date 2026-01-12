@@ -3,7 +3,8 @@
 //! Core CRUD operations for git worktrees: create, remove, list, get_or_create.
 
 use anyhow::{bail, Context, Result};
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::models::worktree::Worktree;
@@ -220,4 +221,80 @@ pub fn get_or_create_worktree(
 
     // Create new worktree
     create_worktree(stage_id, repo_root, base_branch)
+}
+
+/// Find a worktree by ID or prefix.
+///
+/// First attempts an exact match: `.worktrees/{id}`
+/// If not found, scans the .worktrees directory for directories starting with the given prefix.
+///
+/// # Arguments
+/// * `repo_root` - Path to the repository root
+/// * `id` - The stage ID or prefix to find
+///
+/// # Returns
+/// * `Ok(Some(path))` - Single match found (returns path to worktree directory)
+/// * `Ok(None)` - No matches found
+/// * `Err` - Multiple matches found (ambiguous prefix) or filesystem error
+pub fn find_worktree_by_prefix(repo_root: &Path, id: &str) -> Result<Option<PathBuf>> {
+    let worktrees_dir = repo_root.join(".worktrees");
+
+    if !worktrees_dir.exists() {
+        return Ok(None);
+    }
+
+    // Try exact match first
+    let exact_path = worktrees_dir.join(id);
+    if exact_path.exists() && exact_path.is_dir() {
+        return Ok(Some(exact_path));
+    }
+
+    // Scan for prefix matches
+    let entries = fs::read_dir(&worktrees_dir)
+        .with_context(|| format!("Failed to read worktrees directory: {}", worktrees_dir.display()))?;
+
+    let mut matches: Vec<PathBuf> = Vec::new();
+
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+
+        if !path.is_dir() {
+            continue;
+        }
+
+        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+            if name.starts_with(id) {
+                matches.push(path);
+            }
+        }
+    }
+
+    match matches.len() {
+        0 => Ok(None),
+        1 => Ok(Some(matches.into_iter().next().unwrap())),
+        _ => {
+            let match_names: Vec<String> = matches
+                .iter()
+                .filter_map(|p| p.file_name().and_then(|s| s.to_str()).map(String::from))
+                .collect();
+            bail!(
+                "Ambiguous worktree prefix '{}': matches {} worktrees ({})",
+                id,
+                matches.len(),
+                match_names.join(", ")
+            );
+        }
+    }
+}
+
+/// Extract stage ID from a worktree path.
+///
+/// # Arguments
+/// * `path` - Path to the worktree directory
+///
+/// # Returns
+/// The stage ID (directory name)
+pub fn extract_worktree_stage_id(path: &Path) -> Option<String> {
+    path.file_name().and_then(|s| s.to_str()).map(String::from)
 }

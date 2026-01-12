@@ -1,0 +1,68 @@
+{
+  "env": {
+    "LOOM_SESSION_ID": "session-699b9f34-1768223694",
+    "LOOM_STAGE_ID": "prefix-matching",
+    "LOOM_WORK_DIR": "./.work"
+  },
+  "hasTrustDialogAccepted": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "LOOM_STAGE_ID='prefix-matching' LOOM_SESSION_ID='session-699b9f34-1768223694' LOOM_WORK_DIR='./.work' 'hooks/post-tool-use.sh'",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "command": "LOOM_STAGE_ID='prefix-matching' LOOM_SESSION_ID='session-699b9f34-1768223694' LOOM_WORK_DIR='./.work' 'hooks/pre-compact.sh'",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "LOOM_STAGE_ID='prefix-matching' LOOM_SESSION_ID='session-699b9f34-1768223694' LOOM_WORK_DIR='./.work' 'hooks/session-start.sh'",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "LOOM_STAGE_ID='prefix-matching' LOOM_SESSION_ID='session-699b9f34-1768223694' LOOM_WORK_DIR='./.work' 'hooks/stop.sh'",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "command": "LOOM_STAGE_ID='prefix-matching' LOOM_SESSION_ID='session-699b9f34-1768223694' LOOM_WORK_DIR='./.work' 'hooks/subagent-stop.sh'",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ]
+  },
+  "permissions": {
+    "defaultMode": "acceptEdits"
+  }
+}

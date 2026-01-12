@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use crate::commands::merge::mark_stage_merged;
 use crate::fs::stage_files::find_stage_file;
 use crate::git::cleanup::{cleanup_after_merge, prune_worktrees, CleanupConfig};
+use crate::git::worktree::find_worktree_by_prefix;
 use crate::models::stage::StageStatus;
 use crate::verify::transitions::parse_stage_from_markdown;
 
@@ -252,6 +253,9 @@ pub fn worktrees_dir() -> PathBuf {
 /// 2. CC runs `git merge loom/<stage>` → resolves → `git add` → `git commit`
 /// 3. The merge is complete but worktree/branch still exist
 /// 4. Run `loom worktree remove <stage>` to clean up
+///
+/// Supports prefix matching: `loom worktree remove pref` will match `prefix-matching`
+/// if it's the only worktree starting with "pref".
 pub fn remove(stage_id: String) -> Result<()> {
     let repo_root = std::env::current_dir()?;
     let work_dir = repo_root.join(".work");
@@ -260,18 +264,33 @@ pub fn remove(stage_id: String) -> Result<()> {
         bail!(".work/ directory not found. Run 'loom init' first.");
     }
 
+    // Resolve stage_id using prefix matching
+    let (worktree_path, actual_stage_id) = match find_worktree_by_prefix(&repo_root, &stage_id)? {
+        Some(path) => {
+            let actual_id = path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or(&stage_id)
+                .to_string();
+            (path, actual_id)
+        }
+        None => {
+            // No worktree found, but branch might still exist
+            // Fall back to the provided stage_id
+            (repo_root.join(".worktrees").join(&stage_id), stage_id.clone())
+        }
+    };
+
     println!();
     println!(
         "{} {} {}",
         "Cleaning up".cyan().bold(),
         "stage:".dimmed(),
-        stage_id.cyan()
+        actual_stage_id.cyan()
     );
     println!("{}", "─".repeat(50).dimmed());
 
-    // Check if worktree or branch exists
-    let worktree_path = repo_root.join(".worktrees").join(&stage_id);
-    let branch_name = format!("loom/{stage_id}");
+    let branch_name = format!("loom/{actual_stage_id}");
 
     let worktree_exists = worktree_path.exists();
     let branch_exists = std::process::Command::new("git")
@@ -285,7 +304,7 @@ pub fn remove(stage_id: String) -> Result<()> {
         println!(
             "  {} Stage '{}' is already cleaned up",
             "✓".green().bold(),
-            stage_id
+            actual_stage_id
         );
         println!("    {} Worktree not found", "─".dimmed());
         println!(
@@ -295,7 +314,7 @@ pub fn remove(stage_id: String) -> Result<()> {
         );
 
         // Still mark as merged in case stage status wasn't updated
-        mark_stage_merged(&stage_id, &work_dir)?;
+        mark_stage_merged(&actual_stage_id, &work_dir)?;
         println!();
         return Ok(());
     }
@@ -308,14 +327,14 @@ pub fn remove(stage_id: String) -> Result<()> {
         verbose: false,
     };
 
-    let result = cleanup_after_merge(&stage_id, &repo_root, &config)?;
+    let result = cleanup_after_merge(&actual_stage_id, &repo_root, &config)?;
 
     // Report results
     if result.worktree_removed {
         println!(
             "  {} Removed worktree: {}",
             "✓".green().bold(),
-            format!(".worktrees/{stage_id}").dimmed()
+            format!(".worktrees/{actual_stage_id}").dimmed()
         );
     } else if worktree_exists {
         println!("  {} Worktree not found (already removed)", "─".dimmed());
@@ -337,11 +356,11 @@ pub fn remove(stage_id: String) -> Result<()> {
     }
 
     // Mark stage as merged
-    mark_stage_merged(&stage_id, &work_dir)?;
+    mark_stage_merged(&actual_stage_id, &work_dir)?;
     println!(
         "  {} Stage '{}' marked as merged",
         "✓".green().bold(),
-        stage_id
+        actual_stage_id
     );
 
     println!();

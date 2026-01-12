@@ -21,7 +21,8 @@ mod settings;
 pub use base::{cleanup_all_temp_branches, cleanup_temp_branch, resolve_base_branch, ResolvedBase};
 pub use checks::{check_git_available, check_worktree_support, get_worktree_path, worktree_exists};
 pub use operations::{
-    clean_worktrees, create_worktree, get_or_create_worktree, list_worktrees, remove_worktree,
+    clean_worktrees, create_worktree, extract_worktree_stage_id, find_worktree_by_prefix,
+    get_or_create_worktree, list_worktrees, remove_worktree,
 };
 pub use parser::WorktreeInfo;
 pub use settings::{ensure_work_symlink, setup_worktree_hooks};

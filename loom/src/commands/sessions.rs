@@ -3,6 +3,7 @@
 
 use anyhow::{bail, Context, Result};
 
+use crate::fs::session_files::find_session_file;
 use crate::models::session::Session;
 use crate::orchestrator::terminal::{create_backend, BackendType};
 
@@ -41,19 +42,25 @@ pub fn list() -> Result<()> {
     Ok(())
 }
 
-/// Kill a session by ID
+/// Kill a session by ID or prefix
 pub fn kill(session_id: String) -> Result<()> {
-    println!("Killing session: {session_id}");
-
     let work_dir = std::env::current_dir()?.join(".work");
     if !work_dir.exists() {
         bail!(".work/ directory not found. Run 'loom init' first.");
     }
 
-    let session_file = work_dir.join("sessions").join(format!("{session_id}.md"));
-    if !session_file.exists() {
-        bail!("Session '{session_id}' not found");
-    }
+    let session_file = match find_session_file(&work_dir, &session_id)? {
+        Some(path) => path,
+        None => bail!("Session '{session_id}' not found"),
+    };
+
+    // Extract the actual session ID from the found file
+    let actual_session_id = session_file
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(&session_id);
+
+    println!("Killing session: {actual_session_id}");
 
     // Read session file and parse it
     let content = std::fs::read_to_string(&session_file)
@@ -90,14 +97,14 @@ pub fn kill(session_id: String) -> Result<()> {
     println!("  Session file removed");
 
     // Also remove the signal file if it exists
-    let signal_file = work_dir.join("signals").join(format!("{session_id}.md"));
+    let signal_file = work_dir.join("signals").join(format!("{actual_session_id}.md"));
     if signal_file.exists() {
         std::fs::remove_file(&signal_file)
             .with_context(|| format!("Failed to remove signal file: {}", signal_file.display()))?;
         println!("  Signal file removed");
     }
 
-    println!("\nSession '{session_id}' killed successfully");
+    println!("\nSession '{actual_session_id}' killed successfully");
     Ok(())
 }
 
