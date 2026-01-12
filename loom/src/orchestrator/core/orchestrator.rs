@@ -118,7 +118,12 @@ impl Orchestrator {
         self.sync_queued_status_to_files()
             .context("Failed to sync queued status to files")?;
 
-        let mut total_sessions_spawned = 0;
+        // Spawn merge resolution sessions for stages stuck in MergeConflict/MergeBlocked
+        let initial_merge_sessions = self
+            .spawn_merge_resolution_sessions()
+            .context("Failed to spawn merge resolution sessions")?;
+
+        let mut total_sessions_spawned = initial_merge_sessions;
         let mut completed_stages = Vec::new();
         let mut failed_stages = Vec::new();
         let mut needs_handoff = Vec::new();
@@ -134,6 +139,12 @@ impl Orchestrator {
             // Sync queued status back to files so status display is accurate
             self.sync_queued_status_to_files()
                 .context("Failed to sync queued status to files")?;
+
+            // Spawn merge resolution sessions for stages stuck in MergeConflict/MergeBlocked
+            let merge_sessions_spawned = self
+                .spawn_merge_resolution_sessions()
+                .context("Failed to spawn merge resolution sessions")?;
+            total_sessions_spawned += merge_sessions_spawned;
 
             let started = self
                 .start_ready_stages()

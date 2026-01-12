@@ -126,7 +126,7 @@ fn parse_merge_stats(output: &str) -> (u32, u32, u32) {
     (files_changed, insertions, deletions)
 }
 
-/// Get list of files with conflicts
+/// Get list of files with conflicts (during an active merge)
 fn get_conflicting_files(repo_root: &Path) -> Result<Vec<String>> {
     let output = Command::new("git")
         .args(["diff", "--name-only", "--diff-filter=U"])
@@ -142,6 +142,47 @@ fn get_conflicting_files(repo_root: &Path) -> Result<Vec<String>> {
         .collect();
 
     Ok(files)
+}
+
+/// Get list of files that would conflict if we merged a branch.
+///
+/// This uses `git merge --no-commit` to test the merge, then aborts.
+/// Returns the list of conflicting files, or empty if merge would succeed.
+pub fn get_conflicting_files_from_status(
+    source_branch: &str,
+    target_branch: &str,
+    repo_root: &Path,
+) -> Result<Vec<String>> {
+    // Save current branch
+    let original_branch = current_branch(repo_root)?;
+
+    // Checkout target branch
+    checkout_branch(target_branch, repo_root)?;
+
+    // Try merge with --no-commit to test for conflicts
+    let output = Command::new("git")
+        .args(["merge", "--no-commit", "--no-ff", source_branch])
+        .current_dir(repo_root)
+        .output()
+        .with_context(|| "Failed to test merge")?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    let conflicts = if !output.status.success()
+        && (stderr.contains("CONFLICT") || stdout.contains("CONFLICT"))
+    {
+        // Get the conflicting files
+        get_conflicting_files(repo_root).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    // Always abort the test merge and restore original branch
+    abort_merge(repo_root).ok();
+    checkout_branch(&original_branch, repo_root).ok();
+
+    Ok(conflicts)
 }
 
 /// Abort a merge in progress
