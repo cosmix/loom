@@ -3,7 +3,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 use loom::checkpoints::CheckpointStatus;
 use loom::commands::{
     attach, checkpoint, clean, diagnose, fact, graph, init, knowledge, learn, memory, merge,
-    resume, run, self_update, sessions, stage, status, stop, worktree_cmd,
+    resume, run, self_update, sessions, stage, status, stop, verify, worktree_cmd,
 };
 use loom::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use loom::validation::{clap_description_validator, clap_id_validator};
@@ -144,6 +144,12 @@ enum Commands {
     Memory {
         #[command(subcommand)]
         command: MemoryCommands,
+    },
+
+    /// Verify integrity of loom resources
+    Verify {
+        #[command(subcommand)]
+        command: VerifyCommands,
     },
 
     /// Update loom and configuration files
@@ -628,6 +634,16 @@ enum MemoryCommands {
 }
 
 #[derive(Subcommand)]
+enum VerifyCommands {
+    /// Verify learning files haven't been corrupted
+    Learnings {
+        /// Session ID to verify against (auto-detected from worktree if not provided)
+        #[arg(short, long, value_parser = clap_id_validator)]
+        session: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
 enum AttachCommands {
     /// Attach to all running sessions in a unified tmux view
     All {
@@ -786,6 +802,9 @@ fn main() -> Result<()> {
             } => memory::list(session, entry_type),
             MemoryCommands::Show { session } => memory::show(session),
             MemoryCommands::Sessions => memory::sessions(),
+        },
+        Commands::Verify { command } => match command {
+            VerifyCommands::Learnings { session } => verify::learnings(session),
         },
         Commands::SelfUpdate => self_update::execute(),
         Commands::Clean {

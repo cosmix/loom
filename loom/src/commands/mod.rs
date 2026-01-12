@@ -18,4 +18,5 @@ pub mod stage;
 pub mod status;
 pub mod stop;
 pub mod track;
+pub mod verify;
 pub mod worktree_cmd;
