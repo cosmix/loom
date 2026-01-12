@@ -1,8 +1,10 @@
 //! Stage execution logic - creating worktrees, spawning sessions
 
 use anyhow::{Context, Result};
+use chrono::Utc;
 
 use crate::git;
+use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::signals::{generate_signal, DependencyStatus};
@@ -97,12 +99,29 @@ impl StageExecutor for Orchestrator {
             }
         };
 
-        let worktree = git::get_or_create_worktree(
+        let worktree = match git::get_or_create_worktree(
             stage_id,
             &self.config.repo_root,
             Some(resolved.branch_name()),
-        )
-        .with_context(|| format!("Failed to get or create worktree for stage: {stage_id}"))?;
+        ) {
+            Ok(wt) => wt,
+            Err(e) => {
+                let err_msg = format!("{e:#}");
+                eprintln!("Stage '{stage_id}' blocked due to worktree error: {err_msg}");
+
+                // Mark stage as blocked with failure info
+                let mut blocked_stage = self.load_stage(stage_id)?;
+                if blocked_stage.try_mark_blocked().is_ok() {
+                    blocked_stage.failure_info = Some(FailureInfo {
+                        failure_type: FailureType::InfrastructureError,
+                        detected_at: Utc::now(),
+                        evidence: vec![err_msg],
+                    });
+                    self.save_stage(&blocked_stage)?;
+                }
+                return Ok(());
+            }
+        };
 
         let session = Session::new();
 

@@ -61,19 +61,33 @@ pub fn create_worktree(
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
 
-        // If branch already exists, try without -b
+        // If branch already exists, delete it and recreate from correct base
+        // This ensures we always use the correct base branch, not a stale one
         if stderr.contains("already exists") {
-            let output = Command::new("git")
-                .args(["worktree", "add"])
-                .arg(&worktree_path)
-                .arg(&branch_name)
+            // Delete the existing branch
+            let delete_output = Command::new("git")
+                .args(["branch", "-D", &branch_name])
                 .current_dir(repo_root)
                 .output()
-                .with_context(|| "Failed to execute git worktree add")?;
+                .with_context(|| format!("Failed to delete existing branch {branch_name}"))?;
 
-            if !output.status.success() {
-                let stderr_msg = String::from_utf8_lossy(&output.stderr);
-                bail!("git worktree add failed: {stderr_msg}");
+            if !delete_output.status.success() {
+                let delete_stderr = String::from_utf8_lossy(&delete_output.stderr);
+                bail!(
+                    "Failed to delete existing branch {branch_name}: {delete_stderr}"
+                );
+            }
+
+            // Retry creating the worktree with the correct base
+            let retry_output = Command::new("git")
+                .args(&args)
+                .current_dir(repo_root)
+                .output()
+                .with_context(|| "Failed to execute git worktree add after branch deletion")?;
+
+            if !retry_output.status.success() {
+                let retry_stderr = String::from_utf8_lossy(&retry_output.stderr);
+                bail!("git worktree add failed after branch deletion: {retry_stderr}");
             }
         } else {
             bail!("git worktree add failed: {stderr}");
