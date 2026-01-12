@@ -14,7 +14,10 @@ pub fn show(file: Option<String>) -> Result<()> {
     let work_dir = WorkDir::new(".")?;
     work_dir.load()?;
 
-    let knowledge = KnowledgeDir::new(work_dir.root());
+    let project_root = work_dir
+        .project_root()
+        .context("Cannot determine project root")?;
+    let knowledge = KnowledgeDir::new(project_root);
 
     if !knowledge.exists() {
         println!(
@@ -50,7 +53,10 @@ pub fn update(file: String, content: String) -> Result<()> {
     let work_dir = WorkDir::new(".")?;
     work_dir.load()?;
 
-    let knowledge = KnowledgeDir::new(work_dir.root());
+    let project_root = work_dir
+        .project_root()
+        .context("Cannot determine project root")?;
+    let knowledge = KnowledgeDir::new(project_root);
 
     if !knowledge.exists() {
         knowledge
@@ -75,7 +81,10 @@ pub fn init() -> Result<()> {
     let work_dir = WorkDir::new(".")?;
     work_dir.load()?;
 
-    let knowledge = KnowledgeDir::new(work_dir.root());
+    let project_root = work_dir
+        .project_root()
+        .context("Cannot determine project root")?;
+    let knowledge = KnowledgeDir::new(project_root);
 
     if knowledge.exists() {
         println!(
@@ -103,7 +112,10 @@ pub fn list() -> Result<()> {
     let work_dir = WorkDir::new(".")?;
     work_dir.load()?;
 
-    let knowledge = KnowledgeDir::new(work_dir.root());
+    let project_root = work_dir
+        .project_root()
+        .context("Cannot determine project root")?;
+    let knowledge = KnowledgeDir::new(project_root);
 
     if !knowledge.exists() {
         println!(
@@ -230,8 +242,8 @@ mod tests {
         let result = init();
         assert!(result.is_ok());
 
-        // Verify files were created
-        let knowledge_dir = test_dir.join(".work").join("knowledge");
+        // Verify files were created at project root (not .work)
+        let knowledge_dir = test_dir.join("knowledge");
         assert!(knowledge_dir.exists());
         assert!(knowledge_dir.join("entry-points.md").exists());
         assert!(knowledge_dir.join("patterns.md").exists());
@@ -258,8 +270,8 @@ mod tests {
         );
         assert!(result.is_ok());
 
-        // Verify content was appended
-        let content = fs::read_to_string(test_dir.join(".work/knowledge/entry-points.md")).unwrap();
+        // Verify content was appended (knowledge is at project root, not .work)
+        let content = fs::read_to_string(test_dir.join("knowledge/entry-points.md")).unwrap();
         assert!(content.contains("## New Section"));
         assert!(content.contains("- New entry"));
 
