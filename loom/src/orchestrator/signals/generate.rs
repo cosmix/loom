@@ -118,7 +118,9 @@ pub fn build_embedded_context_with_stage_and_session(
     }
 
     // Read knowledge summary if knowledge directory exists
-    let knowledge = KnowledgeDir::new(work_dir);
+    // KnowledgeDir expects project root, not work_dir
+    let project_root = work_dir.parent().unwrap_or(work_dir);
+    let knowledge = KnowledgeDir::new(project_root);
     context.knowledge_exists = knowledge.exists();
     if context.knowledge_exists {
         let summary = knowledge.generate_summary().ok().filter(|s| !s.is_empty());

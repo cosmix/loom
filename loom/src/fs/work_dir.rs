@@ -44,8 +44,11 @@ impl WorkDir {
         self.create_readme()?;
 
         // Initialize knowledge directory with template files
-        let knowledge = KnowledgeDir::new(&self.root);
-        knowledge.initialize()?;
+        // KnowledgeDir expects project root (parent of .work), not work_dir
+        if let Some(project_root) = self.project_root() {
+            let knowledge = KnowledgeDir::new(project_root);
+            knowledge.initialize()?;
+        }
 
         Ok(())
     }

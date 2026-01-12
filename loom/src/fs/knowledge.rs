@@ -55,16 +55,16 @@ impl KnowledgeFile {
     }
 }
 
-/// Manager for the .work/knowledge/ directory
+/// Manager for the doc/loom/knowledge/ directory
 pub struct KnowledgeDir {
     root: PathBuf,
 }
 
 impl KnowledgeDir {
-    /// Create a new KnowledgeDir from the work directory root
-    pub fn new<P: AsRef<Path>>(work_dir: P) -> Self {
+    /// Create a new KnowledgeDir from the project root directory
+    pub fn new<P: AsRef<Path>>(project_root: P) -> Self {
         Self {
-            root: work_dir.as_ref().join("knowledge"),
+            root: project_root.as_ref().join("doc/loom/knowledge"),
         }
     }
 
@@ -290,14 +290,14 @@ mod tests {
     #[test]
     fn test_knowledge_dir_initialize() {
         let temp = TempDir::new().unwrap();
-        let work_dir = temp.path().join(".work");
-        fs::create_dir_all(&work_dir).unwrap();
+        let project_root = temp.path();
 
-        let knowledge = KnowledgeDir::new(&work_dir);
+        let knowledge = KnowledgeDir::new(project_root);
         assert!(!knowledge.exists());
 
         knowledge.initialize().unwrap();
         assert!(knowledge.exists());
+        assert!(project_root.join("doc/loom/knowledge").exists());
 
         // Check all files were created
         for file_type in KnowledgeFile::all() {
@@ -309,10 +309,9 @@ mod tests {
     #[test]
     fn test_knowledge_append() {
         let temp = TempDir::new().unwrap();
-        let work_dir = temp.path().join(".work");
-        fs::create_dir_all(&work_dir).unwrap();
+        let project_root = temp.path();
 
-        let knowledge = KnowledgeDir::new(&work_dir);
+        let knowledge = KnowledgeDir::new(project_root);
         knowledge.initialize().unwrap();
 
         // Append to entry-points
@@ -331,10 +330,9 @@ mod tests {
     #[test]
     fn test_generate_summary() {
         let temp = TempDir::new().unwrap();
-        let work_dir = temp.path().join(".work");
-        fs::create_dir_all(&work_dir).unwrap();
+        let project_root = temp.path();
 
-        let knowledge = KnowledgeDir::new(&work_dir);
+        let knowledge = KnowledgeDir::new(project_root);
         knowledge.initialize().unwrap();
 
         // Add some content
