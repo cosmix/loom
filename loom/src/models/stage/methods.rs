@@ -220,6 +220,28 @@ impl Stage {
         Ok(())
     }
 
+    /// Mark the stage as completed with failures (acceptance criteria failed).
+    ///
+    /// This indicates the stage finished executing but acceptance criteria failed.
+    /// The stage can be retried by transitioning back to Executing.
+    ///
+    /// # Returns
+    /// `Ok(())` if the transition succeeded, `Err` if invalid
+    pub fn try_complete_with_failures(&mut self) -> Result<()> {
+        self.try_transition(StageStatus::CompletedWithFailures)
+    }
+
+    /// Mark the stage as merge blocked (merge failed with actual error, not conflicts).
+    ///
+    /// This indicates the merge operation failed due to an error (not conflicts).
+    /// The stage can be retried by transitioning back to Executing.
+    ///
+    /// # Returns
+    /// `Ok(())` if the transition succeeded, `Err` if invalid
+    pub fn try_mark_merge_blocked(&mut self) -> Result<()> {
+        self.try_transition(StageStatus::MergeBlocked)
+    }
+
     pub fn hold(&mut self) {
         if !self.held {
             self.held = true;

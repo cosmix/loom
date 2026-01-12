@@ -143,6 +143,16 @@ pub enum StageStatus {
     /// Spawns a conflict resolution session to handle the merge.
     #[serde(rename = "merge-conflict")]
     MergeConflict,
+
+    /// Stage finished executing but acceptance criteria failed.
+    /// Can be retried by transitioning back to Executing.
+    #[serde(rename = "completed-with-failures")]
+    CompletedWithFailures,
+
+    /// Stage merge failed with an actual error (not conflicts).
+    /// Can be retried by transitioning back to Executing.
+    #[serde(rename = "merge-blocked")]
+    MergeBlocked,
 }
 
 impl std::fmt::Display for StageStatus {
@@ -157,6 +167,8 @@ impl std::fmt::Display for StageStatus {
             StageStatus::NeedsHandoff => write!(f, "NeedsHandoff"),
             StageStatus::Skipped => write!(f, "Skipped"),
             StageStatus::MergeConflict => write!(f, "MergeConflict"),
+            StageStatus::CompletedWithFailures => write!(f, "CompletedWithFailures"),
+            StageStatus::MergeBlocked => write!(f, "MergeBlocked"),
         }
     }
 }

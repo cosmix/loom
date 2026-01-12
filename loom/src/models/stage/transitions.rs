@@ -8,11 +8,13 @@ impl StageStatus {
     /// Valid transitions:
     /// - `WaitingForDeps` -> `Queued` | `Skipped` (when dependencies satisfied or user skips)
     /// - `Queued` -> `Executing` | `Skipped` | `Blocked` (when session spawns, user skips, or pre-execution failure)
-    /// - `Executing` -> `Completed` | `Blocked` | `NeedsHandoff` | `WaitingForInput` | `MergeConflict`
+    /// - `Executing` -> `Completed` | `Blocked` | `NeedsHandoff` | `WaitingForInput` | `MergeConflict` | `CompletedWithFailures` | `MergeBlocked`
     /// - `Blocked` -> `Queued` | `Skipped` (when unblocked or user skips)
     /// - `NeedsHandoff` -> `Queued` (when resumed)
     /// - `WaitingForInput` -> `Executing` (when input provided)
     /// - `MergeConflict` -> `Completed` | `Blocked` (when conflicts resolved or resolution fails)
+    /// - `CompletedWithFailures` -> `Executing` (for retry)
+    /// - `MergeBlocked` -> `Executing` (for retry)
     /// - `Completed` is a terminal state
     /// - `Skipped` is a terminal state
     ///
@@ -44,6 +46,8 @@ impl StageStatus {
                     | StageStatus::NeedsHandoff
                     | StageStatus::WaitingForInput
                     | StageStatus::MergeConflict
+                    | StageStatus::CompletedWithFailures
+                    | StageStatus::MergeBlocked
             ),
             StageStatus::WaitingForInput => matches!(new_status, StageStatus::Executing),
             StageStatus::Completed => false, // Terminal state
@@ -54,6 +58,12 @@ impl StageStatus {
             StageStatus::Skipped => false, // Terminal state
             StageStatus::MergeConflict => {
                 matches!(new_status, StageStatus::Completed | StageStatus::Blocked)
+            }
+            StageStatus::CompletedWithFailures => {
+                matches!(new_status, StageStatus::Executing)
+            }
+            StageStatus::MergeBlocked => {
+                matches!(new_status, StageStatus::Executing)
             }
         }
     }
@@ -90,6 +100,8 @@ impl StageStatus {
                 StageStatus::NeedsHandoff,
                 StageStatus::WaitingForInput,
                 StageStatus::MergeConflict,
+                StageStatus::CompletedWithFailures,
+                StageStatus::MergeBlocked,
             ],
             StageStatus::WaitingForInput => vec![StageStatus::Executing],
             StageStatus::Completed => vec![], // Terminal state
@@ -97,6 +109,8 @@ impl StageStatus {
             StageStatus::NeedsHandoff => vec![StageStatus::Queued],
             StageStatus::Skipped => vec![], // Terminal state
             StageStatus::MergeConflict => vec![StageStatus::Completed, StageStatus::Blocked],
+            StageStatus::CompletedWithFailures => vec![StageStatus::Executing],
+            StageStatus::MergeBlocked => vec![StageStatus::Executing],
         }
     }
 }

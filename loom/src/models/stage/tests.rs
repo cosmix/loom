@@ -133,6 +133,8 @@ fn test_same_status_transition_is_valid() {
         StageStatus::WaitingForInput,
         StageStatus::Skipped,
         StageStatus::MergeConflict,
+        StageStatus::CompletedWithFailures,
+        StageStatus::MergeBlocked,
     ];
 
     for status in statuses {
@@ -179,12 +181,14 @@ fn test_valid_transitions_waiting_for_deps() {
 #[test]
 fn test_valid_transitions_executing() {
     let transitions = StageStatus::Executing.valid_transitions();
-    assert_eq!(transitions.len(), 5);
+    assert_eq!(transitions.len(), 7);
     assert!(transitions.contains(&StageStatus::Completed));
     assert!(transitions.contains(&StageStatus::Blocked));
     assert!(transitions.contains(&StageStatus::NeedsHandoff));
     assert!(transitions.contains(&StageStatus::WaitingForInput));
     assert!(transitions.contains(&StageStatus::MergeConflict));
+    assert!(transitions.contains(&StageStatus::CompletedWithFailures));
+    assert!(transitions.contains(&StageStatus::MergeBlocked));
 }
 
 #[test]
@@ -559,7 +563,8 @@ fn test_merge_conflict_cannot_transition_to_other_states() {
 fn test_valid_transitions_executing_includes_merge_conflict() {
     let transitions = StageStatus::Executing.valid_transitions();
     assert!(transitions.contains(&StageStatus::MergeConflict));
-    assert_eq!(transitions.len(), 5); // Completed, Blocked, NeedsHandoff, WaitingForInput, MergeConflict
+    // Completed, Blocked, NeedsHandoff, WaitingForInput, MergeConflict, CompletedWithFailures, MergeBlocked
+    assert_eq!(transitions.len(), 7);
 }
 
 #[test]
@@ -650,4 +655,188 @@ fn test_merge_conflict_display() {
 fn test_same_status_transition_includes_merge_conflict() {
     let status = StageStatus::MergeConflict;
     assert!(status.can_transition_to(&status.clone()));
+}
+
+// =========================================================================
+// CompletedWithFailures status tests
+// =========================================================================
+
+#[test]
+fn test_executing_can_transition_to_completed_with_failures() {
+    let status = StageStatus::Executing;
+    assert!(status.can_transition_to(&StageStatus::CompletedWithFailures));
+}
+
+#[test]
+fn test_completed_with_failures_can_transition_to_executing() {
+    let status = StageStatus::CompletedWithFailures;
+    assert!(status.can_transition_to(&StageStatus::Executing));
+}
+
+#[test]
+fn test_completed_with_failures_cannot_transition_to_other_states() {
+    let status = StageStatus::CompletedWithFailures;
+    assert!(!status.can_transition_to(&StageStatus::WaitingForDeps));
+    assert!(!status.can_transition_to(&StageStatus::Queued));
+    assert!(!status.can_transition_to(&StageStatus::Completed));
+    assert!(!status.can_transition_to(&StageStatus::Blocked));
+    assert!(!status.can_transition_to(&StageStatus::NeedsHandoff));
+    assert!(!status.can_transition_to(&StageStatus::WaitingForInput));
+    assert!(!status.can_transition_to(&StageStatus::Skipped));
+    assert!(!status.can_transition_to(&StageStatus::MergeConflict));
+    assert!(!status.can_transition_to(&StageStatus::MergeBlocked));
+}
+
+#[test]
+fn test_valid_transitions_executing_includes_completed_with_failures() {
+    let transitions = StageStatus::Executing.valid_transitions();
+    assert!(transitions.contains(&StageStatus::CompletedWithFailures));
+}
+
+#[test]
+fn test_valid_transitions_completed_with_failures() {
+    let transitions = StageStatus::CompletedWithFailures.valid_transitions();
+    assert!(transitions.contains(&StageStatus::Executing));
+    assert_eq!(transitions.len(), 1);
+}
+
+#[test]
+fn test_stage_try_complete_with_failures_valid() {
+    let mut stage = create_test_stage(StageStatus::Executing);
+    let result = stage.try_complete_with_failures();
+    assert!(result.is_ok());
+    assert_eq!(stage.status, StageStatus::CompletedWithFailures);
+}
+
+#[test]
+fn test_stage_try_complete_with_failures_invalid() {
+    let mut stage = create_test_stage(StageStatus::WaitingForDeps);
+    let result = stage.try_complete_with_failures();
+    assert!(result.is_err());
+    assert_eq!(stage.status, StageStatus::WaitingForDeps);
+}
+
+#[test]
+fn test_completed_with_failures_retry_workflow() {
+    let mut stage = create_test_stage(StageStatus::Executing);
+
+    // Executing -> CompletedWithFailures (acceptance criteria failed)
+    assert!(stage.try_complete_with_failures().is_ok());
+    assert_eq!(stage.status, StageStatus::CompletedWithFailures);
+
+    // CompletedWithFailures -> Executing (retry)
+    assert!(stage.try_mark_executing().is_ok());
+    assert_eq!(stage.status, StageStatus::Executing);
+
+    // Executing -> Completed (retry succeeds)
+    assert!(stage.try_complete(None).is_ok());
+    assert_eq!(stage.status, StageStatus::Completed);
+}
+
+#[test]
+fn test_completed_with_failures_display() {
+    assert_eq!(
+        format!("{}", StageStatus::CompletedWithFailures),
+        "CompletedWithFailures"
+    );
+}
+
+#[test]
+fn test_same_status_transition_includes_completed_with_failures() {
+    let status = StageStatus::CompletedWithFailures;
+    assert!(status.can_transition_to(&status.clone()));
+}
+
+// =========================================================================
+// MergeBlocked status tests
+// =========================================================================
+
+#[test]
+fn test_executing_can_transition_to_merge_blocked() {
+    let status = StageStatus::Executing;
+    assert!(status.can_transition_to(&StageStatus::MergeBlocked));
+}
+
+#[test]
+fn test_merge_blocked_can_transition_to_executing() {
+    let status = StageStatus::MergeBlocked;
+    assert!(status.can_transition_to(&StageStatus::Executing));
+}
+
+#[test]
+fn test_merge_blocked_cannot_transition_to_other_states() {
+    let status = StageStatus::MergeBlocked;
+    assert!(!status.can_transition_to(&StageStatus::WaitingForDeps));
+    assert!(!status.can_transition_to(&StageStatus::Queued));
+    assert!(!status.can_transition_to(&StageStatus::Completed));
+    assert!(!status.can_transition_to(&StageStatus::Blocked));
+    assert!(!status.can_transition_to(&StageStatus::NeedsHandoff));
+    assert!(!status.can_transition_to(&StageStatus::WaitingForInput));
+    assert!(!status.can_transition_to(&StageStatus::Skipped));
+    assert!(!status.can_transition_to(&StageStatus::MergeConflict));
+    assert!(!status.can_transition_to(&StageStatus::CompletedWithFailures));
+}
+
+#[test]
+fn test_valid_transitions_executing_includes_merge_blocked() {
+    let transitions = StageStatus::Executing.valid_transitions();
+    assert!(transitions.contains(&StageStatus::MergeBlocked));
+}
+
+#[test]
+fn test_valid_transitions_merge_blocked() {
+    let transitions = StageStatus::MergeBlocked.valid_transitions();
+    assert!(transitions.contains(&StageStatus::Executing));
+    assert_eq!(transitions.len(), 1);
+}
+
+#[test]
+fn test_stage_try_mark_merge_blocked_valid() {
+    let mut stage = create_test_stage(StageStatus::Executing);
+    let result = stage.try_mark_merge_blocked();
+    assert!(result.is_ok());
+    assert_eq!(stage.status, StageStatus::MergeBlocked);
+}
+
+#[test]
+fn test_stage_try_mark_merge_blocked_invalid() {
+    let mut stage = create_test_stage(StageStatus::WaitingForDeps);
+    let result = stage.try_mark_merge_blocked();
+    assert!(result.is_err());
+    assert_eq!(stage.status, StageStatus::WaitingForDeps);
+}
+
+#[test]
+fn test_merge_blocked_retry_workflow() {
+    let mut stage = create_test_stage(StageStatus::Executing);
+
+    // Executing -> MergeBlocked (merge failed with error)
+    assert!(stage.try_mark_merge_blocked().is_ok());
+    assert_eq!(stage.status, StageStatus::MergeBlocked);
+
+    // MergeBlocked -> Executing (retry)
+    assert!(stage.try_mark_executing().is_ok());
+    assert_eq!(stage.status, StageStatus::Executing);
+
+    // Executing -> Completed (retry succeeds)
+    assert!(stage.try_complete(None).is_ok());
+    assert_eq!(stage.status, StageStatus::Completed);
+}
+
+#[test]
+fn test_merge_blocked_display() {
+    assert_eq!(format!("{}", StageStatus::MergeBlocked), "MergeBlocked");
+}
+
+#[test]
+fn test_same_status_transition_includes_merge_blocked() {
+    let status = StageStatus::MergeBlocked;
+    assert!(status.can_transition_to(&status.clone()));
+}
+
+#[test]
+fn test_valid_transitions_executing_count() {
+    let transitions = StageStatus::Executing.valid_transitions();
+    // Completed, Blocked, NeedsHandoff, WaitingForInput, MergeConflict, CompletedWithFailures, MergeBlocked
+    assert_eq!(transitions.len(), 7);
 }

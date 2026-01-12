@@ -18,6 +18,8 @@ pub fn status_indicator(status: &StageStatus) -> ColoredString {
         StageStatus::NeedsHandoff => "⟳".yellow().bold(),
         StageStatus::Skipped => "⊘".white().dimmed().strikethrough(),
         StageStatus::MergeConflict => "⚡".yellow().bold(),
+        StageStatus::CompletedWithFailures => "✗".red().bold(),
+        StageStatus::MergeBlocked => "⚠".red().bold(),
     }
 }
 
@@ -28,10 +30,12 @@ pub fn status_priority(status: &StageStatus) -> u8 {
         StageStatus::Queued => 1,
         StageStatus::WaitingForInput => 2,
         StageStatus::NeedsHandoff => 3,
-        StageStatus::MergeConflict => 4, // Needs attention, similar to handoff
-        StageStatus::WaitingForDeps => 5,
-        StageStatus::Blocked => 6,
-        StageStatus::Completed => 7,
-        StageStatus::Skipped => 8,
+        StageStatus::MergeConflict => 4,           // Needs attention, similar to handoff
+        StageStatus::CompletedWithFailures => 5,   // Needs retry
+        StageStatus::MergeBlocked => 6,            // Merge failed, needs attention
+        StageStatus::WaitingForDeps => 7,
+        StageStatus::Blocked => 8,
+        StageStatus::Completed => 9,
+        StageStatus::Skipped => 10,
     }
 }

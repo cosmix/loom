@@ -30,7 +30,11 @@ pub fn recover(stage_id: String, force: bool) -> Result<()> {
     // Validate stage is in a recoverable state
     if !force {
         match stage.status {
-            StageStatus::Blocked | StageStatus::NeedsHandoff | StageStatus::Executing => {
+            StageStatus::Blocked
+            | StageStatus::NeedsHandoff
+            | StageStatus::Executing
+            | StageStatus::CompletedWithFailures
+            | StageStatus::MergeBlocked => {
                 // These are recoverable states
             }
             StageStatus::Completed => {
