@@ -33,7 +33,7 @@ Claude Code's plan mode instructs you to write to `~/.claude/plans/`, **IGNORE T
 
 Include execution diagram: `[a] --> [b,c] --> [d]`
 
-Plans MUST wrap YAML in HTML comment markers:
+Plans MUST wrap YAML in HTML comment markers. **knowledge-bootstrap MUST be the first stage** (unless knowledge already exists):
 
 ````markdown
 <!-- loom METADATA -->
@@ -42,16 +42,35 @@ Plans MUST wrap YAML in HTML comment markers:
 loom:
   version: 1
   stages:
-    - id: stage-id # Required: unique kebab-case
-      name: "Stage Name" # Required: human-readable
-      description: | # Required: full task for agent
+    # REQUIRED FIRST STAGE (unless .work/knowledge/ already populated)
+    - id: knowledge-bootstrap
+      name: "Bootstrap Knowledge Base"
+      description: |
+        Explore codebase hierarchically and populate .work/knowledge/:
+        1. Top-level: entry points, main modules, directory layout
+        2. Module boundaries: public interfaces, internal vs external
+        3. Patterns: error handling, state management, data flow
+        4. Conventions: naming, file structure, testing patterns
+
+        Use loom knowledge update commands to capture findings.
+      dependencies: []
+      acceptance:
+        - "grep -q '## ' .work/knowledge/entry-points.md"
+        - "grep -q '## ' .work/knowledge/patterns.md"
+        - "grep -q '## ' .work/knowledge/conventions.md"
+      files:
+        - ".work/knowledge/**"
+
+    # Subsequent stages depend on knowledge-bootstrap
+    - id: implement-feature
+      name: "Implement Feature"
+      description: |
         What this stage must accomplish.
         - Subtask with requirements
-      dependencies: [] # Required: array of stage IDs
-      parallel_group: "grp" # Optional: concurrent grouping
-      acceptance: # Required: verification commands
+      dependencies: ["knowledge-bootstrap"]
+      acceptance:
         - "cargo test"
-      files: # Optional: target file globs
+      files:
         - "src/**/*.rs"
 ```
 
@@ -198,27 +217,68 @@ When executing in a loom worktree, you MUST stay within your worktree boundaries
 
 **If you need context from the main repo:** Your signal file (`.work/signals/<session-id>.md`) contains all embedded context you need. DO NOT read from the main repo — use the signal.
 
+### 9. KNOWLEDGE MANAGEMENT (MANDATORY)
+
+Build and maintain the `.work/knowledge/` base BEFORE and DURING every session.
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  KNOWLEDGE CHECK - FIRST ACTION OF EVERY SESSION                   │
+│                                                                    │
+│  .work/knowledge/ EMPTY?                                           │
+│  YES → Run hierarchical exploration and populate it                │
+│  NO  → Check for gaps, update with new discoveries                 │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+**Hierarchical Exploration Order:**
+
+1. **Top-level structure** — Entry points, main modules, directory layout
+2. **Module boundaries** — Public interfaces, internal vs external APIs
+3. **Patterns** — Error handling, state management, data flow conventions
+4. **Conventions** — Naming, file structure, testing patterns
+
+**Commands:**
+
+| Command                                  | Description                                      |
+| ---------------------------------------- | ------------------------------------------------ |
+| `loom knowledge init`                    | Initialize `.work/knowledge/` directory          |
+| `loom knowledge list`                    | List all knowledge files                         |
+| `loom knowledge show`                    | Show summary of all knowledge                    |
+| `loom knowledge show <file>`             | Show specific file (entry-points, patterns, conventions) |
+| `loom knowledge update <file> <content>` | Append content to a knowledge file               |
+
+**Update Examples:**
+
+| Discovery Type         | Command                                                                   |
+| ---------------------- | ------------------------------------------------------------------------- |
+| Key entry point        | `loom knowledge update entry-points "## Section\n\n- path - description"` |
+| Architectural pattern  | `loom knowledge update patterns "## Pattern\n\n- How it works"`           |
+| Coding convention      | `loom knowledge update conventions "## Convention\n\n- Details"`          |
+
+**EVERY PLAN MUST include `knowledge-bootstrap` as the first stage** (unless knowledge already exists and is complete). See Plan Format section for the required stage definition.
+
 ---
 
 ## STANDARD RULES
 
-### 9. QUALITY GATES
+### 10. QUALITY GATES
 
 Before completion: zero lint errors, tests passing, self-reviewed for security.
 
-### 10. DEPENDENCIES
+### 11. DEPENDENCIES
 
 Never hand-edit manifests. Use: `bun add`, `cargo add`, `uv add`, `go get`
 
-### 11. CODE SIZE LIMITS
+### 12. CODE SIZE LIMITS
 
 File: 400 lines | Function: 50 lines | Class: 300 lines — Exceed = refactor immediately.
 
-### 12. SESSION STATE
+### 13. SESSION STATE
 
 Update `CLAUDE.md` during work. On completion, replace updates with summary.
 
-### 13. MISTAKES LOG
+### 14. MISTAKES LOG
 
 On any mistake: append to "MISTAKES AND LESSONS LEARNT" section. Never delete.
 
@@ -273,33 +333,7 @@ Also: `Blocked`, `NeedsHandoff`, `WaitingForInput`
 
 ### Knowledge Bootstrap Pattern
 
-For new codebases, create a bootstrap stage to capture initial knowledge:
-
-Example stage definition:
-
-    - id: knowledge-bootstrap
-      name: "Bootstrap Knowledge Base"
-      description: |
-        Explore the codebase and capture foundational knowledge.
-
-        Tasks:
-        1. Identify key entry points (main files, API endpoints, CLI entry)
-        2. Document architectural patterns (error handling, state management, etc.)
-        3. Record coding conventions (naming, file structure, testing patterns)
-
-        Commands to capture findings:
-          loom knowledge update entry-points "## CLI Entry\n\n- src/main.rs - Application entry point"
-          loom knowledge update patterns "## Error Handling\n\n- Uses anyhow for error propagation"
-          loom knowledge update conventions "## Naming\n\n- snake_case for functions, PascalCase for types"
-      dependencies: []
-      acceptance:
-        - "test -s .work/knowledge/entry-points.md"
-        - "test -s .work/knowledge/patterns.md"
-      files:
-        - ".work/knowledge/**"
-
-This stage runs first (no dependencies) and builds the knowledge base
-that subsequent stages will use via signals.
+See **Rule 9: KNOWLEDGE MANAGEMENT** and **Plan Format** section for the required `knowledge-bootstrap` stage definition.
 
 ---
 
@@ -363,6 +397,8 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 │  3. CONTEXT ≥75%: STOP everything. Write handoff. No exceptions.   │
 │                                                                    │
 │  4. IN WORKTREE: Commit + complete stage or hook BLOCKS exit.      │
+│                                                                    │
+│  5. KNOWLEDGE: Bootstrap if empty. Update discoveries. ALWAYS.     │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
