@@ -7,4 +7,4 @@ mod validation;
 mod tests;
 
 pub use types::{LoomConfig, LoomMetadata, StageDefinition, ValidationError};
-pub use validation::validate;
+pub use validation::{check_knowledge_recommendations, validate};

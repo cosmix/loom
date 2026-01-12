@@ -135,3 +135,32 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
         Err(errors)
     }
 }
+
+/// Check for knowledge-related recommendations (non-fatal warnings)
+///
+/// Returns a list of warning messages when:
+/// - Plan has root stages (no dependencies) but lacks a knowledge-bootstrap stage
+pub fn check_knowledge_recommendations(stages: &[super::types::StageDefinition]) -> Vec<String> {
+    let mut warnings = Vec::new();
+
+    // Check if any stage has "knowledge" in its ID or name (case-insensitive)
+    let has_knowledge_stage = stages.iter().any(|stage| {
+        stage.id.to_lowercase().contains("knowledge")
+            || stage.name.to_lowercase().contains("knowledge")
+    });
+
+    // Find root stages (stages with no dependencies)
+    let has_root_stages = stages.iter().any(|stage| stage.dependencies.is_empty());
+
+    // Warn if there are root stages but no knowledge stage
+    if has_root_stages && !has_knowledge_stage {
+        warnings.push(
+            "Consider adding a 'knowledge-bootstrap' stage to capture codebase knowledge. \
+             This stage can run first (no dependencies) to document entry points, patterns, \
+             and conventions for subsequent stages."
+                .to_string(),
+        );
+    }
+
+    warnings
+}

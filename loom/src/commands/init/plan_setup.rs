@@ -4,7 +4,7 @@ use crate::fs::stage_files::{compute_stage_depths, stage_file_path, StageDepende
 use crate::fs::work_dir::WorkDir;
 use crate::models::stage::{Stage, StageStatus};
 use crate::plan::parser::parse_plan;
-use crate::plan::schema::StageDefinition;
+use crate::plan::schema::{check_knowledge_recommendations, StageDefinition};
 use crate::verify::serialize_stage_to_markdown;
 use anyhow::{Context, Result};
 use chrono::Utc;
@@ -45,6 +45,12 @@ pub fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<usiz
         "✓".green().bold(),
         parsed_plan.name.bold()
     );
+
+    // Check for knowledge-related recommendations (non-fatal warnings)
+    let warnings = check_knowledge_recommendations(&parsed_plan.stages);
+    for warning in &warnings {
+        println!("  {} {}", "⚠".yellow().bold(), warning.yellow());
+    }
 
     let base_branch = get_current_branch().context("Failed to get current git branch")?;
 
