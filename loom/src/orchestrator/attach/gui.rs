@@ -2,11 +2,11 @@
 //!
 //! Provides functionality to spawn separate GUI terminal windows for
 //! each loom session, using the detected terminal emulator.
-//! Supports both tmux and native sessions.
+//! Supports native sessions.
 
 use anyhow::{anyhow, Result};
 
-use super::{tmux_attach_command, AttachableSession, SessionBackend};
+use super::{AttachableSession, SessionBackend};
 
 /// Supported terminal emulators for GUI mode
 #[derive(Debug, Clone, Copy)]
@@ -126,10 +126,9 @@ impl std::fmt::Display for TerminalEmulator {
 
 /// Spawn GUI terminal windows for each session
 ///
-/// For tmux sessions: spawns terminal with tmux attach command.
 /// For native sessions: focuses existing windows instead of spawning new ones.
-pub fn spawn_gui_windows(sessions: &[AttachableSession], detach_existing: bool) -> Result<()> {
-    let terminal = TerminalEmulator::detect().ok_or_else(|| {
+pub fn spawn_gui_windows(sessions: &[AttachableSession], _detach_existing: bool) -> Result<()> {
+    let _terminal = TerminalEmulator::detect().ok_or_else(|| {
         anyhow!(
             "No supported terminal emulator found.\n\
              Supported: gnome-terminal, konsole, xfce4-terminal, mate-terminal, \
@@ -137,38 +136,8 @@ pub fn spawn_gui_windows(sessions: &[AttachableSession], detach_existing: bool) 
         )
     })?;
 
-    // Separate tmux and native sessions
-    let tmux_sessions: Vec<_> = sessions.iter().filter(|s| s.is_tmux()).collect();
+    // Only native sessions are supported
     let native_sessions: Vec<_> = sessions.iter().filter(|s| s.is_native()).collect();
-
-    if !tmux_sessions.is_empty() {
-        println!(
-            "\nOpening {} tmux session(s) in {} windows...\n",
-            tmux_sessions.len(),
-            terminal
-        );
-
-        for session in &tmux_sessions {
-            let title = format!(
-                "loom: {}",
-                session
-                    .stage_name
-                    .as_ref()
-                    .or(session.stage_id.as_ref())
-                    .unwrap_or(&session.session_id)
-            );
-
-            if let SessionBackend::Tmux { session_name } = &session.backend {
-                let attach_cmd = tmux_attach_command(session_name, detach_existing);
-                let mut cmd = terminal.spawn_with_command(&title, &attach_cmd);
-
-                match cmd.spawn() {
-                    Ok(_) => println!("  Opened: {session_name} ({title})"),
-                    Err(e) => eprintln!("  Failed to open {session_name}: {e}"),
-                }
-            }
-        }
-    }
 
     if !native_sessions.is_empty() {
         println!(
@@ -184,22 +153,17 @@ pub fn spawn_gui_windows(sessions: &[AttachableSession], detach_existing: bool) 
                 .map(|s| s.as_str())
                 .unwrap_or(&session.session_id);
 
-            if let SessionBackend::Native { pid } = &session.backend {
-                if focus_window_by_pid(*pid) {
-                    println!("  Focused: {stage_display} (PID: {pid})");
-                } else {
-                    eprintln!("  Could not focus: {stage_display} (PID: {pid})");
-                }
+            let SessionBackend::Native { pid } = &session.backend;
+            if focus_window_by_pid(*pid) {
+                println!("  Focused: {stage_display} (PID: {pid})");
+            } else {
+                eprintln!("  Could not focus: {stage_display} (PID: {pid})");
             }
         }
     }
 
-    let total = tmux_sessions.len() + native_sessions.len();
+    let total = native_sessions.len();
     println!("\nProcessed {total} session(s).");
-
-    if !tmux_sessions.is_empty() {
-        println!("Tip: Use 'loom attach --all' (without --gui) for a unified tmux view.");
-    }
 
     Ok(())
 }

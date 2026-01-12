@@ -35,15 +35,6 @@ pub fn find_active_merge_session(stage_id: &str, work_dir: &Path) -> Result<Opti
                 continue;
             }
 
-            // Check if tmux session name indicates merge session
-            if let Some(tmux_session) = extract_frontmatter_field(&content, "tmux_session") {
-                if tmux_session.contains("merge")
-                    && crate::orchestrator::session_is_running(&tmux_session).unwrap_or(false)
-                {
-                    return Ok(Some(tmux_session));
-                }
-            }
-
             // Check if PID indicates a running merge session
             // (for native backend, we check if the session ID contains "merge")
             if let Some(session_id) = extract_frontmatter_field(&content, "id") {

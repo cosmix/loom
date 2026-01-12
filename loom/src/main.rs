@@ -27,7 +27,7 @@ enum Commands {
         plan_path: String,
 
         /// Clean up stale resources before initialization
-        /// (removes old .work/, prunes worktrees, kills orphaned tmux sessions)
+        /// (removes old .work/, prunes worktrees, kills orphaned sessions)
         #[arg(long)]
         clean: bool,
     },
@@ -165,7 +165,7 @@ enum Commands {
         #[arg(long)]
         worktrees: bool,
 
-        /// Kill only loom tmux sessions
+        /// Kill only loom sessions
         #[arg(long)]
         sessions: bool,
 
@@ -645,9 +645,9 @@ enum VerifyCommands {
 
 #[derive(Subcommand)]
 enum AttachCommands {
-    /// Attach to all running sessions in a unified tmux view
+    /// Attach to all running sessions
     All {
-        /// Open separate GUI terminal windows instead of tmux session
+        /// Open separate GUI terminal windows
         #[arg(long)]
         gui: bool,
 
@@ -655,11 +655,11 @@ enum AttachCommands {
         #[arg(long, short)]
         detach: bool,
 
-        /// Use legacy window-per-session mode instead of tiled panes
+        /// Use legacy window-per-session mode (ignored for native backend)
         #[arg(long)]
         windows: bool,
 
-        /// Layout for tiled view: tiled (default), horizontal, vertical
+        /// Layout for view: tiled (default), horizontal, vertical (ignored for native backend)
         #[arg(long, value_name = "LAYOUT", default_value = "tiled")]
         layout: String,
     },

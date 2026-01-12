@@ -21,7 +21,7 @@ struct CleanStats {
 /// # Arguments
 /// * `all` - Remove all loom resources
 /// * `worktrees` - Remove only worktrees
-/// * `sessions` - Kill only tmux sessions
+/// * `sessions` - Kill only sessions
 /// * `state` - Remove only .work/ state directory
 ///
 /// If no flags are provided, cleans everything (same as --all)
@@ -45,11 +45,11 @@ pub fn execute(all: bool, worktrees: bool, sessions: bool, state: bool) -> Resul
         stats.branches_removed = br_count;
     }
 
-    // Clean tmux sessions
+    // Clean sessions
     if clean_all || sessions {
         println!("\n{}", "Sessions".bold());
         println!("{}", "─".repeat(40).dimmed());
-        stats.sessions_killed = clean_tmux_sessions()?;
+        stats.sessions_killed = clean_sessions()?;
     }
 
     // Clean state directory
@@ -288,77 +288,16 @@ fn clean_worktrees(repo_root: &Path) -> Result<(usize, usize)> {
 /// Kill all loom sessions
 ///
 /// Returns the number of sessions killed
-fn clean_tmux_sessions() -> Result<usize> {
-    // List all tmux sessions with loom- prefix
-    let output = Command::new("tmux")
-        .args(["list-sessions", "-F", "#{session_name}"])
-        .output();
-
-    let sessions: Vec<String> = match output {
-        Ok(result) if result.status.success() => {
-            let stdout = String::from_utf8_lossy(&result.stdout);
-            stdout
-                .lines()
-                .filter(|line| line.starts_with("loom-"))
-                .map(|s| s.to_string())
-                .collect()
-        }
-        Ok(_) => {
-            // tmux returns non-zero when no sessions exist
-            println!("  {} No sessions found", "✓".green().bold());
-            return Ok(0);
-        }
-        Err(_) => {
-            // tmux might not be installed
-            println!(
-                "  {} Sessions check skipped {}",
-                "─".dimmed(),
-                "(tmux not available)".dimmed()
-            );
-            return Ok(0);
-        }
-    };
-
-    if sessions.is_empty() {
-        println!("  {} No loom sessions found", "✓".green().bold());
-        return Ok(0);
-    }
-
-    let mut killed_count = 0;
-    for session_name in &sessions {
-        match Command::new("tmux")
-            .args(["kill-session", "-t", session_name])
-            .output()
-        {
-            Ok(result) if result.status.success() => {
-                println!(
-                    "  {} Killed session: {}",
-                    "✓".green().bold(),
-                    session_name.dimmed()
-                );
-                killed_count += 1;
-            }
-            Ok(result) => {
-                let stderr = String::from_utf8_lossy(&result.stderr);
-                println!(
-                    "  {} Session '{}': {}",
-                    "⚠".yellow().bold(),
-                    session_name,
-                    stderr.trim().dimmed()
-                );
-            }
-            Err(e) => {
-                println!(
-                    "  {} Session '{}': {}",
-                    "⚠".yellow().bold(),
-                    session_name,
-                    e.to_string().dimmed()
-                );
-            }
-        }
-    }
-
-    Ok(killed_count)
+fn clean_sessions() -> Result<usize> {
+    println!(
+        "  {} Session cleanup not yet implemented for native backend",
+        "─".dimmed()
+    );
+    println!(
+        "  {} Use 'loom sessions kill' to kill specific sessions",
+        "→".dimmed()
+    );
+    Ok(0)
 }
 
 /// Remove the .work/ state directory

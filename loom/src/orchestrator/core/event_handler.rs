@@ -227,7 +227,7 @@ impl EventHandler for Orchestrator {
 
             let mut stage = self.load_stage(&sid)?;
 
-            // Don't override terminal states - stage may have completed before tmux died
+            // Don't override terminal states - stage may have completed before session died
             if matches!(stage.status, StageStatus::Completed) {
                 // Stage already completed successfully, just clean up
                 return Ok(());

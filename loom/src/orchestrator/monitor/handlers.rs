@@ -12,7 +12,6 @@ use crate::models::session::Session;
 use crate::models::stage::Stage;
 use crate::orchestrator::signals::read_merge_signal;
 use crate::orchestrator::spawner::{generate_crash_report, CrashReport};
-use crate::orchestrator::terminal::tmux::session_is_running;
 
 use super::config::MonitorConfig;
 use super::context::context_usage_percent;
@@ -29,10 +28,9 @@ impl Handlers {
 
     /// Check if a session is still alive by checking its process
     ///
-    /// First checks the PID if available (works for both native and tmux sessions).
-    /// Falls back to checking tmux session if PID check fails or is unavailable.
+    /// Checks the PID if available (works for both native and terminal sessions).
     pub fn check_session_alive(&self, session: &Session) -> Result<Option<bool>> {
-        // First check PID if available (works for both native and tmux sessions)
+        // Check PID if available (works for both native and terminal sessions)
         if let Some(pid) = session.pid {
             let output = std::process::Command::new("kill")
                 .arg("-0")
@@ -43,15 +41,10 @@ impl Handlers {
             if output.status.success() {
                 return Ok(Some(true));
             }
-            // PID is dead, but let's also check tmux in case PID tracking was lost
+            return Ok(Some(false));
         }
 
-        // Fall back to tmux check if available
-        if let Some(tmux_name) = &session.tmux_session {
-            return check_tmux_session_alive(tmux_name).map(Some);
-        }
-
-        // No PID and no tmux session - cannot track liveness
+        // No PID - cannot track liveness
         Ok(None)
     }
 
@@ -122,16 +115,11 @@ impl Handlers {
     /// Called when a session crash is detected.
     /// Creates a CrashReport, generates the crash report file, and preserves session memory.
     pub fn handle_session_crash(&self, session: &Session, reason: &str) -> Option<PathBuf> {
-        let mut report = CrashReport::new(
+        let report = CrashReport::new(
             session.id.clone(),
             session.stage_id.clone(),
             reason.to_string(),
         );
-
-        // Add tmux session info if available
-        if let Some(tmux_session) = &session.tmux_session {
-            report = report.with_tmux_session(tmux_session.clone());
-        }
 
         // Preserve session memory for recovery
         match preserve_for_crash(&self.config.work_dir, &session.id) {
@@ -167,9 +155,4 @@ impl Handlers {
             }
         }
     }
-}
-
-/// Check if a tmux session is still running
-fn check_tmux_session_alive(tmux_name: &str) -> Result<bool> {
-    session_is_running(tmux_name)
 }

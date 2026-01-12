@@ -22,16 +22,8 @@ pub fn block(stage_id: String, reason: String) -> Result<()> {
 }
 
 /// Reset a stage to pending
-pub fn reset(stage_id: String, hard: bool, kill_session: bool) -> Result<()> {
+pub fn reset(stage_id: String, hard: bool, _kill_session: bool) -> Result<()> {
     let work_dir = Path::new(".work");
-
-    // Kill tmux session if requested
-    if kill_session {
-        let tmux_name = format!("loom-{stage_id}");
-        let _ = std::process::Command::new("tmux")
-            .args(["kill-session", "-t", &tmux_name])
-            .output();
-    }
 
     let mut stage = load_stage(&stage_id, work_dir)?;
     stage.status = StageStatus::WaitingForDeps;

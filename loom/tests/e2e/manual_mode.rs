@@ -1,6 +1,6 @@
 //! E2E tests for manual mode execution (signals without session spawning)
 //!
-//! Manual mode creates signal files for Ready stages without spawning tmux sessions.
+//! Manual mode creates signal files for Ready stages without spawning sessions.
 //! This allows developers to manually attach to sessions and execute work.
 
 use loom::models::session::Session;
@@ -156,7 +156,7 @@ fn test_signal_not_created_for_pending_stages() {
 }
 
 #[test]
-fn test_manual_mode_no_tmux_sessions() {
+fn test_manual_mode_creates_signal_without_session_spawn() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = create_work_dir_structure(temp_dir.path());
 
@@ -166,7 +166,8 @@ fn test_manual_mode_no_tmux_sessions() {
 
     generate_signal(&session, &stage, &worktree, &[], None, None, &work_dir).unwrap();
 
-    assert!(session.tmux_session.is_none());
+    let signal_path = work_dir.join("signals").join("session-manual-test.md");
+    assert!(signal_path.exists());
     assert_eq!(stage.status, StageStatus::Queued);
 }
 

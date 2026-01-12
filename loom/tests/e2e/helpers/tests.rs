@@ -86,7 +86,6 @@ fn test_create_and_read_session_file() {
     session.id = "test-session-1".to_string();
     session.status = SessionStatus::Running;
     session.assign_to_stage("stage-1".to_string());
-    session.set_tmux_session("test-tmux".to_string());
 
     create_session_file(work_dir, &session).expect("Should create session file");
 
@@ -95,7 +94,6 @@ fn test_create_and_read_session_file() {
     assert_eq!(loaded.id, session.id);
     assert_eq!(loaded.status, session.status);
     assert_eq!(loaded.stage_id, session.stage_id);
-    assert_eq!(loaded.tmux_session, session.tmux_session);
 }
 
 #[test]
@@ -115,12 +113,6 @@ fn test_create_signal_file() {
 
     let content = std::fs::read_to_string(signal_path).expect("Should read signal file");
     assert_eq!(content, signal_content);
-}
-
-#[test]
-fn test_is_tmux_available() {
-    let result = is_tmux_available();
-    println!("tmux available: {result}");
 }
 
 #[test]

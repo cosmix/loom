@@ -410,7 +410,6 @@ fn test_deserialize_legacy_session_without_merge_fields() {
     let legacy_json = r#"{
         "id": "session-abc123-1234567890",
         "stage_id": null,
-        "tmux_session": null,
         "worktree_path": null,
         "pid": null,
         "status": "spawning",

@@ -212,7 +212,6 @@ fn test_parse_session_frontmatter() {
     let content = r#"---
 id: session-abc-123
 stage_id: stage-1
-tmux_session: loom-session-abc
 worktree_path: null
 pid: 12345
 status: running

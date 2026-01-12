@@ -5,15 +5,6 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 #[test]
-fn test_session_tmux_assignment() {
-    let mut session = Session::new();
-    assert!(session.tmux_session.is_none());
-
-    session.set_tmux_session("loom-session-123".to_string());
-    assert_eq!(session.tmux_session, Some("loom-session-123".to_string()));
-}
-
-#[test]
 fn test_session_worktree_path_assignment() {
     let mut session = Session::new();
     assert!(session.worktree_path.is_none());
@@ -42,7 +33,6 @@ fn test_session_serialization_roundtrip() {
 
     let mut session = Session::new();
     session.assign_to_stage("stage-1".to_string());
-    session.set_tmux_session("loom-test-123".to_string());
     session.set_worktree_path(PathBuf::from("/tmp/test-worktree"));
     session.set_pid(54321);
     session.try_mark_running().expect("Spawning -> Running");
@@ -58,7 +48,6 @@ fn test_session_serialization_roundtrip() {
 
     assert_eq!(loaded.id, session.id);
     assert_eq!(loaded.stage_id, session.stage_id);
-    assert_eq!(loaded.tmux_session, session.tmux_session);
     assert_eq!(loaded.worktree_path, session.worktree_path);
     assert_eq!(loaded.pid, session.pid);
     assert_eq!(loaded.status, session.status);

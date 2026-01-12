@@ -18,9 +18,7 @@ fn test_format_attachable_list() {
             session_id: "session-1".to_string(),
             stage_id: Some("stage-1".to_string()),
             stage_name: Some("models".to_string()),
-            backend: SessionBackend::Tmux {
-                session_name: "loom-session-1".to_string(),
-            },
+            backend: SessionBackend::Native { pid: 12345 },
             status: SessionStatus::Running,
             context_percent: 45.0,
         },
@@ -28,9 +26,7 @@ fn test_format_attachable_list() {
             session_id: "session-2".to_string(),
             stage_id: Some("stage-2".to_string()),
             stage_name: Some("api".to_string()),
-            backend: SessionBackend::Tmux {
-                session_name: "loom-session-2".to_string(),
-            },
+            backend: SessionBackend::Native { pid: 12346 },
             status: SessionStatus::Paused,
             context_percent: 23.5,
         },
@@ -47,7 +43,7 @@ fn test_format_attachable_list() {
     assert!(output.contains("session-2"));
     assert!(output.contains("models"));
     assert!(output.contains("api"));
-    assert!(output.contains("tmux"));
+    assert!(output.contains("native"));
     assert!(output.contains("running"));
     assert!(output.contains("paused"));
     assert!(output.contains("45%"));
@@ -60,9 +56,7 @@ fn test_format_attachable_list_long_names() {
         session_id: "very-long-session-identifier-name".to_string(),
         stage_id: Some("stage-1".to_string()),
         stage_name: Some("very-long-stage-name-that-exceeds-limit".to_string()),
-        backend: SessionBackend::Tmux {
-            session_name: "loom-session-1".to_string(),
-        },
+        backend: SessionBackend::Native { pid: 12345 },
         status: SessionStatus::Running,
         context_percent: 75.8,
     }];
@@ -85,9 +79,7 @@ fn test_context_percent_calculation() {
         session_id: "test".to_string(),
         stage_id: None,
         stage_name: None,
-        backend: SessionBackend::Tmux {
-            session_name: "loom-test".to_string(),
-        },
+        backend: SessionBackend::Native { pid: 12345 },
         status: SessionStatus::Running,
         context_percent: 75.5,
     };
@@ -96,26 +88,25 @@ fn test_context_percent_calculation() {
 }
 
 #[test]
-fn test_attachable_filter_tmux() {
+fn test_attachable_filter() {
     let mut running_session = Session::new();
     running_session.status = SessionStatus::Running;
-    running_session.tmux_session = Some("tmux-1".to_string());
+    running_session.pid = Some(12345);
 
     let mut paused_session = Session::new();
     paused_session.status = SessionStatus::Paused;
-    paused_session.tmux_session = Some("tmux-2".to_string());
+    paused_session.pid = Some(12346);
 
     let mut completed_session = Session::new();
     completed_session.status = SessionStatus::Completed;
-    completed_session.tmux_session = Some("tmux-3".to_string());
+    completed_session.pid = Some(12347);
 
     let mut spawning_session = Session::new();
     spawning_session.status = SessionStatus::Spawning;
-    spawning_session.tmux_session = Some("tmux-4".to_string());
+    spawning_session.pid = Some(12348);
 
     let mut no_backend_session = Session::new();
     no_backend_session.status = SessionStatus::Running;
-    no_backend_session.tmux_session = None;
     no_backend_session.pid = None;
 
     assert!(is_attachable(&running_session));
@@ -146,10 +137,6 @@ fn test_attachable_filter_native() {
 
 #[test]
 fn test_detect_backend_type() {
-    let mut tmux_session = Session::new();
-    tmux_session.tmux_session = Some("loom-test".to_string());
-    assert_eq!(detect_backend_type(&tmux_session), Some(BackendType::Tmux));
-
     let mut native_session = Session::new();
     native_session.pid = Some(12345);
     assert_eq!(
@@ -159,33 +146,10 @@ fn test_detect_backend_type() {
 
     let no_backend = Session::new();
     assert_eq!(detect_backend_type(&no_backend), None);
-
-    // tmux takes precedence if both are set
-    let mut both = Session::new();
-    both.tmux_session = Some("loom-test".to_string());
-    both.pid = Some(12345);
-    assert_eq!(detect_backend_type(&both), Some(BackendType::Tmux));
 }
 
 #[test]
 fn test_session_backend_methods() {
-    let tmux_session = AttachableSession {
-        session_id: "test".to_string(),
-        stage_id: None,
-        stage_name: None,
-        backend: SessionBackend::Tmux {
-            session_name: "loom-test".to_string(),
-        },
-        status: SessionStatus::Running,
-        context_percent: 50.0,
-    };
-
-    assert!(tmux_session.is_tmux());
-    assert!(!tmux_session.is_native());
-    assert_eq!(tmux_session.tmux_session(), Some("loom-test"));
-    assert_eq!(tmux_session.pid(), None);
-    assert_eq!(tmux_session.backend_type(), BackendType::Tmux);
-
     let native_session = AttachableSession {
         session_id: "test".to_string(),
         stage_id: None,
@@ -195,10 +159,8 @@ fn test_session_backend_methods() {
         context_percent: 50.0,
     };
 
-    assert!(!native_session.is_tmux());
     assert!(native_session.is_native());
-    assert_eq!(native_session.tmux_session(), None);
-    assert_eq!(native_session.pid(), Some(12345));
+    assert_eq!(native_session.pid(), 12345);
     assert_eq!(native_session.backend_type(), BackendType::Native);
 }
 
@@ -240,7 +202,7 @@ fn test_format_manual_mode_error_without_worktree() {
 #[test]
 fn test_print_attach_instructions_long_name() {
     // Should not panic with a very long session name
-    print_attach_instructions("this-is-a-very-long-tmux-session-name-that-exceeds-32-chars");
+    print_attach_instructions("this-is-a-very-long-session-name-that-exceeds-32-characters");
 }
 
 #[test]
@@ -258,9 +220,7 @@ fn test_format_attachable_list_native_sessions() {
             session_id: "session-2".to_string(),
             stage_id: Some("stage-2".to_string()),
             stage_name: Some("api".to_string()),
-            backend: SessionBackend::Tmux {
-                session_name: "loom-session-2".to_string(),
-            },
+            backend: SessionBackend::Native { pid: 12346 },
             status: SessionStatus::Running,
             context_percent: 30.0,
         },
@@ -270,5 +230,4 @@ fn test_format_attachable_list_native_sessions() {
 
     assert!(output.contains("BACKEND"));
     assert!(output.contains("native"));
-    assert!(output.contains("tmux"));
 }

@@ -108,7 +108,7 @@ impl Detection {
             if previous_status == Some(&SessionStatus::Running)
                 && current_status == &SessionStatus::Running
             {
-                // Check if session is still alive (PID or tmux)
+                // Check if session is still alive (PID check)
                 if let Ok(Some(is_alive)) = handlers.check_session_alive(session) {
                     if !is_alive {
                         // Check if this is a merge session that completed
@@ -129,8 +129,6 @@ impl Detection {
                         // Regular session crashed - generate crash report
                         let reason = if session.pid.is_some() {
                             "Process no longer running"
-                        } else if session.tmux_session.is_some() {
-                            "Tmux session no longer running"
                         } else {
                             "Session no longer running"
                         };

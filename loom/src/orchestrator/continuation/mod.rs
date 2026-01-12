@@ -6,7 +6,7 @@
 //! - Prepare continuation context (stage, handoff, worktree)
 //! - Create new sessions with handoff references
 //! - Generate signals that include handoff file paths for context restoration
-//! - Optionally spawn tmux sessions to continue work
+//! - Optionally spawn terminal sessions to continue work
 
 mod context;
 mod session_io;
@@ -52,7 +52,7 @@ impl Default for ContinuationConfig {
 /// Continue work on a stage after a handoff
 ///
 /// Creates a new session, generates signal file with handoff reference,
-/// optionally spawns tmux session, and updates stage status.
+/// optionally spawns terminal session, and updates stage status.
 ///
 /// # Arguments
 /// * `stage` - The stage to continue work on
@@ -92,7 +92,7 @@ pub fn continue_session(
     .context("Failed to generate signal for continuation")?;
 
     if config.auto_spawn {
-        let backend = create_backend(config.backend_type)
+        let backend = create_backend(config.backend_type, work_dir)
             .context("Failed to create terminal backend for continuation")?;
         session = backend
             .spawn_session(stage, worktree, session, &signal_path)

@@ -25,11 +25,10 @@ pub fn session_to_markdown(session: &Session) -> String {
     let yaml = serde_yaml::to_string(session).unwrap_or_else(|_| String::from("{}"));
 
     format!(
-        "---\n{yaml}---\n\n# Session: {}\n\n## Details\n\n- **Status**: {:?}\n- **Stage**: {}\n- **Tmux**: {}\n- **Context**: {:.1}%\n",
+        "---\n{yaml}---\n\n# Session: {}\n\n## Details\n\n- **Status**: {:?}\n- **Stage**: {}\n- **Context**: {:.1}%\n",
         session.id,
         session.status,
         session.stage_id.as_ref().unwrap_or(&"None".to_string()),
-        session.tmux_session.as_ref().unwrap_or(&"None".to_string()),
         session.context_health()
     )
 }
@@ -43,7 +42,6 @@ mod tests {
         let mut session = Session::new();
         session.id = "test-session-123".to_string();
         session.assign_to_stage("stage-1".to_string());
-        session.set_tmux_session("loom-stage-1".to_string());
 
         let markdown = session_to_markdown(&session);
 
@@ -51,6 +49,5 @@ mod tests {
         assert!(markdown.contains("# Session: test-session-123"));
         assert!(markdown.contains("## Details"));
         assert!(markdown.contains("**Stage**: stage-1"));
-        assert!(markdown.contains("**Tmux**: loom-stage-1"));
     }
 }

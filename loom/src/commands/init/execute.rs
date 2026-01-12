@@ -7,7 +7,7 @@ use colored::Colorize;
 use std::path::{Path, PathBuf};
 
 use super::cleanup::{
-    cleanup_orphaned_tmux_sessions, cleanup_work_directory, cleanup_worktrees_directory,
+    cleanup_orphaned_sessions, cleanup_work_directory, cleanup_worktrees_directory,
     prune_stale_worktrees,
 };
 use super::plan_setup::initialize_with_plan;
@@ -26,7 +26,7 @@ pub fn execute(plan_path: Option<PathBuf>, clean: bool) -> Result<()> {
     println!("{}", "─".repeat(40).dimmed());
 
     prune_stale_worktrees(&repo_root)?;
-    cleanup_orphaned_tmux_sessions()?;
+    cleanup_orphaned_sessions()?;
 
     if clean {
         cleanup_work_directory(&repo_root)?;

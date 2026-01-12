@@ -4,15 +4,6 @@ use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::StageStatus;
 
 #[test]
-fn test_is_session_orphaned_with_tmux_backend() {
-    let mut session = Session::new();
-    session.status = SessionStatus::Running;
-    session.set_tmux_session("test-session".to_string());
-
-    let _result = is_session_orphaned(&session);
-}
-
-#[test]
 fn test_is_session_orphaned_with_native_backend() {
     let mut session = Session::new();
     session.status = SessionStatus::Running;

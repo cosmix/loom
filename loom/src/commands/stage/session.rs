@@ -6,13 +6,6 @@ use std::path::Path;
 
 use crate::models::session::{Session, SessionStatus};
 
-/// Backend type enum (local copy to avoid circular dependency)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BackendType {
-    Native,
-    Tmux,
-}
-
 /// Find session ID for a stage by scanning .work/sessions/
 pub fn find_session_for_stage(stage_id: &str, work_dir: &Path) -> Option<String> {
     let sessions_dir = work_dir.join("sessions");
@@ -37,34 +30,6 @@ pub fn find_session_for_stage(stage_id: &str, work_dir: &Path) -> Option<String>
         }
     }
     None
-}
-
-/// Detect backend type from session file
-pub fn detect_backend_from_session(session_id: &str, work_dir: &Path) -> BackendType {
-    let session_path = work_dir.join("sessions").join(format!("{session_id}.md"));
-
-    if !session_path.exists() {
-        // Default to tmux for backwards compatibility
-        return BackendType::Tmux;
-    }
-
-    match fs::read_to_string(&session_path) {
-        Ok(content) => {
-            if let Ok(session) = session_from_markdown(&content) {
-                // If tmux_session field is present, it's tmux backend
-                if session.tmux_session.is_some() {
-                    return BackendType::Tmux;
-                }
-                // If pid is present but no tmux_session, it's native backend
-                if session.pid.is_some() {
-                    return BackendType::Native;
-                }
-            }
-            // Default to tmux for backwards compatibility
-            BackendType::Tmux
-        }
-        Err(_) => BackendType::Tmux, // Default to tmux for backwards compatibility
-    }
 }
 
 /// Clean up resources associated with a completed stage
@@ -140,10 +105,10 @@ pub fn session_to_markdown(session: &Session) -> String {
     let yaml = serde_yaml::to_string(session).unwrap_or_else(|_| String::from("{}"));
 
     format!(
-        "---\n{yaml}---\n\n# Session: {}\n\n## Details\n\n- **Status**: {:?}\n- **Stage**: {}\n- **Tmux**: {}\n",
+        "---\n{yaml}---\n\n# Session: {}\n\n## Details\n\n- **Status**: {:?}\n- **Stage**: {}\n- **PID**: {}\n",
         session.id,
         session.status,
         session.stage_id.as_ref().unwrap_or(&"None".to_string()),
-        session.tmux_session.as_ref().unwrap_or(&"None".to_string()),
+        session.pid.map(|p| p.to_string()).as_ref().unwrap_or(&"None".to_string()),
     )
 }

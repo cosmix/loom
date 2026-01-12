@@ -13,9 +13,7 @@ use crate::orchestrator::{get_merge_point, merge_completed_stage, ProgressiveMer
 use crate::verify::task_verification::run_task_verifications;
 use crate::verify::transitions::{load_stage, save_stage, trigger_dependents};
 
-use super::session::{
-    cleanup_session_resources, detect_backend_from_session, find_session_for_stage, BackendType,
-};
+use super::session::{cleanup_session_resources, find_session_for_stage};
 
 /// Mark a stage as complete, optionally running acceptance criteria.
 /// If acceptance criteria pass, auto-verifies the stage and triggers dependents.
@@ -240,48 +238,13 @@ pub fn complete(stage_id: String, session_id: Option<String>, no_verify: bool) -
 
 /// Clean up terminal resources for a stage based on backend type
 ///
-/// This function determines the backend type by checking the session's tmux_session field.
-/// If tmux_session is present, it uses tmux backend cleanup. Otherwise, it's native backend
-/// which doesn't require cleanup (processes are killed via PID by the orchestrator).
+/// For native backend, process cleanup is handled by the orchestrator via PID.
+/// No additional cleanup needed here.
 pub(super) fn cleanup_terminal_for_stage(
-    stage_id: &str,
-    session_id: Option<&str>,
-    work_dir: &Path,
+    _stage_id: &str,
+    _session_id: Option<&str>,
+    _work_dir: &Path,
 ) {
-    // Try to determine backend type from session data
-    let backend_type = if let Some(sid) = session_id {
-        detect_backend_from_session(sid, work_dir)
-    } else {
-        // No session ID - try tmux cleanup as best effort (backwards compatibility)
-        BackendType::Tmux
-    };
-
-    match backend_type {
-        BackendType::Tmux => {
-            cleanup_tmux_for_stage(stage_id);
-        }
-        BackendType::Native => {
-            // Native backend cleanup is handled by orchestrator via PID
-            // No additional cleanup needed here
-        }
-    }
-}
-
-/// Kill tmux session for a stage (best-effort, doesn't require session_id)
-fn cleanup_tmux_for_stage(stage_id: &str) {
-    let tmux_name = format!("loom-{stage_id}");
-    match Command::new("tmux")
-        .args(["kill-session", "-t", &tmux_name])
-        .output()
-    {
-        Ok(output) if output.status.success() => {
-            println!("Killed tmux session '{tmux_name}'");
-        }
-        Ok(_) => {
-            // Session may not exist or already dead - this is fine
-        }
-        Err(e) => {
-            eprintln!("Warning: failed to kill tmux session '{tmux_name}': {e}");
-        }
-    }
+    // Native backend cleanup is handled by orchestrator via PID
+    // No additional cleanup needed here
 }

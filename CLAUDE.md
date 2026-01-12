@@ -33,7 +33,7 @@ commands/            Command implementations (init, run, status, stage, etc.)
 daemon/              Unix socket server for IPC (protocol.rs, server.rs)
 orchestrator/
   core/              Main orchestrator loop and state machine
-  terminal/          Backend abstraction (native terminals, tmux)
+  terminal/          Terminal window spawning abstraction
   monitor/           Session health monitoring and context tracking
   signals/           Signal generation for agent communication
   auto_merge.rs      Git merge automation
@@ -61,7 +61,7 @@ verify/              Acceptance criteria execution
 
 **Orchestrator** (`orchestrator/core/orchestrator.rs`): Main loop that polls stage/session state, spawns ready stages, handles crashes.
 
-**TerminalBackend** (`orchestrator/terminal/`): Abstraction for spawning sessions. Native backend opens OS terminal windows; tmux backend uses tmux sessions.
+**TerminalBackend** (`orchestrator/terminal/`): Abstraction for spawning sessions in OS terminal windows.
 
 ### State Directory (`.work/`)
 
@@ -82,7 +82,7 @@ All state is file-based for git-friendliness:
 1. Listens on Unix socket for status/stop commands
 2. Polls stage files every 5 seconds
 3. Creates git worktrees for parallel stages
-4. Spawns Claude Code in native terminal windows
+4. Spawns Claude Code in terminal windows
 5. Detects crashes via PID liveness checks
 6. Generates git-based crash reports
 

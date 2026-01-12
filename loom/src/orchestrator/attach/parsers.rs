@@ -24,11 +24,6 @@ pub fn session_from_markdown(content: &str) -> Result<Session> {
         .map(|s| s.to_string())
         .filter(|s| !s.is_empty() && s != "null");
 
-    let tmux_session = doc
-        .get_frontmatter("tmux_session")
-        .map(|s| s.to_string())
-        .filter(|s| !s.is_empty() && s != "null");
-
     let worktree_path = doc
         .get_frontmatter("worktree_path")
         .filter(|s| !s.is_empty() && *s != "null")
@@ -87,7 +82,6 @@ pub fn session_from_markdown(content: &str) -> Result<Session> {
     Ok(Session {
         id,
         stage_id,
-        tmux_session,
         worktree_path,
         pid,
         status,
@@ -209,7 +203,6 @@ mod tests {
         let markdown = r#"---
 id: session-123
 stage_id: stage-456
-tmux_session: loom-session-123
 status: running
 context_tokens: 45000
 context_limit: 200000
@@ -223,7 +216,6 @@ last_active: 2026-01-06T13:30:00Z
         let session = session_from_markdown(markdown).unwrap();
         assert_eq!(session.id, "session-123");
         assert_eq!(session.stage_id, Some("stage-456".to_string()));
-        assert_eq!(session.tmux_session, Some("loom-session-123".to_string()));
         assert_eq!(session.status, SessionStatus::Running);
         assert_eq!(session.context_tokens, 45000);
         assert_eq!(session.context_limit, 200000);

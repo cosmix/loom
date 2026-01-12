@@ -4,7 +4,6 @@ use anyhow::{Context, Result};
 use loom::models::stage::{Stage, StageStatus};
 use loom::verify::transitions::transition_stage;
 use std::path::Path;
-use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -30,43 +29,6 @@ pub fn complete_stage(stage_id: &str, work_dir: &Path) -> Result<Stage> {
         .with_context(|| format!("Failed to save stage {stage_id} with merged=true"))?;
 
     Ok(stage)
-}
-
-/// Checks if tmux is installed and available
-pub fn is_tmux_available() -> bool {
-    Command::new("tmux")
-        .arg("-V")
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
-}
-
-/// Cleans up tmux sessions with a given prefix
-///
-/// This is useful for cleaning up test sessions that may have been left running
-pub fn cleanup_tmux_sessions(prefix: &str) -> Result<()> {
-    if !is_tmux_available() {
-        return Ok(());
-    }
-
-    let output = Command::new("tmux")
-        .args(["list-sessions", "-F", "#{session_name}"])
-        .output();
-
-    if let Ok(output) = output {
-        if output.status.success() {
-            let sessions = String::from_utf8_lossy(&output.stdout);
-            for session_name in sessions.lines() {
-                if session_name.starts_with(prefix) {
-                    let _ = Command::new("tmux")
-                        .args(["kill-session", "-t", session_name])
-                        .output();
-                }
-            }
-        }
-    }
-
-    Ok(())
 }
 
 /// Polls a predicate function until it returns true or timeout is reached

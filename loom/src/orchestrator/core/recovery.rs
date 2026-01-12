@@ -31,7 +31,7 @@ pub(super) trait Recovery: Persistence {
     /// This syncs FROM graph TO files.
     fn sync_queued_status_to_files(&mut self) -> Result<()>;
 
-    /// Recover orphaned sessions (tmux died but session/stage files exist).
+    /// Recover orphaned sessions (process died but session/stage files exist).
     fn recover_orphaned_sessions(&mut self) -> Result<usize>;
 
     /// Check if all stages are in a terminal state (for watch mode exit)
@@ -220,7 +220,7 @@ impl Recovery for Orchestrator {
                 Err(_) => continue,
             };
 
-            // Check if session is still running (works for both native and tmux)
+            // Check if session is still running
             let is_running = self.backend.is_session_alive(&session).unwrap_or(false);
 
             if !is_running {

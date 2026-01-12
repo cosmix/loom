@@ -73,7 +73,6 @@ fn test_session_from_markdown_valid() {
     let content = r#"---
 id: session-1
 stage_id: stage-1
-tmux_session: null
 worktree_path: null
 pid: null
 status: running
@@ -112,9 +111,8 @@ fn test_session_to_markdown() {
     let session = Session {
         id: "session-1".to_string(),
         stage_id: Some("stage-1".to_string()),
-        tmux_session: Some("loom-stage-1".to_string()),
         worktree_path: None,
-        pid: None,
+        pid: Some(12345),
         status: SessionStatus::Running,
         context_tokens: 0,
         context_limit: 200000,
@@ -131,6 +129,7 @@ fn test_session_to_markdown() {
     assert!(content.contains("# Session: session-1"));
     assert!(content.contains("**Status**: Running"));
     assert!(content.contains("**Stage**: stage-1"));
+    assert!(content.contains("**PID**: 12345"));
 }
 
 #[test]
@@ -141,7 +140,6 @@ fn test_find_session_for_stage_found() {
     let session_content = r#"---
 id: session-1
 stage_id: test-stage
-tmux_session: null
 worktree_path: null
 pid: null
 status: running
@@ -180,7 +178,6 @@ fn test_find_session_for_stage_different_stage() {
     let session_content = r#"---
 id: session-1
 stage_id: other-stage
-tmux_session: null
 worktree_path: null
 pid: null
 status: running
@@ -200,7 +197,7 @@ last_active: "2024-01-01T00:00:00Z"
 }
 
 #[test]
-fn test_cleanup_tmux_for_stage_does_not_fail() {
+fn test_cleanup_terminal_for_stage_does_not_fail() {
     cleanup_terminal_for_stage("test-stage", None, Path::new(".work"));
 }
 
@@ -214,7 +211,6 @@ fn test_cleanup_session_resources() {
     let session = Session {
         id: "session-1".to_string(),
         stage_id: Some("test-stage".to_string()),
-        tmux_session: None,
         worktree_path: None,
         pid: None,
         status: SessionStatus::Running,

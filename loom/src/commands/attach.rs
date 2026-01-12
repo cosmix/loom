@@ -15,10 +15,8 @@ use crate::daemon::{read_message, write_message, DaemonServer, Request, Response
 use crate::fs::work_dir::WorkDir;
 use crate::orchestrator::terminal::BackendType;
 use crate::orchestrator::{
-    attach_by_session, attach_by_stage, attach_native_all, attach_overview_session,
-    create_overview_session, create_tiled_overview, format_attachable_list, list_attachable,
-    print_many_sessions_warning, print_native_instructions, print_overview_instructions,
-    print_tiled_instructions, spawn_gui_windows,
+    attach_by_session, attach_by_stage, attach_native_all, format_attachable_list, list_attachable,
+    spawn_gui_windows,
 };
 
 /// Attach terminal to running session
@@ -69,18 +67,13 @@ pub fn list() -> Result<()> {
 
 /// Attach to all running sessions
 ///
-/// Default mode creates a tiled pane view where all sessions are visible
-/// simultaneously. Use --windows for legacy window-per-session mode.
+/// Default mode focuses terminal windows.
 /// Use --gui to spawn separate terminal windows.
-///
-/// For native-only sessions, focuses terminal windows instead of using tmux.
-/// For mixed sessions (tmux + native), uses tmux overview for tmux sessions
-/// and focuses native windows separately.
 pub fn execute_all(
     gui_mode: bool,
     detach_existing: bool,
-    windows_mode: bool,
-    layout: String,
+    _windows_mode: bool,
+    _layout: String,
 ) -> Result<()> {
     let work_dir = std::env::current_dir()?.join(".work");
     if !work_dir.exists() {
@@ -95,98 +88,25 @@ pub fn execute_all(
         return Ok(());
     }
 
-    // Categorize sessions by backend
-    let tmux_sessions: Vec<_> = sessions
-        .iter()
-        .filter(|s| s.backend_type() == BackendType::Tmux)
-        .cloned()
-        .collect();
+    // All sessions are native backend - use window focusing
     let native_sessions: Vec<_> = sessions
         .iter()
         .filter(|s| s.backend_type() == BackendType::Native)
         .cloned()
         .collect();
 
-    // GUI mode: handle both tmux and native sessions
+    // GUI mode: handle native sessions
     if gui_mode {
         return spawn_gui_windows(&sessions, detach_existing);
     }
 
-    // All native sessions: use window focusing
-    if tmux_sessions.is_empty() && !native_sessions.is_empty() {
+    // Use native window focusing
+    if !native_sessions.is_empty() {
         return attach_native_all(&native_sessions);
     }
 
-    // All tmux sessions: use tmux overview
-    if !tmux_sessions.is_empty() && native_sessions.is_empty() {
-        if windows_mode {
-            // Legacy: one window per session
-            println!(
-                "\nCreating overview session with {} loom session(s)...",
-                tmux_sessions.len()
-            );
-            let overview_name = create_overview_session(&tmux_sessions, detach_existing)?;
-            print_overview_instructions(tmux_sessions.len());
-            return attach_overview_session(&overview_name);
-        } else {
-            // Default: tiled panes
-            print_many_sessions_warning(tmux_sessions.len());
-            println!(
-                "\nCreating tiled view with {} loom session(s)...",
-                tmux_sessions.len()
-            );
-            let overview_name = create_tiled_overview(&tmux_sessions, &layout, detach_existing)?;
-            print_tiled_instructions(tmux_sessions.len());
-            return attach_overview_session(&overview_name);
-        }
-    }
-
-    // Mixed sessions: handle native first, then tmux
-    if !native_sessions.is_empty() {
-        println!(
-            "\nFound {} native and {} tmux session(s).",
-            native_sessions.len(),
-            tmux_sessions.len()
-        );
-        println!("\nFocusing native sessions first...");
-        print_native_instructions(native_sessions.len());
-
-        for session in &native_sessions {
-            if let Some(pid) = session.pid() {
-                let stage_display = session
-                    .stage_name
-                    .as_ref()
-                    .or(session.stage_id.as_ref())
-                    .map(|s| s.as_str())
-                    .unwrap_or(&session.session_id);
-                println!("  Native: {stage_display} (PID: {pid})");
-            }
-        }
-    }
-
-    // Now attach to tmux sessions
-    if !tmux_sessions.is_empty() {
-        if windows_mode {
-            println!(
-                "\nCreating overview session with {} tmux session(s)...",
-                tmux_sessions.len()
-            );
-            let overview_name = create_overview_session(&tmux_sessions, detach_existing)?;
-            print_overview_instructions(tmux_sessions.len());
-            attach_overview_session(&overview_name)
-        } else {
-            print_many_sessions_warning(tmux_sessions.len());
-            println!(
-                "\nCreating tiled view with {} tmux session(s)...",
-                tmux_sessions.len()
-            );
-            let overview_name = create_tiled_overview(&tmux_sessions, &layout, detach_existing)?;
-            print_tiled_instructions(tmux_sessions.len());
-            attach_overview_session(&overview_name)
-        }
-    } else {
-        Ok(())
-    }
+    println!("No attachable sessions found.");
+    Ok(())
 }
 
 /// Stream daemon logs in real-time

@@ -79,7 +79,6 @@ pub fn classify_failure(close_reason: &str) -> FailureType {
 
     // SessionCrash: Process-level failures
     if reason_lower.contains("crash")
-        || reason_lower.contains("tmux")
         || reason_lower.contains("process")
         || reason_lower.contains("orphan")
     {
@@ -214,10 +213,6 @@ mod tests {
     fn test_classify_failure() {
         // SessionCrash
         assert_eq!(
-            classify_failure("tmux session crashed"),
-            FailureType::SessionCrash
-        );
-        assert_eq!(
             classify_failure("Process terminated unexpectedly"),
             FailureType::SessionCrash
         );
@@ -303,10 +298,6 @@ mod tests {
 
     #[test]
     fn test_classify_failure_case_insensitive() {
-        assert_eq!(
-            classify_failure("TMUX SESSION CRASHED"),
-            FailureType::SessionCrash
-        );
         assert_eq!(
             classify_failure("Context LIMIT exceeded"),
             FailureType::ContextExhausted

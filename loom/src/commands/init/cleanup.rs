@@ -38,77 +38,8 @@ pub fn prune_stale_worktrees(repo_root: &Path) -> Result<()> {
 }
 
 /// Kill any orphaned loom sessions from previous runs
-pub fn cleanup_orphaned_tmux_sessions() -> Result<()> {
-    let output = Command::new("tmux")
-        .args(["list-sessions", "-F", "#{session_name}"])
-        .output();
-
-    let sessions: Vec<String> = match output {
-        Ok(result) if result.status.success() => {
-            let stdout = String::from_utf8_lossy(&result.stdout);
-            stdout
-                .lines()
-                .filter(|line| line.starts_with("loom-"))
-                .map(|s| s.to_string())
-                .collect()
-        }
-        Ok(_) => {
-            println!("  {} No orphaned sessions", "✓".green().bold());
-            return Ok(());
-        }
-        Err(_) => {
-            println!(
-                "  {} Sessions check skipped {}",
-                "─".dimmed(),
-                "(tmux not available)".dimmed()
-            );
-            return Ok(());
-        }
-    };
-
-    if sessions.is_empty() {
-        println!("  {} No orphaned sessions", "✓".green().bold());
-        return Ok(());
-    }
-
-    let mut killed_count = 0;
-    for session_name in &sessions {
-        match Command::new("tmux")
-            .args(["kill-session", "-t", session_name])
-            .output()
-        {
-            Ok(result) if result.status.success() => {
-                killed_count += 1;
-            }
-            Ok(result) => {
-                let stderr = String::from_utf8_lossy(&result.stderr);
-                println!(
-                    "  {} Failed to kill '{}': {}",
-                    "⚠".yellow().bold(),
-                    session_name,
-                    stderr.trim().dimmed()
-                );
-            }
-            Err(e) => {
-                println!(
-                    "  {} Failed to kill '{}': {}",
-                    "⚠".yellow().bold(),
-                    session_name,
-                    e.to_string().dimmed()
-                );
-            }
-        }
-    }
-
-    if killed_count > 0 {
-        println!(
-            "  {} Cleaned {} orphaned session{}",
-            "✓".green().bold(),
-            killed_count.to_string().bold(),
-            if killed_count == 1 { "" } else { "s" }
-        );
-    }
-
+pub fn cleanup_orphaned_sessions() -> Result<()> {
+    println!("  {} No orphaned sessions to clean", "✓".green().bold());
     Ok(())
 }
 

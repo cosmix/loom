@@ -6,8 +6,6 @@ use anyhow::anyhow;
 
 use crate::models::session::SessionStatus;
 
-use super::types::{AttachableSession, SessionBackend};
-
 /// Format session status for display
 pub(crate) fn format_status(status: &SessionStatus) -> String {
     match status {
@@ -35,52 +33,11 @@ pub(crate) fn format_manual_mode_error(
     let signal_hint = signal_path.display();
 
     anyhow!(
-        "Session '{session_id}' was created in manual mode (no tmux session).\n\n\
+        "Session '{session_id}' was created in manual mode (no backend session).\n\n\
          To work on this stage, navigate to the worktree manually:\n  \
          {worktree_hint}\n  \
          claude \"Read the signal file at {signal_hint} and execute the assigned work.\"\n"
     )
-}
-
-/// Generate a window name from session info (truncated to 20 chars)
-pub(crate) fn window_name_for_session(session: &AttachableSession) -> String {
-    session
-        .stage_name
-        .clone()
-        .or_else(|| session.stage_id.clone())
-        .unwrap_or_else(|| session.session_id.clone())
-        .chars()
-        .take(20)
-        .collect()
-}
-
-/// Build the tmux attach command string
-///
-/// Uses `env -u TMUX` to allow nested tmux sessions (running inside overview windows)
-pub(crate) fn tmux_attach_command(tmux_session: &str, detach_existing: bool) -> String {
-    if detach_existing {
-        format!("env -u TMUX tmux attach -d -t {tmux_session}")
-    } else {
-        format!("env -u TMUX tmux attach -t {tmux_session}")
-    }
-}
-
-/// Build the attach command string for any session backend
-///
-/// For tmux sessions, uses tmux attach.
-/// For native sessions, this returns a message since we can't "attach" in the same way.
-pub(crate) fn attach_command_for_session(
-    session: &AttachableSession,
-    detach_existing: bool,
-) -> String {
-    match &session.backend {
-        SessionBackend::Tmux { session_name } => tmux_attach_command(session_name, detach_existing),
-        SessionBackend::Native { pid } => {
-            // For native sessions, we focus the window instead
-            // This command is used in overview windows, so we just show status
-            format!("echo 'Native session (PID: {pid}) - use window focus to attach'; sleep 3600")
-        }
-    }
 }
 
 /// Focus a window by process ID using wmctrl or xdotool

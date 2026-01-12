@@ -52,7 +52,6 @@ fn test_session_complex_lifecycle() {
     assert_eq!(session.status, SessionStatus::Spawning);
 
     session.assign_to_stage("stage-1".to_string());
-    session.set_tmux_session("loom-stage-1".to_string());
     session.set_worktree_path(PathBuf::from("/tmp/worktree-1"));
     session.set_pid(99999);
 

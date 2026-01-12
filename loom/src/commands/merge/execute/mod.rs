@@ -133,7 +133,7 @@ pub fn execute(stage_id: String, force: bool) -> Result<()> {
     // Safety check 1: Validate stage status
     validate_stage_status(&stage_id, &work_dir, force)?;
 
-    // Safety check 2: Check for active sessions (both tmux and native)
+    // Safety check 2: Check for active sessions
     check_active_session(&stage_id, &work_dir, force)?;
 
     println!("Worktree path: {}", worktree_path.display());

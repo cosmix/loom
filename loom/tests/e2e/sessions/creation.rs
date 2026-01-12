@@ -13,7 +13,6 @@ fn test_session_creation() {
     assert_eq!(session.context_limit, DEFAULT_CONTEXT_LIMIT);
     assert_eq!(session.context_limit, 200_000);
     assert!(session.stage_id.is_none());
-    assert!(session.tmux_session.is_none());
     assert!(session.worktree_path.is_none());
     assert!(session.pid.is_none());
     assert_eq!(session.created_at, session.last_active);
@@ -50,13 +49,11 @@ fn test_session_default_trait() {
 fn test_session_clone() {
     let mut session = Session::new();
     session.assign_to_stage("stage-1".to_string());
-    session.set_tmux_session("loom-test".to_string());
     session.try_mark_running().expect("Spawning -> Running");
 
     let cloned = session.clone();
 
     assert_eq!(cloned.id, session.id);
     assert_eq!(cloned.stage_id, session.stage_id);
-    assert_eq!(cloned.tmux_session, session.tmux_session);
     assert_eq!(cloned.status, session.status);
 }

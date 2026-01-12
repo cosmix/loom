@@ -83,11 +83,11 @@ pub(crate) fn find_session_for_stage(work_dir: &Path, stage_id: &str) -> Result<
 /// Check if a session can be attached to
 ///
 /// A session is attachable if:
-/// - It has a tmux_session (tmux backend) OR a pid (native backend)
+/// - It has a pid (backend available)
 /// - It is in Running or Paused state
 pub(crate) fn is_attachable(session: &Session) -> bool {
-    // Must have either tmux session or PID
-    let has_backend = session.tmux_session.is_some() || session.pid.is_some();
+    // Must have PID to be attachable
+    let has_backend = session.pid.is_some();
     if !has_backend {
         return false;
     }
@@ -100,12 +100,9 @@ pub(crate) fn is_attachable(session: &Session) -> bool {
 
 /// Determine the backend type for a session
 ///
-/// If tmux_session is set, returns Tmux.
-/// If only pid is set, returns Native.
+/// If pid is set, returns Native.
 pub(crate) fn detect_backend_type(session: &Session) -> Option<BackendType> {
-    if session.tmux_session.is_some() {
-        Some(BackendType::Tmux)
-    } else if session.pid.is_some() {
+    if session.pid.is_some() {
         Some(BackendType::Native)
     } else {
         None
@@ -114,11 +111,5 @@ pub(crate) fn detect_backend_type(session: &Session) -> Option<BackendType> {
 
 /// Create a SessionBackend from a Session
 pub(crate) fn session_backend(session: &Session) -> Option<SessionBackend> {
-    if let Some(ref tmux_session) = session.tmux_session {
-        Some(SessionBackend::Tmux {
-            session_name: tmux_session.clone(),
-        })
-    } else {
-        session.pid.map(|pid| SessionBackend::Native { pid })
-    }
+    session.pid.map(|pid| SessionBackend::Native { pid })
 }

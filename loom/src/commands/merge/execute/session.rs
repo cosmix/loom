@@ -40,7 +40,7 @@ pub fn spawn_merge_resolution_session(
     )?;
 
     // Create terminal backend and spawn session
-    let backend = create_backend(BackendType::Native)?;
+    let backend = create_backend(BackendType::Native, work_dir)?;
     let spawned_session = backend.spawn_merge_session(&stage, session, &signal_path, repo_root)?;
 
     Ok(spawned_session.id)

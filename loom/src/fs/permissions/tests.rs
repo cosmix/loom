@@ -22,7 +22,6 @@ fn test_ensure_loom_permissions_creates_new_file() {
 
     let allow = settings["permissions"]["allow"].as_array().unwrap();
     assert!(allow.iter().any(|v| v == "Bash(loom:*)"));
-    assert!(allow.iter().any(|v| v == "Bash(tmux:*)"));
 }
 
 #[test]
@@ -57,7 +56,6 @@ fn test_ensure_loom_permissions_merges_existing() {
 
     // Check loom CLI permissions added
     assert!(allow.iter().any(|v| v == "Bash(loom:*)"));
-    assert!(allow.iter().any(|v| v == "Bash(tmux:*)"));
 
     // Check deny list preserved
     let deny = settings["permissions"]["deny"].as_array().unwrap();
@@ -77,7 +75,7 @@ fn test_ensure_loom_permissions_no_duplicates() {
     // Create existing settings with some loom permissions already
     let existing = json!({
         "permissions": {
-            "allow": ["Bash(loom:*)", "Bash(tmux:*)"]
+            "allow": ["Bash(loom:*)"]
         }
     });
     fs::write(
@@ -102,7 +100,6 @@ fn test_ensure_loom_permissions_no_duplicates() {
 fn test_loom_permissions_constant() {
     // Main repo includes all permissions (shared with worktrees via symlink)
     assert!(LOOM_PERMISSIONS.contains(&"Bash(loom:*)"));
-    assert!(LOOM_PERMISSIONS.contains(&"Bash(tmux:*)"));
     // Now includes worktree permissions so settings can be symlinked
     assert!(LOOM_PERMISSIONS.contains(&"Read(.work/**)"));
     assert!(LOOM_PERMISSIONS.contains(&"Write(.work/**)"));
@@ -121,7 +118,6 @@ fn test_worktree_permissions_constant() {
     assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Read(.claude/**)"));
     assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Read(~/.claude/**)"));
     assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Bash(loom:*)"));
-    assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Bash(tmux:*)"));
 }
 
 #[test]

@@ -45,10 +45,6 @@ pub use signals::{
 pub use spawner::{generate_crash_report, get_session_log_tail, CrashReport};
 // Re-export terminal functions (replaces legacy spawner exports)
 pub use terminal::native::NativeBackend;
-pub use terminal::tmux::{
-    check_tmux_available, get_tmux_session_info, list_tmux_sessions, send_keys, session_is_running,
-    TmuxBackend, TmuxSessionInfo,
-};
 pub use terminal::{create_backend, BackendType, TerminalBackend};
 // Re-export hooks infrastructure
 pub use hooks::{

@@ -1,14 +1,13 @@
 //! Terminal backend abstraction for session management
 //!
 //! Provides a unified interface for spawning and managing Claude Code sessions
-//! in different terminal environments (native terminal windows or tmux).
+//! in native terminal windows.
 //!
 //! Supports two session types:
 //! - Stage sessions: run in isolated worktrees for parallel stage execution
 //! - Merge sessions: run in main repository for conflict resolution
 
 pub mod native;
-pub mod tmux;
 
 use anyhow::Result;
 use std::path::Path;
@@ -20,18 +19,15 @@ use crate::models::worktree::Worktree;
 /// Backend type selection
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BackendType {
-    /// Native terminal windows (default) - each session in its own terminal
+    /// Native terminal windows - each session in its own terminal
     #[default]
     Native,
-    /// tmux multiplexer - all sessions in tmux
-    Tmux,
 }
 
 impl std::fmt::Display for BackendType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             BackendType::Native => write!(f, "native"),
-            BackendType::Tmux => write!(f, "tmux"),
         }
     }
 }
@@ -42,21 +38,20 @@ impl std::str::FromStr for BackendType {
     fn from_str(s: &str) -> Result<Self> {
         match s.to_lowercase().as_str() {
             "native" => Ok(BackendType::Native),
-            "tmux" => Ok(BackendType::Tmux),
-            _ => anyhow::bail!("Unknown backend type: {s}. Expected 'native' or 'tmux'"),
+            _ => anyhow::bail!("Unknown backend type: {s}. Expected 'native'"),
         }
     }
 }
 
 /// Trait for terminal backends
 ///
-/// Implementations handle spawning Claude Code sessions in different
-/// terminal environments while providing a consistent interface.
+/// Implementations handle spawning Claude Code sessions in native
+/// terminal windows while providing a consistent interface.
 pub trait TerminalBackend: Send + Sync {
     /// Spawn a new Claude Code session for the given stage
     ///
-    /// Creates a terminal (native window or tmux session) and runs the claude
-    /// command with the signal file path as the initial prompt.
+    /// Creates a native terminal window and runs the claude command with
+    /// the signal file path as the initial prompt.
     /// The session runs in the worktree directory for isolated stage work.
     fn spawn_session(
         &self,
@@ -123,14 +118,13 @@ pub trait TerminalBackend: Send + Sync {
 }
 
 /// Create a terminal backend based on the specified type
-pub fn create_backend(backend_type: BackendType) -> Result<Box<dyn TerminalBackend>> {
+pub fn create_backend(
+    backend_type: BackendType,
+    work_dir: &Path,
+) -> Result<Box<dyn TerminalBackend>> {
     match backend_type {
         BackendType::Native => {
-            let backend = native::NativeBackend::new()?;
-            Ok(Box::new(backend))
-        }
-        BackendType::Tmux => {
-            let backend = tmux::TmuxBackend::new()?;
+            let backend = native::NativeBackend::new(work_dir.to_path_buf())?;
             Ok(Box::new(backend))
         }
     }
@@ -143,7 +137,6 @@ mod tests {
     #[test]
     fn test_backend_type_display() {
         assert_eq!(BackendType::Native.to_string(), "native");
-        assert_eq!(BackendType::Tmux.to_string(), "tmux");
     }
 
     #[test]
@@ -152,7 +145,6 @@ mod tests {
             "native".parse::<BackendType>().unwrap(),
             BackendType::Native
         );
-        assert_eq!("tmux".parse::<BackendType>().unwrap(), BackendType::Tmux);
         assert_eq!(
             "NATIVE".parse::<BackendType>().unwrap(),
             BackendType::Native

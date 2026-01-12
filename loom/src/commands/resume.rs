@@ -76,7 +76,7 @@ pub fn execute(stage_id: String) -> Result<()> {
             context.branch.clone(),
         );
 
-        // Spawn the tmux session with handoff context
+        // Spawn the continuation session with handoff context
         let session = continue_session(
             &context.stage,
             context.handoff_path.as_deref(),
@@ -91,15 +91,9 @@ pub fn execute(stage_id: String) -> Result<()> {
         save_stage(&stage, work_dir.root())?;
 
         println!("\n✓ Stage status updated to Executing");
-        println!(
-            "✓ Spawned tmux session: {}",
-            session.tmux_session.as_ref().unwrap_or(&"none".to_string())
-        );
+        println!("✓ Spawned session: {}", session.id);
         println!("\nTo attach to the session:");
-        println!(
-            "  tmux attach -t {}",
-            session.tmux_session.as_ref().unwrap_or(&"none".to_string())
-        );
+        println!("  loom attach {}", session.id);
 
         if let Some(ref path) = handoff_path {
             println!("\nHandoff context loaded from: {}", path.display());

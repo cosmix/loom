@@ -7,13 +7,7 @@
 //!
 //! - `spawn_session` -> Use `TerminalBackend::spawn_session()` from `terminal` module
 //! - `SpawnerConfig` -> Use `OrchestratorConfig` or `BackendType` from `terminal` module
-//! - `check_tmux_available` -> Use `terminal::tmux::check_tmux_available()`
-//! - `session_is_running` -> Use `terminal::tmux::session_is_running()`
-//! - `list_tmux_sessions` -> Use `terminal::tmux::list_tmux_sessions()`
-//! - `get_tmux_session_info` -> Use `terminal::tmux::get_tmux_session_info()`
-//! - `send_keys` -> Use `terminal::tmux::send_keys()`
 //! - `kill_session` -> Use `TerminalBackend::kill_session()`
-//! - `TmuxSessionInfo` -> Use `terminal::tmux::TmuxSessionInfo`
 //!
 //! # Retained Functionality
 //!
@@ -65,15 +59,13 @@ pub struct CrashReport {
     pub session_id: String,
     /// Stage ID associated with the crash
     pub stage_id: Option<String>,
-    /// Tmux session name
-    pub tmux_session: Option<String>,
     /// Exit code if available
     pub exit_code: Option<i32>,
     /// Error message or crash reason
     pub reason: String,
-    /// Last N lines from the tmux log
+    /// Last N lines from the session log
     pub log_tail: Option<String>,
-    /// Path to the full tmux log file
+    /// Path to the full session log file
     pub log_path: Option<PathBuf>,
 }
 
@@ -84,18 +76,11 @@ impl CrashReport {
             detected_at: Utc::now(),
             session_id,
             stage_id,
-            tmux_session: None,
             exit_code: None,
             reason,
             log_tail: None,
             log_path: None,
         }
-    }
-
-    /// Set the tmux session name
-    pub fn with_tmux_session(mut self, tmux_session: String) -> Self {
-        self.tmux_session = Some(tmux_session);
-        self
     }
 
     /// Set the exit code
@@ -104,7 +89,7 @@ impl CrashReport {
         self
     }
 
-    /// Set the log tail from captured tmux output
+    /// Set the log tail from captured session output
     pub fn with_log_tail(mut self, log_tail: String) -> Self {
         self.log_tail = Some(log_tail);
         self
@@ -122,7 +107,7 @@ impl CrashReport {
 /// Creates a markdown file with crash diagnostics including:
 /// - Timestamp and session/stage info
 /// - Crash reason
-/// - Last N lines of tmux log output
+/// - Last N lines of session log output
 /// - Path to full log file for detailed investigation
 pub fn generate_crash_report(
     report: &CrashReport,
@@ -176,9 +161,6 @@ pub fn generate_crash_report(
     if let Some(stage_id) = &report.stage_id {
         content.push_str(&format!("stage_id: \"{stage_id}\"\n"));
     }
-    if let Some(tmux) = &report.tmux_session {
-        content.push_str(&format!("tmux_session: \"{tmux}\"\n"));
-    }
     if let Some(code) = report.exit_code {
         content.push_str(&format!("exit_code: {code}\n"));
     }
@@ -201,9 +183,6 @@ pub fn generate_crash_report(
     if let Some(stage_id) = &report.stage_id {
         content.push_str(&format!("- **Stage**: `{stage_id}`\n"));
     }
-    if let Some(tmux) = &report.tmux_session {
-        content.push_str(&format!("- **Tmux Session**: `{tmux}`\n"));
-    }
     if let Some(code) = report.exit_code {
         content.push_str(&format!("- **Exit Code**: {code}\n"));
     }
@@ -220,7 +199,8 @@ pub fn generate_crash_report(
         content.push_str("```\n\n");
     } else {
         content.push_str("## Log Output\n\n");
-        content.push_str("*No log output captured. Tmux logging may not have been enabled.*\n\n");
+        content
+            .push_str("*No log output captured. Session logging may not have been enabled.*\n\n");
     }
 
     if let Some(path) = &log_path {
@@ -305,7 +285,6 @@ mod tests {
         assert_eq!(report.session_id, "session-123");
         assert_eq!(report.stage_id, Some("stage-1".to_string()));
         assert_eq!(report.reason, "Process crashed");
-        assert!(report.tmux_session.is_none());
         assert!(report.exit_code.is_none());
         assert!(report.log_tail.is_none());
         assert!(report.log_path.is_none());
@@ -318,12 +297,10 @@ mod tests {
             Some("stage-1".to_string()),
             "Process crashed".to_string(),
         )
-        .with_tmux_session("loom-stage-1".to_string())
         .with_exit_code(1)
         .with_log_tail("last line of log".to_string())
         .with_log_path(PathBuf::from("/tmp/test.log"));
 
-        assert_eq!(report.tmux_session, Some("loom-stage-1".to_string()));
         assert_eq!(report.exit_code, Some(1));
         assert_eq!(report.log_tail, Some("last line of log".to_string()));
         assert_eq!(report.log_path, Some(PathBuf::from("/tmp/test.log")));

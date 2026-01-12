@@ -9,7 +9,6 @@ use crate::models::session::Session;
 use crate::models::stage::StageStatus;
 use crate::models::worktree::Worktree;
 use crate::orchestrator::monitor::{Monitor, MonitorConfig, MonitorEvent};
-use crate::orchestrator::terminal::tmux::check_tmux_available;
 use crate::plan::ExecutionGraph;
 use crate::utils::{cleanup_terminal, install_terminal_panic_hook};
 
@@ -81,8 +80,8 @@ impl Orchestrator {
         let monitor = Monitor::new(monitor_config);
 
         // Create the terminal backend based on config
-        let backend =
-            create_backend(config.backend_type).context("Failed to create terminal backend")?;
+        let backend = create_backend(config.backend_type, &config.work_dir)
+            .context("Failed to create terminal backend")?;
 
         Ok(Self {
             config,
@@ -99,11 +98,6 @@ impl Orchestrator {
     pub fn run(&mut self) -> Result<OrchestratorResult> {
         // Install panic hook to restore terminal on panic
         install_terminal_panic_hook();
-
-        if !self.config.manual_mode && self.config.backend_type == BackendType::Tmux {
-            check_tmux_available()
-                .context("tmux is required when using tmux backend. Use --manual to set up sessions yourself, or use --backend=native.")?;
-        }
 
         // Sync graph with existing stage states and recover orphaned sessions
         self.sync_graph_with_stage_files()
@@ -270,10 +264,6 @@ impl Orchestrator {
                 needs_handoff: Vec::new(),
                 total_sessions_spawned: 1,
             });
-        }
-
-        if self.config.backend_type == BackendType::Tmux {
-            check_tmux_available().context("tmux is required when using tmux backend")?;
         }
 
         let mut completed = false;

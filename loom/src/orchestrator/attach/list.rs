@@ -13,7 +13,7 @@ use super::{
 /// List all sessions that can be attached to
 ///
 /// - Reads .work/sessions/ for session files
-/// - Filters to Running or Paused sessions with a backend (tmux_session or pid)
+/// - Filters to Running or Paused sessions with a backend (PID)
 /// - Returns list with context health information
 pub fn list_attachable(work_dir: &Path) -> Result<Vec<AttachableSession>> {
     let sessions_dir = work_dir.join("sessions");
@@ -50,7 +50,7 @@ pub fn list_attachable(work_dir: &Path) -> Result<Vec<AttachableSession>> {
                     continue;
                 }
 
-                // Get backend from session (tmux or native)
+                // Get backend from session
                 let backend = match session_backend(&session) {
                     Some(b) => b,
                     None => continue, // Skip sessions without a backend
@@ -117,7 +117,6 @@ pub fn format_attachable_list(sessions: &[AttachableSession]) -> String {
         };
 
         let backend_display = match &session.backend {
-            SessionBackend::Tmux { .. } => "tmux",
             SessionBackend::Native { .. } => "native",
         };
 

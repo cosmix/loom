@@ -6,8 +6,6 @@ use crate::orchestrator::terminal::BackendType;
 /// Backend information for an attachable session
 #[derive(Debug, Clone)]
 pub enum SessionBackend {
-    /// tmux backend - has a tmux session name
-    Tmux { session_name: String },
     /// Native backend - has a process ID
     Native { pid: u32 },
 }
@@ -25,37 +23,21 @@ pub struct AttachableSession {
 }
 
 impl AttachableSession {
-    /// Get the tmux session name if this is a tmux session
-    pub fn tmux_session(&self) -> Option<&str> {
+    /// Get the PID for this native session
+    pub fn pid(&self) -> u32 {
         match &self.backend {
-            SessionBackend::Tmux { session_name } => Some(session_name),
-            SessionBackend::Native { .. } => None,
-        }
-    }
-
-    /// Get the PID if this is a native session
-    pub fn pid(&self) -> Option<u32> {
-        match &self.backend {
-            SessionBackend::Tmux { .. } => None,
-            SessionBackend::Native { pid } => Some(*pid),
+            SessionBackend::Native { pid } => *pid,
         }
     }
 
     /// Get the backend type
     pub fn backend_type(&self) -> BackendType {
-        match &self.backend {
-            SessionBackend::Tmux { .. } => BackendType::Tmux,
-            SessionBackend::Native { .. } => BackendType::Native,
-        }
+        // All sessions are now native
+        BackendType::Native
     }
 
-    /// Check if this is a tmux session
-    pub fn is_tmux(&self) -> bool {
-        matches!(self.backend, SessionBackend::Tmux { .. })
-    }
-
-    /// Check if this is a native session
+    /// Check if this is a native session (always true now)
     pub fn is_native(&self) -> bool {
-        matches!(self.backend, SessionBackend::Native { .. })
+        true
     }
 }

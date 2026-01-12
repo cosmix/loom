@@ -87,10 +87,6 @@ fn parse_session_from_doc(doc: &MarkdownDocument) -> Option<Session> {
     Some(Session {
         id,
         stage_id: doc.get_frontmatter("stage_id").cloned(),
-        tmux_session: doc
-            .get_frontmatter("tmux_session")
-            .cloned()
-            .filter(|s| !s.is_empty() && s != "null"),
         worktree_path: doc.get_frontmatter("worktree_path").map(|s| s.into()),
         pid: doc.get_frontmatter("pid").and_then(|s| s.parse().ok()),
         status,
@@ -112,22 +108,13 @@ pub fn is_session_orphaned(session: &Session) -> bool {
         return false;
     }
 
-    let backend_type = if session.tmux_session.is_some() {
-        Some(BackendType::Tmux)
-    } else if session.pid.is_some() {
+    let backend_type = if session.pid.is_some() {
         Some(BackendType::Native)
     } else {
         None
     };
 
     match backend_type {
-        Some(BackendType::Tmux) => {
-            if let Some(tmux_name) = &session.tmux_session {
-                !tmux_session_exists(tmux_name)
-            } else {
-                false
-            }
-        }
         Some(BackendType::Native) => {
             if let Some(pid) = session.pid {
                 !is_pid_alive(pid)
@@ -137,14 +124,6 @@ pub fn is_session_orphaned(session: &Session) -> bool {
         }
         None => false,
     }
-}
-
-pub fn tmux_session_exists(session_name: &str) -> bool {
-    std::process::Command::new("tmux")
-        .args(["has-session", "-t", session_name])
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
 }
 
 pub fn is_pid_alive(pid: u32) -> bool {

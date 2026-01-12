@@ -131,7 +131,7 @@ fn kill_single_session(work_dir: &std::path::Path, session_id: &str) -> Result<(
     // Kill the session using the appropriate backend
     if let Some(backend_type) = backend_type {
         println!("  Detected backend: {backend_type}");
-        let backend = create_backend(backend_type)
+        let backend = create_backend(backend_type, work_dir)
             .with_context(|| format!("Failed to create {backend_type} backend"))?;
 
         // Check if session is alive
@@ -177,12 +177,9 @@ fn parse_session_from_markdown(content: &str) -> Result<Session> {
 
 /// Detect backend type from session metadata
 ///
-/// If tmux_session is set, returns Tmux.
-/// If only pid is set, returns Native.
+/// Returns Native if pid is set, otherwise None.
 fn detect_backend_type(session: &Session) -> Option<BackendType> {
-    if session.tmux_session.is_some() {
-        Some(BackendType::Tmux)
-    } else if session.pid.is_some() {
+    if session.pid.is_some() {
         Some(BackendType::Native)
     } else {
         None
@@ -194,29 +191,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_detect_backend_type_tmux() {
-        let mut session = Session::new();
-        session.tmux_session = Some("loom-stage-1".to_string());
-
-        assert_eq!(detect_backend_type(&session), Some(BackendType::Tmux));
-    }
-
-    #[test]
     fn test_detect_backend_type_native() {
         let mut session = Session::new();
         session.pid = Some(12345);
 
         assert_eq!(detect_backend_type(&session), Some(BackendType::Native));
-    }
-
-    #[test]
-    fn test_detect_backend_type_tmux_takes_precedence() {
-        let mut session = Session::new();
-        session.tmux_session = Some("loom-stage-1".to_string());
-        session.pid = Some(12345);
-
-        // Tmux takes precedence if both are set
-        assert_eq!(detect_backend_type(&session), Some(BackendType::Tmux));
     }
 
     #[test]
@@ -231,7 +210,7 @@ mod tests {
         let content = r#"---
 id: session-1
 stage_id: stage-1
-tmux_session: loom-stage-1
+pid: 12345
 status: running
 context_tokens: 0
 context_limit: 200000
@@ -245,7 +224,7 @@ last_active: 2024-01-01T00:00:00Z
         let session = parse_session_from_markdown(content).unwrap();
         assert_eq!(session.id, "session-1");
         assert_eq!(session.stage_id, Some("stage-1".to_string()));
-        assert_eq!(session.tmux_session, Some("loom-stage-1".to_string()));
+        assert_eq!(session.pid, Some(12345));
     }
 
     #[test]

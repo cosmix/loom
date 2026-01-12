@@ -2,7 +2,7 @@
 //!
 //! This module provides functionality to attach to running sessions,
 //! list attachable sessions, and manage multi-session views.
-//! Supports both tmux and native terminal backends.
+//! Supports native terminal backends.
 
 mod gui;
 pub(crate) mod helpers;
@@ -30,10 +30,7 @@ pub use single::{
 pub use types::{AttachableSession, SessionBackend};
 
 // Re-export crate-internal API
-pub(crate) use helpers::{
-    attach_command_for_session, format_manual_mode_error, format_status, tmux_attach_command,
-    try_focus_window_by_pid, window_name_for_session,
-};
+pub(crate) use helpers::{format_manual_mode_error, format_status, try_focus_window_by_pid};
 pub(crate) use loaders::{
     detect_backend_type, find_session_for_stage, is_attachable, load_session, load_stage,
     session_backend,

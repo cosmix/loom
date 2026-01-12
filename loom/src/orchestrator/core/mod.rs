@@ -2,7 +2,7 @@
 //!
 //! The orchestrator is the heart of `loom run`. It:
 //! - Creates worktrees for ready stages
-//! - Spawns Claude sessions in tmux
+//! - Spawns Claude sessions in terminal windows
 //! - Monitors stage completion and session health
 //! - Handles crashes and context exhaustion
 //! - Manages the execution graph

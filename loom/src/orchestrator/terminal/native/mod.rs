@@ -4,13 +4,14 @@
 //! using xdg-terminal-exec or fallback detection.
 
 mod detection;
+mod pid_tracking;
 mod spawner;
 mod window_ops;
 
 use anyhow::{bail, Context, Result};
 use shell_escape::escape;
 use std::borrow::Cow;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use super::{BackendType, TerminalBackend};
@@ -19,20 +20,26 @@ use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
 
 pub use detection::detect_terminal;
+pub use pid_tracking::{check_pid_alive, cleanup_stage_files, read_pid_file};
 pub use spawner::spawn_in_terminal;
-pub use window_ops::{close_window_by_title, focus_window_by_pid};
+pub use window_ops::{close_window_by_title, focus_window_by_pid, window_exists_by_title};
 
 /// Native terminal backend - spawns sessions in native terminal windows
 pub struct NativeBackend {
     /// The terminal command to use (e.g., "xdg-terminal-exec", "kitty")
     terminal_cmd: String,
+    /// The .work directory path for PID tracking
+    work_dir: PathBuf,
 }
 
 impl NativeBackend {
     /// Create a new native backend, detecting the available terminal
-    pub fn new() -> Result<Self> {
+    pub fn new(work_dir: PathBuf) -> Result<Self> {
         let terminal_cmd = detect_terminal()?;
-        Ok(Self { terminal_cmd })
+        Ok(Self {
+            terminal_cmd,
+            work_dir,
+        })
     }
 
     /// Get the detected terminal command
@@ -71,15 +78,23 @@ impl TerminalBackend for NativeBackend {
         let escaped_prompt = escape(Cow::Borrowed(&initial_prompt));
 
         // Build the command to run in the terminal
-        // We use exec to replace the shell with claude, so the PID we get is claude's
-        let claude_cmd = format!("exec claude {escaped_prompt}");
+        let claude_cmd = format!("claude {escaped_prompt}");
 
-        // Spawn the terminal
+        // Create wrapper script that writes PID before exec'ing claude
+        let wrapper_path =
+            pid_tracking::create_wrapper_script(&self.work_dir, &stage.id, &claude_cmd)?;
+
+        // Build the command that runs the wrapper script
+        let wrapper_cmd = wrapper_path.to_string_lossy();
+
+        // Spawn the terminal with PID tracking enabled
         let pid = spawn_in_terminal(
             &self.terminal_cmd,
             &title,
             Path::new(worktree_path),
-            &claude_cmd,
+            &wrapper_cmd,
+            Some(&self.work_dir),
+            Some(&stage.id),
         )?;
 
         // Update the session with spawn info
@@ -120,14 +135,26 @@ impl TerminalBackend for NativeBackend {
         let escaped_prompt = escape(Cow::Borrowed(&initial_prompt));
 
         // Build the command to run in the terminal
-        let claude_cmd = format!("exec claude {escaped_prompt}");
+        let claude_cmd = format!("claude {escaped_prompt}");
+
+        // Create wrapper script for merge session
+        let wrapper_path = pid_tracking::create_wrapper_script(
+            &self.work_dir,
+            &format!("merge-{}", stage.id),
+            &claude_cmd,
+        )?;
+
+        // Build the command that runs the wrapper script
+        let wrapper_cmd = wrapper_path.to_string_lossy();
 
         // Spawn the terminal in the main repository (not worktree)
         let pid = spawn_in_terminal(
             &self.terminal_cmd,
             &title,
             Path::new(repo_root_str),
-            &claude_cmd,
+            &wrapper_cmd,
+            Some(&self.work_dir),
+            Some(&format!("merge-{}", stage.id)),
         )?;
 
         // Update the session with spawn info
@@ -170,14 +197,26 @@ impl TerminalBackend for NativeBackend {
         let escaped_prompt = escape(Cow::Borrowed(&initial_prompt));
 
         // Build the command to run in the terminal
-        let claude_cmd = format!("exec claude {escaped_prompt}");
+        let claude_cmd = format!("claude {escaped_prompt}");
+
+        // Create wrapper script for base conflict session
+        let wrapper_path = pid_tracking::create_wrapper_script(
+            &self.work_dir,
+            &format!("base-conflict-{}", stage.id),
+            &claude_cmd,
+        )?;
+
+        // Build the command that runs the wrapper script
+        let wrapper_cmd = wrapper_path.to_string_lossy();
 
         // Spawn the terminal in the main repository (not worktree)
         let pid = spawn_in_terminal(
             &self.terminal_cmd,
             &title,
             Path::new(repo_root_str),
-            &claude_cmd,
+            &wrapper_cmd,
+            Some(&self.work_dir),
+            Some(&format!("base-conflict-{}", stage.id)),
         )?;
 
         // Update the session with spawn info
@@ -198,6 +237,8 @@ impl TerminalBackend for NativeBackend {
         if let Some(stage_id) = &session.stage_id {
             let title = format!("loom-{stage_id}");
             if close_window_by_title(&title) {
+                // Clean up tracking files after closing the window
+                cleanup_stage_files(&self.work_dir, stage_id);
                 return Ok(());
             }
         }
@@ -221,11 +262,35 @@ impl TerminalBackend for NativeBackend {
                     bail!("Failed to kill process {pid}: {stderr}");
                 }
             }
+
+            // Clean up tracking files
+            if let Some(stage_id) = &session.stage_id {
+                cleanup_stage_files(&self.work_dir, stage_id);
+            }
         }
         Ok(())
     }
 
     fn is_session_alive(&self, session: &Session) -> Result<bool> {
+        // Layered approach to checking if session is alive:
+        // 1. Try reading from PID file (most current)
+        // 2. Check if that PID is alive
+        // 3. Fallback to stored session.pid
+        // 4. Fallback to window existence check
+
+        // First, try to get the most current PID from the PID file
+        if let Some(stage_id) = &session.stage_id {
+            if let Some(current_pid) = read_pid_file(&self.work_dir, stage_id) {
+                // We have a PID from the tracking file, check if it's alive
+                if check_pid_alive(current_pid) {
+                    return Ok(true);
+                }
+                // PID file exists but process is dead - clean up and continue checking
+                cleanup_stage_files(&self.work_dir, stage_id);
+            }
+        }
+
+        // Fallback to the stored PID from the session
         if let Some(pid) = session.pid {
             // Check if process exists using kill -0
             let output = Command::new("kill")
@@ -234,10 +299,20 @@ impl TerminalBackend for NativeBackend {
                 .output()
                 .context("Failed to check process status")?;
 
-            Ok(output.status.success())
-        } else {
-            Ok(false)
+            if output.status.success() {
+                return Ok(true);
+            }
         }
+
+        // Final fallback: check if window still exists
+        if let Some(stage_id) = &session.stage_id {
+            let title = format!("loom-{stage_id}");
+            if window_exists_by_title(&title) {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 
     fn attach_session(&self, session: &Session) -> Result<()> {
@@ -274,11 +349,13 @@ impl TerminalBackend for NativeBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     #[test]
     fn test_native_backend_creation() {
         // May fail if no terminal is available
-        let result = NativeBackend::new();
+        let temp_dir = TempDir::new().unwrap();
+        let result = NativeBackend::new(temp_dir.path().to_path_buf());
         if result.is_ok() {
             let backend = result.unwrap();
             assert!(!backend.terminal_cmd().is_empty());

@@ -13,7 +13,6 @@ impl Session {
         Self {
             id,
             stage_id: None,
-            tmux_session: None,
             worktree_path: None,
             pid: None,
             status: SessionStatus::Spawning,
@@ -76,10 +75,6 @@ impl Session {
     pub fn release_from_stage(&mut self) {
         self.stage_id = None;
         self.last_active = Utc::now();
-    }
-
-    pub fn set_tmux_session(&mut self, session_name: String) {
-        self.tmux_session = Some(session_name);
     }
 
     pub fn set_worktree_path(&mut self, path: PathBuf) {

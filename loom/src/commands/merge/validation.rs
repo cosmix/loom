@@ -9,14 +9,13 @@ use std::process::Command;
 
 use crate::fs::stage_files::find_stage_file;
 use crate::models::stage::StageStatus;
-use crate::orchestrator::session_is_running;
 use crate::verify::transitions::load_stage;
 
-/// Find the tmux session name for a stage by checking session files
+/// Find the session for a stage by checking session files
 ///
 /// Looks for a session file in `.work/sessions/` that is assigned to the given stage
-/// and returns its tmux_session name if found.
-pub fn find_tmux_session_for_stage(stage_id: &str, work_dir: &Path) -> Result<Option<String>> {
+/// and returns its session ID if found.
+pub fn find_session_for_stage(stage_id: &str, work_dir: &Path) -> Result<Option<String>> {
     let sessions_dir = work_dir.join("sessions");
     if !sessions_dir.exists() {
         return Ok(None);
@@ -40,11 +39,11 @@ pub fn find_tmux_session_for_stage(stage_id: &str, work_dir: &Path) -> Result<Op
             Err(_) => continue,
         };
 
-        // Parse YAML frontmatter to check stage_id and get tmux_session
+        // Parse YAML frontmatter to check stage_id and get session id
         if let Some(session_stage_id) = extract_frontmatter_field(&content, "stage_id") {
             if session_stage_id == stage_id {
-                if let Some(tmux_session) = extract_frontmatter_field(&content, "tmux_session") {
-                    return Ok(Some(tmux_session));
+                if let Some(session_id) = extract_frontmatter_field(&content, "id") {
+                    return Ok(Some(session_id));
                 }
             }
         }
@@ -100,13 +99,10 @@ fn is_native_session_alive(pid: u32) -> bool {
         .unwrap_or(false)
 }
 
-/// Find active session for a stage, checking both tmux and native backends
+/// Find active session for a stage, checking native backend
 ///
-/// Returns (session_name, is_tmux) if an active session is found.
-fn find_active_session_for_stage(
-    stage_id: &str,
-    work_dir: &Path,
-) -> Result<Option<(String, bool)>> {
+/// Returns session_id if an active session is found.
+fn find_active_session_for_stage(stage_id: &str, work_dir: &Path) -> Result<Option<String>> {
     let sessions_dir = work_dir.join("sessions");
     if !sessions_dir.exists() {
         return Ok(None);
@@ -136,21 +132,14 @@ fn find_active_session_for_stage(
                 continue;
             }
 
-            // Check for tmux session
-            if let Some(tmux_session) = extract_frontmatter_field(&content, "tmux_session") {
-                if session_is_running(&tmux_session).unwrap_or(false) {
-                    return Ok(Some((tmux_session, true)));
-                }
-            }
-
             // Check for native session (by PID)
             if let Some(pid_str) = extract_frontmatter_field(&content, "pid") {
                 if let Ok(pid) = pid_str.parse::<u32>() {
                     if is_native_session_alive(pid) {
-                        // Return session ID as the identifier for native sessions
+                        // Return session ID as the identifier
                         let session_id = extract_frontmatter_field(&content, "id")
                             .unwrap_or_else(|| format!("pid-{pid}"));
-                        return Ok(Some((session_id, false)));
+                        return Ok(Some(session_id));
                     }
                 }
             }
@@ -202,21 +191,18 @@ pub fn validate_stage_status(stage_id: &str, work_dir: &Path, force: bool) -> Re
 
 /// Check if there's an active session for this stage (backend-aware)
 ///
-/// This function checks for active sessions in both tmux and native backends.
-/// For tmux: checks standard naming convention (loom-{stage_id}) and session files
-/// For native: checks session files for PIDs and verifies they're still alive
+/// This function checks for active sessions in the native backend.
+/// Checks session files for PIDs and verifies they're still alive.
 pub fn check_active_session(stage_id: &str, work_dir: &Path, force: bool) -> Result<()> {
-    // First, check the standard tmux naming convention: loom-{stage_id}
-    // This handles legacy sessions that might not have session files
-    let standard_tmux_name = format!("loom-{stage_id}");
-    if session_is_running(&standard_tmux_name).unwrap_or(false) {
+    // Check for tracked sessions in .work/sessions/
+    if let Some(session_id) = find_active_session_for_stage(stage_id, work_dir)? {
         if force {
             eprintln!(
-                "Warning: Stage '{stage_id}' has an active tmux session. Proceeding due to --force."
+                "Warning: Stage '{stage_id}' has an active native session ({session_id}). Proceeding due to --force."
             );
         } else {
             bail!(
-                "Stage '{stage_id}' has an active tmux session.\n\
+                "Stage '{stage_id}' has an active native session ({session_id}).\n\
                  \n\
                  The worktree may be in use by a running Claude Code session.\n\
                  \n\
@@ -224,38 +210,7 @@ pub fn check_active_session(stage_id: &str, work_dir: &Path, force: bool) -> Res
                    loom stage complete {stage_id}\n\
                  \n\
                  To kill the session:\n\
-                   loom clean --sessions\n\
-                 \n\
-                 To force merge anyway (DANGEROUS - will delete worktree from under active session):\n\
-                   loom merge {stage_id} --force"
-            );
-        }
-        return Ok(());
-    }
-
-    // Check for tracked sessions in .work/sessions/ (handles both backends)
-    if let Some((session_name, is_tmux)) = find_active_session_for_stage(stage_id, work_dir)? {
-        let backend_name = if is_tmux {
-            "tmux session"
-        } else {
-            "native session"
-        };
-
-        if force {
-            eprintln!(
-                "Warning: Stage '{stage_id}' has an active {backend_name} ({session_name}). Proceeding due to --force."
-            );
-        } else {
-            bail!(
-                "Stage '{stage_id}' has an active {backend_name} ({session_name}).\n\
-                 \n\
-                 The worktree may be in use by a running Claude Code session.\n\
-                 \n\
-                 To complete the stage first:\n\
-                   loom stage complete {stage_id}\n\
-                 \n\
-                 To kill the session:\n\
-                   loom clean --sessions\n\
+                   loom sessions kill {session_id}\n\
                  \n\
                  To force merge anyway (DANGEROUS - will delete worktree from under active session):\n\
                    loom merge {stage_id} --force"
@@ -276,7 +231,7 @@ mod tests {
         let content = r#"---
 id: session-123
 stage_id: my-stage
-tmux_session: loom-my-stage
+pid: 12345
 status: running
 ---
 
@@ -292,8 +247,8 @@ status: running
             Some("my-stage".to_string())
         );
         assert_eq!(
-            extract_frontmatter_field(content, "tmux_session"),
-            Some("loom-my-stage".to_string())
+            extract_frontmatter_field(content, "pid"),
+            Some("12345".to_string())
         );
         assert_eq!(
             extract_frontmatter_field(content, "status"),
@@ -307,13 +262,13 @@ status: running
         let content = r#"---
 id: session-123
 stage_id: null
-tmux_session: ~
+pid: ~
 empty_field:
 ---
 "#;
 
         assert_eq!(extract_frontmatter_field(content, "stage_id"), None);
-        assert_eq!(extract_frontmatter_field(content, "tmux_session"), None);
+        assert_eq!(extract_frontmatter_field(content, "pid"), None);
         assert_eq!(extract_frontmatter_field(content, "empty_field"), None);
     }
 
@@ -324,16 +279,16 @@ empty_field:
     }
 
     #[test]
-    fn test_find_tmux_session_for_stage_empty_dir() {
+    fn test_find_session_for_stage_empty_dir() {
         let temp_dir = TempDir::new().unwrap();
         let work_dir = temp_dir.path();
 
-        let result = find_tmux_session_for_stage("stage-1", work_dir).unwrap();
+        let result = find_session_for_stage("stage-1", work_dir).unwrap();
         assert_eq!(result, None);
     }
 
     #[test]
-    fn test_find_tmux_session_for_stage_found() {
+    fn test_find_session_for_stage_found() {
         let temp_dir = TempDir::new().unwrap();
         let work_dir = temp_dir.path();
 
@@ -344,7 +299,7 @@ empty_field:
         let session_content = r#"---
 id: session-abc-123
 stage_id: my-target-stage
-tmux_session: loom-session-abc
+pid: 12345
 status: running
 ---
 
@@ -352,11 +307,11 @@ status: running
 "#;
         std::fs::write(sessions_dir.join("session-abc-123.md"), session_content).unwrap();
 
-        let result = find_tmux_session_for_stage("my-target-stage", work_dir).unwrap();
-        assert_eq!(result, Some("loom-session-abc".to_string()));
+        let result = find_session_for_stage("my-target-stage", work_dir).unwrap();
+        assert_eq!(result, Some("session-abc-123".to_string()));
 
         // Different stage should not match
-        let result = find_tmux_session_for_stage("other-stage", work_dir).unwrap();
+        let result = find_session_for_stage("other-stage", work_dir).unwrap();
         assert_eq!(result, None);
     }
 
@@ -422,9 +377,8 @@ status: running
         // Should find the active session
         let result = find_active_session_for_stage("test-stage", work_dir).unwrap();
         assert!(result.is_some());
-        let (session_id, is_tmux) = result.unwrap();
+        let session_id = result.unwrap();
         assert_eq!(session_id, "session-native-test");
-        assert!(!is_tmux); // Should be native backend
     }
 
     #[test]

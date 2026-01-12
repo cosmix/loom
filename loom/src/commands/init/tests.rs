@@ -324,10 +324,10 @@ fn test_prune_stale_worktrees_does_not_fail() {
 }
 
 #[test]
-fn test_cleanup_orphaned_tmux_sessions_does_not_fail() {
-    use super::cleanup::cleanup_orphaned_tmux_sessions;
+fn test_cleanup_orphaned_sessions_does_not_fail() {
+    use super::cleanup::cleanup_orphaned_sessions;
 
-    let result = cleanup_orphaned_tmux_sessions();
+    let result = cleanup_orphaned_sessions();
 
     assert!(result.is_ok());
 }

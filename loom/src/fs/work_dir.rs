@@ -99,7 +99,7 @@ This directory is managed by loom CLI and contains:
 - `archive/` - Archived entities
 - `stages/` - Stage definitions and status
 - `sessions/` - Active session tracking
-- `logs/` - Tmux session logs and crash reports
+- `logs/` - Session logs and crash reports
 - `knowledge/` - Curated codebase knowledge (entry points, patterns, conventions)
 - `checkpoints/` - Task completion checkpoints from agents
 - `task-state/` - Task progression tracking per stage

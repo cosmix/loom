@@ -5,7 +5,6 @@
 //! - Stage file I/O
 //! - Session file I/O
 //! - YAML frontmatter parsing
-//! - Tmux helpers
 //! - Async condition waiting
 
 mod git;
@@ -27,10 +26,7 @@ pub use stage_io::{create_stage_file, read_stage_file};
 pub use session_io::{create_session_file, read_session_file};
 
 // Re-export utils
-pub use utils::{
-    cleanup_tmux_sessions, complete_stage, create_signal_file, is_tmux_available,
-    wait_for_condition,
-};
+pub use utils::{complete_stage, create_signal_file, wait_for_condition};
 
 // Re-export yaml parsing (needed by stage_io and session_io, but also useful for tests)
 pub use yaml::extract_yaml_frontmatter;

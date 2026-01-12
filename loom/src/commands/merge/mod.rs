@@ -37,8 +37,7 @@ pub use execute::{execute, mark_stage_merged, worktree_path};
 
 // Re-export validation functions that may be useful externally
 pub use validation::{
-    check_active_session, extract_frontmatter_field, find_tmux_session_for_stage,
-    validate_stage_status,
+    check_active_session, extract_frontmatter_field, find_session_for_stage, validate_stage_status,
 };
 
 // Re-export helpers that may be useful externally

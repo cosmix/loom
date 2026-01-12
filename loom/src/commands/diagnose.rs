@@ -65,37 +65,12 @@ pub fn execute(stage_id: &str) -> Result<()> {
 
     println!("Spawning diagnosis session...");
     println!("Working directory: {}", session_cwd.display());
-
-    // Try to spawn in tmux if available
-    let tmux_result = Command::new("tmux")
-        .args([
-            "new-session",
-            "-d",
-            "-s",
-            &session_id,
-            "-c",
-            &session_cwd.to_string_lossy(),
-            "claude",
-        ])
-        .status();
-
-    match tmux_result {
-        Ok(status) if status.success() => {
-            println!("Diagnosis session '{session_id}' started in tmux.");
-            println!();
-            println!("To attach: tmux attach -t {session_id}");
-            println!("Signal file: {}", signal_path.display());
-        }
-        _ => {
-            // Fall back: instruct user to run claude manually
-            println!();
-            println!("Could not spawn tmux session. Please run manually:");
-            println!("  cd {}", session_cwd.display());
-            println!("  claude");
-            println!();
-            println!("The signal file is at: {}", signal_path.display());
-        }
-    }
+    println!();
+    println!("Signal file created at: {}", signal_path.display());
+    println!();
+    println!("To start diagnosis, run:");
+    println!("  cd {}", session_cwd.display());
+    println!("  claude");
 
     Ok(())
 }

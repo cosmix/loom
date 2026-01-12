@@ -53,7 +53,6 @@ impl std::fmt::Display for SessionStatus {
 pub struct Session {
     pub id: String,
     pub stage_id: Option<String>,
-    pub tmux_session: Option<String>,
     pub worktree_path: Option<PathBuf>,
     pub pid: Option<u32>,
     pub status: SessionStatus,
