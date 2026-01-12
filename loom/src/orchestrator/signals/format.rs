@@ -103,6 +103,15 @@ fn format_semi_stable_section(embedded_context: &EmbeddedContext) -> String {
         content.push_str("\n</knowledge>\n\n");
     }
 
+    // Add knowledge update instructions after knowledge summary
+    content.push_str("## Knowledge Updates\n\n");
+    content.push_str("**Capture discoveries** to help future sessions. Use these commands:\n\n");
+    content.push_str("| Discovery Type | Command |\n");
+    content.push_str("|----------------|--------|\n");
+    content.push_str("| Key entry point | `loom knowledge update entry-points \"## Section\\n\\n- path/file.rs - description\"` |\n");
+    content.push_str("| Architectural pattern | `loom knowledge update patterns \"## Pattern Name\\n\\n- How it works\"` |\n");
+    content.push_str("| Coding convention | `loom knowledge update conventions \"## Convention\\n\\n- Details\"` |\n\n");
+
     // Embed facts for this stage (semi-stable - facts accumulate but rarely change)
     if let Some(facts_content) = &embedded_context.facts_content {
         content.push_str("## Known Facts\n\n");
