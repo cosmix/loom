@@ -103,6 +103,8 @@ Maximize parallel execution at TWO levels:
 
 ````
 
+CRITICAL: Make sure to explicitly ask claude instances to use parallel subagents in signal files whenever possible!
+
 **Example:** Adding auth + adding logging both touch `src/api/handler.ts`:
 - BAD: One stage with both tasks → subagents conflict
 - GOOD: Two stages (`add-auth`, `add-logging`) → loom merges branches
