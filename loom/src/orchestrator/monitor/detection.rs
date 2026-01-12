@@ -257,7 +257,8 @@ impl Detection {
 
                 // If we previously reported this session as hung, clear that flag
                 // since we got a fresh heartbeat
-                self.reported_hung_sessions.remove(&update.heartbeat.session_id);
+                self.reported_hung_sessions
+                    .remove(&update.heartbeat.session_id);
             }
         }
 
@@ -276,7 +277,9 @@ impl Detection {
             let heartbeat_status = heartbeat_watcher.check_session_hung(stage_id);
 
             match heartbeat_status {
-                HeartbeatStatus::Hung { stale_duration_secs } => {
+                HeartbeatStatus::Hung {
+                    stale_duration_secs,
+                } => {
                     // Only report if we haven't already and the session is still alive
                     if !self.reported_hung_sessions.contains(&session.id) {
                         // Verify PID is still alive before declaring hung

@@ -634,7 +634,10 @@ fn test_compute_hash_different_for_different_content() {
 fn test_stable_prefix_is_constant() {
     let prefix1 = generate_stable_prefix();
     let prefix2 = generate_stable_prefix();
-    assert_eq!(prefix1, prefix2, "Stable prefix should be identical across calls");
+    assert_eq!(
+        prefix1, prefix2,
+        "Stable prefix should be identical across calls"
+    );
 }
 
 #[test]
@@ -710,15 +713,8 @@ fn test_generate_signal_with_metrics() {
     let stage = create_test_stage();
     let worktree = create_test_worktree();
 
-    let result = generate_signal_with_metrics(
-        &session,
-        &stage,
-        &worktree,
-        &[],
-        None,
-        None,
-        &work_dir,
-    );
+    let result =
+        generate_signal_with_metrics(&session, &stage, &worktree, &[], None, None, &work_dir);
 
     assert!(result.is_ok());
     let (signal_path, metrics) = result.unwrap();
@@ -843,7 +839,10 @@ fn test_stable_prefix_hash_changes_with_session() {
     );
 
     // Different sessions should have different hashes (header includes session ID)
-    assert_ne!(formatted1.metrics.stable_prefix_hash, formatted2.metrics.stable_prefix_hash);
+    assert_ne!(
+        formatted1.metrics.stable_prefix_hash,
+        formatted2.metrics.stable_prefix_hash
+    );
 
     // But the stable portion size should be similar (only header differs)
     let size_diff = (formatted1.metrics.stable_prefix_bytes as i64

@@ -141,15 +141,23 @@ pub fn init_memory_dir(work_dir: &Path) -> Result<()> {
     let memory_path = memory_dir(work_dir);
 
     if !memory_path.exists() {
-        fs::create_dir_all(&memory_path)
-            .with_context(|| format!("Failed to create memory directory: {}", memory_path.display()))?;
+        fs::create_dir_all(&memory_path).with_context(|| {
+            format!(
+                "Failed to create memory directory: {}",
+                memory_path.display()
+            )
+        })?;
     }
 
     Ok(())
 }
 
 /// Create a new memory journal for a session
-pub fn create_journal(work_dir: &Path, session_id: &str, stage_id: Option<&str>) -> Result<PathBuf> {
+pub fn create_journal(
+    work_dir: &Path,
+    session_id: &str,
+    stage_id: Option<&str>,
+) -> Result<PathBuf> {
     init_memory_dir(work_dir)?;
 
     let file_path = memory_file_path(work_dir, session_id);
@@ -184,8 +192,12 @@ pub fn append_entry(work_dir: &Path, session_id: &str, entry: &MemoryEntry) -> R
         .open(&file_path)
         .with_context(|| format!("Failed to open memory journal: {}", file_path.display()))?;
 
-    file.write_all(formatted.as_bytes())
-        .with_context(|| format!("Failed to append to memory journal: {}", file_path.display()))?;
+    file.write_all(formatted.as_bytes()).with_context(|| {
+        format!(
+            "Failed to append to memory journal: {}",
+            file_path.display()
+        )
+    })?;
 
     Ok(())
 }
@@ -379,7 +391,11 @@ pub fn get_recent_entries(journal: &MemoryJournal, max_entries: usize) -> Vec<&M
 }
 
 /// Format memory entries for embedding in a signal
-pub fn format_memory_for_signal(work_dir: &Path, session_id: &str, max_entries: usize) -> Option<String> {
+pub fn format_memory_for_signal(
+    work_dir: &Path,
+    session_id: &str,
+    max_entries: usize,
+) -> Option<String> {
     let journal = read_journal(work_dir, session_id).ok()?;
 
     if journal.entries.is_empty() {
@@ -394,9 +410,18 @@ pub fn format_memory_for_signal(work_dir: &Path, session_id: &str, max_entries: 
     let mut output = String::new();
 
     // Group by type for better organization
-    let notes: Vec<_> = recent.iter().filter(|e| e.entry_type == MemoryEntryType::Note).collect();
-    let decisions: Vec<_> = recent.iter().filter(|e| e.entry_type == MemoryEntryType::Decision).collect();
-    let questions: Vec<_> = recent.iter().filter(|e| e.entry_type == MemoryEntryType::Question).collect();
+    let notes: Vec<_> = recent
+        .iter()
+        .filter(|e| e.entry_type == MemoryEntryType::Note)
+        .collect();
+    let decisions: Vec<_> = recent
+        .iter()
+        .filter(|e| e.entry_type == MemoryEntryType::Decision)
+        .collect();
+    let questions: Vec<_> = recent
+        .iter()
+        .filter(|e| e.entry_type == MemoryEntryType::Question)
+        .collect();
 
     if !notes.is_empty() {
         output.push_str("### Notes\n\n");
@@ -419,7 +444,10 @@ pub fn format_memory_for_signal(work_dir: &Path, session_id: &str, max_entries: 
                 truncate_content(&entry.content, 150)
             ));
             if let Some(ctx) = &entry.context {
-                output.push_str(&format!("  - *Rationale:* {}\n", truncate_content(ctx, 100)));
+                output.push_str(&format!(
+                    "  - *Rationale:* {}\n",
+                    truncate_content(ctx, 100)
+                ));
             }
         }
         output.push('\n');
@@ -448,7 +476,9 @@ pub fn query_entries<'a>(journal: &'a MemoryJournal, search: &str) -> Vec<&'a Me
         .iter()
         .filter(|e| {
             e.content.to_lowercase().contains(&search_lower)
-                || e.context.as_ref().is_some_and(|c| c.to_lowercase().contains(&search_lower))
+                || e.context
+                    .as_ref()
+                    .is_some_and(|c| c.to_lowercase().contains(&search_lower))
         })
         .collect()
 }
@@ -459,9 +489,21 @@ pub fn generate_summary(journal: &MemoryJournal, max_entries: usize) -> String {
     summary.push_str("## Summary\n\n");
     summary.push_str("Auto-generated summary at context threshold.\n\n");
 
-    let notes: Vec<_> = journal.entries.iter().filter(|e| e.entry_type == MemoryEntryType::Note).collect();
-    let decisions: Vec<_> = journal.entries.iter().filter(|e| e.entry_type == MemoryEntryType::Decision).collect();
-    let questions: Vec<_> = journal.entries.iter().filter(|e| e.entry_type == MemoryEntryType::Question).collect();
+    let notes: Vec<_> = journal
+        .entries
+        .iter()
+        .filter(|e| e.entry_type == MemoryEntryType::Note)
+        .collect();
+    let decisions: Vec<_> = journal
+        .entries
+        .iter()
+        .filter(|e| e.entry_type == MemoryEntryType::Decision)
+        .collect();
+    let questions: Vec<_> = journal
+        .entries
+        .iter()
+        .filter(|e| e.entry_type == MemoryEntryType::Question)
+        .collect();
 
     summary.push_str(&format!("- **Total entries**: {}\n", journal.entries.len()));
     summary.push_str(&format!("- **Notes**: {}\n", notes.len()));
@@ -498,8 +540,12 @@ pub fn write_summary(work_dir: &Path, session_id: &str, summary: &str) -> Result
         .open(&file_path)
         .with_context(|| format!("Failed to open memory journal: {}", file_path.display()))?;
 
-    file.write_all(summary.as_bytes())
-        .with_context(|| format!("Failed to write summary to memory journal: {}", file_path.display()))?;
+    file.write_all(summary.as_bytes()).with_context(|| {
+        format!(
+            "Failed to write summary to memory journal: {}",
+            file_path.display()
+        )
+    })?;
 
     Ok(())
 }
@@ -532,13 +578,25 @@ pub fn format_memory_for_handoff(work_dir: &Path, session_id: &str) -> Option<St
     ));
 
     // Include all decisions and questions (they're important for handoffs)
-    let decisions: Vec<_> = journal.entries.iter().filter(|e| e.entry_type == MemoryEntryType::Decision).collect();
-    let questions: Vec<_> = journal.entries.iter().filter(|e| e.entry_type == MemoryEntryType::Question).collect();
+    let decisions: Vec<_> = journal
+        .entries
+        .iter()
+        .filter(|e| e.entry_type == MemoryEntryType::Decision)
+        .collect();
+    let questions: Vec<_> = journal
+        .entries
+        .iter()
+        .filter(|e| e.entry_type == MemoryEntryType::Question)
+        .collect();
 
     if !decisions.is_empty() {
         output.push_str("### Decisions Made\n\n");
         for entry in &decisions {
-            output.push_str(&format!("- **[{}]** {}\n", entry.timestamp.format("%H:%M"), entry.content));
+            output.push_str(&format!(
+                "- **[{}]** {}\n",
+                entry.timestamp.format("%H:%M"),
+                entry.content
+            ));
             if let Some(ctx) = &entry.context {
                 output.push_str(&format!("  - *Rationale:* {ctx}\n"));
             }
@@ -549,17 +607,29 @@ pub fn format_memory_for_handoff(work_dir: &Path, session_id: &str) -> Option<St
     if !questions.is_empty() {
         output.push_str("### Open Questions\n\n");
         for entry in &questions {
-            output.push_str(&format!("- **[{}]** {}\n", entry.timestamp.format("%H:%M"), entry.content));
+            output.push_str(&format!(
+                "- **[{}]** {}\n",
+                entry.timestamp.format("%H:%M"),
+                entry.content
+            ));
         }
         output.push('\n');
     }
 
     // Recent notes (last 5)
-    let notes: Vec<_> = journal.entries.iter().filter(|e| e.entry_type == MemoryEntryType::Note).collect();
+    let notes: Vec<_> = journal
+        .entries
+        .iter()
+        .filter(|e| e.entry_type == MemoryEntryType::Note)
+        .collect();
     if !notes.is_empty() {
         output.push_str("### Recent Notes\n\n");
         for entry in notes.iter().rev().take(5) {
-            output.push_str(&format!("- **[{}]** {}\n", entry.timestamp.format("%H:%M"), truncate_content(&entry.content, 200)));
+            output.push_str(&format!(
+                "- **[{}]** {}\n",
+                entry.timestamp.format("%H:%M"),
+                truncate_content(&entry.content, 200)
+            ));
         }
         output.push('\n');
     }
@@ -660,9 +730,18 @@ mod tests {
 
     #[test]
     fn test_entry_type_from_str() {
-        assert_eq!("note".parse::<MemoryEntryType>().unwrap(), MemoryEntryType::Note);
-        assert_eq!("DECISION".parse::<MemoryEntryType>().unwrap(), MemoryEntryType::Decision);
-        assert_eq!("questions".parse::<MemoryEntryType>().unwrap(), MemoryEntryType::Question);
+        assert_eq!(
+            "note".parse::<MemoryEntryType>().unwrap(),
+            MemoryEntryType::Note
+        );
+        assert_eq!(
+            "DECISION".parse::<MemoryEntryType>().unwrap(),
+            MemoryEntryType::Decision
+        );
+        assert_eq!(
+            "questions".parse::<MemoryEntryType>().unwrap(),
+            MemoryEntryType::Question
+        );
         assert!("invalid".parse::<MemoryEntryType>().is_err());
     }
 
@@ -698,7 +777,10 @@ mod tests {
         );
         append_entry(work_dir, session_id, &entry2).unwrap();
 
-        let entry3 = MemoryEntry::new(MemoryEntryType::Question, "Should we cache results?".to_string());
+        let entry3 = MemoryEntry::new(
+            MemoryEntryType::Question,
+            "Should we cache results?".to_string(),
+        );
         append_entry(work_dir, session_id, &entry3).unwrap();
 
         let journal = read_journal(work_dir, session_id).unwrap();
@@ -746,9 +828,24 @@ mod tests {
         let session_id = "query-test";
         create_journal(work_dir, session_id, None).unwrap();
 
-        append_entry(work_dir, session_id, &MemoryEntry::new(MemoryEntryType::Note, "Authentication flow".to_string())).unwrap();
-        append_entry(work_dir, session_id, &MemoryEntry::new(MemoryEntryType::Note, "Database schema".to_string())).unwrap();
-        append_entry(work_dir, session_id, &MemoryEntry::new(MemoryEntryType::Decision, "Use JWT for auth".to_string())).unwrap();
+        append_entry(
+            work_dir,
+            session_id,
+            &MemoryEntry::new(MemoryEntryType::Note, "Authentication flow".to_string()),
+        )
+        .unwrap();
+        append_entry(
+            work_dir,
+            session_id,
+            &MemoryEntry::new(MemoryEntryType::Note, "Database schema".to_string()),
+        )
+        .unwrap();
+        append_entry(
+            work_dir,
+            session_id,
+            &MemoryEntry::new(MemoryEntryType::Decision, "Use JWT for auth".to_string()),
+        )
+        .unwrap();
 
         let journal = read_journal(work_dir, session_id).unwrap();
 
@@ -794,12 +891,22 @@ mod tests {
         let session_id = "handoff-test";
         create_journal(work_dir, session_id, None).unwrap();
 
-        append_entry(work_dir, session_id, &MemoryEntry::new(MemoryEntryType::Note, "Important note".to_string())).unwrap();
-        append_entry(work_dir, session_id, &MemoryEntry::with_context(
-            MemoryEntryType::Decision,
-            "Key decision".to_string(),
-            "Good rationale".to_string(),
-        )).unwrap();
+        append_entry(
+            work_dir,
+            session_id,
+            &MemoryEntry::new(MemoryEntryType::Note, "Important note".to_string()),
+        )
+        .unwrap();
+        append_entry(
+            work_dir,
+            session_id,
+            &MemoryEntry::with_context(
+                MemoryEntryType::Decision,
+                "Key decision".to_string(),
+                "Good rationale".to_string(),
+            ),
+        )
+        .unwrap();
 
         let handoff = format_memory_for_handoff(work_dir, session_id).unwrap();
         assert!(handoff.contains("## Session Memory"));
@@ -817,7 +924,12 @@ mod tests {
 
         let session_id = "crash-test";
         create_journal(work_dir, session_id, None).unwrap();
-        append_entry(work_dir, session_id, &MemoryEntry::new(MemoryEntryType::Note, "Important work".to_string())).unwrap();
+        append_entry(
+            work_dir,
+            session_id,
+            &MemoryEntry::new(MemoryEntryType::Note, "Important work".to_string()),
+        )
+        .unwrap();
 
         let preserved = preserve_for_crash(work_dir, session_id).unwrap().unwrap();
         assert!(preserved.exists());

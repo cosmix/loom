@@ -74,7 +74,7 @@ mod tests {
         let id = "test-stage";
         let color1 = stage_color(id);
         let color2 = stage_color(id);
-        assert_eq!(format!("{:?}", color1), format!("{:?}", color2));
+        assert_eq!(format!("{color1:?}"), format!("{:?}", color2));
     }
 
     #[test]
@@ -85,10 +85,10 @@ mod tests {
 
         // Note: We can't guarantee they're different due to hash collisions,
         // but we can verify they're both valid colors
-        let valid_colors: Vec<String> = STAGE_COLORS.iter().map(|c| format!("{:?}", c)).collect();
+        let valid_colors: Vec<String> = STAGE_COLORS.iter().map(|c| format!("{c:?}")).collect();
 
-        assert!(valid_colors.contains(&format!("{:?}", color1)));
-        assert!(valid_colors.contains(&format!("{:?}", color2)));
+        assert!(valid_colors.contains(&format!("{color1:?}")));
+        assert!(valid_colors.contains(&format!("{color2:?}")));
     }
 
     #[test]

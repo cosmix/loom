@@ -33,8 +33,7 @@ pub fn write_task_state(work_dir: &Path, state: &TaskState) -> Result<PathBuf> {
     ensure_task_state_dir(work_dir)?;
     let path = task_state_path(work_dir, &state.stage_id);
 
-    let yaml = serde_yaml::to_string(state)
-        .context("Failed to serialize task state to YAML")?;
+    let yaml = serde_yaml::to_string(state).context("Failed to serialize task state to YAML")?;
 
     fs::write(&path, yaml)
         .with_context(|| format!("Failed to write task state file: {}", path.display()))?;

@@ -13,8 +13,8 @@ use colored::Colorize;
 use std::env;
 
 use crate::fs::memory::{
-    append_entry, list_journals, query_entries, read_journal, validate_content,
-    MemoryEntry, MemoryEntryType,
+    append_entry, list_journals, query_entries, read_journal, validate_content, MemoryEntry,
+    MemoryEntryType,
 };
 
 /// Get the .work directory, handling worktree symlinks
@@ -188,7 +188,11 @@ pub fn query(search: String, session_id: Option<String>) -> Result<()> {
             );
 
             if let Some(ctx) = &entry.context {
-                println!("  {} {}", "→".dimmed(), truncate_for_display(ctx, 48).yellow());
+                println!(
+                    "  {} {}",
+                    "→".dimmed(),
+                    truncate_for_display(ctx, 48).yellow()
+                );
             }
         }
 
@@ -214,21 +218,24 @@ pub fn list(session_id: Option<String>, entry_type: Option<String>) -> Result<()
 
     let session = match session_id {
         Some(id) => id,
-        None => detect_session_id()
-            .ok_or_else(|| anyhow::anyhow!("No session ID provided or detected. Use --session <id>"))?,
+        None => detect_session_id().ok_or_else(|| {
+            anyhow::anyhow!("No session ID provided or detected. Use --session <id>")
+        })?,
     };
 
     let journal = read_journal(&work_dir, &session)?;
 
     if journal.entries.is_empty() {
-        println!("{} No entries in memory journal for session '{}'", "ℹ".blue(), session);
+        println!(
+            "{} No entries in memory journal for session '{}'",
+            "ℹ".blue(),
+            session
+        );
         return Ok(());
     }
 
     // Filter by type if specified
-    let type_filter: Option<MemoryEntryType> = entry_type
-        .map(|t| t.parse())
-        .transpose()?;
+    let type_filter: Option<MemoryEntryType> = entry_type.map(|t| t.parse()).transpose()?;
 
     let entries: Vec<_> = journal
         .entries
@@ -240,7 +247,9 @@ pub fn list(session_id: Option<String>, entry_type: Option<String>) -> Result<()
         println!(
             "{} No {} entries found in session '{}'",
             "ℹ".blue(),
-            type_filter.map(|t| t.to_string()).unwrap_or_else(|| "matching".to_string()),
+            type_filter
+                .map(|t| t.to_string())
+                .unwrap_or_else(|| "matching".to_string()),
             session
         );
         return Ok(());
@@ -273,7 +282,11 @@ pub fn list(session_id: Option<String>, entry_type: Option<String>) -> Result<()
         );
 
         if let Some(ctx) = &entry.context {
-            println!("  {} {}", "→".dimmed(), truncate_for_display(ctx, 48).yellow());
+            println!(
+                "  {} {}",
+                "→".dimmed(),
+                truncate_for_display(ctx, 48).yellow()
+            );
         }
     }
 
@@ -290,19 +303,24 @@ pub fn show(session_id: Option<String>) -> Result<()> {
 
     let session = match session_id {
         Some(id) => id,
-        None => detect_session_id()
-            .ok_or_else(|| anyhow::anyhow!("No session ID provided or detected. Use --session <id>"))?,
+        None => detect_session_id().ok_or_else(|| {
+            anyhow::anyhow!("No session ID provided or detected. Use --session <id>")
+        })?,
     };
 
     let journal = read_journal(&work_dir, &session)?;
 
     if journal.entries.is_empty() {
-        println!("{} No entries in memory journal for session '{}'", "ℹ".blue(), session);
+        println!(
+            "{} No entries in memory journal for session '{}'",
+            "ℹ".blue(),
+            session
+        );
         return Ok(());
     }
 
     println!("{}", "═".repeat(60));
-    println!("{}", format!("Memory Journal: {}", session).bold());
+    println!("{}", format!("Memory Journal: {session}").bold());
     if let Some(stage) = &journal.stage_id {
         println!("{} {}", "Stage:".dimmed(), stage);
     }
@@ -317,7 +335,12 @@ pub fn show(session_id: Option<String>) -> Result<()> {
             MemoryEntryType::Question => "❓",
         };
 
-        println!("\n{} {} {}", type_emoji, entry.entry_type.display_name().bold(), time.dimmed());
+        println!(
+            "\n{} {} {}",
+            type_emoji,
+            entry.entry_type.display_name().bold(),
+            time.dimmed()
+        );
         println!("{}", "─".repeat(40));
         println!("{}", entry.content);
 
@@ -346,12 +369,25 @@ pub fn sessions() -> Result<()> {
 
     for session_id in &journals {
         let journal = read_journal(&work_dir, session_id)?;
-        let notes = journal.entries.iter().filter(|e| e.entry_type == MemoryEntryType::Note).count();
-        let decisions = journal.entries.iter().filter(|e| e.entry_type == MemoryEntryType::Decision).count();
-        let questions = journal.entries.iter().filter(|e| e.entry_type == MemoryEntryType::Question).count();
+        let notes = journal
+            .entries
+            .iter()
+            .filter(|e| e.entry_type == MemoryEntryType::Note)
+            .count();
+        let decisions = journal
+            .entries
+            .iter()
+            .filter(|e| e.entry_type == MemoryEntryType::Decision)
+            .count();
+        let questions = journal
+            .entries
+            .iter()
+            .filter(|e| e.entry_type == MemoryEntryType::Question)
+            .count();
 
-        let stage_info = journal.stage_id
-            .map(|s| format!(" [{}]", s))
+        let stage_info = journal
+            .stage_id
+            .map(|s| format!(" [{s}]"))
             .unwrap_or_default();
 
         println!(
@@ -386,7 +422,10 @@ mod tests {
     #[test]
     fn test_truncate_for_display() {
         assert_eq!(truncate_for_display("short", 10), "short");
-        assert_eq!(truncate_for_display("this is a longer string", 10), "this is a…");
+        assert_eq!(
+            truncate_for_display("this is a longer string", 10),
+            "this is a…"
+        );
         assert_eq!(
             truncate_for_display("line1\nline2\nline3", 20),
             "line1 line2 line3"

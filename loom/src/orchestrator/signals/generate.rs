@@ -33,12 +33,8 @@ pub fn generate_signal(
     }
 
     // Build embedded context by reading files, including task state and session memory for recitation
-    let embedded_context = build_embedded_context_with_session(
-        work_dir,
-        handoff_file,
-        &stage.id,
-        Some(&session.id),
-    );
+    let embedded_context =
+        build_embedded_context_with_session(work_dir, handoff_file, &stage.id, Some(&session.id));
 
     let signal_path = signals_dir.join(format!("{}.md", session.id));
     let content = format_signal_content(
@@ -64,7 +60,12 @@ pub(super) fn build_embedded_context_with_session(
     stage_id: &str,
     session_id: Option<&str>,
 ) -> EmbeddedContext {
-    build_embedded_context_with_stage_and_session(work_dir, handoff_file, Some(stage_id), session_id)
+    build_embedded_context_with_stage_and_session(
+        work_dir,
+        handoff_file,
+        Some(stage_id),
+        session_id,
+    )
 }
 
 /// Build embedded context with optional stage-specific task state (no session memory)
@@ -93,7 +94,7 @@ pub fn build_embedded_context_with_stage_and_session(
                 // Try to parse as V2, fall back to V1
                 match ParsedHandoff::parse(&content) {
                     ParsedHandoff::V2(handoff) => {
-                        context.parsed_handoff = Some(handoff);
+                        context.parsed_handoff = Some(*handoff);
                         // Still store full content for human-readable sections
                         context.handoff_content = Some(content);
                     }
@@ -249,12 +250,8 @@ pub fn generate_signal_with_metrics(
     }
 
     // Build embedded context by reading files, including task state and session memory for recitation
-    let embedded_context = build_embedded_context_with_session(
-        work_dir,
-        handoff_file,
-        &stage.id,
-        Some(&session.id),
-    );
+    let embedded_context =
+        build_embedded_context_with_session(work_dir, handoff_file, &stage.id, Some(&session.id));
 
     let signal_path = signals_dir.join(format!("{}.md", session.id));
     let formatted = format_signal_with_metrics(

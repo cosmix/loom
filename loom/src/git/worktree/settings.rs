@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use serde_json::{json, Value};
 use std::path::Path;
 
-use crate::orchestrator::hooks::{HooksConfig, setup_hooks_for_worktree};
+use crate::orchestrator::hooks::{setup_hooks_for_worktree, HooksConfig};
 
 /// Creates or restores the .work symlink in a worktree.
 ///
@@ -163,8 +163,12 @@ pub fn setup_worktree_hooks(
         work_dir.to_path_buf(),
     );
 
-    setup_hooks_for_worktree(worktree_path, &config)
-        .with_context(|| format!("Failed to setup hooks for worktree: {}", worktree_path.display()))
+    setup_hooks_for_worktree(worktree_path, &config).with_context(|| {
+        format!(
+            "Failed to setup hooks for worktree: {}",
+            worktree_path.display()
+        )
+    })
 }
 
 /// Remove worktree-specific settings and symlinks

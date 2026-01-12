@@ -141,15 +141,14 @@ impl EventHandler for Orchestrator {
                     clear_status_line();
                     let stage_info = stage_id
                         .as_ref()
-                        .map(|s| format!(" (stage '{}')", s))
+                        .map(|s| format!(" (stage '{s}')"))
                         .unwrap_or_default();
                     let activity_info = last_activity
                         .as_ref()
-                        .map(|a| format!(", last: {}", a))
+                        .map(|a| format!(", last: {a}"))
                         .unwrap_or_default();
                     eprintln!(
-                        "Warning: Session '{session_id}'{stage_info} appears hung (no heartbeat for {}s{activity_info})",
-                        stale_duration_secs
+                        "Warning: Session '{session_id}'{stage_info} appears hung (no heartbeat for {stale_duration_secs}s{activity_info})"
                     );
                 }
                 MonitorEvent::HeartbeatReceived {
@@ -167,8 +166,7 @@ impl EventHandler for Orchestrator {
                 } => {
                     clear_status_line();
                     eprintln!(
-                        "Recovery initiated for stage '{}' (session '{}', type: {:?})",
-                        stage_id, session_id, recovery_type
+                        "Recovery initiated for stage '{stage_id}' (session '{session_id}', type: {recovery_type:?})"
                     );
                 }
                 MonitorEvent::StageEscalated {
@@ -178,8 +176,7 @@ impl EventHandler for Orchestrator {
                 } => {
                     clear_status_line();
                     eprintln!(
-                        "Stage '{}' escalated after {} failures: {}",
-                        stage_id, failure_count, reason
+                        "Stage '{stage_id}' escalated after {failure_count} failures: {reason}"
                     );
                 }
                 MonitorEvent::ContextRefreshNeeded {
@@ -189,8 +186,7 @@ impl EventHandler for Orchestrator {
                 } => {
                     clear_status_line();
                     eprintln!(
-                        "Context refresh needed for stage '{}' (session '{}', context at {:.1}%)",
-                        stage_id, session_id, context_percent
+                        "Context refresh needed for stage '{stage_id}' (session '{session_id}', context at {context_percent:.1}%)"
                     );
                 }
             }
@@ -330,11 +326,9 @@ impl EventHandler for Orchestrator {
         }
 
         // Determine the merge point to check against
-        let merge_point = self
-            .config
-            .base_branch
-            .clone()
-            .unwrap_or_else(|| default_branch(&self.config.repo_root).unwrap_or_else(|_| "main".to_string()));
+        let merge_point = self.config.base_branch.clone().unwrap_or_else(|| {
+            default_branch(&self.config.repo_root).unwrap_or_else(|_| "main".to_string())
+        });
 
         // Check if the merge was actually successful by examining git state
         match check_merge_state(&stage, &merge_point, &self.config.repo_root) {
@@ -343,7 +337,9 @@ impl EventHandler for Orchestrator {
                 stage.merged = true;
                 stage.merge_conflict = false;
                 if let Err(e) = self.save_stage(&stage) {
-                    eprintln!("Warning: Failed to save stage after detecting successful merge: {e}");
+                    eprintln!(
+                        "Warning: Failed to save stage after detecting successful merge: {e}"
+                    );
                 }
                 clear_status_line();
                 eprintln!("Stage '{stage_id}' merge verified and marked as complete");
@@ -398,11 +394,9 @@ impl Orchestrator {
         }
 
         // Get target branch (from config or default branch of the repo)
-        let target_branch = self
-            .config
-            .base_branch
-            .clone()
-            .unwrap_or_else(|| default_branch(&self.config.repo_root).unwrap_or_else(|_| "main".to_string()));
+        let target_branch = self.config.base_branch.clone().unwrap_or_else(|| {
+            default_branch(&self.config.repo_root).unwrap_or_else(|_| "main".to_string())
+        });
 
         clear_status_line();
         eprintln!("Auto-merging stage '{stage_id}'...");

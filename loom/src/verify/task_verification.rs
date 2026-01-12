@@ -35,7 +35,9 @@ pub fn run_single_verification(
     outputs: &HashMap<String, String>,
 ) -> VerificationResult {
     match rule {
-        VerificationRule::FileExists { path } => verify_file_exists(rule.clone(), worktree_path, path),
+        VerificationRule::FileExists { path } => {
+            verify_file_exists(rule.clone(), worktree_path, path)
+        }
         VerificationRule::Contains { path, pattern } => {
             verify_contains(rule.clone(), worktree_path, path, pattern)
         }
@@ -47,7 +49,11 @@ pub fn run_single_verification(
     }
 }
 
-fn verify_file_exists(rule: VerificationRule, worktree_path: &Path, path: &str) -> VerificationResult {
+fn verify_file_exists(
+    rule: VerificationRule,
+    worktree_path: &Path,
+    path: &str,
+) -> VerificationResult {
     let full_path = worktree_path.join(path);
     if full_path.exists() {
         VerificationResult::passed(rule, format!("File exists: {path}"))
@@ -75,10 +81,7 @@ fn verify_contains(
         Ok(content) => match Regex::new(pattern) {
             Ok(regex) => {
                 if regex.is_match(&content) {
-                    VerificationResult::passed(
-                        rule,
-                        format!("Pattern '{pattern}' found in {path}"),
-                    )
+                    VerificationResult::passed(rule, format!("Pattern '{pattern}' found in {path}"))
                 } else {
                     VerificationResult::failed(
                         rule,

@@ -21,12 +21,7 @@ pub struct SignalMetrics {
 
 impl SignalMetrics {
     /// Compute metrics from signal sections
-    pub fn from_sections(
-        stable: &str,
-        semi_stable: &str,
-        dynamic: &str,
-        recitation: &str,
-    ) -> Self {
+    pub fn from_sections(stable: &str, semi_stable: &str, dynamic: &str, recitation: &str) -> Self {
         let stable_bytes = stable.len();
         let semi_stable_bytes = semi_stable.len();
         let dynamic_bytes = dynamic.len();

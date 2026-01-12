@@ -38,7 +38,9 @@ impl std::str::FromStr for CheckpointStatus {
             "completed" => Ok(CheckpointStatus::Completed),
             "blocked" => Ok(CheckpointStatus::Blocked),
             "needs_help" | "needs-help" | "needshelp" => Ok(CheckpointStatus::NeedsHelp),
-            _ => anyhow::bail!("Invalid checkpoint status: {s}. Valid values: completed, blocked, needs_help"),
+            _ => anyhow::bail!(
+                "Invalid checkpoint status: {s}. Valid values: completed, blocked, needs_help"
+            ),
         }
     }
 }
@@ -256,9 +258,11 @@ impl TaskState {
         );
 
         // Advance current_task_index to next available task
-        if let Some(idx) = self.tasks.iter().position(|t| {
-            !self.completed_tasks.contains_key(&t.id) && self.is_task_unlocked(&t.id)
-        }) {
+        if let Some(idx) = self
+            .tasks
+            .iter()
+            .position(|t| !self.completed_tasks.contains_key(&t.id) && self.is_task_unlocked(&t.id))
+        {
             self.current_task_index = idx;
         }
 

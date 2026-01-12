@@ -89,9 +89,9 @@ impl std::str::FromStr for LearningCategory {
             "guidance" | "human-guidance" => Ok(LearningCategory::Guidance),
             "pattern" | "patterns" => Ok(LearningCategory::Pattern),
             "convention" | "conventions" => Ok(LearningCategory::Convention),
-            _ => anyhow::bail!(
-                "Invalid category: {s}. Use: mistake, guidance, pattern, convention"
-            ),
+            _ => {
+                anyhow::bail!("Invalid category: {s}. Use: mistake, guidance, pattern, convention")
+            }
         }
     }
 }
@@ -116,10 +116,7 @@ pub const PROTECTED_MARKER: &str = "<!-- .loom-protected -->\n";
 
 /// The header for a learning file
 fn category_header(category: LearningCategory) -> String {
-    format!(
-        "{PROTECTED_MARKER}# {}\n\n",
-        category.display_name()
-    )
+    format!("{PROTECTED_MARKER}# {}\n\n", category.display_name())
 }
 
 /// Get the learnings directory path
@@ -142,15 +139,23 @@ pub fn init_learnings_dir(work_dir: &Path) -> Result<()> {
     let learnings_path = learnings_dir(work_dir);
 
     if !learnings_path.exists() {
-        fs::create_dir_all(&learnings_path)
-            .with_context(|| format!("Failed to create learnings directory: {}", learnings_path.display()))?;
+        fs::create_dir_all(&learnings_path).with_context(|| {
+            format!(
+                "Failed to create learnings directory: {}",
+                learnings_path.display()
+            )
+        })?;
     }
 
     // Create snapshots directory
     let snapshots_path = snapshots_dir(work_dir);
     if !snapshots_path.exists() {
-        fs::create_dir_all(&snapshots_path)
-            .with_context(|| format!("Failed to create snapshots directory: {}", snapshots_path.display()))?;
+        fs::create_dir_all(&snapshots_path).with_context(|| {
+            format!(
+                "Failed to create snapshots directory: {}",
+                snapshots_path.display()
+            )
+        })?;
     }
 
     // Initialize category files if they don't exist
@@ -158,8 +163,9 @@ pub fn init_learnings_dir(work_dir: &Path) -> Result<()> {
         let file_path = category_file_path(work_dir, *category);
         if !file_path.exists() {
             let header = category_header(*category);
-            fs::write(&file_path, header)
-                .with_context(|| format!("Failed to create category file: {}", file_path.display()))?;
+            fs::write(&file_path, header).with_context(|| {
+                format!("Failed to create category file: {}", file_path.display())
+            })?;
         }
     }
 
@@ -287,13 +293,11 @@ fn parse_learnings(content: &str, category: LearningCategory) -> Result<Vec<Lear
             let header = line.trim_start_matches("## ");
             if let Some((timestamp_str, stage_part)) = header.split_once(" (") {
                 let stage_id = stage_part.trim_end_matches(')').to_string();
-                let timestamp = chrono::NaiveDateTime::parse_from_str(
-                    timestamp_str,
-                    "%Y-%m-%d %H:%M:%S UTC",
-                )
-                .ok()
-                .map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
-                .unwrap_or_else(Utc::now);
+                let timestamp =
+                    chrono::NaiveDateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S UTC")
+                        .ok()
+                        .map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
+                        .unwrap_or_else(Utc::now);
 
                 current_entry = Some(LearningBuilder {
                     timestamp,
@@ -315,13 +319,11 @@ fn parse_learnings(content: &str, category: LearningCategory) -> Result<Vec<Lear
 
         // Parse field markers
         if let Some(builder) = &mut current_entry {
-            if line.starts_with("**Mistake:**") {
-                builder.current_field = Some("description");
-            } else if line.starts_with("**Guidance:**") {
-                builder.current_field = Some("description");
-            } else if line.starts_with("**Pattern:**") {
-                builder.current_field = Some("description");
-            } else if line.starts_with("**Convention:**") {
+            if line.starts_with("**Mistake:**")
+                || line.starts_with("**Guidance:**")
+                || line.starts_with("**Pattern:**")
+                || line.starts_with("**Convention:**")
+            {
                 builder.current_field = Some("description");
             } else if line.starts_with("**Correction:**") {
                 builder.current_field = Some("correction");
@@ -689,10 +691,7 @@ mod tests {
         let learnings = read_learnings(work_dir, LearningCategory::Mistake).unwrap();
         assert_eq!(learnings.len(), 1);
         assert_eq!(learnings[0].description, "Test learning description");
-        assert_eq!(
-            learnings[0].correction.as_deref(),
-            Some("Test correction")
-        );
+        assert_eq!(learnings[0].correction.as_deref(), Some("Test correction"));
     }
 
     #[test]

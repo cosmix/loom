@@ -11,7 +11,7 @@ use crate::orchestrator::monitor::failure_tracking::FailureTracker;
 use crate::orchestrator::signals::{
     generate_recovery_signal, LastHeartbeatInfo, RecoveryReason, RecoverySignalContent,
 };
-use crate::orchestrator::{read_heartbeat, heartbeat_path};
+use crate::orchestrator::{heartbeat_path, read_heartbeat};
 use crate::verify::transitions::{load_stage, save_stage};
 
 /// Manually trigger recovery for a stage
@@ -25,7 +25,7 @@ pub fn recover(stage_id: String, force: bool) -> Result<()> {
 
     // Load the stage
     let mut stage = load_stage(&stage_id, work_dir)
-        .with_context(|| format!("Failed to load stage: {}", stage_id))?;
+        .with_context(|| format!("Failed to load stage: {stage_id}"))?;
 
     // Validate stage is in a recoverable state
     if !force {
@@ -34,7 +34,9 @@ pub fn recover(stage_id: String, force: bool) -> Result<()> {
                 // These are recoverable states
             }
             StageStatus::Completed => {
-                bail!("Stage '{}' is already completed. Use --force to override.", stage_id);
+                bail!(
+                    "Stage '{stage_id}' is already completed. Use --force to override."
+                );
             }
             StageStatus::WaitingForDeps | StageStatus::Queued => {
                 bail!(
@@ -45,33 +47,36 @@ pub fn recover(stage_id: String, force: bool) -> Result<()> {
             }
             StageStatus::WaitingForInput => {
                 bail!(
-                    "Stage '{}' is waiting for input, not crashed. Use 'loom stage resume {}' instead.",
-                    stage_id,
-                    stage_id
+                    "Stage '{stage_id}' is waiting for input, not crashed. Use 'loom stage resume {stage_id}' instead."
                 );
             }
             StageStatus::Skipped => {
-                bail!("Stage '{}' was skipped. Use 'loom stage retry {}' to re-enable.", stage_id, stage_id);
+                bail!(
+                    "Stage '{stage_id}' was skipped. Use 'loom stage retry {stage_id}' to re-enable."
+                );
             }
             StageStatus::MergeConflict => {
                 bail!(
-                    "Stage '{}' has merge conflicts. Use 'loom merge {}' to resolve.",
-                    stage_id,
-                    stage_id
+                    "Stage '{stage_id}' has merge conflicts. Use 'loom merge {stage_id}' to resolve."
                 );
             }
         }
     }
 
     // Get information about the previous session
-    let previous_session_id = stage.session.clone().unwrap_or_else(|| "unknown".to_string());
+    let previous_session_id = stage
+        .session
+        .clone()
+        .unwrap_or_else(|| "unknown".to_string());
 
     // Try to load last heartbeat for context
     let last_heartbeat = load_last_heartbeat(work_dir, &stage_id);
 
     // Get recent hook events for recovery context
     let recent_events = read_stage_events(work_dir, &stage_id).unwrap_or_default();
-    let last_event = recent_events.last().map(|e| format!("{}: {}", e.event, e.timestamp));
+    let last_event = recent_events
+        .last()
+        .map(|e| format!("{}: {}", e.event, e.timestamp));
 
     // Determine recovery reason based on stage state
     let recovery_reason = determine_recovery_reason(&stage);
@@ -129,18 +134,20 @@ pub fn recover(stage_id: String, force: bool) -> Result<()> {
     // Reset stage to Queued for the new session
     stage.status = StageStatus::Queued;
     stage.session = Some(new_session_id.clone());
-    stage.close_reason = Some(format!("Recovery initiated (attempt #{})", recovery_attempt));
+    stage.close_reason = Some(format!(
+        "Recovery initiated (attempt #{recovery_attempt})"
+    ));
     stage.updated_at = chrono::Utc::now();
 
     save_stage(&stage, work_dir).context("Failed to save stage")?;
 
-    println!("Recovery initiated for stage '{}'", stage_id);
-    println!("  Previous session: {}", previous_session_id);
-    println!("  New session: {}", new_session_id);
-    println!("  Recovery reason: {}", recovery_reason);
-    println!("  Attempt: #{}", recovery_attempt);
+    println!("Recovery initiated for stage '{stage_id}'");
+    println!("  Previous session: {previous_session_id}");
+    println!("  New session: {new_session_id}");
+    println!("  Recovery reason: {recovery_reason}");
+    println!("  Attempt: #{recovery_attempt}");
     if let Some(event) = &last_event {
-        println!("  Last hook event: {}", event);
+        println!("  Last hook event: {event}");
     }
     println!();
     println!("The stage will be picked up by the next orchestrator poll.");
@@ -186,7 +193,7 @@ fn generate_recovery_session_id(stage_id: &str) -> String {
     let uuid_part = uuid::Uuid::new_v4().to_string();
     let short_uuid = &uuid_part[..8];
     let timestamp = chrono::Utc::now().timestamp();
-    format!("recovery-{}-{}-{}", stage_id, short_uuid, timestamp)
+    format!("recovery-{stage_id}-{short_uuid}-{timestamp}")
 }
 
 /// Find crash report for a session
@@ -281,6 +288,9 @@ mod tests {
 
         // Context exhaustion
         stage.close_reason = Some("Context limit reached, handoff created".to_string());
-        assert_eq!(determine_recovery_reason(&stage), RecoveryReason::ContextExhaustion);
+        assert_eq!(
+            determine_recovery_reason(&stage),
+            RecoveryReason::ContextExhaustion
+        );
     }
 }

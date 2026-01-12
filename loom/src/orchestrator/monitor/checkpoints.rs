@@ -95,7 +95,8 @@ impl CheckpointWatcher {
 
         // Process new checkpoints
         for (session_id, checkpoint) in new_checkpoints {
-            if let Some(result) = Self::process_checkpoint_static(work_dir, &session_id, &checkpoint)
+            if let Some(result) =
+                Self::process_checkpoint_static(work_dir, &session_id, &checkpoint)
             {
                 results.push(result);
             }

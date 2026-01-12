@@ -7,6 +7,7 @@ use crate::models::stage::{Stage, StageStatus};
 use crate::plan::schema::{LoomConfig, LoomMetadata, StageDefinition};
 use crate::verify::serialize_stage_to_markdown;
 use chrono::Utc;
+use serial_test::serial;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -184,6 +185,7 @@ fn test_initialize_with_plan_nonexistent_file() {
 }
 
 #[test]
+#[serial]
 fn test_initialize_with_plan_creates_config() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = WorkDir::new(temp_dir.path()).unwrap();
@@ -216,6 +218,7 @@ fn test_initialize_with_plan_creates_config() {
 }
 
 #[test]
+#[serial]
 fn test_initialize_with_plan_creates_stage_files() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = WorkDir::new(temp_dir.path()).unwrap();

@@ -66,17 +66,18 @@ pub fn generate_hooks_settings(
 /// 1. Reads existing settings.json if present
 /// 2. Generates hooks configuration
 /// 3. Writes the merged settings to the worktree's .claude/settings.json
-pub fn setup_hooks_for_worktree(
-    worktree_path: &Path,
-    config: &HooksConfig,
-) -> Result<()> {
+pub fn setup_hooks_for_worktree(worktree_path: &Path, config: &HooksConfig) -> Result<()> {
     let claude_dir = worktree_path.join(".claude");
     let settings_path = claude_dir.join("settings.json");
 
     // Ensure .claude directory exists
     if !claude_dir.exists() {
-        std::fs::create_dir_all(&claude_dir)
-            .with_context(|| format!("Failed to create .claude directory: {}", claude_dir.display()))?;
+        std::fs::create_dir_all(&claude_dir).with_context(|| {
+            format!(
+                "Failed to create .claude directory: {}",
+                claude_dir.display()
+            )
+        })?;
     }
 
     // Read existing settings if present
@@ -92,8 +93,8 @@ pub fn setup_hooks_for_worktree(
     let settings = generate_hooks_settings(config, existing.as_ref())?;
 
     // Write settings
-    let content = serde_json::to_string_pretty(&settings)
-        .with_context(|| "Failed to serialize settings")?;
+    let content =
+        serde_json::to_string_pretty(&settings).with_context(|| "Failed to serialize settings")?;
     std::fs::write(&settings_path, content)
         .with_context(|| format!("Failed to write settings: {}", settings_path.display()))?;
 

@@ -22,36 +22,23 @@ pub fn display_merge_status(report: &MergeStatusReport) {
     }
 
     if !report.conflicts.is_empty() {
-        println!(
-            "\n  {} Conflicts ({}):",
-            "!".red(),
-            report.conflicts.len()
-        );
+        println!("\n  {} Conflicts ({}):", "!".red(), report.conflicts.len());
         for stage_id in &report.conflicts {
-            println!("    {}  loom attach {}", stage_id, stage_id);
+            println!("    {stage_id}  loom attach {stage_id}");
         }
     }
 
     if !report.pending.is_empty() {
-        println!(
-            "\n  {} Pending ({}):",
-            "○".yellow(),
-            report.pending.len()
-        );
+        println!("\n  {} Pending ({}):", "○".yellow(), report.pending.len());
         for (i, stage_id) in report.pending.iter().enumerate() {
-            println!(
-                "    {}. {}      loom merge {}",
-                i + 1,
-                stage_id,
-                stage_id
-            );
+            println!("    {}. {}      loom merge {}", i + 1, stage_id, stage_id);
         }
     }
 
     if !report.warnings.is_empty() {
         println!("\n  {} Warnings:", "⚠".yellow());
         for warning in &report.warnings {
-            println!("    - {}", warning);
+            println!("    - {warning}");
         }
     }
 }
@@ -96,7 +83,9 @@ mod tests {
     #[test]
     fn test_display_merge_status_with_warnings() {
         let mut report = MergeStatusReport::default();
-        report.warnings.push("Stage 'foo' branch missing".to_string());
+        report
+            .warnings
+            .push("Stage 'foo' branch missing".to_string());
         // Just verify it doesn't panic
         display_merge_status(&report);
     }

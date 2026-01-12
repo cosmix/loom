@@ -22,8 +22,9 @@ pub fn checkpoint_path(work_dir: &Path, session_id: &str, task_id: &str) -> Path
 pub fn ensure_checkpoints_dir(work_dir: &Path, session_id: &str) -> Result<PathBuf> {
     let dir = checkpoints_dir(work_dir, session_id);
     if !dir.exists() {
-        fs::create_dir_all(&dir)
-            .with_context(|| format!("Failed to create checkpoints directory: {}", dir.display()))?;
+        fs::create_dir_all(&dir).with_context(|| {
+            format!("Failed to create checkpoints directory: {}", dir.display())
+        })?;
     }
     Ok(dir)
 }
@@ -37,8 +38,8 @@ pub fn write_checkpoint(
     ensure_checkpoints_dir(work_dir, session_id)?;
     let path = checkpoint_path(work_dir, session_id, &checkpoint.task_id);
 
-    let yaml = serde_yaml::to_string(checkpoint)
-        .context("Failed to serialize checkpoint to YAML")?;
+    let yaml =
+        serde_yaml::to_string(checkpoint).context("Failed to serialize checkpoint to YAML")?;
 
     fs::write(&path, yaml)
         .with_context(|| format!("Failed to write checkpoint file: {}", path.display()))?;
@@ -120,8 +121,9 @@ pub fn delete_checkpoint(work_dir: &Path, session_id: &str, task_id: &str) -> Re
 pub fn delete_session_checkpoints(work_dir: &Path, session_id: &str) -> Result<()> {
     let dir = checkpoints_dir(work_dir, session_id);
     if dir.exists() {
-        fs::remove_dir_all(&dir)
-            .with_context(|| format!("Failed to delete checkpoints directory: {}", dir.display()))?;
+        fs::remove_dir_all(&dir).with_context(|| {
+            format!("Failed to delete checkpoints directory: {}", dir.display())
+        })?;
     }
     Ok(())
 }

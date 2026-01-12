@@ -63,8 +63,7 @@ pub fn resolve_base_branch(
     init_base_branch: Option<&str>,
 ) -> Result<ResolvedBase> {
     eprintln!(
-        "[resolve_base_branch] stage={}, deps={:?}, init_base_branch={:?}",
-        stage_id, dependencies, init_base_branch
+        "[resolve_base_branch] stage={stage_id}, deps={dependencies:?}, init_base_branch={init_base_branch:?}"
     );
 
     // No deps → use init_base_branch if provided, otherwise fall back to default
@@ -72,7 +71,7 @@ pub fn resolve_base_branch(
         let base = init_base_branch
             .map(String::from)
             .unwrap_or_else(|| default_branch(repo_root).unwrap_or_else(|_| "main".to_string()));
-        eprintln!("[resolve_base_branch] No deps, using base: {}", base);
+        eprintln!("[resolve_base_branch] No deps, using base: {base}");
         return Ok(ResolvedBase::Main(base));
     }
 
@@ -103,8 +102,7 @@ pub fn resolve_base_branch(
             .map(String::from)
             .unwrap_or_else(|| default_branch(repo_root).unwrap_or_else(|_| "main".to_string()));
         eprintln!(
-            "[resolve_base_branch] All deps merged, using base: {}",
-            base
+            "[resolve_base_branch] All deps merged, using base: {base}"
         );
         return Ok(ResolvedBase::Main(base));
     }
@@ -497,14 +495,9 @@ mod tests {
         let graph = build_test_graph(vec![("stage-1", vec![])]);
 
         // When init_base_branch is provided, use it instead of default_branch
-        let result = resolve_base_branch(
-            "stage-1",
-            &[],
-            &graph,
-            repo_root,
-            Some("feat-my-feature"),
-        )
-        .unwrap();
+        let result =
+            resolve_base_branch("stage-1", &[], &graph, repo_root, Some("feat-my-feature"))
+                .unwrap();
 
         assert_eq!(result, ResolvedBase::Main("feat-my-feature".to_string()));
     }

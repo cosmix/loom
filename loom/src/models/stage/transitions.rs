@@ -78,7 +78,11 @@ impl StageStatus {
         match self {
             StageStatus::WaitingForDeps => vec![StageStatus::Queued, StageStatus::Skipped],
             StageStatus::Queued => {
-                vec![StageStatus::Executing, StageStatus::Skipped, StageStatus::Blocked]
+                vec![
+                    StageStatus::Executing,
+                    StageStatus::Skipped,
+                    StageStatus::Blocked,
+                ]
             }
             StageStatus::Executing => vec![
                 StageStatus::Completed,

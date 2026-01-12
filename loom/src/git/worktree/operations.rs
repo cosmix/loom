@@ -73,9 +73,7 @@ pub fn create_worktree(
 
             if !delete_output.status.success() {
                 let delete_stderr = String::from_utf8_lossy(&delete_output.stderr);
-                bail!(
-                    "Failed to delete existing branch {branch_name}: {delete_stderr}"
-                );
+                bail!("Failed to delete existing branch {branch_name}: {delete_stderr}");
             }
 
             // Retry creating the worktree with the correct base

@@ -20,8 +20,17 @@ impl WorkDir {
         fs::create_dir_all(&self.root).context("Failed to create .work directory")?;
 
         let subdirs = [
-            "runners", "tracks", "signals", "handoffs", "archive", "stages", "sessions", "logs",
-            "crashes", "checkpoints", "task-state",
+            "runners",
+            "tracks",
+            "signals",
+            "handoffs",
+            "archive",
+            "stages",
+            "sessions",
+            "logs",
+            "crashes",
+            "checkpoints",
+            "task-state",
         ];
 
         for subdir in &subdirs {
@@ -47,8 +56,17 @@ impl WorkDir {
 
     fn validate_structure(&self) -> Result<()> {
         let required_dirs = [
-            "runners", "tracks", "signals", "handoffs", "archive", "stages", "sessions", "logs",
-            "crashes", "checkpoints", "task-state",
+            "runners",
+            "tracks",
+            "signals",
+            "handoffs",
+            "archive",
+            "stages",
+            "sessions",
+            "logs",
+            "crashes",
+            "checkpoints",
+            "task-state",
         ];
 
         for dir in &required_dirs {

@@ -50,8 +50,7 @@ fn test_multi_dep_all_merged_uses_main() {
     // All deps merged - use main as base (no temp branch created)
     assert!(
         matches!(result, ResolvedBase::Main(_)),
-        "Expected Main, got {:?}",
-        result
+        "Expected Main, got {result:?}"
     );
 
     // No temp branch should exist

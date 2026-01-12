@@ -776,7 +776,10 @@ fn main() -> Result<()> {
             } => memory::decision(text, context, session),
             MemoryCommands::Question { text, session } => memory::question(text, session),
             MemoryCommands::Query { search, session } => memory::query(search, session),
-            MemoryCommands::List { session, entry_type } => memory::list(session, entry_type),
+            MemoryCommands::List {
+                session,
+                entry_type,
+            } => memory::list(session, entry_type),
             MemoryCommands::Show { session } => memory::show(session),
             MemoryCommands::Sessions => memory::sessions(),
         },

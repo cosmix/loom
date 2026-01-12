@@ -100,7 +100,7 @@ fn extract_yaml_metadata(content: &str) -> Result<String> {
     let closing_fence = "`".repeat(fence_len);
     let yaml_end = metadata_section[yaml_content_start..]
         .find(&closing_fence)
-        .ok_or_else(|| anyhow::anyhow!("No closing {} for YAML block", closing_fence))?;
+        .ok_or_else(|| anyhow::anyhow!("No closing {closing_fence} for YAML block"))?;
 
     let yaml_content = &metadata_section[yaml_content_start..yaml_content_start + yaml_end];
 
@@ -456,7 +456,7 @@ loom:
         let yaml = extract_yaml_metadata(content).unwrap();
         assert!(yaml.contains("loom:"));
         assert!(yaml.contains("stage-1"));
-        assert!(yaml.contains("```rust"));  // Inner code block preserved
+        assert!(yaml.contains("```rust")); // Inner code block preserved
     }
 
     #[test]

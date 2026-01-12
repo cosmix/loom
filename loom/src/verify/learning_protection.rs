@@ -14,8 +14,8 @@ use colored::Colorize;
 use std::path::Path;
 
 use crate::fs::learnings::{
-    cleanup_snapshot, create_snapshot, restore_from_snapshot, verify_learnings,
-    VerificationIssue, VerificationResult,
+    cleanup_snapshot, create_snapshot, restore_from_snapshot, verify_learnings, VerificationIssue,
+    VerificationResult,
 };
 
 /// Create a pre-session snapshot of learning files
@@ -54,11 +54,7 @@ pub fn verify_after_session(work_dir: &Path, session_id: &str) -> Result<Protect
             for issue in &issues {
                 match issue {
                     VerificationIssue::Deleted(cat) => {
-                        eprintln!(
-                            "  {} {} was deleted",
-                            "✗".red(),
-                            cat.filename()
-                        );
+                        eprintln!("  {} {} was deleted", "✗".red(), cat.filename());
                     }
                     VerificationIssue::Truncated {
                         category,

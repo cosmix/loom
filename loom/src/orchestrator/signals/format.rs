@@ -54,7 +54,7 @@ pub fn format_signal_with_metrics(
     embedded_context: &EmbeddedContext,
 ) -> FormattedSignal {
     // Build each section separately for metrics
-    let header = format!("# Signal: {}\n\n", session.id);
+    let header = format!("# Signal: {}\n\n", &session.id);
     let stable_prefix = generate_stable_prefix();
     let semi_stable = format_semi_stable_section(embedded_context);
     let dynamic = format_dynamic_section(
@@ -71,12 +71,8 @@ pub fn format_signal_with_metrics(
     // Combine stable prefix with header for hash (header is session-specific but tiny)
     let stable_with_header = format!("{header}{stable_prefix}");
 
-    let metrics = SignalMetrics::from_sections(
-        &stable_with_header,
-        &semi_stable,
-        &dynamic,
-        &recitation,
-    );
+    let metrics =
+        SignalMetrics::from_sections(&stable_with_header, &semi_stable, &dynamic, &recitation);
 
     let content = format!("{stable_with_header}{semi_stable}{dynamic}{recitation}");
 
@@ -144,15 +140,15 @@ fn format_dynamic_section(
 
     // Target section (session-specific)
     content.push_str("## Target\n\n");
-    content.push_str(&format!("- **Session**: {}\n", session.id));
-    content.push_str(&format!("- **Stage**: {}\n", stage.id));
+    content.push_str(&format!("- **Session**: {}\n", &session.id));
+    content.push_str(&format!("- **Stage**: {}\n", &stage.id));
     if let Some(plan_id) = &stage.plan_id {
         content.push_str(&format!(
             "- **Plan**: {plan_id} (overview embedded below)\n"
         ));
     }
-    content.push_str(&format!("- **Worktree**: {}\n", worktree.path.display()));
-    content.push_str(&format!("- **Branch**: {}\n", worktree.branch));
+    content.push_str(&format!("- **Worktree**: {}\n", &worktree.path.display()));
+    content.push_str(&format!("- **Branch**: {}\n", &worktree.branch));
     content.push('\n');
 
     // Embed plan overview if available
@@ -165,7 +161,7 @@ fn format_dynamic_section(
 
     // Assignment section
     content.push_str("## Assignment\n\n");
-    content.push_str(&format!("{}: ", stage.name));
+    content.push_str(&format!("{}: ", &stage.name));
     if let Some(desc) = &stage.description {
         content.push_str(desc);
     } else {
@@ -247,10 +243,7 @@ fn format_dynamic_section(
 
 /// RECITATION section: At end for maximum attention (Manus pattern)
 /// Contains immediate tasks, task progression, and session memory
-fn format_recitation_section(
-    stage: &Stage,
-    embedded_context: &EmbeddedContext,
-) -> String {
+fn format_recitation_section(stage: &Stage, embedded_context: &EmbeddedContext) -> String {
     let mut content = String::new();
 
     // Task progression section (if task state is available)
@@ -299,7 +292,10 @@ fn format_task_progression(task_state: &crate::checkpoints::TaskState) -> String
 
     // Current task
     if let Some(current) = task_state.current_task() {
-        content.push_str(&format!("**Current Task**: `{}` - {}\n\n", current.id, current.instruction));
+        content.push_str(&format!(
+            "**Current Task**: `{}` - {}\n\n",
+            current.id, current.instruction
+        ));
     }
 
     // Task status table
@@ -330,10 +326,16 @@ fn format_task_progression(task_state: &crate::checkpoints::TaskState) -> String
                         content.push_str(&format!("- File must exist: `{path}`\n"));
                     }
                     crate::checkpoints::VerificationRule::Contains { path, pattern } => {
-                        content.push_str(&format!("- `{path}` must contain pattern: `{pattern}`\n"));
+                        content
+                            .push_str(&format!("- `{path}` must contain pattern: `{pattern}`\n"));
                     }
-                    crate::checkpoints::VerificationRule::Command { cmd, expected_exit_code } => {
-                        content.push_str(&format!("- Command `{cmd}` must exit with code {expected_exit_code}\n"));
+                    crate::checkpoints::VerificationRule::Command {
+                        cmd,
+                        expected_exit_code,
+                    } => {
+                        content.push_str(&format!(
+                            "- Command `{cmd}` must exit with code {expected_exit_code}\n"
+                        ));
                     }
                     crate::checkpoints::VerificationRule::OutputSet { key } => {
                         content.push_str(&format!("- Output `{key}` must be set\n"));
@@ -501,7 +503,9 @@ fn format_structured_handoff(handoff: &HandoffV2) -> String {
     }
 
     // Git state
-    if handoff.branch.is_some() || !handoff.commits.is_empty() || !handoff.uncommitted_files.is_empty()
+    if handoff.branch.is_some()
+        || !handoff.commits.is_empty()
+        || !handoff.uncommitted_files.is_empty()
     {
         content.push_str("### Git State\n\n");
         if let Some(branch) = &handoff.branch {

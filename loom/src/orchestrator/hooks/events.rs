@@ -125,8 +125,9 @@ pub fn log_hook_event(work_dir: &Path, event: HookEventLog) -> Result<()> {
 
     // Ensure hooks directory exists
     if !hooks_dir.exists() {
-        fs::create_dir_all(&hooks_dir)
-            .with_context(|| format!("Failed to create hooks directory: {}", hooks_dir.display()))?;
+        fs::create_dir_all(&hooks_dir).with_context(|| {
+            format!("Failed to create hooks directory: {}", hooks_dir.display())
+        })?;
     }
 
     // Serialize event to JSON line
@@ -139,7 +140,7 @@ pub fn log_hook_event(work_dir: &Path, event: HookEventLog) -> Result<()> {
         .open(&events_file)
         .with_context(|| format!("Failed to open events file: {}", events_file.display()))?;
 
-    writeln!(file, "{}", json_line)
+    writeln!(file, "{json_line}")
         .with_context(|| format!("Failed to write event: {}", events_file.display()))?;
 
     Ok(())

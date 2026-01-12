@@ -138,12 +138,17 @@ mod events_tests {
             context_percent: Some(75.5),
             handoff_file: Some("stage-1-handoff-001.md".to_string()),
         };
-        let event = HookEventLog::with_payload("stage-1", "session-abc", HookEvent::PreCompact, payload);
+        let event =
+            HookEventLog::with_payload("stage-1", "session-abc", HookEvent::PreCompact, payload);
 
         assert_eq!(event.event, "PreCompact");
         assert!(event.payload.is_some());
 
-        if let Some(HookEventPayload::PreCompact { context_percent, handoff_file }) = &event.payload {
+        if let Some(HookEventPayload::PreCompact {
+            context_percent,
+            handoff_file,
+        }) = &event.payload
+        {
             assert_eq!(*context_percent, Some(75.5));
             assert_eq!(*handoff_file, Some("stage-1-handoff-001.md".to_string()));
         } else {
@@ -258,7 +263,10 @@ mod generator_tests {
 
         // Check permissions merged
         assert_eq!(settings["permissions"]["defaultMode"], json!("acceptEdits"));
-        assert_eq!(settings["permissions"]["allowedTools"], json!(["Bash", "Read"]));
+        assert_eq!(
+            settings["permissions"]["allowedTools"],
+            json!(["Bash", "Read"])
+        );
     }
 
     #[test]

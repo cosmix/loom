@@ -31,11 +31,11 @@ pub use config::MonitorConfig;
 pub use context::{context_health, context_usage_percent, ContextHealth};
 pub use core::Monitor;
 pub use events::MonitorEvent;
-pub use heartbeat::{
-    heartbeat_path, read_heartbeat, remove_heartbeat, write_heartbeat, Heartbeat,
-    HeartbeatStatus, HeartbeatWatcher, DEFAULT_HEARTBEAT_POLL_SECS, DEFAULT_HUNG_TIMEOUT_SECS,
-};
 pub use failure_tracking::{
     build_failure_info, failure_state_path, FailureRecord, FailureTracker, StageFailureState,
     DEFAULT_MAX_FAILURES,
+};
+pub use heartbeat::{
+    heartbeat_path, read_heartbeat, remove_heartbeat, write_heartbeat, Heartbeat, HeartbeatStatus,
+    HeartbeatWatcher, DEFAULT_HEARTBEAT_POLL_SECS, DEFAULT_HUNG_TIMEOUT_SECS,
 };

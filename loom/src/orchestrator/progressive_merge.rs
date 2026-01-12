@@ -230,8 +230,7 @@ pub fn get_merge_point(work_dir: &Path) -> Result<String> {
         return Ok("main".to_string());
     }
 
-    let config_content =
-        fs::read_to_string(&config_path).context("Failed to read config.toml")?;
+    let config_content = fs::read_to_string(&config_path).context("Failed to read config.toml")?;
 
     let config: toml::Value =
         toml::from_str(&config_content).context("Failed to parse config.toml")?;

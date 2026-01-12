@@ -84,10 +84,7 @@ pub(super) fn format_merge_conflict_signal_content(
 ) -> String {
     let mut content = String::new();
 
-    content.push_str(&format!(
-        "# Merge Conflict Resolution: {}\n\n",
-        session.id
-    ));
+    content.push_str(&format!("# Merge Conflict Resolution: {}\n\n", session.id));
 
     // Explain the situation
     content.push_str("## Situation\n\n");

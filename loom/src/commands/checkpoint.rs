@@ -4,7 +4,7 @@
 
 use anyhow::{bail, Context, Result};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::checkpoints::{Checkpoint, CheckpointStatus};
 use crate::fs::checkpoints::{checkpoint_exists, write_checkpoint};
@@ -33,9 +33,7 @@ pub fn execute(
 
     // Check if checkpoint already exists
     if checkpoint_exists(&work_dir, &session_id, &task_id) && !force {
-        bail!(
-            "Checkpoint for task '{task_id}' already exists. Use --force to overwrite."
-        );
+        bail!("Checkpoint for task '{task_id}' already exists. Use --force to overwrite.");
     }
 
     // Get the stage ID from the session
@@ -47,7 +45,14 @@ pub fn execute(
         None => {
             // No task state - just create the checkpoint without verification
             println!("Warning: No task state found for stage '{stage_id}'. Creating checkpoint without verification.");
-            return create_checkpoint_only(&work_dir, &session_id, &task_id, status, outputs_map, notes);
+            return create_checkpoint_only(
+                &work_dir,
+                &session_id,
+                &task_id,
+                status,
+                outputs_map,
+                notes,
+            );
         }
     };
 
@@ -62,16 +67,21 @@ pub fn execute(
             let (passed, failed, warnings) = summarize_verifications(&results);
 
             if failed > 0 {
-                println!("\n⚠️  Verification warnings ({failed} of {} checks failed):", passed + failed);
+                println!(
+                    "\n⚠️  Verification warnings ({failed} of {} checks failed):",
+                    passed + failed
+                );
                 for warning in &warnings {
                     println!("   - {warning}");
                 }
 
                 if !force {
-                    println!("\nCheckpoint created with warnings. Use --force to suppress this message.");
+                    println!(
+                        "\nCheckpoint created with warnings. Use --force to suppress this message."
+                    );
                 }
             } else {
-                println!("✓ All {} verification checks passed", passed);
+                println!("✓ All {passed} verification checks passed");
             }
 
             warnings
@@ -79,13 +89,15 @@ pub fn execute(
             Vec::new()
         }
     } else {
-        println!("Warning: Task '{task_id}' not found in task definitions. Creating checkpoint anyway.");
+        println!(
+            "Warning: Task '{task_id}' not found in task definitions. Creating checkpoint anyway."
+        );
         Vec::new()
     };
 
     // Create the checkpoint
-    let checkpoint = Checkpoint::new(task_id.clone(), status.clone())
-        .with_outputs(outputs_map.clone());
+    let checkpoint =
+        Checkpoint::new(task_id.clone(), status.clone()).with_outputs(outputs_map.clone());
     let checkpoint = if let Some(notes) = notes.clone() {
         checkpoint.with_notes(notes)
     } else {
@@ -123,7 +135,7 @@ pub fn execute(
 
 /// Create a checkpoint without task state tracking
 fn create_checkpoint_only(
-    work_dir: &PathBuf,
+    work_dir: &Path,
     session_id: &str,
     task_id: &str,
     status: CheckpointStatus,
@@ -160,7 +172,7 @@ fn find_work_dir() -> Result<PathBuf> {
 }
 
 /// Get the current session ID from environment or context
-fn get_current_session_id(work_dir: &PathBuf) -> Result<String> {
+fn get_current_session_id(work_dir: &Path) -> Result<String> {
     // First check environment variable
     if let Ok(session_id) = std::env::var("LOOM_SESSION_ID") {
         return Ok(session_id);
@@ -187,7 +199,7 @@ fn get_current_session_id(work_dir: &PathBuf) -> Result<String> {
 }
 
 /// Get the stage ID from a session file
-fn get_stage_id_from_session(work_dir: &PathBuf, session_id: &str) -> Result<String> {
+fn get_stage_id_from_session(work_dir: &Path, session_id: &str) -> Result<String> {
     let session_path = work_dir.join("sessions").join(format!("{session_id}.md"));
 
     if !session_path.exists() {
@@ -208,8 +220,8 @@ fn get_stage_id_from_session(work_dir: &PathBuf, session_id: &str) -> Result<Str
     // Parse stage_id from session file YAML frontmatter
     let content = std::fs::read_to_string(&session_path)?;
     let frontmatter = crate::parser::frontmatter::extract_yaml_frontmatter(&content)?;
-    let session: crate::models::session::Session = serde_yaml::from_value(frontmatter)
-        .context("Failed to parse session file")?;
+    let session: crate::models::session::Session =
+        serde_yaml::from_value(frontmatter).context("Failed to parse session file")?;
 
     session
         .stage_id
@@ -217,7 +229,7 @@ fn get_stage_id_from_session(work_dir: &PathBuf, session_id: &str) -> Result<Str
 }
 
 /// Get the worktree path for a stage
-fn get_worktree_path(work_dir: &PathBuf, stage_id: &str) -> Result<PathBuf> {
+fn get_worktree_path(work_dir: &Path, stage_id: &str) -> Result<PathBuf> {
     let stage_path = work_dir.join("stages").join(format!("{stage_id}.md"));
 
     if !stage_path.exists() {
@@ -227,12 +239,12 @@ fn get_worktree_path(work_dir: &PathBuf, stage_id: &str) -> Result<PathBuf> {
 
     let content = std::fs::read_to_string(&stage_path)?;
     let frontmatter = crate::parser::frontmatter::extract_yaml_frontmatter(&content)?;
-    let stage: crate::models::stage::Stage = serde_yaml::from_value(frontmatter)
-        .context("Failed to parse stage file")?;
+    let stage: crate::models::stage::Stage =
+        serde_yaml::from_value(frontmatter).context("Failed to parse stage file")?;
 
     if let Some(worktree) = stage.worktree {
         // Worktree path is relative to project root (parent of .work)
-        let project_root = work_dir.parent().unwrap_or(work_dir.as_path());
+        let project_root = work_dir.parent().unwrap_or(work_dir);
         Ok(project_root.join(worktree))
     } else {
         // No worktree - use current directory
@@ -298,7 +310,10 @@ mod tests {
 
     #[test]
     fn test_parse_outputs() {
-        let outputs = vec!["key1=value1".to_string(), "key2=value with spaces".to_string()];
+        let outputs = vec![
+            "key1=value1".to_string(),
+            "key2=value with spaces".to_string(),
+        ];
         let map = parse_outputs(&outputs).unwrap();
 
         assert_eq!(map.get("key1"), Some(&"value1".to_string()));

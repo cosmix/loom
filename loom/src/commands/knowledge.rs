@@ -53,7 +53,9 @@ pub fn update(file: String, content: String) -> Result<()> {
     let knowledge = KnowledgeDir::new(work_dir.root());
 
     if !knowledge.exists() {
-        knowledge.initialize().context("Failed to initialize knowledge directory")?;
+        knowledge
+            .initialize()
+            .context("Failed to initialize knowledge directory")?;
     }
 
     let file_type = parse_file_type(&file)?;
@@ -123,10 +125,7 @@ pub fn list() -> Result<()> {
 
     for (file_type, path) in files {
         let content = std::fs::read_to_string(&path).ok();
-        let line_count = content
-            .as_ref()
-            .map(|c| c.lines().count())
-            .unwrap_or(0);
+        let line_count = content.as_ref().map(|c| c.lines().count()).unwrap_or(0);
 
         println!(
             "  {} {} ({} lines)",
@@ -159,10 +158,7 @@ fn parse_file_type(file: &str) -> Result<KnowledgeFile> {
         "pattern" | "arch" | "architecture" => Ok(KnowledgeFile::Patterns),
         "convention" | "conventions" | "code" | "coding" => Ok(KnowledgeFile::Conventions),
         _ => {
-            let valid_files: Vec<_> = KnowledgeFile::all()
-                .iter()
-                .map(|f| f.filename())
-                .collect();
+            let valid_files: Vec<_> = KnowledgeFile::all().iter().map(|f| f.filename()).collect();
             bail!(
                 "Unknown knowledge file: '{}'. Valid files: {}",
                 file,
@@ -189,14 +185,7 @@ mod tests {
 
         // Create required subdirectories
         for subdir in &[
-            "runners",
-            "tracks",
-            "signals",
-            "handoffs",
-            "archive",
-            "stages",
-            "sessions",
-            "logs",
+            "runners", "tracks", "signals", "handoffs", "archive", "stages", "sessions", "logs",
             "crashes",
         ] {
             fs::create_dir(work_dir_path.join(subdir)).expect("Failed to create subdir");
@@ -223,7 +212,10 @@ mod tests {
             parse_file_type("conventions").unwrap(),
             KnowledgeFile::Conventions
         );
-        assert_eq!(parse_file_type("entry").unwrap(), KnowledgeFile::EntryPoints);
+        assert_eq!(
+            parse_file_type("entry").unwrap(),
+            KnowledgeFile::EntryPoints
+        );
         assert!(parse_file_type("unknown").is_err());
     }
 
@@ -267,8 +259,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify content was appended
-        let content =
-            fs::read_to_string(test_dir.join(".work/knowledge/entry-points.md")).unwrap();
+        let content = fs::read_to_string(test_dir.join(".work/knowledge/entry-points.md")).unwrap();
         assert!(content.contains("## New Section"));
         assert!(content.contains("- New entry"));
 

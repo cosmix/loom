@@ -98,7 +98,7 @@ pub fn get(stage_id: String, key: String) -> Result<()> {
             Ok(())
         }
         None => {
-            bail!("Output '{}' not found for stage '{}'", key, stage_id)
+            bail!("Output '{key}' not found for stage '{stage_id}'")
         }
     }
 }
@@ -114,7 +114,7 @@ pub fn remove(stage_id: String, key: String) -> Result<()> {
         println!("Output '{key}' removed from stage '{stage_id}'");
         Ok(())
     } else {
-        bail!("Output '{}' not found for stage '{}'", key, stage_id)
+        bail!("Output '{key}' not found for stage '{stage_id}'")
     }
 }
 
@@ -156,7 +156,7 @@ fn parse_value(value: &str) -> Value {
 /// Format a JSON value for display.
 fn format_value(value: &Value) -> String {
     match value {
-        Value::String(s) => format!("\"{}\"", s),
+        Value::String(s) => format!("\"{s}\""),
         Value::Null => "null".to_string(),
         Value::Bool(b) => b.to_string(),
         Value::Number(n) => n.to_string(),

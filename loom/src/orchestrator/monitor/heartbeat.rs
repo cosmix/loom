@@ -174,7 +174,11 @@ impl HeartbeatWatcher {
                     self.heartbeats.insert(stage_id, heartbeat);
                 }
                 Err(e) => {
-                    eprintln!("Warning: Failed to read heartbeat {}: {}", path.display(), e);
+                    eprintln!(
+                        "Warning: Failed to read heartbeat {}: {}",
+                        path.display(),
+                        e
+                    );
                 }
             }
         }
@@ -249,13 +253,17 @@ pub fn read_heartbeat(path: &Path) -> Result<Heartbeat> {
 pub fn write_heartbeat(work_dir: &Path, heartbeat: &Heartbeat) -> Result<PathBuf> {
     let heartbeat_dir = work_dir.join("heartbeat");
     if !heartbeat_dir.exists() {
-        std::fs::create_dir_all(&heartbeat_dir)
-            .with_context(|| format!("Failed to create heartbeat directory: {}", heartbeat_dir.display()))?;
+        std::fs::create_dir_all(&heartbeat_dir).with_context(|| {
+            format!(
+                "Failed to create heartbeat directory: {}",
+                heartbeat_dir.display()
+            )
+        })?;
     }
 
     let path = heartbeat_dir.join(format!("{}.json", heartbeat.stage_id));
-    let content = serde_json::to_string_pretty(heartbeat)
-        .context("Failed to serialize heartbeat")?;
+    let content =
+        serde_json::to_string_pretty(heartbeat).context("Failed to serialize heartbeat")?;
     std::fs::write(&path, content)
         .with_context(|| format!("Failed to write heartbeat file: {}", path.display()))?;
 
@@ -264,7 +272,9 @@ pub fn write_heartbeat(work_dir: &Path, heartbeat: &Heartbeat) -> Result<PathBuf
 
 /// Remove a heartbeat file
 pub fn remove_heartbeat(work_dir: &Path, stage_id: &str) -> Result<()> {
-    let path = work_dir.join("heartbeat").join(format!("{}.json", stage_id));
+    let path = work_dir
+        .join("heartbeat")
+        .join(format!("{stage_id}.json"));
     if path.exists() {
         std::fs::remove_file(&path)
             .with_context(|| format!("Failed to remove heartbeat file: {}", path.display()))?;
@@ -274,7 +284,9 @@ pub fn remove_heartbeat(work_dir: &Path, stage_id: &str) -> Result<()> {
 
 /// Get heartbeat path for a stage
 pub fn heartbeat_path(work_dir: &Path, stage_id: &str) -> PathBuf {
-    work_dir.join("heartbeat").join(format!("{}.json", stage_id))
+    work_dir
+        .join("heartbeat")
+        .join(format!("{stage_id}.json"))
 }
 
 #[cfg(test)]
@@ -355,19 +367,25 @@ mod tests {
         let mut watcher = HeartbeatWatcher::with_timeout(Duration::from_secs(60));
 
         // No heartbeat
-        assert_eq!(watcher.check_session_hung("unknown"), HeartbeatStatus::NoHeartbeat);
+        assert_eq!(
+            watcher.check_session_hung("unknown"),
+            HeartbeatStatus::NoHeartbeat
+        );
 
         // Add a fresh heartbeat
         let hb = Heartbeat::new("stage-1".to_string(), "session-1".to_string());
         watcher.heartbeats.insert("stage-1".to_string(), hb);
 
-        assert_eq!(watcher.check_session_hung("stage-1"), HeartbeatStatus::Healthy);
+        assert_eq!(
+            watcher.check_session_hung("stage-1"),
+            HeartbeatStatus::Healthy
+        );
 
         // Add an old heartbeat (simulate by setting timeout to 0)
         watcher.set_timeout(Duration::from_secs(0));
         match watcher.check_session_hung("stage-1") {
             HeartbeatStatus::Hung { .. } => (),
-            other => panic!("Expected Hung, got {:?}", other),
+            other => panic!("Expected Hung, got {other:?}"),
         }
     }
 }

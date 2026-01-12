@@ -3,8 +3,8 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::models::constants::{CONTEXT_CRITICAL_THRESHOLD, CONTEXT_WARNING_THRESHOLD};
 use super::heartbeat::DEFAULT_HUNG_TIMEOUT_SECS;
+use crate::models::constants::{CONTEXT_CRITICAL_THRESHOLD, CONTEXT_WARNING_THRESHOLD};
 
 /// Configuration for the monitor
 #[derive(Debug, Clone)]

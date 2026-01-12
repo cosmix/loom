@@ -194,7 +194,7 @@ pub fn list(category: Option<String>) -> Result<()> {
             println!(
                 "{} {} {}",
                 date.dimmed(),
-                format!("[{}]", stage).cyan(),
+                format!("[{stage}]").cyan(),
                 truncate_for_display(&learning.description, 50)
             );
 
@@ -208,11 +208,7 @@ pub fn list(category: Option<String>) -> Result<()> {
         }
 
         if learnings.len() > 10 {
-            println!(
-                "  {} {} more...",
-                "...".dimmed(),
-                learnings.len() - 10
-            );
+            println!("  {} {} more...", "...".dimmed(), learnings.len() - 10);
         }
     }
 
@@ -262,7 +258,10 @@ mod tests {
     #[test]
     fn test_truncate_for_display() {
         assert_eq!(truncate_for_display("short", 10), "short");
-        assert_eq!(truncate_for_display("this is a longer string", 10), "this is a…");
+        assert_eq!(
+            truncate_for_display("this is a longer string", 10),
+            "this is a…"
+        );
         assert_eq!(
             truncate_for_display("line1\nline2\nline3", 20),
             "line1 line2 line3"

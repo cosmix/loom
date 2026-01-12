@@ -260,8 +260,7 @@ impl HandoffV2 {
 
     /// Parse from YAML string
     pub fn from_yaml(yaml: &str) -> Result<Self> {
-        let handoff: Self =
-            serde_yaml::from_str(yaml).context("Failed to parse handoff YAML")?;
+        let handoff: Self = serde_yaml::from_str(yaml).context("Failed to parse handoff YAML")?;
         handoff.validate()?;
         Ok(handoff)
     }
@@ -301,7 +300,7 @@ impl HandoffV2 {
 #[derive(Debug)]
 pub enum ParsedHandoff {
     /// Successfully parsed V2 structured handoff
-    V2(HandoffV2),
+    V2(Box<HandoffV2>),
     /// Fell back to V1 prose format (raw markdown content)
     V1Fallback(String),
 }
@@ -312,7 +311,7 @@ impl ParsedHandoff {
         // Try to extract YAML frontmatter or find YAML block
         if let Some(yaml_content) = extract_yaml_from_handoff(content) {
             if let Ok(handoff) = HandoffV2::from_yaml(&yaml_content) {
-                return ParsedHandoff::V2(handoff);
+                return ParsedHandoff::V2(Box::new(handoff));
             }
         }
 
@@ -351,8 +350,7 @@ fn extract_yaml_from_handoff(content: &str) -> Option<String> {
     let trimmed = content.trim();
 
     // Check for YAML frontmatter
-    if trimmed.starts_with("---") {
-        let after_first = &trimmed[3..];
+    if let Some(after_first) = trimmed.strip_prefix("---") {
         if let Some(end_idx) = after_first.find("---") {
             let yaml = after_first[..end_idx].trim();
             return Some(yaml.to_string());
@@ -443,7 +441,10 @@ mod tests {
             .with_context_percent(65.0)
             .with_branch("loom/my-stage")
             .with_completed_tasks(vec![CompletedTask::new("Did something")])
-            .with_key_decisions(vec![KeyDecision::new("Used pattern X", "Better performance")])
+            .with_key_decisions(vec![KeyDecision::new(
+                "Used pattern X",
+                "Better performance",
+            )])
             .with_files_read(vec![FileRef::with_lines("src/main.rs", 1, 100, "context")]);
 
         let yaml = original.to_yaml().unwrap();

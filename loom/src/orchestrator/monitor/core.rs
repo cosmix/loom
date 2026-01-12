@@ -60,10 +60,12 @@ impl Monitor {
         }
 
         // Poll for heartbeat updates and detect hung sessions
-        events.extend(
-            self.detection
-                .detect_heartbeat_events(&sessions, &mut self.heartbeat_watcher, &self.config, &self.handlers),
-        );
+        events.extend(self.detection.detect_heartbeat_events(
+            &sessions,
+            &mut self.heartbeat_watcher,
+            &self.config,
+            &self.handlers,
+        ));
 
         Ok(events)
     }

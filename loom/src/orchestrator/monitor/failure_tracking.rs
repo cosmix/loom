@@ -56,7 +56,12 @@ impl StageFailureState {
     }
 
     /// Record a failure
-    pub fn record_failure(&mut self, session_id: String, failure_type: FailureType, description: String) {
+    pub fn record_failure(
+        &mut self,
+        session_id: String,
+        failure_type: FailureType,
+        description: String,
+    ) {
         self.consecutive_failures += 1;
 
         let record = FailureRecord {
@@ -201,7 +206,11 @@ impl FailureTracker {
                     self.states.insert(state.stage_id.clone(), state);
                 }
                 Err(e) => {
-                    eprintln!("Warning: Failed to load failure state from {}: {}", path.display(), e);
+                    eprintln!(
+                        "Warning: Failed to load failure state from {}: {}",
+                        path.display(),
+                        e
+                    );
                 }
             }
         }
@@ -213,8 +222,9 @@ impl FailureTracker {
     pub fn save_to_work_dir(&self, work_dir: &Path) -> Result<()> {
         let state_dir = work_dir.join("state");
         if !state_dir.exists() {
-            fs::create_dir_all(&state_dir)
-                .with_context(|| format!("Failed to create state directory: {}", state_dir.display()))?;
+            fs::create_dir_all(&state_dir).with_context(|| {
+                format!("Failed to create state directory: {}", state_dir.display())
+            })?;
         }
 
         for state in self.states.values() {
@@ -228,8 +238,9 @@ impl FailureTracker {
     pub fn save_stage_state(&self, stage_id: &str, work_dir: &Path) -> Result<()> {
         let state_dir = work_dir.join("state");
         if !state_dir.exists() {
-            fs::create_dir_all(&state_dir)
-                .with_context(|| format!("Failed to create state directory: {}", state_dir.display()))?;
+            fs::create_dir_all(&state_dir).with_context(|| {
+                format!("Failed to create state directory: {}", state_dir.display())
+            })?;
         }
 
         if let Some(state) = self.states.get(stage_id) {
@@ -251,15 +262,14 @@ fn load_failure_state(path: &Path) -> Result<StageFailureState> {
 /// Save failure state to a YAML file
 fn save_failure_state(state: &StageFailureState, state_dir: &Path) -> Result<()> {
     let path = state_dir.join(format!("{}.yaml", state.stage_id));
-    let content = serde_yaml::to_string(state)
-        .context("Failed to serialize failure state")?;
+    let content = serde_yaml::to_string(state).context("Failed to serialize failure state")?;
     fs::write(&path, content)
         .with_context(|| format!("Failed to write failure state: {}", path.display()))
 }
 
 /// Get failure state path for a stage
 pub fn failure_state_path(work_dir: &Path, stage_id: &str) -> PathBuf {
-    work_dir.join("state").join(format!("{}.yaml", stage_id))
+    work_dir.join("state").join(format!("{stage_id}.yaml"))
 }
 
 /// Build a FailureInfo from a failure record
@@ -319,9 +329,9 @@ mod tests {
         for i in 1..=3 {
             tracker.record_failure(
                 "stage-1",
-                format!("session-{}", i),
+                format!("session-{i}"),
                 FailureType::SessionCrash,
-                format!("Crash {}", i),
+                format!("Crash {i}"),
             );
         }
 

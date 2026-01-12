@@ -59,8 +59,8 @@ pub fn merge_complete(stage_id: String) -> Result<()> {
     println!("  Status: Completed (merged: true)");
 
     // Trigger dependent stages
-    let triggered = trigger_dependents(&stage_id, work_dir)
-        .context("Failed to trigger dependent stages")?;
+    let triggered =
+        trigger_dependents(&stage_id, work_dir).context("Failed to trigger dependent stages")?;
 
     if !triggered.is_empty() {
         println!("Triggered {} dependent stage(s):", triggered.len());

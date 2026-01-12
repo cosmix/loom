@@ -170,7 +170,10 @@ impl KnowledgeDir {
             }
         }
 
-        if summary.len() <= "## Knowledge Summary\n\n> Curated knowledge to help you navigate the codebase.\n\n".len() {
+        if summary.len()
+            <= "## Knowledge Summary\n\n> Curated knowledge to help you navigate the codebase.\n\n"
+                .len()
+        {
             return Ok(String::new());
         }
 
@@ -219,36 +222,30 @@ impl KnowledgeDir {
     /// Get default content for a knowledge file type
     fn default_content(&self, file_type: KnowledgeFile) -> String {
         match file_type {
-            KnowledgeFile::EntryPoints => {
-                r#"# Entry Points
+            KnowledgeFile::EntryPoints => r#"# Entry Points
 
 > Key files agents should read first to understand the codebase.
 > This file is append-only - agents add discoveries, never delete.
 
 (Add entry points as you discover them)
 "#
-                .to_string()
-            }
-            KnowledgeFile::Patterns => {
-                r#"# Architectural Patterns
+            .to_string(),
+            KnowledgeFile::Patterns => r#"# Architectural Patterns
 
 > Discovered patterns in the codebase that help agents understand how things work.
 > This file is append-only - agents add discoveries, never delete.
 
 (Add patterns as you discover them)
 "#
-                .to_string()
-            }
-            KnowledgeFile::Conventions => {
-                r#"# Coding Conventions
+            .to_string(),
+            KnowledgeFile::Conventions => r#"# Coding Conventions
 
 > Discovered coding conventions in the codebase.
 > This file is append-only - agents add discoveries, never delete.
 
 (Add conventions as you discover them)
 "#
-                .to_string()
-            }
+            .to_string(),
         }
     }
 

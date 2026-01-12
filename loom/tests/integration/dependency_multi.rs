@@ -54,8 +54,7 @@ fn test_multiple_deps_all_merged_uses_main() {
     // All deps merged - use main as base
     assert!(
         matches!(result, ResolvedBase::Main(_)),
-        "Expected Main, got {:?}",
-        result
+        "Expected Main, got {result:?}"
     );
     assert_eq!(result.branch_name(), "main");
 
@@ -107,7 +106,10 @@ fn test_multiple_deps_not_merged_returns_error() {
 
     assert!(result.is_err(), "Should return error when deps not merged");
     let err = result.unwrap_err().to_string();
-    assert!(err.contains("Scheduling error"), "Error should mention scheduling");
+    assert!(
+        err.contains("Scheduling error"),
+        "Error should mention scheduling"
+    );
 }
 
 /// Test 3: Diamond pattern A → B, A → C, [B,C] → D with all merged
@@ -196,8 +198,7 @@ fn test_diamond_pattern_all_merged() {
     // All deps merged - use main
     assert!(
         matches!(result, ResolvedBase::Main(_)),
-        "Expected Main for diamond, got {:?}",
-        result
+        "Expected Main for diamond, got {result:?}"
     );
 
     let worktree = create_worktree("stage-d", repo_root, Some(result.branch_name()))
