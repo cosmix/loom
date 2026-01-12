@@ -112,7 +112,8 @@ pub fn generate_stable_prefix() -> String {
     content.push_str("- **Use TodoWrite** to plan and track progress\n\n");
     content.push_str("**Completion:**\n");
     content.push_str("- **Verify acceptance criteria** before marking stage complete\n");
-    content.push_str("- **Create handoff** if context exceeds 75%\n\n");
+    content.push_str("- **Create handoff** if context exceeds 75%\n");
+    content.push_str("- **IMPORTANT: Before running `loom stage complete`, ensure you are at the worktree root directory**\n\n");
     content.push_str("**Git Staging (CRITICAL):**\n");
     content
         .push_str("- **ALWAYS use `git add <specific-files>`** - stage only files you modified\n");
@@ -177,6 +178,8 @@ mod tests {
         assert!(prefix.contains(
             "Parallel subagents and appropriate skills should be used WHEREVER POSSIBLE."
         ));
+        // Critical: worktree root directory reminder for loom stage complete
+        assert!(prefix.contains("Before running `loom stage complete`, ensure you are at the worktree root directory"));
     }
 
     #[test]
