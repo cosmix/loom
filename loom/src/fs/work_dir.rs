@@ -2,6 +2,8 @@ use anyhow::{bail, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::fs::knowledge::KnowledgeDir;
+
 pub struct WorkDir {
     root: PathBuf,
 }
@@ -40,6 +42,10 @@ impl WorkDir {
         }
 
         self.create_readme()?;
+
+        // Initialize knowledge directory with template files
+        let knowledge = KnowledgeDir::new(&self.root);
+        knowledge.initialize()?;
 
         Ok(())
     }
