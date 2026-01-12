@@ -99,14 +99,16 @@ pub fn trigger_dependents(completed_stage_id: &str, work_dir: &Path) -> Result<V
 
 /// Check if all dependencies of a stage are satisfied
 ///
-/// A dependency is satisfied if its status is Completed.
+/// A dependency is satisfied if its status is Completed AND merged is true.
+/// This ensures dependent stages can use main as their base, containing all
+/// dependency work.
 ///
 /// # Arguments
 /// * `stage` - The stage to check dependencies for
 /// * `work_dir` - Path to the `.work` directory
 ///
 /// # Returns
-/// `true` if all dependencies are in Completed status, `false` otherwise
+/// `true` if all dependencies are Completed with merged=true, `false` otherwise
 pub(crate) fn are_all_dependencies_satisfied(stage: &Stage, work_dir: &Path) -> Result<bool> {
     if stage.dependencies.is_empty() {
         return Ok(true);
@@ -121,6 +123,9 @@ pub(crate) fn are_all_dependencies_satisfied(stage: &Stage, work_dir: &Path) -> 
         })?;
 
         if dep_stage.status != StageStatus::Completed {
+            return Ok(false);
+        }
+        if !dep_stage.merged {
             return Ok(false);
         }
     }
