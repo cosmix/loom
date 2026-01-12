@@ -20,7 +20,7 @@ pub fn create_session_file(work_dir: &Path, session: &Session) -> Result<()> {
         session.id,
         session.status,
         session.stage_id.as_ref().unwrap_or(&"None".to_string()),
-        session.context_health()
+        session.context_usage_percent()
     );
 
     std::fs::write(&session_path, content)

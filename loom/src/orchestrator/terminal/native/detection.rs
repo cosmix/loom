@@ -5,6 +5,8 @@
 use anyhow::{bail, Result};
 use std::process::Command;
 
+use super::super::emulator::TerminalEmulator;
+
 /// Detect the available terminal emulator
 ///
 /// Priority:
@@ -12,48 +14,51 @@ use std::process::Command;
 /// 2. gsettings/dconf default terminal (GNOME/Cosmic DE settings)
 /// 3. xdg-terminal-exec (emerging standard)
 /// 4. Common terminals: kitty, alacritty, etc.
-pub fn detect_terminal() -> Result<String> {
+pub fn detect_terminal() -> Result<TerminalEmulator> {
     // 1. Check TERMINAL environment variable (user preference)
     if let Ok(terminal) = std::env::var("TERMINAL") {
         if !terminal.is_empty() && which::which(&terminal).is_ok() {
-            return Ok(terminal);
+            if let Some(emulator) = TerminalEmulator::from_binary(&terminal) {
+                return Ok(emulator);
+            }
         }
     }
 
     // 2. Check gsettings for default terminal (GNOME/Cosmic DE)
     if let Some(terminal) = get_gsettings_terminal() {
         if which::which(&terminal).is_ok() {
-            return Ok(terminal);
+            if let Some(emulator) = TerminalEmulator::from_binary(&terminal) {
+                return Ok(emulator);
+            }
         }
     }
 
     // 3. Try xdg-terminal-exec (emerging standard - respects desktop settings)
     if which::which("xdg-terminal-exec").is_ok() {
-        return Ok("xdg-terminal-exec".to_string());
+        return Ok(TerminalEmulator::XdgTerminalExec);
     }
 
     // 4. Fall back to common terminals (prefer modern GPU-accelerated ones)
     let candidates = [
-        "kitty",
-        "alacritty",
-        "foot",
-        "wezterm",
-        "gnome-terminal",
-        "konsole",
-        "xfce4-terminal",
-        "x-terminal-emulator",
-        "xterm",
+        TerminalEmulator::Kitty,
+        TerminalEmulator::Alacritty,
+        TerminalEmulator::Foot,
+        TerminalEmulator::Wezterm,
+        TerminalEmulator::GnomeTerminal,
+        TerminalEmulator::Konsole,
+        TerminalEmulator::Xfce4Terminal,
+        TerminalEmulator::XTerm,
     ];
 
     for candidate in candidates {
-        if which::which(candidate).is_ok() {
-            return Ok(candidate.to_string());
+        if which::which(candidate.binary()).is_ok() {
+            return Ok(candidate);
         }
     }
 
     bail!(
-        "No terminal emulator found. Set TERMINAL environment variable or install one of: {}",
-        candidates.join(", ")
+        "No terminal emulator found. Set TERMINAL environment variable or install one of: \
+         kitty, alacritty, foot, wezterm, gnome-terminal, konsole, xfce4-terminal, xterm"
     )
 }
 
@@ -110,7 +115,7 @@ mod tests {
         // We just check it doesn't panic - actual result depends on system
         if result.is_ok() {
             let terminal = result.unwrap();
-            assert!(!terminal.is_empty());
+            assert!(!terminal.binary().is_empty());
         }
     }
 }

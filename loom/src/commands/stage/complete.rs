@@ -34,6 +34,9 @@ pub fn complete(
     let mut stage = load_stage(&stage_id, work_dir)?;
 
     // Handle --force-unsafe: bypass state machine and mark as completed directly
+    // Merged flag semantics for this path:
+    // - merged=true ONLY if --assume-merged is provided (manual merge assumed)
+    // - merged=false otherwise (manual merge needed, dependents won't trigger)
     if force_unsafe {
         eprintln!();
         eprintln!("⚠️  WARNING: Using --force-unsafe bypasses state machine validation!");
@@ -229,6 +232,10 @@ pub fn complete(
         }
 
         // Attempt progressive merge into the merge point (base_branch)
+        // Merged flag semantics for this path (normal completion):
+        // - merged=true ONLY if git merge succeeds (or fast-forward/already-merged)
+        // - merged=false if merge has conflicts or errors
+        // - merged=true even if NoBranch (branch was already cleaned up)
         let repo_root = std::env::current_dir().context("Failed to get current directory")?;
         let merge_point = get_merge_point(work_dir)?;
 
@@ -316,9 +323,15 @@ pub fn complete(
         }
     } else {
         // --no-verify: Skip verifications and merge, just mark as completed
+        // Merged flag semantics for this path:
+        // - merged=false (merge was skipped entirely)
+        // - Dependents will NOT be triggered automatically
+        // - User must manually merge and use --force-unsafe --assume-merged to trigger dependents
         stage.try_complete(None)?;
         save_stage(&stage, work_dir)?;
         println!("Stage '{stage_id}' completed (skipped verification)");
+        println!("⚠️  Note: Merge was skipped. Stage NOT marked as merged.");
+        println!("⚠️  Dependent stages will NOT be automatically triggered.");
     }
 
     Ok(())

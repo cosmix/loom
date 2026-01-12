@@ -59,11 +59,11 @@ fn test_session_complex_lifecycle() {
     assert_eq!(session.status, SessionStatus::Running);
 
     session.update_context(50_000);
-    assert_eq!(session.context_health(), 25.0);
+    assert_eq!(session.context_usage_percent(), 25.0);
     assert!(!session.is_context_exhausted());
 
     session.update_context(150_000);
-    assert_eq!(session.context_health(), 75.0);
+    assert_eq!(session.context_usage_percent(), 75.0);
     assert!(session.is_context_exhausted());
 
     session

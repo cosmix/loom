@@ -6,7 +6,7 @@
 use anyhow::{Context, Result};
 
 use crate::commands::common::{detect_session_from_sessions, find_work_dir};
-use crate::fs::learnings::{verify_learnings, VerificationIssue, VerificationResult};
+use crate::fs::learnings::{verify_learnings, LearningVerificationResult, VerificationIssue};
 
 /// Execute the `loom verify learnings` command.
 ///
@@ -29,11 +29,11 @@ pub fn learnings(session_id: Option<String>) -> Result<()> {
         .with_context(|| format!("Failed to verify learnings for session {session_id}"))?;
 
     match result {
-        VerificationResult::Ok => {
+        LearningVerificationResult::Ok => {
             println!("Learnings verification passed for session {session_id}");
             Ok(())
         }
-        VerificationResult::NoSnapshot => {
+        LearningVerificationResult::NoSnapshot => {
             eprintln!(
                 "Warning: No snapshot exists for session {session_id}. \
                  Cannot verify without baseline."
@@ -41,7 +41,7 @@ pub fn learnings(session_id: Option<String>) -> Result<()> {
             // Return success since we can't verify without a baseline
             Ok(())
         }
-        VerificationResult::Issues(issues) => {
+        LearningVerificationResult::Issues(issues) => {
             eprintln!("Learning file corruption detected for session {session_id}:");
             for issue in &issues {
                 match issue {
@@ -126,7 +126,7 @@ mod tests {
 
         // Verify should pass
         let result = verify_learnings(work_dir, "test-session").unwrap();
-        assert!(matches!(result, VerificationResult::Ok));
+        assert!(matches!(result, LearningVerificationResult::Ok));
     }
 
     #[test]
@@ -157,7 +157,7 @@ mod tests {
         // Verify should detect truncation
         let result = verify_learnings(work_dir, "test-session").unwrap();
         match result {
-            VerificationResult::Issues(issues) => {
+            LearningVerificationResult::Issues(issues) => {
                 assert!(!issues.is_empty());
                 let has_truncation = issues.iter().any(|i| {
                     matches!(
@@ -184,7 +184,7 @@ mod tests {
 
         // Verify should return NoSnapshot
         let result = verify_learnings(work_dir, "nonexistent-session").unwrap();
-        assert!(matches!(result, VerificationResult::NoSnapshot));
+        assert!(matches!(result, LearningVerificationResult::NoSnapshot));
     }
 
     #[test]
@@ -205,7 +205,7 @@ mod tests {
         // Verify should detect marker removal
         let result = verify_learnings(work_dir, "test-session").unwrap();
         match result {
-            VerificationResult::Issues(issues) => {
+            LearningVerificationResult::Issues(issues) => {
                 let has_marker_issue = issues.iter().any(|i| {
                     matches!(
                         i,

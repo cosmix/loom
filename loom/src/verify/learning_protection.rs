@@ -14,8 +14,8 @@ use colored::Colorize;
 use std::path::Path;
 
 use crate::fs::learnings::{
-    cleanup_snapshot, create_snapshot, restore_from_snapshot, verify_learnings, VerificationIssue,
-    VerificationResult,
+    cleanup_snapshot, create_snapshot, restore_from_snapshot, verify_learnings,
+    LearningVerificationResult, VerificationIssue,
 };
 
 /// Create a pre-session snapshot of learning files
@@ -35,16 +35,16 @@ pub fn snapshot_before_session(work_dir: &Path, session_id: &str) -> Result<()> 
 /// This should be called from stop hooks or session completion.
 pub fn verify_after_session(work_dir: &Path, session_id: &str) -> Result<ProtectionResult> {
     match verify_learnings(work_dir, session_id)? {
-        VerificationResult::Ok => {
+        LearningVerificationResult::Ok => {
             // Clean up snapshot since verification passed
             cleanup_snapshot(work_dir, session_id)?;
             Ok(ProtectionResult::Intact)
         }
-        VerificationResult::NoSnapshot => {
+        LearningVerificationResult::NoSnapshot => {
             // No snapshot to verify against - this is fine for new sessions
             Ok(ProtectionResult::NoSnapshot)
         }
-        VerificationResult::Issues(issues) => {
+        LearningVerificationResult::Issues(issues) => {
             // Learning files were damaged - restore from snapshot
             eprintln!(
                 "{} Learning file protection triggered!",

@@ -29,7 +29,7 @@ pub fn session_to_markdown(session: &Session) -> String {
         session.id,
         session.status,
         session.stage_id.as_ref().unwrap_or(&"None".to_string()),
-        session.context_health()
+        session.context_usage_percent()
     )
 }
 

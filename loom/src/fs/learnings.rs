@@ -266,11 +266,11 @@ pub fn read_learnings(work_dir: &Path, category: LearningCategory) -> Result<Vec
     let content = fs::read_to_string(&file_path)
         .with_context(|| format!("Failed to read category file: {}", file_path.display()))?;
 
-    parse_learnings(&content, category)
+    parse_learnings(&content)
 }
 
 /// Parse learnings from markdown content
-fn parse_learnings(content: &str, category: LearningCategory) -> Result<Vec<Learning>> {
+fn parse_learnings(content: &str) -> Result<Vec<Learning>> {
     let mut learnings = Vec::new();
     let mut current_entry: Option<LearningBuilder> = None;
 
@@ -302,7 +302,6 @@ fn parse_learnings(content: &str, category: LearningCategory) -> Result<Vec<Lear
                 current_entry = Some(LearningBuilder {
                     timestamp,
                     stage_id,
-                    category,
                     current_field: None,
                     description: String::new(),
                     correction: None,
@@ -371,8 +370,6 @@ fn parse_learnings(content: &str, category: LearningCategory) -> Result<Vec<Lear
 struct LearningBuilder {
     timestamp: DateTime<Utc>,
     stage_id: String,
-    #[allow(dead_code)]
-    category: LearningCategory,
     current_field: Option<&'static str>,
     description: String,
     correction: Option<String>,
@@ -492,11 +489,11 @@ pub fn create_snapshot(work_dir: &Path, session_id: &str) -> Result<PathBuf> {
 }
 
 /// Verify that learning files have not been truncated/deleted
-pub fn verify_learnings(work_dir: &Path, session_id: &str) -> Result<VerificationResult> {
+pub fn verify_learnings(work_dir: &Path, session_id: &str) -> Result<LearningVerificationResult> {
     let snapshot_path = snapshots_dir(work_dir).join(session_id);
 
     if !snapshot_path.exists() {
-        return Ok(VerificationResult::NoSnapshot);
+        return Ok(LearningVerificationResult::NoSnapshot);
     }
 
     let mut issues = Vec::new();
@@ -536,15 +533,15 @@ pub fn verify_learnings(work_dir: &Path, session_id: &str) -> Result<Verificatio
     }
 
     if issues.is_empty() {
-        Ok(VerificationResult::Ok)
+        Ok(LearningVerificationResult::Ok)
     } else {
-        Ok(VerificationResult::Issues(issues))
+        Ok(LearningVerificationResult::Issues(issues))
     }
 }
 
 /// Result of learning file verification
 #[derive(Debug)]
-pub enum VerificationResult {
+pub enum LearningVerificationResult {
     /// All files are intact
     Ok,
     /// No snapshot exists for this session
@@ -717,7 +714,7 @@ mod tests {
 
         // Verify - should be OK
         let result = verify_learnings(work_dir, "session-123").unwrap();
-        assert!(matches!(result, VerificationResult::Ok));
+        assert!(matches!(result, LearningVerificationResult::Ok));
 
         // Truncate file
         let pattern_file = category_file_path(work_dir, LearningCategory::Pattern);
@@ -725,7 +722,7 @@ mod tests {
 
         // Verify - should detect issue
         let result = verify_learnings(work_dir, "session-123").unwrap();
-        assert!(matches!(result, VerificationResult::Issues(_)));
+        assert!(matches!(result, LearningVerificationResult::Issues(_)));
 
         // Restore from snapshot
         let restored = restore_from_snapshot(work_dir, "session-123").unwrap();

@@ -4,11 +4,15 @@
 
 use anyhow::{Context, Result};
 use std::path::Path;
-use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
+use super::super::emulator::TerminalEmulator;
 use super::pid_tracking;
+
+// Terminal spawning timing constants
+const CLAUDE_STARTUP_DELAY_MS: u64 = 500;
+const PID_DISCOVERY_TIMEOUT_SECS: u64 = 3;
 
 /// Spawn a command in a terminal window
 ///
@@ -24,118 +28,25 @@ use super::pid_tracking;
 /// The PID of the spawned process. If `work_dir` and `stage_id` are provided,
 /// attempts to resolve the actual Claude PID instead of the terminal PID.
 pub fn spawn_in_terminal(
-    terminal: &str,
+    terminal: &TerminalEmulator,
     title: &str,
     workdir: &Path,
     cmd: &str,
     work_dir: Option<&Path>,
     stage_id: Option<&str>,
 ) -> Result<u32> {
-    let mut command = Command::new(terminal);
-
-    // Configure based on terminal type
-    match terminal {
-        "xdg-terminal-exec" => {
-            command
-                .arg(format!("--title={title}"))
-                .arg(format!("--dir={}", workdir.display()))
-                .arg("--")
-                .arg("bash")
-                .arg("-c")
-                .arg(cmd);
-        }
-        "kitty" => {
-            command
-                .arg("--title")
-                .arg(title)
-                .arg("--directory")
-                .arg(workdir)
-                .arg("bash")
-                .arg("-c")
-                .arg(cmd);
-        }
-        "alacritty" => {
-            command
-                .arg("--title")
-                .arg(title)
-                .arg("--working-directory")
-                .arg(workdir)
-                .arg("-e")
-                .arg("bash")
-                .arg("-c")
-                .arg(cmd);
-        }
-        "foot" => {
-            command
-                .arg("--title")
-                .arg(title)
-                .arg("--working-directory")
-                .arg(workdir)
-                .arg("bash")
-                .arg("-c")
-                .arg(cmd);
-        }
-        "wezterm" => {
-            command
-                .arg("start")
-                .arg("--cwd")
-                .arg(workdir)
-                .arg("--")
-                .arg("bash")
-                .arg("-c")
-                .arg(cmd);
-        }
-        "gnome-terminal" => {
-            command
-                .arg("--title")
-                .arg(title)
-                .arg("--working-directory")
-                .arg(workdir)
-                .arg("--")
-                .arg("bash")
-                .arg("-c")
-                .arg(cmd);
-        }
-        "konsole" => {
-            command
-                .arg("--workdir")
-                .arg(workdir)
-                .arg("-e")
-                .arg("bash")
-                .arg("-c")
-                .arg(cmd);
-        }
-        "xfce4-terminal" => {
-            command
-                .arg("--title")
-                .arg(title)
-                .arg("--working-directory")
-                .arg(workdir)
-                .arg("-x")
-                .arg("bash")
-                .arg("-c")
-                .arg(cmd);
-        }
-        _ => {
-            // Generic fallback - most terminals support -e
-            command.arg("-e").arg("bash").arg("-c").arg(format!(
-                "cd {} && {}",
-                workdir.display(),
-                cmd
-            ));
-        }
-    }
+    let mut command = terminal.build_command(title, workdir, cmd);
 
     let child = command
         .spawn()
-        .with_context(|| format!("Failed to spawn terminal '{terminal}'. Is it installed?"))?;
+        .with_context(|| format!("Failed to spawn terminal '{}'. Is it installed?", terminal.binary()))?;
 
     let terminal_pid = child.id();
 
     // If PID tracking is enabled, try to resolve the actual Claude PID
     if let (Some(work_dir), Some(stage_id)) = (work_dir, stage_id) {
         // Wait for the PID file to be created by the wrapper script
-        thread::sleep(Duration::from_millis(500));
+        thread::sleep(Duration::from_millis(CLAUDE_STARTUP_DELAY_MS));
 
         // Try to read the PID from the PID file
         if let Some(claude_pid) = pid_tracking::read_pid_file(work_dir, stage_id) {
@@ -146,7 +57,7 @@ pub fn spawn_in_terminal(
         }
 
         // Fallback: try to discover the Claude process by scanning /proc
-        if let Some(claude_pid) = pid_tracking::discover_claude_pid(workdir, Duration::from_secs(3))
+        if let Some(claude_pid) = pid_tracking::discover_claude_pid(workdir, Duration::from_secs(PID_DISCOVERY_TIMEOUT_SECS))
         {
             return Ok(claude_pid);
         }

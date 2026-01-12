@@ -56,7 +56,7 @@ pub fn list_attachable(work_dir: &Path) -> Result<Vec<AttachableSession>> {
                     None => continue, // Skip sessions without a backend
                 };
 
-                let context_percent = session.context_health() as f64;
+                let context_percent = session.context_usage_percent() as f64;
 
                 let (stage_id, stage_name) = if let Some(ref sid) = session.stage_id {
                     match load_stage(work_dir, sid) {

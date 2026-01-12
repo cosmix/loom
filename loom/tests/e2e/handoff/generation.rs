@@ -25,7 +25,7 @@ fn test_handoff_generation() {
 
     // Generate handoff content
     let content = HandoffContent::new(session.id.clone(), stage.id.clone())
-        .with_context_percent(session.context_health())
+        .with_context_percent(session.context_usage_percent())
         .with_goals("Implement test feature with proper error handling".to_string())
         .with_completed_work(vec![
             "Created initial module structure in src/test_feature.rs:1-50".to_string(),

@@ -11,6 +11,9 @@ use std::time::Duration;
 pub(crate) const HTTP_CONNECT_TIMEOUT_SECS: u64 = 10;
 pub(crate) const HTTP_REQUEST_TIMEOUT_SECS: u64 = 120; // Total request timeout (includes connection + transfer)
 
+// Download buffer size for streaming responses
+const DOWNLOAD_BUFFER_SIZE: usize = 8192;
+
 /// Create an HTTP client with security-focused timeout configuration.
 /// Prevents indefinite hangs on slow or unresponsive servers.
 /// - connect_timeout: Maximum time to establish a TCP connection
@@ -58,7 +61,7 @@ pub(crate) fn download_with_limit(
     let mut bytes = Vec::new();
     let mut reader = response;
     let mut total_read: u64 = 0;
-    let mut buffer = [0u8; 8192];
+    let mut buffer = [0u8; DOWNLOAD_BUFFER_SIZE];
 
     loop {
         let n = reader

@@ -10,15 +10,6 @@ pub const CONTEXT_WARNING_THRESHOLD: f32 = 0.75;
 /// At 85% context usage, runners must immediately create a handoff.
 pub const CONTEXT_CRITICAL_THRESHOLD: f32 = 0.85;
 
-/// Minimum valid priority value for signals.
-pub const SIGNAL_MIN_PRIORITY: u8 = 1;
-
-/// Maximum valid priority value for signals.
-pub const SIGNAL_MAX_PRIORITY: u8 = 5;
-
-/// Default priority value for new signals.
-pub const SIGNAL_DEFAULT_PRIORITY: u8 = 3;
-
 /// Context threshold percentages for display coloring.
 pub mod display {
     /// Below this percentage, context usage is considered healthy (green).

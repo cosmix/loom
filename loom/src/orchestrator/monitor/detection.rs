@@ -320,14 +320,6 @@ impl Detection {
         events
     }
 
-    /// Clear hung report for a session (call when session ends or is recovered)
-    ///
-    /// This is a public API for external callers (e.g., recovery commands) that need
-    /// to clear hung status. Internal cleanup happens automatically via heartbeat updates.
-    #[allow(dead_code)]
-    pub fn clear_hung_report(&mut self, session_id: &str) {
-        self.reported_hung_sessions.remove(session_id);
-    }
 }
 
 impl Default for Detection {

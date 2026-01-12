@@ -17,6 +17,9 @@ use crate::git::branch::branch_exists;
 use crate::git::merge::{merge_stage, MergeResult};
 use crate::models::stage::Stage;
 
+// Merge lock timeout for detecting stale locks (5 minutes)
+const MERGE_LOCK_STALE_TIMEOUT_SECS: u64 = 300;
+
 /// Result of a progressive merge attempt
 #[derive(Debug, Clone)]
 pub enum ProgressiveMergeResult {
@@ -123,8 +126,8 @@ impl MergeLock {
             .duration_since(modified)
             .unwrap_or(Duration::ZERO);
 
-        // Consider lock stale if older than 5 minutes
-        Ok(age > Duration::from_secs(300))
+        // Consider lock stale if older than MERGE_LOCK_STALE_TIMEOUT_SECS
+        Ok(age > Duration::from_secs(MERGE_LOCK_STALE_TIMEOUT_SECS))
     }
 
     /// Release the lock

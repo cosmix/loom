@@ -7,6 +7,7 @@
 //! - Stage sessions: run in isolated worktrees for parallel stage execution
 //! - Merge sessions: run in main repository for conflict resolution
 
+pub mod emulator;
 pub mod native;
 
 use anyhow::Result;
@@ -129,6 +130,9 @@ pub fn create_backend(
         }
     }
 }
+
+// Re-export terminal emulator
+pub use emulator::TerminalEmulator;
 
 #[cfg(test)]
 mod tests {

@@ -140,13 +140,13 @@ pub enum VerificationRule {
 
 /// Result of running a verification rule
 #[derive(Debug, Clone)]
-pub struct VerificationResult {
+pub struct CheckpointVerificationResult {
     pub rule: VerificationRule,
     pub passed: bool,
     pub message: String,
 }
 
-impl VerificationResult {
+impl CheckpointVerificationResult {
     pub fn passed(rule: VerificationRule, message: impl Into<String>) -> Self {
         Self {
             rule,

@@ -4,9 +4,8 @@
 //! With progressive merge, all dependency work is merged to main before dependent stages
 //! can be scheduled, so the base is always main (or a single unmerged dependency branch).
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use std::path::Path;
-use std::process::Command;
 
 use crate::git::branch::{branch_exists, branch_name_for_stage, default_branch};
 use crate::plan::graph::{ExecutionGraph, NodeStatus};
@@ -144,51 +143,6 @@ pub fn resolve_base_branch(
         stage_id,
         not_ready.join(", ")
     );
-}
-
-/// Clean up a temporary base branch if it exists (legacy cleanup)
-pub fn cleanup_temp_branch(branch_name: &str, repo_root: &Path) {
-    if branch_name.starts_with("loom/_base/") {
-        delete_branch(branch_name, repo_root).ok();
-    }
-}
-
-/// Clean up all temporary base branches
-pub fn cleanup_all_temp_branches(repo_root: &Path) -> Result<Vec<String>> {
-    let output = Command::new("git")
-        .args(["branch", "--list", "loom/_base/*"])
-        .current_dir(repo_root)
-        .output()
-        .with_context(|| "Failed to list temp base branches")?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut cleaned = Vec::new();
-
-    for line in stdout.lines() {
-        let branch = line.trim().trim_start_matches('*').trim();
-        if !branch.is_empty() && delete_branch(branch, repo_root).is_ok() {
-            cleaned.push(branch.to_string());
-        }
-    }
-
-    Ok(cleaned)
-}
-
-// Helper functions
-
-fn delete_branch(branch: &str, repo_root: &Path) -> Result<()> {
-    let output = Command::new("git")
-        .args(["branch", "-D", branch])
-        .current_dir(repo_root)
-        .output()
-        .with_context(|| format!("Failed to delete branch {branch}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("git branch -D failed: {stderr}");
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -532,46 +486,4 @@ mod tests {
         assert_eq!(result, ResolvedBase::Main("feat-my-feature".to_string()));
     }
 
-    #[test]
-    fn test_cleanup_temp_branch() {
-        let temp_dir = init_test_repo();
-        let repo_root = temp_dir.path();
-
-        // Create a temp branch
-        Command::new("git")
-            .args(["branch", "loom/_base/test-stage"])
-            .current_dir(repo_root)
-            .output()
-            .unwrap();
-
-        assert!(branch_exists("loom/_base/test-stage", repo_root).unwrap());
-
-        cleanup_temp_branch("loom/_base/test-stage", repo_root);
-
-        assert!(!branch_exists("loom/_base/test-stage", repo_root).unwrap());
-    }
-
-    #[test]
-    fn test_cleanup_all_temp_branches() {
-        let temp_dir = init_test_repo();
-        let repo_root = temp_dir.path();
-
-        // Create multiple temp branches
-        Command::new("git")
-            .args(["branch", "loom/_base/stage-1"])
-            .current_dir(repo_root)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["branch", "loom/_base/stage-2"])
-            .current_dir(repo_root)
-            .output()
-            .unwrap();
-
-        let cleaned = cleanup_all_temp_branches(repo_root).unwrap();
-
-        assert_eq!(cleaned.len(), 2);
-        assert!(!branch_exists("loom/_base/stage-1", repo_root).unwrap());
-        assert!(!branch_exists("loom/_base/stage-2", repo_root).unwrap());
-    }
 }

@@ -64,7 +64,7 @@ fn parse_runner_from_doc(doc: &MarkdownDocument) -> Option<Runner> {
 }
 
 pub fn display_runner_health(runner: &Runner) {
-    let health = runner.context_health();
+    let health = runner.context_usage_percent();
     let health_str = format!("{health:.1}%");
     let context_tokens = runner.context_tokens;
     let context_limit = runner.context_limit;

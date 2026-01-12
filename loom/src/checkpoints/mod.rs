@@ -8,6 +8,6 @@
 mod types;
 
 pub use types::{
-    Checkpoint, CheckpointStatus, TaskCompletionRecord, TaskDefinition, TaskState,
-    VerificationResult, VerificationRule,
+    Checkpoint, CheckpointStatus, CheckpointVerificationResult, TaskCompletionRecord,
+    TaskDefinition, TaskState, VerificationRule,
 };

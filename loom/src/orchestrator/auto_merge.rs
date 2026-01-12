@@ -35,8 +35,6 @@ pub enum AutoMergeResult {
     },
     /// Stage has no worktree (nothing to merge)
     NoWorktree,
-    /// Auto-merge is disabled for this stage
-    Disabled,
 }
 
 /// Check if auto-merge is enabled for a stage

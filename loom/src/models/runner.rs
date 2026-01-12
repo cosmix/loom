@@ -68,7 +68,7 @@ impl Runner {
         self.last_active = Utc::now();
     }
 
-    pub fn context_health(&self) -> f32 {
+    pub fn context_usage_percent(&self) -> f32 {
         if self.context_limit == 0 {
             return 0.0;
         }

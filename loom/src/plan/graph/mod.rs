@@ -120,16 +120,12 @@ impl ExecutionGraph {
     }
 
     /// Get stages in a specific parallel group
+    #[cfg(test)]
     pub fn parallel_group(&self, name: &str) -> Vec<&StageNode> {
         self.parallel_groups
             .get(name)
             .map(|ids| ids.iter().filter_map(|id| self.nodes.get(id)).collect())
             .unwrap_or_default()
-    }
-
-    /// Get all parallel group names
-    pub fn parallel_group_names(&self) -> Vec<&String> {
-        self.parallel_groups.keys().collect()
     }
 
     /// Mark a stage as executing
@@ -257,6 +253,7 @@ impl ExecutionGraph {
     /// the final stages in an execution plan that produce the ultimate outputs.
     /// In the DAG representation, these are nodes with no outgoing edges
     /// (no other nodes list them as dependencies).
+    #[cfg(test)]
     pub fn leaf_stages(&self) -> Vec<&str> {
         self.nodes
             .keys()

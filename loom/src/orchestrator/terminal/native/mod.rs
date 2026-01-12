@@ -26,8 +26,8 @@ pub use window_ops::{close_window_by_title, focus_window_by_pid, window_exists_b
 
 /// Native terminal backend - spawns sessions in native terminal windows
 pub struct NativeBackend {
-    /// The terminal command to use (e.g., "xdg-terminal-exec", "kitty")
-    terminal_cmd: String,
+    /// The terminal emulator to use
+    terminal: super::emulator::TerminalEmulator,
     /// The .work directory path for PID tracking
     work_dir: PathBuf,
 }
@@ -35,16 +35,16 @@ pub struct NativeBackend {
 impl NativeBackend {
     /// Create a new native backend, detecting the available terminal
     pub fn new(work_dir: PathBuf) -> Result<Self> {
-        let terminal_cmd = detect_terminal()?;
+        let terminal = detect_terminal()?;
         Ok(Self {
-            terminal_cmd,
+            terminal,
             work_dir,
         })
     }
 
-    /// Get the detected terminal command
-    pub fn terminal_cmd(&self) -> &str {
-        &self.terminal_cmd
+    /// Get the detected terminal emulator
+    pub fn terminal(&self) -> &super::emulator::TerminalEmulator {
+        &self.terminal
     }
 }
 
@@ -89,7 +89,7 @@ impl TerminalBackend for NativeBackend {
 
         // Spawn the terminal with PID tracking enabled
         let pid = spawn_in_terminal(
-            &self.terminal_cmd,
+            &self.terminal,
             &title,
             Path::new(worktree_path),
             &wrapper_cmd,
@@ -149,7 +149,7 @@ impl TerminalBackend for NativeBackend {
 
         // Spawn the terminal in the main repository (not worktree)
         let pid = spawn_in_terminal(
-            &self.terminal_cmd,
+            &self.terminal,
             &title,
             Path::new(repo_root_str),
             &wrapper_cmd,
@@ -211,7 +211,7 @@ impl TerminalBackend for NativeBackend {
 
         // Spawn the terminal in the main repository (not worktree)
         let pid = spawn_in_terminal(
-            &self.terminal_cmd,
+            &self.terminal,
             &title,
             Path::new(repo_root_str),
             &wrapper_cmd,
@@ -358,7 +358,6 @@ mod tests {
         let result = NativeBackend::new(temp_dir.path().to_path_buf());
         if result.is_ok() {
             let backend = result.unwrap();
-            assert!(!backend.terminal_cmd().is_empty());
             assert_eq!(backend.backend_type(), BackendType::Native);
         }
     }

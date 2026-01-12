@@ -8,20 +8,24 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::Duration;
+use wait_timeout::ChildExt;
 
-use crate::checkpoints::{VerificationResult, VerificationRule};
+use crate::checkpoints::{CheckpointVerificationResult, VerificationRule};
 
 /// Default timeout for verification commands
 pub const DEFAULT_VERIFICATION_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Maximum number of error output lines to show in verification failures
+const MAX_ERROR_OUTPUT_LINES: usize = 5;
 
 /// Run all verification rules for a task
 pub fn run_task_verifications(
     rules: &[VerificationRule],
     worktree_path: &Path,
     outputs: &HashMap<String, String>,
-) -> Vec<VerificationResult> {
+) -> Vec<CheckpointVerificationResult> {
     rules
         .iter()
         .map(|rule| run_single_verification(rule, worktree_path, outputs))
@@ -33,7 +37,7 @@ pub fn run_single_verification(
     rule: &VerificationRule,
     worktree_path: &Path,
     outputs: &HashMap<String, String>,
-) -> VerificationResult {
+) -> CheckpointVerificationResult {
     match rule {
         VerificationRule::FileExists { path } => {
             verify_file_exists(rule.clone(), worktree_path, path)
@@ -53,12 +57,12 @@ fn verify_file_exists(
     rule: VerificationRule,
     worktree_path: &Path,
     path: &str,
-) -> VerificationResult {
+) -> CheckpointVerificationResult {
     let full_path = worktree_path.join(path);
     if full_path.exists() {
-        VerificationResult::passed(rule, format!("File exists: {path}"))
+        CheckpointVerificationResult::passed(rule, format!("File exists: {path}"))
     } else {
-        VerificationResult::failed(rule, format!("File not found: {path}"))
+        CheckpointVerificationResult::failed(rule, format!("File not found: {path}"))
     }
 }
 
@@ -67,11 +71,11 @@ fn verify_contains(
     worktree_path: &Path,
     path: &str,
     pattern: &str,
-) -> VerificationResult {
+) -> CheckpointVerificationResult {
     let full_path = worktree_path.join(path);
 
     if !full_path.exists() {
-        return VerificationResult::failed(
+        return CheckpointVerificationResult::failed(
             rule,
             format!("File not found for pattern check: {path}"),
         );
@@ -81,17 +85,17 @@ fn verify_contains(
         Ok(content) => match Regex::new(pattern) {
             Ok(regex) => {
                 if regex.is_match(&content) {
-                    VerificationResult::passed(rule, format!("Pattern '{pattern}' found in {path}"))
+                    CheckpointVerificationResult::passed(rule, format!("Pattern '{pattern}' found in {path}"))
                 } else {
-                    VerificationResult::failed(
+                    CheckpointVerificationResult::failed(
                         rule,
                         format!("Pattern '{pattern}' not found in {path}"),
                     )
                 }
             }
-            Err(e) => VerificationResult::failed(rule, format!("Invalid regex pattern: {e}")),
+            Err(e) => CheckpointVerificationResult::failed(rule, format!("Invalid regex pattern: {e}")),
         },
-        Err(e) => VerificationResult::failed(rule, format!("Failed to read {path}: {e}")),
+        Err(e) => CheckpointVerificationResult::failed(rule, format!("Failed to read {path}: {e}")),
     }
 }
 
@@ -100,25 +104,25 @@ fn verify_command(
     worktree_path: &Path,
     cmd: &str,
     expected_exit_code: i32,
-) -> VerificationResult {
+) -> CheckpointVerificationResult {
     let result = run_verification_command(cmd, worktree_path);
 
     match result {
         Ok((exit_code, stdout, stderr)) => {
             if exit_code == expected_exit_code {
-                VerificationResult::passed(
+                CheckpointVerificationResult::passed(
                     rule,
                     format!("Command succeeded (exit code {exit_code})"),
                 )
             } else {
                 let output = if !stderr.is_empty() {
-                    stderr.lines().take(5).collect::<Vec<_>>().join("\n")
+                    stderr.lines().take(MAX_ERROR_OUTPUT_LINES).collect::<Vec<_>>().join("\n")
                 } else if !stdout.is_empty() {
-                    stdout.lines().take(5).collect::<Vec<_>>().join("\n")
+                    stdout.lines().take(MAX_ERROR_OUTPUT_LINES).collect::<Vec<_>>().join("\n")
                 } else {
                     String::new()
                 };
-                VerificationResult::failed(
+                CheckpointVerificationResult::failed(
                     rule,
                     format!(
                         "Command failed: expected exit code {expected_exit_code}, got {exit_code}\n{output}"
@@ -126,7 +130,7 @@ fn verify_command(
                 )
             }
         }
-        Err(e) => VerificationResult::failed(rule, format!("Command failed to execute: {e}")),
+        Err(e) => CheckpointVerificationResult::failed(rule, format!("Command failed to execute: {e}")),
     }
 }
 
@@ -134,41 +138,91 @@ fn verify_output_set(
     rule: VerificationRule,
     outputs: &HashMap<String, String>,
     key: &str,
-) -> VerificationResult {
+) -> CheckpointVerificationResult {
     if outputs.contains_key(key) {
-        VerificationResult::passed(rule, format!("Output '{key}' is set"))
+        CheckpointVerificationResult::passed(rule, format!("Output '{key}' is set"))
     } else {
-        VerificationResult::failed(rule, format!("Output '{key}' is not set"))
+        CheckpointVerificationResult::failed(rule, format!("Output '{key}' is not set"))
     }
 }
 
 /// Run a verification command with timeout
 fn run_verification_command(cmd: &str, working_dir: &Path) -> Result<(i32, String, String)> {
-    let mut command = if cfg!(target_family = "unix") {
+    // Spawn the child process using the appropriate shell
+    let mut child = if cfg!(target_family = "unix") {
         let mut c = Command::new("sh");
         c.arg("-c").arg(cmd);
-        c
+        c.current_dir(working_dir);
+        c.stdout(Stdio::piped()).stderr(Stdio::piped());
+        c.spawn()
+            .with_context(|| format!("Failed to spawn command: {cmd}"))?
     } else {
         let mut c = Command::new("cmd");
         c.arg("/C").arg(cmd);
-        c
+        c.current_dir(working_dir);
+        c.stdout(Stdio::piped()).stderr(Stdio::piped());
+        c.spawn()
+            .with_context(|| format!("Failed to spawn command: {cmd}"))?
     };
 
-    command.current_dir(working_dir);
+    // Wait for completion with timeout
+    let wait_result = child
+        .wait_timeout(DEFAULT_VERIFICATION_TIMEOUT)
+        .with_context(|| format!("Failed to wait for command: {cmd}"))?;
 
-    let output = command
-        .output()
-        .with_context(|| format!("Failed to execute command: {cmd}"))?;
+    match wait_result {
+        Some(status) => {
+            // Command completed within timeout
+            let exit_code = status.code().unwrap_or(-1);
+            let (stdout, stderr) = collect_output(&mut child)?;
+            Ok((exit_code, stdout, stderr))
+        }
+        None => {
+            // Command timed out - kill the process
+            let _ = child.kill();
+            let _ = child.wait();
 
-    let exit_code = output.status.code().unwrap_or(-1);
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            // Collect any partial output that was captured
+            let (stdout, stderr) = collect_output(&mut child).unwrap_or_default();
 
-    Ok((exit_code, stdout, stderr))
+            // Return error with timeout information
+            Err(anyhow::anyhow!(
+                "Command timed out after {}s\nPartial stdout: {}\nPartial stderr: {}",
+                DEFAULT_VERIFICATION_TIMEOUT.as_secs(),
+                stdout,
+                stderr
+            ))
+        }
+    }
+}
+
+/// Collect stdout and stderr from a child process
+fn collect_output(child: &mut std::process::Child) -> Result<(String, String)> {
+    let stdout = child
+        .stdout
+        .take()
+        .map(|mut s| {
+            let mut buf = Vec::new();
+            std::io::Read::read_to_end(&mut s, &mut buf).ok();
+            String::from_utf8_lossy(&buf).to_string()
+        })
+        .unwrap_or_default();
+
+    let stderr = child
+        .stderr
+        .take()
+        .map(|mut s| {
+            let mut buf = Vec::new();
+            std::io::Read::read_to_end(&mut s, &mut buf).ok();
+            String::from_utf8_lossy(&buf).to_string()
+        })
+        .unwrap_or_default();
+
+    Ok((stdout, stderr))
 }
 
 /// Get a summary of verification results
-pub fn summarize_verifications(results: &[VerificationResult]) -> (usize, usize, Vec<String>) {
+pub fn summarize_verifications(results: &[CheckpointVerificationResult]) -> (usize, usize, Vec<String>) {
     let passed = results.iter().filter(|r| r.passed).count();
     let failed = results.iter().filter(|r| !r.passed).count();
     let warnings: Vec<String> = results
@@ -272,5 +326,24 @@ mod tests {
 
         let result_missing = run_single_verification(&rule_missing, Path::new("."), &outputs);
         assert!(!result_missing.passed);
+    }
+
+    #[test]
+    fn test_command_timeout() {
+        let temp = TempDir::new().unwrap();
+        let worktree = temp.path();
+
+        // Create a command that sleeps longer than the timeout (30 seconds)
+        // Using a 35 second sleep to exceed the DEFAULT_VERIFICATION_TIMEOUT
+        let rule = VerificationRule::Command {
+            cmd: "sleep 35".to_string(),
+            expected_exit_code: 0,
+        };
+
+        let result = run_single_verification(&rule, worktree, &HashMap::new());
+
+        // The command should fail due to timeout
+        assert!(!result.passed);
+        assert!(result.message.contains("timed out") || result.message.contains("timeout"));
     }
 }

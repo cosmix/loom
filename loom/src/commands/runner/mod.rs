@@ -116,7 +116,7 @@ pub fn list(show_inactive: bool) -> Result<()> {
             .map(|t| t.cyan().to_string())
             .unwrap_or_else(|| "-".dimmed().to_string());
 
-        let context_pct = runner.context_health();
+        let context_pct = runner.context_usage_percent();
         let context_str = format!("{context_pct:.1}%");
         let context_colored = if context_pct > 85.0 {
             context_str.red()

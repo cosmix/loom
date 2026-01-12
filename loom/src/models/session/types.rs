@@ -30,6 +30,8 @@ impl std::fmt::Display for SessionType {
 pub enum SessionStatus {
     Spawning,
     Running,
+    /// Session is paused and can be resumed.
+    /// Currently set via manual session file editing or attach operations.
     Paused,
     Completed,
     Crashed,

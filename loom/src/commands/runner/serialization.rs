@@ -18,7 +18,7 @@ pub fn runner_to_markdown(runner: &Runner) -> Result<String> {
     };
 
     let created_date = runner.created_at.format("%Y-%m-%d").to_string();
-    let context_pct = runner.context_health();
+    let context_pct = runner.context_usage_percent();
 
     let track_display = runner.assigned_track.as_deref().unwrap_or("none");
 

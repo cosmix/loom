@@ -19,9 +19,6 @@ pub const MAX_DESCRIPTION_LENGTH: usize = 500;
 /// Maximum allowed length for signal messages.
 pub const MAX_MESSAGE_LENGTH: usize = 1000;
 
-/// Maximum allowed length for context summaries.
-pub const MAX_CONTEXT_LENGTH: usize = 5000;
-
 /// Reserved names that cannot be used as IDs (case-insensitive).
 const RESERVED_NAMES: &[&str] = &[
     ".", "..", "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7",

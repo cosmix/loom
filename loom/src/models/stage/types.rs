@@ -72,7 +72,18 @@ pub struct Stage {
     /// SHA of HEAD commit when stage completed
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completed_commit: Option<String>,
-    /// Whether stage has been merged to merge point (set by progressive merge)
+    /// Whether this stage's changes have been merged to the merge point.
+    ///
+    /// Semantics vary by completion mode:
+    /// - **Normal completion**: `true` only after successful git merge
+    /// - **`--no-verify` completion**: merge is skipped entirely, remains `false`
+    /// - **`--force-unsafe` completion**: follows `--assume-merged` flag:
+    ///   - With `--assume-merged`: set to `true` (assumes manual merge)
+    ///   - Without `--assume-merged`: remains `false` (manual merge needed)
+    ///
+    /// Dependent stages only transition to `Queued` when dependencies have BOTH
+    /// `status == Completed` AND `merged == true`. This ensures dependents can
+    /// use the merge point as their base, containing all dependency work.
     #[serde(default)]
     pub merged: bool,
     /// Whether stage has unresolved merge conflicts

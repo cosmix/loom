@@ -9,16 +9,9 @@ use crate::orchestrator::retry::{calculate_backoff, is_backoff_elapsed, should_a
 use crate::parser::frontmatter::extract_yaml_frontmatter;
 use crate::plan::graph::NodeStatus;
 
+use super::clear_status_line;
 use super::persistence::Persistence;
 use super::Orchestrator;
-
-/// Clear the current line (status line) before printing a message.
-/// This prevents output from being mangled when the status line is being updated.
-fn clear_status_line() {
-    // \r moves cursor to start of line, \x1B[K clears from cursor to end of line
-    print!("\r\x1B[K");
-    let _ = io::stdout().flush();
-}
 
 /// Trait for recovery operations
 pub(super) trait Recovery: Persistence {

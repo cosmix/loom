@@ -42,28 +42,28 @@ fn test_context_health_calculation() {
 
     // 50% usage
     session.context_tokens = 100_000;
-    let health = session.context_health();
+    let health = session.context_usage_percent();
     assert!((health - 50.0).abs() < 0.01);
 
     // 25% usage
     session.context_tokens = 50_000;
-    let health = session.context_health();
+    let health = session.context_usage_percent();
     assert!((health - 25.0).abs() < 0.01);
 
     // 75% usage
     session.context_tokens = 150_000;
-    let health = session.context_health();
+    let health = session.context_usage_percent();
     assert!((health - 75.0).abs() < 0.01);
 
     // 100% usage
     session.context_tokens = 200_000;
-    let health = session.context_health();
+    let health = session.context_usage_percent();
     assert!((health - 100.0).abs() < 0.01);
 
     // Zero limit edge case
     session.context_limit = 0;
     session.context_tokens = 100;
-    let health = session.context_health();
+    let health = session.context_usage_percent();
     assert_eq!(health, 0.0);
 }
 
@@ -121,22 +121,22 @@ fn test_context_usage_percent_function() {
     session.context_limit = 200_000;
 
     session.context_tokens = 0;
-    assert_eq!(session.context_health(), 0.0);
+    assert_eq!(session.context_usage_percent(), 0.0);
 
     session.context_tokens = 50_000;
-    assert_eq!(session.context_health(), 25.0);
+    assert_eq!(session.context_usage_percent(), 25.0);
 
     session.context_tokens = 100_000;
-    assert_eq!(session.context_health(), 50.0);
+    assert_eq!(session.context_usage_percent(), 50.0);
 
     session.context_tokens = 150_000;
-    assert_eq!(session.context_health(), 75.0);
+    assert_eq!(session.context_usage_percent(), 75.0);
 
     session.context_tokens = 200_000;
-    assert_eq!(session.context_health(), 100.0);
+    assert_eq!(session.context_usage_percent(), 100.0);
 
     // Zero limit edge case
     session.context_limit = 0;
     session.context_tokens = 1000;
-    assert_eq!(session.context_health(), 0.0);
+    assert_eq!(session.context_usage_percent(), 0.0);
 }

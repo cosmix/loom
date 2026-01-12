@@ -2,7 +2,6 @@
 
 use anyhow::Result;
 use chrono::Utc;
-use std::io::{self, Write};
 use std::path::PathBuf;
 
 use crate::commands::status::merge_status::{check_merge_state, MergeState};
@@ -15,16 +14,9 @@ use crate::orchestrator::retry::{calculate_backoff, classify_failure, should_aut
 use crate::orchestrator::signals::remove_signal;
 use crate::verify::transitions::load_stage;
 
+use super::clear_status_line;
 use super::persistence::Persistence;
 use super::Orchestrator;
-
-/// Clear the current line (status line) before printing a message.
-/// This prevents output from being mangled when the status line is being updated.
-fn clear_status_line() {
-    // \r moves cursor to start of line, \x1B[K clears from cursor to end of line
-    print!("\r\x1B[K");
-    let _ = io::stdout().flush();
-}
 
 /// Trait for handling monitor events
 pub(super) trait EventHandler: Persistence {
@@ -468,9 +460,6 @@ impl Orchestrator {
                 if let Err(e) = self.save_stage(&stage) {
                     eprintln!("Warning: Failed to save stage after no-worktree merge: {e}");
                 }
-            }
-            Ok(AutoMergeResult::Disabled) => {
-                // Should not reach here
             }
             Err(e) => {
                 clear_status_line();

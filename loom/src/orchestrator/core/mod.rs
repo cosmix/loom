@@ -7,6 +7,8 @@
 //! - Handles crashes and context exhaustion
 //! - Manages the execution graph
 
+use std::io::{self, Write};
+
 mod event_handler;
 mod orchestrator;
 mod persistence;
@@ -14,6 +16,14 @@ mod recovery;
 mod stage_executor;
 
 pub use orchestrator::{Orchestrator, OrchestratorConfig, OrchestratorResult};
+
+/// Clear the current line (status line) before printing a message.
+/// This prevents output from being mangled when the status line is being updated.
+pub(super) fn clear_status_line() {
+    // \r moves cursor to start of line, \x1B[K clears from cursor to end of line
+    print!("\r\x1B[K");
+    let _ = io::stdout().flush();
+}
 
 #[cfg(test)]
 mod tests {
