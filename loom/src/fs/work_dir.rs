@@ -31,7 +31,6 @@ impl WorkDir {
         }
 
         self.create_readme()?;
-        self.create_structure_template()?;
 
         Ok(())
     }
@@ -42,17 +41,7 @@ impl WorkDir {
         }
 
         self.validate_structure()?;
-        self.ensure_structure_md()?;
 
-        Ok(())
-    }
-
-    /// Ensure structure.md exists (create if missing for backwards compatibility)
-    fn ensure_structure_md(&self) -> Result<()> {
-        let structure_path = self.root.join("structure.md");
-        if !structure_path.exists() {
-            self.create_structure_template()?;
-        }
         Ok(())
     }
 
@@ -96,51 +85,6 @@ Do not manually edit these files unless you know what you're doing.
 
         let readme_path = self.root.join("README.md");
         fs::write(readme_path, readme_content).context("Failed to create README.md")?;
-
-        Ok(())
-    }
-
-    fn create_structure_template(&self) -> Result<()> {
-        let structure_content = r#"# Code Structure Map
-
-> This file helps agents understand the codebase without redundant exploration.
-> Update this file as you work - add modules you discover, note conventions you observe.
-
-Last updated: (auto-generated template)
-
-## Directory Overview
-
-```
-(Fill in your project's directory structure)
-src/
-├── ...
-└── ...
-```
-
-## Key Modules
-
-| File | Purpose | Key exports |
-|------|---------|-------------|
-| ... | ... | ... |
-
-## Entry Points
-
-- **Main**: (describe main entry point)
-- **Library**: (describe library entry if applicable)
-
-## Conventions
-
-- **Error handling**: (describe pattern)
-- **Testing**: (describe test location and patterns)
-- **Dependencies**: (note any patterns)
-
-## Notes
-
-(Add discoveries, gotchas, or important context for future sessions)
-"#;
-
-        let structure_path = self.root.join("structure.md");
-        fs::write(structure_path, structure_content).context("Failed to create structure.md")?;
 
         Ok(())
     }
