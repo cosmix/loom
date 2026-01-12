@@ -29,11 +29,17 @@ pub use continuation::{
 };
 pub use core::{Orchestrator, OrchestratorConfig, OrchestratorResult};
 pub use monitor::{
-    context_health, context_usage_percent, ContextHealth, Monitor, MonitorConfig, MonitorEvent,
+    build_failure_info, context_health, context_usage_percent, failure_state_path,
+    heartbeat_path, read_heartbeat, remove_heartbeat, write_heartbeat, ContextHealth,
+    FailureRecord, FailureTracker, Heartbeat, HeartbeatStatus, HeartbeatWatcher, Monitor,
+    MonitorConfig, MonitorEvent, StageFailureState, DEFAULT_HEARTBEAT_POLL_SECS,
+    DEFAULT_HUNG_TIMEOUT_SECS, DEFAULT_MAX_FAILURES,
 };
+pub use monitor::events::RecoveryType;
 pub use signals::{
-    generate_signal, list_signals, read_signal, remove_signal, update_signal, DependencyStatus,
-    SignalContent, SignalUpdates,
+    generate_recovery_signal, generate_signal, list_signals, read_recovery_signal, read_signal,
+    remove_signal, update_signal, DependencyStatus, LastHeartbeatInfo, RecoveryReason,
+    RecoverySignalContent, SignalContent, SignalUpdates,
 };
 // Re-export crash reporting from spawner (until migrated to separate module)
 pub use spawner::{generate_crash_report, get_session_log_tail, CrashReport};

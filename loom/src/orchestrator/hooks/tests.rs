@@ -10,6 +10,7 @@ mod config_tests {
     #[test]
     fn test_hook_event_display() {
         assert_eq!(HookEvent::SessionStart.to_string(), "SessionStart");
+        assert_eq!(HookEvent::PostToolUse.to_string(), "PostToolUse");
         assert_eq!(HookEvent::PreCompact.to_string(), "PreCompact");
         assert_eq!(HookEvent::SessionEnd.to_string(), "SessionEnd");
         assert_eq!(HookEvent::Stop.to_string(), "Stop");
@@ -19,6 +20,7 @@ mod config_tests {
     #[test]
     fn test_hook_event_script_name() {
         assert_eq!(HookEvent::SessionStart.script_name(), "session-start.sh");
+        assert_eq!(HookEvent::PostToolUse.script_name(), "post-tool-use.sh");
         assert_eq!(HookEvent::PreCompact.script_name(), "pre-compact.sh");
         assert_eq!(HookEvent::SessionEnd.script_name(), "session-end.sh");
         assert_eq!(HookEvent::Stop.script_name(), "stop.sh");
@@ -28,8 +30,9 @@ mod config_tests {
     #[test]
     fn test_hook_event_all() {
         let all = HookEvent::all();
-        assert_eq!(all.len(), 5);
+        assert_eq!(all.len(), 6);
         assert!(all.contains(&HookEvent::SessionStart));
+        assert!(all.contains(&HookEvent::PostToolUse));
         assert!(all.contains(&HookEvent::PreCompact));
         assert!(all.contains(&HookEvent::SessionEnd));
         assert!(all.contains(&HookEvent::Stop));

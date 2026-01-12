@@ -8,7 +8,7 @@
 #   LOOM_WORK_DIR    - Path to the .work directory
 #
 # Actions:
-#   1. Writes initial heartbeat to session file
+#   1. Writes initial heartbeat to .work/heartbeat/<stage-id>.json
 #   2. Logs session start event
 
 set -euo pipefail
@@ -22,22 +22,33 @@ if [[ -z "${LOOM_STAGE_ID:-}" ]] || [[ -z "${LOOM_SESSION_ID:-}" ]] || [[ -z "${
     exit 1
 fi
 
-# Ensure hooks directory exists
+# Ensure directories exist
 HOOKS_DIR="${LOOM_WORK_DIR}/hooks"
-mkdir -p "$HOOKS_DIR"
+HEARTBEAT_DIR="${LOOM_WORK_DIR}/heartbeat"
+mkdir -p "$HOOKS_DIR" "$HEARTBEAT_DIR"
 
-# Log event to events.jsonl
-EVENTS_FILE="${HOOKS_DIR}/events.jsonl"
+# Get timestamp
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 PID=$$
 
+# Log event to events.jsonl
+EVENTS_FILE="${HOOKS_DIR}/events.jsonl"
 cat >> "$EVENTS_FILE" << EOF
 {"timestamp":"${TIMESTAMP}","stage_id":"${LOOM_STAGE_ID}","session_id":"${LOOM_SESSION_ID}","event":"SessionStart","payload":{"type":"SessionStart","pid":${PID}}}
 EOF
 
-# Write heartbeat file
-HEARTBEAT_FILE="${LOOM_WORK_DIR}/sessions/${LOOM_SESSION_ID}.heartbeat"
-mkdir -p "$(dirname "$HEARTBEAT_FILE")"
-echo "$TIMESTAMP" > "$HEARTBEAT_FILE"
+# Write heartbeat file in JSON format
+# Format: {stage_id, session_id, timestamp, context_pct, last_tool, activity}
+HEARTBEAT_FILE="${HEARTBEAT_DIR}/${LOOM_STAGE_ID}.json"
+cat > "$HEARTBEAT_FILE" << EOF
+{
+  "stage_id": "${LOOM_STAGE_ID}",
+  "session_id": "${LOOM_SESSION_ID}",
+  "timestamp": "${TIMESTAMP}",
+  "context_percent": null,
+  "last_tool": null,
+  "activity": "Session started"
+}
+EOF
 
 exit 0

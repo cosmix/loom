@@ -13,6 +13,8 @@ use std::path::PathBuf;
 pub enum HookEvent {
     /// Called when a Claude Code session starts
     SessionStart,
+    /// Called after each tool use (heartbeat update)
+    PostToolUse,
     /// Called before context compaction (triggers handoff)
     PreCompact,
     /// Called when a session ends normally
@@ -27,6 +29,7 @@ impl fmt::Display for HookEvent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             HookEvent::SessionStart => write!(f, "SessionStart"),
+            HookEvent::PostToolUse => write!(f, "PostToolUse"),
             HookEvent::PreCompact => write!(f, "PreCompact"),
             HookEvent::SessionEnd => write!(f, "SessionEnd"),
             HookEvent::Stop => write!(f, "Stop"),
@@ -40,6 +43,7 @@ impl HookEvent {
     pub fn script_name(&self) -> &'static str {
         match self {
             HookEvent::SessionStart => "session-start.sh",
+            HookEvent::PostToolUse => "post-tool-use.sh",
             HookEvent::PreCompact => "pre-compact.sh",
             HookEvent::SessionEnd => "session-end.sh",
             HookEvent::Stop => "stop.sh",
@@ -51,6 +55,7 @@ impl HookEvent {
     pub fn all() -> &'static [HookEvent] {
         &[
             HookEvent::SessionStart,
+            HookEvent::PostToolUse,
             HookEvent::PreCompact,
             HookEvent::SessionEnd,
             HookEvent::Stop,
@@ -151,13 +156,22 @@ impl HooksConfig {
         // Create event-specific hook definitions
         let mut hooks = Vec::new();
 
-        // SessionStart hook - runs on any tool use start
-        // We use a notification hook that runs once at start
+        // SessionStart hook - runs on first Bash tool use
         hooks.push(HookDefinition {
             matcher: "Bash".to_string(),
             hooks: HookCommands {
                 pre_tool_use: Some(vec![self.build_command(HookEvent::SessionStart)]),
                 post_tool_use: None,
+            },
+        });
+
+        // PostToolUse hook - runs after any tool use to update heartbeat
+        // Uses ".*" matcher to catch all tools
+        hooks.push(HookDefinition {
+            matcher: ".*".to_string(),
+            hooks: HookCommands {
+                pre_tool_use: None,
+                post_tool_use: Some(vec![self.build_command(HookEvent::PostToolUse)]),
             },
         });
 
