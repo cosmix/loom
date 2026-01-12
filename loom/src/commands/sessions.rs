@@ -1,9 +1,10 @@
 //! Session management commands
-//! Usage: loom sessions [list|kill <id>]
+//! Usage: loom sessions [list|kill <id>...]
 
 use anyhow::{bail, Context, Result};
 
 use crate::fs::session_files::find_session_file;
+use crate::fs::worktree_files::find_sessions_for_stage;
 use crate::models::session::Session;
 use crate::orchestrator::terminal::{create_backend, BackendType};
 
@@ -42,14 +43,67 @@ pub fn list() -> Result<()> {
     Ok(())
 }
 
-/// Kill a session by ID or prefix
-pub fn kill(session_id: String) -> Result<()> {
+/// Kill one or more sessions by ID/prefix, or all sessions for a stage
+pub fn kill(session_ids: Vec<String>, stage: Option<String>) -> Result<()> {
     let work_dir = std::env::current_dir()?.join(".work");
     if !work_dir.exists() {
         bail!(".work/ directory not found. Run 'loom init' first.");
     }
 
-    let session_file = match find_session_file(&work_dir, &session_id)? {
+    // Collect all session IDs to kill
+    let mut ids_to_kill = session_ids;
+
+    // If --stage is provided, find all sessions for that stage
+    if let Some(stage_id) = &stage {
+        let stage_sessions = find_sessions_for_stage(stage_id, &work_dir)
+            .with_context(|| format!("Failed to find sessions for stage '{stage_id}'"))?;
+
+        if stage_sessions.is_empty() {
+            println!("No sessions found for stage '{stage_id}'");
+            return Ok(());
+        }
+
+        println!("Found {} session(s) for stage '{stage_id}'", stage_sessions.len());
+        ids_to_kill.extend(stage_sessions);
+    }
+
+    if ids_to_kill.is_empty() {
+        bail!("No sessions specified. Provide session IDs or use --stage <stage-id>");
+    }
+
+    let mut success_count = 0;
+    let mut failure_count = 0;
+
+    for session_id in &ids_to_kill {
+        match kill_single_session(&work_dir, session_id) {
+            Ok(()) => success_count += 1,
+            Err(e) => {
+                eprintln!("Failed to kill session '{session_id}': {e}");
+                failure_count += 1;
+            }
+        }
+    }
+
+    // Report summary
+    println!();
+    if failure_count == 0 {
+        println!("Successfully killed {success_count} session(s)");
+    } else {
+        println!(
+            "Killed {success_count} session(s), {failure_count} failed"
+        );
+    }
+
+    if failure_count > 0 {
+        bail!("{failure_count} session(s) failed to kill");
+    }
+
+    Ok(())
+}
+
+/// Kill a single session by ID or prefix
+fn kill_single_session(work_dir: &std::path::Path, session_id: &str) -> Result<()> {
+    let session_file = match find_session_file(work_dir, session_id)? {
         Some(path) => path,
         None => bail!("Session '{session_id}' not found"),
     };
@@ -58,7 +112,7 @@ pub fn kill(session_id: String) -> Result<()> {
     let actual_session_id = session_file
         .file_stem()
         .and_then(|s| s.to_str())
-        .unwrap_or(&session_id);
+        .unwrap_or(session_id);
 
     println!("Killing session: {actual_session_id}");
 
@@ -75,13 +129,13 @@ pub fn kill(session_id: String) -> Result<()> {
 
     // Kill the session using the appropriate backend
     if let Some(backend_type) = backend_type {
-        println!("Detected backend: {backend_type}");
+        println!("  Detected backend: {backend_type}");
         let backend = create_backend(backend_type)
             .with_context(|| format!("Failed to create {backend_type} backend"))?;
 
         // Check if session is alive
         if backend.is_session_alive(&session)? {
-            println!("Killing session using {backend_type} backend...");
+            println!("  Killing session using {backend_type} backend...");
             backend.kill_session(&session)?;
             println!("  Session killed successfully");
         } else {
@@ -104,7 +158,6 @@ pub fn kill(session_id: String) -> Result<()> {
         println!("  Signal file removed");
     }
 
-    println!("\nSession '{actual_session_id}' killed successfully");
     Ok(())
 }
 

@@ -206,11 +206,15 @@ enum SessionsCommands {
     /// List all active sessions
     List,
 
-    /// Kill a specific session
+    /// Kill one or more sessions
     Kill {
-        /// Session ID to kill (alphanumeric, dash, underscore only; max 128 characters)
-        #[arg(value_parser = clap_id_validator)]
-        session_id: String,
+        /// Session IDs to kill (alphanumeric, dash, underscore only; max 128 characters)
+        #[arg(num_args = 1.., required_unless_present = "stage", value_parser = clap_id_validator)]
+        session_ids: Vec<String>,
+
+        /// Kill all sessions for a stage
+        #[arg(long, conflicts_with = "session_ids", value_parser = clap_id_validator)]
+        stage: Option<String>,
     },
 }
 
@@ -694,7 +698,7 @@ fn main() -> Result<()> {
         },
         Commands::Sessions { command } => match command {
             SessionsCommands::List => sessions::list(),
-            SessionsCommands::Kill { session_id } => sessions::kill(session_id),
+            SessionsCommands::Kill { session_ids, stage } => sessions::kill(session_ids, stage),
         },
         Commands::Worktree { command } => match command {
             WorktreeCommands::List => worktree_cmd::list(),
