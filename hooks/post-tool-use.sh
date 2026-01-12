@@ -21,9 +21,15 @@ if [[ -z "${LOOM_STAGE_ID:-}" ]] || [[ -z "${LOOM_SESSION_ID:-}" ]] || [[ -z "${
     exit 0
 fi
 
+# Validate work directory exists and is accessible
+if [[ ! -d "${LOOM_WORK_DIR}" ]]; then
+    # Silently exit - work dir may have been cleaned up
+    exit 0
+fi
+
 # Ensure heartbeat directory exists
 HEARTBEAT_DIR="${LOOM_WORK_DIR}/heartbeat"
-mkdir -p "$HEARTBEAT_DIR"
+mkdir -p "$HEARTBEAT_DIR" 2>/dev/null || exit 0
 
 # Get timestamp
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")

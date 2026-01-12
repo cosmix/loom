@@ -156,11 +156,18 @@ pub fn setup_worktree_hooks(
     work_dir: &Path,
     hooks_dir: &Path,
 ) -> Result<()> {
+    // Canonicalize work_dir to absolute path so hooks work regardless of
+    // Claude Code's current working directory. This fixes "spawn /bin/sh ENOENT"
+    // errors that occur when hooks run from a deleted/changed directory.
+    let absolute_work_dir = work_dir
+        .canonicalize()
+        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default().join(work_dir));
+
     let config = HooksConfig::new(
         hooks_dir.to_path_buf(),
         stage_id.to_string(),
         session_id.to_string(),
-        work_dir.to_path_buf(),
+        absolute_work_dir,
     );
 
     setup_hooks_for_worktree(worktree_path, &config).with_context(|| {

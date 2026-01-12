@@ -22,10 +22,19 @@ if [[ -z "${LOOM_STAGE_ID:-}" ]] || [[ -z "${LOOM_SESSION_ID:-}" ]] || [[ -z "${
     exit 1
 fi
 
+# Validate work directory exists and is accessible
+if [[ ! -d "${LOOM_WORK_DIR}" ]]; then
+    echo "Warning: Work directory does not exist: ${LOOM_WORK_DIR}" >&2
+    exit 0  # Exit gracefully
+fi
+
 # Ensure directories exist
 HOOKS_DIR="${LOOM_WORK_DIR}/hooks"
 HEARTBEAT_DIR="${LOOM_WORK_DIR}/heartbeat"
-mkdir -p "$HOOKS_DIR" "$HEARTBEAT_DIR"
+mkdir -p "$HOOKS_DIR" "$HEARTBEAT_DIR" 2>/dev/null || {
+    echo "Warning: Cannot create required directories" >&2
+    exit 0
+}
 
 # Get timestamp
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
