@@ -302,3 +302,182 @@ pub fn find_worktree_by_prefix(repo_root: &Path, id: &str) -> Result<Option<Path
 pub fn extract_worktree_stage_id(path: &Path) -> Option<String> {
     path.file_name().and_then(|s| s.to_str()).map(String::from)
 }
+
+/// Extract stage ID from any path that contains `.worktrees/<stage-id>`.
+///
+/// This works for paths at any depth within a worktree:
+/// - `.worktrees/my-stage` -> Some("my-stage")
+/// - `/home/user/project/.worktrees/my-stage/src/main.rs` -> Some("my-stage")
+/// - `/regular/path/without/worktree` -> None
+///
+/// # Arguments
+/// * `path` - Any path that may be inside a worktree
+///
+/// # Returns
+/// The stage ID if the path is within a `.worktrees/<stage-id>` directory, None otherwise.
+pub fn extract_stage_id_from_path(path: &Path) -> Option<String> {
+    let path_str = path.to_string_lossy();
+
+    // Look for ".worktrees/" pattern in the path
+    let worktrees_marker = ".worktrees/";
+    if let Some(idx) = path_str.find(worktrees_marker) {
+        let after_worktrees = &path_str[idx + worktrees_marker.len()..];
+        // Take everything up to the next path separator (or end of string)
+        let stage_id = after_worktrees
+            .split(std::path::MAIN_SEPARATOR)
+            .next()
+            .filter(|s| !s.is_empty())?;
+        return Some(stage_id.to_string());
+    }
+    None
+}
+
+/// Find the worktree root directory from any path within that worktree.
+///
+/// Given a path like `/home/user/project/.worktrees/my-stage/src/lib/module.rs`,
+/// returns `/home/user/project/.worktrees/my-stage`.
+///
+/// # Arguments
+/// * `cwd` - Current working directory or any path within a worktree
+///
+/// # Returns
+/// * `Some(PathBuf)` - Absolute path to the worktree root if `cwd` is inside a worktree
+/// * `None` - If `cwd` is not inside a `.worktrees/<stage-id>` directory
+///
+/// # Examples
+///
+/// ```ignore
+/// let path = Path::new("/home/user/project/.worktrees/my-stage/src/main.rs");
+/// assert_eq!(
+///     find_worktree_root_from_cwd(path),
+///     Some(PathBuf::from("/home/user/project/.worktrees/my-stage"))
+/// );
+/// ```
+pub fn find_worktree_root_from_cwd(cwd: &Path) -> Option<PathBuf> {
+    let path_str = cwd.to_string_lossy();
+
+    // Look for ".worktrees/" pattern in the path
+    let worktrees_marker = ".worktrees/";
+    let idx = path_str.find(worktrees_marker)?;
+
+    let after_worktrees = &path_str[idx + worktrees_marker.len()..];
+
+    // Extract the stage_id (next path component after .worktrees/)
+    let stage_id = after_worktrees
+        .split(std::path::MAIN_SEPARATOR)
+        .next()
+        .filter(|s| !s.is_empty())?;
+
+    // Construct the worktree root path: everything up to and including .worktrees/stage_id
+    let worktree_root_str = format!(
+        "{}{}{}",
+        &path_str[..idx],
+        worktrees_marker,
+        stage_id
+    );
+
+    let worktree_root = PathBuf::from(&worktree_root_str);
+
+    // Attempt to canonicalize if the path exists, otherwise return the constructed path
+    // This handles both absolute and relative input paths
+    if worktree_root.exists() {
+        worktree_root.canonicalize().ok()
+    } else {
+        // For testing with non-existent paths, return the constructed path
+        Some(worktree_root)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_stage_id_from_path_deep_nesting() {
+        let path = PathBuf::from("/home/user/project/.worktrees/my-stage/src/lib/module.rs");
+        assert_eq!(
+            extract_stage_id_from_path(&path),
+            Some("my-stage".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_stage_id_from_path_at_root() {
+        let path = PathBuf::from("/home/user/project/.worktrees/test-stage");
+        assert_eq!(
+            extract_stage_id_from_path(&path),
+            Some("test-stage".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_stage_id_from_path_relative() {
+        let path = PathBuf::from(".worktrees/stage-1/src/main.rs");
+        assert_eq!(
+            extract_stage_id_from_path(&path),
+            Some("stage-1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_stage_id_from_path_not_in_worktree() {
+        let path = PathBuf::from("/home/user/project/src/main.rs");
+        assert_eq!(extract_stage_id_from_path(&path), None);
+    }
+
+    #[test]
+    fn test_extract_stage_id_from_path_empty_stage_id() {
+        let path = PathBuf::from("/home/user/project/.worktrees/");
+        assert_eq!(extract_stage_id_from_path(&path), None);
+    }
+
+    #[test]
+    fn test_find_worktree_root_from_cwd_deep_nesting() {
+        let path = PathBuf::from("/home/user/project/.worktrees/my-stage/src/lib/module.rs");
+        assert_eq!(
+            find_worktree_root_from_cwd(&path),
+            Some(PathBuf::from("/home/user/project/.worktrees/my-stage"))
+        );
+    }
+
+    #[test]
+    fn test_find_worktree_root_from_cwd_at_root() {
+        let path = PathBuf::from("/home/user/project/.worktrees/test-stage");
+        assert_eq!(
+            find_worktree_root_from_cwd(&path),
+            Some(PathBuf::from("/home/user/project/.worktrees/test-stage"))
+        );
+    }
+
+    #[test]
+    fn test_find_worktree_root_from_cwd_relative() {
+        let path = PathBuf::from(".worktrees/stage-1/src/main.rs");
+        assert_eq!(
+            find_worktree_root_from_cwd(&path),
+            Some(PathBuf::from(".worktrees/stage-1"))
+        );
+    }
+
+    #[test]
+    fn test_find_worktree_root_from_cwd_not_in_worktree() {
+        let path = PathBuf::from("/home/user/project/src/main.rs");
+        assert_eq!(find_worktree_root_from_cwd(&path), None);
+    }
+
+    #[test]
+    fn test_find_worktree_root_from_cwd_empty_stage_id() {
+        let path = PathBuf::from("/home/user/project/.worktrees/");
+        assert_eq!(find_worktree_root_from_cwd(&path), None);
+    }
+
+    #[test]
+    fn test_find_worktree_root_from_cwd_with_trailing_slash() {
+        let path = PathBuf::from("/home/user/project/.worktrees/my-stage/");
+        // The trailing slash means the path ends after the stage_id, so it should still work
+        let result = find_worktree_root_from_cwd(&path);
+        assert_eq!(
+            result,
+            Some(PathBuf::from("/home/user/project/.worktrees/my-stage"))
+        );
+    }
+}
