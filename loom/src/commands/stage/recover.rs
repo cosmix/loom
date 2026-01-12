@@ -38,9 +38,7 @@ pub fn recover(stage_id: String, force: bool) -> Result<()> {
                 // These are recoverable states
             }
             StageStatus::Completed => {
-                bail!(
-                    "Stage '{stage_id}' is already completed. Use --force to override."
-                );
+                bail!("Stage '{stage_id}' is already completed. Use --force to override.");
             }
             StageStatus::WaitingForDeps | StageStatus::Queued => {
                 bail!(
@@ -138,9 +136,7 @@ pub fn recover(stage_id: String, force: bool) -> Result<()> {
     // Reset stage to Queued for the new session
     stage.status = StageStatus::Queued;
     stage.session = Some(new_session_id.clone());
-    stage.close_reason = Some(format!(
-        "Recovery initiated (attempt #{recovery_attempt})"
-    ));
+    stage.close_reason = Some(format!("Recovery initiated (attempt #{recovery_attempt})"));
     stage.updated_at = chrono::Utc::now();
 
     save_stage(&stage, work_dir).context("Failed to save stage")?;

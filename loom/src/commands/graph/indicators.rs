@@ -30,9 +30,9 @@ pub fn status_priority(status: &StageStatus) -> u8 {
         StageStatus::Queued => 1,
         StageStatus::WaitingForInput => 2,
         StageStatus::NeedsHandoff => 3,
-        StageStatus::MergeConflict => 4,           // Needs attention, similar to handoff
-        StageStatus::CompletedWithFailures => 5,   // Needs retry
-        StageStatus::MergeBlocked => 6,            // Merge failed, needs attention
+        StageStatus::MergeConflict => 4, // Needs attention, similar to handoff
+        StageStatus::CompletedWithFailures => 5, // Needs retry
+        StageStatus::MergeBlocked => 6,  // Merge failed, needs attention
         StageStatus::WaitingForDeps => 7,
         StageStatus::Blocked => 8,
         StageStatus::Completed => 9,

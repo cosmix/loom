@@ -277,7 +277,10 @@ pub fn remove(stage_id: String) -> Result<()> {
         None => {
             // No worktree found, but branch might still exist
             // Fall back to the provided stage_id
-            (repo_root.join(".worktrees").join(&stage_id), stage_id.clone())
+            (
+                repo_root.join(".worktrees").join(&stage_id),
+                stage_id.clone(),
+            )
         }
     };
 

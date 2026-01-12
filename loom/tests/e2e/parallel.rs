@@ -14,10 +14,11 @@ fn test_parallel_stages_triggered_together() {
     let work_dir = temp_dir.path();
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
 
-    // Create foundation stage
+    // Create foundation stage (Completed AND merged for dependents to trigger)
     let mut foundation = Stage::new("Foundation".to_string(), None);
     foundation.id = "foundation".to_string();
     foundation.status = StageStatus::Completed;
+    foundation.merged = true;
     save_stage(&foundation, work_dir).unwrap();
 
     // Create parallel stages depending on foundation
@@ -70,10 +71,11 @@ fn test_parallel_group_isolation() {
     let work_dir = temp_dir.path();
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
 
-    // Create foundation stage
+    // Create foundation stage (Completed AND merged for dependents to trigger)
     let mut foundation = Stage::new("Foundation".to_string(), None);
     foundation.id = "foundation".to_string();
     foundation.status = StageStatus::Completed;
+    foundation.merged = true;
     save_stage(&foundation, work_dir).unwrap();
 
     // Create frontend parallel group (A, B)
@@ -128,10 +130,11 @@ fn test_diamond_dependency_pattern() {
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
 
     // Create diamond: A -> B, A -> C, B -> D, C -> D
-    // A (top)
+    // A (top, Completed AND merged)
     let mut stage_a = Stage::new("Stage A".to_string(), None);
     stage_a.id = "stage-a".to_string();
     stage_a.status = StageStatus::Completed;
+    stage_a.merged = true;
     save_stage(&stage_a, work_dir).unwrap();
 
     // B (depends on A)
@@ -203,10 +206,11 @@ fn test_fan_out_fan_in() {
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
 
     // Create: A -> {B, C, D} -> E
-    // A
+    // A (Completed AND merged)
     let mut stage_a = Stage::new("Stage A".to_string(), None);
     stage_a.id = "stage-a".to_string();
     stage_a.status = StageStatus::Completed;
+    stage_a.merged = true;
     save_stage(&stage_a, work_dir).unwrap();
 
     // B, C, D all depend on A

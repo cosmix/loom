@@ -34,8 +34,12 @@ pub fn find_session_file(work_dir: &Path, id: &str) -> Result<Option<PathBuf>> {
     }
 
     // Scan for prefix matches
-    let entries = fs::read_dir(&sessions_dir)
-        .with_context(|| format!("Failed to read sessions directory: {}", sessions_dir.display()))?;
+    let entries = fs::read_dir(&sessions_dir).with_context(|| {
+        format!(
+            "Failed to read sessions directory: {}",
+            sessions_dir.display()
+        )
+    })?;
 
     let mut matches: Vec<PathBuf> = Vec::new();
 

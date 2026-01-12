@@ -272,9 +272,7 @@ pub fn write_heartbeat(work_dir: &Path, heartbeat: &Heartbeat) -> Result<PathBuf
 
 /// Remove a heartbeat file
 pub fn remove_heartbeat(work_dir: &Path, stage_id: &str) -> Result<()> {
-    let path = work_dir
-        .join("heartbeat")
-        .join(format!("{stage_id}.json"));
+    let path = work_dir.join("heartbeat").join(format!("{stage_id}.json"));
     if path.exists() {
         std::fs::remove_file(&path)
             .with_context(|| format!("Failed to remove heartbeat file: {}", path.display()))?;
@@ -284,9 +282,7 @@ pub fn remove_heartbeat(work_dir: &Path, stage_id: &str) -> Result<()> {
 
 /// Get heartbeat path for a stage
 pub fn heartbeat_path(work_dir: &Path, stage_id: &str) -> PathBuf {
-    work_dir
-        .join("heartbeat")
-        .join(format!("{stage_id}.json"))
+    work_dir.join("heartbeat").join(format!("{stage_id}.json"))
 }
 
 #[cfg(test)]

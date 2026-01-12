@@ -11,15 +11,25 @@ use std::time::{Duration, Instant};
 /// Complete a stage following the proper state machine transitions
 ///
 /// Transitions: Ready -> Executing -> Completed
+/// Also sets merged = true which is required for dependents to be triggered.
 /// Returns the completed stage
 pub fn complete_stage(stage_id: &str, work_dir: &Path) -> Result<Stage> {
+    use loom::verify::transitions::{load_stage, save_stage};
+
     // First transition to Executing (required before Completed)
     transition_stage(stage_id, StageStatus::Executing, work_dir)
         .with_context(|| format!("Failed to transition {stage_id} to Executing"))?;
 
     // Then transition to Completed
-    transition_stage(stage_id, StageStatus::Completed, work_dir)
-        .with_context(|| format!("Failed to transition {stage_id} to Completed"))
+    let mut stage = transition_stage(stage_id, StageStatus::Completed, work_dir)
+        .with_context(|| format!("Failed to transition {stage_id} to Completed"))?;
+
+    // Set merged = true (required for dependents to be satisfied)
+    stage.merged = true;
+    save_stage(&stage, work_dir)
+        .with_context(|| format!("Failed to save stage {stage_id} with merged=true"))?;
+
+    Ok(stage)
 }
 
 /// Checks if tmux is installed and available

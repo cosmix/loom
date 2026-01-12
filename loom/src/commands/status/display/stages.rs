@@ -40,7 +40,11 @@ pub fn display_stages(work_dir: &WorkDir) -> Result<()> {
         (StageStatus::WaitingForInput, "?", "Waiting for Input"),
         (StageStatus::NeedsHandoff, "↻", "Needs Handoff"),
         (StageStatus::MergeConflict, "⚡", "Merge Conflict"),
-        (StageStatus::CompletedWithFailures, "✗", "Completed with Failures"),
+        (
+            StageStatus::CompletedWithFailures,
+            "✗",
+            "Completed with Failures",
+        ),
         (StageStatus::MergeBlocked, "⚠", "Merge Blocked"),
         (StageStatus::Blocked, "✗", "Blocked"),
         (StageStatus::WaitingForDeps, "·", "Pending"),

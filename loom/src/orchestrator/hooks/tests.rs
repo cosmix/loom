@@ -23,10 +23,7 @@ mod config_tests {
         assert_eq!(HookEvent::PostToolUse.script_name(), "post-tool-use.sh");
         assert_eq!(HookEvent::PreCompact.script_name(), "pre-compact.sh");
         assert_eq!(HookEvent::SessionEnd.script_name(), "session-end.sh");
-        assert_eq!(
-            HookEvent::Stop.script_name(),
-            "learning-validator.sh"
-        );
+        assert_eq!(HookEvent::Stop.script_name(), "learning-validator.sh");
         assert_eq!(HookEvent::SubagentStop.script_name(), "subagent-stop.sh");
     }
 
