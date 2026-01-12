@@ -230,9 +230,9 @@ Delegate implementation to subagents. Spawn PARALLEL when files don't overlap.
 
 ### Session Start
 
-1. Read `.work/structure.md` if exists
-2. Check `.work/signals/` for your session ID
-3. Signal found? Execute. No signal? Ask user.
+1. Check `.work/signals/` for your session ID
+2. Signal found? Execute. No signal? Ask user.
+3. If starting fresh, consider running `loom knowledge init` to create knowledge files
 
 ### Stage Lifecycle
 
@@ -257,6 +257,36 @@ Also: `Blocked`, `NeedsHandoff`, `WaitingForInput`
 ### Daemon Commands
 
 `loom run` (start) | `loom status` (dashboard) | `loom stop` (shutdown)
+
+### Knowledge Bootstrap Pattern
+
+For new codebases, create a bootstrap stage to capture initial knowledge:
+
+Example stage definition:
+
+    - id: knowledge-bootstrap
+      name: "Bootstrap Knowledge Base"
+      description: |
+        Explore the codebase and capture foundational knowledge.
+
+        Tasks:
+        1. Identify key entry points (main files, API endpoints, CLI entry)
+        2. Document architectural patterns (error handling, state management, etc.)
+        3. Record coding conventions (naming, file structure, testing patterns)
+
+        Commands to capture findings:
+          loom knowledge update entry-points "## CLI Entry\n\n- src/main.rs - Application entry point"
+          loom knowledge update patterns "## Error Handling\n\n- Uses anyhow for error propagation"
+          loom knowledge update conventions "## Naming\n\n- snake_case for functions, PascalCase for types"
+      dependencies: []
+      acceptance:
+        - "test -s .work/knowledge/entry-points.md"
+        - "test -s .work/knowledge/patterns.md"
+      files:
+        - ".work/knowledge/**"
+
+This stage runs first (no dependencies) and builds the knowledge base
+that subsequent stages will use via signals.
 
 ---
 
