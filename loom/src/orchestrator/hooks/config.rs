@@ -64,25 +64,31 @@ impl HookEvent {
     }
 }
 
-/// A single hook definition for Claude Code settings.json
+/// A single hook rule for Claude Code settings.json (new format)
+///
+/// New format structure:
+/// ```json
+/// {
+///   "matcher": "Bash",  // String pattern: tool name, "Edit|Write", or "*" for all
+///   "hooks": [{"type": "command", "command": "..."}]
+/// }
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HookDefinition {
-    /// The hook command matcher (typically ".*" for all commands)
+pub struct HookRule {
+    /// The matcher pattern (e.g., "Bash", "Edit|Write", or "*" for all)
     pub matcher: String,
-    /// The hooks configuration
-    pub hooks: HookCommands,
+    /// Array of hook command objects
+    pub hooks: Vec<HookCommand>,
 }
 
-/// Hook commands for a matcher
+/// A single hook command in the new format
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HookCommands {
-    /// Commands to run before the matched command
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pre_tool_use: Option<Vec<String>>,
-    /// Commands to run after the matched command
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub post_tool_use: Option<Vec<String>>,
+pub struct HookCommand {
+    /// Type of hook (always "command" for shell commands)
+    #[serde(rename = "type")]
+    pub hook_type: String,
+    /// The shell command to execute
+    pub command: String,
 }
 
 /// Configuration for loom hooks.
@@ -136,73 +142,88 @@ impl HooksConfig {
         )
     }
 
-    /// Generate the hooks array for Claude Code settings.json
+    /// Generate the hooks record for Claude Code settings.json (new format)
     ///
     /// This creates the hooks configuration in the format expected by Claude Code:
     /// ```json
     /// {
-    ///   "hooks": [
-    ///     {
-    ///       "matcher": ".*",
-    ///       "hooks": {
-    ///         "preToolUse": [...],
-    ///         "postToolUse": [...]
-    ///       }
-    ///     }
-    ///   ]
+    ///   "hooks": {
+    ///     "PreToolUse": [
+    ///       {"matcher": "Bash", "hooks": [{"type": "command", "command": "..."}]}
+    ///     ],
+    ///     "PostToolUse": [
+    ///       {"matcher": "*", "hooks": [{"type": "command", "command": "..."}]}
+    ///     ]
+    ///   }
     /// }
     /// ```
-    pub fn to_settings_hooks(&self) -> Vec<HookDefinition> {
-        // Create event-specific hook definitions
-        let mut hooks = Vec::new();
+    ///
+    /// Returns a map of event type to hook rules.
+    pub fn to_settings_hooks(&self) -> std::collections::HashMap<String, Vec<HookRule>> {
+        use std::collections::HashMap;
+        let mut hooks_map: HashMap<String, Vec<HookRule>> = HashMap::new();
 
-        // SessionStart hook - runs on first Bash tool use
-        hooks.push(HookDefinition {
-            matcher: "Bash".to_string(),
-            hooks: HookCommands {
-                pre_tool_use: Some(vec![self.build_command(HookEvent::SessionStart)]),
-                post_tool_use: None,
-            },
-        });
+        // SessionStart hook - runs on first Bash tool use (PreToolUse event)
+        hooks_map
+            .entry("PreToolUse".to_string())
+            .or_default()
+            .push(HookRule {
+                matcher: "Bash".to_string(),
+                hooks: vec![HookCommand {
+                    hook_type: "command".to_string(),
+                    command: self.build_command(HookEvent::SessionStart),
+                }],
+            });
 
         // PostToolUse hook - runs after any tool use to update heartbeat
-        // Uses ".*" matcher to catch all tools
-        hooks.push(HookDefinition {
-            matcher: ".*".to_string(),
-            hooks: HookCommands {
-                pre_tool_use: None,
-                post_tool_use: Some(vec![self.build_command(HookEvent::PostToolUse)]),
-            },
-        });
+        // "*" matcher to catch all tools
+        hooks_map
+            .entry("PostToolUse".to_string())
+            .or_default()
+            .push(HookRule {
+                matcher: "*".to_string(),
+                hooks: vec![HookCommand {
+                    hook_type: "command".to_string(),
+                    command: self.build_command(HookEvent::PostToolUse),
+                }],
+            });
 
         // PreCompact - runs before context compaction
-        // Claude Code calls this before truncating context
-        hooks.push(HookDefinition {
-            matcher: "PreCompact".to_string(),
-            hooks: HookCommands {
-                pre_tool_use: Some(vec![self.build_command(HookEvent::PreCompact)]),
-                post_tool_use: None,
-            },
-        });
+        hooks_map
+            .entry("PreCompact".to_string())
+            .or_default()
+            .push(HookRule {
+                matcher: "*".to_string(),
+                hooks: vec![HookCommand {
+                    hook_type: "command".to_string(),
+                    command: self.build_command(HookEvent::PreCompact),
+                }],
+            });
 
         // Stop hook - runs when session is stopping
-        hooks.push(HookDefinition {
-            matcher: "Stop".to_string(),
-            hooks: HookCommands {
-                pre_tool_use: Some(vec![self.build_command(HookEvent::Stop)]),
-                post_tool_use: None,
-            },
-        });
+        hooks_map
+            .entry("Stop".to_string())
+            .or_default()
+            .push(HookRule {
+                matcher: "*".to_string(),
+                hooks: vec![HookCommand {
+                    hook_type: "command".to_string(),
+                    command: self.build_command(HookEvent::Stop),
+                }],
+            });
 
         // SubagentStop - runs when subagent completes
-        hooks.push(HookDefinition {
-            matcher: "SubagentStop".to_string(),
-            hooks: HookCommands {
-                pre_tool_use: None,
-                post_tool_use: Some(vec![self.build_command(HookEvent::SubagentStop)]),
-            },
-        });
+        hooks_map
+            .entry("SubagentStop".to_string())
+            .or_default()
+            .push(HookRule {
+                matcher: "*".to_string(),
+                hooks: vec![HookCommand {
+                    hook_type: "command".to_string(),
+                    command: self.build_command(HookEvent::SubagentStop),
+                }],
+            });
 
-        hooks
+        hooks_map
     }
 }

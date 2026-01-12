@@ -36,22 +36,12 @@ pub fn generate_hooks_settings(
 
     permissions.insert("defaultMode".to_string(), json!("acceptEdits"));
 
-    // Generate hooks configuration
-    let hooks = config.to_settings_hooks();
-    let hooks_json: Vec<Value> = hooks
-        .iter()
-        .map(|h| {
-            json!({
-                "matcher": h.matcher,
-                "hooks": {
-                    "preToolUse": h.hooks.pre_tool_use,
-                    "postToolUse": h.hooks.post_tool_use
-                }
-            })
-        })
-        .collect();
+    // Generate hooks configuration (new record format)
+    let hooks_map = config.to_settings_hooks();
+    let hooks_json = serde_json::to_value(&hooks_map)
+        .with_context(|| "Failed to serialize hooks configuration")?;
 
-    obj.insert("hooks".to_string(), json!(hooks_json));
+    obj.insert("hooks".to_string(), hooks_json);
 
     // Add environment variables for hooks to access
     let env = obj

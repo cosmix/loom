@@ -99,18 +99,24 @@ mod config_tests {
         );
 
         let hooks = config.to_settings_hooks();
-        // Should have hooks for Bash (SessionStart), PreCompact, Stop, SubagentStop
-        assert!(hooks.len() >= 3);
+        // Should have hook events: PreToolUse, PostToolUse, PreCompact, Stop, SubagentStop
+        assert!(hooks.len() >= 4);
 
         // Check PreCompact hook exists
-        let pre_compact = hooks.iter().find(|h| h.matcher == "PreCompact");
-        assert!(pre_compact.is_some());
-        let pre_compact = pre_compact.unwrap();
-        assert!(pre_compact.hooks.pre_tool_use.is_some());
+        assert!(hooks.contains_key("PreCompact"));
+        let pre_compact_rules = &hooks["PreCompact"];
+        assert!(!pre_compact_rules.is_empty());
+        assert_eq!(pre_compact_rules[0].matcher, "*");
 
         // Check Stop hook exists
-        let stop = hooks.iter().find(|h| h.matcher == "Stop");
-        assert!(stop.is_some());
+        assert!(hooks.contains_key("Stop"));
+        let stop_rules = &hooks["Stop"];
+        assert!(!stop_rules.is_empty());
+
+        // Check PreToolUse has Bash matcher
+        assert!(hooks.contains_key("PreToolUse"));
+        let pre_tool_rules = &hooks["PreToolUse"];
+        assert!(pre_tool_rules.iter().any(|r| r.matcher == "Bash"));
     }
 }
 
@@ -217,8 +223,12 @@ mod generator_tests {
         // Check permissions
         assert_eq!(settings["permissions"]["defaultMode"], json!("acceptEdits"));
 
-        // Check hooks array exists
-        assert!(settings["hooks"].is_array());
+        // Check hooks is a record (object) not an array
+        assert!(settings["hooks"].is_object());
+        assert!(settings["hooks"]["PreToolUse"].is_array());
+        assert!(settings["hooks"]["PostToolUse"].is_array());
+        assert!(settings["hooks"]["PreCompact"].is_array());
+        assert!(settings["hooks"]["Stop"].is_array());
 
         // Check environment variables
         assert_eq!(settings["env"]["LOOM_STAGE_ID"], json!("stage"));
@@ -278,7 +288,8 @@ mod generator_tests {
         let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
 
         assert_eq!(settings["env"]["LOOM_STAGE_ID"], json!("test-stage"));
-        assert!(settings["hooks"].is_array());
+        assert!(settings["hooks"].is_object());
+        assert!(settings["hooks"]["PreToolUse"].is_array());
     }
 
     #[test]

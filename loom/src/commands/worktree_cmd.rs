@@ -6,7 +6,10 @@ use colored::Colorize;
 use std::path::PathBuf;
 
 use crate::commands::merge::mark_stage_merged;
-use crate::git::cleanup::{cleanup_after_merge, CleanupConfig};
+use crate::fs::stage_files::find_stage_file;
+use crate::git::cleanup::{cleanup_after_merge, prune_worktrees, CleanupConfig};
+use crate::models::stage::StageStatus;
+use crate::verify::transitions::parse_stage_from_markdown;
 
 /// List all worktrees
 pub fn list() -> Result<()> {
@@ -39,18 +42,194 @@ pub fn list() -> Result<()> {
 }
 
 /// Clean orphaned worktrees
+///
+/// A worktree is considered orphaned if:
+/// - The corresponding stage file doesn't exist
+/// - The stage is in a terminal state (Completed, Blocked, Skipped)
+/// - The stage is waiting for dependencies (not actively executing)
+///
+/// Active states that keep worktrees alive: Executing, NeedsHandoff, MergeConflict, WaitingForInput
 pub fn clean() -> Result<()> {
     println!("Cleaning orphaned worktrees...");
+    println!("{}", "─".repeat(50).dimmed());
 
-    let worktrees_dir = std::env::current_dir()?.join(".worktrees");
+    let repo_root = std::env::current_dir()?;
+    let worktrees_dir = repo_root.join(".worktrees");
+    let work_dir = repo_root.join(".work");
+    let stages_dir = work_dir.join("stages");
+
     if !worktrees_dir.exists() {
         println!("No .worktrees/ directory to clean");
         return Ok(());
     }
 
-    // Would run: git worktree prune
-    println!("\nWould run: git worktree prune");
-    println!("Note: Full clean requires Phase 4 (git module)");
+    // Collect worktree stage IDs
+    let mut worktree_ids: Vec<String> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&worktrees_dir) {
+        for entry in entries.flatten() {
+            if entry.path().is_dir() {
+                let name = entry.file_name();
+                worktree_ids.push(name.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    if worktree_ids.is_empty() {
+        println!("No worktrees found");
+        prune_worktrees(&repo_root)?;
+        println!("{} Pruned stale worktree references", "✓".green().bold());
+        return Ok(());
+    }
+
+    println!(
+        "Found {} worktree(s): {}",
+        worktree_ids.len(),
+        worktree_ids.join(", ").dimmed()
+    );
+    println!();
+
+    // Check each worktree for orphan status
+    let mut orphaned: Vec<String> = Vec::new();
+    let mut active: Vec<String> = Vec::new();
+
+    for stage_id in &worktree_ids {
+        let is_orphan = match find_stage_file(&stages_dir, stage_id)? {
+            None => {
+                // No stage file exists - orphaned
+                println!(
+                    "  {} {} (no stage file)",
+                    "orphan:".yellow(),
+                    stage_id.cyan()
+                );
+                true
+            }
+            Some(stage_path) => {
+                // Parse stage file to check status
+                match std::fs::read_to_string(&stage_path) {
+                    Ok(content) => match parse_stage_from_markdown(&content) {
+                        Ok(stage) => {
+                            let status = &stage.status;
+                            let is_active = matches!(
+                                status,
+                                StageStatus::Executing
+                                    | StageStatus::NeedsHandoff
+                                    | StageStatus::MergeConflict
+                                    | StageStatus::WaitingForInput
+                                    | StageStatus::Queued
+                            );
+
+                            if is_active {
+                                println!(
+                                    "  {} {} ({})",
+                                    "active:".green(),
+                                    stage_id.cyan(),
+                                    format!("{status}").dimmed()
+                                );
+                                false
+                            } else {
+                                println!(
+                                    "  {} {} ({})",
+                                    "orphan:".yellow(),
+                                    stage_id.cyan(),
+                                    format!("{status}").dimmed()
+                                );
+                                true
+                            }
+                        }
+                        Err(_) => {
+                            // Can't parse stage - treat as orphan
+                            println!(
+                                "  {} {} (unparseable stage file)",
+                                "orphan:".yellow(),
+                                stage_id.cyan()
+                            );
+                            true
+                        }
+                    },
+                    Err(_) => {
+                        // Can't read stage file - treat as orphan
+                        println!(
+                            "  {} {} (unreadable stage file)",
+                            "orphan:".yellow(),
+                            stage_id.cyan()
+                        );
+                        true
+                    }
+                }
+            }
+        };
+
+        if is_orphan {
+            orphaned.push(stage_id.clone());
+        } else {
+            active.push(stage_id.clone());
+        }
+    }
+
+    println!();
+
+    if orphaned.is_empty() {
+        println!(
+            "{} No orphaned worktrees to clean ({} active)",
+            "✓".green().bold(),
+            active.len()
+        );
+    } else {
+        println!(
+            "Cleaning {} orphaned worktree(s)...",
+            orphaned.len().to_string().yellow()
+        );
+
+        let config = CleanupConfig {
+            force_worktree_removal: true,
+            force_branch_deletion: true,
+            prune_worktrees: false, // We'll prune at the end
+            verbose: false,
+        };
+
+        for stage_id in &orphaned {
+            match cleanup_after_merge(stage_id, &repo_root, &config) {
+                Ok(result) => {
+                    let mut actions = Vec::new();
+                    if result.worktree_removed {
+                        actions.push("worktree");
+                    }
+                    if result.branch_deleted {
+                        actions.push("branch");
+                    }
+                    if result.base_branch_deleted {
+                        actions.push("base branch");
+                    }
+
+                    if actions.is_empty() {
+                        println!("  {} {} (already clean)", "─".dimmed(), stage_id);
+                    } else {
+                        println!(
+                            "  {} {} (removed: {})",
+                            "✓".green().bold(),
+                            stage_id,
+                            actions.join(", ")
+                        );
+                    }
+
+                    for warning in &result.warnings {
+                        println!("    {} {}", "⚠".yellow(), warning.dimmed());
+                    }
+                }
+                Err(e) => {
+                    println!("  {} {} ({})", "✗".red().bold(), stage_id, e);
+                }
+            }
+        }
+    }
+
+    // Always prune stale worktree references
+    println!();
+    prune_worktrees(&repo_root)?;
+    println!("{} Pruned stale worktree references", "✓".green().bold());
+
+    println!();
+    println!("{} Cleanup complete!", "✓".green().bold());
 
     Ok(())
 }
