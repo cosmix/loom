@@ -2,6 +2,7 @@ pub mod attach;
 pub mod auto_merge;
 pub mod continuation;
 pub mod core;
+pub mod hooks;
 pub mod monitor;
 pub mod progressive_merge;
 pub mod retry;
@@ -43,3 +44,8 @@ pub use terminal::tmux::{
     TmuxBackend, TmuxSessionInfo,
 };
 pub use terminal::{create_backend, BackendType, TerminalBackend};
+// Re-export hooks infrastructure
+pub use hooks::{
+    generate_hooks_settings, log_hook_event, setup_hooks_for_worktree, HookEvent,
+    HookEventLog, HookEventPayload, HooksConfig,
+};

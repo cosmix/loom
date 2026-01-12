@@ -24,4 +24,4 @@ pub use operations::{
     clean_worktrees, create_worktree, get_or_create_worktree, list_worktrees, remove_worktree,
 };
 pub use parser::WorktreeInfo;
-pub use settings::ensure_work_symlink;
+pub use settings::{ensure_work_symlink, setup_worktree_hooks};

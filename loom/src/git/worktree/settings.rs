@@ -1,10 +1,13 @@
 //! Worktree settings management
 //!
 //! Handles creation of settings files (.claude/, CLAUDE.md) for worktrees.
+//! Also supports hooks configuration when session context is available.
 
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
 use std::path::Path;
+
+use crate::orchestrator::hooks::{HooksConfig, setup_hooks_for_worktree};
 
 /// Creates or restores the .work symlink in a worktree.
 ///
@@ -135,6 +138,33 @@ fn create_worktree_settings(main_settings: &Path, worktree_settings: &Path) -> R
         .with_context(|| "Failed to write worktree settings.local.json")?;
 
     Ok(())
+}
+
+/// Configure hooks for a worktree with session context
+///
+/// This adds Claude Code hooks to the worktree's .claude/settings.json.
+/// Hooks enable:
+/// - Auto-handoff on PreCompact (context exhaustion)
+/// - Learning protection via Stop hook
+/// - Session lifecycle tracking
+///
+/// This should be called after worktree creation when session ID is known.
+pub fn setup_worktree_hooks(
+    worktree_path: &Path,
+    stage_id: &str,
+    session_id: &str,
+    work_dir: &Path,
+    hooks_dir: &Path,
+) -> Result<()> {
+    let config = HooksConfig::new(
+        hooks_dir.to_path_buf(),
+        stage_id.to_string(),
+        session_id.to_string(),
+        work_dir.to_path_buf(),
+    );
+
+    setup_hooks_for_worktree(worktree_path, &config)
+        .with_context(|| format!("Failed to setup hooks for worktree: {}", worktree_path.display()))
 }
 
 /// Remove worktree-specific settings and symlinks
