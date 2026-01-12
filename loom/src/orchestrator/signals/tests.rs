@@ -793,6 +793,31 @@ fn test_signal_sections_ordering() {
 }
 
 #[test]
+fn test_signal_contains_knowledge_updates_section() {
+    let session = create_test_session();
+    let stage = create_test_stage();
+    let worktree = create_test_worktree();
+    let embedded_context = EmbeddedContext::default();
+
+    let content = format_signal_content(
+        &session,
+        &stage,
+        &worktree,
+        &[],
+        None,
+        None,
+        &embedded_context,
+    );
+
+    // Knowledge Updates section should always be present
+    assert!(content.contains("## Knowledge Updates"));
+    assert!(content.contains("**Capture discoveries**"));
+    assert!(content.contains("loom knowledge update entry-points"));
+    assert!(content.contains("loom knowledge update patterns"));
+    assert!(content.contains("loom knowledge update conventions"));
+}
+
+#[test]
 fn test_stable_prefix_hash_changes_with_session() {
     // The stable prefix includes the session header, so different sessions
     // will have different hashes (but the execution rules portion is stable)
