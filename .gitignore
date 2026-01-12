@@ -15,8 +15,8 @@ Desktop.ini
 .project
 .settings/
 
-# Claude Code local settings (user-specific)
-.claude/settings.local.json
+# Claude Code (user-specific session data)
+.claude/
 
 # Logs
 *.log
@@ -33,4 +33,3 @@ logs/
 # Rust build artifacts
 target/
 .worktrees/
- changes

@@ -14,7 +14,7 @@ use std::process::Command;
 pub fn ensure_work_gitignored(repo_root: &Path) -> Result<()> {
     let gitignore_path = repo_root.join(".gitignore");
 
-    let entries_to_add = [".work/", ".worktrees/"];
+    let entries_to_add = [".work/", ".worktrees/", ".claude/"];
 
     let existing_content = if gitignore_path.exists() {
         std::fs::read_to_string(&gitignore_path).with_context(|| "Failed to read .gitignore")?
@@ -65,14 +65,14 @@ pub fn ensure_work_gitignored(repo_root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Remove .work and .worktrees from a branch if they were accidentally committed
+/// Remove .work, .worktrees, and .claude from a branch if they were accidentally committed
 ///
 /// This can happen if .gitignore wasn't set up before worktree creation.
 /// We detect if these files exist in the branch and create a fixup commit to remove them.
 pub fn remove_loom_dirs_from_branch(stage_id: &str, worktree_path: &Path) -> Result<()> {
-    // Check if .work or .worktrees exist in the branch's tree
+    // Check if .work, .worktrees, or .claude exist in the branch's tree
     let output = Command::new("git")
-        .args(["ls-files", ".work", ".worktrees"])
+        .args(["ls-files", ".work", ".worktrees", ".claude"])
         .current_dir(worktree_path)
         .output()
         .with_context(|| "Failed to check for .work in branch")?;
@@ -140,10 +140,10 @@ pub fn has_uncommitted_changes(worktree_path: &Path) -> Result<bool> {
 
     let stdout = String::from_utf8_lossy(&status_output.stdout);
 
-    // Filter out loom internal directories
+    // Filter out loom internal directories and .claude
     let has_changes = stdout.lines().filter(|l| !l.is_empty()).any(|l| {
         let file = if l.len() > 3 { &l[3..] } else { l };
-        !file.starts_with(".work") && !file.starts_with(".worktrees")
+        !file.starts_with(".work") && !file.starts_with(".worktrees") && !file.starts_with(".claude")
     });
 
     Ok(has_changes)
@@ -170,8 +170,8 @@ pub fn get_uncommitted_files(worktree_path: &Path) -> Result<Vec<String>> {
                 l.to_string()
             }
         })
-        // Exclude loom internal directories
-        .filter(|f| !f.starts_with(".work") && !f.starts_with(".worktrees"))
+        // Exclude loom internal directories and .claude
+        .filter(|f| !f.starts_with(".work") && !f.starts_with(".worktrees") && !f.starts_with(".claude"))
         .collect();
 
     Ok(files)
