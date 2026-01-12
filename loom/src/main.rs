@@ -335,6 +335,20 @@ enum StageCommands {
         force: bool,
     },
 
+    /// Manually trigger recovery for a crashed or hung stage
+    ///
+    /// Creates a recovery signal with context from the last session
+    /// and resets the stage to Queued status for a new session.
+    Recover {
+        /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
+        #[arg(value_parser = clap_id_validator)]
+        stage_id: String,
+
+        /// Force recovery even if stage is not in a failed state
+        #[arg(short, long)]
+        force: bool,
+    },
+
     /// Complete merge conflict resolution and mark stage as completed
     ///
     /// Use this after resolving merge conflicts for a stage in MergeConflict status.
@@ -709,6 +723,7 @@ fn main() -> Result<()> {
             StageCommands::Release { stage_id } => stage::release(stage_id),
             StageCommands::Skip { stage_id, reason } => stage::skip(stage_id, reason),
             StageCommands::Retry { stage_id, force } => stage::retry(stage_id, force),
+            StageCommands::Recover { stage_id, force } => stage::recover(stage_id, force),
             StageCommands::MergeComplete { stage_id } => stage::merge_complete(stage_id),
             StageCommands::Output { command } => match command {
                 OutputCommands::Set {

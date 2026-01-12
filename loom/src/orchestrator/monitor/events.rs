@@ -25,6 +25,15 @@ pub enum MonitorEvent {
         stage_id: Option<String>,
         crash_report_path: Option<PathBuf>,
     },
+    /// Session is hung (PID alive but no heartbeat for extended period)
+    SessionHung {
+        session_id: String,
+        stage_id: Option<String>,
+        /// How long since last heartbeat in seconds
+        stale_duration_secs: u64,
+        /// Last known activity from heartbeat
+        last_activity: Option<String>,
+    },
     SessionNeedsHandoff {
         session_id: String,
         stage_id: String,
@@ -51,4 +60,42 @@ pub enum MonitorEvent {
         warnings: Vec<String>,
         stage_complete: bool,
     },
+    /// Heartbeat received from a session
+    HeartbeatReceived {
+        stage_id: String,
+        session_id: String,
+        context_percent: Option<f32>,
+        last_tool: Option<String>,
+    },
+    /// Session recovery initiated
+    RecoveryInitiated {
+        stage_id: String,
+        session_id: String,
+        recovery_type: RecoveryType,
+    },
+    /// Stage has exceeded maximum failure count
+    StageEscalated {
+        stage_id: String,
+        failure_count: u32,
+        reason: String,
+    },
+    /// PreCompact hook fired - context refresh needed
+    ContextRefreshNeeded {
+        stage_id: String,
+        session_id: String,
+        context_percent: f32,
+    },
+}
+
+/// Type of recovery being initiated
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RecoveryType {
+    /// Recovering from a crashed session (PID dead)
+    Crash,
+    /// Recovering from a hung session (PID alive, no heartbeat)
+    Hung,
+    /// Recovering from context exhaustion (graceful refresh)
+    ContextRefresh,
+    /// Manual recovery triggered by user
+    Manual,
 }

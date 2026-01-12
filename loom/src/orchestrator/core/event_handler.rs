@@ -131,6 +131,67 @@ impl EventHandler for Orchestrator {
                         );
                     }
                 }
+                MonitorEvent::SessionHung {
+                    session_id,
+                    stage_id,
+                    stale_duration_secs,
+                    last_activity,
+                } => {
+                    clear_status_line();
+                    let stage_info = stage_id
+                        .as_ref()
+                        .map(|s| format!(" (stage '{}')", s))
+                        .unwrap_or_default();
+                    let activity_info = last_activity
+                        .as_ref()
+                        .map(|a| format!(", last: {}", a))
+                        .unwrap_or_default();
+                    eprintln!(
+                        "Warning: Session '{session_id}'{stage_info} appears hung (no heartbeat for {}s{activity_info})",
+                        stale_duration_secs
+                    );
+                }
+                MonitorEvent::HeartbeatReceived {
+                    stage_id: _,
+                    session_id: _,
+                    context_percent: _,
+                    last_tool: _,
+                } => {
+                    // Heartbeat events are silent - just used for internal tracking
+                }
+                MonitorEvent::RecoveryInitiated {
+                    stage_id,
+                    session_id,
+                    recovery_type,
+                } => {
+                    clear_status_line();
+                    eprintln!(
+                        "Recovery initiated for stage '{}' (session '{}', type: {:?})",
+                        stage_id, session_id, recovery_type
+                    );
+                }
+                MonitorEvent::StageEscalated {
+                    stage_id,
+                    failure_count,
+                    reason,
+                } => {
+                    clear_status_line();
+                    eprintln!(
+                        "Stage '{}' escalated after {} failures: {}",
+                        stage_id, failure_count, reason
+                    );
+                }
+                MonitorEvent::ContextRefreshNeeded {
+                    stage_id,
+                    session_id,
+                    context_percent,
+                } => {
+                    clear_status_line();
+                    eprintln!(
+                        "Context refresh needed for stage '{}' (session '{}', context at {:.1}%)",
+                        stage_id, session_id, context_percent
+                    );
+                }
             }
         }
         Ok(())

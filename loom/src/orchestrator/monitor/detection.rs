@@ -1,19 +1,23 @@
 //! Change detection for stages and sessions
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
 
+use super::config::MonitorConfig;
 use super::context::{context_health, context_usage_percent, ContextHealth};
 use super::events::MonitorEvent;
 use super::handlers::Handlers;
+use super::heartbeat::{HeartbeatStatus, HeartbeatWatcher};
 
 /// Detection state for tracking changes
 pub struct Detection {
     pub last_stage_states: HashMap<String, StageStatus>,
     pub last_session_states: HashMap<String, SessionStatus>,
     pub last_context_levels: HashMap<String, ContextHealth>,
+    /// Track sessions that have been reported as hung to avoid duplicate events
+    pub reported_hung_sessions: HashSet<String>,
 }
 
 impl Detection {
@@ -22,6 +26,7 @@ impl Detection {
             last_stage_states: HashMap::new(),
             last_session_states: HashMap::new(),
             last_context_levels: HashMap::new(),
+            reported_hung_sessions: HashSet::new(),
         }
     }
 
@@ -227,6 +232,96 @@ impl Detection {
         }
 
         events
+    }
+
+    /// Detect heartbeat-based events (heartbeat updates, hung sessions)
+    pub fn detect_heartbeat_events(
+        &mut self,
+        sessions: &[Session],
+        heartbeat_watcher: &mut HeartbeatWatcher,
+        config: &MonitorConfig,
+        handlers: &Handlers,
+    ) -> Vec<MonitorEvent> {
+        let mut events = Vec::new();
+
+        // Poll heartbeat files for updates
+        if let Ok(updates) = heartbeat_watcher.poll(&config.work_dir) {
+            for update in updates {
+                // Emit heartbeat received event
+                events.push(MonitorEvent::HeartbeatReceived {
+                    stage_id: update.heartbeat.stage_id.clone(),
+                    session_id: update.heartbeat.session_id.clone(),
+                    context_percent: update.heartbeat.context_percent,
+                    last_tool: update.heartbeat.last_tool.clone(),
+                });
+
+                // If we previously reported this session as hung, clear that flag
+                // since we got a fresh heartbeat
+                self.reported_hung_sessions.remove(&update.heartbeat.session_id);
+            }
+        }
+
+        // Check each running session for hung status
+        for session in sessions {
+            if session.status != SessionStatus::Running {
+                continue;
+            }
+
+            let stage_id = match &session.stage_id {
+                Some(id) => id,
+                None => continue,
+            };
+
+            // Check heartbeat status for this stage
+            let heartbeat_status = heartbeat_watcher.check_session_hung(stage_id);
+
+            match heartbeat_status {
+                HeartbeatStatus::Hung { stale_duration_secs } => {
+                    // Only report if we haven't already and the session is still alive
+                    if !self.reported_hung_sessions.contains(&session.id) {
+                        // Verify PID is still alive before declaring hung
+                        // (if PID is dead, it's a crash not a hang)
+                        if let Ok(Some(is_alive)) = handlers.check_session_alive(session) {
+                            if is_alive {
+                                // Session is alive but not sending heartbeats - it's hung
+                                let last_activity = heartbeat_watcher
+                                    .get_heartbeat(stage_id)
+                                    .and_then(|hb| hb.activity.clone());
+
+                                events.push(MonitorEvent::SessionHung {
+                                    session_id: session.id.clone(),
+                                    stage_id: Some(stage_id.clone()),
+                                    stale_duration_secs,
+                                    last_activity,
+                                });
+
+                                self.reported_hung_sessions.insert(session.id.clone());
+                            }
+                            // If not alive, the crash detection in detect_session_changes handles it
+                        }
+                    }
+                }
+                HeartbeatStatus::Healthy => {
+                    // Session is healthy, clear any hung report
+                    self.reported_hung_sessions.remove(&session.id);
+                }
+                HeartbeatStatus::NoHeartbeat => {
+                    // No heartbeat yet - session may not have started heartbeat protocol
+                    // This is normal for new sessions or sessions before hooks are set up
+                }
+                HeartbeatStatus::Crashed => {
+                    // This shouldn't happen from heartbeat watcher, but handle it
+                    // Crash detection is handled in detect_session_changes
+                }
+            }
+        }
+
+        events
+    }
+
+    /// Clear hung report for a session (call when session ends or is recovered)
+    pub fn clear_hung_report(&mut self, session_id: &str) {
+        self.reported_hung_sessions.remove(session_id);
     }
 }
 

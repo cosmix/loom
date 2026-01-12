@@ -11,6 +11,7 @@ use super::config::MonitorConfig;
 use super::detection::Detection;
 use super::events::MonitorEvent;
 use super::handlers::Handlers;
+use super::heartbeat::HeartbeatWatcher;
 
 /// Monitor state for tracking changes
 pub struct Monitor {
@@ -18,14 +19,17 @@ pub struct Monitor {
     pub(super) detection: Detection,
     pub(super) handlers: Handlers,
     pub(super) checkpoint_watcher: CheckpointWatcher,
+    pub(super) heartbeat_watcher: HeartbeatWatcher,
 }
 
 impl Monitor {
     pub fn new(config: MonitorConfig) -> Self {
+        let heartbeat_watcher = HeartbeatWatcher::with_timeout(config.hung_timeout);
         Self {
             handlers: Handlers::new(config.clone()),
             detection: Detection::new(),
             checkpoint_watcher: CheckpointWatcher::new(),
+            heartbeat_watcher,
             config,
         }
     }
@@ -55,7 +59,23 @@ impl Monitor {
             });
         }
 
+        // Poll for heartbeat updates and detect hung sessions
+        events.extend(
+            self.detection
+                .detect_heartbeat_events(&sessions, &mut self.heartbeat_watcher, &self.config, &self.handlers),
+        );
+
         Ok(events)
+    }
+
+    /// Get the heartbeat watcher for direct access
+    pub fn heartbeat_watcher(&self) -> &HeartbeatWatcher {
+        &self.heartbeat_watcher
+    }
+
+    /// Get mutable heartbeat watcher
+    pub fn heartbeat_watcher_mut(&mut self) -> &mut HeartbeatWatcher {
+        &mut self.heartbeat_watcher
     }
 
     /// Load all stages from .work/stages/
