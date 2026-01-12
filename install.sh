@@ -148,7 +148,7 @@ install_hooks_remote() {
 	for hook in "${global_hooks[@]}"; do
 		if download_file "${GITHUB_RELEASES}/$hook" "$hooks_dir/$hook" 2>/dev/null; then
 			chmod +x "$hooks_dir/$hook"
-			((downloaded++))
+			((++downloaded))
 		fi
 	done
 
@@ -160,7 +160,7 @@ install_hooks_remote() {
 	for hook in "${worktree_hooks[@]}"; do
 		if download_file "${GITHUB_RELEASES}/$hook" "$loom_hooks_dir/$hook" 2>/dev/null; then
 			chmod +x "$loom_hooks_dir/$hook"
-			((downloaded++))
+			((++downloaded))
 		fi
 	done
 
@@ -290,7 +290,7 @@ install_hooks() {
 			if [[ -f "$hook" ]]; then
 				cp "$hook" "$hooks_dir/"
 				chmod +x "$hooks_dir/$hook_name"
-				((count++))
+				((++count))
 			fi
 		done
 
@@ -300,7 +300,7 @@ install_hooks() {
 			if [[ -f "$hook" ]]; then
 				cp "$hook" "$loom_hooks_dir/"
 				chmod +x "$loom_hooks_dir/$hook_name"
-				((count++))
+				((++count))
 			fi
 		done
 	fi

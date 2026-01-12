@@ -89,7 +89,7 @@ loom stop                         # Stop the daemon
 ```
 
 loom will create git worktrees for parallel stages and spawn Claude Code
-sessions in native terminal windows automatically.
+sessions in terminal windows automatically.
 
 ## How It Works
 
@@ -174,7 +174,7 @@ loom uses a **daemon architecture** for reliability:
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │  Orchestrator Loop (every 5s)                       │    │
 │  │  - Poll stage/session files for changes             │    │
-│  │  - Start ready stages (spawn native terminals)      │    │
+│  │  - Start ready stages (spawn terminal windows)      │    │
 │  │  - Detect crashed sessions (PID not alive)          │    │
 │  │  - Generate git-based handoffs on crash             │    │
 │  └─────────────────────────────────────────────────────┘    │
@@ -191,7 +191,7 @@ loom uses a **daemon architecture** for reliability:
 
 **Key benefits:**
 
-- Sessions run in native terminal windows (more stable than tmux)
+- Sessions run in terminal windows with auto-detected emulator
 - Daemon survives terminal close
 - PID-based liveness monitoring
 - Git-based crash recovery
@@ -378,11 +378,11 @@ loom init <plan-path> [--clean]
 # - Sets up .work/ directory structure
 # - --clean: remove old .work/, prune worktrees, kill orphaned sessions first
 
-# Execute stages (starts daemon, spawns sessions in native terminals)
+# Execute stages (starts daemon, spawns sessions in terminal windows)
 loom run [--stage <id>] [--manual] [--max-parallel <n>] [--watch] [--foreground] [--attach] [--no-merge]
 # - Starts background daemon if not running
 # - Creates git worktrees for ready parallel stages
-# - Spawns Claude sessions in native terminal windows (unless --manual)
+# - Spawns Claude sessions in terminal windows (unless --manual)
 # - Monitors progress, triggers dependent stages
 # - Auto-merges completed stages to target branch (enabled by default)
 # - --stage: run only specific stage
@@ -433,7 +433,7 @@ loom attach logs
 # - Attaches terminal to running Claude session
 # - list: list all attachable sessions
 # - all: attach to all sessions (default: tiled pane view)
-#   - --gui: open separate terminal windows (native backend)
+#   - --gui: open separate terminal windows
 #   - --detach: detach other clients first
 #   - --windows: legacy window-per-session mode instead of tiled panes
 #   - --layout: layout for tiled view (tiled, horizontal, vertical)
