@@ -1,0 +1,68 @@
+{
+  "env": {
+    "LOOM_SESSION_ID": "session-63591e50-1768248572",
+    "LOOM_STAGE_ID": "fix-complete-command",
+    "LOOM_WORK_DIR": "./.work"
+  },
+  "hasTrustDialogAccepted": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "LOOM_STAGE_ID='fix-complete-command' LOOM_SESSION_ID='session-63591e50-1768248572' LOOM_WORK_DIR='./.work' '/home/dkaponis/.claude/hooks/loom/post-tool-use.sh'",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "command": "LOOM_STAGE_ID='fix-complete-command' LOOM_SESSION_ID='session-63591e50-1768248572' LOOM_WORK_DIR='./.work' '/home/dkaponis/.claude/hooks/loom/pre-compact.sh'",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "LOOM_STAGE_ID='fix-complete-command' LOOM_SESSION_ID='session-63591e50-1768248572' LOOM_WORK_DIR='./.work' '/home/dkaponis/.claude/hooks/loom/session-start.sh'",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "LOOM_STAGE_ID='fix-complete-command' LOOM_SESSION_ID='session-63591e50-1768248572' LOOM_WORK_DIR='./.work' '/home/dkaponis/.claude/hooks/loom/learning-validator.sh'",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "command": "LOOM_STAGE_ID='fix-complete-command' LOOM_SESSION_ID='session-63591e50-1768248572' LOOM_WORK_DIR='./.work' '/home/dkaponis/.claude/hooks/loom/subagent-stop.sh'",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ]
+  },
+  "permissions": {
+    "defaultMode": "acceptEdits"
+  }
+}
