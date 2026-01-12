@@ -5,6 +5,7 @@ use chrono::Utc;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
+use crate::commands::status::merge_status::{check_merge_state, MergeState};
 use crate::git::branch::default_branch;
 use crate::models::failure::FailureInfo;
 use crate::models::stage::StageStatus;
@@ -318,11 +319,60 @@ impl EventHandler for Orchestrator {
         // Clean up the active session
         self.active_sessions.remove(stage_id);
 
-        // Log next steps for the user
-        eprintln!("Merge conflicts should be resolved. To complete:");
-        eprintln!("  1. Verify the merge was successful: git status");
-        eprintln!("  2. If merge is complete, run: loom verify {stage_id}");
-        eprintln!("  3. If issues remain, run: loom merge {stage_id}");
+        // Check if the merge was successful and update stage accordingly
+        let mut stage = self.load_stage(stage_id)?;
+
+        // If stage is already marked as merged (e.g., agent ran `loom worktree remove`), we're done
+        if stage.merged {
+            clear_status_line();
+            eprintln!("Stage '{stage_id}' merge completed successfully");
+            return Ok(());
+        }
+
+        // Determine the merge point to check against
+        let merge_point = self
+            .config
+            .base_branch
+            .clone()
+            .unwrap_or_else(|| default_branch(&self.config.repo_root).unwrap_or_else(|_| "main".to_string()));
+
+        // Check if the merge was actually successful by examining git state
+        match check_merge_state(&stage, &merge_point, &self.config.repo_root) {
+            Ok(MergeState::Merged) => {
+                // Merge succeeded - update stage
+                stage.merged = true;
+                stage.merge_conflict = false;
+                if let Err(e) = self.save_stage(&stage) {
+                    eprintln!("Warning: Failed to save stage after detecting successful merge: {e}");
+                }
+                clear_status_line();
+                eprintln!("Stage '{stage_id}' merge verified and marked as complete");
+            }
+            Ok(MergeState::BranchMissing) => {
+                // Branch was deleted (likely by `loom worktree remove`) - assume merge succeeded
+                stage.merged = true;
+                stage.merge_conflict = false;
+                if let Err(e) = self.save_stage(&stage) {
+                    eprintln!("Warning: Failed to save stage after branch cleanup: {e}");
+                }
+                clear_status_line();
+                eprintln!("Stage '{stage_id}' branch cleaned up, marking as merged");
+            }
+            Ok(MergeState::Pending) | Ok(MergeState::Conflict) | Ok(MergeState::Unknown) => {
+                // Merge not complete - log next steps for the user
+                eprintln!("Merge may not be complete. To finish:");
+                eprintln!("  1. Verify the merge was successful: git status");
+                eprintln!("  2. If merge is complete, run: loom worktree remove {stage_id}");
+                eprintln!("  3. If issues remain, run: loom merge {stage_id}");
+            }
+            Err(e) => {
+                eprintln!("Warning: Failed to verify merge state: {e}");
+                eprintln!("To complete:");
+                eprintln!("  1. Verify the merge was successful: git status");
+                eprintln!("  2. If merge is complete, run: loom worktree remove {stage_id}");
+                eprintln!("  3. If issues remain, run: loom merge {stage_id}");
+            }
+        }
 
         Ok(())
     }
@@ -331,7 +381,7 @@ impl EventHandler for Orchestrator {
 impl Orchestrator {
     fn try_auto_merge(&self, stage_id: &str) {
         // Load the stage to check auto_merge setting
-        let stage = match load_stage(stage_id, &self.config.work_dir) {
+        let mut stage = match load_stage(stage_id, &self.config.work_dir) {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("Warning: Failed to load stage for auto-merge check: {e}");
@@ -370,16 +420,31 @@ impl Orchestrator {
                 deletions,
                 ..
             }) => {
+                // Mark stage as merged and save
+                stage.merged = true;
+                if let Err(e) = self.save_stage(&stage) {
+                    eprintln!("Warning: Failed to save stage after merge: {e}");
+                }
                 clear_status_line();
                 eprintln!(
                     "Stage '{stage_id}' merged: {files_changed} files, +{insertions} -{deletions}"
                 );
             }
             Ok(AutoMergeResult::FastForward { .. }) => {
+                // Mark stage as merged and save
+                stage.merged = true;
+                if let Err(e) = self.save_stage(&stage) {
+                    eprintln!("Warning: Failed to save stage after merge: {e}");
+                }
                 clear_status_line();
                 eprintln!("Stage '{stage_id}' merged (fast-forward)");
             }
             Ok(AutoMergeResult::AlreadyUpToDate { .. }) => {
+                // Mark stage as merged and save (no changes needed, but branch is up to date)
+                stage.merged = true;
+                if let Err(e) = self.save_stage(&stage) {
+                    eprintln!("Warning: Failed to save stage after merge: {e}");
+                }
                 clear_status_line();
                 eprintln!("Stage '{stage_id}' already up to date");
             }
@@ -387,6 +452,11 @@ impl Orchestrator {
                 session_id,
                 conflicting_files,
             }) => {
+                // Mark stage as having merge conflicts
+                stage.merge_conflict = true;
+                if let Err(e) = self.save_stage(&stage) {
+                    eprintln!("Warning: Failed to save stage merge conflict status: {e}");
+                }
                 clear_status_line();
                 eprintln!(
                     "Stage '{stage_id}' has {} conflict(s). Spawned resolution session: {session_id}",
@@ -394,7 +464,12 @@ impl Orchestrator {
                 );
             }
             Ok(AutoMergeResult::NoWorktree) => {
-                // Nothing to merge - this is fine
+                // Nothing to merge - stage may have been created without worktree
+                // Mark as merged since there's nothing to merge
+                stage.merged = true;
+                if let Err(e) = self.save_stage(&stage) {
+                    eprintln!("Warning: Failed to save stage after no-worktree merge: {e}");
+                }
             }
             Ok(AutoMergeResult::Disabled) => {
                 // Should not reach here
