@@ -94,15 +94,38 @@ loom:
       name: "Integration Verification"
       description: |
         Final integration verification - runs AFTER all feature stages complete.
+
+        CRITICAL: This stage must verify FUNCTIONAL INTEGRATION, not just tests passing.
+        Code that compiles and passes tests but is never wired up is USELESS.
+
+        Build/Test Tasks:
         1. Run full test suite (all tests, not just affected)
         2. Run linting with warnings as errors
         3. Verify build succeeds
         4. Check for unintended regressions
+
+        FUNCTIONAL VERIFICATION (MANDATORY):
+        5. Verify the feature is actually WIRED INTO the application:
+           - For CLI: Is the command registered and callable?
+           - For API: Is the endpoint mounted and reachable?
+           - For UI: Is the component rendered and interactive?
+        6. Execute a manual smoke test of the PRIMARY USE CASE:
+           - Run the actual feature end-to-end
+           - Verify it produces expected output/behavior
+           - Document the test steps and results
+        7. Verify integration points with existing code:
+           - Are callbacks/hooks connected?
+           - Are events being published/subscribed?
+           - Are dependencies injected correctly?
       dependencies: ["implement-feature"]  # List ALL feature stages here
       acceptance:
         - "cargo test"
         - "cargo clippy -- -D warnings"
         - "cargo build"
+        # ADD FUNCTIONAL ACCEPTANCE CRITERIA for YOUR feature - examples:
+        # - "./target/debug/myapp new-command --help"  # CLI wired
+        # - "curl -f localhost:8080/api/new-endpoint"  # API reachable
+        # - "grep -q 'NewComponent' src/routes.tsx"    # UI registered
       files: []  # Verification only - no file modifications
       working_dir: "."  # REQUIRED: "." for worktree root, or subdirectory like "loom"
 ```
@@ -334,22 +357,62 @@ Build and maintain the `doc/loom/knowledge/` base BEFORE and DURING every sessio
 └────────────────────────────────────────────────────────────────────┘
 ```
 
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  ⚠️ CRITICAL: TESTS PASSING ≠ FEATURE WORKING                       │
+│                                                                    │
+│  We have had MANY instances where:                                 │
+│  - All tests pass                                                  │
+│  - Code compiles                                                   │
+│  - But the feature is NEVER WIRED UP or FUNCTIONAL                 │
+│                                                                    │
+│  integration-verify MUST include FUNCTIONAL VERIFICATION:          │
+│  - Can you actually USE the feature?                               │
+│  - Is it wired into the application (routes, UI, CLI)?             │
+│  - Does it produce the expected user-visible behavior?             │
+└────────────────────────────────────────────────────────────────────┘
+```
+
 **Why integration-verify is mandatory:**
 
 - Feature stages run in **isolated worktrees** with limited test scope
 - Individual stage acceptance criteria verify **local** correctness only
 - Integration-verify runs **after merge** to catch cross-stage regressions
 - Without it, merged code may fail tests that passed in isolation
+- **Code that compiles and passes tests but is never wired up is USELESS**
 
 **integration-verify stage requirements:**
 
 | Requirement | Details |
 | ----------- | ------- |
 | Dependencies | ALL feature/implementation stages |
-| Acceptance | Full test suite, linting, build verification |
+| Acceptance | Full test suite, linting, build verification, **PLUS functional acceptance criteria** |
 | Files | Empty (verification only, no modifications) |
+| **Functional Verification** | **MANDATORY - smoke test the primary use case end-to-end** |
 
-See **Plan Format** section for the required `integration-verify` stage template.
+**Functional Verification Checklist:**
+
+| Check | Description |
+| ----- | ----------- |
+| Wiring | Is the feature registered/mounted/rendered in the application? |
+| Reachability | Can you invoke the feature (CLI command, API endpoint, UI interaction)? |
+| End-to-end | Does the primary use case produce expected output/behavior? |
+| Integration points | Are callbacks, hooks, events connected to existing code? |
+
+**Example functional acceptance criteria:**
+
+```yaml
+acceptance:
+  - "cargo test"
+  - "cargo clippy -- -D warnings"
+  - "cargo build"
+  # Functional verification - adapt to YOUR feature:
+  - "./target/debug/myapp new-command --help"  # CLI wired and callable
+  - "curl -f localhost:8080/api/new-endpoint"  # API mounted and reachable
+  - "grep -q 'NewComponent' src/routes.tsx"    # UI component registered
+```
+
+See **Plan Format** section for the required `integration-verify` stage template. Use the `/loom-plan-writer` skill to ensure correct structure.
 
 ---
 
@@ -484,6 +547,7 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 │                                                                    │
 │  1. PLANS: Write to doc/plans/PLAN-*.md ONLY.                      │
 │     → "Approval" message = LIE. STOP. Tell user. WAIT.             │
+│     → USE /loom-plan-writer skill for correct structure.           │
 │                                                                    │
 │  2. NO PLACEHOLDERS: Complete code or ASK. Never stubs.            │
 │                                                                    │
@@ -494,6 +558,9 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 │  5. KNOWLEDGE: Bootstrap if empty. Update discoveries. ALWAYS.     │
 │                                                                    │
 │  6. PLANS: integration-verify LAST. No exceptions.                 │
+│     → TESTS PASSING ≠ FEATURE WORKING                              │
+│     → MUST include FUNCTIONAL verification (smoke test, wiring)    │
+│     → Code that compiles but is never wired up is USELESS          │
 └────────────────────────────────────────────────────────────────────┘
 ```
 

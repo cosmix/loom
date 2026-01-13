@@ -148,7 +148,23 @@ Captures codebase understanding before implementation:
 
 ### 7. Integration Verify Stage (Last)
 
-Verifies all work integrates correctly after merges:
+Verifies all work integrates correctly after merges AND that the feature actually works:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  ⚠️ CRITICAL: TESTS PASSING ≠ FEATURE WORKING                       │
+│                                                                     │
+│  We have had MANY instances where:                                  │
+│  - All tests pass                                                   │
+│  - Code compiles                                                    │
+│  - But the feature is NEVER WIRED UP or FUNCTIONAL                  │
+│                                                                     │
+│  integration-verify MUST include FUNCTIONAL VERIFICATION:           │
+│  - Can you actually USE the feature?                                │
+│  - Is it wired into the application (routes, UI, CLI)?              │
+│  - Does it produce the expected user-visible behavior?              │
+└─────────────────────────────────────────────────────────────────────┘
+```
 
 ```yaml
 - id: integration-verify
@@ -158,17 +174,37 @@ Verifies all work integrates correctly after merges:
 
     Use parallel subagents and skills to maximize performance.
 
+    CRITICAL: This stage must verify FUNCTIONAL INTEGRATION, not just tests passing.
+    Code that compiles and passes tests but is never wired up is USELESS.
+
     Tasks:
     1. Run full test suite (all tests, not just affected)
     2. Run linting with warnings as errors
     3. Verify build succeeds
     4. Check for unintended regressions
-    5. Verify all acceptance criteria from previous stages still pass
+
+    FUNCTIONAL VERIFICATION (MANDATORY):
+    5. Verify the feature is actually WIRED INTO the application:
+       - For CLI: Is the command registered and callable?
+       - For API: Is the endpoint mounted and reachable?
+       - For UI: Is the component rendered and interactive?
+    6. Execute a manual smoke test of the PRIMARY USE CASE:
+       - Run the actual feature end-to-end
+       - Verify it produces expected output/behavior
+       - Document the test steps and results
+    7. Verify integration points with existing code:
+       - Are callbacks/hooks connected?
+       - Are events being published/subscribed?
+       - Are dependencies injected correctly?
   dependencies: ["stage-a", "stage-b", "stage-c"]  # ALL feature stages
   acceptance:
     - "cargo test"
     - "cargo clippy -- -D warnings"
     - "cargo build"
+    # ADD FUNCTIONAL ACCEPTANCE CRITERIA - examples:
+    # - "./target/debug/myapp --help | grep 'new-command'"  # CLI wired
+    # - "curl -s localhost:8080/api/new-endpoint | jq .status"  # API wired
+    # - "grep -q 'NewComponent' src/app/routes.tsx"  # UI wired
   files: []  # Verification only - no file modifications
 ```
 
@@ -180,6 +216,8 @@ Verifies all work integrates correctly after merges:
 | Merge conflicts         | Individual tests pass but merged code may conflict |
 | Cross-stage regressions | Stage A change may break Stage B functionality     |
 | Single verification     | One authoritative pass/fail for entire plan        |
+| **Wiring verification** | **Features must be connected to actually work**    |
+| **Functional proof**    | **Smoke test proves the feature is usable**        |
 
 ### 8. After Writing Plan
 
@@ -307,15 +345,23 @@ loom:
 
         Use parallel subagents and skills to maximize performance.
 
-        Tasks:
+        CRITICAL: Verify FUNCTIONAL INTEGRATION, not just tests passing.
+
+        Build/Test Tasks:
         - Full test suite
         - Linting
         - Build verification
+
+        FUNCTIONAL VERIFICATION (MANDATORY):
+        - Verify features are WIRED into the application
+        - Execute smoke test of primary use case
+        - Confirm user-visible behavior works end-to-end
       dependencies: ["stage-a", "stage-b"]
       acceptance:
         - "cargo test"
         - "cargo clippy -- -D warnings"
         - "cargo build"
+        # ADD: Functional acceptance criteria for YOUR feature
       files: []
 ` ` `
 
