@@ -14,10 +14,10 @@ pub fn show(file: Option<String>) -> Result<()> {
     let work_dir = WorkDir::new(".")?;
     work_dir.load()?;
 
-    let project_root = work_dir
-        .project_root()
-        .context("Could not determine project root")?;
-    let knowledge = KnowledgeDir::new(project_root);
+    let main_project_root = work_dir
+        .main_project_root()
+        .context("Could not determine main project root")?;
+    let knowledge = KnowledgeDir::new(main_project_root);
 
     if !knowledge.exists() {
         println!(
@@ -53,10 +53,10 @@ pub fn update(file: String, content: String) -> Result<()> {
     let work_dir = WorkDir::new(".")?;
     work_dir.load()?;
 
-    let project_root = work_dir
-        .project_root()
-        .context("Could not determine project root")?;
-    let knowledge = KnowledgeDir::new(project_root);
+    let main_project_root = work_dir
+        .main_project_root()
+        .context("Could not determine main project root")?;
+    let knowledge = KnowledgeDir::new(main_project_root);
 
     if !knowledge.exists() {
         knowledge
@@ -81,10 +81,10 @@ pub fn init() -> Result<()> {
     let work_dir = WorkDir::new(".")?;
     work_dir.load()?;
 
-    let project_root = work_dir
-        .project_root()
-        .context("Could not determine project root")?;
-    let knowledge = KnowledgeDir::new(project_root);
+    let main_project_root = work_dir
+        .main_project_root()
+        .context("Could not determine main project root")?;
+    let knowledge = KnowledgeDir::new(main_project_root);
 
     if knowledge.exists() {
         println!(
@@ -112,10 +112,10 @@ pub fn list() -> Result<()> {
     let work_dir = WorkDir::new(".")?;
     work_dir.load()?;
 
-    let project_root = work_dir
-        .project_root()
-        .context("Could not determine project root")?;
-    let knowledge = KnowledgeDir::new(project_root);
+    let main_project_root = work_dir
+        .main_project_root()
+        .context("Could not determine main project root")?;
+    let knowledge = KnowledgeDir::new(main_project_root);
 
     if !knowledge.exists() {
         println!(
@@ -275,6 +275,99 @@ mod tests {
             fs::read_to_string(test_dir.join("doc/loom/knowledge/entry-points.md")).unwrap();
         assert!(content.contains("## New Section"));
         assert!(content.contains("- New entry"));
+
+        std::env::set_current_dir(original_dir).expect("Failed to restore dir");
+    }
+
+    /// Helper to set up a worktree-like structure with symlinked .work
+    fn setup_worktree_env() -> (TempDir, std::path::PathBuf, std::path::PathBuf) {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let base = temp_dir.path();
+
+        // Create main repo structure: base/main-repo/.work/
+        let main_repo = base.join("main-repo");
+        let main_work = main_repo.join(".work");
+        fs::create_dir_all(&main_work).expect("Failed to create main .work dir");
+
+        // Create required subdirectories in main .work
+        for subdir in &[
+            "runners",
+            "tracks",
+            "signals",
+            "handoffs",
+            "archive",
+            "stages",
+            "sessions",
+            "logs",
+            "crashes",
+            "checkpoints",
+            "task-state",
+        ] {
+            fs::create_dir(main_work.join(subdir)).expect("Failed to create subdir");
+        }
+
+        // Create worktree structure: base/main-repo/.worktrees/my-worktree/
+        let worktree = main_repo.join(".worktrees").join("my-worktree");
+        fs::create_dir_all(&worktree).expect("Failed to create worktree dir");
+
+        // Create symlink: worktree/.work -> ../../.work
+        let worktree_work = worktree.join(".work");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("../../.work", &worktree_work)
+            .expect("Failed to create symlink");
+
+        (temp_dir, main_repo, worktree)
+    }
+
+    #[test]
+    #[serial]
+    #[cfg(unix)] // Symlink tests only work reliably on Unix
+    fn test_knowledge_update_in_worktree_writes_to_main_repo() {
+        let (_temp_dir, main_repo, worktree) = setup_worktree_env();
+
+        let original_dir = std::env::current_dir().expect("Failed to get current dir");
+        std::env::set_current_dir(&worktree).expect("Failed to change dir to worktree");
+
+        // Initialize knowledge - should write to main repo
+        let result = init();
+        assert!(result.is_ok(), "init() failed: {:?}", result);
+
+        // Verify files were created in MAIN REPO, not worktree
+        let main_knowledge_dir = main_repo.join("doc/loom/knowledge");
+        let worktree_knowledge_dir = worktree.join("doc/loom/knowledge");
+
+        assert!(
+            main_knowledge_dir.exists(),
+            "Knowledge dir should exist in main repo at {:?}",
+            main_knowledge_dir
+        );
+        assert!(
+            !worktree_knowledge_dir.exists(),
+            "Knowledge dir should NOT exist in worktree at {:?}",
+            worktree_knowledge_dir
+        );
+        assert!(main_knowledge_dir.join("entry-points.md").exists());
+
+        // Update knowledge - should also write to main repo
+        let result = update(
+            "entry-points".to_string(),
+            "## Test Entry\n\n- test/file.rs - Test description".to_string(),
+        );
+        assert!(result.is_ok(), "update() failed: {:?}", result);
+
+        // Verify content was written to main repo
+        let content =
+            fs::read_to_string(main_knowledge_dir.join("entry-points.md")).unwrap();
+        assert!(
+            content.contains("## Test Entry"),
+            "Content should be in main repo"
+        );
+
+        // Double-check worktree doesn't have the file
+        assert!(
+            !worktree_knowledge_dir.exists(),
+            "Worktree should still not have knowledge dir"
+        );
 
         std::env::set_current_dir(original_dir).expect("Failed to restore dir");
     }
