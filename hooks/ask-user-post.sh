@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # loom post-AskUserQuestion hook - runs after user answers a question
 # Called by Claude Code's PostToolUse hook mechanism
 #

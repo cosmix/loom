@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # loom pre-AskUserQuestion hook - runs before asking user a question
 # Called by Claude Code's PreToolUse hook mechanism
 #
