@@ -101,7 +101,9 @@ pub(crate) fn spawn_shell_command(command: &str, working_dir: Option<&Path>) -> 
         c
     };
 
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
     if let Some(dir) = working_dir {
         cmd.current_dir(dir);

@@ -168,14 +168,18 @@ fn run_verification_command(cmd: &str, working_dir: &Path) -> Result<(i32, Strin
         let mut c = Command::new("sh");
         c.arg("-c").arg(cmd);
         c.current_dir(working_dir);
-        c.stdout(Stdio::piped()).stderr(Stdio::piped());
+        c.stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
         c.spawn()
             .with_context(|| format!("Failed to spawn command: {cmd}"))?
     } else {
         let mut c = Command::new("cmd");
         c.arg("/C").arg(cmd);
         c.current_dir(working_dir);
-        c.stdout(Stdio::piped()).stderr(Stdio::piped());
+        c.stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
         c.spawn()
             .with_context(|| format!("Failed to spawn command: {cmd}"))?
     };
