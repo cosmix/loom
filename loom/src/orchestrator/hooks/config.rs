@@ -129,17 +129,12 @@ impl HooksConfig {
 
     /// Build the command string for a hook event
     ///
-    /// The command sets environment variables and calls the hook script:
-    /// LOOM_STAGE_ID=<stage> LOOM_SESSION_ID=<session> LOOM_WORK_DIR=<work> <script>
+    /// Returns just the script path. Environment variables (LOOM_STAGE_ID,
+    /// LOOM_SESSION_ID, LOOM_WORK_DIR) are set via the `env` section in
+    /// settings.json and automatically passed by Claude Code to hooks.
     pub fn build_command(&self, event: HookEvent) -> String {
         let script = self.script_path(event);
-        format!(
-            "LOOM_STAGE_ID='{}' LOOM_SESSION_ID='{}' LOOM_WORK_DIR='{}' '{}'",
-            self.stage_id,
-            self.session_id,
-            self.work_dir.display(),
-            script.display()
-        )
+        script.display().to_string()
     }
 
     /// Generate the hooks record for Claude Code settings.json (new format)

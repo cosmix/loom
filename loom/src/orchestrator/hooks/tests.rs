@@ -82,11 +82,13 @@ mod config_tests {
             PathBuf::from("/work"),
         );
 
+        // build_command now returns just the script path
+        // Environment variables are set via env section in settings.json
         let cmd = config.build_command(HookEvent::SessionStart);
-        assert!(cmd.contains("LOOM_STAGE_ID='test-stage'"));
-        assert!(cmd.contains("LOOM_SESSION_ID='test-session'"));
-        assert!(cmd.contains("LOOM_WORK_DIR='/work'"));
-        assert!(cmd.contains("/hooks/session-start.sh"));
+        assert_eq!(cmd, "/hooks/session-start.sh");
+
+        let cmd = config.build_command(HookEvent::PostToolUse);
+        assert_eq!(cmd, "/hooks/post-tool-use.sh");
     }
 
     #[test]
