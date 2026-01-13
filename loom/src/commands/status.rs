@@ -1,13 +1,15 @@
+pub mod data;
 mod diagnostics;
 mod display;
 pub mod merge_status;
+pub mod render;
+pub mod ui;
 mod validation;
 
 use crate::commands::graph::build_tree_display;
 use crate::daemon::{read_message, write_message, DaemonServer, Request, Response, StageInfo};
 use crate::fs::work_dir::WorkDir;
 use crate::models::worktree::WorktreeStatus;
-use crate::orchestrator::get_merge_point;
 use crate::utils::{cleanup_terminal, install_terminal_panic_hook};
 use crate::verify::transitions::list_all_stages;
 use anyhow::{Context, Result};
@@ -19,19 +21,36 @@ use diagnostics::{
     check_directory_structure, check_orphaned_tracks, check_parsing_errors, check_stuck_runners,
 };
 use display::{
-    count_files, display_merge_status, display_runner_health, display_sessions, display_stages,
+    count_files, display_runner_health, display_sessions, display_stages,
     display_worktrees, load_runners,
 };
-use merge_status::build_merge_report;
 use validation::{validate_markdown_files, validate_references};
 
 /// Show the status dashboard with context health
-pub fn execute() -> Result<()> {
+pub fn execute(live: bool, compact: bool, verbose: bool) -> Result<()> {
     let work_dir = WorkDir::new(".")?;
     work_dir.load()?;
 
-    // Check if daemon is running and use live mode if available
     let work_path = work_dir.root();
+
+    // Compact mode: single-line output for scripting
+    if compact {
+        return execute_compact(&work_dir);
+    }
+
+    // Live mode: subscribe to daemon for real-time updates
+    if live {
+        if DaemonServer::is_running(work_path) {
+            return render::run_live_mode(work_path);
+        } else {
+            eprintln!("{}", "Daemon not running. Cannot use --live mode.".yellow());
+            println!("{}", "Start the daemon with 'loom run' or use static mode.".dimmed());
+            return Ok(());
+        }
+    }
+
+    // Static mode (default): show snapshot of current state
+    // If daemon is running and no explicit mode, auto-switch to live
     if DaemonServer::is_running(work_path) {
         match execute_live(work_path) {
             Ok(()) => return Ok(()),
@@ -48,7 +67,17 @@ pub fn execute() -> Result<()> {
         );
     }
 
-    execute_static(&work_dir)
+    execute_static(&work_dir, verbose)
+}
+
+/// Execute compact mode - single line output for scripting
+fn execute_compact(work_dir: &WorkDir) -> Result<()> {
+    use data::collect_status_data;
+    use std::io::stdout;
+
+    let status_data = collect_status_data(work_dir)?;
+    render::render_compact(&mut stdout(), &status_data)?;
+    Ok(())
 }
 
 /// Connection timeout for daemon socket (2 seconds)
@@ -309,10 +338,20 @@ fn format_worktree_status(status: &Option<WorktreeStatus>) -> colored::ColoredSt
 }
 
 /// Show static status dashboard (original implementation)
-fn execute_static(work_dir: &WorkDir) -> Result<()> {
+fn execute_static(work_dir: &WorkDir, verbose: bool) -> Result<()> {
+    use data::collect_status_data;
+    use std::io::stdout;
+
+    // Collect all status data
+    let status_data = collect_status_data(work_dir)?;
+    let mut out = stdout();
+
     println!();
     println!("{}", "Loom Status Dashboard".bold().blue());
     println!("{}", "=".repeat(50));
+
+    // Show progress bar with stage counts
+    render::render_progress(&mut out, &status_data.progress)?;
 
     let (runners, runner_count) = load_runners(work_dir)?;
     let track_count = count_files(&work_dir.tracks_dir())?;
@@ -350,63 +389,30 @@ fn execute_static(work_dir: &WorkDir) -> Result<()> {
     // Show worktrees status
     display_worktrees(work_dir)?;
 
-    // Show merge status for completed stages
-    if stage_count > 0 {
-        let work_path = work_dir.root();
-        let stages = list_all_stages(work_path)?;
-        let merge_point = get_merge_point(work_path)?;
-        // Use parent of .work as repo root
-        let repo_root = work_path.parent().unwrap_or(work_path);
-        if let Ok(report) = build_merge_report(&stages, &merge_point, repo_root) {
-            display_merge_status(&report);
-        }
+    // Show merge status using new render module
+    if !status_data.merge.merged.is_empty()
+        || !status_data.merge.pending.is_empty()
+        || !status_data.merge.conflicts.is_empty()
+    {
+        render::render_merge_status(&mut out, &status_data.merge)?;
     }
 
     // Show execution graph if stages exist
     if stage_count > 0 {
-        display_execution_graph(work_dir)?;
+        render::render_graph(&mut out, &status_data)?;
+    }
+
+    // Show active sessions using new render module
+    if !status_data.sessions.is_empty() {
+        render::render_sessions(&mut out, &status_data.sessions)?;
+    }
+
+    // Verbose mode: show detailed failure information
+    if verbose {
+        render::render_attention(&mut out, &status_data.stages)?;
     }
 
     println!();
-    Ok(())
-}
-
-/// Display the execution graph showing stage dependencies
-fn display_execution_graph(work_dir: &WorkDir) -> Result<()> {
-    let stages_dir = work_dir.stages_dir();
-    let work_path = stages_dir.parent().ok_or_else(|| {
-        anyhow::anyhow!("Stages directory has no parent: {}", stages_dir.display())
-    })?;
-
-    let stages = list_all_stages(work_path)?;
-    if stages.is_empty() {
-        return Ok(());
-    }
-
-    println!("\n{}", "Execution Graph".bold());
-    let tree_display = build_tree_display(&stages);
-    for line in tree_display.lines() {
-        println!("  {line}");
-    }
-
-    // Print compact legend with colored symbols
-    println!();
-    print!("  {} ", "Legend:".dimmed());
-    print!("{} ", "✓".green().bold());
-    print!("verified  ");
-    print!("{} ", "●".blue().bold());
-    print!("executing  ");
-    print!("{} ", "▶".cyan().bold());
-    print!("ready  ");
-    print!("{} ", "○".white().dimmed());
-    print!("pending  ");
-    print!("{} ", "✔".green());
-    print!("completed  ");
-    print!("{} ", "✗".red().bold());
-    print!("blocked  ");
-    print!("{} ", "⟳".yellow().bold());
-    println!("handoff");
-
     Ok(())
 }
 
