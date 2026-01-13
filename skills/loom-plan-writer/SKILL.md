@@ -124,7 +124,7 @@ Captures codebase understanding before implementation:
 - id: knowledge-bootstrap
   name: "Bootstrap Knowledge Base"
   description: |
-    Explore codebase hierarchically and populate .work/knowledge/:
+    Explore codebase hierarchically and populate doc/loom/knowledge/:
 
     Use parallel subagents and skills to maximize performance.
 
@@ -137,14 +137,14 @@ Captures codebase understanding before implementation:
     Use loom knowledge update commands to capture findings.
   dependencies: []
   acceptance:
-    - "grep -q '## ' .work/knowledge/entry-points.md"
-    - "grep -q '## ' .work/knowledge/patterns.md"
-    - "grep -q '## ' .work/knowledge/conventions.md"
+    - "grep -q '## ' doc/loom/knowledge/entry-points.md"
+    - "grep -q '## ' doc/loom/knowledge/patterns.md"
+    - "grep -q '## ' doc/loom/knowledge/conventions.md"
   files:
-    - ".work/knowledge/**"
+    - "doc/loom/knowledge/**"
 ```
 
-**Skip ONLY if:** `.work/knowledge/` already populated or user explicitly states knowledge exists.
+**Skip ONLY if:** `doc/loom/knowledge/` already populated or user explicitly states knowledge exists.
 
 ### 7. Integration Verify Stage (Last)
 
@@ -255,7 +255,7 @@ loom:
     - id: knowledge-bootstrap
       name: "Bootstrap Knowledge Base"
       description: |
-        Explore codebase and populate .work/knowledge/.
+        Explore codebase and populate doc/loom/knowledge/.
 
         Use parallel subagents and skills to maximize performance.
 
@@ -264,9 +264,9 @@ loom:
         - Document patterns and conventions
       dependencies: []
       acceptance:
-        - "grep -q '## ' .work/knowledge/entry-points.md"
+        - "grep -q '## ' doc/loom/knowledge/entry-points.md"
       files:
-        - ".work/knowledge/**"
+        - "doc/loom/knowledge/**"
 
     - id: stage-a
       name: "Feature A"
