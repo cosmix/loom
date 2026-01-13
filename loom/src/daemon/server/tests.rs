@@ -4,6 +4,7 @@ use super::super::protocol::Response;
 use super::core::DaemonServer;
 use super::status::{
     collect_status, detect_worktree_status, is_manually_merged, parse_stage_frontmatter,
+    parse_stage_frontmatter_full,
 };
 use crate::models::worktree::WorktreeStatus;
 use std::fs;
@@ -256,3 +257,54 @@ fn test_is_manually_merged_no_git_repo() {
 // 1. Gets the default branch (main/master)
 // 2. Checks if loom/{stage_id} is in `git branch --merged {target}`
 // 3. Returns true if the branch has been merged, false otherwise
+
+#[test]
+fn test_parse_stage_frontmatter_full_with_merged_and_deps() {
+    let content = r#"---
+id: stage-with-deps
+name: Stage With Dependencies
+status: executing
+session: session-456
+merged: true
+dependencies:
+  - stage-1
+  - stage-2
+---
+
+# Stage content
+"#;
+
+    let result = parse_stage_frontmatter_full(content);
+    assert!(result.is_some());
+
+    let parsed = result.unwrap();
+    assert_eq!(parsed.id, "stage-with-deps");
+    assert_eq!(parsed.name, "Stage With Dependencies");
+    assert_eq!(parsed.status, "executing");
+    assert_eq!(parsed.session, Some("session-456".to_string()));
+    assert!(parsed.merged);
+    assert_eq!(parsed.dependencies, vec!["stage-1", "stage-2"]);
+}
+
+#[test]
+fn test_parse_stage_frontmatter_full_defaults() {
+    let content = r#"---
+id: stage-minimal
+name: Minimal Stage
+status: pending
+---
+
+# Stage content
+"#;
+
+    let result = parse_stage_frontmatter_full(content);
+    assert!(result.is_some());
+
+    let parsed = result.unwrap();
+    assert_eq!(parsed.id, "stage-minimal");
+    assert_eq!(parsed.name, "Minimal Stage");
+    assert_eq!(parsed.status, "pending");
+    assert!(parsed.session.is_none());
+    assert!(!parsed.merged);
+    assert!(parsed.dependencies.is_empty());
+}
