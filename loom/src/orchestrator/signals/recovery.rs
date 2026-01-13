@@ -467,6 +467,7 @@ mod tests {
             acceptance: vec!["cargo test".to_string()],
             setup: vec![],
             files: vec!["src/lib.rs".to_string()],
+            stage_type: crate::models::stage::StageType::default(),
             plan_id: Some("test-plan".to_string()),
             worktree: Some(".worktrees/test-stage".to_string()),
             session: Some("session-123".to_string()),

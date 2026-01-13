@@ -2,7 +2,7 @@
 
 use crate::fs::stage_files::{compute_stage_depths, stage_file_path, StageDependencies};
 use crate::fs::work_dir::WorkDir;
-use crate::models::stage::{Stage, StageStatus};
+use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::plan::parser::parse_plan;
 use crate::plan::schema::{check_knowledge_recommendations, StageDefinition};
 use crate::verify::serialize_stage_to_markdown;
@@ -131,6 +131,26 @@ pub fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<usiz
     Ok(stage_count)
 }
 
+/// Detect the stage type from the definition.
+///
+/// Uses explicit `stage_type` field if set to Knowledge, otherwise
+/// falls back to detecting "knowledge" in ID or name (case-insensitive).
+fn detect_stage_type(stage_def: &StageDefinition) -> StageType {
+    // Check explicit stage_type field first
+    if stage_def.stage_type == StageType::Knowledge {
+        return StageType::Knowledge;
+    }
+
+    // Fallback: detect based on ID or name containing "knowledge"
+    if stage_def.id.to_lowercase().contains("knowledge")
+        || stage_def.name.to_lowercase().contains("knowledge")
+    {
+        return StageType::Knowledge;
+    }
+
+    StageType::Standard
+}
+
 /// Create a Stage from a StageDefinition
 pub(crate) fn create_stage_from_definition(stage_def: &StageDefinition, plan_id: &str) -> Stage {
     let now = Utc::now();
@@ -140,6 +160,8 @@ pub(crate) fn create_stage_from_definition(stage_def: &StageDefinition, plan_id:
     } else {
         StageStatus::WaitingForDeps
     };
+
+    let stage_type = detect_stage_type(stage_def);
 
     Stage {
         id: stage_def.id.clone(),
@@ -151,6 +173,7 @@ pub(crate) fn create_stage_from_definition(stage_def: &StageDefinition, plan_id:
         acceptance: stage_def.acceptance.clone(),
         setup: stage_def.setup.clone(),
         files: stage_def.files.clone(),
+        stage_type,
         plan_id: Some(plan_id.to_string()),
         worktree: None,
         session: None,

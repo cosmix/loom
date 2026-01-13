@@ -89,6 +89,7 @@ pub fn load_stages_from_work_dir(stages_dir: &PathBuf) -> Result<Vec<StageDefini
             files: frontmatter.files,
             auto_merge: None,
             working_dir: frontmatter.working_dir.unwrap_or_else(|| ".".to_string()),
+            stage_type: crate::plan::schema::StageType::default(),
         };
 
         stages.push(stage_def);

@@ -1,6 +1,6 @@
 //! Tests for plan YAML schema
 
-use super::types::{LoomConfig, LoomMetadata, StageDefinition, ValidationError};
+use super::types::{LoomConfig, LoomMetadata, StageDefinition, StageType, ValidationError};
 use super::validation::{check_knowledge_recommendations, validate, validate_acceptance_criterion};
 
 fn create_valid_metadata() -> LoomMetadata {
@@ -20,6 +20,7 @@ fn create_valid_metadata() -> LoomMetadata {
                     files: vec![],
                     auto_merge: None,
                     working_dir: ".".to_string(),
+                    stage_type: StageType::default(),
                 },
                 StageDefinition {
                     id: "stage-2".to_string(),
@@ -32,6 +33,7 @@ fn create_valid_metadata() -> LoomMetadata {
                     files: vec!["src/*.rs".to_string()],
                     auto_merge: None,
                     working_dir: ".".to_string(),
+                    stage_type: StageType::default(),
                 },
             ],
         },
@@ -91,6 +93,7 @@ fn test_validate_empty_stage_id() {
                 files: vec![],
                 auto_merge: None,
                 working_dir: ".".to_string(),
+                stage_type: StageType::default(),
             }],
         },
     };
@@ -120,6 +123,7 @@ fn test_validate_empty_stage_name() {
                 files: vec![],
                 auto_merge: None,
                 working_dir: ".".to_string(),
+                stage_type: StageType::default(),
             }],
         },
     };
@@ -149,6 +153,7 @@ fn test_validate_unknown_dependency() {
                 files: vec![],
                 auto_merge: None,
                 working_dir: ".".to_string(),
+                stage_type: StageType::default(),
             }],
         },
     };
@@ -179,6 +184,7 @@ fn test_validate_self_dependency() {
                 files: vec![],
                 auto_merge: None,
                 working_dir: ".".to_string(),
+                stage_type: StageType::default(),
             }],
         },
     };
@@ -209,6 +215,7 @@ fn test_validate_multiple_errors() {
                     files: vec![],
                     auto_merge: None,
                     working_dir: ".".to_string(),
+                    stage_type: StageType::default(),
                 },
                 StageDefinition {
                     id: "stage-2".to_string(),
@@ -221,6 +228,7 @@ fn test_validate_multiple_errors() {
                     files: vec![],
                     auto_merge: None,
                     working_dir: ".".to_string(),
+                    stage_type: StageType::default(),
                 },
             ],
         },
@@ -286,6 +294,7 @@ fn test_complex_dependency_chain() {
                     files: vec![],
                     auto_merge: None,
                     working_dir: ".".to_string(),
+                    stage_type: StageType::default(),
                 },
                 StageDefinition {
                     id: "stage-2".to_string(),
@@ -298,6 +307,7 @@ fn test_complex_dependency_chain() {
                     files: vec![],
                     auto_merge: None,
                     working_dir: ".".to_string(),
+                    stage_type: StageType::default(),
                 },
                 StageDefinition {
                     id: "stage-3".to_string(),
@@ -310,6 +320,7 @@ fn test_complex_dependency_chain() {
                     files: vec![],
                     auto_merge: None,
                     working_dir: ".".to_string(),
+                    stage_type: StageType::default(),
                 },
             ],
         },
@@ -335,6 +346,7 @@ fn test_validate_stage_id_path_traversal() {
                 files: vec![],
                 auto_merge: None,
                 working_dir: ".".to_string(),
+                stage_type: StageType::default(),
             }],
         },
     };
@@ -364,6 +376,7 @@ fn test_validate_stage_id_with_slashes() {
                 files: vec![],
                 auto_merge: None,
                 working_dir: ".".to_string(),
+                stage_type: StageType::default(),
             }],
         },
     };
@@ -393,6 +406,7 @@ fn test_validate_stage_id_with_dots() {
                 files: vec![],
                 auto_merge: None,
                 working_dir: ".".to_string(),
+                stage_type: StageType::default(),
             }],
         },
     };
@@ -422,6 +436,7 @@ fn test_validate_stage_id_reserved_name_dotdot() {
                 files: vec![],
                 auto_merge: None,
                 working_dir: ".".to_string(),
+                stage_type: StageType::default(),
             }],
         },
     };
@@ -447,6 +462,7 @@ fn test_validate_stage_id_reserved_name_con() {
                 files: vec![],
                 auto_merge: None,
                 working_dir: ".".to_string(),
+                stage_type: StageType::default(),
             }],
         },
     };
@@ -474,6 +490,7 @@ fn test_validate_dependency_id_path_traversal() {
                 files: vec![],
                 auto_merge: None,
                 working_dir: ".".to_string(),
+                stage_type: StageType::default(),
             }],
         },
     };
@@ -504,6 +521,7 @@ fn test_validate_stage_id_too_long() {
                 files: vec![],
                 auto_merge: None,
                 working_dir: ".".to_string(),
+                stage_type: StageType::default(),
             }],
         },
     };
@@ -531,6 +549,7 @@ fn test_validate_stage_id_with_spaces() {
                 files: vec![],
                 auto_merge: None,
                 working_dir: ".".to_string(),
+                stage_type: StageType::default(),
             }],
         },
     };
@@ -602,6 +621,7 @@ fn test_validate_metadata_with_empty_acceptance() {
                 files: vec![],
                 auto_merge: None,
                 working_dir: ".".to_string(),
+                stage_type: StageType::default(),
             }],
         },
     };
@@ -635,6 +655,7 @@ fn test_validate_metadata_with_valid_acceptance() {
                 files: vec![],
                 auto_merge: None,
                 working_dir: ".".to_string(),
+                stage_type: StageType::default(),
             }],
         },
     };
@@ -660,6 +681,7 @@ fn test_validate_metadata_multiple_invalid_acceptance() {
                 files: vec![],
                 auto_merge: None,
                 working_dir: ".".to_string(),
+                stage_type: StageType::default(),
             }],
         },
     };
@@ -736,6 +758,7 @@ fn test_knowledge_recommendations_no_knowledge_stage() {
             files: vec![],
             auto_merge: None,
             working_dir: ".".to_string(),
+            stage_type: StageType::default(),
         },
         StageDefinition {
             id: "stage-2".to_string(),
@@ -748,6 +771,7 @@ fn test_knowledge_recommendations_no_knowledge_stage() {
             files: vec![],
             auto_merge: None,
             working_dir: ".".to_string(),
+            stage_type: StageType::default(),
         },
     ];
 
@@ -770,6 +794,7 @@ fn test_knowledge_recommendations_has_knowledge_id() {
             files: vec![],
             auto_merge: None,
             working_dir: ".".to_string(),
+            stage_type: StageType::default(),
         },
         StageDefinition {
             id: "stage-2".to_string(),
@@ -782,6 +807,7 @@ fn test_knowledge_recommendations_has_knowledge_id() {
             files: vec![],
             auto_merge: None,
             working_dir: ".".to_string(),
+            stage_type: StageType::default(),
         },
     ];
 
@@ -803,6 +829,7 @@ fn test_knowledge_recommendations_has_knowledge_name() {
             files: vec![],
             auto_merge: None,
             working_dir: ".".to_string(),
+            stage_type: StageType::default(),
         },
     ];
 
@@ -824,6 +851,7 @@ fn test_knowledge_recommendations_case_insensitive() {
             files: vec![],
             auto_merge: None,
             working_dir: ".".to_string(),
+            stage_type: StageType::default(),
         },
     ];
 
@@ -846,6 +874,7 @@ fn test_knowledge_recommendations_no_root_stages() {
         files: vec![],
         auto_merge: None,
         working_dir: ".".to_string(),
+        stage_type: StageType::default(),
     }];
 
     let warnings = check_knowledge_recommendations(&stages);

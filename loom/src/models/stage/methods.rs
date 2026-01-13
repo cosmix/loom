@@ -1,7 +1,7 @@
 use anyhow::Result;
 use chrono::Utc;
 
-use super::types::{Stage, StageOutput, StageStatus};
+use super::types::{Stage, StageOutput, StageStatus, StageType};
 
 impl Stage {
     pub fn new(name: String, description: Option<String>) -> Self {
@@ -18,6 +18,7 @@ impl Stage {
             acceptance: Vec::new(),
             setup: Vec::new(),
             files: Vec::new(),
+            stage_type: StageType::default(),
             plan_id: None,
             worktree: None,
             session: None,
@@ -317,5 +318,19 @@ impl Stage {
     /// `true` if the key exists, `false` otherwise
     pub fn has_output(&self, key: &str) -> bool {
         self.outputs.iter().any(|o| o.key == key)
+    }
+
+    /// Check if this stage is a knowledge-gathering stage.
+    ///
+    /// A stage is considered a knowledge stage if:
+    /// 1. Its `stage_type` is explicitly set to `Knowledge`, OR
+    /// 2. Its ID or name contains "knowledge" (case-insensitive)
+    ///
+    /// This allows both explicit typing via plan YAML and implicit
+    /// detection based on naming conventions.
+    pub fn is_knowledge_stage(&self) -> bool {
+        self.stage_type == StageType::Knowledge
+            || self.id.to_lowercase().contains("knowledge")
+            || self.name.to_lowercase().contains("knowledge")
     }
 }

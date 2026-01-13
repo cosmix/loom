@@ -99,6 +99,7 @@ pub fn build_test_graph(stages: Vec<(&str, Vec<&str>)>) -> ExecutionGraph {
             parallel_group: None,
             auto_merge: None,
             working_dir: ".".to_string(),
+            stage_type: loom::plan::schema::StageType::default(),
         })
         .collect();
 

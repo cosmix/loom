@@ -17,6 +17,7 @@ fn create_test_stage(id: &str, auto_merge: Option<bool>) -> Stage {
         acceptance: vec![],
         setup: vec![],
         files: vec![],
+        stage_type: loom::models::stage::StageType::default(),
         plan_id: None,
         worktree: Some(id.to_string()),
         session: None,

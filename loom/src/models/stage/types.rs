@@ -4,6 +4,12 @@ use serde_json::Value;
 
 use crate::models::failure::FailureInfo;
 
+/// Type of stage for specialized handling.
+///
+/// Re-exported from plan schema for convenience. Use this to distinguish
+/// between knowledge-gathering stages and standard implementation stages.
+pub use crate::plan::schema::StageType;
+
 /// A structured output from a completed stage that can be passed to dependent stages.
 ///
 /// Outputs allow stages to communicate computed values, discovered paths, or
@@ -30,6 +36,9 @@ pub struct Stage {
     #[serde(default)]
     pub setup: Vec<String>,
     pub files: Vec<String>,
+    /// Type of stage for specialized handling (knowledge vs standard)
+    #[serde(default)]
+    pub stage_type: StageType,
     pub plan_id: Option<String>,
     pub worktree: Option<String>,
     pub session: Option<String>,

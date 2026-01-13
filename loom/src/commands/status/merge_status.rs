@@ -180,7 +180,7 @@ pub fn build_merge_report(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::stage::{Stage, StageStatus};
+    use crate::models::stage::{Stage, StageStatus, StageType};
     use chrono::Utc;
 
     fn make_test_stage(id: &str) -> Stage {
@@ -194,6 +194,7 @@ mod tests {
             acceptance: vec![],
             setup: vec![],
             files: vec![],
+            stage_type: StageType::default(),
             plan_id: None,
             worktree: None,
             session: None,

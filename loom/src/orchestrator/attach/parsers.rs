@@ -169,6 +169,7 @@ pub fn stage_from_markdown(content: &str) -> Result<Stage> {
         acceptance: Vec::new(),
         setup: Vec::new(),
         files: Vec::new(),
+        stage_type: crate::models::stage::StageType::default(),
         plan_id: None,
         worktree: None,
         session,

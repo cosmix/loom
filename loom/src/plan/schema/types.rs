@@ -2,6 +2,17 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Type of stage for specialized handling
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StageType {
+    /// Standard implementation stage
+    #[default]
+    Standard,
+    /// Knowledge-gathering stage (e.g., knowledge-bootstrap)
+    Knowledge,
+}
+
 /// Root structure of the loom metadata block
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoomMetadata {
@@ -40,6 +51,9 @@ pub struct StageDefinition {
     /// REQUIRED field - forces explicit choice of execution directory.
     /// Use "." for worktree root, or a subdirectory like "loom".
     pub working_dir: String,
+    /// Type of stage for specialized handling (e.g., knowledge vs standard)
+    #[serde(default)]
+    pub stage_type: StageType,
 }
 
 /// Validation error with context

@@ -267,6 +267,7 @@ mod tests {
             acceptance: vec![],
             setup: vec![],
             files: vec![],
+            stage_type: crate::models::stage::StageType::default(),
             plan_id: None,
             worktree: Some(id.to_string()),
             session: None,

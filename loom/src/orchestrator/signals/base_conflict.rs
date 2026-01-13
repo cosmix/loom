@@ -225,7 +225,7 @@ fn parse_base_conflict_signal_content(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::stage::StageStatus;
+    use crate::models::stage::{StageStatus, StageType};
     use chrono::Utc;
 
     fn create_test_stage(id: &str) -> Stage {
@@ -239,6 +239,7 @@ mod tests {
             acceptance: vec![],
             setup: vec![],
             files: vec![],
+            stage_type: StageType::default(),
             plan_id: None,
             worktree: None,
             session: None,

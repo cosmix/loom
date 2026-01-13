@@ -3,8 +3,8 @@
 use super::cleanup::{cleanup_work_directory, prune_stale_worktrees};
 use super::plan_setup::{create_stage_from_definition, initialize_with_plan};
 use crate::fs::work_dir::WorkDir;
-use crate::models::stage::{Stage, StageStatus};
-use crate::plan::schema::{LoomConfig, LoomMetadata, StageDefinition};
+use crate::models::stage::{Stage, StageStatus, StageType as ModelStageType};
+use crate::plan::schema::{LoomConfig, LoomMetadata, StageDefinition, StageType};
 use crate::verify::serialize_stage_to_markdown;
 use chrono::Utc;
 use serial_test::serial;
@@ -45,6 +45,7 @@ fn test_create_stage_from_definition_no_dependencies() {
         files: vec!["src/*.rs".to_string()],
         auto_merge: None,
         working_dir: ".".to_string(),
+        stage_type: StageType::default(),
     };
 
     let stage = create_stage_from_definition(&stage_def, "plan-001");
@@ -70,6 +71,7 @@ fn test_create_stage_from_definition_with_dependencies() {
         files: vec![],
         auto_merge: None,
         working_dir: ".".to_string(),
+        stage_type: StageType::default(),
     };
 
     let stage = create_stage_from_definition(&stage_def, "plan-002");
@@ -92,6 +94,7 @@ fn test_serialize_stage_to_markdown_minimal() {
         acceptance: vec![],
         setup: vec![],
         files: vec![],
+        stage_type: ModelStageType::default(),
         plan_id: None,
         worktree: None,
         session: None,
@@ -136,6 +139,7 @@ fn test_serialize_stage_to_markdown_with_all_fields() {
         acceptance: vec!["test1".to_string(), "test2".to_string()],
         setup: vec![],
         files: vec!["file1.rs".to_string(), "file2.rs".to_string()],
+        stage_type: ModelStageType::default(),
         plan_id: Some("plan-123".to_string()),
         worktree: None,
         session: None,
@@ -206,6 +210,7 @@ fn test_initialize_with_plan_creates_config() {
         files: vec![],
         auto_merge: None,
         working_dir: ".".to_string(),
+        stage_type: StageType::default(),
     };
 
     let plan_path = create_test_plan(temp_dir.path(), vec![stage_def]);
@@ -241,6 +246,7 @@ fn test_initialize_with_plan_creates_stage_files() {
             files: vec![],
             auto_merge: None,
             working_dir: ".".to_string(),
+            stage_type: StageType::default(),
         },
         StageDefinition {
             id: "stage-2".to_string(),
@@ -253,6 +259,7 @@ fn test_initialize_with_plan_creates_stage_files() {
             files: vec![],
             auto_merge: None,
             working_dir: ".".to_string(),
+            stage_type: StageType::default(),
         },
     ];
 

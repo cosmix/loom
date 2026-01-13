@@ -240,7 +240,7 @@ mod tests {
 
     #[test]
     fn test_determine_recovery_reason() {
-        use crate::models::stage::{Stage, StageStatus};
+        use crate::models::stage::{Stage, StageStatus, StageType};
         use chrono::Utc;
 
         let mut stage = Stage {
@@ -253,6 +253,7 @@ mod tests {
             acceptance: vec![],
             setup: vec![],
             files: vec![],
+            stage_type: StageType::default(),
             plan_id: None,
             worktree: None,
             session: None,

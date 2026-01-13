@@ -271,5 +271,6 @@ fn extract_stage_frontmatter(content: &str) -> Result<StageDefinition> {
         files: fm.files,
         auto_merge: None,
         working_dir: fm.working_dir.unwrap_or_else(|| ".".to_string()),
+        stage_type: crate::plan::schema::StageType::default(),
     })
 }

@@ -61,6 +61,7 @@ mod tests {
             files: vec![],
             auto_merge: None,
             working_dir: ".".to_string(),
+            stage_type: crate::plan::schema::StageType::default(),
         }];
 
         ExecutionGraph::build(stages).unwrap()

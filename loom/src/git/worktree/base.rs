@@ -240,6 +240,7 @@ mod tests {
                 parallel_group: None,
                 auto_merge: None,
                 working_dir: ".".to_string(),
+                stage_type: crate::plan::schema::StageType::default(),
             })
             .collect();
 

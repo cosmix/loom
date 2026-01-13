@@ -6,7 +6,7 @@ use super::state::{block, hold, ready, release, reset, resume_from_waiting, wait
 use super::*;
 use crate::fs::work_dir::WorkDir;
 use crate::models::session::{Session, SessionStatus, SessionType};
-use crate::models::stage::{Stage, StageStatus};
+use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::verify::transitions::load_stage;
 use chrono::Utc;
 use serial_test::serial;
@@ -25,6 +25,7 @@ fn create_test_stage(id: &str, status: StageStatus) -> Stage {
         acceptance: vec![],
         setup: vec![],
         files: vec![],
+        stage_type: StageType::default(),
         plan_id: None,
         worktree: None,
         session: None,

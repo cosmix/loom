@@ -15,6 +15,7 @@ fn make_stage(id: &str, deps: Vec<&str>, group: Option<&str>) -> StageDefinition
         files: vec![],
         auto_merge: None,
         working_dir: ".".to_string(),
+        stage_type: crate::plan::schema::StageType::default(),
     }
 }
 

@@ -15,7 +15,7 @@ mod dependencies;
 mod stage_id;
 mod structure;
 
-use loom::plan::schema::{LoomConfig, LoomMetadata, StageDefinition};
+use loom::plan::schema::{LoomConfig, LoomMetadata, StageDefinition, StageType};
 
 /// Helper to create a minimal valid stage definition
 pub(crate) fn create_valid_stage(id: &str, name: &str) -> StageDefinition {
@@ -30,6 +30,7 @@ pub(crate) fn create_valid_stage(id: &str, name: &str) -> StageDefinition {
         files: vec![],
         auto_merge: None,
         working_dir: ".".to_string(),
+        stage_type: StageType::default(),
     }
 }
 

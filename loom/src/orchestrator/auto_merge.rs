@@ -142,7 +142,7 @@ pub fn attempt_auto_merge(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::stage::StageStatus;
+    use crate::models::stage::{StageStatus, StageType};
     use chrono::Utc;
 
     fn create_test_stage(id: &str) -> Stage {
@@ -156,6 +156,7 @@ mod tests {
             acceptance: vec![],
             setup: vec![],
             files: vec![],
+            stage_type: StageType::default(),
             plan_id: None,
             worktree: Some(id.to_string()),
             session: None,
