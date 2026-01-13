@@ -3,9 +3,10 @@
 //! Provides a unified interface for spawning and managing Claude Code sessions
 //! in native terminal windows.
 //!
-//! Supports two session types:
+//! Supports three session types:
 //! - Stage sessions: run in isolated worktrees for parallel stage execution
 //! - Merge sessions: run in main repository for conflict resolution
+//! - Knowledge sessions: run in main repository for knowledge gathering (no worktree)
 
 pub mod emulator;
 pub mod native;
@@ -95,6 +96,25 @@ pub trait TerminalBackend: Send + Sync {
     /// * `signal_path` - Path to the base conflict signal file
     /// * `repo_root` - Path to the main repository (not a worktree)
     fn spawn_base_conflict_session(
+        &self,
+        stage: &Stage,
+        session: Session,
+        signal_path: &Path,
+        repo_root: &Path,
+    ) -> Result<Session>;
+
+    /// Spawn a Claude Code session for knowledge gathering
+    ///
+    /// Knowledge stages run in the main repository without creating a worktree.
+    /// They don't require commits or merging - their purpose is to populate
+    /// the doc/loom/knowledge/ directory with codebase understanding.
+    ///
+    /// # Arguments
+    /// * `stage` - The knowledge stage to execute
+    /// * `session` - The session for this execution
+    /// * `signal_path` - Path to the knowledge signal file
+    /// * `repo_root` - Path to the main repository
+    fn spawn_knowledge_session(
         &self,
         stage: &Stage,
         session: Session,

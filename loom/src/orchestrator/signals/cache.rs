@@ -123,6 +123,72 @@ pub fn generate_stable_prefix() -> String {
     content
 }
 
+/// Stable prefix for knowledge stages (runs in main repo, no worktree)
+///
+/// Knowledge stages have different rules:
+/// - Run in the main repository, not a worktree
+/// - No commits or merges required
+/// - Focus on exploring codebase and populating doc/loom/knowledge/
+/// - No git staging restrictions (they don't commit)
+pub fn generate_knowledge_stable_prefix() -> String {
+    let mut content = String::new();
+
+    // Fixed header for knowledge stages
+    content.push_str("## Knowledge Stage Context\n\n");
+    content.push_str(
+        "You are running a **knowledge-gathering stage** in the **main repository**.\n\n",
+    );
+    content.push_str("**Key Differences from Regular Stages:**\n\n");
+    content.push_str("- **NO WORKTREE** - You are in the main repository, not an isolated worktree\n");
+    content
+        .push_str("- **NO COMMITS REQUIRED** - Knowledge stages do NOT require git commits\n");
+    content.push_str("- **NO MERGING** - Your work stays in doc/loom/knowledge/ directly\n");
+    content.push_str("- **EXPLORATION FOCUS** - Your goal is to understand and document the codebase\n\n");
+
+    // What knowledge stages DO
+    content.push_str("**Your Mission:**\n\n");
+    content.push_str("1. **Explore** the codebase hierarchically (entry points → modules → patterns → conventions)\n");
+    content.push_str(
+        "2. **Document** findings using `loom knowledge update <file> <content>` commands\n",
+    );
+    content.push_str("3. **Verify** acceptance criteria before completing\n\n");
+
+    // Add reminder to follow CLAUDE.md rules
+    content.push_str("## Execution Rules\n\n");
+    content.push_str(
+        "Follow your `~/.claude/CLAUDE.md` and project `CLAUDE.md` rules. Key reminders:\n\n",
+    );
+    content.push_str("**Delegation & Efficiency (CRITICAL):**\n\n");
+    content.push_str(
+        "**Parallel subagents and appropriate skills should be used WHEREVER POSSIBLE.**\n\n",
+    );
+    content.push_str(
+        "- **Use PARALLEL subagents** - spawn multiple appropriate subagents concurrently when tasks are independent\n",
+    );
+    content.push_str("- **Use Skills** - invoke relevant skills wherever applicable\n");
+    content.push_str("- **Use TodoWrite** to plan and track progress\n\n");
+    content.push_str("**Completion:**\n");
+    content.push_str("- **Verify acceptance criteria** before marking stage complete\n");
+    content.push_str("- **Create handoff** if context exceeds 75%\n");
+    content.push_str("- **Run `loom stage complete <stage-id>`** when done (from the repo root)\n\n");
+
+    // Knowledge-specific instructions
+    content.push_str("**Knowledge Commands:**\n\n");
+    content.push_str("```bash\n");
+    content.push_str("# Update a knowledge file\n");
+    content.push_str(
+        "loom knowledge update entry-points \"## Section\\n\\n- path/file.rs - description\"\n",
+    );
+    content.push_str("loom knowledge update patterns \"## Pattern Name\\n\\n- How it works\"\n");
+    content.push_str("loom knowledge update conventions \"## Convention\\n\\n- Details\"\n");
+    content.push_str("\n# Show current knowledge\n");
+    content.push_str("loom knowledge show\n");
+    content.push_str("loom knowledge show entry-points\n");
+    content.push_str("```\n\n");
+
+    content
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -189,5 +255,33 @@ mod tests {
         let prefix1 = generate_stable_prefix();
         let prefix2 = generate_stable_prefix();
         assert_eq!(prefix1, prefix2, "Stable prefix should be deterministic");
+    }
+
+    #[test]
+    fn test_knowledge_stable_prefix_contains_required_sections() {
+        let prefix = generate_knowledge_stable_prefix();
+
+        assert!(prefix.contains("## Knowledge Stage Context"));
+        assert!(prefix.contains("main repository"));
+        assert!(prefix.contains("NO WORKTREE"));
+        assert!(prefix.contains("NO COMMITS REQUIRED"));
+        assert!(prefix.contains("NO MERGING"));
+        assert!(prefix.contains("## Execution Rules"));
+        assert!(prefix.contains("loom knowledge update"));
+        assert!(prefix.contains("loom stage complete"));
+        // Critical: parallel subagents guidance must be verbatim
+        assert!(prefix.contains(
+            "Parallel subagents and appropriate skills should be used WHEREVER POSSIBLE."
+        ));
+    }
+
+    #[test]
+    fn test_knowledge_stable_prefix_is_stable() {
+        let prefix1 = generate_knowledge_stable_prefix();
+        let prefix2 = generate_knowledge_stable_prefix();
+        assert_eq!(
+            prefix1, prefix2,
+            "Knowledge stable prefix should be deterministic"
+        );
     }
 }

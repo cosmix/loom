@@ -3,6 +3,7 @@ mod cache;
 mod crud;
 mod format;
 mod generate;
+mod knowledge;
 mod merge;
 mod merge_conflict;
 mod parse;
@@ -31,5 +32,6 @@ pub use format::{format_dependency_table, format_signal_with_metrics, FormattedS
 pub use generate::{
     build_embedded_context_with_stage, generate_signal, generate_signal_with_metrics,
 };
+pub use knowledge::generate_knowledge_signal;
 pub use merge::{generate_merge_signal, read_merge_signal};
 pub use merge_conflict::{generate_merge_conflict_signal, read_merge_conflict_signal};

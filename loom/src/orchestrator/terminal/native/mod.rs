@@ -226,6 +226,67 @@ impl TerminalBackend for NativeBackend {
         Ok(session)
     }
 
+    fn spawn_knowledge_session(
+        &self,
+        stage: &Stage,
+        session: Session,
+        signal_path: &Path,
+        repo_root: &Path,
+    ) -> Result<Session> {
+        let repo_root_str = repo_root.to_str().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Repository path contains invalid UTF-8: {}",
+                repo_root.display()
+            )
+        })?;
+
+        // Build the title for the knowledge session window
+        let title = format!("loom-knowledge-{}", stage.id);
+
+        // Build the initial prompt for Claude knowledge gathering session
+        let signal_path_str = signal_path.to_string_lossy();
+        let initial_prompt = format!(
+            "Read the signal file at {signal_path_str} and execute the assigned knowledge gathering work. \
+             This file contains your assignment, tasks, acceptance criteria, \
+             and instructions for populating the knowledge base."
+        );
+
+        // Escape the prompt for shell
+        let escaped_prompt = escape(Cow::Borrowed(&initial_prompt));
+
+        // Build the command to run in the terminal
+        let claude_cmd = format!("claude {escaped_prompt}");
+
+        // Create wrapper script for knowledge session
+        let wrapper_path = pid_tracking::create_wrapper_script(
+            &self.work_dir,
+            &format!("knowledge-{}", stage.id),
+            &claude_cmd,
+        )?;
+
+        // Build the command that runs the wrapper script
+        let wrapper_cmd = wrapper_path.to_string_lossy();
+
+        // Spawn the terminal in the main repository (not worktree)
+        let pid = spawn_in_terminal(
+            &self.terminal,
+            &title,
+            Path::new(repo_root_str),
+            &wrapper_cmd,
+            Some(&self.work_dir),
+            Some(&format!("knowledge-{}", stage.id)),
+        )?;
+
+        // Update the session with spawn info
+        // Note: For knowledge sessions, we don't set worktree_path since we're in the main repo
+        let mut session = session;
+        session.assign_to_stage(stage.id.clone());
+        session.set_pid(pid);
+        session.try_mark_running()?;
+
+        Ok(session)
+    }
+
     fn kill_session(&self, session: &Session) -> Result<()> {
         // First, try to close the window by title (more reliable for all terminals).
         // The title is set to "loom-{stage_id}" when spawning.

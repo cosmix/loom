@@ -7,9 +7,9 @@ use crate::git;
 use crate::git::worktree::setup_worktree_hooks;
 use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::session::Session;
-use crate::models::stage::{Stage, StageStatus};
-use crate::orchestrator::hooks::find_hooks_dir;
-use crate::orchestrator::signals::{generate_signal, DependencyStatus};
+use crate::models::stage::{Stage, StageStatus, StageType};
+use crate::orchestrator::hooks::{find_hooks_dir, setup_hooks_for_worktree, HooksConfig};
+use crate::orchestrator::signals::{generate_knowledge_signal, generate_signal, DependencyStatus};
 
 use super::persistence::Persistence;
 use super::Orchestrator;
@@ -21,6 +21,9 @@ pub(super) trait StageExecutor: Persistence {
 
     /// Process a single ready stage
     fn start_stage(&mut self, stage_id: &str) -> Result<()>;
+
+    /// Start a knowledge stage (runs in main repo without worktree)
+    fn start_knowledge_stage(&mut self, stage: Stage) -> Result<()>;
 }
 
 impl StageExecutor for Orchestrator {
@@ -62,6 +65,11 @@ impl StageExecutor for Orchestrator {
         // Skip if stage is held
         if stage.held {
             return Ok(());
+        }
+
+        // Knowledge stages run in main repo without a worktree
+        if stage.stage_type == StageType::Knowledge {
+            return self.start_knowledge_stage(stage);
         }
 
         // Resolve the base branch for worktree creation
@@ -207,6 +215,109 @@ impl StageExecutor for Orchestrator {
         self.active_sessions
             .insert(stage_id.to_string(), spawned_session);
         self.active_worktrees.insert(stage_id.to_string(), worktree);
+
+        Ok(())
+    }
+
+    fn start_knowledge_stage(&mut self, stage: Stage) -> Result<()> {
+        let stage_id = stage.id.clone();
+
+        let session = Session::new();
+
+        // Set up Claude Code hooks for this session in the main repo
+        if let Some(hooks_dir) = find_hooks_dir() {
+            // Canonicalize work_dir to absolute path
+            let absolute_work_dir = self
+                .config
+                .work_dir
+                .canonicalize()
+                .unwrap_or_else(|_| self.config.work_dir.clone());
+
+            let config = HooksConfig::new(
+                hooks_dir,
+                stage_id.to_string(),
+                session.id.clone(),
+                absolute_work_dir,
+            );
+
+            // Set up hooks in the main repo (not a worktree)
+            if let Err(e) = setup_hooks_for_worktree(&self.config.repo_root, &config) {
+                eprintln!(
+                    "Warning: Failed to set up hooks for knowledge stage '{stage_id}': {e}"
+                );
+                // Continue anyway - hooks are optional enhancement
+            }
+        }
+
+        let deps = get_dependency_status(&stage, &self.graph);
+
+        // Generate knowledge-specific signal (runs in main repo, no commit required)
+        let signal_path = generate_knowledge_signal(
+            &session,
+            &stage,
+            &self.config.repo_root,
+            &deps,
+            &self.config.work_dir,
+        )
+        .context("Failed to generate knowledge signal file")?;
+
+        // Store original session ID to verify consistency after spawn
+        let original_session_id = session.id.clone();
+
+        let spawned_session = if !self.config.manual_mode {
+            // Spawn session in the main repo directory (not a worktree)
+            let spawned = self
+                .backend
+                .spawn_knowledge_session(&stage, session, &signal_path, &self.config.repo_root)
+                .with_context(|| {
+                    format!("Failed to spawn knowledge session for stage: {stage_id}")
+                })?;
+
+            // Print confirmation that stage was started
+            println!("  Started (knowledge): {stage_id}");
+
+            spawned
+        } else {
+            println!("Manual mode: Session setup for knowledge stage '{stage_id}'");
+            println!("  Directory: {}", self.config.repo_root.display());
+            println!("  Signal: {}", signal_path.display());
+            println!(
+                "  To start: cd {} && claude \"Read the signal file at {} and execute the assigned stage work.\"",
+                self.config.repo_root.display(),
+                signal_path.display()
+            );
+            session
+        };
+
+        // Verify session ID consistency (signal file uses this ID)
+        debug_assert_eq!(
+            original_session_id, spawned_session.id,
+            "Session ID mismatch: signal file created with '{}' but saving session with '{}'",
+            original_session_id, spawned_session.id
+        );
+
+        self.save_session(&spawned_session)?;
+
+        let mut updated_stage = stage;
+        updated_stage.assign_session(spawned_session.id.clone());
+        // Knowledge stages don't have a worktree
+        updated_stage.set_worktree(None);
+        updated_stage.set_resolved_base(None);
+
+        // Transition through Queued if currently WaitingForDeps (WaitingForDeps -> Queued -> Executing)
+        if updated_stage.status == StageStatus::WaitingForDeps {
+            updated_stage.try_mark_queued()?;
+        }
+        updated_stage.try_mark_executing()?;
+        self.save_stage(&updated_stage)?;
+
+        self.graph
+            .mark_executing(&stage_id)
+            .context("Failed to mark knowledge stage as executing in graph")?;
+
+        // Add to active sessions but NOT to active_worktrees (no worktree for knowledge stages)
+        self.active_sessions
+            .insert(stage_id, spawned_session);
 
         Ok(())
     }
