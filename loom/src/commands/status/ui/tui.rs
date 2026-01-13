@@ -32,7 +32,7 @@ use ratatui::{
 };
 
 use super::theme::{StatusColors, Theme};
-use super::widgets::{render_execution_graph, status_indicator, status_text};
+use super::widgets::{status_indicator, status_text};
 use crate::daemon::{read_message, write_message, Request, Response, StageInfo};
 use crate::models::stage::StageStatus;
 
@@ -50,6 +50,7 @@ struct UnifiedStage {
     merged: bool,
     started_at: Option<chrono::DateTime<chrono::Utc>>,
     level: usize,
+    dependencies: Vec<String>,
 }
 
 /// Live status data received from daemon
@@ -155,6 +156,7 @@ impl LiveStatus {
                 merged: stage.merged,
                 started_at: Some(stage.started_at),
                 level: levels.get(&stage.id).copied().unwrap_or(0),
+                dependencies: stage.dependencies.clone(),
             }
         };
 
@@ -357,32 +359,33 @@ impl TuiApp {
         let completed_count = status.completed.len();
 
         // Clone the data we need for rendering
-        let executing = status.executing.clone();
-        let pending = status.pending.clone();
-        let completed = status.completed.clone();
-        let blocked = status.blocked.clone();
         let unified_stages = status.unified_stages();
 
         self.terminal.draw(|frame| {
             let area = frame.area();
 
+            // Calculate graph height: one line per level
+            let max_level = unified_stages.iter().map(|s| s.level).max().unwrap_or(0);
+            let num_levels = max_level + 1;
+            let graph_height = (num_levels as u16).clamp(1, 8);
+
             // New unified layout:
             // - Compact header (1 line with inline progress)
-            // - Execution graph (3 lines)
+            // - Execution graph (dynamic based on levels)
             // - Unified stage table (remaining space)
             // - Footer (1 line)
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(1), // Compact header with inline progress
-                    Constraint::Length(3), // Execution graph
-                    Constraint::Min(8),    // Unified stage table
-                    Constraint::Length(1), // Footer
+                    Constraint::Length(1),            // Compact header with inline progress
+                    Constraint::Length(graph_height), // Execution graph (dynamic)
+                    Constraint::Min(8),               // Unified stage table
+                    Constraint::Length(1),            // Footer
                 ])
                 .split(area);
 
             render_compact_header(frame, chunks[0], spinner, pct, completed_count, total);
-            render_graph(frame, chunks[1], &executing, &pending, &completed, &blocked);
+            render_graph(frame, chunks[1], &unified_stages);
             render_unified_table(frame, chunks[2], &unified_stages);
             render_compact_footer(frame, chunks[3], &last_error);
         })?;
@@ -437,28 +440,75 @@ fn progress_bar_compact(pct: f64, width: usize) -> String {
     format!("[{}{}]", "█".repeat(filled), "░".repeat(empty))
 }
 
-/// Render execution graph
-fn render_graph(
-    frame: &mut Frame,
-    area: Rect,
-    executing: &[StageInfo],
-    pending: &[StageInfo],
-    completed: &[StageInfo],
-    blocked: &[StageInfo],
-) {
-    // Extract IDs for the graph rendering function
-    let pending_ids: Vec<String> = pending.iter().map(|s| s.id.clone()).collect();
-    let completed_ids: Vec<String> = completed.iter().map(|s| s.id.clone()).collect();
-    let blocked_ids: Vec<String> = blocked.iter().map(|s| s.id.clone()).collect();
-    let graph_lines = render_execution_graph(executing, &pending_ids, &completed_ids, &blocked_ids);
+/// Render execution graph with stable vertical layout and inline dependencies
+fn render_graph(frame: &mut Frame, area: Rect, stages: &[UnifiedStage]) {
+    use std::collections::BTreeMap;
 
-    let block = Block::default()
-        .title(" Execution Graph ")
-        .title_style(Theme::dimmed())
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(StatusColors::BORDER));
+    if stages.is_empty() {
+        let empty = Paragraph::new(Span::styled("No stages", Theme::dimmed()));
+        frame.render_widget(empty, area);
+        return;
+    }
 
-    let paragraph = Paragraph::new(graph_lines).block(block);
+    // Group stages by level (BTreeMap for sorted order)
+    let mut by_level: BTreeMap<usize, Vec<&UnifiedStage>> = BTreeMap::new();
+    for stage in stages {
+        by_level.entry(stage.level).or_default().push(stage);
+    }
+
+    // Render one line per level with inline deps
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    for level_stages in by_level.values() {
+        let mut spans: Vec<Span<'static>> = Vec::new();
+
+        for (i, stage) in level_stages.iter().enumerate() {
+            if i > 0 {
+                spans.push(Span::styled("  │  ", Theme::dimmed()));
+            }
+
+            let icon = match stage.status {
+                StageStatus::Completed => "✓",
+                StageStatus::Executing => "●",
+                StageStatus::Queued => "▶",
+                StageStatus::Blocked | StageStatus::MergeConflict | StageStatus::MergeBlocked => "✗",
+                StageStatus::NeedsHandoff | StageStatus::WaitingForInput => "?",
+                _ => "○",
+            };
+
+            let style = match stage.status {
+                StageStatus::Completed => Theme::status_completed(),
+                StageStatus::Executing => Theme::status_executing(),
+                StageStatus::Queued => Theme::status_queued(),
+                StageStatus::Blocked | StageStatus::MergeConflict | StageStatus::MergeBlocked => {
+                    Theme::status_blocked()
+                }
+                StageStatus::NeedsHandoff
+                | StageStatus::WaitingForInput
+                | StageStatus::CompletedWithFailures => Theme::status_warning(),
+                _ => Theme::dimmed(),
+            };
+
+            // Stage name with icon
+            spans.push(Span::styled(format!("{icon} {}", stage.id), style));
+
+            // Inline dependencies
+            if !stage.dependencies.is_empty() {
+                let deps_str = stage.dependencies.join(",");
+                // Truncate if too long
+                let max_deps_len = 30;
+                let display_deps = if deps_str.len() > max_deps_len {
+                    format!("{}…", &deps_str[..max_deps_len - 1])
+                } else {
+                    deps_str
+                };
+                spans.push(Span::styled(format!(" (←{display_deps})"), Theme::dimmed()));
+            }
+        }
+
+        lines.push(Line::from(spans));
+    }
+
+    let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, area);
 }
 
