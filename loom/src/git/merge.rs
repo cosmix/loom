@@ -56,7 +56,13 @@ pub fn merge_stage(stage_id: &str, target_branch: &str, repo_root: &Path) -> Res
         .arg(&branch_name)
         .current_dir(repo_root)
         .output()
-        .with_context(|| "Failed to execute git merge")?;
+        .with_context(|| {
+            format!(
+                "Failed to execute git merge {} in {}",
+                branch_name,
+                repo_root.display()
+            )
+        })?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -95,8 +101,30 @@ pub fn merge_stage(stage_id: &str, target_branch: &str, repo_root: &Path) -> Res
         });
     }
 
-    // Some other error
-    bail!("git merge failed: {stderr}");
+    // Some other error - include comprehensive diagnostics
+    let exit_code = output
+        .status
+        .code()
+        .map(|c| c.to_string())
+        .unwrap_or_else(|| "signal".to_string());
+
+    bail!(
+        "git merge failed (exit code {exit_code}):\n\
+         Directory: {}\n\
+         Stdout: {}\n\
+         Stderr: {}",
+        repo_root.display(),
+        if stdout.is_empty() {
+            "(empty)"
+        } else {
+            stdout.trim()
+        },
+        if stderr.is_empty() {
+            "(empty)"
+        } else {
+            stderr.trim()
+        }
+    );
 }
 
 /// Parse merge statistics from git output
@@ -132,7 +160,12 @@ fn get_conflicting_files(repo_root: &Path) -> Result<Vec<String>> {
         .args(["diff", "--name-only", "--diff-filter=U"])
         .current_dir(repo_root)
         .output()
-        .with_context(|| "Failed to get conflicting files")?;
+        .with_context(|| {
+            format!(
+                "Failed to execute git diff --name-only --diff-filter=U in {}",
+                repo_root.display()
+            )
+        })?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let files: Vec<String> = stdout
@@ -164,7 +197,13 @@ pub fn get_conflicting_files_from_status(
         .args(["merge", "--no-commit", "--no-ff", source_branch])
         .current_dir(repo_root)
         .output()
-        .with_context(|| "Failed to test merge")?;
+        .with_context(|| {
+            format!(
+                "Failed to execute test merge of {} in {}",
+                source_branch,
+                repo_root.display()
+            )
+        })?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -191,11 +230,34 @@ pub fn abort_merge(repo_root: &Path) -> Result<()> {
         .args(["merge", "--abort"])
         .current_dir(repo_root)
         .output()
-        .with_context(|| "Failed to abort merge")?;
+        .with_context(|| format!("Failed to execute git merge --abort in {}", repo_root.display()))?;
 
     if !output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("git merge --abort failed: {stderr}");
+        let exit_code = output
+            .status
+            .code()
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "signal".to_string());
+
+        bail!(
+            "git merge --abort failed (exit code {exit_code}):\n\
+             Directory: {}\n\
+             Stdout: {}\n\
+             Stderr: {}",
+            repo_root.display(),
+            if stdout.is_empty() {
+                "(empty)"
+            } else {
+                stdout.trim()
+            },
+            if stderr.is_empty() {
+                "(empty)"
+            } else {
+                stderr.trim()
+            }
+        );
     }
 
     Ok(())
@@ -207,11 +269,40 @@ pub fn checkout_branch(branch_name: &str, repo_root: &Path) -> Result<()> {
         .args(["checkout", branch_name])
         .current_dir(repo_root)
         .output()
-        .with_context(|| format!("Failed to checkout branch {branch_name}"))?;
+        .with_context(|| {
+            format!(
+                "Failed to execute git checkout {} in {}",
+                branch_name,
+                repo_root.display()
+            )
+        })?;
 
     if !output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("git checkout failed: {stderr}");
+        let exit_code = output
+            .status
+            .code()
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "signal".to_string());
+
+        bail!(
+            "git checkout '{branch_name}' failed (exit code {exit_code}):\n\
+             Directory: {}\n\
+             Stdout: {}\n\
+             Stderr: {}",
+            repo_root.display(),
+            if stdout.is_empty() {
+                "(empty)"
+            } else {
+                stdout.trim()
+            },
+            if stderr.is_empty() {
+                "(empty)"
+            } else {
+                stderr.trim()
+            }
+        );
     }
 
     Ok(())
