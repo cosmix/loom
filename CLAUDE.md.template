@@ -56,11 +56,11 @@ Plans MUST wrap YAML in HTML comment markers. **knowledge-bootstrap MUST be the 
 loom:
   version: 1
   stages:
-    # REQUIRED FIRST STAGE (unless .work/knowledge/ already populated)
+    # REQUIRED FIRST STAGE (unless doc/loom/knowledge/ already populated)
     - id: knowledge-bootstrap
       name: "Bootstrap Knowledge Base"
       description: |
-        Explore codebase hierarchically and populate .work/knowledge/:
+        Explore codebase hierarchically and populate doc/loom/knowledge/:
         1. Top-level: entry points, main modules, directory layout
         2. Module boundaries: public interfaces, internal vs external
         3. Patterns: error handling, state management, data flow
@@ -69,11 +69,11 @@ loom:
         Use loom knowledge update commands to capture findings.
       dependencies: []
       acceptance:
-        - "grep -q '## ' .work/knowledge/entry-points.md"
-        - "grep -q '## ' .work/knowledge/patterns.md"
-        - "grep -q '## ' .work/knowledge/conventions.md"
+        - "grep -q '## ' doc/loom/knowledge/entry-points.md"
+        - "grep -q '## ' doc/loom/knowledge/patterns.md"
+        - "grep -q '## ' doc/loom/knowledge/conventions.md"
       files:
-        - ".work/knowledge/**"
+        - "doc/loom/knowledge/**"
 
     # Subsequent stages depend on knowledge-bootstrap
     - id: implement-feature
@@ -86,6 +86,8 @@ loom:
         - "cargo test"
       files:
         - "src/**/*.rs"
+      # Optional: subdirectory to run acceptance criteria from (relative to worktree root)
+      # working_dir: "loom"  # Use when Cargo.toml/package.json is in a subdirectory
 
     # REQUIRED LAST STAGE - integration-verify MUST be final
     - id: integration-verify
@@ -138,6 +140,28 @@ Or describe inline: settings section with key=value entry
 ```
 
 Stage definitions become agent signals: `description` → tasks, `acceptance` → criteria, `files` → scope.
+
+#### Acceptance Criteria Working Directory
+
+Acceptance criteria run from the **worktree root** by default. If your project structure has code in a subdirectory (e.g., `loom/` containing `Cargo.toml`), use one of these approaches:
+
+**Option 1 (Recommended): Use `working_dir` field**
+```yaml
+- id: my-stage
+  acceptance:
+    - "cargo test"
+    - "cargo clippy"
+  working_dir: "loom"  # Run all criteria from this subdirectory
+```
+
+**Option 2: Inline `cd` in command**
+```yaml
+- id: my-stage
+  acceptance:
+    - "(cd loom && cargo test)"  # Parentheses prevent directory leakage
+```
+
+The `working_dir` field is cleaner when ALL criteria need the same subdirectory. Use inline `cd` when only some criteria need it.
 
 #### Parallelization Strategy
 
@@ -249,13 +273,13 @@ When executing in a loom worktree, you MUST stay within your worktree boundaries
 
 ### 9. KNOWLEDGE MANAGEMENT (MANDATORY)
 
-Build and maintain the `.work/knowledge/` base BEFORE and DURING every session.
+Build and maintain the `doc/loom/knowledge/` base BEFORE and DURING every session.
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
 │  KNOWLEDGE CHECK - FIRST ACTION OF EVERY SESSION                   │
 │                                                                    │
-│  .work/knowledge/ EMPTY?                                           │
+│  doc/loom/knowledge/ EMPTY?                                           │
 │  YES → Run hierarchical exploration and populate it                │
 │  NO  → Check for gaps, update with new discoveries                 │
 └────────────────────────────────────────────────────────────────────┘
@@ -272,7 +296,7 @@ Build and maintain the `.work/knowledge/` base BEFORE and DURING every session.
 
 | Command                                  | Description                                      |
 | ---------------------------------------- | ------------------------------------------------ |
-| `loom knowledge init`                    | Initialize `.work/knowledge/` directory          |
+| `loom knowledge init`                    | Initialize `doc/loom/knowledge/` directory          |
 | `loom knowledge list`                    | List all knowledge files                         |
 | `loom knowledge show`                    | Show summary of all knowledge                    |
 | `loom knowledge show <file>`             | Show specific file (entry-points, patterns, conventions) |
