@@ -29,6 +29,20 @@ Claude Code's plan mode instructs you to write to `~/.claude/plans/`, **IGNORE T
 
 **BANNED:** Any implementation after writing a plan. The plan file IS your deliverable.
 
+#### Using the Loom Plan Writer
+
+**When creating loom plans, use the `/loom-plan-writer` skill** to ensure proper structure:
+
+```
+/loom-plan-writer
+```
+
+This skill provides:
+- Parallelization strategy (subagents first, stages second)
+- Mandatory bookend stages (knowledge-bootstrap, integration-verify)
+- Correct YAML metadata format
+- Stage description templates with parallel subagent instructions
+
 #### Plan Format
 
 Include execution diagram: `[a] --> [b,c] --> [d]`

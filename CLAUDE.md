@@ -116,13 +116,14 @@ Look in doc/plans for the plan files!
 
 Plan files are automatically renamed to reflect execution status:
 
-| State | Filename | When |
-|-------|----------|------|
-| Not started | `PLAN-feature.md` | Initial plan file |
-| In progress | `IN_PROGRESS-PLAN-feature.md` | After `loom run` starts |
-| Completed | `DONE-PLAN-feature.md` | When all stages are merged |
+| State       | Filename                      | When                       |
+| ----------- | ----------------------------- | -------------------------- |
+| Not started | `PLAN-feature.md`             | Initial plan file          |
+| In progress | `IN_PROGRESS-PLAN-feature.md` | After `loom run` starts    |
+| Completed   | `DONE-PLAN-feature.md`        | When all stages are merged |
 
 Behavior details:
+
 - `loom run` renames the plan file to add `IN_PROGRESS-` prefix
 - When orchestration completes successfully and all stages have `merged: true`, the prefix changes to `DONE-`
 - If not all stages are merged, the plan stays as `IN_PROGRESS-` for manual intervention
@@ -132,3 +133,7 @@ Behavior details:
 ## Remember your Mandatory Rules!
 
 Claude.md rules are mandatory and supersede any Plan Mode or other Claude instructions!
+
+Ignore the test-project, unless the user explicitly asks you to read or work with it to test a loom feature.
+
+Remember: NEVER write plans to ~/.claude/plans. It is strictly forbidden.
