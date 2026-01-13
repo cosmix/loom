@@ -2,6 +2,12 @@
 //!
 //! This module provides the ratatui-based terminal UI for displaying
 //! live status updates from the loom daemon.
+//!
+//! Layout (unified design):
+//! - Compact header with spinner, title, and inline progress
+//! - Execution graph (ASCII DAG showing dependency flow)
+//! - Unified stage table with all columns (status, name, merged, deps, elapsed)
+//! - Simplified footer with keybinds and errors
 
 use std::io::{self, Stdout};
 use std::os::unix::net::UnixStream;
@@ -21,19 +27,30 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, Row, Table},
+    widgets::{Block, Borders, Paragraph, Row, Table},
     Frame, Terminal,
 };
 
-use crate::daemon::{read_message, write_message, Request, Response, StageInfo};
-
 use super::theme::{StatusColors, Theme};
+use super::widgets::{render_execution_graph, status_indicator, status_text};
+use crate::daemon::{read_message, write_message, Request, Response, StageInfo};
+use crate::models::stage::StageStatus;
 
 /// Connection timeout for daemon socket
 const SOCKET_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Poll timeout for event loop (100ms for responsive UI)
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
+
+/// Unified stage entry for the table display
+#[derive(Clone)]
+struct UnifiedStage {
+    id: String,
+    status: StageStatus,
+    merged: bool,
+    dependencies: Vec<String>,
+    started_at: Option<chrono::DateTime<chrono::Utc>>,
+}
 
 /// Live status data received from daemon
 #[derive(Default)]
@@ -56,6 +73,63 @@ impl LiveStatus {
         } else {
             self.completed.len() as f64 / total as f64
         }
+    }
+
+    /// Build unified list of all stages for table display
+    fn unified_stages(&self) -> Vec<UnifiedStage> {
+        let mut stages = Vec::new();
+
+        // Add executing stages (have full info)
+        for stage in &self.executing {
+            stages.push(UnifiedStage {
+                id: stage.id.clone(),
+                status: stage.status.clone(),
+                merged: stage.merged,
+                dependencies: stage.dependencies.clone(),
+                started_at: Some(stage.started_at),
+            });
+        }
+
+        // Add completed stages (minimal info)
+        for id in &self.completed {
+            if !stages.iter().any(|s| &s.id == id) {
+                stages.push(UnifiedStage {
+                    id: id.clone(),
+                    status: StageStatus::Completed,
+                    merged: true,
+                    dependencies: vec![],
+                    started_at: None,
+                });
+            }
+        }
+
+        // Add pending stages
+        for id in &self.pending {
+            if !stages.iter().any(|s| &s.id == id) {
+                stages.push(UnifiedStage {
+                    id: id.clone(),
+                    status: StageStatus::WaitingForDeps,
+                    merged: false,
+                    dependencies: vec![],
+                    started_at: None,
+                });
+            }
+        }
+
+        // Add blocked stages
+        for id in &self.blocked {
+            if !stages.iter().any(|s| &s.id == id) {
+                stages.push(UnifiedStage {
+                    id: id.clone(),
+                    status: StageStatus::Blocked,
+                    merged: false,
+                    dependencies: vec![],
+                    started_at: None,
+                });
+            }
+        }
+
+        stages
     }
 }
 
@@ -223,25 +297,30 @@ impl TuiApp {
         let pending = status.pending.clone();
         let completed = status.completed.clone();
         let blocked = status.blocked.clone();
+        let unified_stages = status.unified_stages();
 
         self.terminal.draw(|frame| {
             let area = frame.area();
 
-            // Main layout: header, progress, content, footer
+            // New unified layout:
+            // - Compact header (1 line with inline progress)
+            // - Execution graph (3 lines)
+            // - Unified stage table (remaining space)
+            // - Footer (1 line)
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3), // Header
-                    Constraint::Length(3), // Progress bar
-                    Constraint::Min(10),   // Main content
-                    Constraint::Length(3), // Footer
+                    Constraint::Length(1), // Compact header with inline progress
+                    Constraint::Length(3), // Execution graph
+                    Constraint::Min(8),    // Unified stage table
+                    Constraint::Length(1), // Footer
                 ])
                 .split(area);
 
-            render_header(frame, chunks[0], spinner);
-            render_progress(frame, chunks[1], pct, completed_count, total);
-            render_stages(frame, chunks[2], &executing, &pending, &completed, &blocked);
-            render_footer(frame, chunks[3], &last_error);
+            render_compact_header(frame, chunks[0], spinner, pct, completed_count, total);
+            render_graph(frame, chunks[1], &executing, &pending, &completed, &blocked);
+            render_unified_table(frame, chunks[2], &unified_stages);
+            render_compact_footer(frame, chunks[3], &last_error);
         })?;
 
         Ok(())
@@ -263,41 +342,39 @@ impl Drop for TuiApp {
     }
 }
 
-/// Render the header
-fn render_header(frame: &mut Frame, area: Rect, spinner: char) {
-    let title = format!("{spinner} Loom Live Status Dashboard");
+/// Render compact header with inline progress
+fn render_compact_header(
+    frame: &mut Frame,
+    area: Rect,
+    spinner: char,
+    pct: f64,
+    completed_count: usize,
+    total: usize,
+) {
+    let progress_str = format!("{completed_count}/{total} ({:.0}%)", pct * 100.0);
 
-    let header = Paragraph::new(title)
-        .style(Theme::header())
-        .block(
-            Block::default()
-                .borders(Borders::BOTTOM)
-                .border_style(Style::default().fg(StatusColors::BORDER)),
-        );
+    let header_line = Line::from(vec![
+        Span::styled(format!("{spinner} "), Theme::header()),
+        Span::styled("Loom", Theme::header()),
+        Span::raw(" │ "),
+        Span::styled(progress_str, Style::default().fg(StatusColors::COMPLETED)),
+        Span::raw(" "),
+        Span::styled(progress_bar_compact(pct, 20), Theme::status_completed()),
+    ]);
 
+    let header = Paragraph::new(header_line);
     frame.render_widget(header, area);
 }
 
-/// Render the progress bar
-fn render_progress(frame: &mut Frame, area: Rect, pct: f64, completed_count: usize, total: usize) {
-    let label = format!(
-        "{}/{} stages completed ({:.0}%)",
-        completed_count,
-        total,
-        pct * 100.0
-    );
-
-    let gauge = Gauge::default()
-        .block(Block::default().borders(Borders::NONE))
-        .gauge_style(Style::default().fg(StatusColors::COMPLETED))
-        .ratio(pct)
-        .label(label);
-
-    frame.render_widget(gauge, area);
+/// Create a compact progress bar string
+fn progress_bar_compact(pct: f64, width: usize) -> String {
+    let filled = (pct * width as f64).round() as usize;
+    let empty = width.saturating_sub(filled);
+    format!("[{}{}]", "█".repeat(filled), "░".repeat(empty))
 }
 
-/// Render the stages panel
-fn render_stages(
+/// Render execution graph
+fn render_graph(
     frame: &mut Frame,
     area: Rect,
     executing: &[StageInfo],
@@ -305,175 +382,98 @@ fn render_stages(
     completed: &[String],
     blocked: &[String],
 ) {
-    // Split into columns
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(50), // Executing + Pending
-            Constraint::Percentage(50), // Completed + Blocked
-        ])
-        .split(area);
+    let graph_lines = render_execution_graph(executing, pending, completed, blocked);
 
-    // Left column: Executing and Pending
-    let left_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-        .split(chunks[0]);
-
-    render_executing(frame, left_chunks[0], executing);
-    render_pending(frame, left_chunks[1], pending);
-
-    // Right column: Completed and Blocked
-    let right_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-        .split(chunks[1]);
-
-    render_completed(frame, right_chunks[0], completed);
-    render_blocked(frame, right_chunks[1], blocked);
-}
-
-/// Render executing stages
-fn render_executing(frame: &mut Frame, area: Rect, executing: &[StageInfo]) {
-    let title = format!(" Executing ({}) ", executing.len());
     let block = Block::default()
-        .title(title)
-        .title_style(Style::default().fg(StatusColors::EXECUTING).add_modifier(Modifier::BOLD))
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(StatusColors::EXECUTING));
-
-    if executing.is_empty() {
-        let empty = Paragraph::new("No stages executing")
-            .style(Theme::dimmed())
-            .block(block);
-        frame.render_widget(empty, area);
-    } else {
-        let rows: Vec<Row> = executing
-            .iter()
-            .map(|stage| {
-                let elapsed = chrono::Utc::now()
-                    .signed_duration_since(stage.started_at)
-                    .num_seconds();
-                let time_str = format_elapsed(elapsed);
-                let pid_str = stage
-                    .session_pid
-                    .map(|p| format!("PID:{p}"))
-                    .unwrap_or_default();
-
-                Row::new(vec![
-                    format!("● {}", stage.id),
-                    stage.name.clone(),
-                    time_str,
-                    pid_str,
-                ])
-                .style(Style::default().fg(StatusColors::EXECUTING))
-            })
-            .collect();
-
-        let widths = [
-            Constraint::Length(20),
-            Constraint::Min(15),
-            Constraint::Length(10),
-            Constraint::Length(12),
-        ];
-
-        let table = Table::new(rows, widths)
-            .block(block)
-            .header(
-                Row::new(vec!["ID", "Name", "Elapsed", "Session"])
-                    .style(Theme::header())
-                    .bottom_margin(1),
-            );
-
-        frame.render_widget(table, area);
-    }
-}
-
-/// Render pending stages
-fn render_pending(frame: &mut Frame, area: Rect, pending: &[String]) {
-    let title = format!(" Pending ({}) ", pending.len());
-    let block = Block::default()
-        .title(title)
+        .title(" Execution Graph ")
         .title_style(Theme::dimmed())
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(StatusColors::PENDING));
+        .border_style(Style::default().fg(StatusColors::BORDER));
 
-    let items: Vec<ListItem> = pending
-        .iter()
-        .take(10)
-        .map(|id| ListItem::new(format!("○ {id}")).style(Theme::dimmed()))
-        .collect();
-
-    let mut items = items;
-    if pending.len() > 10 {
-        items.push(
-            ListItem::new(format!("  ... {} more", pending.len() - 10))
-                .style(Theme::dimmed()),
-        );
-    }
-
-    let list = List::new(items).block(block);
-    frame.render_widget(list, area);
+    let paragraph = Paragraph::new(graph_lines).block(block);
+    frame.render_widget(paragraph, area);
 }
 
-/// Render completed stages
-fn render_completed(frame: &mut Frame, area: Rect, completed: &[String]) {
-    let title = format!(" Completed ({}) ", completed.len());
+/// Render unified stage table with all columns
+fn render_unified_table(frame: &mut Frame, area: Rect, stages: &[UnifiedStage]) {
     let block = Block::default()
-        .title(title)
-        .title_style(Style::default().fg(StatusColors::COMPLETED))
+        .title(format!(" Stages ({}) ", stages.len()))
+        .title_style(Theme::header())
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(StatusColors::COMPLETED));
+        .border_style(Style::default().fg(StatusColors::BORDER));
 
-    let items: Vec<ListItem> = completed
-        .iter()
-        .take(10)
-        .map(|id| ListItem::new(format!("✓ {id}")).style(Style::default().fg(StatusColors::COMPLETED)))
-        .collect();
-
-    let mut items = items;
-    if completed.len() > 10 {
-        items.push(
-            ListItem::new(format!("  ... {} more", completed.len() - 10))
-                .style(Theme::dimmed()),
-        );
-    }
-
-    let list = List::new(items).block(block);
-    frame.render_widget(list, area);
-}
-
-/// Render blocked stages
-fn render_blocked(frame: &mut Frame, area: Rect, blocked: &[String]) {
-    let title = format!(" Blocked ({}) ", blocked.len());
-    let block = Block::default()
-        .title(title)
-        .title_style(Style::default().fg(StatusColors::BLOCKED).add_modifier(Modifier::BOLD))
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(StatusColors::BLOCKED));
-
-    if blocked.is_empty() {
-        let empty = Paragraph::new("No blocked stages")
-            .style(Theme::dimmed())
-            .block(block);
+    if stages.is_empty() {
+        let empty = Paragraph::new("No stages").style(Theme::dimmed()).block(block);
         frame.render_widget(empty, area);
-    } else {
-        let items: Vec<ListItem> = blocked
-            .iter()
-            .map(|id| {
-                ListItem::new(format!("✗ {id}"))
-                    .style(Style::default().fg(StatusColors::BLOCKED))
-            })
-            .collect();
-
-        let list = List::new(items).block(block);
-        frame.render_widget(list, area);
+        return;
     }
+
+    let header = Row::new(vec!["", "ID", "Status", "Merged", "Deps", "Elapsed"])
+        .style(Theme::header())
+        .bottom_margin(1);
+
+    let rows: Vec<Row> = stages
+        .iter()
+        .map(|stage| {
+            let icon = status_indicator(&stage.status);
+            let status_str = status_text(&stage.status);
+            let merged_str = if stage.merged { "✓" } else { "○" };
+
+            let deps_str = if stage.dependencies.is_empty() {
+                "-".to_string()
+            } else {
+                stage.dependencies.len().to_string()
+            };
+
+            let elapsed_str = stage
+                .started_at
+                .map(|t| {
+                    let elapsed = chrono::Utc::now().signed_duration_since(t).num_seconds();
+                    format_elapsed(elapsed)
+                })
+                .unwrap_or_else(|| "-".to_string());
+
+            let style = match stage.status {
+                StageStatus::Executing => Theme::status_executing(),
+                StageStatus::Completed => Theme::status_completed(),
+                StageStatus::Blocked
+                | StageStatus::MergeConflict
+                | StageStatus::MergeBlocked => Theme::status_blocked(),
+                StageStatus::NeedsHandoff
+                | StageStatus::WaitingForInput
+                | StageStatus::CompletedWithFailures => Theme::status_warning(),
+                StageStatus::Queued => Theme::status_queued(),
+                _ => Theme::dimmed(),
+            };
+
+            Row::new(vec![
+                icon.content.to_string(),
+                stage.id.clone(),
+                status_str.to_string(),
+                merged_str.to_string(),
+                deps_str,
+                elapsed_str,
+            ])
+            .style(style)
+        })
+        .collect();
+
+    let widths = [
+        Constraint::Length(2),  // Icon
+        Constraint::Min(20),    // ID
+        Constraint::Length(10), // Status
+        Constraint::Length(6),  // Merged
+        Constraint::Length(4),  // Deps
+        Constraint::Length(8),  // Elapsed
+    ];
+
+    let table = Table::new(rows, widths).block(block).header(header);
+    frame.render_widget(table, area);
 }
 
-/// Render the footer
-fn render_footer(frame: &mut Frame, area: Rect, last_error: &Option<String>) {
-    let help_text = if let Some(ref err) = last_error {
+/// Render compact footer
+fn render_compact_footer(frame: &mut Frame, area: Rect, last_error: &Option<String>) {
+    let footer_line = if let Some(ref err) = last_error {
         Line::from(vec![
             Span::styled("Error: ", Style::default().fg(StatusColors::BLOCKED)),
             Span::styled(err.as_str(), Style::default().fg(StatusColors::BLOCKED)),
@@ -481,19 +481,12 @@ fn render_footer(frame: &mut Frame, area: Rect, last_error: &Option<String>) {
     } else {
         Line::from(vec![
             Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw("/"),
-            Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(" quit  "),
-            Span::styled("Daemon continues in background", Theme::dimmed()),
+            Span::raw(" quit │ "),
+            Span::styled("Daemon runs in background", Theme::dimmed()),
         ])
     };
 
-    let footer = Paragraph::new(help_text).block(
-        Block::default()
-            .borders(Borders::TOP)
-            .border_style(Style::default().fg(StatusColors::BORDER)),
-    );
-
+    let footer = Paragraph::new(footer_line);
     frame.render_widget(footer, area);
 }
 

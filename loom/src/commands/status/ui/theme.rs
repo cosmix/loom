@@ -1,4 +1,4 @@
-use ratatui::style::{Color, Style, Modifier};
+use ratatui::style::{Color, Modifier, Style};
 
 /// Color scheme for status indicators
 pub struct StatusColors;
@@ -13,16 +13,23 @@ impl StatusColors {
     pub const WARNING: Color = Color::Yellow;
     pub const HANDOFF: Color = Color::Magenta;
     pub const CONFLICT: Color = Color::Red;
+    pub const MERGED: Color = Color::Rgb(100, 180, 100); // Lighter green for merged
 
     // Context bar colors
-    pub const CONTEXT_LOW: Color = Color::Green;      // 0-60%
-    pub const CONTEXT_MED: Color = Color::Yellow;     // 60-75%
-    pub const CONTEXT_HIGH: Color = Color::Red;       // 75-100%
+    pub const CONTEXT_LOW: Color = Color::Green; // 0-60%
+    pub const CONTEXT_MED: Color = Color::Yellow; // 60-75%
+    pub const CONTEXT_HIGH: Color = Color::Red; // 75-100%
 
     // UI chrome
     pub const HEADER: Color = Color::White;
     pub const DIMMED: Color = Color::DarkGray;
     pub const BORDER: Color = Color::Gray;
+
+    // Graph colors
+    pub const GRAPH_EDGE: Color = Color::DarkGray;
+    pub const GRAPH_NODE_ACTIVE: Color = Color::Blue;
+    pub const GRAPH_NODE_DONE: Color = Color::Green;
+    pub const GRAPH_NODE_PENDING: Color = Color::Gray;
 }
 
 /// Theme provides pre-built styles
@@ -70,5 +77,27 @@ impl Theme {
             StatusColors::CONTEXT_HIGH
         };
         Style::default().fg(color)
+    }
+
+    pub fn status_merged() -> Style {
+        Style::default().fg(StatusColors::MERGED)
+    }
+
+    pub fn graph_edge() -> Style {
+        Style::default().fg(StatusColors::GRAPH_EDGE)
+    }
+
+    pub fn graph_node_active() -> Style {
+        Style::default()
+            .fg(StatusColors::GRAPH_NODE_ACTIVE)
+            .add_modifier(Modifier::BOLD)
+    }
+
+    pub fn graph_node_done() -> Style {
+        Style::default().fg(StatusColors::GRAPH_NODE_DONE)
+    }
+
+    pub fn graph_node_pending() -> Style {
+        Style::default().fg(StatusColors::GRAPH_NODE_PENDING)
     }
 }
