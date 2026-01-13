@@ -37,7 +37,7 @@ fn create_test_stage(id: &str, status: StageStatus) -> Stage {
         completed_at: None,
         close_reason: None,
         auto_merge: None,
-        working_dir: None,
+        working_dir: Some(".".to_string()),
         retry_count: 0,
         max_retries: None,
         last_failure_at: None,
