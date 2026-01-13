@@ -178,10 +178,15 @@ get_uncommitted_changes() {
 # Parse stage status from stage file YAML frontmatter
 # Args: $1 = path to stage file
 # Returns: status string or empty if not found
+# Handles:
+#   - Quoted values: status: "completed"
+#   - Inline comments: status: completed  # done
+#   - Leading/trailing whitespace
 get_stage_status() {
     local stage_file="$1"
 
     if [[ ! -f "$stage_file" ]]; then
+        debug_log "get_stage_status: file not found: $stage_file"
         echo ""
         return
     fi
@@ -205,51 +210,86 @@ get_stage_status() {
             # Match status: <value>
             if [[ "$line" =~ ^status:\ *(.+)$ ]]; then
                 status="${BASH_REMATCH[1]}"
+
+                # Strip inline comments (everything after #)
+                status="${status%%#*}"
+
                 # Trim whitespace
                 status="${status#"${status%%[![:space:]]*}"}"
                 status="${status%"${status##*[![:space:]]}"}"
+
+                # Strip surrounding quotes (single or double)
+                if [[ "$status" =~ ^\"(.*)\"$ ]] || [[ "$status" =~ ^\'(.*)\'$ ]]; then
+                    status="${BASH_REMATCH[1]}"
+                fi
+
+                debug_log "get_stage_status: parsed status='$status' from line: $line"
                 break
             fi
         fi
     done < "$stage_file"
 
+    debug_log "get_stage_status: final status='$status'"
     echo "$status"
 }
 
 # Find the stage file for a given stage ID
 # Args: $1 = project root, $2 = stage ID
+# Matches Rust logic: files are named NN-stage-id.md (e.g., 01-my-stage.md)
+# Uses exact matching to avoid false positives (e.g., "fix" matching "fix-bug")
 find_stage_file() {
     local project_root="$1"
     local stage_id="$2"
     local stages_path="$project_root/$STAGES_DIR"
-    debug_log "Looking for stage file for '$stage_id' in: $stages_path"
+    debug_log "find_stage_file: looking for stage '$stage_id' in: $stages_path"
 
+    # Check if stages directory exists and is accessible
     if [[ ! -d "$stages_path" ]]; then
-        debug_log "Stages directory does not exist: $stages_path"
+        debug_log "find_stage_file: stages directory does not exist: $stages_path"
         echo ""
         return
     fi
 
-    # Look for files matching the stage ID
-    # Stage files can be named: <prefix>-<stage-id>.md or just <stage-id>.md
-    for file in "$stages_path"/*"$stage_id"*.md "$stages_path"/"$stage_id".md; do
-        if [[ -f "$file" ]]; then
-            debug_log "Found stage file: $file"
+    # Check if .work is a symlink and accessible
+    if [[ -L "$project_root/$WORK_DIR" ]]; then
+        debug_log "find_stage_file: .work is a symlink"
+        if [[ ! -e "$project_root/$WORK_DIR" ]]; then
+            debug_log "find_stage_file: .work symlink is broken/inaccessible"
+            echo ""
+            return
+        fi
+    fi
+
+    # Exact match: NN-<stage-id>.md (Rust naming convention)
+    # Pattern: digits followed by dash, then exact stage-id, then .md
+    for file in "$stages_path"/*.md; do
+        if [[ ! -f "$file" ]]; then
+            continue
+        fi
+
+        local basename
+        basename=$(basename "$file")
+
+        # Match pattern: NN-stage-id.md (depth prefix + exact stage id)
+        # Strip the numeric prefix and dash, check if remainder matches stage-id.md
+        if [[ "$basename" =~ ^[0-9]+-(.+)\.md$ ]]; then
+            local extracted_id="${BASH_REMATCH[1]}"
+            if [[ "$extracted_id" == "$stage_id" ]]; then
+                debug_log "find_stage_file: found exact match: $file"
+                echo "$file"
+                return
+            fi
+        fi
+
+        # Also check for exact match without prefix: stage-id.md
+        if [[ "$basename" == "${stage_id}.md" ]]; then
+            debug_log "find_stage_file: found exact match (no prefix): $file"
             echo "$file"
             return
         fi
     done
 
-    # Also try exact match with number prefix (e.g., 01-stage-id.md)
-    for file in "$stages_path"/*-"$stage_id".md; do
-        if [[ -f "$file" ]]; then
-            debug_log "Found stage file with prefix: $file"
-            echo "$file"
-            return
-        fi
-    done
-
-    debug_log "No stage file found for stage '$stage_id'"
+    debug_log "find_stage_file: no exact match found for stage '$stage_id'"
     echo ""
 }
 
@@ -309,6 +349,8 @@ remind_knowledge_capture() {
 # Main hook logic
 main() {
     debug_log "=== loom-stop hook starting ==="
+    debug_log "CWD: $(pwd)"
+    debug_log "LOOM_HOOK_DEBUG: ${LOOM_HOOK_DEBUG:-0}"
 
     # Check if we're in a loom worktree
     local STAGE_ID=""
@@ -325,6 +367,24 @@ main() {
         debug_log "Project root not found (.work missing), allowing stop"
         exit 0
     fi
+
+    # Log complete state for debugging
+    debug_log "=== State Summary ==="
+    debug_log "  Stage ID: $STAGE_ID"
+    debug_log "  Project Root: $project_root"
+    if [[ -L "$project_root/$WORK_DIR" ]]; then
+        debug_log "  .work: symlink -> $(readlink -f "$project_root/$WORK_DIR" 2>/dev/null || echo 'unresolvable')"
+        if [[ -e "$project_root/$WORK_DIR" ]]; then
+            debug_log "  .work accessible: yes"
+        else
+            debug_log "  .work accessible: NO (broken symlink)"
+        fi
+    elif [[ -d "$project_root/$WORK_DIR" ]]; then
+        debug_log "  .work: directory (not symlink)"
+    else
+        debug_log "  .work: does not exist"
+    fi
+    debug_log "===================="
 
     # Check if this is a knowledge stage - bypass commit requirement
     # Knowledge stages only update doc/loom/knowledge/ which is shared state
@@ -364,37 +424,69 @@ main() {
         status=$(get_stage_status "$stage_file")
         debug_log "Stage '$STAGE_ID' status: $status"
 
-        # Status values that mean work is not done
+        # Status values and their blocking behavior
+        # BLOCK: executing (work in progress, must complete)
+        # BLOCK: merge-conflict (needs manual resolution)
+        # ALLOW: all other valid statuses
         case "$status" in
+            # BLOCKING STATUSES - work is not done or needs attention
             executing|Executing)
                 stage_incomplete=1
                 issues+=("Stage '$STAGE_ID' is still in EXECUTING status")
                 debug_log "Stage is still executing - will block"
                 ;;
+            merge-conflict|MergeConflict)
+                stage_incomplete=1
+                issues+=("Stage '$STAGE_ID' has MERGE CONFLICT that needs resolution")
+                debug_log "Stage has merge conflict - will block"
+                ;;
+
+            # ALLOWING STATUSES - stage is in a valid terminal or waiting state
+
+            # Waiting states - haven't started or waiting for external input
             queued|Queued)
-                # Queued stages haven't started yet - allow stop
-                # This handles edge case where detection finds worktree but stage hasn't started
                 debug_log "Stage is queued (not yet started) - allowing stop"
                 ;;
-            waiting-for-input|WaitingForInput)
-                # This is acceptable - waiting for user
-                debug_log "Stage is waiting for input - allowing stop"
+            waiting-for-deps|WaitingForDeps|pending)
+                debug_log "Stage is waiting for dependencies - allowing stop"
                 ;;
+            waiting-for-input|WaitingForInput)
+                debug_log "Stage is waiting for user input - allowing stop"
+                ;;
+
+            # Blocked/paused states - intentionally stopped
             blocked|Blocked)
-                # This is acceptable - explicitly blocked
                 debug_log "Stage is blocked - allowing stop"
                 ;;
             needs-handoff|NeedsHandoff)
-                # This is acceptable - handoff in progress
                 debug_log "Stage needs handoff - allowing stop"
                 ;;
-            completed|Completed|verified|Verified)
-                # All good
-                debug_log "Stage is completed/verified - allowing stop"
+            merge-blocked|MergeBlocked)
+                debug_log "Stage merge is blocked - allowing stop"
                 ;;
+
+            # Completion states - work is done
+            completed|Completed)
+                debug_log "Stage is completed - allowing stop"
+                ;;
+            verified|Verified)
+                debug_log "Stage is verified - allowing stop"
+                ;;
+            completed-with-failures|CompletedWithFailures)
+                debug_log "Stage completed with failures - allowing stop"
+                ;;
+            skipped|Skipped)
+                debug_log "Stage is skipped - allowing stop"
+                ;;
+
+            # Empty status - stage file exists but no status field
+            "")
+                debug_log "Stage has empty status - allowing stop (may be newly created)"
+                ;;
+
+            # Unknown status - don't block, but log for debugging
             *)
-                # Unknown status, don't block
-                debug_log "Stage has unknown status '$status' - allowing stop"
+                debug_log "Stage has unrecognized status '$status' - allowing stop (add to case statement if blocking needed)"
                 ;;
         esac
     else
@@ -439,13 +531,39 @@ main() {
         if [[ $has_uncommitted -eq 1 ]]; then
             step_num=2
         fi
-        message+="\n\n${step_num}. Stage is still EXECUTING. After committing, run:\n   loom stage complete $STAGE_ID"
+
+        # Get status for error message
+        local blocking_status=""
+        if [[ -n "$stage_file" ]]; then
+            blocking_status=$(get_stage_status "$stage_file")
+        fi
+
+        if [[ "$blocking_status" == "merge-conflict" ]] || [[ "$blocking_status" == "MergeConflict" ]]; then
+            message+="\n\n${step_num}. Stage has a MERGE CONFLICT. Resolve it manually:\n   - Check the conflicting files\n   - Resolve conflicts and commit\n   - Run: loom stage complete $STAGE_ID"
+        else
+            message+="\n\n${step_num}. Stage is still in '$blocking_status' status. After committing, run:\n   loom stage complete $STAGE_ID"
+        fi
+
         if [[ -n "$stage_file" ]]; then
             message+="\n   (Stage file: $stage_file)"
         fi
     fi
 
     message+="\n\nDo NOT end this session until all steps are complete."
+
+    # Add debug info section
+    message+="\n\n--- Debug Info ---"
+    message+="\nStage ID: $STAGE_ID"
+    if [[ -n "$stage_file" ]]; then
+        local parsed_status
+        parsed_status=$(get_stage_status "$stage_file")
+        message+="\nParsed status: '$parsed_status'"
+        message+="\nStage file: $stage_file"
+    else
+        message+="\nStage file: NOT FOUND"
+    fi
+    message+="\nTo enable verbose logging, set: LOOM_HOOK_DEBUG=1"
+    message+="\n------------------"
 
     block_with_reason "$message"
 }
