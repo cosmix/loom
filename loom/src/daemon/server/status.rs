@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::models::stage::StageStatus;
 use crate::models::worktree::WorktreeStatus;
 use crate::parser::frontmatter::extract_yaml_frontmatter;
 
@@ -32,31 +33,33 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
                 let path = entry.path();
                 if path.extension().and_then(|s| s.to_str()) == Some("md") {
                     if let Ok(content) = fs::read_to_string(&path) {
-                        if let Some((id, name, status, session_id)) =
-                            parse_stage_frontmatter(&content)
-                        {
-                            match status.as_str() {
+                        if let Some(parsed) = parse_stage_frontmatter_full(&content) {
+                            match parsed.status.as_str() {
                                 "executing" => {
                                     let session_pid =
-                                        get_session_pid(&sessions_dir, session_id.as_deref());
+                                        get_session_pid(&sessions_dir, parsed.session.as_deref());
                                     let started_at = get_stage_started_at(&content);
-                                    let worktree_status = detect_worktree_status(&id, &repo_root);
+                                    let worktree_status =
+                                        detect_worktree_status(&parsed.id, &repo_root);
                                     stages_executing.push(StageInfo {
-                                        id,
-                                        name,
+                                        id: parsed.id,
+                                        name: parsed.name,
                                         session_pid,
                                         started_at,
                                         worktree_status,
+                                        status: StageStatus::Executing,
+                                        merged: parsed.merged,
+                                        dependencies: parsed.dependencies,
                                     });
                                 }
                                 "waiting-for-deps" | "pending" | "queued" | "ready" => {
-                                    stages_pending.push(id);
+                                    stages_pending.push(parsed.id);
                                 }
                                 "completed" | "verified" => {
-                                    stages_completed.push(id);
+                                    stages_completed.push(parsed.id);
                                 }
                                 "blocked" | "needshandoff" | "waiting-for-input" => {
-                                    stages_blocked.push(id);
+                                    stages_blocked.push(parsed.id);
                                 }
                                 _ => {}
                             }
@@ -161,12 +164,34 @@ pub fn has_merge_conflicts(worktree_path: &Path) -> bool {
     }
 }
 
+/// Parsed stage data from frontmatter.
+pub struct ParsedStage {
+    pub id: String,
+    pub name: String,
+    pub status: String,
+    pub session: Option<String>,
+    pub merged: bool,
+    pub dependencies: Vec<String>,
+}
+
 /// Parse stage frontmatter to extract id, name, status, and session.
 ///
 /// Uses proper YAML parsing via serde_yaml for robustness. This handles
 /// all YAML formats correctly (quoted strings, flow style, multiline values, etc.)
+///
+/// Note: This function is kept for backwards compatibility. Use
+/// `parse_stage_frontmatter_full` for access to all fields including
+/// `merged` and `dependencies`.
+#[allow(dead_code)]
 pub fn parse_stage_frontmatter(content: &str) -> Option<(String, String, String, Option<String>)> {
-    // Use proper YAML parsing instead of line-by-line string matching
+    let parsed = parse_stage_frontmatter_full(content)?;
+    Some((parsed.id, parsed.name, parsed.status, parsed.session))
+}
+
+/// Parse stage frontmatter to extract all fields including merged and dependencies.
+///
+/// Uses proper YAML parsing via serde_yaml for robustness.
+pub fn parse_stage_frontmatter_full(content: &str) -> Option<ParsedStage> {
     let yaml = extract_yaml_frontmatter(content).ok()?;
 
     // Extract required fields
@@ -192,7 +217,28 @@ pub fn parse_stage_frontmatter(content: &str) -> Option<(String, String, String,
         .filter(|s| !s.is_empty() && *s != "null" && *s != "~")
         .map(|s| s.to_string());
 
-    Some((id, name, status, session))
+    // Extract merged field (defaults to false)
+    let merged = yaml.get("merged").and_then(|v| v.as_bool()).unwrap_or(false);
+
+    // Extract dependencies array
+    let dependencies = yaml
+        .get("dependencies")
+        .and_then(|v| v.as_sequence())
+        .map(|seq| {
+            seq.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Some(ParsedStage {
+        id,
+        name,
+        status,
+        session,
+        merged,
+        dependencies,
+    })
 }
 
 /// Get the started_at timestamp from stage content.
