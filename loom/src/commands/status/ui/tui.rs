@@ -48,17 +48,17 @@ struct UnifiedStage {
     id: String,
     status: StageStatus,
     merged: bool,
-    dependencies: Vec<String>,
     started_at: Option<chrono::DateTime<chrono::Utc>>,
+    level: usize,
 }
 
 /// Live status data received from daemon
 #[derive(Default)]
 struct LiveStatus {
     executing: Vec<StageInfo>,
-    pending: Vec<String>,
-    completed: Vec<String>,
-    blocked: Vec<String>,
+    pending: Vec<StageInfo>,
+    completed: Vec<StageInfo>,
+    blocked: Vec<StageInfo>,
 }
 
 impl LiveStatus {
@@ -75,59 +75,116 @@ impl LiveStatus {
         }
     }
 
-    /// Build unified list of all stages for table display
-    fn unified_stages(&self) -> Vec<UnifiedStage> {
-        let mut stages = Vec::new();
+    /// Compute execution levels for all stages based on dependencies
+    fn compute_levels(&self) -> std::collections::HashMap<String, usize> {
+        use std::collections::{HashMap, HashSet};
 
-        // Add executing stages (have full info)
-        for stage in &self.executing {
-            stages.push(UnifiedStage {
+        // Collect all stages into a map
+        let all_stages: Vec<&StageInfo> = self
+            .executing
+            .iter()
+            .chain(self.pending.iter())
+            .chain(self.completed.iter())
+            .chain(self.blocked.iter())
+            .collect();
+
+        let stage_map: HashMap<&str, &StageInfo> =
+            all_stages.iter().map(|s| (s.id.as_str(), *s)).collect();
+
+        let mut levels: HashMap<String, usize> = HashMap::new();
+
+        fn get_level(
+            stage_id: &str,
+            stage_map: &HashMap<&str, &StageInfo>,
+            levels: &mut HashMap<String, usize>,
+            visiting: &mut HashSet<String>,
+        ) -> usize {
+            if let Some(&level) = levels.get(stage_id) {
+                return level;
+            }
+
+            // Cycle detection - treat as level 0 to avoid infinite recursion
+            if visiting.contains(stage_id) {
+                return 0;
+            }
+            visiting.insert(stage_id.to_string());
+
+            let stage = match stage_map.get(stage_id) {
+                Some(s) => s,
+                None => return 0,
+            };
+
+            let level = if stage.dependencies.is_empty() {
+                0
+            } else {
+                stage
+                    .dependencies
+                    .iter()
+                    .map(|dep| get_level(dep, stage_map, levels, visiting))
+                    .max()
+                    .unwrap_or(0)
+                    + 1
+            };
+
+            visiting.remove(stage_id);
+            levels.insert(stage_id.to_string(), level);
+            level
+        }
+
+        for stage in &all_stages {
+            let mut visiting = HashSet::new();
+            get_level(&stage.id, &stage_map, &mut levels, &mut visiting);
+        }
+
+        levels
+    }
+
+    /// Build unified list of all stages for table display, sorted by execution order
+    fn unified_stages(&self) -> Vec<UnifiedStage> {
+        use std::collections::HashSet;
+
+        let levels = self.compute_levels();
+        let mut stages = Vec::new();
+        let mut seen: HashSet<String> = HashSet::new();
+
+        // Helper to convert StageInfo to UnifiedStage with level
+        let to_unified = |stage: &StageInfo, levels: &std::collections::HashMap<String, usize>| {
+            UnifiedStage {
                 id: stage.id.clone(),
                 status: stage.status.clone(),
                 merged: stage.merged,
-                dependencies: stage.dependencies.clone(),
                 started_at: Some(stage.started_at),
-            });
-        }
+                level: levels.get(&stage.id).copied().unwrap_or(0),
+            }
+        };
 
-        // Add completed stages (minimal info)
-        for id in &self.completed {
-            if !stages.iter().any(|s| &s.id == id) {
-                stages.push(UnifiedStage {
-                    id: id.clone(),
-                    status: StageStatus::Completed,
-                    merged: true,
-                    dependencies: vec![],
-                    started_at: None,
-                });
+        // Add all stages from each category
+        for stage in &self.executing {
+            if seen.insert(stage.id.clone()) {
+                stages.push(to_unified(stage, &levels));
             }
         }
 
-        // Add pending stages
-        for id in &self.pending {
-            if !stages.iter().any(|s| &s.id == id) {
-                stages.push(UnifiedStage {
-                    id: id.clone(),
-                    status: StageStatus::WaitingForDeps,
-                    merged: false,
-                    dependencies: vec![],
-                    started_at: None,
-                });
+        for stage in &self.completed {
+            if seen.insert(stage.id.clone()) {
+                stages.push(to_unified(stage, &levels));
             }
         }
 
-        // Add blocked stages
-        for id in &self.blocked {
-            if !stages.iter().any(|s| &s.id == id) {
-                stages.push(UnifiedStage {
-                    id: id.clone(),
-                    status: StageStatus::Blocked,
-                    merged: false,
-                    dependencies: vec![],
-                    started_at: None,
-                });
+        for stage in &self.pending {
+            if seen.insert(stage.id.clone()) {
+                stages.push(to_unified(stage, &levels));
             }
         }
+
+        for stage in &self.blocked {
+            if seen.insert(stage.id.clone()) {
+                stages.push(to_unified(stage, &levels));
+            }
+        }
+
+        // Sort by level (execution order), then by id for consistency
+        stages.sort_by(|a, b| a.level.cmp(&b.level).then_with(|| a.id.cmp(&b.id)));
 
         stages
     }
@@ -171,6 +228,13 @@ impl TuiApp {
         stream
             .set_read_timeout(Some(Duration::from_millis(50)))
             .ok();
+
+        // Set up Ctrl-C handler for clean exit
+        let running_clone = Arc::clone(&self.running);
+        ctrlc::set_handler(move || {
+            running_clone.store(false, Ordering::SeqCst);
+        })
+        .ok(); // Ignore error if handler already set
 
         while self.running.load(Ordering::SeqCst) {
             // Handle daemon messages (non-blocking)
@@ -378,11 +442,15 @@ fn render_graph(
     frame: &mut Frame,
     area: Rect,
     executing: &[StageInfo],
-    pending: &[String],
-    completed: &[String],
-    blocked: &[String],
+    pending: &[StageInfo],
+    completed: &[StageInfo],
+    blocked: &[StageInfo],
 ) {
-    let graph_lines = render_execution_graph(executing, pending, completed, blocked);
+    // Extract IDs for the graph rendering function
+    let pending_ids: Vec<String> = pending.iter().map(|s| s.id.clone()).collect();
+    let completed_ids: Vec<String> = completed.iter().map(|s| s.id.clone()).collect();
+    let blocked_ids: Vec<String> = blocked.iter().map(|s| s.id.clone()).collect();
+    let graph_lines = render_execution_graph(executing, &pending_ids, &completed_ids, &blocked_ids);
 
     let block = Block::default()
         .title(" Execution Graph ")
@@ -408,7 +476,7 @@ fn render_unified_table(frame: &mut Frame, area: Rect, stages: &[UnifiedStage]) 
         return;
     }
 
-    let header = Row::new(vec!["", "ID", "Status", "Merged", "Deps", "Elapsed"])
+    let header = Row::new(vec!["", "Lvl", "ID", "Status", "Merged", "Elapsed"])
         .style(Theme::header())
         .bottom_margin(1);
 
@@ -419,11 +487,7 @@ fn render_unified_table(frame: &mut Frame, area: Rect, stages: &[UnifiedStage]) 
             let status_str = status_text(&stage.status);
             let merged_str = if stage.merged { "✓" } else { "○" };
 
-            let deps_str = if stage.dependencies.is_empty() {
-                "-".to_string()
-            } else {
-                stage.dependencies.len().to_string()
-            };
+            let level_str = stage.level.to_string();
 
             let elapsed_str = stage
                 .started_at
@@ -448,10 +512,10 @@ fn render_unified_table(frame: &mut Frame, area: Rect, stages: &[UnifiedStage]) 
 
             Row::new(vec![
                 icon.content.to_string(),
+                level_str,
                 stage.id.clone(),
                 status_str.to_string(),
                 merged_str.to_string(),
-                deps_str,
                 elapsed_str,
             ])
             .style(style)
@@ -460,10 +524,10 @@ fn render_unified_table(frame: &mut Frame, area: Rect, stages: &[UnifiedStage]) 
 
     let widths = [
         Constraint::Length(2),  // Icon
+        Constraint::Length(3),  // Level
         Constraint::Min(20),    // ID
         Constraint::Length(10), // Status
         Constraint::Length(6),  // Merged
-        Constraint::Length(4),  // Deps
         Constraint::Length(8),  // Elapsed
     ];
 

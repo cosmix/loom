@@ -143,12 +143,12 @@ impl<'a> GraphWidget<'a> {
             let level_label = if *level == 0 {
                 "Root".to_string()
             } else {
-                format!("L{}", level)
+                format!("L{level}")
             };
 
             // Build the stage boxes for this level
             let mut spans = Vec::new();
-            spans.push(Span::styled(format!("{:>4} ", level_label), Theme::dimmed()));
+            spans.push(Span::styled(format!("{level_label:>4} "), Theme::dimmed()));
 
             for (i, node) in level_nodes.iter().enumerate() {
                 if i > 0 {
@@ -166,7 +166,7 @@ impl<'a> GraphWidget<'a> {
                     node.id.clone()
                 };
 
-                spans.push(Span::styled(format!("[{} {}]", indicator, display_id), style));
+                spans.push(Span::styled(format!("[{indicator} {display_id}]"), style));
             }
 
             lines.push(Line::from(spans));

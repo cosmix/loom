@@ -203,9 +203,9 @@ session: ~
             assert_eq!(stages_executing.len(), 1);
             assert_eq!(stages_executing[0].id, "stage-executing");
             assert_eq!(stages_pending.len(), 1);
-            assert!(stages_pending.contains(&"stage-pending".to_string()));
+            assert!(stages_pending.iter().any(|s| s.id == "stage-pending"));
             assert_eq!(stages_completed.len(), 1);
-            assert!(stages_completed.contains(&"stage-completed".to_string()));
+            assert!(stages_completed.iter().any(|s| s.id == "stage-completed"));
             assert!(stages_blocked.is_empty());
         }
         _ => panic!("Expected StatusUpdate response"),

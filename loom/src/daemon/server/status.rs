@@ -34,34 +34,58 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
                 if path.extension().and_then(|s| s.to_str()) == Some("md") {
                     if let Ok(content) = fs::read_to_string(&path) {
                         if let Some(parsed) = parse_stage_frontmatter_full(&content) {
-                            match parsed.status.as_str() {
-                                "executing" => {
-                                    let session_pid =
-                                        get_session_pid(&sessions_dir, parsed.session.as_deref());
-                                    let started_at = get_stage_started_at(&content);
-                                    let worktree_status =
-                                        detect_worktree_status(&parsed.id, &repo_root);
-                                    stages_executing.push(StageInfo {
-                                        id: parsed.id,
-                                        name: parsed.name,
-                                        session_pid,
-                                        started_at,
-                                        worktree_status,
-                                        status: StageStatus::Executing,
-                                        merged: parsed.merged,
-                                        dependencies: parsed.dependencies,
-                                    });
+                            let session_pid =
+                                get_session_pid(&sessions_dir, parsed.session.as_deref());
+                            let started_at = get_stage_started_at(&content);
+                            let worktree_status =
+                                detect_worktree_status(&parsed.id, &repo_root);
+
+                            // Map status string to StageStatus enum
+                            let status_enum = match parsed.status.as_str() {
+                                "executing" => StageStatus::Executing,
+                                "waiting-for-deps" | "pending" => StageStatus::WaitingForDeps,
+                                "queued" | "ready" => StageStatus::Queued,
+                                "completed" | "verified" => StageStatus::Completed,
+                                "blocked" => StageStatus::Blocked,
+                                "needs-handoff" => StageStatus::NeedsHandoff,
+                                "waiting-for-input" => StageStatus::WaitingForInput,
+                                "merge-conflict" => StageStatus::MergeConflict,
+                                "completed-with-failures" => StageStatus::CompletedWithFailures,
+                                "merge-blocked" => StageStatus::MergeBlocked,
+                                "skipped" => StageStatus::Skipped,
+                                _ => StageStatus::WaitingForDeps,
+                            };
+
+                            let stage_info = StageInfo {
+                                id: parsed.id,
+                                name: parsed.name,
+                                session_pid,
+                                started_at,
+                                worktree_status,
+                                status: status_enum.clone(),
+                                merged: parsed.merged,
+                                dependencies: parsed.dependencies,
+                            };
+
+                            // Categorize into lists based on status
+                            match status_enum {
+                                StageStatus::Executing => {
+                                    stages_executing.push(stage_info);
                                 }
-                                "waiting-for-deps" | "pending" | "queued" | "ready" => {
-                                    stages_pending.push(parsed.id);
+                                StageStatus::WaitingForDeps | StageStatus::Queued => {
+                                    stages_pending.push(stage_info);
                                 }
-                                "completed" | "verified" => {
-                                    stages_completed.push(parsed.id);
+                                StageStatus::Completed | StageStatus::Skipped => {
+                                    stages_completed.push(stage_info);
                                 }
-                                "blocked" | "needshandoff" | "waiting-for-input" => {
-                                    stages_blocked.push(parsed.id);
+                                StageStatus::Blocked
+                                | StageStatus::NeedsHandoff
+                                | StageStatus::WaitingForInput
+                                | StageStatus::MergeConflict
+                                | StageStatus::CompletedWithFailures
+                                | StageStatus::MergeBlocked => {
+                                    stages_blocked.push(stage_info);
                                 }
-                                _ => {}
                             }
                         }
                     }

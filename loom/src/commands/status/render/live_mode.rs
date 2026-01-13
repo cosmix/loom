@@ -176,18 +176,18 @@ impl LiveMode {
     fn update_activity(
         &mut self,
         executing: &[StageInfo],
-        completed: &[String],
-        blocked: &[String],
+        completed: &[StageInfo],
+        blocked: &[StageInfo],
     ) {
-        for stage_id in completed.iter().take(1) {
+        for stage in completed.iter().take(1) {
             self.activity.push(
                 ActivityType::StageCompleted,
-                format!("Stage {stage_id} completed"),
+                format!("Stage {} completed", stage.id),
             );
         }
-        for stage_id in blocked.iter().take(1) {
+        for stage in blocked.iter().take(1) {
             self.activity
-                .push(ActivityType::StageBlocked, format!("Stage {stage_id} blocked"));
+                .push(ActivityType::StageBlocked, format!("Stage {} blocked", stage.id));
         }
         for stage in executing.iter().take(1) {
             self.activity.push(
@@ -201,9 +201,9 @@ impl LiveMode {
         &self,
         _work_path: &Path,
         executing: &[StageInfo],
-        pending: &[String],
-        completed: &[String],
-        blocked: &[String],
+        pending: &[StageInfo],
+        completed: &[StageInfo],
+        blocked: &[StageInfo],
     ) {
         print!("\x1B[2J\x1B[1;1H");
 
@@ -245,8 +245,8 @@ impl LiveMode {
                 "\n{}",
                 format!("○ Pending ({})", pending.len()).dimmed()
             );
-            for stage_id in pending.iter().take(5) {
-                println!("    {}", stage_id.dimmed());
+            for stage in pending.iter().take(5) {
+                println!("    {}", stage.id.dimmed());
             }
             if pending.len() > 5 {
                 println!("    ... {} more", pending.len() - 5);
@@ -255,8 +255,8 @@ impl LiveMode {
 
         if !completed.is_empty() {
             println!("\n{}", format!("✓ Completed ({})", completed.len()).green());
-            for stage_id in completed.iter().take(3) {
-                println!("    {}", stage_id.dimmed());
+            for stage in completed.iter().take(3) {
+                println!("    {}", stage.id.dimmed());
             }
             if completed.len() > 3 {
                 println!("    ... {} more", completed.len() - 3);
@@ -268,8 +268,8 @@ impl LiveMode {
                 "\n{}",
                 format!("✗ Blocked ({})", blocked.len()).red().bold()
             );
-            for stage_id in blocked {
-                println!("    {stage_id}");
+            for stage in blocked {
+                println!("    {}", stage.id);
             }
         }
 

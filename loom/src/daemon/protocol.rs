@@ -65,9 +65,9 @@ pub enum Response {
     },
     StatusUpdate {
         stages_executing: Vec<StageInfo>,
-        stages_pending: Vec<String>,
-        stages_completed: Vec<String>,
-        stages_blocked: Vec<String>,
+        stages_pending: Vec<StageInfo>,
+        stages_completed: Vec<StageInfo>,
+        stages_blocked: Vec<StageInfo>,
     },
     LogLine {
         line: String,
@@ -189,19 +189,38 @@ mod tests {
     #[test]
     fn test_write_and_read_status_update() {
         let mut buffer = Vec::new();
+        let now = Utc::now();
         let response = Response::StatusUpdate {
             stages_executing: vec![StageInfo {
                 id: "stage-1".to_string(),
                 name: "Test Stage".to_string(),
                 session_pid: Some(12345),
-                started_at: Utc::now(),
+                started_at: now,
                 worktree_status: Some(WorktreeStatus::Active),
                 status: StageStatus::Executing,
                 merged: false,
                 dependencies: vec!["stage-0".to_string()],
             }],
-            stages_pending: vec!["stage-2".to_string()],
-            stages_completed: vec!["stage-0".to_string()],
+            stages_pending: vec![StageInfo {
+                id: "stage-2".to_string(),
+                name: "Pending Stage".to_string(),
+                session_pid: None,
+                started_at: now,
+                worktree_status: None,
+                status: StageStatus::WaitingForDeps,
+                merged: false,
+                dependencies: vec!["stage-1".to_string()],
+            }],
+            stages_completed: vec![StageInfo {
+                id: "stage-0".to_string(),
+                name: "Completed Stage".to_string(),
+                session_pid: None,
+                started_at: now,
+                worktree_status: None,
+                status: StageStatus::Completed,
+                merged: true,
+                dependencies: vec![],
+            }],
             stages_blocked: vec![],
         };
 

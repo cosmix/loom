@@ -44,23 +44,6 @@ pub fn execute(live: bool, compact: bool, verbose: bool) -> Result<()> {
     }
 
     // Static mode (default): show snapshot of current state
-    // If daemon is running and no explicit mode, auto-switch to live TUI
-    if DaemonServer::is_running(work_path) {
-        match ui::run_tui(work_path) {
-            Ok(()) => return Ok(()),
-            Err(e) => {
-                // Connection failed or daemon unresponsive - fall back to static
-                eprintln!("{}", format!("Could not connect to daemon: {e}").yellow());
-                println!("{}", "Falling back to static status display.".dimmed());
-            }
-        }
-    } else {
-        println!(
-            "\n{}",
-            "Daemon not running. Showing static status.".dimmed()
-        );
-    }
-
     execute_static(&work_dir, verbose)
 }
 
@@ -86,6 +69,13 @@ fn execute_static(work_dir: &WorkDir, verbose: bool) -> Result<()> {
     println!();
     println!("{}", "Loom Status Dashboard".bold().blue());
     println!("{}", "=".repeat(50));
+
+    // Show daemon status hint
+    if DaemonServer::is_running(work_dir.root()) {
+        println!("{}", "Use 'loom status --live' for real-time updates".dimmed());
+    } else {
+        println!("{}", "Daemon not running (use 'loom run' to start)".dimmed());
+    }
 
     // Show progress bar with stage counts
     render::render_progress(&mut out, &status_data.progress)?;
