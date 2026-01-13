@@ -1,6 +1,6 @@
 use ratatui::text::{Span, Line};
 use ratatui::style::Style;
-use super::theme::{Theme, StatusColors};
+use super::theme::Theme;
 use crate::models::stage::StageStatus;
 
 /// Unicode block characters for progress bars
@@ -12,7 +12,7 @@ const BLOCKS: [char; 9] = [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉',
 /// * `pct` - Progress percentage (0.0 to 1.0)
 /// * `width` - Total width in characters
 /// * `style` - Style for filled portion
-pub fn progress_bar(pct: f32, width: usize, style: Style) -> String {
+pub fn progress_bar(pct: f32, width: usize, _style: Style) -> String {
     let pct = pct.clamp(0.0, 1.0);
     let filled_width = pct * width as f32;
     let full_blocks = filled_width.floor() as usize;

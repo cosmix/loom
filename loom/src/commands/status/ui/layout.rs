@@ -52,7 +52,7 @@ impl LayoutHelper {
     /// Calculate optimal table column widths based on terminal width
     pub fn table_columns(&self, columns: &[(&str, u16, u16)]) -> Vec<Constraint> {
         // columns: &[(name, min_width, max_width)]
-        let available = self.width.saturating_sub(2); // borders
+        let _available = self.width.saturating_sub(2); // borders
 
         columns
             .iter()

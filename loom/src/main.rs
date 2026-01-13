@@ -64,7 +64,19 @@ enum Commands {
     },
 
     /// Show dashboard with context health
-    Status,
+    Status {
+        /// Live mode: subscribe to daemon for real-time updates
+        #[arg(short, long)]
+        live: bool,
+
+        /// Compact mode: single-line output for scripting
+        #[arg(short, long)]
+        compact: bool,
+
+        /// Verbose mode: show detailed failure information
+        #[arg(short, long)]
+        verbose: bool,
+    },
 
     /// Resume work on a stage
     Resume {
@@ -704,7 +716,11 @@ fn main() -> Result<()> {
                 run::execute_background(stage, manual, max_parallel, watch, auto_merge)
             }
         }
-        Commands::Status => status::execute(),
+        Commands::Status {
+            live,
+            compact,
+            verbose,
+        } => status::execute(live, compact, verbose),
         Commands::Resume { stage_id } => resume::execute(stage_id),
         Commands::Merge { stage_id, force } => merge::execute(stage_id, force),
         Commands::Attach { command, target } => match (command, target) {
