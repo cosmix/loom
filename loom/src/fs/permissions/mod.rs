@@ -3,7 +3,7 @@
 //! Ensures that `.claude/settings.local.json` has the necessary permissions
 //! and hooks for loom to operate without constant user approval prompts.
 
-mod constants;
+pub mod constants;
 mod hooks;
 mod settings;
 mod sync;

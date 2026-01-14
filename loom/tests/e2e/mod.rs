@@ -9,6 +9,7 @@ pub mod daemon_config;
 pub mod fixtures;
 pub mod handoff;
 pub mod helpers;
+pub mod hooks;
 pub mod manual_mode;
 pub mod merge;
 pub mod parallel;
