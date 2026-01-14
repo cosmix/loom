@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind},
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -233,13 +233,6 @@ impl TuiApp {
             .set_read_timeout(Some(Duration::from_millis(50)))
             .ok();
 
-        // Set up Ctrl-C handler for clean exit
-        let running_clone = Arc::clone(&self.running);
-        ctrlc::set_handler(move || {
-            running_clone.store(false, Ordering::SeqCst);
-        })
-        .ok(); // Ignore error if handler already set
-
         while self.running.load(Ordering::SeqCst) {
             // Handle daemon messages (non-blocking)
             let msg_result: Result<Response> = read_message(&mut stream);
@@ -253,6 +246,11 @@ impl TuiApp {
                     if key.kind == KeyEventKind::Press {
                         match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => {
+                                self.running.store(false, Ordering::SeqCst);
+                            }
+                            KeyCode::Char('c')
+                                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+                            {
                                 self.running.store(false, Ordering::SeqCst);
                             }
                             _ => {}
@@ -613,7 +611,7 @@ fn render_compact_footer(frame: &mut Frame, area: Rect, last_error: &Option<Stri
         ])
     } else {
         Line::from(vec![
-            Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled("q/Esc/Ctrl+C", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw(" quit │ "),
             Span::styled("Daemon runs in background", Theme::dimmed()),
         ])
