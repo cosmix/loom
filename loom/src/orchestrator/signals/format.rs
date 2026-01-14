@@ -202,6 +202,12 @@ fn format_dynamic_section(
     content.push_str(&format!("- **Branch**: {}\n", &worktree.branch));
     content.push('\n');
 
+    // Add worktree root directory reminder (defense-in-depth)
+    content.push_str(&format!(
+        "**IMPORTANT:** Before running `loom stage complete`, ensure you are at the worktree root: `cd {}`\n\n",
+        &worktree.path.display()
+    ));
+
     // Embed plan overview if available
     if let Some(plan_overview) = &embedded_context.plan_overview {
         content.push_str("## Plan Overview\n\n");

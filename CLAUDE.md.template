@@ -242,6 +242,12 @@ loom stage complete <stage-id>
 **IMPORTANT: Ensure you are at the worktree root directory before running `loom stage complete`.**
 The worktree root is `.worktrees/<stage-id>/` — if you `cd` into subdirectories during work, return to the root first.
 
+**To return to worktree root:**
+```bash
+cd /path/to/project/.worktrees/<stage-id>
+```
+(The exact path is shown in your signal file under "## Target" → "Worktree")
+
 **NEVER use `git add -A` or `git add .`** — these stage `.work` (shared state symlink). Always specify files.
 
 The stop hook BLOCKS exit if uncommitted changes exist or stage is still "Executing".
@@ -554,6 +560,7 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 │  3. CONTEXT ≥75%: STOP everything. Write handoff. No exceptions.   │
 │                                                                    │
 │  4. IN WORKTREE: Commit + complete stage or hook BLOCKS exit.      │
+│     → cd to WORKTREE ROOT before running loom stage complete       │
 │                                                                    │
 │  5. KNOWLEDGE: Bootstrap if empty. Update discoveries. ALWAYS.     │
 │                                                                    │
