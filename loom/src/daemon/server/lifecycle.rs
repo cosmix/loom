@@ -32,10 +32,29 @@ impl DaemonServer {
         let mut stream =
             UnixStream::connect(&socket_path).context("Failed to connect to daemon socket")?;
 
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .context("Failed to set read timeout")?;
+
         write_message(&mut stream, &Request::Stop).context("Failed to send stop request")?;
 
-        let response: Response =
-            read_message(&mut stream).context("Failed to read stop response")?;
+        let response: Response = match read_message(&mut stream) {
+            Ok(resp) => resp,
+            Err(e) => {
+                if let Some(io_err) = e.downcast_ref::<std::io::Error>() {
+                    if io_err.kind() == std::io::ErrorKind::WouldBlock
+                        || io_err.kind() == std::io::ErrorKind::TimedOut
+                    {
+                        anyhow::bail!(
+                            "Daemon did not respond within 5 seconds. \
+                             It may be frozen. Try: kill $(cat {})",
+                            work_dir.join("orchestrator.pid").display()
+                        );
+                    }
+                }
+                return Err(e).context("Failed to read stop response");
+            }
+        };
 
         match response {
             Response::Ok => Ok(()),
