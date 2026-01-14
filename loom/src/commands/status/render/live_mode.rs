@@ -84,8 +84,8 @@ impl LiveMode {
     }
 
     fn connect(&self, socket_path: &Path) -> Result<UnixStream> {
-        let mut stream = UnixStream::connect(socket_path)
-            .context("Failed to connect to daemon socket")?;
+        let mut stream =
+            UnixStream::connect(socket_path).context("Failed to connect to daemon socket")?;
 
         stream
             .set_read_timeout(Some(SOCKET_TIMEOUT))
@@ -140,10 +140,7 @@ impl LiveMode {
             self.spinner.current(),
             "Live Status Dashboard".bold().blue()
         );
-        println!(
-            "{}",
-            "Press Ctrl+C to exit (daemon continues)".dimmed()
-        );
+        println!("{}", "Press Ctrl+C to exit (daemon continues)".dimmed());
         println!("{}", "═".repeat(50));
     }
 
@@ -186,8 +183,10 @@ impl LiveMode {
             );
         }
         for stage in blocked.iter().take(1) {
-            self.activity
-                .push(ActivityType::StageBlocked, format!("Stage {} blocked", stage.id));
+            self.activity.push(
+                ActivityType::StageBlocked,
+                format!("Stage {} blocked", stage.id),
+            );
         }
         for stage in executing.iter().take(1) {
             self.activity.push(
@@ -212,10 +211,7 @@ impl LiveMode {
             self.spinner.current(),
             "Live Status Dashboard".bold().blue()
         );
-        println!(
-            "{}",
-            "Press Ctrl+C to exit (daemon continues)".dimmed()
-        );
+        println!("{}", "Press Ctrl+C to exit (daemon continues)".dimmed());
         println!("{}", "═".repeat(50));
 
         let total = executing.len() + pending.len() + completed.len() + blocked.len();
@@ -241,10 +237,7 @@ impl LiveMode {
         }
 
         if !pending.is_empty() {
-            println!(
-                "\n{}",
-                format!("○ Pending ({})", pending.len()).dimmed()
-            );
+            println!("\n{}", format!("○ Pending ({})", pending.len()).dimmed());
             for stage in pending.iter().take(5) {
                 println!("    {}", stage.id.dimmed());
             }

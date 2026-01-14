@@ -1,8 +1,8 @@
 //! Recent activity log widget
 
+use colored::Colorize;
 use std::collections::VecDeque;
 use std::time::Instant;
-use colored::Colorize;
 
 /// Maximum number of activity entries to keep
 const MAX_ENTRIES: usize = 10;

@@ -143,7 +143,9 @@ pub fn has_uncommitted_changes(worktree_path: &Path) -> Result<bool> {
     // Filter out loom internal directories and .claude
     let has_changes = stdout.lines().filter(|l| !l.is_empty()).any(|l| {
         let file = if l.len() > 3 { &l[3..] } else { l };
-        !file.starts_with(".work") && !file.starts_with(".worktrees") && !file.starts_with(".claude")
+        !file.starts_with(".work")
+            && !file.starts_with(".worktrees")
+            && !file.starts_with(".claude")
     });
 
     Ok(has_changes)
@@ -171,7 +173,9 @@ pub fn get_uncommitted_files(worktree_path: &Path) -> Result<Vec<String>> {
             }
         })
         // Exclude loom internal directories and .claude
-        .filter(|f| !f.starts_with(".work") && !f.starts_with(".worktrees") && !f.starts_with(".claude"))
+        .filter(|f| {
+            !f.starts_with(".work") && !f.starts_with(".worktrees") && !f.starts_with(".claude")
+        })
         .collect();
 
     Ok(files)

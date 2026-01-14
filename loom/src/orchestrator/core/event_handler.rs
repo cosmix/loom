@@ -532,7 +532,9 @@ impl Orchestrator {
             // Spawn a merge resolution session
             if let Err(e) = self.spawn_merge_resolution_session(&stage) {
                 clear_status_line();
-                eprintln!("Warning: Failed to spawn merge resolution session for '{stage_id}': {e}");
+                eprintln!(
+                    "Warning: Failed to spawn merge resolution session for '{stage_id}': {e}"
+                );
             } else {
                 spawned += 1;
             }
@@ -570,7 +572,10 @@ impl Orchestrator {
     }
 
     /// Spawn a merge resolution session for a stage with merge issues.
-    fn spawn_merge_resolution_session(&mut self, stage: &crate::models::stage::Stage) -> Result<()> {
+    fn spawn_merge_resolution_session(
+        &mut self,
+        stage: &crate::models::stage::Stage,
+    ) -> Result<()> {
         let source_branch = format!("loom/{}", stage.id);
 
         // Get target branch
@@ -579,9 +584,12 @@ impl Orchestrator {
         });
 
         // Get conflicting files (test merge to see what conflicts)
-        let conflicting_files =
-            get_conflicting_files_from_status(&source_branch, &target_branch, &self.config.repo_root)
-                .unwrap_or_default();
+        let conflicting_files = get_conflicting_files_from_status(
+            &source_branch,
+            &target_branch,
+            &self.config.repo_root,
+        )
+        .unwrap_or_default();
 
         // Create a merge session
         let session = Session::new_merge(source_branch.clone(), target_branch.clone());

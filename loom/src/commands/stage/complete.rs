@@ -103,8 +103,8 @@ fn complete_knowledge_stage(
     println!("  (merged=true auto-set, no git merge required for knowledge stages)");
 
     // Trigger dependent stages
-    let triggered = trigger_dependents(stage_id, work_dir)
-        .context("Failed to trigger dependent stages")?;
+    let triggered =
+        trigger_dependents(stage_id, work_dir).context("Failed to trigger dependent stages")?;
 
     if !triggered.is_empty() {
         println!("Triggered {} dependent stage(s):", triggered.len());
@@ -212,10 +212,8 @@ pub fn complete(
     // Resolve acceptance criteria working directory:
     // If stage has a working_dir set, join it with the worktree root
     // Special case: "." means use the worktree root directly
-    let acceptance_dir: Option<PathBuf> = resolve_acceptance_dir(
-        working_dir.as_deref(),
-        stage.working_dir.as_deref(),
-    );
+    let acceptance_dir: Option<PathBuf> =
+        resolve_acceptance_dir(working_dir.as_deref(), stage.working_dir.as_deref());
 
     // Debug logging for path resolution
     if let Some(ref worktree_root) = working_dir {
@@ -361,8 +359,7 @@ pub fn complete(
         // Find the main repo root (not the worktree root) for merge operations.
         // When running from within a worktree, we need to merge from the main repo.
         let cwd = std::env::current_dir().context("Failed to get current directory")?;
-        let repo_root = find_repo_root_from_cwd(&cwd)
-            .unwrap_or_else(|| cwd.clone());
+        let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or_else(|| cwd.clone());
         let merge_point = get_merge_point(work_dir)?;
 
         // Capture the completed commit SHA before merge (the HEAD of the stage branch)

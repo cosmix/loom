@@ -817,21 +817,19 @@ fn test_knowledge_recommendations_has_knowledge_id() {
 
 #[test]
 fn test_knowledge_recommendations_has_knowledge_name() {
-    let stages = vec![
-        StageDefinition {
-            id: "init-stage".to_string(),
-            name: "Knowledge Bootstrap".to_string(),
-            description: None,
-            dependencies: vec![],
-            parallel_group: None,
-            acceptance: vec![],
-            setup: vec![],
-            files: vec![],
-            auto_merge: None,
-            working_dir: ".".to_string(),
-            stage_type: StageType::default(),
-        },
-    ];
+    let stages = vec![StageDefinition {
+        id: "init-stage".to_string(),
+        name: "Knowledge Bootstrap".to_string(),
+        description: None,
+        dependencies: vec![],
+        parallel_group: None,
+        acceptance: vec![],
+        setup: vec![],
+        files: vec![],
+        auto_merge: None,
+        working_dir: ".".to_string(),
+        stage_type: StageType::default(),
+    }];
 
     let warnings = check_knowledge_recommendations(&stages);
     assert!(warnings.is_empty());
@@ -839,21 +837,19 @@ fn test_knowledge_recommendations_has_knowledge_name() {
 
 #[test]
 fn test_knowledge_recommendations_case_insensitive() {
-    let stages = vec![
-        StageDefinition {
-            id: "KNOWLEDGE-setup".to_string(),
-            name: "Setup".to_string(),
-            description: None,
-            dependencies: vec![],
-            parallel_group: None,
-            acceptance: vec![],
-            setup: vec![],
-            files: vec![],
-            auto_merge: None,
-            working_dir: ".".to_string(),
-            stage_type: StageType::default(),
-        },
-    ];
+    let stages = vec![StageDefinition {
+        id: "KNOWLEDGE-setup".to_string(),
+        name: "Setup".to_string(),
+        description: None,
+        dependencies: vec![],
+        parallel_group: None,
+        acceptance: vec![],
+        setup: vec![],
+        files: vec![],
+        auto_merge: None,
+        working_dir: ".".to_string(),
+        stage_type: StageType::default(),
+    }];
 
     let warnings = check_knowledge_recommendations(&stages);
     assert!(warnings.is_empty());

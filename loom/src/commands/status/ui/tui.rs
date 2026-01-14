@@ -150,8 +150,8 @@ impl LiveStatus {
         let mut seen: HashSet<String> = HashSet::new();
 
         // Helper to convert StageInfo to UnifiedStage with level
-        let to_unified = |stage: &StageInfo, levels: &std::collections::HashMap<String, usize>| {
-            UnifiedStage {
+        let to_unified =
+            |stage: &StageInfo, levels: &std::collections::HashMap<String, usize>| UnifiedStage {
                 id: stage.id.clone(),
                 status: stage.status.clone(),
                 merged: stage.merged,
@@ -159,8 +159,7 @@ impl LiveStatus {
                 completed_at: stage.completed_at,
                 level: levels.get(&stage.id).copied().unwrap_or(0),
                 dependencies: stage.dependencies.clone(),
-            }
-        };
+            };
 
         // Add all stages from each category
         for stage in &self.executing {
@@ -248,9 +247,7 @@ impl TuiApp {
                             KeyCode::Char('q') | KeyCode::Esc => {
                                 self.running.store(false, Ordering::SeqCst);
                             }
-                            KeyCode::Char('c')
-                                if key.modifiers.contains(KeyModifiers::CONTROL) =>
-                            {
+                            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                 self.running.store(false, Ordering::SeqCst);
                             }
                             _ => {}
@@ -479,7 +476,9 @@ fn render_graph(frame: &mut Frame, area: Rect, stages: &[UnifiedStage]) {
                 StageStatus::Completed => "✓",
                 StageStatus::Executing => "●",
                 StageStatus::Queued => "▶",
-                StageStatus::Blocked | StageStatus::MergeConflict | StageStatus::MergeBlocked => "✗",
+                StageStatus::Blocked | StageStatus::MergeConflict | StageStatus::MergeBlocked => {
+                    "✗"
+                }
                 StageStatus::NeedsHandoff | StageStatus::WaitingForInput => "?",
                 _ => "○",
             };
@@ -530,7 +529,9 @@ fn render_unified_table(frame: &mut Frame, area: Rect, stages: &[UnifiedStage]) 
         .border_style(Style::default().fg(StatusColors::BORDER));
 
     if stages.is_empty() {
-        let empty = Paragraph::new("No stages").style(Theme::dimmed()).block(block);
+        let empty = Paragraph::new("No stages")
+            .style(Theme::dimmed())
+            .block(block);
         frame.render_widget(empty, area);
         return;
     }
@@ -552,7 +553,9 @@ fn render_unified_table(frame: &mut Frame, area: Rect, stages: &[UnifiedStage]) 
             let elapsed_str = match (&stage.status, stage.started_at, stage.completed_at) {
                 // Executing: show live elapsed time
                 (StageStatus::Executing, Some(start), _) => {
-                    let elapsed = chrono::Utc::now().signed_duration_since(start).num_seconds();
+                    let elapsed = chrono::Utc::now()
+                        .signed_duration_since(start)
+                        .num_seconds();
                     format_elapsed(elapsed)
                 }
                 // Completed/blocked/etc with completed_at: show final duration
@@ -567,9 +570,9 @@ fn render_unified_table(frame: &mut Frame, area: Rect, stages: &[UnifiedStage]) 
             let style = match stage.status {
                 StageStatus::Executing => Theme::status_executing(),
                 StageStatus::Completed => Theme::status_completed(),
-                StageStatus::Blocked
-                | StageStatus::MergeConflict
-                | StageStatus::MergeBlocked => Theme::status_blocked(),
+                StageStatus::Blocked | StageStatus::MergeConflict | StageStatus::MergeBlocked => {
+                    Theme::status_blocked()
+                }
                 StageStatus::NeedsHandoff
                 | StageStatus::WaitingForInput
                 | StageStatus::CompletedWithFailures => Theme::status_warning(),
@@ -611,7 +614,10 @@ fn render_compact_footer(frame: &mut Frame, area: Rect, last_error: &Option<Stri
         ])
     } else {
         Line::from(vec![
-            Span::styled("q/Esc/Ctrl+C", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "q/Esc/Ctrl+C",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" quit │ "),
             Span::styled("Daemon runs in background", Theme::dimmed()),
         ])

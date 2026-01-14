@@ -1,7 +1,7 @@
 //! Attention/failure details widget (verbose mode)
 
-use std::io::Write;
 use colored::Colorize;
+use std::io::Write;
 
 use crate::commands::status::data::StageSummary;
 use crate::models::stage::StageStatus;
@@ -10,13 +10,15 @@ use crate::models::stage::StageStatus;
 pub fn render_attention<W: Write>(w: &mut W, stages: &[StageSummary]) -> std::io::Result<()> {
     let problem_stages: Vec<_> = stages
         .iter()
-        .filter(|s| matches!(
-            s.status,
-            StageStatus::Blocked
-            | StageStatus::MergeConflict
-            | StageStatus::CompletedWithFailures
-            | StageStatus::MergeBlocked
-        ))
+        .filter(|s| {
+            matches!(
+                s.status,
+                StageStatus::Blocked
+                    | StageStatus::MergeConflict
+                    | StageStatus::CompletedWithFailures
+                    | StageStatus::MergeBlocked
+            )
+        })
         .collect();
 
     if problem_stages.is_empty() {
@@ -43,7 +45,13 @@ fn render_problem_stage<W: Write>(w: &mut W, stage: &StageSummary) -> std::io::R
         _ => "ISSUE",
     };
 
-    writeln!(w, "\n  {} {} ({})", "►".red(), stage.name.red().bold(), status_str)?;
+    writeln!(
+        w,
+        "\n  {} {} ({})",
+        "►".red(),
+        stage.name.red().bold(),
+        status_str
+    )?;
     writeln!(w, "    ID: {}", stage.id.dimmed())?;
 
     // Show failure details if available

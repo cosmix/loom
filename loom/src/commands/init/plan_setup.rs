@@ -55,10 +55,7 @@ pub fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<usiz
     let base_branch = get_current_branch().context("Failed to get current git branch")?;
 
     // Escape special characters for TOML string values
-    let escaped_name = parsed_plan
-        .name
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"");
+    let escaped_name = parsed_plan.name.replace('\\', "\\\\").replace('"', "\\\"");
 
     let config_content = format!(
         "# loom Configuration\n# Generated from plan: {}\n\n[plan]\nsource_path = \"{}\"\nplan_id = \"{}\"\nplan_name = \"{}\"\nbase_branch = \"{}\"\n",

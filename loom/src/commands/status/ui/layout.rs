@@ -28,10 +28,7 @@ impl LayoutHelper {
     pub fn header_body(&self, area: Rect, header_height: u16) -> (Rect, Rect) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(header_height),
-                Constraint::Min(0),
-            ])
+            .constraints([Constraint::Length(header_height), Constraint::Min(0)])
             .split(area);
         (chunks[0], chunks[1])
     }
@@ -72,10 +69,10 @@ pub fn main_layout(area: Rect) -> Vec<Rect> {
     Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Progress bar
-            Constraint::Length(1),  // Spacer
-            Constraint::Min(10),    // Main content (graph + tables)
-            Constraint::Length(3),  // Footer/activity
+            Constraint::Length(3), // Progress bar
+            Constraint::Length(1), // Spacer
+            Constraint::Min(10),   // Main content (graph + tables)
+            Constraint::Length(3), // Footer/activity
         ])
         .split(area)
         .to_vec()

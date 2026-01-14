@@ -230,7 +230,12 @@ pub fn abort_merge(repo_root: &Path) -> Result<()> {
         .args(["merge", "--abort"])
         .current_dir(repo_root)
         .output()
-        .with_context(|| format!("Failed to execute git merge --abort in {}", repo_root.display()))?;
+        .with_context(|| {
+            format!(
+                "Failed to execute git merge --abort in {}",
+                repo_root.display()
+            )
+        })?;
 
     if !output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);

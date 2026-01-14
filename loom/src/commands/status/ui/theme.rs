@@ -37,7 +37,9 @@ pub struct Theme;
 
 impl Theme {
     pub fn header() -> Style {
-        Style::default().fg(StatusColors::HEADER).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(StatusColors::HEADER)
+            .add_modifier(Modifier::BOLD)
     }
 
     pub fn dimmed() -> Style {
@@ -45,7 +47,9 @@ impl Theme {
     }
 
     pub fn status_executing() -> Style {
-        Style::default().fg(StatusColors::EXECUTING).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(StatusColors::EXECUTING)
+            .add_modifier(Modifier::BOLD)
     }
 
     pub fn status_completed() -> Style {
@@ -53,7 +57,9 @@ impl Theme {
     }
 
     pub fn status_blocked() -> Style {
-        Style::default().fg(StatusColors::BLOCKED).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(StatusColors::BLOCKED)
+            .add_modifier(Modifier::BOLD)
     }
 
     pub fn status_pending() -> Style {

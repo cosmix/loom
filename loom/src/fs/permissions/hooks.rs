@@ -68,7 +68,10 @@ pub fn install_loom_hooks() -> Result<usize> {
     // Create hooks directory if needed
     if !hooks_dir.exists() {
         fs::create_dir_all(&hooks_dir).with_context(|| {
-            format!("Failed to create hooks directory at {}", hooks_dir.display())
+            format!(
+                "Failed to create hooks directory at {}",
+                hooks_dir.display()
+            )
         })?;
     }
 
@@ -186,9 +189,7 @@ fn migrate_old_hook_paths(settings_obj: &mut serde_json::Map<String, Value>) -> 
                     } else {
                         Some(format!("{new_tilde_prefix}{rest}"))
                     }
-                } else if let Ok(stripped) =
-                    std::path::Path::new(&cmd).strip_prefix(&old_prefix)
-                {
+                } else if let Ok(stripped) = std::path::Path::new(&cmd).strip_prefix(&old_prefix) {
                     // Absolute path
                     let first_component = stripped.components().next();
                     let needs_migration = match first_component {
@@ -205,7 +206,6 @@ fn migrate_old_hook_paths(settings_obj: &mut serde_json::Map<String, Value>) -> 
                 };
 
                 if let Some(new_cmd) = new_cmd {
-
                     // Update the command in place
                     if let Some(hook_obj) = hook.as_object_mut() {
                         hook_obj.insert("command".to_string(), json!(new_cmd));

@@ -1,7 +1,7 @@
 //! Sessions table widget
 
-use std::io::Write;
 use colored::Colorize;
+use std::io::Write;
 
 use crate::commands::status::data::SessionSummary;
 
@@ -16,7 +16,9 @@ pub fn render_sessions<W: Write>(w: &mut W, sessions: &[SessionSummary]) -> std:
     writeln!(w, "{}", "─".repeat(50))?;
 
     // Header
-    writeln!(w, "  {:12} {:16} {:>6} {:>12} {:>8}",
+    writeln!(
+        w,
+        "  {:12} {:16} {:>6} {:>12} {:>8}",
         "SESSION".dimmed(),
         "STAGE".dimmed(),
         "PID".dimmed(),
@@ -33,8 +35,15 @@ pub fn render_sessions<W: Write>(w: &mut W, sessions: &[SessionSummary]) -> std:
 
 fn render_session_row<W: Write>(w: &mut W, session: &SessionSummary) -> std::io::Result<()> {
     let id = truncate(&session.id, 12);
-    let stage = session.stage_id.as_deref().map(|s| truncate(s, 16)).unwrap_or_else(|| "-".to_string());
-    let pid = session.pid.map(|p| p.to_string()).unwrap_or_else(|| "-".to_string());
+    let stage = session
+        .stage_id
+        .as_deref()
+        .map(|s| truncate(s, 16))
+        .unwrap_or_else(|| "-".to_string());
+    let pid = session
+        .pid
+        .map(|p| p.to_string())
+        .unwrap_or_else(|| "-".to_string());
 
     // Context bar
     let ctx_pct = session.context_tokens as f32 / session.context_limit.max(1) as f32;
@@ -54,7 +63,9 @@ fn render_session_row<W: Write>(w: &mut W, session: &SessionSummary) -> std::io:
     // Alive indicator
     let alive_indicator = if session.is_alive { "" } else { " ✗" };
 
-    writeln!(w, "  {:12} {:16} {:>6} {} {:>8}{}",
+    writeln!(
+        w,
+        "  {:12} {:16} {:>6} {} {:>8}{}",
         id.dimmed(),
         stage,
         pid,
@@ -86,6 +97,6 @@ fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_string()
     } else {
-        format!("{}…", &s[..max-1])
+        format!("{}…", &s[..max - 1])
     }
 }

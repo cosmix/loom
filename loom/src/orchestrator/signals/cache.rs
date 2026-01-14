@@ -139,11 +139,13 @@ pub fn generate_knowledge_stable_prefix() -> String {
         "You are running a **knowledge-gathering stage** in the **main repository**.\n\n",
     );
     content.push_str("**Key Differences from Regular Stages:**\n\n");
-    content.push_str("- **NO WORKTREE** - You are in the main repository, not an isolated worktree\n");
     content
-        .push_str("- **NO COMMITS REQUIRED** - Knowledge stages do NOT require git commits\n");
+        .push_str("- **NO WORKTREE** - You are in the main repository, not an isolated worktree\n");
+    content.push_str("- **NO COMMITS REQUIRED** - Knowledge stages do NOT require git commits\n");
     content.push_str("- **NO MERGING** - Your work stays in doc/loom/knowledge/ directly\n");
-    content.push_str("- **EXPLORATION FOCUS** - Your goal is to understand and document the codebase\n\n");
+    content.push_str(
+        "- **EXPLORATION FOCUS** - Your goal is to understand and document the codebase\n\n",
+    );
 
     // What knowledge stages DO
     content.push_str("**Your Mission:**\n\n");
@@ -170,7 +172,8 @@ pub fn generate_knowledge_stable_prefix() -> String {
     content.push_str("**Completion:**\n");
     content.push_str("- **Verify acceptance criteria** before marking stage complete\n");
     content.push_str("- **Create handoff** if context exceeds 75%\n");
-    content.push_str("- **Run `loom stage complete <stage-id>`** when done (from the repo root)\n\n");
+    content
+        .push_str("- **Run `loom stage complete <stage-id>`** when done (from the repo root)\n\n");
 
     // Knowledge-specific instructions
     content.push_str("**Knowledge Commands:**\n\n");

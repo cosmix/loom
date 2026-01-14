@@ -1,7 +1,7 @@
 //! Progress bar widget showing stage counts
 
-use std::io::Write;
 use colored::Colorize;
+use std::io::Write;
 
 use crate::commands::status::data::ProgressSummary;
 
@@ -30,7 +30,11 @@ pub fn render_progress<W: Write>(w: &mut W, progress: &ProgressSummary) -> std::
     };
 
     // Build status line
-    write!(w, "[{}] {}/{} stages", colored_bar, progress.completed, progress.total)?;
+    write!(
+        w,
+        "[{}] {}/{} stages",
+        colored_bar, progress.completed, progress.total
+    )?;
 
     if progress.executing > 0 {
         write!(w, " | {} {}", progress.executing, "executing".blue())?;

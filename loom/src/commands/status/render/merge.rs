@@ -1,7 +1,7 @@
 //! Merge status widget
 
-use std::io::Write;
 use colored::Colorize;
+use std::io::Write;
 
 use crate::commands::status::data::MergeSummary;
 
@@ -23,7 +23,12 @@ pub fn render_merge_status<W: Write>(w: &mut W, merge: &MergeSummary) -> std::io
 
     // Pending stages
     if !merge.pending.is_empty() {
-        writeln!(w, "  {} {} pending merge:", "○".yellow(), merge.pending.len())?;
+        writeln!(
+            w,
+            "  {} {} pending merge:",
+            "○".yellow(),
+            merge.pending.len()
+        )?;
         for stage_id in &merge.pending {
             writeln!(w, "    {} {}", "→".dimmed(), stage_id)?;
         }
@@ -32,11 +37,20 @@ pub fn render_merge_status<W: Write>(w: &mut W, merge: &MergeSummary) -> std::io
 
     // Conflicts
     if !merge.conflicts.is_empty() {
-        writeln!(w, "  {} {} with conflicts:", "✗".red().bold(), merge.conflicts.len())?;
+        writeln!(
+            w,
+            "  {} {} with conflicts:",
+            "✗".red().bold(),
+            merge.conflicts.len()
+        )?;
         for stage_id in &merge.conflicts {
             writeln!(w, "    {} {}", "⚡".red(), stage_id)?;
         }
-        writeln!(w, "    {}", "Run: loom merge <stage-id> to start resolution".dimmed())?;
+        writeln!(
+            w,
+            "    {}",
+            "Run: loom merge <stage-id> to start resolution".dimmed()
+        )?;
     }
 
     Ok(())

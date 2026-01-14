@@ -242,9 +242,7 @@ impl StageExecutor for Orchestrator {
 
             // Set up hooks in the main repo (not a worktree)
             if let Err(e) = setup_hooks_for_worktree(&self.config.repo_root, &config) {
-                eprintln!(
-                    "Warning: Failed to set up hooks for knowledge stage '{stage_id}': {e}"
-                );
+                eprintln!("Warning: Failed to set up hooks for knowledge stage '{stage_id}': {e}");
                 // Continue anyway - hooks are optional enhancement
             }
         }
@@ -316,8 +314,7 @@ impl StageExecutor for Orchestrator {
             .context("Failed to mark knowledge stage as executing in graph")?;
 
         // Add to active sessions but NOT to active_worktrees (no worktree for knowledge stages)
-        self.active_sessions
-            .insert(stage_id, spawned_session);
+        self.active_sessions.insert(stage_id, spawned_session);
 
         Ok(())
     }

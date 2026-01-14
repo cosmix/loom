@@ -46,8 +46,12 @@ pub fn generate_knowledge_signal(
         &embedded_context,
     );
 
-    fs::write(&signal_path, content)
-        .with_context(|| format!("Failed to write knowledge signal file: {}", signal_path.display()))?;
+    fs::write(&signal_path, content).with_context(|| {
+        format!(
+            "Failed to write knowledge signal file: {}",
+            signal_path.display()
+        )
+    })?;
 
     Ok(signal_path)
 }
@@ -132,7 +136,8 @@ fn format_knowledge_signal_content(
     let tasks = extract_tasks_from_stage(stage);
     if tasks.is_empty() {
         content.push_str("1. Explore the codebase starting from entry points\n");
-        content.push_str("2. Document key architectural patterns in doc/loom/knowledge/patterns.md\n");
+        content
+            .push_str("2. Document key architectural patterns in doc/loom/knowledge/patterns.md\n");
         content.push_str("3. Document coding conventions in doc/loom/knowledge/conventions.md\n");
         content.push_str("4. Verify acceptance criteria are met\n");
         content.push_str(&format!("5. Run `loom stage complete {}`\n", &stage.id));
@@ -185,8 +190,8 @@ fn extract_tasks_from_description(description: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
     use crate::models::stage::StageStatus;
+    use chrono::Utc;
 
     fn create_test_stage() -> Stage {
         Stage {
@@ -237,7 +242,8 @@ mod tests {
         let deps: Vec<DependencyStatus> = vec![];
         let embedded = super::super::types::EmbeddedContext::default();
 
-        let content = format_knowledge_signal_content(&session, &stage, &repo_root, &deps, &embedded);
+        let content =
+            format_knowledge_signal_content(&session, &stage, &repo_root, &deps, &embedded);
 
         assert!(content.contains("# Signal:"));
         assert!(content.contains("## Knowledge Stage Context"));
@@ -257,7 +263,8 @@ mod tests {
         let deps: Vec<DependencyStatus> = vec![];
         let embedded = super::super::types::EmbeddedContext::default();
 
-        let content = format_knowledge_signal_content(&session, &stage, &repo_root, &deps, &embedded);
+        let content =
+            format_knowledge_signal_content(&session, &stage, &repo_root, &deps, &embedded);
 
         // Should NOT contain worktree-specific instructions
         assert!(!content.contains("Worktree Context"));

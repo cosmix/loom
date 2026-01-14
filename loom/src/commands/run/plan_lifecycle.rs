@@ -308,11 +308,11 @@ mod tests {
             Path::new("doc/plans/IN_PROGRESS-PLAN.md"),
             IN_PROGRESS_PREFIX
         ));
-        assert!(!has_prefix(Path::new("doc/plans/PLAN.md"), IN_PROGRESS_PREFIX));
-        assert!(has_prefix(
-            Path::new("doc/plans/DONE-PLAN.md"),
-            DONE_PREFIX
+        assert!(!has_prefix(
+            Path::new("doc/plans/PLAN.md"),
+            IN_PROGRESS_PREFIX
         ));
+        assert!(has_prefix(Path::new("doc/plans/DONE-PLAN.md"), DONE_PREFIX));
     }
 
     #[test]
@@ -384,7 +384,12 @@ mod tests {
 
         assert!(result.is_some());
         let new_path = result.unwrap();
-        assert!(new_path.file_name().unwrap().to_str().unwrap().starts_with("IN_PROGRESS-"));
+        assert!(new_path
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .starts_with("IN_PROGRESS-"));
         assert!(new_path.exists());
         assert!(!plan_path.exists()); // Original file should be gone
     }
@@ -455,7 +460,12 @@ mod tests {
 
         assert!(result.is_some());
         let new_path = result.unwrap();
-        assert!(new_path.file_name().unwrap().to_str().unwrap().starts_with("DONE-"));
+        assert!(new_path
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .starts_with("DONE-"));
         assert!(!new_path.to_str().unwrap().contains("IN_PROGRESS"));
         assert!(new_path.exists());
     }

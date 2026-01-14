@@ -1,7 +1,7 @@
 //! Execution graph widget showing stage dependencies
 
-use std::io::Write;
 use colored::Colorize;
+use std::io::Write;
 
 use crate::commands::status::data::{StageSummary, StatusData};
 use crate::models::stage::StageStatus;

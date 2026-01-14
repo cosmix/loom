@@ -563,7 +563,10 @@ fn test_complete_knowledge_stage_with_failing_acceptance() {
 
     std::env::set_current_dir(original_dir).unwrap();
 
-    assert!(result.is_ok(), "complete() should succeed even with failed acceptance");
+    assert!(
+        result.is_ok(),
+        "complete() should succeed even with failed acceptance"
+    );
 
     let loaded_stage = load_stage("knowledge-stage", &work_dir_path).unwrap();
     // Failing acceptance results in CompletedWithFailures

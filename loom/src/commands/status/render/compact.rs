@@ -1,7 +1,7 @@
 //! Compact single-line output for scripting
 
-use std::io::Write;
 use colored::Colorize;
+use std::io::Write;
 
 use crate::commands::status::data::StatusData;
 
@@ -22,7 +22,9 @@ pub fn render_compact<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result
     }
 
     // Handoff count
-    let handoff_count = data.stages.iter()
+    let handoff_count = data
+        .stages
+        .iter()
         .filter(|s| matches!(s.status, crate::models::stage::StageStatus::NeedsHandoff))
         .count();
     if handoff_count > 0 {
@@ -30,7 +32,9 @@ pub fn render_compact<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result
     }
 
     // Max context usage
-    let max_ctx = data.stages.iter()
+    let max_ctx = data
+        .stages
+        .iter()
         .filter_map(|s| s.context_pct)
         .fold(0.0f32, |a, b| a.max(b));
     if max_ctx > 0.0 {

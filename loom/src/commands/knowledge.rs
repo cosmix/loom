@@ -356,8 +356,7 @@ mod tests {
         assert!(result.is_ok(), "update() failed: {:?}", result);
 
         // Verify content was written to main repo
-        let content =
-            fs::read_to_string(main_knowledge_dir.join("entry-points.md")).unwrap();
+        let content = fs::read_to_string(main_knowledge_dir.join("entry-points.md")).unwrap();
         assert!(
             content.contains("## Test Entry"),
             "Content should be in main repo"

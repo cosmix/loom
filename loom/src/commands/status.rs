@@ -15,8 +15,8 @@ use diagnostics::{
     check_directory_structure, check_orphaned_tracks, check_parsing_errors, check_stuck_runners,
 };
 use display::{
-    count_files, display_runner_health, display_sessions, display_stages,
-    display_worktrees, load_runners,
+    count_files, display_runner_health, display_sessions, display_stages, display_worktrees,
+    load_runners,
 };
 use validation::{validate_markdown_files, validate_references};
 
@@ -38,7 +38,10 @@ pub fn execute(live: bool, compact: bool, verbose: bool) -> Result<()> {
             return ui::run_tui(work_path);
         } else {
             eprintln!("{}", "Daemon not running. Cannot use --live mode.".yellow());
-            println!("{}", "Start the daemon with 'loom run' or use static mode.".dimmed());
+            println!(
+                "{}",
+                "Start the daemon with 'loom run' or use static mode.".dimmed()
+            );
             return Ok(());
         }
     }
@@ -72,9 +75,15 @@ fn execute_static(work_dir: &WorkDir, verbose: bool) -> Result<()> {
 
     // Show daemon status hint
     if DaemonServer::is_running(work_dir.root()) {
-        println!("{}", "Use 'loom status --live' for real-time updates".dimmed());
+        println!(
+            "{}",
+            "Use 'loom status --live' for real-time updates".dimmed()
+        );
     } else {
-        println!("{}", "Daemon not running (use 'loom run' to start)".dimmed());
+        println!(
+            "{}",
+            "Daemon not running (use 'loom run' to start)".dimmed()
+        );
     }
 
     // Show progress bar with stage counts

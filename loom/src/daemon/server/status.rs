@@ -38,8 +38,7 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
                                 get_session_pid(&sessions_dir, parsed.session.as_deref());
                             let started_at = get_stage_started_at(&content);
                             let completed_at = get_stage_completed_at(&content);
-                            let worktree_status =
-                                detect_worktree_status(&parsed.id, &repo_root);
+                            let worktree_status = detect_worktree_status(&parsed.id, &repo_root);
 
                             // Map status string to StageStatus enum
                             let status_enum = match parsed.status.as_str() {
@@ -244,7 +243,10 @@ pub fn parse_stage_frontmatter_full(content: &str) -> Option<ParsedStage> {
         .map(|s| s.to_string());
 
     // Extract merged field (defaults to false)
-    let merged = yaml.get("merged").and_then(|v| v.as_bool()).unwrap_or(false);
+    let merged = yaml
+        .get("merged")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     // Extract dependencies array
     let dependencies = yaml

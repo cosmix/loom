@@ -97,22 +97,37 @@ fn format_semi_stable_section(embedded_context: &EmbeddedContext) -> String {
     if !embedded_context.knowledge_exists || embedded_context.knowledge_is_empty {
         // CRITICAL warning for missing/empty knowledge
         content.push_str("```\n");
-        content.push_str("┌────────────────────────────────────────────────────────────────────┐\n");
-        content.push_str("│  CRITICAL: KNOWLEDGE BASE IS EMPTY                                 │\n");
-        content.push_str("│                                                                    │\n");
+        content
+            .push_str("┌────────────────────────────────────────────────────────────────────┐\n");
+        content
+            .push_str("│  CRITICAL: KNOWLEDGE BASE IS EMPTY                                 │\n");
+        content
+            .push_str("│                                                                    │\n");
         content.push_str("│  Before implementing ANYTHING, you MUST explore and document:     │\n");
-        content.push_str("│                                                                    │\n");
-        content.push_str("│  1. Entry Points                                                   │\n");
-        content.push_str("│     - Main files, CLI entry, API endpoints                         │\n");
-        content.push_str("│                                                                    │\n");
-        content.push_str("│  2. Architectural Patterns                                         │\n");
-        content.push_str("│     - Error handling, state management, data flow                  │\n");
-        content.push_str("│                                                                    │\n");
-        content.push_str("│  3. Coding Conventions                                             │\n");
-        content.push_str("│     - Naming, file structure, testing patterns                     │\n");
-        content.push_str("│                                                                    │\n");
-        content.push_str("│  This prevents wasted context on repeated exploration.             │\n");
-        content.push_str("└────────────────────────────────────────────────────────────────────┘\n");
+        content
+            .push_str("│                                                                    │\n");
+        content
+            .push_str("│  1. Entry Points                                                   │\n");
+        content
+            .push_str("│     - Main files, CLI entry, API endpoints                         │\n");
+        content
+            .push_str("│                                                                    │\n");
+        content
+            .push_str("│  2. Architectural Patterns                                         │\n");
+        content
+            .push_str("│     - Error handling, state management, data flow                  │\n");
+        content
+            .push_str("│                                                                    │\n");
+        content
+            .push_str("│  3. Coding Conventions                                             │\n");
+        content
+            .push_str("│     - Naming, file structure, testing patterns                     │\n");
+        content
+            .push_str("│                                                                    │\n");
+        content
+            .push_str("│  This prevents wasted context on repeated exploration.             │\n");
+        content
+            .push_str("└────────────────────────────────────────────────────────────────────┘\n");
         content.push_str("```\n\n");
 
         content.push_str("**Exploration Order (hierarchical):**\n\n");
