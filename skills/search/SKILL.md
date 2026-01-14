@@ -1,6 +1,6 @@
 ---
 name: search
-description: Elasticsearch and full-text search implementation. Use when implementing search functionality, autocomplete, faceted search, relevance tuning, or working with search indexes. Keywords: elasticsearch, search, full-text, indexing, relevance, facets, autocomplete, analyzers, synonyms, aggregations.
+description: Full-text search and search engine implementation. Use when implementing search functionality, autocomplete, faceted search, relevance tuning, or working with search indexes. Keywords: search, full-text search, Elasticsearch, OpenSearch, Meilisearch, Typesense, fuzzy search, autocomplete, faceted search, facets, inverted index, relevance, ranking, scoring, tokenizer, analyzer, search-as-you-type, aggregations, synonyms, indexing, query, filtering, highlighting, search UI, typeahead, suggestions.
 ---
 
 # Search
@@ -377,6 +377,270 @@ PUT /products
           "filter": ["lowercase", "english_stop", "english_stemmer"]
         }
       }
+    }
+  }
+}
+```
+
+### Elasticsearch Patterns
+
+**Connection Management:**
+
+```javascript
+// Singleton client pattern
+class ElasticsearchClient {
+  static instance = null;
+
+  static getInstance() {
+    if (!this.instance) {
+      this.instance = new Client({
+        node: process.env.ES_URL,
+        auth: {
+          apiKey: process.env.ES_API_KEY,
+        },
+        maxRetries: 3,
+        requestTimeout: 30000,
+      });
+    }
+    return this.instance;
+  }
+}
+```
+
+**Index Templates** - Consistent mappings across time-series indices:
+
+```json
+PUT /_index_template/logs_template
+{
+  "index_patterns": ["logs-*"],
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 1
+    },
+    "mappings": {
+      "properties": {
+        "@timestamp": { "type": "date" },
+        "message": { "type": "text" },
+        "level": { "type": "keyword" }
+      }
+    }
+  }
+}
+```
+
+**Reindexing Pattern** - Schema migrations:
+
+```json
+POST /_reindex
+{
+  "source": { "index": "products_v1" },
+  "dest": { "index": "products_v2" },
+  "script": {
+    "source": "ctx._source.category = ctx._source.category.toLowerCase()"
+  }
+}
+```
+
+### Search UI Patterns
+
+**Debounced Search Input:**
+
+```javascript
+import { useState, useEffect } from 'react';
+
+function SearchBar({ onSearch }) {
+  const [query, setQuery] = useState('');
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (query.length >= 2) {
+        onSearch(query);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [query, onSearch]);
+
+  return (
+    <input
+      type="text"
+      value={query}
+      onChange={(e) => setQuery(e.target.value)}
+      placeholder="Search..."
+    />
+  );
+}
+```
+
+**Faceted Search Component:**
+
+```javascript
+function FacetedSearch({ aggregations, selectedFilters, onFilterChange }) {
+  return (
+    <div className="facets">
+      <div className="facet-group">
+        <h3>Category</h3>
+        {aggregations.categories.buckets.map(bucket => (
+          <label key={bucket.key}>
+            <input
+              type="checkbox"
+              checked={selectedFilters.category?.includes(bucket.key)}
+              onChange={() => onFilterChange('category', bucket.key)}
+            />
+            {bucket.key} ({bucket.doc_count})
+          </label>
+        ))}
+      </div>
+
+      <div className="facet-group">
+        <h3>Price Range</h3>
+        {aggregations.price_ranges.buckets.map(bucket => (
+          <label key={bucket.key}>
+            <input
+              type="radio"
+              name="price_range"
+              checked={selectedFilters.priceRange === bucket.key}
+              onChange={() => onFilterChange('priceRange', bucket.key)}
+            />
+            {bucket.key} ({bucket.doc_count})
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+**Search Results with Highlighting:**
+
+```javascript
+function SearchResult({ hit }) {
+  const getHighlightedText = (text, highlights) => {
+    if (!highlights) return text;
+    return { __html: highlights.join('...') };
+  };
+
+  return (
+    <div className="search-result">
+      <h3
+        dangerouslySetInnerHTML={
+          getHighlightedText(hit.name, hit.highlight?.name)
+        }
+      />
+      <p
+        dangerouslySetInnerHTML={
+          getHighlightedText(hit.description, hit.highlight?.description)
+        }
+      />
+      <span className="score">Score: {hit._score.toFixed(2)}</span>
+    </div>
+  );
+}
+```
+
+### Relevance Tuning Strategies
+
+**Testing Relevance:**
+
+```javascript
+class RelevanceTest {
+  async testQuery(query, expectedTopResults) {
+    const results = await this.search(query);
+    const topIds = results.hits.slice(0, 3).map(h => h._id);
+
+    console.log(`Query: "${query}"`);
+    console.log(`Expected: ${expectedTopResults.join(', ')}`);
+    console.log(`Actual: ${topIds.join(', ')}`);
+
+    const precision = topIds.filter(id =>
+      expectedTopResults.includes(id)
+    ).length / topIds.length;
+
+    return { precision, topIds };
+  }
+}
+
+// Test cases
+const tests = [
+  { query: 'wireless headphones', expected: ['prod-123', 'prod-456'] },
+  { query: 'bluetooth speaker', expected: ['prod-789', 'prod-012'] },
+];
+```
+
+**Multi-Field Scoring Strategy:**
+
+```json
+GET /products/_search
+{
+  "query": {
+    "multi_match": {
+      "query": "wireless headphones",
+      "fields": [
+        "exact_name^10",
+        "name^5",
+        "brand^3",
+        "description^2",
+        "tags"
+      ],
+      "type": "cross_fields",
+      "operator": "and"
+    }
+  }
+}
+```
+
+**Recency Boosting Pattern:**
+
+```json
+GET /articles/_search
+{
+  "query": {
+    "function_score": {
+      "query": { "match": { "content": "elasticsearch" } },
+      "functions": [
+        {
+          "exp": {
+            "published_at": {
+              "origin": "now",
+              "scale": "7d",
+              "offset": "1d",
+              "decay": 0.5
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+**Popularity + Relevance Combination:**
+
+```json
+GET /products/_search
+{
+  "query": {
+    "function_score": {
+      "query": { "match": { "name": "laptop" } },
+      "functions": [
+        {
+          "field_value_factor": {
+            "field": "sales_count",
+            "modifier": "log1p",
+            "factor": 0.1
+          }
+        },
+        {
+          "field_value_factor": {
+            "field": "rating",
+            "modifier": "none",
+            "factor": 2
+          }
+        }
+      ],
+      "score_mode": "sum",
+      "boost_mode": "multiply"
     }
   }
 }

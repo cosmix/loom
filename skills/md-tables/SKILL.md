@@ -1,58 +1,56 @@
 ---
 name: md-tables
-description: Fix markdown table alignment and spacing issues. Use when formatting tables in markdown files, aligning columns, normalizing cell padding, or ensuring proper table structure. Triggers: markdown table, table alignment, table formatting, md table, align columns.
+description: Fix markdown table alignment and spacing issues. Use when formatting tables in markdown files, aligning columns, normalizing cell padding, or ensuring proper table structure. Triggers: markdown table, md table, table formatting, column alignment, pipe table, GFM table, table generator, align columns, table spacing, table layout, fix table, format table, table structure.
 ---
 
 # Markdown Table Formatting
 
-## Overview
+Utility for fixing markdown table alignment and spacing. Normalizes column widths, ensures consistent padding, and preserves alignment markers.
 
-This skill provides a Python script (`fix-md-tables.py`) to fix markdown table alignment and spacing issues. It normalizes column widths, ensures consistent cell padding, and handles separator row alignment markers.
-
-## Features
-
-- Aligns columns to consistent widths
-- Normalizes cell spacing with single-space padding
-- Preserves alignment markers (`:---`, `:---:`, `---:`)
-- Handles tables with varying column counts
-- Adds blank lines around tables when needed
-
-## Usage
-
-Run the script located in this skill's directory:
+## Quick Examples
 
 ```bash
 # Preview fixed output
 python fix-md-tables.py document.md
 
-# Fix tables in-place
-python fix-md-tables.py document.md --in-place
+# Fix in-place
 python fix-md-tables.py document.md -i
 ```
 
-## Example
+### Common Patterns
 
-### Before
-
+**Status tables:**
 ```markdown
-|Name|Age|City|
-|---|---|---|
-|Alice|30|New York|
-|Bob|25|Los Angeles|
+| Stage    | Status    | Branch       |
+| -------- | --------- | ------------ |
+| build    | Complete  | loom/build   |
+| test     | Executing | loom/test    |
 ```
 
-### After
-
+**Configuration tables:**
 ```markdown
-| Name  | Age | City        |
-| ----- | --- | ----------- |
-| Alice | 30  | New York    |
-| Bob   | 25  | Los Angeles |
+| Option      | Default | Description           |
+| ----------- | ------- | --------------------- |
+| timeout     | 300     | Session timeout (sec) |
+| auto_merge  | false   | Enable auto merging   |
 ```
+
+**Right-aligned numbers:**
+```markdown
+| Item  | Count | Total |
+| ----- | ----: | ----: |
+| Files |    42 |   500 |
+| Lines | 1,234 | 5,000 |
+```
+
+## Features
+
+- Aligns columns to consistent widths
+- Single-space padding for cells
+- Preserves alignment markers (`:---`, `:---:`, `---:`)
+- Adds blank lines around tables
 
 ## Alignment Markers
-
-The script preserves alignment markers in separator rows:
 
 | Syntax  | Alignment      |
 | ------- | -------------- |

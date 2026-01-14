@@ -1,13 +1,19 @@
 ---
 name: logging-observability
-description: Comprehensive logging and observability patterns for production systems. Use when implementing structured logging, distributed tracing, metrics collection, or alerting. Triggers: logging, logs, observability, tracing, metrics, OpenTelemetry, correlation ID, spans, alerts, monitoring, JSON logs.
+description: Comprehensive logging and observability patterns for production systems including structured logging, distributed tracing, metrics collection, log aggregation, and alerting. Triggers for this skill - log, logging, logs, trace, tracing, traces, metrics, observability, OpenTelemetry, OTEL, Jaeger, Zipkin, structured logging, log level, debug, info, warn, error, fatal, correlation ID, span, spans, ELK, Elasticsearch, Loki, Datadog, Prometheus, Grafana, distributed tracing, log aggregation, alerting, monitoring, JSON logs, telemetry.
 ---
 
 # Logging and Observability
 
 ## Overview
 
-Observability enables understanding system behavior through logs, metrics, and traces. This skill covers structured logging, distributed tracing, metrics collection, OpenTelemetry integration, and effective alert design.
+Observability enables understanding system behavior through logs, metrics, and traces. This skill provides patterns for:
+
+- **Structured Logging**: JSON logs with correlation IDs and contextual data
+- **Distributed Tracing**: Span-based request tracking across services (OpenTelemetry, Jaeger, Zipkin)
+- **Metrics Collection**: Counters, gauges, histograms for system health (Prometheus patterns)
+- **Log Aggregation**: Centralized log management (ELK, Loki, Datadog)
+- **Alerting**: Symptom-based alerts with runbooks
 
 ## Instructions
 
@@ -406,10 +412,104 @@ async def get_order(order_id: str):
         return order
 ```
 
-### 6. Alert Design
+### 6. Log Aggregation Patterns
+
+#### ELK Stack (Elasticsearch, Logstash, Kibana)
 
 ```yaml
-# Prometheus alerting rules example
+# Logstash pipeline configuration
+input {
+  file {
+    path => "/var/log/app/*.log"
+    codec => json
+  }
+}
+
+filter {
+  # Parse structured JSON logs
+  json {
+    source => "message"
+  }
+
+  # Add Elasticsearch index based on date
+  mutate {
+    add_field => {
+      "[@metadata][index]" => "app-logs-%{+YYYY.MM.dd}"
+    }
+  }
+
+  # Enrich with geolocation (if IP present)
+  geoip {
+    source => "ip_address"
+    target => "geo"
+  }
+}
+
+output {
+  elasticsearch {
+    hosts => ["elasticsearch:9200"]
+    index => "%{[@metadata][index]}"
+  }
+}
+```
+
+#### Grafana Loki
+
+```yaml
+# Promtail scrape configuration
+scrape_configs:
+  - job_name: app-logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: app-logs
+          __path__: /var/log/app/*.log
+
+    # Extract JSON fields as labels
+    pipeline_stages:
+      - json:
+          expressions:
+            level: level
+            correlation_id: correlation_id
+            service: service
+      - labels:
+          level:
+          correlation_id:
+          service:
+```
+
+#### Datadog Agent Configuration
+
+```yaml
+# datadog.yaml
+logs_enabled: true
+
+logs_config:
+  processing_rules:
+    - type: exclude_at_match
+      name: exclude_healthcheck
+      pattern: "GET /health"
+
+  # Auto-parse JSON logs
+  auto_multi_line_detection: true
+
+# Log collection from files
+logs:
+  - type: file
+    path: "/var/log/app/*.log"
+    service: "order-service"
+    source: "python"
+    tags:
+      - "env:production"
+```
+
+### 7. Alert Design
+
+#### Prometheus Alerting Rules
+
+```yaml
+# Prometheus alerting rules
 groups:
   - name: service-alerts
     rules:
@@ -448,23 +548,65 @@ groups:
           description: "{{ $labels.job }} has been down for more than 1 minute"
 ```
 
+#### Alert Severity Levels
+
+| Level        | Response Time | Examples                                      |
+| ------------ | ------------- | --------------------------------------------- |
+| **Critical** | Immediate     | Service down, high error rate, data loss      |
+| **Warning**  | Business hrs  | High latency, approaching limits, retry spikes|
+| **Info**     | Log only      | Deployment started, config changed            |
+
 ## Best Practices
 
-1. **Log at Appropriate Levels**: Use DEBUG for development, INFO for normal operations, ERROR for failures.
+### Logging
 
-2. **Include Context**: Always include correlation IDs, user IDs, and relevant business identifiers.
+1. **Log at Appropriate Levels**: DEBUG for development, INFO for normal operations, WARN for potential issues, ERROR for failures, FATAL for critical failures.
 
-3. **Avoid Sensitive Data**: Never log passwords, tokens, or PII. Use redaction when necessary.
+2. **Include Context**: Always include correlation IDs, trace IDs, user IDs, and relevant business identifiers in structured fields.
 
-4. **Use Structured Logging**: JSON logs enable easy parsing and querying.
+3. **Avoid Sensitive Data**: Never log passwords, tokens, credit cards, or PII. Implement automatic redaction when necessary.
 
-5. **Trace Boundaries**: Create spans at service boundaries and significant operations.
+4. **Use Structured Logging**: JSON logs enable easy parsing and querying in log aggregation systems (ELK, Loki, Datadog).
 
-6. **Meaningful Metrics**: Track the Four Golden Signals - latency, traffic, errors, saturation.
+5. **Consistent Field Names**: Standardize field names across services (e.g., always use `correlation_id`, not sometimes `request_id`).
 
-7. **Alert on Symptoms**: Alert on user-impacting issues, not every metric fluctuation.
+### Distributed Tracing
 
-8. **Include Runbooks**: Every alert should link to a runbook with investigation steps.
+6. **Trace Boundaries**: Create spans at service boundaries, database calls, external API calls, and significant operations.
+
+7. **Propagate Context**: Pass trace IDs and span IDs across service boundaries via HTTP headers (OpenTelemetry standards).
+
+8. **Add Meaningful Attributes**: Include business context (user_id, order_id) and technical context (db_query, cache_hit) in span attributes.
+
+9. **Sample Appropriately**: Use adaptive sampling - trace 100% of errors, sample successful requests based on traffic volume.
+
+### Metrics
+
+10. **Track Golden Signals**: Monitor the Four Golden Signals - latency, traffic, errors, saturation.
+
+11. **Use Correct Metric Types**: Counters for totals (requests), Gauges for current values (memory), Histograms for distributions (latency).
+
+12. **Label Cardinality**: Keep label cardinality low - avoid high-cardinality values like user IDs in metric labels.
+
+13. **Naming Conventions**: Follow Prometheus naming - `http_requests_total` (counter), `process_memory_bytes` (gauge), `http_request_duration_seconds` (histogram).
+
+### Alerting
+
+14. **Alert on Symptoms**: Alert on user-impacting issues (error rate, latency), not causes (CPU usage). Symptoms indicate what is broken, causes explain why.
+
+15. **Include Runbooks**: Every alert must link to a runbook with investigation steps, common causes, and remediation procedures.
+
+16. **Use Appropriate Thresholds**: Set thresholds based on SLOs and historical data, not arbitrary values.
+
+17. **Alert Fatigue**: Ensure alerts are actionable. Non-actionable alerts lead to alert fatigue and ignored critical issues.
+
+### Integration
+
+18. **End-to-End Correlation**: Link logs, traces, and metrics using correlation IDs to enable cross-system debugging.
+
+19. **Centralize**: Use centralized log aggregation (ELK, Loki) and trace collection (Jaeger, Zipkin) for cross-service visibility.
+
+20. **Test Observability**: Verify logging, tracing, and metrics in development - don't discover gaps in production.
 
 ## Examples
 

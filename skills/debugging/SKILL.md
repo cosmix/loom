@@ -1,6 +1,6 @@
 ---
 name: debugging
-description: Systematically diagnoses and resolves software bugs using various debugging techniques and tools. Trigger keywords: debug, bug, error, exception, crash, issue, troubleshoot, fix, stack trace.
+description: Systematically diagnoses and resolves software bugs, test failures, data quality issues, and performance problems using various debugging techniques and tools. Trigger keywords: debug, bug, error, exception, crash, issue, troubleshoot, fix, stack trace, diagnosis, diagnose, investigate, root cause, why, failing, broken, not working, unexpected, flaky, intermittent, regression, performance degradation.
 allowed-tools: Read, Grep, Glob, Bash, Edit
 ---
 
@@ -8,7 +8,7 @@ allowed-tools: Read, Grep, Glob, Bash, Edit
 
 ## Overview
 
-This skill provides systematic approaches to finding and fixing bugs. It covers debugging strategies, tool usage, and techniques for various types of issues across different environments.
+This skill provides systematic approaches to finding and fixing bugs across all domains: application code, tests, data pipelines, ML models, and infrastructure. It covers debugging strategies, tool usage, and techniques for various types of issues including crashes, flaky tests, data quality problems, and model performance degradation.
 
 ## Instructions
 
@@ -49,6 +49,154 @@ This skill provides systematic approaches to finding and fixing bugs. It covers 
 5. **Isolate Variables**: Change one thing at a time
 6. **Use Source Control**: Git bisect is powerful
 7. **Write Tests**: Prove the bug exists, then prove it's fixed
+
+## Specialized Debugging Domains
+
+### Debugging Flaky Tests
+
+Flaky tests pass/fail non-deterministically. Common root causes:
+
+**Timing Issues:**
+
+- Race conditions in async code
+- Insufficient wait times for UI elements
+- Network request timeouts
+- Background jobs not completing
+
+**Non-Deterministic State:**
+
+- Random data generation without seeds
+- Unordered collections (sets, map iteration)
+- Floating-point precision issues
+- Timestamp-based logic in tests
+
+**Test Isolation Failures:**
+
+- Shared global state between tests
+- Database not cleaned between runs
+- Files/resources not properly cleaned up
+- Test execution order dependencies
+
+**Debugging Techniques:**
+
+```bash
+# Run test multiple times to reproduce flakiness
+for i in {1..100}; do cargo test test_name || break; done
+
+# Run with verbose logging to expose timing
+RUST_LOG=debug cargo test test_name
+
+# Check for shared state issues
+cargo test -- --test-threads=1  # Force serial execution
+
+# Identify timing-dependent tests
+cargo test -- --nocapture | grep -i "timeout\|sleep\|wait"
+```
+
+**Fixes:**
+
+- Add explicit waits instead of arbitrary sleeps
+- Seed random generators: `rand::thread_rng().seed(42)`
+- Clean up state in test fixtures/teardown
+- Use test isolation patterns (transactions, temp directories)
+- Mock time-dependent code
+
+### Debugging Data Pipelines
+
+Data pipeline bugs manifest as incorrect results, crashes on specific data, or performance issues.
+
+**Common Issues:**
+
+- Schema mismatches between stages
+- Null/missing value handling
+- Data type conversions (precision loss, overflow)
+- Encoding issues (UTF-8, special characters)
+- Memory issues with large datasets
+
+**Debugging Techniques:**
+
+```python
+# Sample problematic data for local debugging
+df_sample = df.filter("problematic_condition").limit(1000)
+df_sample.write.parquet("debug_sample.parquet")
+
+# Add data quality assertions
+assert df.filter(col("user_id").isNull()).count() == 0, "Null user_ids found"
+assert df.filter(col("amount") < 0).count() == 0, "Negative amounts found"
+
+# Profile memory and performance
+df.explain()  # Show execution plan
+df.cache()    # Materialize for profiling
+
+# Check schema evolution issues
+df.printSchema()
+df.dtypes  # Verify expected types
+```
+
+**Root Cause Analysis:**
+
+- Check upstream data sources for schema changes
+- Validate data at pipeline stage boundaries
+- Log sample records at each transformation
+- Use data profiling tools to find anomalies
+- Test with edge cases: nulls, empty strings, extreme values
+
+### Debugging ML Models
+
+ML debugging involves both code bugs and model behavior issues.
+
+**Training Issues:**
+
+- Loss not decreasing (learning rate, gradient flow)
+- Loss exploding (gradient explosion, numerical instability)
+- Overfitting (model memorizes training data)
+- Underfitting (model too simple for data)
+
+**Inference Issues:**
+
+- Prediction distribution shift
+- Performance degradation over time
+- Inconsistent results between training/inference
+- Memory leaks in model serving
+
+**Debugging Techniques:**
+
+```python
+# Check gradient flow
+for name, param in model.named_parameters():
+    if param.grad is not None:
+        print(f"{name}: grad norm = {param.grad.norm()}")
+    else:
+        print(f"{name}: NO GRADIENT")  # Dead layer!
+
+# Detect numerical issues
+torch.autograd.set_detect_anomaly(True)  # Catch NaN/Inf
+
+# Validate data preprocessing
+print("Training data stats:", train_data.mean(), train_data.std())
+print("Inference data stats:", inference_data.mean(), inference_data.std())
+# If stats differ significantly, preprocessing mismatch!
+
+# Profile model performance
+import torch.autograd.profiler as profiler
+with profiler.profile(use_cuda=True) as prof:
+    model(input_data)
+print(prof.key_averages().table())
+
+# Test on single example
+model.eval()
+with torch.no_grad():
+    output = model(single_input)
+    print(f"Input: {single_input}, Output: {output}")
+```
+
+**Root Cause Analysis:**
+
+- Verify data preprocessing matches training
+- Check for label leakage or data contamination
+- Validate feature distributions (training vs production)
+- Test model on known examples with expected outputs
+- Use explainability tools (SHAP, attention weights)
 
 ## Examples
 
@@ -181,6 +329,10 @@ python -m trace --trace script.py  # Trace execution
 node --inspect script.js  # Chrome DevTools
 node --inspect-brk script.js  # Break on first line
 
+# Rust debugging
+RUST_BACKTRACE=1 cargo run  # Full stack trace
+RUST_LOG=debug cargo run    # Verbose logging
+
 # Memory profiling (Python)
 python -m memory_profiler script.py
 
@@ -194,4 +346,108 @@ strace -f -e trace=file python script.py
 # Network debugging
 tcpdump -i any port 8080
 curl -v http://localhost:8080/api/health
+```
+
+### Example 5: Debugging Flaky Test
+
+```python
+# Flaky test - fails intermittently
+def test_user_registration():
+    user = create_user(email="test@example.com")
+    # Sometimes fails: "User already exists"
+    assert user.id is not None
+
+# Diagnosis: Test isolation failure - database not cleaned between runs
+
+# Fix: Add proper teardown
+@pytest.fixture(autouse=True)
+def clean_database():
+    yield
+    # Clean up after each test
+    User.query.delete()
+    db.session.commit()
+
+def test_user_registration():
+    user = create_user(email="test@example.com")
+    assert user.id is not None
+
+# Alternative fix: Use unique data per test run
+def test_user_registration():
+    email = f"test-{uuid.uuid4()}@example.com"
+    user = create_user(email=email)
+    assert user.id is not None
+```
+
+### Example 6: Debugging Data Pipeline
+
+```python
+# Data pipeline crashes on production data but works on test data
+def transform_orders(df):
+    # Bug: Crashes when discount column has nulls
+    df["final_price"] = df["price"] * (1 - df["discount"])
+    return df
+
+# Diagnosis: Add assertions to catch bad data early
+def transform_orders(df):
+    # Check assumptions about input data
+    assert "price" in df.columns, "Missing price column"
+    assert "discount" in df.columns, "Missing discount column"
+
+    # Expose the bug
+    null_discounts = df[df["discount"].isnull()]
+    if len(null_discounts) > 0:
+        print(f"Found {len(null_discounts)} orders with null discounts")
+        print(null_discounts.head())
+
+    # Fix: Handle nulls explicitly
+    df["discount"] = df["discount"].fillna(0.0)
+    df["final_price"] = df["price"] * (1 - df["discount"])
+    return df
+
+# Add data validation test
+def test_transform_orders_handles_nulls():
+    df = pd.DataFrame({
+        "price": [100, 200],
+        "discount": [0.1, None]  # Null discount
+    })
+    result = transform_orders(df)
+    assert result["final_price"].tolist() == [90.0, 200.0]
+```
+
+### Example 7: Debugging ML Model Performance
+
+```python
+# Model accuracy dropped from 95% to 75% in production
+
+# Step 1: Compare training vs production data distributions
+train_stats = train_df.describe()
+prod_stats = production_df.describe()
+print("Feature drift detected:")
+for col in train_stats.columns:
+    train_mean = train_stats.loc["mean", col]
+    prod_mean = prod_stats.loc["mean", col]
+    drift = abs(prod_mean - train_mean) / train_mean
+    if drift > 0.1:
+        print(f"{col}: {drift*100:.1f}% drift")
+
+# Step 2: Test on individual examples to find pattern
+test_cases = [
+    {"input": [...], "expected": 1, "predicted": model.predict([...])},
+    {"input": [...], "expected": 0, "predicted": model.predict([...])},
+]
+for case in test_cases:
+    if case["expected"] != case["predicted"]:
+        print(f"Misprediction: {case}")
+
+# Step 3: Root cause - feature preprocessing changed
+# Training: features normalized with StandardScaler fit on training data
+# Production: features normalized with different scaler parameters!
+
+# Fix: Save and load scaler with model
+import joblib
+joblib.dump(scaler, "scaler.pkl")
+# In production:
+scaler = joblib.load("scaler.pkl")
+features_scaled = scaler.transform(features)
+predictions = model.predict(features_scaled)
 ```

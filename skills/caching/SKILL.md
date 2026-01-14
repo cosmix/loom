@@ -1,6 +1,6 @@
 ---
 name: caching
-description: Comprehensive caching strategies and patterns for performance optimization. Use when implementing cache layers, cache invalidation, TTL policies, or distributed caching with Redis/Memcached. Triggers: cache, caching, Redis, Memcached, TTL, invalidation, cache-aside, write-through, cache stampede, distributed cache.
+description: Comprehensive caching strategies and patterns for performance optimization. Use when implementing cache layers, cache invalidation, TTL policies, or distributed caching. Covers Redis/Memcached patterns, CDN caching, database query caching, ML model caching, and eviction policies. Triggers: cache, caching, Redis, Memcached, CDN, TTL, invalidation, eviction, LRU, LFU, FIFO, write-through, write-behind, cache-aside, read-through, cache stampede, distributed cache, local cache, memoization, query cache, result cache, edge cache, browser cache, HTTP cache.
 ---
 
 # Caching
@@ -666,6 +666,423 @@ class DistributedCache:
             results[key] = value
 ```
 
+### 7. Database Query Caching
+
+```python
+import sqlalchemy
+from typing import Optional, List, Any
+import hashlib
+
+class QueryCache:
+    """Database query result caching with automatic invalidation."""
+
+    def __init__(self, cache_client, default_ttl: int = 300):
+        self.cache = cache_client
+        self.default_ttl = default_ttl
+
+    def _query_key(self, sql: str, params: tuple) -> str:
+        """Generate cache key from SQL and parameters."""
+        query_str = f"{sql}:{params}"
+        return f"query:{hashlib.md5(query_str.encode()).hexdigest()}"
+
+    async def execute_cached(
+        self,
+        session,
+        query,
+        params: Optional[dict] = None,
+        ttl: Optional[int] = None
+    ) -> List[Any]:
+        sql_str = str(query)
+        cache_key = self._query_key(sql_str, tuple(sorted((params or {}).items())))
+
+        # Check cache
+        cached = await self.cache.get(cache_key)
+        if cached:
+            return json.loads(cached)
+
+        # Execute query
+        result = session.execute(query, params).fetchall()
+        serialized = [dict(row) for row in result]
+
+        # Cache result
+        await self.cache.setex(
+            cache_key,
+            ttl or self.default_ttl,
+            json.dumps(serialized)
+        )
+
+        return serialized
+
+    async def invalidate_table(self, table_name: str):
+        """Invalidate all queries for a table."""
+        pattern = f"query:*{table_name}*"
+        await self.cache.delete_pattern(pattern)
+
+# ORM-level caching with SQLAlchemy
+from sqlalchemy import event
+from sqlalchemy.orm import Session
+
+class ORMCache:
+    def __init__(self, cache_client):
+        self.cache = cache_client
+
+    def setup_listeners(self, engine):
+        """Set up automatic cache invalidation on writes."""
+
+        @event.listens_for(Session, "after_flush")
+        def receive_after_flush(session, flush_context):
+            # Invalidate cache for modified tables
+            for obj in session.dirty | session.new | session.deleted:
+                table = obj.__tablename__
+                asyncio.create_task(
+                    self.cache.delete_pattern(f"query:*{table}*")
+                )
+
+    async def get_by_id(self, model, obj_id: int, session):
+        key = f"{model.__tablename__}:{obj_id}"
+        cached = await self.cache.get(key)
+
+        if cached:
+            return json.loads(cached)
+
+        obj = session.query(model).get(obj_id)
+        if obj:
+            await self.cache.setex(key, 3600, json.dumps(obj.to_dict()))
+
+        return obj
+```
+
+### 8. CDN and Static Asset Caching
+
+```python
+from datetime import datetime, timedelta
+from typing import Dict, Optional
+
+class CDNCache:
+    """CDN caching strategies with proper headers."""
+
+    @staticmethod
+    def get_cache_headers(
+        cache_type: str,
+        max_age: int = 3600
+    ) -> Dict[str, str]:
+        """Generate appropriate HTTP cache headers."""
+
+        strategies = {
+            "immutable": {
+                "Cache-Control": f"public, max-age={max_age}, immutable",
+                "Expires": (datetime.utcnow() + timedelta(seconds=max_age)).strftime(
+                    "%a, %d %b %Y %H:%M:%S GMT"
+                ),
+            },
+            "versioned": {
+                "Cache-Control": f"public, max-age={max_age}",
+                "ETag": None,  # Set dynamically
+            },
+            "revalidate": {
+                "Cache-Control": "public, max-age=0, must-revalidate",
+                "ETag": None,  # Set dynamically
+            },
+            "private": {
+                "Cache-Control": "private, max-age=0, must-revalidate",
+                "Pragma": "no-cache",
+            },
+            "no-cache": {
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        }
+
+        return strategies.get(cache_type, strategies["revalidate"])
+
+    @staticmethod
+    def generate_etag(content: bytes) -> str:
+        """Generate ETag from content hash."""
+        return hashlib.md5(content).hexdigest()
+
+# FastAPI/Flask example
+from fastapi import Response
+from fastapi.responses import FileResponse
+
+class StaticAssetCache:
+    def __init__(self, cdn_base_url: Optional[str] = None):
+        self.cdn_base_url = cdn_base_url
+
+    def serve_asset(
+        self,
+        file_path: str,
+        asset_type: str = "immutable"
+    ) -> FileResponse:
+        """Serve static asset with caching headers."""
+
+        with open(file_path, "rb") as f:
+            content = f.read()
+
+        headers = CDNCache.get_cache_headers(
+            asset_type,
+            max_age=31536000 if asset_type == "immutable" else 3600
+        )
+
+        # Add ETag for versioned assets
+        if asset_type in ["versioned", "revalidate"]:
+            headers["ETag"] = f'"{CDNCache.generate_etag(content)}"'
+
+        return FileResponse(
+            file_path,
+            headers=headers,
+            media_type=self._get_media_type(file_path)
+        )
+
+    def get_asset_url(self, path: str, version: Optional[str] = None) -> str:
+        """Generate CDN URL with optional versioning."""
+        base = self.cdn_base_url or ""
+
+        if version:
+            # Append version to filename for cache busting
+            parts = path.rsplit(".", 1)
+            path = f"{parts[0]}.{version}.{parts[1]}"
+
+        return f"{base}/{path}"
+
+    @staticmethod
+    def _get_media_type(file_path: str) -> str:
+        ext_to_mime = {
+            ".js": "application/javascript",
+            ".css": "text/css",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".svg": "image/svg+xml",
+            ".woff2": "font/woff2",
+        }
+        ext = file_path[file_path.rfind("."):]
+        return ext_to_mime.get(ext, "application/octet-stream")
+```
+
+### 9. ML Model Caching
+
+```python
+import pickle
+from typing import Any, Callable
+import numpy as np
+
+class MLModelCache:
+    """Caching for machine learning models and predictions."""
+
+    def __init__(self, cache_client, model_store_path: str = "./models"):
+        self.cache = cache_client
+        self.model_store = model_store_path
+
+    async def get_model(self, model_id: str, version: str):
+        """Load model from cache or disk."""
+        key = f"model:{model_id}:v{version}"
+
+        cached = await self.cache.get(key)
+        if cached:
+            return pickle.loads(cached)
+
+        # Load from disk
+        path = f"{self.model_store}/{model_id}/{version}/model.pkl"
+        with open(path, "rb") as f:
+            model = pickle.load(f)
+
+        # Cache serialized model (use compression for large models)
+        await self.cache.setex(
+            key,
+            86400,  # 1 day
+            pickle.dumps(model)
+        )
+
+        return model
+
+    async def cache_prediction(
+        self,
+        model_id: str,
+        input_hash: str,
+        prediction: Any,
+        ttl: int = 3600
+    ):
+        """Cache prediction results."""
+        key = f"pred:{model_id}:{input_hash}"
+        await self.cache.setex(key, ttl, json.dumps(prediction))
+
+    async def get_cached_prediction(
+        self,
+        model_id: str,
+        input_data: Any
+    ) -> Optional[Any]:
+        """Retrieve cached prediction if available."""
+        input_hash = hashlib.md5(
+            json.dumps(input_data, sort_keys=True).encode()
+        ).hexdigest()
+
+        key = f"pred:{model_id}:{input_hash}"
+        cached = await self.cache.get(key)
+
+        return json.loads(cached) if cached else None
+
+# Feature caching for ML pipelines
+class FeatureCache:
+    def __init__(self, cache_client):
+        self.cache = cache_client
+
+    async def get_features(
+        self,
+        entity_id: str,
+        feature_names: List[str],
+        compute_fn: Callable
+    ) -> Dict[str, Any]:
+        """Get features from cache or compute."""
+
+        # Try to get from cache
+        keys = [f"feature:{entity_id}:{name}" for name in feature_names]
+        cached_values = await self.cache.mget(keys)
+
+        features = {}
+        missing = []
+
+        for name, value in zip(feature_names, cached_values):
+            if value:
+                features[name] = json.loads(value)
+            else:
+                missing.append(name)
+
+        # Compute missing features
+        if missing:
+            computed = await compute_fn(entity_id, missing)
+
+            # Cache computed features
+            for name, value in computed.items():
+                key = f"feature:{entity_id}:{name}"
+                await self.cache.setex(key, 3600, json.dumps(value))
+                features[name] = value
+
+        return features
+
+# Embeddings cache for vector similarity
+class EmbeddingCache:
+    def __init__(self, cache_client):
+        self.cache = cache_client
+
+    async def get_embedding(
+        self,
+        text: str,
+        model: str,
+        embed_fn: Callable
+    ) -> np.ndarray:
+        """Get or compute text embedding."""
+
+        text_hash = hashlib.md5(text.encode()).hexdigest()
+        key = f"embed:{model}:{text_hash}"
+
+        cached = await self.cache.get(key)
+        if cached:
+            return np.frombuffer(cached, dtype=np.float32)
+
+        embedding = await embed_fn(text)
+
+        # Store as binary
+        await self.cache.setex(
+            key,
+            86400 * 7,  # 1 week
+            embedding.tobytes()
+        )
+
+        return embedding
+```
+
+### 10. Local In-Memory Caching
+
+```python
+from collections import OrderedDict
+from threading import RLock
+from typing import Optional
+import time
+
+class LRUCache:
+    """Thread-safe LRU cache with TTL support."""
+
+    def __init__(self, capacity: int = 1000, default_ttl: Optional[int] = None):
+        self.cache = OrderedDict()
+        self.capacity = capacity
+        self.default_ttl = default_ttl
+        self.lock = RLock()
+
+    def get(self, key: str) -> Optional[Any]:
+        with self.lock:
+            if key not in self.cache:
+                return None
+
+            value, expiry = self.cache[key]
+
+            # Check expiration
+            if expiry and time.time() > expiry:
+                del self.cache[key]
+                return None
+
+            # Move to end (most recently used)
+            self.cache.move_to_end(key)
+            return value
+
+    def put(self, key: str, value: Any, ttl: Optional[int] = None):
+        with self.lock:
+            if key in self.cache:
+                self.cache.move_to_end(key)
+
+            ttl = ttl or self.default_ttl
+            expiry = time.time() + ttl if ttl else None
+            self.cache[key] = (value, expiry)
+
+            if len(self.cache) > self.capacity:
+                # Remove oldest (least recently used)
+                self.cache.popitem(last=False)
+
+    def invalidate(self, key: str):
+        with self.lock:
+            self.cache.pop(key, None)
+
+    def clear(self):
+        with self.lock:
+            self.cache.clear()
+
+# Function memoization decorator
+from functools import wraps
+
+def memoize(ttl: Optional[int] = None, maxsize: int = 128):
+    """Memoization decorator with TTL."""
+
+    cache = LRUCache(capacity=maxsize, default_ttl=ttl)
+
+    def decorator(func: Callable):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Create cache key from args
+            key = f"{func.__name__}:{args}:{sorted(kwargs.items())}"
+
+            result = cache.get(key)
+            if result is not None:
+                return result
+
+            result = func(*args, **kwargs)
+            cache.put(key, result)
+            return result
+
+        wrapper.cache_clear = cache.clear
+        wrapper.cache_info = lambda: {
+            "size": len(cache.cache),
+            "maxsize": cache.capacity
+        }
+
+        return wrapper
+
+    return decorator
+
+# Usage
+@memoize(ttl=300, maxsize=1000)
+def expensive_computation(x: int, y: int) -> int:
+    return x ** y
+```
+
 ## Best Practices
 
 1. **Cache What Matters**: Focus on frequently accessed, expensive-to-compute data.
@@ -683,6 +1100,10 @@ class DistributedCache:
 7. **Prevent Stampedes**: Use locking, early recomputation, or stale-while-revalidate.
 
 8. **Size Your Cache Appropriately**: Monitor eviction rates and adjust size accordingly.
+
+9. **Layer Your Caches**: Browser cache → CDN → Redis → Database for optimal performance.
+
+10. **Security Considerations**: Never cache sensitive data (passwords, tokens, PII) without encryption.
 
 ## Examples
 

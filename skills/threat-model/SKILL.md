@@ -1,6 +1,6 @@
 ---
 name: threat-model
-description: Threat modeling methodologies (STRIDE, DREAD, PASTA, attack trees) for secure architecture design. Use when planning new systems, reviewing architecture security, identifying threats, or assessing risk. Triggers: threat model, STRIDE, DREAD, attack surface, security architecture, trust boundary, threat vector, risk assessment.
+description: Threat modeling methodologies (STRIDE, DREAD, PASTA, attack trees) for secure architecture design. Use when planning new systems, reviewing architecture security, identifying threats, or assessing risk. Triggers: threat modeling, threat model, STRIDE, DREAD, attack tree, attack surface, trust boundary, data flow diagram, DFD, threat analysis, risk assessment, adversary, threat actor, threat vector, mitigation, security architecture, attack scenario, vulnerability assessment, security posture, defense in depth.
 allowed-tools: Read, Grep, Glob, Bash, WebFetch
 ---
 
@@ -223,6 +223,119 @@ Identify:
 ## 8. Review Schedule
 [When to revisit this threat model]
 ```
+
+## Domain-Specific Threat Modeling
+
+### API Threat Modeling
+
+Focus areas for REST, GraphQL, and gRPC APIs:
+
+**Authentication & Authorization**
+- Token-based auth vulnerabilities (JWT, OAuth 2.0)
+- Broken object-level authorization (BOLA/IDOR)
+- Broken function-level authorization
+- API key leakage and rotation issues
+
+**Data Exposure**
+- Excessive data exposure in responses
+- Mass assignment vulnerabilities
+- GraphQL introspection in production
+- Verbose error messages leaking architecture
+
+**Rate Limiting & Abuse**
+- Missing or bypassable rate limits
+- Resource exhaustion (large payloads, deep queries)
+- Batch request abuse
+- Pagination vulnerabilities
+
+**Input Validation**
+- Injection attacks (SQL, NoSQL, command, LDAP)
+- XML external entity (XXE) attacks
+- Server-side request forgery (SSRF)
+- GraphQL query complexity attacks
+
+**API-Specific Mitigations**
+- Schema validation (OpenAPI, GraphQL schema)
+- Query depth/complexity limiting
+- Field-level authorization
+- API gateway security policies
+- Request signing and replay protection
+
+### Infrastructure Threat Modeling
+
+Focus areas for cloud, containers, and orchestration:
+
+**Cloud Services**
+- Misconfigured S3 buckets/blob storage (public access)
+- IAM privilege escalation paths
+- Metadata service abuse (SSRF to credentials)
+- Unencrypted storage/transit
+- Network security group misconfigurations
+
+**Container Security**
+- Vulnerable base images
+- Secrets in environment variables/layers
+- Privileged containers
+- Container escape vulnerabilities
+- Registry security (image signing, scanning)
+
+**Orchestration (Kubernetes, Docker Swarm)**
+- Exposed API servers (unauthenticated kubelet)
+- RBAC misconfigurations
+- Pod security policies/standards violations
+- Network policy gaps
+- Secrets management (etcd encryption, external vaults)
+
+**CI/CD Pipeline**
+- Compromised build agents
+- Dependency confusion/substitution
+- Secrets in version control
+- Unsigned artifacts
+- Pipeline injection attacks
+
+**Infrastructure Mitigations**
+- Infrastructure as Code security scanning
+- Least privilege IAM policies
+- Network segmentation (VPCs, subnets, security groups)
+- Immutable infrastructure patterns
+- Runtime security monitoring (Falco, OSSEC)
+
+### ML Model Threat Modeling
+
+Focus areas for machine learning systems:
+
+**Adversarial Attacks**
+- Evasion attacks (adversarial examples at inference)
+- Poisoning attacks (training data manipulation)
+- Model inversion (extracting training data)
+- Membership inference (detecting if data was in training set)
+
+**Model Theft**
+- Model extraction via API queries
+- Intellectual property leakage
+- Hyperparameter discovery
+- Architecture reverse engineering
+
+**Data Privacy**
+- Training data exposure
+- PII leakage in model outputs
+- Differential privacy violations
+- GDPR right-to-explanation challenges
+
+**Deployment Risks**
+- Model serving API vulnerabilities
+- Feature store poisoning
+- Model registry security
+- A/B testing exploitation
+
+**ML-Specific Mitigations**
+- Adversarial training and robustness testing
+- Input sanitization and anomaly detection
+- Model watermarking
+- Differential privacy techniques
+- Explainability constraints
+- Rate limiting on prediction APIs
+- Model versioning and rollback capabilities
 
 ## Quick Reference: Common Threats by Component
 

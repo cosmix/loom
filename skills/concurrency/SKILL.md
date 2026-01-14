@@ -1,19 +1,161 @@
 ---
 name: concurrency
-description: Comprehensive concurrency and parallelism patterns for multi-threaded and async programming. Use when implementing async/await, parallel processing, thread safety, worker pools, or debugging race conditions and deadlocks. Triggers: async, await, concurrent, parallel, threads, race condition, deadlock, mutex, semaphore, worker pool, queue.
+description: Comprehensive concurrency and parallelism patterns for multi-threaded and async programming. Use when implementing async/await, parallel processing, thread safety, worker pools, or debugging race conditions and deadlocks. Triggers: async, await, thread, mutex, lock, semaphore, channel, actor, parallel, concurrent, race condition, deadlock, livelock, atomic, futures, promises, tokio, asyncio, goroutine, spawn, Arc, Mutex, RwLock, mpsc, select, join, worker pool, queue, synchronization, critical section, context switch.
 ---
 
 # Concurrency
 
 ## Overview
 
-Concurrency enables programs to handle multiple tasks efficiently. This skill covers async/await patterns, parallelism vs concurrency distinctions, race condition prevention, deadlock handling, thread safety patterns, and work queue implementations.
+Concurrency enables programs to handle multiple tasks efficiently. This skill covers async/await patterns across Rust (tokio), Python (asyncio), TypeScript (Promises), and Go (goroutines). Includes parallelism strategies, race condition prevention, deadlock handling, thread safety patterns, channel-based communication, and work queue implementations.
+
+## Agent Specializations
+
+When implementing concurrency, delegate to the appropriate specialist:
+
+1. **senior-software-engineer** (Opus) - Architectural decisions for concurrent systems, choosing between threading models, designing message-passing vs shared-state architectures
+2. **software-engineer** (Sonnet) - Implementing concurrent code following established patterns, writing async functions, worker pools, rate limiters
+3. **security-engineer** (Opus) - Identifying race conditions, time-of-check-time-of-use vulnerabilities, reviewing lock ordering for deadlocks
+4. **senior-infrastructure-engineer** (Opus) - Distributed systems concurrency, consistency models, distributed locks, saga patterns
 
 ## Instructions
 
-### 1. Async/Await Patterns
+### 1. Rust Async/Await with Tokio
 
-#### Python Async Patterns
+```rust
+use tokio::sync::{Mutex, RwLock, Semaphore, mpsc};
+use tokio::time::{sleep, Duration, timeout};
+use std::sync::Arc;
+use futures::future::join_all;
+
+// Basic async function
+async fn fetch_data(url: &str) -> Result<String, reqwest::Error> {
+    let response = reqwest::get(url).await?;
+    response.text().await
+}
+
+// Concurrent execution with join_all
+async fn fetch_all(urls: Vec<String>) -> Vec<Result<String, reqwest::Error>> {
+    let tasks: Vec<_> = urls.into_iter()
+        .map(|url| tokio::spawn(async move { fetch_data(&url).await }))
+        .collect();
+
+    join_all(tasks).await
+        .into_iter()
+        .map(|r| r.unwrap())
+        .collect()
+}
+
+// Timeout handling
+async fn fetch_with_timeout(url: &str) -> Result<String, Box<dyn std::error::Error>> {
+    match timeout(Duration::from_secs(5), fetch_data(url)).await {
+        Ok(result) => Ok(result?),
+        Err(_) => Err(format!("Request to {} timed out", url).into()),
+    }
+}
+
+// Semaphore for rate limiting
+async fn fetch_with_rate_limit(
+    urls: Vec<String>,
+    max_concurrent: usize,
+) -> Vec<Result<String, reqwest::Error>> {
+    let semaphore = Arc::new(Semaphore::new(max_concurrent));
+
+    let tasks: Vec<_> = urls.into_iter()
+        .map(|url| {
+            let sem = semaphore.clone();
+            tokio::spawn(async move {
+                let _permit = sem.acquire().await.unwrap();
+                fetch_data(&url).await
+            })
+        })
+        .collect();
+
+    join_all(tasks).await
+        .into_iter()
+        .map(|r| r.unwrap())
+        .collect()
+}
+
+// Channel-based worker pattern
+async fn worker_pool_example() {
+    let (tx, mut rx) = mpsc::channel::<String>(100);
+
+    // Spawn workers
+    for i in 0..4 {
+        let mut worker_rx = rx.clone();
+        tokio::spawn(async move {
+            while let Some(url) = worker_rx.recv().await {
+                println!("Worker {} processing {}", i, url);
+                let _ = fetch_data(&url).await;
+            }
+        });
+    }
+
+    // Send work
+    for url in vec!["https://example.com"; 20] {
+        tx.send(url.to_string()).await.unwrap();
+    }
+}
+
+// Shared state with Arc<Mutex<T>>
+#[derive(Clone)]
+struct SharedCache {
+    data: Arc<Mutex<std::collections::HashMap<String, String>>>,
+}
+
+impl SharedCache {
+    async fn get_or_insert(&self, key: String, value: String) -> String {
+        let mut cache = self.data.lock().await;
+        cache.entry(key).or_insert(value).clone()
+    }
+}
+
+// Arc<RwLock<T>> for read-heavy workloads
+struct ReadHeavyCache {
+    data: Arc<RwLock<std::collections::HashMap<String, String>>>,
+}
+
+impl ReadHeavyCache {
+    async fn get(&self, key: &str) -> Option<String> {
+        let cache = self.data.read().await;
+        cache.get(key).cloned()
+    }
+
+    async fn insert(&self, key: String, value: String) {
+        let mut cache = self.data.write().await;
+        cache.insert(key, value);
+    }
+}
+
+// Select for racing multiple futures
+use tokio::select;
+
+async fn fetch_from_fastest(urls: Vec<String>) -> Option<String> {
+    let mut tasks = urls.into_iter()
+        .map(|url| Box::pin(fetch_data(&url)))
+        .collect::<Vec<_>>();
+
+    if tasks.is_empty() {
+        return None;
+    }
+
+    loop {
+        select! {
+            result = tasks[0], if !tasks.is_empty() => {
+                if result.is_ok() {
+                    return result.ok();
+                }
+                tasks.remove(0);
+            }
+            else => break,
+        }
+    }
+    None
+}
+```
+
+### 2. Python Async Patterns
 
 ```python
 import asyncio
@@ -92,11 +234,11 @@ async function fetchAll<T>(urls: string[]): Promise<T[]> {
 // Promise.allSettled for fault tolerance
 async function fetchAllSafe<T>(urls: string[]): Promise<Array<T | Error>> {
   const results = await Promise.allSettled(
-    urls.map((url) => fetch(url).then((r) => r.json())),
+    urls.map((url) => fetch(url).then((r) => r.json()))
   );
 
   return results.map((result) =>
-    result.status === "fulfilled" ? result.value : new Error(result.reason),
+    result.status === "fulfilled" ? result.value : new Error(result.reason)
   );
 }
 
@@ -104,7 +246,7 @@ async function fetchAllSafe<T>(urls: string[]): Promise<Array<T | Error>> {
 async function fetchWithConcurrencyLimit<T>(
   items: string[],
   fn: (item: string) => Promise<T>,
-  limit: number,
+  limit: number
 ): Promise<T[]> {
   const results: T[] = [];
   const executing: Promise<void>[] = [];
@@ -119,7 +261,7 @@ async function fetchWithConcurrencyLimit<T>(
       await Promise.race(executing);
       executing.splice(
         executing.findIndex((e) => e === p),
-        1,
+        1
       );
     }
   }
@@ -148,6 +290,190 @@ class AsyncQueue<T> {
     }
     return new Promise((resolve) => this.resolvers.push(resolve));
   }
+}
+```
+
+#### Go Concurrency Patterns
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "sync"
+    "time"
+)
+
+// Basic goroutine with channel
+func fetchData(url string, ch chan<- string) {
+    // Simulate fetch
+    time.Sleep(100 * time.Millisecond)
+    ch <- fmt.Sprintf("Data from %s", url)
+}
+
+// Fan-out pattern (concurrent workers)
+func fetchAll(urls []string) []string {
+    ch := make(chan string, len(urls))
+
+    for _, url := range urls {
+        go fetchData(url, ch)
+    }
+
+    results := make([]string, 0, len(urls))
+    for i := 0; i < len(urls); i++ {
+        results = append(results, <-ch)
+    }
+
+    return results
+}
+
+// WaitGroup for synchronization
+func fetchAllWithWaitGroup(urls []string) []string {
+    var wg sync.WaitGroup
+    results := make([]string, len(urls))
+
+    for i, url := range urls {
+        wg.Add(1)
+        go func(idx int, u string) {
+            defer wg.Done()
+            results[idx] = fmt.Sprintf("Data from %s", u)
+        }(i, url)
+    }
+
+    wg.Wait()
+    return results
+}
+
+// Context for cancellation
+func fetchWithTimeout(ctx context.Context, url string) (string, error) {
+    ch := make(chan string, 1)
+
+    go func() {
+        time.Sleep(100 * time.Millisecond)
+        ch <- fmt.Sprintf("Data from %s", url)
+    }()
+
+    select {
+    case result := <-ch:
+        return result, nil
+    case <-ctx.Done():
+        return "", ctx.Err()
+    }
+}
+
+// Worker pool with buffered channel
+func workerPool(jobs <-chan string, results chan<- string, numWorkers int) {
+    var wg sync.WaitGroup
+
+    for i := 0; i < numWorkers; i++ {
+        wg.Add(1)
+        go func(id int) {
+            defer wg.Done()
+            for job := range jobs {
+                results <- fmt.Sprintf("Worker %d processed %s", id, job)
+            }
+        }(i)
+    }
+
+    wg.Wait()
+    close(results)
+}
+
+// Rate limiting with ticker
+func rateLimit(urls []string, requestsPerSecond int) {
+    ticker := time.NewTicker(time.Second / time.Duration(requestsPerSecond))
+    defer ticker.Stop()
+
+    for _, url := range urls {
+        <-ticker.C
+        go fetchData(url, nil)
+    }
+}
+
+// Select for multiplexing channels
+func fanIn(ch1, ch2 <-chan string) <-chan string {
+    out := make(chan string)
+
+    go func() {
+        defer close(out)
+        for {
+            select {
+            case val, ok := <-ch1:
+                if !ok {
+                    ch1 = nil
+                } else {
+                    out <- val
+                }
+            case val, ok := <-ch2:
+                if !ok {
+                    ch2 = nil
+                } else {
+                    out <- val
+                }
+            }
+
+            if ch1 == nil && ch2 == nil {
+                return
+            }
+        }
+    }()
+
+    return out
+}
+
+// Mutex for shared state
+type SafeCounter struct {
+    mu    sync.Mutex
+    count int
+}
+
+func (c *SafeCounter) Inc() {
+    c.mu.Lock()
+    defer c.mu.Unlock()
+    c.count++
+}
+
+func (c *SafeCounter) Value() int {
+    c.mu.Lock()
+    defer c.mu.Unlock()
+    return c.count
+}
+
+// RWMutex for read-heavy workloads
+type Cache struct {
+    mu   sync.RWMutex
+    data map[string]string
+}
+
+func (c *Cache) Get(key string) (string, bool) {
+    c.mu.RLock()
+    defer c.mu.RUnlock()
+    val, ok := c.data[key]
+    return val, ok
+}
+
+func (c *Cache) Set(key, value string) {
+    c.mu.Lock()
+    defer c.mu.Unlock()
+    c.data[key] = value
+}
+
+// Once for one-time initialization
+var (
+    instance *Singleton
+    once     sync.Once
+)
+
+type Singleton struct {
+    value string
+}
+
+func GetInstance() *Singleton {
+    once.Do(func() {
+        instance = &Singleton{value: "initialized"}
+    })
+    return instance
 }
 ```
 
@@ -671,4 +997,337 @@ async def main():
             print(f"Success: {result.url} - {result.status}")
 
 asyncio.run(main())
+```
+
+### Data Pipeline Parallelism
+
+Patterns for ETL, stream processing, and batch data pipelines with concurrent stages.
+
+```python
+import asyncio
+from typing import AsyncIterator, Callable, TypeVar, List
+from dataclasses import dataclass
+import queue
+import threading
+
+T = TypeVar('T')
+U = TypeVar('U')
+
+# Async pipeline with backpressure
+class AsyncPipeline:
+    """
+    Multi-stage async pipeline with bounded queues for backpressure.
+    Each stage processes items concurrently up to worker limit.
+    """
+    def __init__(self, max_queue_size: int = 100):
+        self.max_queue_size = max_queue_size
+
+    async def stage(
+        self,
+        input_iter: AsyncIterator[T],
+        transform: Callable[[T], U],
+        workers: int = 4
+    ) -> AsyncIterator[U]:
+        """Single pipeline stage with concurrent workers."""
+        queue_in = asyncio.Queue(maxsize=self.max_queue_size)
+        queue_out = asyncio.Queue(maxsize=self.max_queue_size)
+
+        # Producer: feed input queue
+        async def producer():
+            async for item in input_iter:
+                await queue_in.put(item)
+            for _ in range(workers):
+                await queue_in.put(None)  # Sentinel for workers
+
+        # Workers: transform items
+        async def worker():
+            while True:
+                item = await queue_in.get()
+                if item is None:
+                    break
+                try:
+                    if asyncio.iscoroutinefunction(transform):
+                        result = await transform(item)
+                    else:
+                        result = transform(item)
+                    await queue_out.put(result)
+                except Exception as e:
+                    await queue_out.put(e)
+
+        # Consumer: yield results
+        async def consumer():
+            processed = 0
+            while processed < workers:
+                result = await queue_out.get()
+                if result is None:
+                    processed += 1
+                    continue
+                if isinstance(result, Exception):
+                    raise result
+                yield result
+
+        # Start producer and workers
+        asyncio.create_task(producer())
+        worker_tasks = [asyncio.create_task(worker()) for _ in range(workers)]
+
+        # Yield from consumer
+        async for item in consumer():
+            yield item
+
+        # Cleanup
+        await asyncio.gather(*worker_tasks)
+
+# Thread-based pipeline for CPU-bound work
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+
+class ParallelPipeline:
+    """Pipeline using process pools for CPU-bound stages."""
+
+    @staticmethod
+    def map_stage(
+        items: List[T],
+        transform: Callable[[T], U],
+        workers: int = None
+    ) -> List[U]:
+        """Parallel map stage using processes."""
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            return list(executor.map(transform, items))
+
+    @staticmethod
+    def filter_stage(
+        items: List[T],
+        predicate: Callable[[T], bool],
+        workers: int = None
+    ) -> List[T]:
+        """Parallel filter stage."""
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            results = executor.map(lambda x: (x, predicate(x)), items)
+            return [item for item, keep in results if keep]
+
+    @staticmethod
+    def reduce_stage(
+        items: List[T],
+        reducer: Callable[[U, T], U],
+        initial: U,
+        chunk_size: int = 1000
+    ) -> U:
+        """Parallel reduce with chunking."""
+        def reduce_chunk(chunk):
+            result = initial
+            for item in chunk:
+                result = reducer(result, item)
+            return result
+
+        chunks = [items[i:i+chunk_size] for i in range(0, len(items), chunk_size)]
+
+        with ProcessPoolExecutor() as executor:
+            partial_results = list(executor.map(reduce_chunk, chunks))
+
+        # Final reduce of partial results
+        final = initial
+        for partial in partial_results:
+            final = reducer(final, partial)
+        return final
+
+# Streaming pipeline with batching
+class StreamingPipeline:
+    """Process unbounded streams with batching and timeouts."""
+
+    @staticmethod
+    async def batch_stream(
+        stream: AsyncIterator[T],
+        batch_size: int = 100,
+        timeout: float = 1.0
+    ) -> AsyncIterator[List[T]]:
+        """Collect items into batches by size or timeout."""
+        batch = []
+        deadline = asyncio.get_event_loop().time() + timeout
+
+        async for item in stream:
+            batch.append(item)
+
+            if len(batch) >= batch_size:
+                yield batch
+                batch = []
+                deadline = asyncio.get_event_loop().time() + timeout
+            elif asyncio.get_event_loop().time() >= deadline:
+                if batch:
+                    yield batch
+                    batch = []
+                deadline = asyncio.get_event_loop().time() + timeout
+
+        if batch:
+            yield batch
+
+    @staticmethod
+    async def parallel_batch_process(
+        batched_stream: AsyncIterator[List[T]],
+        process_batch: Callable[[List[T]], List[U]],
+        max_concurrent: int = 4
+    ) -> AsyncIterator[U]:
+        """Process batches in parallel up to concurrency limit."""
+        semaphore = asyncio.Semaphore(max_concurrent)
+
+        async def process_with_limit(batch):
+            async with semaphore:
+                return await asyncio.to_thread(process_batch, batch)
+
+        pending = set()
+
+        async for batch in batched_stream:
+            task = asyncio.create_task(process_with_limit(batch))
+            pending.add(task)
+
+            if len(pending) >= max_concurrent:
+                done, pending = await asyncio.wait(
+                    pending,
+                    return_when=asyncio.FIRST_COMPLETED
+                )
+                for task in done:
+                    results = await task
+                    for result in results:
+                        yield result
+
+        # Drain remaining
+        while pending:
+            done, pending = await asyncio.wait(pending)
+            for task in done:
+                results = await task
+                for result in results:
+                    yield result
+
+# Complete ETL example
+@dataclass
+class Record:
+    id: int
+    value: str
+
+class ETLPipeline:
+    """Complete ETL pipeline with extraction, transformation, loading."""
+
+    async def extract(self) -> AsyncIterator[Record]:
+        """Simulate data extraction from source."""
+        for i in range(1000):
+            await asyncio.sleep(0.001)  # Simulate I/O
+            yield Record(id=i, value=f"raw_{i}")
+
+    def transform(self, record: Record) -> Record:
+        """CPU-bound transformation."""
+        import hashlib
+        transformed = hashlib.sha256(record.value.encode()).hexdigest()
+        return Record(id=record.id, value=transformed)
+
+    async def load_batch(self, records: List[Record]):
+        """Batch load to destination."""
+        await asyncio.sleep(0.1)  # Simulate batch write
+        print(f"Loaded batch of {len(records)} records")
+
+    async def run(self):
+        """Execute full pipeline."""
+        pipeline = AsyncPipeline()
+
+        # Stage 1: Extract
+        extracted = self.extract()
+
+        # Stage 2: Transform (concurrent)
+        transformed = pipeline.stage(extracted, self.transform, workers=8)
+
+        # Stage 3: Batch and load
+        batched = StreamingPipeline.batch_stream(transformed, batch_size=50)
+
+        async for batch in batched:
+            await self.load_batch(batch)
+
+# Usage
+async def main():
+    etl = ETLPipeline()
+    await etl.run()
+
+asyncio.run(main())
+```
+
+#### Rust Data Pipeline with Rayon
+
+```rust
+use rayon::prelude::*;
+use std::sync::{Arc, Mutex};
+
+// Parallel map-reduce pipeline
+fn parallel_pipeline(data: Vec<i32>) -> i32 {
+    data.par_iter()
+        .map(|x| x * x)           // Parallel map
+        .filter(|x| x % 2 == 0)   // Parallel filter
+        .sum()                     // Parallel reduce
+}
+
+// Pipeline with intermediate collection
+struct Pipeline<T> {
+    data: Vec<T>,
+}
+
+impl<T: Send + Sync> Pipeline<T> {
+    fn new(data: Vec<T>) -> Self {
+        Self { data }
+    }
+
+    fn map<U, F>(self, f: F) -> Pipeline<U>
+    where
+        U: Send,
+        F: Fn(T) -> U + Send + Sync,
+    {
+        let data = self.data.into_par_iter().map(f).collect();
+        Pipeline { data }
+    }
+
+    fn filter<F>(self, f: F) -> Pipeline<T>
+    where
+        F: Fn(&T) -> bool + Send + Sync,
+    {
+        let data = self.data.into_par_iter().filter(f).collect();
+        Pipeline { data }
+    }
+
+    fn collect(self) -> Vec<T> {
+        self.data
+    }
+}
+
+// Async stream processing
+use tokio::sync::mpsc;
+use tokio_stream::{Stream, StreamExt};
+
+async fn process_stream<T, U, F>(
+    mut stream: impl Stream<Item = T> + Unpin,
+    transform: F,
+    parallelism: usize,
+) -> Vec<U>
+where
+    T: Send + 'static,
+    U: Send + 'static,
+    F: Fn(T) -> U + Send + Sync + Clone + 'static,
+{
+    let (tx, mut rx) = mpsc::channel(100);
+
+    let processor = tokio::spawn(async move {
+        let mut results = Vec::new();
+        while let Some(result) = rx.recv().await {
+            results.push(result);
+        }
+        results
+    });
+
+    stream
+        .for_each_concurrent(parallelism, |item| {
+            let tx = tx.clone();
+            let transform = transform.clone();
+            async move {
+                let result = transform(item);
+                let _ = tx.send(result).await;
+            }
+        })
+        .await;
+
+    drop(tx);
+    processor.await.unwrap()
+}
 ```

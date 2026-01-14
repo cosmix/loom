@@ -1,6 +1,6 @@
 ---
 name: crossplane
-description: Cloud-native infrastructure management with Crossplane using Kubernetes APIs. Use when implementing infrastructure as code, composite resources, or multi-cloud provisioning. Triggers: crossplane, xrd, composition, claim, provider, managed resource, composite resource, infrastructure API.
+description: Cloud-native infrastructure management with Crossplane using Kubernetes APIs. Build internal platform APIs for self-service infrastructure provisioning. Use when implementing infrastructure as code, platform engineering, composite resources, XRDs, compositions, claims, provider configuration, or multi-cloud provisioning. Triggers: crossplane, XRD, composition, claim, provider, managed resource, composite resource, infrastructure API, platform engineering, platform API, infrastructure abstraction, self-service infrastructure, kubernetes infrastructure, cloud control plane.
 allowed-tools: Read, Grep, Glob, Edit, Write, Bash
 ---
 
@@ -860,6 +860,130 @@ EOF
 ```
 
 ## Best Practices
+
+### Composition Patterns
+
+#### Layered Abstraction Strategy
+
+Build compositions in layers of increasing abstraction:
+
+1. **Foundation Layer**: Provider-specific managed resources (S3, RDS, GCS)
+2. **Resource Layer**: Cloud-agnostic XRDs (Database, ObjectStorage)
+3. **Platform Layer**: Application-focused XRDs (AppPlatform, DataPlatform)
+
+This enables teams to consume infrastructure at the right abstraction level.
+
+#### Parallel Resource Creation
+
+Crossplane automatically provisions resources in parallel when no dependencies exist. Optimize for this:
+
+- Use selectors (matchControllerRef, matchLabels) instead of explicit refs
+- Let Crossplane infer dependencies from resource relationships
+- Avoid artificial ordering constraints
+
+#### Transform Patterns
+
+Common transform patterns for patches:
+
+- **Size mapping**: map small/medium/large to instance types
+- **Environment logic**: map dev/staging/prod to different configurations
+- **String formatting**: CombineFromComposite with fmt for naming
+- **Math operations**: multiply storage size by environment factor
+- **Conditional values**: map boolean flags to provider-specific settings
+
+#### Secret Aggregation
+
+Merge connection secrets from multiple managed resources:
+
+- Each managed resource writes to a unique secret
+- Use connectionSecretKeys in XRD to define merged fields
+- Crossplane automatically aggregates into composite secret
+- Copy to claim namespace for application consumption
+
+### Claim Design Patterns
+
+#### Namespace Strategy
+
+Choose a namespace model that fits your organization:
+
+- **Per-team namespaces**: team-alpha, team-beta (good for multi-tenancy)
+- **Per-environment namespaces**: dev, staging, prod (good for env isolation)
+- **Hybrid approach**: team-alpha-prod, team-alpha-dev (maximum isolation)
+
+Use RBAC to control which teams can create claims in which namespaces.
+
+#### Self-Service Guardrails
+
+Build guardrails into XRDs to prevent misconfiguration:
+
+- Use enums to restrict choices (small/medium/large, not arbitrary values)
+- Set min/max constraints on storage, replicas, retention periods
+- Provide sensible defaults for optional parameters
+- Use regex patterns for naming conventions
+- Document expected values in field descriptions
+
+#### Claim Lifecycle Management
+
+Design claims for day-2 operations:
+
+- Enable updates without replacement (use forProvider.applyMethod)
+- Support scaling operations through parameter changes
+- Include backup/restore configuration from day 1
+- Plan for disaster recovery scenarios
+- Document which parameters can be changed post-creation
+
+#### Cost Visibility
+
+Make cost implications visible to claim users:
+
+- Add cost-related metadata to XRD descriptions
+- Use labels for cost allocation (team, project, environment)
+- Document size tiers with approximate costs
+- Implement budget controls through validation webhooks
+- Export cost tags to cloud provider billing
+
+### Provider Configuration Strategies
+
+#### Multi-Account Architecture
+
+Use separate ProviderConfigs for different accounts/environments:
+
+- Isolate prod from non-prod at the cloud account level
+- Use IRSA (IAM Roles for Service Accounts) for AWS authentication
+- Configure Workload Identity for GCP
+- Implement Managed Identities for Azure
+
+Reference the appropriate ProviderConfig in compositions or allow claims to specify it.
+
+#### Credential Rotation
+
+Implement secure credential management:
+
+- Use external secret stores (Vault, AWS Secrets Manager)
+- Configure ESO (External Secrets Operator) integration
+- Rotate credentials on a schedule
+- Use short-lived credentials when possible
+- Avoid storing credentials in git
+
+#### Provider Scoping
+
+Install provider families strategically:
+
+- Use scoped providers (provider-aws-s3) not monolithic (provider-aws)
+- Reduces memory footprint and reconciliation load
+- Install only required provider families
+- Configure separate controller replicas for high-volume families
+- Tune poll intervals per provider (--poll flag)
+
+#### Rate Limiting
+
+Configure provider controllers for production scale:
+
+- Set --max-reconcile-rate based on API quotas
+- Configure --poll interval to balance freshness vs load
+- Use --enable-management-policies for granular control
+- Monitor provider controller CPU/memory usage
+- Scale controller replicas for high resource counts
 
 ### XRD Design
 

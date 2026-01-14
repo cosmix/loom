@@ -1,6 +1,6 @@
 ---
 name: istio
-description: Service mesh implementation with Istio for traffic management, security, and observability. Use when implementing mTLS, traffic routing, circuit breakers, or service-to-service communication. Triggers: istio, service mesh, virtualservice, destinationrule, gateway, mtls, sidecar, envoy, traffic management.
+description: Service mesh implementation with Istio for microservices traffic management, security, and observability. Use when implementing service mesh, mTLS, traffic routing, load balancing, circuit breakers, retries, timeouts, canary deployments, A/B testing, or service-to-service communication. Triggers: istio, service mesh, envoy, sidecar, virtualservice, destinationrule, gateway, mtls, peerauthentication, authorizationpolicy, serviceentry, traffic management, traffic splitting, canary, blue-green, circuit breaker, retry, timeout, load balancing, ingress, egress, observability, tracing, telemetry.
 allowed-tools: Read, Grep, Glob, Edit, Write, Bash
 ---
 
@@ -9,6 +9,28 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash
 ## Overview
 
 Istio is an open-source service mesh that provides traffic management, security, and observability for microservices architectures. It uses a sidecar proxy pattern with Envoy proxies to intercept and control all network communication between services.
+
+### Core Capabilities
+
+**Traffic Management**: Load balancing, traffic splitting, canary deployments, blue-green deployments, A/B testing, retries, timeouts, circuit breakers, fault injection.
+
+**Security**: mTLS encryption, certificate management, authentication, authorization policies, RBAC, JWT validation, service-to-service security.
+
+**Observability**: Distributed tracing, metrics collection, access logging, service topology visualization, golden signals monitoring.
+
+### Quick Reference: Common Tasks
+
+| Task | Resources | Section |
+|------|-----------|---------|
+| Enable mTLS between services | PeerAuthentication | mTLS PeerAuthentication |
+| Route traffic to new version | VirtualService + DestinationRule | Traffic Splitting for Canary |
+| Add circuit breaker | DestinationRule (outlierDetection) | Circuit Breaker and Retry |
+| Configure retries/timeouts | VirtualService (retries, timeout) | Circuit Breaker and Retry |
+| Expose service to internet | Gateway + VirtualService | Gateway and VirtualService |
+| Control egress traffic | Sidecar + ServiceEntry | Sidecar Resource for Egress |
+| Add authorization rules | AuthorizationPolicy | AuthorizationPolicy for RBAC |
+| Configure load balancing | DestinationRule (loadBalancer) | DestinationRule with Traffic Policies |
+| Test resilience | VirtualService (fault injection) | Fault Injection for Testing |
 
 ### Architecture Components
 

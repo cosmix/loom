@@ -1,6 +1,6 @@
 ---
 name: fluxcd
-description: GitOps toolkit with Flux CD for Kubernetes continuous delivery. Use when implementing GitOps workflows, Helm releases, Kustomize deployments, or image automation. Triggers: fluxcd, flux, gitops, gitrepository, kustomization, helmrelease, image automation, source controller.
+description: GitOps continuous delivery toolkit for Kubernetes with Flux CD. Use when implementing GitOps workflows, declarative deployments, Helm chart automation, Kustomize overlays, image update automation, multi-tenancy, or Git-based continuous delivery. Triggers: flux, fluxcd, gitops, kustomization, helmrelease, gitrepository, helmrepository, imagerepository, imagepolicy, image automation, source controller, continuous delivery, kubernetes deployment automation, helm automation, kustomize automation, git sync, declarative deployment.
 allowed-tools: Read, Grep, Glob, Edit, Write, Bash
 ---
 
@@ -9,6 +9,16 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash
 ## Overview
 
 Flux CD is a declarative, GitOps continuous delivery solution for Kubernetes. It automatically ensures that the state of your Kubernetes cluster matches the configuration stored in Git repositories.
+
+**When to use this skill:**
+- Implementing GitOps workflows for Kubernetes
+- Automating Helm chart deployments and upgrades
+- Managing Kustomize overlays across environments
+- Automating container image updates from registries
+- Setting up multi-tenant Kubernetes with isolated teams
+- Integrating Git-based continuous delivery pipelines
+- Managing infrastructure and application dependencies
+- Implementing progressive delivery with canary deployments
 
 ### Core Architecture
 
@@ -281,7 +291,127 @@ data:
   url: https://app.${domain}
 ```
 
-## Helm Repository and Helm Release
+## Multi-Tenancy Patterns
+
+### Namespace Isolation
+
+Flux supports multi-tenant clusters where teams have isolated namespaces with their own GitRepository sources and Kustomizations.
+
+### Tenant Bootstrap Pattern
+
+```yaml
+# clusters/production/tenants/team-a.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-a
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: team-a-reconciler
+  namespace: team-a
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: team-a-reconciler
+  namespace: team-a
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: team-a-reconciler
+    namespace: team-a
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: team-a-repo
+  namespace: team-a
+spec:
+  interval: 1m
+  url: https://github.com/org/team-a-repo
+  ref:
+    branch: main
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: team-a-apps
+  namespace: team-a
+spec:
+  interval: 10m
+  serviceAccountName: team-a-reconciler
+  sourceRef:
+    kind: GitRepository
+    name: team-a-repo
+  path: ./apps
+  prune: true
+  validation: client
+```
+
+### Tenant RBAC Restrictions
+
+Restrict tenant reconcilers to their namespace only:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: team-a-reconciler
+  namespace: team-a
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: team-a-reconciler
+  namespace: team-a
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: team-a-reconciler
+subjects:
+  - kind: ServiceAccount
+    name: team-a-reconciler
+    namespace: team-a
+```
+
+### Cross-Tenant Dependencies
+
+Teams can depend on shared infrastructure while maintaining isolation:
+
+```yaml
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: team-a-apps
+  namespace: team-a
+spec:
+  interval: 10m
+  dependsOn:
+    - name: shared-ingress
+      namespace: flux-system
+    - name: shared-monitoring
+      namespace: flux-system
+  sourceRef:
+    kind: GitRepository
+    name: team-a-repo
+  path: ./apps
+  prune: true
+```
+
+## Helm Integration
+
+Flux provides deep integration with Helm for chart-based deployments.
+
+### Helm Repository and Helm Release
 
 ### HelmRepository
 
@@ -541,6 +671,45 @@ creation_rules:
 
 ## Image Automation
 
+Flux can automatically detect new container image versions and update manifests in Git.
+
+### Image Automation Architecture
+
+The image automation workflow consists of three resources:
+
+1. **ImageRepository** - Scans container registry for available tags
+2. **ImagePolicy** - Defines tag selection rules (semver, regex, alphabetical)
+3. **ImageUpdateAutomation** - Commits updated image tags back to Git
+
+### Image Automation Workflow
+
+```text
+Container Registry
+       |
+       | (scan for tags)
+       v
+ImageRepository
+       |
+       | (filter & select)
+       v
+  ImagePolicy
+       |
+       | (update manifests)
+       v
+ImageUpdateAutomation
+       |
+       | (commit to Git)
+       v
+   GitRepository
+       |
+       | (reconcile)
+       v
+  Kustomization
+       |
+       v
+   Kubernetes Cluster
+```
+
 ### ImageRepository
 
 ```yaml
@@ -692,6 +861,23 @@ spec:
         - name: app
           image: ghcr.io/org/my-app:1.0.0 # {"$imagepolicy": "flux-system:my-app"}
 ```
+
+### Image Automation Best Practices
+
+**Environment Strategy:**
+- Enable automation in development/staging first
+- Use manual approval for production (PR-based workflow)
+- Test policy rules before deploying
+
+**Tag Policies:**
+- Use semver for releases (e.g., `1.0.x`, `>=1.0.0`)
+- Use regex for branch-based tags (e.g., `^develop-.*`)
+- Use numerical for build numbers
+
+**Security:**
+- Scan images before deployment (integrate with CI)
+- Use private registries with authentication
+- Enable image signing verification
 
 ### ImageUpdateAutomation with Push Branch
 
@@ -1381,5 +1567,30 @@ Flux CD provides a powerful, declarative approach to managing Kubernetes deploym
 6. **Automate carefully**: Use image automation for non-production environments first
 7. **Multi-tenancy**: Leverage namespaces and RBAC for team isolation
 8. **Test changes**: Validate in lower environments before production
+
+### Key Decision Points
+
+**Choose GitRepository vs HelmRepository:**
+- GitRepository: For custom manifests, Kustomize overlays, or Helm charts in Git
+- HelmRepository: For public/private Helm chart repositories
+
+**Choose Kustomization vs HelmRelease:**
+- Kustomization: For raw manifests, ConfigMaps, Secrets, Kustomize overlays
+- HelmRelease: For packaged Helm charts with values customization
+
+**Image Automation Strategy:**
+- Direct commit: Development/staging environments with rapid iteration
+- PR workflow: Production environments requiring review and approval
+- Disabled: Mission-critical production with manual deployment gates
+
+**Multi-Tenancy Approach:**
+- Namespace isolation: Teams share cluster, separate by namespace
+- Cluster isolation: Each team gets dedicated cluster(s)
+- Hybrid: Core teams share, external teams isolated
+
+**Secret Management:**
+- SOPS: Git-native, age/pgp encryption, good for small teams
+- External Secrets Operator: Integrate AWS Secrets Manager, Vault, GCP Secret Manager
+- Sealed Secrets: Kubernetes-native, one-way encryption
 
 By following these patterns and practices, you can build reliable, automated deployment pipelines that scale with your organization.

@@ -1,6 +1,6 @@
 ---
 name: prometheus
-description: Prometheus monitoring and alerting for cloud-native observability. Use when implementing metrics collection, PromQL queries, alerting rules, or service discovery. Triggers: prometheus, promql, metrics, alertmanager, service discovery, recording rules, alerting, scrape config.
+description: Prometheus monitoring and alerting for cloud-native observability. Use when implementing metrics collection, time-series analysis, alerting workflows, or service discovery. Triggers - metrics, prometheus, promql, counter, gauge, histogram, summary, alert, alertmanager, alerting rule, recording rule, scrape, target, label, service discovery, relabeling, exporter, instrumentation, slo, error budget.
 allowed-tools: Read, Grep, Glob, Edit, Write, Bash
 ---
 
@@ -8,25 +8,27 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash
 
 ## Overview
 
-Prometheus is a powerful open-source monitoring and alerting system designed for reliability and scalability in cloud-native environments.
+Prometheus is a powerful open-source monitoring and alerting system designed for reliability and scalability in cloud-native environments. Built for multi-dimensional time-series data with flexible querying via PromQL.
 
 ### Architecture Components
 
-- **Prometheus Server**: Core component that scrapes and stores time-series data
-- **Alertmanager**: Handles alerts, deduplication, grouping, routing, and notifications
-- **Pushgateway**: Allows ephemeral jobs to push metrics (use sparingly)
-- **Exporters**: Convert metrics from third-party systems to Prometheus format
-- **Client Libraries**: Instrument application code (Go, Java, Python, etc.)
-- **Prometheus Operator**: Kubernetes-native deployment and management
+- **Prometheus Server**: Core component that scrapes and stores time-series data with local TSDB
+- **Alertmanager**: Handles alerts, deduplication, grouping, routing, and notifications to receivers
+- **Pushgateway**: Allows ephemeral jobs to push metrics (use sparingly - prefer pull model)
+- **Exporters**: Convert metrics from third-party systems to Prometheus format (node, blackbox, etc.)
+- **Client Libraries**: Instrument application code (Go, Java, Python, Rust, etc.)
+- **Prometheus Operator**: Kubernetes-native deployment and management via CRDs
+- **Remote Storage**: Long-term storage via Thanos, Cortex, Mimir for multi-cluster federation
 
 ### Data Model
 
 - **Metrics**: Time-series data identified by metric name and key-value labels
+- **Format**: `metric_name{label1="value1", label2="value2"} sample_value timestamp`
 - **Metric Types**:
-  - Counter: Monotonically increasing value (requests, errors)
-  - Gauge: Value that can go up/down (temperature, memory usage)
-  - Histogram: Observations in configurable buckets (latency, request size)
-  - Summary: Similar to histogram but calculates quantiles client-side
+  - **Counter**: Monotonically increasing value (requests, errors) - use `rate()` or `increase()` for querying
+  - **Gauge**: Value that can go up/down (temperature, memory usage, queue length)
+  - **Histogram**: Observations in configurable buckets (latency, request size) - exposes `_bucket`, `_sum`, `_count`
+  - **Summary**: Similar to histogram but calculates quantiles client-side - use histograms for aggregation
 
 ## Setup and Configuration
 
@@ -416,19 +418,45 @@ groups:
 4. **Actionable alerts**: Every alert should require human action
 5. **Include context**: Add labels for team ownership, service, environment
 
-## PromQL Examples
+## PromQL Query Patterns
+
+PromQL is the query language for Prometheus. Key concepts: instant vectors, range vectors, scalar, string literals, selectors, operators, functions, and aggregation.
+
+### Selectors and Matchers
+
+```promql
+# Instant vector selector (latest sample for each time-series)
+http_requests_total
+
+# Filter by label values
+http_requests_total{method="GET", status="200"}
+
+# Regex matching (=~) and negative regex (!~)
+http_requests_total{status=~"5.."}  # 5xx errors
+http_requests_total{endpoint!~"/admin.*"}  # exclude admin endpoints
+
+# Label absence/presence
+http_requests_total{job="api", status=""}  # empty label
+http_requests_total{job="api", status!=""}  # non-empty label
+
+# Range vector selector (samples over time)
+http_requests_total[5m]  # last 5 minutes of samples
+```
 
 ### Rate Calculations
 
 ```promql
-# Request rate (requests per second)
+# Request rate (requests per second) - ALWAYS use rate() for counters
 rate(http_requests_total[5m])
 
 # Sum by service
 sum(rate(http_requests_total[5m])) by (service)
 
-# Increase over time window (total count)
+# Increase over time window (total count) - for alerts/dashboards showing total
 increase(http_requests_total[1h])
+
+# irate() for volatile, fast-moving counters (more sensitive to spikes)
+irate(http_requests_total[5m])
 ```
 
 ### Error Ratios
@@ -534,6 +562,407 @@ and
   sum(rate(http_requests_total[5m]))
   > 0.001 * 14.4
 )
+```
+
+### Binary Operators and Vector Matching
+
+```promql
+# Arithmetic operators (+, -, *, /, %, ^)
+node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes
+
+# Comparison operators (==, !=, >, <, >=, <=) - filter to matching values
+http_request_duration_seconds > 1
+
+# Logical operators (and, or, unless)
+up{job="api"} and rate(http_requests_total[5m]) > 100
+
+# One-to-one matching (default)
+method:http_requests:rate5m / method:http_requests:total
+
+# Many-to-one matching with group_left
+sum(rate(http_requests_total[5m])) by (instance, method)
+  / on(instance) group_left
+sum(rate(http_requests_total[5m])) by (instance)
+
+# One-to-many matching with group_right
+sum(rate(http_requests_total[5m])) by (instance)
+  / on(instance) group_right
+sum(rate(http_requests_total[5m])) by (instance, method)
+```
+
+### Time Functions and Offsets
+
+```promql
+# Compare with previous time period
+rate(http_requests_total[5m]) / rate(http_requests_total[5m] offset 1h)
+
+# Day-over-day comparison
+http_requests_total - http_requests_total offset 1d
+
+# Time-based filtering
+http_requests_total and hour() >= 9 and hour() < 17  # business hours
+day_of_week() == 0 or day_of_week() == 6  # weekends
+
+# Timestamp functions
+time() - process_start_time_seconds  # uptime in seconds
+```
+
+## Service Discovery
+
+Prometheus supports multiple service discovery mechanisms for dynamic environments where targets appear and disappear.
+
+### Static Configuration
+
+```yaml
+scrape_configs:
+  - job_name: 'static-targets'
+    static_configs:
+      - targets:
+          - 'host1:9100'
+          - 'host2:9100'
+        labels:
+          env: production
+          region: us-east-1
+```
+
+### File-based Service Discovery
+
+```yaml
+scrape_configs:
+  - job_name: 'file-sd'
+    file_sd_configs:
+      - files:
+          - '/etc/prometheus/targets/*.json'
+          - '/etc/prometheus/targets/*.yml'
+        refresh_interval: 30s
+
+# targets/webservers.json
+[
+  {
+    "targets": ["web1:8080", "web2:8080"],
+    "labels": {
+      "job": "web",
+      "env": "prod"
+    }
+  }
+]
+```
+
+### Kubernetes Service Discovery
+
+```yaml
+scrape_configs:
+  # Pod-based discovery
+  - job_name: 'kubernetes-pods'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - production
+            - staging
+    relabel_configs:
+      # Keep only pods with prometheus.io/scrape=true annotation
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+
+      # Extract custom scrape path from annotation
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+
+      # Extract custom port from annotation
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+
+      # Add standard Kubernetes labels
+      - action: labelmap
+        regex: __meta_kubernetes_pod_label_(.+)
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: kubernetes_namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: kubernetes_pod_name
+
+  # Service-based discovery
+  - job_name: 'kubernetes-services'
+    kubernetes_sd_configs:
+      - role: service
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
+        action: replace
+        target_label: __scheme__
+        regex: (https?)
+      - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+
+  # Node-based discovery (for node exporters)
+  - job_name: 'kubernetes-nodes'
+    kubernetes_sd_configs:
+      - role: node
+    relabel_configs:
+      - action: labelmap
+        regex: __meta_kubernetes_node_label_(.+)
+      - target_label: __address__
+        replacement: kubernetes.default.svc:443
+      - source_labels: [__meta_kubernetes_node_name]
+        regex: (.+)
+        target_label: __metrics_path__
+        replacement: /api/v1/nodes/${1}/proxy/metrics
+
+  # Endpoints discovery (for service endpoints)
+  - job_name: 'kubernetes-endpoints'
+    kubernetes_sd_configs:
+      - role: endpoints
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_endpoint_port_name]
+        action: keep
+        regex: metrics
+```
+
+### Consul Service Discovery
+
+```yaml
+scrape_configs:
+  - job_name: 'consul-services'
+    consul_sd_configs:
+      - server: 'consul.example.com:8500'
+        datacenter: 'dc1'
+        services: ['web', 'api', 'cache']
+        tags: ['production']
+    relabel_configs:
+      - source_labels: [__meta_consul_service]
+        target_label: service
+      - source_labels: [__meta_consul_tags]
+        target_label: tags
+```
+
+### EC2 Service Discovery
+
+```yaml
+scrape_configs:
+  - job_name: 'ec2-instances'
+    ec2_sd_configs:
+      - region: us-east-1
+        access_key: YOUR_ACCESS_KEY
+        secret_key: YOUR_SECRET_KEY
+        port: 9100
+        filters:
+          - name: tag:Environment
+            values: [production]
+          - name: instance-state-name
+            values: [running]
+    relabel_configs:
+      - source_labels: [__meta_ec2_tag_Name]
+        target_label: instance_name
+      - source_labels: [__meta_ec2_availability_zone]
+        target_label: availability_zone
+      - source_labels: [__meta_ec2_instance_type]
+        target_label: instance_type
+```
+
+### DNS Service Discovery
+
+```yaml
+scrape_configs:
+  - job_name: 'dns-srv-records'
+    dns_sd_configs:
+      - names:
+          - '_prometheus._tcp.example.com'
+        type: 'SRV'
+        refresh_interval: 30s
+    relabel_configs:
+      - source_labels: [__meta_dns_name]
+        target_label: instance
+```
+
+### Relabeling Actions Reference
+
+| Action | Description | Use Case |
+|--------|-------------|----------|
+| `keep` | Keep targets where regex matches source labels | Filter targets by annotation/label |
+| `drop` | Drop targets where regex matches source labels | Exclude specific targets |
+| `replace` | Replace target label with value from source labels | Extract custom labels/paths/ports |
+| `labelmap` | Map source label names to target labels via regex | Copy all Kubernetes labels |
+| `labeldrop` | Drop labels matching regex | Remove internal metadata labels |
+| `labelkeep` | Keep only labels matching regex | Reduce cardinality |
+| `hashmod` | Set target label to hash of source labels modulo N | Sharding/routing |
+
+## High Availability and Scalability
+
+### Prometheus High Availability Setup
+
+```yaml
+# Deploy multiple identical Prometheus instances scraping same targets
+# Use external labels to distinguish instances
+global:
+  external_labels:
+    replica: prometheus-1  # Change to prometheus-2, etc.
+    cluster: production
+
+# Alertmanager will deduplicate alerts from multiple Prometheus instances
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager-1:9093
+            - alertmanager-2:9093
+            - alertmanager-3:9093
+```
+
+### Alertmanager Clustering
+
+```yaml
+# alertmanager.yml - HA cluster configuration
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: 'default'
+  group_by: ['alertname', 'cluster']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+
+receivers:
+  - name: 'default'
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/YOUR/WEBHOOK'
+        channel: '#alerts'
+
+# Start Alertmanager cluster members
+# alertmanager-1: --cluster.peer=alertmanager-2:9094 --cluster.peer=alertmanager-3:9094
+# alertmanager-2: --cluster.peer=alertmanager-1:9094 --cluster.peer=alertmanager-3:9094
+# alertmanager-3: --cluster.peer=alertmanager-1:9094 --cluster.peer=alertmanager-2:9094
+```
+
+### Federation for Hierarchical Monitoring
+
+```yaml
+# Global Prometheus federating from regional instances
+scrape_configs:
+  - job_name: 'federate'
+    scrape_interval: 15s
+    honor_labels: true
+    metrics_path: '/federate'
+    params:
+      'match[]':
+        # Pull aggregated metrics only
+        - '{job="prometheus"}'
+        - '{__name__=~"job:.*"}'  # Recording rules
+        - 'up'
+    static_configs:
+      - targets:
+          - 'prometheus-us-east-1:9090'
+          - 'prometheus-us-west-2:9090'
+          - 'prometheus-eu-west-1:9090'
+        labels:
+          region: 'us-east-1'
+```
+
+### Remote Storage for Long-term Retention
+
+```yaml
+# Prometheus remote write to Thanos/Cortex/Mimir
+remote_write:
+  - url: "http://thanos-receive:19291/api/v1/receive"
+    queue_config:
+      capacity: 10000
+      max_shards: 50
+      min_shards: 1
+      max_samples_per_send: 5000
+      batch_send_deadline: 5s
+      min_backoff: 30ms
+      max_backoff: 100ms
+    write_relabel_configs:
+      # Drop high-cardinality metrics before remote write
+      - source_labels: [__name__]
+        regex: 'go_.*'
+        action: drop
+
+# Prometheus remote read from long-term storage
+remote_read:
+  - url: "http://thanos-query:9090/api/v1/read"
+    read_recent: true
+```
+
+### Thanos Architecture for Global View
+
+```yaml
+# Thanos Sidecar - runs alongside Prometheus
+thanos sidecar \
+  --prometheus.url=http://localhost:9090 \
+  --tsdb.path=/prometheus \
+  --objstore.config-file=/etc/thanos/bucket.yml \
+  --grpc-address=0.0.0.0:10901 \
+  --http-address=0.0.0.0:10902
+
+# Thanos Store - queries object storage
+thanos store \
+  --data-dir=/var/thanos/store \
+  --objstore.config-file=/etc/thanos/bucket.yml \
+  --grpc-address=0.0.0.0:10901 \
+  --http-address=0.0.0.0:10902
+
+# Thanos Query - global query interface
+thanos query \
+  --http-address=0.0.0.0:9090 \
+  --grpc-address=0.0.0.0:10901 \
+  --store=prometheus-1-sidecar:10901 \
+  --store=prometheus-2-sidecar:10901 \
+  --store=thanos-store:10901
+
+# Thanos Compactor - downsample and compact blocks
+thanos compact \
+  --data-dir=/var/thanos/compact \
+  --objstore.config-file=/etc/thanos/bucket.yml \
+  --retention.resolution-raw=30d \
+  --retention.resolution-5m=90d \
+  --retention.resolution-1h=365d
+```
+
+### Horizontal Sharding with Hashmod
+
+```yaml
+# Split scrape targets across multiple Prometheus instances using hashmod
+scrape_configs:
+  - job_name: 'kubernetes-pods-shard-0'
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      # Hash pod name and keep only shard 0 (mod 3)
+      - source_labels: [__meta_kubernetes_pod_name]
+        modulus: 3
+        target_label: __tmp_hash
+        action: hashmod
+      - source_labels: [__tmp_hash]
+        regex: "0"
+        action: keep
+
+  - job_name: 'kubernetes-pods-shard-1'
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_name]
+        modulus: 3
+        target_label: __tmp_hash
+        action: hashmod
+      - source_labels: [__tmp_hash]
+        regex: "1"
+        action: keep
+
+  # shard-2 similar pattern...
 ```
 
 ## Kubernetes Integration
@@ -987,6 +1416,203 @@ curl http://localhost:9090/api/v1/status/tsdb
 curl http://localhost:9090/api/v1/status/runtimeinfo
 ```
 
+## Quick Reference
+
+### Common PromQL Patterns
+
+```promql
+# Request rate per second
+rate(http_requests_total[5m])
+
+# Error ratio percentage
+100 * sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))
+
+# P95 latency from histogram
+histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))
+
+# Average latency from histogram
+sum(rate(http_request_duration_seconds_sum[5m])) / sum(rate(http_request_duration_seconds_count[5m]))
+
+# Memory utilization percentage
+100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)
+
+# CPU utilization (non-idle)
+100 * (1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])))
+
+# Disk space remaining percentage
+100 * node_filesystem_avail_bytes / node_filesystem_size_bytes
+
+# Top 5 endpoints by request rate
+topk(5, sum(rate(http_requests_total[5m])) by (endpoint))
+
+# Service uptime in days
+(time() - process_start_time_seconds) / 86400
+
+# Request rate growth compared to 1 hour ago
+rate(http_requests_total[5m]) / rate(http_requests_total[5m] offset 1h)
+```
+
+### Alert Rule Patterns
+
+```yaml
+# High error rate (symptom-based)
+alert: HighErrorRate
+expr: |
+  sum(rate(http_requests_total{status=~"5.."}[5m]))
+  / sum(rate(http_requests_total[5m])) > 0.05
+for: 5m
+labels:
+  severity: critical
+annotations:
+  summary: "Error rate is {{ $value | humanizePercentage }}"
+  runbook: "https://runbooks.example.com/high-error-rate"
+
+# High latency P95
+alert: HighLatency
+expr: |
+  histogram_quantile(0.95,
+    sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service)
+  ) > 1
+for: 5m
+labels:
+  severity: warning
+
+# Service down
+alert: ServiceDown
+expr: up{job="critical-service"} == 0
+for: 2m
+labels:
+  severity: critical
+
+# Disk space low (cause-based, warning only)
+alert: DiskSpaceLow
+expr: |
+  node_filesystem_avail_bytes{mountpoint="/"}
+  / node_filesystem_size_bytes{mountpoint="/"} < 0.1
+for: 10m
+labels:
+  severity: warning
+
+# Pod crash looping
+alert: PodCrashLooping
+expr: rate(kube_pod_container_status_restarts_total[15m]) > 0
+for: 5m
+labels:
+  severity: warning
+```
+
+### Recording Rule Naming Convention
+
+```yaml
+# Format: level:metric:operations
+# level = aggregation level (job, instance, cluster)
+# metric = base metric name
+# operations = transformations applied (rate5m, sum, ratio)
+
+groups:
+  - name: aggregation_rules
+    rules:
+      # Instance-level aggregation
+      - record: instance:node_cpu_utilization:ratio
+        expr: 1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) by (instance)
+
+      # Job-level aggregation
+      - record: job:http_requests:rate5m
+        expr: sum(rate(http_requests_total[5m])) by (job)
+
+      # Job-level error ratio
+      - record: job:http_request_errors:ratio
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m])) by (job)
+          / sum(rate(http_requests_total[5m])) by (job)
+
+      # Cluster-level aggregation
+      - record: cluster:cpu_utilization:ratio
+        expr: avg(instance:node_cpu_utilization:ratio)
+```
+
+### Metric Naming Best Practices
+
+| Pattern | Good Example | Bad Example |
+|---------|-------------|-------------|
+| Counter suffix | `http_requests_total` | `http_requests` |
+| Base units | `http_request_duration_seconds` | `http_request_duration_ms` |
+| Ratio range | `cache_hit_ratio` (0.0-1.0) | `cache_hit_percentage` (0-100) |
+| Byte units | `response_size_bytes` | `response_size_kb` |
+| Namespace prefix | `myapp_http_requests_total` | `http_requests_total` |
+| Label naming | `{method="GET", status="200"}` | `{httpMethod="GET", statusCode="200"}` |
+
+### Label Cardinality Guidelines
+
+| Cardinality | Examples | Recommendation |
+|-------------|----------|----------------|
+| Low (<10) | HTTP method, status code, environment | Safe for all labels |
+| Medium (10-100) | API endpoint, service name, pod name | Safe with aggregation |
+| High (100-1000) | Container ID, hostname | Use only when necessary |
+| Unbounded | User ID, IP address, timestamp, URL path | Never use as label |
+
+### Kubernetes Annotation-based Scraping
+
+```yaml
+# Pod annotations for automatic Prometheus scraping
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/metrics"
+    prometheus.io/scheme: "http"
+spec:
+  containers:
+    - name: app
+      image: myapp:latest
+      ports:
+        - containerPort: 8080
+          name: metrics
+```
+
+### Alertmanager Routing Patterns
+
+```yaml
+route:
+  receiver: default
+  group_by: ['alertname', 'cluster']
+  routes:
+    # Critical alerts to PagerDuty
+    - match:
+        severity: critical
+      receiver: pagerduty
+      continue: true  # Also send to default
+
+    # Team-based routing
+    - match:
+        team: database
+      receiver: dba-team
+      group_by: ['alertname', 'instance']
+
+    # Environment-based routing
+    - match:
+        env: development
+      receiver: slack-dev
+      repeat_interval: 4h
+
+    # Time-based routing (office hours only)
+    - match:
+        severity: warning
+      receiver: email
+      active_time_intervals:
+        - business-hours
+
+time_intervals:
+  - name: business-hours
+    time_intervals:
+      - times:
+          - start_time: '09:00'
+            end_time: '17:00'
+        weekdays: ['monday:friday']
+```
+
 ## Additional Resources
 
 - [Prometheus Documentation](https://prometheus.io/docs/)
@@ -995,3 +1621,5 @@ curl http://localhost:9090/api/v1/status/runtimeinfo
 - [Alerting Rules](https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/)
 - [Recording Rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/)
 - [Prometheus Operator](https://github.com/prometheus-operator/prometheus-operator)
+- [Thanos Documentation](https://thanos.io/tip/thanos/getting-started.md/)
+- [Google SRE Book - Monitoring](https://sre.google/sre-book/monitoring-distributed-systems/)

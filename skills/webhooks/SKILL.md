@@ -1,6 +1,6 @@
 ---
 name: webhooks
-description: Webhook implementation and consumption patterns. Use when implementing webhook endpoints, sending webhooks, handling retries, or ensuring reliable delivery. Keywords: webhooks, callbacks, HMAC, signature verification, retry, exponential backoff, idempotency, event delivery, webhook security.
+description: Webhook implementation and consumption patterns. Use when implementing webhook endpoints, webhook receivers, webhook senders, HTTP callbacks, event notifications, push notifications, or real-time integrations. Covers signature verification (HMAC, crypto), retry strategies (exponential backoff), idempotency keys, delivery guarantees, webhook security, payload design, and monitoring. Keywords: webhook, webhooks, callback, callbacks, HTTP callback, event notification, push notification, signature verification, HMAC, hmac, crypto signature, retry, exponential backoff, idempotency, idempotent, delivery guarantee, at-least-once delivery, webhook receiver, webhook sender, webhook security, webhook authentication, replay attack, dead letter queue, webhook monitoring.
 ---
 
 # Webhooks
@@ -133,7 +133,7 @@ class WebhookSigner {
 class WebhookVerifier {
   constructor(
     private secret: string,
-    private tolerance: number = 300, // 5 minutes
+    private tolerance: number = 300 // 5 minutes
   ) {}
 
   verify(payload: string, signature: string, timestamp: string): boolean {
@@ -144,7 +144,7 @@ class WebhookVerifier {
     if (Math.abs(now - ts) > this.tolerance) {
       throw new WebhookError(
         "Timestamp outside tolerance",
-        "TIMESTAMP_EXPIRED",
+        "TIMESTAMP_EXPIRED"
       );
     }
 
@@ -168,7 +168,7 @@ class WebhookVerifier {
     // Constant-time comparison
     const isValid = crypto.timingSafeEqual(
       Buffer.from(v1Sig),
-      Buffer.from(expectedSig),
+      Buffer.from(expectedSig)
     );
 
     if (!isValid) {
@@ -180,10 +180,7 @@ class WebhookVerifier {
 }
 
 class WebhookError extends Error {
-  constructor(
-    message: string,
-    public code: string,
-  ) {
+  constructor(message: string, public code: string) {
     super(message);
     this.name = "WebhookError";
   }
@@ -201,7 +198,7 @@ function webhookVerificationMiddleware(secret: string) {
   return (
     req: express.Request,
     res: express.Response,
-    next: express.NextFunction,
+    next: express.NextFunction
   ) => {
     const signature = req.headers["x-webhook-signature"] as string;
     const timestamp = req.headers["x-webhook-timestamp"] as string;
@@ -245,14 +242,14 @@ app.post(
       verifier.verify(
         req.body.toString(),
         req.headers["x-webhook-signature"] as string,
-        req.headers["x-webhook-timestamp"] as string,
+        req.headers["x-webhook-timestamp"] as string
       );
       req.body = JSON.parse(req.body.toString());
       next();
     } catch (error) {
       res.status(401).json({ error: "Invalid signature" });
     }
-  },
+  }
 );
 ```
 
@@ -281,7 +278,7 @@ function calculateNextRetry(attempt: number, config: RetryConfig): number {
   // Exponential backoff with jitter
   const delay = Math.min(
     config.initialDelay * Math.pow(config.backoffMultiplier, attempt),
-    config.maxDelay,
+    config.maxDelay
   );
 
   // Add random jitter (0-25% of delay)
@@ -299,7 +296,7 @@ import fetch from "node-fetch";
 class WebhookDeliveryService {
   constructor(
     private db: Database,
-    private retryConfig: RetryConfig = defaultRetryConfig,
+    private retryConfig: RetryConfig = defaultRetryConfig
   ) {}
 
   async deliver(endpoint: WebhookEndpoint, event: WebhookEvent): Promise<void> {
@@ -309,7 +306,7 @@ class WebhookDeliveryService {
 
   private async createDelivery(
     endpoint: WebhookEndpoint,
-    event: WebhookEvent,
+    event: WebhookEvent
   ): Promise<WebhookDelivery> {
     const payload = JSON.stringify(event);
     const signer = new WebhookSigner(endpoint.secret);
@@ -395,7 +392,7 @@ class WebhookDeliveryService {
       },
       {
         delay,
-      },
+      }
     );
   }
 }
@@ -411,7 +408,7 @@ class IdempotencyManager {
 
   async checkAndStore(
     key: string,
-    ttl: number = 86400, // 24 hours
+    ttl: number = 86400 // 24 hours
   ): Promise<{ isNew: boolean; existingResult?: any }> {
     const existing = await this.redis.get(`idempotency:${key}`);
 
@@ -428,7 +425,7 @@ class IdempotencyManager {
       JSON.stringify({ status: "processing" }),
       "EX",
       ttl,
-      "NX",
+      "NX"
     );
 
     return { isNew: acquired === "OK" };
@@ -437,13 +434,13 @@ class IdempotencyManager {
   async storeResult(
     key: string,
     result: any,
-    ttl: number = 86400,
+    ttl: number = 86400
   ): Promise<void> {
     await this.redis.set(
       `idempotency:${key}`,
       JSON.stringify({ status: "completed", result }),
       "EX",
-      ttl,
+      ttl
     );
   }
 
@@ -459,7 +456,7 @@ class IdempotencyManager {
 class WebhookHandler {
   constructor(
     private idempotency: IdempotencyManager,
-    private handlers: Map<string, (data: any) => Promise<any>>,
+    private handlers: Map<string, (data: any) => Promise<any>>
   ) {}
 
   async handleEvent(event: WebhookEvent): Promise<any> {
@@ -590,7 +587,7 @@ class WebhookDispatcher {
 
   async dispatch(
     event: WebhookEvent,
-    endpoints: WebhookEndpoint[],
+    endpoints: WebhookEndpoint[]
   ): Promise<void> {
     // Persist event first
     await this.db.events.create(event);
@@ -614,7 +611,7 @@ class WebhookDispatcher {
           },
           removeOnComplete: true,
           removeOnFail: false, // Keep failed jobs for inspection
-        },
+        }
       );
     }
   }
@@ -636,10 +633,7 @@ class WebhookDispatcher {
 
 ```typescript
 class DeadLetterHandler {
-  constructor(
-    private db: Database,
-    private alertService: AlertService,
-  ) {}
+  constructor(private db: Database, private alertService: AlertService) {}
 
   async handleFailedDelivery(delivery: WebhookDelivery): Promise<void> {
     // Move to dead letter queue
@@ -715,7 +709,7 @@ class WebhookMetricsService {
 
   async getMetrics(
     endpointId: string,
-    period: "hour" | "day" | "week",
+    period: "hour" | "day" | "week"
   ): Promise<WebhookMetrics> {
     const since = this.getPeriodStart(period);
 
@@ -770,7 +764,7 @@ class WebhookMetricsService {
       p95ResponseTime: this.calculateP95(data.durations || []),
       successRate: data.total > 0 ? data.successful / data.total : 0,
       errorBreakdown: Object.fromEntries(
-        errorBreakdown.map((e) => [e._id, e.count]),
+        errorBreakdown.map((e) => [e._id, e.count])
       ),
     };
   }
@@ -804,7 +798,7 @@ class WebhookMetricsService {
 class WebhookReplayService {
   constructor(
     private db: Database,
-    private deliveryService: WebhookDeliveryService,
+    private deliveryService: WebhookDeliveryService
   ) {}
 
   async replayEvent(eventId: string, endpointId?: string): Promise<void> {
@@ -832,7 +826,7 @@ class WebhookReplayService {
 
   async replayFailedDeliveries(
     endpointId: string,
-    since: Date,
+    since: Date
   ): Promise<number> {
     const failedDeliveries = await this.db.deliveries.find({
       endpointId,
@@ -856,45 +850,146 @@ class WebhookReplayService {
 
 ## Best Practices
 
-### Security
+### Security (Signature Verification, Authentication)
+
+**Core Principles:**
 
 - Always use HTTPS for webhook URLs
-- Implement HMAC signature verification
+- Implement HMAC signature verification for authentication
 - Include timestamp in signatures to prevent replay attacks
-- Use constant-time comparison for signatures
+- Use constant-time comparison for signatures (timing-safe)
 - Rotate webhook secrets periodically
+- Validate payload structure before processing
+- Rate limit webhook endpoints to prevent abuse
 
-### Reliability
+**When to Use:**
 
-- Implement exponential backoff with jitter
-- Use idempotency keys to handle duplicates
+- Any webhook receiver that handles sensitive data
+- Systems requiring proof of origin
+- Preventing man-in-the-middle attacks
+- Ensuring message integrity
+
+### Reliability (Retry Strategies, Delivery Guarantees)
+
+**Core Principles:**
+
+- Implement exponential backoff with jitter for retries
+- Use idempotency keys to handle duplicates safely
 - Provide at-least-once delivery guarantees
 - Queue webhook deliveries asynchronously
 - Implement dead letter queues for persistent failures
+- Set reasonable timeout limits (30s recommended)
+- Track delivery attempts and final status
 
-### Payload Design
+**Retry Configuration:**
 
-- Include all necessary data in the payload
-- Version your webhook payloads
+- Max attempts: 5 (configurable)
+- Initial delay: 1 second
+- Max delay: 1 hour
+- Retryable status codes: 408, 429, 500, 502, 503, 504
+- Add 0-25% random jitter to prevent thundering herd
+
+**When to Use:**
+
+- Systems requiring guaranteed event delivery
+- Distributed architectures with network unreliability
+- Customer-facing webhook integrations
+- Any async event notification system
+
+### Idempotency (Duplicate Prevention)
+
+**Core Principles:**
+
+- Use event ID as idempotency key
+- Store processing status in Redis/cache (24h TTL)
+- Return cached result for duplicate requests
+- Mark as processing to prevent race conditions
+- Clean up failed processing attempts
+
+**When to Use:**
+
+- Payment processing webhooks
+- Order creation/updates
+- Any state-changing operation
+- Systems with retry logic (prevents double-processing)
+
+### Payload Design (Event Structure)
+
+**Core Principles:**
+
+- Include all necessary data in the payload (avoid extra API calls)
+- Version your webhook payloads (`apiVersion` field)
 - Keep payloads reasonably sized (< 256KB)
-- Use consistent event naming conventions
+- Use consistent event naming conventions (`resource.action`)
 - Include event IDs for deduplication
+- Provide `previousAttributes` for update events
+- Add timestamps (Unix epoch) for event timing
 
-### Receiver Implementation
+**Event Naming Patterns:**
 
-- Respond quickly (< 5 seconds)
-- Process webhooks asynchronously
-- Store raw payloads before processing
+- `order.created`, `order.updated`, `order.cancelled`
+- `payment.completed`, `payment.failed`
+- `user.registered`, `user.deleted`
+- Support wildcard subscriptions: `order.*`, `*`
+
+**When to Use:**
+
+- Designing new webhook systems
+- Improving webhook consumer experience
+- Version migrations for breaking changes
+
+### Receiver Implementation (Webhook Endpoints)
+
+**Core Principles:**
+
+- Respond quickly (< 5 seconds, ideally < 1 second)
+- Process webhooks asynchronously (acknowledge first, process later)
+- Store raw payloads before processing (for replay/debugging)
 - Implement proper error handling
-- Return appropriate status codes
+- Return appropriate status codes (200 for success, 4xx for permanent errors, 5xx for retries)
+- Use request ID for tracing
 
-### Monitoring
+**Status Code Guidelines:**
+
+- 200: Successfully received and queued
+- 400: Bad request (malformed payload, will not retry)
+- 401: Invalid signature (authentication failure, will not retry)
+- 500: Internal error (sender will retry)
+- 503: Service temporarily unavailable (sender will retry)
+
+**When to Use:**
+
+- Building webhook receiver endpoints
+- Integrating with third-party webhooks (Stripe, GitHub, etc.)
+- Ensuring webhook endpoint reliability
+
+### Monitoring (Observability, Debugging)
+
+**Core Principles:**
 
 - Track delivery success rates per endpoint
-- Alert on endpoint failures
-- Log all delivery attempts
+- Alert on endpoint failures (disable after threshold)
+- Log all delivery attempts with full context
 - Provide webhook event logs to customers
-- Implement replay functionality
+- Implement replay functionality for failed events
+- Monitor response times (avg, p95, p99)
+- Dashboard showing delivery metrics
+
+**Key Metrics:**
+
+- Total deliveries (hour/day/week)
+- Success rate percentage
+- Average response time
+- P95 response time
+- Error breakdown by status code
+- Dead letter queue size
+
+**When to Use:**
+
+- Operating production webhook systems
+- Debugging customer integration issues
+- SLA monitoring and alerting
+- Capacity planning
 
 ## Examples
 
@@ -966,7 +1061,7 @@ const worker = new Worker(
   {
     connection: redis,
     limiter: { max: 100, duration: 1000 },
-  },
+  }
 );
 
 // Webhook receiver
@@ -979,7 +1074,7 @@ app.post("/webhooks", express.raw({ type: "application/json" }), (req, res) => {
     verifier.verify(
       req.body.toString(),
       req.headers["x-webhook-signature"] as string,
-      req.headers["x-webhook-timestamp"] as string,
+      req.headers["x-webhook-timestamp"] as string
     );
   } catch (error) {
     return res.status(401).json({ error: "Invalid signature" });

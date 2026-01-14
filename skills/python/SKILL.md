@@ -1,13 +1,13 @@
 ---
 name: python
-description: Python language expertise for writing idiomatic, production-quality Python code. Use for Python development, type hints, async patterns, testing with pytest, packaging, and following PEP 8 standards. Triggers: python, py, pytest, pep8, typing, asyncio, poetry, uv, pyproject.
+description: Python language expertise for writing idiomatic, production-quality Python code. Covers web frameworks (FastAPI, Django, Flask), data processing (pandas, numpy, dask), ML patterns (sklearn, pytorch), async programming, type hints, testing with pytest, packaging (pip, uv, poetry), linting (ruff, mypy, black), and PEP 8 standards. Use for any Python development including data engineering and machine learning workflows. Triggers: python, py, pip, uv, poetry, virtualenv, pytest, pydantic, fastapi, django, flask, pandas, numpy, dataclass, type hints, asyncio, mypy, ruff, black, sklearn, pytorch, tensorflow, jupyter, pipenv, conda.
 ---
 
 # Python Language Expertise
 
 ## Overview
 
-This skill provides guidance for writing idiomatic, maintainable, and production-quality Python code. It covers modern Python practices including type hints, async programming, testing patterns, and proper packaging.
+This skill provides comprehensive guidance for writing idiomatic, maintainable, and production-quality Python code across all domains: web applications, data processing, machine learning, and general-purpose scripting. It covers modern Python practices including type hints, async programming, testing patterns, proper packaging, data engineering workflows, and ML model development.
 
 ## Key Concepts
 
@@ -187,6 +187,359 @@ target-version = "py311"
 [tool.mypy]
 strict = true
 python_version = "3.11"
+```
+
+## Web Framework Patterns
+
+### FastAPI Applications
+
+```python
+from fastapi import FastAPI, Depends, HTTPException, status
+from pydantic import BaseModel, Field
+from typing import Annotated
+
+app = FastAPI(title="API Service", version="1.0.0")
+
+class UserCreate(BaseModel):
+    email: str = Field(..., pattern=r'^[\w\.-]+@[\w\.-]+\.\w+$')
+    name: str = Field(..., min_length=1, max_length=100)
+
+class User(UserCreate):
+    id: int
+
+async def get_db() -> AsyncIterator[AsyncSession]:
+    async with AsyncSession(engine) as session:
+        yield session
+
+@app.post("/users/", response_model=User, status_code=status.HTTP_201_CREATED)
+async def create_user(
+    user: UserCreate,
+    db: Annotated[AsyncSession, Depends(get_db)]
+) -> User:
+    db_user = await UserService(db).create(user)
+    return User(id=db_user.id, email=db_user.email, name=db_user.name)
+
+@app.get("/users/{user_id}", response_model=User)
+async def get_user(
+    user_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)]
+) -> User:
+    user = await UserService(db).get(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+```
+
+### Django Patterns
+
+```python
+from django.db import models, transaction
+from django.core.validators import EmailValidator
+from typing import Self
+
+class TimeStampedModel(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        abstract = True
+
+class User(TimeStampedModel):
+    email = models.EmailField(unique=True, validators=[EmailValidator()])
+    name = models.CharField(max_length=100)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = 'users'
+        indexes = [
+            models.Index(fields=['email']),
+            models.Index(fields=['created_at']),
+        ]
+
+    @classmethod
+    def create_with_profile(cls, email: str, name: str) -> Self:
+        with transaction.atomic():
+            user = cls.objects.create(email=email, name=name)
+            Profile.objects.create(user=user)
+            return user
+```
+
+## Data Engineering Patterns
+
+### Pandas Data Processing
+
+```python
+import pandas as pd
+import numpy as np
+from typing import Callable
+
+def load_and_clean(file_path: str) -> pd.DataFrame:
+    df = pd.read_csv(file_path, parse_dates=['timestamp'])
+
+    # Handle missing values
+    df['amount'] = df['amount'].fillna(0)
+    df['category'] = df['category'].fillna('unknown')
+
+    # Type conversions
+    df['user_id'] = df['user_id'].astype('Int64')
+    df['amount'] = df['amount'].astype('float64')
+
+    # Remove duplicates
+    df = df.drop_duplicates(subset=['user_id', 'timestamp'])
+
+    return df
+
+def aggregate_by_window(
+    df: pd.DataFrame,
+    window: str = '1D',
+    agg_funcs: dict[str, str | list[str]] = None
+) -> pd.DataFrame:
+    if agg_funcs is None:
+        agg_funcs = {'amount': ['sum', 'mean', 'count']}
+
+    return (df
+        .set_index('timestamp')
+        .groupby('category')
+        .resample(window)
+        .agg(agg_funcs)
+        .reset_index())
+
+def apply_transformation(
+    df: pd.DataFrame,
+    transform: Callable[[pd.Series], pd.Series],
+    columns: list[str]
+) -> pd.DataFrame:
+    df_copy = df.copy()
+    for col in columns:
+        df_copy[col] = transform(df_copy[col])
+    return df_copy
+
+# Vectorized operations for performance
+def calculate_features(df: pd.DataFrame) -> pd.DataFrame:
+    df['amount_log'] = np.log1p(df['amount'])
+    df['amount_zscore'] = (df['amount'] - df['amount'].mean()) / df['amount'].std()
+    df['is_weekend'] = df['timestamp'].dt.dayofweek.isin([5, 6])
+    return df
+```
+
+### Dask for Large Datasets
+
+```python
+import dask.dataframe as dd
+from dask.diagnostics import ProgressBar
+
+def process_large_dataset(input_path: str, output_path: str) -> None:
+    # Read partitioned data
+    ddf = dd.read_parquet(input_path, engine='pyarrow')
+
+    # Lazy transformations
+    ddf = ddf[ddf['amount'] > 0]
+    ddf['amount_usd'] = ddf['amount'] * ddf['exchange_rate']
+
+    # Aggregation
+    result = ddf.groupby('category').agg({
+        'amount_usd': ['sum', 'mean', 'count'],
+        'user_id': 'nunique'
+    })
+
+    # Execute and save
+    with ProgressBar():
+        result.compute().to_parquet(output_path)
+
+def parallel_apply(
+    ddf: dd.DataFrame,
+    func: Callable[[pd.DataFrame], pd.DataFrame],
+    meta: dict[str, type]
+) -> dd.DataFrame:
+    return ddf.map_partitions(func, meta=meta)
+```
+
+### NumPy Numerical Computing
+
+```python
+import numpy as np
+from numpy.typing import NDArray
+
+def moving_average(
+    data: NDArray[np.float64],
+    window_size: int
+) -> NDArray[np.float64]:
+    return np.convolve(data, np.ones(window_size), 'valid') / window_size
+
+def normalize_features(
+    X: NDArray[np.float64],
+    axis: int = 0
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+    mean = np.mean(X, axis=axis, keepdims=True)
+    std = np.std(X, axis=axis, keepdims=True)
+    X_normalized = (X - mean) / (std + 1e-8)
+    return X_normalized, mean, std
+
+def batch_process(
+    data: NDArray[np.float64],
+    batch_size: int
+) -> list[NDArray[np.float64]]:
+    n_samples = data.shape[0]
+    return [data[i:i+batch_size] for i in range(0, n_samples, batch_size)]
+```
+
+## Machine Learning Patterns
+
+### Scikit-learn Pipelines
+
+```python
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import cross_val_score, GridSearchCV
+from sklearn.base import BaseEstimator, TransformerMixin
+import numpy as np
+
+class CustomFeatureTransformer(BaseEstimator, TransformerMixin):
+    def __init__(self, log_transform: bool = True):
+        self.log_transform = log_transform
+
+    def fit(self, X: NDArray, y: NDArray | None = None) -> Self:
+        return self
+
+    def transform(self, X: NDArray) -> NDArray:
+        X_copy = X.copy()
+        if self.log_transform:
+            X_copy = np.log1p(np.abs(X_copy))
+        return X_copy
+
+def build_pipeline() -> Pipeline:
+    return Pipeline([
+        ('features', CustomFeatureTransformer(log_transform=True)),
+        ('scaler', StandardScaler()),
+        ('classifier', RandomForestClassifier(random_state=42))
+    ])
+
+def train_with_cv(
+    X: NDArray,
+    y: NDArray,
+    pipeline: Pipeline,
+    cv: int = 5
+) -> dict[str, float]:
+    scores = cross_val_score(pipeline, X, y, cv=cv, scoring='f1_macro')
+    return {
+        'mean_score': scores.mean(),
+        'std_score': scores.std(),
+        'scores': scores.tolist()
+    }
+
+def hyperparameter_search(
+    X: NDArray,
+    y: NDArray,
+    pipeline: Pipeline
+) -> tuple[Pipeline, dict]:
+    param_grid = {
+        'classifier__n_estimators': [100, 200, 300],
+        'classifier__max_depth': [10, 20, None],
+        'features__log_transform': [True, False]
+    }
+
+    search = GridSearchCV(
+        pipeline,
+        param_grid,
+        cv=5,
+        scoring='f1_macro',
+        n_jobs=-1,
+        verbose=1
+    )
+
+    search.fit(X, y)
+    return search.best_estimator_, search.best_params_
+```
+
+### PyTorch Model Training
+
+```python
+import torch
+import torch.nn as nn
+from torch.utils.data import Dataset, DataLoader
+from typing import Callable
+
+class CustomDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
+    def __init__(self, X: NDArray, y: NDArray, transform: Callable | None = None):
+        self.X = torch.from_numpy(X).float()
+        self.y = torch.from_numpy(y).long()
+        self.transform = transform
+
+    def __len__(self) -> int:
+        return len(self.X)
+
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+        x, y = self.X[idx], self.y[idx]
+        if self.transform:
+            x = self.transform(x)
+        return x, y
+
+class MLP(nn.Module):
+    def __init__(self, input_dim: int, hidden_dims: list[int], output_dim: int):
+        super().__init__()
+        layers = []
+        prev_dim = input_dim
+
+        for hidden_dim in hidden_dims:
+            layers.extend([
+                nn.Linear(prev_dim, hidden_dim),
+                nn.ReLU(),
+                nn.BatchNorm1d(hidden_dim),
+                nn.Dropout(0.3)
+            ])
+            prev_dim = hidden_dim
+
+        layers.append(nn.Linear(prev_dim, output_dim))
+        self.network = nn.Sequential(*layers)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.network(x)
+
+def train_epoch(
+    model: nn.Module,
+    dataloader: DataLoader,
+    criterion: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    device: torch.device
+) -> float:
+    model.train()
+    total_loss = 0.0
+
+    for X_batch, y_batch in dataloader:
+        X_batch = X_batch.to(device)
+        y_batch = y_batch.to(device)
+
+        optimizer.zero_grad()
+        outputs = model(X_batch)
+        loss = criterion(outputs, y_batch)
+        loss.backward()
+        optimizer.step()
+
+        total_loss += loss.item() * X_batch.size(0)
+
+    return total_loss / len(dataloader.dataset)
+
+@torch.no_grad()
+def evaluate(
+    model: nn.Module,
+    dataloader: DataLoader,
+    device: torch.device
+) -> tuple[float, NDArray]:
+    model.eval()
+    all_preds = []
+    all_labels = []
+
+    for X_batch, y_batch in dataloader:
+        X_batch = X_batch.to(device)
+        outputs = model(X_batch)
+        preds = outputs.argmax(dim=1).cpu().numpy()
+
+        all_preds.extend(preds)
+        all_labels.extend(y_batch.numpy())
+
+    accuracy = np.mean(np.array(all_preds) == np.array(all_labels))
+    return accuracy, np.array(all_preds)
 ```
 
 ## Common Patterns

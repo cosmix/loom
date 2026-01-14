@@ -1,13 +1,92 @@
 ---
 name: performance-testing
-description: Performance testing guidance including load testing with k6, locust, and artillery, benchmarking strategies, profiling techniques, metrics analysis, performance budgets, and bottleneck identification. Use when setting up performance tests, analyzing system behavior under load, or optimizing application performance. Trigger keywords: performance testing, load testing, k6, locust, artillery, benchmarking, profiling, latency, throughput, performance budget, bottleneck, stress testing, scalability testing.
+description: Performance testing and load testing expertise including k6, locust, JMeter, Gatling, artillery, API load testing, database query optimization, benchmarking strategies, profiling techniques, metrics analysis (p95/p99 latency, throughput, RPS), performance budgets, and bottleneck identification. Use when implementing load tests, stress tests, spike tests, soak tests, analyzing system behavior under concurrent users, measuring saturation points, or optimizing application performance under load. Trigger keywords: performance testing, load testing, stress testing, stress test, load test, performance test, k6, locust, JMeter, Gatling, artillery, benchmark, benchmarking, profiling, latency, throughput, RPS, requests per second, concurrent users, virtual users, percentile, p95, p99, p50, median latency, saturation, bottleneck, performance budget, API load testing, database performance, query optimization, slow queries, scalability testing, capacity planning, response time, error rate, apdex.
 ---
 
 # Performance Testing
 
 ## Overview
 
-Performance testing validates that applications meet speed, scalability, and stability requirements under various load conditions. This skill covers load testing tools, benchmarking strategies, profiling techniques, and systematic approaches to identifying and resolving performance bottlenecks.
+Performance testing validates that applications meet speed, scalability, and stability requirements under various load conditions. This skill provides comprehensive expertise in load testing tools (k6, locust, JMeter, Gatling), API and database performance testing, benchmarking strategies, profiling techniques, and systematic approaches to identifying and resolving performance bottlenecks.
+
+## When to Use This Skill
+
+Use this skill when you need to:
+- Implement load tests, stress tests, spike tests, or soak tests
+- Measure API endpoint performance under concurrent users
+- Optimize database queries and identify slow queries
+- Analyze latency percentiles (p50, p95, p99) and throughput (RPS)
+- Set up performance monitoring and alerting
+- Identify system saturation points and bottlenecks
+- Establish performance budgets and SLOs
+- Conduct capacity planning and scalability analysis
+
+## Instructions
+
+## Test Types and Patterns
+
+### Load Test Types
+
+| Test Type | Purpose | Pattern | When to Use |
+|-----------|---------|---------|-------------|
+| **Load Test** | Validate performance under expected load | Constant VUs over time | Establish baseline performance |
+| **Stress Test** | Find breaking point | Gradual ramp-up until failure | Determine system limits |
+| **Spike Test** | Test sudden traffic bursts | Rapid increase to high load | Validate autoscaling, caching |
+| **Soak Test** | Detect memory leaks, degradation | Moderate load for extended time (hours) | Production readiness |
+| **Breakpoint Test** | Find maximum capacity | Incremental load increases | Capacity planning |
+
+### k6 Test Patterns
+
+**Pattern: Baseline Load Test**
+```javascript
+export const options = {
+  vus: 50,
+  duration: '5m',
+  thresholds: {
+    http_req_duration: ['p(95)<500'],
+  },
+};
+```
+
+**Pattern: Stress Test (Find Breaking Point)**
+```javascript
+export const options = {
+  stages: [
+    { duration: '2m', target: 100 },
+    { duration: '5m', target: 100 },
+    { duration: '2m', target: 200 },
+    { duration: '5m', target: 200 },
+    { duration: '2m', target: 300 },
+    { duration: '5m', target: 300 },
+    { duration: '5m', target: 0 },
+  ],
+};
+```
+
+**Pattern: Spike Test**
+```javascript
+export const options = {
+  stages: [
+    { duration: '30s', target: 50 },   // Normal load
+    { duration: '10s', target: 500 },  // Spike!
+    { duration: '1m', target: 500 },   // Hold spike
+    { duration: '10s', target: 50 },   // Drop
+    { duration: '1m', target: 50 },    // Recovery
+  ],
+};
+```
+
+**Pattern: Soak Test (Memory Leaks)**
+```javascript
+export const options = {
+  vus: 100,
+  duration: '4h',  // Extended duration
+  thresholds: {
+    http_req_duration: ['p(95)<500'],
+    http_req_failed: ['rate<0.01'],
+  },
+};
+```
 
 ## Instructions
 
@@ -250,7 +329,432 @@ artillery run artillery-config.yml --output report.json
 artillery report report.json --output report.html
 ```
 
-### 2. Benchmarking Strategies
+### 2. API Load Testing Patterns
+
+**REST API Load Testing:**
+
+```javascript
+// k6 API load test with authentication and data variation
+import http from 'k6/http';
+import { check, sleep } from 'k6';
+import { SharedArray } from 'k6/data';
+import { randomIntBetween } from 'k6/x/util';
+
+// Load test data from CSV
+const testData = new SharedArray('users', function () {
+  return JSON.parse(open('./test-data.json'));
+});
+
+export const options = {
+  scenarios: {
+    // Read-heavy workload (70% reads)
+    reads: {
+      executor: 'constant-arrival-rate',
+      rate: 700,
+      timeUnit: '1s',
+      duration: '5m',
+      preAllocatedVUs: 50,
+      maxVUs: 200,
+      exec: 'readScenario',
+    },
+    // Write workload (30% writes)
+    writes: {
+      executor: 'constant-arrival-rate',
+      rate: 300,
+      timeUnit: '1s',
+      duration: '5m',
+      preAllocatedVUs: 30,
+      maxVUs: 100,
+      exec: 'writeScenario',
+    },
+  },
+  thresholds: {
+    'http_req_duration{scenario:reads}': ['p(95)<200', 'p(99)<500'],
+    'http_req_duration{scenario:writes}': ['p(95)<500', 'p(99)<1000'],
+    'http_req_failed': ['rate<0.01'],
+  },
+};
+
+let authToken;
+
+export function setup() {
+  const loginRes = http.post(`${__ENV.API_URL}/auth/login`, JSON.stringify({
+    email: 'loadtest@example.com',
+    password: 'test123',
+  }), {
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  return { token: loginRes.json('token') };
+}
+
+export function readScenario(data) {
+  const headers = {
+    'Authorization': `Bearer ${data.token}`,
+    'Content-Type': 'application/json',
+  };
+
+  // GET request with query parameters
+  const userId = randomIntBetween(1, 10000);
+  const res = http.get(
+    `${__ENV.API_URL}/api/users/${userId}`,
+    { headers, tags: { name: 'GetUser' } }
+  );
+
+  check(res, {
+    'status is 200': (r) => r.status === 200,
+    'has user data': (r) => r.json('id') === userId,
+    'response time OK': (r) => r.timings.duration < 200,
+  });
+
+  sleep(0.5);
+}
+
+export function writeScenario(data) {
+  const headers = {
+    'Authorization': `Bearer ${data.token}`,
+    'Content-Type': 'application/json',
+  };
+
+  // POST request with dynamic payload
+  const user = testData[Math.floor(Math.random() * testData.length)];
+  const res = http.post(
+    `${__ENV.API_URL}/api/orders`,
+    JSON.stringify({
+      userId: user.id,
+      items: [
+        { productId: randomIntBetween(1, 100), quantity: 1 },
+      ],
+      timestamp: new Date().toISOString(),
+    }),
+    { headers, tags: { name: 'CreateOrder' } }
+  );
+
+  check(res, {
+    'status is 201': (r) => r.status === 201,
+    'order created': (r) => r.json('id') !== undefined,
+  });
+
+  sleep(1);
+}
+```
+
+**GraphQL API Load Testing:**
+
+```javascript
+import http from 'k6/http';
+import { check } from 'k6';
+
+export default function() {
+  const query = `
+    query GetUserWithOrders($userId: ID!) {
+      user(id: $userId) {
+        id
+        name
+        orders(limit: 10) {
+          id
+          total
+          items {
+            productId
+            quantity
+          }
+        }
+      }
+    }
+  `;
+
+  const variables = {
+    userId: `${__VU}`,
+  };
+
+  const res = http.post('https://api.example.com/graphql', JSON.stringify({
+    query,
+    variables,
+  }), {
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${__ENV.TOKEN}`,
+    },
+  });
+
+  check(res, {
+    'no GraphQL errors': (r) => !r.json('errors'),
+    'user data present': (r) => r.json('data.user.id') === variables.userId,
+  });
+}
+```
+
+**WebSocket Load Testing:**
+
+```javascript
+import ws from 'k6/ws';
+import { check } from 'k6';
+
+export default function() {
+  const url = 'wss://api.example.com/ws';
+  const params = { tags: { my_tag: 'websocket' } };
+
+  const res = ws.connect(url, params, function (socket) {
+    socket.on('open', () => {
+      console.log('Connected');
+      socket.send(JSON.stringify({ type: 'subscribe', channel: 'updates' }));
+    });
+
+    socket.on('message', (data) => {
+      const msg = JSON.parse(data);
+      check(msg, {
+        'valid message': (m) => m.type !== undefined,
+      });
+    });
+
+    socket.on('error', (e) => {
+      console.log('Error:', e.error());
+    });
+
+    socket.setTimeout(() => {
+      socket.close();
+    }, 60000);
+  });
+
+  check(res, { 'status is 101': (r) => r && r.status === 101 });
+}
+```
+
+### 3. Database Performance Testing
+
+**Query Performance Testing:**
+
+```typescript
+// database-perf-test.ts
+import { performance } from 'perf_hooks';
+import { Pool } from 'pg';
+
+interface QueryBenchmark {
+  query: string;
+  params?: any[];
+  iterations: number;
+  results: {
+    min: number;
+    max: number;
+    avg: number;
+    p50: number;
+    p95: number;
+    p99: number;
+  };
+}
+
+async function benchmarkQuery(
+  pool: Pool,
+  query: string,
+  params: any[] = [],
+  iterations: number = 100
+): Promise<QueryBenchmark> {
+  const timings: number[] = [];
+
+  // Warmup
+  for (let i = 0; i < 10; i++) {
+    await pool.query(query, params);
+  }
+
+  // Benchmark
+  for (let i = 0; i < iterations; i++) {
+    const start = performance.now();
+    await pool.query(query, params);
+    timings.push(performance.now() - start);
+  }
+
+  timings.sort((a, b) => a - b);
+
+  return {
+    query: query.substring(0, 100),
+    params,
+    iterations,
+    results: {
+      min: timings[0],
+      max: timings[timings.length - 1],
+      avg: timings.reduce((a, b) => a + b, 0) / timings.length,
+      p50: timings[Math.floor(timings.length * 0.5)],
+      p95: timings[Math.floor(timings.length * 0.95)],
+      p99: timings[Math.floor(timings.length * 0.99)],
+    },
+  };
+}
+
+// Compare query performance
+async function compareQueries() {
+  const pool = new Pool({ /* config */ });
+
+  const queries = [
+    {
+      name: 'Without Index',
+      sql: 'SELECT * FROM users WHERE email = $1',
+      params: ['test@example.com'],
+    },
+    {
+      name: 'With Index',
+      sql: 'SELECT * FROM users WHERE id = $1',
+      params: [1],
+    },
+    {
+      name: 'Complex Join',
+      sql: `
+        SELECT u.*, COUNT(o.id) as order_count
+        FROM users u
+        LEFT JOIN orders o ON u.id = o.user_id
+        WHERE u.created_at > $1
+        GROUP BY u.id
+        LIMIT 100
+      `,
+      params: ['2024-01-01'],
+    },
+  ];
+
+  for (const { name, sql, params } of queries) {
+    const result = await benchmarkQuery(pool, sql, params);
+    console.log(`\n${name}:`);
+    console.table(result.results);
+  }
+
+  await pool.end();
+}
+```
+
+**Connection Pool Load Testing:**
+
+```typescript
+// connection-pool-test.ts
+import { Pool } from 'pg';
+import { performance } from 'perf_hooks';
+
+async function testConnectionPool(
+  poolSize: number,
+  concurrentQueries: number,
+  duration: number
+) {
+  const pool = new Pool({
+    max: poolSize,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 2000,
+  });
+
+  const stats = {
+    totalQueries: 0,
+    successfulQueries: 0,
+    failedQueries: 0,
+    timeouts: 0,
+    queryTimes: [] as number[],
+  };
+
+  const startTime = Date.now();
+  const workers: Promise<void>[] = [];
+
+  for (let i = 0; i < concurrentQueries; i++) {
+    workers.push((async () => {
+      while (Date.now() - startTime < duration) {
+        try {
+          const start = performance.now();
+          await pool.query('SELECT 1');
+          const elapsed = performance.now() - start;
+
+          stats.queryTimes.push(elapsed);
+          stats.successfulQueries++;
+        } catch (err) {
+          stats.failedQueries++;
+          if (err.message.includes('timeout')) {
+            stats.timeouts++;
+          }
+        }
+        stats.totalQueries++;
+      }
+    })());
+  }
+
+  await Promise.all(workers);
+  await pool.end();
+
+  stats.queryTimes.sort((a, b) => a - b);
+
+  return {
+    poolSize,
+    concurrentQueries,
+    duration,
+    ...stats,
+    avgQueryTime: stats.queryTimes.reduce((a, b) => a + b, 0) / stats.queryTimes.length,
+    p95QueryTime: stats.queryTimes[Math.floor(stats.queryTimes.length * 0.95)],
+    qps: stats.successfulQueries / (duration / 1000),
+  };
+}
+
+// Test different pool sizes
+async function findOptimalPoolSize() {
+  const results = [];
+
+  for (const poolSize of [5, 10, 20, 50, 100]) {
+    console.log(`Testing pool size: ${poolSize}`);
+    const result = await testConnectionPool(poolSize, 100, 30000);
+    results.push(result);
+  }
+
+  console.table(results);
+}
+```
+
+**N+1 Query Detection:**
+
+```typescript
+// n-plus-one-detector.ts
+class QueryTracker {
+  private queries: Map<string, number> = new Map();
+  private startTime: number = 0;
+
+  start() {
+    this.queries.clear();
+    this.startTime = Date.now();
+  }
+
+  track(sql: string) {
+    const normalized = this.normalizeSql(sql);
+    this.queries.set(normalized, (this.queries.get(normalized) || 0) + 1);
+  }
+
+  detectNPlusOne(threshold: number = 10): Array<{ query: string; count: number }> {
+    const suspicious: Array<{ query: string; count: number }> = [];
+
+    for (const [query, count] of this.queries.entries()) {
+      if (count > threshold) {
+        suspicious.push({ query, count });
+      }
+    }
+
+    return suspicious.sort((a, b) => b.count - a.count);
+  }
+
+  private normalizeSql(sql: string): string {
+    // Replace literals with placeholders for comparison
+    return sql
+      .replace(/\d+/g, '?')
+      .replace(/'[^']*'/g, '?')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  report() {
+    const duration = Date.now() - this.startTime;
+    const nPlusOne = this.detectNPlusOne();
+
+    console.log(`\nQuery Analysis (${duration}ms):`);
+    console.log(`Total unique queries: ${this.queries.size}`);
+    console.log(`Total query executions: ${Array.from(this.queries.values()).reduce((a, b) => a + b, 0)}`);
+
+    if (nPlusOne.length > 0) {
+      console.log('\nPotential N+1 Queries:');
+      console.table(nPlusOne);
+    }
+  }
+}
+```
+
+### 4. Benchmarking Strategies
 
 **Micro-benchmarking (Function Level):**
 
@@ -364,7 +868,7 @@ npx autocannon -c 100 -d 30 -p 10 https://api.example.com/endpoint
 hey -n 10000 -c 100 https://api.example.com/endpoint
 ```
 
-### 3. Profiling Techniques
+### 5. Profiling Techniques
 
 **Node.js CPU Profiling:**
 
@@ -514,7 +1018,7 @@ const queryLogger = {
 };
 ```
 
-### 4. Track Key Metrics
+### 6. Track Key Metrics
 
 **Essential Performance Metrics:**
 
@@ -619,7 +1123,7 @@ const concurrentUsers = new Gauge({
 });
 ```
 
-### 5. Define Performance Budgets
+### 7. Define Performance Budgets
 
 **Web Performance Budgets:**
 
@@ -706,7 +1210,7 @@ endpoints:
     throughput_rps: 500
 ```
 
-### 6. Identify and Resolve Bottlenecks
+### 8. Identify and Resolve Bottlenecks
 
 **Systematic Bottleneck Analysis:**
 
@@ -806,37 +1310,368 @@ JOIN pg_catalog.pg_locks blocking_locks
 WHERE NOT blocked_locks.granted;
 ```
 
+### 9. Test Data Generation and Realistic Load Patterns
+
+**Generate Realistic Test Data:**
+
+```typescript
+// test-data-generator.ts
+import { faker } from '@faker-js/faker';
+
+interface TestUser {
+  id: number;
+  email: string;
+  name: string;
+  createdAt: Date;
+  preferences: Record<string, any>;
+}
+
+function generateUsers(count: number): TestUser[] {
+  return Array.from({ length: count }, (_, i) => ({
+    id: i + 1,
+    email: faker.internet.email(),
+    name: faker.person.fullName(),
+    createdAt: faker.date.past({ years: 2 }),
+    preferences: {
+      theme: faker.helpers.arrayElement(['light', 'dark']),
+      notifications: faker.datatype.boolean(),
+      language: faker.helpers.arrayElement(['en', 'es', 'fr', 'de']),
+    },
+  }));
+}
+
+// Generate data with realistic distributions
+function generateOrdersWithDistribution(userCount: number, orderCount: number) {
+  const users = generateUsers(userCount);
+  const orders = [];
+
+  // 80/20 rule: 20% of users make 80% of orders
+  const powerUsers = users.slice(0, Math.floor(userCount * 0.2));
+  const regularUsers = users.slice(Math.floor(userCount * 0.2));
+
+  const powerUserOrders = Math.floor(orderCount * 0.8);
+  const regularUserOrders = orderCount - powerUserOrders;
+
+  // Power users
+  for (let i = 0; i < powerUserOrders; i++) {
+    const user = faker.helpers.arrayElement(powerUsers);
+    orders.push(generateOrder(user.id, i + 1));
+  }
+
+  // Regular users
+  for (let i = 0; i < regularUserOrders; i++) {
+    const user = faker.helpers.arrayElement(regularUsers);
+    orders.push(generateOrder(user.id, powerUserOrders + i + 1));
+  }
+
+  return { users, orders };
+}
+
+function generateOrder(userId: number, orderId: number) {
+  const itemCount = faker.number.int({ min: 1, max: 10 });
+
+  return {
+    id: orderId,
+    userId,
+    items: Array.from({ length: itemCount }, () => ({
+      productId: faker.number.int({ min: 1, max: 1000 }),
+      quantity: faker.number.int({ min: 1, max: 5 }),
+      price: parseFloat(faker.commerce.price()),
+    })),
+    status: faker.helpers.arrayElement(['pending', 'processing', 'shipped', 'delivered']),
+    createdAt: faker.date.recent({ days: 90 }),
+  };
+}
+```
+
+**Realistic Traffic Patterns:**
+
+```javascript
+// k6 realistic traffic patterns
+import http from 'k6/http';
+import { sleep } from 'k6';
+
+export const options = {
+  scenarios: {
+    // Morning traffic spike (9am)
+    morning_spike: {
+      executor: 'ramping-arrival-rate',
+      startRate: 10,
+      timeUnit: '1s',
+      preAllocatedVUs: 50,
+      maxVUs: 200,
+      stages: [
+        { duration: '5m', target: 50 },   // Ramp up
+        { duration: '10m', target: 50 },  // Sustained
+        { duration: '5m', target: 10 },   // Ramp down
+      ],
+      startTime: '0s',
+    },
+    // Lunch traffic (12pm)
+    lunch_traffic: {
+      executor: 'constant-arrival-rate',
+      rate: 30,
+      timeUnit: '1s',
+      duration: '30m',
+      preAllocatedVUs: 100,
+      maxVUs: 150,
+      startTime: '20m',
+    },
+    // Evening spike (6pm)
+    evening_spike: {
+      executor: 'ramping-arrival-rate',
+      startRate: 10,
+      timeUnit: '1s',
+      preAllocatedVUs: 50,
+      maxVUs: 300,
+      stages: [
+        { duration: '5m', target: 100 },
+        { duration: '15m', target: 100 },
+        { duration: '5m', target: 10 },
+      ],
+      startTime: '50m',
+    },
+    // Background jobs (constant low load)
+    background_jobs: {
+      executor: 'constant-vus',
+      vus: 5,
+      duration: '2h',
+      exec: 'backgroundJob',
+    },
+  },
+};
+
+export default function() {
+  // Simulate different user behaviors
+  const userType = Math.random();
+
+  if (userType < 0.6) {
+    // 60% - Browsers (fast, many requests)
+    http.get(`${__ENV.API_URL}/api/products`);
+    sleep(0.5);
+    http.get(`${__ENV.API_URL}/api/products/${Math.floor(Math.random() * 100)}`);
+    sleep(0.5);
+  } else if (userType < 0.9) {
+    // 30% - Regular users (moderate pace)
+    http.get(`${__ENV.API_URL}/api/products`);
+    sleep(2);
+    http.get(`${__ENV.API_URL}/api/cart`);
+    sleep(3);
+  } else {
+    // 10% - Power users (complex operations)
+    http.post(`${__ENV.API_URL}/api/orders`, JSON.stringify({
+      items: [{ productId: 1, quantity: 1 }],
+    }), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+    sleep(5);
+  }
+}
+
+export function backgroundJob() {
+  // Simulate cron jobs, workers
+  http.post(`${__ENV.API_URL}/internal/process-batch`, JSON.stringify({
+    batchId: Math.floor(Math.random() * 1000),
+  }), {
+    headers: { 'Content-Type': 'application/json' },
+  });
+  sleep(60);  // Every minute
+}
+```
+
+**Think Time and User Behavior:**
+
+```javascript
+import { sleep } from 'k6';
+import { randomIntBetween } from 'https://jslib.k6.io/k6-utils/1.2.0/index.js';
+
+// Human-like think time
+function thinkTime() {
+  // Normal distribution around 2 seconds
+  const mean = 2;
+  const stdDev = 0.5;
+  const time = mean + stdDev * (Math.random() + Math.random() + Math.random() - 1.5);
+  sleep(Math.max(0.5, time));
+}
+
+// Simulate user session
+export default function() {
+  // Login
+  http.post(`${__ENV.API_URL}/auth/login`, /* ... */);
+  thinkTime();
+
+  // Browse products (3-7 pages)
+  const pageViews = randomIntBetween(3, 7);
+  for (let i = 0; i < pageViews; i++) {
+    http.get(`${__ENV.API_URL}/api/products?page=${i}`);
+    thinkTime();
+  }
+
+  // 30% add to cart
+  if (Math.random() < 0.3) {
+    http.post(`${__ENV.API_URL}/api/cart`, /* ... */);
+    thinkTime();
+
+    // 50% of those who add to cart complete checkout
+    if (Math.random() < 0.5) {
+      http.post(`${__ENV.API_URL}/api/orders`, /* ... */);
+      sleep(3);  // Checkout takes longer
+    }
+  }
+
+  // Logout (20% of users explicitly logout)
+  if (Math.random() < 0.2) {
+    http.post(`${__ENV.API_URL}/auth/logout`);
+  }
+}
+```
+
+**Edge Cases and Error Scenarios:**
+
+```javascript
+import http from 'k6/http';
+import { check } from 'k6';
+
+export default function() {
+  const scenarios = [
+    // Happy path (70%)
+    () => {
+      const res = http.get(`${__ENV.API_URL}/api/products`);
+      check(res, { 'status is 200': (r) => r.status === 200 });
+    },
+    // Large payload (10%)
+    () => {
+      const res = http.get(`${__ENV.API_URL}/api/products?limit=1000`);
+      check(res, { 'handles large response': (r) => r.status === 200 });
+    },
+    // Invalid input (10%)
+    () => {
+      const res = http.get(`${__ENV.API_URL}/api/products/-1`);
+      check(res, { 'handles invalid ID': (r) => r.status === 400 });
+    },
+    // Not found (5%)
+    () => {
+      const res = http.get(`${__ENV.API_URL}/api/products/999999`);
+      check(res, { 'handles not found': (r) => r.status === 404 });
+    },
+    // Timeout scenario (3%)
+    () => {
+      const res = http.get(`${__ENV.API_URL}/api/slow-endpoint`, {
+        timeout: '5s',
+      });
+      check(res, { 'handles timeout': (r) => r.status === 200 || r.error });
+    },
+    // Unauthorized (2%)
+    () => {
+      const res = http.get(`${__ENV.API_URL}/api/admin/users`);
+      check(res, { 'enforces auth': (r) => r.status === 401 || r.status === 403 });
+    },
+  ];
+
+  // Weighted random scenario selection
+  const weights = [0.7, 0.8, 0.9, 0.95, 0.98, 1.0];
+  const random = Math.random();
+
+  for (let i = 0; i < weights.length; i++) {
+    if (random < weights[i]) {
+      scenarios[i]();
+      break;
+    }
+  }
+}
+```
+
 ## Best Practices
 
+### Test Environment and Setup
+
 1. **Test in Production-like Environments**
-   - Match hardware specifications
-   - Use realistic data volumes
-   - Simulate actual traffic patterns
+   - Match hardware specifications (CPU, RAM, disk I/O)
+   - Use realistic data volumes (production-scale databases)
+   - Simulate actual traffic patterns and user distributions
+   - Include network latency if testing distributed systems
+   - Test with production-like configuration (caching, CDN, load balancers)
 
 2. **Establish Baselines First**
-   - Measure current performance before optimizing
-   - Document baseline metrics
-   - Track changes over time
+   - Measure current performance before any optimization
+   - Document baseline metrics for all critical endpoints
+   - Track changes over time to detect regressions
+   - Create performance baseline reports for stakeholder communication
 
-3. **Test Early and Often**
-   - Include performance tests in CI/CD
-   - Catch regressions before deployment
-   - Monitor trends, not just thresholds
+3. **Use Realistic Test Data**
+   - Volume should match production scale (not just small samples)
+   - Include edge cases (large records, unicode, special characters, malformed data)
+   - Test with cold and warm caches to measure both scenarios
+   - Apply realistic data distributions (80/20 rule, Pareto principle)
+   - Include timezone, locale, and internationalization variations
 
-4. **Use Realistic Test Data**
-   - Volume should match production
-   - Include edge cases (large records, unicode)
-   - Test with cold and warm caches
+### Test Execution Strategy
 
-5. **Monitor in Production**
-   - Performance testing complements, not replaces monitoring
-   - Use APM tools for real user metrics
-   - Alert on performance degradation
+4. **Test Early and Often**
+   - Include performance tests in CI/CD pipeline
+   - Run smoke tests on every commit (quick baseline check)
+   - Run full load tests nightly or on pull requests
+   - Catch regressions before deployment, not in production
+   - Monitor trends, not just pass/fail thresholds
 
-6. **Document and Share Results**
-   - Keep performance test reports
-   - Share findings with the team
-   - Track optimization improvements
+5. **Implement Progressive Load Testing**
+   - Start with smoke tests (minimal load, validate functionality)
+   - Progress to load tests (expected normal load)
+   - Execute stress tests (find breaking points)
+   - Run spike tests (validate autoscaling and recovery)
+   - Finish with soak tests (detect memory leaks and degradation over time)
+
+6. **Test Critical User Journeys**
+   - Identify top 3-5 most important user flows
+   - Prioritize testing revenue-generating paths
+   - Include authentication, payment, and checkout flows
+   - Test admin and privileged operations separately
+   - Validate graceful degradation under partial failures
+
+### Analysis and Reporting
+
+7. **Analyze Percentiles, Not Averages**
+   - Always report p50, p95, p99 latencies (not just average)
+   - Use p95/p99 for SLOs and alerting thresholds
+   - Understand that outliers matter for user experience
+   - Track maximum latency to identify worst-case scenarios
+
+8. **Monitor in Production**
+   - Performance testing complements, not replaces production monitoring
+   - Use APM tools (Datadog, New Relic, etc.) for real user metrics
+   - Implement synthetic monitoring for critical paths
+   - Alert on performance degradation before users complain
+   - Correlate load test results with production behavior
+
+9. **Document and Share Results**
+   - Keep performance test reports in version control
+   - Create visual dashboards for trend analysis
+   - Share findings with team in regular reviews
+   - Track optimization improvements with before/after metrics
+   - Document infrastructure changes and their performance impact
+
+### Optimization and Iteration
+
+10. **Follow Scientific Method**
+    - Form hypothesis before optimization ("I think X is slow because Y")
+    - Change one variable at a time
+    - Measure impact with load tests before and after
+    - Document failed attempts (what didn't work and why)
+    - Validate optimizations don't break functionality
+
+11. **Set and Enforce Performance Budgets**
+    - Define acceptable latency targets per endpoint
+    - Set throughput requirements (RPS, concurrent users)
+    - Establish error rate thresholds
+    - Block deployments that violate budgets
+    - Review and adjust budgets quarterly based on business needs
+
+12. **Test Database Performance Separately**
+    - Isolate database bottlenecks from application issues
+    - Benchmark queries under load (not just in dev)
+    - Test connection pool exhaustion scenarios
+    - Validate index effectiveness with production data volumes
+    - Monitor slow query logs during load tests
 
 ## Examples
 

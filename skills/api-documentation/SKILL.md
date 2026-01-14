@@ -1,13 +1,13 @@
 ---
 name: api-documentation
-description: Document REST APIs with OpenAPI/Swagger specifications, endpoint documentation, authentication, error handling, and SDK guides. Use for API reference docs, Swagger specs, and client library documentation. Triggers: api docs, openapi, swagger, endpoint documentation, rest api, api reference, sdk documentation, api specification, document api, api endpoints.
+description: Document REST APIs with OpenAPI/Swagger specifications, endpoint documentation, authentication, error handling, and SDK guides. Use for API reference docs, Swagger specs, and client library documentation. Triggers: api docs, openapi, swagger, endpoint documentation, rest api, api reference, sdk documentation, api specification, document api, api endpoints, request response examples, schema documentation, openapi 3.1, redoc, stoplight, postman collection, api explorer, interactive docs, api contract, api schema, swagger ui, authentication flows, rate limits.
 ---
 
 # API Documentation
 
 ## Overview
 
-Comprehensive API documentation skill covering OpenAPI/Swagger specifications, endpoint documentation, authentication flows, error handling, versioning strategies, and SDK/client documentation.
+Comprehensive API documentation skill covering OpenAPI/Swagger specifications, endpoint documentation, authentication flows, error handling, versioning strategies, and SDK/client documentation. Combines technical precision with clear, user-friendly writing to create documentation that developers can actually use.
 
 ## Instructions
 
@@ -33,13 +33,71 @@ Every API should document:
 
 ## Best Practices
 
-- Use consistent terminology
-- Provide working examples for every endpoint
-- Document all possible response codes
-- Include request/response examples
-- Explain authentication clearly
-- Document rate limits and quotas
+### Technical Accuracy
+- Use consistent terminology throughout
 - Keep schemas DRY with $ref
+- Document all possible response codes
+- Validate examples against schema
+- Include proper JSON Schema constraints
+
+### Clarity and Usability (from technical-writer expertise)
+- Write for the developer audience: assume technical competence, skip patronizing explanations
+- Lead with practical examples: show before explaining
+- Use active voice and direct language
+- Provide working curl examples for every endpoint
+- Explain authentication with complete, copy-paste examples
+- Document rate limits with concrete numbers and headers
+- Surface common error scenarios prominently
+- Include troubleshooting tips for frequent issues
+
+### Interactive Documentation
+- Design for auto-generated docs (Redoc, Swagger UI, Stoplight)
+- Use operationId for stable client generation
+- Tag endpoints logically for navigation
+- Write descriptions that render well in both markdown and UI tools
+- Include multiple request/response examples for different scenarios
+
+## OpenAPI 3.1 Key Features
+
+### Full JSON Schema Support
+- Use JSON Schema 2020-12 vocabulary
+- Support const, if/then/else, dependentSchemas
+- Native oneOf/anyOf/allOf with discriminators
+
+### Example Handling
+- Single example: use `example` property
+- Multiple examples: use `examples` object with named scenarios
+- Examples in both schema definitions AND operation level
+
+### Webhooks Documentation
+```yaml
+webhooks:
+  userCreated:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserEvent'
+```
+
+### Content Negotiation
+```yaml
+content:
+  application/json:
+    schema: {...}
+  application/xml:
+    schema: {...}
+  text/csv:
+    schema:
+      type: string
+```
+
+### Security Schemes
+- OAuth2 with multiple flows
+- OpenID Connect Discovery
+- Mutual TLS
+- Custom security schemes with extensions
 
 ## Examples
 
@@ -933,3 +991,90 @@ name: 'Typed User'
 const user: User = await client.users.create(params);
 \`\`\`
 ```
+
+## Documentation Tooling
+
+### Interactive Documentation Generators
+
+**Redoc** - Clean, three-panel layout with search
+```bash
+npx @redocly/cli build-docs openapi.yaml --output docs.html
+```
+
+**Swagger UI** - Try-it-out functionality, widely recognized
+```bash
+docker run -p 80:8080 -e SWAGGER_JSON=/api/openapi.yaml -v $(pwd):/api swaggerapi/swagger-ui
+```
+
+**Stoplight Elements** - Embeddable web components
+```html
+<script src="https://unpkg.com/@stoplight/elements/web-components.min.js"></script>
+<elements-api apiDescriptionUrl="./openapi.yaml" router="hash"/>
+```
+
+### Validation and Linting
+
+**Redocly CLI** - Lint OpenAPI specs
+```bash
+npx @redocly/cli lint openapi.yaml
+npx @redocly/cli bundle openapi.yaml --output bundled.yaml
+```
+
+**Spectral** - Flexible linting with custom rules
+```bash
+spectral lint openapi.yaml --ruleset .spectral.yaml
+```
+
+### Client Generation
+
+**OpenAPI Generator** - Multi-language client/server generation
+```bash
+openapi-generator-cli generate -i openapi.yaml -g typescript-fetch -o ./client
+```
+
+**Postman Collection Export**
+```bash
+npm install -g openapi-to-postmanv2
+openapi2postmanv2 -s openapi.yaml -o collection.json
+```
+
+### Testing and Mocking
+
+**Prism** - Mock server from OpenAPI spec
+```bash
+prism mock openapi.yaml
+# Returns example responses from your spec
+```
+
+**Dredd** - Test API against OpenAPI contract
+```bash
+dredd openapi.yaml http://localhost:3000
+```
+
+## Documentation Patterns
+
+### Progressive Disclosure
+Structure docs from quick start to advanced topics:
+1. Authentication quick start (single example)
+2. Common use cases (recipes)
+3. Complete endpoint reference
+4. Advanced topics (webhooks, pagination strategies)
+
+### Code Examples Strategy
+- Provide examples in multiple languages (curl, JavaScript, Python, Go)
+- Use realistic data (not foo/bar)
+- Show complete working examples, not fragments
+- Include error handling in examples
+
+### API Explorer Integration
+Include "Try It" functionality:
+- Pre-fill authentication from environment
+- Provide example payloads
+- Show actual requests/responses
+- Support environment switching (sandbox/production)
+
+### Versioning Communication
+- Announce deprecations 6+ months in advance
+- Provide migration guides with side-by-side comparisons
+- Include deprecation headers in API responses
+- Maintain changelog with breaking/non-breaking labels

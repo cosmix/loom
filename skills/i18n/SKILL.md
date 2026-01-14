@@ -1,6 +1,6 @@
 ---
 name: i18n
-description: Internationalization and localization implementation. Use when implementing multi-language support, translation systems, locale-specific formatting, or RTL layouts. Keywords: i18n, l10n, internationalization, localization, translation, locale, RTL, pluralization, i18next, react-intl, gettext, ICU, formatting.
+description: Internationalization and localization patterns for multi-language applications. Use when implementing translation systems, locale-specific formatting, RTL layouts, or managing language switching. Keywords: i18n, internationalization, l10n, localization, translation, translate, locale, language, multilingual, multi-language, RTL, right-to-left, LTR, bidirectional, pluralization, plural forms, date format, time format, number format, currency format, timezone, i18next, react-intl, FormatJS, gettext, ICU MessageFormat, message format, language detection, language switching, Accept-Language, locale fallback, translation keys, translation files, JSON translations, PO files, YAML translations, react i18n, React localization, format date, format number, format currency, format relative time, Intl API, NumberFormat, DateTimeFormat, RTL CSS, logical properties, direction-aware, language code, region code, locale identifier, BCP47, ISO 639, translation extraction, pseudo-localization, namespace, translation namespace.
 ---
 
 # Internationalization (i18n)
@@ -8,6 +8,24 @@ description: Internationalization and localization implementation. Use when impl
 ## Overview
 
 Internationalization (i18n) is the process of designing software so it can be adapted to various languages and regions without engineering changes. Localization (l10n) is the actual adaptation for a specific locale. This skill covers architecture patterns, translation formats, locale-specific formatting, and popular libraries.
+
+## Quick Reference
+
+**Common Use Cases:**
+- Multi-language web applications (React, Vue, Angular)
+- Locale-specific date, number, and currency formatting
+- RTL (right-to-left) layout support for Arabic, Hebrew, Persian, Urdu
+- Pluralization rules for different languages
+- Translation management and extraction workflows
+- Dynamic language switching without page reload
+- Server-side locale detection from headers/cookies
+
+**Popular Libraries:**
+- React: i18next, react-intl (FormatJS), react-i18next
+- Vue: vue-i18n
+- Node.js: i18next, node-polyglot, format-message
+- Python: gettext, Babel
+- Ruby: i18n gem, Rails I18n
 
 ## Key Concepts
 

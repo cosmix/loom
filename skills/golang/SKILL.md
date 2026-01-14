@@ -1,6 +1,6 @@
 ---
 name: golang
-description: Go language expertise for writing idiomatic, production-quality Go code. Use for Go development, concurrency patterns, error handling, testing, and module management. Triggers: go, golang, goroutine, channel, go mod, go test, effective go.
+description: Go language expertise for writing idiomatic, production-quality Go code. Use for Go development, concurrency patterns, error handling, testing, and module management. Triggers: go, golang, goroutine, channel, interface, struct, pointer, slice, map, defer, context, error, gin, echo, fiber, cobra, viper, gorm, sqlx, go mod, go test, effective go, errgroup, sync, mutex, waitgroup.
 ---
 
 # Go Language Expertise
@@ -253,6 +253,281 @@ server := NewServer(
     WithPort(9000),
     WithTimeout(60*time.Second),
 )
+```
+
+### CLI Applications with Cobra
+
+```go
+// cmd/root.go
+package cmd
+
+import (
+    "fmt"
+    "os"
+
+    "github.com/spf13/cobra"
+    "github.com/spf13/viper"
+)
+
+var (
+    cfgFile string
+    verbose bool
+)
+
+var rootCmd = &cobra.Command{
+    Use:   "myapp",
+    Short: "A brief description of your application",
+    Long: `A longer description that spans multiple lines and likely contains
+examples and usage of using your application.`,
+}
+
+func Execute() {
+    if err := rootCmd.Execute(); err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(1)
+    }
+}
+
+func init() {
+    cobra.OnInitialize(initConfig)
+
+    rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.myapp.yaml)")
+    rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
+
+    viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
+}
+
+func initConfig() {
+    if cfgFile != "" {
+        viper.SetConfigFile(cfgFile)
+    } else {
+        home, err := os.UserHomeDir()
+        cobra.CheckErr(err)
+        viper.AddConfigPath(home)
+        viper.SetConfigType("yaml")
+        viper.SetConfigName(".myapp")
+    }
+
+    viper.AutomaticEnv()
+
+    if err := viper.ReadInConfig(); err == nil {
+        fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
+    }
+}
+
+// cmd/serve.go
+var serveCmd = &cobra.Command{
+    Use:   "serve",
+    Short: "Start the HTTP server",
+    RunE: func(cmd *cobra.Command, args []string) error {
+        port := viper.GetInt("port")
+        return startServer(cmd.Context(), port)
+    },
+}
+
+func init() {
+    rootCmd.AddCommand(serveCmd)
+    serveCmd.Flags().IntP("port", "p", 8080, "Port to listen on")
+    viper.BindPFlag("port", serveCmd.Flags().Lookup("port"))
+}
+```
+
+### HTTP Servers
+
+```go
+// Standard library HTTP server
+package server
+
+import (
+    "context"
+    "errors"
+    "log/slog"
+    "net/http"
+    "time"
+)
+
+type Server struct {
+    httpServer *http.Server
+    logger     *slog.Logger
+}
+
+func New(addr string, handler http.Handler, logger *slog.Logger) *Server {
+    return &Server{
+        httpServer: &http.Server{
+            Addr:         addr,
+            Handler:      handler,
+            ReadTimeout:  15 * time.Second,
+            WriteTimeout: 15 * time.Second,
+            IdleTimeout:  60 * time.Second,
+        },
+        logger: logger,
+    }
+}
+
+func (s *Server) Start() error {
+    s.logger.Info("starting server", slog.String("addr", s.httpServer.Addr))
+    if err := s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+        return err
+    }
+    return nil
+}
+
+func (s *Server) Shutdown(ctx context.Context) error {
+    s.logger.Info("shutting down server")
+    return s.httpServer.Shutdown(ctx)
+}
+
+// Middleware patterns
+func loggingMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
+    return func(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            start := time.Now()
+            next.ServeHTTP(w, r)
+            logger.Info("request",
+                slog.String("method", r.Method),
+                slog.String("path", r.URL.Path),
+                slog.Duration("duration", time.Since(start)),
+            )
+        })
+    }
+}
+
+func recoveryMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
+    return func(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            defer func() {
+                if err := recover(); err != nil {
+                    logger.Error("panic recovered",
+                        slog.Any("error", err),
+                        slog.String("path", r.URL.Path),
+                    )
+                    http.Error(w, "internal server error", http.StatusInternalServerError)
+                }
+            }()
+            next.ServeHTTP(w, r)
+        })
+    }
+}
+
+// Router setup with Go 1.22+ patterns
+func setupRoutes(mux *http.ServeMux, handler *Handler) {
+    mux.HandleFunc("GET /api/users/{id}", handler.GetUser)
+    mux.HandleFunc("POST /api/users", handler.CreateUser)
+    mux.HandleFunc("PUT /api/users/{id}", handler.UpdateUser)
+    mux.HandleFunc("DELETE /api/users/{id}", handler.DeleteUser)
+    mux.HandleFunc("GET /health", handler.Health)
+}
+
+// Gin framework example
+import "github.com/gin-gonic/gin"
+
+func setupGinRouter(handler *Handler) *gin.Engine {
+    r := gin.New()
+    r.Use(gin.Recovery())
+    r.Use(gin.Logger())
+
+    api := r.Group("/api")
+    {
+        users := api.Group("/users")
+        {
+            users.GET("/:id", handler.GetUser)
+            users.POST("/", handler.CreateUser)
+            users.PUT("/:id", handler.UpdateUser)
+            users.DELETE("/:id", handler.DeleteUser)
+        }
+    }
+
+    r.GET("/health", handler.Health)
+    return r
+}
+```
+
+### Database Access Patterns
+
+```go
+// Using sqlx for cleaner database operations
+import (
+    "context"
+    "database/sql"
+    "github.com/jmoiron/sqlx"
+    _ "github.com/lib/pq"
+)
+
+type User struct {
+    ID        string    `db:"id"`
+    Email     string    `db:"email"`
+    Name      string    `db:"name"`
+    CreatedAt time.Time `db:"created_at"`
+}
+
+type UserRepository struct {
+    db *sqlx.DB
+}
+
+func NewUserRepository(db *sqlx.DB) *UserRepository {
+    return &UserRepository{db: db}
+}
+
+func (r *UserRepository) GetByID(ctx context.Context, id string) (*User, error) {
+    var user User
+    query := `SELECT id, email, name, created_at FROM users WHERE id = $1`
+
+    if err := r.db.GetContext(ctx, &user, query, id); err != nil {
+        if errors.Is(err, sql.ErrNoRows) {
+            return nil, ErrNotFound
+        }
+        return nil, fmt.Errorf("getting user: %w", err)
+    }
+    return &user, nil
+}
+
+func (r *UserRepository) Create(ctx context.Context, user *User) error {
+    query := `
+        INSERT INTO users (id, email, name, created_at)
+        VALUES (:id, :email, :name, :created_at)
+    `
+
+    _, err := r.db.NamedExecContext(ctx, query, user)
+    if err != nil {
+        return fmt.Errorf("creating user: %w", err)
+    }
+    return nil
+}
+
+func (r *UserRepository) List(ctx context.Context, limit, offset int) ([]*User, error) {
+    var users []*User
+    query := `
+        SELECT id, email, name, created_at
+        FROM users
+        ORDER BY created_at DESC
+        LIMIT $1 OFFSET $2
+    `
+
+    if err := r.db.SelectContext(ctx, &users, query, limit, offset); err != nil {
+        return nil, fmt.Errorf("listing users: %w", err)
+    }
+    return users, nil
+}
+
+// Transaction helper
+func (r *UserRepository) WithTx(ctx context.Context, fn func(*sqlx.Tx) error) error {
+    tx, err := r.db.BeginTxx(ctx, nil)
+    if err != nil {
+        return fmt.Errorf("beginning transaction: %w", err)
+    }
+
+    if err := fn(tx); err != nil {
+        if rbErr := tx.Rollback(); rbErr != nil {
+            return fmt.Errorf("rolling back transaction: %v (original error: %w)", rbErr, err)
+        }
+        return err
+    }
+
+    if err := tx.Commit(); err != nil {
+        return fmt.Errorf("committing transaction: %w", err)
+    }
+    return nil
+}
 ```
 
 ## Best Practices

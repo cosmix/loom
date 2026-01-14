@@ -1,6 +1,6 @@
 ---
 name: e2e-testing
-description: End-to-end testing patterns and best practices for web applications using Playwright and Cypress. Covers Page Object Model, test fixtures, selector strategies, async handling, visual regression testing, and flaky test prevention. Use when setting up E2E tests, debugging test failures, or improving test reliability. Trigger keywords: e2e testing, end-to-end tests, Playwright, Cypress, Page Object Model, test fixtures, selectors, data-testid, async tests, visual regression, flaky tests, browser testing.
+description: End-to-end testing patterns and best practices for web applications using Playwright, Cypress, Selenium, and Puppeteer. Covers Page Object Model, test fixtures, selector strategies, async handling, visual regression testing, and flaky test prevention. Includes QA expertise for acceptance testing, smoke testing, cross-browser testing, and test reliability. Use when setting up E2E tests, debugging test failures, improving test reliability, or implementing browser automation. Trigger keywords: e2e, e2e testing, end-to-end, end-to-end tests, Playwright, Cypress, Selenium, Puppeteer, Page Object Model, page object, test fixtures, selectors, locator, locators, data-testid, async tests, visual regression, visual testing, screenshot, flaky tests, flakiness, browser testing, browser automation, UI test, UI testing, acceptance test, acceptance testing, smoke test, smoke testing, integration test, wait, waits, assertion, assertions, test data, test isolation.
 ---
 
 # E2E Testing
@@ -583,36 +583,262 @@ await context.tracing.stop({ path: "trace.zip" });
 await page.pause(); // Opens inspector
 ```
 
+### 8. Implement Playwright-Specific Patterns
+
+**Playwright Advanced Features:**
+
+```typescript
+// Multiple contexts (parallel sessions)
+test("multiple users", async ({ browser }) => {
+  const userContext = await browser.newContext();
+  const adminContext = await browser.newContext();
+
+  const userPage = await userContext.newPage();
+  const adminPage = await adminContext.newPage();
+
+  await userPage.goto("/");
+  await adminPage.goto("/admin");
+
+  // Test interactions between users
+  await adminPage.getByRole("button", { name: "Broadcast" }).click();
+  await expect(userPage.getByRole("alert")).toBeVisible();
+
+  await userContext.close();
+  await adminContext.close();
+});
+
+// Mobile emulation
+test("mobile navigation", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 667 });
+  await page.goto("/");
+
+  // Mobile menu should be visible
+  await expect(page.getByRole("button", { name: "Menu" })).toBeVisible();
+});
+
+// Geolocation testing
+test("location-based features", async ({ context, page }) => {
+  await context.setGeolocation({ latitude: 37.7749, longitude: -122.4194 });
+  await context.grantPermissions(["geolocation"]);
+
+  await page.goto("/");
+  await expect(page.getByText("San Francisco")).toBeVisible();
+});
+
+// Network offline mode
+test("offline behavior", async ({ context, page }) => {
+  await page.goto("/");
+  await context.setOffline(true);
+
+  await page.reload();
+  await expect(page.getByText("You are offline")).toBeVisible();
+});
+```
+
+**Playwright API Request Context:**
+
+```typescript
+// API-level authentication for faster setup
+test.beforeAll(async ({ request }) => {
+  // Create user via API
+  const response = await request.post("/api/users", {
+    data: { email: "test@example.com", password: "secure123" },
+  });
+  expect(response.ok()).toBeTruthy();
+});
+
+// Hybrid API + UI testing
+test("order creation", async ({ page, request }) => {
+  // Setup via API (fast)
+  await request.post("/api/cart/add", {
+    data: { productId: "123", quantity: 2 },
+  });
+
+  // Verify via UI (user-facing)
+  await page.goto("/cart");
+  await expect(page.getByTestId("cart-item")).toHaveCount(1);
+  await expect(page.getByTestId("quantity")).toHaveText("2");
+});
+```
+
+### 9. Apply QA Best Practices
+
+**Test Pyramid Strategy:**
+
+```
+         E2E (5-10%)      ← Smoke tests, critical paths
+       Integration (20-30%) ← Component integration
+      Unit Tests (60-75%)  ← Business logic, utilities
+```
+
+**Smoke Test Suite (Must-Pass Before Release):**
+
+```typescript
+// e2e/smoke/critical-paths.spec.ts
+test.describe("Smoke Tests", () => {
+  test("homepage loads", async ({ page }) => {
+    await page.goto("/");
+    await expect(page).toHaveTitle(/Home/);
+    await expect(page.getByRole("navigation")).toBeVisible();
+  });
+
+  test("user can sign in", async ({ page }) => {
+    await page.goto("/login");
+    await page.getByLabel("Email").fill("user@example.com");
+    await page.getByLabel("Password").fill("password123");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page).toHaveURL("/dashboard");
+  });
+
+  test("critical API endpoints respond", async ({ request }) => {
+    const endpoints = ["/api/health", "/api/products", "/api/user"];
+    for (const endpoint of endpoints) {
+      const response = await request.get(endpoint);
+      expect(response.status()).toBeLessThan(500);
+    }
+  });
+});
+```
+
+**Acceptance Testing Patterns:**
+
+```typescript
+// e2e/acceptance/user-stories.spec.ts
+test.describe("User Story: Purchase Flow", () => {
+  test("As a customer, I want to buy a product so I can receive it at home", async ({
+    page,
+  }) => {
+    // Given I am on the product page
+    await page.goto("/products/widget-123");
+
+    // When I add the product to cart
+    await page.getByRole("button", { name: "Add to Cart" }).click();
+
+    // And I proceed to checkout
+    await page.getByRole("link", { name: "Checkout" }).click();
+
+    // And I fill in my shipping details
+    await page.getByLabel("Address").fill("123 Main St");
+    await page.getByLabel("City").fill("Anytown");
+
+    // And I complete payment
+    await page.getByLabel("Card number").fill("4242424242424242");
+    await page.getByRole("button", { name: "Place Order" }).click();
+
+    // Then I should see order confirmation
+    await expect(page.getByText("Thank you for your order")).toBeVisible();
+    await expect(page.getByTestId("order-number")).toBeVisible();
+  });
+});
+```
+
+**Cross-Browser Testing Strategy:**
+
+```typescript
+// playwright.config.ts
+export default defineConfig({
+  projects: [
+    // Desktop browsers
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    { name: "firefox", use: { ...devices["Desktop Firefox"] } },
+    { name: "webkit", use: { ...devices["Desktop Safari"] } },
+
+    // Mobile browsers
+    { name: "mobile-chrome", use: { ...devices["Pixel 5"] } },
+    { name: "mobile-safari", use: { ...devices["iPhone 13"] } },
+
+    // Branded browsers (if needed)
+    { name: "edge", use: { ...devices["Desktop Edge"], channel: "msedge" } },
+    { name: "chrome", use: { ...devices["Desktop Chrome"], channel: "chrome" } },
+  ],
+});
+
+// Run critical tests on all browsers, others on Chrome only
+test.describe("Critical Flow", () => {
+  test("checkout works", async ({ page, browserName }) => {
+    // Runs on all browsers
+  });
+});
+
+test.describe("Admin Panel", () => {
+  test.skip(({ browserName }) => browserName !== "chromium");
+
+  test("bulk operations", async ({ page }) => {
+    // Only runs on Chrome for speed
+  });
+});
+```
+
+**Test Observability and Reporting:**
+
+```typescript
+// Custom test reporter for CI
+// playwright.config.ts
+export default defineConfig({
+  reporter: [
+    ["html", { outputFolder: "test-results/html" }],
+    ["junit", { outputFile: "test-results/junit.xml" }],
+    ["json", { outputFile: "test-results/results.json" }],
+    ["./custom-reporter.ts"], // Custom Slack/Teams notifications
+  ],
+
+  use: {
+    trace: "retain-on-failure", // Keep traces for failed tests
+    video: "retain-on-failure",
+    screenshot: "only-on-failure",
+  },
+});
+
+// Custom reporter example
+class CustomReporter {
+  onTestEnd(test, result) {
+    if (result.status === "failed") {
+      // Send notification to Slack/Teams
+      // Attach trace URL, screenshot
+    }
+  }
+
+  onEnd(result) {
+    const passRate = (result.passed / result.total) * 100;
+    // Send summary dashboard
+  }
+}
+```
+
 ## Best Practices
 
 1. **Keep Tests Independent**
    - No shared state between tests
    - Each test sets up and tears down its own data
    - Tests can run in any order
+   - Use database transactions or isolated test databases
 
 2. **Use Descriptive Test Names**
 
    ```typescript
-   // Good
+   // Good - describes user behavior and expected outcome
    test('user sees error message when submitting empty form', ...);
-   // Bad
+   test('admin can delete user from management panel', ...);
+
+   // Bad - too vague
    test('form validation', ...);
+   test('delete user', ...);
    ```
 
-3. **Follow AAA Pattern**
+3. **Follow AAA Pattern (Arrange-Act-Assert)**
 
    ```typescript
    test("product added to cart", async ({ page }) => {
-     // Arrange
+     // Arrange - setup initial state
      await page.goto("/products");
 
-     // Act
+     // Act - perform user action
      await page
        .getByTestId("product-1")
        .getByRole("button", { name: "Add" })
        .click();
 
-     // Assert
+     // Assert - verify expected outcome
      await expect(page.getByTestId("cart-count")).toHaveText("1");
    });
    ```
@@ -621,16 +847,33 @@ await page.pause(); // Opens inspector
    - Test one user flow per test
    - Break complex flows into smaller tests
    - Use fixtures for common setup
+   - Avoid testing multiple scenarios in one test
 
 5. **Handle Flakiness Proactively**
-   - Review and fix flaky tests immediately
+   - Review and fix flaky tests immediately (broken window theory)
    - Use proper waits, never arbitrary timeouts
    - Isolate tests from external dependencies
+   - Mock unstable third-party services
+   - Use auto-retry only as a temporary measure
 
 6. **Maintain Test Data**
    - Use factories for consistent test data
-   - Clean up after tests
+   - Clean up after tests (avoid polluting database)
    - Avoid hardcoded IDs or values
+   - Use unique identifiers (timestamps, UUIDs) when needed
+
+7. **Prioritize Test Maintenance**
+   - Refactor tests when code changes
+   - Remove obsolete tests
+   - Keep Page Objects in sync with UI changes
+   - Review test failures in CI immediately
+
+8. **Optimize Test Execution Speed**
+   - Run tests in parallel when possible
+   - Use API setup instead of UI for test data
+   - Skip unnecessary navigation between tests
+   - Use storage state for authentication
+   - Group similar tests to share setup
 
 ## Examples
 

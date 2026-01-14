@@ -1,6 +1,6 @@
 ---
 name: dependency-scan
-description: Scans project dependencies for known vulnerabilities, outdated packages, and license compliance issues. Trigger keywords: dependency, vulnerability, CVE, npm audit, outdated, license, supply chain, SBOM.
+description: Scans project dependencies for known vulnerabilities, outdated packages, and license compliance issues. Supports vulnerability scanning (CVE detection), SBOM generation, license compliance checking, and supply chain security analysis across multiple ecosystems (npm, pip, cargo, go, maven, etc.). Trigger keywords: dependency scan, vulnerability, CVE, Snyk, Dependabot, Renovate, npm audit, cargo audit, pip-audit, safety, outdated packages, SBOM, software bill of materials, license compliance, supply chain, security advisory, transitive dependency, lock file.
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
@@ -8,7 +8,18 @@ allowed-tools: Read, Grep, Glob, Bash
 
 ## Overview
 
-This skill focuses on identifying security vulnerabilities, outdated packages, and license compliance issues in project dependencies. It covers multiple package ecosystems and provides remediation guidance.
+This skill focuses on identifying security vulnerabilities, outdated packages, and license compliance issues in project dependencies. It covers multiple package ecosystems (JavaScript/Node.js, Python, Rust, Go, Ruby, Java, .NET, PHP) and provides remediation guidance, SBOM generation, and supply chain security analysis.
+
+## When to Use
+
+- Scanning dependencies for CVEs and security advisories
+- Checking for outdated or unmaintained packages
+- Generating Software Bill of Materials (SBOM)
+- Verifying license compliance and compatibility
+- Analyzing supply chain risks and transitive dependencies
+- Setting up automated dependency updates (Dependabot, Renovate, Snyk)
+- Investigating security alerts from GitHub/GitLab
+- Auditing dependencies before production deployment
 
 ## Instructions
 
@@ -39,6 +50,63 @@ This skill focuses on identifying security vulnerabilities, outdated packages, a
 - Provide upgrade paths
 - Suggest alternatives
 - Create remediation plan
+
+### 5. Language-Specific Scanning
+
+**JavaScript/Node.js:**
+- Use `npm audit` or `yarn audit` for vulnerability scanning
+- Check `package-lock.json` or `yarn.lock` for reproducibility
+- Consider `npm-check-updates` for upgrade analysis
+- Use `license-checker` for license compliance
+
+**Python:**
+- Use `pip-audit` or `safety` for CVE scanning
+- Check `requirements.txt` and `Pipfile.lock`
+- Use `pip-compile` with `--generate-hashes` for integrity
+- Consider `pipdeptree` for dependency visualization
+
+**Rust:**
+- Use `cargo audit` for RustSec advisories
+- Check `Cargo.lock` for reproducible builds
+- Use `cargo outdated` for version analysis
+- Consider `cargo deny` for policy enforcement
+
+**Go:**
+- Use `govulncheck` for vulnerability scanning
+- Check `go.sum` for module integrity
+- Use `go list -m all` to enumerate dependencies
+- Consider `nancy` for OSS Index checking
+
+### 6. SBOM Generation
+
+Generate Software Bill of Materials for supply chain transparency:
+
+**CycloneDX:**
+- `npm install -g @cyclonedx/cyclonedx-npm && cyclonedx-npm --output-file sbom.json`
+- `cargo install cargo-cyclonedx && cargo cyclonedx`
+- `pip install cyclonedx-bom && cyclonedx-py`
+
+**SPDX:**
+- Use `syft` (universal tool): `syft . -o spdx-json > sbom.spdx.json`
+- Use `trivy` for container images: `trivy image --format spdx-json myimage:tag`
+
+**Purpose:** Track all components for vulnerability management, license compliance, and incident response.
+
+### 7. License Compliance Checking
+
+Ensure all dependencies have compatible licenses:
+
+**Automated Tools:**
+- Node.js: `npx license-checker --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC'`
+- Rust: `cargo deny check licenses`
+- Python: `pip-licenses`
+- Universal: `fossology`, `scancode-toolkit`
+
+**License Categories:**
+- Permissive: MIT, Apache-2.0, BSD (generally safe)
+- Weak Copyleft: MPL, LGPL (check linking requirements)
+- Strong Copyleft: GPL, AGPL (may require source disclosure)
+- Unknown/Missing: Investigate before use
 
 ## Best Practices
 

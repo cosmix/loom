@@ -1,6 +1,24 @@
 ---
 name: karpenter
-description: Kubernetes node autoscaling with Karpenter for efficient cluster scaling. Use when implementing node provisioning, consolidation, spot instance handling, or optimizing compute costs. Triggers: karpenter, node autoscaling, provisioner, nodepool, spot instances, cluster autoscaling, node consolidation.
+description: Kubernetes node autoscaling and cost optimization with Karpenter. Use when implementing node provisioning, spot instance management, cluster right-sizing, node consolidation, or reducing compute costs. Covers NodePool configuration, EC2NodeClass setup, disruption budgets, spot/on-demand mix strategies, multi-architecture support, and capacity-type selection.
+triggers:
+  - karpenter
+  - node autoscaling
+  - nodepool
+  - ec2nodeclass
+  - provisioner
+  - spot instances
+  - on-demand instances
+  - node consolidation
+  - node termination
+  - cluster autoscaling
+  - right-sizing
+  - capacity-type
+  - node disruption
+  - compute costs
+  - instance selection
+  - graviton
+  - arm64
 allowed-tools: Read, Grep, Glob, Edit, Write, Bash
 ---
 
@@ -22,9 +40,11 @@ Karpenter is a Kubernetes node autoscaler that provisions right-sized compute re
 
 - Running workloads with diverse resource requirements
 - Need for fast scaling (sub-minute response)
-- Cost optimization with spot instances
-- Consolidation to reduce cluster waste
+- Cost optimization with spot instances and Graviton (ARM64)
+- Consolidation to reduce cluster waste and over-provisioning
 - Clusters with unpredictable or bursty workloads
+- Right-sizing infrastructure to actual usage patterns
+- Managing mixed capacity types (spot/on-demand) automatically
 
 ## Instructions
 
@@ -56,9 +76,37 @@ Karpenter is a Kubernetes node autoscaler that provisions right-sized compute re
 
 - Enable consolidation for cost savings
 - Use spot instances with fallback strategies
-- Set appropriate resource requests on pods
+- Set appropriate resource requests on pods (Karpenter depends on accurate requests)
 - Monitor node utilization and waste
 - Adjust instance type restrictions based on usage
+- Leverage Graviton (ARM64) instances for 20% cost reduction
+- Configure capacity-type weighting to prefer spot over on-demand
+
+### 5. Cost Optimization Strategies
+
+- **Spot instances**: Configure 70-90% spot mix for fault-tolerant workloads
+- **Graviton (ARM64)**: Use c7g, m7g, r7g families for lower costs
+- **Consolidation**: Enable WhenUnderutilized policy to replace expensive nodes
+- **Instance diversity**: Wide instance family selection improves spot availability
+- **Right-sizing**: Let Karpenter bin-pack efficiently instead of over-provisioning
+
+### 6. Spot Instance Management
+
+- Use wide instance type selection (10+ families) for better spot availability
+- Configure automatic fallback to on-demand when spot unavailable
+- Implement Pod Disruption Budgets to control blast radius
+- Set graceful termination handlers in applications (preStop hooks)
+- Monitor spot interruption rates and adjust instance selection
+- Use diverse availability zones to reduce correlated failures
+
+### 7. Node Consolidation
+
+- **WhenUnderutilized**: Replaces nodes with cheaper/smaller alternatives actively
+- **WhenEmpty**: Only consolidates completely empty nodes (conservative)
+- Configure consolidateAfter delay to prevent churn (30s-600s typical)
+- Use disruption budgets to limit consolidation rate (5-20% per window)
+- Respect Pod Disruption Budgets during consolidation
+- Set expiration windows to force periodic node refresh
 
 ## Best Practices
 

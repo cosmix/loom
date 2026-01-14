@@ -1,6 +1,6 @@
 ---
 name: background-jobs
-description: Background job processing patterns including job queues, scheduled jobs, worker pools, and retry strategies. Use when implementing async processing, Celery, Bull, Sidekiq, cron jobs, task queues, job monitoring, or worker management.
+description: Background job processing patterns including job queues, scheduled jobs, worker pools, and retry strategies. Use when implementing async processing, job queues, workers, task queues, async tasks, delayed jobs, recurring jobs, scheduled tasks, ETL pipelines, data processing, ML training jobs, Celery, Bull, Sidekiq, Resque, cron jobs, retry logic, dead letter queues, DLQ, at-least-once delivery, exactly-once delivery, job monitoring, or worker management.
 ---
 
 # Background Jobs
@@ -104,7 +104,7 @@ emailQueue.process(async (job: Job<EmailJobData>) => {
 // Add job with options
 async function sendEmail(
   data: EmailJobData,
-  options?: JobOptions,
+  options?: JobOptions
 ): Promise<Job<EmailJobData>> {
   return emailQueue.add(data, {
     priority: options?.priority || 0,
@@ -116,7 +116,7 @@ async function sendEmail(
 
 // Bulk job addition
 async function sendBulkEmails(
-  emails: EmailJobData[],
+  emails: EmailJobData[]
 ): Promise<Job<EmailJobData>[]> {
   const jobs = emails.map((data, index) => ({
     data,
@@ -348,7 +348,7 @@ async function setupScheduledJobs(): Promise<void> {
     {
       repeat: { cron: "0 * * * *" }, // Every hour
       jobId: "cleanup-hourly",
-    },
+    }
   );
 
   // Daily report at 9 AM
@@ -358,7 +358,7 @@ async function setupScheduledJobs(): Promise<void> {
     {
       repeat: { cron: "0 9 * * *" },
       jobId: "daily-report",
-    },
+    }
   );
 
   // Every 5 minutes
@@ -368,7 +368,7 @@ async function setupScheduledJobs(): Promise<void> {
     {
       repeat: { every: 5 * 60 * 1000 }, // 5 minutes in ms
       jobId: "health-check",
-    },
+    }
   );
 
   // Weekly on Sunday at midnight
@@ -378,7 +378,7 @@ async function setupScheduledJobs(): Promise<void> {
     {
       repeat: { cron: "0 0 * * 0" },
       jobId: "weekly-cleanup",
-    },
+    }
   );
 }
 
@@ -520,7 +520,7 @@ class WorkerPool {
 
   registerQueue<T>(
     name: string,
-    processor: (job: Job<T>) => Promise<unknown>,
+    processor: (job: Job<T>) => Promise<unknown>
   ): Queue.Queue<T> {
     const queue = new Queue<T>(name, process.env.REDIS_URL!, {
       limiter: this.config.limiter,
@@ -560,7 +560,7 @@ class WorkerPool {
       async (queue) => {
         await queue.pause(true); // Pause and wait for active jobs
         await queue.close();
-      },
+      }
     );
 
     await Promise.all(closePromises);
@@ -683,7 +683,7 @@ const priorityMap = {
 };
 
 async function addPriorityJob(
-  data: PriorityJobData,
+  data: PriorityJobData
 ): Promise<Job<PriorityJobData>> {
   return queue.add(data, {
     priority: priorityMap[data.priority],
@@ -707,11 +707,11 @@ class FairScheduler {
 
   // Weighted round-robin processing
   async process(
-    handler: (queueName: string, job: Job) => Promise<void>,
+    handler: (queueName: string, job: Job) => Promise<void>
   ): Promise<void> {
     const totalWeight = Array.from(this.weights.values()).reduce(
       (a, b) => a + b,
-      0,
+      0
     );
 
     for (const [name, queue] of this.queues) {
@@ -756,10 +756,7 @@ class IdempotentProcessor<T> {
   private processedKeys: Set<string> = new Set();
   private redis: Redis;
 
-  constructor(
-    private queue: Queue.Queue<T>,
-    redis: Redis,
-  ) {
+  constructor(private queue: Queue.Queue<T>, redis: Redis) {
     this.redis = redis;
   }
 
@@ -781,7 +778,7 @@ class IdempotentProcessor<T> {
       await this.redis.setex(
         `processed:${idempotencyKey}`,
         86400, // 24 hours
-        JSON.stringify(result),
+        JSON.stringify(result)
       );
 
       return result;
@@ -982,7 +979,7 @@ class JobMonitor extends EventEmitter {
   }
 
   private calculateLatencyPercentiles(
-    durations: number[],
+    durations: number[]
   ): JobMetrics["latency"] {
     if (durations.length === 0) {
       return { avg: 0, p50: 0, p95: 0, p99: 0 };
@@ -1051,7 +1048,7 @@ class JobMonitor extends EventEmitter {
 
   async cleanDeadJobs(
     queueName: string,
-    olderThan: number = 86400000,
+    olderThan: number = 86400000
   ): Promise<number> {
     const queue = this.queues.find((q) => q.name === queueName);
     if (!queue) throw new Error(`Queue ${queueName} not found`);
@@ -1086,7 +1083,7 @@ function createMonitoringRouter(monitor: JobMonitor): express.Router {
         failedReason: j.failedReason,
         attemptsMade: j.attemptsMade,
         timestamp: j.timestamp,
-      })),
+      }))
     );
   });
 
@@ -1114,32 +1111,593 @@ function createMonitoringRouter(monitor: JobMonitor): express.Router {
 }
 ```
 
+### Data Pipeline Jobs
+
+**ETL scheduling and orchestration**:
+
+```python
+# Airflow-style task dependencies
+from celery import chain, group
+
+@app.task
+def extract_from_source(source_id: str):
+    """Extract data from source system."""
+    data = fetch_from_api(source_id)
+    return {'source_id': source_id, 'records': data}
+
+@app.task
+def transform_data(extract_result: dict):
+    """Transform extracted data."""
+    records = extract_result['records']
+    transformed = [normalize_record(r) for r in records]
+    return {'source_id': extract_result['source_id'], 'records': transformed}
+
+@app.task
+def load_to_warehouse(transform_result: dict):
+    """Load transformed data to warehouse."""
+    warehouse.bulk_insert(transform_result['records'])
+    return {'loaded': len(transform_result['records'])}
+
+# ETL pipeline with chaining
+def run_etl_pipeline(source_id: str):
+    pipeline = chain(
+        extract_from_source.s(source_id),
+        transform_data.s(),
+        load_to_warehouse.s(),
+    )
+    return pipeline.apply_async()
+
+# Parallel extraction from multiple sources
+def run_multi_source_etl(source_ids: list):
+    pipeline = chain(
+        group(extract_from_source.s(sid) for sid in source_ids),
+        # Fan-in: transform all results
+        group(transform_data.s() for _ in source_ids),
+        # Aggregate and load
+        aggregate_and_load.s(),
+    )
+    return pipeline.apply_async()
+```
+
+```typescript
+// Bull-based data pipeline
+import Queue from "bull";
+
+interface PipelineStage<T, U> {
+  name: string;
+  queue: Queue.Queue<T>;
+  process: (data: T) => Promise<U>;
+  nextStage?: PipelineStage<U, any>;
+}
+
+class DataPipeline {
+  private stages: Map<string, PipelineStage<any, any>> = new Map();
+
+  addStage<T, U>(stage: PipelineStage<T, U>): void {
+    this.stages.set(stage.name, stage);
+
+    // Process and forward to next stage
+    stage.queue.process(async (job) => {
+      const result = await stage.process(job.data);
+
+      if (stage.nextStage) {
+        await stage.nextStage.queue.add(result, {
+          jobId: `${stage.nextStage.name}-${job.id}`,
+        });
+      }
+
+      return result;
+    });
+  }
+
+  async start(initialData: any, startStage: string): Promise<void> {
+    const stage = this.stages.get(startStage);
+    if (!stage) throw new Error(`Stage ${startStage} not found`);
+
+    await stage.queue.add(initialData);
+  }
+}
+
+// Usage
+const extractQueue = new Queue("extract", redisUrl);
+const transformQueue = new Queue("transform", redisUrl);
+const loadQueue = new Queue("load", redisUrl);
+
+const pipeline = new DataPipeline();
+
+pipeline.addStage({
+  name: "extract",
+  queue: extractQueue,
+  process: async (sourceId) => fetchFromSource(sourceId),
+  nextStage: {
+    name: "transform",
+    queue: transformQueue,
+    process: async (data) => transformData(data),
+    nextStage: {
+      name: "load",
+      queue: loadQueue,
+      process: async (data) => loadToWarehouse(data),
+    },
+  },
+});
+
+await pipeline.start("source-123", "extract");
+```
+
+### ML Training Jobs
+
+**Long-running model training with checkpointing**:
+
+```python
+# Distributed ML training job
+from celery import Task
+import torch
+from pathlib import Path
+
+class TrainingTask(Task):
+    autoretry_for = (RuntimeError,)
+    max_retries = 3
+
+    def __init__(self):
+        self.checkpoint_dir = Path('/checkpoints')
+        self.checkpoint_dir.mkdir(exist_ok=True)
+
+    def on_failure(self, exc, task_id, args, kwargs, einfo):
+        """Save checkpoint on failure for recovery."""
+        model = kwargs.get('model_state')
+        if model:
+            checkpoint_path = self.checkpoint_dir / f'{task_id}.pt'
+            torch.save(model, checkpoint_path)
+
+@app.task(base=TrainingTask, bind=True, time_limit=7200)
+def train_model(
+    self,
+    model_id: str,
+    dataset_id: str,
+    config: dict,
+    resume_from: str = None
+):
+    """Train ML model with checkpointing."""
+
+    # Load checkpoint if resuming
+    if resume_from:
+        checkpoint = torch.load(resume_from)
+        model = checkpoint['model']
+        optimizer = checkpoint['optimizer']
+        start_epoch = checkpoint['epoch']
+    else:
+        model = create_model(config)
+        optimizer = create_optimizer(model, config)
+        start_epoch = 0
+
+    dataset = load_dataset(dataset_id)
+
+    for epoch in range(start_epoch, config['epochs']):
+        # Update progress
+        progress = (epoch / config['epochs']) * 100
+        self.update_state(
+            state='PROGRESS',
+            meta={'epoch': epoch, 'progress': progress}
+        )
+
+        # Train one epoch
+        metrics = train_epoch(model, dataset, optimizer)
+
+        # Checkpoint every N epochs
+        if epoch % config.get('checkpoint_interval', 10) == 0:
+            checkpoint_path = self.checkpoint_dir / f'{model_id}_epoch_{epoch}.pt'
+            torch.save({
+                'model': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'epoch': epoch,
+                'metrics': metrics,
+            }, checkpoint_path)
+
+    # Save final model
+    model_path = save_model(model, model_id)
+    return {'model_path': model_path, 'final_metrics': metrics}
+
+# Hyperparameter tuning with parallel jobs
+def hyperparameter_search(model_id: str, param_grid: dict):
+    """Run parallel hyperparameter search."""
+    from itertools import product
+
+    # Generate parameter combinations
+    keys = param_grid.keys()
+    values = param_grid.values()
+    combinations = [dict(zip(keys, v)) for v in product(*values)]
+
+    # Launch parallel training jobs
+    jobs = group(
+        train_model.s(
+            model_id=f'{model_id}_trial_{i}',
+            dataset_id='train_dataset',
+            config=params
+        )
+        for i, params in enumerate(combinations)
+    )
+
+    # Aggregate results and select best model
+    workflow = chain(jobs, select_best_model.s())
+    return workflow.apply_async()
+```
+
+```typescript
+// Distributed ML inference pipeline
+import Queue, { Job } from "bull";
+
+interface InferenceJob {
+  modelId: string;
+  batchId: string;
+  inputs: Array<{ id: string; data: any }>;
+}
+
+interface InferenceResult {
+  batchId: string;
+  predictions: Array<{ id: string; prediction: any; confidence: number }>;
+}
+
+const inferenceQueue = new Queue<InferenceJob>("ml-inference", redisUrl, {
+  defaultJobOptions: {
+    attempts: 2,
+    backoff: { type: "fixed", delay: 5000 },
+  },
+  limiter: {
+    max: 10, // Max 10 concurrent inference jobs
+    duration: 1000,
+  },
+});
+
+// Batch inference processor
+inferenceQueue.process(4, async (job: Job<InferenceJob>) => {
+  const { modelId, batchId, inputs } = job.data;
+
+  // Load model (cached)
+  const model = await loadModel(modelId);
+
+  const predictions: InferenceResult["predictions"] = [];
+
+  for (let i = 0; i < inputs.length; i++) {
+    const input = inputs[i];
+
+    // Update progress
+    await job.progress((i / inputs.length) * 100);
+
+    // Run inference
+    const prediction = await model.predict(input.data);
+    predictions.push({
+      id: input.id,
+      prediction: prediction.result,
+      confidence: prediction.confidence,
+    });
+  }
+
+  return { batchId, predictions };
+});
+
+// Batch splitter for large datasets
+async function runBatchInference(
+  modelId: string,
+  dataset: Array<{ id: string; data: any }>,
+  batchSize: number = 100
+): Promise<string[]> {
+  const batches: InferenceJob[] = [];
+
+  for (let i = 0; i < dataset.length; i += batchSize) {
+    batches.push({
+      modelId,
+      batchId: `batch_${i / batchSize}`,
+      inputs: dataset.slice(i, i + batchSize),
+    });
+  }
+
+  const jobs = await inferenceQueue.addBulk(
+    batches.map((batch, idx) => ({
+      data: batch,
+      opts: { jobId: `inference_${modelId}_${idx}` },
+    }))
+  );
+
+  return jobs.map((j) => j.id!);
+}
+```
+
+### Job Monitoring and Observability
+
+**Metrics, tracing, and alerting**:
+
+```typescript
+import { EventEmitter } from "events";
+import Queue, { Job } from "bull";
+
+interface ObservabilityConfig {
+  metricsInterval: number; // Emit metrics every N ms
+  alertThresholds: {
+    errorRate: number;
+    queueDepth: number;
+    latencyP99: number;
+  };
+}
+
+class JobObserver extends EventEmitter {
+  private queues: Map<string, Queue.Queue> = new Map();
+  private metrics: Map<string, QueueMetrics> = new Map();
+  private metricsInterval: NodeJS.Timeout | null = null;
+
+  constructor(private config: ObservabilityConfig) {
+    super();
+  }
+
+  observe(queue: Queue.Queue): void {
+    this.queues.set(queue.name, queue);
+    this.metrics.set(queue.name, this.emptyMetrics());
+
+    // Instrument queue events
+    queue.on("completed", (job, result) => {
+      this.recordCompletion(queue.name, job, result);
+    });
+
+    queue.on("failed", (job, err) => {
+      this.recordFailure(queue.name, job!, err);
+    });
+
+    queue.on("stalled", (job) => {
+      this.recordStalled(queue.name, job);
+    });
+
+    queue.on("waiting", (jobId) => {
+      this.recordWaiting(queue.name, jobId);
+    });
+
+    // Start metrics emission
+    if (!this.metricsInterval) {
+      this.startMetricsEmission();
+    }
+  }
+
+  private emptyMetrics(): QueueMetrics {
+    return {
+      completed: 0,
+      failed: 0,
+      stalled: 0,
+      waiting: 0,
+      processing: 0,
+      latencies: [],
+      errors: [],
+    };
+  }
+
+  private recordCompletion(queueName: string, job: Job, result: any): void {
+    const metrics = this.metrics.get(queueName)!;
+    metrics.completed++;
+
+    const latency = Date.now() - job.timestamp;
+    metrics.latencies.push(latency);
+
+    // Emit trace span
+    this.emit("trace", {
+      queue: queueName,
+      jobId: job.id,
+      operation: "job.completed",
+      duration: latency,
+      result,
+    });
+  }
+
+  private recordFailure(queueName: string, job: Job, error: Error): void {
+    const metrics = this.metrics.get(queueName)!;
+    metrics.failed++;
+    metrics.errors.push({
+      jobId: job.id!,
+      error: error.message,
+      timestamp: Date.now(),
+    });
+
+    // Alert on error rate threshold
+    const errorRate =
+      metrics.failed / (metrics.completed + metrics.failed || 1);
+    if (errorRate > this.config.alertThresholds.errorRate) {
+      this.emit("alert", {
+        type: "high_error_rate",
+        queue: queueName,
+        errorRate,
+        threshold: this.config.alertThresholds.errorRate,
+      });
+    }
+
+    // Emit error trace
+    this.emit("trace", {
+      queue: queueName,
+      jobId: job.id,
+      operation: "job.failed",
+      error: error.message,
+      stack: error.stack,
+    });
+  }
+
+  private recordStalled(queueName: string, jobId: string): void {
+    const metrics = this.metrics.get(queueName)!;
+    metrics.stalled++;
+
+    this.emit("alert", {
+      type: "job_stalled",
+      queue: queueName,
+      jobId,
+    });
+  }
+
+  private recordWaiting(queueName: string, jobId: string): void {
+    const metrics = this.metrics.get(queueName)!;
+    metrics.waiting++;
+  }
+
+  private startMetricsEmission(): void {
+    this.metricsInterval = setInterval(async () => {
+      for (const [queueName, queue] of this.queues) {
+        const metrics = this.metrics.get(queueName)!;
+
+        // Get current queue state
+        const counts = await queue.getJobCounts();
+
+        // Calculate percentiles
+        const sorted = [...metrics.latencies].sort((a, b) => a - b);
+        const p50 = sorted[Math.floor(sorted.length * 0.5)] || 0;
+        const p95 = sorted[Math.floor(sorted.length * 0.95)] || 0;
+        const p99 = sorted[Math.floor(sorted.length * 0.99)] || 0;
+
+        // Emit metrics
+        this.emit("metrics", {
+          queue: queueName,
+          timestamp: Date.now(),
+          counts,
+          latency: {
+            p50,
+            p95,
+            p99,
+          },
+          throughput: metrics.completed,
+          errorRate: metrics.failed / (metrics.completed + metrics.failed || 1),
+        });
+
+        // Alert on queue depth
+        if (counts.waiting > this.config.alertThresholds.queueDepth) {
+          this.emit("alert", {
+            type: "high_queue_depth",
+            queue: queueName,
+            depth: counts.waiting,
+            threshold: this.config.alertThresholds.queueDepth,
+          });
+        }
+
+        // Alert on latency
+        if (p99 > this.config.alertThresholds.latencyP99) {
+          this.emit("alert", {
+            type: "high_latency",
+            queue: queueName,
+            p99,
+            threshold: this.config.alertThresholds.latencyP99,
+          });
+        }
+
+        // Reset counters
+        this.metrics.set(queueName, this.emptyMetrics());
+      }
+    }, this.config.metricsInterval);
+  }
+
+  stop(): void {
+    if (this.metricsInterval) {
+      clearInterval(this.metricsInterval);
+      this.metricsInterval = null;
+    }
+  }
+}
+
+interface QueueMetrics {
+  completed: number;
+  failed: number;
+  stalled: number;
+  waiting: number;
+  processing: number;
+  latencies: number[];
+  errors: Array<{ jobId: string; error: string; timestamp: number }>;
+}
+
+// Integration with observability backends
+const observer = new JobObserver({
+  metricsInterval: 10000, // 10 seconds
+  alertThresholds: {
+    errorRate: 0.05, // 5%
+    queueDepth: 1000,
+    latencyP99: 5000, // 5 seconds
+  },
+});
+
+// Prometheus metrics export
+observer.on("metrics", (metrics) => {
+  prometheusClient.gauge("queue_depth", metrics.counts.waiting, {
+    queue: metrics.queue,
+  });
+  prometheusClient.histogram("job_latency", metrics.latency.p99, {
+    queue: metrics.queue,
+    percentile: "p99",
+  });
+  prometheusClient.counter("jobs_completed", metrics.throughput, {
+    queue: metrics.queue,
+  });
+});
+
+// Distributed tracing (OpenTelemetry)
+observer.on("trace", (span) => {
+  tracer.startSpan(span.operation, {
+    attributes: {
+      queue: span.queue,
+      jobId: span.jobId,
+      duration: span.duration,
+    },
+  });
+});
+
+// Alerting (PagerDuty, Slack, etc.)
+observer.on("alert", (alert) => {
+  if (alert.type === "high_error_rate") {
+    pagerduty.trigger({
+      severity: "error",
+      summary: `High error rate in ${alert.queue}: ${(
+        alert.errorRate * 100
+      ).toFixed(1)}%`,
+    });
+  }
+});
+```
+
 ## Best Practices
 
 1. **Idempotency**
+
    - Design jobs to be safely re-executed
    - Use unique job IDs for deduplication
    - Store processed state externally
 
 2. **Retry Strategies**
+
    - Use exponential backoff with jitter
    - Set maximum retry limits
    - Distinguish between retryable and non-retryable errors
 
-3. **Monitoring**
-   - Track queue depths and processing latency
+3. **Monitoring and Observability**
+
+   - Track queue depths, processing latency, and throughput
    - Alert on high error rates or growing queues
    - Monitor worker health and memory usage
+   - Use distributed tracing for complex pipelines
+   - Export metrics to Prometheus, Datadog, or CloudWatch
 
 4. **Graceful Shutdown**
+
    - Complete in-progress jobs before shutdown
    - Use signals (SIGTERM, SIGINT) properly
    - Set reasonable timeouts for job completion
 
 5. **Resource Management**
+
    - Set appropriate concurrency limits
    - Use worker pools for CPU-bound tasks
    - Implement rate limiting for external APIs
+   - Configure memory and time limits per job
+
+6. **Data Pipeline Design**
+
+   - Break pipelines into stages with clear boundaries
+   - Use fan-out/fan-in patterns for parallel processing
+   - Checkpoint long-running jobs for recovery
+   - Store intermediate results for debugging
+
+7. **ML Training Jobs**
+   - Save checkpoints frequently for crash recovery
+   - Use separate queues for training vs inference
+   - Implement resource quotas to prevent starvation
+   - Track experiment metadata and hyperparameters
 
 ## Examples
 
@@ -1204,7 +1762,7 @@ class WorkerService {
 
     // Pause all queues
     await Promise.all(
-      Array.from(this.queues.values()).map((q) => q.pause(true)),
+      Array.from(this.queues.values()).map((q) => q.pause(true))
     );
 
     // Wait for active jobs to complete

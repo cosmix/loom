@@ -1,13 +1,33 @@
 ---
 name: data-validation
-description: Data validation patterns including schema validation, input sanitization, output encoding, and type coercion. Use when implementing form validation, API input validation, JSON Schema, Zod, Pydantic, sanitization, XSS prevention, or custom validators.
+description: Data validation patterns including schema validation, input sanitization, output encoding, and type coercion. Use when implementing validate, validation, schema, form validation, API validation, JSON Schema, Zod, Pydantic, Joi, Yup, sanitize, sanitization, XSS prevention, injection prevention, escape, encode, whitelist, constraint checking, invariant validation, data pipeline validation, ML feature validation, or custom validators.
 ---
 
 # Data Validation
 
 ## Overview
 
-Data validation ensures that input data meets expected formats, types, and constraints before processing. This skill covers schema validation libraries, input sanitization, output encoding, type coercion strategies, and comprehensive error handling for validation failures.
+Data validation ensures that input data meets expected formats, types, and constraints before processing. This skill covers schema validation libraries, input sanitization, output encoding, type coercion strategies, security-focused validation (XSS, injection prevention), data pipeline validation, and comprehensive error handling.
+
+## Trigger Keywords
+
+Use this skill when working with:
+- **Schema validation**: JSON Schema, Zod, Pydantic, Joi, Yup, Ajv, class-validator
+- **Input processing**: validate, validation, sanitize, sanitization, input validation, form validation
+- **Security validation**: XSS prevention, injection prevention, escape, encode, whitelist, blacklist
+- **Constraints**: constraint checking, invariant validation, business rules, data quality
+- **API validation**: request validation, response validation, API contracts
+- **Data pipelines**: Great Expectations, dbt tests, data quality checks
+- **ML/AI**: feature validation, distribution checks, data drift detection
+
+## Agent Assignments
+
+| Agent | Responsibility |
+|-------|----------------|
+| **senior-software-engineer** (Opus) | Schema architecture, validation strategy design, complex validation patterns |
+| **software-engineer** (Sonnet) | Implements validation logic, integrates schema libraries, writes validators |
+| **security-engineer** (Opus) | XSS prevention, injection prevention, sanitization strategies, encoding |
+| **senior-infrastructure-engineer** (Opus) | Infrastructure config validation, pipeline validation, data quality checks |
 
 ## Key Concepts
 
@@ -626,457 +646,10 @@ const safe = safeHtml`<div class="user-content">${userInput}</div>`;
 // Result: <div class="user-content">&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;</div>
 ```
 
-### Type Coercion Strategies
+### API Request/Response Validation
 
 ```typescript
-// Safe type coercion utilities
-const coerce = {
-  toString(value: unknown, defaultValue: string = ""): string {
-    if (value === null || value === undefined) return defaultValue;
-    if (typeof value === "string") return value;
-    if (typeof value === "number" && !isNaN(value)) return String(value);
-    if (typeof value === "boolean") return String(value);
-    return defaultValue;
-  },
-
-  toNumber(value: unknown, defaultValue: number = 0): number {
-    if (typeof value === "number" && !isNaN(value)) return value;
-    if (typeof value === "string") {
-      const parsed = parseFloat(value);
-      if (!isNaN(parsed)) return parsed;
-    }
-    return defaultValue;
-  },
-
-  toInt(value: unknown, defaultValue: number = 0): number {
-    const num = coerce.toNumber(value, NaN);
-    if (isNaN(num)) return defaultValue;
-    return Math.trunc(num);
-  },
-
-  toBoolean(value: unknown, defaultValue: boolean = false): boolean {
-    if (typeof value === "boolean") return value;
-    if (typeof value === "string") {
-      const lower = value.toLowerCase().trim();
-      if (["true", "1", "yes", "on"].includes(lower)) return true;
-      if (["false", "0", "no", "off"].includes(lower)) return false;
-    }
-    if (typeof value === "number") return value !== 0;
-    return defaultValue;
-  },
-
-  toDate(value: unknown, defaultValue: Date | null = null): Date | null {
-    if (value instanceof Date && !isNaN(value.getTime())) return value;
-    if (typeof value === "string" || typeof value === "number") {
-      const date = new Date(value);
-      if (!isNaN(date.getTime())) return date;
-    }
-    return defaultValue;
-  },
-
-  toArray<T>(value: unknown, itemCoercer?: (item: unknown) => T): T[] {
-    if (Array.isArray(value)) {
-      return itemCoercer ? value.map(itemCoercer) : (value as T[]);
-    }
-    if (value === null || value === undefined) return [];
-    return itemCoercer ? [itemCoercer(value)] : [value as T];
-  },
-
-  toEnum<T extends string>(
-    value: unknown,
-    allowedValues: readonly T[],
-    defaultValue: T,
-  ): T {
-    const str = coerce.toString(value);
-    if (allowedValues.includes(str as T)) return str as T;
-    return defaultValue;
-  },
-};
-
-// Query parameter coercion
-interface QueryParams {
-  page: number;
-  limit: number;
-  sort: "asc" | "desc";
-  filter: string;
-  active: boolean;
-  tags: string[];
-}
-
-function parseQueryParams(query: Record<string, unknown>): QueryParams {
-  return {
-    page: Math.max(1, coerce.toInt(query.page, 1)),
-    limit: Math.min(100, Math.max(1, coerce.toInt(query.limit, 20))),
-    sort: coerce.toEnum(query.sort, ["asc", "desc"] as const, "desc"),
-    filter: coerce.toString(query.filter).substring(0, 200),
-    active: coerce.toBoolean(query.active, true),
-    tags: coerce.toArray(query.tags, coerce.toString).slice(0, 10),
-  };
-}
-
-// Form data coercion with validation
-interface FormDataCoercer<T> {
-  coerce: (value: unknown) => T;
-  validate?: (value: T) => boolean;
-  errorMessage?: string;
-}
-
-function coerceFormData<T extends Record<string, unknown>>(
-  data: Record<string, unknown>,
-  schema: { [K in keyof T]: FormDataCoercer<T[K]> },
-):
-  | { success: true; data: T }
-  | { success: false; errors: Record<string, string> } {
-  const result: Partial<T> = {};
-  const errors: Record<string, string> = {};
-
-  for (const [key, coercer] of Object.entries(schema)) {
-    const value = data[key];
-    const coerced = coercer.coerce(value);
-
-    if (coercer.validate && !coercer.validate(coerced)) {
-      errors[key] = coercer.errorMessage || `Invalid value for ${key}`;
-    } else {
-      result[key as keyof T] = coerced as T[keyof T];
-    }
-  }
-
-  if (Object.keys(errors).length > 0) {
-    return { success: false, errors };
-  }
-
-  return { success: true, data: result as T };
-}
-```
-
-### Custom Validators
-
-```typescript
-// Validator builder pattern
-type ValidatorFn<T> = (value: T) => boolean | string;
-
-class Validator<T> {
-  private validators: Array<{ fn: ValidatorFn<T>; message: string }> = [];
-
-  add(fn: ValidatorFn<T>, message: string): this {
-    this.validators.push({ fn, message });
-    return this;
-  }
-
-  validate(value: T): { valid: boolean; errors: string[] } {
-    const errors: string[] = [];
-
-    for (const { fn, message } of this.validators) {
-      const result = fn(value);
-      if (result === false) {
-        errors.push(message);
-      } else if (typeof result === "string") {
-        errors.push(result);
-      }
-    }
-
-    return { valid: errors.length === 0, errors };
-  }
-}
-
-// Common validators
-const validators = {
-  required:
-    (message = "This field is required") =>
-    (value: unknown) =>
-      value !== null && value !== undefined && value !== "" ? true : message,
-
-  minLength: (min: number, message?: string) => (value: string) =>
-    value.length >= min
-      ? true
-      : message || `Must be at least ${min} characters`,
-
-  maxLength: (max: number, message?: string) => (value: string) =>
-    value.length <= max ? true : message || `Must be at most ${max} characters`,
-
-  pattern: (regex: RegExp, message: string) => (value: string) =>
-    regex.test(value) ? true : message,
-
-  email:
-    (message = "Invalid email address") =>
-    (value: string) =>
-      /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? true : message,
-
-  url:
-    (message = "Invalid URL") =>
-    (value: string) => {
-      try {
-        new URL(value);
-        return true;
-      } catch {
-        return message;
-      }
-    },
-
-  range: (min: number, max: number, message?: string) => (value: number) =>
-    value >= min && value <= max
-      ? true
-      : message || `Must be between ${min} and ${max}`,
-
-  integer:
-    (message = "Must be a whole number") =>
-    (value: number) =>
-      Number.isInteger(value) ? true : message,
-
-  positive:
-    (message = "Must be a positive number") =>
-    (value: number) =>
-      value > 0 ? true : message,
-
-  oneOf:
-    <T>(allowed: T[], message?: string) =>
-    (value: T) =>
-      allowed.includes(value)
-        ? true
-        : message || `Must be one of: ${allowed.join(", ")}`,
-
-  custom:
-    <T>(fn: (value: T) => boolean, message: string) =>
-    (value: T) =>
-      fn(value) ? true : message,
-};
-
-// Usage
-const passwordValidator = new Validator<string>()
-  .add(validators.required(), "Password is required")
-  .add(validators.minLength(12), "Password must be at least 12 characters")
-  .add(
-    validators.pattern(/[A-Z]/, "Must contain uppercase"),
-    "Must contain uppercase",
-  )
-  .add(
-    validators.pattern(/[a-z]/, "Must contain lowercase"),
-    "Must contain lowercase",
-  )
-  .add(
-    validators.pattern(/[0-9]/, "Must contain number"),
-    "Must contain number",
-  )
-  .add(
-    validators.custom(
-      (v) => !["password123", "qwerty123"].includes(v.toLowerCase()),
-      "Password is too common",
-    ),
-    "Password is too common",
-  );
-
-const result = passwordValidator.validate("MyPass123!");
-
-// Async validators
-type AsyncValidatorFn<T> = (value: T) => Promise<boolean | string>;
-
-class AsyncValidator<T> {
-  private validators: Array<{ fn: AsyncValidatorFn<T>; message: string }> = [];
-
-  add(fn: AsyncValidatorFn<T>, message: string): this {
-    this.validators.push({ fn, message });
-    return this;
-  }
-
-  async validate(value: T): Promise<{ valid: boolean; errors: string[] }> {
-    const errors: string[] = [];
-
-    const results = await Promise.all(
-      this.validators.map(async ({ fn, message }) => {
-        try {
-          const result = await fn(value);
-          if (result === false) return message;
-          if (typeof result === "string") return result;
-          return null;
-        } catch {
-          return message;
-        }
-      }),
-    );
-
-    for (const error of results) {
-      if (error) errors.push(error);
-    }
-
-    return { valid: errors.length === 0, errors };
-  }
-}
-
-// Async validator example
-const emailValidator = new AsyncValidator<string>()
-  .add(async (email) => {
-    const exists = await db.users.findByEmail(email);
-    return !exists;
-  }, "Email already registered")
-  .add(async (email) => {
-    // Check against disposable email domains
-    const domain = email.split("@")[1];
-    const isDisposable = await checkDisposableDomain(domain);
-    return !isDisposable;
-  }, "Disposable email addresses are not allowed");
-```
-
-### Validation Error Handling
-
-```typescript
-// Structured validation error
-interface ValidationError {
-  field: string;
-  message: string;
-  code: string;
-  value?: unknown;
-}
-
-class ValidationException extends Error {
-  public readonly errors: ValidationError[];
-  public readonly statusCode = 422;
-
-  constructor(errors: ValidationError[]) {
-    super("Validation failed");
-    this.name = "ValidationException";
-    this.errors = errors;
-  }
-
-  toJSON() {
-    return {
-      error: "Validation Error",
-      message: this.message,
-      details: this.errors,
-    };
-  }
-
-  static single(
-    field: string,
-    message: string,
-    code: string = "invalid",
-  ): ValidationException {
-    return new ValidationException([{ field, message, code }]);
-  }
-
-  static fromZod(error: ZodError): ValidationException {
-    return new ValidationException(
-      error.errors.map((e) => ({
-        field: e.path.join("."),
-        message: e.message,
-        code: e.code,
-      })),
-    );
-  }
-}
-
-// Express error handler middleware
-function validationErrorHandler(
-  err: Error,
-  req: Request,
-  res: Response,
-  next: NextFunction,
-): void {
-  if (err instanceof ValidationException) {
-    res.status(err.statusCode).json(err.toJSON());
-    return;
-  }
-
-  if (err instanceof ZodError) {
-    const validationError = ValidationException.fromZod(err);
-    res.status(validationError.statusCode).json(validationError.toJSON());
-    return;
-  }
-
-  next(err);
-}
-
-// Field-level error accumulator
-class ValidationErrorCollector {
-  private errors: Map<string, string[]> = new Map();
-
-  addError(field: string, message: string): void {
-    const existing = this.errors.get(field) || [];
-    this.errors.set(field, [...existing, message]);
-  }
-
-  hasErrors(): boolean {
-    return this.errors.size > 0;
-  }
-
-  getErrors(): Record<string, string[]> {
-    return Object.fromEntries(this.errors);
-  }
-
-  getFirstErrors(): Record<string, string> {
-    const result: Record<string, string> = {};
-    for (const [field, messages] of this.errors) {
-      result[field] = messages[0];
-    }
-    return result;
-  }
-
-  toException(): ValidationException {
-    const errors: ValidationError[] = [];
-    for (const [field, messages] of this.errors) {
-      for (const message of messages) {
-        errors.push({ field, message, code: "validation_error" });
-      }
-    }
-    return new ValidationException(errors);
-  }
-
-  throwIfErrors(): void {
-    if (this.hasErrors()) {
-      throw this.toException();
-    }
-  }
-}
-
-// Usage
-const collector = new ValidationErrorCollector();
-
-if (!isValidEmail(data.email)) {
-  collector.addError("email", "Invalid email format");
-}
-
-if (data.password.length < 12) {
-  collector.addError("password", "Password must be at least 12 characters");
-}
-
-if (data.password !== data.confirmPassword) {
-  collector.addError("confirmPassword", "Passwords do not match");
-}
-
-collector.throwIfErrors();
-```
-
-## Best Practices
-
-1. **Validate Early**
-   - Validate at the boundary (API endpoints, form submissions)
-   - Fail fast with clear error messages
-   - Don't trust any external input
-
-2. **Use Schema Validation Libraries**
-   - Prefer Zod/Pydantic for type safety
-   - JSON Schema for language-agnostic validation
-   - Generate TypeScript types from schemas
-
-3. **Sanitize and Encode**
-   - Sanitize input based on context (HTML, SQL, paths)
-   - Encode output based on where it's rendered
-   - Use parameterized queries instead of escaping for SQL
-
-4. **Error Messages**
-   - Provide specific, actionable error messages
-   - Include field names in errors
-   - Don't expose internal details in production
-
-5. **Defense in Depth**
-   - Validate on both client and server
-   - Apply principle of least privilege
-   - Whitelist rather than blacklist
-
-## Examples
-
-### Express Validation Middleware
-
-```typescript
+// Express middleware for request validation
 import { Request, Response, NextFunction } from "express";
 import { z, ZodSchema } from "zod";
 
@@ -1114,4 +687,371 @@ app.post("/users", validate(createUserSchema), async (req, res) => {
   const user = await createUser(req.body);
   res.status(201).json(user);
 });
+
+// Response validation
+const userResponseSchema = z.object({
+  id: z.string().uuid(),
+  email: z.string().email(),
+  name: z.string(),
+  createdAt: z.string().datetime(),
+});
+
+function validateResponse<T>(schema: ZodSchema<T>, data: unknown): T {
+  const result = schema.safeParse(data);
+  if (!result.success) {
+    throw new Error("Invalid response format");
+  }
+  return result.data;
+}
 ```
+
+### Data Pipeline Validation (Great Expectations)
+
+```python
+# Great Expectations for data quality validation
+import great_expectations as ge
+from great_expectations.dataset import PandasDataset
+
+# Load dataset with expectations
+df = ge.read_csv('data.csv')
+
+# Basic expectations
+df.expect_column_to_exist('user_id')
+df.expect_column_values_to_not_be_null('email')
+df.expect_column_values_to_be_unique('email')
+df.expect_column_values_to_match_regex('email', r'^[^@]+@[^@]+\.[^@]+$')
+df.expect_column_values_to_be_in_set('status', ['active', 'inactive', 'pending'])
+
+# Numeric expectations
+df.expect_column_values_to_be_between('age', 0, 150)
+df.expect_column_mean_to_be_between('price', 10, 1000)
+
+# Date expectations
+df.expect_column_values_to_be_dateutil_parseable('created_at')
+
+# Custom expectations
+def custom_validation(df):
+    # Email domain must match company_domain
+    emails = df['email'].str.split('@', expand=True)[1]
+    return (emails == df['company_domain']).all()
+
+df.expect_column_pair_values_to_be_equal('email_domain', 'company_domain',
+                                          custom_fn=custom_validation)
+
+# Run validation suite
+results = df.validate()
+if not results['success']:
+    for result in results['results']:
+        if not result['success']:
+            print(f"Validation failed: {result['expectation_config']}")
+
+# dbt tests for SQL data validation
+# models/schema.yml
+version: 2
+
+models:
+  - name: users
+    columns:
+      - name: user_id
+        tests:
+          - unique
+          - not_null
+      - name: email
+        tests:
+          - unique
+          - not_null
+          - email_format  # Custom test
+      - name: age
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 150
+      - name: status
+        tests:
+          - accepted_values:
+              values: ['active', 'inactive', 'pending']
+      - name: created_at
+        tests:
+          - not_null
+          - dbt_utils.recency:
+              datepart: day
+              field: created_at
+              interval: 7
+```
+
+### ML Feature Validation
+
+```python
+# Feature validation for ML pipelines
+import numpy as np
+import pandas as pd
+from typing import Dict, List, Tuple
+
+class FeatureValidator:
+    def __init__(self, expected_schema: Dict[str, str]):
+        self.expected_schema = expected_schema
+        self.baseline_stats = {}
+
+    def validate_schema(self, df: pd.DataFrame) -> List[str]:
+        errors = []
+
+        # Check column presence
+        expected_cols = set(self.expected_schema.keys())
+        actual_cols = set(df.columns)
+
+        missing = expected_cols - actual_cols
+        if missing:
+            errors.append(f"Missing columns: {missing}")
+
+        extra = actual_cols - expected_cols
+        if extra:
+            errors.append(f"Unexpected columns: {extra}")
+
+        # Check data types
+        for col, expected_type in self.expected_schema.items():
+            if col in df.columns:
+                actual_type = str(df[col].dtype)
+                if not actual_type.startswith(expected_type):
+                    errors.append(f"Column {col}: expected {expected_type}, got {actual_type}")
+
+        return errors
+
+    def validate_distributions(self, df: pd.DataFrame,
+                               threshold: float = 3.0) -> List[str]:
+        errors = []
+
+        for col in df.select_dtypes(include=[np.number]).columns:
+            if col not in self.baseline_stats:
+                continue
+
+            baseline_mean = self.baseline_stats[col]['mean']
+            baseline_std = self.baseline_stats[col]['std']
+
+            current_mean = df[col].mean()
+            current_std = df[col].std()
+
+            # Check for distribution drift using z-score
+            mean_zscore = abs((current_mean - baseline_mean) / baseline_std)
+            if mean_zscore > threshold:
+                errors.append(f"Column {col}: mean drift detected (z-score: {mean_zscore:.2f})")
+
+            # Check for variance change
+            variance_ratio = current_std / baseline_std
+            if variance_ratio < 0.5 or variance_ratio > 2.0:
+                errors.append(f"Column {col}: variance change detected (ratio: {variance_ratio:.2f})")
+
+        return errors
+
+    def validate_null_rates(self, df: pd.DataFrame,
+                            max_null_rate: float = 0.05) -> List[str]:
+        errors = []
+        null_rates = df.isnull().sum() / len(df)
+
+        for col, rate in null_rates.items():
+            if rate > max_null_rate:
+                errors.append(f"Column {col}: null rate {rate:.2%} exceeds threshold {max_null_rate:.2%}")
+
+        return errors
+
+    def validate_categorical_values(self, df: pd.DataFrame,
+                                     expected_categories: Dict[str, List]) -> List[str]:
+        errors = []
+
+        for col, expected in expected_categories.items():
+            if col not in df.columns:
+                continue
+
+            actual = set(df[col].dropna().unique())
+            expected_set = set(expected)
+
+            unexpected = actual - expected_set
+            if unexpected:
+                errors.append(f"Column {col}: unexpected categories {unexpected}")
+
+        return errors
+
+    def set_baseline(self, df: pd.DataFrame):
+        for col in df.select_dtypes(include=[np.number]).columns:
+            self.baseline_stats[col] = {
+                'mean': df[col].mean(),
+                'std': df[col].std(),
+                'min': df[col].min(),
+                'max': df[col].max(),
+            }
+
+# Usage
+validator = FeatureValidator({
+    'user_id': 'int',
+    'age': 'float',
+    'income': 'float',
+    'category': 'object',
+})
+
+# Set baseline from training data
+validator.set_baseline(training_df)
+
+# Validate new data
+errors = []
+errors.extend(validator.validate_schema(new_df))
+errors.extend(validator.validate_distributions(new_df))
+errors.extend(validator.validate_null_rates(new_df))
+errors.extend(validator.validate_categorical_values(new_df, {
+    'category': ['A', 'B', 'C']
+}))
+
+if errors:
+    raise ValueError(f"Feature validation failed:\n" + "\n".join(errors))
+```
+
+### Infrastructure Configuration Validation
+
+```yaml
+# JSON Schema for Kubernetes config validation
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: validation-schema
+data:
+  deployment-schema.json: |
+    {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "required": ["apiVersion", "kind", "metadata", "spec"],
+      "properties": {
+        "apiVersion": {
+          "type": "string",
+          "pattern": "^apps/v1$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["Deployment"]
+        },
+        "spec": {
+          "type": "object",
+          "required": ["replicas", "selector", "template"],
+          "properties": {
+            "replicas": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "selector": {
+              "type": "object",
+              "required": ["matchLabels"]
+            },
+            "template": {
+              "type": "object",
+              "required": ["metadata", "spec"],
+              "properties": {
+                "spec": {
+                  "type": "object",
+                  "required": ["containers"],
+                  "properties": {
+                    "containers": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "required": ["name", "image"],
+                        "properties": {
+                          "resources": {
+                            "type": "object",
+                            "required": ["requests", "limits"]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+```
+
+```python
+# Terraform configuration validation
+import hcl2
+import json
+from jsonschema import validate, ValidationError
+
+def validate_terraform_config(config_path: str, schema_path: str):
+    # Parse HCL
+    with open(config_path, 'r') as f:
+        config = hcl2.load(f)
+
+    # Load schema
+    with open(schema_path, 'r') as f:
+        schema = json.load(f)
+
+    # Validate
+    try:
+        validate(instance=config, schema=schema)
+        print("Terraform config is valid")
+    except ValidationError as e:
+        print(f"Validation error: {e.message}")
+        print(f"Path: {' -> '.join(str(p) for p in e.path)}")
+        raise
+
+# Custom business rule validation
+def validate_aws_resource_tags(config: dict) -> List[str]:
+    errors = []
+    required_tags = {'Environment', 'Owner', 'CostCenter'}
+
+    for resource in config.get('resource', {}).values():
+        for resource_name, resource_config in resource.items():
+            tags = set(resource_config.get('tags', {}).keys())
+            missing = required_tags - tags
+
+            if missing:
+                errors.append(f"Resource {resource_name} missing tags: {missing}")
+
+    return errors
+```
+
+## Best Practices
+
+1. **Validate Early**
+   - Validate at the boundary (API endpoints, form submissions, pipeline ingestion)
+   - Fail fast with clear error messages
+   - Don't trust any external input
+
+2. **Use Schema Validation Libraries**
+   - Prefer Zod/Pydantic for type safety
+   - JSON Schema for language-agnostic validation
+   - Generate TypeScript types from schemas
+
+3. **Sanitize and Encode**
+   - Sanitize input based on context (HTML, SQL, paths)
+   - Encode output based on where it's rendered
+   - Use parameterized queries instead of escaping for SQL
+
+4. **Security-First Validation**
+   - Whitelist allowed values rather than blacklist
+   - Prevent XSS with output encoding
+   - Prevent injection with parameterized queries and sanitization
+   - Validate file uploads (type, size, content)
+
+5. **Data Pipeline Validation**
+   - Validate schema before processing
+   - Check data distributions for drift
+   - Monitor null rates and cardinality
+   - Use Great Expectations for comprehensive data quality
+
+6. **ML Feature Validation**
+   - Validate schema matches training data
+   - Detect distribution drift
+   - Check for unexpected categories
+   - Monitor feature correlations
+
+7. **Error Messages**
+   - Provide specific, actionable error messages
+   - Include field names in errors
+   - Don't expose internal details in production
+
+8. **Defense in Depth**
+   - Validate on both client and server
+   - Apply principle of least privilege
+   - Validate at multiple layers (API, service, database)

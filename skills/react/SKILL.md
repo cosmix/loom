@@ -1,6 +1,6 @@
 ---
 name: react
-description: Modern React SPA development with React Router v7, Jotai state management, and Vite tooling. Use for building single-page applications with client-side routing, global state, forms, and async data loading. Triggers: react, spa, single page application, react-router, jotai, vite, bun, client-side routing, react hooks, useState, useEffect.
+description: Modern React development patterns including components, hooks, state management, routing, forms, and UI architecture. Covers React 19+, React Router v7, Jotai atoms, server components, accessibility, performance optimization, and testing. Use for building React applications with client-side routing, global state, component composition, and async data loading. Triggers: react, jsx, tsx, component, hook, useState, useEffect, useContext, useReducer, useMemo, useCallback, useRef, props, state, render, virtual DOM, reconciliation, single page application, spa, react-router, jotai, vite, bun, Next.js, Remix, client-side routing, server components, accessibility, a11y, ARIA, performance, code splitting, lazy loading, Suspense, error boundaries, form validation, UI components, design system, composition patterns.
 ---
 
 # React SPA Development
@@ -16,6 +16,388 @@ This skill provides guidance for building modern React Single Page Applications 
 - **Bun** as the package manager and runtime
 
 This skill focuses exclusively on client-side React applications, NOT server-side rendering frameworks like Next.js or Remix.
+
+## React 19 Features
+
+### Actions and useActionState
+
+React 19 introduces Actions for handling async state transitions:
+
+```typescript
+import { useActionState } from 'react'
+
+interface FormState {
+  message: string
+  error?: string
+}
+
+async function updateProfile(previousState: FormState, formData: FormData) {
+  const name = formData.get('name') as string
+
+  try {
+    await fetch('/api/profile', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    })
+    return { message: 'Profile updated successfully' }
+  } catch (error) {
+    return { message: '', error: 'Update failed' }
+  }
+}
+
+export function ProfileForm() {
+  const [state, formAction, isPending] = useActionState(updateProfile, { message: '' })
+
+  return (
+    <form action={formAction}>
+      <input type="text" name="name" disabled={isPending} />
+      <button type="submit" disabled={isPending}>
+        {isPending ? 'Updating...' : 'Update Profile'}
+      </button>
+      {state.error && <p className="error">{state.error}</p>}
+      {state.message && <p className="success">{state.message}</p>}
+    </form>
+  )
+}
+```
+
+### useOptimistic for Instant UI Updates
+
+```typescript
+import { useOptimistic, useState } from 'react'
+
+interface Todo {
+  id: string
+  title: string
+  completed: boolean
+}
+
+export function TodoList({ todos }: { todos: Todo[] }) {
+  const [optimisticTodos, addOptimisticTodo] = useOptimistic(
+    todos,
+    (state, newTodo: Todo) => [...state, newTodo]
+  )
+
+  async function addTodo(formData: FormData) {
+    const title = formData.get('title') as string
+    const tempTodo = { id: crypto.randomUUID(), title, completed: false }
+
+    addOptimisticTodo(tempTodo)
+
+    await fetch('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ title }),
+    })
+  }
+
+  return (
+    <div>
+      <ul>
+        {optimisticTodos.map((todo) => (
+          <li key={todo.id}>{todo.title}</li>
+        ))}
+      </ul>
+      <form action={addTodo}>
+        <input type="text" name="title" />
+        <button type="submit">Add Todo</button>
+      </form>
+    </div>
+  )
+}
+```
+
+### use() for Reading Promises and Context
+
+```typescript
+import { use, Suspense } from 'react'
+
+interface User {
+  id: string
+  name: string
+}
+
+async function fetchUser(userId: string): Promise<User> {
+  const response = await fetch(`/api/users/${userId}`)
+  return response.json()
+}
+
+function UserProfile({ userPromise }: { userPromise: Promise<User> }) {
+  // use() unwraps the promise
+  const user = use(userPromise)
+
+  return <div>{user.name}</div>
+}
+
+export function UserContainer({ userId }: { userId: string }) {
+  const userPromise = fetchUser(userId)
+
+  return (
+    <Suspense fallback={<div>Loading user...</div>}>
+      <UserProfile userPromise={userPromise} />
+    </Suspense>
+  )
+}
+```
+
+### Document Metadata Components
+
+```typescript
+import { useEffect } from 'react'
+
+// React 19 allows rendering metadata in components
+export function ProductPage({ product }: { product: Product }) {
+  return (
+    <div>
+      <title>{product.name} - My Store</title>
+      <meta name="description" content={product.description} />
+      <meta property="og:title" content={product.name} />
+
+      <h1>{product.name}</h1>
+      <p>{product.description}</p>
+    </div>
+  )
+}
+```
+
+## Server Components vs Client Components
+
+**Important**: This skill focuses on CLIENT-SIDE SPAs. However, when working with frameworks that support React Server Components (RSC):
+
+### When NOT Using Next.js/Remix (This Skill's Focus)
+
+All components are client components by default in SPAs. You have full access to:
+- Browser APIs (window, document, localStorage)
+- Event handlers (onClick, onChange, etc.)
+- React hooks (useState, useEffect, etc.)
+- Client-side routing
+
+### When Using Next.js or Remix (Outside This Skill)
+
+Server Components are the default and cannot use:
+- Client-side hooks or state
+- Browser APIs
+- Event handlers
+
+Mark components with `'use client'` to make them client components:
+
+```typescript
+'use client'
+
+import { useState } from 'react'
+
+export function Counter() {
+  const [count, setCount] = useState(0)
+  return <button onClick={() => setCount(count + 1)}>{count}</button>
+}
+```
+
+## UI Component Patterns
+
+### Design System Foundation
+
+```typescript
+// src/components/ui/Button.tsx
+import { ComponentPropsWithoutRef, forwardRef } from 'react'
+import { cva, type VariantProps } from 'class-variance-authority'
+
+const buttonVariants = cva(
+  'inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50',
+  {
+    variants: {
+      variant: {
+        default: 'bg-primary text-white hover:bg-primary/90',
+        secondary: 'bg-secondary text-white hover:bg-secondary/90',
+        outline: 'border border-gray-300 bg-transparent hover:bg-gray-100',
+        ghost: 'hover:bg-gray-100',
+        danger: 'bg-red-600 text-white hover:bg-red-700',
+      },
+      size: {
+        sm: 'h-8 px-3 text-sm',
+        md: 'h-10 px-4',
+        lg: 'h-12 px-6 text-lg',
+        icon: 'h-10 w-10',
+      },
+    },
+    defaultVariants: {
+      variant: 'default',
+      size: 'md',
+    },
+  }
+)
+
+export interface ButtonProps
+  extends ComponentPropsWithoutRef<'button'>,
+    VariantProps<typeof buttonVariants> {
+  isLoading?: boolean
+}
+
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ className, variant, size, isLoading, children, ...props }, ref) => {
+    return (
+      <button
+        ref={ref}
+        className={buttonVariants({ variant, size, className })}
+        disabled={isLoading || props.disabled}
+        {...props}
+      >
+        {isLoading ? (
+          <>
+            <svg className="animate-spin -ml-1 mr-2 h-4 w-4" />
+            Loading...
+          </>
+        ) : (
+          children
+        )}
+      </button>
+    )
+  }
+)
+
+Button.displayName = 'Button'
+```
+
+### Card Component with Composition
+
+```typescript
+// src/components/ui/Card.tsx
+import { ComponentPropsWithoutRef, forwardRef } from 'react'
+
+export const Card = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<'div'>>(
+  ({ className, ...props }, ref) => (
+    <div
+      ref={ref}
+      className={`rounded-lg border bg-white shadow-sm ${className}`}
+      {...props}
+    />
+  )
+)
+
+export const CardHeader = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<'div'>>(
+  ({ className, ...props }, ref) => (
+    <div ref={ref} className={`p-6 ${className}`} {...props} />
+  )
+)
+
+export const CardTitle = forwardRef<HTMLHeadingElement, ComponentPropsWithoutRef<'h3'>>(
+  ({ className, ...props }, ref) => (
+    <h3 ref={ref} className={`text-2xl font-semibold ${className}`} {...props} />
+  )
+)
+
+export const CardContent = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<'div'>>(
+  ({ className, ...props }, ref) => (
+    <div ref={ref} className={`p-6 pt-0 ${className}`} {...props} />
+  )
+)
+
+// Usage
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
+
+export function ProductCard({ product }: { product: Product }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{product.name}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p>{product.description}</p>
+        <p className="text-xl font-bold">${product.price}</p>
+      </CardContent>
+    </Card>
+  )
+}
+```
+
+### Polymorphic Components
+
+```typescript
+// src/components/ui/Text.tsx
+import { ElementType, ComponentPropsWithoutRef } from 'react'
+
+type TextProps<E extends ElementType> = {
+  as?: E
+  variant?: 'h1' | 'h2' | 'h3' | 'body' | 'small'
+} & ComponentPropsWithoutRef<E>
+
+export function Text<E extends ElementType = 'p'>({
+  as,
+  variant = 'body',
+  className,
+  ...props
+}: TextProps<E>) {
+  const Component = as || 'p'
+
+  const variantClasses = {
+    h1: 'text-4xl font-bold',
+    h2: 'text-3xl font-semibold',
+    h3: 'text-2xl font-semibold',
+    body: 'text-base',
+    small: 'text-sm text-gray-600',
+  }
+
+  return (
+    <Component
+      className={`${variantClasses[variant]} ${className || ''}`}
+      {...props}
+    />
+  )
+}
+
+// Usage - flexible element types
+<Text variant="h1">Heading</Text>
+<Text as="h1" variant="h1">Heading with h1 tag</Text>
+<Text as="span" variant="small">Small text in span</Text>
+```
+
+### Render Props Pattern
+
+```typescript
+// src/components/DataLoader.tsx
+import { ReactNode } from 'react'
+
+interface DataLoaderProps<T> {
+  data: T | null
+  isLoading: boolean
+  error: Error | null
+  children: (data: T) => ReactNode
+  loadingFallback?: ReactNode
+  errorFallback?: (error: Error) => ReactNode
+}
+
+export function DataLoader<T>({
+  data,
+  isLoading,
+  error,
+  children,
+  loadingFallback = <div>Loading...</div>,
+  errorFallback = (err) => <div>Error: {err.message}</div>,
+}: DataLoaderProps<T>) {
+  if (isLoading) return <>{loadingFallback}</>
+  if (error) return <>{errorFallback(error)}</>
+  if (!data) return null
+
+  return <>{children(data)}</>
+}
+
+// Usage
+import { useFetch } from '@/hooks/useFetch'
+
+export function UsersList() {
+  const { data, isLoading, error } = useFetch<User[]>('/api/users')
+
+  return (
+    <DataLoader data={data} isLoading={isLoading} error={error}>
+      {(users) => (
+        <ul>
+          {users.map((user) => (
+            <li key={user.id}>{user.name}</li>
+          ))}
+        </ul>
+      )}
+    </DataLoader>
+  )
+}
+```
 
 ## Project Setup
 
@@ -1316,7 +1698,9 @@ function App() {
 }
 ```
 
-### Accessibility
+### Accessibility (a11y)
+
+#### Modal Dialog with Focus Management
 
 ```typescript
 // src/components/Modal.tsx
@@ -1339,15 +1723,45 @@ export function Modal({ isOpen, onClose, title, children }: ModalProps) {
       previousActiveElement.current = document.activeElement as HTMLElement
       dialogRef.current?.focus()
 
+      // Trap focus inside modal
+      const focusableElements = dialogRef.current?.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      )
+      const firstElement = focusableElements?.[0] as HTMLElement
+      const lastElement = focusableElements?.[
+        focusableElements.length - 1
+      ] as HTMLElement
+
+      const handleTab = (e: KeyboardEvent) => {
+        if (e.key === 'Tab') {
+          if (e.shiftKey) {
+            if (document.activeElement === firstElement) {
+              e.preventDefault()
+              lastElement?.focus()
+            }
+          } else {
+            if (document.activeElement === lastElement) {
+              e.preventDefault()
+              firstElement?.focus()
+            }
+          }
+        }
+      }
+
       const handleEscape = (e: KeyboardEvent) => {
         if (e.key === 'Escape') {
           onClose()
         }
       }
 
+      document.addEventListener('keydown', handleTab)
       document.addEventListener('keydown', handleEscape)
+      document.body.style.overflow = 'hidden'
+
       return () => {
+        document.removeEventListener('keydown', handleTab)
         document.removeEventListener('keydown', handleEscape)
+        document.body.style.overflow = ''
         previousActiveElement.current?.focus()
       }
     }
@@ -1379,6 +1793,341 @@ export function Modal({ isOpen, onClose, title, children }: ModalProps) {
     </div>,
     document.body
   )
+}
+```
+
+#### Accessible Form with Live Validation
+
+```typescript
+// src/components/AccessibleForm.tsx
+import { useState, useId } from 'react'
+
+export function AccessibleForm() {
+  const [email, setEmail] = useState('')
+  const [emailError, setEmailError] = useState('')
+  const emailId = useId()
+  const errorId = useId()
+
+  const validateEmail = (value: string) => {
+    if (!value) {
+      setEmailError('Email is required')
+      return false
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      setEmailError('Please enter a valid email address')
+      return false
+    }
+    setEmailError('')
+    return true
+  }
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        if (validateEmail(email)) {
+          // Submit form
+        }
+      }}
+      noValidate
+    >
+      <div>
+        <label htmlFor={emailId}>
+          Email Address
+          <span aria-label="required">*</span>
+        </label>
+        <input
+          id={emailId}
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onBlur={(e) => validateEmail(e.target.value)}
+          aria-invalid={!!emailError}
+          aria-describedby={emailError ? errorId : undefined}
+          aria-required="true"
+        />
+        {emailError && (
+          <span id={errorId} role="alert" className="error">
+            {emailError}
+          </span>
+        )}
+      </div>
+      <button type="submit">Submit</button>
+    </form>
+  )
+}
+```
+
+#### Accessible Button with Loading State
+
+```typescript
+// src/components/AccessibleButton.tsx
+import { ComponentPropsWithoutRef, forwardRef } from 'react'
+
+interface AccessibleButtonProps extends ComponentPropsWithoutRef<'button'> {
+  isLoading?: boolean
+  loadingText?: string
+}
+
+export const AccessibleButton = forwardRef<
+  HTMLButtonElement,
+  AccessibleButtonProps
+>(({ isLoading, loadingText = 'Loading', children, ...props }, ref) => {
+  return (
+    <button
+      ref={ref}
+      disabled={isLoading || props.disabled}
+      aria-busy={isLoading}
+      aria-live="polite"
+      {...props}
+    >
+      {isLoading ? (
+        <>
+          <span className="visually-hidden">{loadingText}</span>
+          <span aria-hidden="true">
+            <svg className="animate-spin" />
+            {loadingText}
+          </span>
+        </>
+      ) : (
+        children
+      )}
+    </button>
+  )
+})
+
+AccessibleButton.displayName = 'AccessibleButton'
+```
+
+#### Skip to Content Link
+
+```typescript
+// src/components/SkipLink.tsx
+export function SkipLink() {
+  return (
+    <a
+      href="#main-content"
+      className="skip-link"
+      style={{
+        position: 'absolute',
+        left: '-10000px',
+        top: 'auto',
+        width: '1px',
+        height: '1px',
+        overflow: 'hidden',
+      }}
+      onFocus={(e) => {
+        e.currentTarget.style.left = '0'
+        e.currentTarget.style.width = 'auto'
+        e.currentTarget.style.height = 'auto'
+      }}
+      onBlur={(e) => {
+        e.currentTarget.style.left = '-10000px'
+        e.currentTarget.style.width = '1px'
+        e.currentTarget.style.height = '1px'
+      }}
+    >
+      Skip to main content
+    </a>
+  )
+}
+
+// Usage in layout
+export function Layout({ children }: { children: ReactNode }) {
+  return (
+    <div>
+      <SkipLink />
+      <header>
+        <nav>...</nav>
+      </header>
+      <main id="main-content" tabIndex={-1}>
+        {children}
+      </main>
+    </div>
+  )
+}
+```
+
+#### Accessible Dropdown Menu
+
+```typescript
+// src/components/DropdownMenu.tsx
+import { useState, useRef, useEffect, useId } from 'react'
+
+interface DropdownMenuProps {
+  trigger: React.ReactNode
+  items: Array<{ label: string; onClick: () => void }>
+}
+
+export function DropdownMenu({ trigger, items }: DropdownMenuProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const menuRef = useRef<HTMLUListElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const menuId = useId()
+
+  useEffect(() => {
+    if (isOpen && menuRef.current) {
+      const firstItem = menuRef.current.querySelector('button') as HTMLButtonElement
+      firstItem?.focus()
+    }
+  }, [isOpen])
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!isOpen) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+        e.preventDefault()
+        setIsOpen(true)
+      }
+      return
+    }
+
+    switch (e.key) {
+      case 'Escape':
+        setIsOpen(false)
+        buttonRef.current?.focus()
+        break
+      case 'ArrowDown':
+        e.preventDefault()
+        const nextItem = (document.activeElement?.nextElementSibling as HTMLElement)
+        nextItem?.querySelector('button')?.focus()
+        break
+      case 'ArrowUp':
+        e.preventDefault()
+        const prevItem = (document.activeElement?.previousElementSibling as HTMLElement)
+        prevItem?.querySelector('button')?.focus()
+        break
+    }
+  }
+
+  return (
+    <div className="dropdown">
+      <button
+        ref={buttonRef}
+        aria-haspopup="true"
+        aria-expanded={isOpen}
+        aria-controls={menuId}
+        onClick={() => setIsOpen(!isOpen)}
+        onKeyDown={handleKeyDown}
+      >
+        {trigger}
+      </button>
+
+      {isOpen && (
+        <ul
+          ref={menuRef}
+          id={menuId}
+          role="menu"
+          className="dropdown-menu"
+        >
+          {items.map((item, index) => (
+            <li key={index} role="none">
+              <button
+                role="menuitem"
+                onClick={() => {
+                  item.onClick()
+                  setIsOpen(false)
+                  buttonRef.current?.focus()
+                }}
+                onKeyDown={handleKeyDown}
+              >
+                {item.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+```
+
+#### Live Region for Announcements
+
+```typescript
+// src/components/LiveRegion.tsx
+import { createContext, useContext, useState, ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+
+interface LiveRegionContextValue {
+  announce: (message: string, priority?: 'polite' | 'assertive') => void
+}
+
+const LiveRegionContext = createContext<LiveRegionContextValue | undefined>(
+  undefined
+)
+
+export function useLiveRegion() {
+  const context = useContext(LiveRegionContext)
+  if (!context) {
+    throw new Error('useLiveRegion must be used within LiveRegionProvider')
+  }
+  return context
+}
+
+export function LiveRegionProvider({ children }: { children: ReactNode }) {
+  const [message, setMessage] = useState('')
+  const [priority, setPriority] = useState<'polite' | 'assertive'>('polite')
+
+  const announce = (
+    newMessage: string,
+    newPriority: 'polite' | 'assertive' = 'polite'
+  ) => {
+    setMessage('')
+    setTimeout(() => {
+      setMessage(newMessage)
+      setPriority(newPriority)
+    }, 100)
+  }
+
+  return (
+    <LiveRegionContext.Provider value={{ announce }}>
+      {children}
+      {createPortal(
+        <div
+          role="status"
+          aria-live={priority}
+          aria-atomic="true"
+          className="visually-hidden"
+        >
+          {message}
+        </div>,
+        document.body
+      )}
+    </LiveRegionContext.Provider>
+  )
+}
+
+// Usage
+function SaveButton() {
+  const { announce } = useLiveRegion()
+
+  const handleSave = async () => {
+    try {
+      await saveData()
+      announce('Data saved successfully', 'polite')
+    } catch (error) {
+      announce('Failed to save data', 'assertive')
+    }
+  }
+
+  return <button onClick={handleSave}>Save</button>
+}
+```
+
+#### Visually Hidden Utility
+
+```css
+/* src/styles/utilities.css */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
 }
 ```
 

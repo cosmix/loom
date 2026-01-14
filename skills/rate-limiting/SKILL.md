@@ -1,6 +1,6 @@
 ---
 name: rate-limiting
-description: API rate limiting and quota management implementation. Use when implementing request throttling, API quotas, backpressure handling, or protection against abuse. Keywords: rate limiting, throttling, token bucket, sliding window, leaky bucket, quota, Redis, backpressure, API limits, DDoS protection.
+description: API rate limiting and quota management implementation. Use when implementing request throttling, API quotas, backpressure handling, or protection against abuse. Keywords: rate limiting, rate limit, throttle, throttling, token bucket, leaky bucket, sliding window, fixed window, quota, 429, too many requests, DDoS, abuse prevention, API quota, burst, Redis rate limiting, distributed rate limiting, API gateway, per-user limits, per-IP limits, concurrent requests, request limiting.
 ---
 
 # Rate Limiting
@@ -392,7 +392,11 @@ class HybridRateLimiter {
 }
 ```
 
-### Distributed Rate Limiting (Redis)
+## Redis-Based Rate Limiting
+
+Redis provides distributed rate limiting with atomic operations and high performance across multiple application instances.
+
+### Distributed Rate Limiting with Redis
 
 **Redis-Based Sliding Window:**
 
@@ -490,6 +494,252 @@ class ClusterRateLimiter {
     }
 
     return count <= limit;
+  }
+}
+```
+
+## API Gateway Rate Limiting
+
+API gateways provide centralized rate limiting across microservices.
+
+### Kong Rate Limiting
+
+```yaml
+# Kong configuration
+plugins:
+  - name: rate-limiting
+    config:
+      minute: 100
+      hour: 10000
+      policy: redis
+      redis_host: redis.example.com
+      redis_port: 6379
+      fault_tolerant: true
+      hide_client_headers: false
+```
+
+### Nginx Rate Limiting
+
+```nginx
+# Nginx configuration
+limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+limit_req_zone $http_authorization zone=user:10m rate=100r/s;
+
+server {
+    location /api/ {
+        # Burst allows 20 requests, then enforces rate
+        limit_req zone=api burst=20 nodelay;
+        limit_req_status 429;
+
+        # Custom rate limit headers
+        add_header X-RateLimit-Limit $limit_req_rate always;
+        add_header X-RateLimit-Remaining $limit_req_remaining always;
+
+        proxy_pass http://backend;
+    }
+
+    location /api/authenticated/ {
+        limit_req zone=user burst=50;
+        proxy_pass http://backend;
+    }
+}
+```
+
+### AWS API Gateway Throttling
+
+```typescript
+// AWS CDK configuration
+import * as apigateway from 'aws-cdk-lib/aws-apigateway';
+
+const api = new apigateway.RestApi(this, 'MyApi', {
+  deployOptions: {
+    throttlingRateLimit: 1000,  // Requests per second
+    throttlingBurstLimit: 2000, // Burst capacity
+  },
+});
+
+// Per-method throttling
+const resource = api.root.addResource('users');
+resource.addMethod('GET', integration, {
+  methodResponses: [
+    { statusCode: '200' },
+    { statusCode: '429' },
+  ],
+  throttling: {
+    rateLimit: 100,
+    burstLimit: 200,
+  },
+});
+
+// Per-client API key throttling
+const plan = api.addUsagePlan('BasicPlan', {
+  throttle: {
+    rateLimit: 10,
+    burstLimit: 20,
+  },
+  quota: {
+    limit: 10000,
+    period: apigateway.Period.MONTH,
+  },
+});
+```
+
+### Envoy Rate Limiting
+
+```yaml
+# Envoy proxy configuration
+static_resources:
+  listeners:
+    - name: listener_0
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 8080
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                http_filters:
+                  - name: envoy.filters.http.ratelimit
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
+                      domain: api_domain
+                      rate_limit_service:
+                        grpc_service:
+                          envoy_grpc:
+                            cluster_name: rate_limit_cluster
+                      failure_mode_deny: false
+```
+
+## Distributed Systems Considerations
+
+### Multi-Region Rate Limiting
+
+**Global Rate Limiter with Redis Cluster:**
+
+```typescript
+class GlobalRateLimiter {
+  private regions: Map<string, Redis.Cluster>;
+  private localCache: Map<string, { count: number; expires: number }>;
+
+  constructor(redisConfig: Record<string, Redis.ClusterNode[]>) {
+    this.regions = new Map();
+    this.localCache = new Map();
+
+    for (const [region, nodes] of Object.entries(redisConfig)) {
+      this.regions.set(region, new Redis.Cluster(nodes));
+    }
+  }
+
+  async checkLimit(
+    userId: string,
+    limit: number,
+    windowSeconds: number,
+  ): Promise<boolean> {
+    // Check local cache first (reduces Redis calls)
+    const cached = this.localCache.get(userId);
+    if (cached && cached.expires > Date.now()) {
+      if (cached.count >= limit) {
+        return false;
+      }
+      cached.count++;
+      return true;
+    }
+
+    // Aggregate counts across all regions
+    const promises = Array.from(this.regions.values()).map((redis) =>
+      redis.get(`ratelimit:${userId}`).then((v) => parseInt(v || "0")),
+    );
+
+    const counts = await Promise.all(promises);
+    const totalCount = counts.reduce((sum, c) => sum + c, 0);
+
+    if (totalCount >= limit) {
+      return false;
+    }
+
+    // Increment in current region
+    const currentRegion = this.regions.get(process.env.REGION!)!;
+    const key = `ratelimit:${userId}`;
+    await currentRegion.incr(key);
+    await currentRegion.expire(key, windowSeconds);
+
+    // Update local cache
+    this.localCache.set(userId, {
+      count: totalCount + 1,
+      expires: Date.now() + 1000, // Cache for 1 second
+    });
+
+    return true;
+  }
+}
+```
+
+### Eventual Consistency Trade-offs
+
+Rate limiting in distributed systems involves trade-offs:
+
+- **Strong Consistency**: Accurate limits, higher latency (global coordination)
+- **Eventual Consistency**: Lower latency, potential over-limiting (regional independence)
+- **Hybrid Approach**: Local caching with periodic synchronization
+
+```typescript
+interface RateLimitStrategy {
+  consistency: 'strong' | 'eventual' | 'hybrid';
+  tolerancePercent: number; // How much over-limit is acceptable
+}
+
+class HybridDistributedLimiter {
+  private localCount: Map<string, number> = new Map();
+  private globalSync: Redis;
+  private syncInterval: number = 5000; // 5 seconds
+
+  constructor(
+    redis: Redis,
+    private strategy: RateLimitStrategy,
+  ) {
+    this.globalSync = redis;
+    this.startSyncLoop();
+  }
+
+  async checkLimit(userId: string, limit: number): Promise<boolean> {
+    const local = this.localCount.get(userId) || 0;
+
+    if (this.strategy.consistency === 'strong') {
+      // Always check global state
+      const global = await this.getGlobalCount(userId);
+      return global < limit;
+    }
+
+    // Eventual consistency: allow local buffer
+    const buffer = Math.ceil(limit * this.strategy.tolerancePercent / 100);
+    const effectiveLimit = limit + buffer;
+
+    if (local >= effectiveLimit) {
+      // Over local buffer, check global
+      const global = await this.getGlobalCount(userId);
+      if (global >= limit) {
+        return false;
+      }
+    }
+
+    this.localCount.set(userId, local + 1);
+    return true;
+  }
+
+  private async getGlobalCount(userId: string): Promise<number> {
+    const count = await this.globalSync.get(`global:${userId}`);
+    return parseInt(count || "0");
+  }
+
+  private startSyncLoop(): void {
+    setInterval(async () => {
+      for (const [userId, count] of this.localCount.entries()) {
+        await this.globalSync.incrby(`global:${userId}`, count);
+        this.localCount.set(userId, 0);
+      }
+    }, this.syncInterval);
   }
 }
 ```

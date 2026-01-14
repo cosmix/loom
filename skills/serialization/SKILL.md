@@ -1,6 +1,6 @@
 ---
 name: serialization
-description: Data serialization formats and techniques. Use when implementing data exchange, API payloads, storage formats, or cross-language communication. Keywords: serialization, JSON, Protocol Buffers, protobuf, MessagePack, schema evolution, versioning, backward compatibility, forward compatibility, binary formats.
+description: Data serialization and deserialization patterns across formats. Use when implementing data exchange, API payloads, storage formats, encoding/decoding, or cross-language communication. Keywords: serialize, deserialize, serialization, deserialization, JSON, YAML, TOML, XML, Protocol Buffers, protobuf, MessagePack, CBOR, serde, encoding, decoding, schema, schema evolution, versioning, backward compatibility, forward compatibility, binary format, text format, data interchange, gRPC, API contracts.
 ---
 
 # Serialization
@@ -480,6 +480,475 @@ async function* decodeStream<T>(
   for await (const message of decodeMultiStream(stream)) {
     yield message as T;
   }
+}
+```
+
+### Rust Serde Patterns
+
+**Basic Serde Usage:**
+
+```rust
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, Debug)]
+struct User {
+    id: String,
+    email: String,
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    phone: Option<String>,
+    tags: Vec<String>,
+}
+
+// Serialize to JSON
+let user = User {
+    id: "usr_123".to_string(),
+    email: "user@example.com".to_string(),
+    name: "Alice".to_string(),
+    phone: None,
+    tags: vec!["admin".to_string()],
+};
+
+let json = serde_json::to_string(&user)?;
+let pretty = serde_json::to_string_pretty(&user)?;
+
+// Deserialize from JSON
+let parsed: User = serde_json::from_str(&json)?;
+```
+
+**Custom Serialization with Serde Attributes:**
+
+```rust
+use serde::{Deserialize, Serialize};
+use std::time::{Duration, SystemTime};
+
+#[derive(Serialize, Deserialize)]
+struct Order {
+    #[serde(rename = "orderId")]
+    id: String,
+
+    #[serde(rename = "userId")]
+    user_id: String,
+
+    // Skip serializing default values
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    items: Vec<OrderItem>,
+
+    // Custom serialization for timestamps
+    #[serde(with = "timestamp_serde")]
+    created_at: SystemTime,
+
+    // Flatten nested struct into parent
+    #[serde(flatten)]
+    metadata: OrderMetadata,
+
+    // Skip field entirely
+    #[serde(skip)]
+    internal_state: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct OrderItem {
+    product_id: String,
+    quantity: u32,
+    price_cents: i64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct OrderMetadata {
+    source: String,
+    campaign: Option<String>,
+}
+
+// Custom timestamp serialization module
+mod timestamp_serde {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    pub fn serialize<S>(time: &SystemTime, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let duration = time.duration_since(UNIX_EPOCH)
+            .map_err(serde::ser::Error::custom)?;
+        serializer.serialize_u64(duration.as_secs())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<SystemTime, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let secs = u64::deserialize(deserializer)?;
+        Ok(UNIX_EPOCH + std::time::Duration::from_secs(secs))
+    }
+}
+```
+
+**Serde with Multiple Formats:**
+
+```rust
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize)]
+struct Config {
+    name: String,
+    port: u16,
+    database_url: String,
+    features: Vec<String>,
+}
+
+// JSON
+let json_str = serde_json::to_string(&config)?;
+let from_json: Config = serde_json::from_str(&json_str)?;
+
+// YAML
+let yaml_str = serde_yaml::to_string(&config)?;
+let from_yaml: Config = serde_yaml::from_str(&yaml_str)?;
+
+// TOML
+let toml_str = toml::to_string(&config)?;
+let from_toml: Config = toml::from_str(&toml_str)?;
+
+// MessagePack
+let msgpack_bytes = rmp_serde::to_vec(&config)?;
+let from_msgpack: Config = rmp_serde::from_slice(&msgpack_bytes)?;
+
+// Bincode (binary)
+let bincode_bytes = bincode::serialize(&config)?;
+let from_bincode: Config = bincode::deserialize(&bincode_bytes)?;
+```
+
+**Custom Serialize/Deserialize Implementation:**
+
+```rust
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::fmt;
+
+struct UserId(u64);
+
+impl Serialize for UserId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // Serialize as string with prefix
+        serializer.serialize_str(&format!("usr_{}", self.0))
+    }
+}
+
+impl<'de> Deserialize<'de> for UserId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct UserIdVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for UserIdVisitor {
+            type Value = UserId;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a user ID string like 'usr_123'")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<UserId, E>
+            where
+                E: serde::de::Error,
+            {
+                if let Some(id_str) = value.strip_prefix("usr_") {
+                    id_str.parse::<u64>()
+                        .map(UserId)
+                        .map_err(|_| E::custom("invalid user ID number"))
+                } else {
+                    Err(E::custom("user ID must start with 'usr_'"))
+                }
+            }
+        }
+
+        deserializer.deserialize_str(UserIdVisitor)
+    }
+}
+```
+
+**Enum Serialization Strategies:**
+
+```rust
+use serde::{Deserialize, Serialize};
+
+// Externally tagged (default)
+#[derive(Serialize, Deserialize)]
+enum Message {
+    Text(String),
+    Image { url: String, width: u32, height: u32 },
+}
+// JSON: {"Text": "hello"} or {"Image": {"url": "...", "width": 100, "height": 100}}
+
+// Internally tagged
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "type")]
+enum MessageInternal {
+    Text { content: String },
+    Image { url: String, width: u32, height: u32 },
+}
+// JSON: {"type": "Text", "content": "hello"}
+
+// Adjacently tagged
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
+enum MessageAdjacent {
+    Text(String),
+    Image { url: String, width: u32, height: u32 },
+}
+// JSON: {"type": "Text", "data": "hello"}
+
+// Untagged (determined by shape)
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum Value {
+    String(String),
+    Number(i64),
+    Boolean(bool),
+}
+// JSON: "hello" or 123 or true
+```
+
+### Protocol Buffers for gRPC
+
+**Service Definition with gRPC:**
+
+```protobuf
+syntax = "proto3";
+
+package users.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+// User service for managing user accounts
+service UserService {
+  // Unary RPC
+  rpc GetUser(GetUserRequest) returns (User);
+  rpc CreateUser(CreateUserRequest) returns (User);
+  rpc UpdateUser(UpdateUserRequest) returns (User);
+  rpc DeleteUser(DeleteUserRequest) returns (google.protobuf.Empty);
+
+  // Server streaming RPC
+  rpc ListUsers(ListUsersRequest) returns (stream User);
+
+  // Client streaming RPC
+  rpc BatchCreateUsers(stream CreateUserRequest) returns (BatchCreateUsersResponse);
+
+  // Bidirectional streaming RPC
+  rpc SyncUsers(stream UserUpdate) returns (stream UserUpdate);
+}
+
+message User {
+  string id = 1;
+  string email = 2;
+  string name = 3;
+  optional string phone = 4;
+  repeated string roles = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+message GetUserRequest {
+  string id = 1;
+}
+
+message CreateUserRequest {
+  string email = 1;
+  string name = 2;
+  optional string phone = 3;
+  repeated string roles = 4;
+}
+
+message UpdateUserRequest {
+  string id = 1;
+  optional string email = 2;
+  optional string name = 3;
+  optional string phone = 4;
+  repeated string roles = 5;
+}
+
+message DeleteUserRequest {
+  string id = 1;
+}
+
+message ListUsersRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  optional string filter = 3;
+}
+
+message BatchCreateUsersResponse {
+  repeated User users = 1;
+  int32 success_count = 2;
+  int32 failure_count = 3;
+}
+
+message UserUpdate {
+  enum UpdateType {
+    UPDATE_TYPE_UNSPECIFIED = 0;
+    UPDATE_TYPE_CREATED = 1;
+    UPDATE_TYPE_UPDATED = 2;
+    UPDATE_TYPE_DELETED = 3;
+  }
+
+  UpdateType type = 1;
+  User user = 2;
+}
+```
+
+**Rust gRPC Server Implementation (tonic):**
+
+```rust
+use tonic::{transport::Server, Request, Response, Status};
+
+pub mod users {
+    tonic::include_proto!("users.v1");
+}
+
+use users::user_service_server::{UserService, UserServiceServer};
+use users::{User, GetUserRequest, CreateUserRequest, ListUsersRequest};
+
+#[derive(Default)]
+pub struct UserServiceImpl {}
+
+#[tonic::async_trait]
+impl UserService for UserServiceImpl {
+    async fn get_user(
+        &self,
+        request: Request<GetUserRequest>,
+    ) -> Result<Response<User>, Status> {
+        let req = request.into_inner();
+
+        // Business logic here
+        let user = User {
+            id: req.id,
+            email: "user@example.com".to_string(),
+            name: "Alice".to_string(),
+            phone: None,
+            roles: vec!["user".to_string()],
+            created_at: Some(prost_types::Timestamp::from(std::time::SystemTime::now())),
+            updated_at: Some(prost_types::Timestamp::from(std::time::SystemTime::now())),
+        };
+
+        Ok(Response::new(user))
+    }
+
+    async fn create_user(
+        &self,
+        request: Request<CreateUserRequest>,
+    ) -> Result<Response<User>, Status> {
+        let req = request.into_inner();
+
+        // Validation
+        if req.email.is_empty() {
+            return Err(Status::invalid_argument("email is required"));
+        }
+
+        // Create user logic...
+        let user = User {
+            id: uuid::Uuid::new_v4().to_string(),
+            email: req.email,
+            name: req.name,
+            phone: req.phone,
+            roles: req.roles,
+            created_at: Some(prost_types::Timestamp::from(std::time::SystemTime::now())),
+            updated_at: Some(prost_types::Timestamp::from(std::time::SystemTime::now())),
+        };
+
+        Ok(Response::new(user))
+    }
+
+    type ListUsersStream = tokio_stream::wrappers::ReceiverStream<Result<User, Status>>;
+
+    async fn list_users(
+        &self,
+        request: Request<ListUsersRequest>,
+    ) -> Result<Response<Self::ListUsersStream>, Status> {
+        let (tx, rx) = tokio::sync::mpsc::channel(128);
+
+        tokio::spawn(async move {
+            // Stream users from database
+            for i in 0..10 {
+                let user = User {
+                    id: format!("usr_{}", i),
+                    email: format!("user{}@example.com", i),
+                    name: format!("User {}", i),
+                    phone: None,
+                    roles: vec![],
+                    created_at: None,
+                    updated_at: None,
+                };
+
+                if tx.send(Ok(user)).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        Ok(Response::new(tokio_stream::wrappers::ReceiverStream::new(rx)))
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let addr = "[::1]:50051".parse()?;
+    let service = UserServiceImpl::default();
+
+    Server::builder()
+        .add_service(UserServiceServer::new(service))
+        .serve(addr)
+        .await?;
+
+    Ok(())
+}
+```
+
+**Rust gRPC Client:**
+
+```rust
+use users::user_service_client::UserServiceClient;
+use users::{GetUserRequest, CreateUserRequest};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut client = UserServiceClient::connect("http://[::1]:50051").await?;
+
+    // Unary call
+    let request = tonic::Request::new(GetUserRequest {
+        id: "usr_123".to_string(),
+    });
+
+    let response = client.get_user(request).await?;
+    println!("User: {:?}", response.into_inner());
+
+    // Create user
+    let request = tonic::Request::new(CreateUserRequest {
+        email: "new@example.com".to_string(),
+        name: "New User".to_string(),
+        phone: None,
+        roles: vec!["user".to_string()],
+    });
+
+    let response = client.create_user(request).await?;
+    println!("Created: {:?}", response.into_inner());
+
+    // Streaming call
+    let request = tonic::Request::new(ListUsersRequest {
+        page_size: 10,
+        page_token: String::new(),
+        filter: None,
+    });
+
+    let mut stream = client.list_users(request).await?.into_inner();
+
+    while let Some(user) = stream.message().await? {
+        println!("Received user: {:?}", user);
+    }
+
+    Ok(())
 }
 ```
 
@@ -1002,8 +1471,18 @@ class JSONLineDeserializer extends Transform {
 - Reserve field numbers for deprecated fields
 - Use optional for fields that may be absent
 - Avoid changing field types
-- Use well-known types for common patterns
-- Version your .proto files
+- Use well-known types for common patterns (Timestamp, Duration, Empty)
+- Version your .proto files with package names (e.g., myapp.v1)
+- For gRPC: design services with clear unary/streaming semantics
+
+### Rust Serde
+
+- Use derive macros for standard cases
+- Leverage serde attributes for field renaming and control
+- Implement custom Serialize/Deserialize for complex types
+- Use skip_serializing_if to omit optional fields
+- Choose enum tagging strategy based on JSON compatibility needs
+- Support multiple formats (JSON, YAML, TOML) with minimal code
 
 ### Schema Evolution
 
@@ -1012,6 +1491,8 @@ class JSONLineDeserializer extends Transform {
 - Never reuse field numbers or names
 - Test backward/forward compatibility
 - Document breaking changes
+- Use versioned packages in protobuf (e.g., users.v1, users.v2)
+- Implement migration logic for breaking changes
 
 ### Performance
 
@@ -1020,6 +1501,7 @@ class JSONLineDeserializer extends Transform {
 - Consider compression for large JSON
 - Profile serialization in your specific context
 - Cache serializers/deserializers
+- For Rust: bincode is fastest, MessagePack balances size and speed
 
 ## Examples
 

@@ -1,6 +1,6 @@
 ---
 name: kustomize
-description: Kubernetes native configuration management with Kustomize. Use when managing environment-specific configs, patching resources, or organizing Kubernetes manifests. Triggers: kustomize, kustomization, overlay, patch, base, strategic merge, json patch, config management.
+description: Kubernetes native configuration management with Kustomize. Use for environment-specific configs, resource patching, manifest organization, multi-environment deployments, and GitOps workflows. Triggers: kustomize, kustomization, overlay, base, patch, strategic merge, json patch, json6902, configmap generator, secret generator, namespace, namePrefix, nameSuffix, commonLabels, commonAnnotations, component, transformer, replacement, multi-environment, dev/staging/prod configs, k8s manifest management.
 allowed-tools: Read, Grep, Glob, Edit, Write, Bash
 ---
 
@@ -10,22 +10,37 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash
 
 Kustomize is a Kubernetes-native configuration management tool that uses declarative customization to manage environment-specific configurations without templates. It follows the principles of declarative application management and integrates directly with kubectl.
 
+**Primary use cases:** Multi-environment deployments, resource patching, GitOps workflows, ConfigMap/Secret generation, cross-cutting transformations.
+
+### What This Skill Covers
+
+- **Multi-Environment Overlays**: Dev/staging/prod pattern with base + overlays
+- **Patch Strategies**: Strategic merge vs JSON 6902 patches, when to use each
+- **Generators**: ConfigMap and Secret generation with automatic content hashing
+- **Transformers**: Cross-cutting changes (labels, annotations, namespace, namePrefix/Suffix, images, replicas)
+- **Components**: Reusable optional feature bundles (monitoring, ingress, debug-tools)
+- **Replacements**: Dynamic field substitution for propagating values between resources
+- **GitOps Integration**: ArgoCD, Flux, CI/CD pipeline patterns
+- **Security**: Secret management, image pinning, validation, RBAC patterns
+
 ### Core Concepts
 
 - **Base**: A directory containing a `kustomization.yaml` and a set of resources (typically common/shared configurations)
-- **Overlay**: A directory with a `kustomization.yaml` that refers to a base and applies customizations (environment-specific configs)
-- **Patch**: A partial resource definition that modifies existing resources
-- **Component**: Reusable customization bundles that can be included in multiple kustomizations
-- **Generator**: Creates ConfigMaps and Secrets from files, literals, or env files
-- **Transformer**: Modifies resources (labels, annotations, namespaces, replicas, etc.)
+- **Overlay**: A directory with a `kustomization.yaml` that refers to a base and applies customizations (environment-specific configs like dev/staging/prod)
+- **Patch**: A partial resource definition that modifies existing resources (strategic merge or JSON patch)
+- **Component**: Reusable customization bundles that can be included in multiple kustomizations (e.g., monitoring, ingress)
+- **Generator**: Creates ConfigMaps and Secrets from files, literals, or env files with automatic content hashing
+- **Transformer**: Modifies resources across the board (labels, annotations, namespaces, namePrefix, nameSuffix, replicas, images)
+- **Replacement**: Dynamic field substitution that propagates values between resources (e.g., ConfigMap names with hash suffixes)
 
 ### Key Principles
 
 1. **Bases are reusable**: Define common configuration once, customize per environment
-2. **Overlays are composable**: Stack multiple customizations
+2. **Overlays are composable**: Stack multiple customizations for different environments
 3. **Resources are not modified**: Original base files remain unchanged
 4. **No templating**: Uses declarative merging instead of variable substitution
 5. **kubectl integration**: `kubectl apply -k <directory>` natively supports Kustomize
+6. **Content hashing**: ConfigMaps and Secrets get automatic name suffixes based on content for immutable deployments
 
 ## Directory Structure
 
@@ -85,6 +100,54 @@ k8s/
     └── prod/
         └── kustomization.yaml
 ```
+
+## Quick Reference
+
+### Common Operations
+
+| Task | Command |
+|------|---------|
+| Build manifests | `kustomize build k8s/overlays/prod` |
+| Preview changes | `kubectl diff -k k8s/overlays/prod` |
+| Apply to cluster | `kubectl apply -k k8s/overlays/prod` |
+| Validate syntax | `kustomize build k8s/overlays/prod \| kubectl apply --dry-run=client -f -` |
+| Update image tag | `kustomize edit set image myapp=registry/myapp:v1.2.3` |
+| Add resource | `kustomize edit add resource deployment.yaml` |
+| Add ConfigMap | `kustomize edit add configmap app-config --from-literal=KEY=value` |
+
+### Multi-Environment Pattern
+
+```text
+k8s/
+├── base/              # Shared configuration
+├── overlays/
+│   ├── dev/          # Development-specific (low resources, debug enabled)
+│   ├── staging/      # Staging-specific (moderate resources, monitoring)
+│   └── prod/         # Production-specific (high resources, HA, security)
+└── components/       # Optional features (monitoring, ingress, debug-tools)
+```
+
+### Generator Quick Start
+
+| Generator Type | Use Case | Example |
+|----------------|----------|---------|
+| ConfigMap literals | Simple key-value config | `configMapGenerator: - name: app-config literals: - LOG_LEVEL=info` |
+| ConfigMap files | Config files | `configMapGenerator: - name: app-config files: - application.properties` |
+| ConfigMap env file | Environment variables | `configMapGenerator: - name: app-config envs: - config.env` |
+| Secret literals | Simple secrets | `secretGenerator: - name: app-secrets literals: - username=admin` |
+| Secret files | Certificate/key files | `secretGenerator: - name: tls-secrets files: - tls.crt - tls.key type: kubernetes.io/tls` |
+
+### Transformer Quick Start
+
+| Transformer | Use Case | Example |
+|-------------|----------|---------|
+| namespace | Set namespace for all resources | `namespace: production` |
+| namePrefix | Add prefix to resource names | `namePrefix: myapp-` |
+| nameSuffix | Add suffix to resource names | `nameSuffix: -v2` |
+| commonLabels | Add labels to all resources | `commonLabels: app: myapp team: platform` |
+| commonAnnotations | Add annotations to all resources | `commonAnnotations: managed-by: kustomize` |
+| images | Update container images | `images: - name: myapp newTag: v1.2.3` |
+| replicas | Set replica count | `replicas: - name: myapp count: 5` |
 
 ## Workflow
 
@@ -172,6 +235,72 @@ JSON Patch provides precise array manipulation and field operations.
 - Conditional patches (test operation)
 - Complex nested updates
 - When strategic merge is too coarse
+
+## Component Patterns
+
+Components are reusable customization bundles that can be selectively included in overlays. They're ideal for optional features that only some environments need.
+
+### When to Use Components
+
+| Pattern | Use Components For | Use Patches For |
+|---------|-------------------|-----------------|
+| Optional features | Monitoring, ingress, debug tools | Required modifications |
+| Cross-environment reuse | Feature available in staging+prod | Environment-specific changes |
+| Clean composition | Independent feature sets | Tweaking existing resources |
+| Conditional inclusion | Enable per environment | Always apply in overlay |
+
+### Component Structure
+
+```yaml
+# k8s/components/monitoring/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - servicemonitor.yaml
+  - prometheusrule.yaml
+
+patches:
+  - path: patch-metrics.yaml
+    target:
+      kind: Deployment
+
+labels:
+  - pairs:
+      prometheus.io/scrape: "true"
+```
+
+### Including Components
+
+```yaml
+# k8s/overlays/prod/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+components:
+  - ../../components/monitoring
+  - ../../components/ingress
+  - ../../components/security-hardening
+```
+
+### Common Component Patterns
+
+**Monitoring Component**: ServiceMonitor, PrometheusRules, metrics port patch
+**Ingress Component**: Ingress resource, TLS config, service annotations
+**Debug Tools Component**: Debug env vars, profiling ports, verbose logging
+**Security Hardening Component**: SecurityContext, NetworkPolicy, PodSecurityPolicy
+**Backup Component**: CronJob for backups, PersistentVolume, ServiceAccount with backup permissions
+
+### Component vs Overlay Decision Tree
+
+```text
+Need to include optional features? → Component
+Need environment-specific values? → Overlay
+Need both? → Component for features + Overlay patches for values
+```
 
 ## Best Practices
 

@@ -1,6 +1,50 @@
 ---
 name: auth
 description: Authentication and authorization patterns including OAuth2, JWT, RBAC/ABAC, session management, API keys, password hashing, and MFA. Use when implementing login, access control, identity management, tokens, permissions, or security features.
+triggers:
+  - login
+  - logout
+  - signin
+  - signup
+  - register
+  - authentication
+  - authorization
+  - password
+  - credential
+  - token
+  - JWT
+  - OAuth
+  - OAuth2
+  - OIDC
+  - OpenID
+  - SSO
+  - SAML
+  - session
+  - cookie
+  - refresh token
+  - access token
+  - bearer
+  - authorization header
+  - auth header
+  - 401
+  - 403
+  - forbidden
+  - unauthorized
+  - RBAC
+  - ABAC
+  - permissions
+  - roles
+  - access control
+  - identity
+  - MFA
+  - 2FA
+  - two-factor
+  - multi-factor
+  - TOTP
+  - API key
+  - auth flow
+  - PKCE
+  - client credentials
 ---
 
 # Authentication & Authorization
@@ -8,6 +52,41 @@ description: Authentication and authorization patterns including OAuth2, JWT, RB
 ## Overview
 
 This skill covers comprehensive authentication and authorization strategies for modern applications. It includes identity verification (authentication), access control (authorization), and secure credential management across web, mobile, and API contexts.
+
+## When to Use
+
+**software-engineer (Sonnet)** - Use when:
+
+- Implementing standard auth flows (login, logout, password reset)
+- Adding JWT or session handling to existing applications
+- Implementing RBAC/ABAC patterns with defined requirements
+- Integrating with established OAuth2 providers
+- Adding MFA or API key authentication
+
+**senior-software-engineer (Opus)** - Escalate to when:
+
+- Designing auth architecture from scratch
+- Choosing between authentication strategies (JWT vs sessions, OAuth flows)
+- Evaluating trade-offs between different access control models
+- Planning token rotation, refresh strategies, or session lifecycle
+- Making cross-cutting security decisions
+
+**security-engineer (Opus)** - Request review when:
+
+- Implementing password hashing or credential storage
+- Handling sensitive tokens (refresh tokens, API keys)
+- Implementing rate limiting or brute force protection
+- Adding MFA or step-up authentication
+- Dealing with PII, compliance, or regulatory requirements
+- ANY authentication/authorization implementation before production
+
+**senior-infrastructure-engineer (Opus)** - Consult when:
+
+- Setting up identity providers (Keycloak, Auth0, Cognito)
+- Configuring SSO, SAML, or OIDC integrations
+- Scaling session storage (Redis clusters, distributed sessions)
+- Managing secrets, key rotation infrastructure
+- Setting up certificate management for JWT signing
 
 ## Key Concepts
 
@@ -48,7 +127,7 @@ async function exchangeCode(code: string): Promise<TokenResponse> {
 function generatePKCE(): { verifier: string; challenge: string } {
   const verifier = base64UrlEncode(crypto.getRandomValues(new Uint8Array(32)));
   const challenge = base64UrlEncode(
-    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)),
+    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))
   );
   return { verifier, challenge };
 }
@@ -106,7 +185,7 @@ function signToken(payload: Omit<TokenPayload, "iat" | "exp">): string {
       expiresIn: "15m",
       issuer: "https://api.example.com",
       audience: "https://app.example.com",
-    },
+    }
   );
 }
 
@@ -266,7 +345,7 @@ async function createSession(userId: string, req: Request): Promise<string> {
   await redis.setex(
     `session:${sessionId}`,
     SESSION_TTL,
-    JSON.stringify(session),
+    JSON.stringify(session)
   );
   await redis.sadd(`user-sessions:${userId}`, sessionId);
 
@@ -284,7 +363,7 @@ async function validateSession(sessionId: string): Promise<Session | null> {
   await redis.setex(
     `session:${sessionId}`,
     SESSION_TTL,
-    JSON.stringify(session),
+    JSON.stringify(session)
   );
 
   return session;
@@ -369,7 +448,7 @@ async function hashPasswordArgon2(password: string): Promise<string> {
 
 async function verifyPasswordArgon2(
   hash: string,
-  password: string,
+  password: string
 ): Promise<boolean> {
   return argon2.verify(hash, password);
 }
@@ -383,7 +462,7 @@ async function hashPasswordBcrypt(password: string): Promise<string> {
 
 async function verifyPasswordBcrypt(
   hash: string,
-  password: string,
+  password: string
 ): Promise<boolean> {
   return bcrypt.compare(password, hash);
 }
@@ -418,7 +497,7 @@ import QRCode from "qrcode";
 // TOTP Setup
 async function setupTOTP(
   userId: string,
-  email: string,
+  email: string
 ): Promise<{ secret: string; qrCode: string }> {
   const secret = authenticator.generateSecret();
   const otpauth = authenticator.keyuri(email, "MyApp", secret);
@@ -438,10 +517,10 @@ function verifyTOTP(secret: string, token: string): boolean {
 // Backup codes generation
 function generateBackupCodes(): { codes: string[]; hashes: string[] } {
   const codes = Array.from({ length: 10 }, () =>
-    crypto.randomBytes(4).toString("hex").toUpperCase(),
+    crypto.randomBytes(4).toString("hex").toUpperCase()
   );
   const hashes = codes.map((code) =>
-    crypto.createHash("sha256").update(code).digest("hex"),
+    crypto.createHash("sha256").update(code).digest("hex")
   );
   return { codes, hashes };
 }
@@ -463,7 +542,7 @@ async function verifyMFA(userId: string, code: string): Promise<boolean> {
   // Try backup code
   const codeHash = crypto.createHash("sha256").update(code).digest("hex");
   const backupCode = user.mfaSettings.backupCodes.find(
-    (bc) => bc.hash === codeHash && !bc.usedAt,
+    (bc) => bc.hash === codeHash && !bc.usedAt
   );
 
   if (backupCode) {
@@ -478,27 +557,90 @@ async function verifyMFA(userId: string, code: string): Promise<boolean> {
 }
 ```
 
+## Security Considerations
+
+**Critical Security Checklist** (for security-engineer review):
+
+1. **Credential Storage**
+
+   - Never log passwords, tokens, or API keys
+   - Hash passwords with Argon2id or bcrypt (12+ rounds)
+   - Hash API keys before database storage
+   - Encrypt refresh tokens and MFA secrets at rest
+   - Never return sensitive data in error messages
+
+2. **Token Security**
+
+   - Validate ALL token claims (signature, exp, iss, aud, nbf)
+   - Use RS256 or ES256 for JWT signatures (never HS256 in distributed systems)
+   - Set minimum token expiration (access: 15 min, refresh: 7 days max)
+   - Implement token revocation lists for logout
+   - Use PKCE for all public clients (SPAs, mobile)
+
+3. **Attack Prevention**
+
+   - Implement rate limiting on auth endpoints (5 attempts per 15 min)
+   - Account lockout after failed login attempts (10 failures = 30 min lockout)
+   - Use timing-safe comparison for password/token validation
+   - Prevent user enumeration (same error for invalid user/password)
+   - Validate redirect URIs against allowlist (prevent open redirects)
+
+4. **Session Security**
+
+   - Set httpOnly, secure, sameSite=strict on cookies
+   - Regenerate session ID after privilege escalation
+   - Implement absolute timeout (24h) and idle timeout (30min)
+   - Clear all sessions on password change
+   - Detect and alert on concurrent sessions from different IPs
+
+5. **Transport Security**
+
+   - Require HTTPS for all auth endpoints (HSTS header)
+   - Use secure WebSocket (wss://) for real-time auth
+   - Validate Content-Type headers (prevent CSRF)
+   - Set CORS policies restrictively
+
+6. **Compliance & Privacy**
+   - Log authentication events (login, logout, failures) for audit
+   - Implement PII data retention policies
+   - Support account deletion (GDPR right to erasure)
+   - Provide data export (GDPR right to portability)
+   - Consider SOC2, HIPAA, PCI-DSS requirements if applicable
+
+**Common Vulnerabilities to Avoid**:
+
+- Timing attacks (use crypto.timingSafeEqual)
+- JWT algorithm confusion (always specify allowed algorithms)
+- Session fixation (regenerate ID on login)
+- Insecure direct object references (verify resource ownership)
+- Mass assignment (validate all input fields)
+- Broken access control (default deny, explicit allow)
+
 ## Best Practices
 
 1. **Token Security**
+
    - Use short-lived access tokens (15 minutes or less)
    - Store refresh tokens securely (httpOnly cookies, encrypted storage)
    - Implement token rotation for refresh tokens
    - Always validate token signature, expiration, issuer, and audience
 
 2. **Password Security**
+
    - Use Argon2id for new implementations
    - Never store plaintext passwords
    - Implement account lockout after failed attempts
    - Use secure password reset flows with time-limited tokens
 
 3. **Session Security**
+
    - Regenerate session ID after authentication
    - Implement absolute and idle timeouts
    - Bind sessions to user agent/IP when appropriate
    - Provide session management UI for users
 
 4. **API Key Security**
+
    - Hash API keys before storage
    - Use prefixes for key identification
    - Implement scopes and rate limiting
@@ -518,7 +660,7 @@ async function verifyMFA(userId: string, code: string): Promise<boolean> {
 async function login(
   email: string,
   password: string,
-  mfaCode?: string,
+  mfaCode?: string
 ): Promise<AuthResponse> {
   // Find user
   const user = await db.users.findUnique({ where: { email } });

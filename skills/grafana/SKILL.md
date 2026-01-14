@@ -1,6 +1,6 @@
 ---
 name: grafana
-description: Observability visualization with Grafana and the LGTM stack (Loki, Grafana, Tempo, Mimir). Use when implementing dashboards, log aggregation, distributed tracing, or metrics visualization. Triggers: grafana, loki, tempo, mimir, dashboard, logql, traceql, observability stack, LGTM.
+description: Observability visualization with Grafana and LGTM stack. Dashboard design, panel configuration, alerting, variables/templating, data sources, and query languages (PromQL, LogQL, TraceQL). Use when implementing dashboards, panels, visualizations, queries, alerts, annotations, templates, or observability stack components. Triggers: grafana, dashboard, panel, visualization, query, promql, logql, traceql, loki, tempo, mimir, prometheus, data source, alert, annotation, variable, template, row, stat, graph, table, heatmap, gauge, bar chart, pie chart, time series, logs panel, traces panel, observability, monitoring, metrics, logs, traces, LGTM stack.
 allowed-tools: Read, Grep, Glob, Edit, Write, Bash
 ---
 
@@ -8,14 +8,32 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash
 
 ## Overview
 
-The LGTM stack provides a complete observability solution:
+The LGTM stack provides a complete observability solution with comprehensive visualization and dashboard capabilities:
 
 - **Loki**: Log aggregation and querying (LogQL)
-- **Grafana**: Visualization and dashboarding
+- **Grafana**: Visualization, dashboarding, alerting, and exploration
 - **Tempo**: Distributed tracing (TraceQL)
 - **Mimir**: Long-term metrics storage (Prometheus-compatible)
 
-This skill covers setup, configuration, dashboard creation, querying, and alerting for production observability.
+This skill covers setup, configuration, dashboard creation, panel design, querying, alerting, templating, and production observability best practices.
+
+## When to Use This Skill
+
+### Primary Use Cases
+- Creating or modifying Grafana dashboards
+- Designing panels and visualizations (graphs, stats, tables, heatmaps, etc.)
+- Writing queries (PromQL, LogQL, TraceQL)
+- Configuring data sources (Prometheus, Loki, Tempo, Mimir)
+- Setting up alerting rules and notification policies
+- Implementing dashboard variables and templates
+- Dashboard provisioning and GitOps workflows
+- Troubleshooting observability queries
+- Analyzing application performance, errors, or system behavior
+
+### Who Uses This Skill
+- **senior-infrastructure-engineer** (PRIMARY): Production observability setup, LGTM stack deployment, dashboard architecture
+- **software-engineer**: Application dashboards, service metrics visualization
+- **devops-engineer**: Infrastructure monitoring, deployment dashboards
 
 ## LGTM Stack Components
 
@@ -41,11 +59,14 @@ Horizontally scalable log aggregation inspired by Prometheus
 #### Features
 
 - Multi-datasource dashboarding
-- Templating and variables
-- Alerting (unified alerting)
-- Dashboard provisioning
+- Panel types: Graph, Stat, Table, Heatmap, Bar Chart, Pie Chart, Gauge, Logs, Traces, Time Series
+- Templating and variables for dynamic dashboards
+- Alerting (unified alerting with contact points and notification policies)
+- Dashboard provisioning and GitOps integration
 - Role-based access control (RBAC)
 - Explore mode for ad-hoc queries
+- Annotations for event markers
+- Dashboard folders and organization
 
 ### Tempo - Distributed Tracing
 
@@ -69,194 +90,350 @@ Horizontally scalable long-term Prometheus storage
 - High availability
 - Prometheus remote_write compatible
 
-## Setup and Configuration
+## Dashboard Design and Best Practices
 
-### Loki Configuration
+### Dashboard Organization Principles
 
-#### Production Loki Config
+1. **Hierarchy**: Overview -> Service -> Component -> Deep Dive
+2. **Golden Signals**: Latency, Traffic, Errors, Saturation (RED/USE method)
+3. **Variable-driven**: Use templates for flexibility across environments
+4. **Consistent Layouts**: Grid alignment (24-column grid), logical top-to-bottom flow
+5. **Performance**: Limit queries, use query caching, appropriate time intervals
 
-File: `loki.yaml`
+### Panel Types and When to Use Them
 
-```yaml
-auth_enabled: false
+| Panel Type | Use Case | Best For |
+|------------|----------|----------|
+| **Time Series / Graph** | Trends over time | Request rates, latency, resource usage |
+| **Stat** | Single metric value | Error rates, current values, percentage |
+| **Gauge** | Progress toward limit | CPU usage, memory, disk space |
+| **Bar Gauge** | Comparative values | Top N items, distribution |
+| **Table** | Structured data | Service lists, error details, resource inventory |
+| **Pie Chart** | Proportions | Traffic distribution, error breakdown |
+| **Heatmap** | Distribution over time | Latency percentiles, request patterns |
+| **Logs** | Log streams | Error investigation, debugging |
+| **Traces** | Distributed tracing | Performance analysis, dependency mapping |
 
-server:
-  http_listen_port: 3100
-  grpc_listen_port: 9096
-  log_level: info
+### Panel Configuration Best Practices
 
-common:
-  path_prefix: /loki
-  storage:
-    filesystem:
-      chunks_directory: /loki/chunks
-      rules_directory: /loki/rules
-  replication_factor: 1
-  ring:
-    kvstore:
-      store: inmemory
+#### Titles and Descriptions
+- **Clear, descriptive titles**: Include units and metric context
+- **Tooltips**: Add description fields for panel documentation
+- **Examples**:
+  - Good: "P95 Latency (seconds) by Endpoint"
+  - Bad: "Latency"
 
-schema_config:
-  configs:
-    - from: 2024-01-01
-      store: tsdb
-      object_store: s3
-      schema: v13
-      index:
-        prefix: index_
-        period: 24h
+#### Legends and Labels
+- Show legends only when needed (multiple series)
+- Use `{{label}}` format for dynamic legend names
+- Place legends appropriately (bottom, right, or hidden)
+- Sort by value when showing Top N
 
-storage_config:
-  aws:
-    s3: s3://us-east-1/my-loki-bucket
-    s3forcepathstyle: true
-  tsdb_shipper:
-    active_index_directory: /loki/tsdb-index
-    cache_location: /loki/tsdb-cache
-    shared_store: s3
+#### Axes and Units
+- Always label axes with units
+- Use appropriate unit formats (seconds, bytes, percent, requests/sec)
+- Set reasonable min/max ranges to avoid misleading scales
+- Use logarithmic scales for wide value ranges
 
-limits_config:
-  retention_period: 744h # 31 days
-  ingestion_rate_mb: 10
-  ingestion_burst_size_mb: 20
-  max_query_series: 500
-  max_query_lookback: 30d
-  max_streams_per_user: 0
-  max_global_streams_per_user: 5000
-  reject_old_samples: true
-  reject_old_samples_max_age: 168h
+#### Thresholds and Colors
+- Use thresholds for visual cues (green/yellow/red)
+- Standard threshold pattern:
+  - Green: Normal operation
+  - Yellow: Warning (action may be needed)
+  - Red: Critical (immediate attention required)
+- Examples:
+  - Error rate: 0% (green), 1% (yellow), 5% (red)
+  - P95 latency: <1s (green), 1-3s (yellow), >3s (red)
 
-compactor:
-  working_directory: /loki/compactor
-  shared_store: s3
-  compaction_interval: 10m
-  retention_enabled: true
-  retention_delete_delay: 2h
-  retention_delete_worker_count: 150
+#### Links and Drilldowns
+- Link panels to related dashboards
+- Use data links for context (logs, traces, related services)
+- Create drill-down paths: Overview -> Service -> Component -> Details
+- Link to runbooks for alert panels
 
-querier:
-  max_concurrent: 4
+### Dashboard Variables and Templating
 
-query_range:
-  align_queries_with_step: true
-  cache_results: true
-  results_cache:
-    cache:
-      embedded_cache:
-        enabled: true
-        max_size_mb: 100
+Dashboard variables enable reusable, dynamic dashboards that work across environments, services, and time ranges.
+
+#### Variable Types
+
+| Type | Purpose | Example |
+|------|---------|---------|
+| **Query** | Populate from data source | Namespaces, services, pods |
+| **Custom** | Static list of options | Environments (prod/staging/dev) |
+| **Interval** | Time interval selection | Auto-adjusted query intervals |
+| **Datasource** | Switch between data sources | Multiple Prometheus instances |
+| **Constant** | Hidden values for queries | Cluster name, region |
+| **Text box** | Free-form input | Custom filters |
+
+#### Common Variable Patterns
+
+```json
+{
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "description": "Select Prometheus data source"
+      },
+      {
+        "name": "namespace",
+        "type": "query",
+        "datasource": "${datasource}",
+        "query": "label_values(kube_pod_info, namespace)",
+        "multi": true,
+        "includeAll": true,
+        "description": "Kubernetes namespace filter"
+      },
+      {
+        "name": "app",
+        "type": "query",
+        "datasource": "${datasource}",
+        "query": "label_values(kube_pod_info{namespace=~\"$namespace\"}, app)",
+        "multi": true,
+        "includeAll": true,
+        "description": "Application filter (depends on namespace)"
+      },
+      {
+        "name": "interval",
+        "type": "interval",
+        "auto": true,
+        "auto_count": 30,
+        "auto_min": "10s",
+        "options": ["1m", "5m", "15m", "30m", "1h", "6h", "12h", "1d"],
+        "description": "Query resolution interval"
+      },
+      {
+        "name": "environment",
+        "type": "custom",
+        "options": [
+          { "text": "Production", "value": "prod" },
+          { "text": "Staging", "value": "staging" },
+          { "text": "Development", "value": "dev" }
+        ],
+        "current": { "text": "Production", "value": "prod" }
+      }
+    ]
+  }
+}
 ```
 
-#### Multi-tenant Loki Config
+#### Variable Usage in Queries
 
-With authentication
+Variables are referenced with `$variable_name` or `${variable_name}` syntax:
 
-```yaml
-auth_enabled: true
-server:
-  http_listen_port: 3100
+```promql
+# Simple variable reference
+rate(http_requests_total{namespace="$namespace"}[5m])
 
-common:
-  storage:
-    s3:
-      endpoint: s3.amazonaws.com
-      bucketnames: loki-chunks
-      region: us-east-1
-      access_key_id: ${AWS_ACCESS_KEY_ID}
-      secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+# Multi-select with regex match
+rate(http_requests_total{namespace=~"$namespace"}[5m])
 
-distributor:
-  ring:
-    kvstore:
-      store: memberlist
+# Variable in legend
+rate(http_requests_total{app="$app"}[5m]) by (method)
+# Legend format: "{{method}}"
 
-ingester:
-  lifecycler:
-    ring:
-      kvstore:
-        store: memberlist
-      replication_factor: 3
-  chunk_idle_period: 30m
-  chunk_block_size: 262144
-  chunk_retain_period: 1m
-  max_transfer_retries: 0
+# Using interval variable for adaptive queries
+rate(http_requests_total[$__interval])
 
-memberlist:
-  join_members:
-    - loki-gossip-ring.loki.svc.cluster.local:7946
+# Chained variables (app depends on namespace)
+rate(http_requests_total{namespace="$namespace", app="$app"}[5m])
 ```
 
-### Tempo Configuration
+#### Advanced Variable Techniques
 
-#### Production Tempo Config
-
-File: `tempo.yaml`
-
-```yaml
-server:
-  http_listen_port: 3200
-  grpc_listen_port: 9096
-
-distributor:
-  receivers:
-    otlp:
-      protocols:
-        http:
-        grpc:
-    jaeger:
-      protocols:
-        thrift_http:
-        grpc:
-
-ingester:
-  max_block_duration: 5m
-
-compactor:
-  compaction:
-    block_retention: 720h # 30 days
-
-storage:
-  trace:
-    backend: s3
-    s3:
-      bucket: tempo-traces
-      endpoint: s3.amazonaws.com
-      region: us-east-1
-    pool:
-      max_workers: 100
-      queue_depth: 10000
-    wal:
-      path: /var/tempo/wal
-
-query_frontend:
-  search:
-    duration_slo: 5s
-    throughput_bytes_slo: 1.073741824e+09
-  trace_by_id:
-    duration_slo: 5s
-
-metrics_generator:
-  registry:
-    external_labels:
-      source: tempo
-      cluster: primary
-  storage:
-    path: /var/tempo/generator/wal
-    remote_write:
-      - url: http://mimir:9009/api/v1/push
-        send_exemplars: true
-
-overrides:
-  defaults:
-    metrics_generator:
-      processors: [service-graphs, span-metrics]
+**Regex filtering**:
+```json
+{
+  "name": "pod",
+  "type": "query",
+  "query": "label_values(kube_pod_info{namespace=\"$namespace\"}, pod)",
+  "regex": "/^$app-.*/",
+  "description": "Filter pods by app prefix"
+}
 ```
 
-### Grafana Data Source Configuration
+**All option with custom value**:
+```json
+{
+  "name": "status",
+  "type": "custom",
+  "options": ["200", "404", "500"],
+  "includeAll": true,
+  "allValue": ".*",
+  "description": "HTTP status code filter"
+}
+```
+
+**Dependent variables** (variable chain):
+1. `$datasource` (datasource type)
+2. `$cluster` (query: depends on datasource)
+3. `$namespace` (query: depends on cluster)
+4. `$app` (query: depends on namespace)
+5. `$pod` (query: depends on app)
+
+### Annotations
+
+Annotations display events as vertical markers on time series panels:
+
+```json
+{
+  "annotations": {
+    "list": [
+      {
+        "name": "Deployments",
+        "datasource": "Prometheus",
+        "expr": "changes(kube_deployment_spec_replicas{namespace=\"$namespace\"}[5m])",
+        "tagKeys": "deployment,namespace",
+        "textFormat": "Deployment: {{deployment}}",
+        "iconColor": "blue"
+      },
+      {
+        "name": "Alerts",
+        "datasource": "Loki",
+        "expr": "{app=\"alertmanager\"} | json | alertname!=\"\"",
+        "textFormat": "Alert: {{alertname}}",
+        "iconColor": "red"
+      }
+    ]
+  }
+}
+```
+
+### Dashboard Performance Optimization
+
+#### Query Optimization
+- Limit number of panels (< 15 per dashboard)
+- Use appropriate time ranges (avoid queries over months)
+- Leverage `$__interval` for adaptive sampling
+- Avoid high-cardinality grouping (too many series)
+- Use query caching when available
+
+#### Panel Performance
+- Set max data points to reasonable values
+- Use instant queries for current-state panels
+- Combine related metrics into single queries when possible
+- Disable auto-refresh on heavy dashboards
+
+## Dashboard as Code and Provisioning
+
+### Dashboard Provisioning
+
+Dashboard provisioning enables GitOps workflows and version-controlled dashboard definitions.
+
+#### Provisioning Provider Configuration
+
+File: `/etc/grafana/provisioning/dashboards/dashboards.yaml`
+
+```yaml
+apiVersion: 1
+
+providers:
+  - name: 'default'
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+
+  - name: 'application'
+    orgId: 1
+    folder: 'Applications'
+    type: file
+    disableDeletion: true
+    editable: false
+    options:
+      path: /var/lib/grafana/dashboards/application
+
+  - name: 'infrastructure'
+    orgId: 1
+    folder: 'Infrastructure'
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards/infrastructure
+```
+
+#### Dashboard JSON Structure
+
+Complete dashboard JSON with metadata and provisioning:
+
+```json
+{
+  "dashboard": {
+    "title": "Application Observability - ${app}",
+    "uid": "app-observability",
+    "tags": ["observability", "application"],
+    "timezone": "browser",
+    "editable": true,
+    "graphTooltip": 1,
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "refresh": "30s",
+    "templating": { "list": [] },
+    "panels": [],
+    "links": []
+  },
+  "overwrite": true,
+  "folderId": null,
+  "folderUid": null
+}
+```
+
+#### Kubernetes ConfigMap Provisioning
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  application-dashboard.json: |
+    {
+      "dashboard": {
+        "title": "Application Metrics",
+        "uid": "app-metrics",
+        "tags": ["application"],
+        "panels": []
+      }
+    }
+```
+
+#### Grafana Operator (CRD)
+
+```yaml
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: application-observability
+  namespace: monitoring
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana"
+  json: |
+    {
+      "dashboard": {
+        "title": "Application Observability",
+        "panels": []
+      }
+    }
+```
+
+### Data Source Provisioning
 
 #### Loki Data Source
 
-File: `loki-datasource.yaml`
+File: `/etc/grafana/provisioning/datasources/loki.yaml`
 
 ```yaml
 apiVersion: 1
@@ -278,7 +455,7 @@ datasources:
 
 #### Tempo Data Source
 
-File: `tempo-datasource.yaml`
+File: `/etc/grafana/provisioning/datasources/tempo.yaml`
 
 ```yaml
 apiVersion: 1
@@ -295,31 +472,21 @@ datasources:
         datasourceUid: loki_uid
         tags: ["job", "instance", "pod", "namespace"]
         mappedTags: [{ key: "service.name", value: "service" }]
-        mapTagNamesEnabled: false
         spanStartTimeShift: "1h"
         spanEndTimeShift: "1h"
-        filterByTraceID: false
-        filterBySpanID: false
       tracesToMetrics:
         datasourceUid: prometheus_uid
         tags: [{ key: "service.name", value: "service" }]
-        queries:
-          - name: "Sample query"
-            query: "sum(rate(tempo_spanmetrics_latency_bucket{$__tags}[5m]))"
       serviceMap:
         datasourceUid: prometheus_uid
-      search:
-        hide: false
       nodeGraph:
         enabled: true
-      lokiSearch:
-        datasourceUid: loki_uid
     editable: false
 ```
 
 #### Mimir/Prometheus Data Source
 
-File: `mimir-datasource.yaml`
+File: `/etc/grafana/provisioning/datasources/mimir.yaml`
 
 ```yaml
 apiVersion: 1
@@ -341,6 +508,186 @@ datasources:
       incrementalQuerying: true
       incrementalQueryOverlapWindow: 10m
     editable: false
+```
+
+## Alerting
+
+### Alert Rule Configuration
+
+Grafana unified alerting supports multi-datasource alerts with flexible evaluation and routing.
+
+#### Prometheus/Mimir Alert Rule
+
+File: `/etc/grafana/provisioning/alerting/rules.yaml`
+
+```yaml
+apiVersion: 1
+
+groups:
+  - name: application_alerts
+    interval: 1m
+    rules:
+      - uid: error_rate_high
+        title: High Error Rate
+        condition: A
+        data:
+          - refId: A
+            queryType: ""
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus_uid
+            model:
+              expr: |
+                sum(rate(http_requests_total{status=~"5.."}[5m]))
+                /
+                sum(rate(http_requests_total[5m]))
+                > 0.05
+              intervalMs: 1000
+              maxDataPoints: 43200
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          description: 'Error rate is {{ printf "%.2f" $values.A.Value }}% (threshold: 5%)'
+          summary: Application error rate is above threshold
+          runbook_url: https://wiki.company.com/runbooks/high-error-rate
+        labels:
+          severity: critical
+          team: platform
+        isPaused: false
+
+      - uid: high_latency
+        title: High P95 Latency
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus_uid
+            model:
+              expr: |
+                histogram_quantile(0.95,
+                  sum(rate(http_request_duration_seconds_bucket[5m])) by (le, endpoint)
+                ) > 2
+        for: 10m
+        annotations:
+          description: "P95 latency is {{ $values.A.Value }}s on endpoint {{ $labels.endpoint }}"
+          runbook_url: https://wiki.company.com/runbooks/high-latency
+        labels:
+          severity: warning
+```
+
+#### Loki Alert Rule
+
+```yaml
+apiVersion: 1
+
+groups:
+  - name: log_based_alerts
+    interval: 1m
+    rules:
+      - uid: error_spike
+        title: Error Log Spike
+        condition: A
+        data:
+          - refId: A
+            queryType: ""
+            datasourceUid: loki_uid
+            model:
+              expr: |
+                sum(rate({app="api"} | json | level="error" [5m]))
+                > 10
+        for: 2m
+        annotations:
+          description: "Error log rate is {{ $values.A.Value }} logs/sec"
+          summary: Spike in error logs detected
+        labels:
+          severity: warning
+
+      - uid: critical_error_pattern
+        title: Critical Error Pattern Detected
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: loki_uid
+            model:
+              expr: |
+                sum(count_over_time({app="api"}
+                  |~ "OutOfMemoryError|StackOverflowError|FatalException" [5m]
+                )) > 0
+        for: 0m
+        annotations:
+          description: "Critical error pattern found in logs"
+        labels:
+          severity: critical
+          page: true
+```
+
+### Contact Points and Notification Policies
+
+File: `/etc/grafana/provisioning/alerting/contactpoints.yaml`
+
+```yaml
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: slack-critical
+    receivers:
+      - uid: slack_critical
+        type: slack
+        settings:
+          url: https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+          title: "{{ .GroupLabels.alertname }}"
+          text: |
+            {{ range .Alerts }}
+            *Alert:* {{ .Labels.alertname }}
+            *Summary:* {{ .Annotations.summary }}
+            *Description:* {{ .Annotations.description }}
+            *Severity:* {{ .Labels.severity }}
+            {{ end }}
+        disableResolveMessage: false
+
+  - orgId: 1
+    name: pagerduty-oncall
+    receivers:
+      - uid: pagerduty_oncall
+        type: pagerduty
+        settings:
+          integrationKey: YOUR_INTEGRATION_KEY
+          severity: critical
+          class: infrastructure
+
+  - orgId: 1
+    name: email-team
+    receivers:
+      - uid: email_team
+        type: email
+        settings:
+          addresses: team@company.com
+          singleEmail: true
+
+notificationPolicies:
+  - orgId: 1
+    receiver: slack-critical
+    group_by: ["alertname", "namespace"]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
+    routes:
+      - receiver: pagerduty-oncall
+        matchers:
+          - severity = critical
+          - page = true
+        group_wait: 10s
+        repeat_interval: 1h
+        continue: true
+
+      - receiver: email-team
+        matchers:
+          - severity = warning
+          - team = platform
+        group_interval: 10m
+        repeat_interval: 12h
 ```
 
 ## LogQL Query Patterns
@@ -426,50 +773,6 @@ datasources:
 {app="api"} | pattern `level=<level> msg="<msg>" duration=<duration>ms`
 ```
 
-#### Regex Parsing
-
-```logql
-# Named capture groups
-{app="api"} | regexp `(?P<method>[A-Z]+) (?P<uri>/[^ ]*) (?P<duration>[0-9.]+)ms`
-
-# Multiple regexes
-{app="api"}
-  | regexp `level=(?P<level>[a-z]+)`
-  | regexp `duration=(?P<duration>[0-9.]+)ms`
-```
-
-### Label Formatting and Manipulation
-
-#### Label Format
-
-```logql
-# Add labels from parsed fields
-{app="api"} | json | label_format level=severity
-
-# Rename labels
-{app="api"} | label_format environment=env
-
-# Template labels
-{app="api"} | json | label_format full_path=`{{.namespace}}/{{.pod}}`
-
-# Convert to lowercase
-{app="api"} | label_format app=`{{ ToLower .app }}`
-```
-
-#### Line Format
-
-```logql
-# Custom output format
-{app="api"} | json | line_format "{{.timestamp}} [{{.level}}] {{.message}}"
-
-# Only specific fields
-{app="api"} | logfmt | line_format "{{.msg}}"
-
-# Conditional formatting
-{app="api"} | json
-  | line_format `{{if eq .level "error"}}ERROR: {{end}}{{.msg}}`
-```
-
 ### Aggregations and Metrics
 
 #### Count Queries
@@ -493,9 +796,6 @@ sum(rate({app="api"}[5m]))
 #### Extracted Metrics
 
 ```logql
-# Parse and aggregate numeric values
-sum(rate({app="api"} | json | __error__="" [5m])) by (status_code)
-
 # Average duration
 avg_over_time({app="api"}
   | logfmt
@@ -506,13 +806,6 @@ quantile_over_time(0.95, {app="api"}
   | regexp `duration=(?P<duration>[0-9.]+)ms`
   | unwrap duration [5m]) by (method)
 
-# Bytes processed
-sum(bytes_over_time({app="api"}[5m]))
-```
-
-#### Advanced Aggregations
-
-```logql
 # Top 10 error messages
 topk(10,
   sum by (msg) (
@@ -522,82 +815,15 @@ topk(10,
     )
   )
 )
-
-# Request rate by endpoint
-sum by (endpoint) (
-  rate({app="api"}
-    | json
-    | __error__="" [5m]
-  )
-)
-
-# 4xx/5xx rate
-sum(
-  rate({app="api"}
-    | pattern `<_> <status> <_>`
-    | status >= 400 [5m]
-  )
-) by (status)
-```
-
-### Production Query Examples
-
-#### Error Investigation
-
-```logql
-# Find errors with context
-{namespace="production", app="api"}
-  | json
-  | level="error"
-  | line_format "{{.timestamp}} [{{.trace_id}}] {{.message}}"
-
-# Errors with stack traces
-{app="api"}
-  |= "error"
-  |= "stack"
-  | json
-  | line_format "{{.message}}\n{{.stack}}"
-
-# Group errors by type
-sum by (error_type) (
-  count_over_time({app="api"}
-    | json
-    | level="error" [1h]
-  )
-)
-```
-
-#### Performance Analysis
-
-```logql
-# Slow requests (>1s)
-{app="api"}
-  | logfmt
-  | unwrap duration
-  | duration > 1000
-  | line_format "{{.method}} {{.uri}} took {{.duration}}ms"
-
-# P99 latency by endpoint
-quantile_over_time(0.99, {app="api"}
-  | json
-  | unwrap response_time [5m]) by (endpoint)
-
-# Request throughput
-sum(rate({app="api"} | json | __error__="" [1m])) by (method, endpoint)
 ```
 
 ## TraceQL Query Patterns
 
 ### Basic Trace Queries
 
-#### Span Search
-
 ```traceql
 # Find traces by service
 { .service.name = "api" }
-
-# Find by span name
-{ name = "GET /users" }
 
 # HTTP status codes
 { .http.status_code = 500 }
@@ -605,138 +831,24 @@ sum(rate({app="api"} | json | __error__="" [1m])) by (method, endpoint)
 # Combine conditions
 { .service.name = "api" && .http.status_code >= 400 }
 
-# Duration filter (in nanoseconds)
+# Duration filter
 { duration > 1s }
 ```
 
-#### Resource and Span Attributes
-
-```traceql
-# Resource attributes (service-level)
-{ resource.service.name = "checkout" }
-{ resource.deployment.environment = "production" }
-
-# Span attributes
-{ span.http.method = "POST" }
-{ span.db.system = "postgresql" }
-
-# Intrinsic fields
-{ name = "database-query" && duration > 100ms }
-{ kind = "server" }
-{ status = "error" }
-```
-
 ### Advanced TraceQL
-
-#### Aggregations
-
-```traceql
-# Count spans
-{ .service.name = "api" } | count() > 10
-
-# Min/Max/Avg duration
-{ .service.name = "api" } | max(duration) > 5s
-
-# Structural operators
-{ .service.name = "api" }
-  >> { .service.name = "database" && duration > 100ms }
-```
-
-#### Span Sets and Relationships
 
 ```traceql
 # Parent-child relationship
 { .service.name = "frontend" }
   >> { .service.name = "backend" && .http.status_code = 500 }
 
-# Sibling spans
-{ .service.name = "api" }
-  && { .service.name = "cache" }
-
 # Descendant spans
 { .service.name = "api" }
   >>+ { .db.system = "postgresql" && duration > 1s }
-```
 
-#### Production TraceQL Examples
-
-```traceql
 # Failed database queries
 { .service.name = "api" }
   >> { .db.system = "postgresql" && status = "error" }
-
-# Slow checkout flows
-{ name = "checkout" && duration > 5s }
-
-# Cache misses leading to slow DB calls
-{ .cache.hit = false }
-  >> { .db.system = "postgresql" && duration > 500ms }
-
-# Error traces with specific tag
-{ status = "error" && .tenant.id = "acme-corp" }
-
-# High cardinality debugging
-{ .service.name = "api" && .user.id = "user123" }
-```
-
-## Dashboard Design Best Practices
-
-### Dashboard Organization
-
-1. Hierarchy: Overview -> Service -> Component -> Deep Dive
-2. Golden Signals: Latency, Traffic, Errors, Saturation
-3. Variable-driven: Use templates for flexibility
-4. Consistent Layouts: Grid alignment, logical flow
-5. Performance: Limit queries, use query caching
-
-### Panel Best Practices
-
-- **Titles**: Clear, descriptive (include units)
-- **Legends**: Show only when needed, use `{{label}}` format
-- **Axes**: Label with units, appropriate ranges
-- **Thresholds**: Use for visual cues (green/yellow/red)
-- **Links**: Deep-link to related dashboards/logs/traces
-
-### Variable Patterns
-
-#### Common Variables
-
-```json
-{
-  "templating": {
-    "list": [
-      {
-        "name": "datasource",
-        "type": "datasource",
-        "query": "prometheus"
-      },
-      {
-        "name": "namespace",
-        "type": "query",
-        "datasource": "${datasource}",
-        "query": "label_values(kube_pod_info, namespace)",
-        "multi": true,
-        "includeAll": true
-      },
-      {
-        "name": "pod",
-        "type": "query",
-        "datasource": "${datasource}",
-        "query": "label_values(kube_pod_info{namespace=~\"$namespace\"}, pod)",
-        "multi": true,
-        "includeAll": true
-      },
-      {
-        "name": "interval",
-        "type": "interval",
-        "auto": true,
-        "auto_count": 30,
-        "auto_min": "10s",
-        "options": ["1m", "5m", "15m", "30m", "1h", "6h", "12h", "1d"]
-      }
-    ]
-  }
-}
 ```
 
 ## Complete Dashboard Examples
@@ -911,82 +1023,6 @@ sum(rate({app="api"} | json | __error__="" [1m])) by (method, endpoint)
           "x": 12,
           "y": 8
         }
-      },
-      {
-        "id": 5,
-        "title": "Trace Error Rate",
-        "type": "graph",
-        "datasource": "Mimir",
-        "targets": [
-          {
-            "expr": "sum(rate(traces_spanmetrics_calls_total{service=\"$app\", status_code=\"STATUS_CODE_ERROR\"}[$__rate_interval])) / sum(rate(traces_spanmetrics_calls_total{service=\"$app\"}[$__rate_interval]))",
-            "legendFormat": "Trace Error %"
-          }
-        ],
-        "gridPos": {
-          "h": 6,
-          "w": 8,
-          "x": 0,
-          "y": 16
-        }
-      },
-      {
-        "id": 6,
-        "title": "Active Traces",
-        "type": "stat",
-        "datasource": "Tempo",
-        "targets": [
-          {
-            "queryType": "traceql",
-            "query": "{ resource.service.name = \"$app\" }",
-            "refId": "A"
-          }
-        ],
-        "options": {
-          "graphMode": "area",
-          "colorMode": "value",
-          "justifyMode": "auto",
-          "textMode": "auto"
-        },
-        "gridPos": {
-          "h": 6,
-          "w": 8,
-          "x": 8,
-          "y": 16
-        }
-      },
-      {
-        "id": 7,
-        "title": "Top Endpoints by Request Count",
-        "type": "table",
-        "datasource": "Mimir",
-        "targets": [
-          {
-            "expr": "topk(10, sum by (endpoint) (rate(http_requests_total{app=\"$app\", namespace=~\"$namespace\"}[$__rate_interval])))",
-            "format": "table",
-            "instant": true
-          }
-        ],
-        "transformations": [
-          {
-            "id": "organize",
-            "options": {
-              "excludeByName": {
-                "Time": true
-              },
-              "renameByName": {
-                "endpoint": "Endpoint",
-                "Value": "Req/s"
-              }
-            }
-          }
-        ],
-        "gridPos": {
-          "h": 6,
-          "w": 8,
-          "x": 16,
-          "y": 16
-        }
       }
     ],
     "links": [
@@ -1007,795 +1043,133 @@ sum(rate({app="api"} | json | __error__="" [1m])) by (method, endpoint)
 }
 ```
 
-### Log Analysis Dashboard
+## LGTM Stack Configuration
 
-```json
-{
-  "dashboard": {
-    "title": "Log Analysis - ${namespace}",
-    "tags": ["logs", "loki"],
-    "templating": {
-      "list": [
-        {
-          "name": "namespace",
-          "type": "query",
-          "datasource": "Loki",
-          "query": "label_values(namespace)",
-          "multi": false
-        },
-        {
-          "name": "app",
-          "type": "query",
-          "datasource": "Loki",
-          "query": "label_values({namespace=\"$namespace\"}, app)",
-          "multi": true,
-          "includeAll": true
-        },
-        {
-          "name": "level",
-          "type": "custom",
-          "options": [
-            { "text": "All", "value": ".*" },
-            { "text": "Error", "value": "error" },
-            { "text": "Warning", "value": "warn|warning" },
-            { "text": "Info", "value": "info" },
-            { "text": "Debug", "value": "debug" }
-          ],
-          "current": {
-            "text": "All",
-            "value": ".*"
-          }
-        }
-      ]
-    },
-    "panels": [
-      {
-        "id": 1,
-        "title": "Log Volume",
-        "type": "graph",
-        "datasource": "Loki",
-        "targets": [
-          {
-            "expr": "sum by (app) (rate({namespace=\"$namespace\", app=~\"$app\"} | json | level=~\"$level\" [$__interval]))",
-            "legendFormat": "{{app}}"
-          }
-        ],
-        "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 }
-      },
-      {
-        "id": 2,
-        "title": "Log Level Distribution",
-        "type": "piechart",
-        "datasource": "Loki",
-        "targets": [
-          {
-            "expr": "sum by (level) (count_over_time({namespace=\"$namespace\", app=~\"$app\"} | json | level=~\"$level\" [$__range]))",
-            "legendFormat": "{{level}}"
-          }
-        ],
-        "options": {
-          "legend": {
-            "displayMode": "table",
-            "placement": "right",
-            "values": ["value", "percent"]
-          }
-        },
-        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 }
-      },
-      {
-        "id": 3,
-        "title": "Top Error Messages",
-        "type": "bargauge",
-        "datasource": "Loki",
-        "targets": [
-          {
-            "expr": "topk(10, sum by (msg) (count_over_time({namespace=\"$namespace\", app=~\"$app\"} | json | level=\"error\" [$__range])))",
-            "legendFormat": "{{msg}}"
-          }
-        ],
-        "options": {
-          "orientation": "horizontal",
-          "displayMode": "gradient"
-        },
-        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 }
-      },
-      {
-        "id": 4,
-        "title": "Log Stream",
-        "type": "logs",
-        "datasource": "Loki",
-        "targets": [
-          {
-            "expr": "{namespace=\"$namespace\", app=~\"$app\"} | json | level=~\"$level\"",
-            "refId": "A"
-          }
-        ],
-        "options": {
-          "showTime": true,
-          "showLabels": true,
-          "wrapLogMessage": true,
-          "dedupStrategy": "none",
-          "enableLogDetails": true
-        },
-        "gridPos": { "h": 12, "w": 24, "x": 0, "y": 16 }
-      }
-    ]
-  }
-}
-```
+### Loki Configuration
 
-### Distributed Tracing Dashboard
-
-```json
-{
-  "dashboard": {
-    "title": "Distributed Tracing - ${service}",
-    "tags": ["tracing", "tempo"],
-    "templating": {
-      "list": [
-        {
-          "name": "service",
-          "type": "query",
-          "datasource": "Tempo",
-          "query": "service.name",
-          "multi": false
-        },
-        {
-          "name": "min_duration",
-          "type": "custom",
-          "options": [
-            { "text": "Any", "value": "0" },
-            { "text": ">100ms", "value": "100ms" },
-            { "text": ">500ms", "value": "500ms" },
-            { "text": ">1s", "value": "1s" },
-            { "text": ">5s", "value": "5s" }
-          ]
-        }
-      ]
-    },
-    "panels": [
-      {
-        "id": 1,
-        "title": "Request Rate (from span metrics)",
-        "type": "graph",
-        "datasource": "Mimir",
-        "targets": [
-          {
-            "expr": "sum(rate(traces_spanmetrics_calls_total{service=\"$service\"}[$__rate_interval])) by (span_name)",
-            "legendFormat": "{{span_name}}"
-          }
-        ],
-        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }
-      },
-      {
-        "id": 2,
-        "title": "P95 Latency (from span metrics)",
-        "type": "graph",
-        "datasource": "Mimir",
-        "targets": [
-          {
-            "expr": "histogram_quantile(0.95, sum(rate(traces_spanmetrics_latency_bucket{service=\"$service\"}[$__rate_interval])) by (le, span_name))",
-            "legendFormat": "{{span_name}}"
-          }
-        ],
-        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }
-      },
-      {
-        "id": 3,
-        "title": "Error Rate",
-        "type": "stat",
-        "datasource": "Mimir",
-        "targets": [
-          {
-            "expr": "sum(rate(traces_spanmetrics_calls_total{service=\"$service\", status_code=\"STATUS_CODE_ERROR\"}[$__rate_interval])) / sum(rate(traces_spanmetrics_calls_total{service=\"$service\"}[$__rate_interval]))"
-          }
-        ],
-        "options": {
-          "reduceOptions": {
-            "values": false,
-            "calcs": ["lastNotNull"]
-          },
-          "graphMode": "area",
-          "colorMode": "background",
-          "textMode": "value_and_name"
-        },
-        "fieldConfig": {
-          "defaults": {
-            "unit": "percentunit",
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                { "value": 0, "color": "green" },
-                { "value": 0.01, "color": "yellow" },
-                { "value": 0.05, "color": "red" }
-              ]
-            }
-          }
-        },
-        "gridPos": { "h": 4, "w": 6, "x": 0, "y": 8 }
-      },
-      {
-        "id": 4,
-        "title": "Traces with Errors",
-        "type": "table",
-        "datasource": "Tempo",
-        "targets": [
-          {
-            "queryType": "traceql",
-            "query": "{ resource.service.name = \"$service\" && status = error }",
-            "refId": "A",
-            "limit": 20
-          }
-        ],
-        "transformations": [
-          {
-            "id": "organize",
-            "options": {
-              "renameByName": {
-                "traceID": "Trace ID",
-                "startTime": "Start Time",
-                "duration": "Duration"
-              }
-            }
-          }
-        ],
-        "gridPos": { "h": 8, "w": 18, "x": 6, "y": 8 }
-      },
-      {
-        "id": 5,
-        "title": "Service Dependency Graph",
-        "type": "nodeGraph",
-        "datasource": "Mimir",
-        "targets": [
-          {
-            "expr": "traces_service_graph_request_total",
-            "format": "table"
-          }
-        ],
-        "gridPos": { "h": 12, "w": 24, "x": 0, "y": 16 }
-      }
-    ]
-  }
-}
-```
-
-## Grafana Alerting
-
-### Alert Rule Configuration
-
-#### Prometheus/Mimir Alert Rule
+File: `loki.yaml`
 
 ```yaml
-apiVersion: 1
+auth_enabled: false
 
-groups:
-  - name: application_alerts
-    interval: 1m
-    rules:
-      - uid: error_rate_high
-        title: High Error Rate
-        condition: A
-        data:
-          - refId: A
-            queryType: ""
-            relativeTimeRange:
-              from: 300
-              to: 0
-            datasourceUid: prometheus_uid
-            model:
-              expr: |
-                sum(rate(http_requests_total{status=~"5.."}[5m]))
-                /
-                sum(rate(http_requests_total[5m]))
-                > 0.05
-              intervalMs: 1000
-              maxDataPoints: 43200
-        noDataState: NoData
-        execErrState: Error
-        for: 5m
-        annotations:
-          description: 'Error rate is {{ printf "%.2f" $values.A.Value }}% (threshold: 5%)'
-          summary: Application error rate is above threshold
-        labels:
-          severity: critical
-          team: platform
-        isPaused: false
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  log_level: info
 
-      - uid: high_latency
-        title: High P95 Latency
-        condition: A
-        data:
-          - refId: A
-            datasourceUid: prometheus_uid
-            model:
-              expr: |
-                histogram_quantile(0.95,
-                  sum(rate(http_request_duration_seconds_bucket[5m])) by (le, endpoint)
-                ) > 2
-        for: 10m
-        annotations:
-          description: "P95 latency is {{ $values.A.Value }}s on endpoint {{ $labels.endpoint }}"
-          runbook_url: https://wiki.company.com/runbooks/high-latency
-        labels:
-          severity: warning
+common:
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
 
-      - uid: pod_restart_high
-        title: High Pod Restart Rate
-        condition: A
-        data:
-          - refId: A
-            datasourceUid: prometheus_uid
-            model:
-              expr: |
-                rate(kube_pod_container_status_restarts_total[15m]) > 0.1
-        for: 5m
-        annotations:
-          description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} is restarting frequently"
-        labels:
-          severity: warning
-          team: sre
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: s3
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+storage_config:
+  aws:
+    s3: s3://us-east-1/my-loki-bucket
+    s3forcepathstyle: true
+  tsdb_shipper:
+    active_index_directory: /loki/tsdb-index
+    cache_location: /loki/tsdb-cache
+    shared_store: s3
+
+limits_config:
+  retention_period: 744h # 31 days
+  ingestion_rate_mb: 10
+  ingestion_burst_size_mb: 20
+  max_query_series: 500
+  max_query_lookback: 30d
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+
+compactor:
+  working_directory: /loki/compactor
+  shared_store: s3
+  compaction_interval: 10m
+  retention_enabled: true
+  retention_delete_delay: 2h
 ```
 
-#### Loki Alert Rule
+### Tempo Configuration
+
+File: `tempo.yaml`
 
 ```yaml
-apiVersion: 1
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9096
 
-groups:
-  - name: log_based_alerts
-    interval: 1m
-    rules:
-      - uid: error_spike
-        title: Error Log Spike
-        condition: A
-        data:
-          - refId: A
-            queryType: ""
-            datasourceUid: loki_uid
-            model:
-              expr: |
-                sum(rate({app="api"} | json | level="error" [5m]))
-                > 10
-        for: 2m
-        annotations:
-          description: "Error log rate is {{ $values.A.Value }} logs/sec"
-          summary: Spike in error logs detected
-        labels:
-          severity: warning
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        http:
+        grpc:
+    jaeger:
+      protocols:
+        thrift_http:
+        grpc:
 
-      - uid: critical_error_pattern
-        title: Critical Error Pattern Detected
-        condition: A
-        data:
-          - refId: A
-            datasourceUid: loki_uid
-            model:
-              expr: |
-                sum(count_over_time({app="api"}
-                  |~ "OutOfMemoryError|StackOverflowError|FatalException" [5m]
-                )) > 0
-        for: 0m
-        annotations:
-          description: "Critical error pattern found in logs"
-        labels:
-          severity: critical
-          page: true
+ingester:
+  max_block_duration: 5m
 
-      - uid: database_connection_errors
-        title: Database Connection Errors
-        condition: A
-        data:
-          - refId: A
-            datasourceUid: loki_uid
-            model:
-              expr: |
-                sum by (app) (
-                  rate({namespace="production"}
-                    | json
-                    | message =~ ".*database connection.*failed.*" [5m]
-                  )
-                ) > 1
-        for: 3m
-        annotations:
-          description: "App {{ $labels.app }} experiencing DB connection issues"
-        labels:
-          severity: critical
+compactor:
+  compaction:
+    block_retention: 720h # 30 days
+
+storage:
+  trace:
+    backend: s3
+    s3:
+      bucket: tempo-traces
+      endpoint: s3.amazonaws.com
+      region: us-east-1
+    wal:
+      path: /var/tempo/wal
+
+metrics_generator:
+  registry:
+    external_labels:
+      source: tempo
+      cluster: primary
+  storage:
+    path: /var/tempo/generator/wal
+    remote_write:
+      - url: http://mimir:9009/api/v1/push
+        send_exemplars: true
 ```
 
-### Contact Points and Notification Policies
-
-#### Contact Point Configuration
-
-```yaml
-apiVersion: 1
-
-contactPoints:
-  - orgId: 1
-    name: slack-critical
-    receivers:
-      - uid: slack_critical
-        type: slack
-        settings:
-          url: https://hooks.slack.com/services/YOUR/WEBHOOK/URL
-          title: "{{ .GroupLabels.alertname }}"
-          text: |
-            {{ range .Alerts }}
-            *Alert:* {{ .Labels.alertname }}
-            *Summary:* {{ .Annotations.summary }}
-            *Description:* {{ .Annotations.description }}
-            *Severity:* {{ .Labels.severity }}
-            {{ end }}
-        disableResolveMessage: false
-
-  - orgId: 1
-    name: pagerduty-oncall
-    receivers:
-      - uid: pagerduty_oncall
-        type: pagerduty
-        settings:
-          integrationKey: YOUR_INTEGRATION_KEY
-          severity: critical
-          class: infrastructure
-          component: kubernetes
-
-  - orgId: 1
-    name: email-team
-    receivers:
-      - uid: email_team
-        type: email
-        settings:
-          addresses: team@company.com
-          singleEmail: true
-
-notificationPolicies:
-  - orgId: 1
-    receiver: slack-critical
-    group_by: ["alertname", "namespace"]
-    group_wait: 30s
-    group_interval: 5m
-    repeat_interval: 4h
-    routes:
-      - receiver: pagerduty-oncall
-        matchers:
-          - severity = critical
-          - page = true
-        group_wait: 10s
-        repeat_interval: 1h
-        continue: true
-
-      - receiver: email-team
-        matchers:
-          - severity = warning
-          - team = platform
-        group_interval: 10m
-        repeat_interval: 12h
-```
-
-## Dashboard Provisioning
-
-### ConfigMap for Dashboard Provisioning
-
-#### Kubernetes ConfigMap
-
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: grafana-dashboards
-  namespace: monitoring
-  labels:
-    grafana_dashboard: "1"
-data:
-  application-dashboard.json: |
-    {
-      "dashboard": {
-        "title": "Application Metrics",
-        "uid": "app-metrics",
-        "tags": ["application"],
-        "timezone": "browser",
-        "panels": []
-      }
-    }
-  log-analysis.json: |
-    {
-      "dashboard": {
-        "title": "Log Analysis",
-        "uid": "log-analysis",
-        "tags": ["logs"],
-        "timezone": "browser",
-        "panels": []
-      }
-    }
-```
-
-#### Dashboard Provider Configuration
-
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: grafana-dashboard-providers
-  namespace: monitoring
-data:
-  dashboards.yaml: |
-    apiVersion: 1
-    providers:
-      - name: 'default'
-        orgId: 1
-        folder: 'General'
-        type: file
-        disableDeletion: false
-        updateIntervalSeconds: 10
-        allowUiUpdates: true
-        options:
-          path: /etc/grafana/provisioning/dashboards
-
-      - name: 'application'
-        orgId: 1
-        folder: 'Applications'
-        type: file
-        disableDeletion: true
-        editable: false
-        options:
-          path: /var/lib/grafana/dashboards/application
-
-      - name: 'infrastructure'
-        orgId: 1
-        folder: 'Infrastructure'
-        type: file
-        options:
-          path: /var/lib/grafana/dashboards/infrastructure
-```
-
-#### Grafana Deployment with Provisioning
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: grafana
-  namespace: monitoring
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: grafana
-  template:
-    metadata:
-      labels:
-        app: grafana
-    spec:
-      containers:
-        - name: grafana
-          image: grafana/grafana:10.2.0
-          ports:
-            - containerPort: 3000
-          env:
-            - name: GF_SECURITY_ADMIN_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: grafana-admin
-                  key: password
-            - name: GF_INSTALL_PLUGINS
-              value: "grafana-piechart-panel,grafana-worldmap-panel"
-          volumeMounts:
-            - name: grafana-storage
-              mountPath: /var/lib/grafana
-            - name: grafana-datasources
-              mountPath: /etc/grafana/provisioning/datasources
-            - name: grafana-dashboards
-              mountPath: /etc/grafana/provisioning/dashboards
-            - name: dashboard-files
-              mountPath: /var/lib/grafana/dashboards
-      volumes:
-        - name: grafana-storage
-          persistentVolumeClaim:
-            claimName: grafana-pvc
-        - name: grafana-datasources
-          configMap:
-            name: grafana-datasources
-        - name: grafana-dashboards
-          configMap:
-            name: grafana-dashboard-providers
-        - name: dashboard-files
-          configMap:
-            name: grafana-dashboards
-```
-
-## GrafanaDashboard CRD (Grafana Operator)
-
-### Using Grafana Operator
-
-#### GrafanaDashboard Resource
-
-```yaml
-apiVersion: grafana.integreatly.org/v1beta1
-kind: GrafanaDashboard
-metadata:
-  name: application-observability
-  namespace: monitoring
-  labels:
-    app: grafana
-spec:
-  instanceSelector:
-    matchLabels:
-      dashboards: "grafana"
-
-  # Inline dashboard JSON
-  json: |
-    {
-      "dashboard": {
-        "title": "Application Observability",
-        "tags": ["generated", "application"],
-        "timezone": "browser",
-        "panels": [
-          {
-            "id": 1,
-            "title": "Request Rate",
-            "type": "graph",
-            "datasource": "Prometheus",
-            "targets": [
-              {
-                "expr": "sum(rate(http_requests_total[5m])) by (method)",
-                "legendFormat": "{{method}}"
-              }
-            ]
-          }
-        ]
-      }
-    }
-```
-
-#### GrafanaDashboard from ConfigMap
-
-```yaml
-apiVersion: grafana.integreatly.org/v1beta1
-kind: GrafanaDashboard
-metadata:
-  name: logs-dashboard
-  namespace: monitoring
-spec:
-  instanceSelector:
-    matchLabels:
-      dashboards: "grafana"
-
-  configMapRef:
-    name: log-dashboard-config
-    key: dashboard.json
-```
-
-#### Grafana Instance with Operator
-
-```yaml
-apiVersion: grafana.integreatly.org/v1beta1
-kind: Grafana
-metadata:
-  name: grafana
-  namespace: monitoring
-  labels:
-    dashboards: "grafana"
-spec:
-  config:
-    log:
-      mode: "console"
-    auth:
-      disable_login_form: false
-    security:
-      admin_user: admin
-      admin_password: ${ADMIN_PASSWORD}
-
-  deployment:
-    spec:
-      replicas: 2
-      template:
-        spec:
-          containers:
-            - name: grafana
-              image: grafana/grafana:10.2.0
-
-  service:
-    spec:
-      type: LoadBalancer
-      ports:
-        - name: http
-          port: 3000
-          targetPort: 3000
-
-  ingress:
-    spec:
-      ingressClassName: nginx
-      rules:
-        - host: grafana.company.com
-          http:
-            paths:
-              - path: /
-                pathType: Prefix
-                backend:
-                  service:
-                    name: grafana-service
-                    port:
-                      number: 3000
-      tls:
-        - hosts:
-            - grafana.company.com
-          secretName: grafana-tls
-```
-
-#### GrafanaDataSource CRD
-
-```yaml
-apiVersion: grafana.integreatly.org/v1beta1
-kind: GrafanaDataSource
-metadata:
-  name: loki-datasource
-  namespace: monitoring
-spec:
-  instanceSelector:
-    matchLabels:
-      dashboards: "grafana"
-
-  datasource:
-    name: Loki
-    type: loki
-    access: proxy
-    url: http://loki-gateway.monitoring.svc.cluster.local:3100
-    isDefault: false
-    editable: false
-    jsonData:
-      maxLines: 1000
-      derivedFields:
-        - datasourceUid: tempo
-          matcherRegex: "trace_id=(\\w+)"
-          name: TraceID
-          url: "$${__value.raw}"
-
----
-apiVersion: grafana.integreatly.org/v1beta1
-kind: GrafanaDataSource
-metadata:
-  name: tempo-datasource
-  namespace: monitoring
-spec:
-  instanceSelector:
-    matchLabels:
-      dashboards: "grafana"
-
-  datasource:
-    name: Tempo
-    type: tempo
-    access: proxy
-    url: http://tempo-query-frontend.monitoring.svc.cluster.local:3200
-    uid: tempo
-    jsonData:
-      httpMethod: GET
-      tracesToLogs:
-        datasourceUid: loki
-        tags: ["job", "instance", "pod", "namespace"]
-        mappedTags: [{ key: "service.name", value: "service" }]
-      nodeGraph:
-        enabled: true
-```
-
-## Production Tips
+## Production Best Practices
 
 ### Performance Optimization
 
 #### Query Optimization
-
 - Use label filters before line filters
 - Limit time ranges for expensive queries
 - Use `unwrap` instead of parsing when possible
 - Cache query results with query frontend
 
 #### Dashboard Performance
-
 - Limit number of panels (< 15 per dashboard)
 - Use appropriate time intervals
 - Avoid high-cardinality grouping
 - Use `$__interval` for adaptive sampling
 
 #### Storage Optimization
-
 - Configure retention policies
 - Use compaction for Loki and Tempo
 - Implement tiered storage (hot/warm/cold)
@@ -1804,67 +1178,35 @@ spec:
 ### Security Best Practices
 
 #### Authentication
-
 - Enable auth (`auth_enabled: true` in Loki/Tempo)
 - Use OAuth/LDAP for Grafana
 - Implement multi-tenancy with org isolation
 
 #### Authorization
-
 - Configure RBAC in Grafana
 - Limit datasource access by team
 - Use folder permissions for dashboards
 
 #### Network Security
-
 - TLS for all components
 - Network policies in Kubernetes
 - Rate limiting at ingress
-
-### Monitoring the Monitoring Stack
-
-```promql
-# Monitor Loki itself
-sum(rate(loki_request_duration_seconds_count[5m])) by (route)
-
-# Tempo ingestion rate
-rate(tempo_distributor_spans_received_total[5m])
-
-# Grafana active users
-grafana_stat_active_users
-
-# Query performance
-histogram_quantile(0.99, sum(rate(loki_request_duration_seconds_bucket[5m])) by (le))
-```
 
 ### Troubleshooting
 
 #### Common Issues
 
-1. High Cardinality: Too many unique label combinations
+1. **High Cardinality**: Too many unique label combinations
    - Solution: Reduce label dimensions, use log parsing instead
 
-2. Query Timeouts: Complex queries on large datasets
+2. **Query Timeouts**: Complex queries on large datasets
    - Solution: Reduce time range, use aggregations, add query limits
 
-3. Storage Growth: Unbounded retention
+3. **Storage Growth**: Unbounded retention
    - Solution: Configure retention policies, enable compaction
 
-4. Missing Traces: Incomplete trace data
-   - Solution: Check sampling rates, verify instrumentation, check network connectivity
-
-#### Debugging Queries
-
-```logql
-# Check query performance
-{app="api"} | json | __error__=""  # Filter parsing errors
-
-# Verify labels exist
-{namespace="production"} | logfmt | line_format "{{.level}}"
-
-# Count parsing failures
-sum(rate({app="api"} | json | __error__!="" [5m]))
-```
+4. **Missing Traces**: Incomplete trace data
+   - Solution: Check sampling rates, verify instrumentation
 
 ## Resources
 

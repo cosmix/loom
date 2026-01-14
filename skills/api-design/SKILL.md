@@ -1,6 +1,6 @@
 ---
 name: api-design
-description: Designs RESTful APIs, GraphQL schemas, and RPC interfaces following best practices for consistency, usability, and scalability. Trigger keywords: api design, rest api, graphql, openapi, swagger, endpoint, schema design.
+description: Designs RESTful APIs, GraphQL schemas, and RPC interfaces following best practices for consistency, usability, and scalability. Trigger keywords: api design, REST, RESTful, REST API, GraphQL, GraphQL schema, gRPC, OpenAPI, Swagger, endpoint, route, resource, CRUD, HTTP method, GET, POST, PUT, PATCH, DELETE, status code, pagination, filtering, sorting, versioning, HATEOAS, API versioning, schema design, RPC, service design.
 allowed-tools: Read, Grep, Glob, Edit, Write
 ---
 
@@ -42,13 +42,48 @@ This skill guides the design of well-structured APIs that are intuitive, consist
 
 ## Best Practices
 
+### RESTful API Design
+
 1. **Use Nouns for Resources**: `/users`, not `/getUsers`
-2. **Consistent Naming**: Use snake_case or camelCase consistently
-3. **Proper HTTP Methods**: GET (read), POST (create), PUT/PATCH (update), DELETE (remove)
-4. **Meaningful Status Codes**: 200, 201, 400, 401, 403, 404, 500
-5. **Version Your API**: `/v1/users` or `Accept: application/vnd.api.v1+json`
-6. **HATEOAS**: Include links to related resources
-7. **Idempotency**: PUT and DELETE should be idempotent
+2. **Consistent Naming**: Use snake_case or camelCase consistently across all endpoints
+3. **Proper HTTP Methods**:
+   - GET (read/fetch), POST (create), PUT (full update), PATCH (partial update), DELETE (remove)
+4. **Meaningful Status Codes**:
+   - 200 (OK), 201 (Created), 204 (No Content)
+   - 400 (Bad Request), 401 (Unauthorized), 403 (Forbidden), 404 (Not Found)
+   - 409 (Conflict), 422 (Unprocessable Entity)
+   - 500 (Internal Server Error), 503 (Service Unavailable)
+5. **Idempotency**: PUT and DELETE should be idempotent; consider idempotency keys for POST
+6. **HATEOAS**: Include links to related resources in responses
+7. **Filtering & Sorting**: Use query parameters (`?status=active&sort=-created_at`)
+8. **Pagination**: Cursor-based for large datasets, offset for simpler cases
+
+### GraphQL Schema Design
+
+1. **Use Descriptive Types**: Clear, self-documenting type and field names
+2. **Connection Pattern**: Use relay-style connections for paginated lists
+3. **Input Objects**: Separate input types for mutations (CreateUserInput, UpdateUserInput)
+4. **Error Handling**: Return errors as part of payload, not just top-level exceptions
+5. **Nullability**: Be explicit about nullable vs non-nullable fields
+6. **Mutations Return Payloads**: Include both data and errors in mutation responses
+7. **Avoid Over-fetching**: Design fragments and fields for common query patterns
+
+### gRPC Service Design
+
+1. **Service Naming**: Use verbs for RPC methods (CreateUser, GetUser, ListUsers)
+2. **Message Reuse**: Define shared message types for common patterns
+3. **Pagination**: Use page_token pattern for cursor-based pagination
+4. **Errors**: Use google.rpc.Status for rich error details
+5. **Versioning**: Use package versioning (myapi.v1, myapi.v2)
+6. **Streaming**: Leverage server/client/bidirectional streaming where appropriate
+
+### API Versioning Strategies
+
+1. **URL Path Versioning**: `/v1/users`, `/v2/users` (explicit, simple, cacheable)
+2. **Header Versioning**: `API-Version: 2` or `Accept: application/vnd.api.v2+json` (cleaner URLs)
+3. **Query Parameter**: `?version=2` (fallback option, less recommended)
+4. **Semantic Versioning**: Major versions for breaking changes, minor for features, patch for fixes
+5. **Deprecation Policy**: Announce sunset dates, support N-1 versions minimum
 
 ## Examples
 
@@ -183,7 +218,75 @@ type UserError {
 }
 ```
 
-### Example 3: Error Response Design
+### Example 3: gRPC Service Definition
+
+```protobuf
+syntax = "proto3";
+
+package ecommerce.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service ProductService {
+  // Fetch a single product by ID
+  rpc GetProduct(GetProductRequest) returns (GetProductResponse);
+
+  // List products with filtering and pagination
+  rpc ListProducts(ListProductsRequest) returns (ListProductsResponse);
+
+  // Create a new product
+  rpc CreateProduct(CreateProductRequest) returns (CreateProductResponse);
+
+  // Update an existing product
+  rpc UpdateProduct(UpdateProductRequest) returns (UpdateProductResponse);
+
+  // Delete a product
+  rpc DeleteProduct(DeleteProductRequest) returns (DeleteProductResponse);
+}
+
+message Product {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  int64 price_cents = 4;
+  string category = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+message ListProductsRequest {
+  // Optional category filter
+  string category = 1;
+
+  // Minimum price filter (in cents)
+  optional int64 min_price_cents = 2;
+
+  // Maximum number of items to return
+  int32 page_size = 3;
+
+  // Page token from previous response
+  string page_token = 4;
+}
+
+message ListProductsResponse {
+  repeated Product products = 1;
+  string next_page_token = 2;
+  int32 total_count = 3;
+}
+
+message CreateProductRequest {
+  string name = 1;
+  string description = 2;
+  int64 price_cents = 3;
+  string category = 4;
+}
+
+message CreateProductResponse {
+  Product product = 1;
+}
+```
+
+### Example 4: Error Response Design (REST)
 
 ```json
 {
@@ -205,5 +308,28 @@ type UserError {
     "request_id": "req_abc123xyz",
     "documentation_url": "https://api.example.com/docs/errors#VALIDATION_ERROR"
   }
+}
+```
+
+### Example 5: API Versioning with Header
+
+```http
+# Request with API version header
+GET /users/123 HTTP/1.1
+Host: api.example.com
+Accept: application/vnd.api.v2+json
+Authorization: Bearer eyJ...
+
+# Response includes deprecation warning
+HTTP/1.1 200 OK
+Content-Type: application/vnd.api.v2+json
+Sunset: Sat, 31 Dec 2026 23:59:59 GMT
+Deprecation: true
+Link: <https://api.example.com/v3/users/123>; rel="successor-version"
+
+{
+  "id": "123",
+  "email": "user@example.com",
+  "name": "John Doe"
 }
 ```

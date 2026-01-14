@@ -1,6 +1,6 @@
 ---
 name: diagramming
-description: Create technical diagrams using Mermaid syntax for architecture, sequences, ERDs, flowcharts, and state machines. Use for visualizing system design, data flows, and processes. Triggers: diagram, mermaid, architecture diagram, sequence diagram, flowchart, ERD, entity relationship, state diagram, C4 model, component diagram, visualize, draw.
+description: Create technical diagrams using Mermaid syntax for architecture, sequences, ERDs, flowcharts, and state machines. Use for visualizing system design, data flows, and processes. Triggers: diagram, diagrams, mermaid, plantuml, draw.io, excalidraw, flowchart, sequence diagram, class diagram, architecture diagram, ERD, entity relationship, entity-relationship, C4, C4 model, system context, container diagram, component diagram, state diagram, state machine, visualize, draw, chart, flow, data flow, API flow, system design, architecture visualization, UML.
 ---
 
 # Diagramming
@@ -21,7 +21,36 @@ Create clear, maintainable technical diagrams using Mermaid syntax. This skill c
 | Flowchart       | Showing decision logic and processes    |
 | State           | Showing state transitions               |
 
-### 2. General Mermaid Principles
+### 2. Mermaid Syntax Patterns
+
+**Direction Control:**
+- `flowchart TB` - Top to bottom
+- `flowchart LR` - Left to right
+- `sequenceDiagram` - Automatic top-down layout
+
+**Node Shapes:**
+- `[Rectangle]` - Process
+- `(Rounded)` - Start/end
+- `{Diamond}` - Decision
+- `[(Database)]` - Storage
+- `((Circle))` - Connection point
+
+**Arrow Types:**
+- `-->` Solid line (flow)
+- `-.->` Dotted line (optional)
+- `->>` Thick line (message)
+- `-->>` Dotted message
+- `==>` Extra thick (emphasis)
+
+**Subgraphs for Grouping:**
+```mermaid
+flowchart TB
+    subgraph "Subsystem Name"
+        A --> B
+    end
+```
+
+### 3. General Principles
 
 - Keep diagrams focused on one concept
 - Use consistent naming conventions
@@ -40,6 +69,13 @@ Create clear, maintainable technical diagrams using Mermaid syntax. This skill c
 ## Examples
 
 ### Architecture Diagrams (C4 Model)
+
+The C4 model provides hierarchical system visualization:
+- **Level 1 (Context)**: System in its environment, external dependencies
+- **Level 2 (Container)**: High-level technical building blocks (apps, databases, services)
+- **Level 3 (Component)**: Internal structure of containers (classes, modules)
+
+Use C4 for architecture documentation, onboarding new developers, and stakeholder communication.
 
 #### Context Diagram (Level 1)
 
@@ -119,6 +155,16 @@ flowchart TB
 
 ### Sequence Diagrams
 
+Use for API flows, request/response cycles, distributed system interactions, and multi-service communication.
+
+**Key Patterns:**
+- `participant` - Define actors upfront
+- `autonumber` - Add step numbers
+- `alt/else/end` - Conditional flows
+- `loop/end` - Repeated operations
+- `par/end` - Parallel operations
+- `Note over A,B` - Add explanatory notes
+
 #### Basic Request Flow
 
 ```mermaid
@@ -189,7 +235,74 @@ sequenceDiagram
     N-->>C: Job complete notification
 ```
 
+#### API Authentication Flow
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant API as API Gateway
+    participant Auth as Auth Service
+    participant Cache as Redis Cache
+    participant DB as User DB
+
+    C->>API: POST /login (credentials)
+    API->>Auth: Validate credentials
+    Auth->>DB: Query user
+    DB-->>Auth: User record
+
+    alt Valid credentials
+        Auth->>Auth: Generate JWT
+        Auth->>Cache: Store session
+        Cache-->>Auth: OK
+        Auth-->>API: Token + refresh token
+        API-->>C: 200 OK (tokens)
+    else Invalid credentials
+        Auth-->>API: Invalid credentials
+        API-->>C: 401 Unauthorized
+    end
+```
+
+#### Microservices Communication
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant API as API Gateway
+    participant O as Order Service
+    participant I as Inventory Service
+    participant P as Payment Service
+    participant Q as Message Queue
+
+    U->>API: POST /orders
+    API->>O: Create order
+
+    par Check inventory and process payment
+        O->>I: Check stock
+        I-->>O: Stock available
+    and
+        O->>P: Authorize payment
+        P-->>O: Payment authorized
+    end
+
+    O->>I: Reserve items
+    O->>P: Capture payment
+
+    alt Success
+        P-->>O: Payment captured
+        O->>Q: Publish OrderCreated event
+        O-->>API: Order created
+        API-->>U: 201 Created
+    else Payment failed
+        P-->>O: Payment failed
+        O->>I: Release reservation
+        O-->>API: Payment failed
+        API-->>U: 402 Payment Required
+    end
+```
+
 ### Entity-Relationship Diagrams
+
+Use for database schema design, data model documentation, and relationship mapping.
 
 #### Basic ERD
 

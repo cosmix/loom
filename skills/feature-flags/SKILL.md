@@ -1,13 +1,21 @@
 ---
 name: feature-flags
-description: Feature flag patterns for controlled rollouts, A/B testing, and kill switches. Use when implementing feature toggles, gradual rollouts, canary releases, percentage-based features, user targeting, or emergency kill switches.
+description: Feature flag patterns for controlled rollouts, A/B testing, kill switches, and runtime configuration. Use when implementing feature toggles, feature flags, gradual rollouts, canary releases, percentage rollouts, dark launches, user targeting, A/B tests, experiments, circuit breakers, emergency kill switches, model switching, or infrastructure flags.
+keywords: feature flag, feature toggle, LaunchDarkly, Unleash, split, canary, gradual rollout, percentage rollout, dark launch, A/B test, experiment, kill switch, circuit breaker, model switching, infrastructure flag, runtime config, feature gate
 ---
 
 # Feature Flags
 
 ## Overview
 
-Feature flags (also called feature toggles) enable runtime control over feature availability without code deployments. They support gradual rollouts, A/B testing, user targeting, and emergency kill switches. This skill covers implementation patterns, best practices, and integration with popular tools.
+Feature flags (also called feature toggles or feature gates) enable runtime control over feature availability without code deployments. They support gradual rollouts, A/B testing, user targeting, emergency kill switches, ML model switching, and infrastructure configuration. This skill covers implementation patterns, best practices, integration with LaunchDarkly/Unleash, and flag lifecycle management.
+
+## Agents
+
+- **senior-software-engineer** - Feature flag strategy, architecture decisions, rollout planning
+- **software-engineer** - Implements feature flags, integrations, and flag evaluation logic
+- **security-engineer** - Feature flag security, access controls, audit logging
+- **senior-infrastructure-engineer** - Feature flag infrastructure, distributed systems, caching strategies
 
 ## Key Concepts
 
@@ -23,7 +31,7 @@ interface BooleanFlag {
 }
 
 // Usage
-if (featureFlags.isEnabled('new-checkout-flow')) {
+if (featureFlags.isEnabled("new-checkout-flow")) {
   return <NewCheckoutFlow />;
 }
 return <LegacyCheckout />;
@@ -166,7 +174,7 @@ class FeatureFlagService {
 
   async evaluate(
     key: string,
-    context: EvaluationContext = {},
+    context: EvaluationContext = {}
   ): Promise<boolean> {
     const flag = await this.getFlag(key);
     if (!flag) return false;
@@ -189,7 +197,7 @@ class FeatureFlagService {
 
   async evaluateVariant<T>(
     key: string,
-    context: EvaluationContext = {},
+    context: EvaluationContext = {}
   ): Promise<T | null> {
     const flag = await this.getFlag(key);
     if (!flag || !flag.enabled || !flag.variants) return null;
@@ -221,7 +229,7 @@ class FeatureFlagService {
 
   private evaluateTargeting(
     flag: FeatureFlag,
-    context: EvaluationContext,
+    context: EvaluationContext
   ): boolean {
     if (!flag.rules || flag.rules.length === 0) return true;
 
@@ -270,7 +278,7 @@ class FeatureFlagService {
     this.cache.delete(key);
     await this.redis.publish(
       "flag-updates",
-      JSON.stringify({ key, deleted: true }),
+      JSON.stringify({ key, deleted: true })
     );
   }
 }
@@ -295,7 +303,7 @@ class RolloutManager {
 
   async startRollout(
     flagKey: string,
-    strategy: RolloutStrategy,
+    strategy: RolloutStrategy
   ): Promise<void> {
     const flag = await this.flags.getFlag(flagKey);
     if (!flag) throw new Error("Flag not found");
@@ -312,7 +320,7 @@ class RolloutManager {
 
   private async scheduleIncrement(
     flagKey: string,
-    strategy: RolloutStrategy,
+    strategy: RolloutStrategy
   ): Promise<void> {
     const incrementJob = async () => {
       const flag = await this.flags.getFlag(flagKey);
@@ -324,7 +332,7 @@ class RolloutManager {
       if (strategy.type === "linear") {
         newPercentage = Math.min(
           current + strategy.incrementPercentage,
-          strategy.targetPercentage,
+          strategy.targetPercentage
         );
       } else {
         // Exponential: double each time
@@ -390,7 +398,7 @@ class ABTestingService {
   async trackExposure(
     experimentId: string,
     variantName: string,
-    userId: string,
+    userId: string
   ): Promise<void> {
     // Record that user was exposed to variant
     await this.analytics.track({
@@ -407,19 +415,19 @@ class ABTestingService {
     await this.redis.hincrby(
       `experiment:${experimentId}:${variantName}`,
       "impressions",
-      1,
+      1
     );
   }
 
   async trackConversion(
     experimentId: string,
     userId: string,
-    metric: string,
+    metric: string
   ): Promise<void> {
     // Get user's assigned variant
     const variant = await this.redis.hget(
       `experiment:${experimentId}:assignments`,
-      userId,
+      userId
     );
     if (!variant) return;
 
@@ -437,7 +445,7 @@ class ABTestingService {
     await this.redis.hincrby(
       `experiment:${experimentId}:${variant}`,
       "conversions",
-      1,
+      1
     );
   }
 
@@ -447,7 +455,7 @@ class ABTestingService {
     const results = await Promise.all(
       experiment.variants.map(async (variant) => {
         const data = await this.redis.hgetall(
-          `experiment:${experimentId}:${variant.name}`,
+          `experiment:${experimentId}:${variant.name}`
         );
         return {
           name: variant.name,
@@ -457,7 +465,7 @@ class ABTestingService {
             parseInt(data.conversions || "0") /
             parseInt(data.impressions || "1"),
         };
-      }),
+      })
     );
 
     // Calculate statistical significance
@@ -468,11 +476,7 @@ class ABTestingService {
       experimentId,
       results,
       winners: treatments.filter((t) =>
-        this.isStatisticallySignificant(
-          control!,
-          t,
-          experiment.confidenceLevel,
-        ),
+        this.isStatisticallySignificant(control!, t, experiment.confidenceLevel)
       ),
     };
   }
@@ -480,7 +484,7 @@ class ABTestingService {
   private isStatisticallySignificant(
     control: VariantResult,
     treatment: VariantResult,
-    confidenceLevel: number,
+    confidenceLevel: number
   ): boolean {
     // Z-test for proportions
     const p1 = control.conversionRate;
@@ -519,7 +523,7 @@ class KillSwitchService {
   async activate(
     key: string,
     reason: string,
-    activatedBy: string,
+    activatedBy: string
   ): Promise<void> {
     const killSwitch = await this.getKillSwitch(key);
     if (!killSwitch) throw new Error("Kill switch not found");
@@ -533,20 +537,22 @@ class KillSwitchService {
     // Broadcast to all instances immediately
     await this.redis.publish(
       "killswitch-activated",
-      JSON.stringify(killSwitch),
+      JSON.stringify(killSwitch)
     );
 
     // Alert on-call
     await this.alerting.sendCritical({
       title: `Kill Switch Activated: ${key}`,
-      message: `Reason: ${reason}\nActivated by: ${activatedBy}\nAffected: ${killSwitch.affectedServices.join(", ")}`,
+      message: `Reason: ${reason}\nActivated by: ${activatedBy}\nAffected: ${killSwitch.affectedServices.join(
+        ", "
+      )}`,
     });
 
     // Schedule auto-recovery if configured
     if (killSwitch.autoRecoveryMinutes) {
       setTimeout(
         () => this.deactivate(key, "Auto-recovery"),
-        killSwitch.autoRecoveryMinutes * 60 * 1000,
+        killSwitch.autoRecoveryMinutes * 60 * 1000
       );
     }
   }
@@ -562,7 +568,7 @@ class KillSwitchService {
     await this.redis.set(`killswitch:${key}`, JSON.stringify(killSwitch));
     await this.redis.publish(
       "killswitch-deactivated",
-      JSON.stringify({ key, reason }),
+      JSON.stringify({ key, reason })
     );
 
     await this.alerting.sendInfo({
@@ -584,7 +590,7 @@ async function processPayment(payment: Payment): Promise<PaymentResult> {
   // Check kill switch first
   if (await killSwitches.isActive("payments-disabled")) {
     throw new ServiceUnavailableError(
-      "Payment processing temporarily disabled",
+      "Payment processing temporarily disabled"
     );
   }
 
@@ -698,7 +704,7 @@ interface LDUser {
 async function evaluateFlag(
   flagKey: string,
   user: LDUser,
-  defaultValue: boolean,
+  defaultValue: boolean
 ): Promise<boolean> {
   await ldClient.waitForInitialization();
   return ldClient.variation(flagKey, user, defaultValue);
@@ -707,7 +713,7 @@ async function evaluateFlag(
 async function evaluateFlagWithReason(
   flagKey: string,
   user: LDUser,
-  defaultValue: boolean,
+  defaultValue: boolean
 ) {
   await ldClient.waitForInitialization();
   const detail = await ldClient.variationDetail(flagKey, user, defaultValue);
@@ -723,7 +729,7 @@ async function evaluateFlagWithReason(
 function trackConversion(
   user: LDUser,
   eventKey: string,
-  data?: Record<string, unknown>,
+  data?: Record<string, unknown>
 ): void {
   ldClient.track(eventKey, user, data);
 }
@@ -731,7 +737,7 @@ function trackConversion(
 // React hook for client-side
 function useFeatureFlag(
   flagKey: string,
-  defaultValue: boolean = false,
+  defaultValue: boolean = false
 ): boolean {
   const ldClient = useLDClient();
   const [value, setValue] = useState(defaultValue);
@@ -751,25 +757,430 @@ function useFeatureFlag(
 }
 ```
 
+### ML Model Feature Flags
+
+```typescript
+interface ModelFlag {
+  key: string;
+  modelVariants: ModelVariant[];
+  routingStrategy: "percentage" | "performance" | "custom";
+  fallbackModel: string;
+  performanceThresholds?: {
+    latencyMs: number;
+    errorRate: number;
+  };
+}
+
+interface ModelVariant {
+  name: string;
+  modelId: string;
+  version: string;
+  weight?: number; // For percentage routing
+  endpoint: string;
+}
+
+class ModelFlagService {
+  async evaluateModel(
+    flagKey: string,
+    context: { userId?: string; inputSize?: number }
+  ): Promise<ModelVariant> {
+    const flag = await this.getModelFlag(flagKey);
+
+    switch (flag.routingStrategy) {
+      case "percentage":
+        return this.percentageRouting(flag, context.userId || "anonymous");
+
+      case "performance":
+        return this.performanceRouting(flag);
+
+      case "custom":
+        return this.customRouting(flag, context);
+
+      default:
+        return flag.modelVariants.find((v) => v.name === flag.fallbackModel)!;
+    }
+  }
+
+  private async performanceRouting(flag: ModelFlag): Promise<ModelVariant> {
+    // Get real-time performance metrics for each model
+    const metrics = await Promise.all(
+      flag.modelVariants.map(async (variant) => ({
+        variant,
+        latency: await this.getAverageLatency(variant.modelId),
+        errorRate: await this.getErrorRate(variant.modelId),
+      }))
+    );
+
+    // Filter models meeting performance thresholds
+    const eligible = metrics.filter(
+      (m) =>
+        m.latency < flag.performanceThresholds!.latencyMs &&
+        m.errorRate < flag.performanceThresholds!.errorRate
+    );
+
+    // Return best performing model or fallback
+    if (eligible.length === 0) {
+      return flag.modelVariants.find((v) => v.name === flag.fallbackModel)!;
+    }
+
+    return eligible.sort((a, b) => a.latency - b.latency)[0].variant;
+  }
+
+  async trackModelInference(
+    flagKey: string,
+    modelVariant: ModelVariant,
+    metrics: {
+      latencyMs: number;
+      success: boolean;
+      inputTokens: number;
+      outputTokens: number;
+    }
+  ): Promise<void> {
+    // Track metrics for performance-based routing
+    await this.redis.zadd(
+      `model:${modelVariant.modelId}:latency`,
+      Date.now(),
+      metrics.latencyMs
+    );
+
+    await this.redis.hincrby(
+      `model:${modelVariant.modelId}:stats`,
+      metrics.success ? "success" : "failure",
+      1
+    );
+
+    // Track costs
+    await this.redis.hincrby(
+      `model:${modelVariant.modelId}:tokens`,
+      "input",
+      metrics.inputTokens
+    );
+    await this.redis.hincrby(
+      `model:${modelVariant.modelId}:tokens`,
+      "output",
+      metrics.outputTokens
+    );
+  }
+}
+
+// Usage example
+async function generateResponse(
+  prompt: string,
+  userId: string
+): Promise<string> {
+  const modelVariant = await modelFlags.evaluateModel("chat-model", { userId });
+
+  const startTime = Date.now();
+  try {
+    const response = await fetch(modelVariant.endpoint, {
+      method: "POST",
+      body: JSON.stringify({ prompt, model: modelVariant.modelId }),
+    });
+
+    const data = await response.json();
+
+    await modelFlags.trackModelInference("chat-model", modelVariant, {
+      latencyMs: Date.now() - startTime,
+      success: true,
+      inputTokens: data.usage.input_tokens,
+      outputTokens: data.usage.output_tokens,
+    });
+
+    return data.response;
+  } catch (error) {
+    await modelFlags.trackModelInference("chat-model", modelVariant, {
+      latencyMs: Date.now() - startTime,
+      success: false,
+      inputTokens: 0,
+      outputTokens: 0,
+    });
+    throw error;
+  }
+}
+```
+
+### Infrastructure Feature Flags
+
+```typescript
+interface InfrastructureFlag {
+  key: string;
+  type: "database" | "cache" | "queue" | "storage" | "cdn";
+  variants: InfraVariant[];
+  healthCheckInterval: number;
+  autoFailover: boolean;
+}
+
+interface InfraVariant {
+  name: string;
+  config: {
+    host?: string;
+    port?: number;
+    url?: string;
+    region?: string;
+    [key: string]: string | number | boolean | undefined;
+  };
+  healthEndpoint?: string;
+  healthy: boolean;
+  priority: number; // Lower = higher priority
+}
+
+class InfrastructureFlagService {
+  private healthChecks: Map<string, NodeJS.Timer> = new Map();
+
+  async startHealthChecks(flagKey: string): Promise<void> {
+    const flag = await this.getInfraFlag(flagKey);
+
+    const interval = setInterval(async () => {
+      for (const variant of flag.variants) {
+        if (!variant.healthEndpoint) continue;
+
+        try {
+          const response = await fetch(variant.healthEndpoint, {
+            timeout: 5000,
+          });
+          variant.healthy = response.ok;
+        } catch {
+          variant.healthy = false;
+        }
+      }
+
+      await this.updateInfraFlag(flag);
+    }, flag.healthCheckInterval);
+
+    this.healthChecks.set(flagKey, interval);
+  }
+
+  async getActiveVariant(flagKey: string): Promise<InfraVariant> {
+    const flag = await this.getInfraFlag(flagKey);
+
+    // Get healthy variants sorted by priority
+    const healthyVariants = flag.variants
+      .filter((v) => v.healthy)
+      .sort((a, b) => a.priority - b.priority);
+
+    if (healthyVariants.length === 0) {
+      if (flag.autoFailover) {
+        // Use unhealthy variant as last resort
+        console.error(`No healthy variants for ${flagKey}, using fallback`);
+        return flag.variants.sort((a, b) => a.priority - b.priority)[0];
+      } else {
+        throw new Error(`No healthy variants available for ${flagKey}`);
+      }
+    }
+
+    return healthyVariants[0];
+  }
+}
+
+// Database migration example
+class DatabaseConnection {
+  private infraFlags: InfrastructureFlagService;
+  private currentConnection?: Connection;
+
+  async getConnection(): Promise<Connection> {
+    const variant = await this.infraFlags.getActiveVariant("primary-database");
+
+    // Reuse connection if config hasn't changed
+    if (this.currentConnection?.config.host === variant.config.host) {
+      return this.currentConnection;
+    }
+
+    // Create new connection to migrated database
+    this.currentConnection = await createConnection({
+      host: variant.config.host as string,
+      port: variant.config.port as number,
+      database: variant.config.database as string,
+    });
+
+    return this.currentConnection;
+  }
+}
+
+// CDN migration example
+class AssetService {
+  async getAssetUrl(assetPath: string): Promise<string> {
+    const cdnVariant = await infraFlags.getActiveVariant("cdn-provider");
+
+    return `${cdnVariant.config.url}/${assetPath}`;
+  }
+}
+```
+
+### Flag Cleanup and Technical Debt Management
+
+```typescript
+interface FlagCleanupTask {
+  flagKey: string;
+  status: "pending" | "in-progress" | "completed" | "blocked";
+  type: "remove-flag" | "make-permanent" | "deprecate";
+  estimatedEffort: "small" | "medium" | "large";
+  affectedCodePaths: string[];
+  dependencies: string[];
+  assignee?: string;
+  dueDate?: Date;
+}
+
+class FlagCleanupService {
+  async analyzeCodeImpact(flagKey: string): Promise<CodeImpactReport> {
+    // Scan codebase for flag references
+    const references = await this.findFlagReferences(flagKey);
+
+    return {
+      flagKey,
+      totalReferences: references.length,
+      fileCount: new Set(references.map((r) => r.file)).size,
+      byFileType: this.groupBy(references, (r) => r.fileExtension),
+      complexityScore: this.calculateComplexity(references),
+      recommendations: this.generateRecommendations(references),
+    };
+  }
+
+  private calculateComplexity(references: CodeReference[]): number {
+    let score = 0;
+
+    for (const ref of references) {
+      // Nested conditions increase complexity
+      if (ref.context.includes("if") && ref.context.includes("else")) {
+        score += 2;
+      }
+
+      // Multiple flags in same file
+      const otherFlags = this.countOtherFlags(ref.file);
+      score += otherFlags * 0.5;
+
+      // Presence in critical paths
+      if (ref.file.includes("payment") || ref.file.includes("auth")) {
+        score += 3;
+      }
+    }
+
+    return score;
+  }
+
+  async generateCleanupPlan(staleFlags: string[]): Promise<FlagCleanupTask[]> {
+    const tasks: FlagCleanupTask[] = [];
+
+    for (const flagKey of staleFlags) {
+      const flag = await this.getFlag(flagKey);
+      const impact = await this.analyzeCodeImpact(flagKey);
+
+      // Determine cleanup type
+      let type: FlagCleanupTask["type"];
+      if (flag.percentage === 100 && flag.lifecycle.status === "stable") {
+        type = "make-permanent"; // Remove flag, keep new code path
+      } else if (flag.percentage === 0) {
+        type = "remove-flag"; // Remove flag and new code path
+      } else {
+        type = "deprecate"; // Mark for future removal
+      }
+
+      tasks.push({
+        flagKey,
+        status: "pending",
+        type,
+        estimatedEffort:
+          impact.complexityScore < 5
+            ? "small"
+            : impact.complexityScore < 15
+            ? "medium"
+            : "large",
+        affectedCodePaths:
+          impact.fileCount > 0
+            ? Array.from(new Set(impact.references.map((r) => r.file)))
+            : [],
+        dependencies: await this.findDependentFlags(flagKey),
+      });
+    }
+
+    // Sort by effort (easiest first for quick wins)
+    return tasks.sort((a, b) => {
+      const effortMap = { small: 1, medium: 2, large: 3 };
+      return effortMap[a.estimatedEffort] - effortMap[b.estimatedEffort];
+    });
+  }
+
+  async trackCleanupProgress(): Promise<CleanupMetrics> {
+    const allFlags = await this.getAllFlags();
+    const tasks = await this.getAllCleanupTasks();
+
+    return {
+      totalFlags: allFlags.length,
+      staleFlags: allFlags.filter((f) => this.isStale(f)).length,
+      flagsWithCleanupTasks: tasks.length,
+      completedCleanups: tasks.filter((t) => t.status === "completed").length,
+      averageAgeOfStaleFlags: this.calculateAverageAge(
+        allFlags.filter((f) => this.isStale(f))
+      ),
+      projectedCleanupDate: this.estimateCompletionDate(tasks),
+    };
+  }
+}
+
+// Automated cleanup detection
+class FlagCleanupMonitor {
+  async runDailyCleanupCheck(): Promise<void> {
+    const staleFlags = await this.flagLifecycle.checkStaleFlags();
+
+    if (staleFlags.length === 0) return;
+
+    // Create Jira tickets for cleanup
+    for (const flag of staleFlags) {
+      const impact = await this.cleanup.analyzeCodeImpact(flag.key);
+
+      await this.ticketingSystem.createTicket({
+        title: `Clean up feature flag: ${flag.key}`,
+        description: `
+          Flag Status: ${flag.lifecycle.status}
+          Age: ${this.calculateAge(flag.lifecycle.createdAt)} days
+          References: ${impact.totalReferences} in ${impact.fileCount} files
+          Complexity: ${impact.complexityScore}
+
+          Recommendations:
+          ${impact.recommendations.join("\n")}
+        `,
+        priority:
+          impact.complexityScore < 5
+            ? "low"
+            : impact.complexityScore < 15
+            ? "medium"
+            : "high",
+        labels: ["technical-debt", "feature-flags", "cleanup"],
+        assignee: flag.lifecycle.owner,
+      });
+    }
+
+    // Send weekly digest to engineering team
+    if (new Date().getDay() === 1) {
+      // Monday
+      await this.sendCleanupDigest(staleFlags);
+    }
+  }
+}
+```
+
 ## Best Practices
 
 1. **Flag Naming Conventions**
+
    - Use descriptive, consistent names: `feature-checkout-v2`, `experiment-button-color`
    - Include type prefix: `release-*`, `experiment-*`, `ops-*`, `kill-*`
    - Avoid abbreviations and ensure team-wide understanding
 
 2. **Flag Hygiene**
+
    - Set expiration dates for temporary flags
    - Remove flags after features are fully rolled out
    - Track flag ownership and associated tickets
    - Regular cleanup audits (monthly)
 
 3. **Testing**
+
    - Test all flag states (on, off, each variant)
    - Include flag states in integration tests
    - Test rollback scenarios
 
 4. **Monitoring**
+
    - Track flag evaluation counts and latency
    - Alert on unusual patterns (sudden spikes, failures)
    - Log flag decisions for debugging
@@ -784,7 +1195,7 @@ function useFeatureFlag(
 ### React Feature Flag Provider
 
 ```typescript
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState } from "react";
 
 interface FeatureFlagContextType {
   isEnabled: (key: string) => boolean;
@@ -794,7 +1205,13 @@ interface FeatureFlagContextType {
 
 const FeatureFlagContext = createContext<FeatureFlagContextType | null>(null);
 
-export function FeatureFlagProvider({ children, userId }: { children: React.ReactNode; userId: string }) {
+export function FeatureFlagProvider({
+  children,
+  userId,
+}: {
+  children: React.ReactNode;
+  userId: string;
+}) {
   const [flags, setFlags] = useState<Record<string, unknown>>({});
   const [loading, setLoading] = useState(true);
 
@@ -808,10 +1225,12 @@ export function FeatureFlagProvider({ children, userId }: { children: React.Reac
     loadFlags();
 
     // Subscribe to real-time updates
-    const ws = new WebSocket(`wss://api.example.com/flags/stream?userId=${userId}`);
+    const ws = new WebSocket(
+      `wss://api.example.com/flags/stream?userId=${userId}`
+    );
     ws.onmessage = (event) => {
       const update = JSON.parse(event.data);
-      setFlags(prev => ({ ...prev, [update.key]: update.value }));
+      setFlags((prev) => ({ ...prev, [update.key]: update.value }));
     };
 
     return () => ws.close();
@@ -819,7 +1238,7 @@ export function FeatureFlagProvider({ children, userId }: { children: React.Reac
 
   const value: FeatureFlagContextType = {
     isEnabled: (key) => Boolean(flags[key]),
-    getVariant: (key) => flags[key] as T ?? null,
+    getVariant: (key) => (flags[key] as T) ?? null,
     loading,
   };
 
@@ -832,13 +1251,14 @@ export function FeatureFlagProvider({ children, userId }: { children: React.Reac
 
 export function useFeatureFlag(key: string): boolean {
   const context = useContext(FeatureFlagContext);
-  if (!context) throw new Error('useFeatureFlag must be used within FeatureFlagProvider');
+  if (!context)
+    throw new Error("useFeatureFlag must be used within FeatureFlagProvider");
   return context.isEnabled(key);
 }
 
 // Usage
 function CheckoutPage() {
-  const newCheckout = useFeatureFlag('new-checkout-flow');
+  const newCheckout = useFeatureFlag("new-checkout-flow");
 
   if (newCheckout) {
     return <NewCheckoutFlow />;
@@ -846,3 +1266,32 @@ function CheckoutPage() {
   return <LegacyCheckout />;
 }
 ```
+
+## When to Use This Skill
+
+Use the feature-flags skill for:
+
+- **Feature Toggles** - Runtime on/off switches for features
+- **Gradual Rollouts** - Percentage-based or canary releases (1% -> 5% -> 25% -> 100%)
+- **Dark Launches** - Deploy code disabled, enable when ready
+- **A/B Testing** - Compare variants to measure impact
+- **User Targeting** - Enable features for specific users, regions, or plans
+- **Kill Switches** - Emergency disable for broken features
+- **Circuit Breakers** - Auto-disable when error thresholds exceeded
+- **ML Model Flags** - Switch between model versions or providers
+- **Infrastructure Flags** - Migrate databases, caches, CDNs without downtime
+- **Configuration** - Runtime config changes without redeployment
+- **Cleanup** - Managing technical debt from old flags
+
+## Agent Selection Guide
+
+| Task                           | Agent                          | Why                                                 |
+| ------------------------------ | ------------------------------ | --------------------------------------------------- |
+| Design flag architecture       | senior-software-engineer       | Strategic decisions on flag types, rollout strategy |
+| Implement flag service         | software-engineer              | Build evaluation logic, integrations                |
+| Review flag security           | security-engineer              | Access controls, audit logging, sensitive data      |
+| Scale flag infrastructure      | senior-infrastructure-engineer | Distributed caching, performance, failover          |
+| Integrate LaunchDarkly/Unleash | software-engineer              | SDK integration, webhook setup                      |
+| Plan ML model rollout          | senior-software-engineer       | Performance routing, fallback strategy              |
+| Implement cleanup automation   | software-engineer              | Code scanning, impact analysis                      |
+| Design flag lifecycle policy   | senior-software-engineer       | Governance, technical debt prevention               |

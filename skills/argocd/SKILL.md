@@ -1,6 +1,6 @@
 ---
 name: argocd
-description: GitOps continuous delivery with Argo CD for Kubernetes deployments. Use when implementing GitOps workflows, application sync, multi-cluster deployments, or progressive delivery. Triggers: argocd, argo cd, gitops, application, applicationset, sync, app of apps, progressive delivery.
+description: GitOps continuous delivery with Argo CD for Kubernetes deployments. Use when implementing declarative GitOps workflows, application sync/rollback, multi-cluster deployments, progressive delivery, or CD automation. Triggers: argocd, argo cd, gitops, application, sync, rollback, app of apps, applicationset, declarative, continuous delivery, CD, deployment automation, kubernetes deployment, multi-cluster, canary deployment, blue-green.
 allowed-tools: Read, Grep, Glob, Edit, Write, Bash
 ---
 
@@ -480,6 +480,604 @@ spec:
         automated:
           prune: true
           selfHeal: true
+```
+
+## ApplicationSet Patterns
+
+### When to Use ApplicationSets
+
+ApplicationSets automate creation and management of multiple Argo CD applications using generators. Use when:
+
+- Deploying to multiple clusters with same configuration
+- Managing multiple tenants or teams
+- Discovering applications from Git repository structure
+- Implementing environment promotion strategies
+
+### Generator Selection Guide
+
+| Generator | Use Case | Example |
+|-----------|----------|---------|
+| **Cluster** | Deploy same app to multiple clusters | Multi-region deployment |
+| **Git Directory** | Generate apps from repo directory structure | Monorepo with app-per-directory |
+| **Git File** | Generate apps from config files in Git | JSON/YAML config per app |
+| **List** | Static list of parameters | Tenant definitions |
+| **Matrix** | Combine multiple generators | Apps across clusters and environments |
+| **Pull Request** | Preview environments per PR | Ephemeral test environments |
+| **SCM Provider** | Discover repos from GitHub/GitLab | Org-wide app discovery |
+
+### Multi-Environment with Git Directory
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: multi-env-apps
+  namespace: argocd
+spec:
+  generators:
+    - matrix:
+        generators:
+          # First: discover apps from directory structure
+          - git:
+              repoURL: https://github.com/myorg/apps.git
+              revision: HEAD
+              directories:
+                - path: apps/*
+          # Second: apply to multiple environments
+          - list:
+              elements:
+                - env: dev
+                  cluster: https://dev-cluster.example.com
+                  replicas: "1"
+                - env: staging
+                  cluster: https://staging-cluster.example.com
+                  replicas: "2"
+                - env: production
+                  cluster: https://prod-cluster.example.com
+                  replicas: "3"
+
+  template:
+    metadata:
+      name: "{{path.basename}}-{{env}}"
+      labels:
+        app: "{{path.basename}}"
+        env: "{{env}}"
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/myorg/apps.git
+        targetRevision: HEAD
+        path: "{{path}}"
+        helm:
+          parameters:
+            - name: environment
+              value: "{{env}}"
+            - name: replicaCount
+              value: "{{replicas}}"
+      destination:
+        server: "{{cluster}}"
+        namespace: "{{path.basename}}-{{env}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+```
+
+### Pull Request Preview Environments
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: pr-preview
+  namespace: argocd
+spec:
+  generators:
+    - pullRequest:
+        github:
+          owner: myorg
+          repo: myapp
+          tokenRef:
+            secretName: github-token
+            key: token
+          labels:
+            - preview
+        requeueAfterSeconds: 60
+
+  template:
+    metadata:
+      name: "myapp-pr-{{number}}"
+      labels:
+        preview: "true"
+        pr: "{{number}}"
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/myorg/myapp.git
+        targetRevision: "{{head_sha}}"
+        path: k8s/overlays/preview
+        kustomize:
+          commonLabels:
+            pr: "{{number}}"
+          images:
+            - name: myapp
+              newTag: "pr-{{number}}"
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "myapp-pr-{{number}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+```
+
+### SCM Provider Discovery
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: org-repos
+  namespace: argocd
+spec:
+  generators:
+    - scmProvider:
+        github:
+          organization: myorg
+          tokenRef:
+            secretName: github-token
+            key: token
+        filters:
+          - repositoryMatch: ".*-service$"
+          - pathsExist: [k8s/production]
+
+  template:
+    metadata:
+      name: "{{repository}}"
+    spec:
+      project: default
+      source:
+        repoURL: "{{url}}"
+        targetRevision: main
+        path: k8s/production
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{repository}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+```
+
+## Sync Strategies
+
+### Strategy Selection Guide
+
+| Strategy | Use Case | Risk | Automation |
+|----------|----------|------|------------|
+| **Automated + SelfHeal** | Non-prod environments | Low | Full |
+| **Automated (no SelfHeal)** | Staging with manual intervention | Medium | Partial |
+| **Manual** | Production deployments | High | None |
+| **Sync Windows** | Business hours restrictions | Medium | Scheduled |
+| **Progressive (Rollouts)** | Gradual production rollout | Low | Conditional |
+
+### Automated Sync with Conditions
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: conditional-sync
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/myorg/myrepo.git
+    targetRevision: HEAD
+    path: apps/myapp
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: myapp
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+      - PrunePropagationPolicy=foreground
+      - RespectIgnoreDifferences=true
+      - ApplyOutOfSyncOnly=true
+
+    # Retry with exponential backoff
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  # Ignore manual changes to specific fields
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+    - group: ""
+      kind: Service
+      jqPathExpressions:
+        - .spec.ports[] | select(.nodePort != null) | .nodePort
+```
+
+### Sync Windows (Time-Based Deployment Control)
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: production
+  namespace: argocd
+spec:
+  description: Production project with sync windows
+
+  sourceRepos:
+    - "*"
+
+  destinations:
+    - namespace: "*"
+      server: https://prod-cluster.example.com
+
+  # Define sync windows
+  syncWindows:
+    # Allow syncs during business hours (Monday-Friday 9am-5pm UTC)
+    - kind: allow
+      schedule: "0 9 * * 1-5"
+      duration: 8h
+      applications:
+        - "*"
+      namespaces:
+        - production-*
+      clusters:
+        - https://prod-cluster.example.com
+
+    # Block syncs during peak traffic (daily 12pm-2pm UTC)
+    - kind: deny
+      schedule: "0 12 * * *"
+      duration: 2h
+      applications:
+        - "*"
+
+    # Emergency sync window (manual override required)
+    - kind: allow
+      schedule: "* * * * *"
+      duration: 1h
+      manualSync: true
+      applications:
+        - critical-app
+```
+
+### Selective Sync (Resource-Level Control)
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: selective-sync
+  namespace: argocd
+  annotations:
+    # Sync only specific resource types
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/myorg/myrepo.git
+    targetRevision: HEAD
+    path: apps/myapp
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: myapp
+
+  # Ignore specific resources from sync
+  ignoreDifferences:
+    - group: "*"
+      kind: Secret
+      name: external-secret
+      jsonPointers:
+        - /data
+
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      # Prune only specific resource types
+      - PruneResourcesOnDeletion=true
+```
+
+### Blue-Green Sync Strategy
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: myapp-blue-green
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/myorg/myrepo.git
+    targetRevision: HEAD
+    path: apps/myapp
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: myapp
+
+  syncPolicy:
+    # Manual sync for production
+    syncOptions:
+      - CreateNamespace=true
+
+    # Use sync waves for blue-green
+    syncWaves:
+      - wave: 0  # Deploy new version (green)
+      - wave: 1  # Run smoke tests
+      - wave: 2  # Switch traffic
+      - wave: 3  # Remove old version (blue)
+```
+
+## Rollback Procedures
+
+### Automatic Rollback Strategies
+
+#### Application-Level Rollback
+
+```bash
+# View sync history
+argocd app history myapp
+
+# Rollback to previous sync
+argocd app rollback myapp
+
+# Rollback to specific revision
+argocd app rollback myapp 5
+
+# Rollback with prune
+argocd app rollback myapp 5 --prune
+```
+
+#### Git-Based Rollback (Recommended)
+
+```bash
+# Revert Git commit
+git revert HEAD
+git push origin main
+
+# Argo CD automatically syncs the revert
+# This maintains full audit trail in Git
+```
+
+### Rollback with Argo Rollouts
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: myapp
+  namespace: myapp
+spec:
+  replicas: 5
+  strategy:
+    blueGreen:
+      activeService: myapp-active
+      previewService: myapp-preview
+      autoPromotionEnabled: false
+      autoPromotionSeconds: 30
+      scaleDownDelaySeconds: 300
+      scaleDownDelayRevisionLimit: 1
+
+      # Automatic rollback on metric failure
+      antiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution: {}
+
+  revisionHistoryLimit: 5
+
+  selector:
+    matchLabels:
+      app: myapp
+
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      containers:
+        - name: myapp
+          image: myapp:stable
+---
+# Manual rollback commands
+# kubectl argo rollouts abort myapp
+# kubectl argo rollouts undo myapp
+# kubectl argo rollouts retry myapp
+```
+
+### Rollback on Health Check Failure
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: auto-rollback-app
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/myorg/myrepo.git
+    targetRevision: HEAD
+    path: apps/myapp
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: myapp
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: false  # Disable selfHeal for manual rollback control
+
+    # Retry sync on failure
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 1m
+
+  # Custom health check that triggers rollback
+  syncOptions:
+    - Validate=true
+    - FailOnSharedResource=false
+
+# Use PreSync hook to backup current state
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pre-sync-backup
+  namespace: myapp
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  template:
+    spec:
+      containers:
+        - name: backup
+          image: kubectl:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              kubectl get all -n myapp -o yaml > /backup/previous-state.yaml
+      restartPolicy: Never
+---
+# Use SyncFail hook for automatic rollback
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rollback-on-fail
+  namespace: myapp
+  annotations:
+    argocd.argoproj.io/hook: SyncFail
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  template:
+    spec:
+      serviceAccountName: argocd-rollback
+      containers:
+        - name: rollback
+          image: argoproj/argocd:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              argocd app rollback myapp --auth-token $ARGOCD_TOKEN
+      restartPolicy: Never
+```
+
+### Emergency Rollback Runbook
+
+```bash
+# 1. Check application status
+argocd app get myapp
+argocd app history myapp
+
+# 2. Identify last known good revision
+argocd app history myapp | grep Succeeded
+
+# 3. Quick rollback to previous revision
+argocd app rollback myapp
+
+# 4. If rollback fails, force sync with replace
+argocd app sync myapp --force --replace --prune
+
+# 5. If still failing, revert Git and force sync
+cd gitops-repo
+git revert HEAD --no-commit
+git commit -m "Emergency rollback"
+git push origin main
+argocd app sync myapp --force
+
+# 6. Manual resource cleanup if needed
+kubectl delete deployment myapp -n myapp
+argocd app sync myapp --force
+
+# 7. Verify health and sync status
+argocd app wait myapp --health --timeout 300
+
+# 8. Document incident
+echo "Rollback completed at $(date)" >> /var/log/incidents/myapp-rollback.log
+```
+
+### Rollback Testing (Pre-Production)
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: rollback-test
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/myorg/myrepo.git
+    targetRevision: HEAD
+    path: apps/myapp
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: myapp-test
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+
+# PostSync hook to test rollback capability
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: test-rollback
+  namespace: myapp-test
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  template:
+    spec:
+      serviceAccountName: argocd-test
+      containers:
+        - name: test
+          image: argoproj/argocd:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # Test application health
+              argocd app wait rollback-test --health --timeout 60
+
+              # Perform rollback test
+              argocd app rollback rollback-test
+
+              # Verify rollback succeeded
+              argocd app wait rollback-test --health --timeout 60
+
+              # Re-sync to latest
+              argocd app sync rollback-test
+      restartPolicy: Never
 ```
 
 ## App of Apps Pattern

@@ -1,17 +1,19 @@
 ---
 name: accessibility
-description: Web accessibility patterns and WCAG compliance guidelines. Use when implementing accessible UI components, keyboard navigation, screen reader support, or auditing for a11y compliance. Triggers: accessibility, a11y, WCAG, ARIA, screen reader, keyboard navigation, color contrast, semantic HTML, assistive technology.
+description: Web accessibility patterns, WCAG compliance, and inclusive design. Use when implementing accessible UI, keyboard navigation, screen reader support, focus management, semantic HTML, or auditing for compliance. Triggers: accessibility, a11y, WCAG, ARIA, screen reader, keyboard navigation, focus, tab order, tabindex, alt text, color contrast, semantic HTML, landmark, role, aria-label, aria-labelledby, aria-describedby, aria-live, aria-expanded, aria-selected, aria-hidden, focus trap, roving tabindex, skip link, assistive technology.
 ---
 
 # Accessibility
 
 ## Overview
 
-Web accessibility ensures that websites and applications are usable by everyone, including people with disabilities. This skill covers WCAG 2.1 guidelines, semantic HTML, ARIA attributes, keyboard navigation, screen reader testing, visual accessibility, and automated testing tools.
+Web accessibility ensures that websites and applications are usable by everyone, including people with disabilities. This skill covers WCAG 2.1 compliance, semantic HTML, ARIA patterns, keyboard navigation, screen reader testing, visual accessibility, focus management, and automated testing.
+
+This skill combines engineering implementation with design considerations - use when building accessible UIs, auditing compliance, or designing inclusive user experiences.
 
 ## Instructions
 
-### 1. WCAG 2.1 Guidelines
+### 1. WCAG 2.1 Compliance Checklist
 
 WCAG is organized around four principles (POUR):
 
@@ -27,6 +29,43 @@ WCAG is organized around four principles (POUR):
 - **Level A**: Minimum accessibility (must have)
 - **Level AA**: Addresses major barriers (legal requirement in many jurisdictions)
 - **Level AAA**: Highest level (nice to have for specific audiences)
+
+#### Quick Compliance Checklist
+
+**Level A (Essential):**
+- All images have alt text (1.1.1)
+- Videos have captions (1.2.2)
+- Color is not the only visual means of conveying information (1.4.1)
+- All functionality available from keyboard (2.1.1)
+- Users can pause, stop, or hide moving content (2.2.2)
+- Page has a title (2.4.2)
+- Focus order preserves meaning (2.4.3)
+- Link purpose clear from text or context (2.4.4)
+- Pages have headings and labels (2.4.6)
+- Forms have labels or instructions (3.3.2)
+- Parsing: no duplicate IDs, proper nesting (4.1.1)
+- Name, role, value available for all UI components (4.1.2)
+
+**Level AA (Standard):**
+- Captions for all live audio (1.2.4)
+- Audio description for video (1.2.5)
+- Contrast ratio at least 4.5:1 for normal text, 3:1 for large text (1.4.3)
+- Text can be resized to 200% without loss of functionality (1.4.4)
+- Images of text avoided (1.4.5)
+- Multiple ways to find pages (2.4.5)
+- Headings and labels describe topic or purpose (2.4.6)
+- Focus visible (2.4.7)
+- Language of page identified (3.1.1)
+- Input errors suggested (3.3.3)
+- Error prevention for legal/financial transactions (3.3.4)
+
+**Level AAA (Enhanced):**
+- Sign language interpretation for videos (1.2.6)
+- Extended audio description (1.2.7)
+- Contrast ratio at least 7:1 (1.4.6)
+- No background audio or easy to turn off (1.4.7)
+- Section headings used (2.4.10)
+- Context-sensitive help available (3.3.5)
 
 ```typescript
 // WCAG 2.1 checklist implementation
@@ -340,6 +379,52 @@ function Notification({ message, type }) {
 
 ### 4. Keyboard Navigation
 
+#### Standard Keyboard Patterns
+
+| Pattern | Keys | Behavior |
+|---------|------|----------|
+| **Tab navigation** | Tab, Shift+Tab | Move focus forward/backward through interactive elements |
+| **Arrow navigation** | Arrow keys | Navigate within composite widgets (menus, tabs, lists) |
+| **Action keys** | Enter, Space | Activate buttons/links (Enter for both, Space for buttons) |
+| **Escape** | Esc | Close dialogs, cancel operations, exit modes |
+| **Home/End** | Home, End | Move to first/last item in a group |
+| **Page Up/Down** | PgUp, PgDn | Scroll or navigate by page |
+| **Type-ahead** | Letter keys | Find items by typing first letter |
+
+#### Common Widget Patterns
+
+**Tabs:**
+- Tab: Enter tab list
+- Arrow Left/Right: Navigate between tabs
+- Home/End: First/last tab
+- Tab: Exit to tab panel content
+
+**Menu:**
+- Arrow Up/Down: Navigate menu items
+- Arrow Right: Open submenu
+- Arrow Left: Close submenu
+- Home/End: First/last item
+- Escape: Close menu
+- Letter keys: Jump to item starting with letter
+
+**Dialog:**
+- Tab/Shift+Tab: Cycle through dialog elements (focus trap)
+- Escape: Close dialog
+- Focus returns to trigger element on close
+
+**Accordion:**
+- Tab: Move to next accordion header
+- Arrow Up/Down: Navigate accordion headers (optional)
+- Enter/Space: Toggle accordion panel
+- Home/End: First/last header (optional)
+
+**Combobox:**
+- Arrow Down: Open listbox
+- Arrow Up/Down: Navigate options
+- Enter: Select option and close
+- Escape: Close without selecting
+- Type-ahead: Filter/jump to options
+
 ```tsx
 // Keyboard navigation utilities
 
@@ -465,8 +550,47 @@ function SkipLink({ targetId, children = "Skip to main content" }) {
 
 ### 5. Screen Reader Testing
 
+#### Screen Reader Reference
+
+| Reader | Platform | Cost | Enable | Key Shortcuts |
+|--------|----------|------|--------|---------------|
+| **NVDA** | Windows | Free | Auto-start | Start: NVDA+Down, Stop: Ctrl, Next heading: H, Next link: K, Next form: F, Landmarks: D, Elements list: NVDA+F7 |
+| **JAWS** | Windows | Paid | Auto-start | Start: Insert+Down, Stop: Ctrl, Next heading: H, Headings list: Insert+F6 |
+| **VoiceOver** | macOS/iOS | Built-in | Cmd+F5 | Next: VO+Right, Previous: VO+Left, Rotor: VO+U, Activate: VO+Space |
+| **TalkBack** | Android | Built-in | Settings | Next: Swipe right, Previous: Swipe left, Activate: Double tap, Scroll: Two-finger swipe |
+| **Narrator** | Windows | Built-in | Ctrl+Win+Enter | Scan mode: Caps Lock+Space, Next heading: H, Next link: K |
+
+#### Screen Reader Testing Checklist
+
+**Navigation:**
+- Page title announces on load
+- Headings create logical outline (h1 → h6 hierarchy maintained)
+- Landmark regions are properly labeled (banner, navigation, main, complementary, contentinfo)
+- Skip links allow bypassing repetitive content
+- Focus order follows visual reading order
+
+**Content:**
+- All images have appropriate alt text (decorative images have empty alt="")
+- Links have descriptive text (avoid "click here")
+- Buttons clearly indicate their action
+- Dynamic content updates are announced (aria-live regions)
+- Tables have proper headers and captions
+
+**Forms:**
+- Form labels are properly associated with inputs
+- Error messages are associated with form fields (aria-describedby)
+- Required fields indicated (aria-required)
+- Invalid fields indicated (aria-invalid)
+- Error summary announced on submit
+
+**Interactions:**
+- Modal focus is trapped inside dialog
+- Modal announces its role and label
+- Keyboard shortcuts don't conflict with screen reader shortcuts
+- Custom widgets announce state changes (aria-expanded, aria-selected)
+
 ```typescript
-// Screen reader testing guide
+// Screen reader testing utilities
 
 const screenReaderTesting = {
   // Common screen readers
@@ -517,18 +641,6 @@ const screenReaderTesting = {
       },
     },
   },
-
-  // Testing checklist
-  checklist: [
-    "All images have appropriate alt text",
-    "Form labels are properly associated with inputs",
-    "Headings create a logical outline",
-    'Links have descriptive text (not "click here")',
-    "Dynamic content updates are announced",
-    "Focus is managed correctly in modals",
-    "Error messages are associated with form fields",
-    "Tables have proper headers and captions",
-  ],
 };
 
 // Announce utility for screen readers
@@ -801,21 +913,25 @@ const accessibilityConfig = {
 
 ## Best Practices
 
-1. **Start with Semantic HTML**: Proper HTML elements provide built-in accessibility.
+1. **Start with Semantic HTML**: Proper HTML elements provide built-in accessibility. Use button for buttons, a for links, nav for navigation, etc.
 
-2. **Test with Real Users**: Include users with disabilities in testing when possible.
+2. **First Rule of ARIA**: Don't use ARIA if semantic HTML can do it. ARIA fixes what HTML can't express.
 
-3. **Use ARIA Sparingly**: First rule of ARIA is "don't use ARIA" if HTML can do it.
+3. **Maintain Focus Management**: Ensure logical focus order, visible focus indicators, and proper focus trapping in modals.
 
-4. **Maintain Focus Management**: Ensure logical focus order and visible focus indicators.
+4. **Keyboard First**: All functionality must work with keyboard only. Test by unplugging your mouse.
 
-5. **Provide Text Alternatives**: All non-text content needs text alternatives.
+5. **Test with Real Tools**: Use screen readers (NVDA, VoiceOver), keyboard only, and automated tools (axe, Lighthouse).
 
-6. **Ensure Keyboard Accessibility**: All functionality must work with keyboard only.
+6. **Provide Text Alternatives**: All images need alt text (or empty alt="" for decorative), videos need captions.
 
-7. **Test with Multiple Tools**: Use both automated tools and manual testing.
+7. **Design for Inclusion**: Consider color blindness, low vision, motor disabilities, cognitive disabilities from the start.
 
-8. **Document Accessibility Features**: Help users discover accessibility options.
+8. **Progressive Enhancement**: Core functionality should work without JavaScript. Enhanced experience for capable browsers.
+
+9. **Test Early and Often**: Accessibility is easier to build in than bolt on. Include in every code review.
+
+10. **Learn from Users**: Include people with disabilities in user testing when possible.
 
 ## Examples
 
@@ -927,3 +1043,165 @@ function AccessibleForm() {
   );
 }
 ```
+
+## Quick Reference
+
+### Common ARIA Patterns Cheat Sheet
+
+```typescript
+// Button
+<button type="button">Click me</button>
+
+// Toggle button
+<button aria-pressed="true">Mute</button>
+
+// Icon button
+<button aria-label="Close">×</button>
+
+// Link that looks like button (DON'T - use button instead)
+// If you must: <a href="#" role="button" aria-pressed="false">
+
+// Disabled state
+<button disabled>Cannot click</button>
+<button aria-disabled="true">Visually disabled but focusable</button>
+
+// Loading state
+<button aria-busy="true">Saving...</button>
+
+// Expandable section
+<button aria-expanded="false" aria-controls="panel-id">Toggle</button>
+<div id="panel-id" hidden>Content</div>
+
+// Custom checkbox
+<div role="checkbox" aria-checked="false" tabindex="0">Option</div>
+
+// Modal dialog
+<div role="dialog" aria-modal="true" aria-labelledby="title-id">
+  <h2 id="title-id">Dialog Title</h2>
+</div>
+
+// Alert (announces immediately)
+<div role="alert">Error: Form submission failed</div>
+
+// Status (announces after current utterance)
+<div role="status" aria-live="polite">5 new messages</div>
+
+// Tabs
+<div role="tablist">
+  <button role="tab" aria-selected="true" aria-controls="panel1">Tab 1</button>
+  <button role="tab" aria-selected="false" aria-controls="panel2">Tab 2</button>
+</div>
+<div id="panel1" role="tabpanel">Panel 1 content</div>
+<div id="panel2" role="tabpanel" hidden>Panel 2 content</div>
+
+// Form field with description and error
+<label for="email">Email</label>
+<input
+  id="email"
+  type="email"
+  aria-describedby="email-hint email-error"
+  aria-invalid="true"
+  aria-required="true"
+/>
+<span id="email-hint">We'll never share your email</span>
+<span id="email-error" role="alert">Please enter a valid email</span>
+
+// Visually hidden but available to screen readers
+<span className="sr-only">Screen reader only text</span>
+// CSS: .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; }
+
+// Hidden from screen readers
+<div aria-hidden="true">Decorative content</div>
+```
+
+### Alt Text Guidelines
+
+```typescript
+// Informative images - describe the information
+<img src="chart.png" alt="Sales increased 25% from Q1 to Q2" />
+
+// Functional images - describe the action
+<img src="print-icon.png" alt="Print this page" />
+
+// Decorative images - empty alt
+<img src="decorative-border.png" alt="" />
+
+// Complex images - use long description
+<img
+  src="complex-diagram.png"
+  alt="System architecture diagram"
+  aria-describedby="diagram-desc"
+/>
+<div id="diagram-desc">
+  Detailed description: The system consists of...
+</div>
+
+// Images of text - avoid if possible, otherwise copy the text
+<img src="logo.png" alt="Acme Corporation" />
+
+// Background images - use empty alt, provide text alternative elsewhere
+<div style="background-image: url(hero.jpg)" role="img" aria-label="Team celebrating">
+```
+
+### Focus Management Patterns
+
+```typescript
+// Focus trap (modal, sidebar)
+// 1. Save previously focused element
+const previousFocus = document.activeElement;
+
+// 2. Focus first element in trap
+modal.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')?.focus();
+
+// 3. On Tab, cycle within trap
+// See useFocusManagement hook above
+
+// 4. On close, restore focus
+previousFocus?.focus();
+
+// Roving tabindex (toolbar, menu)
+// Only one item in group has tabindex="0", rest have tabindex="-1"
+// Arrow keys move focus and update tabindex values
+<div role="toolbar">
+  <button tabindex="0">Cut</button>
+  <button tabindex="-1">Copy</button>
+  <button tabindex="-1">Paste</button>
+</div>
+
+// Skip link (first focusable element)
+<a href="#main-content" className="skip-link">Skip to main content</a>
+<main id="main-content" tabindex="-1">...</main>
+
+// Focus management after deletion
+// Focus next item, or previous if last, or container if empty
+listItems.splice(index, 1);
+if (listItems[index]) {
+  listItems[index].focus();
+} else if (listItems[index - 1]) {
+  listItems[index - 1].focus();
+} else {
+  containerElement.focus();
+}
+```
+
+### Testing Checklist
+
+**Automated (Run on every PR):**
+- axe-core (via jest-axe or @axe-core/playwright)
+- Lighthouse accessibility score
+- ESLint plugin: eslint-plugin-jsx-a11y
+
+**Manual (Run before release):**
+- Keyboard only navigation (unplug mouse)
+- Screen reader testing (NVDA/VoiceOver)
+- Browser zoom to 200%
+- Color contrast checker (WCAG AA minimum)
+- Tab through entire application
+- Check focus indicators visible
+- Test with reduced motion preference
+- Test with high contrast mode
+
+**Browser DevTools:**
+- Chrome: Lighthouse, Accessibility tree view
+- Firefox: Accessibility inspector
+- Safari: Accessibility audit

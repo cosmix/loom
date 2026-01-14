@@ -1,13 +1,13 @@
 ---
 name: code-migration
-description: Strategies and patterns for safe code migrations and upgrades. Use when upgrading frameworks, migrating between technologies, handling deprecations, or planning incremental migrations. Triggers: migration, upgrade, deprecation, framework migration, version upgrade, legacy code, modernization, refactoring, feature flags, rollback.
+description: Strategies and patterns for safe code migrations and upgrades. Use when upgrading frameworks, migrating between technologies, handling deprecations, or planning incremental migrations. Triggers: migration, migrate, upgrade, version upgrade, breaking change, deprecation, codemod, codemods, AST transformation, jscodeshift, ts-morph, framework migration, database migration, schema migration, legacy code, modernize, modernization, refactoring, feature flags, rollback, strangler fig, blue-green deployment, canary release, shadow mode, parallel run.
 ---
 
 # Code Migration
 
 ## Overview
 
-Code migration involves moving codebases between versions, frameworks, or technologies while maintaining stability. This skill covers version upgrade strategies, framework migrations, deprecation handling, incremental migration patterns, feature flags, and rollback strategies.
+Code migration involves moving codebases between versions, frameworks, or technologies while maintaining stability. This skill covers version upgrade strategies, framework migrations, deprecation handling, automated codemods, incremental migration patterns, testing during migration, feature flags, and rollback strategies.
 
 ## Instructions
 
@@ -708,7 +708,455 @@ async def search(query: str, user_id: str):
         return await legacy_search_service.search(query)
 ```
 
-### 6. Rollback Strategies
+### 6. Automated Codemods
+
+```typescript
+// codemod-example.ts - Using jscodeshift for automated refactoring
+import jscodeshift, { API, FileInfo, Options } from 'jscodeshift';
+
+/**
+ * Codemod: Migrate from class components to function components
+ *
+ * Before:
+ *   class MyComponent extends React.Component {
+ *     render() { return <div>Hello</div>; }
+ *   }
+ *
+ * After:
+ *   function MyComponent() {
+ *     return <div>Hello</div>;
+ *   }
+ */
+export default function transformer(file: FileInfo, api: API, options: Options) {
+  const j = api.jscodeshift;
+  const root = j(file.source);
+
+  // Find all class components with only render method
+  root
+    .find(j.ClassDeclaration)
+    .filter((path) => {
+      const superClass = path.value.superClass;
+      if (!superClass) return false;
+
+      // Check if extends React.Component
+      const extendsReact =
+        (j.MemberExpression.check(superClass) &&
+          j.Identifier.check(superClass.object) &&
+          superClass.object.name === 'React' &&
+          j.Identifier.check(superClass.property) &&
+          superClass.property.name === 'Component') ||
+        (j.Identifier.check(superClass) && superClass.name === 'Component');
+
+      if (!extendsReact) return false;
+
+      // Check if only has render method
+      const methods = path.value.body.body.filter((node) =>
+        j.MethodDefinition.check(node)
+      );
+      return (
+        methods.length === 1 &&
+        j.Identifier.check(methods[0].key) &&
+        methods[0].key.name === 'render'
+      );
+    })
+    .replaceWith((path) => {
+      const className = path.value.id?.name || 'Component';
+      const renderMethod = path.value.body.body.find(
+        (node) =>
+          j.MethodDefinition.check(node) &&
+          j.Identifier.check(node.key) &&
+          node.key.name === 'render'
+      ) as any;
+
+      const returnStatement = renderMethod.value.body.body.find((stmt: any) =>
+        j.ReturnStatement.check(stmt)
+      );
+
+      // Create function component
+      return j.functionDeclaration(
+        j.identifier(className),
+        [],
+        j.blockStatement([returnStatement])
+      );
+    });
+
+  return root.toSource();
+}
+
+// Run with: jscodeshift -t codemod-example.ts src/**/*.tsx
+```
+
+```python
+# ast_codemod.py - Using Python AST for refactoring
+import ast
+import astor
+from typing import List
+
+class FunctionRenamer(ast.NodeTransformer):
+    """Codemod: Rename deprecated function calls."""
+
+    def __init__(self, old_name: str, new_name: str):
+        self.old_name = old_name
+        self.new_name = new_name
+        self.changes: List[str] = []
+
+    def visit_Call(self, node: ast.Call) -> ast.Call:
+        if isinstance(node.func, ast.Name) and node.func.id == self.old_name:
+            old_lineno = node.lineno
+            node.func.id = self.new_name
+            self.changes.append(f"Line {old_lineno}: {self.old_name} -> {self.new_name}")
+
+        self.generic_visit(node)
+        return node
+
+def apply_codemod(source_code: str, old_name: str, new_name: str) -> tuple[str, List[str]]:
+    """Apply function renaming codemod to source code."""
+    tree = ast.parse(source_code)
+    renamer = FunctionRenamer(old_name, new_name)
+    new_tree = renamer.visit(tree)
+
+    new_source = astor.to_source(new_tree)
+    return new_source, renamer.changes
+
+# Example: Migrate authenticate() to authenticate_v2()
+with open("auth.py") as f:
+    source = f.read()
+
+new_source, changes = apply_codemod(source, "authenticate", "authenticate_v2")
+
+print("Changes made:")
+for change in changes:
+    print(f"  {change}")
+
+with open("auth.py", "w") as f:
+    f.write(new_source)
+```
+
+```rust
+// rust_codemod_example.rs - Using syn for Rust AST manipulation
+use syn::{visit_mut::VisitMut, File, ItemFn, Expr, ExprMethodCall};
+use quote::ToTokens;
+
+/// Codemod: Replace .unwrap() with proper error handling
+struct UnwrapReplacer {
+    changes: Vec<String>,
+}
+
+impl VisitMut for UnwrapReplacer {
+    fn visit_expr_method_call_mut(&mut self, node: &mut ExprMethodCall) {
+        if node.method == "unwrap" {
+            // Convert .unwrap() to ?
+            self.changes.push(format!(
+                "Replaced .unwrap() with ? operator"
+            ));
+
+            // Note: This is simplified - real implementation would
+            // need to handle the expression transformation properly
+        }
+
+        syn::visit_mut::visit_expr_method_call_mut(self, node);
+    }
+}
+
+fn apply_codemod(source: &str) -> Result<(String, Vec<String>), syn::Error> {
+    let mut file = syn::parse_file(source)?;
+
+    let mut replacer = UnwrapReplacer { changes: Vec::new() };
+    replacer.visit_file_mut(&mut file);
+
+    let new_source = file.to_token_stream().to_string();
+    Ok((new_source, replacer.changes))
+}
+```
+
+### 7. Incremental Migration Strategies
+
+#### Dark Launching
+
+```python
+# dark_launch.py
+from typing import Callable, TypeVar, Generic
+import logging
+
+T = TypeVar('T')
+
+class DarkLaunch(Generic[T]):
+    """Execute new code path but ignore results (validation only)."""
+
+    def __init__(
+        self,
+        production_impl: Callable[..., T],
+        dark_impl: Callable[..., T],
+        enabled: bool = False,
+        sample_rate: float = 1.0
+    ):
+        self.production = production_impl
+        self.dark = dark_impl
+        self.enabled = enabled
+        self.sample_rate = sample_rate
+        self.logger = logging.getLogger(__name__)
+
+    async def execute(self, *args, **kwargs) -> T:
+        """Execute production code, optionally run dark code in background."""
+        # Always run production
+        result = await self.production(*args, **kwargs)
+
+        # Conditionally run dark code (don't block on it)
+        if self.enabled and random.random() < self.sample_rate:
+            import asyncio
+            asyncio.create_task(self._run_dark(*args, **kwargs))
+
+        return result
+
+    async def _run_dark(self, *args, **kwargs):
+        """Run dark implementation and log results/errors."""
+        try:
+            dark_result = await self.dark(*args, **kwargs)
+            self.logger.info(f"Dark launch succeeded: {dark_result}")
+        except Exception as e:
+            self.logger.error(f"Dark launch failed: {e}", exc_info=True)
+
+# Usage
+dark_search = DarkLaunch(
+    production_impl=old_search_service.search,
+    dark_impl=new_search_service.search,
+    enabled=True,
+    sample_rate=0.1  # 10% sampling
+)
+
+results = await dark_search.execute(query="test")
+```
+
+#### Branch by Abstraction
+
+```typescript
+// branch-by-abstraction.ts
+// Step 1: Create abstraction layer
+interface PaymentProcessor {
+  processPayment(amount: number, token: string): Promise<PaymentResult>;
+  refund(transactionId: string): Promise<void>;
+}
+
+// Step 2: Implement abstraction for legacy system
+class StripeAdapter implements PaymentProcessor {
+  constructor(private stripe: StripeAPI) {}
+
+  async processPayment(amount: number, token: string): Promise<PaymentResult> {
+    const charge = await this.stripe.charges.create({
+      amount,
+      source: token,
+    });
+    return { transactionId: charge.id, status: 'success' };
+  }
+
+  async refund(transactionId: string): Promise<void> {
+    await this.stripe.refunds.create({ charge: transactionId });
+  }
+}
+
+// Step 3: Implement abstraction for new system
+class BraintreeAdapter implements PaymentProcessor {
+  constructor(private braintree: BraintreeAPI) {}
+
+  async processPayment(amount: number, token: string): Promise<PaymentResult> {
+    const result = await this.braintree.transaction.sale({
+      amount: amount.toString(),
+      paymentMethodNonce: token,
+    });
+    return { transactionId: result.transaction.id, status: 'success' };
+  }
+
+  async refund(transactionId: string): Promise<void> {
+    await this.braintree.transaction.refund(transactionId);
+  }
+}
+
+// Step 4: Route to implementations based on feature flag
+class PaymentService {
+  constructor(
+    private stripeAdapter: StripeAdapter,
+    private braintreeAdapter: BraintreeAdapter,
+    private featureFlags: FeatureFlagService
+  ) {}
+
+  private getProcessor(userId: string): PaymentProcessor {
+    if (this.featureFlags.isEnabled('use_braintree', userId)) {
+      return this.braintreeAdapter;
+    }
+    return this.stripeAdapter;
+  }
+
+  async processPayment(
+    userId: string,
+    amount: number,
+    token: string
+  ): Promise<PaymentResult> {
+    const processor = this.getProcessor(userId);
+    return processor.processPayment(amount, token);
+  }
+}
+
+// Step 5: After migration complete, remove abstraction if desired
+```
+
+### 8. Testing During Migration
+
+```python
+# migration_testing.py
+import pytest
+from typing import Callable, Any, List
+from dataclasses import dataclass
+
+@dataclass
+class MigrationTestCase:
+    name: str
+    input_data: Any
+    expected_output: Any
+    legacy_impl: Callable
+    new_impl: Callable
+
+class MigrationTester:
+    """Test framework for validating migration correctness."""
+
+    def __init__(self):
+        self.test_cases: List[MigrationTestCase] = []
+        self.failures: List[dict] = []
+
+    def add_test_case(self, test_case: MigrationTestCase):
+        self.test_cases.append(test_case)
+
+    async def run_all(self) -> bool:
+        """Run all test cases comparing legacy vs new implementation."""
+        all_passed = True
+
+        for test_case in self.test_cases:
+            try:
+                legacy_result = await test_case.legacy_impl(test_case.input_data)
+                new_result = await test_case.new_impl(test_case.input_data)
+
+                if legacy_result != new_result:
+                    all_passed = False
+                    self.failures.append({
+                        'test': test_case.name,
+                        'input': test_case.input_data,
+                        'legacy': legacy_result,
+                        'new': new_result,
+                        'expected': test_case.expected_output
+                    })
+                    print(f"FAIL: {test_case.name}")
+                    print(f"  Legacy: {legacy_result}")
+                    print(f"  New:    {new_result}")
+                else:
+                    print(f"PASS: {test_case.name}")
+
+            except Exception as e:
+                all_passed = False
+                self.failures.append({
+                    'test': test_case.name,
+                    'error': str(e)
+                })
+                print(f"ERROR: {test_case.name} - {e}")
+
+        return all_passed
+
+    def generate_report(self) -> str:
+        """Generate migration test report."""
+        total = len(self.test_cases)
+        passed = total - len(self.failures)
+
+        report = [
+            "# Migration Test Report",
+            f"Total: {total} | Passed: {passed} | Failed: {len(self.failures)}",
+            ""
+        ]
+
+        if self.failures:
+            report.append("## Failures")
+            for failure in self.failures:
+                report.append(f"- {failure.get('test', 'Unknown')}")
+                if 'error' in failure:
+                    report.append(f"  Error: {failure['error']}")
+                else:
+                    report.append(f"  Legacy: {failure.get('legacy')}")
+                    report.append(f"  New: {failure.get('new')}")
+
+        return "\n".join(report)
+
+# Usage
+tester = MigrationTester()
+
+tester.add_test_case(MigrationTestCase(
+    name="search_basic_query",
+    input_data="test query",
+    expected_output=SearchResults(...),
+    legacy_impl=old_search.search,
+    new_impl=new_search.search
+))
+
+await tester.run_all()
+print(tester.generate_report())
+```
+
+```python
+# snapshot_testing.py
+import json
+import hashlib
+from pathlib import Path
+
+class SnapshotTester:
+    """Snapshot testing for migration validation."""
+
+    def __init__(self, snapshot_dir: str = ".snapshots"):
+        self.snapshot_dir = Path(snapshot_dir)
+        self.snapshot_dir.mkdir(exist_ok=True)
+
+    def capture_snapshot(self, name: str, data: Any):
+        """Capture snapshot of current output."""
+        snapshot_path = self.snapshot_dir / f"{name}.json"
+
+        serialized = json.dumps(data, sort_keys=True, indent=2)
+        snapshot_path.write_text(serialized)
+
+        # Also save hash for quick comparison
+        hash_path = self.snapshot_dir / f"{name}.hash"
+        data_hash = hashlib.sha256(serialized.encode()).hexdigest()
+        hash_path.write_text(data_hash)
+
+    def verify_snapshot(self, name: str, data: Any) -> bool:
+        """Verify data matches snapshot."""
+        snapshot_path = self.snapshot_dir / f"{name}.json"
+
+        if not snapshot_path.exists():
+            raise FileNotFoundError(f"Snapshot {name} not found")
+
+        expected = snapshot_path.read_text()
+        actual = json.dumps(data, sort_keys=True, indent=2)
+
+        if expected != actual:
+            # Save diff for debugging
+            diff_path = self.snapshot_dir / f"{name}.diff"
+            diff_path.write_text(f"Expected:\n{expected}\n\nActual:\n{actual}")
+            return False
+
+        return True
+
+# Migration workflow with snapshots
+snapshot = SnapshotTester()
+
+# 1. Capture baseline from legacy system
+legacy_data = await legacy_search.search("test")
+snapshot.capture_snapshot("search_test_legacy", legacy_data)
+
+# 2. Run migration
+
+# 3. Verify new system matches legacy snapshots
+new_data = await new_search.search("test")
+matches = snapshot.verify_snapshot("search_test_legacy", new_data)
+
+assert matches, "New implementation doesn't match legacy behavior"
+```
+
+### 9. Rollback Strategies
 
 ```python
 # rollback.py
@@ -870,19 +1318,23 @@ class AutoRollback:
 
 1. **Plan Thoroughly**: Document migration steps, dependencies, and rollback procedures before starting.
 
-2. **Migrate Incrementally**: Use strangler fig, feature flags, and percentage rollouts to reduce risk.
+2. **Migrate Incrementally**: Use strangler fig, feature flags, dark launches, and percentage rollouts to reduce risk.
 
-3. **Shadow Test**: Run new and old systems in parallel to validate behavior before switching.
+3. **Automate Where Possible**: Use codemods (jscodeshift, ts-morph, AST tools) to automate repetitive code transformations.
 
-4. **Monitor Closely**: Track error rates, latency, and business metrics during migration.
+4. **Shadow Test**: Run new and old systems in parallel to validate behavior before switching. Compare results and log discrepancies.
 
-5. **Maintain Backward Compatibility**: Keep APIs compatible during transition periods.
+5. **Test Continuously**: Use migration-specific testing (snapshot tests, comparison tests) to validate correctness at each step.
 
-6. **Automate Testing**: Comprehensive test suites catch regressions early.
+6. **Monitor Closely**: Track error rates, latency, and business metrics during migration. Set up automated rollback triggers.
 
-7. **Document Deprecations**: Clear deprecation notices with migration guides help consumers.
+7. **Branch by Abstraction**: Create abstraction layers to decouple migration from feature development.
 
-8. **Always Have Rollback**: Never deploy a migration without a tested rollback plan.
+8. **Maintain Backward Compatibility**: Keep APIs compatible during transition periods. Support both old and new interfaces.
+
+9. **Document Deprecations**: Clear deprecation notices with migration guides help consumers. Track deprecated usage.
+
+10. **Always Have Rollback**: Never deploy a migration without a tested rollback plan. Create rollback points before each phase.
 
 ## Examples
 

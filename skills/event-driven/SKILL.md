@@ -1,13 +1,47 @@
 ---
 name: event-driven
-description: Event-driven architecture patterns including message queues, pub/sub, event sourcing, CQRS, and sagas. Use when implementing async messaging, distributed transactions, event stores, command query separation, RabbitMQ, Kafka, SQS, or NATS integration.
+description: Event-driven architecture patterns including message queues, pub/sub, event sourcing, CQRS, and sagas. Use when implementing async messaging, distributed transactions, event stores, command query separation, domain events, integration events, data streaming, choreography, orchestration, or integrating with RabbitMQ, Kafka, Apache Pulsar, AWS SQS, AWS SNS, NATS, event buses, or message brokers.
+triggers:
+  - event
+  - message
+  - messaging
+  - pub/sub
+  - pubsub
+  - publish/subscribe
+  - kafka
+  - rabbitmq
+  - sqs
+  - sns
+  - nats
+  - pulsar
+  - event sourcing
+  - CQRS
+  - saga
+  - choreography
+  - orchestration
+  - event store
+  - domain event
+  - integration event
+  - message queue
+  - message broker
+  - event bus
+  - data streaming
+  - stream processing
+  - event-driven
 ---
 
 # Event-Driven Architecture
 
 ## Overview
 
-Event-driven architecture (EDA) enables loosely coupled, scalable systems by communicating through events rather than direct calls. This skill covers message queues, pub/sub patterns, event sourcing, CQRS, and distributed transaction management with sagas.
+Event-driven architecture (EDA) enables loosely coupled, scalable systems by communicating through events rather than direct calls. This skill covers message queues, pub/sub patterns, event sourcing, CQRS, distributed transaction management with sagas, and data streaming with Kafka.
+
+## Available Agents
+
+- **senior-software-engineer** (Opus) - Architecture design, pattern selection, distributed system design
+- **software-engineer** (Sonnet) - Event handler implementation, consumer/producer code
+- **security-engineer** (Opus) - Event security, authorization patterns, message encryption
+- **senior-infrastructure-engineer** (Opus) - Message broker setup, Kafka clusters, queue configuration
 
 ## Key Concepts
 
@@ -62,7 +96,7 @@ class RabbitMQClient {
   async publish(
     queue: string,
     message: unknown,
-    options?: PublishOptions,
+    options?: PublishOptions
   ): Promise<void> {
     if (!this.channel) throw new Error("Not connected");
 
@@ -82,9 +116,9 @@ class RabbitMQClient {
     handler: (
       message: T,
       ack: () => void,
-      nack: (requeue?: boolean) => void,
+      nack: (requeue?: boolean) => void
     ) => Promise<void>,
-    options?: ConsumeOptions,
+    options?: ConsumeOptions
   ): Promise<void> {
     if (!this.channel) throw new Error("Not connected");
 
@@ -111,7 +145,7 @@ class RabbitMQClient {
             } else {
               this.channel!.nack(msg, false, false); // Send to DLQ
             }
-          },
+          }
         );
       } catch (error) {
         console.error("Message processing error:", error);
@@ -150,7 +184,7 @@ class SQSQueue<T> {
 
   async send(
     message: T,
-    options?: { delaySeconds?: number; deduplicationId?: string },
+    options?: { delaySeconds?: number; deduplicationId?: string }
   ): Promise<string> {
     const command = new SendMessageCommand({
       QueueUrl: this.queueUrl,
@@ -166,7 +200,7 @@ class SQSQueue<T> {
 
   async receive(
     maxMessages: number = 10,
-    waitTimeSeconds: number = 20,
+    waitTimeSeconds: number = 20
   ): Promise<SQSMessage<T>[]> {
     const command = new ReceiveMessageCommand({
       QueueUrl: this.queueUrl,
@@ -182,7 +216,7 @@ class SQSQueue<T> {
       body: JSON.parse(msg.Body!) as T,
       receiptHandle: msg.ReceiptHandle!,
       approximateReceiveCount: parseInt(
-        msg.Attributes?.ApproximateReceiveCount || "1",
+        msg.Attributes?.ApproximateReceiveCount || "1"
       ),
     }));
   }
@@ -197,7 +231,7 @@ class SQSQueue<T> {
 
   async processMessages(
     handler: (message: T) => Promise<void>,
-    options?: { maxRetries?: number; pollInterval?: number },
+    options?: { maxRetries?: number; pollInterval?: number }
   ): Promise<void> {
     const maxRetries = options?.maxRetries || 3;
 
@@ -218,7 +252,7 @@ class SQSQueue<T> {
             }
             // Don't delete - will be reprocessed after visibility timeout
           }
-        }),
+        })
       );
 
       if (messages.length === 0 && options?.pollInterval) {
@@ -267,7 +301,7 @@ class KafkaEventBus {
 
   async publish<T>(
     topic: string,
-    event: Omit<Event<T>, "id" | "timestamp">,
+    event: Omit<Event<T>, "id" | "timestamp">
   ): Promise<void> {
     if (!this.producer) throw new Error("Producer not connected");
 
@@ -299,7 +333,7 @@ class KafkaEventBus {
     topics: string[],
     groupId: string,
     handler: (event: Event<T>) => Promise<void>,
-    options?: { fromBeginning?: boolean },
+    options?: { fromBeginning?: boolean }
   ): Promise<void> {
     const consumer = this.kafka.consumer({ groupId });
     await consumer.connect();
@@ -325,7 +359,7 @@ class KafkaEventBus {
         } catch (error) {
           console.error(
             `Error processing message from ${topic}:${partition}:`,
-            error,
+            error
           );
           throw error; // Will trigger retry based on consumer config
         }
@@ -364,7 +398,7 @@ await eventBus.subscribe<OrderCreatedData>(
     if (event.type === "order.created") {
       await reserveInventory(event.data);
     }
-  },
+  }
 );
 ```
 
@@ -410,14 +444,14 @@ class NATSEventBus {
 
     await this.js.publish(
       `events.${subject}`,
-      this.sc.encode(JSON.stringify(data)),
+      this.sc.encode(JSON.stringify(data))
     );
   }
 
   async subscribe(
     subject: string,
     durableName: string,
-    handler: (data: unknown) => Promise<void>,
+    handler: (data: unknown) => Promise<void>
   ): Promise<void> {
     if (!this.js) throw new Error("Not connected");
 
@@ -489,13 +523,13 @@ class PostgresEventStore implements EventStore {
         // Optimistic concurrency check
         const { rows } = await client.query(
           "SELECT MAX(version) as max_version FROM events WHERE aggregate_id = $1",
-          [event.aggregateId],
+          [event.aggregateId]
         );
 
         const currentVersion = rows[0]?.max_version || 0;
         if (event.version !== currentVersion + 1) {
           throw new ConcurrencyError(
-            `Expected version ${currentVersion + 1}, got ${event.version}`,
+            `Expected version ${currentVersion + 1}, got ${event.version}`
           );
         }
 
@@ -511,7 +545,7 @@ class PostgresEventStore implements EventStore {
             event.timestamp,
             JSON.stringify(event.data),
             JSON.stringify(event.metadata),
-          ],
+          ]
         );
       }
 
@@ -531,13 +565,13 @@ class PostgresEventStore implements EventStore {
 
   async getEvents(
     aggregateId: string,
-    fromVersion: number = 0,
+    fromVersion: number = 0
   ): Promise<DomainEvent[]> {
     const { rows } = await this.pool.query(
       `SELECT * FROM events
        WHERE aggregate_id = $1 AND version > $2
        ORDER BY version ASC`,
-      [aggregateId, fromVersion],
+      [aggregateId, fromVersion]
     );
 
     return rows.map(this.rowToEvent);
@@ -565,7 +599,7 @@ abstract class Aggregate {
     event: Omit<
       DomainEvent,
       "id" | "aggregateId" | "aggregateType" | "version" | "timestamp"
-    >,
+    >
   ): void {
     const domainEvent: DomainEvent = {
       ...event,
@@ -649,7 +683,7 @@ class Order extends Aggregate {
         this.items = data.items;
         this.total = data.items.reduce(
           (sum, item) => sum + item.price * item.quantity,
-          0,
+          0
         );
         this.status = "pending";
         break;
@@ -716,7 +750,7 @@ class QueryBus {
 
   register<TQuery extends Query<TResult>, TResult>(
     type: string,
-    handler: QueryHandler<TQuery, TResult>,
+    handler: QueryHandler<TQuery, TResult>
   ): void {
     this.handlers.set(type, handler as QueryHandler<Query<unknown>, unknown>);
   }
@@ -748,10 +782,7 @@ interface OrderReadModel {
 }
 
 class OrderProjection {
-  constructor(
-    private db: Database,
-    private eventBus: EventBus,
-  ) {
+  constructor(private db: Database, private eventBus: EventBus) {
     this.setupSubscriptions();
   }
 
@@ -775,7 +806,7 @@ class OrderProjection {
           ...item,
           productName: product.name,
         };
-      }),
+      })
     );
 
     await this.db.orderReadModels.create({
@@ -863,7 +894,7 @@ class SagaOrchestrator {
 
   private async executeNextStep(
     instance: SagaInstance,
-    saga: SagaDefinition<unknown>,
+    saga: SagaDefinition<unknown>
   ): Promise<void> {
     if (instance.currentStep >= saga.steps.length) {
       instance.status = "completed";
@@ -893,7 +924,7 @@ class SagaOrchestrator {
 
   private async compensate(
     instance: SagaInstance,
-    saga: SagaDefinition<unknown>,
+    saga: SagaDefinition<unknown>
   ): Promise<void> {
     // Execute compensations in reverse order
     for (let i = instance.completedSteps.length - 1; i >= 0; i--) {
@@ -942,7 +973,7 @@ const orderFulfillmentSaga: SagaDefinition<OrderFulfillmentData> = {
       execute: async (data) => {
         const total = data.items.reduce(
           (sum, i) => sum + i.price * i.quantity,
-          0,
+          0
         );
         const payment = await paymentService.charge(data.customerId, total);
         data.paymentId = payment.id;
@@ -958,7 +989,7 @@ const orderFulfillmentSaga: SagaDefinition<OrderFulfillmentData> = {
       execute: async (data) => {
         const shipment = await shippingService.createShipment(
           data.orderId,
-          data.items,
+          data.items
         );
         data.shipmentId = shipment.id;
       },
@@ -997,7 +1028,7 @@ class IdempotencyService {
   async process<T>(
     key: string,
     operation: () => Promise<T>,
-    ttlSeconds: number = 86400, // 24 hours
+    ttlSeconds: number = 86400 // 24 hours
   ): Promise<T> {
     const lockKey = `idempotency:lock:${key}`;
     const dataKey = `idempotency:data:${key}`;
@@ -1031,7 +1062,7 @@ class IdempotencyService {
 
   private async waitForResult<T>(
     dataKey: string,
-    maxWaitMs: number = 30000,
+    maxWaitMs: number = 30000
   ): Promise<T> {
     const startTime = Date.now();
 
@@ -1051,12 +1082,12 @@ class IdempotencyService {
 class DeduplicatingConsumer<T> {
   constructor(
     private redis: Redis,
-    private windowSeconds: number = 3600, // 1 hour dedup window
+    private windowSeconds: number = 3600 // 1 hour dedup window
   ) {}
 
   async process(
     messageId: string,
-    handler: () => Promise<T>,
+    handler: () => Promise<T>
   ): Promise<{ result: T; duplicate: boolean }> {
     const dedupKey = `dedup:${messageId}`;
 
@@ -1073,7 +1104,7 @@ class DeduplicatingConsumer<T> {
     await this.redis.setex(
       dedupKey,
       this.windowSeconds,
-      JSON.stringify(result),
+      JSON.stringify(result)
     );
 
     return { result, duplicate: false };
@@ -1097,14 +1128,14 @@ interface DeadLetterMessage {
 class DeadLetterQueueManager {
   constructor(
     private dlqStore: DLQStore,
-    private originalQueue: MessageQueue,
+    private originalQueue: MessageQueue
   ) {}
 
   async moveToDeadLetter(
     message: unknown,
     originalQueue: string,
     error: Error,
-    retryCount: number,
+    retryCount: number
   ): Promise<void> {
     const dlqMessage: DeadLetterMessage = {
       id: crypto.randomUUID(),
@@ -1134,7 +1165,7 @@ class DeadLetterQueueManager {
     try {
       await this.originalQueue.publish(
         dlqMessage.originalQueue,
-        dlqMessage.originalMessage,
+        dlqMessage.originalMessage
       );
       await this.dlqStore.delete(messageId);
     } catch (error) {
@@ -1168,25 +1199,596 @@ class DeadLetterQueueManager {
 }
 ```
 
+### Data Streaming with Kafka
+
+**Stream Processing**:
+
+```typescript
+import { Kafka, CompressionTypes } from "kafkajs";
+
+interface StreamRecord<T> {
+  key: string;
+  value: T;
+  timestamp: number;
+  partition: number;
+  offset: string;
+}
+
+class KafkaStreamProcessor {
+  private kafka: Kafka;
+
+  constructor(brokers: string[]) {
+    this.kafka = new Kafka({
+      clientId: "stream-processor",
+      brokers,
+    });
+  }
+
+  // Stateful stream aggregation
+  async aggregateStream<TInput, TState>(
+    inputTopic: string,
+    outputTopic: string,
+    groupId: string,
+    initialState: TState,
+    aggregator: (state: TState, record: TInput) => TState,
+    windowMs: number = 60000
+  ): Promise<void> {
+    const consumer = this.kafka.consumer({ groupId });
+    const producer = this.kafka.producer({
+      compression: CompressionTypes.GZIP,
+    });
+
+    await consumer.connect();
+    await producer.connect();
+    await consumer.subscribe({ topic: inputTopic });
+
+    const stateByKey = new Map<string, TState>();
+    const windowTimers = new Map<string, NodeJS.Timeout>();
+
+    await consumer.run({
+      eachMessage: async ({ message }) => {
+        const key = message.key?.toString() || "default";
+        const value: TInput = JSON.parse(message.value!.toString());
+
+        // Get or initialize state
+        const currentState = stateByKey.get(key) || initialState;
+        const newState = aggregator(currentState, value);
+        stateByKey.set(key, newState);
+
+        // Clear existing window timer
+        const existingTimer = windowTimers.get(key);
+        if (existingTimer) clearTimeout(existingTimer);
+
+        // Set new window timer to emit aggregated state
+        const timer = setTimeout(async () => {
+          const finalState = stateByKey.get(key);
+          await producer.send({
+            topic: outputTopic,
+            messages: [
+              {
+                key,
+                value: JSON.stringify(finalState),
+                timestamp: Date.now().toString(),
+              },
+            ],
+          });
+          stateByKey.delete(key);
+          windowTimers.delete(key);
+        }, windowMs);
+
+        windowTimers.set(key, timer);
+      },
+    });
+  }
+
+  // Stream joins
+  async joinStreams<TLeft, TRight, TResult>(
+    leftTopic: string,
+    rightTopic: string,
+    outputTopic: string,
+    groupId: string,
+    joiner: (left: TLeft, right: TRight) => TResult,
+    windowMs: number = 30000
+  ): Promise<void> {
+    const consumer = this.kafka.consumer({ groupId });
+    const producer = this.kafka.producer();
+
+    await consumer.connect();
+    await producer.connect();
+    await consumer.subscribe({ topics: [leftTopic, rightTopic] });
+
+    const leftCache = new Map<string, { data: TLeft; timestamp: number }>();
+    const rightCache = new Map<string, { data: TRight; timestamp: number }>();
+
+    await consumer.run({
+      eachMessage: async ({ topic, message }) => {
+        const key = message.key?.toString() || "default";
+        const timestamp = parseInt(message.timestamp);
+        const now = Date.now();
+
+        // Clean old entries
+        this.cleanOldEntries(leftCache, now, windowMs);
+        this.cleanOldEntries(rightCache, now, windowMs);
+
+        if (topic === leftTopic) {
+          const leftData: TLeft = JSON.parse(message.value!.toString());
+          leftCache.set(key, { data: leftData, timestamp });
+
+          // Try to join with right
+          const rightEntry = rightCache.get(key);
+          if (
+            rightEntry &&
+            Math.abs(timestamp - rightEntry.timestamp) <= windowMs
+          ) {
+            const result = joiner(leftData, rightEntry.data);
+            await producer.send({
+              topic: outputTopic,
+              messages: [{ key, value: JSON.stringify(result) }],
+            });
+          }
+        } else {
+          const rightData: TRight = JSON.parse(message.value!.toString());
+          rightCache.set(key, { data: rightData, timestamp });
+
+          // Try to join with left
+          const leftEntry = leftCache.get(key);
+          if (
+            leftEntry &&
+            Math.abs(timestamp - leftEntry.timestamp) <= windowMs
+          ) {
+            const result = joiner(leftEntry.data, rightData);
+            await producer.send({
+              topic: outputTopic,
+              messages: [{ key, value: JSON.stringify(result) }],
+            });
+          }
+        }
+      },
+    });
+  }
+
+  private cleanOldEntries<T>(
+    cache: Map<string, { data: T; timestamp: number }>,
+    now: number,
+    windowMs: number
+  ): void {
+    for (const [key, entry] of cache.entries()) {
+      if (now - entry.timestamp > windowMs) {
+        cache.delete(key);
+      }
+    }
+  }
+}
+
+// Kafka Streams-style operations
+class KafkaStream<T> {
+  constructor(private kafka: Kafka, private topic: string) {}
+
+  // Map transformation
+  map<R>(mapper: (value: T) => R): KafkaStream<R> {
+    const outputTopic = `${this.topic}-mapped`;
+    this.processStream(outputTopic, async (record) => ({
+      key: record.key,
+      value: mapper(record.value),
+    }));
+    return new KafkaStream<R>(this.kafka, outputTopic);
+  }
+
+  // Filter transformation
+  filter(predicate: (value: T) => boolean): KafkaStream<T> {
+    const outputTopic = `${this.topic}-filtered`;
+    this.processStream(outputTopic, async (record) =>
+      predicate(record.value) ? record : null
+    );
+    return new KafkaStream<T>(this.kafka, outputTopic);
+  }
+
+  // Group by key and aggregate
+  groupBy<K, V>(
+    keyExtractor: (value: T) => K,
+    aggregator: (key: K, values: T[]) => V,
+    windowMs: number = 60000
+  ): KafkaStream<V> {
+    const outputTopic = `${this.topic}-grouped`;
+    const groups = new Map<string, T[]>();
+    const timers = new Map<string, NodeJS.Timeout>();
+
+    this.processStream(outputTopic, async (record, producer) => {
+      const key = String(keyExtractor(record.value));
+      const values = groups.get(key) || [];
+      values.push(record.value);
+      groups.set(key, values);
+
+      const existingTimer = timers.get(key);
+      if (existingTimer) clearTimeout(existingTimer);
+
+      const timer = setTimeout(async () => {
+        const groupValues = groups.get(key) || [];
+        const result = aggregator(keyExtractor(record.value), groupValues);
+        await producer.send({
+          topic: outputTopic,
+          messages: [{ key, value: JSON.stringify(result) }],
+        });
+        groups.delete(key);
+        timers.delete(key);
+      }, windowMs);
+
+      timers.set(key, timer);
+
+      return null; // Don't emit immediately
+    });
+
+    return new KafkaStream<V>(this.kafka, outputTopic);
+  }
+
+  private async processStream(
+    outputTopic: string,
+    processor: (
+      record: StreamRecord<T>,
+      producer: any
+    ) => Promise<{ key: string; value: any } | null>
+  ): Promise<void> {
+    const consumer = this.kafka.consumer({
+      groupId: `${this.topic}-processor`,
+    });
+    const producer = this.kafka.producer();
+
+    await consumer.connect();
+    await producer.connect();
+    await consumer.subscribe({ topic: this.topic });
+
+    await consumer.run({
+      eachMessage: async ({ message, partition }) => {
+        const record: StreamRecord<T> = {
+          key: message.key?.toString() || "default",
+          value: JSON.parse(message.value!.toString()),
+          timestamp: parseInt(message.timestamp),
+          partition,
+          offset: message.offset,
+        };
+
+        const result = await processor(record, producer);
+        if (result) {
+          await producer.send({
+            topic: outputTopic,
+            messages: [
+              {
+                key: result.key,
+                value: JSON.stringify(result.value),
+              },
+            ],
+          });
+        }
+      },
+    });
+  }
+}
+```
+
+### Event Sourcing Patterns
+
+**Snapshots for Performance**:
+
+```typescript
+interface Snapshot {
+  aggregateId: string;
+  version: number;
+  state: unknown;
+  timestamp: Date;
+}
+
+class SnapshotStore {
+  constructor(private db: Database) {}
+
+  async save(snapshot: Snapshot): Promise<void> {
+    await this.db.snapshots.upsert({
+      aggregateId: snapshot.aggregateId,
+      version: snapshot.version,
+      state: JSON.stringify(snapshot.state),
+      timestamp: snapshot.timestamp,
+    });
+  }
+
+  async getLatest(aggregateId: string): Promise<Snapshot | null> {
+    const row = await this.db.snapshots.findOne(
+      { aggregateId },
+      { orderBy: { version: "desc" } }
+    );
+    return row
+      ? {
+          aggregateId: row.aggregateId,
+          version: row.version,
+          state: JSON.parse(row.state),
+          timestamp: row.timestamp,
+        }
+      : null;
+  }
+}
+
+// Enhanced aggregate with snapshots
+abstract class SnapshotAggregate extends Aggregate {
+  private static SNAPSHOT_FREQUENCY = 100; // Snapshot every 100 events
+
+  async load(
+    eventStore: EventStore,
+    snapshotStore: SnapshotStore
+  ): Promise<void> {
+    // Try to load from snapshot first
+    const snapshot = await snapshotStore.getLatest(this.id);
+    if (snapshot) {
+      this.applySnapshot(snapshot.state);
+      this._version = snapshot.version;
+
+      // Load events since snapshot
+      const events = await eventStore.getEvents(this.id, snapshot.version);
+      this.loadFromHistory(events);
+    } else {
+      // No snapshot, load all events
+      const events = await eventStore.getEvents(this.id);
+      this.loadFromHistory(events);
+    }
+  }
+
+  async save(
+    eventStore: EventStore,
+    snapshotStore: SnapshotStore
+  ): Promise<void> {
+    const events = this.getUncommittedEvents();
+    await eventStore.append(events);
+    this.clearUncommittedEvents();
+
+    // Create snapshot if needed
+    if (this.version % SnapshotAggregate.SNAPSHOT_FREQUENCY === 0) {
+      await snapshotStore.save({
+        aggregateId: this.id,
+        version: this.version,
+        state: this.createSnapshot(),
+        timestamp: new Date(),
+      });
+    }
+  }
+
+  protected abstract createSnapshot(): unknown;
+  protected abstract applySnapshot(state: unknown): void;
+}
+```
+
+**Event Upcasting (Schema Migration)**:
+
+```typescript
+interface EventUpcaster {
+  eventType: string;
+  fromVersion: number;
+  toVersion: number;
+  upcast: (event: DomainEvent) => DomainEvent;
+}
+
+class EventStoreWithUpcasting implements EventStore {
+  private upcasters: Map<string, EventUpcaster[]> = new Map();
+
+  registerUpcaster(upcaster: EventUpcaster): void {
+    const existing = this.upcasters.get(upcaster.eventType) || [];
+    existing.push(upcaster);
+    existing.sort((a, b) => a.fromVersion - b.fromVersion);
+    this.upcasters.set(upcaster.eventType, existing);
+  }
+
+  async getEvents(
+    aggregateId: string,
+    fromVersion: number = 0
+  ): Promise<DomainEvent[]> {
+    const rawEvents = await this.rawEventStore.getEvents(
+      aggregateId,
+      fromVersion
+    );
+
+    return rawEvents.map((event) => this.upcastEvent(event));
+  }
+
+  private upcastEvent(event: DomainEvent): DomainEvent {
+    const upcasters = this.upcasters.get(event.type) || [];
+    let currentEvent = event;
+
+    for (const upcaster of upcasters) {
+      const eventVersion = (currentEvent.data as any)?.schemaVersion || 1;
+      if (eventVersion === upcaster.fromVersion) {
+        currentEvent = upcaster.upcast(currentEvent);
+      }
+    }
+
+    return currentEvent;
+  }
+}
+
+// Example upcaster
+const orderCreatedV1toV2: EventUpcaster = {
+  eventType: "OrderCreated",
+  fromVersion: 1,
+  toVersion: 2,
+  upcast: (event) => ({
+    ...event,
+    data: {
+      ...(event.data as any),
+      // V2 added shipping address separate from billing
+      shippingAddress: (event.data as any).address,
+      billingAddress: (event.data as any).address,
+      schemaVersion: 2,
+    },
+  }),
+};
+```
+
+### Saga Patterns
+
+**Choreography vs Orchestration**:
+
+```typescript
+// CHOREOGRAPHY: Services react to events independently
+class OrderService {
+  async onOrderCreated(event: OrderCreatedEvent): Promise<void> {
+    // Publish event, other services react
+    await this.eventBus.publish("order.created", {
+      orderId: event.orderId,
+      customerId: event.customerId,
+      items: event.items,
+    });
+  }
+}
+
+class InventoryService {
+  constructor(private eventBus: EventBus) {
+    // Listen and react to order events
+    this.eventBus.subscribe("order.created", this.reserveInventory.bind(this));
+  }
+
+  private async reserveInventory(event: OrderCreatedEvent): Promise<void> {
+    try {
+      await this.reserve(event.items);
+      // Publish success event
+      await this.eventBus.publish("inventory.reserved", {
+        orderId: event.orderId,
+      });
+    } catch (error) {
+      // Publish failure event
+      await this.eventBus.publish("inventory.reservation-failed", {
+        orderId: event.orderId,
+        reason: error.message,
+      });
+    }
+  }
+}
+
+class PaymentService {
+  constructor(private eventBus: EventBus) {
+    // Wait for inventory before processing payment
+    this.eventBus.subscribe(
+      "inventory.reserved",
+      this.processPayment.bind(this)
+    );
+  }
+
+  private async processPayment(event: InventoryReservedEvent): Promise<void> {
+    // Process payment and publish result...
+  }
+}
+
+// ORCHESTRATION: Central coordinator controls flow
+class OrderFulfillmentOrchestrator {
+  async fulfillOrder(orderId: string): Promise<void> {
+    try {
+      // Step 1: Reserve inventory
+      await this.inventoryService.reserve(orderId);
+
+      // Step 2: Process payment
+      await this.paymentService.charge(orderId);
+
+      // Step 3: Create shipment
+      await this.shippingService.createShipment(orderId);
+
+      // Step 4: Confirm order
+      await this.orderService.confirm(orderId);
+    } catch (error) {
+      // Explicit compensation
+      await this.compensate(orderId);
+    }
+  }
+
+  private async compensate(orderId: string): Promise<void> {
+    // Undo in reverse order
+    await this.shippingService.cancelShipment(orderId);
+    await this.paymentService.refund(orderId);
+    await this.inventoryService.release(orderId);
+    await this.orderService.cancel(orderId);
+  }
+}
+```
+
+**Saga State Machine**:
+
+```typescript
+type SagaState =
+  | "STARTED"
+  | "INVENTORY_RESERVED"
+  | "PAYMENT_PROCESSED"
+  | "SHIPPED"
+  | "COMPLETED"
+  | "COMPENSATING"
+  | "FAILED";
+
+interface SagaStateMachine<TData> {
+  state: SagaState;
+  data: TData;
+  transitions: Map<SagaState, SagaTransition<TData>>;
+}
+
+interface SagaTransition<TData> {
+  onEnter: (data: TData) => Promise<void>;
+  onSuccess: SagaState;
+  onFailure: SagaState;
+  compensate?: (data: TData) => Promise<void>;
+}
+
+class StatefulSagaOrchestrator<TData> {
+  async execute(saga: SagaStateMachine<TData>): Promise<void> {
+    let currentState = saga.state;
+
+    while (currentState !== "COMPLETED" && currentState !== "FAILED") {
+      const transition = saga.transitions.get(currentState);
+      if (!transition)
+        throw new Error(`No transition for state: ${currentState}`);
+
+      try {
+        await transition.onEnter(saga.data);
+        currentState = transition.onSuccess;
+        saga.state = currentState;
+        await this.persistSaga(saga); // Save state
+      } catch (error) {
+        // Compensation
+        if (transition.compensate) {
+          await transition.compensate(saga.data);
+        }
+        currentState = transition.onFailure;
+        saga.state = currentState;
+        await this.persistSaga(saga);
+      }
+    }
+  }
+
+  private async persistSaga(saga: SagaStateMachine<TData>): Promise<void> {
+    // Save saga state for recovery
+    await this.sagaStore.save({
+      id: (saga.data as any).orderId,
+      state: saga.state,
+      data: saga.data,
+      updatedAt: new Date(),
+    });
+  }
+}
+```
+
 ## Best Practices
 
 1. **Event Design**
+
    - Events should be immutable and represent facts
    - Use past tense naming (OrderCreated, not CreateOrder)
    - Include all necessary data; avoid references to mutable state
    - Version your events for schema evolution
 
 2. **Idempotency**
+
    - Always design consumers to be idempotent
    - Use unique message IDs for deduplication
    - Store processing state to handle retries
 
 3. **Error Handling**
+
    - Implement dead letter queues for failed messages
    - Set reasonable retry limits with exponential backoff
    - Monitor DLQ size and alert on growth
 
 4. **Ordering**
+
    - Use partition keys for ordering guarantees in Kafka
    - Understand at-least-once vs exactly-once semantics
    - Design for out-of-order message handling when needed
@@ -1223,7 +1825,7 @@ class CreateOrderHandler implements CommandHandler<CreateOrderCommand> {
     const order = Order.create(
       crypto.randomUUID(),
       command.payload.customerId,
-      command.payload.items,
+      command.payload.items
     );
 
     await this.eventStore.append(order.getUncommittedEvents());
