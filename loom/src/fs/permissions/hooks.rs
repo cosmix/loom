@@ -30,6 +30,15 @@ pub fn loom_hooks_config() -> Value {
         ],
         "PostToolUse": [
             {
+                "matcher": "Bash",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": format!("{}/post-tool-use.sh", hooks_dir)
+                    }
+                ]
+            },
+            {
                 "matcher": "AskUserQuestion",
                 "hooks": [
                     {

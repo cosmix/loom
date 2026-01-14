@@ -135,11 +135,18 @@ fn test_hooks_config_structure() {
         .unwrap()
         .contains("ask-user-pre.sh"));
 
-    // Check PostToolUse hook
+    // Check PostToolUse hooks (Bash for heartbeat/claude-check, AskUserQuestion for resume)
     let post_tool = hooks_obj.get("PostToolUse").unwrap().as_array().unwrap();
-    assert_eq!(post_tool.len(), 1);
-    assert_eq!(post_tool[0]["matcher"], "AskUserQuestion");
+    assert_eq!(post_tool.len(), 2);
+    // First hook: Bash matcher with post-tool-use.sh (heartbeat + claude attribution check)
+    assert_eq!(post_tool[0]["matcher"], "Bash");
     assert!(post_tool[0]["hooks"][0]["command"]
+        .as_str()
+        .unwrap()
+        .contains("post-tool-use.sh"));
+    // Second hook: AskUserQuestion matcher with ask-user-post.sh (stage resume)
+    assert_eq!(post_tool[1]["matcher"], "AskUserQuestion");
+    assert!(post_tool[1]["hooks"][0]["command"]
         .as_str()
         .unwrap()
         .contains("ask-user-post.sh"));
