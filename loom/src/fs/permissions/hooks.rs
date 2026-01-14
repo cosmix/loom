@@ -122,35 +122,145 @@ pub fn get_installed_hooks_dir() -> Option<std::path::PathBuf> {
     dirs::home_dir().map(|home| home.join(".claude/hooks/loom"))
 }
 
+/// Migrate old hook paths to the new loom subdirectory structure
+///
+/// Scans hooks config for paths starting with `~/.claude/hooks/` but NOT
+/// `~/.claude/hooks/loom/` and updates them to use the new loom subdirectory.
+///
+/// This handles migration from the old hook location:
+///   `~/.claude/hooks/commit-guard.sh` -> `~/.claude/hooks/loom/commit-guard.sh`
+///
+/// Returns `true` if any paths were migrated, `false` otherwise.
+fn migrate_old_hook_paths(settings_obj: &mut serde_json::Map<String, Value>) -> Result<bool> {
+    let home_dir = dirs::home_dir().context("Failed to determine home directory")?;
+    let old_prefix = home_dir.join(".claude/hooks");
+    let new_prefix = home_dir.join(".claude/hooks/loom");
+
+    // Also handle tilde-prefixed paths
+    let old_tilde_prefix = "~/.claude/hooks/";
+    let new_tilde_prefix = "~/.claude/hooks/loom/";
+
+    let mut migrated = false;
+
+    // Get or return early if no hooks
+    let hooks = match settings_obj.get_mut("hooks") {
+        Some(h) => h,
+        None => return Ok(false),
+    };
+
+    let hooks_obj = match hooks.as_object_mut() {
+        Some(obj) => obj,
+        None => return Ok(false),
+    };
+
+    // Process each hook type
+    for (_event_name, event_hooks) in hooks_obj.iter_mut() {
+        let event_arr = match event_hooks.as_array_mut() {
+            Some(arr) => arr,
+            None => continue,
+        };
+
+        for hook_entry in event_arr.iter_mut() {
+            let hooks_inner = match hook_entry.get_mut("hooks") {
+                Some(h) => h,
+                None => continue,
+            };
+
+            let hooks_arr = match hooks_inner.as_array_mut() {
+                Some(arr) => arr,
+                None => continue,
+            };
+
+            for hook in hooks_arr.iter_mut() {
+                let cmd = match hook.get("command").and_then(|c| c.as_str()) {
+                    Some(c) => c.to_string(),
+                    None => continue,
+                };
+
+                // Check if this is an old-style path that needs migration
+                // Try tilde-prefixed path first
+                let new_cmd = if let Some(rest) = cmd.strip_prefix(old_tilde_prefix) {
+                    // Only migrate if not already in loom/ subdirectory
+                    if rest.starts_with("loom/") {
+                        None
+                    } else {
+                        Some(format!("{new_tilde_prefix}{rest}"))
+                    }
+                } else if let Ok(stripped) =
+                    std::path::Path::new(&cmd).strip_prefix(&old_prefix)
+                {
+                    // Absolute path
+                    let first_component = stripped.components().next();
+                    let needs_migration = match first_component {
+                        Some(std::path::Component::Normal(name)) => name != "loom",
+                        _ => true, // Empty path or other component type
+                    };
+                    if needs_migration {
+                        Some(new_prefix.join(stripped).display().to_string())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                if let Some(new_cmd) = new_cmd {
+
+                    // Update the command in place
+                    if let Some(hook_obj) = hook.as_object_mut() {
+                        hook_obj.insert("command".to_string(), json!(new_cmd));
+                        migrated = true;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(migrated)
+}
+
+/// Extract the basename (filename) from a command path
+///
+/// Returns the filename component of a path, or the original string if extraction fails.
+fn extract_command_basename(cmd: &str) -> String {
+    std::path::Path::new(cmd)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(cmd)
+        .to_string()
+}
+
 /// Remove duplicate hook entries from a hooks array
 ///
-/// A duplicate is identified by having the same command in the hooks array.
+/// A duplicate is identified by having the same script basename in the hooks array.
+/// This allows deduplication even when the same script exists at different paths
+/// (e.g., `~/.claude/hooks/commit-guard.sh` vs `~/.claude/hooks/loom/commit-guard.sh`).
 /// This function modifies the array in place, keeping only the first occurrence
-/// of each unique command.
+/// of each unique command basename.
 fn remove_duplicate_hooks(hooks_arr: &mut Vec<Value>) {
-    let mut seen_commands: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut seen_basenames: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     hooks_arr.retain(|hook_entry| {
-        // Extract commands from this hook entry
-        let commands: Vec<String> = hook_entry
+        // Extract basenames from this hook entry
+        let basenames: Vec<String> = hook_entry
             .get("hooks")
             .and_then(|h| h.as_array())
             .map(|arr| {
                 arr.iter()
                     .filter_map(|hook| hook.get("command").and_then(|c| c.as_str()))
-                    .map(String::from)
+                    .map(extract_command_basename)
                     .collect()
             })
             .unwrap_or_default();
 
-        // If any command in this entry has already been seen, remove the entry
-        if commands.iter().any(|cmd| seen_commands.contains(cmd)) {
+        // If any basename in this entry has already been seen, remove the entry
+        if basenames.iter().any(|bn| seen_basenames.contains(bn)) {
             return false;
         }
 
-        // Mark these commands as seen
-        for cmd in commands {
-            seen_commands.insert(cmd);
+        // Mark these basenames as seen
+        for bn in basenames {
+            seen_basenames.insert(bn);
         }
 
         true
@@ -178,12 +288,16 @@ fn hook_command_exists(hooks_arr: &[Value], command: &str) -> bool {
 /// Returns true if hooks were added/updated, false if already configured
 ///
 /// This function:
-/// 1. Removes any duplicate hook entries before adding new ones
-/// 2. Only adds hooks that don't already exist (by command)
-/// 3. Handles both fresh configs and existing configs with duplicates
+/// 1. Migrates old hook paths to the new loom/ subdirectory
+/// 2. Removes any duplicate hook entries before adding new ones
+/// 3. Only adds hooks that don't already exist (by command)
+/// 4. Handles both fresh configs and existing configs with duplicates
 pub fn configure_loom_hooks(settings_obj: &mut serde_json::Map<String, Value>) -> Result<bool> {
+    // First, migrate any old hook paths to the new loom/ subdirectory
+    let migrated = migrate_old_hook_paths(settings_obj)?;
+    let mut modified = migrated;
+
     let loom_hooks = loom_hooks_config();
-    let mut modified = false;
 
     // Ensure hooks object exists
     let hooks = settings_obj.entry("hooks").or_insert_with(|| json!({}));

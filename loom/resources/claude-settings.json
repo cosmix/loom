@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/commit-guard.sh"
+            "command": "~/.claude/hooks/loom/commit-guard.sh"
           }
         ]
       }

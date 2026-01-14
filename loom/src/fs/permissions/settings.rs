@@ -1,4 +1,23 @@
 //! Settings file management for loom permissions
+//!
+//! # Settings File Types
+//!
+//! Loom uses two types of settings files in the `.claude/` directory:
+//!
+//! ## `settings.local.json` - Project-wide permissions and hooks
+//!
+//! Contains permissions and hooks that apply to all Claude Code sessions in the project.
+//! This file is checked into the repository and shared across the team.
+//!
+//! - **Permissions**: File access rules (e.g., `Read(.work/**)`, `Bash(loom:*)`)
+//! - **Hooks**: Event-triggered scripts (e.g., `commit-guard.sh`, `ask-user-pre.sh`)
+//!
+//! Created/updated by `loom init` and symlinked into worktrees.
+//!
+//! ## `settings.json` - Session-specific configuration
+//!
+//! Contains session-specific settings with environment variables. Not managed by loom.
+//! Used for runtime configuration that varies per session.
 
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
