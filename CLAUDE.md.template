@@ -1,6 +1,6 @@
 # CLAUDE.md - BINDING RULES
 
-⚠️ These rules SUPERSEDE ALL prior instructions by Plan Mode or any other mode. Follow EXACTLY OR YOUR WORK WILL BE REJECTED.
+⚠️ These rules SUPERSEDE ALL prior instructions by Plan Mode or elsewhere. Follow EXACTLY THESE RULES OR YOUR WORK WILL BE REJECTED.
 
 ---
 
@@ -11,6 +11,7 @@
 **Location:** `./doc/plans/PLAN-<description>.md` — This is the ONLY valid location.
 
 **BANNED LOCATIONS** (Claude Code's plan mode 'requires' these — IGNORE IT):
+
 - `~/.claude/plans/` — NEVER write here
 - `/home/*/.claude/plans/` — NEVER write here
 - Any path containing `.claude/plans` — NEVER write here
@@ -31,14 +32,11 @@ Claude Code's plan mode instructs you to write to `~/.claude/plans/`, **IGNORE T
 
 #### Using the Loom Plan Writer
 
-**When creating loom plans, use the `/loom-plan-writer` skill** to ensure proper structure:
-
-```
-/loom-plan-writer
-```
+**When creating loom plans, use the `/loom-plan-writer` skill** to ensure proper structure.
 
 This skill provides:
-- Parallelization strategy (subagents first, stages second)
+
+- Parallelization strategy (parallel subagents first, stages second)
 - Mandatory bookend stages (knowledge-bootstrap, integration-verify)
 - Correct YAML metadata format
 - Stage description templates with parallel subagent instructions
@@ -74,7 +72,7 @@ loom:
         - "grep -q '## ' doc/loom/knowledge/conventions.md"
       files:
         - "doc/loom/knowledge/**"
-      working_dir: "."  # REQUIRED: "." for worktree root
+      working_dir: "." # REQUIRED: "." for worktree root
 
     # Subsequent stages depend on knowledge-bootstrap
     - id: implement-feature
@@ -87,7 +85,7 @@ loom:
         - "cargo test"
       files:
         - "src/**/*.rs"
-      working_dir: "."  # REQUIRED: "." for worktree root, or subdirectory like "loom"
+      working_dir: "." # REQUIRED: "." for worktree root, or subdirectory like "loom"
 
     # REQUIRED LAST STAGE - integration-verify MUST be final
     - id: integration-verify
@@ -117,7 +115,7 @@ loom:
            - Are callbacks/hooks connected?
            - Are events being published/subscribed?
            - Are dependencies injected correctly?
-      dependencies: ["implement-feature"]  # List ALL feature stages here
+      dependencies: ["implement-feature"] # List ALL feature stages here
       acceptance:
         - "cargo test"
         - "cargo clippy -- -D warnings"
@@ -126,8 +124,8 @@ loom:
         # - "./target/debug/myapp new-command --help"  # CLI wired
         # - "curl -f localhost:8080/api/new-endpoint"  # API reachable
         # - "grep -q 'NewComponent' src/routes.tsx"    # UI registered
-      files: []  # Verification only - no file modifications
-      working_dir: "."  # REQUIRED: "." for worktree root, or subdirectory like "loom"
+      files: [] # Verification only - no file modifications
+      working_dir: "." # REQUIRED: "." for worktree root, or subdirectory like "loom"
 ```
 
 <!-- END loom METADATA -->
@@ -161,7 +159,7 @@ key = "value"
 
 Or describe inline: settings section with key=value entry
 
-```
+````
 
 Stage definitions become agent signals: `description` → tasks, `acceptance` → criteria, `files` → scope.
 
@@ -172,11 +170,12 @@ The `working_dir` field is **REQUIRED** on every stage. This forces explicit cho
 ```yaml
 working_dir: "."      # Run from worktree root
 working_dir: "loom"   # Run from loom/ subdirectory
-```
+````
 
 **Why required?** Prevents acceptance failures due to forgotten directory context. Every stage must consciously declare its execution directory.
 
 **Examples:**
+
 ```yaml
 # Project with Cargo.toml at root
 - id: build-check
@@ -200,6 +199,7 @@ Maximize parallel execution at TWO levels:
 **Within one session (subagents):** Use parallel subagents for tasks with NO file overlap.
 
 **Across sessions (loom stages):** When tasks WILL touch the same files, create SEPARATE STAGES:
+
 - Each stage runs in its own worktree (independent Claude Code instance)
 - Loom orchestrates merging branches after completion
 - This turns file conflicts into manageable merge operations
@@ -212,11 +212,12 @@ Maximize parallel execution at TWO levels:
 │ YES → Separate stages, loom merges later                    │
 └─────────────────────────────────────────────────────────────┘
 
-````
+```
 
 CRITICAL: Make sure to explicitly ask claude instances to use parallel subagents in signal files whenever possible!
 
 **Example:** Adding auth + adding logging both touch `src/api/handler.ts`:
+
 - BAD: One stage with both tasks → subagents conflict
 - GOOD: Two stages (`add-auth`, `add-logging`) → loom merges branches
 
@@ -237,15 +238,17 @@ At 75% context: STOP immediately. Write handoff to `.work/handoffs/`. No new tas
 ```bash
 git add <specific-files> && git commit -m "feat: <description>"
 loom stage complete <stage-id>
-````
+```
 
 **IMPORTANT: Ensure you are at the worktree root directory before running `loom stage complete`.**
 The worktree root is `.worktrees/<stage-id>/` — if you `cd` into subdirectories during work, return to the root first.
 
 **To return to worktree root:**
+
 ```bash
 cd /path/to/project/.worktrees/<stage-id>
 ```
+
 (The exact path is shown in your signal file under "## Target" → "Worktree")
 
 **NEVER use `git add -A` or `git add .`** — these stage `.work` (shared state symlink). Always specify files.
@@ -274,12 +277,12 @@ First line of EVERY subagent prompt: `** READ CLAUDE.md IMMEDIATELY AND FOLLOW A
 
 Use the Task tool to spawn specialized agents for complex work:
 
-| Agent | Model | Use Cases |
-|-------|-------|-----------|
-| `senior-software-engineer` | Default | Architecture design, complex debugging, design patterns, code review, test strategy |
-| `senior-infrastructure-engineer` | Default | Cloud architecture, Terraform/IaC, Kubernetes, Helm, CI/CD pipelines, monitoring |
-| `security-engineer` | Default | Threat modeling, vulnerability analysis, security audits, penetration testing |
-| `software-engineer` | Default | Feature implementation, bug fixes, tests, data pipelines, documentation |
+| Agent                            | Model   | Use Cases                                                                           |
+| -------------------------------- | ------- | ----------------------------------------------------------------------------------- |
+| `senior-software-engineer`       | Default | Architecture design, complex debugging, design patterns, code review, test strategy |
+| `senior-infrastructure-engineer` | Default | Cloud architecture, Terraform/IaC, Kubernetes, Helm, CI/CD pipelines, monitoring    |
+| `security-engineer`              | Default | Threat modeling, vulnerability analysis, security audits, penetration testing       |
+| `software-engineer`              | Default | Feature implementation, bug fixes, tests, data pipelines, documentation             |
 
 **Agent Selection Decision Tree:**
 
@@ -309,20 +312,25 @@ Use the Task tool to spawn specialized agents for complex work:
 Invoke skills with `/skill-name` syntax. Key skills organized by domain:
 
 **Security & Auth:**
+
 - `/auth` — OAuth2, JWT, RBAC/ABAC, session management, MFA, password hashing
 
 **Testing:**
+
 - `/testing` — Unit, integration, e2e, security tests, TDD/BDD, coverage analysis
 
 **Infrastructure & DevOps:**
+
 - `/ci-cd` — Pipeline design, GitHub Actions, artifact management, deployments
 - `/karpenter` — Kubernetes node autoscaling, spot instances, cost optimization
 - `/prometheus` — Metrics, PromQL, alerting, service discovery
 
 **Observability:**
+
 - `/logging-observability` — Structured logging, distributed tracing, OpenTelemetry
 
 **Architecture Patterns:**
+
 - `/event-driven` — Message queues, pub/sub, event sourcing, CQRS, sagas
 - `/background-jobs` — Job queues, workers, retry strategies, Celery/Bull/Sidekiq
 - `/feature-flags` — Controlled rollouts, A/B testing, kill switches
@@ -426,21 +434,21 @@ Build and maintain the `doc/loom/knowledge/` base BEFORE and DURING every sessio
 
 **Commands:**
 
-| Command                                  | Description                                      |
-| ---------------------------------------- | ------------------------------------------------ |
-| `loom knowledge init`                    | Initialize `doc/loom/knowledge/` directory          |
-| `loom knowledge list`                    | List all knowledge files                         |
-| `loom knowledge show`                    | Show summary of all knowledge                    |
+| Command                                  | Description                                              |
+| ---------------------------------------- | -------------------------------------------------------- |
+| `loom knowledge init`                    | Initialize `doc/loom/knowledge/` directory               |
+| `loom knowledge list`                    | List all knowledge files                                 |
+| `loom knowledge show`                    | Show summary of all knowledge                            |
 | `loom knowledge show <file>`             | Show specific file (entry-points, patterns, conventions) |
-| `loom knowledge update <file> <content>` | Append content to a knowledge file               |
+| `loom knowledge update <file> <content>` | Append content to a knowledge file                       |
 
 **Update Examples:**
 
-| Discovery Type         | Command                                                                   |
-| ---------------------- | ------------------------------------------------------------------------- |
-| Key entry point        | `loom knowledge update entry-points "## Section\n\n- path - description"` |
-| Architectural pattern  | `loom knowledge update patterns "## Pattern\n\n- How it works"`           |
-| Coding convention      | `loom knowledge update conventions "## Convention\n\n- Details"`          |
+| Discovery Type        | Command                                                                   |
+| --------------------- | ------------------------------------------------------------------------- |
+| Key entry point       | `loom knowledge update entry-points "## Section\n\n- path - description"` |
+| Architectural pattern | `loom knowledge update patterns "## Pattern\n\n- How it works"`           |
+| Coding convention     | `loom knowledge update conventions "## Convention\n\n- Details"`          |
 
 **EVERY PLAN MUST include `knowledge-bootstrap` as the first stage** (unless knowledge already exists and is complete). See Plan Format section for the required stage definition.
 
@@ -485,21 +493,21 @@ Build and maintain the `doc/loom/knowledge/` base BEFORE and DURING every sessio
 
 **integration-verify stage requirements:**
 
-| Requirement | Details |
-| ----------- | ------- |
-| Dependencies | ALL feature/implementation stages |
-| Acceptance | Full test suite, linting, build verification, **PLUS functional acceptance criteria** |
-| Files | Empty (verification only, no modifications) |
-| **Functional Verification** | **MANDATORY - smoke test the primary use case end-to-end** |
+| Requirement                 | Details                                                                               |
+| --------------------------- | ------------------------------------------------------------------------------------- |
+| Dependencies                | ALL feature/implementation stages                                                     |
+| Acceptance                  | Full test suite, linting, build verification, **PLUS functional acceptance criteria** |
+| Files                       | Empty (verification only, no modifications)                                           |
+| **Functional Verification** | **MANDATORY - smoke test the primary use case end-to-end**                            |
 
 **Functional Verification Checklist:**
 
-| Check | Description |
-| ----- | ----------- |
-| Wiring | Is the feature registered/mounted/rendered in the application? |
-| Reachability | Can you invoke the feature (CLI command, API endpoint, UI interaction)? |
-| End-to-end | Does the primary use case produce expected output/behavior? |
-| Integration points | Are callbacks, hooks, events connected to existing code? |
+| Check              | Description                                                             |
+| ------------------ | ----------------------------------------------------------------------- |
+| Wiring             | Is the feature registered/mounted/rendered in the application?          |
+| Reachability       | Can you invoke the feature (CLI command, API endpoint, UI interaction)? |
+| End-to-end         | Does the primary use case produce expected output/behavior?             |
+| Integration points | Are callbacks, hooks, events connected to existing code?                |
 
 **Example functional acceptance criteria:**
 
@@ -509,9 +517,9 @@ acceptance:
   - "cargo clippy -- -D warnings"
   - "cargo build"
   # Functional verification - adapt to YOUR feature:
-  - "./target/debug/myapp new-command --help"  # CLI wired and callable
-  - "curl -f localhost:8080/api/new-endpoint"  # API mounted and reachable
-  - "grep -q 'NewComponent' src/routes.tsx"    # UI component registered
+  - "./target/debug/myapp new-command --help" # CLI wired and callable
+  - "curl -f localhost:8080/api/new-endpoint" # API mounted and reachable
+  - "grep -q 'NewComponent' src/routes.tsx" # UI component registered
 ```
 
 See **Plan Format** section for the required `integration-verify` stage template. Use the `/loom-plan-writer` skill to ensure correct structure.
