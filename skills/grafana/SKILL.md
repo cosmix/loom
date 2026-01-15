@@ -1,6 +1,38 @@
 ---
 name: grafana
-description: Observability visualization with Grafana and LGTM stack. Dashboard design, panel configuration, alerting, variables/templating, data sources, and query languages (PromQL, LogQL, TraceQL). Use when implementing dashboards, panels, visualizations, queries, alerts, annotations, templates, or observability stack components. Triggers: grafana, dashboard, panel, visualization, query, promql, logql, traceql, loki, tempo, mimir, prometheus, data source, alert, annotation, variable, template, row, stat, graph, table, heatmap, gauge, bar chart, pie chart, time series, logs panel, traces panel, observability, monitoring, metrics, logs, traces, LGTM stack.
+description: |
+  Observability visualization with Grafana and LGTM stack. Dashboard design, panel configuration, alerting, variables/templating, and data sources.
+
+  USE WHEN: Creating Grafana dashboards, configuring panels and visualizations, writing LogQL/TraceQL queries, setting up Grafana data sources, configuring dashboard variables and templates, building Grafana alerts.
+  DO NOT USE: For writing PromQL queries (use /prometheus), for alerting rule strategy (use /prometheus), for general observability architecture (use senior-infrastructure-engineer).
+
+  TRIGGERS: grafana, dashboard, panel, visualization, logql, traceql, loki, tempo, mimir, data source, annotation, variable, template, row, stat, graph, table, heatmap, gauge, bar chart, pie chart, time series, logs panel, traces panel, LGTM stack.
+triggers:
+  - grafana
+  - dashboard
+  - panel
+  - visualization
+  - logql
+  - traceql
+  - loki
+  - tempo
+  - mimir
+  - data source
+  - annotation
+  - variable
+  - template
+  - row
+  - stat
+  - graph
+  - table
+  - heatmap
+  - gauge
+  - bar chart
+  - pie chart
+  - time series
+  - logs panel
+  - traces panel
+  - LGTM stack
 allowed-tools: Read, Grep, Glob, Edit, Write, Bash
 ---
 
