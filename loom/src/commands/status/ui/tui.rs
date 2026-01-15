@@ -308,11 +308,33 @@ impl TuiApp {
             .set_read_timeout(Some(Duration::from_millis(50)))
             .ok();
 
+        let result = self.run_event_loop(&mut stream);
+
+        // Cleanup: unsubscribe from daemon (best effort)
+        let _ = write_message(&mut stream, &Request::Unsubscribe);
+
+        result
+    }
+
+    /// Main event loop - returns on quit or daemon disconnect
+    fn run_event_loop(&mut self, stream: &mut UnixStream) -> Result<()> {
         while self.running.load(Ordering::SeqCst) {
             // Handle daemon messages (non-blocking)
-            let msg_result: Result<Response> = read_message(&mut stream);
-            if let Ok(response) = msg_result {
-                self.handle_response(response);
+            match read_message::<Response, _>(stream) {
+                Ok(response) => {
+                    self.handle_response(response);
+                }
+                Err(e) => {
+                    // Check if this is a socket disconnect or fatal error
+                    if self.is_socket_disconnected(&e) {
+                        // Daemon disconnected - exit gracefully
+                        self.last_error = Some("Daemon exited".to_string());
+                        self.render()?; // Show final error state
+                        std::thread::sleep(Duration::from_secs(2)); // Let user see the message
+                        break;
+                    }
+                    // For other errors (timeout is expected with non-blocking reads), continue
+                }
             }
 
             // Handle input events (keyboard and mouse)
@@ -335,10 +357,21 @@ impl TuiApp {
             self.render()?;
         }
 
-        // Cleanup: unsubscribe from daemon
-        let _ = write_message(&mut stream, &Request::Unsubscribe);
-
         Ok(())
+    }
+
+    /// Check if an error indicates socket disconnection
+    fn is_socket_disconnected(&self, error: &anyhow::Error) -> bool {
+        let err_str = error.to_string().to_lowercase();
+
+        // Check for various socket disconnection error patterns
+        err_str.contains("failed to read message length")
+            || err_str.contains("unexpectedeof")
+            || err_str.contains("connection reset")
+            || err_str.contains("broken pipe")
+            || err_str.contains("os error 9") // EBADF - bad file descriptor
+            || err_str.contains("os error 104") // ECONNRESET
+            || err_str.contains("os error 32") // EPIPE
     }
 
     /// Handle keyboard events for navigation and control
