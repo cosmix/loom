@@ -1,6 +1,33 @@
 ---
 name: prometheus
-description: Prometheus monitoring and alerting for cloud-native observability. Use when implementing metrics collection, time-series analysis, alerting workflows, or service discovery. Triggers - metrics, prometheus, promql, counter, gauge, histogram, summary, alert, alertmanager, alerting rule, recording rule, scrape, target, label, service discovery, relabeling, exporter, instrumentation, slo, error budget.
+description: |
+  Prometheus monitoring and alerting for cloud-native observability.
+
+  USE WHEN: Writing PromQL queries, configuring Prometheus scrape targets, creating alerting rules, setting up recording rules, instrumenting applications with Prometheus metrics, configuring service discovery.
+  DO NOT USE: For building dashboards (use /grafana), for log analysis (use /logging-observability), for general observability architecture (use senior-infrastructure-engineer).
+
+  TRIGGERS: metrics, prometheus, promql, counter, gauge, histogram, summary, alert, alertmanager, alerting rule, recording rule, scrape, target, label, service discovery, relabeling, exporter, instrumentation, slo, error budget.
+triggers:
+  - metrics
+  - prometheus
+  - promql
+  - counter
+  - gauge
+  - histogram
+  - summary
+  - alert
+  - alertmanager
+  - alerting rule
+  - recording rule
+  - scrape
+  - target
+  - label
+  - service discovery
+  - relabeling
+  - exporter
+  - instrumentation
+  - slo
+  - error budget
 allowed-tools: Read, Grep, Glob, Edit, Write, Bash
 ---
 
