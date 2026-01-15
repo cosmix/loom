@@ -465,7 +465,7 @@ cleanup_backups() {
 
 	echo ""
 	echo -en "   ${BOLD}delete backup files? [y/N]${NC} "
-	read -r response
+	read -r response </dev/tty
 	if [[ "$response" =~ ^[Yy]$ ]]; then
 		for backup in "${backups[@]}"; do
 			rm -rf "$backup"
