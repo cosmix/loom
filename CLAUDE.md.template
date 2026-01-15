@@ -659,6 +659,7 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 │     → cd to WORKTREE ROOT before running loom stage complete       │
 │                                                                    │
 │  5. KNOWLEDGE: Bootstrap if empty. Update discoveries. ALWAYS.     │
+│     READ IT FIRST!                                                 │
 │                                                                    │
 │  6. SKILLS & AGENTS: Check /auth, /testing, etc. BEFORE coding.    │
 │     → Use specialized agents for security, infra, architecture     │
