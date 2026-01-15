@@ -126,14 +126,21 @@ fn test_hooks_config_structure() {
     let hooks = loom_hooks_config();
     let hooks_obj = hooks.as_object().unwrap();
 
-    // Check PreToolUse hook
+    // Check PreToolUse hooks (AskUserQuestion for stage status, Bash for prefer-modern-tools)
     let pre_tool = hooks_obj.get("PreToolUse").unwrap().as_array().unwrap();
-    assert_eq!(pre_tool.len(), 1);
+    assert_eq!(pre_tool.len(), 2);
+    // First hook: AskUserQuestion matcher with ask-user-pre.sh
     assert_eq!(pre_tool[0]["matcher"], "AskUserQuestion");
     assert!(pre_tool[0]["hooks"][0]["command"]
         .as_str()
         .unwrap()
         .contains("ask-user-pre.sh"));
+    // Second hook: Bash matcher with prefer-modern-tools.sh
+    assert_eq!(pre_tool[1]["matcher"], "Bash");
+    assert!(pre_tool[1]["hooks"][0]["command"]
+        .as_str()
+        .unwrap()
+        .contains("prefer-modern-tools.sh"));
 
     // Check PostToolUse hooks (Bash for heartbeat/claude-check, AskUserQuestion for resume)
     let post_tool = hooks_obj.get("PostToolUse").unwrap().as_array().unwrap();
@@ -158,6 +165,19 @@ fn test_hooks_config_structure() {
         .as_str()
         .unwrap()
         .contains("commit-guard.sh"));
+
+    // Check UserPromptSubmit hook (skill suggestions)
+    let user_prompt = hooks_obj
+        .get("UserPromptSubmit")
+        .unwrap()
+        .as_array()
+        .unwrap();
+    assert_eq!(user_prompt.len(), 1);
+    assert_eq!(user_prompt[0]["matcher"], "*");
+    assert!(user_prompt[0]["hooks"][0]["command"]
+        .as_str()
+        .unwrap()
+        .contains("skill-trigger.sh"));
 }
 
 #[test]

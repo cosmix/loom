@@ -34,6 +34,12 @@ pub const HOOK_ASK_USER_POST: &str = include_str!("../../../../hooks/ask-user-po
 /// PreferModernTools hook - suggests Grep/Glob tools or fd/rg instead of grep/find
 pub const HOOK_PREFER_MODERN_TOOLS: &str = include_str!("../../../../hooks/prefer-modern-tools.sh");
 
+/// SkillIndexBuilder hook - builds keyword index from SKILL.md files
+pub const HOOK_SKILL_INDEX_BUILDER: &str = include_str!("../../../../hooks/skill-index-builder.sh");
+
+/// SkillTrigger hook - suggests skills based on prompt keywords (UserPromptSubmit)
+pub const HOOK_SKILL_TRIGGER: &str = include_str!("../../../../hooks/skill-trigger.sh");
+
 /// All loom hook scripts with their filenames (installed to ~/.claude/hooks/loom/)
 /// All hooks are installed to the loom/ subdirectory to keep them separate from user hooks.
 pub const LOOM_HOOKS: &[(&str, &str)] = &[
@@ -49,6 +55,9 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("ask-user-pre.sh", HOOK_ASK_USER_PRE),
     ("ask-user-post.sh", HOOK_ASK_USER_POST),
     ("prefer-modern-tools.sh", HOOK_PREFER_MODERN_TOOLS),
+    // Skill suggestion hooks
+    ("skill-index-builder.sh", HOOK_SKILL_INDEX_BUILDER),
+    ("skill-trigger.sh", HOOK_SKILL_TRIGGER),
 ];
 
 /// Loom permissions for the MAIN REPO context

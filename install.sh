@@ -81,6 +81,17 @@ download_and_extract_zip() {
 	rm -f "$temp_zip"
 }
 
+build_skill_index() {
+	local index_builder="$CLAUDE_DIR/hooks/loom/skill-index-builder.sh"
+	if [[ -x "$index_builder" ]]; then
+		if "$index_builder" >/dev/null 2>&1; then
+			ok "skill keyword index built"
+		else
+			warn "failed to build skill keyword index"
+		fi
+	fi
+}
+
 install_agents_remote() {
 	step "downloading agents"
 
@@ -154,6 +165,8 @@ install_hooks_remote() {
 		"ask-user-pre.sh"
 		"ask-user-post.sh"
 		"prefer-modern-tools.sh"
+		"skill-index-builder.sh"
+		"skill-trigger.sh"
 	)
 	local downloaded=0
 
@@ -170,6 +183,9 @@ install_hooks_remote() {
 	fi
 
 	ok "$downloaded hooks installed"
+
+	# Build skill keyword index
+	build_skill_index
 }
 
 check_requirements() {
@@ -288,6 +304,8 @@ install_hooks() {
 		"ask-user-pre.sh"
 		"ask-user-post.sh"
 		"prefer-modern-tools.sh"
+		"skill-index-builder.sh"
+		"skill-trigger.sh"
 	)
 
 	local count=0
@@ -304,6 +322,9 @@ install_hooks() {
 	fi
 
 	ok "$count hooks installed"
+
+	# Build skill keyword index
+	build_skill_index
 }
 
 install_loom_local() {

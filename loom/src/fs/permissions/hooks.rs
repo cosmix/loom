@@ -67,6 +67,17 @@ pub fn loom_hooks_config() -> Value {
                     }
                 ]
             }
+        ],
+        "UserPromptSubmit": [
+            {
+                "matcher": "*",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": format!("{}/skill-trigger.sh", hooks_dir)
+                    }
+                ]
+            }
         ]
     })
 }
