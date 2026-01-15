@@ -23,6 +23,8 @@ pub enum HookEvent {
     Stop,
     /// Called when a subagent stops (extracts learnings)
     SubagentStop,
+    /// Called before Bash tool use to suggest modern CLI tools (fd/rg)
+    PreferModernTools,
 }
 
 impl fmt::Display for HookEvent {
@@ -34,6 +36,7 @@ impl fmt::Display for HookEvent {
             HookEvent::SessionEnd => write!(f, "SessionEnd"),
             HookEvent::Stop => write!(f, "Stop"),
             HookEvent::SubagentStop => write!(f, "SubagentStop"),
+            HookEvent::PreferModernTools => write!(f, "PreferModernTools"),
         }
     }
 }
@@ -48,6 +51,7 @@ impl HookEvent {
             HookEvent::SessionEnd => "session-end.sh",
             HookEvent::Stop => "learning-validator.sh",
             HookEvent::SubagentStop => "subagent-stop.sh",
+            HookEvent::PreferModernTools => "prefer-modern-tools.sh",
         }
     }
 
@@ -60,6 +64,7 @@ impl HookEvent {
             HookEvent::SessionEnd,
             HookEvent::Stop,
             HookEvent::SubagentStop,
+            HookEvent::PreferModernTools,
         ]
     }
 }
@@ -167,6 +172,18 @@ impl HooksConfig {
                 hooks: vec![HookCommand {
                     hook_type: "command".to_string(),
                     command: self.build_command(HookEvent::SessionStart),
+                }],
+            });
+
+        // PreferModernTools hook - suggests fd/rg instead of find/grep
+        hooks_map
+            .entry("PreToolUse".to_string())
+            .or_default()
+            .push(HookRule {
+                matcher: "Bash".to_string(),
+                hooks: vec![HookCommand {
+                    hook_type: "command".to_string(),
+                    command: self.build_command(HookEvent::PreferModernTools),
                 }],
             });
 

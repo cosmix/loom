@@ -15,6 +15,10 @@ mod config_tests {
         assert_eq!(HookEvent::SessionEnd.to_string(), "SessionEnd");
         assert_eq!(HookEvent::Stop.to_string(), "Stop");
         assert_eq!(HookEvent::SubagentStop.to_string(), "SubagentStop");
+        assert_eq!(
+            HookEvent::PreferModernTools.to_string(),
+            "PreferModernTools"
+        );
     }
 
     #[test]
@@ -25,18 +29,23 @@ mod config_tests {
         assert_eq!(HookEvent::SessionEnd.script_name(), "session-end.sh");
         assert_eq!(HookEvent::Stop.script_name(), "learning-validator.sh");
         assert_eq!(HookEvent::SubagentStop.script_name(), "subagent-stop.sh");
+        assert_eq!(
+            HookEvent::PreferModernTools.script_name(),
+            "prefer-modern-tools.sh"
+        );
     }
 
     #[test]
     fn test_hook_event_all() {
         let all = HookEvent::all();
-        assert_eq!(all.len(), 6);
+        assert_eq!(all.len(), 7);
         assert!(all.contains(&HookEvent::SessionStart));
         assert!(all.contains(&HookEvent::PostToolUse));
         assert!(all.contains(&HookEvent::PreCompact));
         assert!(all.contains(&HookEvent::SessionEnd));
         assert!(all.contains(&HookEvent::Stop));
         assert!(all.contains(&HookEvent::SubagentStop));
+        assert!(all.contains(&HookEvent::PreferModernTools));
     }
 
     #[test]
