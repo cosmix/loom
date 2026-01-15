@@ -6,7 +6,7 @@
 use anyhow::{Context, Result};
 use std::env;
 
-use crate::fs::permissions::{ensure_loom_permissions, install_loom_hooks, loom_hooks_config};
+use crate::fs::permissions::{ensure_loom_permissions, install_loom_hooks};
 
 /// Install loom hooks to the current project
 ///
@@ -47,46 +47,98 @@ pub fn install() -> Result<()> {
 
 /// List available loom hooks and their status
 pub fn list() -> Result<()> {
-    let hooks_config = loom_hooks_config();
+    // Find repository root
+    let repo_root = find_repo_root().context("Not in a git repository")?;
+    let settings_path = repo_root.join(".claude/settings.local.json");
 
-    println!("Loom hooks configuration:\n");
+    // Check if hooks are configured in this project
+    let project_hooks = if settings_path.exists() {
+        let content = std::fs::read_to_string(&settings_path)
+            .with_context(|| format!("Failed to read {}", settings_path.display()))?;
+        let settings: serde_json::Value = serde_json::from_str(&content)
+            .with_context(|| format!("Failed to parse {}", settings_path.display()))?;
+        settings.get("hooks").cloned()
+    } else {
+        None
+    };
 
-    if let Some(obj) = hooks_config.as_object() {
-        for (event, rules) in obj {
-            println!("{event}:");
-            if let Some(rules_arr) = rules.as_array() {
-                for rule in rules_arr {
-                    if let (Some(matcher), Some(hooks)) =
-                        (rule.get("matcher"), rule.get("hooks"))
-                    {
-                        let matcher_str = matcher.as_str().unwrap_or("*");
-                        if let Some(hooks_arr) = hooks.as_array() {
-                            for hook in hooks_arr {
-                                if let Some(cmd) = hook.get("command").and_then(|c| c.as_str()) {
-                                    let script_name = std::path::Path::new(cmd)
-                                        .file_name()
-                                        .and_then(|n| n.to_str())
-                                        .unwrap_or(cmd);
-                                    println!("  [{matcher_str}] -> {script_name}");
+    // Check if hook scripts are installed globally
+    let home_dir = dirs::home_dir();
+    let scripts_installed = home_dir
+        .as_ref()
+        .map(|h| h.join(".claude/hooks/loom").exists())
+        .unwrap_or(false);
+
+    println!("Loom hooks status:\n");
+
+    // Project status
+    if let Some(hooks) = &project_hooks {
+        println!("Project: CONFIGURED");
+        println!("  Settings: {}", settings_path.display());
+        println!();
+
+        // Show configured hooks
+        if let Some(obj) = hooks.as_object() {
+            for (event, rules) in obj {
+                println!("{event}:");
+                if let Some(rules_arr) = rules.as_array() {
+                    for rule in rules_arr {
+                        if let (Some(matcher), Some(hooks_inner)) =
+                            (rule.get("matcher"), rule.get("hooks"))
+                        {
+                            let matcher_str = matcher.as_str().unwrap_or("*");
+                            if let Some(hooks_arr) = hooks_inner.as_array() {
+                                for hook in hooks_arr {
+                                    if let Some(cmd) = hook.get("command").and_then(|c| c.as_str())
+                                    {
+                                        let script_name = std::path::Path::new(cmd)
+                                            .file_name()
+                                            .and_then(|n| n.to_str())
+                                            .unwrap_or(cmd);
+                                        println!("  [{matcher_str}] -> {script_name}");
+                                    }
                                 }
                             }
                         }
                     }
                 }
+                println!();
             }
-            println!();
         }
+    } else {
+        println!("Project: NOT CONFIGURED");
+        if settings_path.exists() {
+            println!("  Settings file exists but has no hooks section");
+        } else {
+            println!("  No .claude/settings.local.json found");
+        }
+        println!();
+        println!("Run 'loom hooks install' to configure hooks for this project.");
+        println!();
     }
 
-    // Check if hooks are installed
-    let home_dir = dirs::home_dir();
-    if let Some(home) = home_dir {
-        let hooks_dir = home.join(".claude/hooks/loom");
-        if hooks_dir.exists() {
-            println!("Hook scripts installed at: {}", hooks_dir.display());
-        } else {
-            println!("Hook scripts not installed. Run 'loom hooks install' to install them.");
+    // Global scripts status
+    if scripts_installed {
+        if let Some(home) = home_dir {
+            println!(
+                "Hook scripts: INSTALLED at {}",
+                home.join(".claude/hooks/loom").display()
+            );
         }
+    } else {
+        println!("Hook scripts: NOT INSTALLED");
+        println!("  Run 'loom hooks install' to install hook scripts.");
+    }
+
+    // Show available hooks if not configured
+    if project_hooks.is_none() {
+        println!();
+        println!("Available loom hooks:");
+        println!("  - prefer-modern-tools.sh  Guides grep/find usage toward native tools");
+        println!("  - commit-guard.sh         Enforces commit before session end");
+        println!("  - ask-user-pre/post.sh    Manages stage waiting state");
+        println!("  - post-tool-use.sh        Updates heartbeat after tool usage");
+        println!("  - skill-trigger.sh        Handles skill triggers");
     }
 
     Ok(())
