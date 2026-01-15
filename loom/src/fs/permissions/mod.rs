@@ -1,6 +1,6 @@
 //! Claude Code permissions management for loom
 //!
-//! Ensures that `.claude/settings.local.json` has the necessary permissions
+//! Ensures that `.claude/settings.json` has the necessary permissions
 //! and hooks for loom to operate without constant user approval prompts.
 
 pub mod constants;

@@ -1,23 +1,18 @@
 //! Settings file management for loom permissions
 //!
-//! # Settings File Types
+//! # Settings File
 //!
-//! Loom uses two types of settings files in the `.claude/` directory:
+//! Loom uses `.claude/settings.json` for project-wide permissions and hooks.
 //!
-//! ## `settings.local.json` - Project-wide permissions and hooks
+//! ## `settings.json` - Project-wide permissions and hooks
 //!
 //! Contains permissions and hooks that apply to all Claude Code sessions in the project.
 //! This file is checked into the repository and shared across the team.
 //!
 //! - **Permissions**: File access rules (e.g., `Read(.work/**)`, `Bash(loom:*)`)
-//! - **Hooks**: Event-triggered scripts (e.g., `commit-guard.sh`, `ask-user-pre.sh`)
+//! - **Hooks**: Global event-triggered scripts (e.g., `commit-guard.sh`, `ask-user-pre.sh`)
 //!
-//! Created/updated by `loom init` and symlinked into worktrees.
-//!
-//! ## `settings.json` - Session-specific configuration
-//!
-//! Contains session-specific settings with environment variables. Not managed by loom.
-//! Used for runtime configuration that varies per session.
+//! Created/updated by `loom init`. Worktrees merge this with session-specific hooks at creation time.
 
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
@@ -27,17 +22,16 @@ use std::path::Path;
 use super::constants::{LOOM_PERMISSIONS, LOOM_PERMISSIONS_WORKTREE};
 use super::hooks::{configure_loom_hooks, install_loom_hooks, loom_hooks_config};
 
-/// Ensure `.claude/settings.local.json` has loom permissions and hooks configured
+/// Ensure `.claude/settings.json` has loom permissions and hooks configured
 ///
 /// This function:
 /// 1. Installs loom hook scripts to ~/.claude/hooks/
 /// 2. Creates `.claude/` directory if it doesn't exist
-/// 3. Creates `settings.local.json` if it doesn't exist
+/// 3. Creates `settings.json` if it doesn't exist
 /// 4. Merges loom permissions into existing file without duplicates
-/// 5. Configures loom hooks (referencing ~/.claude/hooks/*.sh)
+/// 5. Configures global loom hooks (referencing ~/.claude/hooks/*.sh)
 ///
-/// Since worktrees symlink `.claude/` to the main repo, these permissions
-/// automatically propagate to all loom sessions.
+/// Worktrees will merge this global config with session-specific hooks at creation time.
 pub fn ensure_loom_permissions(repo_root: &Path) -> Result<()> {
     // Install loom hooks to ~/.claude/hooks/ and ~/.claude/hooks/loom/
     let hooks_installed = install_loom_hooks()?;
@@ -46,7 +40,7 @@ pub fn ensure_loom_permissions(repo_root: &Path) -> Result<()> {
     }
 
     let claude_dir = repo_root.join(".claude");
-    let settings_path = claude_dir.join("settings.local.json");
+    let settings_path = claude_dir.join("settings.json");
 
     // Create .claude directory if needed
     if !claude_dir.exists() {
@@ -72,7 +66,7 @@ pub fn ensure_loom_permissions(repo_root: &Path) -> Result<()> {
     // Ensure settings is an object
     let settings_obj = settings
         .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("settings.local.json must be a JSON object"))?;
+        .ok_or_else(|| anyhow::anyhow!("settings.json must be a JSON object"))?;
 
     // Get or create permissions object
     let permissions = settings_obj
@@ -118,11 +112,11 @@ pub fn ensure_loom_permissions(repo_root: &Path) -> Result<()> {
 
         if added_permissions > 0 {
             println!(
-                "  Updated .claude/settings.local.json with {added_permissions} loom permission(s)"
+                "  Updated .claude/settings.json with {added_permissions} loom permission(s)"
             );
         }
         if hooks_configured {
-            println!("  Configured loom hooks in .claude/settings.local.json");
+            println!("  Configured loom hooks in .claude/settings.json");
         }
     } else {
         println!("  Claude Code permissions and hooks already configured");
@@ -131,14 +125,14 @@ pub fn ensure_loom_permissions(repo_root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Create `.claude/settings.local.json` for a worktree with worktree-specific permissions
+/// Create `.claude/settings.json` for a worktree with worktree-specific permissions
 ///
 /// This creates a NEW settings file (not symlinked) with permissions that use
 /// parent traversal (../../.work/**) since worktrees are at .worktrees/stage-X/
 /// and .work is symlinked to ../../.work
 pub fn create_worktree_settings(worktree_path: &Path) -> Result<()> {
     let claude_dir = worktree_path.join(".claude");
-    let settings_path = claude_dir.join("settings.local.json");
+    let settings_path = claude_dir.join("settings.json");
 
     // Create .claude directory if needed
     if !claude_dir.exists() {

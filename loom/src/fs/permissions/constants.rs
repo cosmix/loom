@@ -61,7 +61,7 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
 ];
 
 /// Loom permissions for the MAIN REPO context
-/// Includes worktree permissions so settings.local.json can be symlinked to worktrees
+/// Includes worktree permissions so settings.json can be read by worktrees
 /// and all sessions share the same permission file (approvals propagate)
 pub const LOOM_PERMISSIONS: &[&str] = &[
     // Read/write access via symlink path (for worktree sessions via symlink)

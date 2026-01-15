@@ -7,7 +7,9 @@ use std::os::unix::fs::PermissionsExt;
 
 use super::constants::LOOM_HOOKS;
 
-/// Generate hooks configuration for loom
+/// Generate global hooks configuration for loom
+/// Only includes hooks that should be in the main repo's settings.json
+/// Session-specific hooks (SessionStart, PostToolUse, PreCompact, etc.) are merged at worktree creation
 /// Hooks reference scripts at ~/.claude/hooks/loom/ (installed by loom init)
 pub fn loom_hooks_config() -> Value {
     // Get home directory for full path expansion (~ may not work in all contexts)
@@ -38,15 +40,6 @@ pub fn loom_hooks_config() -> Value {
             }
         ],
         "PostToolUse": [
-            {
-                "matcher": "Bash",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": format!("{}/post-tool-use.sh", hooks_dir)
-                    }
-                ]
-            },
             {
                 "matcher": "AskUserQuestion",
                 "hooks": [
