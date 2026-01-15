@@ -5,19 +5,10 @@
 //!
 //! Layout (unified design):
 //! - Compact header with spinner, title, and inline progress
-//! - Execution graph with mini-map (scrollable DAG + overview)
+//! - Execution graph (scrollable DAG visualization)
 //! - Unified stage table with all columns (status, name, merged, deps, elapsed)
 //! - Simplified footer with keybinds and errors
-//!
-//! Graph area layout:
-//!   ┌─────────────────────────────────────────┬──────────┐
-//!   │                                         │ MINI-MAP │
-//!   │           MAIN GRAPH                    │          │
-//!   │         (scrollable)                    │  [    ]  │
-//!   │                                         │          │
-//!   └─────────────────────────────────────────┴──────────┘
 
-use std::collections::HashMap;
 use std::io::{self, Stdout};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -27,7 +18,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind},
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -36,12 +27,11 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Row, Table, Widget},
+    widgets::{Block, Borders, Paragraph, Row, Table},
     Frame, Terminal,
 };
 
 use super::graph_widget::{GraphWidget, GraphWidgetConfig, Viewport};
-use super::minimap::MiniMap;
 use super::sugiyama::{self, LayoutResult};
 use super::theme::{StatusColors, Theme};
 use super::widgets::{status_indicator, status_text};
@@ -60,11 +50,8 @@ const SCROLL_STEP: i32 = 2;
 /// Page scroll multiplier (viewport size * this factor)
 const PAGE_SCROLL_FACTOR: f64 = 0.8;
 
-/// Mini-map width as percentage of graph area (20%)
-const MINIMAP_WIDTH_PCT: u16 = 20;
-
-/// Minimum mini-map width in characters
-const MINIMAP_MIN_WIDTH: u16 = 10;
+/// Fixed height for the graph area (prevents jerking from dynamic resizing)
+const GRAPH_AREA_HEIGHT: u16 = 12;
 
 /// Graph state tracking for cached layout and scroll position
 #[derive(Default)]
@@ -77,28 +64,15 @@ struct GraphState {
     graph_width: u16,
     /// Total graph height in characters
     graph_height: u16,
-    /// Whether minimap is manually toggled off
-    minimap_hidden: bool,
     /// Cached layout result (recomputed on stage changes)
     cached_layout: Option<LayoutResult>,
     /// Hash of stage IDs for cache invalidation
     stage_hash: u64,
-    /// Last minimap area (for click detection)
-    minimap_area: Option<Rect>,
     /// Last graph area (for scroll bounds)
     graph_area: Option<Rect>,
 }
 
 impl GraphState {
-    /// Check if the graph exceeds the viewport and minimap should be shown
-    #[allow(dead_code)]
-    fn should_show_minimap(&self, viewport_width: u16, viewport_height: u16) -> bool {
-        if self.minimap_hidden {
-            return false;
-        }
-        self.graph_width > viewport_width || self.graph_height > viewport_height
-    }
-
     /// Clamp scroll position to valid bounds
     fn clamp_scroll(&mut self, viewport_width: u16, viewport_height: u16) {
         let max_scroll_x = self.graph_width.saturating_sub(viewport_width) as i32;
@@ -419,16 +393,11 @@ impl TuiApp {
                 self.graph_state.scroll_by(0, page_step, viewport_w, viewport_h);
             }
 
-            // Toggle minimap
-            KeyCode::Char('m') => {
-                self.graph_state.minimap_hidden = !self.graph_state.minimap_hidden;
-            }
-
             _ => {}
         }
     }
 
-    /// Handle mouse events for minimap interaction and scrolling
+    /// Handle mouse events for scrolling
     fn handle_mouse_event(&mut self, mouse: crossterm::event::MouseEvent) {
         let (viewport_w, viewport_h) = self
             .graph_state
@@ -437,33 +406,6 @@ impl TuiApp {
             .unwrap_or((80, 20));
 
         match mouse.kind {
-            // Click in minimap to jump to location
-            MouseEventKind::Down(MouseButton::Left) => {
-                if let Some(minimap_area) = self.graph_state.minimap_area {
-                    let x = mouse.column;
-                    let y = mouse.row;
-
-                    // Check if click is within minimap bounds
-                    if x >= minimap_area.x
-                        && x < minimap_area.x + minimap_area.width
-                        && y >= minimap_area.y
-                        && y < minimap_area.y + minimap_area.height
-                    {
-                        // Convert minimap click to graph scroll position
-                        if let Some(ref layout) = self.graph_state.cached_layout {
-                            let minimap = MiniMap::new(layout);
-                            let (scroll_x, scroll_y) =
-                                minimap.point_to_scroll(x, y, minimap_area);
-
-                            // Center the viewport on the clicked position
-                            let center_x = scroll_x as i32 - (viewport_w / 2) as i32;
-                            let center_y = scroll_y as i32 - (viewport_h / 2) as i32;
-                            self.graph_state.scroll_to(center_x, center_y, viewport_w, viewport_h);
-                        }
-                    }
-                }
-            }
-
             // Scroll wheel to pan graph
             MouseEventKind::ScrollUp => {
                 self.graph_state.scroll_by(0, -SCROLL_STEP * 2, viewport_w, viewport_h);
@@ -471,7 +413,6 @@ impl TuiApp {
             MouseEventKind::ScrollDown => {
                 self.graph_state.scroll_by(0, SCROLL_STEP * 2, viewport_w, viewport_h);
             }
-
             _ => {}
         }
     }
@@ -577,82 +518,62 @@ impl TuiApp {
             // Recompute layout
             let layout = sugiyama::layout(&stages_for_graph);
             let bounds = layout.bounds();
-            self.graph_state.graph_width = bounds.width() as u16 + 20; // padding
-            self.graph_state.graph_height = bounds.height() as u16 + 4; // padding
+            // Add minimum padding to prevent 0-size bounds
+            self.graph_state.graph_width = (bounds.width() as u16).max(40) + 20;
+            self.graph_state.graph_height = (bounds.height() as u16).max(10) + 4;
             self.graph_state.cached_layout = Some(layout);
             self.graph_state.stage_hash = new_hash;
         }
 
-        // Build status map for minimap coloring
-        let status_map: HashMap<String, StageStatus> = unified_stages
-            .iter()
-            .map(|s| (s.id.clone(), s.status.clone()))
-            .collect();
-
         // Extract state for the closure
         let scroll_x = self.graph_state.scroll_x;
         let scroll_y = self.graph_state.scroll_y;
-        let graph_width = self.graph_state.graph_width;
-        let graph_height = self.graph_state.graph_height;
-        let minimap_hidden = self.graph_state.minimap_hidden;
-        let cached_layout = self.graph_state.cached_layout.clone();
 
         // Track areas for event handling
         let mut graph_area_out = None;
-        let mut minimap_area_out = None;
 
         self.terminal.draw(|frame| {
             let area = frame.area();
 
-            // Dynamic graph height based on content, clamped to reasonable bounds
-            let graph_area_height = (graph_height).clamp(6, (area.height / 3).max(8));
-
             // Layout with breathing room:
             // - Compact header (1 line)
             // - Spacer (1 line)
-            // - Execution graph with minimap (dynamic, min 6 lines)
+            // - Execution graph (fixed height for stability)
             // - Spacer (1 line)
             // - Unified stage table (remaining space)
-            // - Footer (2 lines for keybinds)
+            // - Footer (1 line for keybinds)
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(1),                 // Compact header with inline progress
-                    Constraint::Length(1),                 // Spacer
-                    Constraint::Length(graph_area_height), // Execution graph + minimap
-                    Constraint::Length(1),                 // Spacer
-                    Constraint::Min(6),                    // Unified stage table
-                    Constraint::Length(2),                 // Footer with keybinds
+                    Constraint::Length(1),                // Compact header with inline progress
+                    Constraint::Length(1),                // Spacer
+                    Constraint::Length(GRAPH_AREA_HEIGHT), // Execution graph (fixed)
+                    Constraint::Length(1),                // Spacer
+                    Constraint::Min(6),                   // Unified stage table
+                    Constraint::Length(1),                // Footer with keybinds
                 ])
                 .split(area);
 
             render_compact_header(frame, chunks[0], spinner, pct, completed_count, total);
             // chunks[1] is spacer - left empty
 
-            // Render graph area with optional minimap
-            let (graph_rect, minimap_rect) = render_graph_with_minimap(
+            // Render graph area
+            let graph_rect = render_graph(
                 frame,
                 chunks[2],
                 &stages_for_graph,
-                &status_map,
-                cached_layout.as_ref(),
                 scroll_x,
                 scroll_y,
-                graph_width,
-                graph_height,
-                minimap_hidden,
             );
             graph_area_out = Some(graph_rect);
-            minimap_area_out = minimap_rect;
 
             // chunks[3] is spacer - left empty
             render_unified_table(frame, chunks[4], &unified_stages);
             render_compact_footer(frame, chunks[5], &last_error);
         })?;
 
-        // Update stored areas for event handling
+        // Update stored area for event handling
         self.graph_state.graph_area = graph_area_out;
-        self.graph_state.minimap_area = minimap_area_out;
 
         Ok(())
     }
@@ -752,72 +673,29 @@ fn unified_stage_to_stage(us: &UnifiedStage) -> Stage {
     }
 }
 
-/// Render execution graph with optional mini-map overlay
+/// Render the execution graph
 ///
-/// Layout:
-///   ┌─────────────────────────────────────────┬──────────┐
-///   │                                         │ MINI-MAP │
-///   │           MAIN GRAPH                    │          │
-///   │         (scrollable)                    │  [    ]  │
-///   │                                         │          │
-///   └─────────────────────────────────────────┴──────────┘
-///
-/// Returns (graph_area, minimap_area) for event handling
-#[allow(clippy::too_many_arguments)]
-fn render_graph_with_minimap(
+/// Returns the inner graph area for event handling
+fn render_graph(
     frame: &mut Frame,
     area: Rect,
     stages: &[Stage],
-    status_map: &HashMap<String, StageStatus>,
-    cached_layout: Option<&LayoutResult>,
     scroll_x: i32,
     scroll_y: i32,
-    graph_width: u16,
-    graph_height: u16,
-    minimap_hidden: bool,
-) -> (Rect, Option<Rect>) {
-    if stages.is_empty() {
-        let empty = Paragraph::new(Span::styled("No stages", Theme::dimmed())).block(
-            Block::default()
-                .title(" Execution Graph ")
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(StatusColors::BORDER)),
-        );
-        frame.render_widget(empty, area);
-        return (area, None);
-    }
-
-    // Determine if minimap should be shown (auto-hide for small graphs)
-    let viewport_width = area.width.saturating_sub(2); // account for borders
-    let viewport_height = area.height.saturating_sub(2);
-    let show_minimap = !minimap_hidden
-        && (graph_width > viewport_width || graph_height > viewport_height);
-
-    // Calculate layout split
-    let (graph_area, minimap_area) = if show_minimap {
-        let minimap_width = (area.width * MINIMAP_WIDTH_PCT / 100).max(MINIMAP_MIN_WIDTH);
-        let graph_width_area = area.width.saturating_sub(minimap_width);
-
-        let chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(graph_width_area), // Main graph (80%)
-                Constraint::Length(minimap_width),    // Minimap (20%)
-            ])
-            .split(area);
-        (chunks[0], Some(chunks[1]))
-    } else {
-        (area, None)
-    };
-
-    // Render main graph with viewport
+) -> Rect {
     let graph_block = Block::default()
         .title(" Execution Graph ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(StatusColors::BORDER));
 
-    let inner_graph_area = graph_block.inner(graph_area);
-    frame.render_widget(graph_block.clone(), graph_area);
+    let inner_graph_area = graph_block.inner(area);
+    frame.render_widget(graph_block, area);
+
+    if stages.is_empty() {
+        let empty = Paragraph::new(Span::styled("(no stages)", Theme::dimmed()));
+        frame.render_widget(empty, inner_graph_area);
+        return inner_graph_area;
+    }
 
     // Create and render GraphWidget with viewport offset
     let viewport = Viewport::new(scroll_x, scroll_y);
@@ -829,36 +707,7 @@ fn render_graph_with_minimap(
     let buf = frame.buffer_mut();
     graph_widget.render_graph(inner_graph_area, buf);
 
-    // Render minimap if shown
-    if let (Some(minimap_rect), Some(layout)) = (minimap_area, cached_layout) {
-        let minimap_block = Block::default()
-            .title(" Map ")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(StatusColors::BORDER));
-
-        let inner_minimap_area = minimap_block.inner(minimap_rect);
-        frame.render_widget(minimap_block, minimap_rect);
-
-        // Create viewport rectangle for overlay (representing visible area)
-        let viewport_rect = Rect::new(
-            scroll_x.max(0) as u16,
-            scroll_y.max(0) as u16,
-            inner_graph_area.width,
-            inner_graph_area.height,
-        );
-
-        // Create and render minimap
-        let mut minimap = MiniMap::new(layout);
-        minimap.set_viewport(viewport_rect);
-        minimap.set_statuses(status_map.clone());
-
-        let buf = frame.buffer_mut();
-        minimap.render(inner_minimap_area, buf);
-
-        (inner_graph_area, Some(inner_minimap_area))
-    } else {
-        (inner_graph_area, None)
-    }
+    inner_graph_area
 }
 
 /// Render unified stage table with all columns
@@ -948,35 +797,25 @@ fn render_unified_table(frame: &mut Frame, area: Rect, stages: &[UnifiedStage]) 
 
 /// Render compact footer with keybinds
 fn render_compact_footer(frame: &mut Frame, area: Rect, last_error: &Option<String>) {
-    let lines = if let Some(ref err) = last_error {
-        vec![
-            Line::from(vec![
-                Span::styled("Error: ", Style::default().fg(StatusColors::BLOCKED)),
-                Span::styled(err.as_str(), Style::default().fg(StatusColors::BLOCKED)),
-            ]),
-            Line::default(),
-        ]
+    let line = if let Some(ref err) = last_error {
+        Line::from(vec![
+            Span::styled("Error: ", Style::default().fg(StatusColors::BLOCKED)),
+            Span::styled(err.as_str(), Style::default().fg(StatusColors::BLOCKED)),
+        ])
     } else {
-        vec![
-            Line::from(vec![
-                Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" quit │ "),
-                Span::styled("↑↓←→", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" scroll │ "),
-                Span::styled("PgUp/PgDn", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" page │ "),
-                Span::styled("Home/End", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" jump"),
-            ]),
-            Line::from(vec![
-                Span::styled("m", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" toggle minimap │ "),
-                Span::styled("Daemon runs in background", Theme::dimmed()),
-            ]),
-        ]
+        Line::from(vec![
+            Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(" quit │ "),
+            Span::styled("↑↓←→", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(" scroll │ "),
+            Span::styled("PgUp/PgDn", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(" page │ "),
+            Span::styled("Home/End", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(" jump"),
+        ])
     };
 
-    let footer = Paragraph::new(lines);
+    let footer = Paragraph::new(line);
     frame.render_widget(footer, area);
 }
 
@@ -1020,7 +859,6 @@ mod tests {
         assert_eq!(state.scroll_y, 0);
         assert_eq!(state.graph_width, 0);
         assert_eq!(state.graph_height, 0);
-        assert!(!state.minimap_hidden);
         assert!(state.cached_layout.is_none());
     }
 
@@ -1088,31 +926,6 @@ mod tests {
         state.scroll_to(-10, -10, 50, 25);
         assert_eq!(state.scroll_x, 0);
         assert_eq!(state.scroll_y, 0);
-    }
-
-    #[test]
-    fn test_graph_state_should_show_minimap() {
-        let state = GraphState {
-            graph_width: 100,
-            graph_height: 50,
-            minimap_hidden: false,
-            ..Default::default()
-        };
-
-        // Should show when content exceeds viewport
-        assert!(state.should_show_minimap(80, 40));
-
-        // Should not show when content fits
-        assert!(!state.should_show_minimap(120, 60));
-
-        // Should not show when manually hidden
-        let hidden_state = GraphState {
-            graph_width: 100,
-            graph_height: 50,
-            minimap_hidden: true,
-            ..Default::default()
-        };
-        assert!(!hidden_state.should_show_minimap(80, 40));
     }
 
     #[test]
