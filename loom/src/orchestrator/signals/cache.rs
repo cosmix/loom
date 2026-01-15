@@ -108,7 +108,8 @@ pub fn generate_stable_prefix() -> String {
     content.push_str(
         "- **Use PARALLEL subagents** - spawn multiple appropriate subagents concurrently when tasks are independent\n",
     );
-    content.push_str("- **Use Skills** - invoke relevant skills wherever applicable\n");
+    content.push_str("- **Use Skills** - check if /auth, /testing, /ci-cd, /logging-observability apply\n");
+    content.push_str("- **Use specialized agents** - security-engineer, senior-infrastructure-engineer, etc.\n");
     content.push_str("- **Use TodoWrite** to plan and track progress\n\n");
     content.push_str("**Completion:**\n");
     content.push_str("- **Verify acceptance criteria** before marking stage complete\n");
@@ -167,7 +168,8 @@ pub fn generate_knowledge_stable_prefix() -> String {
     content.push_str(
         "- **Use PARALLEL subagents** - spawn multiple appropriate subagents concurrently when tasks are independent\n",
     );
-    content.push_str("- **Use Skills** - invoke relevant skills wherever applicable\n");
+    content.push_str("- **Use Skills** - check if /auth, /testing, /ci-cd, /logging-observability apply\n");
+    content.push_str("- **Use specialized agents** - security-engineer, senior-infrastructure-engineer, etc.\n");
     content.push_str("- **Use TodoWrite** to plan and track progress\n\n");
     content.push_str("**Completion:**\n");
     content.push_str("- **Verify acceptance criteria** before marking stage complete\n");
@@ -251,6 +253,10 @@ mod tests {
         assert!(prefix.contains(
             "Before running `loom stage complete`, ensure you are at the worktree root directory"
         ));
+        // Critical: specific skill examples
+        assert!(prefix.contains("/auth"));
+        assert!(prefix.contains("/testing"));
+        assert!(prefix.contains("security-engineer"));
     }
 
     #[test]
@@ -276,6 +282,10 @@ mod tests {
         assert!(prefix.contains(
             "Parallel subagents and appropriate skills should be used WHEREVER POSSIBLE."
         ));
+        // Critical: specific skill examples
+        assert!(prefix.contains("/auth"));
+        assert!(prefix.contains("/testing"));
+        assert!(prefix.contains("security-engineer"));
     }
 
     #[test]

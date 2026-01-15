@@ -256,7 +256,103 @@ The stop hook BLOCKS exit if uncommitted changes exist or stage is still "Execut
 
 First line of EVERY subagent prompt: `** READ CLAUDE.md IMMEDIATELY AND FOLLOW ALL ITS RULES. **`
 
-### 6. NATIVE TOOLS ONLY
+### 6. SKILLS & AGENT DELEGATION
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  ⚠️ BEFORE IMPLEMENTING: CHECK SKILLS & AGENTS FIRST                │
+│                                                                    │
+│  Many tasks have PURPOSE-BUILT skills or specialized agents.       │
+│  ALWAYS check if one exists before writing code yourself.          │
+│                                                                    │
+│  Skills: /auth, /testing, /ci-cd, /logging-observability, etc.     │
+│  Agents: senior-software-engineer, security-engineer, etc.         │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+#### Specialized Agents
+
+Use the Task tool to spawn specialized agents for complex work:
+
+| Agent | Model | Use Cases |
+|-------|-------|-----------|
+| `senior-software-engineer` | Default | Architecture design, complex debugging, design patterns, code review, test strategy |
+| `senior-infrastructure-engineer` | Default | Cloud architecture, Terraform/IaC, Kubernetes, Helm, CI/CD pipelines, monitoring |
+| `security-engineer` | Default | Threat modeling, vulnerability analysis, security audits, penetration testing |
+| `software-engineer` | Default | Feature implementation, bug fixes, tests, data pipelines, documentation |
+
+**Agent Selection Decision Tree:**
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  WHAT KIND OF TASK?                                                 │
+│                                                                     │
+│  Security work (audit, threats, vulns)?                             │
+│    → security-engineer                                              │
+│                                                                     │
+│  Infrastructure (K8s, Terraform, CI/CD, monitoring)?                │
+│    → senior-infrastructure-engineer                                 │
+│                                                                     │
+│  Architecture, patterns, complex debugging, code review?            │
+│    → senior-software-engineer                                       │
+│                                                                     │
+│  Standard implementation (features, fixes, tests)?                  │
+│    → software-engineer                                              │
+│                                                                     │
+│  Quick exploration or codebase questions?                           │
+│    → Explore agent (subagent_type=Explore)                          │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### Skills by Domain
+
+Invoke skills with `/skill-name` syntax. Key skills organized by domain:
+
+**Security & Auth:**
+- `/auth` — OAuth2, JWT, RBAC/ABAC, session management, MFA, password hashing
+
+**Testing:**
+- `/testing` — Unit, integration, e2e, security tests, TDD/BDD, coverage analysis
+
+**Infrastructure & DevOps:**
+- `/ci-cd` — Pipeline design, GitHub Actions, artifact management, deployments
+- `/karpenter` — Kubernetes node autoscaling, spot instances, cost optimization
+- `/prometheus` — Metrics, PromQL, alerting, service discovery
+
+**Observability:**
+- `/logging-observability` — Structured logging, distributed tracing, OpenTelemetry
+
+**Architecture Patterns:**
+- `/event-driven` — Message queues, pub/sub, event sourcing, CQRS, sagas
+- `/background-jobs` — Job queues, workers, retry strategies, Celery/Bull/Sidekiq
+- `/feature-flags` — Controlled rollouts, A/B testing, kill switches
+- `/data-validation` — Schema validation, input sanitization, Zod/Pydantic
+
+#### Skill Invocation Syntax
+
+```text
+/auth                    # Invoke auth skill
+/testing                 # Invoke testing skill
+/ci-cd                   # Invoke CI/CD skill
+```
+
+Skills expand to detailed prompts with domain expertise. Use them BEFORE attempting manual implementation.
+
+#### Updated Delegation Pattern
+
+When delegating to subagents, include skill hints:
+
+```text
+** READ CLAUDE.md FILES IMMEDIATELY AND FOLLOW ALL THEIR RULES. **
+
+## Assignment: [task]
+## Relevant Skills: /auth, /testing (use if applicable)
+## Files You Own: [paths]
+## Files Read-Only: [paths]
+## Acceptance: [criteria]
+```
+
+### 7. NATIVE TOOLS ONLY
 
 | Banned                | Use Instead |
 | --------------------- | ----------- |
@@ -268,11 +364,11 @@ First line of EVERY subagent prompt: `** READ CLAUDE.md IMMEDIATELY AND FOLLOW A
 
 If you must use CLI search, use `rg` or `fd` — never `grep` or `find`.
 
-### 7. NO ATTRIBUTION
+### 8. NO ATTRIBUTION
 
 Never mention Claude, Claude Code, or any AI system in code, commits, docs, or comments. EVER.
 
-### 8. WORKTREE ISOLATION
+### 9. WORKTREE ISOLATION
 
 When executing in a loom worktree, you MUST stay within your worktree boundaries. Worktree isolation prevents merge conflicts and ensures clean parallel execution.
 
@@ -307,7 +403,7 @@ When executing in a loom worktree, you MUST stay within your worktree boundaries
 
 **If you need context from the main repo:** Your signal file (`.work/signals/<session-id>.md`) contains all embedded context you need. DO NOT read from the main repo — use the signal.
 
-### 9. KNOWLEDGE MANAGEMENT (MANDATORY)
+### 10. KNOWLEDGE MANAGEMENT (MANDATORY)
 
 Build and maintain the `doc/loom/knowledge/` base BEFORE and DURING every session.
 
@@ -348,7 +444,7 @@ Build and maintain the `doc/loom/knowledge/` base BEFORE and DURING every sessio
 
 **EVERY PLAN MUST include `knowledge-bootstrap` as the first stage** (unless knowledge already exists and is complete). See Plan Format section for the required stage definition.
 
-### 10. INTEGRATION VERIFICATION (MANDATORY)
+### 11. INTEGRATION VERIFICATION (MANDATORY)
 
 **Every plan MUST end with an `integration-verify` stage.**
 
@@ -424,23 +520,23 @@ See **Plan Format** section for the required `integration-verify` stage template
 
 ## STANDARD RULES
 
-### 11. QUALITY GATES
+### 12. QUALITY GATES
 
 Before completion: zero lint errors, tests passing, self-reviewed for security.
 
-### 12. DEPENDENCIES
+### 13. DEPENDENCIES
 
 Never hand-edit manifests. Use: `bun add`, `cargo add`, `uv add`, `go get`
 
-### 13. CODE SIZE LIMITS
+### 14. CODE SIZE LIMITS
 
 File: 400 lines | Function: 50 lines | Class: 300 lines — Exceed = refactor immediately.
 
-### 14. SESSION STATE
+### 15. SESSION STATE
 
 Update `CLAUDE.md` during work. On completion, replace updates with summary.
 
-### 15. MISTAKES LOG
+### 16. MISTAKES LOG
 
 On any mistake: append to "MISTAKES AND LESSONS LEARNT" section. Never delete.
 
@@ -495,7 +591,7 @@ Also: `Blocked`, `NeedsHandoff`, `WaitingForInput`
 
 ### Knowledge Bootstrap Pattern
 
-See **Rule 9: KNOWLEDGE MANAGEMENT** and **Plan Format** section for the required `knowledge-bootstrap` stage definition.
+See **Rule 10: KNOWLEDGE MANAGEMENT** and **Plan Format** section for the required `knowledge-bootstrap` stage definition.
 
 ---
 
@@ -564,7 +660,10 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 │                                                                    │
 │  5. KNOWLEDGE: Bootstrap if empty. Update discoveries. ALWAYS.     │
 │                                                                    │
-│  6. PLANS: integration-verify LAST. No exceptions.                 │
+│  6. SKILLS & AGENTS: Check /auth, /testing, etc. BEFORE coding.    │
+│     → Use specialized agents for security, infra, architecture     │
+│                                                                    │
+│  7. PLANS: integration-verify LAST. No exceptions.                 │
 │     → TESTS PASSING ≠ FEATURE WORKING                              │
 │     → MUST include FUNCTIONAL verification (smoke test, wiring)    │
 │     → Code that compiles but is never wired up is USELESS          │
