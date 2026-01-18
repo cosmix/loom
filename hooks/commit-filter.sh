@@ -60,23 +60,41 @@ fi
 # === CLAUDE ATTRIBUTION CHECK ===
 # Auto-strip Co-Authored-By lines from git commits (forbidden per CLAUDE.md rule 8)
 if echo "$COMMAND" | grep -qi 'git commit'; then
+    {
+        echo "DEBUG: Detected git commit command"
+    } >> "$DEBUG_LOG" 2>&1
+
     if echo "$COMMAND" | grep -Ei -q 'co-authored-by.*claude|claude.*(noreply|anthropic)'; then
+        {
+            echo "DEBUG: Detected forbidden Co-Authored-By pattern"
+        } >> "$DEBUG_LOG" 2>&1
+
         # Strip the Co-Authored-By line from the command
-        # Handle both inline -m and heredoc formats
-        CORRECTED_COMMAND=$(echo "$COMMAND" | sed -E 's/[[:space:]]*Co-Authored-By:[^\n]*(\n|\\n)?//gi')
+        # Use sed with actual newline matching (POSIX compatible)
+        # The pattern matches: optional whitespace, "Co-Authored-By:", anything until newline
+        CORRECTED_COMMAND=$(printf '%s' "$COMMAND" | sed '/[Cc]o-[Aa]uthored-[Bb]y.*[Cc]laude/d; /[Cc]o-[Aa]uthored-[Bb]y.*anthropic/d; /[Cc]o-[Aa]uthored-[Bb]y.*noreply/d')
 
-        # Also clean up any resulting double newlines
-        CORRECTED_COMMAND=$(echo "$CORRECTED_COMMAND" | sed -E 's/\\n\\n/\\n/g')
+        # Also try removing inline patterns (for single-line commit messages)
+        CORRECTED_COMMAND=$(printf '%s' "$CORRECTED_COMMAND" | sed -E 's/[[:space:]]*[Cc]o-[Aa]uthored-[Bb]y:[^"]*([Cc]laude|anthropic|noreply)[^"]*//g')
 
-        # Escape for JSON
-        CORRECTED_COMMAND="${CORRECTED_COMMAND//\\/\\\\}"
-        CORRECTED_COMMAND="${CORRECTED_COMMAND//\"/\\\"}"
-        CORRECTED_COMMAND="${CORRECTED_COMMAND//$'\n'/\\n}"
+        {
+            echo "DEBUG: Corrected command:"
+            echo "$CORRECTED_COMMAND"
+        } >> "$DEBUG_LOG" 2>&1
+
+        # Escape for JSON - must escape backslashes first, then quotes, then newlines
+        ESCAPED_COMMAND="${CORRECTED_COMMAND//\\/\\\\}"
+        ESCAPED_COMMAND="${ESCAPED_COMMAND//\"/\\\"}"
+        # Convert actual newlines to \n for JSON
+        ESCAPED_COMMAND=$(printf '%s' "$ESCAPED_COMMAND" | awk '{printf "%s\\n", $0}' | sed 's/\\n$//')
+
+        {
+            echo "DEBUG: Escaped command for JSON:"
+            echo "$ESCAPED_COMMAND"
+        } >> "$DEBUG_LOG" 2>&1
 
         # Output JSON to auto-correct the command
-        cat <<EOF
-{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"Auto-removed forbidden Co-Authored-By attribution (CLAUDE.md rule 8)","updatedInput":{"command":"$CORRECTED_COMMAND"}}}
-EOF
+        printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"Auto-removed forbidden Co-Authored-By attribution (CLAUDE.md rule 8)","updatedInput":{"command":"%s"}}}\n' "$ESCAPED_COMMAND"
         exit 0
     fi
 fi
