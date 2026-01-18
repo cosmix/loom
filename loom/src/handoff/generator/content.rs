@@ -17,7 +17,6 @@ pub struct HandoffContent {
     pub test_status: Option<String>,
     pub files_modified: Vec<String>,
     pub next_steps: Vec<String>,
-    pub learnings: Vec<String>,
     pub git_history: Option<GitHistory>,
     /// Memory content from session journal (for handoff)
     pub memory_content: Option<String>,
@@ -38,7 +37,6 @@ impl HandoffContent {
             test_status: None,
             files_modified: Vec::new(),
             next_steps: Vec::new(),
-            learnings: Vec::new(),
             git_history: None,
             memory_content: None,
         }
@@ -89,12 +87,6 @@ impl HandoffContent {
     /// Add next steps
     pub fn with_next_steps(mut self, steps: Vec<String>) -> Self {
         self.next_steps = steps;
-        self
-    }
-
-    /// Add learnings
-    pub fn with_learnings(mut self, learnings: Vec<String>) -> Self {
-        self.learnings = learnings;
         self
     }
 
@@ -151,14 +143,10 @@ impl HandoffContent {
             .map(|h| h.uncommitted_changes.clone())
             .unwrap_or_default();
 
-        // Learnings become discovered_facts in V2
-        let discovered_facts = self.learnings.clone();
-
         HandoffV2::new(&self.session_id, &self.stage_id)
             .with_context_percent(self.context_percent)
             .with_completed_tasks(completed_tasks)
             .with_key_decisions(key_decisions)
-            .with_discovered_facts(discovered_facts)
             .with_next_actions(self.next_steps.clone())
             .with_branch(
                 self.current_branch

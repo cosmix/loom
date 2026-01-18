@@ -2,8 +2,8 @@ use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 use loom::checkpoints::CheckpointStatus;
 use loom::commands::{
-    attach, checkpoint, clean, diagnose, fact, graph, hooks, init, knowledge, learn, memory, merge,
-    resume, run, self_update, sessions, stage, status, stop, verify, worktree_cmd,
+    attach, checkpoint, clean, diagnose, fact, graph, hooks, init, knowledge, memory, merge,
+    resume, run, self_update, sessions, stage, status, stop, worktree_cmd,
 };
 use loom::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use loom::validation::{clap_description_validator, clap_id_validator};
@@ -34,10 +34,6 @@ enum Commands {
 
     /// Run stages from a plan (starts orchestrator in background)
     Run {
-        /// Specific stage ID to run
-        #[arg(short, long, value_parser = clap_id_validator)]
-        stage: Option<String>,
-
         /// Enable manual approval for each stage
         #[arg(short, long)]
         manual: bool,
@@ -152,22 +148,10 @@ enum Commands {
         command: KnowledgeCommands,
     },
 
-    /// Record and list learnings (mistakes, patterns, conventions)
-    Learn {
-        #[command(subcommand)]
-        command: LearnCommands,
-    },
-
     /// Manage session memory journal (notes, decisions, questions)
     Memory {
         #[command(subcommand)]
         command: MemoryCommands,
-    },
-
-    /// Verify integrity of loom resources
-    Verify {
-        #[command(subcommand)]
-        command: VerifyCommands,
     },
 
     /// Update loom and configuration files
@@ -563,52 +547,6 @@ enum KnowledgeCommands {
 }
 
 #[derive(Subcommand)]
-enum LearnCommands {
-    /// Record a mistake and optional correction
-    Mistake {
-        /// Description of the mistake
-        description: String,
-
-        /// Correction or fix for the mistake
-        #[arg(short, long)]
-        correction: Option<String>,
-    },
-
-    /// Record an architectural pattern discovered
-    Pattern {
-        /// Description of the pattern
-        description: String,
-    },
-
-    /// Record a coding convention learned
-    Convention {
-        /// Description of the convention
-        description: String,
-    },
-
-    /// Record human guidance (requires --human flag)
-    Guidance {
-        /// Description of the guidance
-        description: String,
-
-        /// Confirm this is from a human operator (required)
-        #[arg(long)]
-        human: bool,
-
-        /// Source of the guidance (e.g., "code review", "slack")
-        #[arg(short, long)]
-        source: Option<String>,
-    },
-
-    /// List recorded learnings
-    List {
-        /// Filter by category (mistake, pattern, convention, guidance)
-        #[arg(short, long)]
-        category: Option<String>,
-    },
-}
-
-#[derive(Subcommand)]
 enum MemoryCommands {
     /// Record a note in the session memory
     Note {
@@ -677,16 +615,6 @@ enum MemoryCommands {
 }
 
 #[derive(Subcommand)]
-enum VerifyCommands {
-    /// Verify learning files haven't been corrupted
-    Learnings {
-        /// Session ID to verify against (auto-detected from worktree if not provided)
-        #[arg(short, long, value_parser = clap_id_validator)]
-        session: Option<String>,
-    },
-}
-
-#[derive(Subcommand)]
 enum AttachCommands {
     /// Attach to all running sessions
     All {
@@ -720,7 +648,6 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Init { plan_path, clean } => init::execute(Some(PathBuf::from(plan_path)), clean),
         Commands::Run {
-            stage,
             manual,
             max_parallel,
             attach,
@@ -732,9 +659,9 @@ fn main() -> Result<()> {
             if attach {
                 attach::execute_logs()
             } else if foreground {
-                run::execute(stage, manual, max_parallel, watch, auto_merge)
+                run::execute(manual, max_parallel, watch, auto_merge)
             } else {
-                run::execute_background(stage, manual, max_parallel, watch, auto_merge)
+                run::execute_background(manual, max_parallel, watch, auto_merge)
             }
         }
         Commands::Status {
@@ -826,20 +753,6 @@ fn main() -> Result<()> {
             KnowledgeCommands::Init => knowledge::init(),
             KnowledgeCommands::List => knowledge::list(),
         },
-        Commands::Learn { command } => match command {
-            LearnCommands::Mistake {
-                description,
-                correction,
-            } => learn::mistake(description, correction),
-            LearnCommands::Pattern { description } => learn::pattern(description),
-            LearnCommands::Convention { description } => learn::convention(description),
-            LearnCommands::Guidance {
-                description,
-                human,
-                source,
-            } => learn::guidance(description, human, source),
-            LearnCommands::List { category } => learn::list(category),
-        },
         Commands::Memory { command } => match command {
             MemoryCommands::Note { text, session } => memory::note(text, session),
             MemoryCommands::Decision {
@@ -855,9 +768,6 @@ fn main() -> Result<()> {
             } => memory::list(session, entry_type),
             MemoryCommands::Show { session } => memory::show(session),
             MemoryCommands::Sessions => memory::sessions(),
-        },
-        Commands::Verify { command } => match command {
-            VerifyCommands::Learnings { session } => verify::learnings(session),
         },
         Commands::SelfUpdate => self_update::execute(),
         Commands::Clean {

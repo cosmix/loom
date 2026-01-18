@@ -116,17 +116,6 @@ pub fn format_handoff_markdown(content: &HandoffContent) -> Result<String> {
         md.push('\n');
     }
 
-    // Learnings / Patterns Identified
-    md.push_str("## Learnings / Patterns Identified\n\n");
-    if content.learnings.is_empty() {
-        md.push_str("No learnings documented yet.\n");
-    } else {
-        for learning in &content.learnings {
-            md.push_str(&format!("- {learning}\n"));
-        }
-    }
-    md.push('\n');
-
     // Session Memory (if available)
     if let Some(memory) = &content.memory_content {
         md.push_str(memory);
@@ -235,16 +224,6 @@ pub fn format_handoff_markdown_v1(content: &HandoffContent) -> Result<String> {
             md.push_str(&format!("{}. {step}\n", i + 1));
         }
         md.push('\n');
-    }
-
-    // Learnings / Patterns Identified
-    md.push_str("## Learnings / Patterns Identified\n\n");
-    if content.learnings.is_empty() {
-        md.push_str("No learnings documented yet.\n");
-    } else {
-        for learning in &content.learnings {
-            md.push_str(&format!("- {learning}\n"));
-        }
     }
 
     Ok(md)

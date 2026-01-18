@@ -22,9 +22,8 @@ use crate::git::{get_uncommitted_changes_summary, has_uncommitted_changes};
 pub use foreground::execute;
 
 /// Execute orchestrator in background (daemon mode)
-/// Usage: loom run [--stage <id>] [--manual] [--max-parallel <n>] [--watch] [--no-merge]
+/// Usage: loom run [--manual] [--max-parallel <n>] [--watch] [--no-merge]
 pub fn execute_background(
-    stage_id: Option<String>,
     manual: bool,
     max_parallel: Option<usize>,
     _watch: bool, // Daemon always runs in watch mode; CLI flag is accepted but ignored
@@ -40,10 +39,6 @@ pub fn execute_background(
     // Mark plan as in-progress when starting execution
     plan_lifecycle::mark_plan_in_progress(&work_dir)?;
 
-    if let Some(ref id) = stage_id {
-        println!("{} Running single stage: {}", "→".cyan().bold(), id.bold());
-    }
-
     if DaemonServer::is_running(work_dir.root()) {
         println!("{} Daemon is already running", "─".dimmed());
         println!();
@@ -53,7 +48,6 @@ pub fn execute_background(
     }
 
     let daemon_config = DaemonConfig {
-        stage_id: stage_id.clone(),
         manual_mode: manual,
         max_parallel,
         watch_mode: true, // Daemon always runs in watch mode (ignores CLI flag)

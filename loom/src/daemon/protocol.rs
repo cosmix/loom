@@ -17,8 +17,6 @@ use crate::models::worktree::WorktreeStatus;
 /// desired flags.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DaemonConfig {
-    /// Run only this specific stage (maps to --stage)
-    pub stage_id: Option<String>,
     /// Manual mode - don't auto-start stages (maps to --manual)
     pub manual_mode: bool,
     /// Maximum concurrent stages (maps to --max-parallel)
@@ -32,7 +30,6 @@ pub struct DaemonConfig {
 impl Default for DaemonConfig {
     fn default() -> Self {
         Self {
-            stage_id: None,
             manual_mode: false,
             max_parallel: None,
             watch_mode: true,
@@ -262,7 +259,6 @@ mod tests {
     fn test_daemon_config_default() {
         let config = DaemonConfig::default();
 
-        assert!(config.stage_id.is_none());
         assert!(!config.manual_mode);
         assert!(config.max_parallel.is_none());
         assert!(config.watch_mode);

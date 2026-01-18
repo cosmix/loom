@@ -1,7 +1,6 @@
 pub mod checkpoints;
 pub mod facts;
 pub mod knowledge;
-pub mod learnings;
 pub mod memory;
 pub mod permissions;
 pub mod session_files;

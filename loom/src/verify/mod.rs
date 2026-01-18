@@ -1,7 +1,6 @@
 pub mod context;
 pub mod criteria;
 pub mod gates;
-pub mod learning_protection;
 pub mod task_verification;
 pub mod transitions;
 

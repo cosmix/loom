@@ -1,6 +1,6 @@
 //! Main Orchestrator struct and public interface
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use crate::models::session::Session;
 use crate::models::stage::StageStatus;
 use crate::models::worktree::Worktree;
-use crate::orchestrator::monitor::{Monitor, MonitorConfig, MonitorEvent};
+use crate::orchestrator::monitor::{Monitor, MonitorConfig};
 use crate::plan::ExecutionGraph;
 use crate::skills::SkillIndex;
 use crate::utils::{cleanup_terminal, install_terminal_panic_hook};
@@ -292,94 +292,6 @@ impl Orchestrator {
             failed_stages,
             needs_handoff,
             total_sessions_spawned,
-        })
-    }
-
-    /// Run a single stage by ID (for `loom run --stage <id>`)
-    pub fn run_single(&mut self, stage_id: &str) -> Result<OrchestratorResult> {
-        // Install panic hook to restore terminal on panic
-        install_terminal_panic_hook();
-
-        let node = self
-            .graph
-            .get_node(stage_id)
-            .ok_or_else(|| anyhow::anyhow!("Stage not found: {stage_id}"))?;
-
-        if node.status != crate::plan::NodeStatus::Queued {
-            bail!(
-                "Stage '{}' is not ready for execution. Current status: {:?}",
-                stage_id,
-                node.status
-            );
-        }
-
-        self.start_stage(stage_id)
-            .context("Failed to start stage")?;
-
-        if self.config.manual_mode {
-            return Ok(OrchestratorResult {
-                completed_stages: Vec::new(),
-                failed_stages: Vec::new(),
-                needs_handoff: Vec::new(),
-                total_sessions_spawned: 1,
-            });
-        }
-
-        let mut completed = false;
-        let mut failed = false;
-        let mut needs_handoff = false;
-
-        loop {
-            let events = self.monitor.poll().context("Failed to poll monitor")?;
-
-            for event in events {
-                match event {
-                    MonitorEvent::StageCompleted { stage_id: sid } if sid == stage_id => {
-                        completed = true;
-                    }
-                    MonitorEvent::StageBlocked { stage_id: sid, .. } if sid == stage_id => {
-                        failed = true;
-                    }
-                    MonitorEvent::SessionNeedsHandoff { stage_id: sid, .. } if sid == stage_id => {
-                        needs_handoff = true;
-                    }
-                    MonitorEvent::SessionCrashed {
-                        stage_id: Some(sid),
-                        ..
-                    } if sid == stage_id => {
-                        failed = true;
-                    }
-                    _ => {}
-                }
-            }
-
-            if completed || failed || needs_handoff {
-                break;
-            }
-
-            std::thread::sleep(self.config.poll_interval);
-        }
-
-        // Restore terminal state before returning
-        cleanup_terminal();
-
-        Ok(OrchestratorResult {
-            completed_stages: if completed {
-                vec![stage_id.to_string()]
-            } else {
-                Vec::new()
-            },
-            failed_stages: if failed {
-                vec![stage_id.to_string()]
-            } else {
-                Vec::new()
-            },
-            needs_handoff: if needs_handoff {
-                vec![stage_id.to_string()]
-            } else {
-                Vec::new()
-            },
-            total_sessions_spawned: 1,
         })
     }
 

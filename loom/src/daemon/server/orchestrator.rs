@@ -114,12 +114,7 @@ fn run_orchestrator(
     }
 
     // Run orchestrator - it runs its own loop internally and returns when complete
-    let result = if let Some(ref stage_id) = daemon_config.stage_id {
-        println!("Running single stage: {stage_id}");
-        orchestrator.run_single(stage_id)
-    } else {
-        orchestrator.run()
-    };
+    let result = orchestrator.run();
 
     match result {
         Ok(result) => {

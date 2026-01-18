@@ -36,9 +36,8 @@ fn parse_base_branch_from_config(work_dir: &WorkDir) -> Result<Option<String>> {
 }
 
 /// Execute plan stages in foreground (for --foreground flag)
-/// Usage: loom run --foreground [--stage <id>] [--manual] [--max-parallel <n>] [--watch] [--no-merge]
+/// Usage: loom run --foreground [--manual] [--max-parallel <n>] [--watch] [--no-merge]
 pub fn execute(
-    stage_id: Option<String>,
     manual: bool,
     max_parallel: Option<usize>,
     watch: bool,
@@ -54,7 +53,7 @@ pub fn execute(
     // Mark plan as in-progress when starting execution
     plan_lifecycle::mark_plan_in_progress(&work_dir)?;
 
-    execute_foreground(stage_id, manual, max_parallel, watch, auto_merge, &work_dir)
+    execute_foreground(manual, max_parallel, watch, auto_merge, &work_dir)
 }
 
 /// Check for uncommitted changes and bail if found
@@ -85,7 +84,6 @@ fn check_for_uncommitted_changes(repo_root: &std::path::Path) -> Result<()> {
 
 /// Execute orchestrator in foreground mode (for debugging)
 fn execute_foreground(
-    stage_id: Option<String>,
     manual: bool,
     max_parallel: Option<usize>,
     watch: bool,
@@ -116,22 +114,17 @@ fn execute_foreground(
     let mut orchestrator =
         Orchestrator::new(config, graph).context("Failed to create orchestrator")?;
 
-    let result = if let Some(id) = stage_id {
-        println!("{} Running single stage: {}", "→".cyan().bold(), id.bold());
-        orchestrator.run_single(&id)?
+    if watch {
+        println!(
+            "{} Running in watch mode {}",
+            "→".cyan().bold(),
+            "(continuous execution)".dimmed()
+        );
+        println!("  {} Press {} to stop\n", "→".dimmed(), "Ctrl+C".bold());
     } else {
-        if watch {
-            println!(
-                "{} Running in watch mode {}",
-                "→".cyan().bold(),
-                "(continuous execution)".dimmed()
-            );
-            println!("  {} Press {} to stop\n", "→".dimmed(), "Ctrl+C".bold());
-        } else {
-            println!("{} Running all ready stages...", "→".cyan().bold());
-        }
-        orchestrator.run()?
-    };
+        println!("{} Running all ready stages...", "→".cyan().bold());
+    }
+    let result = orchestrator.run()?;
 
     print_result(&result);
 

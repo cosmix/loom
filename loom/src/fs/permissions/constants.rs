@@ -19,12 +19,6 @@ pub const HOOK_PRE_COMPACT: &str = include_str!("../../../../hooks/pre-compact.s
 /// SessionEnd hook - handles session completion
 pub const HOOK_SESSION_END: &str = include_str!("../../../../hooks/session-end.sh");
 
-/// Learning validator hook - validates learning files weren't damaged during session
-pub const HOOK_LEARNING_VALIDATOR: &str = include_str!("../../../../hooks/learning-validator.sh");
-
-/// SubagentStop hook - extracts learnings from subagents
-pub const HOOK_SUBAGENT_STOP: &str = include_str!("../../../../hooks/subagent-stop.sh");
-
 /// AskUserQuestion pre hook - marks stage as waiting for input
 pub const HOOK_ASK_USER_PRE: &str = include_str!("../../../../hooks/ask-user-pre.sh");
 
@@ -51,8 +45,6 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("session-start.sh", HOOK_SESSION_START),
     ("pre-compact.sh", HOOK_PRE_COMPACT),
     ("session-end.sh", HOOK_SESSION_END),
-    ("learning-validator.sh", HOOK_LEARNING_VALIDATOR),
-    ("subagent-stop.sh", HOOK_SUBAGENT_STOP),
     // Global hooks (commit enforcement, user question handling, tool guidance)
     ("commit-guard.sh", HOOK_COMMIT_GUARD),
     ("ask-user-pre.sh", HOOK_ASK_USER_PRE),

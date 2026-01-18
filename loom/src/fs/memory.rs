@@ -657,11 +657,11 @@ pub fn preserve_for_crash(work_dir: &Path, session_id: &str) -> Result<Option<Pa
     Ok(Some(dest))
 }
 
-/// Extract key notes from memory to promote to learnings on completion
+/// Extract key notes from memory for review on completion
 pub fn extract_key_notes(journal: &MemoryJournal) -> Vec<String> {
     let mut key_notes = Vec::new();
 
-    // Extract all decisions as potential learnings
+    // Extract all decisions as key notes
     for entry in &journal.entries {
         if entry.entry_type == MemoryEntryType::Decision {
             let note = if let Some(ctx) = &entry.context {

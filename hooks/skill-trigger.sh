@@ -163,12 +163,23 @@ unset IFS
 # Build output
 output=""
 for suggestion in "${sorted_suggestions[@]:-}"; do
+    # Skip empty suggestions (can happen when array is empty)
+    if [[ -z "$suggestion" ]]; then
+        continue
+    fi
+
     if (( suggestion_count >= MAX_SUGGESTIONS )); then
         break
     fi
 
     score="${suggestion%%:*}"
     skill="${suggestion#*:}"
+
+    # Skip if skill is empty
+    if [[ -z "$skill" ]]; then
+        continue
+    fi
+
     matches="${skill_matches[$skill]:-}"
 
     # Clean up matches (take first 3)
@@ -178,10 +189,26 @@ for suggestion in "${sorted_suggestions[@]:-}"; do
     skill_file="${HOME}/.claude/skills/${skill}/SKILL.md"
     description=""
     if [[ -f "$skill_file" ]]; then
-        # Extract description from frontmatter
-        description=$(sed -n '/^---$/,/^---$/p' "$skill_file" | grep -E '^description:' | sed 's/^description:[[:space:]]*//' | head -1)
+        # Extract description from YAML frontmatter
+        # Handle both inline and multiline (|) YAML format
+        frontmatter=$(sed -n '/^---$/,/^---$/p' "$skill_file")
+        desc_line=$(echo "$frontmatter" | grep -E '^description:' | head -1)
+
+        if [[ -n "$desc_line" ]]; then
+            # Check if it's a multiline description (ends with | or |-)
+            if echo "$desc_line" | grep -qE ':\s*\|[-]?\s*$'; then
+                # Multiline: get the first non-empty indented line after description:
+                description=$(echo "$frontmatter" | sed -n '/^description:/,/^[a-z]/p' | grep -E '^  [^ ]' | head -1 | sed 's/^  //')
+            else
+                # Inline: extract value after description:
+                description=$(echo "$desc_line" | sed 's/^description:[[:space:]]*//')
+            fi
+        fi
+
         # Truncate to first sentence or 80 chars
-        description=$(echo "$description" | cut -c1-80 | sed 's/\. .*/\./')
+        if [[ -n "$description" ]]; then
+            description=$(echo "$description" | cut -c1-80 | sed 's/\. .*/\./')
+        fi
     fi
 
     if [[ -z "$description" ]]; then
@@ -191,7 +218,7 @@ for suggestion in "${sorted_suggestions[@]:-}"; do
     fi
 
     output+="- /${skill} - ${description}"$'\n'
-    ((suggestion_count++))
+    suggestion_count=$((suggestion_count + 1))
 done
 
 # Output suggestions if any

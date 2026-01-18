@@ -4,8 +4,6 @@ use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::fs::learnings::{append_learning, Learning, LearningCategory};
-use crate::fs::memory::{extract_key_notes, read_journal};
 use crate::fs::permissions::sync_worktree_permissions;
 use crate::fs::task_state::read_task_state_if_exists;
 use crate::git::get_branch_head;
@@ -414,23 +412,6 @@ pub fn complete(
         // Mark stage as completed - only after all checks pass
         stage.try_complete(None)?;
         save_stage(&stage, work_dir)?;
-
-        // Promote key decisions from memory to learnings
-        if let Some(ref sid) = session_id {
-            if let Ok(journal) = read_journal(work_dir, sid) {
-                let decisions = extract_key_notes(&journal);
-                for decision in decisions {
-                    let learning = Learning {
-                        timestamp: chrono::Utc::now(),
-                        stage_id: stage_id.clone(),
-                        description: decision,
-                        correction: None,
-                        source: None,
-                    };
-                    let _ = append_learning(work_dir, LearningCategory::Pattern, &learning);
-                }
-            }
-        }
 
         println!("Stage '{stage_id}' completed!");
 

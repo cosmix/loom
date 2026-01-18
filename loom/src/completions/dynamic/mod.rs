@@ -87,8 +87,6 @@ pub fn complete_dynamic(ctx: &CompletionContext) -> Result<()> {
             complete_stage_ids(cwd, prefix)?
         }
 
-        "--stage" | "-s" if ctx.cmdline.contains("run") => complete_stage_ids(cwd, prefix)?,
-
         _ => Vec::new(),
     };
 
