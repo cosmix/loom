@@ -2,10 +2,16 @@
 # loom post-AskUserQuestion hook - runs after user answers a question
 # Called by Claude Code's PostToolUse hook mechanism
 #
+# Input: JSON from stdin (Claude Code passes tool info via stdin)
+#   {"tool_name": "AskUserQuestion", "tool_input": {...}, "tool_result": {...}, ...}
+#
 # Environment variables (set by loom worktree settings):
 #   LOOM_SESSION_ID - The session identifier
 #   LOOM_STAGE_ID   - The stage being worked on
 #   LOOM_WORK_DIR   - Path to .work/ directory
+
+# Drain stdin to prevent blocking (hook doesn't need tool input details)
+timeout 1 cat >/dev/null 2>&1 || true
 
 # Only run if this is a loom-managed session
 if [ -z "$LOOM_STAGE_ID" ] || [ -z "$LOOM_SESSION_ID" ]; then
