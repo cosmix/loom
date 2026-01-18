@@ -169,6 +169,7 @@ fn parse_file_type(file: &str) -> Result<KnowledgeFile> {
         "entry" | "entries" | "entry-point" | "entrypoints" => Ok(KnowledgeFile::EntryPoints),
         "pattern" | "arch" | "architecture" => Ok(KnowledgeFile::Patterns),
         "convention" | "conventions" | "code" | "coding" => Ok(KnowledgeFile::Conventions),
+        "mistake" | "mistakes" | "lessons" | "lesson" => Ok(KnowledgeFile::Mistakes),
         _ => {
             let valid_files: Vec<_> = KnowledgeFile::all().iter().map(|f| f.filename()).collect();
             bail!(
@@ -227,6 +228,27 @@ mod tests {
         assert_eq!(
             parse_file_type("entry").unwrap(),
             KnowledgeFile::EntryPoints
+        );
+        // Test mistakes and its aliases
+        assert_eq!(
+            parse_file_type("mistakes").unwrap(),
+            KnowledgeFile::Mistakes
+        );
+        assert_eq!(
+            parse_file_type("mistakes.md").unwrap(),
+            KnowledgeFile::Mistakes
+        );
+        assert_eq!(
+            parse_file_type("mistake").unwrap(),
+            KnowledgeFile::Mistakes
+        );
+        assert_eq!(
+            parse_file_type("lessons").unwrap(),
+            KnowledgeFile::Mistakes
+        );
+        assert_eq!(
+            parse_file_type("lesson").unwrap(),
+            KnowledgeFile::Mistakes
         );
         assert!(parse_file_type("unknown").is_err());
     }

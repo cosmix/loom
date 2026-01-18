@@ -14,6 +14,7 @@ pub enum KnowledgeFile {
     EntryPoints,
     Patterns,
     Conventions,
+    Mistakes,
 }
 
 impl KnowledgeFile {
@@ -23,6 +24,7 @@ impl KnowledgeFile {
             KnowledgeFile::EntryPoints => "entry-points.md",
             KnowledgeFile::Patterns => "patterns.md",
             KnowledgeFile::Conventions => "conventions.md",
+            KnowledgeFile::Mistakes => "mistakes.md",
         }
     }
 
@@ -32,6 +34,7 @@ impl KnowledgeFile {
             KnowledgeFile::EntryPoints => "Key files agents should read first",
             KnowledgeFile::Patterns => "Architectural patterns discovered in the codebase",
             KnowledgeFile::Conventions => "Coding conventions discovered in the codebase",
+            KnowledgeFile::Mistakes => "Mistakes made and lessons learned - what to avoid",
         }
     }
 
@@ -41,6 +44,7 @@ impl KnowledgeFile {
             "entry-points.md" => Some(KnowledgeFile::EntryPoints),
             "patterns.md" => Some(KnowledgeFile::Patterns),
             "conventions.md" => Some(KnowledgeFile::Conventions),
+            "mistakes.md" => Some(KnowledgeFile::Mistakes),
             _ => None,
         }
     }
@@ -51,6 +55,7 @@ impl KnowledgeFile {
             KnowledgeFile::EntryPoints,
             KnowledgeFile::Patterns,
             KnowledgeFile::Conventions,
+            KnowledgeFile::Mistakes,
         ]
     }
 }
@@ -246,6 +251,16 @@ impl KnowledgeDir {
 (Add conventions as you discover them)
 "#
             .to_string(),
+            KnowledgeFile::Mistakes => r#"# Mistakes & Lessons Learned
+
+> Record mistakes made during development and how to avoid them.
+> This file is append-only - agents add discoveries, never delete.
+>
+> Format: Describe what went wrong, why, and how to avoid it next time.
+
+(Add mistakes and lessons as you encounter them)
+"#
+            .to_string(),
         }
     }
 
@@ -272,6 +287,7 @@ mod tests {
         assert_eq!(KnowledgeFile::EntryPoints.filename(), "entry-points.md");
         assert_eq!(KnowledgeFile::Patterns.filename(), "patterns.md");
         assert_eq!(KnowledgeFile::Conventions.filename(), "conventions.md");
+        assert_eq!(KnowledgeFile::Mistakes.filename(), "mistakes.md");
     }
 
     #[test]
@@ -283,6 +299,10 @@ mod tests {
         assert_eq!(
             KnowledgeFile::from_filename("patterns.md"),
             Some(KnowledgeFile::Patterns)
+        );
+        assert_eq!(
+            KnowledgeFile::from_filename("mistakes.md"),
+            Some(KnowledgeFile::Mistakes)
         );
         assert_eq!(KnowledgeFile::from_filename("unknown.md"), None);
     }
