@@ -63,8 +63,11 @@ loom:
         2. Module boundaries: public interfaces, internal vs external
         3. Patterns: error handling, state management, data flow
         4. Conventions: naming, file structure, testing patterns
+        5. Review existing mistakes.md - learn from past errors
 
         Use loom knowledge update commands to capture findings.
+
+        REMINDER: Tell dependent stages to update knowledge with any mistakes they make.
       dependencies: []
       acceptance:
         - "grep -q '## ' doc/loom/knowledge/entry-points.md"
@@ -419,9 +422,15 @@ Build and maintain the `doc/loom/knowledge/` base BEFORE and DURING every sessio
 ┌────────────────────────────────────────────────────────────────────┐
 │  KNOWLEDGE CHECK - FIRST ACTION OF EVERY SESSION                   │
 │                                                                    │
-│  doc/loom/knowledge/ EMPTY?                                           │
+│  doc/loom/knowledge/ EMPTY?                                        │
 │  YES → Run hierarchical exploration and populate it                │
-│  NO  → Check for gaps, update with new discoveries                 │
+│  NO  → Read it. Update with new discoveries. Record mistakes.      │
+│                                                                    │
+│  RECORD TO KNOWLEDGE:                                              │
+│  - Entry points discovered                                         │
+│  - Architectural patterns found                                    │
+│  - Coding conventions learned                                      │
+│  - MISTAKES MADE and how to avoid them                             │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -434,23 +443,48 @@ Build and maintain the `doc/loom/knowledge/` base BEFORE and DURING every sessio
 
 **Commands:**
 
-| Command                                  | Description                                              |
-| ---------------------------------------- | -------------------------------------------------------- |
-| `loom knowledge init`                    | Initialize `doc/loom/knowledge/` directory               |
-| `loom knowledge list`                    | List all knowledge files                                 |
-| `loom knowledge show`                    | Show summary of all knowledge                            |
-| `loom knowledge show <file>`             | Show specific file (entry-points, patterns, conventions) |
-| `loom knowledge update <file> <content>` | Append content to a knowledge file                       |
+| Command                                  | Description                                                        |
+| ---------------------------------------- | ------------------------------------------------------------------ |
+| `loom knowledge init`                    | Initialize `doc/loom/knowledge/` directory                         |
+| `loom knowledge list`                    | List all knowledge files                                           |
+| `loom knowledge show`                    | Show summary of all knowledge                                      |
+| `loom knowledge show <file>`             | Show specific file (entry-points, patterns, conventions, mistakes) |
+| `loom knowledge update <file> <content>` | Append content to a knowledge file                                 |
+| `loom knowledge update mistakes`         | Record mistakes and lessons learned                                |
 
 **Update Examples:**
 
-| Discovery Type        | Command                                                                   |
-| --------------------- | ------------------------------------------------------------------------- |
-| Key entry point       | `loom knowledge update entry-points "## Section\n\n- path - description"` |
-| Architectural pattern | `loom knowledge update patterns "## Pattern\n\n- How it works"`           |
-| Coding convention     | `loom knowledge update conventions "## Convention\n\n- Details"`          |
+| Discovery Type        | Command                                                                                  |
+| --------------------- | ---------------------------------------------------------------------------------------- |
+| Key entry point       | `loom knowledge update entry-points "## Section\n\n- path - description"`                |
+| Architectural pattern | `loom knowledge update patterns "## Pattern\n\n- How it works"`                          |
+| Coding convention     | `loom knowledge update conventions "## Convention\n\n- Details"`                         |
+| Mistake/lesson        | `loom knowledge update mistakes "## Mistake\n\n- What happened, why, how to avoid"`      |
 
 **EVERY PLAN MUST include `knowledge-bootstrap` as the first stage** (unless knowledge already exists and is complete). See Plan Format section for the required stage definition.
+
+### Recording Mistakes (MANDATORY)
+
+When you make a mistake, IMMEDIATELY record it:
+
+```bash
+loom knowledge update mistakes "## [Short description]
+
+**What happened:** [Describe the mistake]
+**Why it happened:** [Root cause]
+**How to avoid:** [Prevention strategy]
+**Related files:** [file:line references]"
+```
+
+Examples of mistakes to record:
+
+- Tried to use deprecated API
+- Forgot to handle edge case
+- Made wrong assumption about codebase
+- Used wrong pattern for this codebase
+- Missed a required step in workflow
+
+**DO NOT** skip recording mistakes. Future sessions will thank you.
 
 ### 11. INTEGRATION VERIFICATION (MANDATORY)
 
@@ -545,10 +579,6 @@ File: 400 lines | Function: 50 lines | Class: 300 lines — Exceed = refactor im
 ### 15. SESSION STATE
 
 Update `CLAUDE.md` during work. On completion, replace updates with summary.
-
-### 16. MISTAKES LOG
-
-On any mistake: append to "MISTAKES AND LESSONS LEARNT" section. Never delete.
 
 ---
 
@@ -668,8 +698,8 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 │  4. IN WORKTREE: Commit + complete stage or hook BLOCKS exit.      │
 │     → cd to WORKTREE ROOT before running loom stage complete       │
 │                                                                    │
-│  5. KNOWLEDGE: Bootstrap if empty. Update discoveries. ALWAYS.     │
-│     READ IT FIRST!                                                 │
+│  5. KNOWLEDGE: Read first. Update continuously. RECORD MISTAKES.   │
+│     → Every mistake is a lesson. Document it or repeat it.         │
 │                                                                    │
 │  6. USE PARALLEL SUBAGENTS. ALWAYS WHENEVER POSSIBLE.              │
 │                                                                    │

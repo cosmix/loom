@@ -393,22 +393,18 @@ loom run [--stage <id>] [--manual] [--max-parallel <n>] [--watch] [--foreground]
 # - --no-merge: disable auto-merge of completed stages
 
 # Live dashboard - shows plan progress and session health
-loom status
+loom status [--live] [--compact] [--verbose]
 # - Connects to daemon via Unix socket
-# - Updates continuously until Ctrl+C
 # - Shows: stage states, session health, context levels
+# - --live: subscribe to daemon for real-time updates
+# - --compact: single-line output for scripting
+# - --verbose: show detailed failure information
 
 # Stop the running daemon
 loom stop
 # - Sends graceful shutdown signal to daemon
 # - Terminates all running sessions
 # - Cleans up socket and PID files
-
-# Human verification gate
-loom verify <stage-id>
-# - Runs acceptance criteria
-# - Human approves/rejects
-# - Triggers dependent stages if approved
 
 # Resume from handoff
 loom resume <stage-id>
@@ -437,6 +433,11 @@ loom attach logs
 #   - --windows: legacy window-per-session mode instead of tiled panes
 #   - --layout: layout for tiled view (tiled, horizontal, vertical)
 # - logs: stream daemon logs in real-time
+
+# Diagnose a failed stage with Claude Code
+loom diagnose <stage-id>
+# - Spawns Claude Code session to analyze failure
+# - Provides context from last session and error logs
 ```
 
 ### Secondary Commands
@@ -445,7 +446,11 @@ Power user commands for fine-grained control:
 
 ```bash
 # Session management
-loom sessions [list|kill <id>]
+loom sessions list
+loom sessions kill <id>... [--stage <stage-id>]
+# - list: list all active sessions
+# - kill: kill one or more sessions by ID
+#   - --stage: kill all sessions for a specific stage
 
 # Worktree management
 loom worktree [list|clean|remove <stage-id>]
@@ -457,17 +462,29 @@ loom worktree [list|clean|remove <stage-id>]
 # View/edit execution graph
 loom graph [show|edit]
 
+# Manage loom hooks
+loom hooks install
+loom hooks list
+# - install: install hook scripts to ~/.claude/hooks/loom/ and configure permissions
+# - list: list available hooks and their status
+
 # Force stage state transitions
-loom stage complete <stage-id> [--session <id>] [--no-verify]
+loom stage complete <stage-id> [--session <id>] [--no-verify] [--force-unsafe] [--assume-merged]
 loom stage block <stage-id> <reason>
 loom stage reset <stage-id> [--hard] [--kill-session]
 loom stage hold <stage-id>
 loom stage release <stage-id>
 loom stage waiting <stage-id>
 loom stage resume <stage-id>
+loom stage skip <stage-id> [--reason <reason>]
+loom stage retry <stage-id> [--force]
+loom stage recover <stage-id> [--force]
+loom stage merge-complete <stage-id>
 # - complete: mark stage complete, auto-verify if acceptance passes
 #   - --session: mark associated session complete too
 #   - --no-verify: skip acceptance criteria (marks Completed, not Verified)
+#   - --force-unsafe: force completion from any state (use only for recovery)
+#   - --assume-merged: with --force-unsafe, also mark as merged
 #   - When acceptance passes: auto-transitions to Verified, triggers dependents
 #   - When acceptance fails: stays Completed for manual review
 # - block: block stage with reason
@@ -478,6 +495,31 @@ loom stage resume <stage-id>
 # - release: allow held stage to execute
 # - waiting: mark as waiting for user input (used by hooks)
 # - resume: resume from waiting state (used by hooks)
+# - skip: skip a stage (dependents will remain blocked)
+# - retry: retry a blocked stage (--force ignores retry limit)
+# - recover: manually trigger recovery for a crashed/hung stage
+# - merge-complete: complete merge conflict resolution
+
+# Stage outputs (structured values passed to dependent stages)
+loom stage output set <stage-id> <key> <value> [--description <desc>]
+loom stage output get <stage-id> <key>
+loom stage output list <stage-id>
+loom stage output remove <stage-id> <key>
+
+# Shared facts across stages
+loom fact set <key> <value> [--stage <id>] [--confidence <level>]
+loom fact get <key>
+loom fact list [--stage <id>]
+# - set: store a key-value fact (confidence: low, medium, high)
+# - get: retrieve a fact by key
+# - list: list all facts (optionally filtered by stage)
+
+# Checkpoints for task completion signaling
+loom checkpoint create <task-id> [--status <status>] [--force] [--output KEY=VALUE]... [--notes <text>]
+loom checkpoint list [--session <id>]
+# - create: signal task completion with optional outputs
+#   - status: completed, blocked, needs_help (default: completed)
+# - list: list checkpoints for a session
 
 # Clean up resources
 loom clean [--all] [--worktrees] [--sessions] [--state]
@@ -487,10 +529,53 @@ loom clean [--all] [--worktrees] [--sessions] [--state]
 # - --state: remove .work/ only
 ```
 
+### Knowledge Management Commands
+
+Commands for managing curated codebase knowledge:
+
+```bash
+# Manage curated codebase knowledge
+loom knowledge init
+loom knowledge list
+loom knowledge show [file]
+loom knowledge update <file> <content>
+# - init: initialize doc/loom/knowledge/ directory
+# - list: list all knowledge files
+# - show: show summary or specific file (entry-points, patterns, conventions)
+# - update: append content to a knowledge file
+#
+# Knowledge files should capture:
+#   - Entry points: Key files to read first, main modules, directory layout
+#   - Architectural patterns: Error handling, state management, data flow
+#   - Coding conventions: Naming, file structure, testing patterns
+#   - Mistakes and lessons learned: What went wrong, how to avoid it
+#   - Architecture decisions: Design rationale and tradeoffs
+#
+# This curated knowledge base helps agents understand the codebase quickly
+# and avoid repeating past mistakes.
+
+# Session memory journal (notes, decisions, questions)
+loom memory note <text> [--session <id>]
+loom memory decision <text> [--context <rationale>] [--session <id>]
+loom memory question <text> [--session <id>]
+loom memory query <search> [--session <id>]
+loom memory list [--session <id>] [--entry-type <type>]
+loom memory show [--session <id>]
+loom memory sessions
+# - note: record a note
+# - decision: record a decision with optional rationale
+# - question: record an open question
+# - query: search memory entries
+# - list: list entries (filter by: note, decision, question)
+# - show: show full memory journal
+# - sessions: list all memory journals
+```
+
 ### Utility Commands
 
 ```bash
 loom self-update             # Update loom CLI, agents, skills, and config
+loom completions <shell>     # Generate shell completion script (bash, zsh, fish)
 ```
 
 ## Plan Document Format
@@ -601,23 +686,13 @@ loom status
 loom attach logs
 # Streams real-time logs from the orchestrator
 
-# 6. Verify completed stages (only needed if auto-verification failed)
-# With --watch mode, stages auto-verify when acceptance passes.
-# Manual verify is only needed when acceptance failed or --no-verify was used.
-loom verify stage-1
-# Output: Running acceptance criteria...
-#         All acceptance criteria passed!
-#         Approve this stage? (y/n): y
-#         Stage approved! Transitioning to Verified status...
-#         Triggered 1 dependent stage: stage-2
-
-# 7. Merge completed work to main
+# 6. Merge completed work to main
 loom merge stage-1
 # Output: Merging worktree branch loom/stage-1 to main...
 #         Merge successful!
 #         Removing worktree...
 
-# 8. Stop the daemon when done
+# 7. Stop the daemon when done
 loom stop
 # Output: Stopping daemon (PID 12345)...
 #         Daemon stopped.
@@ -628,7 +703,7 @@ loom stop
 # - Exits gracefully
 # - loom run or loom resume continues seamlessly
 
-# 9. (Optional) Hold a stage to prevent auto-execution
+# 8. (Optional) Hold a stage to prevent auto-execution
 loom stage hold stage-3
 # Stage 'stage-3' held
 # The stage will not auto-execute. Use 'loom stage release stage-3' to unlock.
