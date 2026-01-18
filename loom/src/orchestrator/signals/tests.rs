@@ -165,7 +165,6 @@ fn test_format_signal_content_with_embedded_context() {
         knowledge_exists: false,
         knowledge_is_empty: true,
         task_state: None,
-        learnings_content: None,
         memory_content: None,
         skill_recommendations: Vec::new(),
     };
@@ -208,7 +207,6 @@ fn test_format_signal_content_with_facts() {
         knowledge_exists: false,
         knowledge_is_empty: true,
         task_state: None,
-        learnings_content: None,
         memory_content: None,
         skill_recommendations: Vec::new(),
     };
@@ -746,7 +744,6 @@ fn test_signal_sections_ordering() {
     let worktree = create_test_worktree();
     let embedded_context = EmbeddedContext {
         memory_content: Some("Test memory content".to_string()),
-        learnings_content: Some("Test learnings".to_string()),
         ..Default::default()
     };
 
@@ -764,23 +761,23 @@ fn test_signal_sections_ordering() {
 
     // Verify section ordering (Manus pattern):
     // 1. STABLE: Worktree Context, Execution Rules
-    // 2. SEMI-STABLE: Knowledge, Facts, Learnings
+    // 2. SEMI-STABLE: Knowledge, Facts
     // 3. DYNAMIC: Target, Assignment, Acceptance
     // 4. RECITATION: Immediate Tasks, Session Memory (at END)
 
     let worktree_pos = content.find("## Worktree Context").unwrap();
     let execution_pos = content.find("## Execution Rules").unwrap();
-    let learnings_pos = content.find("## Recent Learnings").unwrap();
+    let knowledge_pos = content.find("## Knowledge Management").unwrap();
     let target_pos = content.find("## Target").unwrap();
     let tasks_pos = content.find("## Immediate Tasks").unwrap();
     let memory_pos = content.find("## Session Memory").unwrap();
 
     // Stable before semi-stable
-    assert!(worktree_pos < learnings_pos);
-    assert!(execution_pos < learnings_pos);
+    assert!(worktree_pos < knowledge_pos);
+    assert!(execution_pos < knowledge_pos);
 
     // Semi-stable before dynamic
-    assert!(learnings_pos < target_pos);
+    assert!(knowledge_pos < target_pos);
 
     // Recitation at end (tasks and memory are last)
     assert!(target_pos < tasks_pos);

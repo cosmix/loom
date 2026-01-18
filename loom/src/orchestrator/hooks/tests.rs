@@ -110,8 +110,8 @@ mod config_tests {
         );
 
         let hooks = config.to_settings_hooks();
-        // Should have hook events: PreToolUse, PostToolUse, PreCompact, Stop, SubagentStop
-        assert!(hooks.len() >= 4);
+        // Should have hook events: SessionStart, PostToolUse, PreCompact, SessionEnd, Stop, SubagentStop
+        assert!(hooks.len() >= 6);
 
         // Check PreCompact hook exists
         assert!(hooks.contains_key("PreCompact"));
@@ -124,10 +124,10 @@ mod config_tests {
         let stop_rules = &hooks["Stop"];
         assert!(!stop_rules.is_empty());
 
-        // Check PreToolUse has Bash matcher
-        assert!(hooks.contains_key("PreToolUse"));
-        let pre_tool_rules = &hooks["PreToolUse"];
-        assert!(pre_tool_rules.iter().any(|r| r.matcher == "Bash"));
+        // Check PostToolUse has * matcher
+        assert!(hooks.contains_key("PostToolUse"));
+        let post_tool_rules = &hooks["PostToolUse"];
+        assert!(post_tool_rules.iter().any(|r| r.matcher == "*"));
     }
 }
 
@@ -241,10 +241,12 @@ mod generator_tests {
 
         // Check hooks is a record (object) not an array
         assert!(settings["hooks"].is_object());
-        assert!(settings["hooks"]["PreToolUse"].is_array());
+        assert!(settings["hooks"]["SessionStart"].is_array());
         assert!(settings["hooks"]["PostToolUse"].is_array());
         assert!(settings["hooks"]["PreCompact"].is_array());
+        assert!(settings["hooks"]["SessionEnd"].is_array());
         assert!(settings["hooks"]["Stop"].is_array());
+        assert!(settings["hooks"]["SubagentStop"].is_array());
 
         // Check environment variables
         assert_eq!(settings["env"]["LOOM_STAGE_ID"], json!("stage"));
@@ -308,7 +310,7 @@ mod generator_tests {
 
         assert_eq!(settings["env"]["LOOM_STAGE_ID"], json!("test-stage"));
         assert!(settings["hooks"].is_object());
-        assert!(settings["hooks"]["PreToolUse"].is_array());
+        assert!(settings["hooks"]["PostToolUse"].is_array());
     }
 
     #[test]
@@ -360,17 +362,18 @@ mod generator_tests {
 
         let settings = generate_hooks_settings(&config, Some(&existing)).unwrap();
 
-        // Check that global hooks are preserved
+        // Check that global hooks are preserved in PreToolUse
         let pre_tool_hooks = settings["hooks"]["PreToolUse"].as_array().unwrap();
         assert!(pre_tool_hooks.iter().any(|h| {
             h["matcher"] == "AskUserQuestion"
                 && h["hooks"][0]["command"] == "/global/ask-user-pre.sh"
-        }));
+        }), "Global ask-user-pre hook should be preserved");
 
-        // Check that session hooks are added
-        assert!(pre_tool_hooks.iter().any(|h| {
-            h["matcher"] == "Bash" && h["hooks"][0]["command"].as_str().unwrap().contains("session-start.sh")
-        }));
+        // Check that session hooks are added (SessionStart uses PostToolUse, not PreToolUse)
+        let session_start_hooks = settings["hooks"]["SessionStart"].as_array().unwrap();
+        assert!(session_start_hooks.iter().any(|h| {
+            h["hooks"][0]["command"].as_str().unwrap().contains("session-start.sh")
+        }), "Session start hook should be added");
 
         // Check Stop event has both global and session hooks
         let stop_hooks = settings["hooks"]["Stop"].as_array().unwrap();
@@ -379,10 +382,10 @@ mod generator_tests {
         }), "Global commit-guard hook should be preserved");
         assert!(stop_hooks.iter().any(|h| {
             h["hooks"][0]["command"].as_str().unwrap().contains("learning-validator.sh")
-        }), "Session learning-validator hook should be added");
+        }), "Session stop hook should be added");
 
         // Verify we have both hooks on Stop event
-        assert!(stop_hooks.len() >= 2, "Stop event should have at least 2 hooks (commit-guard + learning-validator)");
+        assert!(stop_hooks.len() >= 2, "Stop event should have at least 2 hooks (commit-guard + stop hook)");
     }
 
     #[test]
@@ -401,8 +404,8 @@ mod generator_tests {
         let settings2 = generate_hooks_settings(&config, Some(&settings1)).unwrap();
 
         // Hooks should not be duplicated
-        let hooks1 = settings1["hooks"]["PreToolUse"].as_array().unwrap();
-        let hooks2 = settings2["hooks"]["PreToolUse"].as_array().unwrap();
+        let hooks1 = settings1["hooks"]["PostToolUse"].as_array().unwrap();
+        let hooks2 = settings2["hooks"]["PostToolUse"].as_array().unwrap();
         assert_eq!(hooks1.len(), hooks2.len(), "Re-running should not duplicate hooks");
 
         let stop_hooks1 = settings1["hooks"]["Stop"].as_array().unwrap();

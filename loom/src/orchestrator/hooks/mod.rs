@@ -2,7 +2,6 @@
 //!
 //! This module provides hooks integration that enables:
 //! - Auto-handoff on PreCompact (context exhaustion)
-//! - Learning protection via Stop hook
 //! - Session lifecycle tracking via event logging
 //!
 //! ## Hook Events
@@ -11,8 +10,8 @@
 //! - `SessionStart`: Called when a Claude Code session starts
 //! - `PreCompact`: Called before context compaction (triggers handoff)
 //! - `SessionEnd`: Called when a session ends normally
-//! - `Stop`: Called when session is stopping (validates learnings)
-//! - `SubagentStop`: Called when a subagent stops (extracts learnings)
+//! - `Stop`: Called when session is stopping
+//! - `SubagentStop`: Called when a subagent stops
 //!
 //! ## Configuration
 //!

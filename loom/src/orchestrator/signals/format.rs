@@ -81,7 +81,7 @@ pub fn format_signal_with_metrics(
 }
 
 /// SEMI-STABLE section: Changes per stage, not per session
-/// Contains knowledge map references, facts, and learnings from learning loop
+/// Contains knowledge map references and facts
 fn format_semi_stable_section(embedded_context: &EmbeddedContext) -> String {
     let mut content = String::new();
 
@@ -163,16 +163,6 @@ fn format_semi_stable_section(embedded_context: &EmbeddedContext) -> String {
         );
     }
 
-    // Embed learnings from learning loop (semi-stable - accumulated wisdom)
-    if let Some(learnings_content) = &embedded_context.learnings_content {
-        content.push_str("## Recent Learnings\n\n");
-        content.push_str("**REVIEW THESE BEFORE STARTING** - Lessons from previous sessions:\n\n");
-        content.push_str(learnings_content);
-        content.push_str("To record a new learning:\n");
-        content.push_str("- `loom learn mistake \"description\" [--correction \"fix\"]`\n");
-        content.push_str("- `loom learn pattern \"description\"`\n");
-        content.push_str("- `loom learn convention \"description\"`\n\n");
-    }
 
     // Embed skill recommendations (semi-stable - based on stage description)
     if !embedded_context.skill_recommendations.is_empty() {

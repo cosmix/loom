@@ -1,7 +1,7 @@
 //! Hooks configuration types and definitions.
 //!
 //! Defines the structure for Claude Code hooks that loom uses for
-//! session lifecycle management and learning protection.
+//! session lifecycle management.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -19,9 +19,9 @@ pub enum HookEvent {
     PreCompact,
     /// Called when a session ends normally
     SessionEnd,
-    /// Called when session is stopping (validates learnings)
+    /// Called when session is stopping
     Stop,
-    /// Called when a subagent stops (extracts learnings)
+    /// Called when a subagent stops
     SubagentStop,
     /// Called before Bash tool use to suggest modern CLI tools (fd/rg)
     PreferModernTools,
@@ -153,8 +153,8 @@ impl HooksConfig {
     /// - PostToolUse (heartbeat update)
     /// - PreCompact (handoff trigger)
     /// - SessionEnd (cleanup)
-    /// - Stop (learning-validator)
-    /// - SubagentStop (learning extraction)
+    /// - Stop
+    /// - SubagentStop
     ///
     /// Returns a map of event type to hook rules.
     pub fn to_settings_hooks(&self) -> std::collections::HashMap<String, Vec<HookRule>> {
@@ -210,7 +210,7 @@ impl HooksConfig {
                 }],
             });
 
-        // Stop hook - runs when session is stopping (learning-validator.sh)
+        // Stop hook - runs when session is stopping
         // Note: commit-guard.sh is a global hook and should already be in settings.json
         hooks_map
             .entry("Stop".to_string())

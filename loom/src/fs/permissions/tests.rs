@@ -126,9 +126,9 @@ fn test_hooks_config_structure() {
     let hooks = loom_hooks_config();
     let hooks_obj = hooks.as_object().unwrap();
 
-    // Check PreToolUse hooks (AskUserQuestion for stage status, Bash for prefer-modern-tools)
+    // Check PreToolUse hooks (AskUserQuestion for stage status, Bash for prefer-modern-tools, Bash for commit-filter)
     let pre_tool = hooks_obj.get("PreToolUse").unwrap().as_array().unwrap();
-    assert_eq!(pre_tool.len(), 2);
+    assert_eq!(pre_tool.len(), 3);
     // First hook: AskUserQuestion matcher with ask-user-pre.sh
     assert_eq!(pre_tool[0]["matcher"], "AskUserQuestion");
     assert!(pre_tool[0]["hooks"][0]["command"]
@@ -141,6 +141,12 @@ fn test_hooks_config_structure() {
         .as_str()
         .unwrap()
         .contains("prefer-modern-tools.sh"));
+    // Third hook: Bash matcher with commit-filter.sh
+    assert_eq!(pre_tool[2]["matcher"], "Bash");
+    assert!(pre_tool[2]["hooks"][0]["command"]
+        .as_str()
+        .unwrap()
+        .contains("commit-filter.sh"));
 
     // Check PostToolUse hooks (only AskUserQuestion for resume in global config)
     // Session-specific post-tool-use.sh (Bash) is merged at worktree creation
@@ -263,7 +269,6 @@ fn test_install_loom_hooks_creates_hook_files() {
     if worktree_hooks_dir.exists() {
         assert!(worktree_hooks_dir.join("post-tool-use.sh").exists());
         assert!(worktree_hooks_dir.join("session-start.sh").exists());
-        assert!(worktree_hooks_dir.join("learning-validator.sh").exists());
     }
 }
 

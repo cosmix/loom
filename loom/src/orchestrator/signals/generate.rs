@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 
 use crate::fs::facts::FactsStore;
 use crate::fs::knowledge::KnowledgeDir;
-use crate::fs::learnings::format_learnings_for_signal;
 use crate::fs::memory::format_memory_for_signal;
 use crate::fs::task_state::read_task_state_if_exists;
 use crate::handoff::git_handoff::GitHistory;
@@ -186,9 +185,6 @@ pub fn build_embedded_context_with_stage_and_session(
             context.task_state = Some(task_state);
         }
     }
-
-    // Read recent learnings for recitation (last 3 per category)
-    context.learnings_content = format_learnings_for_signal(work_dir, 3);
 
     // Read recent memory entries for recitation (Manus pattern - last 10 entries)
     // This keeps important session context in the attention window

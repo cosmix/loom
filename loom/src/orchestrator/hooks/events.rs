@@ -58,10 +58,7 @@ pub enum HookEventPayload {
     },
     /// Stop event data
     Stop {
-        /// Whether learning protection passed
-        #[serde(skip_serializing_if = "Option::is_none")]
-        learnings_intact: Option<bool>,
-        /// Error message if learning protection failed
+        /// Error message if stop failed
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<String>,
     },
@@ -70,9 +67,6 @@ pub enum HookEventPayload {
         /// Subagent type
         #[serde(skip_serializing_if = "Option::is_none")]
         subagent_type: Option<String>,
-        /// Learnings extracted
-        #[serde(skip_serializing_if = "Option::is_none")]
-        learnings_count: Option<u32>,
     },
     /// Generic payload for custom data
     Custom {
