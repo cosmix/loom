@@ -607,7 +607,7 @@ impl TuiApp {
             let area = frame.area();
 
             // Layout with breathing room:
-            // - Compact header (1 line)
+            // - Header with logo (5 lines: 4 logo + 1 progress)
             // - Spacer (1 line)
             // - Execution graph (fixed height for stability)
             // - Spacer (1 line)
@@ -616,7 +616,7 @@ impl TuiApp {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(1),                // Compact header with inline progress
+                    Constraint::Length(5),                // Header with logo and progress
                     Constraint::Length(1),                // Spacer
                     Constraint::Length(GRAPH_AREA_HEIGHT), // Execution graph (fixed)
                     Constraint::Length(1),                // Spacer
@@ -672,7 +672,7 @@ impl Drop for TuiApp {
     }
 }
 
-/// Render compact header with inline progress
+/// Render compact header with logo and inline progress
 fn render_compact_header(
     frame: &mut Frame,
     area: Rect,
@@ -683,16 +683,21 @@ fn render_compact_header(
 ) {
     let progress_str = format!("{completed_count}/{total} ({:.0}%)", pct * 100.0);
 
-    let header_line = Line::from(vec![
-        Span::styled(format!("{spinner} "), Theme::header()),
-        Span::styled("Loom", Theme::header()),
-        Span::raw(" │ "),
+    // Build lines: logo lines + progress line
+    let mut lines: Vec<Line> = crate::LOGO
+        .lines()
+        .map(|l| Line::from(Span::styled(l, Theme::header())))
+        .collect();
+
+    // Add progress line after logo
+    lines.push(Line::from(vec![
+        Span::styled(format!("   {spinner} "), Theme::header()),
         Span::styled(progress_str, Style::default().fg(StatusColors::COMPLETED)),
         Span::raw(" "),
         Span::styled(progress_bar_compact(pct, 20), Theme::status_completed()),
-    ]);
+    ]));
 
-    let header = Paragraph::new(header_line);
+    let header = Paragraph::new(lines);
     frame.render_widget(header, area);
 }
 

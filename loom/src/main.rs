@@ -10,10 +10,23 @@ use loom::validation::{clap_description_validator, clap_id_validator};
 use std::path::PathBuf;
 use std::str::FromStr;
 
+const HELP_TEMPLATE: &str = "
+   ╷
+   │  ┌─┐┌─┐┌┬┐
+   │  │ ││ ││││
+   ┴─┘└─┘└─┘┴ ┴
+
+{about-with-newline}
+{usage-heading} {usage}
+
+{all-args}{after-help}";
+
 #[derive(Parser)]
 #[command(name = "loom")]
-#[command(about = "Self-propelling agent orchestration CLI", long_about = None)]
+#[command(about = "Agent orchestration CLI", long_about = None)]
 #[command(version)]
+#[command(help_template = HELP_TEMPLATE)]
+#[command(subcommand_help_heading = "Commands")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
