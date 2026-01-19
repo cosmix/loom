@@ -75,6 +75,9 @@ This skill provides:
 │  □ Tasks with file overlap → SEPARATE stages (DAG)                 │
 │  □ Each stage description includes EXPLICIT execution plan         │
 │  □ Execution plan specifies: subagents, file ownership, criteria   │
+│  □ ACCEPTANCE CRITERIA: Verify working_dir + paths are correct!    │
+│    → Does Cargo.toml/package.json exist at working_dir?            │
+│    → Are file paths relative to working_dir (not project root)?    │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -230,7 +233,18 @@ description: |
 
 Stage definitions become agent signals: `description` → tasks, `acceptance` → criteria, `files` → scope.
 
-#### Acceptance Criteria Working Directory
+#### Acceptance Criteria: Working Directory & Command Design
+
+```text
+┌────────────────────────────────────────────────────────────────────┐
+│  ⚠️ ACCEPTANCE CRITERIA FAIL MORE FROM BAD COMMANDS THAN BAD CODE  │
+│                                                                    │
+│  Before writing acceptance criteria, THINK:                        │
+│  1. What is my working_dir? Where will commands execute?           │
+│  2. Do the files/paths in my commands EXIST relative to that dir?  │
+│  3. Will the command output what I expect to match?                │
+└────────────────────────────────────────────────────────────────────┘
+```
 
 The `working_dir` field is **REQUIRED** on every stage. This forces explicit choice of where acceptance criteria run:
 
@@ -241,20 +255,94 @@ working_dir: "loom"   # Run from loom/ subdirectory
 
 **Why required?** Prevents acceptance failures due to forgotten directory context. Every stage must consciously declare its execution directory.
 
-**Examples:**
+##### Common Mistakes and Fixes
+
+| Mistake | Why It Fails | Fix |
+|---------|--------------|-----|
+| `cargo test` with `working_dir: "."` but Cargo.toml in `loom/` | Command runs in wrong directory | Set `working_dir: "loom"` |
+| `grep -q 'pattern' src/file.rs` but file created in `loom/src/` | Path doesn't exist relative to working_dir | Use `grep -q 'pattern' loom/src/file.rs` OR set `working_dir: "loom"` |
+| `test -f new-feature.rs` | Missing directory prefix | Use `test -f src/new-feature.rs` |
+| `./target/debug/myapp --help` | target/ may be in subdirectory | Use full path: `./loom/target/debug/myapp --help` |
+| `npm test` in monorepo | Package.json in subdirectory | Set `working_dir: "packages/app"` |
+
+##### Acceptance Criteria Checklist
+
+Before finalizing acceptance criteria, verify each command:
+
+```text
+□ working_dir is set correctly for where build tools expect to run
+□ All file paths are relative to working_dir (not to project root)
+□ Commands that produce output: grep/test patterns match actual output
+□ Binary paths include the correct subdirectory prefix
+□ For grep: pattern is correctly escaped and uses -q for silent mode
+□ For test -f: path includes full relative path from working_dir
+```
+
+##### Examples
 
 ```yaml
-# Project with Cargo.toml at root
+# ❌ WRONG: Cargo.toml is in loom/ but working_dir is root
 - id: build-check
   acceptance:
-    - "cargo test"
+    - "cargo test"           # FAILS: no Cargo.toml here
+    - "grep -q 'fn new' src/lib.rs"  # FAILS: file is in loom/src/
   working_dir: "."
 
-# Project with Cargo.toml in loom/ subdirectory
+# ✅ CORRECT: Set working_dir to where Cargo.toml lives
 - id: build-check
   acceptance:
-    - "cargo test"
+    - "cargo test"           # WORKS: Cargo.toml is here
+    - "grep -q 'fn new' src/lib.rs"  # WORKS: relative to loom/
   working_dir: "loom"
+
+# ✅ ALSO CORRECT: Keep root working_dir, use full paths
+- id: build-check
+  acceptance:
+    - "cd loom && cargo test"
+    - "grep -q 'fn new' loom/src/lib.rs"
+  working_dir: "."
+```
+
+##### Verifying New Files/Functions
+
+When acceptance criteria check for newly created code:
+
+```yaml
+# ❌ WRONG: Checking for function without correct path
+acceptance:
+  - "grep -q 'pub fn verify' src/verify.rs"  # Where is src/verify.rs?
+
+# ✅ CORRECT: Explicit path relative to working_dir
+acceptance:
+  - "grep -q 'pub fn verify' src/commands/verify.rs"
+working_dir: "loom"
+
+# ✅ ALSO CORRECT: Using test -f for file existence
+acceptance:
+  - "test -f src/commands/verify.rs"
+  - "grep -q 'pub fn verify' src/commands/verify.rs"
+working_dir: "loom"
+```
+
+##### Testing CLI Commands
+
+When acceptance criteria invoke built binaries:
+
+```yaml
+# ❌ WRONG: Binary path assumes root working_dir
+acceptance:
+  - "./target/debug/loom verify --help"
+working_dir: "."  # But target/ is in loom/!
+
+# ✅ CORRECT: Binary path matches where cargo builds
+acceptance:
+  - "./target/debug/loom verify --help"
+working_dir: "loom"
+
+# ✅ ALSO CORRECT: Full path from root
+acceptance:
+  - "./loom/target/debug/loom verify --help"
+working_dir: "."
 ```
 
 **Mixed directories?** Create separate stages instead of inline `cd`. Each stage = one working directory.
@@ -768,6 +856,11 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 │     → TESTS PASSING ≠ FEATURE WORKING                              │
 │     → MUST include FUNCTIONAL verification (smoke test, wiring)    │
 │     → Code that compiles but is never wired up is USELESS          │
+│                                                                    │
+│  10. ACCEPTANCE CRITERIA: Think before you write them!             │
+│     → What is working_dir? Commands run FROM there.                │
+│     → Do paths EXIST relative to working_dir?                      │
+│     → Wrong dir/paths = failing criteria even with correct code.   │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
