@@ -1,5 +1,4 @@
 pub mod checkpoints;
-pub mod facts;
 pub mod knowledge;
 pub mod memory;
 pub mod permissions;

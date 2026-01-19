@@ -174,18 +174,6 @@ fn format_semi_stable_section(embedded_context: &EmbeddedContext) -> String {
     content.push_str("| Coding convention | `loom knowledge update conventions \"## Convention\\n\\n- Details\"` |\n");
     content.push_str("| Mistake/lesson | `loom knowledge update mistakes \"## What happened\\n\\n- Details\"` |\n\n");
 
-    // Embed facts for this stage (semi-stable - facts accumulate but rarely change)
-    if let Some(facts_content) = &embedded_context.facts_content {
-        content.push_str("## Known Facts\n\n");
-        content.push_str("These facts were recorded by previous stages or this stage. High-confidence facts from other stages are included.\n\n");
-        content.push_str(facts_content);
-        content.push('\n');
-        content.push_str(
-            "To add a new fact: `loom fact set <key> <value> [--confidence high|medium|low]`\n\n",
-        );
-    }
-
-
     // Embed skill recommendations (semi-stable - based on stage description)
     if !embedded_context.skill_recommendations.is_empty() {
         content.push_str(&format_skill_recommendations(

@@ -2,7 +2,6 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::fs::facts::FactsStore;
 use crate::fs::knowledge::KnowledgeDir;
 use crate::fs::memory::format_memory_for_signal;
 use crate::fs::task_state::read_task_state_if_exists;
@@ -158,13 +157,6 @@ pub fn build_embedded_context_with_stage_and_session(
 
     // Read plan overview from config.toml and the plan file
     context.plan_overview = read_plan_overview(work_dir);
-
-    // Read relevant facts for this stage (uses stage_id for ownership filtering)
-    if let Some(stage_id) = stage_id {
-        if let Ok(facts_store) = FactsStore::load(work_dir) {
-            context.facts_content = facts_store.format_for_signal(stage_id);
-        }
-    }
 
     // Read knowledge summary if knowledge directory exists
     let project_root = work_dir.parent().unwrap_or(work_dir);

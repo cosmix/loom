@@ -160,7 +160,6 @@ fn test_format_signal_content_with_embedded_context() {
         handoff_content: Some("# Handoff\nPrevious session completed tasks A and B.".to_string()),
         parsed_handoff: None,
         plan_overview: Some("# Plan Title\n\n## Overview\nThis plan does X.".to_string()),
-        facts_content: None,
         knowledge_summary: None,
         knowledge_exists: false,
         knowledge_is_empty: true,
@@ -189,42 +188,6 @@ fn test_format_signal_content_with_embedded_context() {
     assert!(content.contains("<handoff>"));
     assert!(content.contains("Previous session completed tasks A and B."));
     assert!(content.contains("</handoff>"));
-}
-
-#[test]
-fn test_format_signal_content_with_facts() {
-    let session = create_test_session();
-    let stage = create_test_stage();
-    let worktree = create_test_worktree();
-    let embedded_context = EmbeddedContext {
-        handoff_content: None,
-        parsed_handoff: None,
-        plan_overview: None,
-        facts_content: Some(
-            "| Key | Value | Source | Confidence |\n|-----|-------|--------|------------|\n| auth_pattern | JWT tokens | implement-auth | high |\n".to_string(),
-        ),
-        knowledge_summary: None,
-        knowledge_exists: false,
-        knowledge_is_empty: true,
-        task_state: None,
-        memory_content: None,
-        skill_recommendations: Vec::new(),
-    };
-
-    let content = format_signal_content(
-        &session,
-        &stage,
-        &worktree,
-        &[],
-        None,
-        None,
-        &embedded_context,
-    );
-
-    assert!(content.contains("## Known Facts"));
-    assert!(content.contains("auth_pattern"));
-    assert!(content.contains("JWT tokens"));
-    assert!(content.contains("loom fact set"));
 }
 
 #[test]

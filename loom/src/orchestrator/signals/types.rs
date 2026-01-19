@@ -13,8 +13,6 @@ pub struct EmbeddedContext {
     pub parsed_handoff: Option<HandoffV2>,
     /// Plan overview extracted from the plan file
     pub plan_overview: Option<String>,
-    /// Relevant facts for this stage (formatted as markdown table)
-    pub facts_content: Option<String>,
     /// Knowledge summary from doc/loom/knowledge/ files
     pub knowledge_summary: Option<String>,
     /// Whether the knowledge directory exists

@@ -2,8 +2,8 @@ use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 use loom::checkpoints::CheckpointStatus;
 use loom::commands::{
-    attach, checkpoint, clean, diagnose, fact, graph, hooks, init, knowledge, memory, merge,
-    resume, run, self_update, sessions, stage, status, stop, worktree_cmd,
+    attach, checkpoint, clean, diagnose, graph, hooks, init, knowledge, memory, merge, resume,
+    run, self_update, sessions, stage, status, stop, worktree_cmd,
 };
 use loom::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use loom::validation::{clap_description_validator, clap_id_validator};
@@ -147,12 +147,6 @@ enum Commands {
     Stage {
         #[command(subcommand)]
         command: StageCommands,
-    },
-
-    /// Manage shared facts across stages
-    Fact {
-        #[command(subcommand)]
-        command: FactCommands,
     },
 
     /// Manage curated codebase knowledge
@@ -468,39 +462,6 @@ enum OutputCommands {
 }
 
 #[derive(Subcommand)]
-enum FactCommands {
-    /// Set a fact (key-value pair shared across stages)
-    Set {
-        /// Fact key (alphanumeric, dash, underscore only; max 64 characters)
-        key: String,
-
-        /// Fact value (max 500 characters)
-        value: String,
-
-        /// Stage ID that owns this fact (auto-detected from worktree if not provided)
-        #[arg(short, long, value_parser = clap_id_validator)]
-        stage: Option<String>,
-
-        /// Confidence level: low, medium (default), high
-        #[arg(short, long)]
-        confidence: Option<String>,
-    },
-
-    /// Get a fact by key
-    Get {
-        /// Fact key to retrieve
-        key: String,
-    },
-
-    /// List facts (optionally filtered by stage)
-    List {
-        /// Filter by stage ID
-        #[arg(short, long, value_parser = clap_id_validator)]
-        stage: Option<String>,
-    },
-}
-
-#[derive(Subcommand)]
 enum CheckpointCommands {
     /// Create a checkpoint to signal task completion
     Create {
@@ -749,16 +710,6 @@ fn main() -> Result<()> {
                 OutputCommands::List { stage_id } => stage::output_list(stage_id),
                 OutputCommands::Remove { stage_id, key } => stage::output_remove(stage_id, key),
             },
-        },
-        Commands::Fact { command } => match command {
-            FactCommands::Set {
-                key,
-                value,
-                stage,
-                confidence,
-            } => fact::set(key, value, stage, confidence),
-            FactCommands::Get { key } => fact::get(key),
-            FactCommands::List { stage } => fact::list(stage),
         },
         Commands::Knowledge { command } => match command {
             KnowledgeCommands::Show { file } => knowledge::show(file),
