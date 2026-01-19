@@ -35,21 +35,15 @@ pub fn install() -> Result<()> {
 
     println!("\nHooks installed successfully!");
     println!("\nActive hooks:");
-    println!("  Session lifecycle:");
-    println!("    - session-start.sh        Initializes heartbeat when session starts");
-    println!("    - post-tool-use.sh        Updates heartbeat after tool usage");
-    println!("    - pre-compact.sh          Triggers handoff before context compaction");
-    println!("    - session-end.sh          Handles session completion");
-    println!("  Commit enforcement:");
-    println!("    - commit-guard.sh         Enforces commit before session end (in worktrees)");
-    println!("    - commit-filter.sh        Blocks forbidden patterns in commits");
-    println!("  User interaction:");
-    println!("    - ask-user-pre.sh         Marks stage as waiting for user input");
-    println!("    - ask-user-post.sh        Resumes stage after user input");
-    println!("  Tool guidance:");
+    println!("  PreToolUse:");
     println!("    - prefer-modern-tools.sh  Suggests Grep/Glob or fd/rg instead of grep/find");
-    println!("  Skill suggestions:");
-    println!("    - skill-index-builder.sh  Builds keyword index from SKILL.md files");
+    println!("    - commit-filter.sh        Blocks forbidden patterns in git commits");
+    println!("    - ask-user-pre.sh         Marks stage as waiting for user input");
+    println!("  PostToolUse:");
+    println!("    - ask-user-post.sh        Resumes stage after user input");
+    println!("  Stop:");
+    println!("    - commit-guard.sh         Enforces commit before session end (in worktrees)");
+    println!("  UserPromptSubmit:");
     println!("    - skill-trigger.sh        Suggests skills based on prompt keywords");
     println!();
     println!("Hooks are now active for all Claude Code sessions in this project.");
@@ -146,21 +140,15 @@ pub fn list() -> Result<()> {
     if project_hooks.is_none() {
         println!();
         println!("Available loom hooks:");
-        println!("  Session lifecycle:");
-        println!("    - session-start.sh        Initializes heartbeat when session starts");
-        println!("    - post-tool-use.sh        Updates heartbeat after tool usage");
-        println!("    - pre-compact.sh          Triggers handoff before context compaction");
-        println!("    - session-end.sh          Handles session completion");
-        println!("  Commit enforcement:");
-        println!("    - commit-guard.sh         Enforces commit before session end");
-        println!("    - commit-filter.sh        Blocks forbidden patterns in commits");
-        println!("  User interaction:");
-        println!("    - ask-user-pre.sh         Marks stage as waiting for user input");
-        println!("    - ask-user-post.sh        Resumes stage after user input");
-        println!("  Tool guidance:");
+        println!("  PreToolUse:");
         println!("    - prefer-modern-tools.sh  Suggests Grep/Glob or fd/rg instead of grep/find");
-        println!("  Skill suggestions:");
-        println!("    - skill-index-builder.sh  Builds keyword index from SKILL.md files");
+        println!("    - commit-filter.sh        Blocks forbidden patterns in git commits");
+        println!("    - ask-user-pre.sh         Marks stage as waiting for user input");
+        println!("  PostToolUse:");
+        println!("    - ask-user-post.sh        Resumes stage after user input");
+        println!("  Stop:");
+        println!("    - commit-guard.sh         Enforces commit before session end");
+        println!("  UserPromptSubmit:");
         println!("    - skill-trigger.sh        Suggests skills based on prompt keywords");
     }
 
