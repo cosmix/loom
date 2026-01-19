@@ -78,15 +78,18 @@ uses_find() {
     echo "$cmd" | grep -qE '(^|[|;&[:space:]])(\/usr\/bin\/|\/bin\/)?find[[:space:]]'
 }
 
-# Check for grep usage - block and guide to use rg
+# Check for grep usage - block and guide to native tools first, then rg
 if uses_grep "$COMMAND"; then
     echo "BLOCKED: grep detected" >> "$DEBUG_LOG" 2>&1
     # Output to stderr (shown to Claude) and exit 2 to block
     cat >&2 <<'EOF'
-BLOCKED: Use 'rg' (ripgrep) instead of 'grep'.
+BLOCKED: Prefer Claude Code's native Grep tool for standard searches.
 
-rg is faster, respects .gitignore, and has better defaults.
-The syntax is similar: rg [OPTIONS] PATTERN [PATH...]
+For simple pattern matching, use the Grep tool directly:
+  Grep tool: pattern="error", path="src/", glob="*.rs"
+
+If you need advanced features (complex regex, pipes, output processing),
+use 'rg' (ripgrep) instead of 'grep':
 
 Examples:
   grep -r "pattern" .     →  rg "pattern" .
@@ -94,20 +97,23 @@ Examples:
   grep -v "exclude" file  →  rg -v "exclude" file
   grep -l "pattern" .     →  rg -l "pattern" .
 
-Rewrite your command using rg and try again.
+Use the native Grep tool when possible, or rewrite using rg.
 EOF
     exit 2
 fi
 
-# Check for find usage - block and guide to use fd
+# Check for find usage - block and guide to native tools first, then fd
 if uses_find "$COMMAND"; then
     echo "BLOCKED: find detected" >> "$DEBUG_LOG" 2>&1
     # Output to stderr (shown to Claude) and exit 2 to block
     cat >&2 <<'EOF'
-BLOCKED: Use 'fd' instead of 'find'.
+BLOCKED: Prefer Claude Code's native Glob tool for file searches.
 
-fd is faster, has simpler syntax, and respects .gitignore.
-NOTE: fd has DIFFERENT syntax than find!
+For finding files by pattern, use the Glob tool directly:
+  Glob tool: pattern="**/*.rs", path="src/"
+
+If you need advanced features (modification time, size, exec),
+use 'fd' instead of 'find':
 
 Examples:
   find . -name "*.txt"           →  fd -e txt
@@ -115,7 +121,7 @@ Examples:
   find src -name "test*"         →  fd "test" src
   find . -mtime -7               →  fd --changed-within 7d
 
-Rewrite your command using fd syntax and try again.
+Use the native Glob tool when possible, or rewrite using fd.
 EOF
     exit 2
 fi
