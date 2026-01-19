@@ -1,6 +1,12 @@
 //! Tests for session context tracking
+//!
+//! Thresholds are set to trigger handoff BEFORE Claude Code's automatic
+//! context compaction (~75-80%), ensuring we capture full context.
+//! - Green: below 50%
+//! - Yellow: 50-64% (warning zone, not exhausted)
+//! - Red: 65%+ (handoff required, exhausted)
 
-use loom::models::constants::CONTEXT_WARNING_THRESHOLD;
+use loom::models::constants::{CONTEXT_CRITICAL_THRESHOLD, CONTEXT_WARNING_THRESHOLD};
 use loom::models::session::Session;
 use std::thread;
 use std::time::Duration;
@@ -16,10 +22,11 @@ fn test_session_context_tracking() {
     let before = session.last_active;
     thread::sleep(Duration::from_millis(10));
 
+    // 50% is in the yellow zone (warning) but not exhausted
     session.update_context(100_000);
     assert_eq!(session.context_tokens, 100_000);
     assert_eq!(session.context_usage_percent(), 50.0);
-    assert!(!session.is_context_exhausted());
+    assert!(!session.is_context_exhausted()); // Yellow zone, not exhausted yet
     assert!(session.last_active > before);
 }
 
@@ -47,11 +54,13 @@ fn test_session_context_health_calculation() {
 fn test_session_context_exhausted_threshold() {
     let mut session = Session::new();
 
-    session.update_context(149_999);
+    // Just below 65% critical threshold
+    session.update_context(129_999);
     assert!(!session.is_context_exhausted());
 
-    session.update_context(150_000);
-    assert_eq!(150_000_f32 / 200_000_f32, CONTEXT_WARNING_THRESHOLD);
+    // At 65% critical threshold - handoff required
+    session.update_context(130_000);
+    assert_eq!(130_000_f32 / 200_000_f32, CONTEXT_CRITICAL_THRESHOLD);
     assert!(session.is_context_exhausted());
 
     session.update_context(170_000);

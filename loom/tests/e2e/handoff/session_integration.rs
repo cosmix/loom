@@ -1,4 +1,7 @@
 //! Session and stage integration tests for handoff system
+//!
+//! Thresholds are set to trigger handoff BEFORE Claude Code's automatic
+//! context compaction (~75-80%), ensuring we capture full context.
 
 use loom::models::constants::DEFAULT_CONTEXT_LIMIT;
 use loom::models::session::{Session, SessionStatus};
@@ -11,12 +14,13 @@ fn test_session_marks_context_exhausted() {
     session.status = SessionStatus::Running;
 
     // Simulate gradual context usage increase
+    // Yellow zone (50-64%) - not exhausted yet
     session.context_tokens = 100_000; // 50%
     assert!(!session.is_context_exhausted());
     assert_eq!(session.status, SessionStatus::Running);
 
-    // Increase to warning threshold
-    session.context_tokens = 150_000; // 75%
+    // Increase to critical threshold (65%)
+    session.context_tokens = 130_000; // 65%
     assert!(session.is_context_exhausted());
 
     // Manually mark session as context exhausted
