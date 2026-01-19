@@ -693,3 +693,21 @@ WaitingForDeps -> Queued | Skipped
 Queued -> Executing | Skipped | Blocked
 Executing -> Completed | Blocked | NeedsHandoff | WaitingForInput | MergeConflict | CompletedWithFailures | MergeBlocked
 CompletedWithFailures -> Queued | Executing (retry)
+
+## Module Splitting Patterns
+
+### File-Per-Module Pattern
+- Always use `mod foo;` (separate file per submodule)
+- Never use inline block declarations `mod foo { }`
+- Each submodule has its own .rs file alongside mod.rs
+
+### Module Re-Export Pattern (mod.rs)
+Step 1: Declare submodules at top
+Step 2: Re-export public items via `pub use submod::{Item1, Item2};`
+- Never use `pub mod` for re-exports
+- Never use wildcard imports - always explicit
+
+### Module Test Declaration
+- Separate test file: `#[cfg(test)] mod tests;` in mod.rs
+- The tests.rs file contains `#[cfg(test)] mod tests { ... }`
+- Only compiled during test builds

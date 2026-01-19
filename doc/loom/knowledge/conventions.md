@@ -584,3 +584,30 @@ Without --assume-merged: dependents NOT triggered
 - Nested subcommands: Commands -> StageCommands -> OutputCommands
 - Value validators: clap_id_validator, clap_description_validator
 - Help template: Custom ASCII art banner with HELP_TEMPLATE
+
+## Re-export Conventions in mod.rs
+
+### Two-Step Pattern
+1. Declare submodules: `mod base; mod checks; mod operations;`
+2. Re-export public API: `pub use base::Item; pub use checks::func;`
+
+### Re-export Rules
+- Group re-exports by source module
+- Only export public API items (keep helpers private)
+- Use explicit item lists, never wildcards (`*`)
+- `pub use` NOT `pub mod` for re-exports
+
+## Test File Conventions
+
+### Inline Tests
+- Use `#[cfg(test)] mod tests { }` at end of source file
+- For simple unit tests (< 5 tests)
+
+### Separate Test Files
+- Use tests.rs in module directory with complex suites
+- Declare in mod.rs: `#[cfg(test)] mod tests;`
+
+### Integration Tests
+- Located in loom/tests/integration/
+- Use `serial_test` crate for test isolation
+- Shared helpers in helpers.rs module
