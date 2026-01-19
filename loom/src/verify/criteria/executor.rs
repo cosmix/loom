@@ -43,17 +43,53 @@ pub fn run_single_criterion_with_timeout(
     // Spawn the child process using the appropriate shell
     let mut child = spawn_shell_command(command, working_dir)?;
 
-    // Wait for completion with timeout
+    // IMPORTANT: Start reading output BEFORE waiting for exit.
+    // If we wait first, the child may block on write() when the pipe buffer
+    // fills up (~64KB on Linux), causing a deadlock. We must drain the pipes
+    // concurrently with waiting for the process to exit.
+    let stdout_handle = child.stdout.take();
+    let stderr_handle = child.stderr.take();
+
+    // Spawn threads to read stdout/stderr concurrently
+    let (stdout_tx, stdout_rx) = mpsc::channel();
+    let (stderr_tx, stderr_rx) = mpsc::channel();
+
+    if let Some(stdout) = stdout_handle {
+        thread::spawn(move || {
+            let result = read_stream_to_string(stdout);
+            let _ = stdout_tx.send(result);
+        });
+    } else {
+        let _ = stdout_tx.send(String::new());
+    }
+
+    if let Some(stderr) = stderr_handle {
+        thread::spawn(move || {
+            let result = read_stream_to_string(stderr);
+            let _ = stderr_tx.send(result);
+        });
+    } else {
+        let _ = stderr_tx.send(String::new());
+    }
+
+    // Now wait for completion with timeout
     let wait_result = child
         .wait_timeout(timeout)
         .with_context(|| format!("Failed to wait for command: {command}"))?;
 
     let duration = start.elapsed();
 
+    // Collect output from reader threads (they should complete quickly after process exits)
+    let stdout = stdout_rx
+        .recv_timeout(OUTPUT_COLLECTION_TIMEOUT)
+        .unwrap_or_else(|_| "[output collection timed out]".to_string());
+    let stderr = stderr_rx
+        .recv_timeout(OUTPUT_COLLECTION_TIMEOUT)
+        .unwrap_or_else(|_| "[output collection timed out]".to_string());
+
     match wait_result {
         Some(status) => {
             // Command completed within timeout
-            let (stdout, stderr) = collect_child_output(&mut child)?;
             let success = status.success();
             let exit_code = status.code();
 
@@ -70,9 +106,6 @@ pub fn run_single_criterion_with_timeout(
         None => {
             // Command timed out - kill the process
             kill_child_process(&mut child);
-
-            // Collect any partial output that was captured
-            let (stdout, stderr) = collect_child_output(&mut child).unwrap_or_default();
 
             Ok(CriterionResult::new(
                 command.to_string(),
@@ -117,59 +150,6 @@ pub(crate) fn spawn_shell_command(command: &str, working_dir: Option<&Path>) -> 
 
     cmd.spawn()
         .with_context(|| format!("Failed to spawn command: {command}"))
-}
-
-/// Collect stdout and stderr from a child process with timeout protection
-///
-/// Spawns separate threads for reading stdout and stderr to avoid blocking.
-/// If reads don't complete within the timeout, returns partial output collected so far.
-fn collect_child_output(child: &mut Child) -> Result<(String, String)> {
-    collect_child_output_with_timeout(child, OUTPUT_COLLECTION_TIMEOUT)
-}
-
-/// Collect stdout and stderr with a specified timeout
-fn collect_child_output_with_timeout(
-    child: &mut Child,
-    timeout: Duration,
-) -> Result<(String, String)> {
-    let stdout_handle = child.stdout.take();
-    let stderr_handle = child.stderr.take();
-
-    // Channel for stdout
-    let (stdout_tx, stdout_rx) = mpsc::channel();
-    // Channel for stderr
-    let (stderr_tx, stderr_rx) = mpsc::channel();
-
-    // Spawn thread to read stdout
-    if let Some(stdout) = stdout_handle {
-        thread::spawn(move || {
-            let result = read_stream_to_string(stdout);
-            let _ = stdout_tx.send(result);
-        });
-    } else {
-        let _ = stdout_tx.send(String::new());
-    }
-
-    // Spawn thread to read stderr
-    if let Some(stderr) = stderr_handle {
-        thread::spawn(move || {
-            let result = read_stream_to_string(stderr);
-            let _ = stderr_tx.send(result);
-        });
-    } else {
-        let _ = stderr_tx.send(String::new());
-    }
-
-    // Wait for both with timeout
-    let stdout = stdout_rx
-        .recv_timeout(timeout)
-        .unwrap_or_else(|_| "[output collection timed out]".to_string());
-
-    let stderr = stderr_rx
-        .recv_timeout(timeout)
-        .unwrap_or_else(|_| "[output collection timed out]".to_string());
-
-    Ok((stdout, stderr))
 }
 
 /// Read a stream to string, handling errors gracefully
