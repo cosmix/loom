@@ -1,12 +1,18 @@
 //! Context health tracking for sessions
 
-use crate::models::constants::CONTEXT_WARNING_THRESHOLD;
+use crate::models::constants::{CONTEXT_CRITICAL_THRESHOLD, CONTEXT_WARNING_THRESHOLD};
 
 /// Context health level for a session
+///
+/// Thresholds are set to trigger handoff BEFORE Claude Code's automatic
+/// context compaction (~75-80%), ensuring we capture full context.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ContextHealth {
+    /// Below 50% - healthy operation
     Green,
+    /// 50-64% - prepare for handoff
     Yellow,
+    /// 65%+ - handoff required immediately
     Red,
 }
 
@@ -18,9 +24,9 @@ pub fn context_health(tokens: u32, limit: u32) -> ContextHealth {
 
     let usage = tokens as f32 / limit as f32;
 
-    if usage >= CONTEXT_WARNING_THRESHOLD {
+    if usage >= CONTEXT_CRITICAL_THRESHOLD {
         ContextHealth::Red
-    } else if usage >= 0.60 {
+    } else if usage >= CONTEXT_WARNING_THRESHOLD {
         ContextHealth::Yellow
     } else {
         ContextHealth::Green

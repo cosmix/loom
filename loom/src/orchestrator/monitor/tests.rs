@@ -37,7 +37,8 @@ fn test_context_health_green() {
 
 #[test]
 fn test_context_health_yellow() {
-    let tokens = 130_000;
+    // 55% - in the warning zone (50-64%)
+    let tokens = 110_000;
     let limit = DEFAULT_CONTEXT_LIMIT;
     let health = context_health(tokens, limit);
     assert_eq!(health, ContextHealth::Yellow);
@@ -45,7 +46,8 @@ fn test_context_health_yellow() {
 
 #[test]
 fn test_context_health_red() {
-    let tokens = 160_000;
+    // 65% - at the critical threshold
+    let tokens = 130_000;
     let limit = DEFAULT_CONTEXT_LIMIT;
     let health = context_health(tokens, limit);
     assert_eq!(health, ContextHealth::Red);
@@ -150,11 +152,11 @@ fn test_detect_context_warning() {
     let mut session = Session::new();
     session.id = "session-1".to_string();
     session.status = SessionStatus::Running;
-    session.context_tokens = 50_000;
+    session.context_tokens = 50_000; // 25% - Green
 
     detection.detect_session_changes(&[session.clone()], &[], &handlers);
 
-    session.context_tokens = 130_000;
+    session.context_tokens = 110_000; // 55% - Yellow (warning zone)
     let events = detection.detect_session_changes(&[session], &[], &handlers);
     assert_eq!(events.len(), 1);
 
@@ -164,7 +166,7 @@ fn test_detect_context_warning() {
     } = &events[0]
     {
         assert_eq!(session_id, "session-1");
-        assert!(*usage_percent > 60.0 && *usage_percent < 75.0);
+        assert!(*usage_percent >= 50.0 && *usage_percent < 65.0);
     } else {
         panic!("Expected SessionContextWarning event");
     }
@@ -187,11 +189,11 @@ fn test_detect_context_critical() {
     let mut session = Session::new();
     session.id = "session-1".to_string();
     session.status = SessionStatus::Running;
-    session.context_tokens = 50_000;
+    session.context_tokens = 50_000; // 25% - Green
 
     detection.detect_session_changes(&[session.clone()], &[], &handlers);
 
-    session.context_tokens = 160_000;
+    session.context_tokens = 130_000; // 65% - Red (critical threshold)
     let events = detection.detect_session_changes(&[session], &[], &handlers);
     assert_eq!(events.len(), 1);
 
@@ -201,7 +203,7 @@ fn test_detect_context_critical() {
     } = &events[0]
     {
         assert_eq!(session_id, "session-1");
-        assert!(*usage_percent >= 75.0);
+        assert!(*usage_percent >= 65.0);
     } else {
         panic!("Expected SessionContextCritical event");
     }

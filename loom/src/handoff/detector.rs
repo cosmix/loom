@@ -3,39 +3,44 @@
 //! This module provides utilities to detect when a session's context usage
 //! is approaching exhaustion and should trigger a handoff to a fresh session.
 
-use crate::models::constants::CONTEXT_WARNING_THRESHOLD;
+use crate::models::constants::{CONTEXT_CRITICAL_THRESHOLD, CONTEXT_WARNING_THRESHOLD};
 use crate::models::session::Session;
 
 /// Context usage level categorization.
 ///
 /// Mirrors the ContextHealth enum from orchestrator::monitor but provides
 /// a more explicit API for handoff-specific logic.
+///
+/// Thresholds are set to trigger handoff BEFORE Claude Code's automatic
+/// context compaction (~75-80%), ensuring we capture full context.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ContextLevel {
-    /// Context usage is below 60% - healthy operation
+    /// Context usage is below 50% - healthy operation
     Green,
-    /// Context usage is 60-74% - consider handoff soon
+    /// Context usage is 50-64% - prepare handoff soon
     Yellow,
-    /// Context usage is 75% or above - handoff required
+    /// Context usage is 65% or above - handoff required immediately
     Red,
 }
 
 /// Configuration for context threshold detection.
 ///
 /// Allows customization of when warnings and handoffs are triggered.
+/// Default thresholds are set to trigger BEFORE Claude Code's automatic
+/// context compaction (~75-80%).
 #[derive(Debug, Clone)]
 pub struct ThresholdConfig {
-    /// Fraction of context limit at which to show warning (default 0.60)
+    /// Fraction of context limit at which to show warning (default 0.50)
     pub warning_threshold: f32,
-    /// Fraction of context limit at which handoff is required (default 0.75)
+    /// Fraction of context limit at which handoff is required (default 0.65)
     pub critical_threshold: f32,
 }
 
 impl Default for ThresholdConfig {
     fn default() -> Self {
         Self {
-            warning_threshold: 0.60,
-            critical_threshold: CONTEXT_WARNING_THRESHOLD,
+            warning_threshold: CONTEXT_WARNING_THRESHOLD,
+            critical_threshold: CONTEXT_CRITICAL_THRESHOLD,
         }
     }
 }
@@ -119,37 +124,45 @@ mod tests {
 
     #[test]
     fn test_context_levels() {
+        // Green: below 50% (100k tokens)
         assert_eq!(
-            check_context_threshold(&create_test_session(50_000, 200_000)),
+            check_context_threshold(&create_test_session(50_000, 200_000)), // 25%
             ContextLevel::Green
         );
         assert_eq!(
-            check_context_threshold(&create_test_session(130_000, 200_000)),
+            check_context_threshold(&create_test_session(90_000, 200_000)), // 45%
+            ContextLevel::Green
+        );
+        // Yellow: 50-64% (100k-130k tokens)
+        assert_eq!(
+            check_context_threshold(&create_test_session(100_000, 200_000)), // 50%
             ContextLevel::Yellow
         );
         assert_eq!(
-            check_context_threshold(&create_test_session(160_000, 200_000)),
+            check_context_threshold(&create_test_session(120_000, 200_000)), // 60%
+            ContextLevel::Yellow
+        );
+        // Red: 65%+ (130k+ tokens)
+        assert_eq!(
+            check_context_threshold(&create_test_session(130_000, 200_000)), // 65%
             ContextLevel::Red
         );
+        assert_eq!(
+            check_context_threshold(&create_test_session(160_000, 200_000)), // 80%
+            ContextLevel::Red
+        );
+        // Edge case: zero limit
         assert_eq!(
             check_context_threshold(&create_test_session(100, 0)),
             ContextLevel::Green
-        );
-        assert_eq!(
-            check_context_threshold(&create_test_session(120_000, 200_000)),
-            ContextLevel::Yellow
-        );
-        assert_eq!(
-            check_context_threshold(&create_test_session(150_000, 200_000)),
-            ContextLevel::Red
         );
     }
 
     #[test]
     fn test_threshold_config_default() {
         let config = ThresholdConfig::default();
-        assert_eq!(config.warning_threshold, 0.60);
-        assert_eq!(config.critical_threshold, 0.75);
+        assert_eq!(config.warning_threshold, 0.50);
+        assert_eq!(config.critical_threshold, 0.65);
     }
 
     #[test]
@@ -219,18 +232,22 @@ mod tests {
 
     #[test]
     fn test_edge_cases() {
+        // Just below 50% warning threshold
         assert_eq!(
-            check_context_threshold(&create_test_session(118_000, 200_000)),
+            check_context_threshold(&create_test_session(99_000, 200_000)), // 49.5%
             ContextLevel::Green
         );
+        // Just below 65% critical threshold
         assert_eq!(
-            check_context_threshold(&create_test_session(148_000, 200_000)),
+            check_context_threshold(&create_test_session(129_000, 200_000)), // 64.5%
             ContextLevel::Yellow
         );
+        // At max values - should be Red (100% >= 65%)
         assert_eq!(
             check_context_threshold(&create_test_session(u32::MAX, u32::MAX)),
             ContextLevel::Red
         );
+        // Zero tokens
         assert_eq!(
             check_context_threshold(&create_test_session(0, 200_000)),
             ContextLevel::Green
