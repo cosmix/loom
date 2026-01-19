@@ -1,21 +1,23 @@
 #!/usr/bin/env bash
-# commit-filter.sh - PreToolUse hook to filter git commit content
+# commit-filter.sh - PreToolUse hook to block forbidden commit patterns
 #
-# This hook intercepts git commit commands and blocks forbidden patterns:
+# This hook intercepts git commit commands and BLOCKS (not modifies) forbidden patterns:
 #
 # 1. Claude/AI attribution (Co-Authored-By lines mentioning Claude/Anthropic)
 #    Per CLAUDE.md rule 8: Never mention Claude in commits.
 #
-# Environment variables:
-#   TOOL_NAME  - Name of the tool being invoked (from Claude Code)
-#   TOOL_INPUT - The tool's input (command string for Bash)
+# Instead of trying to modify the command (fragile with JSON escaping),
+# this hook blocks and provides guidance so Claude regenerates the command.
+#
+# Input: JSON from stdin (Claude Code passes tool info via stdin)
+#   {"tool_name": "Bash", "tool_input": {"command": "..."}, ...}
 #
 # Exit codes:
 #   0 - Allow the command to proceed
 #   2 - Block the command and return guidance to Claude
 #
 # Output format when blocking:
-#   {"continue": false, "reason": "..."}
+#   Guidance message to stderr, then exit 2
 
 set -euo pipefail
 
@@ -58,46 +60,40 @@ if [[ -z "$COMMAND" ]]; then
 fi
 
 # === CLAUDE ATTRIBUTION CHECK ===
-# Auto-strip Co-Authored-By lines from git commits (forbidden per CLAUDE.md rule 8)
-if echo "$COMMAND" | grep -qi 'git commit'; then
+# Block git commits with Co-Authored-By lines mentioning Claude/Anthropic (per CLAUDE.md rule 8)
+
+# Check if this is a git commit command
+if echo "$COMMAND" | rg -qi 'git\s+(-C\s+\S+\s+)?commit'; then
     {
         echo "DEBUG: Detected git commit command"
     } >> "$DEBUG_LOG" 2>&1
 
-    if echo "$COMMAND" | grep -Ei -q 'co-authored-by.*claude|claude.*(noreply|anthropic)'; then
+    # Check for forbidden Co-Authored-By patterns
+    if echo "$COMMAND" | rg -qi 'co-authored-by.*(claude|anthropic|noreply@anthropic)'; then
         {
-            echo "DEBUG: Detected forbidden Co-Authored-By pattern"
+            echo "DEBUG: BLOCKED - Detected forbidden Co-Authored-By pattern"
         } >> "$DEBUG_LOG" 2>&1
 
-        # Strip the Co-Authored-By line from the command
-        # Use sed with actual newline matching (POSIX compatible)
-        # The pattern matches: optional whitespace, "Co-Authored-By:", anything until newline
-        CORRECTED_COMMAND=$(printf '%s' "$COMMAND" | sed '/[Cc]o-[Aa]uthored-[Bb]y.*[Cc]laude/d; /[Cc]o-[Aa]uthored-[Bb]y.*anthropic/d; /[Cc]o-[Aa]uthored-[Bb]y.*noreply/d')
+        # Output guidance to stderr and block
+        cat >&2 <<'EOF'
+BLOCKED: Commit contains forbidden attribution (CLAUDE.md rule 8).
 
-        # Also try removing inline patterns (for single-line commit messages)
-        CORRECTED_COMMAND=$(printf '%s' "$CORRECTED_COMMAND" | sed -E 's/[[:space:]]*[Cc]o-[Aa]uthored-[Bb]y:[^"]*([Cc]laude|anthropic|noreply)[^"]*//g')
+Your commit message includes a Co-Authored-By line mentioning Claude/Anthropic.
+Per project rules, AI attribution must NEVER appear in commits.
 
-        {
-            echo "DEBUG: Corrected command:"
-            echo "$CORRECTED_COMMAND"
-        } >> "$DEBUG_LOG" 2>&1
+Please rewrite your git commit command WITHOUT the Co-Authored-By line.
+The commit message should only contain your actual changes description.
 
-        # Escape for JSON - must escape backslashes first, then quotes, then newlines
-        ESCAPED_COMMAND="${CORRECTED_COMMAND//\\/\\\\}"
-        ESCAPED_COMMAND="${ESCAPED_COMMAND//\"/\\\"}"
-        # Convert actual newlines to \n for JSON
-        ESCAPED_COMMAND=$(printf '%s' "$ESCAPED_COMMAND" | awk '{printf "%s\\n", $0}' | sed 's/\\n$//')
+Example - remove lines like:
+  Co-Authored-By: Claude <noreply@anthropic.com>
+  Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
-        {
-            echo "DEBUG: Escaped command for JSON:"
-            echo "$ESCAPED_COMMAND"
-        } >> "$DEBUG_LOG" 2>&1
-
-        # Output JSON to auto-correct the command
-        printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"Auto-removed forbidden Co-Authored-By attribution (CLAUDE.md rule 8)","updatedInput":{"command":"%s"}}}\n' "$ESCAPED_COMMAND"
-        exit 0
+Rewrite and try again.
+EOF
+        exit 2
     fi
 fi
 
 # Command is allowed
+echo "Allowing command" >> "$DEBUG_LOG" 2>&1
 exit 0
