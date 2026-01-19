@@ -3,7 +3,7 @@ use chrono::Utc;
 use std::path::PathBuf;
 
 use super::types::{Session, SessionStatus, SessionType};
-use crate::models::constants::{CONTEXT_WARNING_THRESHOLD, DEFAULT_CONTEXT_LIMIT};
+use crate::models::constants::{CONTEXT_CRITICAL_THRESHOLD, DEFAULT_CONTEXT_LIMIT};
 
 impl Session {
     pub fn new() -> Self {
@@ -101,12 +101,17 @@ impl Session {
         (self.context_tokens as f32 / self.context_limit as f32) * 100.0
     }
 
+    /// Check if context usage has reached the critical threshold requiring handoff.
+    ///
+    /// Returns true when usage >= 65% (CONTEXT_CRITICAL_THRESHOLD).
+    /// This threshold is set BEFORE Claude Code's automatic compaction (~75-80%)
+    /// to ensure we capture context while it's still complete.
     pub fn is_context_exhausted(&self) -> bool {
         if self.context_limit == 0 {
             return false;
         }
         let usage_fraction = self.context_tokens as f32 / self.context_limit as f32;
-        usage_fraction >= CONTEXT_WARNING_THRESHOLD
+        usage_fraction >= CONTEXT_CRITICAL_THRESHOLD
     }
 
     /// Attempt to transition the session to a new status with validation.
