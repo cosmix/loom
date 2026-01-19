@@ -692,6 +692,56 @@ pub fn validate_content(content: &str) -> Result<()> {
     Ok(())
 }
 
+/// Delete entries by type from a session's memory journal
+/// Returns the deleted entries for promotion to knowledge
+pub fn delete_entries_by_type(
+    work_dir: &Path,
+    session_id: &str,
+    entry_type: Option<MemoryEntryType>,
+) -> Result<Vec<MemoryEntry>> {
+    let file_path = memory_file_path(work_dir, session_id);
+
+    if !file_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let journal = read_journal(work_dir, session_id)?;
+    if journal.entries.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Partition entries into those to delete and those to keep
+    let (to_delete, to_keep): (Vec<_>, Vec<_>) = journal.entries.into_iter().partition(|e| {
+        entry_type.is_none_or(|t| e.entry_type == t)
+    });
+
+    if to_delete.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Rewrite the journal with only the kept entries
+    let stage_line = journal
+        .stage_id
+        .as_ref()
+        .map(|s| format!("**Stage**: {s}\n"))
+        .unwrap_or_default();
+
+    let header = format!(
+        "{MEMORY_HEADER}# Memory Journal: {session_id}\n\n**Session**: {session_id}\n{stage_line}**Created**: {}\n\n---\n\n",
+        Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+    );
+
+    let mut content = header;
+    for entry in &to_keep {
+        content.push_str(&format_entry(entry));
+    }
+
+    fs::write(&file_path, content)
+        .with_context(|| format!("Failed to rewrite memory journal: {}", file_path.display()))?;
+
+    Ok(to_delete)
+}
+
 /// List all memory journals in the work directory
 pub fn list_journals(work_dir: &Path) -> Result<Vec<String>> {
     let memory_path = memory_dir(work_dir);
@@ -982,5 +1032,105 @@ mod tests {
         assert_eq!(journals.len(), 2);
         assert!(journals.contains(&"session-1".to_string()));
         assert!(journals.contains(&"session-2".to_string()));
+    }
+
+    #[test]
+    fn test_delete_entries_by_type_single() {
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path();
+
+        let session_id = "delete-single-test";
+        create_journal(work_dir, session_id, None).unwrap();
+
+        // Add entries of different types
+        append_entry(
+            work_dir,
+            session_id,
+            &MemoryEntry::new(MemoryEntryType::Note, "Note 1".to_string()),
+        )
+        .unwrap();
+        append_entry(
+            work_dir,
+            session_id,
+            &MemoryEntry::new(MemoryEntryType::Decision, "Decision 1".to_string()),
+        )
+        .unwrap();
+        append_entry(
+            work_dir,
+            session_id,
+            &MemoryEntry::new(MemoryEntryType::Question, "Question 1".to_string()),
+        )
+        .unwrap();
+
+        // Delete only notes
+        let deleted = delete_entries_by_type(work_dir, session_id, Some(MemoryEntryType::Note)).unwrap();
+        assert_eq!(deleted.len(), 1);
+        assert_eq!(deleted[0].entry_type, MemoryEntryType::Note);
+        assert!(deleted[0].content.contains("Note 1"));
+
+        // Verify remaining entries
+        let journal = read_journal(work_dir, session_id).unwrap();
+        assert_eq!(journal.entries.len(), 2);
+        assert!(journal.entries.iter().all(|e| e.entry_type != MemoryEntryType::Note));
+    }
+
+    #[test]
+    fn test_delete_entries_by_type_all() {
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path();
+
+        let session_id = "delete-all-test";
+        create_journal(work_dir, session_id, None).unwrap();
+
+        // Add entries of different types
+        append_entry(
+            work_dir,
+            session_id,
+            &MemoryEntry::new(MemoryEntryType::Note, "Note 1".to_string()),
+        )
+        .unwrap();
+        append_entry(
+            work_dir,
+            session_id,
+            &MemoryEntry::new(MemoryEntryType::Decision, "Decision 1".to_string()),
+        )
+        .unwrap();
+        append_entry(
+            work_dir,
+            session_id,
+            &MemoryEntry::new(MemoryEntryType::Question, "Question 1".to_string()),
+        )
+        .unwrap();
+
+        // Delete all (entry_type = None)
+        let deleted = delete_entries_by_type(work_dir, session_id, None).unwrap();
+        assert_eq!(deleted.len(), 3);
+
+        // Verify journal is now empty
+        let journal = read_journal(work_dir, session_id).unwrap();
+        assert!(journal.entries.is_empty());
+    }
+
+    #[test]
+    fn test_delete_entries_by_type_empty_journal() {
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path();
+
+        let session_id = "delete-empty-test";
+        create_journal(work_dir, session_id, None).unwrap();
+
+        // Delete from empty journal
+        let deleted = delete_entries_by_type(work_dir, session_id, Some(MemoryEntryType::Note)).unwrap();
+        assert!(deleted.is_empty());
+    }
+
+    #[test]
+    fn test_delete_entries_by_type_nonexistent_session() {
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path();
+
+        // Delete from nonexistent session
+        let deleted = delete_entries_by_type(work_dir, "nonexistent", None).unwrap();
+        assert!(deleted.is_empty());
     }
 }

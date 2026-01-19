@@ -586,6 +586,19 @@ enum MemoryCommands {
 
     /// List all memory journals
     Sessions,
+
+    /// Promote memory entries to knowledge files
+    Promote {
+        /// Entry type to promote: note, decision, question, or all
+        entry_type: String,
+
+        /// Target knowledge file: entry-points, patterns, conventions, mistakes
+        target: String,
+
+        /// Session ID (auto-detected if not provided)
+        #[arg(short, long, value_parser = clap_id_validator)]
+        session: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -732,6 +745,11 @@ fn main() -> Result<()> {
             } => memory::list(session, entry_type),
             MemoryCommands::Show { session } => memory::show(session),
             MemoryCommands::Sessions => memory::sessions(),
+            MemoryCommands::Promote {
+                entry_type,
+                target,
+                session,
+            } => memory::promote(entry_type, target, session),
         },
         Commands::SelfUpdate => self_update::execute(),
         Commands::Clean {

@@ -13,9 +13,10 @@ use colored::Colorize;
 use std::env;
 
 use crate::commands::common::{detect_session_from_signals, truncate_for_display};
+use crate::fs::knowledge::{KnowledgeDir, KnowledgeFile};
 use crate::fs::memory::{
-    append_entry, list_journals, query_entries, read_journal, validate_content, MemoryEntry,
-    MemoryEntryType,
+    append_entry, delete_entries_by_type, list_journals, query_entries, read_journal,
+    validate_content, MemoryEntry, MemoryEntryType,
 };
 
 /// Get the .work directory, handling worktree symlinks
@@ -357,4 +358,151 @@ pub fn sessions() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Promote memory entries to knowledge files
+pub fn promote(entry_type: String, target: String, session_id: Option<String>) -> Result<()> {
+    let work_dir = get_work_dir()?;
+    let session = session_id
+        .or_else(|| detect_session_from_signals(&work_dir).ok())
+        .ok_or_else(|| anyhow::anyhow!("No session ID provided or detected. Use --session <id>"))?;
+
+    // Parse entry type - "all" means promote all types
+    let type_filter = if entry_type == "all" {
+        None
+    } else {
+        Some(entry_type.parse::<MemoryEntryType>()?)
+    };
+
+    // Parse target knowledge file
+    let target_file = match target.as_str() {
+        "entry-points" => KnowledgeFile::EntryPoints,
+        "patterns" => KnowledgeFile::Patterns,
+        "conventions" => KnowledgeFile::Conventions,
+        "mistakes" => KnowledgeFile::Mistakes,
+        _ => anyhow::bail!(
+            "Invalid target: {target}. Use: entry-points, patterns, conventions, mistakes"
+        ),
+    };
+
+    // Get project root (go up from .work to find doc/loom/knowledge)
+    let project_root = work_dir
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("Could not find project root"))?;
+
+    let knowledge = KnowledgeDir::new(project_root);
+    if !knowledge.exists() {
+        anyhow::bail!("Knowledge directory does not exist. Run 'loom knowledge init' first.");
+    }
+
+    // Delete and retrieve the matching entries
+    let deleted = delete_entries_by_type(&work_dir, &session, type_filter)?;
+
+    if deleted.is_empty() {
+        let type_desc = type_filter
+            .map(|t| t.to_string())
+            .unwrap_or_else(|| "any".to_string());
+        println!(
+            "{} No {} entries found in session '{}'",
+            "ℹ".blue(),
+            type_desc,
+            session
+        );
+        return Ok(());
+    }
+
+    // Format entries for knowledge file
+    let formatted = format_entries_for_knowledge(&deleted);
+
+    // Append to knowledge file
+    knowledge
+        .append(target_file, &formatted)
+        .context("Failed to append to knowledge file")?;
+
+    // Print success message
+    let type_desc = type_filter
+        .map(|t| format!("{t} "))
+        .unwrap_or_default();
+    println!(
+        "{} Promoted {} {}entries from session '{}' to {}",
+        "✓".green(),
+        deleted.len(),
+        type_desc,
+        session.cyan(),
+        target_file.filename().cyan()
+    );
+
+    // Show promoted content preview
+    for entry in deleted.iter().take(3) {
+        let type_emoji = match entry.entry_type {
+            MemoryEntryType::Note => "📝",
+            MemoryEntryType::Decision => "✅",
+            MemoryEntryType::Question => "❓",
+        };
+        println!(
+            "  {} {}",
+            type_emoji,
+            truncate_for_display(&entry.content, 55)
+        );
+    }
+    if deleted.len() > 3 {
+        println!("  {} {} more...", "...".dimmed(), deleted.len() - 3);
+    }
+
+    Ok(())
+}
+
+/// Format memory entries for inclusion in a knowledge file
+fn format_entries_for_knowledge(entries: &[MemoryEntry]) -> String {
+    let mut output = String::new();
+
+    // Group by type
+    let notes: Vec<_> = entries
+        .iter()
+        .filter(|e| e.entry_type == MemoryEntryType::Note)
+        .collect();
+    let decisions: Vec<_> = entries
+        .iter()
+        .filter(|e| e.entry_type == MemoryEntryType::Decision)
+        .collect();
+    let questions: Vec<_> = entries
+        .iter()
+        .filter(|e| e.entry_type == MemoryEntryType::Question)
+        .collect();
+
+    let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M");
+    output.push_str(&format!("## Promoted from Memory [{timestamp}]\n\n"));
+
+    // Format notes as bullet list
+    if !notes.is_empty() {
+        output.push_str("### Notes\n\n");
+        for entry in &notes {
+            output.push_str(&format!("- {}\n", entry.content));
+        }
+        output.push('\n');
+    }
+
+    // Format decisions with rationale
+    if !decisions.is_empty() {
+        output.push_str("### Decisions\n\n");
+        for entry in &decisions {
+            output.push_str(&format!("- **{}**", entry.content));
+            if let Some(ctx) = &entry.context {
+                output.push_str(&format!("\n  - *Rationale:* {ctx}"));
+            }
+            output.push('\n');
+        }
+        output.push('\n');
+    }
+
+    // Format questions as bullet list
+    if !questions.is_empty() {
+        output.push_str("### Questions\n\n");
+        for entry in &questions {
+            output.push_str(&format!("- {}\n", entry.content));
+        }
+        output.push('\n');
+    }
+
+    output
 }
