@@ -572,12 +572,14 @@ Tool-specific (PreToolUse/PostToolUse):
 - Only valid: `doc/plans/PLAN-<description>.md`
 
 ## Stage Complete CLI Flags
+
 --no-verify: Skip acceptance, no merge, merged=false
 --force-unsafe: Bypass state machine (recovery only)
 --assume-merged: With force-unsafe, set merged=true
 Without --assume-merged: dependents NOT triggered
 
 ## CLI Command Pattern (main.rs)
+
 - clap derive macros: #[derive(Parser)], #[derive(Subcommand)]
 - Nested subcommands: Commands -> StageCommands -> OutputCommands
 - Value validators: clap_id_validator, clap_description_validator

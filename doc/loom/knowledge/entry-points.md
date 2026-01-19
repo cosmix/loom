@@ -204,15 +204,18 @@ Protocol (daemon/protocol.rs):
 - `commands/hooks.rs:19-46` - `loom hooks install` command
 
 ## Stage Completion (commands/stage/complete.rs)
+
 - complete() at line 121 - Main dispatcher
 - complete_knowledge_stage() at line 31 - No merge path
 - resolve_acceptance_dir() at line 466 - Dir resolution
 
 ## Acceptance Criteria (verify/criteria/)
+
 - runner.rs:16 - run_acceptance() main entry
 - executor.rs:36 - run_single_criterion_with_timeout()
 - executor.rs:99 - spawn_shell_command() sh -c
 - config.rs - DEFAULT_COMMAND_TIMEOUT (5 min)
 
 ## Stage Verify Command
+
 - `loom/src/commands/stage/verify.rs` - Re-verify and complete stages that failed acceptance criteria
