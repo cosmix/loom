@@ -189,27 +189,16 @@ loom:
 | Nested code blocks       | NEVER in descriptions   | Breaks YAML parser    |
 | Examples in descriptions | Use plain indented text | Do NOT use ``` fences |
 
-**Example — How to write descriptions with code examples:**
+**Example — CORRECT way to show code in descriptions:**
 
-````yaml
-# WRONG - nested code blocks break parsing
+```yaml
 description: |
-  Create the config file:
-  ```toml
-  [settings]
-  key = "value"
-````
+  Create the config file with TOML format:
+    [settings]
+    key = "value"
+```
 
-# CORRECT - use plain indented text
-
-description: |
-Create the config file with TOML format:
-[settings]
-key = "value"
-
-Or describe inline: settings section with key=value entry
-
-````
+**NEVER** put triple backticks inside YAML descriptions — they break parsing.
 
 Stage definitions become agent signals: `description` → tasks, `acceptance` → criteria, `files` → scope.
 
@@ -220,7 +209,7 @@ The `working_dir` field is **REQUIRED** on every stage. This forces explicit cho
 ```yaml
 working_dir: "."      # Run from worktree root
 working_dir: "loom"   # Run from loom/ subdirectory
-````
+```
 
 **Why required?** Prevents acceptance failures due to forgotten directory context. Every stage must consciously declare its execution directory.
 
@@ -244,161 +233,32 @@ working_dir: "loom"   # Run from loom/ subdirectory
 
 #### Parallelization Strategy
 
-```text
-┌────────────────────────────────────────────────────────────────────┐
-│  ⚠️ PARALLELIZATION PRIORITY ORDER (FOLLOW EXACTLY)                │
-│                                                                    │
-│  1. FIRST: Maximize parallel SUBAGENTS within ONE stage            │
-│  2. SECOND: Only create multiple stages when files MUST conflict   │
-│                                                                    │
-│  DO NOT create multiple stages just because you have multiple      │
-│  tasks. Multiple tasks with NO file overlap = ONE stage with       │
-│  parallel subagents.                                               │
-└────────────────────────────────────────────────────────────────────┘
-```
+**RULE: Subagents FIRST, stages SECOND.**
 
-**The Two Levels of Parallelization:**
+| Level                               | When to Use                 | Overhead                 |
+| ----------------------------------- | --------------------------- | ------------------------ |
+| **Parallel subagents in ONE stage** | Tasks touch DIFFERENT files | LOW - same worktree      |
+| **Multiple stages in DAG**          | Tasks touch SAME files      | HIGH - worktrees, merges |
 
-| Level | Mechanism | When to Use | Overhead |
-|-------|-----------|-------------|----------|
-| **LEVEL 1 (PREFERRED)** | Parallel subagents in ONE stage | Tasks touch DIFFERENT files | LOW - same worktree, instant |
-| **LEVEL 2 (FALLBACK)** | Multiple stages in DAG | Tasks touch SAME files | HIGH - worktrees, branches, merges |
+**Example:**
 
-**ALWAYS START WITH LEVEL 1.** Only escalate to Level 2 when file conflicts are unavoidable.
+Implement auth (`auth/`), logging (`logging/`), metrics (`metrics/`) — files don't overlap.
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│  DECISION TREE FOR PARALLELIZATION                                  │
-│                                                                     │
-│  Q: Do tasks touch the SAME files?                                  │
-│                                                                     │
-│  NO  → ONE stage, PARALLEL SUBAGENTS                                │
-│        (spawn multiple Task tools in single message)                │
-│                                                                     │
-│  YES → SEPARATE STAGES in DAG                                       │
-│        (loom creates worktrees, merges branches)                    │
-│                                                                     │
-│  COMMON MISTAKE: Creating 5 stages for 5 tasks that touch           │
-│  different files. This wastes time on branch management.            │
-│  CORRECT: One stage with 5 parallel subagents.                      │
-└─────────────────────────────────────────────────────────────────────┘
+❌ WRONG: 3 separate stages (unnecessary worktrees/merges)
+✅ CORRECT: 1 stage with 3 parallel subagents, each owning their directory
 ```
 
-**Example — Correct vs Incorrect Planning:**
+**Use multiple stages ONLY when:**
 
-Scenario: Implement user auth (touches `auth/`), add logging (touches `logging/`), add metrics (touches `metrics/`)
-
-```text
-❌ WRONG - 3 separate stages:
-   [auth-stage] --> [logging-stage] --> [metrics-stage]
-
-   Why wrong: Files don't overlap! This creates unnecessary
-   worktrees, branches, and merge operations.
-
-✅ CORRECT - 1 stage with 3 parallel subagents:
-   [implement-all-features]
-   └── Spawns 3 parallel subagents:
-       ├── Subagent 1: auth (owns auth/**)
-       ├── Subagent 2: logging (owns logging/**)
-       └── Subagent 3: metrics (owns metrics/**)
-
-   Why correct: Parallel execution, no merge overhead,
-   faster completion.
-```
-
-**When you MUST use multiple stages:**
-
-- Tasks modify the SAME file (e.g., both add routes to `router.ts`)
+- Tasks modify the SAME file
 - Tasks have true sequential dependencies (B needs A's output)
-- Stages can run in parallel in the DAG when they don't depend on each other
 
-**Example of valid multi-stage DAG:**
+**Stage descriptions MUST specify the execution plan:**
 
-```text
-[knowledge-bootstrap]
-        │
-        ▼
-[api-changes]──────┬──────[cli-changes]    ← These run IN PARALLEL
-        │          │           │              (both touch router.ts differently)
-        ▼          ▼           ▼
-    [integration-verify]
-```
-
-#### Stage Descriptions MUST Include Execution Plans
-
-**MANDATORY: Every stage description MUST explicitly specify HOW the work will be parallelized within that stage.**
-
-```text
-┌────────────────────────────────────────────────────────────────────┐
-│  STAGE DESCRIPTION REQUIREMENTS                                    │
-│                                                                    │
-│  Every stage description MUST include:                             │
-│  1. WHAT tasks need to be done                                     │
-│  2. HOW they will be parallelized (which subagents, what files)    │
-│  3. File ownership for each parallel unit                          │
-│                                                                    │
-│  If a stage has multiple tasks that can be parallelized:           │
-│  → EXPLICITLY list the parallel subagents in the description       │
-│  → Specify which files each subagent owns                          │
-│  → This becomes the execution contract for the agent               │
-└────────────────────────────────────────────────────────────────────┘
-```
-
-**Example stage description WITH explicit execution plan:**
-
-```yaml
-- id: implement-features
-  name: "Implement Core Features"
-  description: |
-    Implement three independent features using PARALLEL SUBAGENTS.
-
-    EXECUTION PLAN - Spawn 3 parallel subagents:
-
-    Subagent 1 - Auth Module:
-      Assignment: Implement JWT authentication
-      Files owned: src/auth/**, tests/auth/**
-      Acceptance: All auth tests pass
-
-    Subagent 2 - Logging Module:
-      Assignment: Add structured logging
-      Files owned: src/logging/**, tests/logging/**
-      Acceptance: Logging tests pass
-
-    Subagent 3 - Metrics Module:
-      Assignment: Implement Prometheus metrics
-      Files owned: src/metrics/**, tests/metrics/**
-      Acceptance: Metrics endpoint responds
-
-    IMPORTANT: These subagents MUST run in parallel (single message
-    with multiple Task tool calls). They do NOT share files.
-  files:
-    - "src/auth/**"
-    - "src/logging/**"
-    - "src/metrics/**"
-    - "tests/**"
-```
-
-**Example stage description for SEQUENTIAL work (no parallelization):**
-
-```yaml
-- id: refactor-router
-  name: "Refactor Router"
-  description: |
-    Refactor the main router to support new middleware.
-
-    EXECUTION PLAN: Single sequential implementation (no parallelization).
-    All changes touch the same files so subagents cannot be used.
-
-    Tasks:
-    1. Extract middleware chain to separate module
-    2. Add hook points for plugins
-    3. Update all route handlers to use new pattern
-
-    Files: src/router.ts, src/middleware.ts (tightly coupled changes)
-  files:
-    - "src/router.ts"
-    - "src/middleware.ts"
-```
+- Which subagents run in parallel
+- What files each subagent owns
+- Or: why sequential (file overlap)
 
 ### 2. NO PLACEHOLDERS
 
@@ -592,236 +452,73 @@ When executing in a loom worktree, you MUST stay within your worktree boundaries
 
 ### 10. KNOWLEDGE MANAGEMENT (MANDATORY)
 
-Build and maintain the `doc/loom/knowledge/` base BEFORE and DURING every session.
+**EVERY PLAN MUST START WITH `knowledge-bootstrap`.** No exceptions.
 
-```text
-┌────────────────────────────────────────────────────────────────────┐
-│  ⚠️ KNOWLEDGE-BOOTSTRAP IS THE MANDATORY FIRST STAGE               │
-│                                                                    │
-│  EVERY PLAN MUST START WITH knowledge-bootstrap (or knowledge      │
-│  update if knowledge already exists). NO EXCEPTIONS.               │
-│                                                                    │
-│  Why? Without knowledge:                                           │
-│  - Agents make wrong assumptions about the codebase                │
-│  - Agents repeat mistakes that were already learned                │
-│  - Agents use wrong patterns for this specific codebase            │
-│  - Time is wasted re-discovering what's already known              │
-│                                                                    │
-│  The ONLY exception: doc/loom/knowledge/ is already fully          │
-│  populated AND up-to-date for the current task.                    │
-└────────────────────────────────────────────────────────────────────┘
-```
+Without knowledge, agents make wrong assumptions, repeat mistakes, and waste time rediscovering what's known.
 
-```text
-┌────────────────────────────────────────────────────────────────────┐
-│  KNOWLEDGE CHECK - FIRST ACTION OF EVERY SESSION                   │
-│                                                                    │
-│  doc/loom/knowledge/ EMPTY?                                        │
-│  YES → Run hierarchical exploration and populate it                │
-│  NO  → Read it. Update with new discoveries. Record mistakes.      │
-│                                                                    │
-│  RECORD TO KNOWLEDGE:                                              │
-│  - Entry points discovered                                         │
-│  - Architectural patterns found                                    │
-│  - Coding conventions learned                                      │
-│  - MISTAKES MADE and how to avoid them                             │
-└────────────────────────────────────────────────────────────────────┘
-```
+#### USE ONLY `loom knowledge` CLI COMMANDS
 
-**Hierarchical Exploration Order:**
+**DO NOT** use Write/Edit tools or echo/heredoc on knowledge files.
 
-1. **Top-level structure** — Entry points, main modules, directory layout
-2. **Module boundaries** — Public interfaces, internal vs external APIs
-3. **Patterns** — Error handling, state management, data flow conventions
-4. **Conventions** — Naming, file structure, testing patterns
+| Command                                  | Description                                                    |
+| ---------------------------------------- | -------------------------------------------------------------- |
+| `loom knowledge init`                    | Initialize knowledge directory                                 |
+| `loom knowledge show`                    | Show all knowledge                                             |
+| `loom knowledge update <file> <content>` | Append to file (entry-points, patterns, conventions, mistakes) |
 
-#### YOU MUST USE THE OFFICIAL `loom knowledge` CLI COMMANDS
-
-```text
-┌────────────────────────────────────────────────────────────────────┐
-│  ⚠️ MANDATORY: USE `loom knowledge` CLI COMMANDS                   │
-│                                                                    │
-│  DO NOT manually edit doc/loom/knowledge/*.md files.               │
-│  DO NOT use Write/Edit tools on knowledge files.                   │
-│  DO NOT use echo/cat/heredoc to write to knowledge files.          │
-│                                                                    │
-│  ALWAYS use: loom knowledge update <file> "<content>"              │
-│                                                                    │
-│  Why? The CLI:                                                     │
-│  - Ensures consistent formatting                                   │
-│  - Handles file creation if needed                                 │
-│  - Appends properly without overwriting                            │
-│  - Works correctly in worktree context                             │
-└────────────────────────────────────────────────────────────────────┘
-```
-
-**Commands:**
-
-| Command                                  | Description                                                        |
-| ---------------------------------------- | ------------------------------------------------------------------ |
-| `loom knowledge init`                    | Initialize `doc/loom/knowledge/` directory                         |
-| `loom knowledge list`                    | List all knowledge files                                           |
-| `loom knowledge show`                    | Show summary of all knowledge                                      |
-| `loom knowledge show <file>`             | Show specific file (entry-points, patterns, conventions, mistakes) |
-| `loom knowledge update <file> <content>` | Append content to a knowledge file                                 |
-
-#### Breaking Up Long Content
-
-**If your content is too long for a single command, break it into multiple invocations:**
+**For long content, break into multiple invocations (~20-30 lines each):**
 
 ```bash
-# WRONG - content too long, may fail or truncate
-loom knowledge update patterns "## Authentication\n\n[500 lines of content...]"
-
-# CORRECT - break into logical chunks
 loom knowledge update patterns "## Authentication
 
 ### Overview
-Authentication uses JWT tokens with refresh token rotation."
-
-loom knowledge update patterns "### Token Flow
-1. User submits credentials
-2. Server validates and issues access + refresh tokens
-3. Access token expires in 15 minutes
-4. Refresh token used to get new access token"
+Uses JWT with refresh token rotation."
 
 loom knowledge update patterns "### Key Files
-- src/auth/jwt.ts:15-80 - Token generation
-- src/auth/middleware.ts:20-45 - Auth middleware
-- src/auth/refresh.ts:10-60 - Refresh logic"
+- src/auth/jwt.ts:15-80 - Token generation"
 ```
 
-**Guidelines for breaking up content:**
-
-| Guideline | Details |
-|-----------|---------|
-| One section per invocation | Each `## Heading` should be its own command |
-| ~20-30 lines max per call | Keeps commands manageable and readable |
-| Logical groupings | Break at natural boundaries (overview, details, files) |
-| Multiple small > one large | Easier to debug, less likely to fail |
-
-**Update Examples:**
-
-| Discovery Type        | Command                                                                                  |
-| --------------------- | ---------------------------------------------------------------------------------------- |
-| Key entry point       | `loom knowledge update entry-points "## Section\n\n- path - description"`                |
-| Architectural pattern | `loom knowledge update patterns "## Pattern\n\n- How it works"`                          |
-| Coding convention     | `loom knowledge update conventions "## Convention\n\n- Details"`                         |
-| Mistake/lesson        | `loom knowledge update mistakes "## Mistake\n\n- What happened, why, how to avoid"`      |
-
-### Recording Mistakes (MANDATORY)
+#### Recording Mistakes (MANDATORY)
 
 When you make a mistake, IMMEDIATELY record it:
 
 ```bash
 loom knowledge update mistakes "## [Short description]
 
-**What happened:** [Describe the mistake]
-**Why it happened:** [Root cause]
-**How to avoid:** [Prevention strategy]
-**Related files:** [file:line references]"
+**What happened:** [Describe]
+**Why:** [Root cause]
+**How to avoid:** [Prevention]"
 ```
-
-Examples of mistakes to record:
-
-- Tried to use deprecated API
-- Forgot to handle edge case
-- Made wrong assumption about codebase
-- Used wrong pattern for this codebase
-- Missed a required step in workflow
-
-**DO NOT** skip recording mistakes. Future sessions will thank you.
 
 ### 11. INTEGRATION VERIFICATION (MANDATORY)
 
-**Every plan MUST end with an `integration-verify` stage.**
+**Every plan MUST end with `integration-verify`.**
 
 ```text
-┌────────────────────────────────────────────────────────────────────┐
-│  PLAN STRUCTURE CHECK                                              │
-│                                                                    │
-│  MANDATORY BOOKENDS (NO EXCEPTIONS):                               │
-│    FIRST STAGE: knowledge-bootstrap                                │
-│      → Explores codebase, populates doc/loom/knowledge/            │
-│      → Uses ONLY `loom knowledge` CLI commands                     │
-│      → If knowledge exists: update it, don't skip the stage        │
-│    LAST STAGE:  integration-verify                                 │
-│      → Depends on ALL feature stages                               │
-│      → Includes FUNCTIONAL verification, not just tests            │
-│                                                                    │
-│  PARALLELIZATION (IN THIS ORDER):                                  │
-│    1. FIRST maximize parallel SUBAGENTS within each stage          │
-│    2. ONLY THEN consider multiple stages for file conflicts        │
-│                                                                    │
-│  STAGE DESCRIPTIONS:                                               │
-│    Every stage description MUST include an EXECUTION PLAN:         │
-│    - Which subagents will run in parallel?                         │
-│    - What files does each subagent own?                            │
-│    - Or: why is this stage sequential (file overlap)?              │
-│                                                                    │
-│  COMMON MISTAKES TO AVOID:                                         │
-│    ✗ Skipping knowledge-bootstrap "to save time"                   │
-│    ✗ Creating separate stages for non-overlapping files            │
-│    ✗ Using Write/Edit on knowledge files instead of CLI            │
-└────────────────────────────────────────────────────────────────────┘
+⚠️ TESTS PASSING ≠ FEATURE WORKING
+
+Code that compiles and passes tests but is never wired up is USELESS.
 ```
 
-```text
-┌────────────────────────────────────────────────────────────────────┐
-│  ⚠️ CRITICAL: TESTS PASSING ≠ FEATURE WORKING                      │
-│                                                                    │
-│  We have had MANY instances where:                                 │
-│  - All tests pass                                                  │
-│  - Code compiles                                                   │
-│  - But the feature is NEVER WIRED UP or FUNCTIONAL                 │
-│                                                                    │
-│  integration-verify MUST include FUNCTIONAL VERIFICATION:          │
-│  - Can you actually USE the feature?                               │
-│  - Is it wired into the application (routes, UI, CLI)?             │
-│  - Does it produce the expected user-visible behavior?             │
-└────────────────────────────────────────────────────────────────────┘
-```
+**integration-verify MUST include FUNCTIONAL verification:**
 
-**Why integration-verify is mandatory:**
+| Check        | Question                                              |
+| ------------ | ----------------------------------------------------- |
+| Wiring       | Is the feature registered/mounted in the application? |
+| Reachability | Can you invoke it (CLI command, API endpoint, UI)?    |
+| End-to-end   | Does the primary use case produce expected behavior?  |
 
-- Feature stages run in **isolated worktrees** with limited test scope
-- Individual stage acceptance criteria verify **local** correctness only
-- Integration-verify runs **after merge** to catch cross-stage regressions
-- Without it, merged code may fail tests that passed in isolation
-- **Code that compiles and passes tests but is never wired up is USELESS**
-
-**integration-verify stage requirements:**
-
-| Requirement                 | Details                                                                               |
-| --------------------------- | ------------------------------------------------------------------------------------- |
-| Dependencies                | ALL feature/implementation stages                                                     |
-| Acceptance                  | Full test suite, linting, build verification, **PLUS functional acceptance criteria** |
-| Files                       | Empty (verification only, no modifications)                                           |
-| **Functional Verification** | **MANDATORY - smoke test the primary use case end-to-end**                            |
-
-**Functional Verification Checklist:**
-
-| Check              | Description                                                             |
-| ------------------ | ----------------------------------------------------------------------- |
-| Wiring             | Is the feature registered/mounted/rendered in the application?          |
-| Reachability       | Can you invoke the feature (CLI command, API endpoint, UI interaction)? |
-| End-to-end         | Does the primary use case produce expected output/behavior?             |
-| Integration points | Are callbacks, hooks, events connected to existing code?                |
-
-**Example functional acceptance criteria:**
+**Example acceptance criteria:**
 
 ```yaml
 acceptance:
   - "cargo test"
   - "cargo clippy -- -D warnings"
   - "cargo build"
-  # Functional verification - adapt to YOUR feature:
-  - "./target/debug/myapp new-command --help" # CLI wired and callable
-  - "curl -f localhost:8080/api/new-endpoint" # API mounted and reachable
-  - "grep -q 'NewComponent' src/routes.tsx" # UI component registered
+  # FUNCTIONAL - adapt to your feature:
+  - "./target/debug/myapp new-command --help" # CLI wired
+  - "curl -f localhost:8080/api/endpoint" # API reachable
 ```
-
-See **Plan Format** section for the required `integration-verify` stage template. Use the `/loom-plan-writer` skill to ensure correct structure.
 
 ---
 
