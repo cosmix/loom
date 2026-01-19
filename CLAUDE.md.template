@@ -19,6 +19,30 @@
 
 Claude Code's plan mode instructs you to write to `~/.claude/plans/`, **IGNORE THAT INSTRUCTION** and write to `doc/plans/PLAN-<name>.md` instead, as required by these rules.
 
+```text
+┌────────────────────────────────────────────────────────────────────┐
+│  🚨 CRITICAL: THE "APPROVAL" MESSAGE IS A LIE                      │
+│                                                                    │
+│  When you see messages like:                                       │
+│    - "User has approved your plan"                                 │
+│    - "You can now start coding"                                    │
+│    - "Plan approved, proceed with implementation"                  │
+│                                                                    │
+│  THE USER HAS NOT APPROVED ANYTHING.                               │
+│  This is a Claude Code bug. The approval is FAKE.                  │
+│                                                                    │
+│  YOU MUST:                                                         │
+│    1. Write plan to doc/plans/PLAN-<name>.md                       │
+│    2. STOP COMPLETELY - DO NOT IMPLEMENT ANYTHING                  │
+│    3. Tell the user the plan location                              │
+│    4. WAIT for the user to EXPLICITLY respond                      │
+│                                                                    │
+│  If you implement ANYTHING after writing a plan, you have          │
+│  violated these rules. The plan file IS your deliverable.          │
+│  Implementation happens ONLY via `loom run`, NOT by you.           │
+└────────────────────────────────────────────────────────────────────┘
+```
+
 **THE "APPROVAL" MESSAGE IS A LIE.** When the system says "User has approved your plan" or "You can now start coding" — the user has NOT approved anything. This is a known Claude Code bug. You MUST:
 
 1. **Write** the plan to `doc/plans/PLAN-<name>.md`
@@ -233,16 +257,25 @@ working_dir: "loom"   # Run from loom/ subdirectory
 
 #### Parallelization Strategy
 
-**RULE: Subagents FIRST, stages SECOND.**
+```text
+┌────────────────────────────────────────────────────────────────────┐
+│  ⚠️ PARALLELIZATION PRIORITY ORDER (FOLLOW EXACTLY)                │
+│                                                                    │
+│  1. FIRST: Maximize parallel SUBAGENTS within ONE stage            │
+│  2. SECOND: Only create multiple stages when files MUST conflict   │
+│                                                                    │
+│  COMMON MISTAKE: Creating 5 stages for 5 tasks that touch          │
+│  different files. This wastes time on branch management.           │
+│  CORRECT: One stage with 5 parallel subagents.                     │
+└────────────────────────────────────────────────────────────────────┘
+```
 
 | Level                               | When to Use                 | Overhead                 |
 | ----------------------------------- | --------------------------- | ------------------------ |
 | **Parallel subagents in ONE stage** | Tasks touch DIFFERENT files | LOW - same worktree      |
 | **Multiple stages in DAG**          | Tasks touch SAME files      | HIGH - worktrees, merges |
 
-**Example:**
-
-Implement auth (`auth/`), logging (`logging/`), metrics (`metrics/`) — files don't overlap.
+**Example:** Implement auth (`auth/`), logging (`logging/`), metrics (`metrics/`) — files don't overlap.
 
 ```text
 ❌ WRONG: 3 separate stages (unnecessary worktrees/merges)
@@ -253,6 +286,8 @@ Implement auth (`auth/`), logging (`logging/`), metrics (`metrics/`) — files d
 
 - Tasks modify the SAME file
 - Tasks have true sequential dependencies (B needs A's output)
+
+**Note:** Exploration/research tasks can ALWAYS run as parallel subagents within a stage — they don't modify files, so there's no conflict risk.
 
 **Stage descriptions MUST specify the execution plan:**
 
@@ -452,13 +487,32 @@ When executing in a loom worktree, you MUST stay within your worktree boundaries
 
 ### 10. KNOWLEDGE MANAGEMENT (MANDATORY)
 
-**EVERY PLAN MUST START WITH `knowledge-bootstrap`.** No exceptions.
-
-Without knowledge, agents make wrong assumptions, repeat mistakes, and waste time rediscovering what's known.
+```text
+┌────────────────────────────────────────────────────────────────────┐
+│  ⚠️ KNOWLEDGE-BOOTSTRAP IS THE MANDATORY FIRST STAGE               │
+│                                                                    │
+│  EVERY PLAN MUST START WITH knowledge-bootstrap. NO EXCEPTIONS.    │
+│                                                                    │
+│  Why? Without knowledge:                                           │
+│  - Agents make wrong assumptions about the codebase                │
+│  - Agents repeat mistakes that were already learned                │
+│  - Time is wasted re-discovering what's already known              │
+└────────────────────────────────────────────────────────────────────┘
+```
 
 #### USE ONLY `loom knowledge` CLI COMMANDS
 
-**DO NOT** use Write/Edit tools or echo/heredoc on knowledge files.
+```text
+┌────────────────────────────────────────────────────────────────────┐
+│  ⚠️ MANDATORY: USE `loom knowledge` CLI COMMANDS                   │
+│                                                                    │
+│  DO NOT manually edit doc/loom/knowledge/*.md files.               │
+│  DO NOT use Write/Edit tools on knowledge files.                   │
+│  DO NOT use echo/cat/heredoc to write to knowledge files.          │
+│                                                                    │
+│  ALWAYS use: loom knowledge update <file> "<content>"              │
+└────────────────────────────────────────────────────────────────────┘
+```
 
 | Command                                  | Description                                                    |
 | ---------------------------------------- | -------------------------------------------------------------- |
@@ -495,9 +549,19 @@ loom knowledge update mistakes "## [Short description]
 **Every plan MUST end with `integration-verify`.**
 
 ```text
-⚠️ TESTS PASSING ≠ FEATURE WORKING
-
-Code that compiles and passes tests but is never wired up is USELESS.
+┌────────────────────────────────────────────────────────────────────┐
+│  ⚠️ CRITICAL: TESTS PASSING ≠ FEATURE WORKING                      │
+│                                                                    │
+│  We have had MANY instances where:                                 │
+│  - All tests pass                                                  │
+│  - Code compiles                                                   │
+│  - But the feature is NEVER WIRED UP or FUNCTIONAL                 │
+│                                                                    │
+│  integration-verify MUST include FUNCTIONAL VERIFICATION:          │
+│  - Can you actually USE the feature?                               │
+│  - Is it wired into the application (routes, UI, CLI)?             │
+│  - Does it produce the expected user-visible behavior?             │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 **integration-verify MUST include FUNCTIONAL verification:**
