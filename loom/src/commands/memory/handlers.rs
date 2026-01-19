@@ -1,12 +1,4 @@
-//! Memory command implementations for managing session memory journals.
-//!
-//! Commands:
-//! - `loom memory note <text>` - Record a note
-//! - `loom memory decision <text> [--context <ctx>]` - Record a decision
-//! - `loom memory question <text>` - Record a question
-//! - `loom memory query <search>` - Search memory entries
-//! - `loom memory list [--session <id>]` - List memory entries
-//! - `loom memory show [--session <id>]` - Show full memory journal
+//! Command handler implementations for memory subcommands.
 
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -17,6 +9,11 @@ use crate::fs::knowledge::{KnowledgeDir, KnowledgeFile};
 use crate::fs::memory::{
     append_entry, delete_entries_by_type, list_journals, query_entries, read_journal,
     validate_content, MemoryEntry, MemoryEntryType,
+};
+
+use super::formatters::{
+    format_entries_for_knowledge, format_entry_compact, format_entry_full,
+    format_record_success, format_session_summary,
 };
 
 /// Get the .work directory, handling worktree symlinks
@@ -43,12 +40,7 @@ pub fn note(text: String, session_id: Option<String>) -> Result<()> {
     let entry = MemoryEntry::new(MemoryEntryType::Note, text.clone());
     append_entry(&work_dir, &session, &entry)?;
 
-    println!(
-        "{} Recorded note in session '{}'",
-        "📝".green(),
-        session.cyan()
-    );
-    println!("  {}", truncate_for_display(&text, 60));
+    println!("{}", format_record_success(&MemoryEntryType::Note, &session, &text));
 
     Ok(())
 }
@@ -71,12 +63,7 @@ pub fn decision(text: String, context: Option<String>, session_id: Option<String
     };
     append_entry(&work_dir, &session, &entry)?;
 
-    println!(
-        "{} Recorded decision in session '{}'",
-        "✅".green(),
-        session.cyan()
-    );
-    println!("  {}", truncate_for_display(&text, 60));
+    println!("{}", format_record_success(&MemoryEntryType::Decision, &session, &text));
 
     Ok(())
 }
@@ -93,12 +80,7 @@ pub fn question(text: String, session_id: Option<String>) -> Result<()> {
     let entry = MemoryEntry::new(MemoryEntryType::Question, text.clone());
     append_entry(&work_dir, &session, &entry)?;
 
-    println!(
-        "{} Recorded question in session '{}'",
-        "❓".green(),
-        session.cyan()
-    );
-    println!("  {}", truncate_for_display(&text, 60));
+    println!("{}", format_record_success(&MemoryEntryType::Question, &session, &text));
 
     Ok(())
 }
@@ -132,28 +114,7 @@ pub fn query(search: String, session_id: Option<String>) -> Result<()> {
         println!("{}", "─".repeat(60));
 
         for entry in &results {
-            let time = entry.timestamp.format("%H:%M:%S").to_string();
-            let type_emoji = match entry.entry_type {
-                MemoryEntryType::Note => "📝",
-                MemoryEntryType::Decision => "✅",
-                MemoryEntryType::Question => "❓",
-            };
-
-            println!(
-                "{} {} {} {}",
-                time.dimmed(),
-                type_emoji,
-                entry.entry_type.display_name().cyan(),
-                truncate_for_display(&entry.content, 50)
-            );
-
-            if let Some(ctx) = &entry.context {
-                println!(
-                    "  {} {}",
-                    "→".dimmed(),
-                    truncate_for_display(ctx, 48).yellow()
-                );
-            }
+            println!("{}", format_entry_compact(entry));
         }
 
         total_results += count;
@@ -224,28 +185,7 @@ pub fn list(session_id: Option<String>, entry_type: Option<String>) -> Result<()
     println!("{}", "─".repeat(60));
 
     for entry in entries.iter().rev().take(20) {
-        let time = entry.timestamp.format("%H:%M:%S").to_string();
-        let type_emoji = match entry.entry_type {
-            MemoryEntryType::Note => "📝",
-            MemoryEntryType::Decision => "✅",
-            MemoryEntryType::Question => "❓",
-        };
-
-        println!(
-            "{} {} {} {}",
-            time.dimmed(),
-            type_emoji,
-            entry.entry_type.display_name().cyan(),
-            truncate_for_display(&entry.content, 50)
-        );
-
-        if let Some(ctx) = &entry.context {
-            println!(
-                "  {} {}",
-                "→".dimmed(),
-                truncate_for_display(ctx, 48).yellow()
-            );
-        }
+        println!("{}", format_entry_compact(entry));
     }
 
     if entries.len() > 20 {
@@ -284,25 +224,7 @@ pub fn show(session_id: Option<String>) -> Result<()> {
     println!("{}", "═".repeat(60));
 
     for entry in &journal.entries {
-        let time = entry.timestamp.format("%Y-%m-%d %H:%M:%S").to_string();
-        let type_emoji = match entry.entry_type {
-            MemoryEntryType::Note => "📝",
-            MemoryEntryType::Decision => "✅",
-            MemoryEntryType::Question => "❓",
-        };
-
-        println!(
-            "\n{} {} {}",
-            type_emoji,
-            entry.entry_type.display_name().bold(),
-            time.dimmed()
-        );
-        println!("{}", "─".repeat(40));
-        println!("{}", entry.content);
-
-        if let Some(ctx) = &entry.context {
-            println!("\n{} {}", "Context:".cyan(), ctx);
-        }
+        println!("{}", format_entry_full(entry));
     }
 
     println!("\n{}", "═".repeat(60));
@@ -341,19 +263,16 @@ pub fn sessions() -> Result<()> {
             .filter(|e| e.entry_type == MemoryEntryType::Question)
             .count();
 
-        let stage_info = journal
-            .stage_id
-            .map(|s| format!(" [{s}]"))
-            .unwrap_or_default();
-
         println!(
-            "{}{} - {} entries (📝 {} / ✅ {} / ❓ {})",
-            session_id.cyan(),
-            stage_info.dimmed(),
-            journal.entries.len(),
-            notes,
-            decisions,
-            questions
+            "{}",
+            format_session_summary(
+                session_id,
+                journal.stage_id.as_deref(),
+                journal.entries.len(),
+                notes,
+                decisions,
+                questions
+            )
         );
     }
 
@@ -450,59 +369,4 @@ pub fn promote(entry_type: String, target: String, session_id: Option<String>) -
     }
 
     Ok(())
-}
-
-/// Format memory entries for inclusion in a knowledge file
-fn format_entries_for_knowledge(entries: &[MemoryEntry]) -> String {
-    let mut output = String::new();
-
-    // Group by type
-    let notes: Vec<_> = entries
-        .iter()
-        .filter(|e| e.entry_type == MemoryEntryType::Note)
-        .collect();
-    let decisions: Vec<_> = entries
-        .iter()
-        .filter(|e| e.entry_type == MemoryEntryType::Decision)
-        .collect();
-    let questions: Vec<_> = entries
-        .iter()
-        .filter(|e| e.entry_type == MemoryEntryType::Question)
-        .collect();
-
-    let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M");
-    output.push_str(&format!("## Promoted from Memory [{timestamp}]\n\n"));
-
-    // Format notes as bullet list
-    if !notes.is_empty() {
-        output.push_str("### Notes\n\n");
-        for entry in &notes {
-            output.push_str(&format!("- {}\n", entry.content));
-        }
-        output.push('\n');
-    }
-
-    // Format decisions with rationale
-    if !decisions.is_empty() {
-        output.push_str("### Decisions\n\n");
-        for entry in &decisions {
-            output.push_str(&format!("- **{}**", entry.content));
-            if let Some(ctx) = &entry.context {
-                output.push_str(&format!("\n  - *Rationale:* {ctx}"));
-            }
-            output.push('\n');
-        }
-        output.push('\n');
-    }
-
-    // Format questions as bullet list
-    if !questions.is_empty() {
-        output.push_str("### Questions\n\n");
-        for entry in &questions {
-            output.push_str(&format!("- {}\n", entry.content));
-        }
-        output.push('\n');
-    }
-
-    output
 }

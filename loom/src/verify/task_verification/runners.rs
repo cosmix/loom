@@ -1,7 +1,4 @@
-//! Task verification execution
-//!
-//! Runs verification rules defined in task definitions.
-//! Verification is soft - it emits warnings but doesn't hard-block.
+//! Verification execution logic
 
 use anyhow::{Context, Result};
 use regex::Regex;
@@ -17,14 +14,9 @@ use wait_timeout::ChildExt;
 
 use crate::checkpoints::{CheckpointVerificationResult, VerificationRule};
 
-/// Default timeout for verification commands
-pub const DEFAULT_VERIFICATION_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// Timeout for collecting output from child process pipes
-const OUTPUT_COLLECTION_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// Maximum number of error output lines to show in verification failures
-const MAX_ERROR_OUTPUT_LINES: usize = 5;
+use super::types::{
+    DEFAULT_VERIFICATION_TIMEOUT, MAX_ERROR_OUTPUT_LINES, OUTPUT_COLLECTION_TIMEOUT,
+};
 
 /// Run all verification rules for a task
 pub fn run_task_verifications(
@@ -281,21 +273,6 @@ fn read_stream_to_string<R: Read>(mut stream: R) -> String {
         Ok(_) => String::from_utf8_lossy(&buf).to_string(),
         Err(_) => "[error reading output]".to_string(),
     }
-}
-
-/// Get a summary of verification results
-pub fn summarize_verifications(
-    results: &[CheckpointVerificationResult],
-) -> (usize, usize, Vec<String>) {
-    let passed = results.iter().filter(|r| r.passed).count();
-    let failed = results.iter().filter(|r| !r.passed).count();
-    let warnings: Vec<String> = results
-        .iter()
-        .filter(|r| !r.passed)
-        .map(|r| r.message.clone())
-        .collect();
-
-    (passed, failed, warnings)
 }
 
 #[cfg(test)]
