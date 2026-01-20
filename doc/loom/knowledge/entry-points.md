@@ -219,3 +219,21 @@ Protocol (daemon/protocol.rs):
 ## Stage Verify Command
 
 - `loom/src/commands/stage/verify.rs` - Re-verify and complete stages that failed acceptance criteria
+
+## Terminal Spawning Module
+
+### Key Files
+- loom/src/orchestrator/terminal/mod.rs:52-133 - TerminalBackend trait
+- loom/src/orchestrator/terminal/native/mod.rs:28-379 - NativeBackend impl
+- loom/src/orchestrator/terminal/emulator.rs:9-187 - TerminalEmulator enum
+
+### TerminalBackend Trait (mod.rs:52-133)
+Core abstraction. Four spawn methods: spawn_session (worktrees),
+spawn_merge_session, spawn_base_conflict_session, spawn_knowledge_session.
+Plus: kill_session, is_session_alive, backend_type.
+
+### Supporting Modules
+- native/detection.rs - Terminal detection (TERMINAL env, gsettings, fallback)
+- native/spawner.rs - spawn_in_terminal() with reaper thread
+- native/pid_tracking.rs - PID files and /proc scanning (Linux-only)
+- native/window_ops.rs - wmctrl/xdotool window management (Linux-only)

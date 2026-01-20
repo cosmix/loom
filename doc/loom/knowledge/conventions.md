@@ -611,3 +611,18 @@ Without --assume-merged: dependents NOT triggered
 - Located in loom/tests/integration/
 - Use `serial_test` crate for test isolation
 - Shared helpers in helpers.rs module
+
+## Terminal Module Conventions
+
+### File Organization
+- emulator.rs: Enum + command building (no platform-specific code)
+- native/detection.rs: Platform-specific detection logic
+- native/pid_tracking.rs: Platform-specific PID discovery
+- native/window_ops.rs: Platform-specific window management
+- native/spawner.rs: Cross-platform spawn orchestration
+
+### Testing Patterns
+- Tests are designed to not panic on missing tools
+- test_detect_terminal_finds_something allows failure in minimal envs
+- Window operation tests check graceful handling of missing wmctrl/xdotool
+- Use tempfile::TempDir for PID file tests

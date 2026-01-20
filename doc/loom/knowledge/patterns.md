@@ -711,3 +711,80 @@ Step 2: Re-export public items via `pub use submod::{Item1, Item2};`
 - Separate test file: `#[cfg(test)] mod tests;` in mod.rs
 - The tests.rs file contains `#[cfg(test)] mod tests { ... }`
 - Only compiled during test builds
+
+## Terminal Emulator Pattern (emulator.rs)
+
+To add a new terminal, modify the TerminalEmulator enum:
+1. Add variant to enum (e.g., TerminalApp, ITerm2)
+2. Implement binary() - return binary name string
+3. Implement from_binary() - parse binary name to variant
+4. Implement build_command() - configure Command with terminal-specific args
+
+### build_command() Pattern
+Each terminal variant configures: title, working directory, command execution.
+Examples of CLI arg variations:
+- kitty: --title, --directory, [cmd args]
+- alacritty: --title, --working-directory, -e [cmd]
+- gnome-terminal: --title, --working-directory, -- [cmd]
+- xterm: -title, -e [cmd with cd prefix]
+
+## PID Tracking Pattern (pid_tracking.rs)
+
+Current Linux-only implementation:
+1. Wrapper script writes own PID (bash $$) to .work/pids/{stage}.pid
+2. spawner.rs reads PID file after startup delay
+3. Fallback: scan /proc for claude process by cmdline + cwd match
+
+macOS port needs: Replace /proc scan with ps/pgrep or lsof-based discovery.
+
+## Window Operations Pattern (window_ops.rs)
+
+Current Linux-only implementation uses wmctrl/xdotool:
+- close_window_by_title(): wmctrl -c or xdotool windowclose
+- window_exists_by_title(): wmctrl -l or xdotool search --name
+
+macOS port needs: AppleScript equivalents via osascript command
+- Terminal.app: tell app Terminal to close window where name contains
+- iTerm2: tell app iTerm2 to close window
+
+## Terminal Detection Pattern (detection.rs)
+
+Priority order (detection.rs:17-63):
+1. TERMINAL env var (user preference)
+2. gsettings/dconf (GNOME/Cosmic DE settings)
+3. xdg-terminal-exec (emerging standard)
+4. Fallback list: kitty, alacritty, foot, wezterm, gnome-terminal, etc.
+
+macOS additions needed:
+1. Check TERM_PROGRAM env var (set by Terminal.app, iTerm)
+2. defaults read com.apple.LaunchServices for default app
+3. macOS-specific fallback: Terminal.app, iTerm2
+
+## Session Spawn Flow
+
+1. NativeBackend::spawn_*_session() builds title, prompt
+2. Creates wrapper script via pid_tracking::create_wrapper_script()
+3. Calls spawner::spawn_in_terminal() with emulator, title, workdir, cmd
+4. spawn_in_terminal() runs emulator.build_command() and spawns
+5. Reaper thread prevents zombie; PID discovery follows
+
+## macOS Implementation Notes
+
+### Terminal.app Command Pattern (AppleScript-based)
+osascript -e 'tell application "Terminal"
+  do script "cd /path && command" in front window
+  set name of front window to "title"
+end tell'
+
+### iTerm2 Command Pattern  
+osascript -e 'tell application "iTerm2"
+  set newWindow to (create window with default profile command "cmd")
+end tell'
+
+### macOS PID Discovery Alternatives
+Instead of /proc scanning:
+- pgrep -f claude: Find by cmdline pattern
+- ps aux: List all processes, filter for claude
+- lsof +D /path/to/worktree: Find processes with files open in dir
+
+Wrapper script approach still works - bash is available on macOS.
