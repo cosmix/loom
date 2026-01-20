@@ -7,94 +7,16 @@
 use anyhow::{Context, Result};
 use colored::Colorize;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::fs::work_dir::WorkDir;
 
-const IN_PROGRESS_PREFIX: &str = "IN_PROGRESS-";
-const DONE_PREFIX: &str = "DONE-";
-
-/// Get the plan source path from config.toml
-fn get_plan_source_path(work_dir: &WorkDir) -> Result<Option<PathBuf>> {
-    let config_path = work_dir.root().join("config.toml");
-
-    if !config_path.exists() {
-        return Ok(None);
-    }
-
-    let config_content =
-        std::fs::read_to_string(&config_path).context("Failed to read config.toml")?;
-
-    let config: toml::Value =
-        toml::from_str(&config_content).context("Failed to parse config.toml")?;
-
-    let source_path = config
-        .get("plan")
-        .and_then(|p| p.get("source_path"))
-        .and_then(|s| s.as_str())
-        .map(PathBuf::from);
-
-    Ok(source_path)
-}
-
-/// Update the plan source path in config.toml
-fn update_plan_source_path(work_dir: &WorkDir, new_path: &Path) -> Result<()> {
-    let config_path = work_dir.root().join("config.toml");
-
-    let config_content =
-        std::fs::read_to_string(&config_path).context("Failed to read config.toml")?;
-
-    let mut config: toml::Value =
-        toml::from_str(&config_content).context("Failed to parse config.toml")?;
-
-    if let Some(plan) = config.get_mut("plan") {
-        if let Some(table) = plan.as_table_mut() {
-            table.insert(
-                "source_path".to_string(),
-                toml::Value::String(new_path.display().to_string()),
-            );
-        }
-    }
-
-    // Serialize back to TOML with proper formatting
-    let new_content = toml::to_string_pretty(&config).context("Failed to serialize config")?;
-    fs::write(&config_path, new_content).context("Failed to write config.toml")?;
-
-    Ok(())
-}
-
-/// Add a prefix to the plan filename, preserving the directory
-fn add_prefix_to_filename(path: &Path, prefix: &str) -> PathBuf {
-    let parent = path.parent().unwrap_or(Path::new("."));
-    let filename = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("plan.md");
-
-    parent.join(format!("{prefix}{filename}"))
-}
-
-/// Remove a prefix from the plan filename if present
-fn remove_prefix_from_filename(path: &Path, prefix: &str) -> PathBuf {
-    let parent = path.parent().unwrap_or(Path::new("."));
-    let filename = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("plan.md");
-
-    if let Some(stripped) = filename.strip_prefix(prefix) {
-        parent.join(stripped)
-    } else {
-        path.to_path_buf()
-    }
-}
-
-/// Check if the filename has a specific prefix
-fn has_prefix(path: &Path, prefix: &str) -> bool {
-    path.file_name()
-        .and_then(|n| n.to_str())
-        .is_some_and(|name| name.starts_with(prefix))
-}
+use super::config_ops::{get_plan_source_path, update_plan_source_path};
+use super::filename_ops::{
+    add_prefix_to_filename, has_prefix, remove_prefix_from_filename, DONE_PREFIX,
+    IN_PROGRESS_PREFIX,
+};
+use super::merge_status::all_stages_merged;
 
 /// Mark the plan file as in-progress by adding `IN_PROGRESS-` prefix.
 ///
@@ -148,62 +70,6 @@ pub fn mark_plan_in_progress(work_dir: &WorkDir) -> Result<Option<PathBuf>> {
     );
 
     Ok(Some(new_path))
-}
-
-/// Check if all stages are merged by reading stage files.
-fn all_stages_merged(work_dir: &WorkDir) -> Result<bool> {
-    let stages_dir = work_dir.root().join("stages");
-
-    if !stages_dir.exists() {
-        return Ok(false);
-    }
-
-    let entries = fs::read_dir(&stages_dir).context("Failed to read stages directory")?;
-
-    let mut found_any_stage = false;
-
-    for entry in entries {
-        let entry = entry?;
-        let path = entry.path();
-
-        if path.extension().and_then(|e| e.to_str()) != Some("md") {
-            continue;
-        }
-
-        found_any_stage = true;
-
-        let content = fs::read_to_string(&path)
-            .with_context(|| format!("Failed to read stage file: {}", path.display()))?;
-
-        // Parse YAML frontmatter to check merged status
-        if let Some(frontmatter) = extract_frontmatter(&content) {
-            // Check if merged: true in frontmatter
-            if !frontmatter.contains("merged: true") {
-                return Ok(false);
-            }
-        } else {
-            // No frontmatter means not merged
-            return Ok(false);
-        }
-    }
-
-    // Must have at least one stage to be considered "all merged"
-    Ok(found_any_stage)
-}
-
-/// Extract YAML frontmatter from markdown content
-fn extract_frontmatter(content: &str) -> Option<&str> {
-    let content = content.trim_start();
-    if !content.starts_with("---") {
-        return None;
-    }
-
-    let rest = &content[3..];
-    if let Some(end) = rest.find("---") {
-        Some(&rest[..end])
-    } else {
-        None
-    }
 }
 
 /// Mark the plan file as done by replacing `IN_PROGRESS-` with `DONE-` prefix.
@@ -266,82 +132,6 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    // === Unit tests for helper functions ===
-
-    #[test]
-    fn test_add_prefix_to_filename() {
-        let path = PathBuf::from("doc/plans/PLAN-feature.md");
-        let result = add_prefix_to_filename(&path, IN_PROGRESS_PREFIX);
-        assert_eq!(
-            result,
-            PathBuf::from("doc/plans/IN_PROGRESS-PLAN-feature.md")
-        );
-    }
-
-    #[test]
-    fn test_add_prefix_preserves_nested_path() {
-        let path = PathBuf::from("/home/user/project/doc/plans/PLAN-auth.md");
-        let result = add_prefix_to_filename(&path, DONE_PREFIX);
-        assert_eq!(
-            result,
-            PathBuf::from("/home/user/project/doc/plans/DONE-PLAN-auth.md")
-        );
-    }
-
-    #[test]
-    fn test_remove_prefix_from_filename() {
-        let path = PathBuf::from("doc/plans/IN_PROGRESS-PLAN-feature.md");
-        let result = remove_prefix_from_filename(&path, IN_PROGRESS_PREFIX);
-        assert_eq!(result, PathBuf::from("doc/plans/PLAN-feature.md"));
-    }
-
-    #[test]
-    fn test_remove_prefix_not_present() {
-        let path = PathBuf::from("doc/plans/PLAN-feature.md");
-        let result = remove_prefix_from_filename(&path, IN_PROGRESS_PREFIX);
-        assert_eq!(result, PathBuf::from("doc/plans/PLAN-feature.md"));
-    }
-
-    #[test]
-    fn test_has_prefix() {
-        assert!(has_prefix(
-            Path::new("doc/plans/IN_PROGRESS-PLAN.md"),
-            IN_PROGRESS_PREFIX
-        ));
-        assert!(!has_prefix(
-            Path::new("doc/plans/PLAN.md"),
-            IN_PROGRESS_PREFIX
-        ));
-        assert!(has_prefix(Path::new("doc/plans/DONE-PLAN.md"), DONE_PREFIX));
-    }
-
-    #[test]
-    fn test_extract_frontmatter() {
-        let content = "---\nstatus: completed\nmerged: true\n---\n# Content";
-        let fm = extract_frontmatter(content);
-        assert!(fm.is_some());
-        assert!(fm.unwrap().contains("merged: true"));
-
-        let no_fm = "# Just content";
-        assert!(extract_frontmatter(no_fm).is_none());
-    }
-
-    #[test]
-    fn test_extract_frontmatter_with_leading_whitespace() {
-        let content = "  \n---\nid: test\n---\n# Content";
-        let fm = extract_frontmatter(content);
-        assert!(fm.is_some());
-    }
-
-    #[test]
-    fn test_extract_frontmatter_unclosed() {
-        let content = "---\nid: test\nNo closing delimiter";
-        let fm = extract_frontmatter(content);
-        assert!(fm.is_none());
-    }
-
-    // === Integration tests with filesystem ===
-
     fn create_test_work_dir(temp_dir: &TempDir) -> WorkDir {
         let work_dir = WorkDir::new(temp_dir.path()).unwrap();
         work_dir.initialize().unwrap();
@@ -356,7 +146,7 @@ mod tests {
         plan_path
     }
 
-    fn write_config(work_dir: &WorkDir, plan_path: &Path) {
+    fn write_config(work_dir: &WorkDir, plan_path: &std::path::Path) {
         let config_content = format!(
             "[plan]\nsource_path = \"{}\"\nplan_id = \"test\"\nplan_name = \"Test\"\nbase_branch = \"main\"\n",
             plan_path.display()
@@ -516,31 +306,6 @@ mod tests {
         let new_source_path = get_plan_source_path(&work_dir).unwrap().unwrap();
         assert!(new_source_path.to_str().unwrap().contains("DONE-"));
         assert!(!new_source_path.to_str().unwrap().contains("IN_PROGRESS"));
-    }
-
-    #[test]
-    fn test_all_stages_merged_empty_stages_dir() {
-        let temp_dir = TempDir::new().unwrap();
-        let work_dir = create_test_work_dir(&temp_dir);
-        // No stages directory
-
-        let result = all_stages_merged(&work_dir).unwrap();
-
-        assert!(!result); // Empty = not merged
-    }
-
-    #[test]
-    fn test_all_stages_merged_ignores_non_markdown() {
-        let temp_dir = TempDir::new().unwrap();
-        let work_dir = create_test_work_dir(&temp_dir);
-
-        let stages_dir = work_dir.root().join("stages");
-        fs::create_dir_all(&stages_dir).unwrap();
-        fs::write(stages_dir.join("readme.txt"), "Not a stage").unwrap();
-
-        // With only non-markdown files, returns false (no stages found)
-        let result = all_stages_merged(&work_dir).unwrap();
-        assert!(!result);
     }
 
     #[test]

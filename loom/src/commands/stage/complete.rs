@@ -6,113 +6,16 @@ use std::path::{Path, PathBuf};
 
 use crate::fs::permissions::sync_worktree_permissions;
 use crate::fs::task_state::read_task_state_if_exists;
-use crate::git::get_branch_head;
 use crate::git::worktree::{find_repo_root_from_cwd, find_worktree_root_from_cwd};
 use crate::models::stage::{StageStatus, StageType};
-use crate::orchestrator::{get_merge_point, merge_completed_stage, ProgressiveMergeResult};
 use crate::verify::criteria::run_acceptance;
 use crate::verify::task_verification::run_task_verifications;
 use crate::verify::transitions::{load_stage, save_stage, trigger_dependents};
 
+use super::acceptance_runner::resolve_acceptance_dir;
+use super::knowledge_complete::complete_knowledge_stage;
+use super::progressive_complete::complete_with_merge;
 use super::session::{cleanup_session_resources, find_session_for_stage};
-
-/// Complete a knowledge stage without requiring merge.
-///
-/// Knowledge stages run in the main repo context (no worktree) and update
-/// documentation in `doc/loom/knowledge/`. Since they don't have a branch
-/// to merge, we skip merge entirely and auto-set `merged=true`.
-///
-/// # Process
-/// 1. Run acceptance criteria if specified (in main repo context)
-/// 2. Skip merge attempt entirely (no branch to merge)
-/// 3. Auto-set merged=true (no actual merge needed)
-/// 4. Mark stage as Completed
-/// 5. Trigger dependent stages
-fn complete_knowledge_stage(
-    stage_id: &str,
-    session_id: Option<&str>,
-    no_verify: bool,
-) -> Result<()> {
-    let work_dir = Path::new(".work");
-    let mut stage = load_stage(stage_id, work_dir)?;
-
-    // Run acceptance criteria unless --no-verify
-    let acceptance_result: Option<bool> = if no_verify {
-        None
-    } else if !stage.acceptance.is_empty() {
-        println!("Running acceptance criteria for knowledge stage '{stage_id}'...");
-
-        // Knowledge stages run in main repo context, not a worktree
-        // Use stage.working_dir if set, otherwise current directory
-        let acceptance_dir: Option<PathBuf> = stage
-            .working_dir
-            .as_ref()
-            .map(PathBuf::from)
-            .filter(|p| p.exists());
-
-        if let Some(ref dir) = acceptance_dir {
-            println!("  (working directory: {})", dir.display());
-        }
-
-        let result = run_acceptance(&stage, acceptance_dir.as_deref())
-            .context("Failed to run acceptance criteria")?;
-
-        for criterion_result in result.results() {
-            if criterion_result.success {
-                println!("  ✓ passed: {}", criterion_result.command);
-            } else if criterion_result.timed_out {
-                println!("  ✗ TIMEOUT: {}", criterion_result.command);
-            } else {
-                println!("  ✗ FAILED: {}", criterion_result.command);
-            }
-        }
-
-        if result.all_passed() {
-            println!("All acceptance criteria passed!");
-        }
-        Some(result.all_passed())
-    } else {
-        // No acceptance criteria defined - treat as passed
-        Some(true)
-    };
-
-    // Cleanup session resources if session_id provided
-    if let Some(sid) = session_id {
-        cleanup_session_resources(stage_id, sid, work_dir);
-    }
-
-    // Handle acceptance failure
-    if acceptance_result == Some(false) {
-        stage.try_complete_with_failures()?;
-        save_stage(&stage, work_dir)?;
-        println!("Knowledge stage '{stage_id}' completed with failures - acceptance criteria did not pass");
-        println!("  Run 'loom stage retry {stage_id}' to try again after fixing issues");
-        return Ok(());
-    }
-
-    // Knowledge stages auto-set merged=true since there's no branch to merge
-    stage.merged = true;
-
-    // Mark stage as completed
-    stage.try_complete(None)?;
-    save_stage(&stage, work_dir)?;
-
-    println!("Knowledge stage '{stage_id}' completed!");
-    println!("  (merged=true auto-set, no git merge required for knowledge stages)");
-
-    // Trigger dependent stages
-    let triggered =
-        trigger_dependents(stage_id, work_dir).context("Failed to trigger dependent stages")?;
-
-    if !triggered.is_empty() {
-        println!("Triggered {} dependent stage(s):", triggered.len());
-        for dep_id in &triggered {
-            println!("  → {dep_id}");
-        }
-    }
-
-    Ok(())
-}
 
 /// Mark a stage as complete, optionally running acceptance criteria.
 /// If acceptance criteria pass, auto-verifies the stage and triggers dependents.
@@ -336,7 +239,9 @@ pub fn complete(
                 if !all_tasks_passed {
                     stage.try_complete_with_failures()?;
                     save_stage(&stage, work_dir)?;
-                    println!("Stage '{stage_id}' completed with failures - task verifications did not pass");
+                    println!(
+                        "Stage '{stage_id}' completed with failures - task verifications did not pass"
+                    );
                     for result in &task_results {
                         if !result.passed {
                             println!("  Task verification FAILED: {}", result.message);
@@ -349,82 +254,12 @@ pub fn complete(
         }
 
         // Attempt progressive merge into the merge point (base_branch)
-        // Merged flag semantics for this path (normal completion):
-        // - merged=true ONLY if git merge succeeds (or fast-forward/already-merged)
-        // - merged=false if merge has conflicts or errors
-        // - merged=true even if NoBranch (branch was already cleaned up)
-        //
         // Find the main repo root (not the worktree root) for merge operations.
         // When running from within a worktree, we need to merge from the main repo.
         let cwd = std::env::current_dir().context("Failed to get current directory")?;
         let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or_else(|| cwd.clone());
-        let merge_point = get_merge_point(work_dir)?;
 
-        // Capture the completed commit SHA before merge (the HEAD of the stage branch)
-        let branch_name = format!("loom/{stage_id}");
-        let completed_commit = get_branch_head(&branch_name, &repo_root).ok();
-
-        println!("Attempting progressive merge into '{merge_point}'...");
-        match merge_completed_stage(&stage, &repo_root, &merge_point) {
-            Ok(ProgressiveMergeResult::Success { files_changed }) => {
-                println!("  ✓ Merged {files_changed} file(s) into '{merge_point}'");
-                stage.completed_commit = completed_commit;
-                stage.merged = true;
-            }
-            Ok(ProgressiveMergeResult::FastForward) => {
-                println!("  ✓ Fast-forward merge into '{merge_point}'");
-                stage.completed_commit = completed_commit;
-                stage.merged = true;
-            }
-            Ok(ProgressiveMergeResult::AlreadyMerged) => {
-                println!("  ✓ Already up to date with '{merge_point}'");
-                stage.completed_commit = completed_commit;
-                stage.merged = true;
-            }
-            Ok(ProgressiveMergeResult::NoBranch) => {
-                println!("  → No branch to merge (already cleaned up)");
-                stage.merged = true;
-            }
-            Ok(ProgressiveMergeResult::Conflict { conflicting_files }) => {
-                println!("  ✗ Merge conflict detected!");
-                println!("    Conflicting files:");
-                for file in &conflicting_files {
-                    println!("      - {file}");
-                }
-                println!();
-                println!("    Stage transitioning to MergeConflict status.");
-                println!("    Resolve conflicts and run: loom stage merge-complete {stage_id}");
-                stage.try_mark_merge_conflict()?;
-                save_stage(&stage, work_dir)?;
-                // Don't trigger dependents when there's a conflict
-                return Ok(());
-            }
-            Err(e) => {
-                eprintln!("Progressive merge failed: {e}");
-                stage.try_mark_merge_blocked()?;
-                save_stage(&stage, work_dir)?;
-                eprintln!("Stage '{stage_id}' marked as MergeBlocked");
-                eprintln!("  Fix the issue and run: loom stage retry {stage_id}");
-                return Ok(());
-            }
-        }
-
-        // Mark stage as completed - only after all checks pass
-        stage.try_complete(None)?;
-        save_stage(&stage, work_dir)?;
-
-        println!("Stage '{stage_id}' completed!");
-
-        // Trigger dependent stages
-        let triggered = trigger_dependents(&stage_id, work_dir)
-            .context("Failed to trigger dependent stages")?;
-
-        if !triggered.is_empty() {
-            println!("Triggered {} dependent stage(s):", triggered.len());
-            for dep_id in &triggered {
-                println!("  → {dep_id}");
-            }
-        }
+        complete_with_merge(&mut stage, &repo_root, work_dir)?;
     } else {
         // --no-verify: Skip verifications and merge, just mark as completed
         // Merged flag semantics for this path:
@@ -452,121 +287,4 @@ pub(super) fn cleanup_terminal_for_stage(
 ) {
     // Native backend cleanup is handled by orchestrator via PID
     // No additional cleanup needed here
-}
-
-/// Helper function to resolve acceptance directory from worktree root and working_dir.
-/// Exposed for testing.
-///
-/// # Arguments
-/// * `worktree_root` - The root of the worktree (e.g., ".worktrees/stage-id")
-/// * `working_dir` - The stage's working_dir setting (e.g., ".", "loom", None)
-///
-/// # Returns
-/// The resolved path for running acceptance criteria
-pub fn resolve_acceptance_dir(
-    worktree_root: Option<&Path>,
-    working_dir: Option<&str>,
-) -> Option<PathBuf> {
-    match (worktree_root, working_dir) {
-        (Some(root), Some(subdir)) => {
-            // Handle "." special case - use worktree root directly
-            if subdir == "." {
-                Some(root.to_path_buf())
-            } else {
-                let full_path = root.join(subdir);
-                if full_path.exists() {
-                    Some(full_path)
-                } else {
-                    // Fall back to worktree root if subdirectory doesn't exist
-                    eprintln!(
-                        "Warning: stage working_dir '{subdir}' does not exist in worktree at '{}', using worktree root",
-                        full_path.display()
-                    );
-                    Some(root.to_path_buf())
-                }
-            }
-        }
-        (Some(root), None) => {
-            // No working_dir specified, use worktree root
-            Some(root.to_path_buf())
-        }
-        _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    #[test]
-    fn test_resolve_acceptance_dir_dot_uses_worktree_root() {
-        let temp_dir = TempDir::new().unwrap();
-        let worktree_root = temp_dir.path();
-
-        let result = resolve_acceptance_dir(Some(worktree_root), Some("."));
-
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), worktree_root.to_path_buf());
-    }
-
-    #[test]
-    fn test_resolve_acceptance_dir_subdir_uses_worktree_root_joined() {
-        let temp_dir = TempDir::new().unwrap();
-        let worktree_root = temp_dir.path();
-
-        // Create the subdirectory
-        let subdir_path = worktree_root.join("loom");
-        std::fs::create_dir_all(&subdir_path).unwrap();
-
-        let result = resolve_acceptance_dir(Some(worktree_root), Some("loom"));
-
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), subdir_path);
-    }
-
-    #[test]
-    fn test_resolve_acceptance_dir_missing_subdir_falls_back_to_worktree_root() {
-        let temp_dir = TempDir::new().unwrap();
-        let worktree_root = temp_dir.path();
-
-        // Don't create the subdirectory - it should fall back to root
-        let result = resolve_acceptance_dir(Some(worktree_root), Some("nonexistent"));
-
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), worktree_root.to_path_buf());
-    }
-
-    #[test]
-    fn test_resolve_acceptance_dir_none_working_dir_uses_worktree_root() {
-        let temp_dir = TempDir::new().unwrap();
-        let worktree_root = temp_dir.path();
-
-        let result = resolve_acceptance_dir(Some(worktree_root), None);
-
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), worktree_root.to_path_buf());
-    }
-
-    #[test]
-    fn test_resolve_acceptance_dir_no_worktree_returns_none() {
-        let result = resolve_acceptance_dir(None, Some("."));
-
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn test_resolve_acceptance_dir_nested_subdir() {
-        let temp_dir = TempDir::new().unwrap();
-        let worktree_root = temp_dir.path();
-
-        // Create a nested subdirectory
-        let subdir_path = worktree_root.join("packages/core");
-        std::fs::create_dir_all(&subdir_path).unwrap();
-
-        let result = resolve_acceptance_dir(Some(worktree_root), Some("packages/core"));
-
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), subdir_path);
-    }
 }

@@ -3,9 +3,12 @@
 //! This module provides commands for running loom plans either in foreground
 //! (debugging) or background (daemon) mode.
 
+mod config_ops;
+mod filename_ops;
 mod foreground;
 mod frontmatter;
 mod graph_loader;
+mod merge_status;
 mod plan_lifecycle;
 
 #[cfg(test)]

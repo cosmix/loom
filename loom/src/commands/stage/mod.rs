@@ -1,9 +1,13 @@
 //! Stage state manipulation
 //! Usage: loom stage <id> [complete|block|reset|ready|merge-complete|recover|verify]
 
+mod acceptance_runner;
 mod complete;
+mod criteria_runner;
+mod knowledge_complete;
 mod merge_complete;
 mod output;
+mod progressive_complete;
 mod recover;
 mod session;
 mod skip_retry;
