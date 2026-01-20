@@ -4,13 +4,14 @@
 
 use std::process::Command;
 
-/// Close a window by its title using wmctrl or xdotool.
+/// Close a window by its title using wmctrl or xdotool (Linux).
 ///
 /// This is the preferred method for closing terminal windows because it works
 /// correctly for all terminal emulators, including those like gnome-terminal
 /// that use a server process (where killing by PID would kill all windows).
 ///
 /// Returns `true` if the window was successfully closed, `false` otherwise.
+#[cfg(target_os = "linux")]
 pub fn close_window_by_title(title: &str) -> bool {
     // Try wmctrl first (most reliable for window management)
     if which::which("wmctrl").is_ok() {
@@ -55,10 +56,63 @@ pub fn close_window_by_title(title: &str) -> bool {
     false
 }
 
-/// Check if a window with the given title exists
+/// Close a window by its title using AppleScript (macOS).
+///
+/// This is the preferred method for closing terminal windows because it works
+/// correctly for all terminal emulators, including Terminal.app and iTerm2.
+///
+/// Returns `true` if the window was successfully closed, `false` otherwise.
+#[cfg(target_os = "macos")]
+pub fn close_window_by_title(title: &str) -> bool {
+    // Escape quotes in title for AppleScript
+    let escaped_title = title.replace('"', "\\\"");
+
+    // Try Terminal.app first
+    let terminal_script = format!(
+        r#"tell application "Terminal"
+    set windowList to every window whose name contains "{}"
+    repeat with w in windowList
+        close w
+    end repeat
+end tell"#,
+        escaped_title
+    );
+
+    let result = Command::new("osascript")
+        .arg("-e")
+        .arg(&terminal_script)
+        .output();
+
+    if let Ok(out) = result {
+        if out.status.success() {
+            return true;
+        }
+    }
+
+    // Try iTerm2
+    let iterm_script = format!(
+        r#"tell application "iTerm2"
+    set windowList to every window whose name contains "{}"
+    repeat with w in windowList
+        close w
+    end repeat
+end tell"#,
+        escaped_title
+    );
+
+    Command::new("osascript")
+        .arg("-e")
+        .arg(&iterm_script)
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
+
+/// Check if a window with the given title exists (Linux)
 ///
 /// Uses wmctrl or xdotool to check if a window with the given title exists.
 /// Returns true if found, false otherwise (or if tools unavailable).
+#[cfg(target_os = "linux")]
 pub fn window_exists_by_title(title: &str) -> bool {
     // Try wmctrl first (most reliable for window management)
     if which::which("wmctrl").is_ok() {
@@ -97,6 +151,60 @@ pub fn window_exists_by_title(title: &str) -> bool {
                     }
                 }
             }
+        }
+    }
+
+    false
+}
+
+/// Check if a window with the given title exists (macOS)
+///
+/// Uses AppleScript to check if a window with the given title exists in
+/// Terminal.app or iTerm2. Returns true if found, false otherwise.
+#[cfg(target_os = "macos")]
+pub fn window_exists_by_title(title: &str) -> bool {
+    // Escape quotes in title for AppleScript
+    let escaped_title = title.replace('"', "\\\"");
+
+    // Check Terminal.app
+    let terminal_script = format!(
+        r#"tell application "Terminal"
+    set windowList to every window whose name contains "{}"
+    return (count of windowList) > 0
+end tell"#,
+        escaped_title
+    );
+
+    if let Ok(out) = Command::new("osascript")
+        .arg("-e")
+        .arg(&terminal_script)
+        .output()
+    {
+        if out.status.success() {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            if stdout.trim() == "true" {
+                return true;
+            }
+        }
+    }
+
+    // Check iTerm2
+    let iterm_script = format!(
+        r#"tell application "iTerm2"
+    set windowList to every window whose name contains "{}"
+    return (count of windowList) > 0
+end tell"#,
+        escaped_title
+    );
+
+    if let Ok(out) = Command::new("osascript")
+        .arg("-e")
+        .arg(&iterm_script)
+        .output()
+    {
+        if out.status.success() {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            return stdout.trim() == "true";
         }
     }
 
