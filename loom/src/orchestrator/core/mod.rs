@@ -9,7 +9,10 @@
 
 use std::io::{self, Write};
 
+mod completion_handler;
+mod crash_handler;
 mod event_handler;
+mod merge_handler;
 mod orchestrator;
 mod persistence;
 mod recovery;

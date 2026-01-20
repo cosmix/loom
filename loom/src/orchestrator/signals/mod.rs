@@ -8,6 +8,9 @@ mod merge;
 mod merge_conflict;
 mod parse;
 mod recovery;
+mod recovery_format;
+mod recovery_parsing;
+mod recovery_types;
 mod types;
 
 #[cfg(test)]
@@ -15,10 +18,9 @@ mod tests;
 
 // Re-export public types
 pub use cache::SignalMetrics;
-pub use recovery::{
-    generate_recovery_signal, read_recovery_signal, LastHeartbeatInfo, RecoveryReason,
-    RecoverySignalContent,
-};
+pub use recovery::generate_recovery_signal;
+pub use recovery_parsing::read_recovery_signal;
+pub use recovery_types::{LastHeartbeatInfo, RecoveryReason, RecoverySignalContent};
 pub use types::{
     BaseConflictSignalContent, DependencyStatus, EmbeddedContext, MergeConflictSignalContent,
     MergeSignalContent, SignalContent, SignalUpdates, TaskStatus,
