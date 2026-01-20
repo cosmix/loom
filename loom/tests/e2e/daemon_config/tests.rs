@@ -3,13 +3,11 @@
 //! Tests for orchestrator creation, auto-merge, backend types, watch mode,
 //! directory configuration, and stage-specific execution.
 
-use crate::helpers::create_temp_git_repo;
-use loom::models::stage::{Stage, StageStatus};
+use loom::models::stage::Stage;
 use loom::orchestrator::terminal::BackendType;
 use loom::orchestrator::{Orchestrator, OrchestratorConfig};
 use loom::plan::graph::ExecutionGraph;
 use loom::plan::schema::StageDefinition;
-use loom::verify::transitions::save_stage;
 use std::time::Duration;
 use tempfile::TempDir;
 

@@ -1,4 +1,3 @@
-mod merge_status;
 mod runners;
 mod sessions;
 mod stages;

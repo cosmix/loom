@@ -204,15 +204,6 @@ pub struct ParsedStage {
 /// Uses proper YAML parsing via serde_yaml for robustness. This handles
 /// all YAML formats correctly (quoted strings, flow style, multiline values, etc.)
 ///
-/// Note: This function is kept for backwards compatibility. Use
-/// `parse_stage_frontmatter_full` for access to all fields including
-/// `merged` and `dependencies`.
-#[allow(dead_code)]
-pub fn parse_stage_frontmatter(content: &str) -> Option<(String, String, String, Option<String>)> {
-    let parsed = parse_stage_frontmatter_full(content)?;
-    Some((parsed.id, parsed.name, parsed.status, parsed.session))
-}
-
 /// Parse stage frontmatter to extract all fields including merged and dependencies.
 ///
 /// Uses proper YAML parsing via serde_yaml for robustness.

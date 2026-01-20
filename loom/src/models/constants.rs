@@ -21,8 +21,4 @@ pub mod display {
     /// Between HEALTHY and WARNING, context is moderate (yellow).
     /// Above WARNING percentage, context usage is critical (red).
     pub const CONTEXT_WARNING_PCT: f32 = 65.0;
-
-    /// Threshold for "critical" display in runner list view.
-    /// This is near Claude Code's compaction threshold - emergency zone.
-    pub const CONTEXT_CRITICAL_PCT: f32 = 75.0;
 }

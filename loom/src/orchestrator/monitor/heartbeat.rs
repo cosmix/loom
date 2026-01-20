@@ -100,8 +100,6 @@ pub enum HeartbeatStatus {
         /// How long since last heartbeat
         stale_duration_secs: u64,
     },
-    /// Session crashed - PID is dead
-    Crashed,
     /// No heartbeat file exists (session may not have started heartbeat yet)
     NoHeartbeat,
 }

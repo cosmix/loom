@@ -13,8 +13,6 @@ impl StatusColors {
     pub const PENDING: Color = Color::Gray;
     pub const QUEUED: Color = Color::Cyan;
     pub const WARNING: Color = Color::Yellow;
-    pub const HANDOFF: Color = Color::Magenta;
-    pub const CONFLICT: Color = Color::Red;
     pub const MERGED: Color = Color::Rgb(100, 180, 100); // Lighter green for merged
 
     // Context bar colors (thresholds in models::constants::display)

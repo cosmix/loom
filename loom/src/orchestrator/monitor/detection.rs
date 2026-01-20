@@ -324,10 +324,6 @@ impl Detection {
                     // No heartbeat yet - session may not have started heartbeat protocol
                     // This is normal for new sessions or sessions before hooks are set up
                 }
-                HeartbeatStatus::Crashed => {
-                    // This shouldn't happen from heartbeat watcher, but handle it
-                    // Crash detection is handled in detect_session_changes
-                }
             }
         }
 

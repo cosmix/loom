@@ -3,8 +3,7 @@
 use super::super::protocol::Response;
 use super::core::DaemonServer;
 use super::status::{
-    collect_status, detect_worktree_status, is_manually_merged, parse_stage_frontmatter,
-    parse_stage_frontmatter_full,
+    collect_status, detect_worktree_status, is_manually_merged, parse_stage_frontmatter_full,
 };
 use crate::models::worktree::WorktreeStatus;
 use std::fs;
@@ -88,14 +87,14 @@ session: session-123
 # Stage content
 "#;
 
-    let result = parse_stage_frontmatter(content);
+    let result = parse_stage_frontmatter_full(content);
     assert!(result.is_some());
 
-    let (id, name, status, session) = result.unwrap();
-    assert_eq!(id, "stage-1");
-    assert_eq!(name, "Test Stage");
-    assert_eq!(status, "executing");
-    assert_eq!(session, Some("session-123".to_string()));
+    let parsed = result.unwrap();
+    assert_eq!(parsed.id, "stage-1");
+    assert_eq!(parsed.name, "Test Stage");
+    assert_eq!(parsed.status, "executing");
+    assert_eq!(parsed.session, Some("session-123".to_string()));
 }
 
 #[test]
@@ -110,20 +109,20 @@ session: ~
 # Stage content
 "#;
 
-    let result = parse_stage_frontmatter(content);
+    let result = parse_stage_frontmatter_full(content);
     assert!(result.is_some());
 
-    let (id, name, status, session) = result.unwrap();
-    assert_eq!(id, "stage-2");
-    assert_eq!(name, "Another Stage");
-    assert_eq!(status, "pending");
-    assert!(session.is_none());
+    let parsed = result.unwrap();
+    assert_eq!(parsed.id, "stage-2");
+    assert_eq!(parsed.name, "Another Stage");
+    assert_eq!(parsed.status, "pending");
+    assert!(parsed.session.is_none());
 }
 
 #[test]
 fn test_parse_stage_frontmatter_missing_frontmatter() {
     let content = "# No frontmatter here";
-    let result = parse_stage_frontmatter(content);
+    let result = parse_stage_frontmatter_full(content);
     assert!(result.is_none());
 }
 

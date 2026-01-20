@@ -1,7 +1,6 @@
 pub mod constants;
 pub mod failure;
 pub mod keys;
-pub mod plan;
 pub mod runner;
 pub mod serialization;
 pub mod session;

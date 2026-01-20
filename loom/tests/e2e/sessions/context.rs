@@ -6,7 +6,7 @@
 //! - Yellow: 50-64% (warning zone, not exhausted)
 //! - Red: 65%+ (handoff required, exhausted)
 
-use loom::models::constants::{CONTEXT_CRITICAL_THRESHOLD, CONTEXT_WARNING_THRESHOLD};
+use loom::models::constants::CONTEXT_CRITICAL_THRESHOLD;
 use loom::models::session::Session;
 use std::thread;
 use std::time::Duration;

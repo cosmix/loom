@@ -158,7 +158,6 @@ pub fn format_record_success(entry_type: &MemoryEntryType, session_id: &str, tex
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
 
     #[test]
     fn test_format_entries_for_knowledge() {
