@@ -79,8 +79,6 @@ pub fn complete_dynamic(ctx: &CompletionContext) -> Result<()> {
 
         "verify" | "merge" | "resume" => complete_stage_ids(cwd, prefix)?,
 
-        "attach" => complete_stage_or_session_ids(cwd, prefix)?,
-
         "kill" if ctx.cmdline.contains("sessions") => complete_session_ids(cwd, prefix)?,
 
         "complete" | "block" | "reset" | "waiting" if ctx.cmdline.contains("stage") => {

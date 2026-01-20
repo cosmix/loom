@@ -46,10 +46,6 @@ pub enum Commands {
         #[arg(short = 'p', long)]
         max_parallel: Option<usize>,
 
-        /// Attach to existing orchestrator session
-        #[arg(short, long)]
-        attach: bool,
-
         /// Run orchestrator in foreground (not recommended)
         #[arg(long)]
         foreground: bool,
@@ -98,16 +94,6 @@ pub enum Commands {
         /// Force merge even if stage is not Completed/Verified or has active sessions
         #[arg(short, long)]
         force: bool,
-    },
-
-    /// Attach to running sessions
-    Attach {
-        #[command(subcommand)]
-        command: Option<AttachCommands>,
-
-        /// Stage ID or session ID (for direct attach without subcommand)
-        #[arg(value_parser = clap_id_validator)]
-        target: Option<String>,
     },
 
     /// Manage active sessions
@@ -605,32 +591,4 @@ pub enum MemoryCommands {
         #[arg(short, long, value_parser = clap_id_validator)]
         session: Option<String>,
     },
-}
-
-#[derive(Subcommand)]
-pub enum AttachCommands {
-    /// Attach to all running sessions
-    All {
-        /// Open separate GUI terminal windows
-        #[arg(long)]
-        gui: bool,
-
-        /// Detach other clients from sessions before attaching
-        #[arg(long, short)]
-        detach: bool,
-
-        /// Use legacy window-per-session mode (ignored for native backend)
-        #[arg(long)]
-        windows: bool,
-
-        /// Layout for view: tiled (default), horizontal, vertical (ignored for native backend)
-        #[arg(long, value_name = "LAYOUT", default_value = "tiled")]
-        layout: String,
-    },
-
-    /// List all attachable sessions
-    List,
-
-    /// Stream daemon logs in real-time
-    Logs,
 }

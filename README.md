@@ -378,7 +378,7 @@ loom init <plan-path> [--clean]
 # - --clean: remove old .work/, prune worktrees, kill orphaned sessions first
 
 # Execute stages (starts daemon, spawns sessions in terminal windows)
-loom run [--stage <id>] [--manual] [--max-parallel <n>] [--watch] [--foreground] [--attach] [--no-merge]
+loom run [--stage <id>] [--manual] [--max-parallel <n>] [--watch] [--foreground] [--no-merge]
 # - Starts background daemon if not running
 # - Creates git worktrees for ready parallel stages
 # - Spawns Claude sessions in terminal windows (unless --manual)
@@ -389,7 +389,6 @@ loom run [--stage <id>] [--manual] [--max-parallel <n>] [--watch] [--foreground]
 # - --max-parallel: max parallel sessions (default: 4)
 # - --watch: continuous mode - keep running until all stages terminal
 # - --foreground: run orchestrator in foreground (for debugging)
-# - --attach: attach to existing orchestrator (shows logs)
 # - --no-merge: disable auto-merge of completed stages
 
 # Live dashboard - shows plan progress and session health
@@ -419,20 +418,6 @@ loom merge <stage-id> [--force]
 # - If that session terminates before completion, use this to restart it
 # - After conflicts are resolved, use 'loom worktree remove' to clean up
 # - --force: merge even if stage not complete or has active sessions
-
-# Attach to running session or view logs
-loom attach [target]
-loom attach list
-loom attach all [--gui] [--detach] [--windows] [--layout <LAYOUT>]
-loom attach logs
-# - Attaches terminal to running Claude session
-# - list: list all attachable sessions
-# - all: attach to all sessions (default: tiled pane view)
-#   - --gui: open separate terminal windows
-#   - --detach: detach other clients first
-#   - --windows: legacy window-per-session mode instead of tiled panes
-#   - --layout: layout for tiled view (tiled, horizontal, vertical)
-# - logs: stream daemon logs in real-time
 
 # Diagnose a failed stage with Claude Code
 loom diagnose <stage-id>
@@ -678,17 +663,13 @@ loom status
 #   stage-2: Blocked (waiting on: stage-1)
 # Press Ctrl+C to exit (daemon keeps running)
 
-# 5. View daemon logs
-loom attach logs
-# Streams real-time logs from the orchestrator
-
-# 6. Merge completed work to main
+# 5. Merge completed work to main
 loom merge stage-1
 # Output: Merging worktree branch loom/stage-1 to main...
 #         Merge successful!
 #         Removing worktree...
 
-# 7. Stop the daemon when done
+# 6. Stop the daemon when done
 loom stop
 # Output: Stopping daemon (PID 12345)...
 #         Daemon stopped.
@@ -699,7 +680,7 @@ loom stop
 # - Exits gracefully
 # - loom run or loom resume continues seamlessly
 
-# 8. (Optional) Hold a stage to prevent auto-execution
+# 7. (Optional) Hold a stage to prevent auto-execution
 loom stage hold stage-3
 # Stage 'stage-3' held
 # The stage will not auto-execute. Use 'loom stage release stage-3' to unlock.

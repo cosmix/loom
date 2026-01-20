@@ -215,22 +215,6 @@ fn test_complete_dynamic_verify() {
 }
 
 #[test]
-fn test_complete_dynamic_attach() {
-    let temp_dir = setup_test_workspace();
-    let root = temp_dir.path();
-
-    let ctx = CompletionContext {
-        cwd: root.to_string_lossy().to_string(),
-        shell: "bash".to_string(),
-        cmdline: "loom attach".to_string(),
-        current_word: "".to_string(),
-        prev_word: "attach".to_string(),
-    };
-
-    assert!(complete_dynamic(&ctx).is_ok());
-}
-
-#[test]
 fn test_complete_dynamic_sessions_kill() {
     let temp_dir = setup_test_workspace();
     let root = temp_dir.path();

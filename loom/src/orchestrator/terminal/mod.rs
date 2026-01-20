@@ -128,12 +128,6 @@ pub trait TerminalBackend: Send + Sync {
     /// Check if a session is still alive
     fn is_session_alive(&self, session: &Session) -> Result<bool>;
 
-    /// Attach to a single session (focus/open its terminal)
-    fn attach_session(&self, session: &Session) -> Result<()>;
-
-    /// Attach to all active sessions (open all terminal windows)
-    fn attach_all(&self, sessions: &[Session]) -> Result<()>;
-
     /// Get the backend type
     fn backend_type(&self) -> BackendType;
 }

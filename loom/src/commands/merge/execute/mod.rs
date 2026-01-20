@@ -72,7 +72,6 @@ pub fn execute(stage_id: String, force: bool) -> Result<()> {
         // Check if a merge session is already running
         if let Some(session_name) = find_active_merge_session(&stage_id, &work_dir)? {
             println!("\nMerge resolution session is already running: {session_name}");
-            println!("Use 'loom attach {stage_id}' to view the session.");
             return Ok(());
         }
 

@@ -15,14 +15,14 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use super::{BackendType, TerminalBackend};
-use crate::models::session::{Session, SessionStatus};
+use crate::models::session::Session;
 use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
 
 pub use detection::detect_terminal;
 pub use pid_tracking::{check_pid_alive, cleanup_stage_files, read_pid_file};
 pub use spawner::spawn_in_terminal;
-pub use window_ops::{close_window_by_title, focus_window_by_pid, window_exists_by_title};
+pub use window_ops::{close_window_by_title, window_exists_by_title};
 
 /// Native terminal backend - spawns sessions in native terminal windows
 pub struct NativeBackend {
@@ -371,32 +371,6 @@ impl TerminalBackend for NativeBackend {
         }
 
         Ok(false)
-    }
-
-    fn attach_session(&self, session: &Session) -> Result<()> {
-        if session.status != SessionStatus::Running {
-            bail!("Session {} is not running", session.id);
-        }
-
-        if let Some(pid) = session.pid {
-            // Try to focus the window using wmctrl or xdotool
-            // This is best-effort - we don't fail if it doesn't work
-            let _ = focus_window_by_pid(pid);
-        }
-
-        Ok(())
-    }
-
-    fn attach_all(&self, sessions: &[Session]) -> Result<()> {
-        for session in sessions {
-            if session.status == SessionStatus::Running {
-                if let Some(pid) = session.pid {
-                    // Try to focus each window, but don't fail on errors
-                    let _ = focus_window_by_pid(pid);
-                }
-            }
-        }
-        Ok(())
     }
 
     fn backend_type(&self) -> BackendType {

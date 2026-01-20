@@ -1,4 +1,3 @@
-pub mod attach;
 pub mod auto_merge;
 pub mod continuation;
 pub mod core;
@@ -11,13 +10,6 @@ pub mod skip;
 pub mod spawner;
 pub mod terminal;
 
-pub use attach::{
-    attach_by_session, attach_by_stage, attach_native_all, attach_overview_session,
-    create_overview_session, create_tiled_overview, format_attachable_list, list_attachable,
-    print_attach_instructions, print_many_sessions_warning, print_native_attach_info,
-    print_native_instructions, print_overview_instructions, print_tiled_instructions,
-    spawn_gui_windows, AttachableSession, SessionBackend, TerminalEmulator,
-};
 pub use auto_merge::{attempt_auto_merge, is_auto_merge_enabled, AutoMergeResult};
 pub use continuation::{
     continue_session, load_handoff_content, prepare_continuation, ContinuationConfig,

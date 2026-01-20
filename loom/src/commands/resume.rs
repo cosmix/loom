@@ -92,8 +92,6 @@ pub fn execute(stage_id: String) -> Result<()> {
 
         println!("\n✓ Stage status updated to Executing");
         println!("✓ Spawned session: {}", session.id);
-        println!("\nTo attach to the session:");
-        println!("  loom attach {}", session.id);
 
         if let Some(ref path) = handoff_path {
             println!("\nHandoff context loaded from: {}", path.display());

@@ -203,9 +203,7 @@ impl Orchestrator {
             if started > 0 && !printed_view_instructions && !self.config.manual_mode {
                 printed_view_instructions = true;
                 println!();
-                println!("Sessions are now running. To view them:");
-                println!("  loom attach <stage-id>    Attach to a stage's session");
-                println!("  loom attach all           View all sessions at once");
+                println!("Sessions are now running. To view progress:");
                 println!("  loom status               View overall progress");
                 println!();
             }

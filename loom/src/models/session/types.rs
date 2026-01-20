@@ -31,7 +31,7 @@ pub enum SessionStatus {
     Spawning,
     Running,
     /// Session is paused and can be resumed.
-    /// Currently set via manual session file editing or attach operations.
+    /// Currently set via manual session file editing.
     Paused,
     Completed,
     Crashed,

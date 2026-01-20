@@ -1,17 +1,16 @@
 use anyhow::Result;
 use loom::checkpoints::CheckpointStatus;
 use loom::commands::{
-    attach, checkpoint, clean, diagnose, graph, hooks, init, knowledge, memory, merge, resume,
-    run, self_update, sessions, stage, status, stop, worktree_cmd,
+    checkpoint, clean, diagnose, graph, hooks, init, knowledge, memory, merge, resume, run,
+    self_update, sessions, stage, status, stop, worktree_cmd,
 };
 use loom::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use std::path::PathBuf;
 use std::str::FromStr;
 
 use super::types::{
-    AttachCommands, CheckpointCommands, Cli, Commands, GraphCommands, HooksCommands,
-    KnowledgeCommands, MemoryCommands, OutputCommands, SessionsCommands, StageCommands,
-    WorktreeCommands,
+    CheckpointCommands, Cli, Commands, GraphCommands, HooksCommands, KnowledgeCommands,
+    MemoryCommands, OutputCommands, SessionsCommands, StageCommands, WorktreeCommands,
 };
 
 pub fn dispatch(command: Commands) -> Result<()> {
@@ -20,15 +19,12 @@ pub fn dispatch(command: Commands) -> Result<()> {
         Commands::Run {
             manual,
             max_parallel,
-            attach,
             foreground,
             watch,
             no_merge,
         } => {
             let auto_merge = !no_merge;
-            if attach {
-                attach::execute_logs()
-            } else if foreground {
+            if foreground {
                 run::execute(manual, max_parallel, watch, auto_merge)
             } else {
                 run::execute_background(manual, max_parallel, watch, auto_merge)
@@ -41,21 +37,6 @@ pub fn dispatch(command: Commands) -> Result<()> {
         } => status::execute(live, compact, verbose),
         Commands::Resume { stage_id } => resume::execute(stage_id),
         Commands::Merge { stage_id, force } => merge::execute(stage_id, force),
-        Commands::Attach { command, target } => match (command, target) {
-            (
-                Some(AttachCommands::All {
-                    gui,
-                    detach,
-                    windows,
-                    layout,
-                }),
-                _,
-            ) => attach::execute_all(gui, detach, windows, layout),
-            (Some(AttachCommands::List), _) => attach::list(),
-            (Some(AttachCommands::Logs), _) => attach::execute_logs(),
-            (None, Some(target)) => attach::execute(target),
-            (None, None) => attach::list(),
-        },
         Commands::Sessions { command } => match command {
             SessionsCommands::List => sessions::list(),
             SessionsCommands::Kill { session_ids, stage } => sessions::kill(session_ids, stage),

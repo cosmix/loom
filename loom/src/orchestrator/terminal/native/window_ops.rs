@@ -2,7 +2,6 @@
 //!
 //! Provides functions for closing and focusing terminal windows.
 
-use anyhow::Result;
 use std::process::Command;
 
 /// Close a window by its title using wmctrl or xdotool.
@@ -102,48 +101,6 @@ pub fn window_exists_by_title(title: &str) -> bool {
     }
 
     false
-}
-
-/// Try to focus a window by its process ID
-///
-/// This is best-effort and uses wmctrl or xdotool if available.
-/// Returns Ok(()) even if focusing fails (the window might not be focusable).
-pub fn focus_window_by_pid(pid: u32) -> Result<()> {
-    // Try wmctrl first (more reliable for window management)
-    if which::which("wmctrl").is_ok() {
-        let _ = Command::new("wmctrl")
-            .args(["-i", "-a"])
-            .arg(format!("0x{pid:x}")) // This won't work, but wmctrl -a with PID isn't standard
-            .output();
-
-        // Try by searching window list
-        let output = Command::new("wmctrl").arg("-l").arg("-p").output()?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        for line in stdout.lines() {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 3 {
-                if let Ok(window_pid) = parts[2].parse::<u32>() {
-                    if window_pid == pid {
-                        let window_id = parts[0];
-                        let _ = Command::new("wmctrl")
-                            .args(["-i", "-a", window_id])
-                            .output();
-                        return Ok(());
-                    }
-                }
-            }
-        }
-    }
-
-    // Try xdotool as fallback
-    if which::which("xdotool").is_ok() {
-        let _ = Command::new("xdotool")
-            .args(["search", "--pid", &pid.to_string(), "windowactivate"])
-            .output();
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]
