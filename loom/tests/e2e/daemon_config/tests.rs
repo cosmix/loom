@@ -14,6 +14,7 @@ use tempfile::TempDir;
 use super::create_stage_def;
 
 #[test]
+#[ignore] // Requires a terminal emulator - skipped in CI
 fn test_orchestrator_creation_with_config() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = temp_dir.path();
@@ -89,6 +90,7 @@ fn test_auto_merge_config_cascade() {
 }
 
 #[test]
+#[ignore] // Requires a terminal emulator - skipped in CI
 fn test_backend_type_native() {
     // Test that Native backend type is the default and works correctly
     let config = OrchestratorConfig::default();
