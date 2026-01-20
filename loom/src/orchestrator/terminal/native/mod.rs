@@ -388,8 +388,7 @@ mod tests {
         // May fail if no terminal is available
         let temp_dir = TempDir::new().unwrap();
         let result = NativeBackend::new(temp_dir.path().to_path_buf());
-        if result.is_ok() {
-            let backend = result.unwrap();
+        if let Ok(backend) = result {
             assert_eq!(backend.backend_type(), BackendType::Native);
         }
     }

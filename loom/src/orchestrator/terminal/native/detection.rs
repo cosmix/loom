@@ -167,8 +167,7 @@ mod tests {
         // but should pass on most development machines
         let result = detect_terminal();
         // We just check it doesn't panic - actual result depends on system
-        if result.is_ok() {
-            let terminal = result.unwrap();
+        if let Ok(terminal) = result {
             assert!(!terminal.binary().is_empty());
         }
     }

@@ -618,7 +618,7 @@ fn test_acceptance_criteria_worktree_variable_expansion() {
     );
     // This criterion should expand $WORKTREE to the working directory
     // Using format string to include literal braces in shell variable
-    let criterion = format!("touch ${{WORKTREE}}/expanded_marker.txt");
+    let criterion = "touch ${WORKTREE}/expanded_marker.txt".to_string();
     stage.add_acceptance_criterion(criterion);
 
     // Run acceptance with working_dir set to worktree root

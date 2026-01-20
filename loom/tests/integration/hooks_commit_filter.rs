@@ -32,9 +32,8 @@ fn run_hook(hook_path: &std::path::Path, tool_name: &str, command: &str) -> i32 
 
     // Build JSON input matching what Claude Code sends
     let json_input = format!(
-        r#"{{"tool_name": "{}", "tool_input": {{"command": {}}}}}"#,
-        tool_name,
-        serde_json::to_string(command).unwrap_or_else(|_| format!("\"{}\"", command))
+        r#"{{"tool_name": "{tool_name}", "tool_input": {{"command": {}}}}}"#,
+        serde_json::to_string(command).unwrap_or_else(|_| format!("\"{command}\""))
     );
 
     let mut child = Command::new("bash")

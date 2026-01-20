@@ -167,8 +167,7 @@ fn test_loom_run_fails_with_staged_changes() {
     let err_msg = result.unwrap_err().to_string();
     assert!(
         err_msg.contains("Uncommitted changes"),
-        "Error should mention uncommitted changes, got: {}",
-        err_msg
+        "Error should mention uncommitted changes, got: {err_msg}"
     );
 }
 
@@ -215,8 +214,7 @@ fn test_loom_run_fails_with_mixed_changes() {
     let err_msg = result.unwrap_err().to_string();
     assert!(
         err_msg.contains("Uncommitted changes"),
-        "Error should mention uncommitted changes, got: {}",
-        err_msg
+        "Error should mention uncommitted changes, got: {err_msg}"
     );
 }
 
@@ -292,7 +290,6 @@ fn test_loom_run_fails_with_modified_tracked_files() {
     let err_msg = result.unwrap_err().to_string();
     assert!(
         err_msg.contains("Uncommitted changes"),
-        "Error should mention uncommitted changes, got: {}",
-        err_msg
+        "Error should mention uncommitted changes, got: {err_msg}"
     );
 }

@@ -169,14 +169,14 @@ mod tests {
         let mut file = fs::File::create(&skill_file).unwrap();
 
         writeln!(file, "---").unwrap();
-        writeln!(file, "name: {}", name).unwrap();
-        writeln!(file, "description: {}", description).unwrap();
+        writeln!(file, "name: {name}").unwrap();
+        writeln!(file, "description: {description}").unwrap();
         writeln!(file, "triggers:").unwrap();
         for trigger in triggers {
-            writeln!(file, "  - {}", trigger).unwrap();
+            writeln!(file, "  - {trigger}").unwrap();
         }
         writeln!(file, "---").unwrap();
-        writeln!(file, "# {}", name).unwrap();
+        writeln!(file, "# {name}").unwrap();
     }
 
     #[test]

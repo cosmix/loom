@@ -343,7 +343,7 @@ mod tests {
 
         // Initialize knowledge - should write to main repo
         let result = init();
-        assert!(result.is_ok(), "init() failed: {:?}", result);
+        assert!(result.is_ok(), "init() failed: {result:?}");
 
         // Verify files were created in MAIN REPO, not worktree
         let main_knowledge_dir = main_repo.join("doc/loom/knowledge");
@@ -351,13 +351,11 @@ mod tests {
 
         assert!(
             main_knowledge_dir.exists(),
-            "Knowledge dir should exist in main repo at {:?}",
-            main_knowledge_dir
+            "Knowledge dir should exist in main repo at {main_knowledge_dir:?}"
         );
         assert!(
             !worktree_knowledge_dir.exists(),
-            "Knowledge dir should NOT exist in worktree at {:?}",
-            worktree_knowledge_dir
+            "Knowledge dir should NOT exist in worktree at {worktree_knowledge_dir:?}"
         );
         assert!(main_knowledge_dir.join("entry-points.md").exists());
 
@@ -366,7 +364,7 @@ mod tests {
             "entry-points".to_string(),
             "## Test Entry\n\n- test/file.rs - Test description".to_string(),
         );
-        assert!(result.is_ok(), "update() failed: {:?}", result);
+        assert!(result.is_ok(), "update() failed: {result:?}");
 
         // Verify content was written to main repo
         let content = fs::read_to_string(main_knowledge_dir.join("entry-points.md")).unwrap();
