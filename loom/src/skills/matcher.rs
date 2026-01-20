@@ -73,10 +73,7 @@ pub fn match_skills(
         .into_iter()
         .filter(|(_, score)| *score >= score_threshold)
         .map(|(name, score)| {
-            let description = skill_descriptions
-                .get(&name)
-                .cloned()
-                .unwrap_or_default();
+            let description = skill_descriptions.get(&name).cloned().unwrap_or_default();
             let matched_triggers = skill_matched_triggers.remove(&name).unwrap_or_default();
             SkillMatch::new(name, description, score, matched_triggers)
         })

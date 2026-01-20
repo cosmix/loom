@@ -50,7 +50,11 @@ pub fn render_compact_header(
 fn progress_bar_compact(pct: f64, width: usize) -> String {
     let filled = (pct * width as f64).round() as usize;
     let empty = width.saturating_sub(filled);
-    format!("[{}{}]", "\u{2588}".repeat(filled), "\u{2591}".repeat(empty))
+    format!(
+        "[{}{}]",
+        "\u{2588}".repeat(filled),
+        "\u{2591}".repeat(empty)
+    )
 }
 
 /// Convert UnifiedStage to Stage for graph widget compatibility.
@@ -223,7 +227,10 @@ pub fn render_compact_footer(frame: &mut Frame, area: Rect, last_error: &Option<
         Line::from(vec![
             Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw(" quit \u{2502} "),
-            Span::styled("\u{2191}\u{2193}\u{2190}\u{2192}", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "\u{2191}\u{2193}\u{2190}\u{2192}",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" scroll \u{2502} "),
             Span::styled("PgUp/PgDn", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw(" page \u{2502} "),
@@ -269,7 +276,10 @@ pub fn format_dependencies(deps: &[String], max_width: usize) -> String {
     let right_len = available / 2;
 
     let left: String = inner.chars().take(left_len).collect();
-    let right: String = inner.chars().skip(inner.len().saturating_sub(right_len)).collect();
+    let right: String = inner
+        .chars()
+        .skip(inner.len().saturating_sub(right_len))
+        .collect();
 
     format!("({left}...{right})")
 }
@@ -327,6 +337,9 @@ mod tests {
         assert_eq!(stage.id, "test-stage");
         assert_eq!(stage.status, StageStatus::Executing);
         assert!(stage.merged);
-        assert_eq!(stage.dependencies, vec!["dep1".to_string(), "dep2".to_string()]);
+        assert_eq!(
+            stage.dependencies,
+            vec!["dep1".to_string(), "dep2".to_string()]
+        );
     }
 }

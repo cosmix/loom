@@ -238,18 +238,9 @@ mod tests {
             parse_file_type("mistakes.md").unwrap(),
             KnowledgeFile::Mistakes
         );
-        assert_eq!(
-            parse_file_type("mistake").unwrap(),
-            KnowledgeFile::Mistakes
-        );
-        assert_eq!(
-            parse_file_type("lessons").unwrap(),
-            KnowledgeFile::Mistakes
-        );
-        assert_eq!(
-            parse_file_type("lesson").unwrap(),
-            KnowledgeFile::Mistakes
-        );
+        assert_eq!(parse_file_type("mistake").unwrap(), KnowledgeFile::Mistakes);
+        assert_eq!(parse_file_type("lessons").unwrap(), KnowledgeFile::Mistakes);
+        assert_eq!(parse_file_type("lesson").unwrap(), KnowledgeFile::Mistakes);
         assert!(parse_file_type("unknown").is_err());
     }
 

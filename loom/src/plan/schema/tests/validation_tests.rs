@@ -1,7 +1,9 @@
 //! Basic validation tests
 
 use super::create_valid_metadata;
-use crate::plan::schema::types::{LoomConfig, LoomMetadata, StageDefinition, StageType, ValidationError};
+use crate::plan::schema::types::{
+    LoomConfig, LoomMetadata, StageDefinition, StageType, ValidationError,
+};
 use crate::plan::schema::validation::validate;
 
 #[test]

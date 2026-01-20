@@ -59,10 +59,7 @@ pub fn generate_summary(journal: &MemoryJournal, max_entries: usize) -> String {
     if !decisions.is_empty() {
         summary.push_str("### Key Decisions\n\n");
         for entry in decisions.iter().rev().take(max_entries) {
-            summary.push_str(&format!(
-                "- {}\n",
-                truncate_content(&entry.content, 200)
-            ));
+            summary.push_str(&format!("- {}\n", truncate_content(&entry.content, 200)));
         }
         summary.push('\n');
     }
@@ -71,10 +68,7 @@ pub fn generate_summary(journal: &MemoryJournal, max_entries: usize) -> String {
     if !questions.is_empty() {
         summary.push_str("### Open Questions\n\n");
         for entry in &questions {
-            summary.push_str(&format!(
-                "- {}\n",
-                truncate_content(&entry.content, 200)
-            ));
+            summary.push_str(&format!("- {}\n", truncate_content(&entry.content, 200)));
         }
         summary.push('\n');
     }

@@ -186,10 +186,7 @@ pub fn discover_claude_pid(worktree_path: &Path, timeout: Duration) -> Option<u3
 #[cfg(target_os = "macos")]
 fn find_claude_process(worktree_path: &Path) -> Option<u32> {
     // Run ps aux to list all processes
-    let output = Command::new("ps")
-        .arg("aux")
-        .output()
-        .ok()?;
+    let output = Command::new("ps").arg("aux").output().ok()?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 

@@ -364,28 +364,49 @@ mod generator_tests {
 
         // Check that global hooks are preserved in PreToolUse
         let pre_tool_hooks = settings["hooks"]["PreToolUse"].as_array().unwrap();
-        assert!(pre_tool_hooks.iter().any(|h| {
-            h["matcher"] == "AskUserQuestion"
-                && h["hooks"][0]["command"] == "/global/ask-user-pre.sh"
-        }), "Global ask-user-pre hook should be preserved");
+        assert!(
+            pre_tool_hooks.iter().any(|h| {
+                h["matcher"] == "AskUserQuestion"
+                    && h["hooks"][0]["command"] == "/global/ask-user-pre.sh"
+            }),
+            "Global ask-user-pre hook should be preserved"
+        );
 
         // Check that session hooks are added (SessionStart uses PostToolUse, not PreToolUse)
         let session_start_hooks = settings["hooks"]["SessionStart"].as_array().unwrap();
-        assert!(session_start_hooks.iter().any(|h| {
-            h["hooks"][0]["command"].as_str().unwrap().contains("session-start.sh")
-        }), "Session start hook should be added");
+        assert!(
+            session_start_hooks.iter().any(|h| {
+                h["hooks"][0]["command"]
+                    .as_str()
+                    .unwrap()
+                    .contains("session-start.sh")
+            }),
+            "Session start hook should be added"
+        );
 
         // Check Stop event has both global and session hooks
         let stop_hooks = settings["hooks"]["Stop"].as_array().unwrap();
-        assert!(stop_hooks.iter().any(|h| {
-            h["hooks"][0]["command"] == "/global/commit-guard.sh"
-        }), "Global commit-guard hook should be preserved");
-        assert!(stop_hooks.iter().any(|h| {
-            h["hooks"][0]["command"].as_str().unwrap().contains("learning-validator.sh")
-        }), "Session stop hook should be added");
+        assert!(
+            stop_hooks
+                .iter()
+                .any(|h| { h["hooks"][0]["command"] == "/global/commit-guard.sh" }),
+            "Global commit-guard hook should be preserved"
+        );
+        assert!(
+            stop_hooks.iter().any(|h| {
+                h["hooks"][0]["command"]
+                    .as_str()
+                    .unwrap()
+                    .contains("learning-validator.sh")
+            }),
+            "Session stop hook should be added"
+        );
 
         // Verify we have both hooks on Stop event
-        assert!(stop_hooks.len() >= 2, "Stop event should have at least 2 hooks (commit-guard + stop hook)");
+        assert!(
+            stop_hooks.len() >= 2,
+            "Stop event should have at least 2 hooks (commit-guard + stop hook)"
+        );
     }
 
     #[test]
@@ -406,10 +427,18 @@ mod generator_tests {
         // Hooks should not be duplicated
         let hooks1 = settings1["hooks"]["PostToolUse"].as_array().unwrap();
         let hooks2 = settings2["hooks"]["PostToolUse"].as_array().unwrap();
-        assert_eq!(hooks1.len(), hooks2.len(), "Re-running should not duplicate hooks");
+        assert_eq!(
+            hooks1.len(),
+            hooks2.len(),
+            "Re-running should not duplicate hooks"
+        );
 
         let stop_hooks1 = settings1["hooks"]["Stop"].as_array().unwrap();
         let stop_hooks2 = settings2["hooks"]["Stop"].as_array().unwrap();
-        assert_eq!(stop_hooks1.len(), stop_hooks2.len(), "Re-running should not duplicate Stop hooks");
+        assert_eq!(
+            stop_hooks1.len(),
+            stop_hooks2.len(),
+            "Re-running should not duplicate Stop hooks"
+        );
     }
 }

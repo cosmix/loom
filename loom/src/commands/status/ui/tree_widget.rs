@@ -115,17 +115,35 @@ fn status_char(status: &StageStatus) -> &'static str {
 /// Get style for a stage status indicator
 fn status_style(status: &StageStatus) -> Style {
     match status {
-        StageStatus::Completed => Style::default().fg(StatusColors::COMPLETED).add_modifier(Modifier::BOLD),
-        StageStatus::Executing => Style::default().fg(StatusColors::EXECUTING).add_modifier(Modifier::BOLD),
-        StageStatus::Queued => Style::default().fg(StatusColors::QUEUED).add_modifier(Modifier::BOLD),
+        StageStatus::Completed => Style::default()
+            .fg(StatusColors::COMPLETED)
+            .add_modifier(Modifier::BOLD),
+        StageStatus::Executing => Style::default()
+            .fg(StatusColors::EXECUTING)
+            .add_modifier(Modifier::BOLD),
+        StageStatus::Queued => Style::default()
+            .fg(StatusColors::QUEUED)
+            .add_modifier(Modifier::BOLD),
         StageStatus::WaitingForDeps => Theme::dimmed(),
-        StageStatus::WaitingForInput => Style::default().fg(StatusColors::WARNING).add_modifier(Modifier::BOLD),
-        StageStatus::Blocked => Style::default().fg(StatusColors::BLOCKED).add_modifier(Modifier::BOLD),
-        StageStatus::NeedsHandoff => Style::default().fg(StatusColors::WARNING).add_modifier(Modifier::BOLD),
+        StageStatus::WaitingForInput => Style::default()
+            .fg(StatusColors::WARNING)
+            .add_modifier(Modifier::BOLD),
+        StageStatus::Blocked => Style::default()
+            .fg(StatusColors::BLOCKED)
+            .add_modifier(Modifier::BOLD),
+        StageStatus::NeedsHandoff => Style::default()
+            .fg(StatusColors::WARNING)
+            .add_modifier(Modifier::BOLD),
         StageStatus::Skipped => Theme::dimmed(),
-        StageStatus::MergeConflict => Style::default().fg(StatusColors::WARNING).add_modifier(Modifier::BOLD),
-        StageStatus::CompletedWithFailures => Style::default().fg(StatusColors::BLOCKED).add_modifier(Modifier::BOLD),
-        StageStatus::MergeBlocked => Style::default().fg(StatusColors::BLOCKED).add_modifier(Modifier::BOLD),
+        StageStatus::MergeConflict => Style::default()
+            .fg(StatusColors::WARNING)
+            .add_modifier(Modifier::BOLD),
+        StageStatus::CompletedWithFailures => Style::default()
+            .fg(StatusColors::BLOCKED)
+            .add_modifier(Modifier::BOLD),
+        StageStatus::MergeBlocked => Style::default()
+            .fg(StatusColors::BLOCKED)
+            .add_modifier(Modifier::BOLD),
     }
 }
 
@@ -230,7 +248,10 @@ impl<'a> TreeWidget<'a> {
 
             // Status indicator
             let indicator = status_char(&stage.status);
-            spans.push(Span::styled(indicator.to_string(), status_style(&stage.status)));
+            spans.push(Span::styled(
+                indicator.to_string(),
+                status_style(&stage.status),
+            ));
             spans.push(Span::raw(" "));
 
             // Stage ID with color
@@ -255,8 +276,10 @@ impl<'a> TreeWidget<'a> {
                         if i > 0 {
                             dep_span_list.push(Span::styled(", ", Theme::dimmed()));
                         }
-                        let dep_color = color_map.get(dep.as_str()).copied().unwrap_or(Color::White);
-                        dep_span_list.push(Span::styled(dep.clone(), Style::default().fg(dep_color)));
+                        let dep_color =
+                            color_map.get(dep.as_str()).copied().unwrap_or(Color::White);
+                        dep_span_list
+                            .push(Span::styled(dep.clone(), Style::default().fg(dep_color)));
                         dep_span_list
                     })
                     .collect();
@@ -312,7 +335,10 @@ impl<'a> TreeWidget<'a> {
                                 }
                                 let dep_color =
                                     color_map.get(dep.as_str()).copied().unwrap_or(Color::White);
-                                list.push(Span::styled(dep.clone(), Style::default().fg(dep_color)));
+                                list.push(Span::styled(
+                                    dep.clone(),
+                                    Style::default().fg(dep_color),
+                                ));
                                 list
                             })
                             .collect();
@@ -320,10 +346,13 @@ impl<'a> TreeWidget<'a> {
                         base_spans.extend(merged_deps);
                         base_spans.push(Span::styled(")", Theme::dimmed()));
                     } else if let Some(dep_id) = stage.dependencies.first() {
-                        let dep_color =
-                            color_map.get(dep_id.as_str()).copied().unwrap_or(Color::White);
+                        let dep_color = color_map
+                            .get(dep_id.as_str())
+                            .copied()
+                            .unwrap_or(Color::White);
                         base_spans.push(Span::styled(" (inherited from ", Theme::dimmed()));
-                        base_spans.push(Span::styled(dep_id.clone(), Style::default().fg(dep_color)));
+                        base_spans
+                            .push(Span::styled(dep_id.clone(), Style::default().fg(dep_color)));
                         base_spans.push(Span::styled(")", Theme::dimmed()));
                     }
 
@@ -516,10 +545,7 @@ mod tests {
     fn test_with_base_branch() {
         let mut stage = make_stage("exec", vec!["root"], StageStatus::Executing);
         stage.base_branch = Some("loom/exec".to_string());
-        let stages = vec![
-            make_stage("root", vec![], StageStatus::Completed),
-            stage,
-        ];
+        let stages = vec![make_stage("root", vec![], StageStatus::Completed), stage];
 
         let widget = TreeWidget::new(&stages);
         let lines = widget.build_lines();

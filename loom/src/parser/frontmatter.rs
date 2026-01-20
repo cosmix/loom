@@ -143,7 +143,10 @@ status: completed
         assert_eq!(yaml["status"].as_str(), Some("completed"));
         // Verify description contains the embedded ---
         let desc = yaml["description"].as_str().unwrap();
-        assert!(desc.contains("---"), "Description should contain embedded ---");
+        assert!(
+            desc.contains("---"),
+            "Description should contain embedded ---"
+        );
     }
 
     #[test]

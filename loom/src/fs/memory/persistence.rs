@@ -30,9 +30,10 @@ pub fn delete_entries_by_type(
     }
 
     // Partition entries into those to delete and those to keep
-    let (to_delete, to_keep): (Vec<_>, Vec<_>) = journal.entries.into_iter().partition(|e| {
-        entry_type.is_none_or(|t| e.entry_type == t)
-    });
+    let (to_delete, to_keep): (Vec<_>, Vec<_>) = journal
+        .entries
+        .into_iter()
+        .partition(|e| entry_type.is_none_or(|t| e.entry_type == t));
 
     if to_delete.is_empty() {
         return Ok(Vec::new());

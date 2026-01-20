@@ -68,9 +68,7 @@ pub fn format_session_summary(
     decisions: usize,
     questions: usize,
 ) -> String {
-    let stage_info = stage_id
-        .map(|s| format!(" [{s}]"))
-        .unwrap_or_default();
+    let stage_info = stage_id.map(|s| format!(" [{s}]")).unwrap_or_default();
 
     format!(
         "{}{} - {} entries (📝 {} / ✅ {} / ❓ {})",

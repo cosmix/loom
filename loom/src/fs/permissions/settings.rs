@@ -111,9 +111,7 @@ pub fn ensure_loom_permissions(repo_root: &Path) -> Result<()> {
             .with_context(|| format!("Failed to write {}", settings_path.display()))?;
 
         if added_permissions > 0 {
-            println!(
-                "  Updated .claude/settings.json with {added_permissions} loom permission(s)"
-            );
+            println!("  Updated .claude/settings.json with {added_permissions} loom permission(s)");
         }
         if hooks_configured {
             println!("  Configured loom hooks in .claude/settings.json");

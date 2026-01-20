@@ -12,8 +12,8 @@ use crate::fs::memory::{
 };
 
 use super::formatters::{
-    format_entries_for_knowledge, format_entry_compact, format_entry_full,
-    format_record_success, format_session_summary,
+    format_entries_for_knowledge, format_entry_compact, format_entry_full, format_record_success,
+    format_session_summary,
 };
 
 /// Get the .work directory, handling worktree symlinks
@@ -40,7 +40,10 @@ pub fn note(text: String, session_id: Option<String>) -> Result<()> {
     let entry = MemoryEntry::new(MemoryEntryType::Note, text.clone());
     append_entry(&work_dir, &session, &entry)?;
 
-    println!("{}", format_record_success(&MemoryEntryType::Note, &session, &text));
+    println!(
+        "{}",
+        format_record_success(&MemoryEntryType::Note, &session, &text)
+    );
 
     Ok(())
 }
@@ -63,7 +66,10 @@ pub fn decision(text: String, context: Option<String>, session_id: Option<String
     };
     append_entry(&work_dir, &session, &entry)?;
 
-    println!("{}", format_record_success(&MemoryEntryType::Decision, &session, &text));
+    println!(
+        "{}",
+        format_record_success(&MemoryEntryType::Decision, &session, &text)
+    );
 
     Ok(())
 }
@@ -80,7 +86,10 @@ pub fn question(text: String, session_id: Option<String>) -> Result<()> {
     let entry = MemoryEntry::new(MemoryEntryType::Question, text.clone());
     append_entry(&work_dir, &session, &entry)?;
 
-    println!("{}", format_record_success(&MemoryEntryType::Question, &session, &text));
+    println!(
+        "{}",
+        format_record_success(&MemoryEntryType::Question, &session, &text)
+    );
 
     Ok(())
 }
@@ -339,9 +348,7 @@ pub fn promote(entry_type: String, target: String, session_id: Option<String>) -
         .context("Failed to append to knowledge file")?;
 
     // Print success message
-    let type_desc = type_filter
-        .map(|t| format!("{t} "))
-        .unwrap_or_default();
+    let type_desc = type_filter.map(|t| format!("{t} ")).unwrap_or_default();
     println!(
         "{} Promoted {} {}entries from session '{}' to {}",
         "✓".green(),

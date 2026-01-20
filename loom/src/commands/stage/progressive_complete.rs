@@ -97,11 +97,7 @@ pub fn attempt_progressive_merge(
 ///
 /// This is the standard completion path for stages after acceptance criteria pass.
 /// It attempts progressive merge and marks the stage as completed.
-pub fn complete_with_merge(
-    stage: &mut Stage,
-    repo_root: &Path,
-    work_dir: &Path,
-) -> Result<bool> {
+pub fn complete_with_merge(stage: &mut Stage, repo_root: &Path, work_dir: &Path) -> Result<bool> {
     match attempt_progressive_merge(stage, repo_root, work_dir)? {
         MergeOutcome::Success => {
             // Mark stage as completed - only after merge succeeds

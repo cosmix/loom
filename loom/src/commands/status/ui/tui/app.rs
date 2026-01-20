@@ -52,7 +52,8 @@ impl TuiApp {
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen).context("Failed to enter alternate screen")?;
 
-        let mouse_enabled = crossterm::execute!(stdout, crossterm::event::EnableMouseCapture).is_ok();
+        let mouse_enabled =
+            crossterm::execute!(stdout, crossterm::event::EnableMouseCapture).is_ok();
 
         let backend = CrosstermBackend::new(stdout);
         let terminal = Terminal::new(backend).context("Failed to create terminal")?;
@@ -168,10 +169,7 @@ impl TuiApp {
 
         let unified_stages = status.unified_stages();
 
-        let stages_for_graph: Vec<_> = unified_stages
-            .iter()
-            .map(unified_stage_to_stage)
-            .collect();
+        let stages_for_graph: Vec<_> = unified_stages.iter().map(unified_stage_to_stage).collect();
 
         let total_lines = unified_stages.iter().fold(0_u16, |acc, s| {
             let base = 1;
@@ -234,7 +232,10 @@ impl TuiApp {
 
     /// Get spinner character for current frame.
     fn spinner_char(&self) -> char {
-        const SPINNER: [char; 10] = ['\u{280B}', '\u{2819}', '\u{2839}', '\u{2838}', '\u{283C}', '\u{2834}', '\u{2826}', '\u{2827}', '\u{2807}', '\u{280F}'];
+        const SPINNER: [char; 10] = [
+            '\u{280B}', '\u{2819}', '\u{2839}', '\u{2838}', '\u{283C}', '\u{2834}', '\u{2826}',
+            '\u{2827}', '\u{2807}', '\u{280F}',
+        ];
         SPINNER[self.spinner_frame % SPINNER.len()]
     }
 }

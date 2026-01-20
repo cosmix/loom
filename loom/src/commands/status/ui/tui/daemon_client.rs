@@ -25,8 +25,7 @@ pub fn connect(socket_path: &Path) -> Result<UnixStream> {
 
     write_message(&mut stream, &Request::Ping).context("Failed to send Ping")?;
 
-    let response: Response =
-        read_message(&mut stream).context("Failed to read Ping response")?;
+    let response: Response = read_message(&mut stream).context("Failed to read Ping response")?;
 
     match response {
         Response::Pong => {}
@@ -43,8 +42,7 @@ pub fn connect(socket_path: &Path) -> Result<UnixStream> {
 
 /// Subscribe to status updates.
 pub fn subscribe(stream: &mut UnixStream) -> Result<()> {
-    write_message(stream, &Request::SubscribeStatus)
-        .context("Failed to send SubscribeStatus")?;
+    write_message(stream, &Request::SubscribeStatus).context("Failed to send SubscribeStatus")?;
 
     let response: Response =
         read_message(stream).context("Failed to read subscription response")?;
@@ -107,21 +105,33 @@ mod tests {
 
     #[test]
     fn test_is_socket_disconnected_timeout_not_disconnect() {
-        assert!(!check_disconnect_for_io_error(std::io::ErrorKind::WouldBlock));
+        assert!(!check_disconnect_for_io_error(
+            std::io::ErrorKind::WouldBlock
+        ));
         assert!(!check_disconnect_for_io_error(std::io::ErrorKind::TimedOut));
     }
 
     #[test]
     fn test_is_socket_disconnected_real_disconnect() {
-        assert!(check_disconnect_for_io_error(std::io::ErrorKind::UnexpectedEof));
-        assert!(check_disconnect_for_io_error(std::io::ErrorKind::ConnectionReset));
-        assert!(check_disconnect_for_io_error(std::io::ErrorKind::BrokenPipe));
-        assert!(check_disconnect_for_io_error(std::io::ErrorKind::ConnectionAborted));
+        assert!(check_disconnect_for_io_error(
+            std::io::ErrorKind::UnexpectedEof
+        ));
+        assert!(check_disconnect_for_io_error(
+            std::io::ErrorKind::ConnectionReset
+        ));
+        assert!(check_disconnect_for_io_error(
+            std::io::ErrorKind::BrokenPipe
+        ));
+        assert!(check_disconnect_for_io_error(
+            std::io::ErrorKind::ConnectionAborted
+        ));
     }
 
     #[test]
     fn test_is_socket_disconnected_other_errors() {
-        assert!(!check_disconnect_for_io_error(std::io::ErrorKind::PermissionDenied));
+        assert!(!check_disconnect_for_io_error(
+            std::io::ErrorKind::PermissionDenied
+        ));
         assert!(!check_disconnect_for_io_error(std::io::ErrorKind::NotFound));
     }
 }

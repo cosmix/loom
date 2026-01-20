@@ -37,8 +37,7 @@ pub use export::{format_memory_for_handoff, format_memory_for_signal};
 
 // Re-export persistence functions
 pub use persistence::{
-    delete_entries_by_type, extract_key_notes, list_journals, preserve_for_crash,
-    validate_content,
+    delete_entries_by_type, extract_key_notes, list_journals, preserve_for_crash, validate_content,
 };
 
 #[cfg(test)]
@@ -338,7 +337,8 @@ mod tests {
         .unwrap();
 
         // Delete only notes
-        let deleted = delete_entries_by_type(work_dir, session_id, Some(MemoryEntryType::Note)).unwrap();
+        let deleted =
+            delete_entries_by_type(work_dir, session_id, Some(MemoryEntryType::Note)).unwrap();
         assert_eq!(deleted.len(), 1);
         assert_eq!(deleted[0].entry_type, MemoryEntryType::Note);
         assert!(deleted[0].content.contains("Note 1"));
@@ -346,7 +346,10 @@ mod tests {
         // Verify remaining entries
         let journal = read_journal(work_dir, session_id).unwrap();
         assert_eq!(journal.entries.len(), 2);
-        assert!(journal.entries.iter().all(|e| e.entry_type != MemoryEntryType::Note));
+        assert!(journal
+            .entries
+            .iter()
+            .all(|e| e.entry_type != MemoryEntryType::Note));
     }
 
     #[test]
@@ -395,7 +398,8 @@ mod tests {
         create_journal(work_dir, session_id, None).unwrap();
 
         // Delete from empty journal
-        let deleted = delete_entries_by_type(work_dir, session_id, Some(MemoryEntryType::Note)).unwrap();
+        let deleted =
+            delete_entries_by_type(work_dir, session_id, Some(MemoryEntryType::Note)).unwrap();
         assert!(deleted.is_empty());
     }
 

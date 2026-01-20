@@ -139,16 +139,15 @@ impl LiveStatus {
         let mut stages = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
 
-        let to_unified =
-            |stage: &StageInfo, levels: &HashMap<String, usize>| UnifiedStage {
-                id: stage.id.clone(),
-                status: stage.status.clone(),
-                merged: stage.merged,
-                started_at: Some(stage.started_at),
-                completed_at: stage.completed_at,
-                level: levels.get(&stage.id).copied().unwrap_or(0),
-                dependencies: stage.dependencies.clone(),
-            };
+        let to_unified = |stage: &StageInfo, levels: &HashMap<String, usize>| UnifiedStage {
+            id: stage.id.clone(),
+            status: stage.status.clone(),
+            merged: stage.merged,
+            started_at: Some(stage.started_at),
+            completed_at: stage.completed_at,
+            level: levels.get(&stage.id).copied().unwrap_or(0),
+            dependencies: stage.dependencies.clone(),
+        };
 
         for stage in &self.executing {
             if seen.insert(stage.id.clone()) {

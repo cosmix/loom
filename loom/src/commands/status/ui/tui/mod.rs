@@ -26,4 +26,3 @@ pub fn run_tui(work_path: &Path) -> Result<()> {
     let mut app = TuiApp::new()?;
     app.run(work_path)
 }
-

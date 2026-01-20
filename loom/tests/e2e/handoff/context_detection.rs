@@ -7,7 +7,9 @@
 //! - Red: 65%+ (handoff required)
 
 use loom::handoff::detector::{check_context_threshold, ContextLevel};
-use loom::models::constants::{CONTEXT_CRITICAL_THRESHOLD, CONTEXT_WARNING_THRESHOLD, DEFAULT_CONTEXT_LIMIT};
+use loom::models::constants::{
+    CONTEXT_CRITICAL_THRESHOLD, CONTEXT_WARNING_THRESHOLD, DEFAULT_CONTEXT_LIMIT,
+};
 use loom::models::session::Session;
 
 #[test]

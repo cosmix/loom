@@ -108,8 +108,12 @@ pub fn generate_stable_prefix() -> String {
     content.push_str(
         "- **Use PARALLEL subagents** - spawn multiple appropriate subagents concurrently when tasks are independent\n",
     );
-    content.push_str("- **Use Skills** - check if /auth, /testing, /ci-cd, /logging-observability apply\n");
-    content.push_str("- **Use specialized agents** - security-engineer, senior-infrastructure-engineer, etc.\n");
+    content.push_str(
+        "- **Use Skills** - check if /auth, /testing, /ci-cd, /logging-observability apply\n",
+    );
+    content.push_str(
+        "- **Use specialized agents** - security-engineer, senior-infrastructure-engineer, etc.\n",
+    );
     content.push_str("- **Use TodoWrite** to plan and track progress\n\n");
     content.push_str("**Completion:**\n");
     content.push_str("- **Verify acceptance criteria** before marking stage complete\n");
@@ -183,8 +187,12 @@ pub fn generate_knowledge_stable_prefix() -> String {
     content.push_str(
         "- **Use PARALLEL subagents** - spawn multiple appropriate subagents concurrently when tasks are independent\n",
     );
-    content.push_str("- **Use Skills** - check if /auth, /testing, /ci-cd, /logging-observability apply\n");
-    content.push_str("- **Use specialized agents** - security-engineer, senior-infrastructure-engineer, etc.\n");
+    content.push_str(
+        "- **Use Skills** - check if /auth, /testing, /ci-cd, /logging-observability apply\n",
+    );
+    content.push_str(
+        "- **Use specialized agents** - security-engineer, senior-infrastructure-engineer, etc.\n",
+    );
     content.push_str("- **Use TodoWrite** to plan and track progress\n\n");
     content.push_str("**Completion:**\n");
     content.push_str("- **Verify acceptance criteria** before marking stage complete\n");

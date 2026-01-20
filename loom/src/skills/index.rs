@@ -104,8 +104,8 @@ impl SkillIndex {
         // Extract YAML content
         let yaml_content = lines[1..end_idx].join("\n");
 
-        let metadata: SkillMetadata = serde_yaml::from_str(&yaml_content)
-            .context("Failed to parse YAML frontmatter")?;
+        let metadata: SkillMetadata =
+            serde_yaml::from_str(&yaml_content).context("Failed to parse YAML frontmatter")?;
 
         Ok(metadata)
     }
@@ -184,8 +184,18 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let skills_dir = temp_dir.path();
 
-        create_test_skill(skills_dir, "auth", "Authentication patterns", &["login", "password"]);
-        create_test_skill(skills_dir, "testing", "Testing patterns", &["test", "unit test"]);
+        create_test_skill(
+            skills_dir,
+            "auth",
+            "Authentication patterns",
+            &["login", "password"],
+        );
+        create_test_skill(
+            skills_dir,
+            "testing",
+            "Testing patterns",
+            &["test", "unit test"],
+        );
 
         let index = SkillIndex::load_from_directory(skills_dir).unwrap();
 
@@ -267,12 +277,7 @@ triggers:
         let temp_dir = TempDir::new().unwrap();
         let skills_dir = temp_dir.path();
 
-        create_test_skill(
-            skills_dir,
-            "auth",
-            "Authentication patterns",
-            &["login"],
-        );
+        create_test_skill(skills_dir, "auth", "Authentication patterns", &["login"]);
 
         let index = SkillIndex::load_from_directory(skills_dir).unwrap();
 

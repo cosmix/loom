@@ -85,4 +85,3 @@ A minimal stage with only required fields.
 "#
     .to_string()
 }
-

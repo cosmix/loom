@@ -54,9 +54,7 @@ pub fn generate_hooks_settings(
             .entry(&event_type)
             .or_insert_with(|| json!([]))
             .as_array_mut()
-            .ok_or_else(|| {
-                anyhow::anyhow!("hooks.{event_type} must be an array")
-            })?;
+            .ok_or_else(|| anyhow::anyhow!("hooks.{event_type} must be an array"))?;
 
         // Convert session rules to JSON and append to existing hooks
         for rule in session_rules {
