@@ -1,8 +1,9 @@
 //! Dynamic shell completions for loom CLI.
 //!
 //! This module provides context-aware tab-completion for plan files,
-//! stage IDs, and session IDs.
+//! stage IDs, session IDs, and knowledge files.
 
+mod knowledge;
 mod plans;
 mod sessions;
 mod stages;
@@ -13,6 +14,7 @@ mod tests;
 use anyhow::Result;
 use std::path::Path;
 
+pub use knowledge::complete_knowledge_files;
 pub use plans::complete_plan_files;
 pub use sessions::{complete_session_ids, complete_stage_or_session_ids};
 pub use stages::complete_stage_ids;
@@ -74,16 +76,44 @@ pub fn complete_dynamic(ctx: &CompletionContext) -> Result<()> {
     let prefix = &ctx.current_word;
 
     // Determine what to complete based on previous word and command line
+    // Note: More specific guards must come BEFORE general matches
     let completions = match ctx.prev_word.as_str() {
+        // Plan file completions
         "init" => complete_plan_files(cwd, prefix)?,
 
-        "verify" | "merge" | "resume" => complete_stage_ids(cwd, prefix)?,
-
-        "kill" if ctx.cmdline.contains("sessions") => complete_session_ids(cwd, prefix)?,
-
-        "complete" | "block" | "reset" | "waiting" if ctx.cmdline.contains("stage") => {
+        // Session kill --stage flag completion (must come before general kill)
+        "--stage" if ctx.cmdline.contains("sessions") && ctx.cmdline.contains("kill") => {
             complete_stage_ids(cwd, prefix)?
         }
+
+        // Session kill with session IDs
+        "kill" if ctx.cmdline.contains("sessions") => complete_session_ids(cwd, prefix)?,
+
+        // Stage output subcommands (must check output context to avoid collision)
+        "set" | "get" | "list" | "remove"
+            if ctx.cmdline.contains("stage") && ctx.cmdline.contains("output") =>
+        {
+            complete_stage_ids(cwd, prefix)?
+        }
+
+        // Worktree remove (must come before general stage commands)
+        "remove" if ctx.cmdline.contains("worktree") => complete_stage_ids(cwd, prefix)?,
+
+        // Knowledge show/update file completions (must come before general stage commands)
+        "show" | "update" if ctx.cmdline.contains("knowledge") => {
+            complete_knowledge_files(prefix)?
+        }
+
+        // Stage subcommands that take stage_id (all in one pattern)
+        "complete" | "block" | "reset" | "waiting" | "hold" | "release" | "skip" | "retry"
+        | "recover" | "resume" | "verify" | "merge-complete"
+            if ctx.cmdline.contains("stage") =>
+        {
+            complete_stage_ids(cwd, prefix)?
+        }
+
+        // Top-level commands that take stage_id (verify/merge/resume outside stage context)
+        "verify" | "merge" | "resume" | "diagnose" => complete_stage_ids(cwd, prefix)?,
 
         _ => Vec::new(),
     };
