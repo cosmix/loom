@@ -91,7 +91,7 @@ pub fn check_pid_alive(pid: u32) -> bool {
         .unwrap_or(false)
 }
 
-/// Discover the Claude process PID by scanning /proc
+/// Discover the Claude process PID by scanning /proc (Linux)
 ///
 /// Searches for processes with "claude" in the command line that have
 /// the specified working directory. Returns the first matching PID.
@@ -99,6 +99,7 @@ pub fn check_pid_alive(pid: u32) -> bool {
 /// # Arguments
 /// * `worktree_path` - The expected working directory of the Claude process
 /// * `timeout` - Maximum time to wait for the process to appear
+#[cfg(target_os = "linux")]
 pub fn discover_claude_pid(worktree_path: &Path, timeout: Duration) -> Option<u32> {
     let deadline = Instant::now() + timeout;
     let canonical_worktree = worktree_path.canonicalize().ok()?;
@@ -113,7 +114,8 @@ pub fn discover_claude_pid(worktree_path: &Path, timeout: Duration) -> Option<u3
     None
 }
 
-/// Find a Claude process with the given working directory
+/// Find a Claude process with the given working directory (Linux)
+#[cfg(target_os = "linux")]
 fn find_claude_process(worktree_path: &Path) -> Option<u32> {
     let proc_dir = Path::new("/proc");
 
@@ -154,6 +156,95 @@ fn find_claude_process(worktree_path: &Path) -> Option<u32> {
         }
     }
 
+    None
+}
+
+/// Discover the Claude process PID using ps and lsof (macOS)
+///
+/// Searches for processes with "claude" in the command line that have
+/// the specified working directory. Returns the first matching PID.
+///
+/// # Arguments
+/// * `worktree_path` - The expected working directory of the Claude process
+/// * `timeout` - Maximum time to wait for the process to appear
+#[cfg(target_os = "macos")]
+pub fn discover_claude_pid(worktree_path: &Path, timeout: Duration) -> Option<u32> {
+    let deadline = Instant::now() + timeout;
+    let canonical_worktree = worktree_path.canonicalize().ok()?;
+
+    while Instant::now() < deadline {
+        if let Some(pid) = find_claude_process(&canonical_worktree) {
+            return Some(pid);
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    None
+}
+
+/// Find a Claude process with the given working directory (macOS)
+#[cfg(target_os = "macos")]
+fn find_claude_process(worktree_path: &Path) -> Option<u32> {
+    // Run ps aux to list all processes
+    let output = Command::new("ps")
+        .arg("aux")
+        .output()
+        .ok()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Filter for lines containing "claude"
+    for line in stdout.lines() {
+        if !line.contains("claude") {
+            continue;
+        }
+
+        // Parse PID from second column
+        // ps aux format: USER PID %CPU %MEM VSZ RSS TTY STAT START TIME COMMAND
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 2 {
+            continue;
+        }
+
+        let pid: u32 = match parts[1].parse() {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+
+        // Check if working directory matches
+        if let Some(cwd) = get_process_cwd_macos(pid) {
+            if let Ok(canonical_cwd) = cwd.canonicalize() {
+                if canonical_cwd == worktree_path {
+                    return Some(pid);
+                }
+            } else if cwd == worktree_path {
+                return Some(pid);
+            }
+        }
+    }
+
+    None
+}
+
+/// Get the current working directory of a process using lsof (macOS)
+#[cfg(target_os = "macos")]
+fn get_process_cwd_macos(pid: u32) -> Option<PathBuf> {
+    let output = Command::new("lsof")
+        .args(["-p", &pid.to_string()])
+        .output()
+        .ok()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        if line.contains("cwd") {
+            // lsof output format: COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME
+            // The NAME column is the path when FD is "cwd"
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 9 {
+                return Some(PathBuf::from(parts[8]));
+            }
+        }
+    }
     None
 }
 
