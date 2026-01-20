@@ -251,3 +251,24 @@ native/detection.rs:120-158 - macOS terminal detection (iTerm2 > cross-platform 
 native/window_ops.rs:65-109,164-212 - macOS AppleScript window operations
 
 native/pid_tracking.rs:170-249 - macOS PID discovery using ps/lsof
+
+## Shell Completions Module
+
+Entry: loom/src/completions/
+
+- mod.rs - Re-exports generator and dynamic modules
+- generator.rs - Static completion via clap_complete (bash, zsh, fish)
+- dynamic/mod.rs - Context-aware completion dispatcher
+
+### Dynamic Completion Files
+
+- dynamic/plans.rs - Completes doc/plans/*.md paths
+- dynamic/stages.rs - Completes .work/stages/*.md IDs (strips depth prefix)
+- dynamic/sessions.rs - Completes .work/sessions/*.md IDs
+- dynamic/tests.rs - Comprehensive test coverage
+
+### CLI Completion Commands (cli/types.rs)
+
+- Completions (line 179-183): `loom completions <shell>` - generates static script
+- Complete (line 185-193, hidden): `loom complete <shell> <args>` - dynamic helper
+- Dispatch (cli/dispatch.rs:144-153): Routes to generator or complete_dynamic

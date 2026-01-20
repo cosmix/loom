@@ -815,3 +815,32 @@ Detection priority: iTerm2 (/Applications/iTerm.app) > cross-platform (kitty, al
 
 Escape double quotes with replace('"', '\\"') before embedding in AppleScript strings.
 Window title search uses 'whose name contains' for partial matching.
+
+## Shell Completion Architecture
+
+Two-tier system: static + dynamic completions.
+
+Static (generator.rs): clap_complete generates scripts user sources in shell rc.
+Dynamic (dynamic/mod.rs): Shell calls hidden `loom complete` for context-aware values.
+
+### Static Completion Pattern
+
+Shell enum (Bash, Zsh, Fish) with FromStr for parsing.
+generate_completions() uses clap_complete::generate() with shell-specific Generator impl.
+User runs: eval "$(loom completions bash)" in .bashrc
+
+### Dynamic Completion Pattern
+
+CompletionContext struct holds: cwd, shell, cmdline, current_word, prev_word.
+complete_dynamic() matches prev_word to determine completion type:
+- init -> plan files
+- verify/merge/resume -> stage IDs
+- kill (in sessions) -> session IDs
+- complete/block/reset/waiting (in stage) -> stage IDs
+
+### Completion Integration with fs Module
+
+Stage ID extraction: Uses fs::stage_files::extract_stage_id() to strip depth prefix.
+Example: 01-knowledge-bootstrap.md -> knowledge-bootstrap
+
+File scanning: Standard fs::read_dir() with extension filtering (.md only).
