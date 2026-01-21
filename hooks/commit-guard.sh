@@ -15,7 +15,14 @@
 set -euo pipefail
 
 # Drain stdin to prevent blocking (Stop hooks receive JSON from Claude Code)
-timeout 1 cat >/dev/null 2>&1 || true
+# Cross-platform: gtimeout (macOS+coreutils), timeout (Linux), or cat
+if command -v gtimeout &>/dev/null; then
+	gtimeout 1 cat >/dev/null 2>&1 || true
+elif command -v timeout &>/dev/null; then
+	timeout 1 cat >/dev/null 2>&1 || true
+else
+	cat >/dev/null 2>&1 || true
+fi
 
 # Configuration
 readonly WORKTREE_MARKER=".worktrees/"

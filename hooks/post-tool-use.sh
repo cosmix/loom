@@ -19,8 +19,14 @@
 set -euo pipefail
 
 # Read JSON input from stdin (Claude Code passes tool info via stdin)
-# Use timeout to avoid blocking if stdin is empty or kept open
-INPUT_JSON=$(timeout 1 cat 2>/dev/null || true)
+# Cross-platform timeout: gtimeout (macOS+coreutils), timeout (Linux), or plain cat
+if command -v gtimeout &>/dev/null; then
+	INPUT_JSON=$(gtimeout 1 cat 2>/dev/null || true)
+elif command -v timeout &>/dev/null; then
+	INPUT_JSON=$(timeout 1 cat 2>/dev/null || true)
+else
+	INPUT_JSON=$(cat 2>/dev/null || true)
+fi
 
 # Parse tool_name and tool_input from JSON using jq
 TOOL_NAME=$(echo "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)

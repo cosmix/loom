@@ -17,7 +17,14 @@
 set -euo pipefail
 
 # Drain stdin to prevent blocking
-timeout 1 cat >/dev/null 2>&1 || true
+# Cross-platform: gtimeout (macOS+coreutils), timeout (Linux), or cat
+if command -v gtimeout &>/dev/null; then
+	gtimeout 1 cat >/dev/null 2>&1 || true
+elif command -v timeout &>/dev/null; then
+	timeout 1 cat >/dev/null 2>&1 || true
+else
+	cat >/dev/null 2>&1 || true
+fi
 
 # Validate required environment variables
 # Silently exit if not in loom context (hook runs on ALL sessions)
