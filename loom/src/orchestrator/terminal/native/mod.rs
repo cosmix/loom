@@ -24,6 +24,35 @@ pub use pid_tracking::{check_pid_alive, cleanup_stage_files, read_pid_file};
 pub use spawner::spawn_in_terminal;
 pub use window_ops::{close_window_by_title, window_exists_by_title};
 
+/// Find the absolute path to the claude binary
+///
+/// On macOS, spawned terminals don't inherit the parent's PATH, so we need
+/// to resolve claude's path at script generation time.
+fn find_claude_path() -> Result<PathBuf> {
+    // First try which::which (uses current PATH)
+    if let Ok(path) = which::which("claude") {
+        return Ok(path);
+    }
+
+    // Common installation locations
+    // Note: ~/.claude/local/claude is the official Claude Code install location
+    let candidates = [
+        dirs::home_dir().map(|h| h.join(".claude/local/claude")),
+        dirs::home_dir().map(|h| h.join(".local/bin/claude")),
+        dirs::home_dir().map(|h| h.join(".cargo/bin/claude")),
+        Some(PathBuf::from("/usr/local/bin/claude")),
+        Some(PathBuf::from("/opt/homebrew/bin/claude")),
+    ];
+
+    for candidate in candidates.into_iter().flatten() {
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+
+    bail!("claude binary not found in PATH or common locations. Checked: ~/.claude/local/claude, ~/.local/bin/claude, /usr/local/bin/claude")
+}
+
 /// Native terminal backend - spawns sessions in native terminal windows
 pub struct NativeBackend {
     /// The terminal emulator to use
@@ -74,15 +103,23 @@ impl TerminalBackend for NativeBackend {
         // Escape the prompt for shell
         let escaped_prompt = escape(Cow::Borrowed(&initial_prompt));
 
-        // Build the command to run in the terminal
-        let claude_cmd = format!("claude {escaped_prompt}");
+        // Find claude's absolute path (needed for macOS where terminals don't inherit PATH)
+        let claude_path = find_claude_path()?;
+        let claude_cmd = format!("{} {escaped_prompt}", claude_path.display());
 
         // Create wrapper script that writes PID before exec'ing claude
-        let wrapper_path =
-            pid_tracking::create_wrapper_script(&self.work_dir, &stage.id, &claude_cmd)?;
+        // Pass the worktree path so the script can cd there (important for macOS)
+        let wrapper_path = pid_tracking::create_wrapper_script(
+            &self.work_dir,
+            &stage.id,
+            &claude_cmd,
+            Some(Path::new(worktree_path)),
+        )?;
 
         // Build the command that runs the wrapper script
-        let wrapper_cmd = wrapper_path.to_string_lossy();
+        // IMPORTANT: Use absolute path because macOS terminals open in home directory
+        let wrapper_path_abs = wrapper_path.canonicalize().unwrap_or(wrapper_path);
+        let wrapper_cmd = wrapper_path_abs.to_string_lossy();
 
         // Spawn the terminal with PID tracking enabled
         let pid = spawn_in_terminal(
@@ -131,18 +168,23 @@ impl TerminalBackend for NativeBackend {
         // Escape the prompt for shell
         let escaped_prompt = escape(Cow::Borrowed(&initial_prompt));
 
-        // Build the command to run in the terminal
-        let claude_cmd = format!("claude {escaped_prompt}");
+        // Find claude's absolute path (needed for macOS where terminals don't inherit PATH)
+        let claude_path = find_claude_path()?;
+        let claude_cmd = format!("{} {escaped_prompt}", claude_path.display());
 
         // Create wrapper script for merge session
+        // Pass repo root so the script can cd there (important for macOS)
         let wrapper_path = pid_tracking::create_wrapper_script(
             &self.work_dir,
             &format!("merge-{}", stage.id),
             &claude_cmd,
+            Some(Path::new(repo_root_str)),
         )?;
 
         // Build the command that runs the wrapper script
-        let wrapper_cmd = wrapper_path.to_string_lossy();
+        // IMPORTANT: Use absolute path because macOS terminals open in home directory
+        let wrapper_path_abs = wrapper_path.canonicalize().unwrap_or(wrapper_path);
+        let wrapper_cmd = wrapper_path_abs.to_string_lossy();
 
         // Spawn the terminal in the main repository (not worktree)
         let pid = spawn_in_terminal(
@@ -193,18 +235,23 @@ impl TerminalBackend for NativeBackend {
         // Escape the prompt for shell
         let escaped_prompt = escape(Cow::Borrowed(&initial_prompt));
 
-        // Build the command to run in the terminal
-        let claude_cmd = format!("claude {escaped_prompt}");
+        // Find claude's absolute path (needed for macOS where terminals don't inherit PATH)
+        let claude_path = find_claude_path()?;
+        let claude_cmd = format!("{} {escaped_prompt}", claude_path.display());
 
         // Create wrapper script for base conflict session
+        // Pass repo root so the script can cd there (important for macOS)
         let wrapper_path = pid_tracking::create_wrapper_script(
             &self.work_dir,
             &format!("base-conflict-{}", stage.id),
             &claude_cmd,
+            Some(Path::new(repo_root_str)),
         )?;
 
         // Build the command that runs the wrapper script
-        let wrapper_cmd = wrapper_path.to_string_lossy();
+        // IMPORTANT: Use absolute path because macOS terminals open in home directory
+        let wrapper_path_abs = wrapper_path.canonicalize().unwrap_or(wrapper_path);
+        let wrapper_cmd = wrapper_path_abs.to_string_lossy();
 
         // Spawn the terminal in the main repository (not worktree)
         let pid = spawn_in_terminal(
@@ -254,18 +301,23 @@ impl TerminalBackend for NativeBackend {
         // Escape the prompt for shell
         let escaped_prompt = escape(Cow::Borrowed(&initial_prompt));
 
-        // Build the command to run in the terminal
-        let claude_cmd = format!("claude {escaped_prompt}");
+        // Find claude's absolute path (needed for macOS where terminals don't inherit PATH)
+        let claude_path = find_claude_path()?;
+        let claude_cmd = format!("{} {escaped_prompt}", claude_path.display());
 
         // Create wrapper script for knowledge session
+        // Pass repo root so the script can cd there (important for macOS)
         let wrapper_path = pid_tracking::create_wrapper_script(
             &self.work_dir,
             &format!("knowledge-{}", stage.id),
             &claude_cmd,
+            Some(Path::new(repo_root_str)),
         )?;
 
         // Build the command that runs the wrapper script
-        let wrapper_cmd = wrapper_path.to_string_lossy();
+        // IMPORTANT: Use absolute path because macOS terminals open in home directory
+        let wrapper_path_abs = wrapper_path.canonicalize().unwrap_or(wrapper_path);
+        let wrapper_cmd = wrapper_path_abs.to_string_lossy();
 
         // Spawn the terminal in the main repository (not worktree)
         let pid = spawn_in_terminal(

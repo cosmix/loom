@@ -198,30 +198,35 @@ impl TerminalEmulator {
             }
             Self::TerminalApp => {
                 // macOS Terminal.app uses AppleScript via osascript
+                // Note: The wrapper script handles cd to the working directory,
+                // so we just need to run the command. This is more reliable than
+                // trying to cd in AppleScript, which can race with shell startup.
                 let script = format!(
                     r#"tell application "Terminal"
     activate
-    do script "cd '{}' && {}"
-    set custom title of front window to "{}"
+    do script "{cmd}"
+    set custom title of front window to "{title}"
 end tell"#,
-                    workdir.display(),
-                    cmd,
-                    title
+                    cmd = cmd,
+                    title = title
                 );
                 command.arg("-e").arg(script);
             }
             Self::ITerm2 => {
                 // macOS iTerm2 uses AppleScript via osascript
+                // Note: The wrapper script handles cd to the working directory,
+                // so we just need to run the command. Using `write text` can race
+                // with shell startup, but since the wrapper script has the cd,
+                // even if there's a delay the directory change will happen.
                 let script = format!(
                     r#"tell application "iTerm"
     activate
     create window with default profile
     tell current session of current window
-        write text "cd '{}' && {}"
+        write text "{cmd}"
     end tell
 end tell"#,
-                    workdir.display(),
-                    cmd
+                    cmd = cmd
                 );
                 command.arg("-e").arg(script);
             }
@@ -361,7 +366,7 @@ mod tests {
 
         let script = args[1].to_str().unwrap();
         assert!(script.contains("tell application \"Terminal\""));
-        assert!(script.contains("/tmp/test"));
+        // Note: workdir is no longer in the AppleScript - it's handled by the wrapper script
         assert!(script.contains("echo hello"));
         assert!(script.contains("Test Title"));
     }
@@ -383,7 +388,7 @@ mod tests {
         let script = args[1].to_str().unwrap();
         assert!(script.contains("tell application \"iTerm\""));
         assert!(script.contains("create window with default profile"));
-        assert!(script.contains("/tmp/test"));
+        // Note: workdir is no longer in the AppleScript - it's handled by the wrapper script
         assert!(script.contains("echo hello"));
     }
 }

@@ -248,37 +248,77 @@ fn get_process_cwd_macos(pid: u32) -> Option<PathBuf> {
 /// Create a wrapper script that writes its PID before exec'ing claude
 ///
 /// The wrapper script:
-/// 1. Creates the pids directory if needed
-/// 2. Writes its own PID ($$) to the PID file
-/// 3. exec's the claude command (replacing the shell process)
+/// 1. Changes to the working directory (important for macOS where terminals
+///    can't reliably set cwd before spawning)
+/// 2. Creates the pids directory if needed
+/// 3. Writes its own PID ($$) to the PID file
+/// 4. exec's the claude command (replacing the shell process)
 ///
 /// # Arguments
 /// * `work_dir` - The .work directory path
 /// * `stage_id` - The stage identifier
 /// * `claude_cmd` - The claude command to execute (e.g., "claude 'prompt here'")
+/// * `working_dir` - The working directory to cd into before running claude
 ///
 /// # Returns
 /// The path to the created wrapper script
-pub fn create_wrapper_script(work_dir: &Path, stage_id: &str, claude_cmd: &str) -> Result<PathBuf> {
+pub fn create_wrapper_script(
+    work_dir: &Path,
+    stage_id: &str,
+    claude_cmd: &str,
+    working_dir: Option<&Path>,
+) -> Result<PathBuf> {
     create_wrappers_dir(work_dir)?;
     create_pid_dir(work_dir)?;
 
     let wrapper_path = wrapper_script_path(work_dir, stage_id);
     let pid_file = pid_file_path(work_dir, stage_id);
 
+    // Convert paths to absolute - important because the script may cd elsewhere
+    let pid_file_abs = pid_file
+        .canonicalize()
+        .or_else(|_| {
+            // If file doesn't exist yet, canonicalize the parent and append filename
+            if let (Some(parent), Some(filename)) = (pid_file.parent(), pid_file.file_name()) {
+                parent.canonicalize().map(|p| p.join(filename))
+            } else {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Cannot canonicalize",
+                ))
+            }
+        })
+        .unwrap_or_else(|_| pid_file.clone());
+
+    // Build the cd command if a working directory is specified
+    // Use absolute path for working directory
+    let cd_section = if let Some(dir) = working_dir {
+        let dir_abs = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+        format!(
+            r#"# Change to working directory
+cd '{}' || {{ echo "Failed to cd to working directory"; exit 1; }}
+
+"#,
+            dir_abs.display()
+        )
+    } else {
+        String::new()
+    };
+
     let script = format!(
         r#"#!/bin/bash
 # Loom wrapper script for stage: {stage_id}
 # Writes PID to file before exec'ing claude
 
-# Write our PID to the tracking file
+{cd_section}# Write our PID to the tracking file
 echo $$ > "{pid_file}"
 
 # Replace this process with claude
 exec {claude_cmd}
 "#,
         stage_id = stage_id,
-        pid_file = pid_file.display(),
+        cd_section = cd_section,
+        pid_file = pid_file_abs.display(),
         claude_cmd = claude_cmd
     );
 
@@ -329,7 +369,7 @@ mod tests {
         let stage_id = "test-stage";
         let claude_cmd = "claude 'test prompt'";
 
-        let wrapper_path = create_wrapper_script(work_dir, stage_id, claude_cmd).unwrap();
+        let wrapper_path = create_wrapper_script(work_dir, stage_id, claude_cmd, None).unwrap();
 
         // Check file exists
         assert!(wrapper_path.exists());
@@ -350,6 +390,28 @@ mod tests {
     }
 
     #[test]
+    fn test_wrapper_script_with_working_dir() {
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path();
+        let stage_id = "test-stage-cwd";
+        let claude_cmd = "claude 'test prompt'";
+        let working_dir = Path::new("/tmp/test-worktree");
+
+        let wrapper_path =
+            create_wrapper_script(work_dir, stage_id, claude_cmd, Some(working_dir)).unwrap();
+
+        // Check file exists
+        assert!(wrapper_path.exists());
+
+        // Check content includes the cd command
+        let content = fs::read_to_string(&wrapper_path).unwrap();
+        assert!(content.contains("#!/bin/bash"));
+        assert!(content.contains("cd '/tmp/test-worktree'"));
+        assert!(content.contains("echo $$"));
+        assert!(content.contains(claude_cmd));
+    }
+
+    #[test]
     fn test_check_pid_alive() {
         // Current process should be alive
         let our_pid = std::process::id();
@@ -367,7 +429,7 @@ mod tests {
 
         // Create files
         write_pid_file(work_dir, stage_id, 12345).unwrap();
-        create_wrapper_script(work_dir, stage_id, "claude 'test'").unwrap();
+        create_wrapper_script(work_dir, stage_id, "claude 'test'", None).unwrap();
 
         // Verify they exist
         assert!(pid_file_path(work_dir, stage_id).exists());
