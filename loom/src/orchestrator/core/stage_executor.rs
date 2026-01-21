@@ -54,7 +54,7 @@ impl StageExecutor for Orchestrator {
     }
 
     fn start_stage(&mut self, stage_id: &str) -> Result<()> {
-        let stage = self.load_stage(stage_id)?;
+        let mut stage = self.load_stage(stage_id)?;
 
         // Skip if stage is already executing or completed
         if matches!(
@@ -68,6 +68,21 @@ impl StageExecutor for Orchestrator {
         if stage.held {
             return Ok(());
         }
+
+        // CRITICAL: Mark as executing IMMEDIATELY to prevent duplicate spawns
+        // This must happen before any potentially slow operations (worktree creation, terminal spawning)
+        // to close the race condition window where another poll cycle could spawn the same stage again.
+
+        // Transition through Queued if currently WaitingForDeps
+        if stage.status == StageStatus::WaitingForDeps {
+            stage.try_mark_queued()?;
+        }
+        stage.try_mark_executing()?;
+        self.save_stage(&stage)?;
+
+        self.graph
+            .mark_executing(stage_id)
+            .context("Failed to mark stage as executing in graph")?;
 
         // Knowledge stages run in main repo without a worktree
         if stage.stage_type == StageType::Knowledge {
@@ -199,21 +214,12 @@ impl StageExecutor for Orchestrator {
 
         self.save_session(&spawned_session)?;
 
+        // Update stage with session and worktree info (already marked Executing earlier)
         let mut updated_stage = stage;
         updated_stage.assign_session(spawned_session.id.clone());
         updated_stage.set_worktree(Some(worktree.id.clone()));
         updated_stage.set_resolved_base(Some(resolved.branch_name().to_string()));
-
-        // Transition through Queued if currently WaitingForDeps (WaitingForDeps -> Queued -> Executing)
-        if updated_stage.status == StageStatus::WaitingForDeps {
-            updated_stage.try_mark_queued()?;
-        }
-        updated_stage.try_mark_executing()?;
         self.save_stage(&updated_stage)?;
-
-        self.graph
-            .mark_executing(stage_id)
-            .context("Failed to mark stage as executing in graph")?;
 
         self.active_sessions
             .insert(stage_id.to_string(), spawned_session);
@@ -299,22 +305,13 @@ impl StageExecutor for Orchestrator {
 
         self.save_session(&spawned_session)?;
 
+        // Update stage with session info (already marked Executing earlier)
         let mut updated_stage = stage;
         updated_stage.assign_session(spawned_session.id.clone());
         // Knowledge stages don't have a worktree
         updated_stage.set_worktree(None);
         updated_stage.set_resolved_base(None);
-
-        // Transition through Queued if currently WaitingForDeps (WaitingForDeps -> Queued -> Executing)
-        if updated_stage.status == StageStatus::WaitingForDeps {
-            updated_stage.try_mark_queued()?;
-        }
-        updated_stage.try_mark_executing()?;
         self.save_stage(&updated_stage)?;
-
-        self.graph
-            .mark_executing(&stage_id)
-            .context("Failed to mark knowledge stage as executing in graph")?;
 
         // Add to active sessions but NOT to active_worktrees (no worktree for knowledge stages)
         self.active_sessions.insert(stage_id, spawned_session);

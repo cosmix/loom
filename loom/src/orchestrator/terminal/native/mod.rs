@@ -65,6 +65,8 @@ impl NativeBackend {
     /// Create a new native backend, detecting the available terminal
     pub fn new(work_dir: PathBuf) -> Result<Self> {
         let terminal = detect_terminal()?;
+        // Log the detected terminal for debugging terminal selection issues
+        eprintln!("Detected terminal: {}", terminal.display_name());
         Ok(Self { terminal, work_dir })
     }
 

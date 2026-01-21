@@ -115,9 +115,13 @@ fn get_gsettings_terminal() -> Option<String> {
 ///
 /// Priority:
 /// 1. TERMINAL environment variable (user preference)
-/// 2. Currently running terminal (detected via parent process or running apps)
+/// 2. Currently running terminal (detected via parent process)
 /// 3. Cross-platform terminals (kitty, alacritty, wezterm)
-/// 4. Terminal.app (always present on macOS)
+/// 4. iTerm2 or Terminal.app (check for installed apps)
+///
+/// Note: We explicitly avoid detect_running_terminal() because it's non-deterministic
+/// when multiple terminal apps are running simultaneously. Instead, we prefer the
+/// parent process chain which is deterministic and stable.
 #[cfg(target_os = "macos")]
 pub fn detect_terminal() -> Result<TerminalEmulator> {
     // 1. Check TERMINAL environment variable (user preference)
@@ -136,14 +140,9 @@ pub fn detect_terminal() -> Result<TerminalEmulator> {
         }
     }
 
-    // 2. Detect currently running terminal
-    // First check parent process chain (we're likely running inside a terminal)
+    // 2. Detect currently running terminal from parent process chain
+    // This is the most reliable method - we're almost certainly running inside a terminal
     if let Some(terminal) = detect_parent_terminal() {
-        return Ok(terminal);
-    }
-
-    // Then check for running terminal apps
-    if let Some(terminal) = detect_running_terminal() {
         return Ok(terminal);
     }
 
@@ -160,7 +159,13 @@ pub fn detect_terminal() -> Result<TerminalEmulator> {
         }
     }
 
-    // 4. Fall back to Terminal.app (always present on macOS)
+    // 4. Check for installed macOS native terminals
+    // Prefer iTerm2 if installed, otherwise fall back to Terminal.app
+    if Path::new("/Applications/iTerm.app").exists() {
+        return Ok(TerminalEmulator::ITerm2);
+    }
+
+    // Terminal.app is always present on macOS
     Ok(TerminalEmulator::TerminalApp)
 }
 
@@ -224,7 +229,11 @@ fn detect_parent_terminal() -> Option<TerminalEmulator> {
 /// Detect running terminal apps on macOS
 ///
 /// Checks which terminal applications are currently running.
+///
+/// NOTE: This function is intentionally unused because it's non-deterministic
+/// when multiple terminals are running. Kept for potential debugging use.
 #[cfg(target_os = "macos")]
+#[allow(dead_code)]
 fn detect_running_terminal() -> Option<TerminalEmulator> {
     // Use ps to find running terminal processes
     let output = Command::new("ps").args(["-axc", "-o", "comm="]).output().ok()?;

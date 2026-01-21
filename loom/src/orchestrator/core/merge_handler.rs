@@ -47,14 +47,31 @@ impl Orchestrator {
         // Check if the merge was actually successful by examining git state
         match check_merge_state(&stage, &merge_point, &self.config.repo_root) {
             Ok(MergeState::Merged) => {
-                // Merge succeeded - update stage
+                // Merge succeeded - transition stage to Completed and mark as merged
                 stage.merged = true;
                 stage.merge_conflict = false;
+
+                // Transition from MergeConflict to Completed (valid per transitions.rs)
+                if stage.status == StageStatus::MergeConflict {
+                    if let Err(e) = stage.status.try_transition(StageStatus::Completed) {
+                        eprintln!("Warning: Failed to transition stage to Completed: {e}");
+                    } else {
+                        stage.status = StageStatus::Completed;
+                    }
+                }
+
                 if let Err(e) = self.save_stage(&stage) {
                     eprintln!(
                         "Warning: Failed to save stage after detecting successful merge: {e}"
                     );
                 }
+
+                // Update graph to mark as completed and merged
+                self.graph.set_node_merged(stage_id, true);
+                if let Err(e) = self.graph.mark_completed(stage_id) {
+                    eprintln!("Warning: Failed to mark stage as completed in graph: {e}");
+                }
+
                 clear_status_line();
                 eprintln!("Stage '{stage_id}' merge verified and marked as complete");
             }
@@ -62,9 +79,26 @@ impl Orchestrator {
                 // Branch was deleted (likely by `loom worktree remove`) - assume merge succeeded
                 stage.merged = true;
                 stage.merge_conflict = false;
+
+                // Transition from MergeConflict to Completed (valid per transitions.rs)
+                if stage.status == StageStatus::MergeConflict {
+                    if let Err(e) = stage.status.try_transition(StageStatus::Completed) {
+                        eprintln!("Warning: Failed to transition stage to Completed: {e}");
+                    } else {
+                        stage.status = StageStatus::Completed;
+                    }
+                }
+
                 if let Err(e) = self.save_stage(&stage) {
                     eprintln!("Warning: Failed to save stage after branch cleanup: {e}");
                 }
+
+                // Update graph to mark as completed and merged
+                self.graph.set_node_merged(stage_id, true);
+                if let Err(e) = self.graph.mark_completed(stage_id) {
+                    eprintln!("Warning: Failed to mark stage as completed in graph: {e}");
+                }
+
                 clear_status_line();
                 eprintln!("Stage '{stage_id}' branch cleaned up, marking as merged");
             }
@@ -87,13 +121,18 @@ impl Orchestrator {
         Ok(())
     }
 
-    pub(super) fn try_auto_merge(&self, stage_id: &str) {
+    /// Attempt auto-merge for a completed stage.
+    ///
+    /// Returns `true` if the merge succeeded or was not needed (stage can be marked Completed).
+    /// Returns `false` if the merge failed with conflicts (stage should be marked MergeConflict).
+    pub(super) fn try_auto_merge(&mut self, stage_id: &str) -> bool {
         // Load the stage to check auto_merge setting
         let mut stage = match load_stage(stage_id, &self.config.work_dir) {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("Warning: Failed to load stage for auto-merge check: {e}");
-                return;
+                // If we can't load the stage, allow completion to proceed
+                return true;
             }
         };
 
@@ -102,7 +141,12 @@ impl Orchestrator {
         let plan_auto_merge = None;
 
         if !is_auto_merge_enabled(&stage, self.config.auto_merge, plan_auto_merge) {
-            return;
+            // Auto-merge disabled - mark as merged without attempting merge
+            stage.merged = true;
+            if let Err(e) = self.save_stage(&stage) {
+                eprintln!("Warning: Failed to save stage after skipping auto-merge: {e}");
+            }
+            return true;
         }
 
         // Get target branch (from config or default branch of the repo)
@@ -135,6 +179,7 @@ impl Orchestrator {
                 eprintln!(
                     "Stage '{stage_id}' merged: {files_changed} files, +{insertions} -{deletions}"
                 );
+                true
             }
             Ok(AutoMergeResult::FastForward { .. }) => {
                 // Mark stage as merged and save
@@ -144,6 +189,7 @@ impl Orchestrator {
                 }
                 clear_status_line();
                 eprintln!("Stage '{stage_id}' merged (fast-forward)");
+                true
             }
             Ok(AutoMergeResult::AlreadyUpToDate { .. }) => {
                 // Mark stage as merged and save (no changes needed, but branch is up to date)
@@ -153,21 +199,37 @@ impl Orchestrator {
                 }
                 clear_status_line();
                 eprintln!("Stage '{stage_id}' already up to date");
+                true
             }
             Ok(AutoMergeResult::ConflictResolutionSpawned {
                 session_id,
                 conflicting_files,
             }) => {
-                // Mark stage as having merge conflicts
+                // CRITICAL: Transition stage to MergeConflict status to prevent dependent stages
+                // from starting before conflicts are resolved
                 stage.merge_conflict = true;
+                if let Err(e) = stage.try_mark_merge_conflict() {
+                    eprintln!("Warning: Failed to transition stage to MergeConflict status: {e}");
+                    // Fallback: force the status (this should not fail based on transitions.rs)
+                    stage.status = StageStatus::MergeConflict;
+                }
                 if let Err(e) = self.save_stage(&stage) {
                     eprintln!("Warning: Failed to save stage merge conflict status: {e}");
                 }
+
+                // Also update the graph to reflect MergeConflict status
+                if let Err(e) = self.graph.mark_merge_conflict(stage_id) {
+                    eprintln!("Warning: Failed to mark stage as merge conflict in graph: {e}");
+                }
+
                 clear_status_line();
                 eprintln!(
                     "Stage '{stage_id}' has {} conflict(s). Spawned resolution session: {session_id}",
                     conflicting_files.len()
                 );
+
+                // Return false to indicate merge did not succeed - stage should NOT be marked Completed
+                false
             }
             Ok(AutoMergeResult::NoWorktree) => {
                 // Nothing to merge - stage may have been created without worktree
@@ -176,10 +238,24 @@ impl Orchestrator {
                 if let Err(e) = self.save_stage(&stage) {
                     eprintln!("Warning: Failed to save stage after no-worktree merge: {e}");
                 }
+                true
             }
             Err(e) => {
                 clear_status_line();
                 eprintln!("Auto-merge failed for '{stage_id}': {e}");
+                // On error, transition to MergeBlocked status
+                if let Err(transition_err) = stage.try_mark_merge_blocked() {
+                    eprintln!("Warning: Failed to transition stage to MergeBlocked status: {transition_err}");
+                    stage.status = StageStatus::MergeBlocked;
+                }
+                if let Err(e) = self.save_stage(&stage) {
+                    eprintln!("Warning: Failed to save stage after merge error: {e}");
+                }
+                if let Err(e) = self.graph.mark_merge_blocked(stage_id) {
+                    eprintln!("Warning: Failed to mark stage as merge blocked in graph: {e}");
+                }
+                // Return false - merge failed, stage should not be marked Completed
+                false
             }
         }
     }
