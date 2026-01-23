@@ -60,7 +60,7 @@ This skill provides:
 
 ```text
 ┌────────────────────────────────────────────────────────────────────┐
-│  ⚠️ PRE-PLANNING EXPLORATION PREVENTS SPAGHETTI CODE               │
+│  🚨 EXPLORE FIRST - EXPLORE CODEBASE BEFORE PLANNING               │
 │                                                                    │
 │  Problem: Agents skip exploration → duplicate code, poor reuse,    │
 │  inconsistent patterns, architectural drift, wasted effort.        │
