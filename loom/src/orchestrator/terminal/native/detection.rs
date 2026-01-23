@@ -236,7 +236,10 @@ fn detect_parent_terminal() -> Option<TerminalEmulator> {
 #[allow(dead_code)]
 fn detect_running_terminal() -> Option<TerminalEmulator> {
     // Use ps to find running terminal processes
-    let output = Command::new("ps").args(["-axc", "-o", "comm="]).output().ok()?;
+    let output = Command::new("ps")
+        .args(["-axc", "-o", "comm="])
+        .output()
+        .ok()?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
