@@ -1,6 +1,7 @@
 pub mod activity;
 pub mod attention;
 pub mod compact;
+pub mod completion;
 pub mod graph;
 pub mod live_mode;
 pub mod merge;
@@ -10,6 +11,7 @@ pub mod spinner;
 
 pub use attention::render_attention;
 pub use compact::render_compact;
+pub use completion::{render_completion_lines, render_completion_screen};
 pub use graph::render_graph;
 pub use live_mode::run_live_mode;
 pub use merge::render_merge_status;

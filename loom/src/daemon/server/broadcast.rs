@@ -1,6 +1,6 @@
 //! Log tailing and status broadcasting threads.
 
-use super::super::protocol::{write_message, Response};
+use super::super::protocol::{write_message, CompletionSummary, Response};
 use super::core::DaemonServer;
 use super::status::collect_status;
 use anyhow::{Context, Result};
@@ -12,6 +12,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
+
+use crate::models::stage::StageStatus;
 
 /// Interval between status broadcasts in milliseconds.
 const STATUS_BROADCAST_INTERVAL_MS: u64 = 1000;
@@ -91,6 +93,9 @@ fn run_status_broadcaster(
     shutdown_flag: Arc<AtomicBool>,
     status_subscribers: Arc<Mutex<Vec<UnixStream>>>,
 ) {
+    let mut completion_sent = false;
+    let mut orchestration_start: Option<chrono::DateTime<chrono::Utc>> = None;
+
     while !shutdown_flag.load(Ordering::Relaxed) {
         // Only broadcast if there are subscribers
         let has_subscribers = status_subscribers
@@ -100,8 +105,88 @@ fn run_status_broadcaster(
 
         if has_subscribers {
             if let Ok(status_update) = collect_status(work_dir) {
-                if let Ok(mut subs) = status_subscribers.lock() {
-                    subs.retain_mut(|stream| write_message(stream, &status_update).is_ok());
+                // Check if orchestration is complete (all stages terminal)
+                if let Response::StatusUpdate {
+                    ref stages_executing,
+                    ref stages_pending,
+                    ref stages_completed,
+                    ref stages_blocked,
+                } = status_update
+                {
+                    // Track orchestration start time from first executing stage
+                    if orchestration_start.is_none() {
+                        let all_stages: Vec<_> = stages_executing
+                            .iter()
+                            .chain(stages_completed.iter())
+                            .chain(stages_blocked.iter())
+                            .collect();
+                        if let Some(earliest) = all_stages.iter().map(|s| s.started_at).min() {
+                            orchestration_start = Some(earliest);
+                        }
+                    }
+
+                    // Check if orchestration is complete
+                    let total = stages_executing.len()
+                        + stages_pending.len()
+                        + stages_completed.len()
+                        + stages_blocked.len();
+
+                    // Orchestration is complete when:
+                    // 1. No stages are executing
+                    // 2. No stages are pending (waiting or queued)
+                    // 3. There is at least one stage
+                    let is_complete =
+                        total > 0 && stages_executing.is_empty() && stages_pending.is_empty();
+
+                    if is_complete && !completion_sent {
+                        // Build completion summary
+                        let all_stages: Vec<_> = stages_completed
+                            .iter()
+                            .chain(stages_blocked.iter())
+                            .cloned()
+                            .collect();
+
+                        let success_count = all_stages
+                            .iter()
+                            .filter(|s| matches!(s.status, StageStatus::Completed))
+                            .count();
+                        let skipped_count = all_stages
+                            .iter()
+                            .filter(|s| matches!(s.status, StageStatus::Skipped))
+                            .count();
+                        let failure_count = all_stages.len() - success_count - skipped_count;
+
+                        let total_time_secs = orchestration_start
+                            .map(|start| {
+                                chrono::Utc::now()
+                                    .signed_duration_since(start)
+                                    .num_seconds()
+                            })
+                            .unwrap_or(0);
+
+                        let success = failure_count == 0;
+
+                        let completion = Response::OrchestrationComplete {
+                            summary: CompletionSummary {
+                                stages: all_stages,
+                                total_time_secs,
+                                success_count,
+                                failure_count,
+                                skipped_count,
+                                success,
+                            },
+                        };
+
+                        if let Ok(mut subs) = status_subscribers.lock() {
+                            subs.retain_mut(|stream| write_message(stream, &completion).is_ok());
+                        }
+                        completion_sent = true;
+                    } else if !completion_sent {
+                        // Send regular status update
+                        if let Ok(mut subs) = status_subscribers.lock() {
+                            subs.retain_mut(|stream| write_message(stream, &status_update).is_ok());
+                        }
+                    }
                 }
             }
         }

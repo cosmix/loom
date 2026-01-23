@@ -53,6 +53,23 @@ pub enum Request {
     Ping,
 }
 
+/// Summary of orchestration completion for display
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompletionSummary {
+    /// All stages with their final status
+    pub stages: Vec<StageInfo>,
+    /// Total orchestration time in seconds
+    pub total_time_secs: i64,
+    /// Number of successfully completed stages
+    pub success_count: usize,
+    /// Number of failed/blocked stages
+    pub failure_count: usize,
+    /// Number of skipped stages
+    pub skipped_count: usize,
+    /// Whether orchestration completed successfully (all stages done or skipped)
+    pub success: bool,
+}
+
 /// Daemon response to client
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Response {
@@ -65,6 +82,10 @@ pub enum Response {
         stages_pending: Vec<StageInfo>,
         stages_completed: Vec<StageInfo>,
         stages_blocked: Vec<StageInfo>,
+    },
+    /// Orchestration has completed (all stages terminal)
+    OrchestrationComplete {
+        summary: CompletionSummary,
     },
     LogLine {
         line: String,

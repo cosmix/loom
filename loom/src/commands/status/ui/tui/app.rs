@@ -23,11 +23,11 @@ use ratatui::{
 use super::daemon_client::{connect, is_socket_disconnected, subscribe};
 use super::event_handler::{handle_key_event, handle_mouse_event, KeyEventResult};
 use super::renderer::{
-    render_compact_footer, render_compact_header, render_tree_graph, render_unified_table,
-    unified_stage_to_stage, GRAPH_AREA_HEIGHT,
+    render_compact_footer, render_compact_header, render_completion, render_tree_graph,
+    render_unified_table, unified_stage_to_stage, GRAPH_AREA_HEIGHT,
 };
 use super::state::{GraphState, LiveStatus};
-use crate::daemon::{read_message, write_message, Request, Response};
+use crate::daemon::{read_message, write_message, CompletionSummary, Request, Response};
 use crate::models::stage::StageStatus;
 
 /// Poll timeout for event loop (100ms for responsive UI).
@@ -43,6 +43,7 @@ pub struct TuiApp {
     graph_state: GraphState,
     mouse_enabled: bool,
     exiting: bool,
+    completion_summary: Option<CompletionSummary>,
 }
 
 impl TuiApp {
@@ -67,6 +68,7 @@ impl TuiApp {
             graph_state: GraphState::default(),
             mouse_enabled,
             exiting: false,
+            completion_summary: None,
         })
     }
 
@@ -150,6 +152,10 @@ impl TuiApp {
                 };
                 self.last_error = None;
             }
+            Response::OrchestrationComplete { summary } => {
+                self.completion_summary = Some(summary);
+                self.last_error = None;
+            }
             Response::Error { message } => {
                 self.last_error = Some(message);
             }
@@ -159,6 +165,15 @@ impl TuiApp {
 
     /// Render the UI.
     fn render(&mut self) -> Result<()> {
+        // If orchestration completed, render completion screen
+        if let Some(ref summary) = self.completion_summary {
+            let summary_clone = summary.clone();
+            self.terminal.draw(|frame| {
+                render_completion(frame, frame.area(), &summary_clone);
+            })?;
+            return Ok(());
+        }
+
         let spinner = self.spinner_char();
         let status = &self.status;
         let last_error = self.last_error.clone();
