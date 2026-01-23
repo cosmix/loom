@@ -33,7 +33,9 @@ impl KnowledgeFile {
     /// Get a description of what this file contains
     pub fn description(&self) -> &'static str {
         match self {
-            KnowledgeFile::Architecture => "High-level project architecture and component map",
+            KnowledgeFile::Architecture => {
+                "High-level component relationships, data flow, module dependencies"
+            }
             KnowledgeFile::EntryPoints => "Key files agents should read first",
             KnowledgeFile::Patterns => "Architectural patterns discovered in the codebase",
             KnowledgeFile::Conventions => "Coding conventions discovered in the codebase",
@@ -234,10 +236,10 @@ impl KnowledgeDir {
         match file_type {
             KnowledgeFile::Architecture => r#"# Architecture
 
-> High-level project structure and component relationships.
+> High-level component relationships, data flow, and module dependencies.
 > This file is append-only - agents add discoveries, never delete.
 
-(Add architecture overview as you discover it)
+(Add architecture diagrams and component relationships as you discover them)
 "#
             .to_string(),
             KnowledgeFile::EntryPoints => r#"# Entry Points
@@ -297,6 +299,7 @@ mod tests {
 
     #[test]
     fn test_knowledge_file_types() {
+        assert_eq!(KnowledgeFile::Architecture.filename(), "architecture.md");
         assert_eq!(KnowledgeFile::EntryPoints.filename(), "entry-points.md");
         assert_eq!(KnowledgeFile::Patterns.filename(), "patterns.md");
         assert_eq!(KnowledgeFile::Conventions.filename(), "conventions.md");
@@ -305,6 +308,10 @@ mod tests {
 
     #[test]
     fn test_knowledge_file_from_filename() {
+        assert_eq!(
+            KnowledgeFile::from_filename("architecture.md"),
+            Some(KnowledgeFile::Architecture)
+        );
         assert_eq!(
             KnowledgeFile::from_filename("entry-points.md"),
             Some(KnowledgeFile::EntryPoints)
