@@ -9,11 +9,14 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use colored::Colorize;
+use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 
-use crate::daemon::{read_message, write_message, Request, Response, StageInfo};
+use crate::daemon::{read_message, write_message, CompletionSummary, Request, Response, StageInfo};
 use crate::utils::{cleanup_terminal, install_terminal_panic_hook};
 
 use super::activity::{ActivityLog, ActivityType};
+use super::completion::render_completion_screen;
 use super::spinner::Spinner;
 
 /// Connection timeout for daemon socket
@@ -24,6 +27,7 @@ pub struct LiveMode {
     spinner: Spinner,
     activity: ActivityLog,
     running: Arc<AtomicBool>,
+    completion_summary: Option<CompletionSummary>,
 }
 
 impl LiveMode {
@@ -32,6 +36,7 @@ impl LiveMode {
             spinner: Spinner::new(),
             activity: ActivityLog::new(),
             running: Arc::new(AtomicBool::new(true)),
+            completion_summary: None,
         }
     }
 
@@ -68,6 +73,15 @@ impl LiveMode {
             match read_message(&mut stream) {
                 Ok(response) => {
                     self.handle_response(response, work_path)?;
+
+                    // Check if orchestration completed
+                    if let Some(ref summary) = self.completion_summary {
+                        // Render completion screen and wait for 'q' to exit
+                        render_completion_screen(summary);
+                        let _ = write_message(&mut stream, &Request::Unsubscribe);
+                        self.wait_for_exit_key()?;
+                        break;
+                    }
                 }
                 Err(e) => {
                     eprintln!("\n{}", "Connection to daemon lost".red());
@@ -80,6 +94,34 @@ impl LiveMode {
         let _ = write_message(&mut stream, &Request::Unsubscribe);
         cleanup_terminal();
 
+        Ok(())
+    }
+
+    /// Wait for user to press 'q' or Escape to exit
+    fn wait_for_exit_key(&self) -> Result<()> {
+        enable_raw_mode().context("Failed to enable raw mode")?;
+
+        loop {
+            if event::poll(Duration::from_millis(100))? {
+                if let Event::Key(key) = event::read()? {
+                    if key.kind == KeyEventKind::Press {
+                        match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => break,
+                            KeyCode::Char('c')
+                                if key
+                                    .modifiers
+                                    .contains(crossterm::event::KeyModifiers::CONTROL) =>
+                            {
+                                break
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+
+        disable_raw_mode().context("Failed to disable raw mode")?;
         Ok(())
     }
 
@@ -160,6 +202,9 @@ impl LiveMode {
                     &stages_completed,
                     &stages_blocked,
                 );
+            }
+            Response::OrchestrationComplete { summary } => {
+                self.completion_summary = Some(summary);
             }
             Response::Error { message } => {
                 eprintln!("\n{}", format!("Daemon error: {message}").red());

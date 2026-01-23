@@ -99,14 +99,14 @@ pub enum Response {
         stages_completed: Vec<StageInfo>,
         stages_blocked: Vec<StageInfo>,
     },
+    /// Orchestration has completed (all stages terminal)
+    OrchestrationComplete {
+        summary: CompletionSummary,
+    },
     LogLine {
         line: String,
     },
     Pong,
-    /// Sent when orchestration completes (all stages finished or failed)
-    OrchestrationComplete {
-        summary: CompletionSummary,
-    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

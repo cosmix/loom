@@ -14,6 +14,7 @@ use super::state::UnifiedStage;
 use crate::commands::status::ui::theme::{StatusColors, Theme};
 use crate::commands::status::ui::tree_widget::TreeWidget;
 use crate::commands::status::ui::widgets::{status_indicator, status_text};
+use crate::daemon::CompletionSummary;
 use crate::models::stage::{Stage, StageStatus};
 
 /// Fixed height for the graph area (prevents jerking from dynamic resizing).
@@ -287,6 +288,158 @@ pub fn format_dependencies(deps: &[String], max_width: usize) -> String {
         .collect();
 
     format!("({left}...{right})")
+}
+
+/// Render completion screen with summary of all stages.
+pub fn render_completion(frame: &mut Frame, area: Rect, summary: &CompletionSummary) {
+    use ratatui::layout::{Constraint, Direction, Layout};
+    use ratatui::text::{Line, Span};
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(4), // Header
+            Constraint::Length(2), // Summary
+            Constraint::Min(10),   // Stage table
+            Constraint::Length(1), // Footer
+        ])
+        .split(area);
+
+    // Header
+    let success = summary.failure_count == 0;
+    let header_text = if success {
+        Line::from(vec![
+            Span::styled("\u{2713} ", Style::default().fg(StatusColors::COMPLETED)),
+            Span::styled(
+                "Orchestration Complete",
+                Style::default()
+                    .fg(StatusColors::COMPLETED)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled("\u{2717} ", Style::default().fg(StatusColors::BLOCKED)),
+            Span::styled(
+                "Orchestration Complete (with failures)",
+                Style::default()
+                    .fg(StatusColors::BLOCKED)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])
+    };
+
+    let total_time = format_elapsed(summary.total_duration_secs);
+    let summary_line = Line::from(vec![
+        Span::styled("Total: ", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(total_time),
+        Span::raw(" | "),
+        Span::styled("\u{2713} ", Style::default().fg(StatusColors::COMPLETED)),
+        Span::raw(summary.success_count.to_string()),
+        Span::raw(" | "),
+        Span::styled("\u{2717} ", Style::default().fg(StatusColors::BLOCKED)),
+        Span::raw(summary.failure_count.to_string()),
+    ]);
+
+    let header_block = Block::default()
+        .title(" Orchestration Results ")
+        .title_style(Theme::header())
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(StatusColors::BORDER));
+
+    let header_content =
+        Paragraph::new(vec![header_text, Line::from(""), summary_line]).block(header_block);
+    frame.render_widget(header_content, chunks[0]);
+
+    // Sort stages by completion (completed first, then by id)
+    let mut sorted_stages = summary.stages.clone();
+    sorted_stages.sort_by(|a, b| match (&a.duration_secs, &b.duration_secs) {
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        _ => a.id.cmp(&b.id),
+    });
+
+    // Stage table
+    let table_block = Block::default()
+        .title(format!(" Stages ({}) ", sorted_stages.len()))
+        .title_style(Theme::header())
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(StatusColors::BORDER));
+
+    let header = Row::new(vec!["", "Stage", "Status", "Duration"])
+        .style(Theme::header())
+        .bottom_margin(1);
+
+    let rows: Vec<Row> = sorted_stages
+        .iter()
+        .map(|stage| {
+            let icon = match stage.status {
+                StageStatus::Completed => "\u{2713}",
+                StageStatus::Skipped => "\u{2298}",
+                StageStatus::Blocked => "\u{2717}",
+                StageStatus::MergeConflict => "\u{26A1}",
+                StageStatus::CompletedWithFailures => "\u{26A0}",
+                StageStatus::MergeBlocked => "\u{2297}",
+                _ => "\u{25CB}",
+            };
+
+            let duration = stage
+                .duration_secs
+                .map(format_elapsed)
+                .unwrap_or_else(|| "-".to_string());
+
+            let status_str = match stage.status {
+                StageStatus::Completed => "Completed",
+                StageStatus::Skipped => "Skipped",
+                StageStatus::Blocked => "Blocked",
+                StageStatus::MergeConflict => "Conflict",
+                StageStatus::CompletedWithFailures => "Failed",
+                StageStatus::MergeBlocked => "MergeBlk",
+                _ => "Other",
+            };
+
+            let style = match stage.status {
+                StageStatus::Completed => Theme::status_completed(),
+                StageStatus::Skipped => Theme::dimmed(),
+                StageStatus::Blocked
+                | StageStatus::CompletedWithFailures
+                | StageStatus::MergeBlocked => Theme::status_blocked(),
+                StageStatus::MergeConflict => Theme::status_warning(),
+                _ => Theme::dimmed(),
+            };
+
+            let id_display = if stage.id.len() > 30 {
+                format!("{}...", &stage.id[..27])
+            } else {
+                stage.id.clone()
+            };
+
+            Row::new(vec![
+                icon.to_string(),
+                id_display,
+                status_str.to_string(),
+                duration,
+            ])
+            .style(style)
+        })
+        .collect();
+
+    let widths = [
+        ratatui::layout::Constraint::Length(2),
+        ratatui::layout::Constraint::Min(20),
+        ratatui::layout::Constraint::Length(10),
+        ratatui::layout::Constraint::Length(8),
+    ];
+
+    let table = Table::new(rows, widths).block(table_block).header(header);
+    frame.render_widget(table, chunks[2]);
+
+    // Footer
+    let footer = Paragraph::new(Line::from(vec![
+        Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(" quit"),
+    ]));
+    frame.render_widget(footer, chunks[3]);
 }
 
 #[cfg(test)]
