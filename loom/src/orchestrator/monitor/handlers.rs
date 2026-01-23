@@ -38,7 +38,11 @@ impl Handlers {
         // First, try to get the most current PID from the PID file (if stage_id is available)
         // The PID file is written by the wrapper script and may be more current than session.pid
         if let Some(stage_id) = &session.stage_id {
-            let pid_file_path = self.config.work_dir.join("pids").join(format!("{}.pid", stage_id));
+            let pid_file_path = self
+                .config
+                .work_dir
+                .join("pids")
+                .join(format!("{stage_id}.pid"));
 
             if let Ok(pid_content) = std::fs::read_to_string(&pid_file_path) {
                 if let Ok(current_pid) = pid_content.trim().parse::<u32>() {

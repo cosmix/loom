@@ -262,10 +262,18 @@ pub fn parse_stage_frontmatter_full(content: &str) -> Option<ParsedStage> {
 
 /// Get the started_at timestamp from stage content.
 ///
-/// Extracts the `updated_at` field from YAML frontmatter using proper parsing.
+/// Extracts the `started_at` field from YAML frontmatter using proper parsing.
+/// Falls back to `updated_at` for backward compatibility with older stage files.
 pub fn get_stage_started_at(content: &str) -> chrono::DateTime<chrono::Utc> {
     // Use proper YAML parsing
     if let Ok(yaml) = extract_yaml_frontmatter(content) {
+        // First try started_at (new field)
+        if let Some(started_at) = yaml.get("started_at").and_then(|v| v.as_str()) {
+            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(started_at) {
+                return dt.with_timezone(&chrono::Utc);
+            }
+        }
+        // Fall back to updated_at for backward compatibility
         if let Some(updated_at) = yaml.get("updated_at").and_then(|v| v.as_str()) {
             if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(updated_at) {
                 return dt.with_timezone(&chrono::Utc);

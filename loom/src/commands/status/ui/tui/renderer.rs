@@ -81,6 +81,11 @@ pub fn unified_stage_to_stage(us: &UnifiedStage) -> Stage {
         created_at: us.started_at.unwrap_or_else(Utc::now),
         updated_at: Utc::now(),
         completed_at: us.completed_at,
+        started_at: us.started_at,
+        duration_secs: us.completed_at.and_then(|end| {
+            us.started_at
+                .map(|start| end.signed_duration_since(start).num_seconds())
+        }),
         close_reason: None,
         auto_merge: None,
         working_dir: None,

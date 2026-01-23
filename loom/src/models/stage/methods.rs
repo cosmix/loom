@@ -28,6 +28,8 @@ impl Stage {
             created_at: now,
             updated_at: now,
             completed_at: None,
+            started_at: None,
+            duration_secs: None,
             close_reason: None,
             auto_merge: None,
             working_dir: Some(".".to_string()),
@@ -136,12 +138,19 @@ impl Stage {
 
     /// Complete the stage with validation.
     ///
+    /// Computes and stores `duration_secs` from `started_at` to completion.
+    ///
     /// # Returns
     /// `Ok(())` if the transition succeeded, `Err` if invalid
     pub fn try_complete(&mut self, reason: Option<String>) -> Result<()> {
         self.try_transition(StageStatus::Completed)?;
-        self.completed_at = Some(Utc::now());
+        let now = Utc::now();
+        self.completed_at = Some(now);
         self.close_reason = reason;
+        // Compute duration from started_at to completed_at
+        if let Some(start) = self.started_at {
+            self.duration_secs = Some(now.signed_duration_since(start).num_seconds());
+        }
         Ok(())
     }
 
@@ -163,10 +172,18 @@ impl Stage {
 
     /// Mark the stage as executing with validation.
     ///
+    /// Sets `started_at` timestamp if not already set (preserves original
+    /// start time across retries).
+    ///
     /// # Returns
     /// `Ok(())` if the transition succeeded, `Err` if invalid
     pub fn try_mark_executing(&mut self) -> Result<()> {
-        self.try_transition(StageStatus::Executing)
+        self.try_transition(StageStatus::Executing)?;
+        // Only set started_at on first execution (preserve across retries)
+        if self.started_at.is_none() {
+            self.started_at = Some(Utc::now());
+        }
+        Ok(())
     }
 
     /// Mark the stage as waiting for input with validation.
@@ -211,6 +228,7 @@ impl Stage {
     /// Complete merge conflict resolution and mark stage as completed.
     ///
     /// This clears the merge_conflict flag and marks the stage as merged.
+    /// Computes and stores `duration_secs` from `started_at` to completion.
     ///
     /// # Returns
     /// `Ok(())` if the transition succeeded, `Err` if invalid
@@ -218,7 +236,12 @@ impl Stage {
         self.try_transition(StageStatus::Completed)?;
         self.merge_conflict = false;
         self.merged = true;
-        self.completed_at = Some(Utc::now());
+        let now = Utc::now();
+        self.completed_at = Some(now);
+        // Compute duration from started_at to completed_at
+        if let Some(start) = self.started_at {
+            self.duration_secs = Some(now.signed_duration_since(start).num_seconds());
+        }
         Ok(())
     }
 

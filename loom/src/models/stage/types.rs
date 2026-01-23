@@ -49,6 +49,14 @@ pub struct Stage {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
+    /// When the stage first transitioned to Executing.
+    /// Persisted to track timing even after orchestrator restart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<DateTime<Utc>>,
+    /// Final duration in seconds (computed when stage completes).
+    /// Persisted so timing is retained even after completion.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_secs: Option<i64>,
     pub close_reason: Option<String>,
     #[serde(default)]
     pub auto_merge: Option<bool>,

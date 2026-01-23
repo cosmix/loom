@@ -206,9 +206,7 @@ impl TerminalEmulator {
     activate
     do script "{cmd}"
     set custom title of front window to "{title}"
-end tell"#,
-                    cmd = cmd,
-                    title = title
+end tell"#
                 );
                 command.arg("-e").arg(script);
             }
@@ -225,8 +223,7 @@ end tell"#,
     tell current session of current window
         write text "{cmd}"
     end tell
-end tell"#,
-                    cmd = cmd
+end tell"#
                 );
                 command.arg("-e").arg(script);
             }

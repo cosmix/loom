@@ -204,6 +204,8 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
             completed_at: Some(Utc::now()),
+            started_at: None,
+            duration_secs: None,
             close_reason: None,
             auto_merge: None,
             working_dir: Some(".".to_string()),
