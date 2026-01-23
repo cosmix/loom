@@ -867,3 +867,33 @@ File scanning: Standard fs::read_dir() with extension filtering (.md only).
 2. Merge success -> try_complete_merge() sets merged=true
 3. Dependencies check merged=true before transitioning to Queued
 4. graph.is_complete() requires Completed OR Skipped on ALL stages
+
+## Template-Skill Coordination Pattern
+
+CLAUDE.md.template and skills/loom-plan-writer/SKILL.md share overlapping content.
+
+**Principle:** CLAUDE.md.template defines RULES, loom-plan-writer provides TEMPLATES + EXAMPLES.
+
+Keep rules DRY - template states the rule once, skill expands with examples.
+
+### Template Section Order
+
+CLAUDE.md.template canonical sections:
+1. Header + timestamp (auto-generated at install)
+2. Critical Rules (1-11) - MUST follow exactly
+3. Standard Rules (12-15) - Quality guidelines
+4. Delegation section - Subagent prompt templates
+5. Loom Orchestration - Session lifecycle
+6. Templates section - Handoff and signal formats
+7. References section - file:line format
+8. Critical Reminders - Consolidated checklist
+
+### Knowledge File Types
+
+Four knowledge files currently exist:
+- entry-points.md - Key files to read first (file:line refs)
+- patterns.md - Architectural patterns and best practices
+- conventions.md - Coding standards and naming schemes
+- mistakes.md - Lessons learned from errors
+
+All are append-only. Agents add discoveries, never delete.

@@ -26,3 +26,13 @@
 ## Acceptance criteria path issue
 
 Used loom/src/... when working_dir=loom. Should use src/... (relative to working_dir).
+
+## code-architecture-support Stage Marked Complete Without Changes
+
+**What happened:** Stage marked completed but no code changes committed. Three subagent tasks were defined but none executed.
+
+**Evidence:** Architecture variant missing from KnowledgeFile enum. No architecture refs in skill file. No branch/commits exist.
+
+**Root cause:** stage_type: knowledge auto-sets merged=true before acceptance verification.
+
+**Fix:** Run acceptance criteria BEFORE marking knowledge stages complete.
