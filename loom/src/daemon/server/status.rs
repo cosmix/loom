@@ -1,7 +1,8 @@
 //! Status collection and worktree status detection.
 
-use super::super::protocol::{Response, StageInfo};
+use super::super::protocol::{CompletionSummary, Response, StageCompletionInfo, StageInfo};
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -328,4 +329,127 @@ pub fn get_session_pid(sessions_dir: &Path, session_id: Option<&str>) -> Option<
     yaml.get("pid")
         .and_then(|v| v.as_u64())
         .and_then(|v| u32::try_from(v).ok())
+}
+
+/// Collect completion summary from all stage files.
+///
+/// Gathers timing information and final status for all stages,
+/// calculates total duration and success/failure counts.
+///
+/// # Arguments
+/// * `work_dir` - The .work/ directory path
+///
+/// # Returns
+/// A CompletionSummary with all stage completion information
+pub fn collect_completion_summary(work_dir: &Path) -> Result<CompletionSummary> {
+    let stages_dir = work_dir.join("stages");
+    let config_path = work_dir.join("config.toml");
+
+    // Read plan path from config.toml
+    let plan_path = if config_path.exists() {
+        let config_content = fs::read_to_string(&config_path)?;
+        let config: toml::Value = toml::from_str(&config_content)?;
+        config
+            .get("plan")
+            .and_then(|p| p.get("source_path"))
+            .and_then(|s| s.as_str())
+            .unwrap_or("unknown")
+            .to_string()
+    } else {
+        "unknown".to_string()
+    };
+
+    let mut stages: Vec<StageCompletionInfo> = Vec::new();
+    let mut earliest_start: Option<DateTime<Utc>> = None;
+    let mut latest_completion: Option<DateTime<Utc>> = None;
+    let mut success_count = 0;
+    let mut failure_count = 0;
+
+    // Read all stage files
+    if stages_dir.exists() {
+        if let Ok(entries) = fs::read_dir(&stages_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|s| s.to_str()) == Some("md") {
+                    if let Ok(content) = fs::read_to_string(&path) {
+                        if let Some(parsed) = parse_stage_frontmatter_full(&content) {
+                            let started_at = get_stage_started_at(&content);
+                            let completed_at = get_stage_completed_at(&content);
+
+                            // Track earliest start and latest completion
+                            if earliest_start.is_none() || started_at < earliest_start.unwrap() {
+                                earliest_start = Some(started_at);
+                            }
+                            if let Some(completed) = completed_at {
+                                if latest_completion.is_none()
+                                    || completed > latest_completion.unwrap()
+                                {
+                                    latest_completion = Some(completed);
+                                }
+                            }
+
+                            // Map status string to enum
+                            let status_enum = match parsed.status.as_str() {
+                                "executing" => StageStatus::Executing,
+                                "waiting-for-deps" | "pending" => StageStatus::WaitingForDeps,
+                                "queued" | "ready" => StageStatus::Queued,
+                                "completed" | "verified" => StageStatus::Completed,
+                                "blocked" => StageStatus::Blocked,
+                                "needs-handoff" => StageStatus::NeedsHandoff,
+                                "waiting-for-input" => StageStatus::WaitingForInput,
+                                "merge-conflict" => StageStatus::MergeConflict,
+                                "completed-with-failures" => StageStatus::CompletedWithFailures,
+                                "merge-blocked" => StageStatus::MergeBlocked,
+                                "skipped" => StageStatus::Skipped,
+                                _ => StageStatus::WaitingForDeps,
+                            };
+
+                            // Count successes and failures
+                            match status_enum {
+                                StageStatus::Completed | StageStatus::Skipped => {
+                                    success_count += 1;
+                                }
+                                StageStatus::Blocked
+                                | StageStatus::MergeConflict
+                                | StageStatus::MergeBlocked
+                                | StageStatus::CompletedWithFailures => {
+                                    failure_count += 1;
+                                }
+                                _ => {}
+                            }
+
+                            // Calculate duration if both timestamps exist
+                            let duration_secs = completed_at
+                                .map(|completed| (completed - started_at).num_seconds());
+
+                            stages.push(StageCompletionInfo {
+                                id: parsed.id,
+                                name: parsed.name,
+                                status: status_enum,
+                                duration_secs,
+                                merged: parsed.merged,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Sort stages by ID for consistent ordering
+    stages.sort_by(|a, b| a.id.cmp(&b.id));
+
+    // Calculate total duration
+    let total_duration_secs = match (earliest_start, latest_completion) {
+        (Some(start), Some(end)) => (end - start).num_seconds(),
+        _ => 0,
+    };
+
+    Ok(CompletionSummary {
+        total_duration_secs,
+        stages,
+        success_count,
+        failure_count,
+        plan_path,
+    })
 }

@@ -6,6 +6,39 @@ use std::io::{Read, Write};
 use crate::models::stage::StageStatus;
 use crate::models::worktree::WorktreeStatus;
 
+/// Information about a single stage's completion status.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StageCompletionInfo {
+    /// Stage identifier
+    pub id: String,
+    /// Human-readable stage name
+    pub name: String,
+    /// Final status of the stage
+    pub status: StageStatus,
+    /// Duration in seconds from start to completion (None if never started)
+    pub duration_secs: Option<i64>,
+    /// Whether the stage was merged
+    pub merged: bool,
+}
+
+/// Summary of orchestration completion.
+///
+/// Sent to all status subscribers when the orchestrator finishes
+/// executing all stages (successfully or with failures).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompletionSummary {
+    /// Total orchestration duration in seconds
+    pub total_duration_secs: i64,
+    /// Completion info for each stage
+    pub stages: Vec<StageCompletionInfo>,
+    /// Number of successfully completed stages
+    pub success_count: usize,
+    /// Number of failed/blocked stages
+    pub failure_count: usize,
+    /// Path to the plan that was executed
+    pub plan_path: String,
+}
+
 /// Configuration parameters for daemon mode.
 ///
 /// These parameters control how the daemon executes stages,
@@ -70,6 +103,10 @@ pub enum Response {
         line: String,
     },
     Pong,
+    /// Sent when orchestration completes (all stages finished or failed)
+    OrchestrationComplete {
+        summary: CompletionSummary,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -263,5 +300,56 @@ mod tests {
         assert!(config.max_parallel.is_none());
         assert!(config.watch_mode);
         assert!(config.auto_merge);
+    }
+
+    #[test]
+    fn test_write_and_read_orchestration_complete() {
+        use super::{CompletionSummary, StageCompletionInfo};
+
+        let mut buffer = Vec::new();
+        let response = Response::OrchestrationComplete {
+            summary: CompletionSummary {
+                total_duration_secs: 120,
+                stages: vec![
+                    StageCompletionInfo {
+                        id: "stage-1".to_string(),
+                        name: "First Stage".to_string(),
+                        status: StageStatus::Completed,
+                        duration_secs: Some(60),
+                        merged: true,
+                    },
+                    StageCompletionInfo {
+                        id: "stage-2".to_string(),
+                        name: "Second Stage".to_string(),
+                        status: StageStatus::Blocked,
+                        duration_secs: Some(45),
+                        merged: false,
+                    },
+                ],
+                success_count: 1,
+                failure_count: 1,
+                plan_path: "doc/plans/PLAN-test.md".to_string(),
+            },
+        };
+
+        write_message(&mut buffer, &response).expect("Failed to write message");
+
+        let mut cursor = Cursor::new(buffer);
+        let decoded: Response = read_message(&mut cursor).expect("Failed to read message");
+
+        match decoded {
+            Response::OrchestrationComplete { summary } => {
+                assert_eq!(summary.total_duration_secs, 120);
+                assert_eq!(summary.stages.len(), 2);
+                assert_eq!(summary.stages[0].id, "stage-1");
+                assert_eq!(summary.stages[0].status, StageStatus::Completed);
+                assert_eq!(summary.stages[1].id, "stage-2");
+                assert_eq!(summary.stages[1].status, StageStatus::Blocked);
+                assert_eq!(summary.success_count, 1);
+                assert_eq!(summary.failure_count, 1);
+                assert_eq!(summary.plan_path, "doc/plans/PLAN-test.md");
+            }
+            _ => panic!("Expected OrchestrationComplete response"),
+        }
     }
 }

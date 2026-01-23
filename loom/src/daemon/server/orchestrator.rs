@@ -127,13 +127,29 @@ fn run_orchestrator(
             if result.is_success() {
                 println!("All stages completed successfully");
             }
+
+            // Write completion marker file to signal broadcaster
+            write_completion_marker(work_dir);
         }
         Err(e) => {
             eprintln!("Orchestrator run error: {e}");
+            // Still write completion marker on error so clients know orchestration stopped
+            write_completion_marker(work_dir);
         }
     }
 
     Ok(())
+}
+
+/// Write a completion marker file to signal that orchestration has finished.
+///
+/// The status broadcaster detects this file and sends OrchestrationComplete
+/// to all subscribers.
+fn write_completion_marker(work_dir: &Path) {
+    let marker_path = work_dir.join("orchestrator.complete");
+    if let Err(e) = fs::write(&marker_path, chrono::Utc::now().to_rfc3339()) {
+        eprintln!("Failed to write completion marker: {e}");
+    }
 }
 
 /// Build execution graph from .work/stages/ files.

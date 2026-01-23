@@ -2,7 +2,7 @@
 
 use super::super::protocol::{write_message, Response};
 use super::core::DaemonServer;
-use super::status::collect_status;
+use super::status::{collect_completion_summary, collect_status};
 use anyhow::{Context, Result};
 use std::fs;
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
@@ -91,6 +91,9 @@ fn run_status_broadcaster(
     shutdown_flag: Arc<AtomicBool>,
     status_subscribers: Arc<Mutex<Vec<UnixStream>>>,
 ) {
+    let completion_marker_path = work_dir.join("orchestrator.complete");
+    let mut completion_sent = false;
+
     while !shutdown_flag.load(Ordering::Relaxed) {
         // Only broadcast if there are subscribers
         let has_subscribers = status_subscribers
@@ -99,6 +102,26 @@ fn run_status_broadcaster(
             .unwrap_or(false);
 
         if has_subscribers {
+            // Check for completion marker (only send once)
+            if !completion_sent && completion_marker_path.exists() {
+                if let Ok(summary) = collect_completion_summary(work_dir) {
+                    let completion_response = Response::OrchestrationComplete { summary };
+                    if let Ok(mut subs) = status_subscribers.lock() {
+                        subs.retain_mut(|stream| {
+                            write_message(stream, &completion_response).is_ok()
+                        });
+                    }
+                    completion_sent = true;
+
+                    // Log completion to console
+                    println!(
+                        "Orchestration complete - notified {} subscriber(s)",
+                        status_subscribers.lock().map(|s| s.len()).unwrap_or(0)
+                    );
+                }
+            }
+
+            // Continue sending regular status updates
             if let Ok(status_update) = collect_status(work_dir) {
                 if let Ok(mut subs) = status_subscribers.lock() {
                     subs.retain_mut(|stream| write_message(stream, &status_update).is_ok());
