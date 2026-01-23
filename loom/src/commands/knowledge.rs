@@ -166,8 +166,9 @@ fn parse_file_type(file: &str) -> Result<KnowledgeFile> {
 
     // Try common aliases
     match file.to_lowercase().as_str() {
+        "arch" | "architecture" | "map" | "overview" => Ok(KnowledgeFile::Architecture),
         "entry" | "entries" | "entry-point" | "entrypoints" => Ok(KnowledgeFile::EntryPoints),
-        "pattern" | "arch" | "architecture" => Ok(KnowledgeFile::Patterns),
+        "pattern" => Ok(KnowledgeFile::Patterns),
         "convention" | "conventions" | "code" | "coding" => Ok(KnowledgeFile::Conventions),
         "mistake" | "mistakes" | "lessons" | "lesson" => Ok(KnowledgeFile::Mistakes),
         _ => {

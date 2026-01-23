@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 /// Known knowledge file types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KnowledgeFile {
+    Architecture,
     EntryPoints,
     Patterns,
     Conventions,
@@ -21,6 +22,7 @@ impl KnowledgeFile {
     /// Get the filename for this knowledge file type
     pub fn filename(&self) -> &'static str {
         match self {
+            KnowledgeFile::Architecture => "architecture.md",
             KnowledgeFile::EntryPoints => "entry-points.md",
             KnowledgeFile::Patterns => "patterns.md",
             KnowledgeFile::Conventions => "conventions.md",
@@ -31,6 +33,7 @@ impl KnowledgeFile {
     /// Get a description of what this file contains
     pub fn description(&self) -> &'static str {
         match self {
+            KnowledgeFile::Architecture => "High-level project architecture and component map",
             KnowledgeFile::EntryPoints => "Key files agents should read first",
             KnowledgeFile::Patterns => "Architectural patterns discovered in the codebase",
             KnowledgeFile::Conventions => "Coding conventions discovered in the codebase",
@@ -41,6 +44,7 @@ impl KnowledgeFile {
     /// Parse from filename
     pub fn from_filename(filename: &str) -> Option<Self> {
         match filename {
+            "architecture.md" => Some(KnowledgeFile::Architecture),
             "entry-points.md" => Some(KnowledgeFile::EntryPoints),
             "patterns.md" => Some(KnowledgeFile::Patterns),
             "conventions.md" => Some(KnowledgeFile::Conventions),
@@ -52,6 +56,7 @@ impl KnowledgeFile {
     /// All known knowledge file types
     pub fn all() -> &'static [KnowledgeFile] {
         &[
+            KnowledgeFile::Architecture,
             KnowledgeFile::EntryPoints,
             KnowledgeFile::Patterns,
             KnowledgeFile::Conventions,
@@ -227,6 +232,14 @@ impl KnowledgeDir {
     /// Get default content for a knowledge file type
     fn default_content(&self, file_type: KnowledgeFile) -> String {
         match file_type {
+            KnowledgeFile::Architecture => r#"# Architecture
+
+> High-level project structure and component relationships.
+> This file is append-only - agents add discoveries, never delete.
+
+(Add architecture overview as you discover it)
+"#
+            .to_string(),
             KnowledgeFile::EntryPoints => r#"# Entry Points
 
 > Key files agents should read first to understand the codebase.

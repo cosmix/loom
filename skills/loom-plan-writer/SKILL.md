@@ -169,14 +169,22 @@ Captures codebase understanding before implementation:
     Use parallel subagents and skills to maximize performance.
 
     Exploration order:
-    1. Top-level: entry points, main modules, directory layout
-    2. Module boundaries: public interfaces, internal vs external
-    3. Patterns: error handling, state management, data flow
-    4. Conventions: naming, file structure, testing patterns
+    1. Architecture: high-level structure, component relationships, data flow
+    2. Entry points: main modules, CLI commands, API endpoints
+    3. Module boundaries: public interfaces, internal vs external
+    4. Patterns: error handling, state management, common idioms
+    5. Conventions: naming, file structure, testing patterns
 
-    Use loom knowledge update commands to capture findings.
+    Use loom knowledge update commands to capture findings:
+      loom knowledge update architecture "## Section\n\nContent..."
+      loom knowledge update entry-points "## Section\n\nContent..."
+      loom knowledge update patterns "## Section\n\nContent..."
+      loom knowledge update conventions "## Section\n\nContent..."
+
+    IMPORTANT: Before completing, review existing mistakes.md to avoid repeating errors.
   dependencies: []
   acceptance:
+    - "grep -q '## ' doc/loom/knowledge/architecture.md"
     - "grep -q '## ' doc/loom/knowledge/entry-points.md"
     - "grep -q '## ' doc/loom/knowledge/patterns.md"
     - "grep -q '## ' doc/loom/knowledge/conventions.md"
