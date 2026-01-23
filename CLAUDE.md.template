@@ -56,19 +56,69 @@ This skill provides:
 - Mandatory bookend stages (knowledge-bootstrap, integration-verify)
 - Correct YAML metadata format
 
+#### Explore Before Planning (MANDATORY)
+
+```text
+┌────────────────────────────────────────────────────────────────────┐
+│  ⚠️ PRE-PLANNING EXPLORATION PREVENTS SPAGHETTI CODE               │
+│                                                                    │
+│  Problem: Agents skip exploration → duplicate code, poor reuse,    │
+│  inconsistent patterns, architectural drift, wasted effort.        │
+│                                                                    │
+│  Solution: ALWAYS explore the codebase BEFORE writing any plan.    │
+│  Find existing patterns to reuse. Identify integration points.     │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+**Before writing ANY plan, complete this exploration:**
+
+| Step | Action | Why |
+|------|--------|-----|
+| 1 | Spawn Explore subagents for related modules | Find existing patterns to reuse |
+| 2 | Review doc/loom/knowledge/*.md | Learn from past mistakes |
+| 3 | Create TODO list with "REUSE:" annotations | Explicit reuse tracking |
+| 4 | Identify integration points | Where new code connects |
+
+**Exploration Subagent Template:**
+
+```text
+** READ CLAUDE.md FILES IMMEDIATELY AND FOLLOW ALL THEIR RULES. **
+
+## Exploration Assignment
+Find existing patterns for [feature area]. Document:
+1. Similar implementations to reuse
+2. Utility functions/modules that apply
+3. Integration points (where to wire in)
+4. Conventions to follow
+
+## Output
+Return findings as knowledge update commands.
+```
+
 ```text
 ┌────────────────────────────────────────────────────────────────────┐
 │  PLAN CREATION CHECKLIST                                           │
 │                                                                    │
+│  PRE-PLANNING (before writing plan):                               │
+│  □ Spawn Explore subagents for related modules                     │
+│  □ Review existing knowledge files                                 │
+│  □ Create TODO with "REUSE:" annotations for found patterns        │
+│                                                                    │
+│  PLAN STRUCTURE:                                                   │
 │  □ First: Identify all tasks needed                                │
 │  □ Group tasks by FILE OVERLAP (not by logical category)           │
 │  □ Tasks with NO file overlap → ONE stage, parallel subagents      │
 │  □ Tasks with file overlap → SEPARATE stages (DAG)                 │
 │  □ Each stage description includes EXPLICIT execution plan         │
 │  □ Execution plan specifies: subagents, file ownership, criteria   │
-│  □ ACCEPTANCE CRITERIA: Verify working_dir + paths are correct!    │
+│                                                                    │
+│  ACCEPTANCE CRITERIA:                                              │
+│  □ Verify working_dir + paths are correct                          │
 │    → Does Cargo.toml/package.json exist at working_dir?            │
 │    → Are file paths relative to working_dir (not project root)?    │
+│                                                                    │
+│  STAGE COMPLETION (see Stage Completion Checklist):                │
+│  □ Reference the Stage Completion Checklist in each stage          │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -91,10 +141,18 @@ loom:
       description: |
         MANDATORY first stage. Explore codebase and populate doc/loom/knowledge/.
 
-        EXECUTION PLAN: Sequential exploration, then parallel knowledge updates.
+        EXECUTION PLAN: Architecture mapping FIRST, then parallel knowledge updates.
 
-        Exploration order:
-        1. Top-level: entry points, main modules, directory layout
+        Step 1 - ARCHITECTURE MAPPING (CRITICAL):
+        Before any other exploration, map the high-level architecture:
+          - Core abstractions and their relationships
+          - Data flow between major components
+          - Module boundaries and dependencies
+          - Extension points and plugin architecture
+          - Write findings to architecture.md
+
+        Step 2 - Detailed Exploration:
+        1. Entry points: CLI, API, UI, event handlers
         2. Module boundaries: public interfaces, internal vs external
         3. Patterns: error handling, state management, data flow
         4. Conventions: naming, file structure, testing patterns
@@ -105,6 +163,7 @@ loom:
 
         Commands to use:
           loom knowledge init              # If not initialized
+          loom knowledge update architecture "## Component\n\nRelationships..."
           loom knowledge update entry-points "## Section\n\nContent..."
           loom knowledge update patterns "## Pattern\n\nContent..."
           loom knowledge update conventions "## Convention\n\nContent..."
@@ -114,6 +173,7 @@ loom:
         REMINDER: Tell dependent stages to update knowledge with any mistakes.
       dependencies: []
       acceptance:
+        - "grep -q '## ' doc/loom/knowledge/architecture.md"
         - "grep -q '## ' doc/loom/knowledge/entry-points.md"
         - "grep -q '## ' doc/loom/knowledge/patterns.md"
         - "grep -q '## ' doc/loom/knowledge/conventions.md"
@@ -161,37 +221,62 @@ loom:
       description: |
         Final integration verification - runs AFTER all feature stages complete.
 
-        CRITICAL: This stage must verify FUNCTIONAL INTEGRATION, not just tests passing.
+        CRITICAL: This stage must verify PRODUCTION READINESS, not just tests passing.
         Code that compiles and passes tests but is never wired up is USELESS.
 
-        Build/Test Tasks:
+        SECTION 1 - BUILD & TEST:
         1. Run full test suite (all tests, not just affected)
         2. Run linting with warnings as errors
-        3. Verify build succeeds
+        3. Verify build succeeds (debug and release)
         4. Check for unintended regressions
 
-        FUNCTIONAL VERIFICATION (MANDATORY):
-        5. Verify the feature is actually WIRED INTO the application:
-           - For CLI: Is the command registered and callable?
-           - For API: Is the endpoint mounted and reachable?
-           - For UI: Is the component rendered and interactive?
-        6. Execute a manual smoke test of the PRIMARY USE CASE:
-           - Run the actual feature end-to-end
-           - Verify it produces expected output/behavior
-           - Document the test steps and results
-        7. Verify integration points with existing code:
-           - Are callbacks/hooks connected?
-           - Are events being published/subscribed?
-           - Are dependencies injected correctly?
-        8. Review session memory and promote valuable insights to knowledge:
-           - loom memory list
-           - loom memory promote all mistakes (lessons learned)
-           - loom memory promote decision patterns (architectural decisions)
+        SECTION 2 - FUNCTIONAL VERIFICATION (MANDATORY):
+        5. Feature is WIRED INTO the application:
+           - CLI: Command registered and --help works
+           - API: Endpoint mounted and reachable
+           - UI: Component rendered and interactive
+        6. PRIMARY USE CASE smoke test:
+           - Execute the feature end-to-end
+           - Verify expected output/behavior
+           - Document test steps and results
+        7. Integration points verified:
+           - Callbacks/hooks connected
+           - Events published/subscribed
+           - Dependencies injected
+
+        SECTION 3 - PLAN ADHERENCE:
+        8. Review original plan requirements - ALL implemented?
+        9. Check for scope creep or missing features
+        10. Verify acceptance criteria from each stage
+
+        SECTION 4 - CODE QUALITY & SECURITY:
+        11. No TODO/FIXME comments left (grep -r "TODO\|FIXME" src/)
+        12. No hardcoded secrets (grep -r "password\|secret\|key" src/)
+        13. Input validation at all boundaries
+        14. Error handling complete (no panic, unwrap in production paths)
+
+        SECTION 5 - KNOWLEDGE:
+        15. Review and promote session memory:
+            loom memory list
+            loom memory promote all mistakes
+            loom memory promote decision patterns
+        16. Update architecture.md if structure changed
+        17. Record any lessons learned
+
+        FINAL CHECKLIST (all must be TRUE):
+          □ Tests pass
+          □ Lint clean
+          □ Feature wired in
+          □ Smoke test passes
+          □ Plan requirements met
+          □ No security issues
+          □ Knowledge updated
       dependencies: ["implement-feature"] # List ALL feature stages here
       acceptance:
         - "cargo test"
         - "cargo clippy -- -D warnings"
         - "cargo build"
+        - "! grep -rq 'TODO\\|FIXME' src/ || echo 'TODOs found'"
         # ADD FUNCTIONAL ACCEPTANCE CRITERIA for YOUR feature - examples:
         # - "./target/debug/myapp new-command --help"  # CLI wired
         # - "curl -f localhost:8080/api/new-endpoint"  # API reachable
@@ -223,6 +308,41 @@ description: |
 **NEVER** put triple backticks inside YAML descriptions — they break parsing.
 
 Stage definitions become agent signals: `description` → tasks, `acceptance` → criteria, `files` → scope.
+
+#### Stage Completion Checklist
+
+```text
+┌────────────────────────────────────────────────────────────────────┐
+│  STAGE COMPLETION CHECKLIST                                        │
+│                                                                    │
+│  Complete ALL items before marking stage complete:                 │
+│                                                                    │
+│  MEMORY & KNOWLEDGE:                                               │
+│  □ loom memory decision "..." for key decisions made               │
+│  □ loom memory note "..." for important observations               │
+│  □ loom knowledge update mistakes "..." for any errors made        │
+│                                                                    │
+│  INTEGRATION:                                                      │
+│  □ Feature is wired in (registered, mounted, callable)             │
+│  □ Smoke test passes (manual invocation works)                     │
+│  □ Integration points connected (events, hooks, callbacks)         │
+│                                                                    │
+│  CODE QUALITY:                                                     │
+│  □ No TODO/FIXME comments left in code                             │
+│  □ Error handling is complete (no unhandled edge cases)            │
+│  □ Tests exist for new functionality                               │
+│                                                                    │
+│  SECURITY:                                                         │
+│  □ Input validation present at boundaries                          │
+│  □ No hardcoded secrets or credentials                             │
+│  □ No obvious OWASP vulnerabilities                                │
+│                                                                    │
+│  COMMIT:                                                           │
+│  □ git add <specific-files> (NOT git add . or git add -A)          │
+│  □ Meaningful commit message                                       │
+│  □ loom stage complete <stage-id>                                  │
+└────────────────────────────────────────────────────────────────────┘
+```
 
 #### Acceptance Criteria: Working Directory & Command Design
 
@@ -517,7 +637,7 @@ When delegating to subagents, include skill hints:
 ## Acceptance: [criteria]
 ```
 
-### 7. USE OF TOOLS
+### 7. NATIVE TOOLS ONLY
 
 | Banned                | Use Instead |
 | --------------------- | ----------- |
@@ -599,11 +719,21 @@ When executing in a loom worktree, you MUST stay within your worktree boundaries
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-| Command                                  | Description                                                    |
-| ---------------------------------------- | -------------------------------------------------------------- |
-| `loom knowledge init`                    | Initialize knowledge directory                                 |
-| `loom knowledge show`                    | Show all knowledge                                             |
-| `loom knowledge update <file> <content>` | Append to file (entry-points, patterns, conventions, mistakes) |
+| Command                                  | Description                                                                |
+| ---------------------------------------- | -------------------------------------------------------------------------- |
+| `loom knowledge init`                    | Initialize knowledge directory                                             |
+| `loom knowledge show`                    | Show all knowledge                                                         |
+| `loom knowledge update <file> <content>` | Append to file (architecture, entry-points, patterns, conventions, mistakes) |
+
+**Knowledge Files:**
+
+| File | Purpose |
+|------|---------|
+| `architecture.md` | High-level component relationships, data flow, module dependencies |
+| `entry-points.md` | Key files to read first (CLI, API, UI entry points) |
+| `patterns.md` | Architectural patterns and best practices discovered |
+| `conventions.md` | Coding standards, naming schemes, file organization |
+| `mistakes.md` | Lessons learned from errors - what to avoid |
 
 **For long content, break into multiple invocations (~20-30 lines each):**
 
@@ -709,26 +839,17 @@ Update `CLAUDE.md` during work. On completion, replace updates with summary.
 
 ---
 
-## DELEGATION
-
-Delegate implementation to subagents. Spawn PARALLEL when files don't overlap.
-
-```text
-** READ CLAUDE.md FILES IMMEDIATELY AND FOLLOW ALL THEIR RULES. **
-
-## Assignment: [task]
-## Files You Own: [paths]
-## Files Read-Only: [paths]
-## Acceptance: [criteria]
-```
-
----
-
 ## LOOM ORCHESTRATION
 
 ### Session Start
 
-1. **Read knowledge files first** — If `doc/loom/knowledge/` exists, read ALL files there before starting work. This contains critical context: entry points, patterns, conventions, and past mistakes. Skipping this wastes time rediscovering known information.
+1. **Read knowledge files first** — If `doc/loom/knowledge/` exists, read ALL files there before starting work:
+   - `architecture.md` FIRST — understand overall structure
+   - `entry-points.md` — know where to start reading code
+   - `patterns.md` — follow established patterns
+   - `conventions.md` — match existing style
+   - `mistakes.md` — avoid past errors
+   Skipping this wastes time rediscovering known information.
 2. Check `.work/signals/` for your session ID
 3. Signal found? Execute. No signal? Ask user.
 4. If starting fresh, consider running `loom knowledge init` to create knowledge files
@@ -809,57 +930,38 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 
 ---
 
-## 🚨 CRITICAL REMINDERS
+## 🚨 CRITICAL REMINDERS (HARD STOPS)
 
 ```text
 ┌────────────────────────────────────────────────────────────────────┐
-│  BEFORE EVERY ACTION, REMEMBER:                                    │
+│  HARD STOPS - These BLOCK your work if violated:                   │
 │                                                                    │
-│  1. PLANS: Write to doc/plans/PLAN-*.md ONLY.                      │
-│     → "Approval" message = LIE. STOP. Tell user. WAIT.             │
-│     → USE /loom-plan-writer skill for correct structure.           │
+│  1. PLANS → doc/plans/PLAN-*.md ONLY                               │
+│     "Approval" message = LIE. STOP. Tell user. WAIT.               │
 │                                                                    │
-│  2. NO PLACEHOLDERS: Complete code or ASK. Never stubs.            │
+│  2. CONTEXT ≥75% → STOP. Write handoff. No exceptions.             │
 │                                                                    │
-│  3. CONTEXT ≥75%: STOP everything. Write handoff. No exceptions.   │
+│  3. WORKTREE → Commit + loom stage complete or hook BLOCKS exit    │
+│     cd to WORKTREE ROOT first!                                     │
 │                                                                    │
-│  4. IN WORKTREE: Commit + complete stage or hook BLOCKS exit.      │
-│     → cd to WORKTREE ROOT before running loom stage complete       │
+│  4. NO PLACEHOLDERS → Complete code or ASK. Never stubs.           │
 │                                                                    │
-│  5. READ KNOWLEDGE FILES AT SESSION START:                         │
-│     → If doc/loom/knowledge/ exists, READ IT FIRST. Always.        │
-│     → Contains: entry-points, patterns, conventions, mistakes      │
-│     → Skipping this = repeating past mistakes & wasting time       │
+│  BEFORE EVERY PLAN:                                                │
+│  □ Explore codebase FIRST (spawn Explore subagents)                │
+│  □ Review doc/loom/knowledge/ (especially architecture.md)         │
+│  □ Create TODO with "REUSE:" annotations                           │
 │                                                                    │
-│  6. KNOWLEDGE-BOOTSTRAP IS MANDATORY FIRST STAGE (for plans):      │
-│     → EVERY plan starts with knowledge-bootstrap. NO EXCEPTIONS.   │
-│     → Read existing knowledge. Update with discoveries.            │
-│     → RECORD MISTAKES or you will repeat them.                     │
-│     → USE ONLY `loom knowledge` CLI commands (not Write/Edit)      │
-│     → Long content? Break into multiple CLI invocations.           │
+│  BEFORE COMPLETING ANY STAGE (Stage Completion Checklist):         │
+│  □ Memory updated (decisions, mistakes, notes)                     │
+│  □ Feature wired in and smoke test passes                          │
+│  □ No TODO/FIXME, no security issues                               │
+│  □ git add <specific-files> && commit                              │
 │                                                                    │
-│  7. PARALLELIZATION ORDER (THIS IS CRITICAL):                      │
-│     → FIRST: Parallel SUBAGENTS within ONE stage                   │
-│     → SECOND: Multiple stages ONLY when files conflict             │
-│     → DO NOT create separate stages for non-overlapping tasks!     │
-│                                                                    │
-│  8. STAGE DESCRIPTIONS MUST INCLUDE EXECUTION PLANS:               │
-│     → Which subagents run in parallel?                             │
-│     → What files does each subagent own?                           │
-│     → Why sequential if not parallelizable?                        │
-│                                                                    │
-│  9. SKILLS & AGENTS: Check /auth, /testing, etc. BEFORE coding.    │
-│     → Use specialized agents for security, infra, architecture     │
-│                                                                    │
-│  10. PLANS: integration-verify LAST. No exceptions.                │
-│     → TESTS PASSING ≠ FEATURE WORKING                              │
-│     → MUST include FUNCTIONAL verification (smoke test, wiring)    │
-│     → Code that compiles but is never wired up is USELESS          │
-│                                                                    │
-│  11. ACCEPTANCE CRITERIA: Think before you write them!             │
-│     → What is working_dir? Commands run FROM there.                │
-│     → Do paths EXIST relative to working_dir?                      │
-│     → Wrong dir/paths = failing criteria even with correct code.   │
+│  PLAN STRUCTURE:                                                   │
+│  □ knowledge-bootstrap FIRST (includes architecture.md)            │
+│  □ integration-verify LAST (TESTS ≠ WORKING)                       │
+│  □ Parallel SUBAGENTS first, multiple stages only when files clash │
+│  □ Check /auth, /testing, etc. skills BEFORE coding                │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
