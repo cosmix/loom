@@ -943,3 +943,17 @@ native/mod.rs:386-428 uses layered checking:
 2. Verify PID is alive via kill -0
 3. Fallback to session.pid
 4. Final fallback: window existence by title
+
+## Memory Enforcement (Defense in Depth)
+
+Memory recording enforced through multiple touchpoints:
+
+1. **Signal recitation** (format.rs:333-361): ALWAYS shows memory section
+2. **Stable prefix** (cache.rs:122-126): "Session Memory (MANDATORY)" section
+3. **CLAUDE.md.template**: CRITICAL box + checklist with MEMORY at top
+4. **loom-plan-writer skill**: MEMORY RECORDING block in stage templates
+5. **commit-guard hook**: Soft reminder when no entries found
+6. **Wrapper script** (pid_tracking.rs:316-318): Sets LOOM_SESSION_ID env var
+
+Pattern: Defense in depth - agents see memory prompts at session start,
+resume, completion checklist, and exit hook.

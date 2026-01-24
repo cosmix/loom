@@ -319,3 +319,16 @@ Stores completion_summary when OrchestrationComplete received (line 156). Render
 Fields in models/stage/types.rs:49-59: started_at, completed_at, duration_secs.
 
 started_at set once in try_mark_executing() (preserved across retries). duration_secs = completed_at - started_at, computed in try_complete() (methods.rs:145-155). Persisted to YAML frontmatter in .work/stages/.
+
+## Session Environment Variables
+
+Wrapper script (pid_tracking.rs:316-318) sets environment variables before exec'ing Claude:
+
+- `LOOM_SESSION_ID`: Session identifier (e.g., "session-abc123-1234567890")
+- `LOOM_STAGE_ID`: Stage being executed
+- `LOOM_WORK_DIR`: Absolute path to .work directory
+
+Used by:
+- Memory commands (commands/common/mod.rs:43): Auto-detect session
+- Hooks: All hooks use these for context
+- Handoff creation: Session tracking
