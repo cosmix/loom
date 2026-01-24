@@ -21,6 +21,41 @@ pub fn parse_from_markdown<T: DeserializeOwned>(content: &str, type_name: &str) 
         .with_context(|| format!("Failed to parse {type_name} from frontmatter"))
 }
 
+/// Extract a single field value from YAML frontmatter
+///
+/// This is a convenience function for extracting simple scalar values from frontmatter
+/// without needing to deserialize the entire structure.
+///
+/// # Example
+///
+/// ```text
+/// let stage_id = extract_frontmatter_field(&content, "stage_id")?;
+/// let status = extract_frontmatter_field(&content, "status")?;
+/// ```
+///
+/// Returns `None` if:
+/// - The field is not found
+/// - The field value is `null`, `~`, or empty
+///
+/// # Errors
+///
+/// Returns an error if frontmatter extraction fails.
+pub fn extract_frontmatter_field(content: &str, field: &str) -> Result<Option<String>> {
+    let yaml = extract_yaml_frontmatter(content)?;
+
+    // Navigate to the field in the YAML value
+    let value = match &yaml[field] {
+        serde_yaml::Value::Null => return Ok(None),
+        serde_yaml::Value::String(s) if s.is_empty() => return Ok(None),
+        serde_yaml::Value::String(s) => s.clone(),
+        serde_yaml::Value::Number(n) => n.to_string(),
+        serde_yaml::Value::Bool(b) => b.to_string(),
+        _ => return Ok(None),
+    };
+
+    Ok(Some(value))
+}
+
 /// Extract YAML frontmatter from markdown content
 ///
 /// Expects frontmatter delimited by `---` at the start and end.
@@ -179,5 +214,85 @@ status: Ready
 
         let result = extract_yaml_frontmatter(content);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_extract_frontmatter_field_string() {
+        let content = r#"---
+id: session-123
+stage_id: my-stage
+pid: 12345
+status: running
+---
+# Content"#;
+
+        assert_eq!(
+            extract_frontmatter_field(content, "id").unwrap(),
+            Some("session-123".to_string())
+        );
+        assert_eq!(
+            extract_frontmatter_field(content, "stage_id").unwrap(),
+            Some("my-stage".to_string())
+        );
+        assert_eq!(
+            extract_frontmatter_field(content, "pid").unwrap(),
+            Some("12345".to_string())
+        );
+        assert_eq!(
+            extract_frontmatter_field(content, "status").unwrap(),
+            Some("running".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_frontmatter_field_nonexistent() {
+        let content = r#"---
+id: test
+---
+# Content"#;
+
+        assert_eq!(
+            extract_frontmatter_field(content, "nonexistent").unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn test_extract_frontmatter_field_null_values() {
+        let content = r#"---
+id: session-123
+stage_id: null
+pid: ~
+empty_field:
+---
+# Content"#;
+
+        assert_eq!(
+            extract_frontmatter_field(content, "stage_id").unwrap(),
+            None
+        );
+        assert_eq!(extract_frontmatter_field(content, "pid").unwrap(), None);
+        assert_eq!(
+            extract_frontmatter_field(content, "empty_field").unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn test_extract_frontmatter_field_bool_and_number() {
+        let content = r#"---
+merged: true
+count: 42
+---
+# Content"#;
+
+        assert_eq!(
+            extract_frontmatter_field(content, "merged").unwrap(),
+            Some("true".to_string())
+        );
+        assert_eq!(
+            extract_frontmatter_field(content, "count").unwrap(),
+            Some("42".to_string())
+        );
     }
 }
