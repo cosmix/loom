@@ -19,6 +19,9 @@ pub struct StageCompletionInfo {
     pub duration_secs: Option<i64>,
     /// Whether the stage was merged
     pub merged: bool,
+    /// Dependencies of this stage
+    #[serde(default)]
+    pub dependencies: Vec<String>,
 }
 
 /// Summary of orchestration completion.
@@ -317,6 +320,7 @@ mod tests {
                         status: StageStatus::Completed,
                         duration_secs: Some(60),
                         merged: true,
+                        dependencies: vec![],
                     },
                     StageCompletionInfo {
                         id: "stage-2".to_string(),
@@ -324,6 +328,7 @@ mod tests {
                         status: StageStatus::Blocked,
                         duration_secs: Some(45),
                         merged: false,
+                        dependencies: vec!["stage-1".to_string()],
                     },
                 ],
                 success_count: 1,

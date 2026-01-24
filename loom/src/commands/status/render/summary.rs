@@ -1,0 +1,183 @@
+//! Shared completion summary rendering for both TUI and foreground modes.
+
+use std::collections::{HashMap, HashSet};
+use std::io::{self, Write};
+
+use crate::daemon::{CompletionSummary, StageCompletionInfo};
+use crate::models::stage::StageStatus;
+
+/// Format elapsed time from seconds into human-readable string.
+pub fn format_elapsed(secs: i64) -> String {
+    let hours = secs / 3600;
+    let minutes = (secs % 3600) / 60;
+    let seconds = secs % 60;
+
+    if hours > 0 {
+        format!("{hours}h {minutes}m {seconds}s")
+    } else if minutes > 0 {
+        format!("{minutes}m {seconds}s")
+    } else {
+        format!("{seconds}s")
+    }
+}
+
+/// Print completion summary to stdout.
+///
+/// This function renders a detailed completion summary including:
+/// - Overall status (success/failure)
+/// - Plan path and timing information
+/// - Execution graph showing stage dependencies
+/// - Detailed stage table with status and duration
+///
+/// Used by both the TUI (after exit) and foreground mode.
+pub fn print_completion_summary(summary: &CompletionSummary) {
+    let success = summary.failure_count == 0;
+    let status_icon = if success { "\u{2713}" } else { "\u{2717}" };
+    let status_text = if success {
+        "Orchestration Complete"
+    } else {
+        "Orchestration Complete (with failures)"
+    };
+
+    println!();
+    println!("{status_icon} {status_text}");
+    println!("══════════════════════════════════════════════════");
+    println!();
+
+    // Show plan path
+    println!("Plan: {}", summary.plan_path);
+
+    let total_time = format_elapsed(summary.total_duration_secs);
+    let success_count = summary.success_count;
+    let failure = summary.failure_count;
+    println!("Total: {total_time} | \u{2713} {success_count} | \u{2717} {failure}");
+    println!();
+
+    // Build and display execution graph
+    if !summary.stages.is_empty() {
+        println!("Execution Graph:");
+        print_execution_graph(&summary.stages);
+        println!();
+    }
+
+    // Print detailed stage table
+    println!("Stages:");
+    for stage in &summary.stages {
+        let icon = match stage.status {
+            StageStatus::Completed => "\u{2713}",
+            StageStatus::Skipped => "\u{2298}",
+            StageStatus::Blocked => "\u{2717}",
+            StageStatus::MergeConflict => "\u{26A1}",
+            StageStatus::CompletedWithFailures => "\u{26A0}",
+            StageStatus::MergeBlocked => "\u{2297}",
+            _ => "\u{25CB}",
+        };
+        let status_text = match stage.status {
+            StageStatus::Completed => "Completed",
+            StageStatus::Skipped => "Skipped",
+            StageStatus::Blocked => "Blocked",
+            StageStatus::MergeConflict => "Conflict",
+            StageStatus::CompletedWithFailures => "Failed",
+            StageStatus::MergeBlocked => "MergeBlk",
+            _ => "Other",
+        };
+        let duration = stage
+            .duration_secs
+            .map(format_elapsed)
+            .unwrap_or_else(|| "-".to_string());
+        println!("  {} {:<30} {:<12} {:>8}", icon, stage.id, status_text, duration);
+    }
+    println!();
+
+    // Flush stdout to ensure output is visible
+    let _ = io::stdout().flush();
+}
+
+/// Print a simple ASCII execution graph showing stage dependencies.
+fn print_execution_graph(stages: &[StageCompletionInfo]) {
+    // Compute dependency levels
+    let mut levels: HashMap<String, usize> = HashMap::new();
+    let stage_map: HashMap<&str, &StageCompletionInfo> =
+        stages.iter().map(|s| (s.id.as_str(), s)).collect();
+
+    fn compute_level(
+        stage_id: &str,
+        stage_map: &HashMap<&str, &StageCompletionInfo>,
+        levels: &mut HashMap<String, usize>,
+        visiting: &mut HashSet<String>,
+    ) -> usize {
+        if let Some(&level) = levels.get(stage_id) {
+            return level;
+        }
+
+        // Cycle detection
+        if visiting.contains(stage_id) {
+            return 0;
+        }
+        visiting.insert(stage_id.to_string());
+
+        let level = if let Some(stage) = stage_map.get(stage_id) {
+            if stage.dependencies.is_empty() {
+                0
+            } else {
+                stage
+                    .dependencies
+                    .iter()
+                    .map(|dep| compute_level(dep, stage_map, levels, visiting))
+                    .max()
+                    .unwrap_or(0)
+                    + 1
+            }
+        } else {
+            0
+        };
+
+        visiting.remove(stage_id);
+        levels.insert(stage_id.to_string(), level);
+        level
+    }
+
+    for stage in stages {
+        let mut visiting = HashSet::new();
+        compute_level(&stage.id, &stage_map, &mut levels, &mut visiting);
+    }
+
+    // Group stages by level
+    let mut stages_by_level: HashMap<usize, Vec<&StageCompletionInfo>> = HashMap::new();
+    for stage in stages {
+        let level = levels.get(&stage.id).copied().unwrap_or(0);
+        stages_by_level.entry(level).or_default().push(stage);
+    }
+
+    let max_level = levels.values().copied().max().unwrap_or(0);
+
+    // Print stages level by level
+    for level in 0..=max_level {
+        if let Some(level_stages) = stages_by_level.get(&level) {
+            let stage_names: Vec<String> = level_stages
+                .iter()
+                .map(|s| {
+                    let short_id = if s.id.len() > 20 {
+                        format!("{}...", &s.id[..17])
+                    } else {
+                        s.id.clone()
+                    };
+                    format!("[{short_id}]")
+                })
+                .collect();
+
+            let indent = "  ".repeat(level);
+
+            if level == 0 {
+                println!("  {}", stage_names.join(" "));
+            } else if level_stages.len() == 1 {
+                println!("  {indent}│");
+                println!("  {indent}▼");
+                println!("  {}", stage_names[0]);
+            } else {
+                println!("  {indent}│");
+                println!("  {indent}├─► {}", stage_names.join(" "));
+            }
+        }
+    }
+}

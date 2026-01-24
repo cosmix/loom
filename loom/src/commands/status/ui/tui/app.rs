@@ -1,7 +1,7 @@
 //! TUI application state and main loop.
 
 use std::collections::HashMap;
-use std::io::{self, Stdout, Write};
+use std::io::{self, Stdout};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -27,14 +27,15 @@ use super::renderer::{
     render_unified_table, unified_stage_to_stage, GRAPH_AREA_HEIGHT,
 };
 use super::state::{GraphState, LiveStatus};
+use crate::commands::status::render::print_completion_summary;
 use crate::daemon::{read_message, write_message, CompletionSummary, Request, Response};
 use crate::models::stage::StageStatus;
 
 /// Poll timeout for event loop (100ms for responsive UI).
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
-/// Delay before auto-exit after completion (3 seconds).
-const COMPLETION_EXIT_DELAY: Duration = Duration::from_secs(3);
+/// Delay before auto-exit after completion (500ms).
+const COMPLETION_EXIT_DELAY: Duration = Duration::from_millis(500);
 
 /// TUI application state.
 pub struct TuiApp {
@@ -99,7 +100,7 @@ impl TuiApp {
         // so it remains visible after TUI exits
         if let Some(summary) = self.completion_summary.clone() {
             self.cleanup_terminal();
-            Self::print_completion_to_stdout(&summary);
+            print_completion_summary(&summary);
         }
 
         result
@@ -209,50 +210,6 @@ impl TuiApp {
         }
         let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
         let _ = self.terminal.show_cursor();
-    }
-
-    /// Print completion summary to stdout (after leaving alternate screen).
-    fn print_completion_to_stdout(summary: &CompletionSummary) {
-        use super::renderer::format_elapsed;
-
-        let success = summary.failure_count == 0;
-        let status_icon = if success { "\u{2713}" } else { "\u{2717}" };
-        let status_text = if success {
-            "Orchestration Complete"
-        } else {
-            "Orchestration Complete (with failures)"
-        };
-
-        println!();
-        println!("{status_icon} {status_text}");
-        let total_time = format_elapsed(summary.total_duration_secs);
-        let success = summary.success_count;
-        let failure = summary.failure_count;
-        println!("   Total: {total_time} | \u{2713} {success} | \u{2717} {failure}");
-        println!();
-
-        // Print stage summary
-        println!("Stages:");
-        for stage in &summary.stages {
-            let icon = match stage.status {
-                StageStatus::Completed => "\u{2713}",
-                StageStatus::Skipped => "\u{2298}",
-                StageStatus::Blocked => "\u{2717}",
-                StageStatus::MergeConflict => "\u{26A1}",
-                StageStatus::CompletedWithFailures => "\u{26A0}",
-                StageStatus::MergeBlocked => "\u{2297}",
-                _ => "\u{25CB}",
-            };
-            let duration = stage
-                .duration_secs
-                .map(format_elapsed)
-                .unwrap_or_else(|| "-".to_string());
-            println!("   {} {} ({})", icon, stage.id, duration);
-        }
-        println!();
-
-        // Flush stdout to ensure output is visible
-        let _ = io::stdout().flush();
     }
 
     /// Render the UI.

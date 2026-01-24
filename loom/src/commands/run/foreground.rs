@@ -4,6 +4,8 @@ use anyhow::{bail, Context, Result};
 use colored::Colorize;
 use std::time::Duration;
 
+use crate::commands::status::render::print_completion_summary;
+use crate::daemon::collect_completion_summary;
 use crate::fs::work_dir::WorkDir;
 use crate::git::{get_uncommitted_changes_summary, has_uncommitted_changes};
 use crate::orchestrator::terminal::BackendType;
@@ -111,7 +113,20 @@ fn execute_foreground(
     }
     let result = orchestrator.run()?;
 
-    print_result(&result);
+    // Collect and print the completion summary with timing and execution graph
+    match collect_completion_summary(work_dir.root()) {
+        Ok(summary) => {
+            print_completion_summary(&summary);
+        }
+        Err(e) => {
+            eprintln!("Warning: Failed to collect completion summary: {e}");
+            // Fall back to basic result printing
+            print_result(&result);
+        }
+    }
+
+    // Print additional details for stages that need attention
+    print_needs_attention(&result);
 
     // If successful, check if all stages are merged and mark plan as done
     if result.is_success() {
@@ -122,7 +137,7 @@ fn execute_foreground(
     }
 }
 
-/// Print orchestrator result summary
+/// Print orchestrator result summary (fallback for when completion summary fails)
 fn print_result(result: &OrchestratorResult) {
     println!();
     println!("{}", "╭──────────────────────────────────────╮".cyan());
@@ -185,5 +200,28 @@ fn print_result(result: &OrchestratorResult) {
             "\n{} All stages completed successfully!",
             "✓".green().bold()
         );
+    }
+}
+
+/// Print additional details for stages that need attention (handoff/failures).
+///
+/// This supplements the completion summary with actionable information.
+fn print_needs_attention(result: &OrchestratorResult) {
+    if !result.needs_handoff.is_empty() {
+        println!(
+            "{} {}",
+            "Needs Handoff".yellow().bold(),
+            format!("({})", result.needs_handoff.len()).dimmed()
+        );
+        println!("{}", "─".repeat(40).dimmed());
+        for stage in &result.needs_handoff {
+            println!("  {} {}", "⚠".yellow().bold(), stage);
+        }
+        println!(
+            "\n  {} Run {} to continue",
+            "→".dimmed(),
+            "loom resume <stage-id>".cyan()
+        );
+        println!();
     }
 }

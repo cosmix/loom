@@ -11,3 +11,4 @@ mod status;
 mod tests;
 
 pub use core::DaemonServer;
+pub use status::collect_completion_summary;

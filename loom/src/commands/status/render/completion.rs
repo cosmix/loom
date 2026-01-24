@@ -219,6 +219,7 @@ mod tests {
             status,
             duration_secs: if completed { Some(120) } else { None },
             merged: completed,
+            dependencies: vec![],
         }
     }
 

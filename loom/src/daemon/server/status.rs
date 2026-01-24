@@ -428,6 +428,7 @@ pub fn collect_completion_summary(work_dir: &Path) -> Result<CompletionSummary> 
                                 status: status_enum,
                                 duration_secs,
                                 merged: parsed.merged,
+                                dependencies: parsed.dependencies,
                             });
                         }
                     }

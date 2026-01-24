@@ -183,6 +183,19 @@ fn run_status_broadcaster(
 
         thread::sleep(Duration::from_millis(STATUS_BROADCAST_INTERVAL_MS));
     }
+
+    // Final completion check before exiting - handles race with shutdown_flag
+    if !completion_sent && completion_marker_path.exists() {
+        if let Ok(summary) = collect_completion_summary(work_dir) {
+            let response = Response::OrchestrationComplete { summary };
+            let mut subs = lock_or_recover(&status_subscribers);
+            subs.retain_mut(|stream| write_message(stream, &response).is_ok());
+            println!(
+                "Orchestration complete (final) - notified {} subscriber(s)",
+                subs.len()
+            );
+        }
+    }
 }
 
 /// Broadcast a response to all subscribers, removing any that fail.
