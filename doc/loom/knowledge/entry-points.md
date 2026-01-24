@@ -262,9 +262,9 @@ Entry: loom/src/completions/
 
 ### Dynamic Completion Files
 
-- dynamic/plans.rs - Completes doc/plans/*.md paths
-- dynamic/stages.rs - Completes .work/stages/*.md IDs (strips depth prefix)
-- dynamic/sessions.rs - Completes .work/sessions/*.md IDs
+- dynamic/plans.rs - Completes doc/plans/\*.md paths
+- dynamic/stages.rs - Completes .work/stages/\*.md IDs (strips depth prefix)
+- dynamic/sessions.rs - Completes .work/sessions/\*.md IDs
 - dynamic/tests.rs - Comprehensive test coverage
 
 ### CLI Completion Commands (cli/types.rs)
@@ -274,21 +274,25 @@ Entry: loom/src/completions/
 - Dispatch (cli/dispatch.rs:144-153): Routes to generator or complete_dynamic
 
 ## Daemon Protocol (daemon/protocol.rs)
+
 - Response enum: Ok, Error, StatusUpdate, LogLine, Pong
 - StageInfo fields: started_at, completed_at, merged, dependencies
 - Status broadcast: 1-second polling via Unix socket
 
 ## Status Collection (daemon/server/status.rs)
-- collect_status() - polls .work/stages/*.md every 1 second
+
+- collect_status() - polls .work/stages/\*.md every 1 second
 - get_stage_started_at/completed_at() - extract timing from YAML
 - detect_worktree_status() - returns Active/Conflict/Merging/Merged
 
 ## Orchestrator Exit (orchestrator/core/orchestrator.rs:250-280)
+
 - Manual mode: exit after first batch
 - Watch mode: exit when all_stages_terminal() true
 - Normal mode: exit when graph.is_complete() true
 
 ## Status Rendering (commands/status/)
+
 - TUI: ui/tui/app.rs - event loop, renderer.rs - unified table
 - Static: status.rs:64-153 - snapshot from files
 - Timing: format_elapsed() for human-readable durations

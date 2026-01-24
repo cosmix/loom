@@ -142,6 +142,19 @@ Used loom/src/... when working_dir=loom. Should use src/... (relative to working
 
 
 
+## Promoted from Memory [2026-01-24 17:32]
+
+### Notes
+
+- Explored orchestrator core: 8 handler modules with clear separation of concerns. active_sessions accessed from 10+ locations - potential for refactoring to encapsulate access patterns.
+- Error handling is excellent: zero unwrap() in main code, systematic use of anyhow::Result with context. No consolidation needed.
+- Security patterns are solid: minisign verification for updates, 0o600 socket permissions, whitelist input validation. Worktree isolation is git-level only (not OS-level).
+
+### Decisions
+
+- **Knowledge update has 500 char limit - break content into multiple smaller updates (~20-30 lines each)**
+  - *Rationale:* Discovered during knowledge bootstrap when longer updates failed
+
 ## Promoted from Memory [2026-01-24 17:56]
 
 ### Decisions

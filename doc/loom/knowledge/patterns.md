@@ -990,3 +990,44 @@ Resolution logic (acceptance_runner.rs:16-45):
 Signals show worktree path (format.rs:209) but NOT working_dir.
 Stage YAML contains working_dir field (types.rs:64-66).
 Agents must check stage definition for working_dir context.
+
+## Error Handling Framework
+
+Uses anyhow::Result<T> (main.rs:3, Cargo.toml:12-13)
+Context patterns: .context(), .with_context(|| format!())
+Validation: bail!() for explicit errors
+
+Key examples:
+- orchestrator.rs:96 - context on backend creation
+- git/merge.rs:59-64 - with_context with format!
+- git/worktree/operations.rs:46 - bail! for validation
+
+## Graceful Error Degradation
+
+Non-critical path patterns:
+- orchestrator.rs:120-142 - Skill loading with warning fallback
+- orchestrator.rs:221-241 - if let Ok() for stage loading
+- process/mod.rs:30-36 - unwrap_or(false) for liveness
+
+Critical: Zero unwrap()/expect() in main code. Assertions only for invariants.
+
+## Daemon Socket Security
+
+- Mode 0o600 (owner only) - daemon/server/lifecycle.rs:123
+- Max 100 connections - daemon/server/core.rs:10
+- 10 MB message limit - daemon/protocol.rs:175-177
+- Unix socket (no network exposure)
+
+## Self-Update Security
+
+Uses minisign verification - commands/self_update/signature.rs:9-37
+Public key: RWTHfjV12CKdjuXF6DPYXsOoneV6zG4nt4Qd1DFe7JzSIXTXKfRJPHjJ
+Limits: 50MB binary, 4KB signature
+Install: temp file → backup → atomic rename → rollback on failure
+
+## Input Validation
+
+Whitelist: alphanumeric + dash/underscore - validation.rs:55-81
+MAX_ID_LENGTH: 128 chars
+Reserved names blocked (., .., CON, PRN, etc.)
+safe_filename() strips traversal - validation.rs:179-185

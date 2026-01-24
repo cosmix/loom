@@ -638,3 +638,27 @@ Without --assume-merged: dependents NOT triggered
 
 Use ps aux to list processes, filter for 'claude', then lsof -p PID to get cwd.
 Compare cwd with expected worktree path to identify correct process.
+
+## Git Command Pattern
+
+All commands use Command::new("git") with:
+- .current_dir(repo_root)
+- .output() for captured output
+- status.success() check + error context
+- .with_context() with exit code, stdout, stderr
+
+## Git Module Operations
+
+Worktree (git/worktree/operations.rs): add, remove, list, prune
+Branch (git/branch/operations.rs): create, delete, current, exists
+Merge (git/merge.rs): execute, test, abort, get conflicts
+Cleanup (git/cleanup/): batch cleanup after merge
+
+## Merge Conflict Detection
+
+Three-stage (git/merge.rs):
+1. Test merge: git merge --no-commit --no-ff
+2. Check for CONFLICT in stderr/stdout
+3. File list: git diff --name-only --diff-filter=U
+
+Always restore original branch on failure (.ok() for cleanup)

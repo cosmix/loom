@@ -329,6 +329,37 @@ Wrapper script (pid_tracking.rs:316-318) sets environment variables before exec'
 - `LOOM_WORK_DIR`: Absolute path to .work directory
 
 Used by:
+
 - Memory commands (commands/common/mod.rs:43): Auto-detect session
 - Hooks: All hooks use these for context
 - Handoff creation: Session tracking
+
+## Orchestrator Core Module Structure
+
+Handlers in orchestrator/core/:
+- orchestrator.rs:1-316 - Main loop and public interface
+- stage_executor.rs:1-354 - Stage spawning
+- event_handler.rs:1-210 - Event processing
+- completion_handler.rs:1-32 - Completion logic
+- crash_handler.rs:1-102 - Crash handling
+- merge_handler.rs:1-426 - Merge resolution
+- recovery.rs:1-397 - State sync
+- persistence.rs:1-142 - File loading
+
+## Stage State Transitions
+
+Flow: WaitingForDeps → Queued → Executing → Completed/Blocked/NeedsHandoff
+On merge conflict: Executing → MergeConflict → Completed
+On merge error: MergeBlocked → Queued
+Retry: Blocked → Queued (after backoff)
+
+Key files: stage_executor.rs:73-158, completion_handler.rs:12-27, merge_handler.rs:204-232, recovery.rs:131-152
+
+## active_sessions Access Patterns
+
+HashMap<stage_id, Session> modified by:
+- stage_executor.rs:37,231-232 - len(), insert()
+- completion_handler.rs:12 - remove()
+- crash_handler.rs:28 - remove()
+- merge_handler.rs:30,311,418-419 - remove(), contains_key(), insert()
+- orchestrator.rs:220,298 - keys(), len()
