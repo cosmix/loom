@@ -167,3 +167,16 @@ Used loom/src/... when working_dir=loom. Should use src/... (relative to working
   - *Rationale:* H5: prevent inconsistent state
 
 
+
+## Promoted from Memory [2026-01-24 19:22]
+
+### Decisions
+
+- **Used chars().take().collect::<String>() pattern for UTF-8 safe string truncation**
+  - *Rationale:* Byte-level slicing like &s[..n] can panic on multi-byte UTF-8 characters (emoji are 4 bytes, CJK are 3 bytes). Using chars().count() and chars().take(n) ensures we truncate at character boundaries, not byte boundaries.
+- **Fixed file lock issue by writing directly to locked file handle**
+  - *Rationale:* fs::write() opens a NEW file handle which doesn't respect locks held by other handles. Instead, use file.set_len(0), file.seek(Start(0)), file.write_all() to write to the same locked handle.
+- **Used bytes().take_while() for counting ASCII backticks in YAML parser**
+  - *Rationale:* When mixing string operations, stay in byte land consistently. find() returns byte positions, so use bytes().count() instead of chars().count() for ASCII characters like backticks to keep all positions in bytes.
+
+

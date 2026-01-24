@@ -10,6 +10,16 @@ use colored::Colorize;
 use crate::daemon::{CompletionSummary, StageCompletionInfo};
 use crate::models::stage::StageStatus;
 
+/// Truncate string to max characters (UTF-8 safe)
+fn truncate_chars(s: &str, max: usize) -> String {
+    let char_count = s.chars().count();
+    if char_count <= max {
+        s.to_string()
+    } else {
+        format!("{}...", s.chars().take(max.saturating_sub(3)).collect::<String>())
+    }
+}
+
 /// Status indicator character for display
 fn status_indicator(status: &StageStatus) -> &'static str {
     match status {
@@ -116,12 +126,8 @@ pub fn render_completion_screen(summary: &CompletionSummary) {
             _ => icon.dimmed(),
         };
 
-        // Truncate stage id if too long
-        let id_display = if stage.id.len() > 28 {
-            format!("{}...", &stage.id[..25])
-        } else {
-            stage.id.clone()
-        };
+        // Truncate stage id if too long (UTF-8 safe)
+        let id_display = truncate_chars(&stage.id, 28);
 
         println!("{icon_colored:2} {id_display:30} {status_str:10} {duration:>8}");
     }
@@ -190,11 +196,8 @@ pub fn render_completion_lines(summary: &CompletionSummary) -> Vec<String> {
             _ => "Other",
         };
 
-        let id_display = if stage.id.len() > 28 {
-            format!("{}...", &stage.id[..25])
-        } else {
-            stage.id.clone()
-        };
+        // Truncate stage id if too long (UTF-8 safe)
+        let id_display = truncate_chars(&stage.id, 28);
 
         lines.push(format!(
             "{icon:2} {id_display:30} {status_str:10} {duration:>8}"
@@ -273,5 +276,41 @@ mod tests {
         let lines = render_completion_lines(&summary);
         assert!(lines.iter().any(|l| l.contains("with failures")));
         assert!(lines.iter().any(|l| l.contains("failing")));
+    }
+
+    #[test]
+    fn test_truncate_chars_short() {
+        assert_eq!(truncate_chars("hello", 10), "hello");
+    }
+
+    #[test]
+    fn test_truncate_chars_exact() {
+        assert_eq!(truncate_chars("hello", 5), "hello");
+    }
+
+    #[test]
+    fn test_truncate_chars_long() {
+        // 28 chars max: truncate to 25 + "..."
+        let long_id = "a".repeat(30);
+        let result = truncate_chars(&long_id, 28);
+        assert_eq!(result.len(), 28);
+        assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn test_truncate_chars_utf8_emoji() {
+        // Emoji are 4 bytes each, but only 1 char
+        let input = "🎉🎊🎁🎈🎂🎄🎅🎆"; // 8 emoji = 8 chars
+        let result = truncate_chars(input, 6);
+        // Should be 3 emoji + "..."
+        assert_eq!(result, "🎉🎊🎁...");
+    }
+
+    #[test]
+    fn test_truncate_chars_utf8_cjk() {
+        // CJK are 3 bytes each
+        let input = "你好世界测试安全"; // 8 CJK chars
+        let result = truncate_chars(input, 6);
+        assert_eq!(result, "你好世...");
     }
 }

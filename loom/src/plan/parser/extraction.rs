@@ -56,15 +56,17 @@ pub fn extract_yaml_metadata(content: &str) -> Result<String> {
 
 /// Find the start of a YAML code fence and return (position, fence_length)
 /// Supports ```, ````, ````` etc.
+/// Returns (byte_position, byte_length) for consistent byte-based indexing
 fn find_yaml_fence(content: &str) -> Option<(usize, usize)> {
     let mut pos = 0;
     while pos < content.len() {
         if let Some(backtick_start) = content[pos..].find('`') {
             let abs_start = pos + backtick_start;
-            // Count consecutive backticks
+            // Count consecutive backticks using bytes (backticks are ASCII, 1 byte each)
+            // This keeps everything in byte positions for safe string slicing
             let fence_len = content[abs_start..]
-                .chars()
-                .take_while(|&c| c == '`')
+                .bytes()
+                .take_while(|&b| b == b'`')
                 .count();
 
             if fence_len >= 3 {
@@ -215,5 +217,60 @@ loom:
         let content = "```rust\ncode\n```\n````yaml\nfoo";
         let (_pos, len) = find_yaml_fence(content).unwrap();
         assert_eq!(len, 4);
+    }
+
+    #[test]
+    fn test_find_yaml_fence_with_utf8_before() {
+        // Non-ASCII content before the fence (emoji are 4 bytes each)
+        let content = "🎉🎊🎁 heading\n\n```yaml\nfoo";
+        let (pos, len) = find_yaml_fence(content).unwrap();
+        assert_eq!(len, 3);
+        // Verify the position is correct:
+        // 3 emoji × 4 bytes = 12 bytes
+        // " heading" = 8 bytes
+        // "\n\n" = 2 bytes
+        // Total = 22 bytes
+        assert_eq!(pos, 22);
+        // Verify we can slice at this position
+        assert_eq!(&content[pos..pos + len], "```");
+    }
+
+    #[test]
+    fn test_find_yaml_fence_with_cjk_before() {
+        // CJK characters (3 bytes each)
+        let content = "你好世界\n\n```yaml\nfoo";
+        let (pos, len) = find_yaml_fence(content).unwrap();
+        assert_eq!(len, 3);
+        // 12 bytes for CJK + 2 bytes for newlines
+        assert_eq!(pos, 14);
+        assert_eq!(&content[pos..pos + len], "```");
+    }
+
+    #[test]
+    fn test_extract_yaml_metadata_with_utf8() {
+        let content = r#"
+# 测试计划 🎉
+
+Some content with emoji 🚀
+
+---
+
+<!-- loom METADATA - Do not edit manually -->
+
+```yaml
+loom:
+  version: 1
+  stages:
+    - id: stage-1
+      name: "テスト"
+```
+
+<!-- END loom METADATA -->
+"#;
+
+        let yaml = extract_yaml_metadata(content).unwrap();
+        assert!(yaml.contains("loom:"));
+        assert!(yaml.contains("stage-1"));
+        assert!(yaml.contains("テスト"));
     }
 }

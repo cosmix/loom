@@ -5,14 +5,18 @@ use super::storage::read_journal;
 use super::types::MemoryEntryType;
 use std::path::Path;
 
-/// Truncate content for display
+/// Truncate content for display (UTF-8 safe)
 pub fn truncate_content(s: &str, max_len: usize) -> String {
     let single_line: String = s.lines().collect::<Vec<_>>().join(" ");
 
-    if single_line.len() <= max_len {
+    let char_count = single_line.chars().count();
+    if char_count <= max_len {
         single_line
     } else {
-        format!("{}…", &single_line[..max_len - 1])
+        format!(
+            "{}…",
+            single_line.chars().take(max_len - 1).collect::<String>()
+        )
     }
 }
 
@@ -168,4 +172,62 @@ pub fn format_memory_for_handoff(work_dir: &Path, session_id: &str) -> Option<St
     }
 
     Some(output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_truncate_content_short() {
+        let result = truncate_content("hello world", 20);
+        assert_eq!(result, "hello world");
+    }
+
+    #[test]
+    fn test_truncate_content_exact() {
+        let result = truncate_content("hello", 5);
+        assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn test_truncate_content_long() {
+        let result = truncate_content("hello world", 8);
+        assert_eq!(result, "hello w…");
+    }
+
+    #[test]
+    fn test_truncate_content_multiline() {
+        let result = truncate_content("hello\nworld", 20);
+        assert_eq!(result, "hello world");
+    }
+
+    #[test]
+    fn test_truncate_content_utf8_emoji() {
+        // Emoji are multi-byte (4 bytes each)
+        // "🎉🎊🎁" = 3 chars but 12 bytes
+        let input = "🎉🎊🎁🎈🎂";
+        let result = truncate_content(input, 4);
+        // Should truncate to 3 chars + ellipsis
+        assert_eq!(result, "🎉🎊🎁…");
+        // Verify no panic on multi-byte boundary
+    }
+
+    #[test]
+    fn test_truncate_content_utf8_cjk() {
+        // CJK characters are 3 bytes each
+        let input = "你好世界";
+        let result = truncate_content(input, 3);
+        assert_eq!(result, "你好…");
+    }
+
+    #[test]
+    fn test_truncate_content_utf8_mixed() {
+        // Mix ASCII and multi-byte
+        // "hello🎉world" = 11 chars (5 ASCII + 1 emoji + 5 ASCII)
+        let input = "hello🎉world";
+        let result = truncate_content(input, 8);
+        // max=8: take 7 chars + ellipsis = "hello🎉w…"
+        assert_eq!(result, "hello🎉w…");
+    }
 }

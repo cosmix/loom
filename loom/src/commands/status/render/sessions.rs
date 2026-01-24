@@ -94,10 +94,61 @@ fn format_uptime(seconds: i64) -> String {
     }
 }
 
+/// Truncate string to max characters (UTF-8 safe)
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
+    let char_count = s.chars().count();
+    if char_count <= max {
         s.to_string()
     } else {
-        format!("{}…", &s[..max - 1])
+        format!("{}…", s.chars().take(max - 1).collect::<String>())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_truncate_short() {
+        assert_eq!(truncate("hello", 10), "hello");
+    }
+
+    #[test]
+    fn test_truncate_exact() {
+        assert_eq!(truncate("hello", 5), "hello");
+    }
+
+    #[test]
+    fn test_truncate_long() {
+        assert_eq!(truncate("hello world", 8), "hello w…");
+    }
+
+    #[test]
+    fn test_truncate_utf8_emoji() {
+        // Emoji are 4 bytes each
+        let input = "🎉🎊🎁🎈🎂";
+        let result = truncate(input, 4);
+        assert_eq!(result, "🎉🎊🎁…");
+    }
+
+    #[test]
+    fn test_truncate_utf8_cjk() {
+        let input = "你好世界测试";
+        let result = truncate(input, 4);
+        assert_eq!(result, "你好世…");
+    }
+
+    #[test]
+    fn test_render_mini_bar() {
+        assert_eq!(render_mini_bar(0.5, 8), "████░░░░");
+        assert_eq!(render_mini_bar(1.0, 4), "████");
+        assert_eq!(render_mini_bar(0.0, 4), "░░░░");
+    }
+
+    #[test]
+    fn test_format_uptime() {
+        assert_eq!(format_uptime(30), "30s");
+        assert_eq!(format_uptime(90), "1m");
+        assert_eq!(format_uptime(3700), "1h");
     }
 }

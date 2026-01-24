@@ -10,7 +10,7 @@ use fs2::FileExt;
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
-use std::io::Read;
+use std::io::{Read, Seek, Write};
 use std::path::Path;
 
 /// Patterns that indicate a worktree-specific permission that should not be synced
@@ -158,14 +158,20 @@ fn merge_permissions_with_lock(
     // Merge permissions
     let result = merge_permission_arrays(&mut settings, allow_perms, deny_perms)?;
 
-    // Write back atomically (truncate and write)
+    // Write back directly to the locked file handle
     let new_content =
         serde_json::to_string_pretty(&settings).context("Failed to serialize settings")?;
 
-    // Truncate and write using a new File handle at the same path
-    // (the lock is still held by 'file')
-    fs::write(main_settings_path, new_content)
+    // Truncate and rewrite using the locked file handle (preserves lock)
+    let mut file = file; // rebind as mutable
+    file.set_len(0)
+        .with_context(|| format!("Failed to truncate {}", main_settings_path.display()))?;
+    file.seek(std::io::SeekFrom::Start(0))
+        .with_context(|| format!("Failed to seek in {}", main_settings_path.display()))?;
+    file.write_all(new_content.as_bytes())
         .with_context(|| format!("Failed to write {}", main_settings_path.display()))?;
+    file.flush()
+        .with_context(|| format!("Failed to flush {}", main_settings_path.display()))?;
 
     // Lock is released when file is dropped
     drop(file);
