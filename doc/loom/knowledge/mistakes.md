@@ -113,4 +113,10 @@ Used loom/src/... when working_dir=loom. Should use src/... (relative to working
 - **Implementing working_dir clarifications in sequential order: 1) CLAUDE.md.template with DIRECTORY HIERARCHY section, 2) format.rs with working_dir and execution_path in Target/Acceptance sections, 3) cache.rs Path Boundaries update, 4) tests**
   - *Rationale:* Tasks overlap files so sequential implementation is required per assignment
 
+## Acceptance Criteria working_dir Mismatch
 
+**What happened:** cargo test/clippy failed because working_dir was '.' but Cargo.toml is in 'loom/'.
+
+**Why:** Plan didn't verify working_dir matches where build tools run.
+
+**Fix:** Set working_dir to directory containing Cargo.toml/package.json, or use 'cd loom &&' prefix.

@@ -957,3 +957,36 @@ Memory recording enforced through multiple touchpoints:
 
 Pattern: Defense in depth - agents see memory prompts at session start,
 resume, completion checklist, and exit hook.
+
+## Directory Hierarchy Pattern (Three-Level Model)
+
+Loom uses a three-level directory model for stage execution:
+
+| Level | Path | Purpose |
+|-------|------|---------|
+| Project Root | /path/to/project | Main repo where doc/plans/ lives |
+| Worktree | .worktrees/<stage-id>/ | Isolated copy mirroring project |
+| working_dir | YAML field | Subdirectory within worktree |
+
+### Path Resolution Formula
+
+EXECUTION_PATH = worktree_root + working_dir
+
+Resolution logic (acceptance_runner.rs:16-45):
+1. working_dir = "." → Use worktree root directly
+2. working_dir = "loom" → Join: .worktrees/<stage>/loom/
+3. Subdirectory missing → Fall back to worktree root with warning
+
+### working_dir Common Mistakes
+
+| Mistake | Fix |
+|---------|-----|
+| cargo test with wrong working_dir | Set working_dir to dir with Cargo.toml |
+| Paths like loom/src/file.rs when working_dir=loom | Use src/file.rs (relative to working_dir) |
+| ./target/debug/app from project root | Use ./loom/target/debug/app OR set working_dir
+
+### Signal vs Stage Context
+
+Signals show worktree path (format.rs:209) but NOT working_dir.
+Stage YAML contains working_dir field (types.rs:64-66).
+Agents must check stage definition for working_dir context.
