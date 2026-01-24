@@ -209,6 +209,10 @@ impl Orchestrator {
             }
 
             if !self.config.manual_mode {
+                // Collect stage IDs BEFORE handle_events() to avoid missing completed stages
+                // that get removed from active_sessions during event handling
+                let stage_ids: Vec<String> = self.active_sessions.keys().cloned().collect();
+
                 let events = self
                     .monitor
                     .poll()
@@ -217,7 +221,7 @@ impl Orchestrator {
                 self.handle_events(events)
                     .context("Failed to handle monitor events")?;
 
-                for stage_id in self.active_sessions.keys() {
+                for stage_id in &stage_ids {
                     if let Ok(stage) = self.load_stage(stage_id) {
                         match stage.status {
                             StageStatus::Completed => {

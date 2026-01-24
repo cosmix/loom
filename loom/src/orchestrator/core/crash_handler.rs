@@ -82,13 +82,17 @@ impl Orchestrator {
             }
 
             // Transition to Blocked status with validation
-            if let Err(e) = stage.try_mark_blocked() {
-                eprintln!("Warning: Failed to transition stage to Blocked: {e}");
-                eprintln!("Current status: {:?}", stage.status);
+            // Only persist state if transition succeeds to avoid inconsistent state
+            match stage.try_mark_blocked() {
+                Ok(()) => {
+                    self.save_stage(&stage)?;
+                    self.graph.mark_blocked(&sid)?;
+                }
+                Err(e) => {
+                    eprintln!("Warning: Failed to transition stage to Blocked: {e}");
+                    eprintln!("Current status: {:?} - not persisting to avoid inconsistent state", stage.status);
+                }
             }
-            self.save_stage(&stage)?;
-
-            self.graph.mark_blocked(&sid)?;
         } else {
             clear_status_line();
             eprintln!("Session '{session_id}' crashed (no stage association)");

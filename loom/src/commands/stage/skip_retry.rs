@@ -51,10 +51,14 @@ pub fn retry(stage_id: String, force: bool) -> Result<()> {
         );
     }
 
-    // Reset for retry
+    // Reset or increment for retry
     if force {
         stage.retry_count = 0;
         stage.failure_info = None;
+    } else {
+        // Increment retry count for non-forced retries
+        // This ensures retry limit is enforced for manual retry attempts
+        stage.retry_count += 1;
     }
     stage.last_failure_at = None;
     stage.try_mark_queued()?;
