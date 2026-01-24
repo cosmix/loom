@@ -833,6 +833,7 @@ User runs: eval "$(loom completions bash)" in .bashrc
 
 CompletionContext struct holds: cwd, shell, cmdline, current_word, prev_word.
 complete_dynamic() matches prev_word to determine completion type:
+
 - init -> plan files
 - verify/merge/resume -> stage IDs
 - kill (in sessions) -> session IDs
@@ -846,23 +847,27 @@ Example: 01-knowledge-bootstrap.md -> knowledge-bootstrap
 File scanning: Standard fs::read_dir() with extension filtering (.md only).
 
 ## Timing Persistence Pattern (Stage Model)
+
 - started_at set on FIRST Executing transition (preserved across retries)
 - completed_at set when stage reaches terminal state
 - duration_secs computed: (completed_at - started_at).num_seconds()
-- Persisted in .work/stages/*.md YAML frontmatter
+- Persisted in .work/stages/\*.md YAML frontmatter
 
 ## Orchestrator Completion Detection Pattern
+
 - is_complete(): ALL stages Completed OR Skipped
 - all_stages_terminal(): includes Blocked, MergeConflict states
 - Normal exit: graph.is_complete() OR (failed + no sessions + no ready)
 
 ## Status Broadcast Pattern
-- Daemon polls .work/stages/*.md every 1 second
+
+- Daemon polls .work/stages/\*.md every 1 second
 - Response::StatusUpdate sent to all subscribed clients
 - Four stage categories: executing, pending, completed, blocked
 - LiveStatus.unified_stages() merges and deduplicates
 
 ## Stage Completion Flow
+
 1. Work done -> try_complete() sets completed_at + duration_secs
 2. Merge success -> try_complete_merge() sets merged=true
 3. Dependencies check merged=true before transitioning to Queued
@@ -879,6 +884,7 @@ Keep rules DRY - template states the rule once, skill expands with examples.
 ### Template Section Order
 
 CLAUDE.md.template canonical sections:
+
 1. Header + timestamp (auto-generated at install)
 2. Critical Rules (1-11) - MUST follow exactly
 3. Standard Rules (12-15) - Quality guidelines
@@ -890,10 +896,12 @@ CLAUDE.md.template canonical sections:
 
 ### Knowledge File Types
 
-Four knowledge files currently exist:
+Five knowledge files currently exist:
+
 - entry-points.md - Key files to read first (file:line refs)
 - patterns.md - Architectural patterns and best practices
 - conventions.md - Coding standards and naming schemes
 - mistakes.md - Lessons learned from errors
+- architecture.md - High-level system architecture overview
 
 All are append-only. Agents add discoveries, never delete.
