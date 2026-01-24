@@ -14,14 +14,6 @@ use super::checks::check_for_uncommitted_changes;
 use super::graph_loader::build_execution_graph;
 use super::plan_lifecycle;
 
-/// Parse base_branch from config.toml
-fn parse_base_branch_from_config(work_dir: &WorkDir) -> Result<Option<String>> {
-    match work_dir.load_config()? {
-        Some(config) => Ok(config.base_branch()),
-        None => Ok(None),
-    }
-}
-
 /// Execute plan stages in foreground (for --foreground flag)
 /// Usage: loom run --foreground [--manual] [--max-parallel <n>] [--watch] [--no-merge]
 pub fn execute(
@@ -54,7 +46,7 @@ fn execute_foreground(
     let graph = build_execution_graph(work_dir)?;
 
     // Parse config.toml to extract base_branch
-    let base_branch = parse_base_branch_from_config(work_dir)?;
+    let base_branch = crate::fs::parse_base_branch_from_config(work_dir.root())?;
 
     let config = OrchestratorConfig {
         max_parallel_sessions: max_parallel.unwrap_or(4),

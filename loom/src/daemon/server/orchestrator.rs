@@ -11,21 +11,11 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use crate::commands::run::mark_plan_done_if_all_merged;
-use crate::fs::load_config;
+use crate::fs::parse_base_branch_from_config;
 use crate::fs::work_dir::WorkDir;
 use crate::orchestrator::terminal::BackendType;
 use crate::orchestrator::{Orchestrator, OrchestratorConfig};
 use crate::plan::graph::ExecutionGraph;
-use crate::plan::parser::parse_plan;
-use crate::plan::schema::StageDefinition;
-
-/// Parse base_branch from config.toml
-fn parse_base_branch_from_config(work_dir: &Path) -> Result<Option<String>> {
-    match load_config(work_dir)? {
-        Some(config) => Ok(config.base_branch()),
-        None => Ok(None),
-    }
-}
 
 /// Spawn the orchestrator thread to execute stages.
 ///
@@ -153,125 +143,8 @@ fn write_completion_marker(work_dir: &Path) {
 }
 
 /// Build execution graph from .work/stages/ files.
+///
+/// This function now delegates to the shared implementation in plan::graph::loader.
 pub(super) fn build_execution_graph(work_dir: &Path) -> Result<ExecutionGraph> {
-    let stages_dir = work_dir.join("stages");
-
-    if stages_dir.exists() {
-        let stages = load_stages_from_work_dir(&stages_dir)?;
-        if !stages.is_empty() {
-            return ExecutionGraph::build(stages)
-                .context("Failed to build execution graph from stage files");
-        }
-    }
-
-    // Fall back to reading from plan file
-    let config = crate::fs::load_config_required(work_dir)?;
-
-    let source_path = config
-        .source_path()
-        .ok_or_else(|| anyhow::anyhow!("No 'plan.source_path' found in config.toml"))?;
-
-    if !source_path.exists() {
-        anyhow::bail!(
-            "Plan file not found: {}\nThe plan may have been moved or deleted.",
-            source_path.display()
-        );
-    }
-
-    let parsed_plan = parse_plan(&source_path)
-        .with_context(|| format!("Failed to parse plan: {}", source_path.display()))?;
-
-    ExecutionGraph::build(parsed_plan.stages).context("Failed to build execution graph")
-}
-
-/// Load stage definitions from .work/stages/ directory.
-fn load_stages_from_work_dir(stages_dir: &Path) -> Result<Vec<StageDefinition>> {
-    let mut stages = Vec::new();
-
-    for entry in fs::read_dir(stages_dir)
-        .with_context(|| format!("Failed to read stages directory: {}", stages_dir.display()))?
-    {
-        let entry = entry?;
-        let path = entry.path();
-
-        // Skip non-markdown files
-        if path.extension().and_then(|s| s.to_str()) != Some("md") {
-            continue;
-        }
-
-        // Read and parse the stage file
-        let content = fs::read_to_string(&path)
-            .with_context(|| format!("Failed to read stage file: {}", path.display()))?;
-
-        // Extract YAML frontmatter
-        let frontmatter = match extract_stage_frontmatter(&content) {
-            Ok(fm) => fm,
-            Err(e) => {
-                eprintln!("Warning: Could not parse {}: {}", path.display(), e);
-                continue;
-            }
-        };
-
-        stages.push(frontmatter);
-    }
-
-    Ok(stages)
-}
-
-/// Extract stage definition from YAML frontmatter.
-fn extract_stage_frontmatter(content: &str) -> Result<StageDefinition> {
-    let lines: Vec<&str> = content.lines().collect();
-
-    if lines.is_empty() || !lines[0].trim().starts_with("---") {
-        anyhow::bail!("No frontmatter delimiter found");
-    }
-
-    let mut end_idx = None;
-    for (idx, line) in lines.iter().enumerate().skip(1) {
-        if line.trim().starts_with("---") {
-            end_idx = Some(idx);
-            break;
-        }
-    }
-
-    let end_idx = end_idx.ok_or_else(|| anyhow::anyhow!("Frontmatter not properly closed"))?;
-
-    let yaml_content = lines[1..end_idx].join("\n");
-
-    #[derive(serde::Deserialize)]
-    struct StageFrontmatter {
-        id: String,
-        name: String,
-        #[serde(default)]
-        description: Option<String>,
-        #[serde(default)]
-        dependencies: Vec<String>,
-        #[serde(default)]
-        parallel_group: Option<String>,
-        #[serde(default)]
-        acceptance: Vec<String>,
-        #[serde(default)]
-        setup: Vec<String>,
-        #[serde(default)]
-        files: Vec<String>,
-        #[serde(default)]
-        working_dir: Option<String>,
-    }
-
-    let fm: StageFrontmatter =
-        serde_yaml::from_str(&yaml_content).context("Failed to parse stage YAML frontmatter")?;
-
-    Ok(StageDefinition {
-        id: fm.id,
-        name: fm.name,
-        description: fm.description,
-        dependencies: fm.dependencies,
-        parallel_group: fm.parallel_group,
-        acceptance: fm.acceptance,
-        setup: fm.setup,
-        files: fm.files,
-        auto_merge: None,
-        working_dir: fm.working_dir.unwrap_or_else(|| ".".to_string()),
-        stage_type: crate::plan::schema::StageType::default(),
-    })
+    crate::plan::graph::build_execution_graph(work_dir)
 }
