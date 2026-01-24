@@ -60,9 +60,17 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
         });
     }
 
-    // Collect all stage IDs
+    // Collect all stage IDs and detect duplicates
     let stage_ids: std::collections::HashSet<_> =
         metadata.loom.stages.iter().map(|s| &s.id).collect();
+
+    // Check for duplicate stage IDs
+    if stage_ids.len() != metadata.loom.stages.len() {
+        errors.push(ValidationError {
+            message: "Duplicate stage IDs detected".to_string(),
+            stage_id: None,
+        });
+    }
 
     // Validate each stage
     for stage in &metadata.loom.stages {
@@ -87,6 +95,20 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
         if stage.name.is_empty() {
             errors.push(ValidationError {
                 message: "Stage name cannot be empty".to_string(),
+                stage_id: Some(stage.id.clone()),
+            });
+        }
+
+        // Validate working_dir to prevent path traversal
+        if stage.working_dir.contains("..") {
+            errors.push(ValidationError {
+                message: "working_dir cannot contain path traversal (..)".to_string(),
+                stage_id: Some(stage.id.clone()),
+            });
+        }
+        if stage.working_dir.starts_with('/') {
+            errors.push(ValidationError {
+                message: "working_dir must be relative path".to_string(),
                 stage_id: Some(stage.id.clone()),
             });
         }

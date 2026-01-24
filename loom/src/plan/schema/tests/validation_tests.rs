@@ -294,3 +294,131 @@ fn test_complex_dependency_chain() {
 
     assert!(validate(&metadata).is_ok());
 }
+
+#[test]
+fn test_validate_duplicate_stage_ids() {
+    let metadata = LoomMetadata {
+        loom: LoomConfig {
+            version: 1,
+            auto_merge: None,
+            stages: vec![
+                StageDefinition {
+                    id: "stage-1".to_string(),
+                    name: "Stage One".to_string(),
+                    description: None,
+                    dependencies: vec![],
+                    parallel_group: None,
+                    acceptance: vec![],
+                    setup: vec![],
+                    files: vec![],
+                    auto_merge: None,
+                    working_dir: ".".to_string(),
+                    stage_type: StageType::default(),
+                },
+                StageDefinition {
+                    id: "stage-1".to_string(), // Duplicate ID
+                    name: "Stage One Duplicate".to_string(),
+                    description: None,
+                    dependencies: vec![],
+                    parallel_group: None,
+                    acceptance: vec![],
+                    setup: vec![],
+                    files: vec![],
+                    auto_merge: None,
+                    working_dir: ".".to_string(),
+                    stage_type: StageType::default(),
+                },
+            ],
+        },
+    };
+
+    let result = validate(&metadata);
+    assert!(result.is_err());
+    let errors = result.unwrap_err();
+    assert!(errors
+        .iter()
+        .any(|e| e.message.contains("Duplicate stage IDs")));
+}
+
+#[test]
+fn test_validate_working_dir_path_traversal() {
+    let metadata = LoomMetadata {
+        loom: LoomConfig {
+            version: 1,
+            auto_merge: None,
+            stages: vec![StageDefinition {
+                id: "stage-1".to_string(),
+                name: "Stage One".to_string(),
+                description: None,
+                dependencies: vec![],
+                parallel_group: None,
+                acceptance: vec![],
+                setup: vec![],
+                files: vec![],
+                auto_merge: None,
+                working_dir: "../etc".to_string(), // Path traversal
+                stage_type: StageType::default(),
+            }],
+        },
+    };
+
+    let result = validate(&metadata);
+    assert!(result.is_err());
+    let errors = result.unwrap_err();
+    assert!(errors.iter().any(|e| e.message.contains("path traversal")));
+}
+
+#[test]
+fn test_validate_working_dir_absolute_path() {
+    let metadata = LoomMetadata {
+        loom: LoomConfig {
+            version: 1,
+            auto_merge: None,
+            stages: vec![StageDefinition {
+                id: "stage-1".to_string(),
+                name: "Stage One".to_string(),
+                description: None,
+                dependencies: vec![],
+                parallel_group: None,
+                acceptance: vec![],
+                setup: vec![],
+                files: vec![],
+                auto_merge: None,
+                working_dir: "/etc/passwd".to_string(), // Absolute path
+                stage_type: StageType::default(),
+            }],
+        },
+    };
+
+    let result = validate(&metadata);
+    assert!(result.is_err());
+    let errors = result.unwrap_err();
+    assert!(errors
+        .iter()
+        .any(|e| e.message.contains("must be relative path")));
+}
+
+#[test]
+fn test_validate_working_dir_valid_subdirectory() {
+    let metadata = LoomMetadata {
+        loom: LoomConfig {
+            version: 1,
+            auto_merge: None,
+            stages: vec![StageDefinition {
+                id: "stage-1".to_string(),
+                name: "Stage One".to_string(),
+                description: None,
+                dependencies: vec![],
+                parallel_group: None,
+                acceptance: vec![],
+                setup: vec![],
+                files: vec![],
+                auto_merge: None,
+                working_dir: "loom".to_string(), // Valid subdirectory
+                stage_type: StageType::default(),
+            }],
+        },
+    };
+
+    assert!(validate(&metadata).is_ok());
+}

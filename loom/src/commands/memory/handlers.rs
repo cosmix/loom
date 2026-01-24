@@ -28,9 +28,20 @@ fn get_work_dir() -> Result<std::path::PathBuf> {
     Ok(work_dir)
 }
 
+/// Validate session ID to prevent path traversal attacks
+fn validate_session_id(id: &str) -> Result<()> {
+    if id.contains('/') || id.contains("..") || id.contains('\\') {
+        anyhow::bail!("Invalid session ID: contains path separators");
+    }
+    Ok(())
+}
+
 /// Record a note in the memory journal
 pub fn note(text: String, session_id: Option<String>) -> Result<()> {
     validate_content(&text)?;
+    if let Some(ref id) = session_id {
+        validate_session_id(id)?;
+    }
 
     let work_dir = get_work_dir()?;
     let session = session_id
@@ -53,6 +64,9 @@ pub fn decision(text: String, context: Option<String>, session_id: Option<String
     validate_content(&text)?;
     if let Some(ref ctx) = context {
         validate_content(ctx)?;
+    }
+    if let Some(ref id) = session_id {
+        validate_session_id(id)?;
     }
 
     let work_dir = get_work_dir()?;
@@ -77,6 +91,9 @@ pub fn decision(text: String, context: Option<String>, session_id: Option<String
 /// Record a question in the memory journal
 pub fn question(text: String, session_id: Option<String>) -> Result<()> {
     validate_content(&text)?;
+    if let Some(ref id) = session_id {
+        validate_session_id(id)?;
+    }
 
     let work_dir = get_work_dir()?;
     let session = session_id
@@ -96,6 +113,10 @@ pub fn question(text: String, session_id: Option<String>) -> Result<()> {
 
 /// Query memory entries by search term
 pub fn query(search: String, session_id: Option<String>) -> Result<()> {
+    if let Some(ref id) = session_id {
+        validate_session_id(id)?;
+    }
+
     let work_dir = get_work_dir()?;
 
     let sessions_to_search: Vec<String> = match session_id {
@@ -144,6 +165,10 @@ pub fn query(search: String, session_id: Option<String>) -> Result<()> {
 
 /// List memory entries from a session
 pub fn list(session_id: Option<String>, entry_type: Option<String>) -> Result<()> {
+    if let Some(ref id) = session_id {
+        validate_session_id(id)?;
+    }
+
     let work_dir = get_work_dir()?;
 
     let session = match session_id {
@@ -206,6 +231,10 @@ pub fn list(session_id: Option<String>, entry_type: Option<String>) -> Result<()
 
 /// Show full memory journal
 pub fn show(session_id: Option<String>) -> Result<()> {
+    if let Some(ref id) = session_id {
+        validate_session_id(id)?;
+    }
+
     let work_dir = get_work_dir()?;
 
     let session = match session_id {
@@ -290,6 +319,10 @@ pub fn sessions() -> Result<()> {
 
 /// Promote memory entries to knowledge files
 pub fn promote(entry_type: String, target: String, session_id: Option<String>) -> Result<()> {
+    if let Some(ref id) = session_id {
+        validate_session_id(id)?;
+    }
+
     let work_dir = get_work_dir()?;
     let session = session_id
         .or_else(|| detect_session_from_signals(&work_dir).ok())

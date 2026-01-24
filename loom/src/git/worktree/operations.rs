@@ -7,6 +7,7 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::models::worktree::Worktree;
+use crate::validation::validate_id;
 
 use super::checks::is_valid_git_worktree;
 use super::parser::{parse_worktree_list, WorktreeInfo};
@@ -27,6 +28,9 @@ pub fn create_worktree(
     repo_root: &Path,
     base_branch: Option<&str>,
 ) -> Result<Worktree> {
+    // Validate stage_id before using in paths
+    validate_id(stage_id).context("Invalid stage ID for worktree")?;
+
     let worktree_path = repo_root.join(".worktrees").join(stage_id);
     let branch_name = format!("loom/{stage_id}");
 
@@ -111,6 +115,9 @@ pub fn create_worktree(
 ///
 /// Runs: git worktree remove .worktrees/{stage_id}
 pub fn remove_worktree(stage_id: &str, repo_root: &Path, force: bool) -> Result<()> {
+    // Validate stage_id before using in paths
+    validate_id(stage_id).context("Invalid stage ID for worktree removal")?;
+
     let worktree_path = repo_root.join(".worktrees").join(stage_id);
 
     if !worktree_path.exists() {
@@ -188,6 +195,9 @@ pub fn get_or_create_worktree(
     repo_root: &Path,
     base_branch: Option<&str>,
 ) -> Result<Worktree> {
+    // Validate stage_id before using in paths
+    validate_id(stage_id).context("Invalid stage ID for worktree")?;
+
     let worktree_path = repo_root.join(".worktrees").join(stage_id);
     let branch_name = format!("loom/{stage_id}");
 
