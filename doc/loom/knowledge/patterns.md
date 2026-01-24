@@ -905,3 +905,41 @@ Five knowledge files currently exist:
 - architecture.md - High-level system architecture overview
 
 All are append-only. Agents add discoveries, never delete.
+
+## Zombie Process Prevention - Reaper Thread
+
+spawner.rs:17-26 spawns a background thread that calls child.wait() to reap zombie processes. Used immediately after terminal spawn (line 62).
+
+## PID Tracking and Wrapper Scripts
+
+pid_tracking.rs:242-332 creates wrapper scripts that write PID to .work/pids/{stage-id}.pid before exec'ing claude.
+
+cleanup_stage_files() (line 83-86) removes both PID file and wrapper script.
+
+## Window-Based Terminal Closure
+
+window_ops.rs prefers closing by window title over PID killing for compatibility.
+
+Linux: wmctrl -c (primary), xdotool (fallback).
+macOS: osascript with AppleScript for Terminal.app/iTerm2.
+
+## Session Kill Strategy
+
+native/mod.rs:344-384 uses layered approach:
+1. Close window by title (loom-{stage_id})
+2. Fallback: SIGTERM to stored PID
+3. Clean up tracking files after either method
+
+## Terminal State Restoration
+
+utils.rs:22-35 cleanup_terminal() clears line, shows cursor, resets attributes.
+
+Panic hook (lines 41-50) installs terminal cleanup before panic using Once for single installation.
+
+## Session Liveness Check
+
+native/mod.rs:386-428 uses layered checking:
+1. Check PID file (most current)
+2. Verify PID is alive via kill -0
+3. Fallback to session.pid
+4. Final fallback: window existence by title

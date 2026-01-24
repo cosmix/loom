@@ -92,3 +92,11 @@ Used loom/src/... when working_dir=loom. Should use src/... (relative to working
 **Impact:** Confuses users, clutters output, inconsistent UX.
 
 **Fix:** Use tracing crate with log levels, or remove debug output before release.
+
+## Acceptance Path Mismatch (2026-01-24)
+
+**What:** Criteria had 'test -f loom/src/...' but working_dir was 'loom', looking for 'loom/loom/src/...'
+
+**Why:** File paths not adjusted for working_dir setting.
+
+**Fix:** When working_dir is a subdir, paths must be relative to it. Use 'test -f src/foo.rs' not 'test -f loom/src/foo.rs'.

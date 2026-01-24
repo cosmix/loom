@@ -295,3 +295,27 @@ Stages merged in dependency order with invariant: a stage can only merge after a
 - **Acceptance criteria**: Runs arbitrary shell commands (trusted model)
 - **Socket permissions**: Currently default (NEEDS FIX: should be 0600)
 - **Self-update**: Signature verification with minisign
+
+## Daemon Completion Flow
+
+Orchestrator (daemon/server/orchestrator.rs:44-129) runs main loop until completion, then writes .work/orchestrator.complete marker (line 131-140).
+
+Status Broadcaster (broadcast.rs:126-185) polls for marker, sends Response::OrchestrationComplete to all subscribers.
+
+## Completion Detection
+
+- ExecutionGraph::is_complete() (plan/graph/mod.rs:303-311): all stages Completed or Skipped
+- all_stages_terminal() (recovery.rs): includes Blocked, MergeConflict, MergeBlocked states
+- CompletionSummary (protocol.rs:24-40): total_duration_secs, stages[], success_count, failure_count
+
+## TUI Event Loop
+
+Event loop in app.rs:93-136 polls daemon socket and terminal events with 100ms timeout.
+
+Stores completion_summary when OrchestrationComplete received (line 156). Renders completion screen instead of status (line 169-175). Exit via 'q'/Esc/Ctrl+C or daemon disconnect.
+
+## Stage Timing
+
+Fields in models/stage/types.rs:49-59: started_at, completed_at, duration_secs.
+
+started_at set once in try_mark_executing() (preserved across retries). duration_secs = completed_at - started_at, computed in try_complete() (methods.rs:145-155). Persisted to YAML frontmatter in .work/stages/.
