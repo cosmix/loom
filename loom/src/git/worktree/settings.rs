@@ -65,6 +65,14 @@ pub fn setup_claude_directory(worktree_path: &Path, repo_root: &Path) -> Result<
         let main_settings = main_claude_dir.join("settings.json");
         let worktree_settings = worktree_claude_dir.join("settings.json");
         create_worktree_settings(&main_settings, &worktree_settings)?;
+
+        // Copy settings.local.json if it exists (contains user-granted runtime permissions)
+        let main_settings_local = main_claude_dir.join("settings.local.json");
+        let worktree_settings_local = worktree_claude_dir.join("settings.local.json");
+        if main_settings_local.exists() {
+            std::fs::copy(&main_settings_local, &worktree_settings_local)
+                .with_context(|| "Failed to copy settings.local.json to worktree")?;
+        }
     }
 
     Ok(())

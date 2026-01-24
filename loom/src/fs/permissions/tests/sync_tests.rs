@@ -21,7 +21,7 @@ fn test_sync_basic_permissions() {
         }
     });
     fs::write(
-        worktree_claude_dir.join("settings.json"),
+        worktree_claude_dir.join("settings.local.json"),
         serde_json::to_string_pretty(&worktree_settings).unwrap(),
     )
     .unwrap();
@@ -34,7 +34,7 @@ fn test_sync_basic_permissions() {
     assert_eq!(result.deny_added, 1);
 
     // Read main settings and verify content
-    let main_settings_path = main_dir.path().join(".claude/settings.json");
+    let main_settings_path = main_dir.path().join(".claude/settings.local.json");
     let content = fs::read_to_string(&main_settings_path).unwrap();
     let main_settings: Value = serde_json::from_str(&content).unwrap();
 
@@ -66,7 +66,7 @@ fn test_sync_filters_parent_traversal() {
         }
     });
     fs::write(
-        worktree_claude_dir.join("settings.json"),
+        worktree_claude_dir.join("settings.local.json"),
         serde_json::to_string_pretty(&worktree_settings).unwrap(),
     )
     .unwrap();
@@ -78,7 +78,7 @@ fn test_sync_filters_parent_traversal() {
     assert_eq!(result.allow_added, 2);
 
     // Verify main settings don't contain worktree-specific paths
-    let main_settings_path = main_dir.path().join(".claude/settings.json");
+    let main_settings_path = main_dir.path().join(".claude/settings.local.json");
     let content = fs::read_to_string(&main_settings_path).unwrap();
     let main_settings: Value = serde_json::from_str(&content).unwrap();
 
@@ -106,7 +106,7 @@ fn test_sync_deduplicates() {
         }
     });
     fs::write(
-        main_claude_dir.join("settings.json"),
+        main_claude_dir.join("settings.local.json"),
         serde_json::to_string_pretty(&main_settings).unwrap(),
     )
     .unwrap();
@@ -121,7 +121,7 @@ fn test_sync_deduplicates() {
         }
     });
     fs::write(
-        worktree_claude_dir.join("settings.json"),
+        worktree_claude_dir.join("settings.local.json"),
         serde_json::to_string_pretty(&worktree_settings).unwrap(),
     )
     .unwrap();
@@ -133,7 +133,7 @@ fn test_sync_deduplicates() {
     assert_eq!(result.allow_added, 1);
 
     // Verify main settings have both but no duplicates
-    let content = fs::read_to_string(main_claude_dir.join("settings.json")).unwrap();
+    let content = fs::read_to_string(main_claude_dir.join("settings.local.json")).unwrap();
     let main_settings: Value = serde_json::from_str(&content).unwrap();
 
     let allow = main_settings["permissions"]["allow"].as_array().unwrap();
@@ -171,13 +171,13 @@ fn test_sync_creates_main_settings() {
         }
     });
     fs::write(
-        worktree_claude_dir.join("settings.json"),
+        worktree_claude_dir.join("settings.local.json"),
         serde_json::to_string_pretty(&worktree_settings).unwrap(),
     )
     .unwrap();
 
     // Verify main settings don't exist yet
-    let main_settings_path = main_dir.path().join(".claude/settings.json");
+    let main_settings_path = main_dir.path().join(".claude/settings.local.json");
     assert!(!main_settings_path.exists());
 
     // Run sync
@@ -216,7 +216,7 @@ fn test_sync_preserves_other_fields() {
         }
     });
     fs::write(
-        main_claude_dir.join("settings.json"),
+        main_claude_dir.join("settings.local.json"),
         serde_json::to_string_pretty(&main_settings).unwrap(),
     )
     .unwrap();
@@ -231,7 +231,7 @@ fn test_sync_preserves_other_fields() {
         }
     });
     fs::write(
-        worktree_claude_dir.join("settings.json"),
+        worktree_claude_dir.join("settings.local.json"),
         serde_json::to_string_pretty(&worktree_settings).unwrap(),
     )
     .unwrap();
@@ -240,7 +240,7 @@ fn test_sync_preserves_other_fields() {
     sync_worktree_permissions(worktree_dir.path(), main_dir.path()).unwrap();
 
     // Verify other fields are preserved
-    let content = fs::read_to_string(main_claude_dir.join("settings.json")).unwrap();
+    let content = fs::read_to_string(main_claude_dir.join("settings.local.json")).unwrap();
     let main_settings: Value = serde_json::from_str(&content).unwrap();
 
     assert_eq!(main_settings["custom_field"], "preserved");
@@ -269,7 +269,7 @@ fn test_sync_idempotent() {
         }
     });
     fs::write(
-        worktree_claude_dir.join("settings.json"),
+        worktree_claude_dir.join("settings.local.json"),
         serde_json::to_string_pretty(&worktree_settings).unwrap(),
     )
     .unwrap();
@@ -287,7 +287,7 @@ fn test_sync_idempotent() {
     assert_eq!(result2.deny_added, 0);
 
     // Verify final state has no duplicates
-    let main_settings_path = main_dir.path().join(".claude/settings.json");
+    let main_settings_path = main_dir.path().join(".claude/settings.local.json");
     let content = fs::read_to_string(&main_settings_path).unwrap();
     let main_settings: Value = serde_json::from_str(&content).unwrap();
 

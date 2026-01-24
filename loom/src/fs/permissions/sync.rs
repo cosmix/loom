@@ -1,9 +1,9 @@
 //! Permission synchronization from worktree to main repo settings
 //!
 //! When Claude Code sessions run in worktrees, they may be granted additional
-//! permissions that are stored in the worktree's settings.json. This module
+//! permissions that are stored in the worktree's settings.local.json. This module
 //! provides functionality to sync those permissions back to the main repo's
-//! settings file, filtering out worktree-specific paths.
+//! settings.local.json file, filtering out worktree-specific paths.
 
 use anyhow::{Context, Result};
 use fs2::FileExt;
@@ -16,21 +16,21 @@ use std::path::Path;
 /// Patterns that indicate a worktree-specific permission that should not be synced
 const WORKTREE_PATH_PATTERNS: &[&str] = &["../../", ".worktrees/"];
 
-/// Sync permissions from a worktree's settings.json to the main repo's settings
+/// Sync permissions from a worktree's settings.local.json to the main repo's settings
 ///
 /// This function:
-/// 1. Reads the worktree's settings.json
+/// 1. Reads the worktree's settings.local.json
 /// 2. Extracts permissions.allow and permissions.deny arrays
 /// 3. Filters out worktree-specific paths (containing ../../ or .worktrees/)
-/// 4. Acquires an exclusive file lock on the main settings
+/// 4. Acquires an exclusive file lock on the main settings.local.json
 /// 5. Merges new permissions (skipping duplicates)
 /// 6. Writes back atomically
 pub fn sync_worktree_permissions(
     worktree_path: &Path,
     main_repo_path: &Path,
 ) -> Result<SyncResult> {
-    let worktree_settings_path = worktree_path.join(".claude/settings.json");
-    let main_settings_path = main_repo_path.join(".claude/settings.json");
+    let worktree_settings_path = worktree_path.join(".claude/settings.local.json");
+    let main_settings_path = main_repo_path.join(".claude/settings.local.json");
 
     // Read worktree settings
     let worktree_settings = read_settings(&worktree_settings_path)?;
