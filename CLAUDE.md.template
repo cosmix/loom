@@ -347,6 +347,73 @@ Stage definitions become agent signals: `description` → tasks, `acceptance` �
 └────────────────────────────────────────────────────────────────────┘
 ```
 
+#### DIRECTORY HIERARCHY — Understanding Where Commands Execute
+
+```text
+┌────────────────────────────────────────────────────────────────────┐
+│  ⚠️ THREE-LEVEL DIRECTORY MODEL                                    │
+│                                                                    │
+│  Most acceptance criteria failures come from path confusion.       │
+│  Understanding these three levels prevents 90% of errors.          │
+└────────────────────────────────────────────────────────────────────┘
+
+PROJECT ROOT (where loom was initialized)
+    │
+    ├── .worktrees/
+    │       └── <stage-id>/          ← WORKTREE ROOT (isolated copy)
+    │               ├── .work/       ← Symlink to shared state
+    │               ├── loom/        ← If project has subdirectory
+    │               │     └── src/   ← Code lives here
+    │               └── CLAUDE.md
+    │
+    └── loom/                        ← Main repo subdirectory
+          ├── Cargo.toml             ← Build tools need THIS directory
+          └── src/
+```
+
+**PATH RESOLUTION FORMULA:**
+
+    EXECUTION_PATH = WORKTREE + working_dir
+
+| working_dir | WORKTREE                        | Commands execute from                    |
+|-------------|---------------------------------|------------------------------------------|
+| `"."`       | `.worktrees/my-stage/`          | `.worktrees/my-stage/`                   |
+| `"loom"`    | `.worktrees/my-stage/`          | `.worktrees/my-stage/loom/`              |
+| `"src/app"` | `.worktrees/my-stage/`          | `.worktrees/my-stage/src/app/`           |
+
+**MIRROR STRUCTURE:**
+
+Worktrees are **complete copies** of the project. The internal structure mirrors the main repo:
+
+    Main Repo                    Worktree
+    /home/user/project/          .worktrees/stage-id/
+    ├── loom/                    ├── loom/              ← Same structure
+    │   ├── Cargo.toml           │   ├── Cargo.toml
+    │   └── src/                 │   └── src/
+    └── doc/                     └── doc/
+
+If Cargo.toml is at `loom/Cargo.toml` in main repo, it's at `loom/Cargo.toml` in the worktree too.
+
+**DEBUGGING CHECKLIST — When acceptance criteria fail:**
+
+```text
+□ 1. What is my working_dir? (check stage definition in plan)
+□ 2. Does the build file exist there? (ls Cargo.toml, ls package.json)
+□ 3. Are file paths relative to working_dir? (not to worktree root)
+□ 4. For binaries: where does the build output go? (./target/debug/...)
+```
+
+**EXPANDED CONFUSION PATTERNS:**
+
+| Symptom | Likely Cause | Fix |
+|---------|--------------|-----|
+| `cargo test` → "could not find Cargo.toml" | working_dir is root, but Cargo.toml in subdirectory | Set `working_dir: "loom"` |
+| `grep -q 'fn foo' src/lib.rs` → fails | File is at `loom/src/lib.rs`, not `src/lib.rs` | Use `grep -q 'fn foo' loom/src/lib.rs` OR set `working_dir: "loom"` |
+| `./target/debug/myapp` → "no such file" | Binary built in subdirectory | Use `./loom/target/debug/myapp` OR set `working_dir: "loom"` |
+| Test passes locally, fails in stage | Local runs from different directory than stage | Verify working_dir matches your local test environment |
+| `test -f src/new.rs` → fails | Created file at wrong relative path | Check if file should be at `loom/src/new.rs` |
+```
+
 #### Acceptance Criteria: Working Directory & Command Design
 
 ```text

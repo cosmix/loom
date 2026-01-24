@@ -208,7 +208,37 @@ fn format_dynamic_section(
     }
     content.push_str(&format!("- **Worktree**: {}\n", &worktree.path.display()));
     content.push_str(&format!("- **Branch**: {}\n", &worktree.branch));
+
+    // Add working_dir and computed execution path
+    let working_dir = stage.working_dir.as_deref().unwrap_or(".");
+    content.push_str(&format!("- **working_dir**: `{working_dir}`\n"));
+    let execution_path = if working_dir == "." {
+        worktree.path.display().to_string()
+    } else {
+        format!("{}/{}", worktree.path.display(), working_dir)
+    };
+    content.push_str(&format!("- **Execution Path**: `{execution_path}`\n"));
     content.push('\n');
+
+    // Execution path reminder box
+    content.push_str("```text\n");
+    content.push_str("┌────────────────────────────────────────────────────────────────────┐\n");
+    content.push_str("│  📍 WHERE COMMANDS EXECUTE                                         │\n");
+    content.push_str("│                                                                    │\n");
+    content.push_str(&format!(
+        "│  Acceptance criteria run from: {}{}│\n",
+        execution_path,
+        " ".repeat(39_usize.saturating_sub(execution_path.len()))
+    ));
+    content.push_str(&format!(
+        "│  Formula: WORKTREE + working_dir = {}{}│\n",
+        working_dir,
+        " ".repeat(29_usize.saturating_sub(working_dir.len()))
+    ));
+    content.push_str("│                                                                    │\n");
+    content.push_str("│  If cargo/npm fails with 'not found', check working_dir setting.   │\n");
+    content.push_str("└────────────────────────────────────────────────────────────────────┘\n");
+    content.push_str("```\n\n");
 
     // Add worktree root directory reminder (defense-in-depth)
     content.push_str(&format!(
@@ -284,6 +314,13 @@ fn format_dynamic_section(
 
     // Acceptance Criteria (stage-specific but part of dynamic for ordering)
     content.push_str("## Acceptance Criteria\n\n");
+
+    // Reminder about working_dir for acceptance criteria
+    let working_dir = stage.working_dir.as_deref().unwrap_or(".");
+    content.push_str(&format!(
+        "**Note:** These commands will run from working_dir: `{working_dir}`\n\n"
+    ));
+
     if stage.acceptance.is_empty() {
         content.push_str("- [ ] Implementation complete\n");
         content.push_str("- [ ] Code reviewed and tested\n");

@@ -100,3 +100,17 @@ Used loom/src/... when working_dir=loom. Should use src/... (relative to working
 **Why:** File paths not adjusted for working_dir setting.
 
 **Fix:** When working_dir is a subdir, paths must be relative to it. Use 'test -f src/foo.rs' not 'test -f loom/src/foo.rs'.
+
+## Promoted from Memory [2026-01-24 15:04]
+
+### Notes
+
+- Added DIRECTORY HIERARCHY section with ASCII diagram, path resolution formula, and debugging checklist
+- Updated format.rs with working_dir and Execution Path display in Target section plus WHERE COMMANDS EXECUTE reminder box
+
+### Decisions
+
+- **Implementing working_dir clarifications in sequential order: 1) CLAUDE.md.template with DIRECTORY HIERARCHY section, 2) format.rs with working_dir and execution_path in Target/Acceptance sections, 3) cache.rs Path Boundaries update, 4) tests**
+  - *Rationale:* Tasks overlap files so sequential implementation is required per assignment
+
+

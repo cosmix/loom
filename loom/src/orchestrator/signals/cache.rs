@@ -90,6 +90,12 @@ pub fn generate_stable_prefix() -> String {
         "| **FORBIDDEN** | `../..`, absolute paths to main repo, any path outside worktree |\n\n",
     );
 
+    // working_dir reminder for acceptance criteria
+    content.push_str(
+        "**working_dir Reminder:** Acceptance criteria execute from `WORKTREE + working_dir`.\n",
+    );
+    content.push_str("Check the Target section below for the exact execution path.\n\n");
+
     // Add reminder to follow CLAUDE.md rules
     content.push_str("## Execution Rules\n\n");
     content.push_str("Follow your `~/.claude/CLAUDE.md` and project `CLAUDE.md` rules (both are symlinked into this worktree). Key reminders:\n\n");
