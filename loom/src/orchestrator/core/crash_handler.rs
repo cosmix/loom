@@ -90,7 +90,10 @@ impl Orchestrator {
                 }
                 Err(e) => {
                     eprintln!("Warning: Failed to transition stage to Blocked: {e}");
-                    eprintln!("Current status: {:?} - not persisting to avoid inconsistent state", stage.status);
+                    eprintln!(
+                        "Current status: {:?} - not persisting to avoid inconsistent state",
+                        stage.status
+                    );
                 }
             }
         } else {

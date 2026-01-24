@@ -144,10 +144,8 @@ impl Recovery for Orchestrator {
                                 // 2. Update graph first (tentatively)
                                 // 3. Save file
                                 // 4. If save fails, rollback graph to original state
-                                let original_graph_status = self
-                                    .graph
-                                    .get_node(&stage.id)
-                                    .map(|n| n.status.clone());
+                                let original_graph_status =
+                                    self.graph.get_node(&stage.id).map(|n| n.status.clone());
 
                                 // Update graph first
                                 let _ = self.graph.mark_queued(&stage.id);
@@ -304,23 +302,20 @@ impl Recovery for Orchestrator {
                             // 2. Update graph first (tentatively)
                             // 3. Save file
                             // 4. If save fails, rollback graph to original state
-                            let original_graph_status = self
-                                .graph
-                                .get_node(stage_id)
-                                .map(|n| n.status.clone());
+                            let original_graph_status =
+                                self.graph.get_node(stage_id).map(|n| n.status.clone());
 
                             // Update graph first - only if not in terminal state
-                            let graph_updated =
-                                if let Some(node) = self.graph.get_node(stage_id) {
-                                    if node.status != NodeStatus::Completed {
-                                        let _ = self.graph.mark_queued(stage_id);
-                                        true
-                                    } else {
-                                        false
-                                    }
+                            let graph_updated = if let Some(node) = self.graph.get_node(stage_id) {
+                                if node.status != NodeStatus::Completed {
+                                    let _ = self.graph.mark_queued(stage_id);
+                                    true
                                 } else {
                                     false
-                                };
+                                }
+                            } else {
+                                false
+                            };
 
                             // Now save the file
                             if let Err(e) = self.save_stage(&stage) {

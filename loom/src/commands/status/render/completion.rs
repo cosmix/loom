@@ -17,7 +17,10 @@ fn truncate_chars(s: &str, max: usize) -> String {
     if char_count <= max {
         s.to_string()
     } else {
-        format!("{}...", s.chars().take(max.saturating_sub(3)).collect::<String>())
+        format!(
+            "{}...",
+            s.chars().take(max.saturating_sub(3)).collect::<String>()
+        )
     }
 }
 

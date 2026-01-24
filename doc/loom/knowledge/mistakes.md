@@ -194,3 +194,18 @@ Used loom/src/... when working_dir=loom. Should use src/... (relative to working
   - *Rationale:* Prevents TOML injection attacks via malicious plan names/paths. toml::to_string_pretty properly escapes all string values.
 
 
+
+## Promoted from Memory [2026-01-24 19:38]
+
+### Notes
+
+- Integration verification: All 185 tests pass (133 unit + 16 failure_resume + 28 integration + 3 stage_transitions + 5 doc-tests)
+- Verified: Self-update uses minisign signature verification (src/commands/self_update/signature.rs) - downloads signature file, verifies BEFORE writing binary
+- Applied cargo fmt to fix minor formatting differences in completion.rs, crash_handler.rs, recovery.rs
+
+### Decisions
+
+- **Acceptance criterion for banned git commands passes**
+  - *Rationale:* Matches in code are documentation warnings against the practice, not actual usage
+
+
