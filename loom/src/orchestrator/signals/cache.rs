@@ -119,6 +119,14 @@ pub fn generate_stable_prefix() -> String {
     content.push_str("- **Verify acceptance criteria** before marking stage complete\n");
     content.push_str("- **Create handoff** if context exceeds 75%\n");
     content.push_str("- **IMPORTANT: Before running `loom stage complete`, ensure you are at the worktree root directory**\n\n");
+    content.push_str("**Session Memory (MANDATORY):**\n");
+    content.push_str(
+        "- **Record discoveries** as you find them: `loom memory note \"observation\"`\n",
+    );
+    content.push_str("- **Record decisions** when you choose between alternatives: `loom memory decision \"choice\" --context \"why\"`\n");
+    content.push_str("- **Before completing stage**: `loom memory promote all mistakes` - transfer insights to knowledge\n");
+    content
+        .push_str("- Memory entries persist across sessions - don't lose valuable learnings\n\n");
     content.push_str("**Git Staging (CRITICAL):**\n");
     content
         .push_str("- **ALWAYS use `git add <specific-files>`** - stage only files you modified\n");

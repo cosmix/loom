@@ -315,10 +315,15 @@ Stage definitions become agent signals: `description` → tasks, `acceptance` �
 │                                                                    │
 │  Complete ALL items before marking stage complete:                 │
 │                                                                    │
-│  MEMORY & KNOWLEDGE:                                               │
+│  ═══════════════════════════════════════════════════════════════   │
+│  FIRST - MEMORY & KNOWLEDGE (before commit):                       │
+│  ═══════════════════════════════════════════════════════════════   │
+│  □ loom memory list (verify insights captured)                     │
 │  □ loom memory decision "..." for key decisions made               │
 │  □ loom memory note "..." for important observations               │
+│  □ loom memory promote all mistakes (transfer to knowledge)        │
 │  □ loom knowledge update mistakes "..." for any errors made        │
+│  ═══════════════════════════════════════════════════════════════   │
 │                                                                    │
 │  INTEGRATION:                                                      │
 │  □ Feature is wired in (registered, mounted, callable)             │
@@ -736,6 +741,19 @@ loom knowledge update mistakes "## [Short description]
 
 #### Using Session Memory
 
+```text
+┌────────────────────────────────────────────────────────────────────┐
+│  ⚠️ MEMORY RECORDING IS MANDATORY - NOT OPTIONAL                   │
+│                                                                    │
+│  Every session MUST record insights AS THEY ARE DISCOVERED:        │
+│  - Mistakes: IMMEDIATELY when they happen                          │
+│  - Decisions: When you choose between alternatives                 │
+│  - Discoveries: Patterns, gotchas, useful code locations           │
+│                                                                    │
+│  Empty memory at session end = lost learning = repeated mistakes   │
+└────────────────────────────────────────────────────────────────────┘
+```
+
 During work, actively record insights:
 
 | Type     | When           | Command                                       |
@@ -917,7 +935,8 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 │  □ Create TODO with "REUSE:" annotations                           │
 │                                                                    │
 │  BEFORE COMPLETING ANY STAGE (Stage Completion Checklist):         │
-│  □ Memory updated (decisions, mistakes, notes)                     │
+│  □ loom memory note/decision recorded for insights                 │
+│  □ loom memory promote all mistakes (BEFORE commit)                │
 │  □ Feature wired in and smoke test passes                          │
 │  □ No TODO/FIXME, no security issues                               │
 │  □ git add <specific-files> && commit                              │

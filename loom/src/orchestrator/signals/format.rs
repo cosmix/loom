@@ -332,15 +332,35 @@ fn format_recitation_section(stage: &Stage, embedded_context: &EmbeddedContext) 
 
     // Embed session memory at the END for maximum attention (Manus recitation pattern)
     // Recent notes, decisions, and questions stay in agent's working memory
+    // ALWAYS show memory section - with prompts when EMPTY to encourage usage
+    content.push_str("## Session Memory\n\n");
     if let Some(memory_content) = &embedded_context.memory_content {
-        content.push_str("## Session Memory\n\n");
         content.push_str("**YOUR WORKING MEMORY** - Notes and decisions from this session:\n\n");
         content.push_str(memory_content);
-        content.push_str("To record to memory:\n");
-        content.push_str("- `loom memory note \"observation\"`\n");
-        content.push_str("- `loom memory decision \"choice\" --context \"rationale\"`\n");
-        content.push_str("- `loom memory question \"open question\"`\n\n");
+        content.push('\n');
+    } else {
+        // CRITICAL: Show prominent prompt when memory is empty
+        content.push_str("```\n");
+        content.push_str("┌─────────────────────────────────────────────────────────────┐\n");
+        content.push_str("│  ⚠️  NO MEMORY ENTRIES RECORDED FOR THIS SESSION            │\n");
+        content.push_str("│                                                             │\n");
+        content.push_str("│  Memory is MANDATORY. Record as you work:                   │\n");
+        content.push_str("│  - Decisions: WHY you chose an approach                     │\n");
+        content.push_str("│  - Discoveries: Patterns, gotchas, useful code locations    │\n");
+        content.push_str("│  - Mistakes: What went wrong and how to avoid it            │\n");
+        content.push_str("│                                                             │\n");
+        content.push_str("│  Empty memory = lost learning = repeated mistakes           │\n");
+        content.push_str("└─────────────────────────────────────────────────────────────┘\n");
+        content.push_str("```\n\n");
     }
+    content.push_str("**Memory Commands:**\n");
+    content.push_str("- `loom memory note \"observation\"` - Record a discovery\n");
+    content.push_str(
+        "- `loom memory decision \"choice\" --context \"rationale\"` - Record a decision\n",
+    );
+    content.push_str("- `loom memory question \"open question\"` - Record an open question\n");
+    content.push_str("- `loom memory list` - Review your session entries\n");
+    content.push_str("- `loom memory promote all mistakes` - Promote insights to knowledge (BEFORE completing)\n\n");
 
     content
 }

@@ -356,6 +356,47 @@ remind_knowledge_capture() {
 	printf '%s\n' "------------------------------------------------------------" >&2
 }
 
+# Non-blocking reminder about memory recording
+# Called after blocking checks pass, outputs to stderr
+remind_memory_usage() {
+	local project_root="$1"
+	local stage_id="$2"
+
+	# Check if memory directory exists
+	local memory_dir="$project_root/$WORK_DIR/memory"
+	if [[ ! -d "$memory_dir" ]]; then
+		return
+	fi
+
+	# Check for any memory files with substantial content (>10 lines = real entries)
+	local has_entries=false
+	for file in "$memory_dir"/*.md; do
+		if [[ -f "$file" ]]; then
+			local lines
+			lines=$(wc -l <"$file")
+			if [[ "$lines" -gt 10 ]]; then
+				has_entries=true
+				break
+			fi
+		fi
+	done
+
+	# Show reminder if no substantial entries found
+	if [[ "$has_entries" == "false" ]]; then
+		printf '\n' >&2
+		printf '%s\n' "------------------------------------------------------------" >&2
+		printf '%s\n' "⚠️  Memory Recording Reminder" >&2
+		printf '%s\n' "------------------------------------------------------------" >&2
+		printf '%s\n' "No memory entries recorded for this session." >&2
+		printf '%s\n' "Did you make decisions or discoveries worth recording?" >&2
+		printf '%s\n' "" >&2
+		printf '%s\n' "  loom memory decision \"choice\" --context \"why\"" >&2
+		printf '%s\n' "  loom memory note \"observation\"" >&2
+		printf '%s\n' "  loom memory promote all mistakes  # Transfer to knowledge" >&2
+		printf '%s\n' "------------------------------------------------------------" >&2
+	fi
+}
+
 # Main hook logic
 main() {
 	debug_log "=== loom-stop hook starting ==="
@@ -410,6 +451,9 @@ main() {
 
 	# Show knowledge reminder (non-blocking, informational)
 	remind_knowledge_capture "$project_root"
+
+	# Show memory reminder (non-blocking, informational)
+	remind_memory_usage "$project_root" "$STAGE_ID"
 
 	# Collect issues
 	local issues=()

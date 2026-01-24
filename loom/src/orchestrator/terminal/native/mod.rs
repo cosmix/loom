@@ -111,9 +111,11 @@ impl TerminalBackend for NativeBackend {
 
         // Create wrapper script that writes PID before exec'ing claude
         // Pass the worktree path so the script can cd there (important for macOS)
+        // Pass the session.id so LOOM_SESSION_ID env var is set for hooks and memory commands
         let wrapper_path = pid_tracking::create_wrapper_script(
             &self.work_dir,
             &stage.id,
+            &session.id,
             &claude_cmd,
             Some(Path::new(worktree_path)),
         )?;
@@ -179,6 +181,7 @@ impl TerminalBackend for NativeBackend {
         let wrapper_path = pid_tracking::create_wrapper_script(
             &self.work_dir,
             &format!("merge-{}", stage.id),
+            &session.id,
             &claude_cmd,
             Some(Path::new(repo_root_str)),
         )?;
@@ -246,6 +249,7 @@ impl TerminalBackend for NativeBackend {
         let wrapper_path = pid_tracking::create_wrapper_script(
             &self.work_dir,
             &format!("base-conflict-{}", stage.id),
+            &session.id,
             &claude_cmd,
             Some(Path::new(repo_root_str)),
         )?;
@@ -312,6 +316,7 @@ impl TerminalBackend for NativeBackend {
         let wrapper_path = pid_tracking::create_wrapper_script(
             &self.work_dir,
             &format!("knowledge-{}", stage.id),
+            &session.id,
             &claude_cmd,
             Some(Path::new(repo_root_str)),
         )?;

@@ -182,6 +182,11 @@ Captures codebase understanding before implementation:
       loom knowledge update conventions "## Section\n\nContent..."
 
     IMPORTANT: Before completing, review existing mistakes.md to avoid repeating errors.
+
+    MEMORY RECORDING:
+    - As you explore, record insights: loom memory note "observation"
+    - Record decisions: loom memory decision "choice" --context "why"
+    - Before completing: loom memory promote all mistakes
   dependencies: []
   acceptance:
     - "grep -q '## ' doc/loom/knowledge/architecture.md"
@@ -245,6 +250,14 @@ Verifies all work integrates correctly after merges AND that the feature actuall
        - Are callbacks/hooks connected?
        - Are events being published/subscribed?
        - Are dependencies injected correctly?
+
+    KNOWLEDGE (MANDATORY):
+    8. Review and promote session memory:
+       loom memory list
+       loom memory promote all mistakes
+       loom memory promote decision patterns
+    9. Update architecture.md if structure changed
+    10. Record any lessons learned
   dependencies: ["stage-a", "stage-b", "stage-c"] # ALL feature stages
   acceptance:
     - "cargo test"
@@ -269,7 +282,32 @@ Verifies all work integrates correctly after merges AND that the feature actuall
 | **Wiring verification** | **Features must be connected to actually work**    |
 | **Functional proof**    | **Smoke test proves the feature is usable**        |
 
-### 8. After Writing Plan
+### 8. Memory Recording in Stage Descriptions
+
+**Every stage description should remind agents to record memory.** Memory persists insights across sessions and prevents repeated mistakes.
+
+Include a MEMORY RECORDING block in stage descriptions:
+
+```yaml
+description: |
+  [Task description here]
+
+  MEMORY RECORDING:
+  - Record insights as discovered: loom memory note "observation"
+  - Record decisions: loom memory decision "choice" --context "why"
+  - Before completing: loom memory promote all mistakes
+```
+
+**Why this is mandatory:**
+
+| Benefit | Explanation |
+| ------- | ----------- |
+| Insight persistence | Memory entries persist across sessions and context resets |
+| Mistake prevention | Promoted mistakes become knowledge that future agents read |
+| Decision documentation | Records WHY choices were made, not just what was done |
+| Learning transfer | Memory → Knowledge transfer makes lessons permanent |
+
+### 9. After Writing Plan
 
 1. Write plan to `doc/plans/PLAN-<name>.md`
 2. **STOP** - Do NOT implement

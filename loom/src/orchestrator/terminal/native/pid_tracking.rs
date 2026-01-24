@@ -242,15 +242,17 @@ fn get_process_cwd_macos(pid: u32) -> Option<PathBuf> {
 /// Create a wrapper script that writes its PID before exec'ing claude
 ///
 /// The wrapper script:
-/// 1. Changes to the working directory (important for macOS where terminals
+/// 1. Sets loom environment variables (LOOM_SESSION_ID, LOOM_STAGE_ID, LOOM_WORK_DIR)
+/// 2. Changes to the working directory (important for macOS where terminals
 ///    can't reliably set cwd before spawning)
-/// 2. Creates the pids directory if needed
-/// 3. Writes its own PID ($$) to the PID file
-/// 4. exec's the claude command (replacing the shell process)
+/// 3. Creates the pids directory if needed
+/// 4. Writes its own PID ($$) to the PID file
+/// 5. exec's the claude command (replacing the shell process)
 ///
 /// # Arguments
 /// * `work_dir` - The .work directory path
 /// * `stage_id` - The stage identifier
+/// * `session_id` - The session identifier (for LOOM_SESSION_ID env var)
 /// * `claude_cmd` - The claude command to execute (e.g., "claude 'prompt here'")
 /// * `working_dir` - The working directory to cd into before running claude
 ///
@@ -259,6 +261,7 @@ fn get_process_cwd_macos(pid: u32) -> Option<PathBuf> {
 pub fn create_wrapper_script(
     work_dir: &Path,
     stage_id: &str,
+    session_id: &str,
     claude_cmd: &str,
     working_dir: Option<&Path>,
 ) -> Result<PathBuf> {
@@ -284,6 +287,11 @@ pub fn create_wrapper_script(
         })
         .unwrap_or_else(|_| pid_file.clone());
 
+    // Get absolute path to .work directory for LOOM_WORK_DIR
+    let work_dir_abs = work_dir
+        .canonicalize()
+        .unwrap_or_else(|_| work_dir.to_path_buf());
+
     // Build the cd command if a working directory is specified
     // Use absolute path for working directory
     let cd_section = if let Some(dir) = working_dir {
@@ -304,6 +312,11 @@ cd '{}' || {{ echo "Failed to cd to working directory"; exit 1; }}
 # Loom wrapper script for stage: {stage_id}
 # Writes PID to file before exec'ing claude
 
+# Set loom environment variables for hooks and memory commands
+export LOOM_SESSION_ID="{session_id}"
+export LOOM_STAGE_ID="{stage_id}"
+export LOOM_WORK_DIR="{work_dir}"
+
 {cd_section}# Write our PID to the tracking file
 echo $$ > "{pid_file}"
 
@@ -311,6 +324,8 @@ echo $$ > "{pid_file}"
 exec {claude_cmd}
 "#,
         stage_id = stage_id,
+        session_id = session_id,
+        work_dir = work_dir_abs.display(),
         cd_section = cd_section,
         pid_file = pid_file_abs.display(),
         claude_cmd = claude_cmd
@@ -361,9 +376,11 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let work_dir = temp_dir.path();
         let stage_id = "test-stage";
+        let session_id = "session-abc123-1234567890";
         let claude_cmd = "claude 'test prompt'";
 
-        let wrapper_path = create_wrapper_script(work_dir, stage_id, claude_cmd, None).unwrap();
+        let wrapper_path =
+            create_wrapper_script(work_dir, stage_id, session_id, claude_cmd, None).unwrap();
 
         // Check file exists
         assert!(wrapper_path.exists());
@@ -373,6 +390,12 @@ mod tests {
         assert!(content.contains("#!/bin/bash"));
         assert!(content.contains("echo $$"));
         assert!(content.contains(claude_cmd));
+        // Check env vars are set
+        assert!(content.contains("LOOM_SESSION_ID"));
+        assert!(content.contains(session_id));
+        assert!(content.contains("LOOM_STAGE_ID"));
+        assert!(content.contains(stage_id));
+        assert!(content.contains("LOOM_WORK_DIR"));
 
         // Check executable
         #[cfg(unix)]
@@ -388,11 +411,18 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let work_dir = temp_dir.path();
         let stage_id = "test-stage-cwd";
+        let session_id = "session-def456-9876543210";
         let claude_cmd = "claude 'test prompt'";
         let working_dir = Path::new("/tmp/test-worktree");
 
-        let wrapper_path =
-            create_wrapper_script(work_dir, stage_id, claude_cmd, Some(working_dir)).unwrap();
+        let wrapper_path = create_wrapper_script(
+            work_dir,
+            stage_id,
+            session_id,
+            claude_cmd,
+            Some(working_dir),
+        )
+        .unwrap();
 
         // Check file exists
         assert!(wrapper_path.exists());
@@ -420,10 +450,11 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let work_dir = temp_dir.path();
         let stage_id = "test-stage";
+        let session_id = "session-cleanup-1234567890";
 
         // Create files
         write_pid_file(work_dir, stage_id, 12345).unwrap();
-        create_wrapper_script(work_dir, stage_id, "claude 'test'", None).unwrap();
+        create_wrapper_script(work_dir, stage_id, session_id, "claude 'test'", None).unwrap();
 
         // Verify they exist
         assert!(pid_file_path(work_dir, stage_id).exists());
