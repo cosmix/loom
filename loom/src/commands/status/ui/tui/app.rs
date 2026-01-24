@@ -1,12 +1,12 @@
 //! TUI application state and main loop.
 
 use std::collections::HashMap;
-use std::io::{self, Stdout};
+use std::io::{self, Stdout, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use crossterm::{
@@ -33,6 +33,9 @@ use crate::models::stage::StageStatus;
 /// Poll timeout for event loop (100ms for responsive UI).
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
+/// Delay before auto-exit after completion (3 seconds).
+const COMPLETION_EXIT_DELAY: Duration = Duration::from_secs(3);
+
 /// TUI application state.
 pub struct TuiApp {
     terminal: Terminal<CrosstermBackend<Stdout>>,
@@ -44,6 +47,10 @@ pub struct TuiApp {
     mouse_enabled: bool,
     exiting: bool,
     completion_summary: Option<CompletionSummary>,
+    /// Tracks when completion was received for auto-exit delay.
+    completion_received_at: Option<Instant>,
+    /// Flag to prevent double cleanup in Drop.
+    cleaned_up: bool,
 }
 
 impl TuiApp {
@@ -69,6 +76,8 @@ impl TuiApp {
             mouse_enabled,
             exiting: false,
             completion_summary: None,
+            completion_received_at: None,
+            cleaned_up: false,
         })
     }
 
@@ -86,6 +95,13 @@ impl TuiApp {
 
         let _ = write_message(&mut stream, &Request::Unsubscribe);
 
+        // If we have a completion summary, cleanup terminal and print summary to stdout
+        // so it remains visible after TUI exits
+        if let Some(summary) = self.completion_summary.clone() {
+            self.cleanup_terminal();
+            Self::print_completion_to_stdout(&summary);
+        }
+
         result
     }
 
@@ -98,12 +114,24 @@ impl TuiApp {
                 break;
             }
 
+            // Check if completion delay has elapsed for auto-exit
+            if let Some(received_at) = self.completion_received_at {
+                if received_at.elapsed() >= COMPLETION_EXIT_DELAY {
+                    // Delay elapsed, exit cleanly
+                    break;
+                }
+            }
+
             match read_message::<Response, _>(stream) {
                 Ok(response) => {
                     self.handle_response(response);
                 }
                 Err(e) => {
                     if is_socket_disconnected(&e) {
+                        // If we already have completion summary, don't show error
+                        if self.completion_summary.is_some() {
+                            break;
+                        }
                         self.last_error = Some("Daemon exited".to_string());
                         self.render()?;
                         std::thread::sleep(Duration::from_millis(500));
@@ -154,6 +182,7 @@ impl TuiApp {
             }
             Response::OrchestrationComplete { summary } => {
                 self.completion_summary = Some(summary);
+                self.completion_received_at = Some(Instant::now());
                 self.last_error = None;
             }
             Response::Error { message } => {
@@ -161,6 +190,69 @@ impl TuiApp {
             }
             _ => {}
         }
+    }
+
+    /// Cleanup terminal state (leave alternate screen, disable raw mode).
+    /// Sets cleaned_up flag to prevent double cleanup in Drop.
+    fn cleanup_terminal(&mut self) {
+        if self.cleaned_up {
+            return;
+        }
+        self.cleaned_up = true;
+
+        let _ = disable_raw_mode();
+        if self.mouse_enabled {
+            let _ = crossterm::execute!(
+                self.terminal.backend_mut(),
+                crossterm::event::DisableMouseCapture
+            );
+        }
+        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
+        let _ = self.terminal.show_cursor();
+    }
+
+    /// Print completion summary to stdout (after leaving alternate screen).
+    fn print_completion_to_stdout(summary: &CompletionSummary) {
+        use super::renderer::format_elapsed;
+
+        let success = summary.failure_count == 0;
+        let status_icon = if success { "\u{2713}" } else { "\u{2717}" };
+        let status_text = if success {
+            "Orchestration Complete"
+        } else {
+            "Orchestration Complete (with failures)"
+        };
+
+        println!();
+        println!("{status_icon} {status_text}");
+        let total_time = format_elapsed(summary.total_duration_secs);
+        let success = summary.success_count;
+        let failure = summary.failure_count;
+        println!("   Total: {total_time} | \u{2713} {success} | \u{2717} {failure}");
+        println!();
+
+        // Print stage summary
+        println!("Stages:");
+        for stage in &summary.stages {
+            let icon = match stage.status {
+                StageStatus::Completed => "\u{2713}",
+                StageStatus::Skipped => "\u{2298}",
+                StageStatus::Blocked => "\u{2717}",
+                StageStatus::MergeConflict => "\u{26A1}",
+                StageStatus::CompletedWithFailures => "\u{26A0}",
+                StageStatus::MergeBlocked => "\u{2297}",
+                _ => "\u{25CB}",
+            };
+            let duration = stage
+                .duration_secs
+                .map(format_elapsed)
+                .unwrap_or_else(|| "-".to_string());
+            println!("   {} {} ({})", icon, stage.id, duration);
+        }
+        println!();
+
+        // Flush stdout to ensure output is visible
+        let _ = io::stdout().flush();
     }
 
     /// Render the UI.
@@ -257,6 +349,10 @@ impl TuiApp {
 
 impl Drop for TuiApp {
     fn drop(&mut self) {
+        // Skip if already cleaned up (e.g., for completion exit)
+        if self.cleaned_up {
+            return;
+        }
         let _ = disable_raw_mode();
         if self.mouse_enabled {
             let _ = crossterm::execute!(
