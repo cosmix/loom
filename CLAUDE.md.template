@@ -463,7 +463,52 @@ The stop hook BLOCKS exit if uncommitted changes exist or stage is still "Execut
 
 First line of EVERY subagent prompt: `** READ CLAUDE.md IMMEDIATELY AND FOLLOW ALL ITS RULES. **`
 
-### 6. SKILLS & AGENT DELEGATION
+### 6. EXECUTING PARALLEL SUBAGENTS (MANDATORY)
+
+**⚠️ WHEN YOUR STAGE DESCRIPTION CONTAINS AN EXECUTION PLAN - FOLLOW IT EXACTLY**
+
+Your stage description may contain an `EXECUTION PLAN` block specifying parallel subagents. This is NOT optional guidance - it is a DIRECTIVE you MUST execute.
+
+**When you see subagent specifications in your stage description:**
+
+1. **Parse the execution plan** - identify ALL subagent assignments
+2. **Spawn ALL subagents in ONE message** - multiple Task tool calls in a single response
+3. **DO NOT work sequentially** - parallel means parallel
+
+**Each Task call MUST include:**
+
+```text
+** READ CLAUDE.md IMMEDIATELY AND FOLLOW ALL ITS RULES. **
+
+## Assignment: [specific task from execution plan]
+## Files You Own: [paths - EXCLUSIVE write access]
+## Files Read-Only: [paths - can read, CANNOT modify]
+## Acceptance: [local criteria from execution plan]
+
+[detailed task description]
+```
+
+**Correct Pattern - Multiple Task calls in ONE message:**
+
+```text
+<single response with multiple tool calls>
+
+Task(subagent_type="software-engineer", prompt="...Subagent 1 assignment...")
+Task(subagent_type="software-engineer", prompt="...Subagent 2 assignment...")
+Task(subagent_type="software-engineer", prompt="...Subagent 3 assignment...")
+```
+
+**WRONG:** Spawn one subagent → wait for result → spawn next (SEQUENTIAL)
+**CORRECT:** All subagents spawned in ONE message (PARALLEL)
+
+**If execution plan says "sequential"** - do NOT parallelize. Execute in order with explicit dependencies.
+
+**File Ownership is CRITICAL:**
+- Each subagent MUST have exclusive write access to their assigned files
+- Overlapping file ownership = merge conflicts = stage failure
+- Read-only files can be shared across subagents
+
+### 7. SKILLS & AGENT DELEGATION
 
 **⚠️ BEFORE IMPLEMENTING: CHECK SKILLS & AGENTS FIRST**
 
@@ -510,7 +555,7 @@ When delegating to subagents, include skill hints:
 ## Acceptance: [criteria]
 ```
 
-### 7. NATIVE TOOLS ONLY
+### 8. NATIVE TOOLS ONLY
 
 | Banned | Use Instead |
 |--------|-------------|
@@ -524,11 +569,11 @@ If you must use CLI search, use `rg` or `fd` — never `grep` or `find`.
 
 We use `uv`, `bun`/`bunx` etc. Avoid legacy tools like `npm`, `pip`.
 
-### 8. NO ATTRIBUTION
+### 9. NO ATTRIBUTION
 
 Never mention Claude, Claude Code, or any AI system in code, commits, docs, or comments. EVER.
 
-### 9. WORKTREE ISOLATION
+### 10. WORKTREE ISOLATION
 
 Stay within worktree boundaries — isolation prevents merge conflicts and ensures clean parallel execution.
 
@@ -554,7 +599,7 @@ Your branch: `loom/<stage-id>`
 
 **Need main repo context?** Your signal file (`.work/signals/<session-id>.md`) has it — DO NOT read from main repo.
 
-### 10. KNOWLEDGE MANAGEMENT (MANDATORY)
+### 11. KNOWLEDGE MANAGEMENT (MANDATORY)
 
 **⚠️ KNOWLEDGE-BOOTSTRAP IS THE MANDATORY FIRST STAGE**
 
@@ -642,7 +687,7 @@ loom memory promote all mistakes        # Promote all entries to mistakes
 loom memory promote decision patterns   # Promote decisions to patterns
 ```
 
-### 11. INTEGRATION VERIFICATION (MANDATORY)
+### 12. INTEGRATION VERIFICATION (MANDATORY)
 
 **Every plan MUST end with `integration-verify`.**
 
@@ -682,19 +727,19 @@ acceptance:
 
 ## STANDARD RULES
 
-### 12. QUALITY GATES
+### 13. QUALITY GATES
 
 Before completion: zero lint errors, tests passing, self-reviewed for security.
 
-### 13. DEPENDENCIES
+### 14. DEPENDENCIES
 
 Never hand-edit manifests. Use: `bun add`, `cargo add`, `uv add`, `go get`
 
-### 14. CODE SIZE LIMITS
+### 15. CODE SIZE LIMITS
 
 File: 400 lines | Function: 50 lines | Class: 300 lines — Exceed = refactor immediately.
 
-### 15. SESSION STATE
+### 16. SESSION STATE
 
 Update `CLAUDE.md` during work. On completion, replace updates with summary.
 
@@ -706,8 +751,10 @@ Update `CLAUDE.md` during work. On completion, replace updates with summary.
 
 1. **Read knowledge files first** — If `doc/loom/knowledge/` exists, read ALL files (`architecture.md` first, then `entry-points.md`, `patterns.md`, `conventions.md`, `mistakes.md`).
 2. Check `.work/signals/` for your session ID
-3. Signal found? Execute. No signal? Ask user.
-4. If starting fresh, consider running `loom knowledge init` to create knowledge files
+3. **Read your stage description carefully** — Look for `EXECUTION PLAN` blocks
+4. **If parallel subagents are specified** — Spawn them ALL using Task tool in ONE message (see Rule 6)
+5. Signal found? Execute. No signal? Ask user.
+6. If starting fresh, consider running `loom knowledge init` to create knowledge files
 
 ### Stage Lifecycle
 
@@ -795,6 +842,9 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 
 4. NO PLACEHOLDERS → Complete code or ASK. Never stubs.
 
+5. EXECUTION PLAN WITH SUBAGENTS → Spawn ALL in ONE message
+   Sequential spawning = WRONG. Multiple Task calls in single response = CORRECT.
+
 **BEFORE EVERY PLAN:**
 □ Explore codebase FIRST (spawn Explore subagents)
 □ Review doc/loom/knowledge/ (especially architecture.md)
@@ -812,6 +862,27 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 □ integration-verify LAST (TESTS ≠ WORKING)
 □ Parallel SUBAGENTS first, multiple stages only when files clash
 □ Check /auth, /testing, etc. skills BEFORE coding
+
+---
+
+## 🚀 QUICK REFERENCE - PARALLEL EXECUTION
+
+**Stage description has EXECUTION PLAN with subagents?**
+
+1. Parse ALL subagent assignments from description
+2. Spawn ALL in ONE message using multiple Task tool calls
+3. Each prompt starts: `** READ CLAUDE.md IMMEDIATELY AND FOLLOW ALL ITS RULES. **`
+4. Include: Assignment, Files Owned, Files Read-Only, Acceptance
+
+**Pattern:**
+```
+Response with multiple tool calls:
+  Task(subagent_type="software-engineer", prompt="[CLAUDE.md injection]\n\n## Assignment: X\n## Files You Own: path/a/**\n...")
+  Task(subagent_type="software-engineer", prompt="[CLAUDE.md injection]\n\n## Assignment: Y\n## Files You Own: path/b/**\n...")
+```
+
+**WRONG:** One subagent at a time (sequential)
+**CORRECT:** All subagents in one message (parallel)
 
 ---
 
