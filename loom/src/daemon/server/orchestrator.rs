@@ -125,6 +125,10 @@ fn run_orchestrator(
         }
     }
 
+    // Signal daemon to exit now that orchestration is complete
+    println!("Orchestration finished, signaling daemon shutdown");
+    shutdown_flag.store(true, Ordering::Relaxed);
+
     Ok(())
 }
 

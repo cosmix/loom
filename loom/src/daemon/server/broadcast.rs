@@ -15,7 +15,8 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 /// Interval between status broadcasts in milliseconds.
-const STATUS_BROADCAST_INTERVAL_MS: u64 = 1000;
+/// Reduced to 200ms for faster shutdown detection after orchestration completes.
+const STATUS_BROADCAST_INTERVAL_MS: u64 = 200;
 
 /// Interval between log file rotation checks in iterations.
 const LOG_ROTATION_CHECK_INTERVAL: u32 = 50; // ~5 seconds at 100ms sleep

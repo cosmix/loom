@@ -194,7 +194,7 @@ impl DaemonServer {
         Ok(())
     }
 
-    /// Clean up socket and PID files.
+    /// Clean up socket, PID, and completion marker files.
     pub(super) fn cleanup(&self) -> Result<()> {
         // Remove files directly, ignoring NotFound to avoid TOCTOU race
         if let Err(e) = fs::remove_file(&self.socket_path) {
@@ -205,6 +205,13 @@ impl DaemonServer {
         if let Err(e) = fs::remove_file(&self.pid_path) {
             if e.kind() != std::io::ErrorKind::NotFound {
                 return Err(e).context("Failed to remove PID file");
+            }
+        }
+        // Clean up completion marker file
+        let completion_marker = self.work_dir.join("orchestrator.complete");
+        if let Err(e) = fs::remove_file(&completion_marker) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                return Err(e).context("Failed to remove completion marker file");
             }
         }
         Ok(())
