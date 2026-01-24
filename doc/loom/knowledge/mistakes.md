@@ -132,3 +132,12 @@ Used loom/src/... when working_dir=loom. Should use src/... (relative to working
 ### Notes
 
 - Fixed acceptance criteria path mismatch in plan: with working_dir='loom', paths must be relative to loom/ directory. Changed CLAUDE.md.template to ../CLAUDE.md.template and loom/src/... to src/... This demonstrates the exact issue the DIRECTORY HIERARCHY documentation was created to prevent.
+
+## Promoted from Memory [2026-01-24 15:58]
+
+### Decisions
+
+- **Fixed case sensitivity in Stage Completion Checklist - changed 'before commit' to 'BEFORE COMMIT'**
+  - *Rationale:* The acceptance criteria pattern requires uppercase. Original template had lowercase which failed the pattern match.
+
+
