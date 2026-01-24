@@ -16,6 +16,7 @@ use crate::commands::status::ui::tree_widget::TreeWidget;
 use crate::commands::status::ui::widgets::{status_indicator, status_text};
 use crate::daemon::CompletionSummary;
 use crate::models::stage::{Stage, StageStatus};
+use crate::utils::format_elapsed;
 
 /// Fixed height for the graph area (prevents jerking from dynamic resizing).
 pub const GRAPH_AREA_HEIGHT: u16 = 12;
@@ -247,17 +248,6 @@ pub fn render_compact_footer(frame: &mut Frame, area: Rect, last_error: &Option<
 
     let footer = Paragraph::new(line);
     frame.render_widget(footer, area);
-}
-
-/// Format elapsed time in human-readable format.
-pub fn format_elapsed(seconds: i64) -> String {
-    if seconds < 60 {
-        format!("{seconds}s")
-    } else if seconds < 3600 {
-        format!("{}m{}s", seconds / 60, seconds % 60)
-    } else {
-        format!("{}h{}m", seconds / 3600, (seconds % 3600) / 60)
-    }
 }
 
 /// Format dependencies as "(dep1, dep2, ...)" with middle truncation if too long.

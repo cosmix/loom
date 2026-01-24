@@ -265,9 +265,20 @@ pub fn pop_stash(repo_path: &Path) -> Result<()> {
 
 /// Auto-commit all changes in worktree before merge
 pub fn auto_commit_changes(stage_id: &str, worktree_path: &Path) -> Result<()> {
-    // Add all changes including untracked files
+    // Get list of changed/untracked files, excluding .work and .worktrees
+    let files = get_uncommitted_files(worktree_path)?;
+
+    if files.is_empty() {
+        // Nothing to commit
+        return Ok(());
+    }
+
+    // Stage each file explicitly (never use git add -A which could include .work symlink)
+    let mut add_args = vec!["add", "--"];
+    add_args.extend(files.iter().map(|s| s.as_str()));
+
     let add_output = Command::new("git")
-        .args(["add", "-A"])
+        .args(&add_args)
         .current_dir(worktree_path)
         .output()
         .with_context(|| "Failed to stage changes")?;

@@ -5,21 +5,7 @@ use std::io::{self, Write};
 
 use crate::daemon::{CompletionSummary, StageCompletionInfo};
 use crate::models::stage::StageStatus;
-
-/// Format elapsed time from seconds into human-readable string.
-pub fn format_elapsed(secs: i64) -> String {
-    let hours = secs / 3600;
-    let minutes = (secs % 3600) / 60;
-    let seconds = secs % 60;
-
-    if hours > 0 {
-        format!("{hours}h {minutes}m {seconds}s")
-    } else if minutes > 0 {
-        format!("{minutes}m {seconds}s")
-    } else {
-        format!("{seconds}s")
-    }
-}
+use crate::utils::format_elapsed_verbose;
 
 /// Print completion summary to stdout.
 ///
@@ -47,7 +33,7 @@ pub fn print_completion_summary(summary: &CompletionSummary) {
     // Show plan path
     println!("Plan: {}", summary.plan_path);
 
-    let total_time = format_elapsed(summary.total_duration_secs);
+    let total_time = format_elapsed_verbose(summary.total_duration_secs);
     let success_count = summary.success_count;
     let failure = summary.failure_count;
     println!("Total: {total_time} | \u{2713} {success_count} | \u{2717} {failure}");
@@ -83,7 +69,7 @@ pub fn print_completion_summary(summary: &CompletionSummary) {
         };
         let duration = stage
             .duration_secs
-            .map(format_elapsed)
+            .map(format_elapsed_verbose)
             .unwrap_or_else(|| "-".to_string());
         println!(
             "  {} {:<30} {:<12} {:>8}",

@@ -13,7 +13,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 
 use crate::daemon::{read_message, write_message, CompletionSummary, Request, Response, StageInfo};
-use crate::utils::{cleanup_terminal, install_terminal_panic_hook};
+use crate::utils::{cleanup_terminal, format_elapsed, install_terminal_panic_hook};
 
 use super::activity::{ActivityLog, ActivityType};
 use super::completion::render_completion_screen;
@@ -326,16 +326,6 @@ impl LiveMode {
 impl Default for LiveMode {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-fn format_elapsed(seconds: i64) -> String {
-    if seconds < 60 {
-        format!("{seconds}s")
-    } else if seconds < 3600 {
-        format!("{}m{}s", seconds / 60, seconds % 60)
-    } else {
-        format!("{}h{}m", seconds / 3600, (seconds % 3600) / 60)
     }
 }
 

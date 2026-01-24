@@ -8,14 +8,10 @@ use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::get_merge_point;
 use crate::parser::frontmatter::parse_from_markdown;
+use crate::process::is_process_alive;
 use crate::verify::transitions::list_all_stages;
 
 use super::{MergeSummary, ProgressSummary, SessionSummary, StageSummary, StatusData};
-
-/// Check if a process is alive by checking /proc/{pid}
-fn is_process_alive(pid: u32) -> bool {
-    std::path::Path::new(&format!("/proc/{pid}")).exists()
-}
 
 /// Load all sessions from .work/sessions/ directory
 fn load_all_sessions(work_dir: &WorkDir) -> Result<Vec<Session>> {

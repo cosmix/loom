@@ -16,6 +16,7 @@ use ratatui::{
 use super::theme::{StatusColors, Theme};
 use crate::models::constants::display::{CONTEXT_HEALTHY_PCT, CONTEXT_WARNING_PCT};
 use crate::models::stage::{Stage, StageStatus};
+use crate::utils::format_elapsed;
 
 /// Available terminal colors for stage differentiation
 const STAGE_COLORS: [Color; 16] = [
@@ -144,17 +145,6 @@ fn status_style(status: &StageStatus) -> Style {
         StageStatus::MergeBlocked => Style::default()
             .fg(StatusColors::BLOCKED)
             .add_modifier(Modifier::BOLD),
-    }
-}
-
-/// Format elapsed time in human-readable format
-fn format_elapsed(seconds: i64) -> String {
-    if seconds < 60 {
-        format!("{seconds}s")
-    } else if seconds < 3600 {
-        format!("{}m{}s", seconds / 60, seconds % 60)
-    } else {
-        format!("{}h{}m", seconds / 3600, (seconds % 3600) / 60)
     }
 }
 
@@ -516,13 +506,6 @@ mod tests {
         assert_eq!(status_char(&StageStatus::Completed), "✓");
         assert_eq!(status_char(&StageStatus::Executing), "●");
         assert_eq!(status_char(&StageStatus::Blocked), "✗");
-    }
-
-    #[test]
-    fn test_format_elapsed() {
-        assert_eq!(format_elapsed(30), "30s");
-        assert_eq!(format_elapsed(90), "1m30s");
-        assert_eq!(format_elapsed(3661), "1h1m");
     }
 
     #[test]

@@ -9,6 +9,7 @@ use colored::Colorize;
 
 use crate::daemon::{CompletionSummary, StageCompletionInfo};
 use crate::models::stage::StageStatus;
+use crate::utils::format_elapsed;
 
 /// Status indicator character for display
 fn status_indicator(status: &StageStatus) -> &'static str {
@@ -20,17 +21,6 @@ fn status_indicator(status: &StageStatus) -> &'static str {
         StageStatus::CompletedWithFailures => "\u{26A0}", // ⚠
         StageStatus::MergeBlocked => "\u{2297}",          // ⊗
         _ => "\u{25CB}",                                  // ○
-    }
-}
-
-/// Format elapsed time in human-readable format
-fn format_elapsed(seconds: i64) -> String {
-    if seconds < 60 {
-        format!("{seconds}s")
-    } else if seconds < 3600 {
-        format!("{}m{}s", seconds / 60, seconds % 60)
-    } else {
-        format!("{}h{}m", seconds / 3600, (seconds % 3600) / 60)
     }
 }
 
@@ -221,13 +211,6 @@ mod tests {
             merged: completed,
             dependencies: vec![],
         }
-    }
-
-    #[test]
-    fn test_format_elapsed() {
-        assert_eq!(format_elapsed(30), "30s");
-        assert_eq!(format_elapsed(90), "1m30s");
-        assert_eq!(format_elapsed(3661), "1h1m");
     }
 
     #[test]

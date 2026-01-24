@@ -3,6 +3,7 @@
 //! This module provides commands for running loom plans either in foreground
 //! (debugging) or background (daemon) mode.
 
+mod checks;
 mod config_ops;
 mod filename_ops;
 mod foreground;
@@ -14,12 +15,13 @@ mod plan_lifecycle;
 #[cfg(test)]
 mod tests;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use colored::Colorize;
 
 use crate::daemon::{DaemonConfig, DaemonServer};
 use crate::fs::work_dir::WorkDir;
-use crate::git::{get_uncommitted_changes_summary, has_uncommitted_changes};
+
+use checks::check_for_uncommitted_changes;
 
 // Re-export the main entry point for foreground mode
 pub use foreground::execute;
@@ -71,31 +73,5 @@ pub fn execute_background(
     println!("  {}  Monitor progress", "loom status".cyan());
     println!("  {}  Stop daemon", "loom stop".cyan());
 
-    Ok(())
-}
-
-/// Check for uncommitted changes and bail if found
-fn check_for_uncommitted_changes(repo_root: &std::path::Path) -> Result<()> {
-    if has_uncommitted_changes(repo_root)? {
-        let summary = get_uncommitted_changes_summary(repo_root)?;
-        eprintln!(
-            "{} Cannot start loom run with uncommitted changes",
-            "✗".red().bold()
-        );
-        eprintln!();
-        if !summary.is_empty() {
-            for line in summary.lines() {
-                eprintln!("  {}", line.dimmed());
-            }
-            eprintln!();
-        }
-        eprintln!("  {} Commit or stash your changes first:", "→".dimmed());
-        eprintln!(
-            "    {}  Commit changes",
-            "git commit -am \"message\"".cyan()
-        );
-        eprintln!("    {}  Or stash them", "git stash".cyan());
-        bail!("Uncommitted changes in repository - commit or stash before running loom");
-    }
     Ok(())
 }

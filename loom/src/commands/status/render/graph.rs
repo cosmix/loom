@@ -11,6 +11,7 @@ use colored::{Color, Colorize};
 use crate::commands::status::data::{StageSummary, StatusData};
 use crate::models::constants::display::{CONTEXT_HEALTHY_PCT, CONTEXT_WARNING_PCT};
 use crate::models::stage::StageStatus;
+use crate::utils::format_elapsed;
 
 /// Available terminal colors for stage differentiation
 const STAGE_COLORS: [Color; 16] = [
@@ -224,17 +225,6 @@ fn format_base_branch_info(
     };
 
     Some(base_info)
-}
-
-/// Format elapsed time in human-readable format
-fn format_elapsed(seconds: i64) -> String {
-    if seconds < 60 {
-        format!("{seconds}s")
-    } else if seconds < 3600 {
-        format!("{}m{}s", seconds / 60, seconds % 60)
-    } else {
-        format!("{}h{}m", seconds / 3600, (seconds % 3600) / 60)
-    }
 }
 
 /// Render execution graph with tree display
@@ -464,13 +454,6 @@ mod tests {
         let output_str = String::from_utf8(output).unwrap();
         assert!(output_str.contains("45%"));
         assert!(output_str.contains("2m0s"));
-    }
-
-    #[test]
-    fn test_format_elapsed() {
-        assert_eq!(format_elapsed(30), "30s");
-        assert_eq!(format_elapsed(90), "1m30s");
-        assert_eq!(format_elapsed(3661), "1h1m");
     }
 
     #[test]

@@ -2,11 +2,9 @@
 //!
 //! This module provides common process management functions used across the codebase.
 
-use std::process::Command;
-
 /// Check if a process with the given PID is alive
 ///
-/// Uses `kill -0` to check if the process exists and can receive signals.
+/// Uses libc::kill with signal 0 to check if the process exists.
 /// This doesn't actually send a signal to the process, it only checks if
 /// it exists and is owned by the current user (or we have permission to signal it).
 ///
@@ -28,12 +26,22 @@ use std::process::Command;
 /// assert!(!is_process_alive(999999999));
 /// ```
 pub fn is_process_alive(pid: u32) -> bool {
-    Command::new("kill")
-        .arg("-0")
-        .arg(pid.to_string())
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
+    // Use libc::kill directly for efficiency (avoids spawning a subprocess)
+    // Signal 0 (null signal) is used to check process existence without sending a real signal
+    //
+    // Safety: kill with signal 0 is safe - it doesn't terminate any process,
+    // only checks if the PID exists and we have permission to signal it
+    match i32::try_from(pid) {
+        Ok(pid_i32) => {
+            // SAFETY: kill(pid, 0) only checks process existence, doesn't send a real signal
+            let result = unsafe { libc::kill(pid_i32, 0) };
+            result == 0
+        }
+        Err(_) => {
+            // PID exceeds i32::MAX, treat as non-existent
+            false
+        }
+    }
 }
 
 #[cfg(test)]
