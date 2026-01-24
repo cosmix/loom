@@ -9,6 +9,8 @@
 use anyhow::{bail, Result};
 use std::path::{Path, PathBuf};
 
+use crate::git::branch::stage_id_from_branch;
+
 /// Find the .work directory by walking up from current directory.
 ///
 /// Searches the current directory and all parent directories until it finds
@@ -28,53 +30,6 @@ pub fn find_work_dir() -> Result<PathBuf> {
             None => bail!("Could not find .work directory. Are you in a loom workspace?"),
         }
     }
-}
-
-/// Detect session ID by matching stages to active sessions.
-///
-/// This strategy:
-/// 1. Checks LOOM_SESSION_ID environment variable
-/// 2. Extracts stage ID from current worktree path
-/// 3. Searches for active session matching that stage
-///
-/// Use this when you need to find the session running in a specific worktree.
-pub fn detect_session_from_sessions(work_dir: &Path) -> Result<String> {
-    // First, try to get from environment (set by hooks)
-    if let Ok(session_id) = std::env::var("LOOM_SESSION_ID") {
-        return Ok(session_id);
-    }
-
-    // Try to detect from current worktree by looking at active sessions
-    let sessions_dir = work_dir.join("sessions");
-    if sessions_dir.exists() {
-        // Get current working directory to determine which worktree we're in
-        let cwd = std::env::current_dir()?;
-
-        // Check if we're in a worktree by looking for .worktrees in the path
-        if let Some(stage_id) = extract_stage_from_worktree_path(&cwd) {
-            // Look for a session file that matches this stage
-            for entry in std::fs::read_dir(&sessions_dir)? {
-                let entry = entry?;
-                let path = entry.path();
-                if path.extension().is_some_and(|e| e == "md") {
-                    let content = std::fs::read_to_string(&path)?;
-                    // Check if session is for this stage and is active
-                    if content.contains(&format!("stage: {stage_id}"))
-                        && content.contains("status: Active")
-                    {
-                        if let Some(session_id) = path.file_stem().and_then(|s| s.to_str()) {
-                            return Ok(session_id.to_string());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    bail!(
-        "Could not detect session ID. Please provide --session <session-id> explicitly, \
-         or set LOOM_SESSION_ID environment variable."
-    )
 }
 
 /// Detect session ID by finding most recent signal file.
@@ -149,7 +104,7 @@ pub fn extract_stage_from_worktree_path(path: &Path) -> Option<String> {
 /// `loom/<stage-id>` and extracts the stage ID. Filters out special branches
 /// like `loom/_base`.
 pub fn detect_stage_id() -> Option<String> {
-    // Check if we're in a worktree by looking at the branch name
+    // Get current branch name
     let output = std::process::Command::new("git")
         .args(["rev-parse", "--abbrev-ref", "HEAD"])
         .output()
@@ -161,21 +116,38 @@ pub fn detect_stage_id() -> Option<String> {
 
     let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
-    // Worktree branches are named loom/<stage-id>
-    if let Some(stage_id) = branch.strip_prefix("loom/") {
-        // Filter out special branches like _base
-        if !stage_id.starts_with('_') {
-            return Some(stage_id.to_string());
-        }
+    // Extract stage ID from branch name using centralized logic
+    let stage_id = stage_id_from_branch(&branch)?;
+
+    // Filter out special branches like _base
+    if stage_id.starts_with('_') {
+        return None;
     }
 
-    None
+    Some(stage_id)
+}
+
+/// Truncate a string safely by character count, not byte count.
+///
+/// This ensures we don't break UTF-8 encoding by cutting mid-character.
+/// Adds "..." ellipsis (3 characters) when truncating.
+///
+/// Use this for simple single-line string truncation.
+/// For multi-line strings that need collapsing, use `truncate_for_display()`.
+pub fn truncate(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        s.to_string()
+    } else {
+        let truncated: String = s.chars().take(max_chars.saturating_sub(3)).collect();
+        format!("{truncated}...")
+    }
 }
 
 /// Truncate a string for display, using UTF-8 safe character-based truncation.
 ///
 /// This converts multi-line strings to single lines and truncates by character
 /// count (not byte count) to avoid breaking UTF-8 encoding.
+/// Uses "…" ellipsis (1 character) when truncating.
 pub fn truncate_for_display(s: &str, max_len: usize) -> String {
     // First, collapse multi-line strings to single line
     let single_line: String = s.lines().collect::<Vec<_>>().join(" ");
@@ -241,6 +213,30 @@ mod tests {
         assert_eq!(parse_branch("loom/_base"), None);
         assert_eq!(parse_branch("main"), None);
         assert_eq!(parse_branch("feature/test"), None);
+    }
+
+    #[test]
+    fn test_truncate() {
+        assert_eq!(truncate("hello", 10), "hello");
+        assert_eq!(truncate("hello world", 8), "hello...");
+        assert_eq!(truncate("12345", 5), "12345");
+        assert_eq!(truncate("12345", 6), "12345");
+    }
+
+    #[test]
+    fn test_truncate_utf8() {
+        // Test with emoji (multi-byte UTF-8 characters)
+        let emoji_str = "Hello 🦀 world";
+        let result = truncate(emoji_str, 10);
+        assert_eq!(result, "Hello 🦀...");
+        assert!(result.is_char_boundary(result.len()));
+    }
+
+    #[test]
+    fn test_truncate_very_short() {
+        // When max_chars is less than 3, we should still get "..."
+        assert_eq!(truncate("hello", 3), "...");
+        assert_eq!(truncate("hello", 2), "...");
     }
 
     #[test]

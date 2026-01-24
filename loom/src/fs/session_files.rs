@@ -1,11 +1,14 @@
 //! Session file lookup utilities with prefix matching support
 //!
 //! Session files are stored in `.work/sessions/` with the naming pattern `{session_id}.md`.
-//! This module provides utilities for finding session files by exact ID or prefix match.
+//! This module provides utilities for finding session files by exact ID or prefix match,
+//! as well as querying sessions by stage assignment.
 
 use anyhow::{bail, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
+
+use crate::parser::markdown::MarkdownDocument;
 
 /// Find a session file by ID or prefix.
 ///
@@ -85,6 +88,120 @@ pub fn find_session_file(work_dir: &Path, id: &str) -> Result<Option<PathBuf>> {
 /// The session ID (filename without extension)
 pub fn extract_session_id(path: &Path) -> Option<String> {
     path.file_stem().and_then(|s| s.to_str()).map(String::from)
+}
+
+/// Find a single session ID for a stage.
+///
+/// Scans `.work/sessions/` for a session assigned to the given stage.
+/// Returns the first matching session ID found.
+///
+/// # Arguments
+/// * `stage_id` - The stage ID to search for
+/// * `work_dir` - Path to the `.work/` directory
+///
+/// # Returns
+/// * `Some(session_id)` - If a session for this stage is found
+/// * `None` - If no session is found or sessions directory doesn't exist
+///
+/// # Example
+/// ```no_run
+/// use std::path::Path;
+/// use loom::fs::session_files::find_session_for_stage;
+///
+/// let work_dir = Path::new(".work");
+/// if let Some(session_id) = find_session_for_stage("my-stage", work_dir) {
+///     println!("Found session: {}", session_id);
+/// }
+/// ```
+pub fn find_session_for_stage(stage_id: &str, work_dir: &Path) -> Option<String> {
+    let sessions_dir = work_dir.join("sessions");
+    if !sessions_dir.exists() {
+        return None;
+    }
+
+    let entries = fs::read_dir(&sessions_dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+
+        // Try to read and parse session file using canonical parser
+        if let Ok(content) = fs::read_to_string(&path) {
+            if let Ok(doc) = MarkdownDocument::parse(&content) {
+                if doc.get_frontmatter("stage_id").map(|s| s.as_str()) == Some(stage_id) {
+                    if let Some(session_id) = doc.get_frontmatter("id") {
+                        return Some(session_id.clone());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Find all session IDs associated with a stage.
+///
+/// Scans `.work/sessions/` and returns IDs of all sessions assigned to the given stage.
+/// Useful for cleanup operations where multiple sessions may exist for a stage.
+///
+/// # Arguments
+/// * `stage_id` - The stage ID to search for
+/// * `work_dir` - Path to the `.work/` directory
+///
+/// # Returns
+/// * `Ok(Vec<String>)` - List of session IDs (may be empty)
+/// * `Err` - Filesystem error reading sessions directory
+///
+/// # Example
+/// ```no_run
+/// use std::path::Path;
+/// use loom::fs::session_files::find_sessions_for_stage;
+///
+/// let work_dir = Path::new(".work");
+/// let sessions = find_sessions_for_stage("my-stage", work_dir).unwrap();
+/// println!("Found {} session(s)", sessions.len());
+/// ```
+pub fn find_sessions_for_stage(stage_id: &str, work_dir: &Path) -> Result<Vec<String>> {
+    let sessions_dir = work_dir.join("sessions");
+    let mut session_ids = Vec::new();
+
+    if !sessions_dir.exists() {
+        return Ok(session_ids);
+    }
+
+    let entries = fs::read_dir(&sessions_dir).with_context(|| {
+        format!(
+            "Failed to read sessions directory: {}",
+            sessions_dir.display()
+        )
+    })?;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() || path.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+
+        let content = match fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        let doc = match MarkdownDocument::parse(&content) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+
+        let session_stage_id = doc.get_frontmatter("stage_id");
+        if session_stage_id.map(|s| s.as_str()) == Some(stage_id) {
+            if let Some(session_id) = doc.get_frontmatter("id").cloned() {
+                session_ids.push(session_id);
+            }
+        }
+    }
+
+    Ok(session_ids)
 }
 
 #[cfg(test)]

@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::fs::permissions::sync_worktree_permissions;
+use crate::fs::session_files::find_session_for_stage;
 use crate::fs::task_state::read_task_state_if_exists;
 use crate::git::worktree::{find_repo_root_from_cwd, find_worktree_root_from_cwd};
 use crate::models::stage::{StageStatus, StageType};
@@ -15,7 +16,7 @@ use crate::verify::transitions::{load_stage, save_stage, trigger_dependents};
 use super::acceptance_runner::resolve_acceptance_dir;
 use super::knowledge_complete::complete_knowledge_stage;
 use super::progressive_complete::complete_with_merge;
-use super::session::{cleanup_session_resources, find_session_for_stage};
+use super::session::cleanup_session_resources;
 
 /// Mark a stage as complete, optionally running acceptance criteria.
 /// If acceptance criteria pass, auto-verifies the stage and triggers dependents.

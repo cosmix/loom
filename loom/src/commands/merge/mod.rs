@@ -36,9 +36,10 @@ mod validation;
 pub use execute::{execute, mark_stage_merged, worktree_path};
 
 // Re-export validation functions that may be useful externally
-pub use validation::{
-    check_active_session, extract_frontmatter_field, find_session_for_stage, validate_stage_status,
-};
+pub use validation::{check_active_session, extract_frontmatter_field, validate_stage_status};
+
+// Re-export find_session_for_stage from the canonical location in fs module
+pub use crate::fs::session_files::find_session_for_stage;
 
 // Re-export helpers that may be useful externally
 pub use helpers::{

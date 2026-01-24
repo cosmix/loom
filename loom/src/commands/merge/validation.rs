@@ -9,13 +9,19 @@ use std::path::Path;
 use crate::fs::stage_files::find_stage_file;
 use crate::models::stage::StageStatus;
 use crate::orchestrator::terminal::native::check_pid_alive;
+use crate::parser::frontmatter::extract_frontmatter_field as extract_field_canonical;
 use crate::verify::transitions::load_stage;
 
-/// Find the session for a stage by checking session files
+/// Find the session for a stage by checking session files (test-only helper)
 ///
 /// Looks for a session file in `.work/sessions/` that is assigned to the given stage
 /// and returns its session ID if found.
-pub fn find_session_for_stage(stage_id: &str, work_dir: &Path) -> Result<Option<String>> {
+///
+/// NOTE: This is only used in tests. For production code, use
+/// `crate::commands::stage::session::find_session_for_stage` or
+/// `crate::fs::worktree_files::find_sessions_for_stage`.
+#[cfg(test)]
+fn find_session_for_stage(stage_id: &str, work_dir: &Path) -> Result<Option<String>> {
     let sessions_dir = work_dir.join("sessions");
     if !sessions_dir.exists() {
         return Ok(None);
@@ -53,40 +59,10 @@ pub fn find_session_for_stage(stage_id: &str, work_dir: &Path) -> Result<Option<
 }
 
 /// Extract a field value from YAML frontmatter
+///
+/// Wrapper around the canonical frontmatter parser that swallows errors for backward compatibility.
 pub fn extract_frontmatter_field(content: &str, field: &str) -> Option<String> {
-    let lines: Vec<&str> = content.lines().collect();
-
-    // Check for frontmatter delimiter
-    if lines.is_empty() || !lines[0].trim().starts_with("---") {
-        return None;
-    }
-
-    // Find end of frontmatter
-    let mut end_idx = None;
-    for (idx, line) in lines.iter().enumerate().skip(1) {
-        if line.trim().starts_with("---") {
-            end_idx = Some(idx);
-            break;
-        }
-    }
-
-    let end_idx = end_idx?;
-
-    // Search for field in frontmatter
-    for line in &lines[1..end_idx] {
-        if let Some((key, value)) = line.split_once(':') {
-            if key.trim() == field {
-                let value = value.trim();
-                // Handle null values
-                if value == "null" || value == "~" || value.is_empty() {
-                    return None;
-                }
-                return Some(value.to_string());
-            }
-        }
-    }
-
-    None
+    extract_field_canonical(content, field).ok().flatten()
 }
 
 /// Find active session for a stage, checking native backend

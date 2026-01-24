@@ -25,4 +25,7 @@ pub use cleanup::cleanup_stage_files;
 pub use config::{StageFileCleanupConfig, StageFileCleanupResult};
 pub use sessions::{find_sessions_for_stage, remove_session_file};
 pub use signals::remove_signal_file;
-pub use stages::{find_stage_file_by_id, stage_has_files};
+pub use stages::stage_has_files;
+
+// Re-export canonical stage file finder from fs/stage_files
+pub use crate::fs::stage_files::find_stage_file;

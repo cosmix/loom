@@ -1,10 +1,9 @@
 //! Tests for session operations
 
 use super::super::complete::cleanup_terminal_for_stage;
-use super::super::session::{
-    cleanup_session_resources, find_session_for_stage, session_from_markdown,
-};
+use super::super::session::{cleanup_session_resources, session_from_markdown};
 use super::setup_work_dir;
+use crate::fs::session_files::find_session_for_stage;
 use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::orchestrator::continuation::session_to_markdown;
 use chrono::Utc;

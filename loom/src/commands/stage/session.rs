@@ -1,4 +1,7 @@
-//! Session finding and cleanup utilities
+//! Session cleanup utilities
+//!
+//! Note: Session finding functions (find_session_for_stage, find_sessions_for_stage)
+//! are now in `crate::fs::session_files`. Import from there instead.
 
 use anyhow::{bail, Context, Result};
 use std::fs;
@@ -6,32 +9,6 @@ use std::path::Path;
 
 use crate::models::session::{Session, SessionStatus};
 use crate::orchestrator::continuation::session_to_markdown;
-
-/// Find session ID for a stage by scanning .work/sessions/
-pub fn find_session_for_stage(stage_id: &str, work_dir: &Path) -> Option<String> {
-    let sessions_dir = work_dir.join("sessions");
-    if !sessions_dir.exists() {
-        return None;
-    }
-
-    let entries = fs::read_dir(&sessions_dir).ok()?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("md") {
-            continue;
-        }
-
-        // Try to read and parse session file
-        if let Ok(content) = fs::read_to_string(&path) {
-            if let Ok(session) = session_from_markdown(&content) {
-                if session.stage_id.as_deref() == Some(stage_id) {
-                    return Some(session.id);
-                }
-            }
-        }
-    }
-    None
-}
 
 /// Clean up resources associated with a completed stage
 ///

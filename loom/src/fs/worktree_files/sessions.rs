@@ -6,6 +6,9 @@ use std::path::Path;
 
 use crate::parser::markdown::MarkdownDocument;
 
+// Re-export canonical implementation from fs::session_files
+pub use crate::fs::session_files::find_sessions_for_stage;
+
 /// Internal result for session cleanup
 pub(crate) struct SessionCleanupResult {
     pub sessions_removed: usize,
@@ -92,51 +95,6 @@ pub(crate) fn cleanup_sessions_for_stage(
     }
 
     Ok(result)
-}
-
-/// Find all session IDs associated with a stage
-///
-/// This is useful for cleaning up sessions without needing to parse each file
-pub fn find_sessions_for_stage(stage_id: &str, work_dir: &Path) -> Result<Vec<String>> {
-    let sessions_dir = work_dir.join("sessions");
-    let mut session_ids = Vec::new();
-
-    if !sessions_dir.exists() {
-        return Ok(session_ids);
-    }
-
-    let entries = fs::read_dir(&sessions_dir).with_context(|| {
-        format!(
-            "Failed to read sessions directory: {}",
-            sessions_dir.display()
-        )
-    })?;
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_file() || path.extension().and_then(|e| e.to_str()) != Some("md") {
-            continue;
-        }
-
-        let content = match fs::read_to_string(&path) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-
-        let doc = match MarkdownDocument::parse(&content) {
-            Ok(d) => d,
-            Err(_) => continue,
-        };
-
-        let session_stage_id = doc.get_frontmatter("stage_id");
-        if session_stage_id.map(|s| s.as_str()) == Some(stage_id) {
-            if let Some(session_id) = doc.get_frontmatter("id").cloned() {
-                session_ids.push(session_id);
-            }
-        }
-    }
-
-    Ok(session_ids)
 }
 
 /// Remove a single session file by session ID
