@@ -74,14 +74,3 @@ pub fn find_runner_file(work_dir: &WorkDir, id: &str) -> Result<PathBuf> {
 
     Ok(runner_path)
 }
-
-/// Truncate a string to a maximum length with ellipsis
-/// Uses character count instead of byte count to ensure UTF-8 safety
-pub fn truncate(s: &str, max_chars: usize) -> String {
-    if s.chars().count() <= max_chars {
-        s.to_string()
-    } else {
-        let truncated: String = s.chars().take(max_chars.saturating_sub(3)).collect();
-        format!("{truncated}...")
-    }
-}

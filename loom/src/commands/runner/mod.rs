@@ -5,12 +5,13 @@ use anyhow::{bail, Context, Result};
 use colored::Colorize;
 use std::fs;
 
+use crate::commands::common::truncate;
 use crate::fs::work_dir::WorkDir;
 use crate::models::runner::Runner;
 use crate::models::runner::RunnerStatus;
 use crate::validation::{validate_id, validate_name};
 
-use helpers::{find_runner_file, generate_runner_id, load_runner, truncate};
+use helpers::{find_runner_file, generate_runner_id, load_runner};
 use serialization::runner_to_markdown;
 
 /// Create a new runner
