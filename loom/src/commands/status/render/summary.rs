@@ -85,7 +85,10 @@ pub fn print_completion_summary(summary: &CompletionSummary) {
             .duration_secs
             .map(format_elapsed)
             .unwrap_or_else(|| "-".to_string());
-        println!("  {} {:<30} {:<12} {:>8}", icon, stage.id, status_text, duration);
+        println!(
+            "  {} {:<30} {:<12} {:>8}",
+            icon, stage.id, status_text, duration
+        );
     }
     println!();
 
