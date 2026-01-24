@@ -5,6 +5,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::models::session::{Session, SessionStatus};
+use crate::orchestrator::continuation::session_to_markdown;
 
 /// Find session ID for a stage by scanning .work/sessions/
 pub fn find_session_for_stage(stage_id: &str, work_dir: &Path) -> Option<String> {
@@ -98,17 +99,4 @@ pub fn session_from_markdown(content: &str) -> Result<Session> {
         .ok_or_else(|| anyhow::anyhow!("Invalid session file format: missing frontmatter"))?;
 
     serde_yaml::from_str(yaml_content).context("Failed to parse session YAML")
-}
-
-/// Convert session to markdown format
-pub fn session_to_markdown(session: &Session) -> String {
-    let yaml = serde_yaml::to_string(session).unwrap_or_else(|_| String::from("{}"));
-
-    format!(
-        "---\n{yaml}---\n\n# Session: {}\n\n## Details\n\n- **Status**: {:?}\n- **Stage**: {}\n- **PID**: {}\n",
-        session.id,
-        session.status,
-        session.stage_id.as_ref().unwrap_or(&"None".to_string()),
-        session.pid.map(|p| p.to_string()).as_ref().unwrap_or(&"None".to_string()),
-    )
 }

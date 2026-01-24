@@ -8,7 +8,7 @@ use crate::fs::stage_files::{
 };
 use crate::models::session::Session;
 use crate::models::stage::Stage;
-use crate::parser::frontmatter::extract_yaml_frontmatter;
+use crate::parser::frontmatter::parse_from_markdown;
 
 use super::Orchestrator;
 
@@ -49,11 +49,7 @@ pub(super) trait Persistence {
         let content = std::fs::read_to_string(&stage_path)
             .with_context(|| format!("Failed to read stage file: {}", stage_path.display()))?;
 
-        let frontmatter = extract_yaml_frontmatter(&content)?;
-        let stage: Stage = serde_yaml::from_value(frontmatter)
-            .context("Failed to deserialize Stage from frontmatter")?;
-
-        Ok(stage)
+        parse_from_markdown(&content, "Stage")
     }
 
     /// Save stage state to .work/stages/

@@ -2,7 +2,7 @@
 //!
 //! Usage: loom checkpoint <task-id> --status <status> [--force] [--output key=value]
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -203,9 +203,8 @@ fn get_stage_id_from_session(work_dir: &Path, session_id: &str) -> Result<String
 
     // Parse stage_id from session file YAML frontmatter
     let content = std::fs::read_to_string(&session_path)?;
-    let frontmatter = crate::parser::frontmatter::extract_yaml_frontmatter(&content)?;
     let session: crate::models::session::Session =
-        serde_yaml::from_value(frontmatter).context("Failed to parse session file")?;
+        crate::parser::frontmatter::parse_from_markdown(&content, "Session")?;
 
     session
         .stage_id
@@ -222,9 +221,8 @@ fn get_worktree_path(work_dir: &Path, stage_id: &str) -> Result<PathBuf> {
     }
 
     let content = std::fs::read_to_string(&stage_path)?;
-    let frontmatter = crate::parser::frontmatter::extract_yaml_frontmatter(&content)?;
     let stage: crate::models::stage::Stage =
-        serde_yaml::from_value(frontmatter).context("Failed to parse stage file")?;
+        crate::parser::frontmatter::parse_from_markdown(&content, "Stage")?;
 
     if let Some(worktree) = stage.worktree {
         // Worktree path is relative to project root (parent of .work)

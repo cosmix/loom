@@ -200,13 +200,11 @@ fn get_stage_id_from_session(work_dir: &Path, session_id: &str) -> Option<String
     let session_path = work_dir.join("sessions").join(format!("{session_id}.md"));
     if session_path.exists() {
         if let Ok(content) = std::fs::read_to_string(&session_path) {
-            if let Ok(frontmatter) = crate::parser::frontmatter::extract_yaml_frontmatter(&content)
+            if let Ok(session) = crate::parser::frontmatter::parse_from_markdown::<
+                crate::models::session::Session,
+            >(&content, "Session")
             {
-                if let Ok(session) =
-                    serde_yaml::from_value::<crate::models::session::Session>(frontmatter)
-                {
-                    return session.stage_id;
-                }
+                return session.stage_id;
             }
         }
     }
@@ -235,8 +233,8 @@ fn get_worktree_path(work_dir: &Path, stage_id: &str) -> Option<std::path::PathB
     }
 
     let content = std::fs::read_to_string(&stage_path).ok()?;
-    let frontmatter = crate::parser::frontmatter::extract_yaml_frontmatter(&content).ok()?;
-    let stage: crate::models::stage::Stage = serde_yaml::from_value(frontmatter).ok()?;
+    let stage: crate::models::stage::Stage =
+        crate::parser::frontmatter::parse_from_markdown(&content, "Stage").ok()?;
 
     if let Some(worktree) = stage.worktree {
         let project_root = work_dir.parent()?;

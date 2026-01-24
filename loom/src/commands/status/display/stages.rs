@@ -1,11 +1,11 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use colored::Colorize;
 use std::fs;
 
 use crate::fs::work_dir::WorkDir;
 use crate::models::failure::FailureType;
 use crate::models::stage::{Stage, StageStatus};
-use crate::parser::frontmatter::extract_yaml_frontmatter;
+use crate::parser::frontmatter::parse_from_markdown;
 
 pub fn display_stages(work_dir: &WorkDir) -> Result<()> {
     let stages_dir = work_dir.stages_dir();
@@ -126,11 +126,5 @@ pub fn display_stages(work_dir: &WorkDir) -> Result<()> {
 }
 
 pub fn parse_stage_from_markdown(content: &str) -> Result<Stage> {
-    let frontmatter = extract_yaml_frontmatter(content)
-        .context("Failed to extract YAML frontmatter from stage file")?;
-
-    let stage: Stage = serde_yaml::from_value(frontmatter)
-        .context("Failed to deserialize Stage from YAML frontmatter")?;
-
-    Ok(stage)
+    parse_from_markdown(content, "Stage")
 }

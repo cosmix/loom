@@ -1,4 +1,25 @@
 use anyhow::{Context, Result};
+use serde::de::DeserializeOwned;
+
+/// Parse a type from markdown content with YAML frontmatter
+///
+/// Generic function that extracts YAML frontmatter and deserializes it into the target type.
+///
+/// # Example
+///
+/// ```text
+/// let stage: Stage = parse_from_markdown(&content, "Stage")?;
+/// let session: Session = parse_from_markdown(&content, "Session")?;
+/// ```
+///
+/// # Errors
+///
+/// Returns an error if frontmatter extraction fails or YAML deserialization fails.
+pub fn parse_from_markdown<T: DeserializeOwned>(content: &str, type_name: &str) -> Result<T> {
+    let frontmatter = extract_yaml_frontmatter(content)?;
+    serde_yaml::from_value(frontmatter)
+        .with_context(|| format!("Failed to parse {type_name} from frontmatter"))
+}
 
 /// Extract YAML frontmatter from markdown content
 ///

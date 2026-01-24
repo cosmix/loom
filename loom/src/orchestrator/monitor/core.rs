@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 
 use crate::models::session::Session;
 use crate::models::stage::Stage;
-use crate::parser::frontmatter::extract_yaml_frontmatter;
+use crate::parser::frontmatter::parse_from_markdown;
 
 use super::checkpoints::CheckpointWatcher;
 use super::config::MonitorConfig;
@@ -168,20 +168,10 @@ fn load_session_from_file(path: &std::path::Path) -> Result<Session> {
 
 /// Parse a Stage from markdown with YAML frontmatter
 pub fn parse_stage_from_markdown(content: &str) -> Result<Stage> {
-    let frontmatter = extract_yaml_frontmatter(content)?;
-
-    let stage: Stage = serde_yaml::from_value(frontmatter)
-        .context("Failed to deserialize Stage from frontmatter")?;
-
-    Ok(stage)
+    parse_from_markdown(content, "Stage")
 }
 
 /// Parse a Session from markdown with YAML frontmatter
 pub fn parse_session_from_markdown(content: &str) -> Result<Session> {
-    let frontmatter = extract_yaml_frontmatter(content)?;
-
-    let session: Session = serde_yaml::from_value(frontmatter)
-        .context("Failed to deserialize Session from frontmatter")?;
-
-    Ok(session)
+    parse_from_markdown(content, "Session")
 }

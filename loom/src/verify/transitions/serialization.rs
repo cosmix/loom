@@ -7,7 +7,7 @@
 use anyhow::{Context, Result};
 
 use crate::models::stage::Stage;
-use crate::parser::frontmatter::extract_yaml_frontmatter;
+use crate::parser::frontmatter::parse_from_markdown;
 
 /// Parse a Stage from markdown with YAML frontmatter
 ///
@@ -22,12 +22,7 @@ use crate::parser::frontmatter::extract_yaml_frontmatter;
 /// # Stage body content
 /// ```
 pub fn parse_stage_from_markdown(content: &str) -> Result<Stage> {
-    let frontmatter = extract_yaml_frontmatter(content)?;
-
-    let stage: Stage = serde_yaml::from_value(frontmatter)
-        .context("Failed to deserialize Stage from YAML frontmatter")?;
-
-    Ok(stage)
+    parse_from_markdown(content, "Stage")
 }
 
 /// Serialize a Stage to markdown with YAML frontmatter

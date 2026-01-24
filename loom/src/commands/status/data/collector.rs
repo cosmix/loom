@@ -7,6 +7,7 @@ use crate::fs::work_dir::WorkDir;
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::get_merge_point;
+use crate::parser::frontmatter::parse_from_markdown;
 use crate::verify::transitions::list_all_stages;
 
 use super::{MergeSummary, ProgressSummary, SessionSummary, StageSummary, StatusData};
@@ -62,30 +63,7 @@ fn load_session_from_file(path: &std::path::Path) -> Result<Session> {
 
 /// Parse a Session from markdown with YAML frontmatter
 fn parse_session_from_markdown(content: &str) -> Result<Session> {
-    let frontmatter = extract_yaml_frontmatter(content)?;
-
-    let session: Session = serde_yaml::from_value(frontmatter)
-        .context("Failed to deserialize Session from frontmatter")?;
-
-    Ok(session)
-}
-
-/// Extract YAML frontmatter from markdown content
-fn extract_yaml_frontmatter(content: &str) -> Result<serde_yaml::Value> {
-    let lines: Vec<&str> = content.lines().collect();
-
-    if lines.is_empty() || lines[0] != "---" {
-        anyhow::bail!("Missing YAML frontmatter delimiter");
-    }
-
-    let end_index = lines[1..]
-        .iter()
-        .position(|&line| line == "---")
-        .ok_or_else(|| anyhow::anyhow!("Missing closing YAML frontmatter delimiter"))?
-        + 1;
-
-    let yaml_content = lines[1..end_index].join("\n");
-    serde_yaml::from_str(&yaml_content).context("Failed to parse YAML frontmatter")
+    parse_from_markdown(content, "Session")
 }
 
 /// Build a StageSummary from a Stage and optional associated Session
@@ -376,31 +354,34 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_yaml_frontmatter() {
+    fn test_parse_session_from_markdown() {
         let content = r#"---
-id: test
-status: executing
+id: test-session
+status: running
+context_tokens: 1000
+context_limit: 200000
+created_at: "2024-01-01T00:00:00Z"
+last_active: "2024-01-01T00:00:00Z"
 ---
 
-# Stage content"#;
+# Session content"#;
 
-        let result = extract_yaml_frontmatter(content);
+        let result = parse_session_from_markdown(content);
         assert!(result.is_ok());
-        let yaml = result.unwrap();
-        assert_eq!(yaml["id"], "test");
-        assert_eq!(yaml["status"], "executing");
+        let session = result.unwrap();
+        assert_eq!(session.id, "test-session");
     }
 
     #[test]
-    fn test_extract_yaml_frontmatter_missing_delimiter() {
+    fn test_parse_session_from_markdown_missing_delimiter() {
         let content = r#"id: test
 status: executing"#;
 
-        let result = extract_yaml_frontmatter(content);
+        let result = parse_session_from_markdown(content);
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
             .to_string()
-            .contains("Missing YAML frontmatter delimiter"));
+            .contains("No frontmatter delimiter"));
     }
 }

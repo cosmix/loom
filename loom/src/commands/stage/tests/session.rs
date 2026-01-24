@@ -2,10 +2,11 @@
 
 use super::super::complete::cleanup_terminal_for_stage;
 use super::super::session::{
-    cleanup_session_resources, find_session_for_stage, session_from_markdown, session_to_markdown,
+    cleanup_session_resources, find_session_for_stage, session_from_markdown,
 };
 use super::setup_work_dir;
 use crate::models::session::{Session, SessionStatus, SessionType};
+use crate::orchestrator::continuation::session_to_markdown;
 use chrono::Utc;
 use std::fs;
 use std::path::Path;
@@ -71,7 +72,7 @@ fn test_session_to_markdown() {
     assert!(content.contains("# Session: session-1"));
     assert!(content.contains("**Status**: Running"));
     assert!(content.contains("**Stage**: stage-1"));
-    assert!(content.contains("**PID**: 12345"));
+    assert!(content.contains("**Context**:")); // Canonical version shows context %
 }
 
 #[test]

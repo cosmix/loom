@@ -6,7 +6,7 @@ use std::io::{self, Write};
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::retry::{calculate_backoff, is_backoff_elapsed, should_auto_retry};
-use crate::parser::frontmatter::extract_yaml_frontmatter;
+use crate::parser::frontmatter::parse_from_markdown;
 use crate::plan::graph::NodeStatus;
 
 use super::clear_status_line;
@@ -235,11 +235,8 @@ impl Recovery for Orchestrator {
 
             // Load session from file
             let content = std::fs::read_to_string(&path)?;
-            let session: Session = match extract_yaml_frontmatter(&content) {
-                Ok(yaml) => match serde_yaml::from_value(yaml) {
-                    Ok(s) => s,
-                    Err(_) => continue,
-                },
+            let session: Session = match parse_from_markdown(&content, "Session") {
+                Ok(s) => s,
                 Err(_) => continue,
             };
 

@@ -1,43 +1,42 @@
 //! YAML frontmatter parsing for stage files.
+//!
+//! This module provides stage-specific parsing that delegates to the canonical
+//! frontmatter parser in `crate::parser::frontmatter`.
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::Result;
 
 use crate::models::stage::Stage;
+use crate::parser::frontmatter::parse_from_markdown;
 
 /// Parse a Stage from markdown with YAML frontmatter
 pub fn parse_stage_from_markdown(content: &str) -> Result<Stage> {
-    let frontmatter = extract_yaml_frontmatter(content)?;
-
-    let stage: Stage = serde_yaml::from_value(frontmatter)
-        .context("Failed to deserialize stage from YAML frontmatter")?;
-
-    Ok(stage)
-}
-
-/// Extract YAML frontmatter from markdown content
-pub fn extract_yaml_frontmatter(content: &str) -> Result<serde_yaml::Value> {
-    let lines: Vec<&str> = content.lines().collect();
-
-    if lines.is_empty() || !lines[0].starts_with("---") {
-        bail!("Missing YAML frontmatter delimiter");
-    }
-
-    let end_index = lines
-        .iter()
-        .skip(1)
-        .position(|line| line.starts_with("---"))
-        .ok_or_else(|| anyhow!("Missing closing YAML frontmatter delimiter"))?
-        + 1;
-
-    let yaml_lines = &lines[1..end_index];
-    let yaml_content = yaml_lines.join("\n");
-
-    serde_yaml::from_str(&yaml_content).context("Failed to parse YAML frontmatter")
+    parse_from_markdown(content, "Stage")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parser::frontmatter::extract_yaml_frontmatter;
+
+    #[test]
+    fn test_parse_stage_from_markdown() {
+        use crate::models::stage::{Stage, StageStatus};
+        use crate::verify::transitions::serialize_stage_to_markdown;
+
+        // Create a Stage and serialize it to ensure valid YAML
+        let mut stage = Stage::new(
+            "Test Name".to_string(),
+            Some("Test description".to_string()),
+        );
+        stage.id = "test-id".to_string();
+        stage.status = StageStatus::Queued;
+        let content = serialize_stage_to_markdown(&stage).expect("Should serialize");
+
+        // Parse it back
+        let parsed = parse_stage_from_markdown(&content).expect("Should parse stage");
+        assert_eq!(parsed.id, "test-id");
+        assert_eq!(parsed.name, "Test Name");
+    }
 
     #[test]
     fn test_extract_yaml_frontmatter() {
@@ -62,6 +61,6 @@ name: Test Name
         assert!(result
             .unwrap_err()
             .to_string()
-            .contains("Missing YAML frontmatter"));
+            .contains("No frontmatter delimiter"));
     }
 }

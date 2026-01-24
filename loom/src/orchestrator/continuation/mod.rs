@@ -20,7 +20,7 @@ pub use context::{
     ContinuationContext,
 };
 pub use session_io::{save_session, session_to_markdown};
-pub use yaml_parse::{extract_yaml_frontmatter, parse_stage_from_markdown};
+pub use yaml_parse::parse_stage_from_markdown;
 
 use anyhow::{bail, Context, Result};
 use std::path::Path;
