@@ -106,193 +106,189 @@ Commands are dispatched through a `Commands` enum match statement in `main()`:
 - `.work/signals/{session-id}.md` - Agent instruction signals
 - `doc/plans/PLAN-*.md` - Plan definition files
 
-## TUI Module Detail (commands/status/ui/)
+## TUI Module
 
-Entry point: `run_tui(work_path: &Path)` in tui.rs:638
+- `commands/status/ui/tui.rs:638` - run_tui() entry point
+- `commands/status/ui/graph_widget.rs` - DAG visualization widget
 
-| File            | Purpose                                                     |
-| --------------- | ----------------------------------------------------------- |
-| mod.rs          | Public exports: run_tui, GraphWidget, Theme, StatusColors   |
-| tui.rs          | TuiApp struct, event loop, rendering functions              |
-| theme.rs        | StatusColors constants and Theme style helpers              |
-| widgets.rs      | progress_bar(), context_bar(), status_indicator() functions |
-| graph_widget.rs | GraphWidget implementing ratatui Widget trait for DAG       |
-| layout.rs       | LayoutHelper for responsive terminal layout                 |
+## Hook Configuration
 
-Key data structures:
+- `fs/permissions/settings.rs:22` - ensure_loom_permissions() entry point
+- `fs/permissions/hooks.rs` - Hook installation and configuration
 
-- TuiApp: Terminal backend, running flag, LiveStatus state, spinner, last_error
-- LiveStatus: Vec<StageInfo> for each category, compute_levels(), unified_stages()
-- UnifiedStage: id, status, merged, timestamps, level, dependencies
+## CLAUDE.md Template
 
-## Hook Configuration Detail (fs/permissions/)
+- `CLAUDE.md.template` - Canonical binding rules template for agents
+- `commands/self_update/mod.rs` - Installation and update logic
 
-Entry point: `ensure_loom_permissions(repo_root: &Path)` in settings.rs:22
+## Skill System
 
-| File         | Purpose                                                     |
-| ------------ | ----------------------------------------------------------- |
-| mod.rs       | Public API exports                                          |
-| constants.rs | Embedded hook scripts via include_str!(), permission arrays |
-| hooks.rs     | loom_hooks_config(), install_loom_hooks(), configure_hooks  |
-| settings.rs  | ensure_loom_permissions(), create_worktree_settings()       |
-| trust.rs     | add_worktrees_to_global_trust() for ~/.claude.json          |
-| sync.rs      | sync_worktree_permissions() with file locking               |
+- `skills/<skill-name>/SKILL.md` - Individual skill definitions
+- `commands/self_update/mod.rs:229-235` - Skill download and installation
 
-Hook types:
+## Hook Shell Scripts
 
-- PreToolUse: AskUserQuestion -> ask-user-pre.sh (marks WaitingForInput)
-- PostToolUse: AskUserQuestion -> ask-user-post.sh (resumes stage)
-- Stop: \* -> commit-guard.sh (blocks exit without commit)
+- `hooks/` directory - Hook scripts (commit-guard.sh, learning-validator.sh, etc.)
 
-## Daemon Server Detail (daemon/server/)
+## Hook Registration
 
-Entry point: `DaemonServer::start(&self)` in lifecycle.rs:51
-
-| File            | Purpose                                               |
-| --------------- | ----------------------------------------------------- |
-| mod.rs          | Public export of DaemonServer                         |
-| core.rs         | DaemonServer struct with paths and shared state       |
-| lifecycle.rs    | start(), run_foreground(), run_server(), cleanup()    |
-| client.rs       | handle_client_connection() processes Request enum     |
-| broadcast.rs    | spawn_log_tailer(), spawn_status_broadcaster()        |
-| status.rs       | collect_status() reads stage files, detects worktrees |
-| orchestrator.rs | spawn_orchestrator() thread for stage execution       |
-
-Protocol (daemon/protocol.rs):
-
-- Request: SubscribeStatus, SubscribeLogs, Stop, Unsubscribe, Ping
-- Response: Ok, Error, StatusUpdate, LogLine, Pong
-- StageInfo: id, name, pid, timestamps, worktree_status, status, merged, deps
-
-## CLAUDE.md.template Entry Point
-
-- `CLAUDE.md.template` (project root, 576 lines) - Canonical binding rules template
-- Contains 10 Critical Rules + 5 Standard Rules for Claude Code agents
-- Key sections: Plan Location, Context Limits, Worktree Isolation, Knowledge Management
-- Installation: Prepends timestamp header, writes to `~/.claude/CLAUDE.md`
-- Update via `loom self-update` downloads from GitHub releases
-
-## Skill System Entry Points
-
-- `skills/` directory - 60+ skill subdirectories (auth, testing, react, etc.)
-- Each skill: `skills/<skill-name>/SKILL.md` (single file per skill)
-- Distribution: Downloaded as `skills.zip` from GitHub releases
-- Installation target: `~/.claude/skills/`
-- Update logic: `loom/src/commands/self_update/mod.rs:229-235`
-
-## Hook Shell Scripts (hooks/)
-
-| Script                 | Event Type            | Purpose                                   |
-| ---------------------- | --------------------- | ----------------------------------------- |
-| session-start.sh       | PreToolUse (Bash)     | Initialize heartbeat on first tool        |
-| post-tool-use.sh       | PostToolUse           | Update heartbeat, enforce commit guard    |
-| pre-compact.sh         | PreCompact            | Trigger handoff before context compaction |
-| session-end.sh         | SessionEnd            | Handle session completion                 |
-| learning-validator.sh  | Stop                  | Validate learnings, blocks exit on damage |
-| commit-guard.sh        | Stop                  | Enforce commits in worktrees              |
-| ask-user-pre.sh        | PreToolUse (AskUser)  | Mark stage WaitingForInput                |
-| ask-user-post.sh       | PostToolUse (AskUser) | Resume stage after input                  |
-| prefer-modern-tools.sh | PreToolUse (Bash)     | Guide CLI tool selection                  |
-| subagent-stop.sh       | SubagentStop          | Extract learnings from subagents          |
-
-## Hook Registration Entry Points
-
-- `orchestrator/hooks/config.rs:10-28` - HookEvent enum (7 event types)
-- `orchestrator/hooks/generator.rs` - Settings file generation for worktrees
-- `fs/permissions/constants.rs:1-52` - Embedded scripts via include_str!()
-- `fs/permissions/hooks.rs:82-106` - install_loom_hooks() function
+- `orchestrator/hooks/config.rs:10-28` - HookEvent enum
+- `fs/permissions/hooks.rs:82-106` - install_loom_hooks()
 - `commands/hooks.rs:19-46` - `loom hooks install` command
 
-## Stage Completion (commands/stage/complete.rs)
+## Stage Completion
 
-- complete() at line 121 - Main dispatcher
-- complete_knowledge_stage() at line 31 - No merge path
-- resolve_acceptance_dir() at line 466 - Dir resolution
+- `commands/stage/complete.rs:121` - complete() main dispatcher
+- `commands/stage/complete.rs:31` - complete_knowledge_stage()
 
-## Acceptance Criteria (verify/criteria/)
+## Acceptance Criteria
 
-- runner.rs:16 - run_acceptance() main entry
-- executor.rs:36 - run_single_criterion_with_timeout()
-- executor.rs:99 - spawn_shell_command() sh -c
-- config.rs - DEFAULT_COMMAND_TIMEOUT (5 min)
+- `verify/criteria/runner.rs:16` - run_acceptance() entry point
+- `verify/criteria/executor.rs:36` - run_single_criterion_with_timeout()
 
-## Stage Verify Command
+## Stage Verify
 
-- `loom/src/commands/stage/verify.rs` - Re-verify and complete stages that failed acceptance criteria
+- `commands/stage/verify.rs` - Re-verify completed stages
 
-## Terminal Spawning Module
+## Shell Completions
 
-### Key Files
+- `completions/generator.rs` - Static completion via clap_complete
+- `completions/dynamic/mod.rs` - Context-aware dynamic completion
 
-- loom/src/orchestrator/terminal/mod.rs:52-133 - TerminalBackend trait
-- loom/src/orchestrator/terminal/native/mod.rs:28-379 - NativeBackend impl
-- loom/src/orchestrator/terminal/emulator.rs:9-187 - TerminalEmulator enum
+---
 
-### TerminalBackend Trait (mod.rs:52-133)
+## Discovery Documentation Summary (2026-01-25)
 
-Core abstraction. Four spawn methods: spawn_session (worktrees),
-spawn_merge_session, spawn_base_conflict_session, spawn_knowledge_session.
-Plus: kill_session, is_session_alive, backend_type.
+Comprehensive analysis of 288 discovery documentation files from `doc/discovery/`.
 
-### Supporting Modules
+### Command System Architecture
 
-- native/detection.rs - Terminal detection (TERMINAL env, gsettings, fallback)
-- native/spawner.rs - spawn_in_terminal() with reaper thread
-- native/pid_tracking.rs - PID files and /proc scanning (Linux-only)
-- native/window_ops.rs - wmctrl/xdotool window management (Linux-only)
+| Command Area | Key Files                                                   | Purpose                                                        |
+| ------------ | ----------------------------------------------------------- | -------------------------------------------------------------- |
+| `run`        | `commands/run/mod.rs`, `foreground.rs`, `plan_lifecycle.rs` | Start orchestrator, manage plan status (PLAN→IN_PROGRESS→DONE) |
+| `stage`      | `commands/stage/complete.rs`, `verify.rs`, `recover.rs`     | Stage lifecycle: completion, verification, recovery            |
+| `status`     | `commands/status/ui/tui/app.rs`, `render/*.rs`              | TUI dashboard with live updates via daemon socket              |
+| `merge`      | `commands/merge/execute/mod.rs`, `recovery.rs`              | Merge with conflict detection, resolution session spawning     |
+| `init`       | `commands/init/execute.rs`, `plan_setup.rs`                 | Workspace init, stage file creation with depth prefixes        |
+| `memory`     | `commands/memory/handlers.rs`                               | Per-session memory journal (note/decision/question)            |
+| `graph`      | `commands/graph/display.rs`, `tree.rs`                      | Execution DAG visualization with topological levels            |
 
-## macOS Terminal Support
+### Orchestrator Core Components
 
-- emulator.rs:23-24 - TerminalApp and ITerm2 enum variants
-- emulator.rs:199-227 - macOS AppleScript build_command()
+| Component          | File                                      | Function                                            |
+| ------------------ | ----------------------------------------- | --------------------------------------------------- |
+| Main Loop          | `orchestrator/core/orchestrator.rs`       | 5-second polling, session spawn, crash recovery     |
+| Stage Executor     | `orchestrator/core/stage_executor.rs`     | Worktree creation, signal generation, session spawn |
+| Event Handler      | `orchestrator/core/event_handler.rs`      | Dispatches StageCompleted, SessionCrashed, etc.     |
+| Crash Handler      | `orchestrator/core/crash_handler.rs`      | Failure classification, exponential backoff retry   |
+| Completion Handler | `orchestrator/core/completion_handler.rs` | Auto-merge BEFORE marking completed                 |
+| Merge Handler      | `orchestrator/core/merge_handler.rs`      | Conflict detection, merge session spawning          |
 
-native/detection.rs:120-158 - macOS terminal detection (iTerm2 > cross-platform > Terminal.app)
+### Monitor Subsystem
 
-native/window_ops.rs:65-109,164-212 - macOS AppleScript window operations
+| Component   | File                                  | Purpose                                         |
+| ----------- | ------------------------------------- | ----------------------------------------------- |
+| Core        | `orchestrator/monitor/core.rs`        | Coordinates detection, heartbeat, checkpoints   |
+| Detection   | `orchestrator/monitor/detection.rs`   | Stage/session state change detection            |
+| Heartbeat   | `orchestrator/monitor/heartbeat.rs`   | Hung detection (300s timeout), crash detection  |
+| Context     | `orchestrator/monitor/context.rs`     | Green (<50%), Yellow (50-64%), Red (≥65%)       |
+| Checkpoints | `orchestrator/monitor/checkpoints.rs` | Task completion polling, verification injection |
 
-native/pid_tracking.rs:170-249 - macOS PID discovery using ps/lsof
+### Signal System (Manus KV-Cache Pattern)
 
-## Shell Completions Module
+Signals in `.work/signals/{session-id}.md` use 4-section structure:
 
-Entry: loom/src/completions/
+1. **STABLE PREFIX** - Fixed rules, CLAUDE.md reminders (cached)
+2. **SEMI-STABLE** - Knowledge summary, skill recommendations
+3. **DYNAMIC** - Target info, assignment, dependencies, handoff
+4. **RECITATION** - Task progression, immediate tasks, memory (max attention)
 
-- mod.rs - Re-exports generator and dynamic modules
-- generator.rs - Static completion via clap_complete (bash, zsh, fish)
-- dynamic/mod.rs - Context-aware completion dispatcher
+Key files: `orchestrator/signals/generate.rs`, `format.rs`, `crud.rs`
 
-### Dynamic Completion Files
+### Git Operations
 
-- dynamic/plans.rs - Completes doc/plans/\*.md paths
-- dynamic/stages.rs - Completes .work/stages/\*.md IDs (strips depth prefix)
-- dynamic/sessions.rs - Completes .work/sessions/\*.md IDs
-- dynamic/tests.rs - Comprehensive test coverage
+| Area      | Key Files                               | Operations                                                |
+| --------- | --------------------------------------- | --------------------------------------------------------- |
+| Worktrees | `git/worktree/operations.rs`, `base.rs` | Create at `.worktrees/{stage-id}/`, resolve base branch   |
+| Branches  | `git/branch/operations.rs`, `naming.rs` | `loom/{stage-id}` naming, ancestry checks                 |
+| Merge     | `git/merge.rs`                          | MergeResult: Success/Conflict/FastForward/AlreadyUpToDate |
+| Cleanup   | `git/cleanup/batch.rs`                  | Post-merge: remove worktree, delete branch, prune         |
 
-### CLI Completion Commands (cli/types.rs)
+### File System State Structure
 
-- Completions (line 179-183): `loom completions <shell>` - generates static script
-- Complete (line 185-193, hidden): `loom complete <shell> <args>` - dynamic helper
-- Dispatch (cli/dispatch.rs:144-153): Routes to generator or complete_dynamic
+```
+.work/
+├── config.toml          # Active plan, base_branch
+├── stages/              # {depth}-{stage-id}.md (YAML frontmatter)
+├── sessions/            # {session-id}.md
+├── signals/             # Agent instruction signals
+├── handoffs/            # Context exhaustion dumps
+├── memory/              # Per-session journals
+├── task-state/          # Task progression YAML
+├── checkpoints/         # Task completion records
+├── crashes/             # Crash recovery logs
+├── heartbeat/           # Session heartbeat JSON
+└── hooks/events.jsonl   # Hook event log
+```
 
-## Daemon Protocol (daemon/protocol.rs)
+### Data Models
 
-- Response enum: Ok, Error, StatusUpdate, LogLine, Pong
-- StageInfo fields: started_at, completed_at, merged, dependencies
-- Status broadcast: 1-second polling via Unix socket
+**Stage** (11 states): WaitingForDeps → Queued → Executing → Completed/Blocked/NeedsHandoff/WaitingForInput/MergeConflict/CompletedWithFailures/MergeBlocked/Skipped
 
-## Status Collection (daemon/server/status.rs)
+**Session** (6 states): Spawning → Running → Completed/Crashed/ContextExhausted/Paused
 
-- collect_status() - polls .work/stages/\*.md every 1 second
-- get_stage_started_at/completed_at() - extract timing from YAML
-- detect_worktree_status() - returns Active/Conflict/Merging/Merged
+**Scheduling Invariant**: Stage ready only when ALL dependencies have `status == Completed` AND `merged == true`
 
-## Orchestrator Exit (orchestrator/core/orchestrator.rs:250-280)
+### Terminal Spawning
 
-- Manual mode: exit after first batch
-- Watch mode: exit when all_stages_terminal() true
-- Normal mode: exit when graph.is_complete() true
+| Component       | File                                           | Purpose                                                        |
+| --------------- | ---------------------------------------------- | -------------------------------------------------------------- |
+| Backend Trait   | `orchestrator/terminal/mod.rs`                 | Unified interface for spawn/kill/alive                         |
+| Emulator Config | `orchestrator/terminal/emulator.rs`            | 11+ terminals (kitty, alacritty, gnome-terminal, etc.)         |
+| Detection       | `orchestrator/terminal/native/detection.rs`    | Auto-detect terminal via $TERMINAL or DE settings              |
+| PID Tracking    | `orchestrator/terminal/native/pid_tracking.rs` | Wrapper script writes PID, handles server-based terminals      |
+| Window Ops      | `orchestrator/terminal/native/window_ops.rs`   | Close by title (wmctrl/xdotool on Linux, AppleScript on macOS) |
 
-## Status Rendering (commands/status/)
+### Handoff System
 
-- TUI: ui/tui/app.rs - event loop, renderer.rs - unified table
-- Static: status.rs:64-153 - snapshot from files
-- Timing: format_elapsed() for human-readable durations
+| Component    | File                               | Purpose                                                     |
+| ------------ | ---------------------------------- | ----------------------------------------------------------- |
+| Detector     | `handoff/detector.rs`              | Context threshold monitoring (Yellow=prepare, Red=generate) |
+| Generator    | `handoff/generator/mod.rs`         | Builds HandoffContent with state snapshot                   |
+| Schema V2    | `handoff/schema/v2.rs`             | Structured YAML frontmatter for machine parsing             |
+| Continuation | `orchestrator/continuation/mod.rs` | Resume session with handoff context                         |
+
+### Plan Parsing Pipeline
+
+1. **Extraction** (`plan/parser/extraction.rs`) - Find YAML in `<!-- loom METADATA -->` markers
+2. **Validation** (`plan/parser/validation.rs`) - Schema validation, ID uniqueness, dependency resolution
+3. **Graph Build** (`plan/graph/mod.rs`) - DAG with cycle detection, topological sort
+
+### Verification System
+
+| Component         | File                          | Purpose                                        |
+| ----------------- | ----------------------------- | ---------------------------------------------- |
+| Criteria Runner   | `verify/criteria/runner.rs`   | Sequential execution, captures all results     |
+| Task Verification | `checkpoints/types.rs`        | FileExists, Contains, Command, OutputSet rules |
+| Stage Transitions | `verify/transitions/state.rs` | Atomic status changes with validation          |
+
+### Skills & Completions
+
+- **Skill Index**: `skills/index.rs` - Loads SKILL.md from ~/.claude/skills/, matches triggers
+- **Dynamic Completions**: `completions/dynamic/*.rs` - Context-aware tab completion for stages, sessions, plans
+
+### Daemon Protocol
+
+Socket at `.work/orchestrator.sock` with 4-byte length-prefixed JSON:
+
+- **Requests**: SubscribeStatus, SubscribeLogs, Stop, Ping
+- **Responses**: StatusUpdate, OrchestrationComplete, LogLine, Pong, Error
+
+### Key Design Patterns
+
+1. **File-Based State** - All state in .work/ as markdown/YAML for git-friendliness
+2. **Progressive Merge** - Merge immediately on completion to minimize conflict window
+3. **Merge-Before-Complete** - Auto-merge attempted BEFORE marking stage completed
+4. **Context Thresholds** - 65% red threshold triggers handoff BEFORE Claude Code's ~75% compaction
+5. **Exponential Backoff** - Retry transient failures (crash/timeout) with 30s-300s backoff
+6. **Window-Based Kill** - Prefer wmctrl/xdotool over PID for reliable terminal closure

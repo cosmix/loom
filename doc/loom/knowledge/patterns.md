@@ -62,30 +62,49 @@ All state persisted to `.work/` directory for git-friendliness and crash recover
 - Crash recovery via file re-read
 - No in-memory state loss
 
-## Manus Pattern (Signal Generation)
+## Signal Generation Patterns
 
-KV-cache optimized 4-section signal structure:
+### Manus Pattern (KV-Cache Optimization)
 
-```markdown
-1. STABLE PREFIX (never changes per agent type)
-   - Worktree context, isolation boundaries
-   - Execution rules, CLAUDE.md reminders
-   - Hash: SHA-256 for debugging cache reuse
+Four-section structure optimizes LLM KV-cache reuse:
 
-2. SEMI-STABLE SECTION (changes per stage, not per session)
-   - Knowledge summary
-   - Facts store
-   - Recent learnings
+| Section       | Stability   | Changes When      | Content                             |
+| ------------- | ----------- | ----------------- | ----------------------------------- |
+| Stable Prefix | Never       | Agent type change | Worktree isolation, execution rules |
+| Semi-Stable   | Per-stage   | Stage changes     | Knowledge, facts, learnings         |
+| Dynamic       | Per-session | Each session      | Target, assignment, handoff         |
+| Recitation    | Per-session | Each session      | Immediate tasks, session memory     |
 
-3. DYNAMIC SECTION (changes per session)
-   - Target (session, stage, worktree, branch)
-   - Stage assignment and description
-   - Dependencies, outputs, handoff
+**Implementation:** `orchestrator/signals/cache.rs` (stable prefix), `format.rs` (sections)
 
-4. RECITATION SECTION (at end for attention)
-   - Immediate tasks
-   - Session memory (last 10 entries)
-```
+### Six Signal Types
+
+| Type            | File                    | Use Case                               |
+| --------------- | ----------------------- | -------------------------------------- |
+| Regular Stage   | generate.rs:20-54       | Normal worktree execution              |
+| Knowledge Stage | knowledge.rs:23-56      | Main repo exploration (no commits)     |
+| Recovery        | recovery.rs:40-100      | Crash/hung/context recovery            |
+| Merge           | merge.rs:14-45          | Auto-merge conflict resolution         |
+| Merge Conflict  | merge_conflict.rs:28-53 | Progressive merge failures             |
+| Base Conflict   | base_conflict.rs:21-52  | Multi-dependency base branch conflicts |
+
+**Signal headers by execution context:**
+
+| Signal Type   | Header                    | Context   | Purpose              |
+| ------------- | ------------------------- | --------- | -------------------- |
+| Regular       | `# Signal:`               | Worktree  | Stage execution      |
+| Merge         | `# Merge Signal:`         | Main repo | Auto-merge conflicts |
+| Recovery      | `# Recovery Signal:`      | Worktree  | Crash/hung recovery  |
+| Knowledge     | `# Signal:`               | Main repo | Knowledge gathering  |
+| Base Conflict | `# Base Conflict Signal:` | Main repo | Multi-dep merge      |
+
+### Embedded Context Pattern
+
+Self-contained signals via `EmbeddedContext` struct (`signals/types.rs:6-29`):
+
+- Agents NEVER read from main repo - signal file is single source of truth
+- Context built at signal generation time with stage-specific data
+- Includes: handoff, plan overview, facts, knowledge, task state, learnings, memory
 
 ## Progressive Merge Pattern
 
@@ -249,9 +268,11 @@ Session::new_merge(source, target)          // Merge conflict resolution
 Session::new_base_conflict(target)          // Base branch conflict
 ```
 
-## Terminal Backend Abstraction
+## Terminal Spawning Patterns
 
-Trait-based terminal abstraction:
+### Backend Abstraction
+
+Trait-based terminal abstraction (`orchestrator/terminal/`):
 
 ```rust
 trait TerminalBackend {
@@ -265,9 +286,40 @@ trait TerminalBackend {
 
 **Implementations:** Native (11 terminal emulators supported)
 
-## PID Tracking via Wrapper Script
+### Emulator Pattern
 
-Avoid relying on terminal PID:
+To add new terminal, modify `TerminalEmulator` enum in `emulator.rs`:
+
+1. Add variant (e.g., TerminalApp, ITerm2)
+2. Implement `binary()` - return binary name string
+3. Implement `from_binary()` - parse binary name to variant
+4. Implement `build_command()` - configure Command with terminal-specific args
+
+**CLI argument variations:**
+
+- kitty: `--title, --directory, [cmd args]`
+- alacritty: `--title, --working-directory, -e [cmd]`
+- gnome-terminal: `--title, --working-directory, -- [cmd]`
+- xterm: `-title, -e [cmd with cd prefix]`
+
+### Detection Pattern
+
+Priority order (`detection.rs:17-63`):
+
+1. `TERMINAL` env var (user preference)
+2. `gsettings/dconf` (GNOME/Cosmic DE settings)
+3. `xdg-terminal-exec` (emerging standard)
+4. Fallback list: kitty, alacritty, foot, wezterm, gnome-terminal
+
+**macOS additions:**
+
+1. Check `TERM_PROGRAM` env var (Terminal.app, iTerm)
+2. `defaults read com.apple.LaunchServices`
+3. macOS fallback: Terminal.app, iTerm2
+
+### PID Tracking via Wrapper Script
+
+Avoid relying on terminal PID (`pid_tracking.rs:242-332`):
 
 ```bash
 #!/bin/bash
@@ -276,6 +328,78 @@ exec claude 'prompt...'
 ```
 
 Claude inherits shell PID after `exec`, enabling reliable tracking.
+
+**Current Linux-only:** Uses `/proc` scanning for fallback discovery
+**macOS alternatives:** `pgrep -f claude`, `ps aux`, `lsof +D /path/to/worktree`
+
+### Window Operations Pattern
+
+Linux implementation uses `wmctrl/xdotool` (`window_ops.rs`):
+
+- `close_window_by_title()`: wmctrl -c or xdotool windowclose
+- `window_exists_by_title()`: wmctrl -l or xdotool search --name
+
+**macOS AppleScript equivalents via osascript:**
+
+- Terminal.app: `tell app Terminal to close window where name contains`
+- iTerm2: `tell app iTerm2 to close window`
+- Escape double quotes: `replace('"', '\\"')` before embedding
+- Window search: `whose name contains` for partial matching
+
+### Session Spawn Flow
+
+1. `NativeBackend::spawn_*_session()` builds title, prompt
+2. Creates wrapper script via `pid_tracking::create_wrapper_script()`
+3. Calls `spawner::spawn_in_terminal()` with emulator, title, workdir, cmd
+4. `spawn_in_terminal()` runs `emulator.build_command()` and spawns
+5. Reaper thread (spawner.rs:17-26) prevents zombies via `child.wait()`
+6. PID discovery follows via file read or fallback scan
+
+### Session Kill Strategy
+
+Layered approach (`native/mod.rs:344-384`):
+
+1. Close window by title (loom-{stage_id})
+2. Fallback: SIGTERM to stored PID
+3. Clean up tracking files after either method
+
+### Session Liveness Check
+
+Layered checking (`native/mod.rs:386-428`):
+
+1. Check PID file (most current)
+2. Verify PID is alive via `kill -0`
+3. Fallback to `session.pid`
+4. Final fallback: window existence by title
+
+### macOS Platform Layer
+
+macOS terminal support uses AppleScript via osascript binary.
+
+**Detection priority:** iTerm2 (/Applications/iTerm.app) > cross-platform (kitty, alacritty, wezterm) > Terminal.app (fallback)
+
+**Terminal.app Command Pattern:**
+
+```applescript
+osascript -e 'tell application "Terminal"
+do script "cd /path && command" in front window
+set name of front window to "title"
+end tell'
+```
+
+**iTerm2 Command Pattern:**
+
+```applescript
+osascript -e 'tell application "iTerm2"
+set newWindow to (create window with default profile command "cmd")
+end tell'
+```
+
+### Terminal State Restoration
+
+`utils.rs:22-35` cleanup_terminal() clears line, shows cursor, resets attributes.
+
+Panic hook (lines 41-50) installs terminal cleanup before panic using Once for single installation.
 
 ## Handoff V2 Schema Pattern
 
@@ -298,29 +422,6 @@ key_decisions:
 
 **Fallback:** V1 prose markdown for legacy systems
 
-## Acceptance Criteria Execution Pattern
-
-Shell commands with timeout protection:
-
-```rust
-run_acceptance_with_config(stage, work_dir, config)
-  -> spawn_shell_command("sh -c", command)
-  -> wait_with_timeout(5 minutes)
-  -> collect CriterionResult { success, stdout, stderr, duration }
-```
-
-**Context Variables:** `${WORKTREE}`, `${PROJECT_ROOT}`, `${STAGE_ID}`
-
-## Signal Types by Execution Context
-
-| Signal Type   | Header                    | Context   | Purpose              |
-| ------------- | ------------------------- | --------- | -------------------- |
-| Regular       | `# Signal:`               | Worktree  | Stage execution      |
-| Merge         | `# Merge Signal:`         | Main repo | Auto-merge conflicts |
-| Recovery      | `# Recovery Signal:`      | Worktree  | Crash/hung recovery  |
-| Knowledge     | `# Signal:`               | Main repo | Knowledge gathering  |
-| Base Conflict | `# Base Conflict Signal:` | Main repo | Multi-dep merge      |
-
 ## Execution Graph DAG Pattern
 
 Directed acyclic graph for stage scheduling:
@@ -335,17 +436,19 @@ ExecutionGraph {
 
 **Cycle Detection:** DFS with recursion stack tracking at build time
 
-## TUI Architecture Pattern (ratatui-based)
+## TUI Patterns
+
+### Architecture (ratatui-based)
 
 Two display modes: static (default) and live (--live flag).
 
 **Static Mode**: One-time status print to stdout, then exits.
 **Live Mode**: Real-time dashboard with daemon socket subscription.
 
-Key files: loom/src/commands/status/ui/{tui.rs, theme.rs, widgets.rs, layout.rs}
-Alternative: loom/src/commands/status/render/live_mode.rs (simpler ANSI output)
+Key files: `loom/src/commands/status/ui/{tui.rs, theme.rs, widgets.rs, layout.rs}`
+Alternative: `loom/src/commands/status/render/live_mode.rs` (simpler ANSI output)
 
-### TUI Widgets Used
+### Widgets Used
 
 | Widget    | Usage                                         |
 | --------- | --------------------------------------------- |
@@ -355,7 +458,7 @@ Alternative: loom/src/commands/status/render/live_mode.rs (simpler ANSI output)
 | Gauge     | Progress bar with percentage label            |
 | Block     | Borders and titles for all sections           |
 
-### TUI Layout Structure (tui.rs:231-239)
+### Layout Structure (tui.rs:231-239)
 
 Vertical layout with constraints:
 
@@ -366,29 +469,54 @@ Vertical layout with constraints:
 
 Main content columns: Left (Executing 60% + Pending 40%), Right (Completed 60% + Blocked 40%)
 
-### TUI Theme (theme.rs)
+### Theme (theme.rs)
 
-StatusColors: EXECUTING=Blue, COMPLETED=Green, BLOCKED=Red, PENDING=Gray, QUEUED=Cyan, WARNING=Yellow
-Context colors: 0-60%=Green, 60-75%=Yellow, 75-100%=Red
+**Status Colors:** EXECUTING=Blue, COMPLETED=Green, BLOCKED=Red, PENDING=Gray, QUEUED=Cyan, WARNING=Yellow
+**Context Colors:** 0-60%=Green, 60-75%=Yellow, 75-100%=Red
 
-Custom widgets (widgets.rs): progress_bar() uses Unicode blocks, status_indicator() maps status to symbols
+Custom widgets (widgets.rs): `progress_bar()` uses Unicode blocks, `status_indicator()` maps status to symbols
 
-### TUI Data Flow: Daemon to Dashboard
+### Data Flow: Daemon to Dashboard
 
-1. TUI connects to .work/orchestrator.sock, sends Ping/SubscribeStatus
-2. Daemon broadcaster thread (broadcast.rs) collects status every 1 second
-3. Status collected from .work/stages/\*.md YAML frontmatter (server/status.rs)
-4. Response::StatusUpdate sent with stages_executing, pending, completed, blocked
+1. TUI connects to `.work/orchestrator.sock`, sends Ping/SubscribeStatus
+2. Daemon broadcaster thread (`broadcast.rs`) collects status every 1 second
+3. Status collected from `.work/stages/*.md` YAML frontmatter (`server/status.rs`)
+4. `Response::StatusUpdate` sent with stages_executing, pending, completed, blocked
 5. TUI event loop: read daemon msgs (non-blocking), poll keyboard (100ms), render
 
-### TUI Keyboard Handling
+### Unified Stage Pattern
 
-TUI mode (tui.rs): q or Esc to exit, sends Unsubscribe, restores terminal via Drop
-Live mode (live_mode.rs): Ctrl+C handler via ctrlc crate, sends Unsubscribe, calls cleanup_terminal()
+Live status dashboard merges all stage categories:
+
+```rust
+unified_stages() -> Vec<UnifiedStage> {
+    compute_levels()  // DAG depth via recursive dependencies
+    collect all stages from executing/pending/completed/blocked
+    sort by level, then by id
+}
+```
+
+**Level Computation:**
+
+- Stages with no deps = level 0
+- Otherwise: max(dependency levels) + 1
+- Cycle detection via visiting set
+
+**Table Display:**
+
+- Icon + Level + ID + Status + Merged + Elapsed
+- Elapsed: live timer for executing, final duration for completed
+
+### Keyboard Handling
+
+**TUI mode (tui.rs):** q or Esc to exit, sends Unsubscribe, restores terminal via Drop
+**Live mode (live_mode.rs):** Ctrl+C handler via ctrlc crate, sends Unsubscribe, calls cleanup_terminal()
 
 Both modes: Daemon continues running after TUI exits. Terminal state properly restored.
 
-## Hook Configuration Pattern (fs/permissions/)
+## Hook Patterns
+
+### Configuration (fs/permissions/)
 
 Permission management for Claude Code sessions:
 
@@ -419,6 +547,85 @@ Permission management for Claude Code sessions:
 - Exclusive file locking via fs2 crate during merge
 - Atomic write to prevent corruption
 
+### Event Pipeline
+
+Seven hook events with specific integration points:
+
+```
+PreToolUse (Bash) --> prefer-modern-tools.sh --> Block with guidance (exit 2)
+PreToolUse (AskUser) --> ask-user-pre.sh --> Mark WaitingForInput
+PostToolUse --> post-tool-use.sh --> Update heartbeat
+PostToolUse (AskUser) --> ask-user-post.sh --> Resume stage
+PreCompact --> pre-compact.sh --> Trigger handoff
+Stop --> commit-guard.sh --> Block exit without commit
+Stop --> learning-validator.sh --> Block exit on damaged learnings
+SessionEnd --> session-end.sh --> Cleanup
+SubagentStop --> subagent-stop.sh --> Extract learnings
+```
+
+### Input Pattern (CRITICAL)
+
+Hooks receive data via stdin JSON, NOT environment variables.
+
+**Stdin JSON structure:**
+
+```json
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": { "command": "...", "description": "..." },
+  "session_id": "...",
+  "cwd": "..."
+}
+```
+
+**Correct pattern:**
+
+```bash
+INPUT_JSON=$(timeout 1 cat 2>/dev/null || true)
+TOOL_NAME=$(echo "$INPUT_JSON" | jq -r '.tool_name // empty')
+COMMAND=$(echo "$INPUT_JSON" | jq -r '.tool_input.command // empty')
+```
+
+**Why timeout:** `cat` blocks forever if stdin kept open. Use `timeout 1 cat`.
+
+### Response Patterns
+
+**Simple (exit code):** Exit 0 = allow, Exit 2 = block (stderr shown to Claude)
+
+**Advanced (JSON output with exit 0):**
+
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "allow|deny|ask",
+    "permissionDecisionReason": "message",
+    "updatedInput": { "command": "corrected-command" }
+  }
+}
+```
+
+**Auto-correct pattern (best UX):** Use `permissionDecision: "allow"` with `updatedInput` to fix commands without blocking. Example: strip Co-Authored-By from git commits automatically.
+
+**Block with guidance pattern:** Exit 2 with helpful stderr message. Used when syntax differs too much for auto-correct (e.g., find→fd). Claude receives the guidance and rewrites the command.
+
+### Current Hook Status
+
+**Stdin-aware hooks:**
+
+| Hook                   | Event                       | Behavior                                    |
+| ---------------------- | --------------------------- | ------------------------------------------- |
+| commit-filter.sh       | PreToolUse:Bash             | Auto-corrects Co-Authored-By out of commits |
+| prefer-modern-tools.sh | PreToolUse:Bash             | Blocks grep/find with guidance to use rg/fd |
+| post-tool-use.sh       | PostToolUse:\*              | Reads tool_name from stdin for heartbeat    |
+| ask-user-pre.sh        | PreToolUse:AskUserQuestion  | Drains stdin, marks stage WaitingForInput   |
+| ask-user-post.sh       | PostToolUse:AskUserQuestion | Drains stdin, resumes stage                 |
+| session-start.sh       | SessionStart:\*             | Drains stdin, initial heartbeat             |
+| session-end.sh         | SessionEnd:\*               | Drains stdin, cleanup/handoff               |
+| pre-compact.sh         | PreCompact:\*               | Drains stdin, triggers handoff              |
+| skill-trigger.sh       | UserPromptSubmit:\*         | Reads stdin for prompt matching             |
+
 ## Status Collection Pattern (daemon/server/status.rs)
 
 How daemon collects stage status:
@@ -437,61 +644,7 @@ How daemon collects stage status:
 - Check if branch manually merged via `is_branch_merged()`
 - Return: Active, Conflict, Merging, Merged, or None
 
-## TUI Unified Stage Pattern
 
-Live status dashboard merges all stage categories:
-
-```rust
-unified_stages() -> Vec<UnifiedStage> {
-    compute_levels()  // DAG depth via recursive dependencies
-    collect all stages from executing/pending/completed/blocked
-    sort by level, then by id
-}
-```
-
-**Level Computation:**
-
-- Stages with no deps = level 0
-- Otherwise: max(dependency levels) + 1
-- Cycle detection via visiting set
-
-**Table Display:**
-
-- Icon + Level + ID + Status + Merged + Elapsed
-- Elapsed: live timer for executing, final duration for completed
-
-## Signal KV-Cache Optimization Pattern (Manus)
-
-Four-section signal structure for optimal LLM KV-cache reuse:
-
-| Section       | Stability   | Changes When      | Content                             |
-| ------------- | ----------- | ----------------- | ----------------------------------- |
-| Stable Prefix | Never       | Agent type change | Worktree isolation, execution rules |
-| Semi-Stable   | Per-stage   | Stage changes     | Knowledge, facts, learnings         |
-| Dynamic       | Per-session | Each session      | Target, assignment, handoff         |
-| Recitation    | Per-session | Each session      | Immediate tasks, session memory     |
-
-**Implementation:** `orchestrator/signals/cache.rs` (stable prefix), `format.rs` (sections)
-**Purpose:** Maximize LLM attention on dynamic/recitation content while caching stable prefix
-
-## Six Signal Types Pattern
-
-| Type            | File                    | Use Case                               |
-| --------------- | ----------------------- | -------------------------------------- |
-| Regular Stage   | generate.rs:20-54       | Normal worktree execution              |
-| Knowledge Stage | knowledge.rs:23-56      | Main repo exploration (no commits)     |
-| Recovery        | recovery.rs:40-100      | Crash/hung/context recovery            |
-| Merge           | merge.rs:14-45          | Auto-merge conflict resolution         |
-| Merge Conflict  | merge_conflict.rs:28-53 | Progressive merge failures             |
-| Base Conflict   | base_conflict.rs:21-52  | Multi-dependency base branch conflicts |
-
-## Embedded Context Pattern
-
-Self-contained signals via `EmbeddedContext` struct (`signals/types.rs:6-29`):
-
-- Agents NEVER read from main repo - signal file is single source of truth
-- Context built at signal generation time with stage-specific data
-- Includes: handoff, plan overview, facts, knowledge, task state, learnings, memory
 
 ## Skill Trigger Pattern
 
@@ -503,21 +656,6 @@ Skills activated via three mechanisms in SKILL.md frontmatter:
 
 **Loading:** Claude Code matches user intent against skill triggers
 
-## Hook Event Pipeline Pattern
-
-Seven hook events with specific integration points:
-
-```
-PreToolUse (Bash) --> prefer-modern-tools.sh --> Block with guidance (exit 2)
-PreToolUse (AskUser) --> ask-user-pre.sh --> Mark WaitingForInput
-PostToolUse --> post-tool-use.sh --> Update heartbeat
-PostToolUse (AskUser) --> ask-user-post.sh --> Resume stage
-PreCompact --> pre-compact.sh --> Trigger handoff
-Stop --> commit-guard.sh --> Block exit without commit
-Stop --> learning-validator.sh --> Block exit on damaged learnings
-SessionEnd --> session-end.sh --> Cleanup
-SubagentStop --> subagent-stop.sh --> Extract learnings
-```
 
 ## Install Distribution Pattern
 
@@ -539,91 +677,8 @@ SubagentStop --> subagent-stop.sh --> Extract learnings
 2. Extract skills to ~/.claude/skills/
 3. Update ~/.claude/CLAUDE.md from CLAUDE.md.template
 
-## Claude Code Hook Input Pattern (CRITICAL - 2026-01-18)
 
-**Discovery:** Hooks receive data via stdin JSON, NOT environment variables.
-
-**Wrong (all hooks currently do this):**
-
-```bash
-if [[ "${TOOL_NAME:-}" != "Bash" ]]; then exit 0; fi
-COMMAND="${TOOL_INPUT:-}"
-```
-
-**Correct pattern:**
-
-```bash
-INPUT_JSON=$(timeout 1 cat 2>/dev/null || true)
-TOOL_NAME=$(echo "$INPUT_JSON" | jq -r '.tool_name // empty')
-COMMAND=$(echo "$INPUT_JSON" | jq -r '.tool_input.command // empty')
-```
-
-**Stdin JSON structure:**
-
-```json
-{
-  "hook_event_name": "PreToolUse",
-  "tool_name": "Bash",
-  "tool_input": { "command": "...", "description": "..." },
-  "session_id": "...",
-  "cwd": "..."
-}
-```
-
-**Why timeout:** `cat` blocks forever if stdin kept open. Use `timeout 1 cat`.
-
-**Known bug:** Claude Code #9567 - env vars always empty.
-
-## PreToolUse Response Pattern (2026-01-18)
-
-**Simple (exit code):** Exit 0 = allow, Exit 2 = block (stderr shown to Claude)
-
-**Advanced (JSON output with exit 0):**
-
-```json
-{
-  "hookSpecificOutput": {
-    "hookEventName": "PreToolUse",
-    "permissionDecision": "allow|deny|ask",
-    "permissionDecisionReason": "message",
-    "updatedInput": { "command": "corrected-command" }
-  }
-}
-```
-
-**Auto-correct pattern (best UX):** Use `permissionDecision: "allow"` with `updatedInput` to fix commands without blocking. Example: strip Co-Authored-By from git commits automatically.
-
-**Block with guidance pattern:** Exit 2 with helpful stderr message. Used when syntax differs too much for auto-correct (e.g., find→fd). Claude receives the guidance and rewrites the command.
-
-## Hook Update Status (2026-01-18)
-
-**FIXED - Read stdin JSON or drain stdin correctly:**
-
-| Hook                   | Event                       | Behavior                                    | Notes                    |
-| ---------------------- | --------------------------- | ------------------------------------------- | ------------------------ |
-| commit-filter.sh       | PreToolUse:Bash             | Auto-corrects Co-Authored-By out of commits | Uses updatedInput JSON   |
-| prefer-modern-tools.sh | PreToolUse:Bash             | Blocks grep/find with guidance to use rg/fd | Exit 2 + stderr guidance |
-| post-tool-use.sh       | PostToolUse:\*              | Reads tool_name from stdin for heartbeat    | Silent operation         |
-| ask-user-pre.sh        | PreToolUse:AskUserQuestion  | Drains stdin, marks stage WaitingForInput   | Uses LOOM\_\* env vars   |
-| ask-user-post.sh       | PostToolUse:AskUserQuestion | Drains stdin, resumes stage                 | Uses LOOM\_\* env vars   |
-| session-start.sh       | SessionStart:\*             | Drains stdin, initial heartbeat             | Uses LOOM\_\* env vars   |
-| session-end.sh         | SessionEnd:\*               | Drains stdin, cleanup/handoff               | Uses LOOM\_\* env vars   |
-| pre-compact.sh         | PreCompact:\*               | Drains stdin, triggers handoff              | Uses LOOM\_\* env vars   |
-| skill-trigger.sh       | UserPromptSubmit:\*         | Reads stdin for prompt matching             | Suggests skills          |
-
-**NOT YET UPDATED - May still use env vars:**
-
-| Hook                  | Event Type      | Notes                      |
-| --------------------- | --------------- | -------------------------- |
-| learning-validator.sh | Stop:\*         | Validates learnings        |
-| commit-guard.sh       | Stop:\*         | Blocks exit without commit |
-| subagent-stop.sh      | SubagentStop:\* | Extracts learnings         |
-
-**Note:** Stop/SubagentStop hooks may have different input formats. Need to verify before updating.
-
-**Configuration fix (2026-01-18):** Fixed SessionStart to use proper `SessionStart:*` event instead of `PreToolUse:Bash` (was incorrectly running before every Bash command). Added missing `SessionEnd:*` hook configuration.
-
-## Memory/Knowledge Consolidation (2026-01-19)
+## Memory/Knowledge Consolidation
 
 Three agent knowledge systems in loom:
 
@@ -633,58 +688,45 @@ Three agent knowledge systems in loom:
 | Memory    | .work/memory/{session}.md | Session journal      |
 | Knowledge | doc/loom/knowledge/       | Permanent curation   |
 
-### Signal Integration Points
+**Signal Integration:** EmbeddedContext (types.rs:9-30) holds embedded content included in signals:
 
-EmbeddedContext (types.rs:9-30) holds embedded content:
+- `facts_content`: Table formatted for stage
+- `memory_content`: Last 10 entries
+- `knowledge_summary`: Compact from doc/loom/knowledge/
 
-- facts_content: Table formatted for stage
-- memory_content: Last 10 entries
-- knowledge_summary: Compact from doc/loom/knowledge/
-
-format.rs section placement:
+**Section placement in format.rs:**
 
 - Semi-stable (88-186): knowledge, facts, skills
 - Recitation (345-355): memory at end for attention
 
-### Consolidation Rationale
+**Memory promotion:** `loom memory promote <type> <target>` promotes session memory to knowledge files (Decisions → patterns, Notes → entry-points)
 
-Facts system redundant with knowledge:
+## Stage Completion Patterns
 
-- Both store key-value information
-- Knowledge is persistent project-level
-- Facts add complexity without unique value
+**Regular stages:**
 
-Approach: Remove facts, add memory promote
+1. Load stage from .work/stages/, run acceptance criteria (unless --no-verify)
+2. Sync worktree permissions to main, cleanup terminal/session resources
+3. Run task verifications if task_state exists
+4. Progressive merge into merge point, mark Completed, trigger dependents
 
-- loom memory promote <type> <target>
-- Promotes session memory to knowledge files
-- Decisions -> patterns, Notes -> entry-points
+**Knowledge stages:**
 
-## Stage Completion Flow
-
-1. Load stage from .work/stages/
-2. Route knowledge stages to no-merge path
-3. Run acceptance criteria (unless --no-verify)
-4. Sync worktree permissions to main
-5. Cleanup terminal/session resources
-6. Run task verifications if task_state exists
-7. Progressive merge into merge point
-8. Mark Completed, trigger dependents
-
-## Knowledge Stage Completion
-
-- No worktree (main repo context)
-- Auto-sets merged=true (no git merge)
-- Uses stage.working_dir for acceptance
-- Skips merge attempt entirely
+- No worktree (main repo context), auto-sets merged=true (no git merge)
+- Uses stage.working_dir for acceptance, skips merge attempt entirely
 
 ## Acceptance Criteria Execution
 
-1. Build CriteriaContext for variable expansion
-2. Expand setup commands, prefix to each criterion
-3. Execute each command sequentially with timeout
-4. sh -c (Unix) / cmd /C (Windows) execution
-5. Return AcceptanceResult (AllPassed/Failed)
+Shell commands with timeout protection (`verify/acceptance_runner.rs`):
+
+```rust
+run_acceptance_with_config(stage, work_dir, config)
+  -> spawn_shell_command("sh -c", command)
+  -> wait_with_timeout(5 minutes)
+  -> collect CriterionResult { success, stdout, stderr, duration }
+```
+
+**Context Variables:** `${WORKTREE}`, `${PROJECT_ROOT}`, `${STAGE_ID}`
 
 ## State Transitions (models/stage/transitions.rs)
 
@@ -716,105 +758,6 @@ Step 2: Re-export public items via `pub use submod::{Item1, Item2};`
 - The tests.rs file contains `#[cfg(test)] mod tests { ... }`
 - Only compiled during test builds
 
-## Terminal Emulator Pattern (emulator.rs)
-
-To add a new terminal, modify the TerminalEmulator enum:
-
-1. Add variant to enum (e.g., TerminalApp, ITerm2)
-2. Implement binary() - return binary name string
-3. Implement from_binary() - parse binary name to variant
-4. Implement build_command() - configure Command with terminal-specific args
-
-### build_command() Pattern
-
-Each terminal variant configures: title, working directory, command execution.
-Examples of CLI arg variations:
-
-- kitty: --title, --directory, [cmd args]
-- alacritty: --title, --working-directory, -e [cmd]
-- gnome-terminal: --title, --working-directory, -- [cmd]
-- xterm: -title, -e [cmd with cd prefix]
-
-## PID Tracking Pattern (pid_tracking.rs)
-
-Current Linux-only implementation:
-
-1. Wrapper script writes own PID (bash $$) to .work/pids/{stage}.pid
-2. spawner.rs reads PID file after startup delay
-3. Fallback: scan /proc for claude process by cmdline + cwd match
-
-macOS port needs: Replace /proc scan with ps/pgrep or lsof-based discovery.
-
-## Window Operations Pattern (window_ops.rs)
-
-Current Linux-only implementation uses wmctrl/xdotool:
-
-- close_window_by_title(): wmctrl -c or xdotool windowclose
-- window_exists_by_title(): wmctrl -l or xdotool search --name
-
-macOS port needs: AppleScript equivalents via osascript command
-
-- Terminal.app: tell app Terminal to close window where name contains
-- iTerm2: tell app iTerm2 to close window
-
-## Terminal Detection Pattern (detection.rs)
-
-Priority order (detection.rs:17-63):
-
-1. TERMINAL env var (user preference)
-2. gsettings/dconf (GNOME/Cosmic DE settings)
-3. xdg-terminal-exec (emerging standard)
-4. Fallback list: kitty, alacritty, foot, wezterm, gnome-terminal, etc.
-
-macOS additions needed:
-
-1. Check TERM_PROGRAM env var (set by Terminal.app, iTerm)
-2. defaults read com.apple.LaunchServices for default app
-3. macOS-specific fallback: Terminal.app, iTerm2
-
-## Session Spawn Flow
-
-1. NativeBackend::spawn\_\*\_session() builds title, prompt
-2. Creates wrapper script via pid_tracking::create_wrapper_script()
-3. Calls spawner::spawn_in_terminal() with emulator, title, workdir, cmd
-4. spawn_in_terminal() runs emulator.build_command() and spawns
-5. Reaper thread prevents zombie; PID discovery follows
-
-## macOS Implementation Notes
-
-### Terminal.app Command Pattern (AppleScript-based)
-
-osascript -e 'tell application "Terminal"
-do script "cd /path && command" in front window
-set name of front window to "title"
-end tell'
-
-### iTerm2 Command Pattern
-
-osascript -e 'tell application "iTerm2"
-set newWindow to (create window with default profile command "cmd")
-end tell'
-
-### macOS PID Discovery Alternatives
-
-Instead of /proc scanning:
-
-- pgrep -f claude: Find by cmdline pattern
-- ps aux: List all processes, filter for claude
-- lsof +D /path/to/worktree: Find processes with files open in dir
-
-Wrapper script approach still works - bash is available on macOS.
-
-## macOS Platform Layer
-
-macOS terminal support uses AppleScript via osascript binary.
-
-Detection priority: iTerm2 (/Applications/iTerm.app) > cross-platform (kitty, alacritty, wezterm) > Terminal.app (fallback)
-
-## AppleScript Window Management
-
-Escape double quotes with replace('"', '\\"') before embedding in AppleScript strings.
-Window title search uses 'whose name contains' for partial matching.
 
 ## Shell Completion Architecture
 
@@ -866,83 +809,9 @@ File scanning: Standard fs::read_dir() with extension filtering (.md only).
 - Four stage categories: executing, pending, completed, blocked
 - LiveStatus.unified_stages() merges and deduplicates
 
-## Stage Completion Flow
 
-1. Work done -> try_complete() sets completed_at + duration_secs
-2. Merge success -> try_complete_merge() sets merged=true
-3. Dependencies check merged=true before transitioning to Queued
-4. graph.is_complete() requires Completed OR Skipped on ALL stages
 
-## Template-Skill Coordination Pattern
 
-CLAUDE.md.template and skills/loom-plan-writer/SKILL.md share overlapping content.
-
-**Principle:** CLAUDE.md.template defines RULES, loom-plan-writer provides TEMPLATES + EXAMPLES.
-
-Keep rules DRY - template states the rule once, skill expands with examples.
-
-### Template Section Order
-
-CLAUDE.md.template canonical sections:
-
-1. Header + timestamp (auto-generated at install)
-2. Critical Rules (1-11) - MUST follow exactly
-3. Standard Rules (12-15) - Quality guidelines
-4. Delegation section - Subagent prompt templates
-5. Loom Orchestration - Session lifecycle
-6. Templates section - Handoff and signal formats
-7. References section - file:line format
-8. Critical Reminders - Consolidated checklist
-
-### Knowledge File Types
-
-Five knowledge files currently exist:
-
-- entry-points.md - Key files to read first (file:line refs)
-- patterns.md - Architectural patterns and best practices
-- conventions.md - Coding standards and naming schemes
-- mistakes.md - Lessons learned from errors
-- architecture.md - High-level system architecture overview
-
-All are append-only. Agents add discoveries, never delete.
-
-## Zombie Process Prevention - Reaper Thread
-
-spawner.rs:17-26 spawns a background thread that calls child.wait() to reap zombie processes. Used immediately after terminal spawn (line 62).
-
-## PID Tracking and Wrapper Scripts
-
-pid_tracking.rs:242-332 creates wrapper scripts that write PID to .work/pids/{stage-id}.pid before exec'ing claude.
-
-cleanup_stage_files() (line 83-86) removes both PID file and wrapper script.
-
-## Window-Based Terminal Closure
-
-window_ops.rs prefers closing by window title over PID killing for compatibility.
-
-Linux: wmctrl -c (primary), xdotool (fallback).
-macOS: osascript with AppleScript for Terminal.app/iTerm2.
-
-## Session Kill Strategy
-
-native/mod.rs:344-384 uses layered approach:
-1. Close window by title (loom-{stage_id})
-2. Fallback: SIGTERM to stored PID
-3. Clean up tracking files after either method
-
-## Terminal State Restoration
-
-utils.rs:22-35 cleanup_terminal() clears line, shows cursor, resets attributes.
-
-Panic hook (lines 41-50) installs terminal cleanup before panic using Once for single installation.
-
-## Session Liveness Check
-
-native/mod.rs:386-428 uses layered checking:
-1. Check PID file (most current)
-2. Verify PID is alive via kill -0
-3. Fallback to session.pid
-4. Final fallback: window existence by title
 
 ## Memory Enforcement (Defense in Depth)
 

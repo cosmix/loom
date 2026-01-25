@@ -383,46 +383,16 @@ impl std::fmt::Display for StageStatus {
 }
 ```
 
-## Signal File Structure
-
-### Header Format
-
-```markdown
-# Signal: {session-id}
-
-## Worktree Context
-
-...
-
-## Target
-
-- **Session**: {session-id}
-- **Stage**: {stage-id}
-- **Worktree**: {path}
-- **Branch**: {branch}
-
-## Assignment
-
-{Stage name and description}
-
-## Acceptance Criteria
-
-- [ ] {criterion}
-```
 
 ## Hook Conventions
 
 ### Hook Location
 
-Hooks installed to `~/.claude/hooks/loom/` (not `~/.claude/hooks/`)
+Hooks installed to `~/.claude/hooks/loom/` (loom subdirectory for isolation)
 
-### Hook Types
+### Naming
 
-- Session lifecycle: `post-tool-use`, `session-start`, `pre-compact`, `session-end`
-- Learning protection: `learning-validator`
-- Subagent: `subagent-stop`
-- User interaction: `ask-user-pre`, `ask-user-post`
-- Global: `commit-guard`
+Pattern: `<event>-<action>.sh` (e.g., `session-start.sh`, `post-tool-use.sh`)
 
 ## Comment Style
 
@@ -488,64 +458,6 @@ Three valid formats (can combine):
 2. `trigger-keywords:` comma-separated string
 3. Inline in `description:` field with "Trigger keywords:" prefix
 
-## Hook Script Convention
-
-### Location
-
-Hooks installed to `~/.claude/hooks/loom/` (loom subdirectory for isolation)
-
-### Naming
-
-Pattern: `<event>-<action>.sh` (e.g., `session-start.sh`, `post-tool-use.sh`)
-
-### Environment Variables
-
-Available to all hooks:
-
-- `LOOM_STAGE_ID` - Current stage identifier
-- `LOOM_SESSION_ID` - Claude Code session identifier
-- `LOOM_WORK_DIR` - Path to `.work/` directory
-
-Tool-specific (PreToolUse/PostToolUse):
-
-- `TOOL_NAME` - Tool being executed
-- `TOOL_INPUT` - Tool's input parameter
-
-### Exit Codes
-
-| Code | Meaning                                           |
-| ---- | ------------------------------------------------- |
-| 0    | Success, continue                                 |
-| 1    | Error, may block exit (Stop hooks)                |
-| 2    | Block execution with guidance (PreferModernTools) |
-
-### Blocking Output Format
-
-```json
-{ "continue": false, "reason": "..." }
-```
-
-## Install Process Convention
-
-### Hook Installation (`loom hooks install`)
-
-1. Find repository root (where `.git` is)
-2. Create `~/.claude/hooks/loom/` directory
-3. Extract embedded scripts from Rust constants
-4. Set executable permission (0o755)
-5. Configure `.claude/settings.local.json`
-
-### Skill Installation (`loom self-update`)
-
-1. Download `skills.zip` from GitHub releases
-2. Extract to `~/.claude/skills/`
-3. Overwrite existing skills
-
-### Template Installation
-
-1. Read `CLAUDE.md.template` from source
-2. Prepend timestamp header
-3. Write to `~/.claude/CLAUDE.md`
 
 ## CLAUDE.md.template Convention
 
@@ -571,19 +483,7 @@ Tool-specific (PreToolUse/PostToolUse):
 - Any `.claude/plans/` path - NEVER write here
 - Only valid: `doc/plans/PLAN-<description>.md`
 
-## Stage Complete CLI Flags
 
---no-verify: Skip acceptance, no merge, merged=false
---force-unsafe: Bypass state machine (recovery only)
---assume-merged: With force-unsafe, set merged=true
-Without --assume-merged: dependents NOT triggered
-
-## CLI Command Pattern (main.rs)
-
-- clap derive macros: #[derive(Parser)], #[derive(Subcommand)]
-- Nested subcommands: Commands -> StageCommands -> OutputCommands
-- Value validators: clap_id_validator, clap_description_validator
-- Help template: Custom ASCII art banner with HELP_TEMPLATE
 
 ## Re-export Conventions in mod.rs
 
@@ -633,32 +533,3 @@ Without --assume-merged: dependents NOT triggered
 - test_detect_terminal_finds_something allows failure in minimal envs
 - Window operation tests check graceful handling of missing wmctrl/xdotool
 - Use tempfile::TempDir for PID file tests
-
-## macOS PID Discovery
-
-Use ps aux to list processes, filter for 'claude', then lsof -p PID to get cwd.
-Compare cwd with expected worktree path to identify correct process.
-
-## Git Command Pattern
-
-All commands use Command::new("git") with:
-- .current_dir(repo_root)
-- .output() for captured output
-- status.success() check + error context
-- .with_context() with exit code, stdout, stderr
-
-## Git Module Operations
-
-Worktree (git/worktree/operations.rs): add, remove, list, prune
-Branch (git/branch/operations.rs): create, delete, current, exists
-Merge (git/merge.rs): execute, test, abort, get conflicts
-Cleanup (git/cleanup/): batch cleanup after merge
-
-## Merge Conflict Detection
-
-Three-stage (git/merge.rs):
-1. Test merge: git merge --no-commit --no-ff
-2. Check for CONFLICT in stderr/stdout
-3. File list: git diff --name-only --diff-filter=U
-
-Always restore original branch on failure (.ok() for cleanup)
