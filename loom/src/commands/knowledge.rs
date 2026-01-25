@@ -171,6 +171,8 @@ fn parse_file_type(file: &str) -> Result<KnowledgeFile> {
         "pattern" => Ok(KnowledgeFile::Patterns),
         "convention" | "conventions" | "code" | "coding" => Ok(KnowledgeFile::Conventions),
         "mistake" | "mistakes" | "lessons" | "lesson" => Ok(KnowledgeFile::Mistakes),
+        "stack" | "deps" | "dependencies" | "tech" | "tooling" => Ok(KnowledgeFile::Stack),
+        "concerns" | "concern" | "debt" | "issues" | "warnings" => Ok(KnowledgeFile::Concerns),
         _ => {
             let valid_files: Vec<_> = KnowledgeFile::all().iter().map(|f| f.filename()).collect();
             bail!(
@@ -242,6 +244,27 @@ mod tests {
         assert_eq!(parse_file_type("mistake").unwrap(), KnowledgeFile::Mistakes);
         assert_eq!(parse_file_type("lessons").unwrap(), KnowledgeFile::Mistakes);
         assert_eq!(parse_file_type("lesson").unwrap(), KnowledgeFile::Mistakes);
+        // Test new Stack type
+        assert_eq!(parse_file_type("stack").unwrap(), KnowledgeFile::Stack);
+        assert_eq!(parse_file_type("stack.md").unwrap(), KnowledgeFile::Stack);
+        assert_eq!(parse_file_type("deps").unwrap(), KnowledgeFile::Stack);
+        assert_eq!(
+            parse_file_type("dependencies").unwrap(),
+            KnowledgeFile::Stack
+        );
+        assert_eq!(parse_file_type("tech").unwrap(), KnowledgeFile::Stack);
+        // Test new Concerns type
+        assert_eq!(
+            parse_file_type("concerns").unwrap(),
+            KnowledgeFile::Concerns
+        );
+        assert_eq!(
+            parse_file_type("concerns.md").unwrap(),
+            KnowledgeFile::Concerns
+        );
+        assert_eq!(parse_file_type("debt").unwrap(), KnowledgeFile::Concerns);
+        assert_eq!(parse_file_type("issues").unwrap(), KnowledgeFile::Concerns);
+        // Test unknown
         assert!(parse_file_type("unknown").is_err());
     }
 
