@@ -155,7 +155,7 @@ fn parse_merge_stats(output: &str) -> (u32, u32, u32) {
 }
 
 /// Get list of files with conflicts (during an active merge)
-fn get_conflicting_files(repo_root: &Path) -> Result<Vec<String>> {
+pub fn get_conflicting_files(repo_root: &Path) -> Result<Vec<String>> {
     let output = Command::new("git")
         .args(["diff", "--name-only", "--diff-filter=U"])
         .current_dir(repo_root)

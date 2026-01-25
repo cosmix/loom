@@ -6,8 +6,8 @@
 
 use anyhow::{bail, Context, Result};
 use std::path::Path;
-use std::process::Command;
 
+use crate::git::get_conflicting_files;
 use crate::models::stage::StageStatus;
 use crate::verify::transitions::{load_stage, save_stage, trigger_dependents};
 
@@ -35,7 +35,7 @@ pub fn merge_complete(stage_id: String) -> Result<()> {
 
     // Check git status for unmerged files
     let repo_root = std::env::current_dir().context("Failed to get current directory")?;
-    if has_unmerged_files(&repo_root)? {
+    if !get_conflicting_files(&repo_root)?.is_empty() {
         bail!(
             "There are still unmerged files in the repository. \
              Please resolve all conflicts before running this command.\n\
@@ -77,18 +77,6 @@ pub fn merge_complete(stage_id: String) -> Result<()> {
     Ok(())
 }
 
-/// Check if there are unmerged files in the repository
-fn has_unmerged_files(repo_root: &Path) -> Result<bool> {
-    let output = Command::new("git")
-        .args(["diff", "--name-only", "--diff-filter=U"])
-        .current_dir(repo_root)
-        .output()
-        .context("Failed to run git diff")?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(!stdout.trim().is_empty())
-}
-
 /// Check if a merge is in progress
 fn is_merge_in_progress(repo_root: &Path) -> Result<bool> {
     let merge_head = repo_root.join(".git").join("MERGE_HEAD");
@@ -98,11 +86,12 @@ fn is_merge_in_progress(repo_root: &Path) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
     use tempfile::TempDir;
 
     #[test]
-    fn test_has_unmerged_files_clean() {
-        // In a clean repo, there should be no unmerged files
+    fn test_get_conflicting_files_clean() {
+        // In a clean repo, there should be no conflicting files
         let temp_dir = TempDir::new().unwrap();
         let repo_root = temp_dir.path();
 
@@ -113,7 +102,7 @@ mod tests {
             .output()
             .unwrap();
 
-        assert!(!has_unmerged_files(repo_root).unwrap());
+        assert!(get_conflicting_files(repo_root).unwrap().is_empty());
     }
 
     #[test]
