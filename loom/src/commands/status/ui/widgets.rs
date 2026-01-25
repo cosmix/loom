@@ -1,6 +1,6 @@
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Gauge;
+use ratatui::widgets::{Block, Borders, Gauge, List, ListItem};
 
 use super::theme::{StatusColors, Theme};
 use crate::commands::status::data::ActivityStatus;
@@ -128,4 +128,29 @@ pub fn context_budget_gauge(usage_pct: f32, budget_pct: f32) -> Gauge<'static> {
         .percent(usage_pct.clamp(0.0, 100.0) as u16)
         .gauge_style(Style::default().fg(color))
         .label(format!("{usage_pct:.0}% (budget: {budget_pct:.0}%)"))
+}
+
+/// Create an activity feed widget displaying recent activities with status
+///
+/// # Arguments
+/// * `activities` - Slice of (message, status) tuples
+/// * `title` - Widget title
+pub fn activity_feed_widget<'a>(
+    activities: &'a [(String, ActivityStatus)],
+    title: &'a str,
+) -> List<'a> {
+    let items: Vec<ListItem> = activities
+        .iter()
+        .map(|(msg, status)| {
+            let style = match status {
+                ActivityStatus::Working => Theme::status_executing(),
+                ActivityStatus::Error => Theme::status_blocked(),
+                ActivityStatus::Stale => Theme::status_warning(),
+                ActivityStatus::Idle => Theme::dimmed(),
+            };
+            ListItem::new(format!("{} {}", status.icon(), msg)).style(style)
+        })
+        .collect();
+
+    List::new(items).block(Block::default().borders(Borders::ALL).title(title))
 }

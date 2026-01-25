@@ -9,5 +9,6 @@ pub use theme::{StatusColors, Theme};
 pub use tree_widget::{execution_tree, TreeWidget};
 pub use tui::run_tui;
 pub use widgets::{
-    activity_indicator, context_bar, context_budget_gauge, progress_bar, status_indicator,
+    activity_feed_widget, activity_indicator, context_bar, context_budget_gauge, progress_bar,
+    status_indicator,
 };
