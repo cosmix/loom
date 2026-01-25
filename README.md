@@ -120,9 +120,13 @@ Agents monitor their context usage and act accordingly:
 
 | Level  | Usage  | Action                                       |
 | ------ | ------ | -------------------------------------------- |
-| Green  | < 60%  | Normal operation                             |
-| Yellow | 60-74% | Consider creating handoff soon               |
-| Red    | >= 75% | Create handoff immediately, then start fresh |
+| Green  | < 50%  | Normal operation                             |
+| Yellow | 50-64% | Consider creating handoff soon               |
+| Red    | >= 65% | Create handoff immediately, then start fresh |
+
+Stages can customize their context budget via the `context_budget` field (1-100%).
+The default is 65%. When a stage exceeds its budget, loom triggers an automatic
+handoff to preserve context and continue work in a fresh session.
 
 ### State Persistence
 
@@ -506,6 +510,36 @@ loom clean [--all] [--worktrees] [--sessions] [--state]
 # - --state: remove .work/ only
 ```
 
+### Verification Commands
+
+Commands for goal-backward verification:
+
+```bash
+# Verify a stage's outcomes (not just test completion)
+loom verify <stage-id> [--suggest]
+# - Runs acceptance criteria first
+# - Then validates goal-backward checks:
+#   - TRUTHS: Observable behaviors that must work (shell commands → exit 0)
+#   - ARTIFACTS: Files that exist with real implementation (not stubs)
+#   - WIRING: Critical connections between components (grep patterns)
+# - --suggest: Generate fix suggestions for any gaps found
+```
+
+### Codebase Mapping Commands
+
+Commands for automated codebase analysis:
+
+```bash
+# Map codebase structure to knowledge files
+loom map [--deep] [--focus <area>] [--overwrite]
+# - Analyzes project structure, dependencies, entry points
+# - Detects conventions, patterns, and potential concerns
+# - Writes findings to knowledge files (stack.md, concerns.md, etc.)
+# - --deep: More thorough analysis (slower)
+# - --focus: Focus on specific area (e.g., "auth", "api")
+# - --overwrite: Replace existing knowledge (default: append)
+```
+
 ### Knowledge Management Commands
 
 Commands for managing curated codebase knowledge:
@@ -518,15 +552,17 @@ loom knowledge show [file]
 loom knowledge update <file> <content>
 # - init: initialize doc/loom/knowledge/ directory
 # - list: list all knowledge files
-# - show: show summary or specific file (entry-points, patterns, conventions)
+# - show: show summary or specific file
 # - update: append content to a knowledge file
 #
-# Knowledge files should capture:
-#   - Entry points: Key files to read first, main modules, directory layout
-#   - Architectural patterns: Error handling, state management, data flow
-#   - Coding conventions: Naming, file structure, testing patterns
-#   - Mistakes and lessons learned: What went wrong, how to avoid it
-#   - Architecture decisions: Design rationale and tradeoffs
+# Knowledge files:
+#   - architecture.md: High-level component relationships and data flow
+#   - entry-points.md: Key files to read first, main modules
+#   - patterns.md: Architectural patterns and best practices
+#   - conventions.md: Naming, file structure, testing patterns
+#   - mistakes.md: Lessons learned from errors
+#   - stack.md: Dependencies, frameworks, and tooling
+#   - concerns.md: Technical debt, warnings, and issues
 #
 # This curated knowledge base helps agents understand the codebase quickly
 # and avoid repeating past mistakes.
@@ -621,17 +657,54 @@ loom:
 
 ### Metadata Fields
 
-| Field            | Required | Description                                |
-| ---------------- | -------- | ------------------------------------------ |
-| `version`        | Yes      | loom metadata schema version (currently 1) |
-| `stages`         | Yes      | List of work stages with dependencies      |
-| `id`             | Yes      | Unique stage identifier (kebab-case)       |
-| `name`           | Yes      | Human-readable stage name                  |
-| `description`    | Yes      | What this stage accomplishes               |
-| `dependencies`   | No       | Stage IDs that must complete first         |
-| `parallel_group` | No       | Group name for parallel execution          |
-| `acceptance`     | No       | Shell commands to verify completion        |
-| `files`          | No       | Glob patterns for modified files           |
+| Field            | Required | Description                                       |
+| ---------------- | -------- | ------------------------------------------------- |
+| `version`        | Yes      | loom metadata schema version (currently 1)        |
+| `stages`         | Yes      | List of work stages with dependencies             |
+| `id`             | Yes      | Unique stage identifier (kebab-case)              |
+| `name`           | Yes      | Human-readable stage name                         |
+| `description`    | Yes      | What this stage accomplishes                      |
+| `dependencies`   | No       | Stage IDs that must complete first                |
+| `parallel_group` | No       | Group name for parallel execution                 |
+| `acceptance`     | No       | Shell commands to verify completion               |
+| `files`          | No       | Glob patterns for modified files                  |
+| `context_budget` | No       | Max context usage % before handoff (default: 65)  |
+| `truths`         | No       | Observable behaviors to verify (shell commands)   |
+| `artifacts`      | No       | Files that must exist with real implementation    |
+| `wiring`         | No       | Critical connections to verify (source + pattern) |
+
+### Goal-Backward Verification
+
+Standard acceptance criteria (tests passing) don't guarantee a feature actually works.
+Code can compile, pass tests, but never be wired up. Goal-backward verification
+validates **outcomes**, not just task completion:
+
+```yaml
+stages:
+  - id: auth-feature
+    name: "Authentication"
+    acceptance:
+      - "cargo test auth"
+    # Goal-backward verification (optional but recommended)
+    truths:
+      - "curl -sf localhost:8080/login -d 'user=test&pass=test'"
+      - "./target/debug/app --version | grep -q 'auth enabled'"
+    artifacts:
+      - "src/auth/*.rs" # Must exist with real code (not stubs)
+    wiring:
+      - source: "src/main.rs"
+        pattern: "use auth::"
+        description: "Auth module imported in main"
+      - source: "src/routes.rs"
+        pattern: "login_handler"
+        description: "Login route registered"
+```
+
+Run `loom verify <stage-id>` to check all three layers:
+
+- **Truths**: Shell commands that return exit 0 if the behavior works
+- **Artifacts**: Files exist with real implementation (detects stubs/TODOs)
+- **Wiring**: Critical connections verified via grep patterns
 
 ## Workflow Example
 
@@ -694,12 +767,12 @@ loom stage release stage-3
 
 Loom uses a streamlined 4-agent architecture with clear separation between strategic thinking (Opus) and implementation (Sonnet):
 
-| Agent                         | Model  | Purpose                                                     |
-| ----------------------------- | ------ | ----------------------------------------------------------- |
-| `senior-software-engineer`    | opus   | Architecture, design patterns, complex debugging, strategy  |
-| `software-engineer`           | sonnet | All routine implementation across domains                   |
-| `security-engineer`           | opus   | Security review, threat modeling, vulnerability analysis    |
-| `senior-infrastructure-engineer` | opus | Cloud architecture, IaC, Kubernetes, CI/CD, monitoring   |
+| Agent                            | Model  | Purpose                                                    |
+| -------------------------------- | ------ | ---------------------------------------------------------- |
+| `senior-software-engineer`       | opus   | Architecture, design patterns, complex debugging, strategy |
+| `software-engineer`              | sonnet | All routine implementation across domains                  |
+| `security-engineer`              | opus   | Security review, threat modeling, vulnerability analysis   |
+| `senior-infrastructure-engineer` | opus   | Cloud architecture, IaC, Kubernetes, CI/CD, monitoring     |
 
 ### When to Use Each Agent
 
