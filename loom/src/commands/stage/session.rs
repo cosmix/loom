@@ -9,6 +9,7 @@ use std::path::Path;
 
 use crate::models::session::{Session, SessionStatus};
 use crate::orchestrator::continuation::session_to_markdown;
+use crate::parser::frontmatter::parse_from_markdown;
 
 /// Clean up resources associated with a completed stage
 ///
@@ -52,7 +53,7 @@ fn update_session_status(work_dir: &Path, session_id: &str, status: SessionStatu
         .with_context(|| format!("Failed to read session file: {}", session_path.display()))?;
 
     // Parse session from markdown
-    let session = session_from_markdown(&content)?;
+    let session: Session = parse_from_markdown(&content, "Session")?;
 
     // Update status
     let mut session = session;
@@ -65,15 +66,4 @@ fn update_session_status(work_dir: &Path, session_id: &str, status: SessionStatu
         .with_context(|| format!("Failed to write session file: {}", session_path.display()))?;
 
     Ok(())
-}
-
-/// Parse session from markdown with YAML frontmatter
-pub fn session_from_markdown(content: &str) -> Result<Session> {
-    let yaml_content = content
-        .strip_prefix("---\n")
-        .and_then(|s| s.split_once("\n---"))
-        .map(|(yaml, _)| yaml)
-        .ok_or_else(|| anyhow::anyhow!("Invalid session file format: missing frontmatter"))?;
-
-    serde_yaml::from_str(yaml_content).context("Failed to parse session YAML")
 }

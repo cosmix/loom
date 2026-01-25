@@ -1,11 +1,12 @@
 //! Tests for session operations
 
 use super::super::complete::cleanup_terminal_for_stage;
-use super::super::session::{cleanup_session_resources, session_from_markdown};
+use super::super::session::cleanup_session_resources;
 use super::setup_work_dir;
 use crate::fs::session_files::find_session_for_stage;
 use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::orchestrator::continuation::session_to_markdown;
+use crate::parser::frontmatter::parse_from_markdown;
 use chrono::Utc;
 use std::fs;
 use std::path::Path;
@@ -27,7 +28,7 @@ last_active: "2024-01-01T00:00:00Z"
 # Session: session-1
 "#;
 
-    let result = session_from_markdown(content);
+    let result: anyhow::Result<Session> = parse_from_markdown(content, "Session");
 
     assert!(result.is_ok());
     let session = result.unwrap();
@@ -39,13 +40,13 @@ last_active: "2024-01-01T00:00:00Z"
 fn test_session_from_markdown_no_frontmatter() {
     let content = "No frontmatter here";
 
-    let result = session_from_markdown(content);
+    let result: anyhow::Result<Session> = parse_from_markdown(content, "Session");
 
     assert!(result.is_err());
     assert!(result
         .unwrap_err()
         .to_string()
-        .contains("missing frontmatter"));
+        .contains("No frontmatter delimiter"));
 }
 
 #[test]

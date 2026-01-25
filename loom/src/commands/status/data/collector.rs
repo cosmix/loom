@@ -54,12 +54,7 @@ fn load_session_from_file(path: &std::path::Path) -> Result<Session> {
     let content = fs::read_to_string(path)
         .with_context(|| format!("Failed to read session file: {}", path.display()))?;
 
-    parse_session_from_markdown(&content)
-}
-
-/// Parse a Session from markdown with YAML frontmatter
-fn parse_session_from_markdown(content: &str) -> Result<Session> {
-    parse_from_markdown(content, "Session")
+    parse_from_markdown(&content, "Session")
 }
 
 /// Build a StageSummary from a Stage and optional associated Session
@@ -362,7 +357,7 @@ last_active: "2024-01-01T00:00:00Z"
 
 # Session content"#;
 
-        let result = parse_session_from_markdown(content);
+        let result: Result<Session> = parse_from_markdown(content, "Session");
         assert!(result.is_ok());
         let session = result.unwrap();
         assert_eq!(session.id, "test-session");
@@ -373,7 +368,7 @@ last_active: "2024-01-01T00:00:00Z"
         let content = r#"id: test
 status: executing"#;
 
-        let result = parse_session_from_markdown(content);
+        let result: Result<Session> = parse_from_markdown(content, "Session");
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
