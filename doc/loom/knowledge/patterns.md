@@ -914,3 +914,9 @@ Example YAML usage:
     - source: src/main.rs
       pattern: 'use auth::'
       description: Auth module imported
+
+## Knowledge Commands Independence
+
+Knowledge commands work without .work/ directory.
+
+WorkDir::main_project_root() works when .work doesn't exist - returns current directory.
