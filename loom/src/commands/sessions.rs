@@ -123,8 +123,8 @@ fn kill_single_session(work_dir: &std::path::Path, session_id: &str) -> Result<(
         .with_context(|| format!("Failed to read session file: {}", session_file.display()))?;
 
     // Parse session from markdown YAML frontmatter
-    let session: Session =
-        parse_from_markdown(&content, "Session").context("Failed to parse session from markdown")?;
+    let session: Session = parse_from_markdown(&content, "Session")
+        .context("Failed to parse session from markdown")?;
 
     // Detect backend type from session metadata
     let backend_type = detect_backend_type(&session);
