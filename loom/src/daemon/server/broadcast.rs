@@ -53,7 +53,7 @@ fn run_log_tailer(
     while !shutdown_flag.load(Ordering::Relaxed) {
         // Periodically check for log rotation or truncation
         iteration_count = iteration_count.wrapping_add(1);
-        if iteration_count % LOG_ROTATION_CHECK_INTERVAL == 0 {
+        if iteration_count.is_multiple_of(LOG_ROTATION_CHECK_INTERVAL) {
             if let Some((new_reader, new_inode)) =
                 check_log_rotation(log_path, &mut reader, current_inode)?
             {
