@@ -160,6 +160,21 @@ pub enum Commands {
         state: bool,
     },
 
+    /// Map codebase structure to knowledge files
+    Map {
+        /// Deep analysis (more thorough, slower)
+        #[arg(short, long)]
+        deep: bool,
+
+        /// Focus on specific area (e.g., "auth", "api", "db")
+        #[arg(short, long)]
+        focus: Option<String>,
+
+        /// Overwrite existing knowledge (default: append)
+        #[arg(long)]
+        overwrite: bool,
+    },
+
     /// Stop the running daemon
     Stop,
 

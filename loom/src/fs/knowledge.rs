@@ -16,6 +16,8 @@ pub enum KnowledgeFile {
     Patterns,
     Conventions,
     Mistakes,
+    Stack,
+    Concerns,
 }
 
 impl KnowledgeFile {
@@ -27,6 +29,8 @@ impl KnowledgeFile {
             KnowledgeFile::Patterns => "patterns.md",
             KnowledgeFile::Conventions => "conventions.md",
             KnowledgeFile::Mistakes => "mistakes.md",
+            KnowledgeFile::Stack => "stack.md",
+            KnowledgeFile::Concerns => "concerns.md",
         }
     }
 
@@ -40,6 +44,8 @@ impl KnowledgeFile {
             KnowledgeFile::Patterns => "Architectural patterns discovered in the codebase",
             KnowledgeFile::Conventions => "Coding conventions discovered in the codebase",
             KnowledgeFile::Mistakes => "Mistakes made and lessons learned - what to avoid",
+            KnowledgeFile::Stack => "Dependencies, frameworks, and tooling used in the project",
+            KnowledgeFile::Concerns => "Technical debt, warnings, and issues to address",
         }
     }
 
@@ -51,6 +57,8 @@ impl KnowledgeFile {
             "patterns.md" => Some(KnowledgeFile::Patterns),
             "conventions.md" => Some(KnowledgeFile::Conventions),
             "mistakes.md" => Some(KnowledgeFile::Mistakes),
+            "stack.md" => Some(KnowledgeFile::Stack),
+            "concerns.md" => Some(KnowledgeFile::Concerns),
             _ => None,
         }
     }
@@ -63,6 +71,8 @@ impl KnowledgeFile {
             KnowledgeFile::Patterns,
             KnowledgeFile::Conventions,
             KnowledgeFile::Mistakes,
+            KnowledgeFile::Stack,
+            KnowledgeFile::Concerns,
         ]
     }
 }
@@ -276,6 +286,22 @@ impl KnowledgeDir {
 (Add mistakes and lessons as you encounter them)
 "#
             .to_string(),
+            KnowledgeFile::Stack => r#"# Stack & Dependencies
+
+> Project technology stack, frameworks, and key dependencies.
+> This file is append-only - agents add discoveries, never delete.
+
+(Add stack information as you discover it)
+"#
+            .to_string(),
+            KnowledgeFile::Concerns => r#"# Concerns & Technical Debt
+
+> Technical debt, warnings, issues, and improvements needed.
+> This file is append-only - agents add discoveries, never delete.
+
+(Add concerns as you discover them)
+"#
+            .to_string(),
         }
     }
 
@@ -304,6 +330,8 @@ mod tests {
         assert_eq!(KnowledgeFile::Patterns.filename(), "patterns.md");
         assert_eq!(KnowledgeFile::Conventions.filename(), "conventions.md");
         assert_eq!(KnowledgeFile::Mistakes.filename(), "mistakes.md");
+        assert_eq!(KnowledgeFile::Stack.filename(), "stack.md");
+        assert_eq!(KnowledgeFile::Concerns.filename(), "concerns.md");
     }
 
     #[test]
@@ -323,6 +351,14 @@ mod tests {
         assert_eq!(
             KnowledgeFile::from_filename("mistakes.md"),
             Some(KnowledgeFile::Mistakes)
+        );
+        assert_eq!(
+            KnowledgeFile::from_filename("stack.md"),
+            Some(KnowledgeFile::Stack)
+        );
+        assert_eq!(
+            KnowledgeFile::from_filename("concerns.md"),
+            Some(KnowledgeFile::Concerns)
         );
         assert_eq!(KnowledgeFile::from_filename("unknown.md"), None);
     }

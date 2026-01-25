@@ -6,6 +6,7 @@ pub mod graph;
 pub mod hooks;
 pub mod init;
 pub mod knowledge;
+pub mod map;
 pub mod memory;
 pub mod merge;
 pub mod resume;

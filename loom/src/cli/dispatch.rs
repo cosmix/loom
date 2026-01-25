@@ -1,7 +1,7 @@
 use anyhow::Result;
 use loom::checkpoints::CheckpointStatus;
 use loom::commands::{
-    checkpoint, clean, diagnose, graph, hooks, init, knowledge, memory, merge, resume, run,
+    checkpoint, clean, diagnose, graph, hooks, init, knowledge, map, memory, merge, resume, run,
     self_update, sessions, stage, status, stop, verify, worktree_cmd,
 };
 use loom::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
@@ -126,6 +126,11 @@ pub fn dispatch(command: Commands) -> Result<()> {
             sessions,
             state,
         } => clean::execute(all, worktrees, sessions, state),
+        Commands::Map {
+            deep,
+            focus,
+            overwrite,
+        } => map::execute(deep, focus, overwrite),
         Commands::Stop => stop::execute(),
         Commands::Checkpoint { command } => match command {
             CheckpointCommands::Create {
