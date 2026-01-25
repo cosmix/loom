@@ -232,3 +232,16 @@ Used loom/src/... when working_dir=loom. Should use src/... (relative to working
 
 - **Added context budget fields to EmbeddedContext struct**
   - _Rationale:_ Enables signal files to display budget warnings when agents approach or exceed their context limits
+
+## status-enhance acceptance criteria path issue
+
+Criteria used 'loom/src/...' but working_dir='loom'. Fix paths to use 'src/...' not 'loom/src/...'
+
+## codebase-mapping marked complete without code (2026-01-25)
+
+Stage marked Completed but code never written:
+- No loom map command
+- No Stack/Concerns knowledge types
+- No map module in src/
+
+Stage marked complete without verifying acceptance criteria passed.

@@ -295,3 +295,19 @@ Stages merged in dependency order with invariant: a stage can only merge after a
 - **Acceptance criteria**: Runs arbitrary shell commands (trusted model)
 - **Socket permissions**: Currently default (NEEDS FIX: should be 0600)
 - **Self-update**: Signature verification with minisign
+
+## Verification System
+
+CriterionResult (verify/criteria/result.rs:7-60): Single command result with success, stdout/stderr, exit_code, duration, timed_out.
+
+AcceptanceResult (result.rs:64-110): AllPassed or Failed enum aggregating CriterionResults with pass/fail counts.
+
+## Monitor System
+
+MonitorEvent (monitor/events.rs:7-95): Events include StageCompleted, SessionContextWarning/Critical, SessionCrashed, SessionHung, CheckpointCreated, BudgetExceeded.
+
+ContextHealth (monitor/context.rs:10-17): Green (<50%), Yellow (50-64%), Red (65%+) thresholds for handoff triggers.
+
+RecoveryType (events.rs:98-108): Crash (PID dead), Hung (no heartbeat), ContextRefresh (graceful), Manual (user triggered).
+
+Verification flow: acceptance criteria → stage complete → progressive merge.
