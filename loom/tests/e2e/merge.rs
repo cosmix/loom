@@ -43,6 +43,7 @@ fn create_test_stage(id: &str, auto_merge: Option<bool>) -> Stage {
         completed_commit: None,
         merged: false,
         merge_conflict: false,
+        verification_status: Default::default(),
     }
 }
 

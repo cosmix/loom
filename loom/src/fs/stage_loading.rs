@@ -42,6 +42,9 @@ impl StageFrontmatter {
             auto_merge: None,
             working_dir: self.working_dir.unwrap_or_else(|| ".".to_string()),
             stage_type: crate::plan::schema::StageType::default(),
+            truths: Vec::new(),
+            artifacts: Vec::new(),
+            wiring: Vec::new(),
         }
     }
 }

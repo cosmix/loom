@@ -176,6 +176,22 @@ pub enum Commands {
         stage_id: String,
     },
 
+    /// Run goal-backward verification for a stage
+    ///
+    /// Validates OUTCOMES beyond acceptance criteria:
+    /// - TRUTHS: Observable behaviors that must work
+    /// - ARTIFACTS: Files that exist with real implementation
+    /// - WIRING: Critical connections between components
+    Verify {
+        /// Stage ID to verify (alphanumeric, dash, underscore only; max 128 characters)
+        #[arg(value_parser = clap_id_validator)]
+        stage_id: String,
+
+        /// Generate fix suggestions for gaps
+        #[arg(long)]
+        suggest: bool,
+    },
+
     /// Generate shell completion script
     Completions {
         /// Shell to generate completions for (bash, zsh, fish)

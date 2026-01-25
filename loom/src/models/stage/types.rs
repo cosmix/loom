@@ -10,6 +10,35 @@ use crate::models::failure::FailureInfo;
 /// between knowledge-gathering stages and standard implementation stages.
 pub use crate::plan::schema::StageType;
 
+/// Status of goal-backward verification for a stage
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum VerificationStatus {
+    /// Verification has not been run
+    #[default]
+    NotRun,
+    /// All verifications passed
+    Passed,
+    /// Gaps were found
+    GapsFound {
+        /// Number of gaps found
+        gap_count: usize,
+    },
+    /// Some checks require human judgment
+    HumanNeeded,
+}
+
+impl std::fmt::Display for VerificationStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VerificationStatus::NotRun => write!(f, "NotRun"),
+            VerificationStatus::Passed => write!(f, "Passed"),
+            VerificationStatus::GapsFound { gap_count } => write!(f, "GapsFound({gap_count})"),
+            VerificationStatus::HumanNeeded => write!(f, "HumanNeeded"),
+        }
+    }
+}
+
 /// A structured output from a completed stage that can be passed to dependent stages.
 ///
 /// Outputs allow stages to communicate computed values, discovered paths, or
@@ -110,6 +139,9 @@ pub struct Stage {
     /// Whether stage has unresolved merge conflicts
     #[serde(default)]
     pub merge_conflict: bool,
+    /// Goal-backward verification status
+    #[serde(default)]
+    pub verification_status: VerificationStatus,
 }
 
 /// Status of a stage in the execution lifecycle.

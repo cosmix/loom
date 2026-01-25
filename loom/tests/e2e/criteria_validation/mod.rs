@@ -31,6 +31,9 @@ pub(crate) fn create_valid_stage(id: &str, name: &str) -> StageDefinition {
         auto_merge: None,
         working_dir: ".".to_string(),
         stage_type: StageType::default(),
+        truths: vec![],
+        artifacts: vec![],
+        wiring: vec![],
     }
 }
 

@@ -149,6 +149,81 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
                 });
             }
         }
+
+        // Validate truths
+        if stage.truths.len() > 20 {
+            errors.push(ValidationError {
+                message: format!("Too many truths ({}, max 20)", stage.truths.len()),
+                stage_id: Some(stage.id.clone()),
+            });
+        }
+        for (idx, truth) in stage.truths.iter().enumerate() {
+            if truth.len() > 500 {
+                errors.push(ValidationError {
+                    message: format!("Truth #{} too long ({} chars, max 500)", idx + 1, truth.len()),
+                    stage_id: Some(stage.id.clone()),
+                });
+            }
+            if truth.trim().is_empty() {
+                errors.push(ValidationError {
+                    message: format!("Truth #{} cannot be empty", idx + 1),
+                    stage_id: Some(stage.id.clone()),
+                });
+            }
+        }
+
+        // Validate artifacts
+        if stage.artifacts.len() > 100 {
+            errors.push(ValidationError {
+                message: format!("Too many artifacts ({}, max 100)", stage.artifacts.len()),
+                stage_id: Some(stage.id.clone()),
+            });
+        }
+        for (idx, artifact) in stage.artifacts.iter().enumerate() {
+            if artifact.contains("..") {
+                errors.push(ValidationError {
+                    message: format!("Artifact #{} contains path traversal (..)", idx + 1),
+                    stage_id: Some(stage.id.clone()),
+                });
+            }
+            if artifact.starts_with('/') {
+                errors.push(ValidationError {
+                    message: format!("Artifact #{} must be relative path", idx + 1),
+                    stage_id: Some(stage.id.clone()),
+                });
+            }
+        }
+
+        // Validate wiring checks
+        for (idx, wiring) in stage.wiring.iter().enumerate() {
+            // Validate source path
+            if wiring.source.contains("..") {
+                errors.push(ValidationError {
+                    message: format!("Wiring #{} source contains path traversal (..)", idx + 1),
+                    stage_id: Some(stage.id.clone()),
+                });
+            }
+            if wiring.source.starts_with('/') {
+                errors.push(ValidationError {
+                    message: format!("Wiring #{} source must be relative path", idx + 1),
+                    stage_id: Some(stage.id.clone()),
+                });
+            }
+            // Validate pattern is valid regex
+            if let Err(e) = regex::Regex::new(&wiring.pattern) {
+                errors.push(ValidationError {
+                    message: format!("Wiring #{} has invalid regex pattern: {}", idx + 1, e),
+                    stage_id: Some(stage.id.clone()),
+                });
+            }
+            // Validate description not empty
+            if wiring.description.trim().is_empty() {
+                errors.push(ValidationError {
+                    message: format!("Wiring #{} description cannot be empty", idx + 1),
+                    stage_id: Some(stage.id.clone()),
+                });
+            }
+        }
     }
 
     if errors.is_empty() {

@@ -54,6 +54,28 @@ pub struct StageDefinition {
     /// Type of stage for specialized handling (e.g., knowledge vs standard)
     #[serde(default)]
     pub stage_type: StageType,
+    /// Observable behaviors that must be true from user perspective
+    /// Each truth is a shell command that returns exit code 0 if the behavior works
+    #[serde(default)]
+    pub truths: Vec<String>,
+    /// Files that must exist with real implementation (not stubs)
+    /// Supports glob patterns like "src/auth/*.rs"
+    #[serde(default)]
+    pub artifacts: Vec<String>,
+    /// Critical connections between components
+    #[serde(default)]
+    pub wiring: Vec<WiringCheck>,
+}
+
+/// Wiring check to verify component connections
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WiringCheck {
+    /// Source file path (relative to working_dir)
+    pub source: String,
+    /// What to check for (grep pattern)
+    pub pattern: String,
+    /// Human-readable description of what this verifies
+    pub description: String,
 }
 
 /// Validation error with context

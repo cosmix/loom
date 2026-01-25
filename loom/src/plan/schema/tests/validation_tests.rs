@@ -60,6 +60,9 @@ fn test_validate_empty_stage_id() {
                 auto_merge: None,
                 working_dir: ".".to_string(),
                 stage_type: StageType::default(),
+                truths: vec![],
+                artifacts: vec![],
+                wiring: vec![],
             }],
         },
     };
@@ -90,6 +93,9 @@ fn test_validate_empty_stage_name() {
                 auto_merge: None,
                 working_dir: ".".to_string(),
                 stage_type: StageType::default(),
+                truths: vec![],
+                artifacts: vec![],
+                wiring: vec![],
             }],
         },
     };
@@ -120,6 +126,9 @@ fn test_validate_unknown_dependency() {
                 auto_merge: None,
                 working_dir: ".".to_string(),
                 stage_type: StageType::default(),
+                truths: vec![],
+                artifacts: vec![],
+                wiring: vec![],
             }],
         },
     };
@@ -151,6 +160,9 @@ fn test_validate_self_dependency() {
                 auto_merge: None,
                 working_dir: ".".to_string(),
                 stage_type: StageType::default(),
+                truths: vec![],
+                artifacts: vec![],
+                wiring: vec![],
             }],
         },
     };
@@ -182,6 +194,9 @@ fn test_validate_multiple_errors() {
                     auto_merge: None,
                     working_dir: ".".to_string(),
                     stage_type: StageType::default(),
+                    truths: vec![],
+                    artifacts: vec![],
+                    wiring: vec![],
                 },
                 StageDefinition {
                     id: "stage-2".to_string(),
@@ -195,6 +210,9 @@ fn test_validate_multiple_errors() {
                     auto_merge: None,
                     working_dir: ".".to_string(),
                     stage_type: StageType::default(),
+                    truths: vec![],
+                    artifacts: vec![],
+                    wiring: vec![],
                 },
             ],
         },
@@ -261,6 +279,9 @@ fn test_complex_dependency_chain() {
                     auto_merge: None,
                     working_dir: ".".to_string(),
                     stage_type: StageType::default(),
+                    truths: vec![],
+                    artifacts: vec![],
+                    wiring: vec![],
                 },
                 StageDefinition {
                     id: "stage-2".to_string(),
@@ -274,6 +295,9 @@ fn test_complex_dependency_chain() {
                     auto_merge: None,
                     working_dir: ".".to_string(),
                     stage_type: StageType::default(),
+                    truths: vec![],
+                    artifacts: vec![],
+                    wiring: vec![],
                 },
                 StageDefinition {
                     id: "stage-3".to_string(),
@@ -287,6 +311,9 @@ fn test_complex_dependency_chain() {
                     auto_merge: None,
                     working_dir: ".".to_string(),
                     stage_type: StageType::default(),
+                    truths: vec![],
+                    artifacts: vec![],
+                    wiring: vec![],
                 },
             ],
         },
@@ -314,6 +341,9 @@ fn test_validate_duplicate_stage_ids() {
                     auto_merge: None,
                     working_dir: ".".to_string(),
                     stage_type: StageType::default(),
+                    truths: vec![],
+                    artifacts: vec![],
+                    wiring: vec![],
                 },
                 StageDefinition {
                     id: "stage-1".to_string(), // Duplicate ID
@@ -327,6 +357,9 @@ fn test_validate_duplicate_stage_ids() {
                     auto_merge: None,
                     working_dir: ".".to_string(),
                     stage_type: StageType::default(),
+                    truths: vec![],
+                    artifacts: vec![],
+                    wiring: vec![],
                 },
             ],
         },
@@ -358,6 +391,9 @@ fn test_validate_working_dir_path_traversal() {
                 auto_merge: None,
                 working_dir: "../etc".to_string(), // Path traversal
                 stage_type: StageType::default(),
+                truths: vec![],
+                artifacts: vec![],
+                wiring: vec![],
             }],
         },
     };
@@ -386,6 +422,9 @@ fn test_validate_working_dir_absolute_path() {
                 auto_merge: None,
                 working_dir: "/etc/passwd".to_string(), // Absolute path
                 stage_type: StageType::default(),
+                truths: vec![],
+                artifacts: vec![],
+                wiring: vec![],
             }],
         },
     };
@@ -416,6 +455,9 @@ fn test_validate_working_dir_valid_subdirectory() {
                 auto_merge: None,
                 working_dir: "loom".to_string(), // Valid subdirectory
                 stage_type: StageType::default(),
+                truths: vec![],
+                artifacts: vec![],
+                wiring: vec![],
             }],
         },
     };

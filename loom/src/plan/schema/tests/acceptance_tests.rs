@@ -63,6 +63,9 @@ fn test_validate_metadata_with_empty_acceptance() {
                 auto_merge: None,
                 working_dir: ".".to_string(),
                 stage_type: StageType::default(),
+                truths: vec![],
+                artifacts: vec![],
+                wiring: vec![],
             }],
         },
     };
@@ -97,6 +100,9 @@ fn test_validate_metadata_with_valid_acceptance() {
                 auto_merge: None,
                 working_dir: ".".to_string(),
                 stage_type: StageType::default(),
+                truths: vec![],
+                artifacts: vec![],
+                wiring: vec![],
             }],
         },
     };
@@ -123,6 +129,9 @@ fn test_validate_metadata_multiple_invalid_acceptance() {
                 auto_merge: None,
                 working_dir: ".".to_string(),
                 stage_type: StageType::default(),
+                truths: vec![],
+                artifacts: vec![],
+                wiring: vec![],
             }],
         },
     };

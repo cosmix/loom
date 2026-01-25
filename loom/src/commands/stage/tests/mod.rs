@@ -53,6 +53,7 @@ pub(crate) fn create_test_stage(id: &str, status: StageStatus) -> Stage {
         completed_commit: None,
         merged: false,
         merge_conflict: false,
+        verification_status: Default::default(),
     }
 }
 

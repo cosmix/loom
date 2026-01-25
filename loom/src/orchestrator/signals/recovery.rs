@@ -114,6 +114,7 @@ mod tests {
             completed_commit: None,
             merged: false,
             merge_conflict: false,
+            verification_status: Default::default(),
         }
     }
 
