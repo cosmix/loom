@@ -216,7 +216,7 @@ Key files: `orchestrator/signals/generate.rs`, `format.rs`, `crud.rs`
 
 ### File System State Structure
 
-```
+```text
 .work/
 ├── config.toml          # Active plan, base_branch
 ├── stages/              # {depth}-{stage-id}.md (YAML frontmatter)

@@ -7,7 +7,7 @@
 
 ### Stage State Machine (10 states)
 
-```
+```text
 WaitingForDeps --> Queued --> Executing --> Completed (terminal)
                      |           |
                      v           +--> Blocked --> Queued (retry)
@@ -24,7 +24,7 @@ WaitingForDeps --> Queued --> Executing --> Completed (terminal)
 
 ### Session State Machine (6 states)
 
-```
+```text
 Spawning --> Running --> Completed (terminal)
                     +--> Crashed (terminal)
                     +--> ContextExhausted (terminal)
@@ -43,7 +43,7 @@ stage.status.try_transition(new_status)?  // Returns Err if invalid
 
 All state persisted to `.work/` directory for git-friendliness and crash recovery:
 
-```
+```text
 .work/
 ├── config.toml          # Active plan reference
 ├── stages/*.md          # Stage state (YAML frontmatter + markdown)
@@ -110,7 +110,7 @@ Self-contained signals via `EmbeddedContext` struct (`signals/types.rs:6-29`):
 
 Dependencies merged to main before dependent stages execute:
 
-```
+```text
 Stage A completes --> Merge A to main --> Stage B starts (uses main as base)
 ```
 
@@ -126,7 +126,7 @@ Stage A completes --> Merge A to main --> Stage B starts (uses main as base)
 
 Each stage gets isolated git worktree:
 
-```
+```text
 .worktrees/
 └── {stage-id}/
     ├── .git              # Worktree git reference
@@ -147,7 +147,7 @@ Each stage gets isolated git worktree:
 
 Unix socket-based IPC with length-prefixed JSON:
 
-```
+```text
 Client                          Daemon
   |-- Request::SubscribeStatus -->|
   |<-- Response::Ok ---------------|
@@ -225,7 +225,7 @@ backoff = min(base * 2^retry_count, max_backoff)
 
 Learning files protected from agent deletion:
 
-```
+```text
 1. snapshot_before_session()  // Save state to .snapshots/
 2. [Session executes]
 3. verify_after_session()     // Compare to snapshot
@@ -248,7 +248,7 @@ append(file_type, content)  // Always append, never overwrite
 
 Stage files prefixed with execution depth:
 
-```
+```text
 .work/stages/
 ├── 01-knowledge-bootstrap.md  # Depth 0 (no deps)
 ├── 02-implement-feature.md    # Depth 1 (depends on bootstrap)
@@ -551,7 +551,7 @@ Permission management for Claude Code sessions:
 
 Seven hook events with specific integration points:
 
-```
+```text
 PreToolUse (Bash) --> prefer-modern-tools.sh --> Block with guidance (exit 2)
 PreToolUse (AskUser) --> ask-user-pre.sh --> Mark WaitingForInput
 PostToolUse --> post-tool-use.sh --> Update heartbeat
@@ -844,7 +844,7 @@ Resolution logic (acceptance_runner.rs:16-45):
 |---------|-----|
 | cargo test with wrong working_dir | Set working_dir to dir with Cargo.toml |
 | Paths like loom/src/file.rs when working_dir=loom | Use src/file.rs (relative to working_dir) |
-| ./target/debug/app from project root | Use ./loom/target/debug/app OR set working_dir
+| ./target/debug/app from project root | Use ./loom/target/debug/app OR set working_dir |
 
 ### Signal vs Stage Context
 

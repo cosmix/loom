@@ -124,7 +124,7 @@ pub updated_at: DateTime<Utc>,
 
 ### Standard Module Structure
 
-```
+```text
 module/
 ├── mod.rs          # Public exports and module docs
 ├── types.rs        # Data structures
@@ -424,7 +424,7 @@ let prefix = format!("{:02}-", depth + 1);
 
 ### Directory Structure
 
-```
+```text
 skills/
 ├── <skill-name>/
 │   └── SKILL.md
