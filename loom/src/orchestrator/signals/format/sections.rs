@@ -262,9 +262,8 @@ pub(super) fn format_dynamic_section(
     content.push('\n');
 
     // Goal-backward verification criteria (if defined)
-    let has_goal_checks = !stage.truths.is_empty()
-        || !stage.artifacts.is_empty()
-        || !stage.wiring.is_empty();
+    let has_goal_checks =
+        !stage.truths.is_empty() || !stage.artifacts.is_empty() || !stage.wiring.is_empty();
 
     if has_goal_checks {
         content.push_str("\n## Goal-Backward Verification\n\n");
@@ -288,13 +287,16 @@ pub(super) fn format_dynamic_section(
         if !stage.wiring.is_empty() {
             content.push_str("### Wiring (critical connections to verify)\n\n");
             for check in &stage.wiring {
-                content.push_str(&format!("- **{}**: pattern `{}` in `{}`\n",
-                    check.description, check.pattern, check.source));
+                content.push_str(&format!(
+                    "- **{}**: pattern `{}` in `{}`\n",
+                    check.description, check.pattern, check.source
+                ));
             }
             content.push('\n');
         }
 
-        content.push_str("Run `loom verify <stage-id> --suggest` to check these automatically.\n\n");
+        content
+            .push_str("Run `loom verify <stage-id> --suggest` to check these automatically.\n\n");
     }
 
     // Files to modify
