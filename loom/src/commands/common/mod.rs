@@ -81,23 +81,6 @@ pub fn detect_session_from_signals(work_dir: &Path) -> Result<String> {
         .ok_or_else(|| anyhow::anyhow!("No session ID provided or detected. Use --session <id>"))
 }
 
-/// Extract stage ID from a worktree path like `.worktrees/stage-name/...`
-///
-/// Returns the stage ID if the path contains a `.worktrees/` directory,
-/// None otherwise.
-pub fn extract_stage_from_worktree_path(path: &Path) -> Option<String> {
-    let path_str = path.to_string_lossy();
-    if let Some(idx) = path_str.find(".worktrees/") {
-        let after_worktrees = &path_str[idx + ".worktrees/".len()..];
-        // Take everything up to the next path separator
-        let stage_id = after_worktrees.split(std::path::MAIN_SEPARATOR).next()?;
-        if !stage_id.is_empty() {
-            return Some(stage_id.to_string());
-        }
-    }
-    None
-}
-
 /// Detect stage ID from current worktree branch.
 ///
 /// Checks if the current git branch follows the loom worktree naming pattern
@@ -168,27 +151,6 @@ pub fn truncate_for_display(s: &str, max_len: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_extract_stage_from_worktree_path() {
-        let path = PathBuf::from("/home/user/project/.worktrees/my-stage/src/main.rs");
-        assert_eq!(
-            extract_stage_from_worktree_path(&path),
-            Some("my-stage".to_string())
-        );
-
-        let path = PathBuf::from("/home/user/project/src/main.rs");
-        assert_eq!(extract_stage_from_worktree_path(&path), None);
-
-        let path = PathBuf::from(".worktrees/test-stage");
-        assert_eq!(
-            extract_stage_from_worktree_path(&path),
-            Some("test-stage".to_string())
-        );
-
-        let path = PathBuf::from(".worktrees/");
-        assert_eq!(extract_stage_from_worktree_path(&path), None);
-    }
 
     #[test]
     fn test_detect_stage_id_format() {

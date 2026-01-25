@@ -209,3 +209,11 @@ Used loom/src/... when working_dir=loom. Should use src/... (relative to working
   - *Rationale:* Matches in code are documentation warnings against the practice, not actual usage
 
 
+
+## Promoted from Memory [2026-01-25 13:03]
+
+### Notes
+
+- extract_stage_from_worktree_path has no external callers - only used in its own tests. Simple deletion without needing to update imports elsewhere.
+
+
