@@ -125,14 +125,19 @@ pub fn generate_stable_prefix() -> String {
     content.push_str("- **Verify acceptance criteria** before marking stage complete\n");
     content.push_str("- **Create handoff** if context exceeds 75%\n");
     content.push_str("- **IMPORTANT: Before running `loom stage complete`, ensure you are at the worktree root directory**\n\n");
-    content.push_str("**Session Memory (MANDATORY):**\n");
+    content.push_str("**Session Memory - MEMORY ONLY (MANDATORY):**\n\n");
+    content.push_str("```text\n");
+    content.push_str("⚠️  IMPLEMENTATION STAGES USE `loom memory` ONLY - NEVER `loom knowledge`\n");
+    content.push_str("    Only integration-verify stages can promote memories to knowledge.\n");
+    content.push_str("```\n\n");
     content.push_str(
         "- **Record discoveries** as you find them: `loom memory note \"observation\"`\n",
     );
     content.push_str("- **Record decisions** when you choose between alternatives: `loom memory decision \"choice\" --context \"why\"`\n");
-    content.push_str("- **Before completing stage**: `loom memory promote all mistakes` - transfer insights to knowledge\n");
+    content.push_str("- **Record mistakes** immediately when they occur: `loom memory note \"mistake: description\"`\n");
+    content.push_str("- **FORBIDDEN**: `loom knowledge update` commands - these are ONLY for knowledge-bootstrap and integration-verify stages\n");
     content
-        .push_str("- Memory entries persist across sessions - don't lose valuable learnings\n\n");
+        .push_str("- Memory entries persist across sessions - they will be promoted to knowledge during integration-verify\n\n");
     content.push_str("**Git Staging (CRITICAL):**\n");
     content
         .push_str("- **ALWAYS use `git add <specific-files>`** - stage only files you modified\n");
