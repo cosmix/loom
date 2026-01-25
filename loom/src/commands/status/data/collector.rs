@@ -4,14 +4,50 @@ use std::fs;
 
 use crate::commands::status::merge_status::build_merge_report;
 use crate::fs::work_dir::WorkDir;
-use crate::models::session::Session;
+use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::get_merge_point;
+use crate::orchestrator::monitor::heartbeat::{read_heartbeat, Heartbeat};
 use crate::parser::frontmatter::parse_from_markdown;
 use crate::process::is_process_alive;
 use crate::verify::transitions::list_all_stages;
 
-use super::{MergeSummary, ProgressSummary, SessionSummary, StageSummary, StatusData};
+use super::{
+    ActivityStatus, MergeSummary, ProgressSummary, SessionSummary, StageSummary, StatusData,
+};
+
+/// Staleness threshold in seconds (5 minutes)
+const STALENESS_THRESHOLD_SECS: u64 = 300;
+
+/// Read heartbeat for a specific stage from the heartbeat directory
+fn read_heartbeat_for_stage(stage_id: &str, work_dir: &WorkDir) -> Option<Heartbeat> {
+    let heartbeat_path = work_dir
+        .root()
+        .join("heartbeat")
+        .join(format!("{stage_id}.json"));
+    if heartbeat_path.exists() {
+        read_heartbeat(&heartbeat_path).ok()
+    } else {
+        None
+    }
+}
+
+/// Calculate activity status from session state and heartbeat staleness
+fn determine_activity_status(
+    session: Option<&Session>,
+    staleness_secs: Option<u64>,
+) -> ActivityStatus {
+    match (session, staleness_secs) {
+        // No session - idle
+        (None, _) => ActivityStatus::Idle,
+        // Session crashed
+        (Some(s), _) if s.status == SessionStatus::Crashed => ActivityStatus::Error,
+        // Session running but stale heartbeat (> 5 minutes)
+        (Some(_), Some(secs)) if secs > STALENESS_THRESHOLD_SECS => ActivityStatus::Stale,
+        // Session running with recent heartbeat
+        (Some(_), _) => ActivityStatus::Working,
+    }
+}
 
 /// Load all sessions from .work/sessions/ directory
 fn load_all_sessions(work_dir: &WorkDir) -> Result<Vec<Session>> {
@@ -58,7 +94,7 @@ fn load_session_from_file(path: &std::path::Path) -> Result<Session> {
 }
 
 /// Build a StageSummary from a Stage and optional associated Session
-fn build_stage_summary(stage: &Stage, sessions: &[Session]) -> StageSummary {
+fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) -> StageSummary {
     let session = sessions
         .iter()
         .find(|s| s.stage_id.as_ref() == Some(&stage.id));
@@ -73,6 +109,22 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session]) -> StageSummary {
 
     let elapsed_secs = (Utc::now() - stage.created_at).num_seconds();
 
+    // Read heartbeat for this stage
+    let heartbeat = read_heartbeat_for_stage(&stage.id, work_dir);
+
+    // Calculate staleness (seconds since last heartbeat)
+    let staleness_secs = heartbeat.as_ref().map(|hb| {
+        let age = Utc::now().signed_duration_since(hb.timestamp);
+        age.num_seconds().max(0) as u64
+    });
+
+    // Determine activity status based on session and heartbeat
+    let activity_status = determine_activity_status(session, staleness_secs);
+
+    // Extract heartbeat details
+    let last_tool = heartbeat.as_ref().and_then(|hb| hb.last_tool.clone());
+    let last_activity = heartbeat.as_ref().and_then(|hb| hb.activity.clone());
+
     StageSummary {
         id: stage.id.clone(),
         name: stage.name.clone(),
@@ -83,6 +135,11 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session]) -> StageSummary {
         base_branch: stage.base_branch.clone(),
         base_merged_from: stage.base_merged_from.clone(),
         failure_info: stage.failure_info.clone(),
+        activity_status,
+        last_tool,
+        last_activity,
+        staleness_secs,
+        context_budget_pct: None, // TODO: Read from plan if needed
     }
 }
 
@@ -155,7 +212,7 @@ pub fn collect_status_data(work_dir: &WorkDir) -> Result<StatusData> {
     // Build stage summaries
     let stage_summaries: Vec<StageSummary> = stages
         .iter()
-        .map(|stage| build_stage_summary(stage, &sessions))
+        .map(|stage| build_stage_summary(stage, &sessions, work_dir))
         .collect();
 
     // Build session summaries
@@ -283,6 +340,10 @@ mod tests {
 
     #[test]
     fn test_build_stage_summary_with_session() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let work_dir = WorkDir::new(tmp.path()).unwrap();
+        work_dir.initialize().unwrap();
+
         let mut stage = make_test_stage("test-stage", StageStatus::Executing);
         stage.dependencies = vec!["dep-1".to_string()];
         let mut session = Session::new();
@@ -290,7 +351,7 @@ mod tests {
         session.context_tokens = 50000;
         session.context_limit = 200000;
 
-        let summary = build_stage_summary(&stage, &[session]);
+        let summary = build_stage_summary(&stage, &[session], &work_dir);
 
         assert_eq!(summary.id, "test-stage");
         assert_eq!(summary.status, StageStatus::Executing);
@@ -298,19 +359,28 @@ mod tests {
         assert!(summary.context_pct.is_some());
         assert_eq!(summary.context_pct.unwrap(), 0.25); // 50000/200000
         assert!(summary.elapsed_secs.is_some());
+        // New fields
+        assert_eq!(summary.activity_status, ActivityStatus::Working);
+        assert!(summary.staleness_secs.is_none()); // No heartbeat file
     }
 
     #[test]
     fn test_build_stage_summary_without_session() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let work_dir = WorkDir::new(tmp.path()).unwrap();
+        work_dir.initialize().unwrap();
+
         let stage = make_test_stage("test-stage", StageStatus::WaitingForDeps);
 
-        let summary = build_stage_summary(&stage, &[]);
+        let summary = build_stage_summary(&stage, &[], &work_dir);
 
         assert_eq!(summary.id, "test-stage");
         assert_eq!(summary.status, StageStatus::WaitingForDeps);
         assert!(summary.dependencies.is_empty());
         assert!(summary.context_pct.is_none());
         assert!(summary.elapsed_secs.is_some());
+        // New fields
+        assert_eq!(summary.activity_status, ActivityStatus::Idle);
     }
 
     #[test]

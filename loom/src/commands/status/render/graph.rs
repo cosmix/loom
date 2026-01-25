@@ -13,6 +13,18 @@ use crate::models::constants::display::{CONTEXT_HEALTHY_PCT, CONTEXT_WARNING_PCT
 use crate::models::stage::StageStatus;
 use crate::utils::format_elapsed;
 
+// Unicode box-drawing constants for cleaner tree visualization (infrastructure for future use)
+#[allow(dead_code)]
+const BOX_HORIZONTAL: char = '─';
+#[allow(dead_code)]
+const BOX_VERTICAL: char = '│';
+#[allow(dead_code)]
+const BOX_DOWN_RIGHT: char = '┌';
+#[allow(dead_code)]
+const BOX_UP_RIGHT: char = '└';
+#[allow(dead_code)]
+const BOX_VERTICAL_RIGHT: char = '├';
+
 /// Available terminal colors for stage differentiation
 const STAGE_COLORS: [Color; 16] = [
     Color::Red,
@@ -52,6 +64,15 @@ const STAGE_COLORS: [Color; 16] = [
 /// Get a color by index, cycling through the palette
 fn color_by_index(index: usize) -> Color {
     STAGE_COLORS[index % STAGE_COLORS.len()]
+}
+
+/// Format multiple parallel stages on same line with brackets (infrastructure for future use)
+#[allow(dead_code)]
+fn render_parallel_group(stage_ids: &[&str]) -> String {
+    if stage_ids.len() == 1 {
+        return stage_ids[0].to_string();
+    }
+    format!("[{}]", stage_ids.join(", "))
 }
 
 /// Compute topological level for each stage (level = max(dep_levels) + 1)
@@ -304,6 +325,17 @@ pub fn render_graph<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<(
                 let elapsed = format_elapsed(secs);
                 write!(w, " {}", elapsed.dimmed())?;
             }
+
+            // Show activity status for executing stages
+            let activity_icon = stage.activity_status.icon();
+            write!(w, " {activity_icon}")?;
+
+            // Add staleness warning
+            if let Some(staleness) = stage.staleness_secs {
+                if staleness > 300 {
+                    write!(w, " {}", "(stale)".yellow())?;
+                }
+            }
         }
 
         writeln!(w)?;
@@ -349,6 +381,7 @@ mod tests {
     use crate::commands::status::data::{MergeSummary, ProgressSummary};
 
     fn make_stage_summary(id: &str, deps: Vec<&str>, status: StageStatus) -> StageSummary {
+        use crate::commands::status::data::ActivityStatus;
         StageSummary {
             id: id.to_string(),
             name: id.to_string(),
@@ -359,6 +392,11 @@ mod tests {
             base_branch: None,
             base_merged_from: vec![],
             failure_info: None,
+            activity_status: ActivityStatus::default(),
+            last_tool: None,
+            last_activity: None,
+            staleness_secs: None,
+            context_budget_pct: None,
         }
     }
 
