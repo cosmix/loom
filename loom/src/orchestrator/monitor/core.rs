@@ -80,6 +80,11 @@ impl Monitor {
         &mut self.heartbeat_watcher
     }
 
+    /// Get handlers for generating handoffs and crash reports
+    pub fn handlers(&self) -> &Handlers {
+        &self.handlers
+    }
+
     /// Load all stages from .work/stages/
     pub fn load_stages(&self) -> Result<Vec<Stage>> {
         let stages_dir = self.config.work_dir.join("stages");

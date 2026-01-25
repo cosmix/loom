@@ -160,6 +160,21 @@ pub enum Commands {
         state: bool,
     },
 
+    /// Map codebase structure to knowledge files
+    Map {
+        /// Deep analysis (more thorough, slower)
+        #[arg(short, long)]
+        deep: bool,
+
+        /// Focus on specific area (e.g., "auth", "api", "db")
+        #[arg(short, long)]
+        focus: Option<String>,
+
+        /// Overwrite existing knowledge (default: append)
+        #[arg(long)]
+        overwrite: bool,
+    },
+
     /// Stop the running daemon
     Stop,
 
@@ -174,6 +189,22 @@ pub enum Commands {
         /// Stage ID to diagnose (alphanumeric, dash, underscore only; max 128 characters)
         #[arg(value_parser = clap_id_validator)]
         stage_id: String,
+    },
+
+    /// Run goal-backward verification for a stage
+    ///
+    /// Validates OUTCOMES beyond acceptance criteria:
+    /// - TRUTHS: Observable behaviors that must work
+    /// - ARTIFACTS: Files that exist with real implementation
+    /// - WIRING: Critical connections between components
+    Verify {
+        /// Stage ID to verify (alphanumeric, dash, underscore only; max 128 characters)
+        #[arg(value_parser = clap_id_validator)]
+        stage_id: String,
+
+        /// Generate fix suggestions for gaps
+        #[arg(long)]
+        suggest: bool,
     },
 
     /// Generate shell completion script

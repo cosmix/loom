@@ -33,5 +33,9 @@ pub fn create_stage_def(id: &str, name: &str, deps: Vec<String>) -> StageDefinit
         auto_merge: None,
         working_dir: ".".to_string(),
         stage_type: loom::plan::schema::StageType::default(),
+        truths: vec![],
+        artifacts: vec![],
+        wiring: vec![],
+        context_budget: None,
     }
 }

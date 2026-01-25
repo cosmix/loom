@@ -1,8 +1,10 @@
 //! Recent activity log widget
 
-use colored::Colorize;
+use colored::{ColoredString, Colorize};
 use std::collections::VecDeque;
 use std::time::Instant;
+
+use super::super::data::ActivityStatus;
 
 /// Maximum number of activity entries to keep
 const MAX_ENTRIES: usize = 10;
@@ -107,5 +109,28 @@ impl ActivityLog {
 impl Default for ActivityLog {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Render activity status as a colored string
+pub fn render_activity_status(status: ActivityStatus) -> ColoredString {
+    match status {
+        ActivityStatus::Idle => "IDLE".dimmed(),
+        ActivityStatus::Working => "WORKING".blue().bold(),
+        ActivityStatus::Error => "ERROR".red().bold(),
+        ActivityStatus::Stale => "STALE".yellow().bold(),
+    }
+}
+
+/// Render staleness warning if session appears hung
+pub fn render_staleness_warning(secs: u64) -> Option<String> {
+    if secs > 300 {
+        // 5 minutes
+        let mins = secs / 60;
+        Some(format!(
+            "  No activity for {mins} minutes - session may be hung"
+        ))
+    } else {
+        None
     }
 }

@@ -348,6 +348,35 @@ fn format_dynamic_section(
 fn format_recitation_section(stage: &Stage, embedded_context: &EmbeddedContext) -> String {
     let mut content = String::new();
 
+    // Context Budget Warning (high attention position - before tasks)
+    if let (Some(usage), Some(budget)) = (
+        embedded_context.context_usage,
+        embedded_context.context_budget,
+    ) {
+        if usage >= budget * 0.8 {
+            // 80% of budget
+            content.push_str("## ⚠️ CONTEXT BUDGET WARNING\n\n");
+            content.push_str(&format!(
+                "Current usage: **{usage:.0}%** | Budget: **{budget:.0}%**\n\n",
+            ));
+
+            if usage >= budget {
+                content.push_str("```\n");
+                content.push_str("┌─────────────────────────────────────────────────┐\n");
+                content.push_str("│  🛑 BUDGET EXCEEDED - HANDOFF REQUIRED         │\n");
+                content.push_str("│  Run: loom memory promote all mistakes          │\n");
+                content.push_str("│  Then: loom stage complete <stage-id>           │\n");
+                content.push_str("└─────────────────────────────────────────────────┘\n");
+                content.push_str("```\n");
+            } else {
+                content.push_str("**Approaching budget limit.** Prepare for handoff:\n");
+                content.push_str("- `loom memory note` to record remaining observations\n");
+                content.push_str("- `loom memory promote all mistakes` before completing\n");
+            }
+            content.push('\n');
+        }
+    }
+
     // Task progression section (if task state is available)
     if let Some(task_state) = &embedded_context.task_state {
         content.push_str(&format_task_progression(task_state));

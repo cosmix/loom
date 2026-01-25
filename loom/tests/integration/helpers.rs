@@ -100,6 +100,10 @@ pub fn build_test_graph(stages: Vec<(&str, Vec<&str>)>) -> ExecutionGraph {
             auto_merge: None,
             working_dir: ".".to_string(),
             stage_type: loom::plan::schema::StageType::default(),
+            truths: vec![],
+            artifacts: vec![],
+            wiring: vec![],
+            context_budget: None,
         })
         .collect();
 

@@ -69,6 +69,19 @@ pub fn generate_signal_with_skills(
             index.match_skills(&text_to_match, DEFAULT_MAX_SKILL_RECOMMENDATIONS);
     }
 
+    // Populate context budget from stage (or use default)
+    embedded_context.context_budget = stage.context_budget.map(|b| b as f32).or(Some(
+        crate::models::constants::CONTEXT_CRITICAL_THRESHOLD * 100.0,
+    ));
+
+    // Populate current context usage from session
+    let usage_pct = if session.context_limit > 0 {
+        (session.context_tokens as f32 / session.context_limit as f32) * 100.0
+    } else {
+        0.0
+    };
+    embedded_context.context_usage = Some(usage_pct);
+
     let signal_path = signals_dir.join(format!("{}.md", session.id));
     let content = format_signal_content(
         session,
@@ -295,8 +308,21 @@ pub fn generate_signal_with_metrics(
     }
 
     // Build embedded context by reading files, including task state and session memory for recitation
-    let embedded_context =
+    let mut embedded_context =
         build_embedded_context_with_session(work_dir, handoff_file, &stage.id, Some(&session.id));
+
+    // Populate context budget from stage (or use default)
+    embedded_context.context_budget = stage.context_budget.map(|b| b as f32).or(Some(
+        crate::models::constants::CONTEXT_CRITICAL_THRESHOLD * 100.0,
+    ));
+
+    // Populate current context usage from session
+    let usage_pct = if session.context_limit > 0 {
+        (session.context_tokens as f32 / session.context_limit as f32) * 100.0
+    } else {
+        0.0
+    };
+    embedded_context.context_usage = Some(usage_pct);
 
     let signal_path = signals_dir.join(format!("{}.md", session.id));
     let formatted = format_signal_with_metrics(

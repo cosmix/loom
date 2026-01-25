@@ -13,6 +13,14 @@ pub const CONTEXT_WARNING_THRESHOLD: f32 = 0.50;
 /// This provides a ~10% buffer before Claude Code's compaction (~75-80%).
 pub const CONTEXT_CRITICAL_THRESHOLD: f32 = 0.65;
 
+/// Default context budget percentage for stages.
+/// Stages can override this in their definition.
+pub const DEFAULT_CONTEXT_BUDGET: f32 = 65.0;
+
+/// Hard limit context percentage that triggers forced handoff.
+/// Even if a stage sets a higher budget, this is the absolute max.
+pub const CONTEXT_ABSOLUTE_MAX: f32 = 75.0;
+
 /// Context threshold percentages for display coloring.
 pub mod display {
     /// Below this percentage, context usage is considered healthy (green).

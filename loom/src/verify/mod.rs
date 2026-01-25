@@ -1,6 +1,7 @@
 pub mod context;
 pub mod criteria;
 pub mod gates;
+pub mod goal_backward;
 pub mod task_verification;
 pub mod transitions;
 
@@ -11,6 +12,9 @@ pub use criteria::{
     DEFAULT_COMMAND_TIMEOUT,
 };
 pub use gates::{human_gate, GateConfig, GateDecision};
+pub use goal_backward::{
+    run_goal_backward_verification, GapType, GoalBackwardResult, VerificationGap,
+};
 pub use task_verification::{
     run_single_verification, run_task_verifications, summarize_verifications,
     DEFAULT_VERIFICATION_TIMEOUT,

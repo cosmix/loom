@@ -25,6 +25,10 @@ pub struct EmbeddedContext {
     pub memory_content: Option<String>,
     /// Skill recommendations based on stage description matching
     pub skill_recommendations: Vec<SkillMatch>,
+    /// Stage-specific context budget percentage
+    pub context_budget: Option<f32>,
+    /// Current context usage percentage
+    pub context_usage: Option<f32>,
 }
 
 /// Information about a task's lock status

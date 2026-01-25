@@ -1,8 +1,8 @@
 use anyhow::Result;
 use loom::checkpoints::CheckpointStatus;
 use loom::commands::{
-    checkpoint, clean, diagnose, graph, hooks, init, knowledge, memory, merge, resume, run,
-    self_update, sessions, stage, status, stop, worktree_cmd,
+    checkpoint, clean, diagnose, graph, hooks, init, knowledge, map, memory, merge, resume, run,
+    self_update, sessions, stage, status, stop, verify, worktree_cmd,
 };
 use loom::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use std::path::PathBuf;
@@ -126,6 +126,11 @@ pub fn dispatch(command: Commands) -> Result<()> {
             sessions,
             state,
         } => clean::execute(all, worktrees, sessions, state),
+        Commands::Map {
+            deep,
+            focus,
+            overwrite,
+        } => map::execute(deep, focus, overwrite),
         Commands::Stop => stop::execute(),
         Commands::Checkpoint { command } => match command {
             CheckpointCommands::Create {
@@ -141,6 +146,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
             CheckpointCommands::List { session } => checkpoint::list(session),
         },
         Commands::Diagnose { stage_id } => diagnose::execute(&stage_id),
+        Commands::Verify { stage_id, suggest } => verify::execute(&stage_id, suggest),
         Commands::Completions { shell } => {
             let shell = Shell::from_str(&shell)?;
             let mut cmd = <Cli as clap::CommandFactory>::command();

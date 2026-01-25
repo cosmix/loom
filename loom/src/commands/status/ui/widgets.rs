@@ -1,7 +1,9 @@
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
+use ratatui::widgets::Gauge;
 
-use super::theme::Theme;
+use super::theme::{StatusColors, Theme};
+use crate::commands::status::data::ActivityStatus;
 use crate::models::stage::StageStatus;
 
 /// Unicode block characters for progress bars
@@ -100,4 +102,30 @@ pub fn merged_indicator(merged: bool) -> Span<'static> {
     } else {
         Span::styled("○", Theme::dimmed())
     }
+}
+
+/// Get activity status indicator with appropriate styling
+pub fn activity_indicator(status: &ActivityStatus) -> Span<'static> {
+    match status {
+        ActivityStatus::Idle => Span::styled("\u{23F3} IDLE", Theme::dimmed()),
+        ActivityStatus::Working => Span::styled("\u{1F504} WORKING", Theme::status_executing()),
+        ActivityStatus::Error => Span::styled("\u{274C} ERROR", Theme::status_blocked()),
+        ActivityStatus::Stale => Span::styled("\u{26A0} STALE", Theme::status_warning()),
+    }
+}
+
+/// Create a context budget gauge with threshold coloring
+pub fn context_budget_gauge(usage_pct: f32, budget_pct: f32) -> Gauge<'static> {
+    let color = if usage_pct >= 65.0 {
+        StatusColors::BLOCKED
+    } else if usage_pct >= 50.0 {
+        StatusColors::WARNING
+    } else {
+        StatusColors::COMPLETED
+    };
+
+    Gauge::default()
+        .percent(usage_pct.clamp(0.0, 100.0) as u16)
+        .gauge_style(Style::default().fg(color))
+        .label(format!("{usage_pct:.0}% (budget: {budget_pct:.0}%)"))
 }

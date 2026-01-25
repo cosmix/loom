@@ -85,6 +85,13 @@ pub enum MonitorEvent {
         session_id: String,
         context_percent: f32,
     },
+    /// Context budget has been exceeded - forced handoff required
+    BudgetExceeded {
+        session_id: String,
+        stage_id: String,
+        usage_percent: f32,
+        budget_percent: f32,
+    },
 }
 
 /// Type of recovery being initiated

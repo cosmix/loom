@@ -102,6 +102,8 @@ pub fn unified_stage_to_stage(us: &UnifiedStage) -> Stage {
         completed_commit: None,
         merged: us.merged,
         merge_conflict: false,
+        verification_status: Default::default(),
+        context_budget: None,
     }
 }
 

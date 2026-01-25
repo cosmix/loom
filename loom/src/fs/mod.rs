@@ -6,6 +6,7 @@ pub mod session_files;
 pub mod stage_files;
 pub mod stage_loading;
 pub mod task_state;
+pub mod verifications;
 pub mod work_dir;
 pub mod worktree_files;
 
@@ -20,6 +21,12 @@ pub use stage_loading::{extract_stage_frontmatter, load_stages_from_work_dir, St
 
 // Re-export session file utilities
 pub use session_files::{find_session_for_stage, find_sessions_for_stage};
+
+// Re-export verification utilities
+pub use verifications::{
+    delete_verification, list_verifications, load_verification, store_verification, GapRecord,
+    VerificationRecord,
+};
 
 /// Parse base_branch from config.toml in a work directory.
 ///

@@ -2,6 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::models::constants::DEFAULT_CONTEXT_BUDGET;
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
 
@@ -236,6 +237,27 @@ impl Detection {
                         }
                     }
                     _ => {}
+                }
+
+                // Check if context usage exceeds stage-specific budget
+                if let Some(stage_id) = &session.stage_id {
+                    if let Some(stage) = stages.iter().find(|s| &s.id == stage_id) {
+                        let budget_percent = stage
+                            .context_budget
+                            .unwrap_or(DEFAULT_CONTEXT_BUDGET as u32)
+                            as f32;
+                        let usage_percent =
+                            context_usage_percent(session.context_tokens, session.context_limit);
+
+                        if usage_percent > budget_percent {
+                            events.push(MonitorEvent::BudgetExceeded {
+                                session_id: session.id.clone(),
+                                stage_id: stage_id.clone(),
+                                usage_percent,
+                                budget_percent,
+                            });
+                        }
+                    }
                 }
 
                 self.last_context_levels

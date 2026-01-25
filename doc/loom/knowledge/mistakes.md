@@ -218,3 +218,31 @@ Used loom/src/... when working_dir=loom. Should use src/... (relative to working
 
 - **Keep config_ops::get_plan_source_path for WorkDir interface, implement by calling new fs::get_source_path internally**
   - _Rationale:_ plan_lifecycle.rs uses WorkDir interface extensively, changing all callers would be more disruptive
+
+## Promoted from Memory [2026-01-25 17:12]
+
+### Notes
+
+- Budget warning section placed in format_recitation_section for maximum attention (Manus pattern)
+- Budget populated from stage.context_budget (u32) with CONTEXT_CRITICAL_THRESHOLD *100.0 as default, usage calculated as (tokens/limit)*100
+- Signal enhancement complete: added context_budget and context_usage fields to EmbeddedContext, implemented budget warning display in format_recitation_section, populated fields in both generate functions from stage and session data
+- BLOCKER: Branch has context_budget field in Stage/StageDefinition types but 50+ test files not updated to include this field in struct initialization. Need broader refactoring to fix all test code.
+
+### Decisions
+
+- **Added context budget fields to EmbeddedContext struct**
+  - _Rationale:_ Enables signal files to display budget warnings when agents approach or exceed their context limits
+
+## status-enhance acceptance criteria path issue
+
+Criteria used 'loom/src/...' but working_dir='loom'. Fix paths to use 'src/...' not 'loom/src/...'
+
+## codebase-mapping marked complete without code (2026-01-25)
+
+Stage marked Completed but code never written:
+
+- No loom map command
+- No Stack/Concerns knowledge types
+- No map module in src/
+
+Stage marked complete without verifying acceptance criteria passed.
