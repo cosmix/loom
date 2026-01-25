@@ -8,6 +8,7 @@ use crate::fs::session_files::find_session_file;
 use crate::fs::worktree_files::find_sessions_for_stage;
 use crate::models::session::Session;
 use crate::orchestrator::terminal::{create_backend, BackendType};
+use crate::parser::frontmatter::parse_from_markdown;
 
 /// List all sessions
 pub fn list() -> Result<()> {
@@ -122,8 +123,8 @@ fn kill_single_session(work_dir: &std::path::Path, session_id: &str) -> Result<(
         .with_context(|| format!("Failed to read session file: {}", session_file.display()))?;
 
     // Parse session from markdown YAML frontmatter
-    let session =
-        parse_session_from_markdown(&content).context("Failed to parse session from markdown")?;
+    let session: Session =
+        parse_from_markdown(&content, "Session").context("Failed to parse session from markdown")?;
 
     // Detect backend type from session metadata
     let backend_type = detect_backend_type(&session);
@@ -162,17 +163,6 @@ fn kill_single_session(work_dir: &std::path::Path, session_id: &str) -> Result<(
     }
 
     Ok(())
-}
-
-/// Parse session from markdown with YAML frontmatter
-fn parse_session_from_markdown(content: &str) -> Result<Session> {
-    let yaml_content = content
-        .strip_prefix("---\n")
-        .and_then(|s| s.split_once("\n---"))
-        .map(|(yaml, _)| yaml)
-        .ok_or_else(|| anyhow::anyhow!("Invalid session file format: missing frontmatter"))?;
-
-    serde_yaml::from_str(yaml_content).context("Failed to parse session YAML")
 }
 
 /// Detect backend type from session metadata
@@ -221,7 +211,7 @@ last_active: 2024-01-01T00:00:00Z
 # Session: session-1
 "#;
 
-        let session = parse_session_from_markdown(content).unwrap();
+        let session: Session = parse_from_markdown(content, "Session").unwrap();
         assert_eq!(session.id, "session-1");
         assert_eq!(session.stage_id, Some("stage-1".to_string()));
         assert_eq!(session.pid, Some(12345));
@@ -231,7 +221,7 @@ last_active: 2024-01-01T00:00:00Z
     fn test_parse_session_from_markdown_invalid() {
         let content = "Invalid content without frontmatter";
 
-        let result = parse_session_from_markdown(content);
+        let result: Result<Session> = parse_from_markdown(content, "Session");
         assert!(result.is_err());
     }
 }
