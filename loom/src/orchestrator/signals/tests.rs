@@ -166,6 +166,8 @@ fn test_format_signal_content_with_embedded_context() {
         task_state: None,
         memory_content: None,
         skill_recommendations: Vec::new(),
+        context_budget: None,
+        context_usage: None,
     };
 
     let content = format_signal_content(
@@ -707,6 +709,8 @@ fn test_signal_sections_ordering() {
     let worktree = create_test_worktree();
     let embedded_context = EmbeddedContext {
         memory_content: Some("Test memory content".to_string()),
+        context_budget: None,
+        context_usage: None,
         ..Default::default()
     };
 
@@ -790,6 +794,8 @@ fn test_signal_contains_knowledge_management_section_populated() {
         knowledge_exists: true,
         knowledge_is_empty: false,
         knowledge_summary: Some("## Entry Points\n\n- src/main.rs".to_string()),
+        context_budget: None,
+        context_usage: None,
         ..Default::default()
     };
 

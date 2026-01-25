@@ -1,6 +1,7 @@
 //! Event handling - processing monitor events and session lifecycle
 
 use anyhow::Result;
+use colored::Colorize;
 use std::path::PathBuf;
 
 use crate::orchestrator::monitor::MonitorEvent;
@@ -30,6 +31,15 @@ pub(super) trait EventHandler: Persistence {
 
     /// Handle merge session completion
     fn on_merge_session_completed(&mut self, session_id: &str, stage_id: &str) -> Result<()>;
+
+    /// Handle budget exceeded (force handoff)
+    fn on_budget_exceeded(
+        &mut self,
+        session_id: &str,
+        stage_id: &str,
+        usage_percent: f32,
+        budget_percent: f32,
+    ) -> Result<()>;
 }
 
 impl EventHandler for Orchestrator {
@@ -172,6 +182,14 @@ impl EventHandler for Orchestrator {
                         "Context refresh needed for stage '{stage_id}' (session '{session_id}', context at {context_percent:.1}%)"
                     );
                 }
+                MonitorEvent::BudgetExceeded {
+                    session_id,
+                    stage_id,
+                    usage_percent,
+                    budget_percent,
+                } => {
+                    self.on_budget_exceeded(&session_id, &stage_id, usage_percent, budget_percent)?;
+                }
             }
         }
         Ok(())
@@ -206,5 +224,71 @@ impl EventHandler for Orchestrator {
     fn on_merge_session_completed(&mut self, session_id: &str, stage_id: &str) -> Result<()> {
         // Implementation in merge_handler.rs
         self.handle_merge_session_completed(session_id, stage_id)
+    }
+
+    fn on_budget_exceeded(
+        &mut self,
+        session_id: &str,
+        stage_id: &str,
+        usage_percent: f32,
+        budget_percent: f32,
+    ) -> Result<()> {
+        // Implementation in event_handler.rs
+        self.handle_budget_exceeded(session_id, stage_id, usage_percent, budget_percent)
+    }
+}
+
+impl Orchestrator {
+    /// Handle budget exceeded by generating handoff and transitioning stage
+    pub(super) fn handle_budget_exceeded(
+        &mut self,
+        session_id: &str,
+        stage_id: &str,
+        usage_percent: f32,
+        budget_percent: f32,
+    ) -> Result<()> {
+        clear_status_line();
+        eprintln!(
+            "{} Session '{}' exceeded budget: {:.1}% > {:.1}% limit",
+            "BUDGET EXCEEDED:".red().bold(),
+            session_id,
+            usage_percent,
+            budget_percent
+        );
+
+        // Load the stage
+        let mut stage = self.load_stage(stage_id)?;
+
+        // Get session from active sessions for handoff generation
+        if let Some(session) = self.active_sessions.get(stage_id) {
+            // Clone session data for handoff generation (avoids borrow conflicts)
+            let session_clone = session.clone();
+
+            // Generate handoff using the monitor's context critical handler
+            let handoff_path = self
+                .monitor
+                .handlers()
+                .handle_context_critical(&session_clone, &stage)?;
+
+            eprintln!("Generated handoff at: {}", handoff_path.display());
+        }
+
+        // Update session status to ContextExhausted and save
+        // Clone to avoid borrow conflicts between get_mut and save_session
+        if let Some(session_mut) = self.active_sessions.get_mut(stage_id) {
+            session_mut.try_mark_context_exhausted()?;
+            let session_to_save = session_mut.clone();
+            // session_mut goes out of scope here, ending the mutable borrow
+            self.save_session(&session_to_save)?;
+        }
+
+        // Transition stage to NeedsHandoff
+        stage.try_mark_needs_handoff()?;
+        self.save_stage(&stage)?;
+
+        // Remove from active sessions
+        self.active_sessions.remove(stage_id);
+
+        Ok(())
     }
 }
