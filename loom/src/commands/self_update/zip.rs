@@ -55,7 +55,7 @@ impl<R: Read> Read for LimitedReader<R> {
 /// Checks:
 /// - Absolute uncompressed size against MAX_UNCOMPRESSED_SIZE
 /// - Compression ratio against MAX_COMPRESSION_RATIO to detect zip bombs
-pub(crate) fn validate_zip_entry(file: &zip::read::ZipFile) -> Result<()> {
+pub(crate) fn validate_zip_entry<R: Read + ?Sized>(file: &zip::read::ZipFile<'_, R>) -> Result<()> {
     let compressed = file.compressed_size();
     let uncompressed = file.size();
 
