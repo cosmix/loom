@@ -68,7 +68,7 @@ mod tests {
             auto_merge: None,
             working_dir: ".".to_string(),
             stage_type: crate::plan::schema::StageType::default(),
-                context_budget: None,
+            context_budget: None,
         }];
 
         ExecutionGraph::build(stages).unwrap()

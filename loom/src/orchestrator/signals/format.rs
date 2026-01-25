@@ -357,8 +357,7 @@ fn format_recitation_section(stage: &Stage, embedded_context: &EmbeddedContext) 
             // 80% of budget
             content.push_str("## ⚠️ CONTEXT BUDGET WARNING\n\n");
             content.push_str(&format!(
-                "Current usage: **{:.0}%** | Budget: **{:.0}%**\n\n",
-                usage, budget
+                "Current usage: **{usage:.0}%** | Budget: **{budget:.0}%**\n\n",
             ));
 
             if usage >= budget {

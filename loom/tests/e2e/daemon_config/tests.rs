@@ -67,7 +67,7 @@ fn test_auto_merge_config_cascade() {
         auto_merge: Some(true), // Stage-level override
         working_dir: ".".to_string(),
         stage_type: loom::plan::schema::StageType::default(),
-                context_budget: None,
+        context_budget: None,
     };
 
     assert_eq!(stage_with_auto_merge.auto_merge, Some(true));
@@ -85,7 +85,7 @@ fn test_auto_merge_config_cascade() {
         auto_merge: None, // Uses plan default
         working_dir: ".".to_string(),
         stage_type: loom::plan::schema::StageType::default(),
-                context_budget: None,
+        context_budget: None,
     };
 
     assert_eq!(stage_without_override.auto_merge, None);
