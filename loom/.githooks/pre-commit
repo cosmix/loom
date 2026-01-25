@@ -11,9 +11,12 @@ echo "Formatting Rust code..."
 cd "$REPO_ROOT/loom" || exit 1
 cargo fmt
 
-# Auto-fix markdown files
+# Auto-fix tracked markdown files only
 echo "Linting markdown files..."
 cd "$REPO_ROOT" || exit 1
-bunx markdownlint-cli2 --fix "**/*.md" 2>/dev/null || true
+MD_FILES=$(git ls-files '*.md')
+if [ -n "$MD_FILES" ]; then
+    echo "$MD_FILES" | xargs bunx markdownlint-cli2 --fix 2>/dev/null || true
+fi
 
 echo "Pre-commit formatting complete."

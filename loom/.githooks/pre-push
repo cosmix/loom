@@ -18,14 +18,17 @@ if ! cargo fmt --check 2>/dev/null; then
     exit 1
 fi
 
-# Check markdown formatting
+# Check markdown formatting (tracked files only)
 cd "$REPO_ROOT" || exit 1
-if ! bunx markdownlint-cli2 "**/*.md" 2>/dev/null; then
-    echo ""
-    echo "ERROR: Markdown files have linting issues."
-    echo "Run 'bunx markdownlint-cli2 --fix \"**/*.md\"' to fix."
-    echo ""
-    exit 1
+MD_FILES=$(git ls-files '*.md')
+if [ -n "$MD_FILES" ]; then
+    if ! echo "$MD_FILES" | xargs bunx markdownlint-cli2 2>/dev/null; then
+        echo ""
+        echo "ERROR: Markdown files have linting issues."
+        echo "Run 'bunx markdownlint-cli2 --fix <files>' to fix."
+        echo ""
+        exit 1
+    fi
 fi
 cd "$REPO_ROOT/loom" || exit 1
 
