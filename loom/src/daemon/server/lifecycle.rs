@@ -6,8 +6,10 @@ use super::client::handle_client_connection;
 use super::core::{DaemonServer, MAX_CONNECTIONS};
 use super::orchestrator::spawn_orchestrator;
 use anyhow::{Context, Result};
-use std::fs::{self, Permissions};
+use nix::unistd::{fork, setsid, ForkResult};
+use std::fs::{self, File, Permissions};
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::io::AsRawFd;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::sync::atomic::Ordering;
@@ -76,20 +78,49 @@ impl DaemonServer {
             }
         }
 
-        // Daemonize the process
-        let daemonize = daemonize::Daemonize::new()
-            .pid_file(&self.pid_path)
-            .working_directory(".")
-            .stdout(fs::File::create(&self.log_path).context("Failed to create log file")?)
-            .stderr(
-                fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&self.log_path)
-                    .context("Failed to open log file for stderr")?,
-            );
+        // First fork - parent exits, child continues
+        match unsafe { fork() }.context("First fork failed")? {
+            ForkResult::Parent { .. } => {
+                // Parent process exits successfully
+                std::process::exit(0);
+            }
+            ForkResult::Child => {
+                // Child continues with daemonization
+            }
+        }
 
-        daemonize.start().context("Failed to daemonize process")?;
+        // Create new session (detach from controlling terminal)
+        setsid().context("setsid failed")?;
+
+        // Second fork - prevents acquiring a controlling terminal
+        match unsafe { fork() }.context("Second fork failed")? {
+            ForkResult::Parent { .. } => {
+                // Intermediate parent exits
+                std::process::exit(0);
+            }
+            ForkResult::Child => {
+                // Grandchild continues as daemon
+            }
+        }
+
+        // Write PID file
+        fs::write(&self.pid_path, format!("{}", std::process::id()))
+            .context("Failed to write PID file")?;
+
+        // Redirect stdout and stderr to log file
+        let log_file = File::create(&self.log_path).context("Failed to create log file")?;
+        let log_fd = log_file.as_raw_fd();
+
+        // Close stdin and redirect stdout/stderr to log file
+        unsafe {
+            libc::close(0);
+            if libc::dup2(log_fd, 1) < 0 {
+                anyhow::bail!("Failed to redirect stdout");
+            }
+            if libc::dup2(log_fd, 2) < 0 {
+                anyhow::bail!("Failed to redirect stderr");
+            }
+        }
 
         // Run the server
         self.run_server()
