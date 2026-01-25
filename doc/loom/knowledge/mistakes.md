@@ -246,3 +246,13 @@ Stage marked Completed but code never written:
 - No map module in src/
 
 Stage marked complete without verifying acceptance criteria passed.
+
+## Promoted from Memory [2026-01-25 23:08]
+
+### Notes
+
+- implement-fix stage was marked complete without actual implementation - knowledge.rs still requires .work directory
+
+### Decisions
+
+- **Removed work_dir.load() calls from knowledge commands**
