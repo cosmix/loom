@@ -128,8 +128,7 @@ pub fn render_staleness_warning(secs: u64) -> Option<String> {
         // 5 minutes
         let mins = secs / 60;
         Some(format!(
-            "  No activity for {} minutes - session may be hung",
-            mins
+            "  No activity for {mins} minutes - session may be hung"
         ))
     } else {
         None

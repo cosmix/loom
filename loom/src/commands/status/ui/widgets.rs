@@ -127,5 +127,5 @@ pub fn context_budget_gauge(usage_pct: f32, budget_pct: f32) -> Gauge<'static> {
     Gauge::default()
         .percent(usage_pct.clamp(0.0, 100.0) as u16)
         .gauge_style(Style::default().fg(color))
-        .label(format!("{:.0}% (budget: {:.0}%)", usage_pct, budget_pct))
+        .label(format!("{usage_pct:.0}% (budget: {budget_pct:.0}%)"))
 }

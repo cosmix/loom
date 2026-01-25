@@ -73,5 +73,5 @@ pub fn render_context_bar(usage_pct: f32, budget_pct: Option<f32>, width: usize)
         })
         .collect();
 
-    format!("[{}] {:.0}%", bar, usage_pct)
+    format!("[{bar}] {usage_pct:.0}%")
 }

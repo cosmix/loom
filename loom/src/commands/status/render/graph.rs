@@ -13,11 +13,16 @@ use crate::models::constants::display::{CONTEXT_HEALTHY_PCT, CONTEXT_WARNING_PCT
 use crate::models::stage::StageStatus;
 use crate::utils::format_elapsed;
 
-// Unicode box-drawing constants for cleaner tree visualization
+// Unicode box-drawing constants for cleaner tree visualization (infrastructure for future use)
+#[allow(dead_code)]
 const BOX_HORIZONTAL: char = '─';
+#[allow(dead_code)]
 const BOX_VERTICAL: char = '│';
+#[allow(dead_code)]
 const BOX_DOWN_RIGHT: char = '┌';
+#[allow(dead_code)]
 const BOX_UP_RIGHT: char = '└';
+#[allow(dead_code)]
 const BOX_VERTICAL_RIGHT: char = '├';
 
 /// Available terminal colors for stage differentiation
@@ -61,7 +66,8 @@ fn color_by_index(index: usize) -> Color {
     STAGE_COLORS[index % STAGE_COLORS.len()]
 }
 
-/// Format multiple parallel stages on same line with brackets
+/// Format multiple parallel stages on same line with brackets (infrastructure for future use)
+#[allow(dead_code)]
 fn render_parallel_group(stage_ids: &[&str]) -> String {
     if stage_ids.len() == 1 {
         return stage_ids[0].to_string();
@@ -322,7 +328,7 @@ pub fn render_graph<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<(
 
             // Show activity status for executing stages
             let activity_icon = stage.activity_status.icon();
-            write!(w, " {}", activity_icon)?;
+            write!(w, " {activity_icon}")?;
 
             // Add staleness warning
             if let Some(staleness) = stage.staleness_secs {

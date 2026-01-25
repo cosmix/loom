@@ -8,6 +8,42 @@ use serde::{Deserialize, Serialize};
 pub use crate::models::failure::FailureInfo;
 pub use crate::models::stage::StageStatus;
 
+/// Activity status derived from heartbeat and session state
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub enum ActivityStatus {
+    /// No active session or session is idle
+    #[default]
+    Idle,
+    /// Session is actively working (recent heartbeat)
+    Working,
+    /// Session encountered an error or crashed
+    Error,
+    /// Session may be hung (no recent heartbeat but PID alive)
+    Stale,
+}
+
+impl ActivityStatus {
+    /// Get Unicode icon for this activity status
+    pub fn icon(&self) -> &'static str {
+        match self {
+            Self::Idle => "\u{23F3}",     // hourglass
+            Self::Working => "\u{1F504}", // arrows counterclockwise
+            Self::Error => "\u{274C}",    // cross mark
+            Self::Stale => "\u{26A0}",    // warning
+        }
+    }
+
+    /// Get a short label for this status
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Idle => "IDLE",
+            Self::Working => "WORKING",
+            Self::Error => "ERROR",
+            Self::Stale => "STALE",
+        }
+    }
+}
+
 /// Main struct aggregating all displayable status information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatusData {
@@ -29,6 +65,16 @@ pub struct StageSummary {
     pub base_branch: Option<String>,
     pub base_merged_from: Vec<String>,
     pub failure_info: Option<FailureInfo>,
+    /// Activity status derived from heartbeat
+    pub activity_status: ActivityStatus,
+    /// Last tool used (from heartbeat)
+    pub last_tool: Option<String>,
+    /// Human-readable activity description
+    pub last_activity: Option<String>,
+    /// Seconds since last heartbeat (for staleness detection)
+    pub staleness_secs: Option<u64>,
+    /// Stage-specific context budget percentage (if set in plan)
+    pub context_budget_pct: Option<f32>,
 }
 
 /// Session display data
