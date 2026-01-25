@@ -261,6 +261,42 @@ pub(super) fn format_dynamic_section(
     }
     content.push('\n');
 
+    // Goal-backward verification criteria (if defined)
+    let has_goal_checks = !stage.truths.is_empty()
+        || !stage.artifacts.is_empty()
+        || !stage.wiring.is_empty();
+
+    if has_goal_checks {
+        content.push_str("\n## Goal-Backward Verification\n\n");
+        content.push_str("Beyond acceptance criteria, verify these OUTCOMES work:\n\n");
+
+        if !stage.truths.is_empty() {
+            content.push_str("### Truths (observable behaviors - must return exit 0)\n\n");
+            for truth in &stage.truths {
+                content.push_str(&format!("```bash\n{truth}\n```\n\n"));
+            }
+        }
+
+        if !stage.artifacts.is_empty() {
+            content.push_str("### Artifacts (files must exist with real implementation)\n\n");
+            for artifact in &stage.artifacts {
+                content.push_str(&format!("- `{artifact}`\n"));
+            }
+            content.push('\n');
+        }
+
+        if !stage.wiring.is_empty() {
+            content.push_str("### Wiring (critical connections to verify)\n\n");
+            for check in &stage.wiring {
+                content.push_str(&format!("- **{}**: pattern `{}` in `{}`\n",
+                    check.description, check.pattern, check.source));
+            }
+            content.push('\n');
+        }
+
+        content.push_str("Run `loom verify <stage-id> --suggest` to check these automatically.\n\n");
+    }
+
     // Files to modify
     if !stage.files.is_empty() {
         content.push_str("## Files to Modify\n\n");
