@@ -47,3 +47,31 @@ pub fn render_progress<W: Write>(w: &mut W, progress: &ProgressSummary) -> std::
     writeln!(w)?;
     Ok(())
 }
+
+/// Render context budget bar with threshold marker
+/// Shows current usage with a marker at the budget threshold
+pub fn render_context_bar(usage_pct: f32, budget_pct: Option<f32>, width: usize) -> String {
+    let budget = budget_pct.unwrap_or(65.0);
+    let filled = ((usage_pct / 100.0) * width as f32) as usize;
+    let budget_marker = ((budget / 100.0) * width as f32) as usize;
+
+    let bar: String = (0..width)
+        .map(|i| {
+            if i < filled {
+                if usage_pct >= 65.0 {
+                    '█'
+                } else if usage_pct >= 50.0 {
+                    '▓'
+                } else {
+                    '░'
+                }
+            } else if i == budget_marker {
+                '│' // Budget threshold marker
+            } else {
+                '·'
+            }
+        })
+        .collect();
+
+    format!("[{}] {:.0}%", bar, usage_pct)
+}
