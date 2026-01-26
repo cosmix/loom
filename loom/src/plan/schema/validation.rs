@@ -228,6 +228,23 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
                 });
             }
         }
+
+        // Require goal-backward checks for standard stages
+        // Knowledge and IntegrationVerify stages are exempt (they have different purposes)
+        if stage.stage_type == super::types::StageType::Standard {
+            let has_goal_checks = !stage.truths.is_empty()
+                || !stage.artifacts.is_empty()
+                || !stage.wiring.is_empty();
+
+            if !has_goal_checks {
+                errors.push(ValidationError {
+                    message: "Standard stages must define at least one truth, artifact, or wiring check. \
+                             These define observable outcomes that verify the stage actually works."
+                        .to_string(),
+                    stage_id: Some(stage.id.clone()),
+                });
+            }
+        }
     }
 
     if errors.is_empty() {

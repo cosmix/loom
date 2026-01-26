@@ -233,7 +233,8 @@ fn test_initialize_with_plan_creates_config() {
         auto_merge: None,
         working_dir: ".".to_string(),
         stage_type: StageType::default(),
-        truths: vec![],
+        // Standard stages require goal-backward checks
+        truths: vec!["test -f README.md".to_string()],
         artifacts: vec![],
         wiring: vec![],
         context_budget: None,
@@ -273,7 +274,8 @@ fn test_initialize_with_plan_creates_stage_files() {
             auto_merge: None,
             working_dir: ".".to_string(),
             stage_type: StageType::default(),
-            truths: vec![],
+            // Standard stages require goal-backward checks
+            truths: vec!["test -f README.md".to_string()],
             artifacts: vec![],
             wiring: vec![],
             context_budget: None,
@@ -290,7 +292,7 @@ fn test_initialize_with_plan_creates_stage_files() {
             auto_merge: None,
             working_dir: ".".to_string(),
             stage_type: StageType::default(),
-            truths: vec![],
+            truths: vec!["cargo build".to_string()],
             artifacts: vec![],
             wiring: vec![],
             context_budget: None,

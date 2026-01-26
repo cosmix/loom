@@ -7,9 +7,13 @@ use std::path::{Path, PathBuf};
 use crate::fs::permissions::sync_worktree_permissions;
 use crate::fs::session_files::find_session_for_stage;
 use crate::fs::task_state::read_task_state_if_exists;
+use crate::fs::work_dir::load_config;
 use crate::git::worktree::{find_repo_root_from_cwd, find_worktree_root_from_cwd};
 use crate::models::stage::{StageStatus, StageType};
+use crate::plan::parser::parse_plan;
+use crate::plan::schema::StageDefinition;
 use crate::verify::criteria::run_acceptance;
+use crate::verify::goal_backward::run_goal_backward_verification;
 use crate::verify::task_verification::run_task_verifications;
 use crate::verify::transitions::{load_stage, save_stage, trigger_dependents};
 
@@ -17,6 +21,27 @@ use super::acceptance_runner::resolve_acceptance_dir;
 use super::knowledge_complete::complete_knowledge_stage;
 use super::progressive_complete::complete_with_merge;
 use super::session::cleanup_session_resources;
+
+/// Load stage definition from the active plan
+fn load_stage_definition_from_plan(stage_id: &str, work_dir: &Path) -> Result<Option<StageDefinition>> {
+    // Load config to get plan source path
+    let config = match load_config(work_dir)? {
+        Some(config) => config,
+        None => return Ok(None),
+    };
+
+    let source_path = match config.source_path() {
+        Some(path) => path,
+        None => return Ok(None),
+    };
+
+    // Parse the plan
+    let parsed_plan = parse_plan(&source_path)
+        .with_context(|| format!("Failed to parse plan: {}", source_path.display()))?;
+
+    // Find the stage definition by ID
+    Ok(parsed_plan.stages.into_iter().find(|s| s.id == stage_id))
+}
 
 /// Mark a stage as complete, optionally running acceptance criteria.
 /// If acceptance criteria pass, auto-verifies the stage and triggers dependents.
@@ -237,6 +262,38 @@ pub fn complete(
                     return Ok(());
                 }
                 println!("All task verifications passed!");
+            }
+        }
+
+        // Run goal-backward verification (truths, artifacts, wiring)
+        if let Some(stage_def) = load_stage_definition_from_plan(&stage_id, work_dir)? {
+            let has_goal_checks = !stage_def.truths.is_empty()
+                || !stage_def.artifacts.is_empty()
+                || !stage_def.wiring.is_empty();
+
+            if has_goal_checks {
+                println!("Running goal-backward verification...");
+                let verification_dir = acceptance_dir.as_deref().unwrap_or(Path::new("."));
+                let goal_result = run_goal_backward_verification(&stage_def, verification_dir)?;
+
+                if !goal_result.is_passed() {
+                    stage.try_complete_with_failures()?;
+                    save_stage(&stage, work_dir)?;
+                    println!(
+                        "Stage '{stage_id}' completed with failures - goal-backward verification failed"
+                    );
+
+                    // Print gaps
+                    for gap in goal_result.gaps() {
+                        println!("  ✗ {:?}: {}", gap.gap_type, gap.description);
+                        println!("    → {}", gap.suggestion);
+                    }
+
+                    println!();
+                    println!("  Run 'loom stage retry {stage_id}' to try again after fixing issues");
+                    return Ok(());
+                }
+                println!("Goal-backward verification passed!");
             }
         }
 

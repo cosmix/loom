@@ -101,7 +101,8 @@ fn test_validate_metadata_with_valid_acceptance() {
                 auto_merge: None,
                 working_dir: ".".to_string(),
                 stage_type: StageType::default(),
-                truths: vec![],
+                // Standard stages require goal-backward checks
+                truths: vec!["cargo build".to_string()],
                 artifacts: vec![],
                 wiring: vec![],
                 context_budget: None,

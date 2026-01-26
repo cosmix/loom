@@ -3,15 +3,17 @@
 //! This module provides hooks integration that enables:
 //! - Auto-handoff on PreCompact (context exhaustion)
 //! - Session lifecycle tracking via event logging
+//! - Learning validation on Stop (memory usage checks)
 //!
 //! ## Hook Events
 //!
 //! The following Claude Code hook events are supported:
 //! - `SessionStart`: Called when a Claude Code session starts
+//! - `PostToolUse`: Called after each tool use (heartbeat update)
 //! - `PreCompact`: Called before context compaction (triggers handoff)
 //! - `SessionEnd`: Called when a session ends normally
-//! - `Stop`: Called when session is stopping
-//! - `SubagentStop`: Called when a subagent stops
+//! - `Stop`: Called when session is stopping (learning-validator)
+//! - `PreferModernTools`: Called before Bash to suggest modern CLI tools
 //!
 //! ## Configuration
 //!

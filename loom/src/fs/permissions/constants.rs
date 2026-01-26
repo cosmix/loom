@@ -37,6 +37,9 @@ pub const HOOK_SKILL_INDEX_BUILDER: &str = include_str!("../../../../hooks/skill
 /// SkillTrigger hook - suggests skills based on prompt keywords (UserPromptSubmit)
 pub const HOOK_SKILL_TRIGGER: &str = include_str!("../../../../hooks/skill-trigger.sh");
 
+/// LearningValidator hook - validates session outcomes on Stop (memory usage checks)
+pub const HOOK_LEARNING_VALIDATOR: &str = include_str!("../../../../hooks/learning-validator.sh");
+
 /// All loom hook scripts with their filenames (installed to ~/.claude/hooks/loom/)
 /// All hooks are installed to the loom/ subdirectory to keep them separate from user hooks.
 pub const LOOM_HOOKS: &[(&str, &str)] = &[
@@ -45,6 +48,7 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("session-start.sh", HOOK_SESSION_START),
     ("pre-compact.sh", HOOK_PRE_COMPACT),
     ("session-end.sh", HOOK_SESSION_END),
+    ("learning-validator.sh", HOOK_LEARNING_VALIDATOR),
     // Global hooks (commit enforcement, user question handling, tool guidance)
     ("commit-guard.sh", HOOK_COMMIT_GUARD),
     ("ask-user-pre.sh", HOOK_ASK_USER_PRE),

@@ -44,7 +44,8 @@ fn setup_work_dir_with_plan(temp_dir: &TempDir) -> (PathBuf, WorkDir) {
         auto_merge: None,
         working_dir: ".".to_string(),
         stage_type: StageType::default(),
-        truths: vec![],
+        // Standard stages require goal-backward checks
+        truths: vec!["test -f README.md".to_string()],
         artifacts: vec![],
         wiring: vec![],
         context_budget: None,

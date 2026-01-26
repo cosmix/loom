@@ -14,8 +14,30 @@ fn test_validate_valid_metadata() {
 
 #[test]
 fn test_validate_unsupported_version() {
-    let mut metadata = create_valid_metadata();
-    metadata.loom.version = 2;
+    // Use Knowledge stages to avoid goal-backward check errors
+    let metadata = LoomMetadata {
+        loom: LoomConfig {
+            version: 2, // Invalid version
+            auto_merge: None,
+            stages: vec![StageDefinition {
+                id: "stage-1".to_string(),
+                name: "Stage One".to_string(),
+                description: None,
+                dependencies: vec![],
+                parallel_group: None,
+                acceptance: vec![],
+                setup: vec![],
+                files: vec![],
+                auto_merge: None,
+                working_dir: ".".to_string(),
+                stage_type: StageType::Knowledge, // Knowledge stages don't require goal-backward checks
+                truths: vec![],
+                artifacts: vec![],
+                wiring: vec![],
+                context_budget: None,
+            }],
+        },
+    };
 
     let result = validate(&metadata);
     assert!(result.is_err());
@@ -285,7 +307,8 @@ fn test_complex_dependency_chain() {
                     auto_merge: None,
                     working_dir: ".".to_string(),
                     stage_type: StageType::default(),
-                    truths: vec![],
+                    // Standard stages require goal-backward checks
+                    truths: vec!["test -f README.md".to_string()],
                     artifacts: vec![],
                     wiring: vec![],
                     context_budget: None,
@@ -302,7 +325,7 @@ fn test_complex_dependency_chain() {
                     auto_merge: None,
                     working_dir: ".".to_string(),
                     stage_type: StageType::default(),
-                    truths: vec![],
+                    truths: vec!["test -f README.md".to_string()],
                     artifacts: vec![],
                     wiring: vec![],
                     context_budget: None,
@@ -319,7 +342,7 @@ fn test_complex_dependency_chain() {
                     auto_merge: None,
                     working_dir: ".".to_string(),
                     stage_type: StageType::default(),
-                    truths: vec![],
+                    truths: vec!["test -f README.md".to_string()],
                     artifacts: vec![],
                     wiring: vec![],
                     context_budget: None,
@@ -468,7 +491,8 @@ fn test_validate_working_dir_valid_subdirectory() {
                 auto_merge: None,
                 working_dir: "loom".to_string(), // Valid subdirectory
                 stage_type: StageType::default(),
-                truths: vec![],
+                // Standard stages require goal-backward checks
+                truths: vec!["cargo build".to_string()],
                 artifacts: vec![],
                 wiring: vec![],
                 context_budget: None,

@@ -77,10 +77,14 @@ loom:
       name: "Stage One"
       dependencies: []
       working_dir: "."
+      truths:
+        - "test -f README.md"
     - id: stage-2
       name: "Stage Two"
       dependencies: [stage-1]
       working_dir: "."
+      truths:
+        - "cargo build"
 ```
 
 <!-- END loom METADATA -->
@@ -119,6 +123,8 @@ loom:
       files:
         - "src/*.rs"
       working_dir: "."
+      truths:
+        - "test -f README.md"
     - id: stage-2
       name: "Second Stage"
       description: "Build on first stage"
@@ -130,6 +136,8 @@ loom:
       files:
         - "Cargo.toml"
       working_dir: "."
+      artifacts:
+        - "target/debug/myapp"
 ```
 
 <!-- END loom METADATA -->

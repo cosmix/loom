@@ -171,7 +171,9 @@ fn test_accepts_valid_relative_path() {
     assert!(result.is_ok());
 
     let path = result.unwrap();
-    assert!(path.starts_with(dest));
+    // safe_extract_path returns canonicalized paths (e.g., /private/var on macOS)
+    let canonical_dest = dest.canonicalize().unwrap();
+    assert!(path.starts_with(&canonical_dest));
     assert!(path.ends_with("subdir/file.txt"));
 }
 
@@ -184,7 +186,9 @@ fn test_accepts_simple_filename() {
     assert!(result.is_ok());
 
     let path = result.unwrap();
-    assert!(path.starts_with(dest));
+    // safe_extract_path returns canonicalized paths (e.g., /private/var on macOS)
+    let canonical_dest = dest.canonicalize().unwrap();
+    assert!(path.starts_with(&canonical_dest));
     assert!(path.ends_with("file.txt"));
 }
 
@@ -197,7 +201,9 @@ fn test_accepts_deeply_nested_path() {
     assert!(result.is_ok());
 
     let path = result.unwrap();
-    assert!(path.starts_with(dest));
+    // safe_extract_path returns canonicalized paths (e.g., /private/var on macOS)
+    let canonical_dest = dest.canonicalize().unwrap();
+    assert!(path.starts_with(&canonical_dest));
 }
 
 // ============================================================================

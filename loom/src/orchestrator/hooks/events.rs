@@ -62,12 +62,6 @@ pub enum HookEventPayload {
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<String>,
     },
-    /// SubagentStop event data
-    SubagentStop {
-        /// Subagent type
-        #[serde(skip_serializing_if = "Option::is_none")]
-        subagent_type: Option<String>,
-    },
     /// Generic payload for custom data
     Custom {
         /// Custom data as key-value pairs

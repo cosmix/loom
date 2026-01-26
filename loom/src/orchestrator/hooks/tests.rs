@@ -14,7 +14,6 @@ mod config_tests {
         assert_eq!(HookEvent::PreCompact.to_string(), "PreCompact");
         assert_eq!(HookEvent::SessionEnd.to_string(), "SessionEnd");
         assert_eq!(HookEvent::Stop.to_string(), "Stop");
-        assert_eq!(HookEvent::SubagentStop.to_string(), "SubagentStop");
         assert_eq!(
             HookEvent::PreferModernTools.to_string(),
             "PreferModernTools"
@@ -28,7 +27,6 @@ mod config_tests {
         assert_eq!(HookEvent::PreCompact.script_name(), "pre-compact.sh");
         assert_eq!(HookEvent::SessionEnd.script_name(), "session-end.sh");
         assert_eq!(HookEvent::Stop.script_name(), "learning-validator.sh");
-        assert_eq!(HookEvent::SubagentStop.script_name(), "subagent-stop.sh");
         assert_eq!(
             HookEvent::PreferModernTools.script_name(),
             "prefer-modern-tools.sh"
@@ -38,13 +36,12 @@ mod config_tests {
     #[test]
     fn test_hook_event_all() {
         let all = HookEvent::all();
-        assert_eq!(all.len(), 7);
+        assert_eq!(all.len(), 6);
         assert!(all.contains(&HookEvent::SessionStart));
         assert!(all.contains(&HookEvent::PostToolUse));
         assert!(all.contains(&HookEvent::PreCompact));
         assert!(all.contains(&HookEvent::SessionEnd));
         assert!(all.contains(&HookEvent::Stop));
-        assert!(all.contains(&HookEvent::SubagentStop));
         assert!(all.contains(&HookEvent::PreferModernTools));
     }
 
@@ -110,8 +107,8 @@ mod config_tests {
         );
 
         let hooks = config.to_settings_hooks();
-        // Should have hook events: SessionStart, PostToolUse, PreCompact, SessionEnd, Stop, SubagentStop
-        assert!(hooks.len() >= 6);
+        // Should have hook events: SessionStart, PostToolUse, PreCompact, SessionEnd, Stop
+        assert!(hooks.len() >= 5);
 
         // Check PreCompact hook exists
         assert!(hooks.contains_key("PreCompact"));
@@ -246,7 +243,6 @@ mod generator_tests {
         assert!(settings["hooks"]["PreCompact"].is_array());
         assert!(settings["hooks"]["SessionEnd"].is_array());
         assert!(settings["hooks"]["Stop"].is_array());
-        assert!(settings["hooks"]["SubagentStop"].is_array());
 
         // Check environment variables
         assert_eq!(settings["env"]["LOOM_STAGE_ID"], json!("stage"));

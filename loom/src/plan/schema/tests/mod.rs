@@ -27,7 +27,8 @@ pub(crate) fn create_valid_metadata() -> LoomMetadata {
                     auto_merge: None,
                     working_dir: ".".to_string(),
                     stage_type: StageType::default(),
-                    truths: vec![],
+                    // Standard stages require at least one goal-backward check
+                    truths: vec!["test -f README.md".to_string()],
                     artifacts: vec![],
                     wiring: vec![],
                     context_budget: None,
@@ -44,7 +45,8 @@ pub(crate) fn create_valid_metadata() -> LoomMetadata {
                     auto_merge: None,
                     working_dir: ".".to_string(),
                     stage_type: StageType::default(),
-                    truths: vec![],
+                    // Standard stages require at least one goal-backward check
+                    truths: vec!["cargo build".to_string()],
                     artifacts: vec![],
                     wiring: vec![],
                     context_budget: None,

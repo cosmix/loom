@@ -33,6 +33,8 @@ loom:
       name: "Test Stage"
       dependencies: []
       working_dir: "."
+      truths:
+        - "test -f README.md"
 "#;
         let stages = parse_and_validate(yaml).unwrap();
         assert_eq!(stages.len(), 1);
