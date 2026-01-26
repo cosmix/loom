@@ -265,20 +265,10 @@ impl Orchestrator {
                     break;
                 }
             } else {
-                // Normal mode: exit on completion or when failed with no running sessions
+                // Normal mode: exit only when all stages are Completed or Skipped
+                // Stages with failures do NOT trigger exit - orchestrator keeps running
+                // for user intervention via `loom stage retry` or `loom status`
                 if self.graph.is_complete() {
-                    break;
-                }
-
-                // Check if there are ready stages waiting - don't exit if there are
-                let ready_stages = self.graph.ready_stages();
-                let has_ready_stages = !ready_stages.is_empty();
-
-                // Only exit on failure if no sessions are running AND no stages are ready to start
-                if !failed_stages.is_empty()
-                    && self.running_session_count() == 0
-                    && !has_ready_stages
-                {
                     break;
                 }
             }
