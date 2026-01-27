@@ -232,9 +232,8 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
         // Require goal-backward checks for standard stages
         // Knowledge and IntegrationVerify stages are exempt (they have different purposes)
         if stage.stage_type == super::types::StageType::Standard {
-            let has_goal_checks = !stage.truths.is_empty()
-                || !stage.artifacts.is_empty()
-                || !stage.wiring.is_empty();
+            let has_goal_checks =
+                !stage.truths.is_empty() || !stage.artifacts.is_empty() || !stage.wiring.is_empty();
 
             if !has_goal_checks {
                 errors.push(ValidationError {

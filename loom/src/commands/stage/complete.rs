@@ -23,7 +23,10 @@ use super::progressive_complete::complete_with_merge;
 use super::session::cleanup_session_resources;
 
 /// Load stage definition from the active plan
-fn load_stage_definition_from_plan(stage_id: &str, work_dir: &Path) -> Result<Option<StageDefinition>> {
+fn load_stage_definition_from_plan(
+    stage_id: &str,
+    work_dir: &Path,
+) -> Result<Option<StageDefinition>> {
     // Load config to get plan source path
     let config = match load_config(work_dir)? {
         Some(config) => config,
@@ -290,7 +293,9 @@ pub fn complete(
                     }
 
                     println!();
-                    println!("  Run 'loom stage retry {stage_id}' to try again after fixing issues");
+                    println!(
+                        "  Run 'loom stage retry {stage_id}' to try again after fixing issues"
+                    );
                     return Ok(());
                 }
                 println!("Goal-backward verification passed!");
