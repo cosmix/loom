@@ -953,3 +953,51 @@ Agents edit .work/stages/*.md files directly to set merged=true instead of using
 
 - CLAUDE.md.template - no explicit prohibition against editing .work/
 - cache.rs signal generation - no state file editing warning
+
+## StageType Enum (plan/schema/types.rs:5-18)
+
+Three variants with kebab-case YAML serialization:
+- Standard (default) - Regular implementation stages
+- Knowledge - Knowledge-gathering stages (no worktree)
+- IntegrationVerify - Final verification stages
+
+YAML: stage_type: knowledge | standard | integration-verify
+
+## Stage Type Detection (models/stage/methods.rs:351-363)
+
+is_knowledge_stage() returns true if:
+1. stage_type == StageType::Knowledge, OR
+2. ID contains 'knowledge' (case-insensitive), OR
+3. Name contains 'knowledge' (case-insensitive)
+
+## Knowledge vs Standard Stage Execution
+
+Knowledge stages (stage_executor.rs:78-86):
+- No worktree (runs in main repo)
+- No commits/merges required (auto merged=true)
+- Mark Executing immediately, then start_knowledge_stage()
+- PID tracked as knowledge-{stage_id}
+
+Standard stages:
+- Create worktree first (.worktrees/{id}/)
+- Require commits and progressive merge
+- Resolve base branch from dependencies before Executing
+
+## Signal Generation by Stage Type
+
+Knowledge signals (signals/knowledge.rs):
+- generate_knowledge_signal(session, stage, repo_root, deps, work_dir)
+- No worktree path, no git history
+- Type marker: 'Knowledge (no worktree)'
+
+Regular signals (signals/generate.rs):
+- generate_signal_with_skills(session, stage, worktree, deps, ...)
+- Includes worktree isolation warnings
+- Git history and commit requirements
+
+## Stage Type Validation (plan/schema/validation.rs:232-246)
+
+Goal-backward checks (truths/artifacts/wiring) required ONLY for Standard stages.
+Knowledge and IntegrationVerify stages are EXEMPT.
+
+Validation warns if plan has no knowledge stage (lines 260-283).
