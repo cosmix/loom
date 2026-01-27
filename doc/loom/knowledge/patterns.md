@@ -822,11 +822,11 @@ resume, completion checklist, and exit hook.
 
 Loom uses a three-level directory model for stage execution:
 
-| Level | Path | Purpose |
-|-------|------|---------|
-| Project Root | /path/to/project | Main repo where doc/plans/ lives |
-| Worktree | .worktrees/<stage-id>/ | Isolated copy mirroring project |
-| working_dir | YAML field | Subdirectory within worktree |
+| Level        | Path                   | Purpose                          |
+| ------------ | ---------------------- | -------------------------------- |
+| Project Root | /path/to/project       | Main repo where doc/plans/ lives |
+| Worktree     | .worktrees/<stage-id>/ | Isolated copy mirroring project  |
+| working_dir  | YAML field             | Subdirectory within worktree     |
 
 ### Path Resolution Formula
 
@@ -840,11 +840,11 @@ Resolution logic (acceptance_runner.rs:16-45):
 
 ### working_dir Common Mistakes
 
-| Mistake | Fix |
-|---------|-----|
-| cargo test with wrong working_dir | Set working_dir to dir with Cargo.toml |
-| Paths like loom/src/file.rs when working_dir=loom | Use src/file.rs (relative to working_dir) |
-| ./target/debug/app from project root | Use ./loom/target/debug/app OR set working_dir |
+| Mistake                                           | Fix                                            |
+| ------------------------------------------------- | ---------------------------------------------- |
+| cargo test with wrong working_dir                 | Set working_dir to dir with Cargo.toml         |
+| Paths like loom/src/file.rs when working_dir=loom | Use src/file.rs (relative to working_dir)      |
+| ./target/debug/app from project root              | Use ./loom/target/debug/app OR set working_dir |
 
 ### Signal vs Stage Context
 
@@ -906,14 +906,11 @@ Solution: Three verification layers in stage definitions:
 3. wiring - Grep patterns verify connections
 
 Example YAML usage:
-  truths:
-    - 'curl -f <http://localhost/health>'
-  artifacts:
-    - 'src/auth/*.rs'
-  wiring:
-    - source: src/main.rs
-      pattern: 'use auth::'
-      description: Auth module imported
+truths: - 'curl -f <http://localhost/health>'
+artifacts: - 'src/auth/\*.rs'
+wiring: - source: src/main.rs
+pattern: 'use auth::'
+description: Auth module imported
 
 ## Knowledge Commands Independence
 
@@ -947,7 +944,7 @@ Agents use target/debug/loom instead of loom from PATH. Causes version mismatch 
 
 ## Agent Anti-Pattern: Direct State Editing
 
-Agents edit .work/stages/*.md files directly to set merged=true instead of using loom CLI.
+Agents edit .work/stages/\*.md files directly to set merged=true instead of using loom CLI.
 
 **Currently missing from:**
 
@@ -1012,7 +1009,7 @@ Validation warns if plan has no knowledge stage (lines 260-283).
 
 ### Hook Infrastructure
 
-Location: fs/permissions/hooks.rs, hooks/*.sh (embedded via include_str!)
+Location: fs/permissions/hooks.rs, hooks/\*.sh (embedded via include_str!)
 Installed to: ~/.claude/hooks/loom/
 
 Key hooks:
@@ -1031,8 +1028,6 @@ Key hooks:
 - session-end.sh: Logs completion event
 
 Hook events logged to: .work/hooks/events.jsonl (JSON Lines format)
-
-## Git Hooks (continued)
 
 ### User Input Hooks
 
