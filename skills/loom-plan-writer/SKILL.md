@@ -286,16 +286,27 @@ Verifies all work integrates correctly after merges AND that the feature actuall
 
 **Every stage description should remind agents to record memory.** Memory persists insights across sessions and prevents repeated mistakes.
 
+```text
+┌─────────────────────────────────────────────────────────────────────┐
+│  ⚠️  IMPLEMENTATION STAGES: Use `loom memory` ONLY                   │
+│                                                                     │
+│  Implementation stages must NEVER use `loom knowledge update`.      │
+│  Only knowledge-bootstrap and integration-verify stages can write   │
+│  to knowledge files directly.                                       │
+│                                                                     │
+│  Memory gets promoted to knowledge during integration-verify.       │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
 Include a MEMORY RECORDING block in stage descriptions:
 
 ```yaml
 description: |
   [Task description here]
 
-  MEMORY RECORDING:
-  - Record insights as discovered: loom memory note "observation"
+  MEMORY RECORDING (use memory ONLY - never knowledge):
+  - Record insights: loom memory note "observation"
   - Record decisions: loom memory decision "choice" --context "why"
-  - Before completing: loom memory promote all mistakes
 ```
 
 **Why this is mandatory:**
@@ -307,7 +318,38 @@ description: |
 | Decision documentation | Records WHY choices were made, not just what was done |
 | Learning transfer | Memory → Knowledge transfer makes lessons permanent |
 
-### 9. After Writing Plan
+### 9. Memory vs Knowledge Rules
+
+**CRITICAL: Different stages have different recording permissions.**
+
+| Stage Type | `loom memory` | `loom knowledge` |
+|------------|---------------|------------------|
+| knowledge-bootstrap | YES | YES |
+| Implementation stages | YES (ONLY) | **FORBIDDEN** |
+| integration-verify | YES | YES (promote only) |
+
+**Why this separation?**
+
+- **Memory** is session-scoped and temporary - captures all insights during work
+- **Knowledge** is permanent and shared across all stages - only proven patterns belong here
+- Only after full integration (integration-verify) do we know which insights are worth keeping permanently
+
+**The Workflow:**
+
+1. **knowledge-bootstrap**: Directly writes to knowledge files (architecture, patterns, conventions)
+2. **Implementation stages**: Record EVERYTHING to memory, NEVER touch knowledge
+3. **integration-verify**: Reviews memory, promotes valuable insights to knowledge
+
+**Implementation Stage Rule:**
+
+During implementation stages, you MUST:
+- Record insights with `loom memory note "..."`
+- Record decisions with `loom memory decision "..." --context "..."`
+- **NEVER** use `loom knowledge update` - this is FORBIDDEN
+
+**Exception:** If you discover a CRITICAL MISTAKE that would block other stages, record it immediately with `loom knowledge update mistakes "..."` AND document why in your commit message.
+
+### 10. After Writing Plan
 
 1. Write plan to `doc/plans/PLAN-<name>.md`
 2. **STOP** - Do NOT implement
