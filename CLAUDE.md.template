@@ -132,30 +132,50 @@ loom:
     - id: knowledge-bootstrap
       name: "Bootstrap Knowledge Base"
       description: |
-        MANDATORY first stage. Read existing doc/loom/knowledge AND .work/memory files! Then: Explore codebase and populate doc/loom/knowledge/ (if empty!). Use parallel subagents to speed up exploration.
+        MANDATORY first stage. Read existing doc/loom/knowledge AND .work/memory files!
 
-        EXECUTION PLAN: Architecture mapping FIRST, then parallel knowledge updates. Use CLI for the knowledge updates. Max length of chunk: 500 words!
+        Step 0 - CHECK EXISTING KNOWLEDGE:
+          Run: loom knowledge check
+          Review output to identify gaps.
 
-        Step 1 - ARCHITECTURE MAPPING (CRITICAL):
-        Before any other exploration, map the high-level architecture:
-          - Core abstractions and their relationships
-          - Data flow between major components
-          - Module boundaries and dependencies
-          - Extension points and plugin architecture
-          - Write findings to architecture.md
+          IF coverage < 50% OR architecture shows INCOMPLETE:
+            Run: loom map --deep
+            This creates structural baseline without consuming your context.
 
-        Step 2 - Detailed Exploration:
-        1. Entry points: CLI, API, UI, event handlers
-        2. Module boundaries: public interfaces, internal vs external
-        3. Patterns: error handling, state management, data flow
-        4. Conventions: naming, file structure, testing patterns
-        5. Review existing mistakes.md - learn from past errors
+        Step 1 - ARCHITECTURE MAPPING (if still needed after map):
+          Before any other exploration, map the high-level architecture:
+            - Core abstractions and their relationships
+            - Data flow between major components
+            - Module boundaries and dependencies
+            - Extension points and plugin architecture
+            - Write findings to architecture.md
 
-        CRITICAL: You MUST use the official `loom knowledge` CLI commands.
-        DO NOT use Write/Edit tools on knowledge files.
+        Step 2 - PARALLEL EXPLORATION (for semantic gaps):
+          Based on loom knowledge check output, spawn Explore subagents:
+
+          Subagent 1 - Entry Points:
+            Assignment: Document CLI commands, API endpoints, event handlers
+            Files owned: (read-only exploration)
+            Output: loom knowledge update entry-points "..."
+
+          Subagent 2 - Patterns:
+            Assignment: Identify error handling, state management, data flow patterns
+            Files owned: (read-only exploration)
+            Output: loom knowledge update patterns "..."
+
+          Subagent 3 - Conventions:
+            Assignment: Document naming, file structure, testing patterns
+            Files owned: (read-only exploration)
+            Output: loom knowledge update conventions "..."
+
+          IMPORTANT: Spawn these as parallel Task tool calls.
+
+        CRITICAL: Use `loom knowledge` CLI commands, NOT Write/Edit tools.
 
         Commands to use:
           loom knowledge init              # If not initialized
+          loom knowledge check             # Check existing coverage
+          loom map --deep                  # If coverage < 50%
           loom knowledge update architecture "## Component\n\nRelationships..."
           loom knowledge update entry-points "## Section\n\nContent..."
           loom knowledge update patterns "## Pattern\n\nContent..."
@@ -166,6 +186,7 @@ loom:
         REMINDER: Tell dependent stages to update knowledge with any mistakes.
       dependencies: []
       acceptance:
+        - "loom knowledge check --min-coverage 50"
         - "rg -q '## ' doc/loom/knowledge/architecture.md"
         - "rg -q '## ' doc/loom/knowledge/entry-points.md"
         - "rg -q '## ' doc/loom/knowledge/patterns.md"
