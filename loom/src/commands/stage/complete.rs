@@ -63,7 +63,7 @@ pub fn complete(
 
     // Route knowledge stages to specialized completion (no merge required)
     if stage.stage_type == StageType::Knowledge {
-        return complete_knowledge_stage(&stage_id, session_id.as_deref(), no_verify);
+        return complete_knowledge_stage(&stage_id, session_id.as_deref(), no_verify, force_unsafe);
     }
 
     // From here on, we need mutable stage for standard completion

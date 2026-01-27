@@ -28,6 +28,7 @@ pub fn complete_knowledge_stage(
     stage_id: &str,
     session_id: Option<&str>,
     no_verify: bool,
+    force_unsafe: bool,
 ) -> Result<()> {
     let work_dir = Path::new(".work");
     let mut stage = load_stage(stage_id, work_dir)?;
@@ -37,6 +38,43 @@ pub fn complete_knowledge_stage(
         stage.stage_type == StageType::Knowledge,
         "complete_knowledge_stage called on non-knowledge stage"
     );
+
+    // Handle --force-unsafe: bypass acceptance criteria and mark as completed directly
+    if force_unsafe {
+        eprintln!();
+        eprintln!("⚠️  WARNING: Using --force-unsafe bypasses acceptance criteria!");
+        eprintln!();
+
+        println!(
+            "Force-completing knowledge stage '{}' (was: {:?})",
+            stage_id, stage.status
+        );
+
+        // Cleanup session resources if session_id provided
+        if let Some(sid) = session_id {
+            cleanup_session_resources(stage_id, sid, work_dir);
+        }
+
+        // Knowledge stages auto-set merged=true since there's no branch to merge
+        stage.merged = true;
+        stage.status = crate::models::stage::StageStatus::Completed;
+        save_stage(&stage, work_dir)?;
+
+        println!("Knowledge stage '{stage_id}' force-completed!");
+
+        // Trigger dependent stages
+        let triggered =
+            trigger_dependents(stage_id, work_dir).context("Failed to trigger dependent stages")?;
+
+        if !triggered.is_empty() {
+            println!("Triggered {} dependent stage(s):", triggered.len());
+            for dep_id in &triggered {
+                println!("  → {dep_id}");
+            }
+        }
+
+        return Ok(());
+    }
 
     // Run acceptance criteria unless --no-verify
     let acceptance_result: Option<bool> = if no_verify {
