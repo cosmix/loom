@@ -35,8 +35,12 @@ pub fn install_pre_commit_hook(repo_root: &Path) -> Result<bool> {
 
     // Ensure hooks directory exists
     if !git_hooks_dir.exists() {
-        fs::create_dir_all(&git_hooks_dir)
-            .with_context(|| format!("Failed to create hooks directory: {}", git_hooks_dir.display()))?;
+        fs::create_dir_all(&git_hooks_dir).with_context(|| {
+            format!(
+                "Failed to create hooks directory: {}",
+                git_hooks_dir.display()
+            )
+        })?;
     }
 
     // Extract only the loom section from the full hook file
@@ -67,7 +71,10 @@ pub fn install_pre_commit_hook(repo_root: &Path) -> Result<bool> {
         }
     } else {
         // Create new hook with shebang and loom section
-        let content = format!("#!/usr/bin/env bash\n# Git pre-commit hook\n\n{}", loom_section);
+        let content = format!(
+            "#!/usr/bin/env bash\n# Git pre-commit hook\n\n{}",
+            loom_section
+        );
         fs::write(&hook_path, content)
             .with_context(|| format!("Failed to create hook: {}", hook_path.display()))?;
     }
@@ -89,9 +96,7 @@ fn extract_loom_section(content: &str) -> String {
     let end = content.find(LOOM_HOOK_END_MARKER);
 
     match (start, end) {
-        (Some(s), Some(e)) => {
-            content[s..e + LOOM_HOOK_END_MARKER.len()].to_string()
-        }
+        (Some(s), Some(e)) => content[s..e + LOOM_HOOK_END_MARKER.len()].to_string(),
         _ => {
             // Fallback: use the whole content (shouldn't happen with proper hook file)
             content.to_string()
@@ -142,7 +147,8 @@ mod tests {
 
     #[test]
     fn test_extract_loom_section() {
-        let content = "#!/bin/bash\n# LOOM_PRE_COMMIT_HOOK_START\necho test\n# LOOM_PRE_COMMIT_HOOK_END\n";
+        let content =
+            "#!/bin/bash\n# LOOM_PRE_COMMIT_HOOK_START\necho test\n# LOOM_PRE_COMMIT_HOOK_END\n";
         let section = extract_loom_section(content);
         assert!(section.contains("LOOM_PRE_COMMIT_HOOK_START"));
         assert!(section.contains("echo test"));

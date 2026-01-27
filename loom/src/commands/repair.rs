@@ -84,7 +84,10 @@ pub fn execute(fix: bool) -> Result<()> {
     let issues = check_all_issues(&repo_root);
 
     if issues.is_empty() {
-        println!("{} No issues found - workspace is healthy!", "✓".green().bold());
+        println!(
+            "{} No issues found - workspace is healthy!",
+            "✓".green().bold()
+        );
         return Ok(());
     }
 
@@ -259,7 +262,10 @@ fn fix_issue(repo_root: &Path, issue: &RepairIssue) -> Result<bool> {
     } else if issue.description.contains(".work not found in .gitignore") {
         fix_gitignore_work(repo_root)?;
         Ok(true)
-    } else if issue.description.contains(".worktrees not found in .gitignore") {
+    } else if issue
+        .description
+        .contains(".worktrees not found in .gitignore")
+    {
         fix_gitignore_worktrees(repo_root)?;
         Ok(true)
     } else if issue.description.contains("pre-commit hook not installed") {
@@ -273,12 +279,8 @@ fn fix_issue(repo_root: &Path, issue: &RepairIssue) -> Result<bool> {
 /// Fix corrupted .work symlink in main repo
 fn fix_work_symlink(repo_root: &Path) -> Result<()> {
     let work_path = repo_root.join(".work");
-    fs::remove_file(&work_path).with_context(|| {
-        format!(
-            "Failed to remove .work symlink at {}",
-            work_path.display()
-        )
-    })?;
+    fs::remove_file(&work_path)
+        .with_context(|| format!("Failed to remove .work symlink at {}", work_path.display()))?;
     Ok(())
 }
 

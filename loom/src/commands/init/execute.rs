@@ -52,10 +52,7 @@ pub fn execute(plan_path: Option<PathBuf>, clean: bool) -> Result<()> {
     // Install git pre-commit hook to prevent .work commits
     match install_pre_commit_hook(&repo_root) {
         Ok(true) => {
-            println!(
-                "  {} Git pre-commit hook installed",
-                "✓".green().bold()
-            );
+            println!("  {} Git pre-commit hook installed", "✓".green().bold());
         }
         Ok(false) => {
             println!(

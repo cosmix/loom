@@ -179,12 +179,10 @@ pub fn is_worktrees_git_ignored(repo_root: &Path) -> bool {
     }
 
     match std::fs::read_to_string(&gitignore_path) {
-        Ok(content) => {
-            content.lines().any(|line| {
-                let trimmed = line.trim();
-                trimmed == ".worktrees/" || trimmed == ".worktrees"
-            })
-        }
+        Ok(content) => content.lines().any(|line| {
+            let trimmed = line.trim();
+            trimmed == ".worktrees/" || trimmed == ".worktrees"
+        }),
         Err(_) => false,
     }
 }
@@ -230,7 +228,9 @@ mod tests {
         use std::path::PathBuf;
 
         assert!(is_in_worktree(&PathBuf::from("/foo/.worktrees/my-stage")));
-        assert!(is_in_worktree(&PathBuf::from("/foo/.worktrees/my-stage/src")));
+        assert!(is_in_worktree(&PathBuf::from(
+            "/foo/.worktrees/my-stage/src"
+        )));
         assert!(!is_in_worktree(&PathBuf::from("/foo/bar")));
         assert!(!is_in_worktree(&PathBuf::from("/foo/worktrees/bar")));
     }

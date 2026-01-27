@@ -143,9 +143,11 @@ pub fn generate_stable_prefix() -> String {
     content.push_str("  ⛔ DANGER: .work is a SYMLINK to shared state in worktrees\n");
     content.push_str("     Committing it CORRUPTS the main repository!\n");
     content.push_str("```\n\n");
-    content.push_str("- **ALWAYS** use `git add <specific-files>` - stage only files you modified\n");
+    content
+        .push_str("- **ALWAYS** use `git add <specific-files>` - stage only files you modified\n");
     content.push_str("- **NEVER** use `git add -A`, `git add --all`, or `git add .`\n");
-    content.push_str("- **NEVER** stage `.work` - it is orchestration state shared across stages\n\n");
+    content
+        .push_str("- **NEVER** stage `.work` - it is orchestration state shared across stages\n\n");
     content.push_str("**Example:**\n");
     content.push_str("```bash\n");
     content.push_str("# CORRECT:\n");
