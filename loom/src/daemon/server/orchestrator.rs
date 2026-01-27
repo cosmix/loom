@@ -42,10 +42,12 @@ fn run_orchestrator(
     let graph = build_execution_graph(work_dir)?;
 
     // Get repo root (parent of .work/)
+    // Clone for later use in mark_plan_done_if_all_merged
     let repo_root = work_dir
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
+    let repo_root_for_plan = repo_root.clone();
 
     // Parse base_branch from config.toml
     let base_branch = match parse_base_branch_from_config(work_dir) {
@@ -107,7 +109,8 @@ fn run_orchestrator(
                 println!("All stages completed successfully");
 
                 // Mark plan as done if all stages are merged
-                if let Ok(work_dir_obj) = WorkDir::new(work_dir) {
+                // Note: WorkDir::new expects repo_root, not work_dir (it appends .work internally)
+                if let Ok(work_dir_obj) = WorkDir::new(&repo_root_for_plan) {
                     if let Err(e) = mark_plan_done_if_all_merged(&work_dir_obj) {
                         eprintln!("Warning: Failed to mark plan as done: {e}");
                     }
