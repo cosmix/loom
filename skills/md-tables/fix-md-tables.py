@@ -1,15 +1,14 @@
-#!/usr/bin/env python3
+# !/usr/bin/env python3
+
 """Fix markdown table alignment and spacing issues."""
 
 import sys
 from pathlib import Path
 
-
 def is_table_row(line: str) -> bool:
     """Check if a line is a markdown table row."""
     stripped = line.strip()
     return stripped.startswith("|") and stripped.endswith("|")
-
 
 def is_separator_row(line: str) -> bool:
     """Check if a line is a table separator row (|---|---|)."""
@@ -19,7 +18,6 @@ def is_separator_row(line: str) -> bool:
     # Remove pipes and check if only dashes, colons, and spaces remain
     content = stripped[1:-1]  # Remove outer pipes
     return all(c in "-|: " for c in content)
-
 
 def normalize_table_row(line: str) -> str:
     """Normalize spacing in a table row."""
@@ -43,7 +41,6 @@ def normalize_table_row(line: str) -> str:
             normalized_cells.append(f" {content} ")
 
     return "|".join(normalized_cells)
-
 
 def align_table(table_lines: list[str]) -> list[str]:
     """Align a markdown table by normalizing column widths."""
@@ -105,7 +102,6 @@ def align_table(table_lines: list[str]) -> list[str]:
 
     return aligned_lines
 
-
 def fix_tables_in_content(content: str) -> str:
     """Fix all tables in markdown content."""
     lines = content.split("\n")
@@ -140,7 +136,6 @@ def fix_tables_in_content(content: str) -> str:
 
     return "\n".join(result)
 
-
 def main():
     if len(sys.argv) < 2:
         print("Usage: python fix-md-tables.py <file.md> [--in-place]")
@@ -161,7 +156,6 @@ def main():
         print(f"Fixed tables in {filepath}")
     else:
         print(fixed)
-
 
 if __name__ == "__main__":
     main()
