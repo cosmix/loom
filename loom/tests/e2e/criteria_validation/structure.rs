@@ -12,6 +12,7 @@ fn test_unsupported_version_rejected() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 2,
+            sandbox: Default::default(),
             auto_merge: None,
             stages: vec![create_valid_stage("stage-1", "Test")],
         },
@@ -32,6 +33,7 @@ fn test_empty_stages_rejected() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
+            sandbox: Default::default(),
             auto_merge: None,
             stages: vec![],
         },
@@ -89,6 +91,7 @@ fn test_multiple_errors_accumulated() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 2,
+            sandbox: Default::default(),
             auto_merge: None,
             stages: vec![create_valid_stage("", ""), {
                 let mut s = create_valid_stage("stage-2", "Stage Two");

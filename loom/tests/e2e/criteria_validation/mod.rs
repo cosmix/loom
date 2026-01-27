@@ -30,6 +30,7 @@ pub(crate) fn create_valid_stage(id: &str, name: &str) -> StageDefinition {
         files: vec![],
         auto_merge: None,
         working_dir: ".".to_string(),
+        sandbox: Default::default(),
         stage_type: StageType::default(),
         // Standard stages require at least one goal-backward check
         truths: vec!["test -f README.md".to_string()],
@@ -44,6 +45,7 @@ pub(crate) fn create_metadata(stages: Vec<StageDefinition>) -> LoomMetadata {
     LoomMetadata {
         loom: LoomConfig {
             version: 1,
+            sandbox: Default::default(),
             auto_merge: None,
             stages,
         },

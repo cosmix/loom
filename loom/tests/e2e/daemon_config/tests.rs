@@ -66,6 +66,7 @@ fn test_auto_merge_config_cascade() {
         files: vec![],
         auto_merge: Some(true), // Stage-level override
         working_dir: ".".to_string(),
+        sandbox: Default::default(),
         stage_type: loom::plan::schema::StageType::default(),
         truths: vec![],
         artifacts: vec![],
@@ -87,6 +88,7 @@ fn test_auto_merge_config_cascade() {
         files: vec![],
         auto_merge: None, // Uses plan default
         working_dir: ".".to_string(),
+        sandbox: Default::default(),
         stage_type: loom::plan::schema::StageType::default(),
         truths: vec![],
         artifacts: vec![],

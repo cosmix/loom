@@ -32,6 +32,7 @@ fn create_test_stage(id: &str, auto_merge: Option<bool>) -> Stage {
         close_reason: None,
         auto_merge,
         working_dir: None,
+        sandbox: Default::default(),
         retry_count: 0,
         max_retries: None,
         last_failure_at: None,
