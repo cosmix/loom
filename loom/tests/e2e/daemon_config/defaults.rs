@@ -2,6 +2,7 @@
 
 use loom::orchestrator::terminal::BackendType;
 use loom::orchestrator::OrchestratorConfig;
+use loom::plan::schema::SandboxConfig;
 use std::time::Duration;
 use tempfile::TempDir;
 
@@ -38,6 +39,7 @@ fn test_orchestrator_config_custom_values() {
         skills_dir: None,
         enable_skill_routing: false,
         max_skill_recommendations: 5,
+        sandbox_config: SandboxConfig::default(),
     };
 
     assert_eq!(config.max_parallel_sessions, 8);

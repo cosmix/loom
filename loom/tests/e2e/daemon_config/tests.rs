@@ -6,6 +6,7 @@
 use loom::models::stage::Stage;
 use loom::orchestrator::terminal::BackendType;
 use loom::orchestrator::{Orchestrator, OrchestratorConfig};
+use loom::plan::schema::SandboxConfig;
 use loom::plan::graph::ExecutionGraph;
 use loom::plan::schema::StageDefinition;
 use std::time::Duration;
@@ -38,6 +39,7 @@ fn test_orchestrator_creation_with_config() {
         skills_dir: None,
         enable_skill_routing: false,
         max_skill_recommendations: 5,
+        sandbox_config: SandboxConfig::default(),
     };
 
     let orchestrator = Orchestrator::new(config.clone(), graph);

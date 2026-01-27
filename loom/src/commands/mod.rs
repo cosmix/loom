@@ -12,6 +12,7 @@ pub mod merge;
 pub mod resume;
 pub mod run;
 pub mod runner;
+pub mod sandbox;
 pub mod self_update;
 pub mod sessions;
 pub mod stage;
