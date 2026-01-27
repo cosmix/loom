@@ -155,6 +155,9 @@ pub struct Stage {
     /// Critical connections between components
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub wiring: Vec<WiringCheck>,
+    /// Per-stage sandbox configuration
+    #[serde(default)]
+    pub sandbox: crate::plan::schema::StageSandboxConfig,
 }
 
 /// Status of a stage in the execution lifecycle.

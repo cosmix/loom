@@ -4,6 +4,23 @@ use crate::handoff::schema::HandoffV2;
 use crate::models::stage::StageOutput;
 use crate::skills::SkillMatch;
 
+/// Summary of sandbox restrictions for signal display
+#[derive(Debug, Clone, Default)]
+pub struct SandboxSummary {
+    /// Whether sandboxing is enabled
+    pub enabled: bool,
+    /// Paths agents cannot read
+    pub deny_read: Vec<String>,
+    /// Paths agents cannot write
+    pub deny_write: Vec<String>,
+    /// Paths agents are allowed to write (exceptions)
+    pub allow_write: Vec<String>,
+    /// Allowed network domains
+    pub allowed_domains: Vec<String>,
+    /// Commands excluded from sandbox
+    pub excluded_commands: Vec<String>,
+}
+
 /// Embedded context to include directly in signals so agents don't need to read from main repo
 #[derive(Debug, Clone, Default)]
 pub struct EmbeddedContext {
@@ -25,6 +42,8 @@ pub struct EmbeddedContext {
     pub context_budget: Option<f32>,
     /// Current context usage percentage
     pub context_usage: Option<f32>,
+    /// Merged sandbox configuration summary for display in signal
+    pub sandbox_summary: Option<SandboxSummary>,
 }
 
 /// Information about a task's lock status

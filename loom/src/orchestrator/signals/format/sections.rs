@@ -4,7 +4,7 @@ use crate::models::stage::{Stage, StageType};
 use crate::models::worktree::Worktree;
 use crate::skills::SkillMatch;
 
-use super::super::types::{DependencyStatus, EmbeddedContext};
+use super::super::types::{DependencyStatus, EmbeddedContext, SandboxSummary};
 use super::helpers::{
     extract_tasks_from_stage, format_dependency_outputs, format_dependency_table,
     format_structured_handoff, format_task_progression,
@@ -237,6 +237,11 @@ pub(super) fn format_semi_stable_section(
                 .push_str("| Question | `loom memory question \"open question to address\"` |\n");
             content.push_str("| List | `loom memory list` |\n\n");
         }
+    }
+
+    // Embed sandbox restrictions (semi-stable - based on stage config)
+    if let Some(sandbox_summary) = &embedded_context.sandbox_summary {
+        content.push_str(&format_sandbox_section(sandbox_summary));
     }
 
     // Embed skill recommendations (semi-stable - based on stage description)
@@ -531,6 +536,74 @@ pub(super) fn format_recitation_section(
     content.push_str("- `loom memory question \"open question\"` - Record an open question\n");
     content.push_str("- `loom memory list` - Review your session entries\n");
     content.push_str("- `loom memory promote all mistakes` - Promote insights to knowledge (BEFORE completing)\n\n");
+
+    content
+}
+
+/// Format sandbox restrictions for agent awareness
+fn format_sandbox_section(summary: &SandboxSummary) -> String {
+    let mut content = String::new();
+
+    if !summary.enabled {
+        content.push_str("## Sandbox Status\n\n");
+        content.push_str("**Sandbox is DISABLED** for this stage.\n\n");
+        return content;
+    }
+
+    content.push_str("## Sandbox Restrictions\n\n");
+    content.push_str("The following restrictions are in effect for this session:\n\n");
+
+    // Filesystem restrictions
+    if !summary.deny_read.is_empty() || !summary.deny_write.is_empty() {
+        content.push_str("### Filesystem\n\n");
+
+        if !summary.deny_read.is_empty() {
+            content.push_str("**Cannot Read:**\n");
+            for path in &summary.deny_read {
+                content.push_str(&format!("- `{}`\n", path));
+            }
+            content.push('\n');
+        }
+
+        if !summary.deny_write.is_empty() {
+            content.push_str("**Cannot Write:**\n");
+            for path in &summary.deny_write {
+                content.push_str(&format!("- `{}`\n", path));
+            }
+            content.push('\n');
+        }
+
+        if !summary.allow_write.is_empty() {
+            content.push_str("**Exceptions (CAN Write):**\n");
+            for path in &summary.allow_write {
+                content.push_str(&format!("- `{}`\n", path));
+            }
+            content.push('\n');
+        }
+    }
+
+    // Network restrictions
+    if !summary.allowed_domains.is_empty() {
+        content.push_str("### Network\n\n");
+        content.push_str("**Allowed Domains:**\n");
+        for domain in &summary.allowed_domains {
+            content.push_str(&format!("- `{}`\n", domain));
+        }
+        content.push('\n');
+    } else {
+        content.push_str("### Network\n\n");
+        content.push_str("**No network access allowed.**\n\n");
+    }
+
+    // Excluded commands
+    if !summary.excluded_commands.is_empty() {
+        content.push_str("### Excluded Commands\n\n");
+        content.push_str("These commands bypass sandbox restrictions:\n");
+        for cmd in &summary.excluded_commands {
+            content.push_str(&format!("- `{}`\n", cmd));
+        }
+        content.push('\n');
+    }
 
     content
 }

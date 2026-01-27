@@ -14,7 +14,7 @@ use crate::skills::SkillIndex;
 
 use super::cache::SignalMetrics;
 use super::format::{format_signal_content, format_signal_with_metrics};
-use super::types::{DependencyStatus, EmbeddedContext};
+use super::types::{DependencyStatus, EmbeddedContext, SandboxSummary};
 
 /// Default maximum number of skill recommendations to include in signals
 pub const DEFAULT_MAX_SKILL_RECOMMENDATIONS: usize = 5;
@@ -82,6 +82,9 @@ pub fn generate_signal_with_skills(
         0.0
     };
     embedded_context.context_usage = Some(usage_pct);
+
+    // Populate sandbox summary from stage config
+    embedded_context.sandbox_summary = Some(build_sandbox_summary(stage));
 
     let signal_path = signals_dir.join(format!("{}.md", session.id));
     let content = format_signal_content(
@@ -318,6 +321,9 @@ pub fn generate_signal_with_metrics(
     };
     embedded_context.context_usage = Some(usage_pct);
 
+    // Populate sandbox summary from stage config
+    embedded_context.sandbox_summary = Some(build_sandbox_summary(stage));
+
     let signal_path = signals_dir.join(format!("{}.md", session.id));
     let formatted = format_signal_with_metrics(
         session,
@@ -333,4 +339,42 @@ pub fn generate_signal_with_metrics(
         .with_context(|| format!("Failed to write signal file: {}", signal_path.display()))?;
 
     Ok((signal_path, formatted.metrics))
+}
+
+/// Build sandbox summary from stage configuration
+fn build_sandbox_summary(stage: &Stage) -> SandboxSummary {
+    // For now, use stage.sandbox directly
+    // Later this will use the sandbox::merge_config function to merge plan-level defaults
+    SandboxSummary {
+        enabled: stage.sandbox.enabled.unwrap_or(true),
+        deny_read: stage
+            .sandbox
+            .filesystem
+            .as_ref()
+            .map(|f| f.deny_read.clone())
+            .unwrap_or_default(),
+        deny_write: stage
+            .sandbox
+            .filesystem
+            .as_ref()
+            .map(|f| f.deny_write.clone())
+            .unwrap_or_default(),
+        allow_write: stage
+            .sandbox
+            .filesystem
+            .as_ref()
+            .map(|f| f.allow_write.clone())
+            .unwrap_or_default(),
+        allowed_domains: stage
+            .sandbox
+            .network
+            .as_ref()
+            .map(|n| {
+                let mut domains = n.allowed_domains.clone();
+                domains.extend(n.additional_domains.clone());
+                domains
+            })
+            .unwrap_or_default(),
+        excluded_commands: stage.sandbox.excluded_commands.clone(),
+    }
 }
