@@ -12,6 +12,7 @@ pub mod orchestrator;
 pub mod parser;
 pub mod plan;
 pub mod process;
+pub mod sandbox;
 pub mod skills;
 pub mod utils;
 pub mod validation;
