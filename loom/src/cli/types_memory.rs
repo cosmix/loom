@@ -27,6 +27,21 @@ pub enum KnowledgeCommands {
 
     /// List all knowledge files
     List,
+
+    /// Check knowledge completeness and src/ coverage
+    Check {
+        /// Minimum coverage percentage required (default: 50)
+        #[arg(long, default_value = "50")]
+        min_coverage: u8,
+
+        /// Path to src/ directory to check (default: auto-detect)
+        #[arg(long)]
+        src_path: Option<String>,
+
+        /// Quiet mode - only output errors
+        #[arg(short, long)]
+        quiet: bool,
+    },
 }
 
 #[derive(Subcommand)]

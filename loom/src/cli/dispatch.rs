@@ -97,6 +97,11 @@ pub fn dispatch(command: Commands) -> Result<()> {
             KnowledgeCommands::Update { file, content } => knowledge::update(file, content),
             KnowledgeCommands::Init => knowledge::init(),
             KnowledgeCommands::List => knowledge::list(),
+            KnowledgeCommands::Check {
+                min_coverage,
+                src_path,
+                quiet,
+            } => knowledge::check(min_coverage, src_path, quiet),
         },
         Commands::Memory { command } => match command {
             MemoryCommands::Note { text, session } => memory::note(text, session),
