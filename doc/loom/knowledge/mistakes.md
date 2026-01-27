@@ -319,3 +319,11 @@ Stage marked complete without verifying acceptance criteria passed.
 
 - **All acceptance criteria verified through direct command execution rather than relying on test-only verification**
   - _Rationale:_ Direct CLI verification catches integration issues that unit tests may miss - especially dynamic completion routing which depends on proper command dispatch
+
+## Acceptance Criteria Binary Path Issue (2026-01-27)
+
+Acceptance criteria using loom commands run system-installed binary, not local build.
+Features in current branch unavailable until merged.
+
+Solutions: 1) Use ./target/debug/loom path, 2) Accept failures until merge,
+3) Use --force-unsafe after manual verification.
