@@ -6,6 +6,7 @@ use anyhow::{bail, Result};
 use colored::Colorize;
 use std::path::Path;
 
+use crate::fs::work_integrity::validate_work_dir_state;
 use crate::git::{get_uncommitted_changes_summary, has_uncommitted_changes};
 
 /// Check for uncommitted changes and bail if found
@@ -35,4 +36,12 @@ pub fn check_for_uncommitted_changes(repo_root: &Path) -> Result<()> {
         bail!("Uncommitted changes in repository - commit or stash before running loom");
     }
     Ok(())
+}
+
+/// Check .work directory integrity before starting orchestration
+///
+/// Validates that .work is in the expected state (directory in main repo,
+/// symlink in worktrees). This catches corruption from committed symlinks.
+pub fn check_work_dir_integrity(repo_root: &Path) -> Result<()> {
+    validate_work_dir_state(repo_root)
 }

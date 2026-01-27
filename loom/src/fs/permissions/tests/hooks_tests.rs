@@ -7,9 +7,9 @@ fn test_hooks_config_structure() {
     let hooks = loom_hooks_config();
     let hooks_obj = hooks.as_object().unwrap();
 
-    // Check PreToolUse hooks (AskUserQuestion for stage status, Bash for prefer-modern-tools, Bash for commit-filter)
+    // Check PreToolUse hooks (AskUserQuestion, prefer-modern-tools, commit-filter, git-add-guard)
     let pre_tool = hooks_obj.get("PreToolUse").unwrap().as_array().unwrap();
-    assert_eq!(pre_tool.len(), 3);
+    assert_eq!(pre_tool.len(), 4);
     // First hook: AskUserQuestion matcher with ask-user-pre.sh
     assert_eq!(pre_tool[0]["matcher"], "AskUserQuestion");
     assert!(pre_tool[0]["hooks"][0]["command"]
@@ -28,6 +28,12 @@ fn test_hooks_config_structure() {
         .as_str()
         .unwrap()
         .contains("commit-filter.sh"));
+    // Fourth hook: Bash matcher with git-add-guard.sh
+    assert_eq!(pre_tool[3]["matcher"], "Bash");
+    assert!(pre_tool[3]["hooks"][0]["command"]
+        .as_str()
+        .unwrap()
+        .contains("git-add-guard.sh"));
 
     // Check PostToolUse hooks (only AskUserQuestion for resume in global config)
     // Session-specific post-tool-use.sh (Bash) is merged at worktree creation

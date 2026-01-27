@@ -2,6 +2,8 @@
 
 use crate::fs::permissions::{add_worktrees_to_global_trust, ensure_loom_permissions};
 use crate::fs::work_dir::WorkDir;
+use crate::fs::work_integrity::validate_work_dir_state;
+use crate::git::install_pre_commit_hook;
 use anyhow::Result;
 use colored::Colorize;
 use std::path::{Path, PathBuf};
@@ -19,6 +21,9 @@ use super::plan_setup::initialize_with_plan;
 /// * `clean` - If true, clean up stale resources before initialization
 pub fn execute(plan_path: Option<PathBuf>, clean: bool) -> Result<()> {
     let repo_root = std::env::current_dir()?;
+
+    // Validate .work directory state before proceeding
+    validate_work_dir_state(&repo_root)?;
 
     print_header();
 
@@ -43,6 +48,31 @@ pub fn execute(plan_path: Option<PathBuf>, clean: bool) -> Result<()> {
         "✓".green().bold(),
         ".work/".dimmed()
     );
+
+    // Install git pre-commit hook to prevent .work commits
+    match install_pre_commit_hook(&repo_root) {
+        Ok(true) => {
+            println!(
+                "  {} Git pre-commit hook installed",
+                "✓".green().bold()
+            );
+        }
+        Ok(false) => {
+            println!(
+                "  {} Git pre-commit hook {} up to date",
+                "✓".green().bold(),
+                "already".dimmed()
+            );
+        }
+        Err(e) => {
+            println!(
+                "  {} Git pre-commit hook installation failed: {}",
+                "!".yellow().bold(),
+                e.to_string().dimmed()
+            );
+            // Non-fatal - continue with init
+        }
+    }
 
     ensure_loom_permissions(&repo_root)?;
     println!("  {} Permissions configured", "✓".green().bold());

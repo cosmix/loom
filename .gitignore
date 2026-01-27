@@ -28,9 +28,15 @@ logs/
 .cache/
 
 # loom workspace (created by `loom init`)
+# CRITICAL: Both patterns needed - directory in main repo, symlink in worktrees
 .work/
+.work
 
 # Rust build artifacts
 target/
+
+# loom worktrees (isolated stage execution)
+# CRITICAL: Both patterns needed - directory form and symlink form
 .worktrees/
+.worktrees
 ISSUES.md

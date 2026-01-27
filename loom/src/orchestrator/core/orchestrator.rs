@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use crate::fs::work_integrity::validate_work_dir_state;
 use crate::models::session::Session;
 use crate::models::stage::StageStatus;
 use crate::models::worktree::Worktree;
@@ -150,6 +151,10 @@ impl Orchestrator {
     pub fn run(&mut self) -> Result<OrchestratorResult> {
         // Install panic hook to restore terminal on panic
         install_terminal_panic_hook();
+
+        // Validate .work directory integrity before starting
+        validate_work_dir_state(&self.config.repo_root)
+            .context("Work directory integrity check failed")?;
 
         // Sync graph with existing stage states and recover orphaned sessions
         self.sync_graph_with_stage_files()

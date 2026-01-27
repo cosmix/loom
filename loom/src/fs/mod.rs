@@ -8,6 +8,7 @@ pub mod stage_loading;
 pub mod task_state;
 pub mod verifications;
 pub mod work_dir;
+pub mod work_integrity;
 pub mod worktree_files;
 
 use anyhow::Result;

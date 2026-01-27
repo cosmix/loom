@@ -5,9 +5,11 @@
 //! - Branch management for stage isolation
 //! - Merge operations for integrating completed work
 //! - Cleanup utilities for successful merges
+//! - Git hook installation for .work protection
 
 pub mod branch;
 pub mod cleanup;
+pub mod hooks;
 pub mod merge;
 pub mod worktree;
 
@@ -35,6 +37,8 @@ pub use cleanup::{
     cleanup_branch, cleanup_multiple_stages, cleanup_worktree, needs_cleanup, prune_worktrees,
     CleanupConfig, CleanupResult,
 };
+
+pub use hooks::{install_pre_commit_hook, is_pre_commit_hook_installed};
 
 /// Initialize git module - check prerequisites
 pub fn init() -> anyhow::Result<()> {

@@ -1,8 +1,8 @@
 use anyhow::Result;
 use loom::checkpoints::CheckpointStatus;
 use loom::commands::{
-    checkpoint, clean, diagnose, graph, hooks, init, knowledge, map, memory, merge, resume, run,
-    sandbox, self_update, sessions, stage, status, stop, verify, worktree_cmd,
+    checkpoint, clean, diagnose, graph, hooks, init, knowledge, map, memory, merge, repair, resume,
+    run, sandbox, self_update, sessions, stage, status, stop, verify, worktree_cmd,
 };
 use loom::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use std::path::PathBuf;
@@ -135,6 +135,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
             sessions,
             state,
         } => clean::execute(all, worktrees, sessions, state),
+        Commands::Repair { fix } => repair::execute(fix),
         Commands::Map {
             deep,
             focus,

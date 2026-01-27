@@ -169,6 +169,16 @@ pub enum Commands {
         state: bool,
     },
 
+    /// Repair loom workspace issues (corrupted .work, missing hooks, etc.)
+    ///
+    /// By default runs in dry-run mode (reports issues without fixing).
+    /// Use --fix to apply repairs.
+    Repair {
+        /// Apply fixes (default is dry-run)
+        #[arg(long)]
+        fix: bool,
+    },
+
     /// Map codebase structure to knowledge files
     Map {
         /// Deep analysis (more thorough, slower)

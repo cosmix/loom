@@ -40,6 +40,9 @@ pub const HOOK_SKILL_TRIGGER: &str = include_str!("../../../../hooks/skill-trigg
 /// LearningValidator hook - validates session outcomes on Stop (memory usage checks)
 pub const HOOK_LEARNING_VALIDATOR: &str = include_str!("../../../../hooks/learning-validator.sh");
 
+/// GitAddGuard hook - blocks dangerous git add patterns (git add -A, git add ., git add .work)
+pub const HOOK_GIT_ADD_GUARD: &str = include_str!("../../../../hooks/git-add-guard.sh");
+
 /// All loom hook scripts with their filenames (installed to ~/.claude/hooks/loom/)
 /// All hooks are installed to the loom/ subdirectory to keep them separate from user hooks.
 pub const LOOM_HOOKS: &[(&str, &str)] = &[
@@ -55,6 +58,7 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("ask-user-post.sh", HOOK_ASK_USER_POST),
     ("prefer-modern-tools.sh", HOOK_PREFER_MODERN_TOOLS),
     ("commit-filter.sh", HOOK_COMMIT_FILTER),
+    ("git-add-guard.sh", HOOK_GIT_ADD_GUARD),
     // Skill suggestion hooks
     ("skill-index-builder.sh", HOOK_SKILL_INDEX_BUILDER),
     ("skill-trigger.sh", HOOK_SKILL_TRIGGER),

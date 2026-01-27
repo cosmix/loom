@@ -138,11 +138,22 @@ pub fn generate_stable_prefix() -> String {
     content.push_str("- **FORBIDDEN**: `loom knowledge update` commands - these are ONLY for knowledge-bootstrap and integration-verify stages\n");
     content
         .push_str("- Memory entries persist across sessions - they will be promoted to knowledge during integration-verify\n\n");
-    content.push_str("**Git Staging (CRITICAL):**\n");
-    content
-        .push_str("- **ALWAYS use `git add <specific-files>`** - stage only files you modified\n");
-    content.push_str("- **NEVER use `git add -A` or `git add .`** - these include `.work` which must NOT be committed\n");
-    content.push_str("- `.work` is a symlink to shared orchestration state - never stage it\n\n");
+    content.push_str("**Git Staging (CRITICAL - READ CAREFULLY):**\n\n");
+    content.push_str("```text\n");
+    content.push_str("  ⛔ DANGER: .work is a SYMLINK to shared state in worktrees\n");
+    content.push_str("     Committing it CORRUPTS the main repository!\n");
+    content.push_str("```\n\n");
+    content.push_str("- **ALWAYS** use `git add <specific-files>` - stage only files you modified\n");
+    content.push_str("- **NEVER** use `git add -A`, `git add --all`, or `git add .`\n");
+    content.push_str("- **NEVER** stage `.work` - it is orchestration state shared across stages\n\n");
+    content.push_str("**Example:**\n");
+    content.push_str("```bash\n");
+    content.push_str("# CORRECT:\n");
+    content.push_str("git add src/main.rs src/lib.rs tests/\n\n");
+    content.push_str("# WRONG (will stage .work):\n");
+    content.push_str("git add -A  # DON'T DO THIS\n");
+    content.push_str("git add .   # DON'T DO THIS\n");
+    content.push_str("```\n\n");
     content.push_str("**Binary Usage (CRITICAL when working on loom):**\n");
     content.push_str("- **ALWAYS use `loom`** - the installed binary from PATH\n");
     content.push_str("- **NEVER use `target/debug/loom`** or `./loom/target/debug/loom`\n");
