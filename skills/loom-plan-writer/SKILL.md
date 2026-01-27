@@ -343,6 +343,7 @@ description: |
 **Implementation Stage Rule:**
 
 During implementation stages, you MUST:
+
 - Record insights with `loom memory note "..."`
 - Record decisions with `loom memory decision "..." --context "..."`
 - **NEVER** use `loom knowledge update` - this is FORBIDDEN
