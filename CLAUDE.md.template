@@ -108,10 +108,12 @@ Return findings as knowledge update commands.
 □ NO file overlap → ONE stage, parallel subagents
 □ File overlap → SEPARATE stages (DAG)
 □ Each stage has EXPLICIT execution plan with subagents, file ownership, criteria
+□ Every stage has stage_type: knowledge, standard, or integration-verify
 
 **ACCEPTANCE CRITERIA:**
 □ Verify working_dir + paths correct (Cargo.toml/package.json at working_dir?)
-□ File paths relative to working_dir (not project root)
+□ File paths relative to working_dir (NO `../` path traversal)
+□ Run `loom init <plan>` to validate before finalizing
 
 **STAGE COMPLETION:** Reference Stage Completion Checklist in each stage
 
@@ -131,6 +133,7 @@ loom:
     # REQUIRED FIRST STAGE - NEVER SKIP THIS
     - id: knowledge-bootstrap
       name: "Bootstrap Knowledge Base"
+      stage_type: knowledge  # REQUIRED: knowledge, standard, or integration-verify
       description: |
         MANDATORY first stage. Read existing doc/loom/knowledge AND .work/memory files!
 
@@ -202,6 +205,7 @@ loom:
     # Subsequent stages depend on knowledge-bootstrap
     - id: implement-feature
       name: "Implement Feature"
+      stage_type: standard  # REQUIRED: knowledge, standard, or integration-verify
       description: |
         What this stage must accomplish.
 
@@ -255,6 +259,7 @@ loom:
     # REQUIRED LAST STAGE - integration-verify MUST be final
     - id: integration-verify
       name: "Integration Verification"
+      stage_type: integration-verify  # REQUIRED: knowledge, standard, or integration-verify
       description: |
         Final integration verification - runs AFTER all feature stages complete.
 
@@ -319,6 +324,18 @@ loom:
 | Code fence               | 3 backticks (```)       | 4 backticks (````)    |
 | Nested code blocks       | NEVER in descriptions   | Breaks YAML parser    |
 | Examples in descriptions | Use plain indented text | Do NOT use ``` fences |
+| stage_type values        | lowercase/kebab-case    | PascalCase            |
+| Path traversal           | NEVER use `../`         | Causes validation error |
+
+**stage_type Field (REQUIRED on every stage):**
+
+| Value | Use For | Special Behavior |
+| ----- | ------- | ---------------- |
+| `knowledge` | knowledge-bootstrap stage | Can write to doc/loom/knowledge/** |
+| `standard` | All implementation stages | Cannot write to knowledge files |
+| `integration-verify` | Final verification stage | Can write to doc/loom/knowledge/** |
+
+**NEVER use PascalCase** (Knowledge, Standard, IntegrationVerify) - the parser rejects these.
 
 **Example — CORRECT way to show code in descriptions:**
 
@@ -467,10 +484,12 @@ If Cargo.toml is at `loom/Cargo.toml` in main repo, it's at `loom/Cargo.toml` in
 Before writing acceptance criteria: 1) What is working_dir? 2) Do paths exist relative to it? 3) Will command output match?
 
 The `working_dir` field is **REQUIRED** on every stage.
+The `stage_type` field is **REQUIRED** on every stage: `knowledge`, `standard`, or `integration-verify`.
 
 **Checklist:**
+□ stage_type set (lowercase: knowledge, standard, integration-verify)
 □ working_dir set for where build tools expect
-□ File paths relative to working_dir
+□ File paths relative to working_dir (NO `../` path traversal allowed)
 □ grep/test patterns match actual output
 □ Binary paths include correct subdirectory
 □ grep uses -q for silent mode
@@ -1034,8 +1053,10 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 **PLAN STRUCTURE:**
 □ knowledge-bootstrap FIRST (includes architecture.md)
 □ integration-verify LAST (TESTS ≠ WORKING)
+□ Every stage has stage_type: knowledge, standard, or integration-verify
+□ NO path traversal (`../`) in any path field
 □ Parallel SUBAGENTS first, multiple stages only when files clash
-□ Check /auth, /testing, etc. skills BEFORE coding
+□ Run `loom init <plan>` to validate YAML before finalizing
 
 ---
 
