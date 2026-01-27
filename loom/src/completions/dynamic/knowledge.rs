@@ -3,7 +3,15 @@
 use anyhow::Result;
 
 /// Valid knowledge file names
-const KNOWLEDGE_FILES: &[&str] = &["entry-points", "patterns", "conventions", "mistakes"];
+const KNOWLEDGE_FILES: &[&str] = &[
+    "architecture",
+    "entry-points",
+    "patterns",
+    "conventions",
+    "mistakes",
+    "stack",
+    "concerns",
+];
 
 /// Complete knowledge file names for `loom knowledge show/update`
 ///

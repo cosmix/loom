@@ -1,9 +1,11 @@
 //! Dynamic shell completions for loom CLI.
 //!
 //! This module provides context-aware tab-completion for plan files,
-//! stage IDs, session IDs, and knowledge files.
+//! stage IDs, session IDs, knowledge files, memory entry types, and checkpoint statuses.
 
+mod checkpoint;
 mod knowledge;
+mod memory;
 mod plans;
 mod sessions;
 mod stages;
@@ -14,7 +16,9 @@ mod tests;
 use anyhow::Result;
 use std::path::Path;
 
+pub use checkpoint::complete_checkpoint_statuses;
 pub use knowledge::complete_knowledge_files;
+pub use memory::{complete_memory_entry_types, complete_memory_promote_entry_types};
 pub use plans::complete_plan_files;
 pub use sessions::{complete_session_ids, complete_stage_or_session_ids};
 pub use stages::complete_stage_ids;
@@ -101,6 +105,32 @@ pub fn complete_dynamic(ctx: &CompletionContext) -> Result<()> {
 
         // Knowledge show/update file completions (must come before general stage commands)
         "show" | "update" if ctx.cmdline.contains("knowledge") => complete_knowledge_files(prefix)?,
+
+        // Memory --session flag completion
+        "--session" if ctx.cmdline.contains("memory") => complete_session_ids(cwd, prefix)?,
+
+        // Memory list --entry-type / -t completion
+        "--entry-type" | "-t" if ctx.cmdline.contains("memory") && ctx.cmdline.contains("list") => {
+            complete_memory_entry_types(prefix)?
+        }
+
+        // Memory promote entry type completion (first positional arg)
+        "promote" if ctx.cmdline.contains("memory") => complete_memory_promote_entry_types(prefix)?,
+
+        // Memory promote target knowledge file completion (second positional arg after entry type)
+        "note" | "decision" | "question" | "all"
+            if ctx.cmdline.contains("memory") && ctx.cmdline.contains("promote") =>
+        {
+            complete_knowledge_files(prefix)?
+        }
+
+        // Checkpoint --session flag completion
+        "--session" if ctx.cmdline.contains("checkpoint") => complete_session_ids(cwd, prefix)?,
+
+        // Checkpoint create --status completion
+        "--status" if ctx.cmdline.contains("checkpoint") && ctx.cmdline.contains("create") => {
+            complete_checkpoint_statuses(prefix)?
+        }
 
         // Stage subcommands that take stage_id (all in one pattern)
         "complete" | "block" | "reset" | "waiting" | "hold" | "release" | "skip" | "retry"
