@@ -72,12 +72,12 @@ This skill provides:
 
 **Solution:** ALWAYS explore BEFORE planning. Find patterns to reuse. Identify integration points.
 
-| Step | Action                                      | Why                      |
-| ---- | ------------------------------------------- | ------------------------ |
-| 1    | Spawn Explore subagents for related modules | Find patterns to reuse   |
-| 2    | Review doc/loom/knowledge/\*.md             | Learn from past mistakes |
-| 3    | Create TODO with "REUSE:" annotations       | Track reuse explicitly   |
-| 4    | Identify integration points                 | Where new code connects  |
+| Step | Action | Why |
+| ---- | ------ | --- |
+| 1 | Spawn Explore subagents for related modules | Find patterns to reuse |
+| 2 | Review doc/loom/knowledge/\*.md | Learn from past mistakes |
+| 3 | Create TODO with "REUSE:" annotations | Track reuse explicitly |
+| 4 | Identify integration points | Where new code connects |
 
 **Exploration Subagent Template:**
 
@@ -319,13 +319,13 @@ loom:
 
 **YAML FORMATTING RULES (CRITICAL):**
 
-| Rule                     | Correct                 | Incorrect             |
-| ------------------------ | ----------------------- | --------------------- |
-| Code fence               | 3 backticks (```)       | 4 backticks (````)    |
-| Nested code blocks       | NEVER in descriptions   | Breaks YAML parser    |
+| Rule | Correct | Incorrect |
+| ---- | ------- | --------- |
+| Code fence | 3 backticks (```) | 4 backticks (````) |
+| Nested code blocks | NEVER in descriptions | Breaks YAML parser |
 | Examples in descriptions | Use plain indented text | Do NOT use ``` fences |
-| stage_type values        | lowercase/kebab-case    | PascalCase            |
-| Path traversal           | NEVER use `../`         | Causes validation error |
+| stage_type values | lowercase/kebab-case | PascalCase |
+| Path traversal | NEVER use `../` | Causes validation error |
 
 **stage_type Field (REQUIRED on every stage):**
 
@@ -440,10 +440,10 @@ PROJECT ROOT (where loom was initialized)
 
 **PATH RESOLUTION FORMULA:** `EXECUTION_PATH = WORKTREE + working_dir`
 
-| working_dir | WORKTREE               | Commands execute from          |
-| ----------- | ---------------------- | ------------------------------ |
-| `"."`       | `.worktrees/my-stage/` | `.worktrees/my-stage/`         |
-| `"loom"`    | `.worktrees/my-stage/` | `.worktrees/my-stage/loom/`    |
+| working_dir | WORKTREE | Commands execute from |
+| ----------- | -------- | --------------------- |
+| `"."` | `.worktrees/my-stage/` | `.worktrees/my-stage/` |
+| `"loom"` | `.worktrees/my-stage/` | `.worktrees/my-stage/loom/` |
 | `"src/app"` | `.worktrees/my-stage/` | `.worktrees/my-stage/src/app/` |
 
 **MIRROR STRUCTURE:** Worktrees are complete copies mirroring the main repo:
@@ -468,14 +468,14 @@ If Cargo.toml is at `loom/Cargo.toml` in main repo, it's at `loom/Cargo.toml` in
 
 **COMMON CONFUSION PATTERNS:**
 
-| Symptom                                    | Likely Cause                           | Fix                                            |
-| ------------------------------------------ | -------------------------------------- | ---------------------------------------------- |
-| `cargo test` → "could not find Cargo.toml" | working_dir root, Cargo.toml in subdir | Set `working_dir: "loom"`                      |
-| `grep -q 'fn foo' src/lib.rs` → fails      | File at `loom/src/lib.rs`              | Use full path OR set `working_dir: "loom"`     |
-| `./target/debug/myapp` → "no such file"    | Binary built in subdirectory           | Use `./loom/target/debug/myapp`                |
-| Test passes locally, fails in stage        | Different directory than stage         | Verify working_dir matches local               |
-| `test -f src/new.rs` → fails               | Wrong relative path                    | Check if should be `loom/src/new.rs`           |
-| artifact `loom/src/x.rs` not found         | Double-path: working_dir + path        | Remove `loom/` prefix if working_dir is "loom" |
+| Symptom | Likely Cause | Fix |
+| ------- | ------------ | --- |
+| `cargo test` → "could not find Cargo.toml" | working_dir root, Cargo.toml in subdir | Set `working_dir: "loom"` |
+| `grep -q 'fn foo' src/lib.rs` → fails | File at `loom/src/lib.rs` | Use full path OR set `working_dir: "loom"` |
+| `./target/debug/myapp` → "no such file" | Binary built in subdirectory | Use `./loom/target/debug/myapp` |
+| Test passes locally, fails in stage | Different directory than stage | Verify working_dir matches local |
+| `test -f src/new.rs` → fails | Wrong relative path | Check if should be `loom/src/new.rs` |
+| artifact `loom/src/x.rs` not found | Double-path: working_dir + path | Remove `loom/` prefix if working_dir is "loom" |
 
 #### Acceptance Criteria: Working Directory & Command Design
 
@@ -565,10 +565,10 @@ This applies to ALL path fields, not just acceptance criteria:
 **COMMON MISTAKE:** 5 stages for 5 tasks touching different files. Wastes time on branch management.
 **CORRECT:** One stage with 5 parallel subagents.
 
-| Level                               | When to Use          | Overhead                 |
-| ----------------------------------- | -------------------- | ------------------------ |
-| **Parallel subagents in ONE stage** | DIFFERENT files      | LOW - same worktree      |
-| **Multiple stages in DAG**          | SAME files           | HIGH - worktrees, merges |
+| Level | When to Use | Overhead |
+| ----- | ----------- | -------- |
+| **Parallel subagents in ONE stage** | DIFFERENT files | LOW - same worktree |
+| **Multiple stages in DAG** | SAME files | HIGH - worktrees, merges |
 
 **Example:** auth/, logging/, metrics/ — files don't overlap.
 ❌ WRONG: 3 stages | ✅ CORRECT: 1 stage with 3 parallel subagents
@@ -659,12 +659,12 @@ Many tasks have purpose-built skills or specialized agents. Check if one exists 
 
 Use the Task tool to spawn specialized agents for complex work:
 
-| Agent                            | Use Cases                                                                           |
-| -------------------------------- | ----------------------------------------------------------------------------------- |
-| `senior-software-engineer`       | Architecture design, complex debugging, design patterns, code review, test strategy |
-| `senior-infrastructure-engineer` | Cloud architecture, Terraform/IaC, Kubernetes, Helm, CI/CD pipelines, monitoring    |
-| `security-engineer`              | Threat modeling, vulnerability analysis, security audits, penetration testing       |
-| `software-engineer`              | Feature implementation, bug fixes, tests, data pipelines, documentation             |
+| Agent | Use Cases |
+| ----- | --------- |
+| `senior-software-engineer` | Architecture design, complex debugging, design patterns, code review, test strategy |
+| `senior-infrastructure-engineer` | Cloud architecture, Terraform/IaC, Kubernetes, Helm, CI/CD pipelines, monitoring |
+| `security-engineer` | Threat modeling, vulnerability analysis, security audits, penetration testing |
+| `software-engineer` | Feature implementation, bug fixes, tests, data pipelines, documentation |
 
 **Agent Selection:** Security → security-engineer | Infrastructure → senior-infrastructure-engineer | Architecture/patterns → senior-software-engineer | Standard implementation → software-engineer | Exploration → Explore agent
 
@@ -672,13 +672,13 @@ Use the Task tool to spawn specialized agents for complex work:
 
 Invoke skills with `/skill-name` syntax:
 
-| Domain                  | Skills                                                                            |
-| ----------------------- | --------------------------------------------------------------------------------- |
-| Security & Auth         | `/auth` — OAuth2, JWT, RBAC/ABAC, session management, MFA, password hashing       |
-| Testing                 | `/testing` — Unit, integration, e2e, security tests, TDD/BDD, coverage analysis   |
-| Infrastructure & DevOps | `/ci-cd`, `/karpenter`, `/prometheus`                                             |
-| Observability           | `/logging-observability` — Structured logging, distributed tracing, OpenTelemetry |
-| Architecture Patterns   | `/event-driven`, `/background-jobs`, `/feature-flags`, `/data-validation`         |
+| Domain | Skills |
+| ------ | ------ |
+| Security & Auth | `/auth` — OAuth2, JWT, RBAC/ABAC, session management, MFA, password hashing |
+| Testing | `/testing` — Unit, integration, e2e, security tests, TDD/BDD, coverage analysis |
+| Infrastructure & DevOps | `/ci-cd`, `/karpenter`, `/prometheus` |
+| Observability | `/logging-observability` — Structured logging, distributed tracing, OpenTelemetry |
+| Architecture Patterns | `/event-driven`, `/background-jobs`, `/feature-flags`, `/data-validation` |
 
 Skills expand to detailed prompts with domain expertise. Use `/skill-name` syntax BEFORE manual implementation.
 
@@ -698,13 +698,13 @@ When delegating to subagents, include skill hints:
 
 ### 8. NATIVE TOOLS ONLY
 
-| Banned                | Use Instead |
-| --------------------- | ----------- |
-| `cat`, `head`, `tail` | Read tool   |
-| `grep`, `ag`          | Grep tool   |
-| `find`, `ls`          | Glob tool   |
-| `sed`, `awk`          | Edit tool   |
-| `echo >`, `tee`       | Write tool  |
+| Banned | Use Instead |
+| ------ | ----------- |
+| `cat`, `head`, `tail` | Read tool |
+| `grep`, `ag` | Grep tool |
+| `find`, `ls` | Glob tool |
+| `sed`, `awk` | Edit tool |
+| `echo >`, `tee` | Write tool |
 
 If you must use CLI search, use `rg` or `fd` — never `grep` or `find`.
 
@@ -726,14 +726,14 @@ Location: `.worktrees/<stage-id>/` | Branch: `loom/<stage-id>`
 
 **FORBIDDEN:**
 
-| Operation                | Example                                   | Why Forbidden                 |
-| ------------------------ | ----------------------------------------- | ----------------------------- |
-| `git -C <path>`          | `git -C ../.. status`                     | Operates on main repo         |
-| `git --work-tree=<path>` | `git --work-tree=/path/to/main`           | Escapes worktree              |
-| `git --git-dir=<path>`   | `git --git-dir=../../.git`                | Accesses main repo git        |
-| `cd` outside worktree    | `cd ../..`, `cd /home/user/project`       | Escapes worktree context      |
-| `../../` relative paths  | `cat ../../src/main.rs`                   | Reads from main repo          |
-| Reading main repo files  | Any file outside `.worktrees/<stage-id>/` | Creates implicit dependencies |
+| Operation | Example | Why Forbidden |
+| --------- | ------- | ------------- |
+| `git -C <path>` | `git -C ../.. status` | Operates on main repo |
+| `git --work-tree=<path>` | `git --work-tree=/path/to/main` | Escapes worktree |
+| `git --git-dir=<path>` | `git --git-dir=../../.git` | Accesses main repo git |
+| `cd` outside worktree | `cd ../..`, `cd /home/user/project` | Escapes worktree context |
+| `../../` relative paths | `cat ../../src/main.rs` | Reads from main repo |
+| Reading main repo files | Any file outside `.worktrees/<stage-id>/` | Creates implicit dependencies |
 
 **ALLOWED:** Git commands in current directory, reading `.work/` (symlink to shared state), reading/writing within your worktree.
 
@@ -761,23 +761,23 @@ DO NOT manually edit doc/loom/knowledge/\*.md files. DO NOT use Write/Edit/echo/
 
 **ALWAYS use:** `loom knowledge update <file> "<content>"`
 
-| Command                                  | Description                                                                  |
-| ---------------------------------------- | ---------------------------------------------------------------------------- |
-| `loom knowledge init`                    | Initialize knowledge directory                                               |
-| `loom knowledge show`                    | Show all knowledge                                                           |
+| Command | Description |
+| ------- | ----------- |
+| `loom knowledge init` | Initialize knowledge directory |
+| `loom knowledge show` | Show all knowledge |
 | `loom knowledge update <file> <content>` | Append to file (architecture, entry-points, patterns, conventions, mistakes) |
 
 **Knowledge Files:**
 
-| File              | Purpose                                                           |
-| ----------------- | ----------------------------------------------------------------- |
-| `architecture.md` | Component relationships, data flow, module dependencies           |
-| `entry-points.md` | Key files to read first (CLI, API, UI entry points)               |
-| `patterns.md`     | Architectural patterns and best practices                         |
-| `conventions.md`  | Coding standards, naming schemes, file organization               |
-| `mistakes.md`     | Lessons learned from errors                                       |
-| `stack.md`        | Dependencies, frameworks, tooling (aliases: deps, tech)           |
-| `concerns.md`     | Technical debt, warnings, issues (aliases: debt, issues)          |
+| File | Purpose |
+| ---- | ------- |
+| `architecture.md` | Component relationships, data flow, module dependencies |
+| `entry-points.md` | Key files to read first (CLI, API, UI entry points) |
+| `patterns.md` | Architectural patterns and best practices |
+| `conventions.md` | Coding standards, naming schemes, file organization |
+| `mistakes.md` | Lessons learned from errors |
+| `stack.md` | Dependencies, frameworks, tooling (aliases: deps, tech) |
+| `concerns.md` | Technical debt, warnings, issues (aliases: debt, issues) |
 
 **For long content, break into multiple invocations (~20-30 lines each):**
 
@@ -811,11 +811,11 @@ Record insights AS DISCOVERED: mistakes (immediately), decisions (when choosing)
 
 Empty memory at session end = lost learning. During work:
 
-| Type     | When           | Command                                       |
-| -------- | -------------- | --------------------------------------------- |
-| Note     | Observations   | `loom memory note "text"`                     |
-| Decision | Choices made   | `loom memory decision "text" --context "why"` |
-| Question | Open questions | `loom memory question "text"`                 |
+| Type | When | Command |
+| ---- | ---- | ------- |
+| Note | Observations | `loom memory note "text"` |
+| Decision | Choices made | `loom memory decision "text" --context "why"` |
+| Question | Open questions | `loom memory question "text"` |
 
 Before completing any stage, review and promote valuable insights:
 
@@ -877,11 +877,11 @@ integration-verify MUST include FUNCTIONAL VERIFICATION:
 
 **integration-verify MUST include FUNCTIONAL verification:**
 
-| Check        | Question                                              |
-| ------------ | ----------------------------------------------------- |
-| Wiring       | Is the feature registered/mounted in the application? |
-| Reachability | Can you invoke it (CLI command, API endpoint, UI)?    |
-| End-to-end   | Does the primary use case produce expected behavior?  |
+| Check | Question |
+| ----- | -------- |
+| Wiring | Is the feature registered/mounted in the application? |
+| Reachability | Can you invoke it (CLI command, API endpoint, UI)? |
+| End-to-end | Does the primary use case produce expected behavior? |
 
 **Example acceptance criteria:**
 
@@ -944,13 +944,13 @@ Also: `Blocked`, `NeedsHandoff`, `WaitingForInput`
 
 Default context budget is 65% (can be overridden per-stage with `context_budget` field in plan YAML). Hard maximum is 75%.
 
-| Usage                    | Action          |
-| ------------------------ | --------------- |
-| <60%                     | Normal          |
-| 60% to budget threshold  | Warning shown   |
-| At budget threshold      | BudgetExceeded  |
-| 60-74% (if no budget)    | Prepare handoff |
-| ≥75%                     | STOP. Handoff.  |
+| Usage | Action |
+| ----- | ------ |
+| <60% | Normal |
+| 60% to budget threshold | Warning shown |
+| At budget threshold | BudgetExceeded |
+| 60-74% (if no budget) | Prepare handoff |
+| ≥75% | STOP. Handoff. |
 
 When context usage reaches the budget threshold, orchestrator triggers auto-handoff. Stages can set custom budgets via `context_budget: 50` (percentage 1-100) in plan YAML.
 
@@ -960,16 +960,16 @@ When context usage reaches the budget threshold, orchestrator triggers auto-hand
 
 ### Additional CLI Commands
 
-| Command                                       | Description                                                                                  |
-| --------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `loom verify <stage-id> [--suggest]`          | Run goal-backward verification (truths, artifacts, wiring checks). Use --suggest for fixes. |
-| `loom map [--deep] [--focus <area>] [--overwrite]` | Analyze codebase structure and write to knowledge files. --deep for detailed analysis.      |
-| `loom knowledge init`                         | Initialize knowledge directory                                                               |
-| `loom knowledge show`                         | Show all knowledge                                                                           |
-| `loom knowledge update <file> <content>`      | Append to knowledge file                                                                     |
-| `loom memory note/decision/question <text>`   | Record session insights                                                                      |
-| `loom memory list`                            | List session memory entries                                                                  |
-| `loom memory promote <type> <target>`         | Promote memory to knowledge                                                                  |
+| Command | Description |
+| ------- | ----------- |
+| `loom verify <stage-id> [--suggest]` | Run goal-backward verification (truths, artifacts, wiring checks). Use --suggest for fixes. |
+| `loom map [--deep] [--focus <area>] [--overwrite]` | Analyze codebase structure and write to knowledge files. --deep for detailed analysis. |
+| `loom knowledge init` | Initialize knowledge directory |
+| `loom knowledge show` | Show all knowledge |
+| `loom knowledge update <file> <content>` | Append to knowledge file |
+| `loom memory note/decision/question <text>` | Record session insights |
+| `loom memory list` | List session memory entries |
+| `loom memory promote <type> <target>` | Promote memory to knowledge |
 
 ---
 
