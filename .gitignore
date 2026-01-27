@@ -33,3 +33,4 @@ logs/
 # Rust build artifacts
 target/
 .worktrees/
+ISSUES.md
