@@ -308,3 +308,16 @@ Stage marked complete without verifying acceptance criteria passed.
 **Why:** Plan author did not verify working_dir matches build tool config locations.
 
 **How to avoid:** For this project, cargo commands need working_dir='loom' not '.'.
+
+## Promoted from Memory [2026-01-27 06:12]
+
+### Notes
+
+- Integration verification for shell completions passed: all 1233+ tests pass, static completions (bash/zsh/fish) work, dynamic completions properly route to new handlers (memory promote, knowledge show with 7 files, checkpoint status)
+
+### Decisions
+
+- **All acceptance criteria verified through direct command execution rather than relying on test-only verification**
+  - *Rationale:* Direct CLI verification catches integration issues that unit tests may miss - especially dynamic completion routing which depends on proper command dispatch
+
+
