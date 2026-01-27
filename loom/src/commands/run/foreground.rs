@@ -9,6 +9,7 @@ use crate::daemon::collect_completion_summary;
 use crate::fs::work_dir::WorkDir;
 use crate::orchestrator::terminal::BackendType;
 use crate::orchestrator::{Orchestrator, OrchestratorConfig, OrchestratorResult};
+use crate::plan::schema::SandboxConfig;
 
 use super::checks::check_for_uncommitted_changes;
 use super::graph_loader::build_execution_graph;
@@ -62,6 +63,7 @@ fn execute_foreground(
         skills_dir: None, // Use default ~/.claude/skills/
         enable_skill_routing: true,
         max_skill_recommendations: 5,
+        sandbox_config: SandboxConfig::default(),
     };
 
     let mut orchestrator =

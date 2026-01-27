@@ -157,6 +157,18 @@ impl StageExecutor for Orchestrator {
             .mark_executing(stage_id)
             .context("Failed to mark stage as executing in graph")?;
 
+        // Generate and write sandbox settings to worktree
+        let mut merged_sandbox = crate::sandbox::merge_config(
+            &self.config.sandbox_config,
+            &stage.sandbox,
+            stage.stage_type,
+        );
+        crate::sandbox::expand_paths(&mut merged_sandbox);
+        if let Err(e) = crate::sandbox::write_settings(&merged_sandbox, &worktree.path) {
+            eprintln!("Warning: Failed to write sandbox settings for stage '{stage_id}': {e}");
+            // Continue anyway - sandbox is optional enhancement
+        }
+
         let session = Session::new();
 
         // Set up Claude Code hooks for this session
@@ -237,6 +249,20 @@ impl StageExecutor for Orchestrator {
 
     fn start_knowledge_stage(&mut self, stage: Stage) -> Result<()> {
         let stage_id = stage.id.clone();
+
+        // Generate and write sandbox settings to main repo
+        let mut merged_sandbox = crate::sandbox::merge_config(
+            &self.config.sandbox_config,
+            &stage.sandbox,
+            stage.stage_type,
+        );
+        crate::sandbox::expand_paths(&mut merged_sandbox);
+        if let Err(e) = crate::sandbox::write_settings(&merged_sandbox, &self.config.repo_root) {
+            eprintln!(
+                "Warning: Failed to write sandbox settings for knowledge stage '{stage_id}': {e}"
+            );
+            // Continue anyway - sandbox is optional enhancement
+        }
 
         let session = Session::new();
 

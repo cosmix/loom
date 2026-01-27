@@ -141,6 +141,12 @@ pub enum Commands {
         command: MemoryCommands,
     },
 
+    /// Manage sandbox configuration
+    Sandbox {
+        #[command(subcommand)]
+        command: SandboxCommands,
+    },
+
     /// Update loom and configuration files
     SelfUpdate,
 
@@ -225,6 +231,12 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+}
+
+#[derive(Subcommand)]
+pub enum SandboxCommands {
+    /// Suggest sandbox network domains based on project dependencies
+    Suggest,
 }
 
 #[derive(Subcommand)]

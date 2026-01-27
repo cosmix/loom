@@ -2,7 +2,7 @@ use anyhow::Result;
 use loom::checkpoints::CheckpointStatus;
 use loom::commands::{
     checkpoint, clean, diagnose, graph, hooks, init, knowledge, map, memory, merge, resume, run,
-    self_update, sessions, stage, status, stop, verify, worktree_cmd,
+    sandbox, self_update, sessions, stage, status, stop, verify, worktree_cmd,
 };
 use loom::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use std::path::PathBuf;
@@ -10,7 +10,8 @@ use std::str::FromStr;
 
 use super::types::{
     CheckpointCommands, Cli, Commands, GraphCommands, HooksCommands, KnowledgeCommands,
-    MemoryCommands, OutputCommands, SessionsCommands, StageCommands, WorktreeCommands,
+    MemoryCommands, OutputCommands, SandboxCommands, SessionsCommands, StageCommands,
+    WorktreeCommands,
 };
 
 pub fn dispatch(command: Commands) -> Result<()> {
@@ -123,6 +124,9 @@ pub fn dispatch(command: Commands) -> Result<()> {
                 target,
                 session,
             } => memory::promote(entry_type, target, session),
+        },
+        Commands::Sandbox { command } => match command {
+            SandboxCommands::Suggest => sandbox::suggest(),
         },
         Commands::SelfUpdate => self_update::execute(),
         Commands::Clean {

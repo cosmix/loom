@@ -3,6 +3,7 @@
 use loom::models::stage::{Stage, StageStatus};
 use loom::orchestrator::terminal::BackendType;
 use loom::orchestrator::{Orchestrator, OrchestratorConfig};
+use loom::plan::schema::SandboxConfig;
 use loom::plan::graph::ExecutionGraph;
 use loom::verify::transitions::save_stage;
 use std::time::Duration;
@@ -134,6 +135,7 @@ fn test_orchestrator_respects_max_parallel_sessions() {
         skills_dir: None,
         enable_skill_routing: false,
         max_skill_recommendations: 5,
+        sandbox_config: SandboxConfig::default(),
     };
 
     let mut orchestrator = Orchestrator::new(config, graph).expect("Should create orchestrator");

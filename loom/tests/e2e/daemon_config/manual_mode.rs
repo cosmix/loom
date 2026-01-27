@@ -4,6 +4,7 @@ use crate::helpers::create_temp_git_repo;
 use loom::models::stage::{Stage, StageStatus};
 use loom::orchestrator::terminal::BackendType;
 use loom::orchestrator::OrchestratorConfig;
+use loom::plan::schema::SandboxConfig;
 use loom::plan::graph::ExecutionGraph;
 use loom::verify::transitions::save_stage;
 use std::time::Duration;
@@ -62,6 +63,7 @@ fn test_orchestrator_with_manual_mode() {
         skills_dir: None,
         enable_skill_routing: false,
         max_skill_recommendations: 5,
+        sandbox_config: SandboxConfig::default(),
     };
 
     let mut orchestrator =

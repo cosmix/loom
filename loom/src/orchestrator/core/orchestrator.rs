@@ -9,6 +9,7 @@ use crate::models::session::Session;
 use crate::models::stage::StageStatus;
 use crate::models::worktree::Worktree;
 use crate::orchestrator::monitor::{Monitor, MonitorConfig};
+use crate::plan::schema::SandboxConfig;
 use crate::plan::ExecutionGraph;
 use crate::skills::SkillIndex;
 use crate::utils::{cleanup_terminal, install_terminal_panic_hook};
@@ -43,6 +44,8 @@ pub struct OrchestratorConfig {
     pub enable_skill_routing: bool,
     /// Maximum number of skill recommendations per signal (default: 5)
     pub max_skill_recommendations: usize,
+    /// Plan-level sandbox configuration (defaults for all stages)
+    pub sandbox_config: SandboxConfig,
 }
 
 impl Default for OrchestratorConfig {
@@ -61,6 +64,7 @@ impl Default for OrchestratorConfig {
             skills_dir: None, // Will default to ~/.claude/skills/ when loading
             enable_skill_routing: true,
             max_skill_recommendations: 5,
+            sandbox_config: SandboxConfig::default(),
         }
     }
 }

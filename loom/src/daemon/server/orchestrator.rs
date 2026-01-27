@@ -16,6 +16,7 @@ use crate::fs::work_dir::WorkDir;
 use crate::orchestrator::terminal::BackendType;
 use crate::orchestrator::{Orchestrator, OrchestratorConfig};
 use crate::plan::graph::ExecutionGraph;
+use crate::plan::schema::SandboxConfig;
 
 /// Spawn the orchestrator thread to execute stages.
 ///
@@ -80,6 +81,7 @@ fn run_orchestrator(
         skills_dir: None, // Use default ~/.claude/skills/
         enable_skill_routing: true,
         max_skill_recommendations: 5,
+        sandbox_config: SandboxConfig::default(),
     };
 
     // Create and run orchestrator

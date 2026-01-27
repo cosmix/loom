@@ -32,7 +32,7 @@ pub(super) fn clear_status_line() {
 mod tests {
     use super::*;
     use crate::parser::frontmatter::extract_yaml_frontmatter;
-    use crate::plan::schema::{StageDefinition, StageSandboxConfig};
+    use crate::plan::schema::{SandboxConfig, StageDefinition, StageSandboxConfig};
     use crate::plan::ExecutionGraph;
     use std::path::PathBuf;
     use std::time::Duration;
@@ -52,6 +52,7 @@ mod tests {
             skills_dir: None,
             enable_skill_routing: false, // Disable for tests
             max_skill_recommendations: 5,
+            sandbox_config: SandboxConfig::default(),
         }
     }
 
