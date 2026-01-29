@@ -5,6 +5,7 @@ use anyhow::{Context, Result};
 use crate::models::session::Session;
 use crate::models::stage::Stage;
 use crate::parser::frontmatter::parse_from_markdown;
+use crate::verify::transitions::parse_stage_from_markdown;
 
 use super::config::MonitorConfig;
 use super::detection::Detection;
@@ -154,11 +155,6 @@ fn load_session_from_file(path: &std::path::Path) -> Result<Session> {
         .with_context(|| format!("Failed to read session file: {}", path.display()))?;
 
     parse_session_from_markdown(&content)
-}
-
-/// Parse a Stage from markdown with YAML frontmatter
-pub fn parse_stage_from_markdown(content: &str) -> Result<Stage> {
-    parse_from_markdown(content, "Stage")
 }
 
 /// Parse a Session from markdown with YAML frontmatter

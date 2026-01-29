@@ -3,15 +3,8 @@
 //! This module provides stage-specific parsing that delegates to the canonical
 //! frontmatter parser in `crate::parser::frontmatter`.
 
-use anyhow::Result;
-
-use crate::models::stage::Stage;
-use crate::parser::frontmatter::parse_from_markdown;
-
 /// Parse a Stage from markdown with YAML frontmatter
-pub fn parse_stage_from_markdown(content: &str) -> Result<Stage> {
-    parse_from_markdown(content, "Stage")
-}
+pub use crate::verify::transitions::parse_stage_from_markdown;
 
 #[cfg(test)]
 mod tests {

@@ -4,8 +4,8 @@ use std::fs;
 
 use crate::fs::work_dir::WorkDir;
 use crate::models::failure::FailureType;
-use crate::models::stage::{Stage, StageStatus};
-use crate::parser::frontmatter::parse_from_markdown;
+use crate::models::stage::StageStatus;
+use crate::verify::transitions::parse_stage_from_markdown;
 
 pub fn display_stages(work_dir: &WorkDir) -> Result<()> {
     let stages_dir = work_dir.stages_dir();
@@ -123,8 +123,4 @@ pub fn display_stages(work_dir: &WorkDir) -> Result<()> {
     }
 
     Ok(())
-}
-
-pub fn parse_stage_from_markdown(content: &str) -> Result<Stage> {
-    parse_from_markdown(content, "Stage")
 }
