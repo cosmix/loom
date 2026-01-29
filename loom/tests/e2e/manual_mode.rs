@@ -84,7 +84,7 @@ fn test_signal_file_format() {
     stage.add_acceptance_criterion("cargo clippy passes".to_string());
     stage.add_file_pattern("src/models/*.rs".to_string());
     stage.add_file_pattern("src/commands/*.rs".to_string());
-    stage.set_plan("plan-test".to_string());
+    stage.plan_id = Some("plan-test".to_string());
 
     let worktree = create_test_worktree("stage-2");
 

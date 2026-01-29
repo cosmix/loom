@@ -72,21 +72,12 @@ impl Session {
         self.last_active = Utc::now();
     }
 
-    pub fn release_from_stage(&mut self) {
-        self.stage_id = None;
-        self.last_active = Utc::now();
-    }
-
     pub fn set_worktree_path(&mut self, path: PathBuf) {
         self.worktree_path = Some(path);
     }
 
     pub fn set_pid(&mut self, pid: u32) {
         self.pid = Some(pid);
-    }
-
-    pub fn clear_pid(&mut self) {
-        self.pid = None;
     }
 
     pub fn update_context(&mut self, tokens: u32) {

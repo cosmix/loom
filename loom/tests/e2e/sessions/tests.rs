@@ -21,9 +21,6 @@ fn test_session_pid_assignment() {
 
     session.set_pid(12345);
     assert_eq!(session.pid, Some(12345));
-
-    session.clear_pid();
-    assert!(session.pid.is_none());
 }
 
 #[test]

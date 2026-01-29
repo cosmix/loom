@@ -18,20 +18,6 @@ fn test_session_stage_assignment() {
 }
 
 #[test]
-fn test_session_release_from_stage() {
-    let mut session = Session::new();
-    session.assign_to_stage("stage-1".to_string());
-    assert_eq!(session.stage_id, Some("stage-1".to_string()));
-
-    let before = session.last_active;
-    thread::sleep(Duration::from_millis(10));
-    session.release_from_stage();
-
-    assert!(session.stage_id.is_none());
-    assert!(session.last_active > before);
-}
-
-#[test]
 fn test_session_stage_reassignment() {
     let mut session = Session::new();
 
@@ -70,12 +56,6 @@ fn test_session_complex_lifecycle() {
         .try_mark_context_exhausted()
         .expect("Running -> ContextExhausted");
     assert_eq!(session.status, SessionStatus::ContextExhausted);
-
-    session.release_from_stage();
-    assert!(session.stage_id.is_none());
-
-    session.clear_pid();
-    assert!(session.pid.is_none());
 }
 
 #[test]
@@ -96,12 +76,6 @@ fn test_session_timestamps_update_correctly() {
     session.update_context(1000);
     assert_eq!(session.created_at, created);
     assert!(session.last_active > after_assign);
-
-    let after_update = session.last_active;
-    thread::sleep(Duration::from_millis(10));
-    session.release_from_stage();
-    assert_eq!(session.created_at, created);
-    assert!(session.last_active > after_update);
 }
 
 #[test]

@@ -69,18 +69,6 @@ impl Stage {
         }
     }
 
-    pub fn remove_dependency(&mut self, stage_id: &str) {
-        if let Some(pos) = self.dependencies.iter().position(|id| id == stage_id) {
-            self.dependencies.remove(pos);
-            self.updated_at = Utc::now();
-        }
-    }
-
-    pub fn set_parallel_group(&mut self, group: Option<String>) {
-        self.parallel_group = group;
-        self.updated_at = Utc::now();
-    }
-
     pub fn add_acceptance_criterion(&mut self, criterion: String) {
         self.acceptance.push(criterion);
         self.updated_at = Utc::now();
@@ -91,11 +79,6 @@ impl Stage {
             self.files.push(pattern);
             self.updated_at = Utc::now();
         }
-    }
-
-    pub fn set_plan(&mut self, plan_id: String) {
-        self.plan_id = Some(plan_id);
-        self.updated_at = Utc::now();
     }
 
     pub fn set_worktree(&mut self, worktree_id: Option<String>) {
@@ -116,13 +99,6 @@ impl Stage {
     pub fn release_session(&mut self) {
         self.session = None;
         self.updated_at = Utc::now();
-    }
-
-    pub fn add_child_stage(&mut self, child_id: String) {
-        if !self.child_stages.contains(&child_id) {
-            self.child_stages.push(child_id);
-            self.updated_at = Utc::now();
-        }
     }
 
     /// Attempt to transition the stage to a new status with validation.

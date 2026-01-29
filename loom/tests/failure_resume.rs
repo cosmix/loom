@@ -314,7 +314,7 @@ fn test_blocked_stage_preserves_metadata() {
     stage.add_acceptance_criterion("Criterion B".to_string());
     stage.add_file_pattern("src/**/*.rs".to_string());
     stage.add_file_pattern("tests/**/*.rs".to_string());
-    stage.set_parallel_group(Some("group-1".to_string()));
+    stage.parallel_group = Some("group-1".to_string());
 
     let created_at = stage.created_at;
     save_stage(&stage, work_dir).unwrap();

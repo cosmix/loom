@@ -314,7 +314,7 @@ fn test_parallel_group_assignment() {
 
     // Test updating parallel_group
     let mut stage_a = loaded_a;
-    stage_a.set_parallel_group(Some("new-group".to_string()));
+    stage_a.parallel_group = Some("new-group".to_string());
     save_stage(&stage_a, work_dir).unwrap();
 
     let reloaded_a = load_stage("stage-a", work_dir).unwrap();
@@ -322,7 +322,7 @@ fn test_parallel_group_assignment() {
 
     // Test clearing parallel_group
     let mut stage_b = loaded_b;
-    stage_b.set_parallel_group(None);
+    stage_b.parallel_group = None;
     save_stage(&stage_b, work_dir).unwrap();
 
     let reloaded_b = load_stage("stage-b", work_dir).unwrap();

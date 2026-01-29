@@ -5,19 +5,12 @@
 //! and other security issues.
 
 use anyhow::{bail, Result};
-use std::path::Path;
 
 /// Maximum allowed length for IDs (runner, track, signal).
 pub const MAX_ID_LENGTH: usize = 128;
 
-/// Maximum allowed length for names.
-pub const MAX_NAME_LENGTH: usize = 64;
-
 /// Maximum allowed length for descriptions.
 pub const MAX_DESCRIPTION_LENGTH: usize = 500;
-
-/// Maximum allowed length for signal messages.
-pub const MAX_MESSAGE_LENGTH: usize = 1000;
 
 /// Reserved names that cannot be used as IDs (case-insensitive).
 const RESERVED_NAMES: &[&str] = &[
@@ -80,32 +73,6 @@ pub fn validate_id(id: &str) -> Result<()> {
     Ok(())
 }
 
-/// Validates that a name is within acceptable length limits.
-///
-/// # Arguments
-///
-/// * `name` - The name string to validate
-///
-/// # Returns
-///
-/// * `Ok(())` if the name is valid
-/// * `Err` with a descriptive message if validation fails
-pub fn validate_name(name: &str) -> Result<()> {
-    if name.is_empty() {
-        bail!("Name cannot be empty");
-    }
-
-    if name.len() > MAX_NAME_LENGTH {
-        bail!(
-            "Name too long: {} characters (max {})",
-            name.len(),
-            MAX_NAME_LENGTH
-        );
-    }
-
-    Ok(())
-}
-
 /// Validates that a description is within acceptable length limits.
 ///
 /// # Arguments
@@ -128,62 +95,6 @@ pub fn validate_description(description: &str) -> Result<()> {
     Ok(())
 }
 
-/// Validates that a signal message is within acceptable length limits.
-///
-/// # Arguments
-///
-/// * `message` - The message string to validate
-///
-/// # Returns
-///
-/// * `Ok(())` if the message is valid
-/// * `Err` with a descriptive message if validation fails
-pub fn validate_message(message: &str) -> Result<()> {
-    if message.is_empty() {
-        bail!("Message cannot be empty");
-    }
-
-    if message.len() > MAX_MESSAGE_LENGTH {
-        bail!(
-            "Message too long: {} characters (max {})",
-            message.len(),
-            MAX_MESSAGE_LENGTH
-        );
-    }
-
-    Ok(())
-}
-
-/// Sanitizes a string for safe use as a filename component.
-///
-/// This function strips any directory traversal components and returns
-/// only the filename portion of the input.
-///
-/// # Arguments
-///
-/// * `name` - The name to sanitize
-///
-/// # Returns
-///
-/// A sanitized string safe for use as a filename.
-///
-/// # Examples
-///
-/// ```
-/// use loom::validation::safe_filename;
-///
-/// assert_eq!(safe_filename("runner-001"), "runner-001");
-/// assert_eq!(safe_filename("../etc/passwd"), "passwd");
-/// assert_eq!(safe_filename("foo/bar/baz.md"), "baz.md");
-/// ```
-pub fn safe_filename(name: &str) -> String {
-    Path::new(name)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("invalid")
-        .to_string()
-}
-
 /// Clap value parser for validating ID arguments.
 ///
 /// Use this with clap's `value_parser` attribute to validate IDs at parse time.
@@ -199,21 +110,9 @@ pub fn clap_id_validator(s: &str) -> Result<String, String> {
     Ok(s.to_string())
 }
 
-/// Clap value parser for validating name arguments.
-pub fn clap_name_validator(s: &str) -> Result<String, String> {
-    validate_name(s).map_err(|e| e.to_string())?;
-    Ok(s.to_string())
-}
-
 /// Clap value parser for validating description arguments.
 pub fn clap_description_validator(s: &str) -> Result<String, String> {
     validate_description(s).map_err(|e| e.to_string())?;
-    Ok(s.to_string())
-}
-
-/// Clap value parser for validating message arguments.
-pub fn clap_message_validator(s: &str) -> Result<String, String> {
-    validate_message(s).map_err(|e| e.to_string())?;
     Ok(s.to_string())
 }
 
@@ -264,23 +163,6 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_name_valid() {
-        assert!(validate_name("My Runner").is_ok());
-        assert!(validate_name("Feature: Authentication").is_ok());
-    }
-
-    #[test]
-    fn test_validate_name_empty() {
-        assert!(validate_name("").is_err());
-    }
-
-    #[test]
-    fn test_validate_name_too_long() {
-        let long_name = "a".repeat(MAX_NAME_LENGTH + 1);
-        assert!(validate_name(&long_name).is_err());
-    }
-
-    #[test]
     fn test_validate_description_valid() {
         assert!(validate_description("A short description").is_ok());
         assert!(validate_description("").is_ok()); // Empty description is allowed
@@ -293,40 +175,10 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_message_valid() {
-        assert!(validate_message("Implement feature X").is_ok());
-    }
-
-    #[test]
-    fn test_validate_message_empty() {
-        assert!(validate_message("").is_err());
-    }
-
-    #[test]
-    fn test_validate_message_too_long() {
-        let long_msg = "a".repeat(MAX_MESSAGE_LENGTH + 1);
-        assert!(validate_message(&long_msg).is_err());
-    }
-
-    #[test]
-    fn test_safe_filename() {
-        assert_eq!(safe_filename("runner-001"), "runner-001");
-        assert_eq!(safe_filename("../etc/passwd"), "passwd");
-        assert_eq!(safe_filename("foo/bar/baz.md"), "baz.md");
-        assert_eq!(safe_filename("./current"), "current");
-    }
-
-    #[test]
     fn test_clap_validators() {
         assert!(clap_id_validator("valid-id").is_ok());
         assert!(clap_id_validator("../invalid").is_err());
 
-        assert!(clap_name_validator("Valid Name").is_ok());
-        assert!(clap_name_validator("").is_err());
-
         assert!(clap_description_validator("Valid description").is_ok());
-
-        assert!(clap_message_validator("Valid message").is_ok());
-        assert!(clap_message_validator("").is_err());
     }
 }
