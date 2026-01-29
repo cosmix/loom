@@ -5,6 +5,7 @@ use std::path::Path;
 
 use crate::parser::frontmatter::parse_from_markdown;
 use crate::plan::schema::StageDefinition;
+use crate::validation::validate_id;
 
 /// Stage frontmatter data extracted from .work/stages/*.md files
 #[derive(Debug, serde::Deserialize)]
@@ -86,7 +87,14 @@ pub fn load_stages_from_work_dir(stages_dir: &Path) -> Result<Vec<StageDefinitio
 
         // Extract YAML frontmatter
         let frontmatter = match extract_stage_frontmatter(&content) {
-            Ok(fm) => fm,
+            Ok(fm) => {
+                // Validate the stage ID before using it
+                if let Err(e) = validate_id(&fm.id) {
+                    eprintln!("Warning: Invalid stage ID in {}: {}", path.display(), e);
+                    continue;
+                }
+                fm
+            }
             Err(e) => {
                 eprintln!("Warning: Could not parse {}: {}", path.display(), e);
                 continue;

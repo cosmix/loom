@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
+use crate::validation::validate_id;
+
 /// Record of a verification run
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerificationRecord {
@@ -50,6 +52,8 @@ pub fn store_verification(
     record: &VerificationRecord,
     work_dir: &Path,
 ) -> Result<()> {
+    validate_id(stage_id).context("Invalid stage ID")?;
+
     let verifications_dir = work_dir.join("verifications");
     fs::create_dir_all(&verifications_dir).context("Failed to create verifications directory")?;
 
@@ -64,6 +68,8 @@ pub fn store_verification(
 
 /// Load a verification result
 pub fn load_verification(stage_id: &str, work_dir: &Path) -> Result<Option<VerificationRecord>> {
+    validate_id(stage_id).context("Invalid stage ID")?;
+
     let path = work_dir
         .join("verifications")
         .join(format!("{stage_id}.json"));
@@ -107,6 +113,8 @@ pub fn list_verifications(work_dir: &Path) -> Result<Vec<VerificationRecord>> {
 
 /// Delete a verification record
 pub fn delete_verification(stage_id: &str, work_dir: &Path) -> Result<()> {
+    validate_id(stage_id).context("Invalid stage ID")?;
+
     let path = work_dir
         .join("verifications")
         .join(format!("{stage_id}.json"));

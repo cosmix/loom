@@ -1,9 +1,10 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::Utc;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::models::stage::Stage;
+use crate::validation::validate_id;
 
 /// Context for generating a diagnosis signal
 pub struct DiagnosisContext {
@@ -20,6 +21,8 @@ pub fn generate_diagnosis_signal(
     session_id: &str,
     work_dir: &Path,
 ) -> Result<PathBuf> {
+    validate_id(session_id).context("Invalid session ID")?;
+
     let signal_path = work_dir.join("signals").join(format!("{session_id}.md"));
 
     let failure_type = ctx
@@ -140,6 +143,11 @@ diagnosed_at: "{timestamp}"
 
 /// Load crash report content for a stage
 pub fn load_crash_report(stage_id: &str, work_dir: &Path) -> Option<String> {
+    // Validate stage_id before using in file operations
+    if validate_id(stage_id).is_err() {
+        return None;
+    }
+
     let crashes_dir = work_dir.join("crashes");
     if !crashes_dir.exists() {
         return None;
