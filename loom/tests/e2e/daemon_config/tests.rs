@@ -40,6 +40,7 @@ fn test_orchestrator_creation_with_config() {
         enable_skill_routing: false,
         max_skill_recommendations: 5,
         sandbox_config: SandboxConfig::default(),
+        shutdown_flag: None,
     };
 
     let orchestrator = Orchestrator::new(config.clone(), graph);

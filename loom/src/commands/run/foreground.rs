@@ -64,6 +64,7 @@ fn execute_foreground(
         enable_skill_routing: true,
         max_skill_recommendations: 5,
         sandbox_config: SandboxConfig::default(),
+        shutdown_flag: None,
     };
 
     let mut orchestrator =

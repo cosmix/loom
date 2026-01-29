@@ -3,6 +3,8 @@
 use anyhow::{Context, Result};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::fs::work_integrity::validate_work_dir_state;
@@ -47,6 +49,8 @@ pub struct OrchestratorConfig {
     pub max_skill_recommendations: usize,
     /// Plan-level sandbox configuration (defaults for all stages)
     pub sandbox_config: SandboxConfig,
+    /// Shutdown flag for graceful termination (used by daemon)
+    pub shutdown_flag: Option<Arc<AtomicBool>>,
 }
 
 impl Default for OrchestratorConfig {
@@ -66,6 +70,7 @@ impl Default for OrchestratorConfig {
             enable_skill_routing: true,
             max_skill_recommendations: 5,
             sandbox_config: SandboxConfig::default(),
+            shutdown_flag: None,
         }
     }
 }
@@ -188,6 +193,14 @@ impl Orchestrator {
         let mut printed_view_instructions = false;
 
         loop {
+            // Check shutdown flag at start of each iteration
+            if let Some(ref flag) = self.config.shutdown_flag {
+                if flag.load(Ordering::Relaxed) {
+                    println!("Orchestrator shutdown requested");
+                    break;
+                }
+            }
+
             // Re-sync with stage files to pick up external changes
             // (e.g., stages verified via `loom verify` command)
             self.sync_graph_with_stage_files()
@@ -282,7 +295,20 @@ impl Orchestrator {
                 }
             }
 
-            std::thread::sleep(self.config.poll_interval);
+            // Use shorter sleep intervals to check shutdown flag more frequently
+            let poll_interval = self.config.poll_interval;
+            let check_interval = Duration::from_millis(100);
+            let mut elapsed = Duration::ZERO;
+
+            while elapsed < poll_interval {
+                if let Some(ref flag) = self.config.shutdown_flag {
+                    if flag.load(Ordering::Relaxed) {
+                        break;
+                    }
+                }
+                std::thread::sleep(check_interval);
+                elapsed += check_interval;
+            }
         }
 
         // Restore terminal state before returning (clears \r-based status line)

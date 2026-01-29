@@ -82,6 +82,7 @@ fn run_orchestrator(
         enable_skill_routing: true,
         max_skill_recommendations: 5,
         sandbox_config: SandboxConfig::default(),
+        shutdown_flag: Some(shutdown_flag.clone()),
     };
 
     // Create and run orchestrator
