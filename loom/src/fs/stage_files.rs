@@ -28,6 +28,11 @@ use std::path::{Path, PathBuf};
 /// # Returns
 /// The path to the stage file if found, None otherwise
 pub fn find_stage_file(stages_dir: &Path, stage_id: &str) -> Result<Option<PathBuf>> {
+    // Defensive validation - stage_id should already be validated at entry points,
+    // but verify here for defense in depth
+    crate::validation::validate_id(stage_id)
+        .context("Invalid stage ID passed to find_stage_file")?;
+
     if !stages_dir.exists() {
         return Ok(None);
     }

@@ -76,30 +76,27 @@ pub fn expand_tilde(path: &str) -> String {
 
 /// Expand ${ENV_VAR} patterns in strings
 pub fn expand_env_vars(s: &str) -> String {
-    let mut result = s.to_string();
-
     // Use regex to find ${VAR} or $VAR patterns
     let re = regex::Regex::new(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)")
         .expect("Invalid regex pattern");
 
-    for cap in re.captures_iter(s) {
-        // ${VAR} form
-        if let Some(var_name) = cap.get(1) {
+    re.replace_all(s, |caps: &regex::Captures| {
+        // ${VAR} form - group 1
+        if let Some(var_name) = caps.get(1) {
             if let Ok(value) = env::var(var_name.as_str()) {
-                let pattern = format!("${{{}}}", var_name.as_str());
-                result = result.replace(&pattern, &value);
+                return value;
             }
         }
-        // $VAR form
-        else if let Some(var_name) = cap.get(2) {
+        // $VAR form - group 2
+        else if let Some(var_name) = caps.get(2) {
             if let Ok(value) = env::var(var_name.as_str()) {
-                let pattern = format!("${}", var_name.as_str());
-                result = result.replace(&pattern, &value);
+                return value;
             }
         }
-    }
-
-    result
+        // If variable not found, keep original
+        caps.get(0).unwrap().as_str().to_string()
+    })
+    .to_string()
 }
 
 /// Expand all paths in the config
@@ -138,6 +135,53 @@ mod tests {
             "prefix/test_value/suffix"
         );
         assert_eq!(expand_env_vars("no_vars_here"), "no_vars_here");
+        env::remove_var("TEST_VAR");
+    }
+
+    #[test]
+    fn test_expand_env_vars_overlapping_names() {
+        env::set_var("TEST_HOME", "/home");
+        env::set_var("TEST_HOME_DIR", "/home/user/dir");
+
+        // The longer variable name should NOT have its prefix replaced
+        let result = expand_env_vars("$TEST_HOME_DIR/foo");
+        assert_eq!(result, "/home/user/dir/foo");
+
+        // Both should work independently
+        let result = expand_env_vars("$TEST_HOME and $TEST_HOME_DIR");
+        assert_eq!(result, "/home and /home/user/dir");
+
+        // Test with ${} form as well
+        let result = expand_env_vars("${TEST_HOME_DIR}/foo");
+        assert_eq!(result, "/home/user/dir/foo");
+
+        let result = expand_env_vars("${TEST_HOME} and ${TEST_HOME_DIR}");
+        assert_eq!(result, "/home and /home/user/dir");
+
+        // Clean up
+        env::remove_var("TEST_HOME");
+        env::remove_var("TEST_HOME_DIR");
+    }
+
+    #[test]
+    fn test_expand_env_vars_undefined() {
+        // Make sure these variables are not defined
+        env::remove_var("UNDEFINED_VAR_TEST");
+        env::remove_var("ALSO_UNDEFINED");
+
+        // Undefined variables should be preserved as-is
+        let result = expand_env_vars("$UNDEFINED_VAR_TEST/path");
+        assert_eq!(result, "$UNDEFINED_VAR_TEST/path");
+
+        let result = expand_env_vars("${UNDEFINED_VAR_TEST}/path");
+        assert_eq!(result, "${UNDEFINED_VAR_TEST}/path");
+
+        // Mix of defined and undefined
+        env::set_var("DEFINED_VAR", "value");
+        let result = expand_env_vars("$DEFINED_VAR/$ALSO_UNDEFINED");
+        assert_eq!(result, "value/$ALSO_UNDEFINED");
+
+        env::remove_var("DEFINED_VAR");
     }
 
     #[test]
