@@ -177,7 +177,7 @@ count_claude_processes_between() {
 	done
 
 	echo "999" # End PID not found
-	return 1
+	return 0  # Don't return 1 - it triggers set -e and skips attribution check
 }
 
 if [[ -n "${LOOM_MAIN_AGENT_PID:-}" ]]; then
