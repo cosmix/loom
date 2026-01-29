@@ -406,22 +406,58 @@ Captures codebase understanding before implementation:
 - id: knowledge-bootstrap
   name: "Bootstrap Knowledge Base"
   description: |
-    Explore codebase hierarchically and populate doc/loom/knowledge/:
+    MANDATORY first stage. Read existing doc/loom/knowledge AND .work/memory files!
 
     Use parallel subagents and skills to maximize performance.
 
-    Exploration order:
-    1. Architecture: high-level structure, component relationships, data flow
-    2. Entry points: main modules, CLI commands, API endpoints
-    3. Module boundaries: public interfaces, internal vs external
-    4. Patterns: error handling, state management, common idioms
-    5. Conventions: naming, file structure, testing patterns
+    Step 0 - CHECK EXISTING KNOWLEDGE:
+      Run: loom knowledge check
+      Review output to identify gaps.
 
-    Use loom knowledge update commands to capture findings:
-      loom knowledge update architecture "## Section\n\nContent..."
+      IF coverage < 50% OR architecture shows INCOMPLETE:
+        Run: loom map --deep
+        This creates structural baseline without consuming your context.
+
+    Step 1 - ARCHITECTURE MAPPING (if still needed after map):
+      Before any other exploration, map the high-level architecture:
+        - Core abstractions and their relationships
+        - Data flow between major components
+        - Module boundaries and dependencies
+        - Extension points and plugin architecture
+        - Write findings to architecture.md
+
+    Step 2 - PARALLEL EXPLORATION (for semantic gaps):
+      Based on loom knowledge check output, spawn Explore subagents:
+
+      Subagent 1 - Entry Points:
+        Assignment: Document CLI commands, API endpoints, event handlers
+        Files owned: (read-only exploration)
+        Output: loom knowledge update entry-points "..."
+
+      Subagent 2 - Patterns:
+        Assignment: Identify error handling, state management, data flow patterns
+        Files owned: (read-only exploration)
+        Output: loom knowledge update patterns "..."
+
+      Subagent 3 - Conventions:
+        Assignment: Document naming, file structure, testing patterns
+        Files owned: (read-only exploration)
+        Output: loom knowledge update conventions "..."
+
+      IMPORTANT: Spawn these as parallel Task tool calls.
+
+    CRITICAL: Use loom knowledge CLI commands, NOT Write/Edit tools.
+
+    Commands to use:
+      loom knowledge init              # If not initialized
+      loom knowledge check             # Check existing coverage
+      loom map --deep                  # If coverage < 50%
+      loom knowledge update architecture "## Component\n\nRelationships..."
       loom knowledge update entry-points "## Section\n\nContent..."
-      loom knowledge update patterns "## Section\n\nContent..."
-      loom knowledge update conventions "## Section\n\nContent..."
+      loom knowledge update patterns "## Pattern\n\nContent..."
+      loom knowledge update conventions "## Convention\n\nContent..."
+
+    If content is long, break into multiple CLI invocations (~20-30 lines each).
 
     IMPORTANT: Before completing, review existing mistakes.md to avoid repeating errors.
 
@@ -431,10 +467,11 @@ Captures codebase understanding before implementation:
     - Before completing: loom memory promote all mistakes
   dependencies: []
   acceptance:
-    - "grep -q '## ' doc/loom/knowledge/architecture.md"
-    - "grep -q '## ' doc/loom/knowledge/entry-points.md"
-    - "grep -q '## ' doc/loom/knowledge/patterns.md"
-    - "grep -q '## ' doc/loom/knowledge/conventions.md"
+    - "loom knowledge check --min-coverage 50"
+    - "rg -q '## ' doc/loom/knowledge/architecture.md"
+    - "rg -q '## ' doc/loom/knowledge/entry-points.md"
+    - "rg -q '## ' doc/loom/knowledge/patterns.md"
+    - "rg -q '## ' doc/loom/knowledge/conventions.md"
   files:
     - "doc/loom/knowledge/**"
   working_dir: "."  # REQUIRED: "." for worktree root
@@ -444,7 +481,7 @@ Captures codebase understanding before implementation:
     - "doc/loom/knowledge/entry-points.md"
 ```
 
-**Skip ONLY if:** `doc/loom/knowledge/` already populated or user explicitly states knowledge exists.
+**Skip ONLY if:** `doc/loom/knowledge/` already populated AND `loom knowledge check` shows coverage ≥ 50%.
 
 ### 11. Integration Verify Stage (Last)
 

@@ -423,6 +423,11 @@ EVERY PLAN MUST START WITH knowledge-bootstrap. NO EXCEPTIONS.
 
 Why? Without knowledge: wrong assumptions, repeated mistakes, wasted effort.
 
+**The knowledge-bootstrap stage MUST:**
+1. Run `loom knowledge check` to assess existing coverage
+2. If coverage < 50%, run `loom map --deep` to create structural baseline
+3. Fill gaps identified by the check with targeted exploration
+
 #### USE ONLY `loom knowledge` CLI COMMANDS
 
 DO NOT manually edit doc/loom/knowledge/\*.md files. DO NOT use Write/Edit/echo/cat.
@@ -432,6 +437,7 @@ DO NOT manually edit doc/loom/knowledge/\*.md files. DO NOT use Write/Edit/echo/
 | Command | Description |
 | ------- | ----------- |
 | `loom knowledge init` | Initialize knowledge directory |
+| `loom knowledge check` | Check coverage of knowledge files (use in knowledge-bootstrap) |
 | `loom knowledge show` | Show all knowledge |
 | `loom knowledge update <file> <content>` | Append to file (architecture, entry-points, patterns, conventions, mistakes) |
 
