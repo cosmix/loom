@@ -7,6 +7,7 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 
+use crate::git::branch::branch_name_for_stage;
 use crate::git::cleanup::{cleanup_after_merge, CleanupConfig, CleanupResult};
 use crate::git::merge::{merge_stage, MergeResult};
 use crate::models::session::Session;
@@ -112,7 +113,7 @@ pub fn attempt_auto_merge(
 
         MergeResult::Conflict { conflicting_files } => {
             // Create a merge session to resolve conflicts
-            let source_branch = format!("loom/{}", stage.id);
+            let source_branch = branch_name_for_stage(&stage.id);
             let session = Session::new_merge(source_branch.clone(), target_branch.to_string());
 
             // Generate the merge signal file

@@ -5,6 +5,7 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 
+use crate::git::branch::branch_name_for_stage;
 use crate::git::default_branch;
 use crate::models::session::Session;
 use crate::orchestrator::signals::generate_merge_signal;
@@ -27,7 +28,7 @@ pub fn spawn_merge_resolution_session(
 
     // Create a new merge session
     let session = Session::new();
-    let source_branch = format!("loom/{stage_id}");
+    let source_branch = branch_name_for_stage(stage_id);
 
     // Generate merge signal
     let signal_path = generate_merge_signal(

@@ -8,6 +8,7 @@ use super::base::cleanup_base_branch;
 use super::branch::cleanup_branch;
 use super::config::{CleanupConfig, CleanupResult};
 use super::worktree::cleanup_worktree;
+use crate::git::branch::branch_name_for_stage;
 
 /// Perform full cleanup after a successful merge
 ///
@@ -28,7 +29,7 @@ pub fn cleanup_after_merge(
     config: &CleanupConfig,
 ) -> Result<CleanupResult> {
     let mut result = CleanupResult::default();
-    let branch_name = format!("loom/{stage_id}");
+    let branch_name = branch_name_for_stage(stage_id);
 
     // Phase 1: Remove the worktree
     if config.verbose {
@@ -162,7 +163,7 @@ pub fn cleanup_multiple_stages(
 /// Returns true if the stage has a worktree or branch that exists.
 pub fn needs_cleanup(stage_id: &str, repo_root: &Path) -> bool {
     let worktree_path = repo_root.join(".worktrees").join(stage_id);
-    let branch_name = format!("loom/{stage_id}");
+    let branch_name = branch_name_for_stage(stage_id);
 
     // Check worktree exists
     if worktree_path.exists() {

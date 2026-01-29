@@ -16,6 +16,7 @@ mod tests;
 
 use anyhow::{bail, Result};
 
+use crate::git::branch::branch_name_for_stage;
 use crate::git::{
     cleanup_merged_branches, conflict_resolution_instructions, current_branch, ensure_work_symlink,
     merge_stage, remove_worktree, MergeResult,
@@ -94,7 +95,7 @@ pub fn execute(stage_id: String, force: bool) -> Result<()> {
     // Check if worktree doesn't exist - might already be merged
     if !worktree_exists {
         // Check if branch still exists
-        let branch_name = format!("loom/{stage_id}");
+        let branch_name = branch_name_for_stage(&stage_id);
         let branch_exists = std::process::Command::new("git")
             .args(["rev-parse", "--verify", &branch_name])
             .current_dir(&repo_root)

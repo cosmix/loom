@@ -7,6 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::git::branch::branch_name_for_stage;
 use crate::models::stage::StageStatus;
 use crate::models::worktree::WorktreeStatus;
 use crate::parser::frontmatter::extract_yaml_frontmatter;
@@ -170,7 +171,7 @@ pub fn is_manually_merged(stage_id: &str, repo_root: &Path) -> bool {
     };
 
     // Check if the loom branch has been merged into the target branch
-    let branch_name = format!("loom/{stage_id}");
+    let branch_name = branch_name_for_stage(stage_id);
     is_branch_merged(&branch_name, &target_branch, repo_root).unwrap_or_default()
 }
 

@@ -6,6 +6,7 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 
+use crate::git::branch::branch_name_for_stage;
 use crate::git::get_branch_head;
 use crate::models::stage::Stage;
 use crate::orchestrator::{get_merge_point, merge_completed_stage, ProgressiveMergeResult};
@@ -38,7 +39,7 @@ pub fn attempt_progressive_merge(
     let merge_point = get_merge_point(work_dir)?;
 
     // Capture the completed commit SHA before merge (the HEAD of the stage branch)
-    let branch_name = format!("loom/{}", stage.id);
+    let branch_name = branch_name_for_stage(&stage.id);
     let completed_commit = get_branch_head(&branch_name, repo_root).ok();
 
     println!("Attempting progressive merge into '{merge_point}'...");

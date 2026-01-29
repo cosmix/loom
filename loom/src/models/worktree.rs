@@ -120,17 +120,6 @@ impl Worktree {
         )
     }
 
-    /// Generates the branch name for a given stage
-    ///
-    /// # Arguments
-    /// * `stage_id` - The stage identifier
-    ///
-    /// # Returns
-    /// A branch name in the format "loom/{stage_id}"
-    pub fn branch_name(stage_id: &str) -> String {
-        format!("loom/{stage_id}")
-    }
-
     /// Generates the worktree path for a given stage
     ///
     /// # Arguments
@@ -229,12 +218,6 @@ mod tests {
         assert_eq!(worktree.status, WorktreeStatus::Removed);
         assert!(!worktree.is_active());
         assert!(!worktree.is_available());
-    }
-
-    #[test]
-    fn test_branch_name() {
-        assert_eq!(Worktree::branch_name("stage-1"), "loom/stage-1");
-        assert_eq!(Worktree::branch_name("my-stage"), "loom/my-stage");
     }
 
     #[test]

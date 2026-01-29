@@ -6,6 +6,8 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
+use crate::git::branch::branch_name_for_stage;
+
 /// Prune stale git worktrees that have been deleted but are still registered
 pub fn prune_stale_worktrees(repo_root: &Path) -> Result<()> {
     let output = Command::new("git")
@@ -91,7 +93,7 @@ pub fn cleanup_worktrees_directory(repo_root: &Path) -> Result<()> {
                     .current_dir(repo_root)
                     .output();
 
-                let branch_name = format!("loom/{stage_id}");
+                let branch_name = branch_name_for_stage(&stage_id);
                 let _ = Command::new("git")
                     .args(["branch", "-D", &branch_name])
                     .current_dir(repo_root)

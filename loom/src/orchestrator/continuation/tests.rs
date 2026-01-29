@@ -1,6 +1,7 @@
 //! Tests for continuation module.
 
 use super::*;
+use crate::git::branch::branch_name_for_stage;
 use crate::models::stage::StageStatus;
 use crate::models::worktree::Worktree;
 use crate::orchestrator::terminal::BackendType;
@@ -43,7 +44,7 @@ fn create_test_worktree(stage_id: &str, project_root: &std::path::Path) -> Workt
     let mut worktree = Worktree::new(
         stage_id.to_string(),
         worktree_path,
-        Worktree::branch_name(stage_id),
+        branch_name_for_stage(stage_id),
     );
     worktree.mark_active();
     worktree
@@ -111,7 +112,7 @@ fn test_prepare_continuation_with_handoff() {
         handoff_path.canonicalize().unwrap()
     );
     assert!(context.worktree_path.exists());
-    assert_eq!(context.branch, format!("loom/{stage_id}"));
+    assert_eq!(context.branch, branch_name_for_stage(stage_id));
 }
 
 #[test]

@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::Command;
 
-use crate::git::branch::delete_branch;
+use crate::git::branch::{branch_name_for_stage, delete_branch};
 
 /// Clean up the branch for a stage
 ///
@@ -16,7 +16,7 @@ use crate::git::branch::delete_branch;
 /// # Returns
 /// `true` if the branch was deleted, `false` if it didn't exist
 pub fn cleanup_branch(stage_id: &str, repo_root: &Path, force: bool) -> Result<bool> {
-    let branch_name = format!("loom/{stage_id}");
+    let branch_name = branch_name_for_stage(stage_id);
 
     // Check if branch exists first
     let output = Command::new("git")

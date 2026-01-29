@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use crate::commands::merge::mark_stage_merged;
 use crate::fs::stage_files::find_stage_file;
+use crate::git::branch::branch_name_for_stage;
 use crate::git::cleanup::{cleanup_after_merge, prune_worktrees, CleanupConfig};
 use crate::git::worktree::find_worktree_by_prefix;
 use crate::models::stage::StageStatus;
@@ -29,7 +30,7 @@ pub fn list() -> Result<()> {
             if entry.path().is_dir() {
                 let name = entry.file_name();
                 let stage_name = name.to_string_lossy();
-                let branch = format!("loom/{stage_name}");
+                let branch = branch_name_for_stage(&stage_name);
                 println!("  {stage_name} -> {branch}");
                 found = true;
             }
@@ -293,7 +294,7 @@ pub fn remove(stage_id: String) -> Result<()> {
     );
     println!("{}", "─".repeat(50).dimmed());
 
-    let branch_name = format!("loom/{actual_stage_id}");
+    let branch_name = branch_name_for_stage(&actual_stage_id);
 
     let worktree_exists = worktree_path.exists();
     let branch_exists = std::process::Command::new("git")

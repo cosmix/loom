@@ -5,6 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::fs::stage_files::find_stage_file;
+use crate::git::branch::branch_name_for_stage;
 use crate::handoff::generator::find_latest_handoff;
 use crate::handoff::schema::{HandoffV2, ParsedHandoff};
 use crate::models::stage::Stage;
@@ -106,7 +107,7 @@ fn load_stage(work_dir: &Path, stage_id: &str) -> Result<Stage> {
 fn resolve_worktree_info(stage: &Stage, work_dir: &Path) -> Result<(PathBuf, String)> {
     if let Some(worktree_id) = &stage.worktree {
         let path = load_worktree_path(work_dir, worktree_id)?;
-        let branch = Worktree::branch_name(&stage.id);
+        let branch = branch_name_for_stage(&stage.id);
         Ok((path, branch))
     } else {
         let project_root = work_dir.parent().ok_or_else(|| {

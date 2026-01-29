@@ -4,7 +4,7 @@ use anyhow::{bail, Context, Result};
 use std::path::Path;
 use std::process::Command;
 
-use super::branch::{branch_exists, current_branch, is_ancestor_of};
+use super::branch::{branch_exists, branch_name_for_stage, current_branch, is_ancestor_of};
 
 /// Result of a merge operation
 #[derive(Debug, Clone)]
@@ -36,7 +36,7 @@ pub enum MergeResult {
 /// 2. Merge stage branch (loom/{stage_id})
 /// 3. Return merge result
 pub fn merge_stage(stage_id: &str, target_branch: &str, repo_root: &Path) -> Result<MergeResult> {
-    let branch_name = format!("loom/{stage_id}");
+    let branch_name = branch_name_for_stage(stage_id);
 
     // First, check that the branch exists
     if !branch_exists(&branch_name, repo_root)? {
