@@ -327,3 +327,14 @@ Features in current branch unavailable until merged.
 
 Solutions: 1) Use ./target/debug/loom path, 2) Accept failures until merge,
 3) Use --force-unsafe after manual verification.
+
+## Promoted from Memory [2026-01-29 14:06]
+
+### Notes
+
+- Dead code cleanup: Found and removed leftover logs_dir parameter from generate_crash_report() function and handlers.rs caller. The acceptance criteria 'rg logs_dir src/' caught these leftovers.
+
+### Decisions
+
+- **Cleaned up dead logs_dir references in integration-verify stage rather than failing the stage**
+  - _Rationale:_ The prior stage (remove-dead-code) missed these local variable references. Fixing in integration-verify stage completes the cleanup properly.

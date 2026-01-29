@@ -160,9 +160,8 @@ impl Handlers {
 
         // Generate the crash report
         let crashes_dir = self.config.work_dir.join("crashes");
-        let logs_dir = self.config.work_dir.join("logs");
 
-        match generate_crash_report(&report, &crashes_dir, &logs_dir) {
+        match generate_crash_report(&report, &crashes_dir) {
             Ok(path) => {
                 eprintln!("Generated crash report: {}", path.display());
                 Some(path)

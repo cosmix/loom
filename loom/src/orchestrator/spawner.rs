@@ -84,11 +84,7 @@ impl CrashReport {
 /// - Timestamp and session/stage info
 /// - Crash reason
 /// - Log tail if provided in the report
-pub fn generate_crash_report(
-    report: &CrashReport,
-    crashes_dir: &Path,
-    _logs_dir: &Path,
-) -> Result<PathBuf> {
+pub fn generate_crash_report(report: &CrashReport, crashes_dir: &Path) -> Result<PathBuf> {
     // Ensure crashes directory exists
     if !crashes_dir.exists() {
         std::fs::create_dir_all(crashes_dir).with_context(|| {
@@ -227,7 +223,6 @@ mod tests {
     fn test_generate_crash_report() {
         let temp = tempfile::TempDir::new().unwrap();
         let crashes_dir = temp.path().join("crashes");
-        let logs_dir = temp.path().join("logs");
 
         let report = CrashReport::new(
             "session-123".to_string(),
@@ -235,7 +230,7 @@ mod tests {
             "Test crash".to_string(),
         );
 
-        let result = generate_crash_report(&report, &crashes_dir, &logs_dir);
+        let result = generate_crash_report(&report, &crashes_dir);
         assert!(result.is_ok());
 
         let crash_path = result.unwrap();
