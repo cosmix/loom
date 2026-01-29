@@ -199,6 +199,12 @@ loom verify <stage-id> [--suggest]    # Verify stage outcomes
 loom map [--deep] [--focus <area>]    # Map codebase to knowledge files
 ```
 
+### Sandbox
+
+```bash
+loom sandbox suggest                  # Auto-detect project type and suggest config
+```
+
 ### Utilities
 
 ```bash
@@ -275,6 +281,43 @@ wiring:
 ```
 
 Run `loom verify <stage-id>` to check all layers.
+
+### Sandbox Configuration
+
+Loom integrates with Claude Code's sandboxing to control agent permissions:
+
+```yaml
+loom:
+  version: 1
+  sandbox:
+    enabled: true
+    filesystem:
+      deny_read: ["~/.ssh/**", "~/.aws/**"]
+      deny_write: [".work/stages/**"]
+      allow_write: ["src/**"]
+    network:
+      allowed_domains: ["github.com", "crates.io"]
+```
+
+**Get project-specific suggestions:**
+
+```bash
+loom sandbox suggest
+```
+
+This auto-detects your project type (Rust, Node, Python) and outputs recommended domain allowlists.
+
+**Key sandbox options:**
+
+| Option | Description |
+|--------|-------------|
+| `filesystem.deny_read` | Paths agents cannot read (e.g., SSH keys, credentials) |
+| `filesystem.deny_write` | Paths agents cannot write |
+| `filesystem.allow_write` | Exceptions to write restrictions |
+| `network.allowed_domains` | Domains agents can access (empty = no network) |
+| `excluded_commands` | Commands exempt from sandboxing (default: `["loom"]`) |
+
+Stages can override plan-level settings with their own `sandbox` block. Knowledge and integration-verify stages automatically get write access to `doc/loom/knowledge/**`.
 
 ## Agent Hierarchy
 

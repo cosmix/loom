@@ -110,6 +110,12 @@ Return findings as knowledge update commands.
 □ Each stage has EXPLICIT execution plan with subagents, file ownership, criteria
 □ Every stage has stage_type: knowledge, standard, or integration-verify
 
+**SANDBOX CONFIGURATION (MANDATORY):**
+□ Run `loom sandbox suggest` to get project-specific recommendations
+□ Ask the user about network access requirements (APIs, package registries, external services)
+□ Ask the user about sensitive paths that should be protected (credentials, secrets, configs)
+□ Configure `sandbox` block in plan YAML based on answers
+
 **ACCEPTANCE CRITERIA:**
 □ Verify working_dir + paths correct (Cargo.toml/package.json at working_dir?)
 □ File paths relative to working_dir (NO `../` path traversal)
@@ -123,12 +129,104 @@ Include execution diagram, e.g.: `[a] --> [b,c] --> [d]`
 
 Plans MUST wrap YAML in HTML comment markers. **knowledge-bootstrap MUST be the first stage**:
 
+#### Sandbox Configuration (MANDATORY)
+
+**⚠️ BEFORE WRITING ANY PLAN, ASK THE USER ABOUT SANDBOX SETTINGS**
+
+During plan creation, you MUST gather sandbox requirements by asking these questions:
+
+**Question 1 - Network Access:**
+> "Does this task require network access? If so, which external services/domains?"
+> Examples: GitHub API, npm registry, PyPI, crates.io, external APIs, webhooks
+
+**Question 2 - Sensitive Paths:**
+> "Are there any sensitive files/directories that should be protected from agent access?"
+> Examples: ~/.ssh, ~/.aws, .env files, credentials.json, private keys
+
+**Question 3 - Build Tool Access:**
+> "Which package managers or build tools will agents need to use?"
+> Examples: cargo, npm/bun, pip/uv, go, docker
+
+**After gathering answers:**
+1. Run `loom sandbox suggest` to get base recommendations for the project type
+2. Merge user requirements with suggestions
+3. Add the `sandbox` block to the plan YAML
+
+**Sandbox Configuration Reference:**
+
+```yaml
+loom:
+  version: 1
+  sandbox:
+    enabled: true                    # Master switch (default: true)
+    auto_allow: true                 # Auto-grant permissions at stage start
+    allow_unsandboxed_escape: false  # Allow agents to bypass sandbox
+    excluded_commands:               # Commands exempt from sandboxing
+      - "loom"
+    filesystem:
+      deny_read:                     # Paths agents CANNOT read
+        - "~/.ssh/**"
+        - "~/.aws/**"
+        - "~/.config/gcloud/**"
+        - "~/.gnupg/**"
+      deny_write:                    # Paths agents CANNOT write
+        - ".work/stages/**"
+        - "doc/loom/knowledge/**"    # Except knowledge/integration-verify stages
+      allow_write:                   # Exceptions to deny rules
+        - "src/**"
+    network:
+      allowed_domains:               # Domains agents CAN access (empty = no network)
+        - "github.com"
+        - "api.github.com"
+        - "crates.io"                # Add based on project type
+      allow_local_binding: false     # Bind to local ports
+      allow_unix_sockets: false      # Unix socket connections
+    linux:
+      enable_weaker_nested: false    # For containers/nested execution
+  stages:
+    # ...
+```
+
+**Per-Stage Overrides:**
+
+Stages can override plan-level sandbox settings:
+
+```yaml
+- id: my-stage
+  sandbox:
+    enabled: false                   # Disable sandbox for this stage only
+    filesystem:
+      allow_write:
+        - "build/**"                 # Additional write access for this stage
+```
+
+**Special Stage Behavior:**
+- `knowledge` and `integration-verify` stages automatically get write access to `doc/loom/knowledge/**`
+
 ````markdown
 <!-- loom METADATA -->
 
 ```yaml
 loom:
   version: 1
+
+  # SANDBOX CONFIGURATION - Configure based on user requirements
+  sandbox:
+    enabled: true
+    filesystem:
+      deny_read:
+        - "~/.ssh/**"
+        - "~/.aws/**"
+      deny_write:
+        - ".work/stages/**"
+    network:
+      allowed_domains:
+        - "github.com"
+        - "api.github.com"
+        # Add project-specific domains (crates.io, npmjs.org, pypi.org, etc.)
+    excluded_commands:
+      - "loom"
+
   stages:
     # REQUIRED FIRST STAGE - NEVER SKIP THIS
     - id: knowledge-bootstrap
@@ -446,36 +544,19 @@ PROJECT ROOT (where loom was initialized)
 | `"loom"` | `.worktrees/my-stage/` | `.worktrees/my-stage/loom/` |
 | `"src/app"` | `.worktrees/my-stage/` | `.worktrees/my-stage/src/app/` |
 
-**MIRROR STRUCTURE:** Worktrees are complete copies mirroring the main repo:
+Worktrees mirror main repo structure exactly. If `Cargo.toml` is at `loom/Cargo.toml` in main, it's at `loom/Cargo.toml` in worktree.
 
-```text
-Main Repo                    Worktree
-/home/user/project/          .worktrees/stage-id/
-├── loom/                    ├── loom/              ← Same structure
-│   ├── Cargo.toml           │   ├── Cargo.toml
-│   └── src/                 │   └── src/
-└── doc/                     └── doc/
-```
+**DEBUGGING — When acceptance fails:**
+□ What is my working_dir? □ Does build file exist there? □ Are paths relative to working_dir?
 
-If Cargo.toml is at `loom/Cargo.toml` in main repo, it's at `loom/Cargo.toml` in worktree too.
+**COMMON FIXES:**
 
-**DEBUGGING CHECKLIST — When acceptance fails:**
-
-□ 1. What is my working_dir? (check plan)
-□ 2. Does build file exist there? (ls Cargo.toml)
-□ 3. Are file paths relative to working_dir?
-□ 4. For binaries: where is build output? (./target/debug/...)
-
-**COMMON CONFUSION PATTERNS:**
-
-| Symptom | Likely Cause | Fix |
-| ------- | ------------ | --- |
-| `cargo test` → "could not find Cargo.toml" | working_dir root, Cargo.toml in subdir | Set `working_dir: "loom"` |
-| `grep -q 'fn foo' src/lib.rs` → fails | File at `loom/src/lib.rs` | Use full path OR set `working_dir: "loom"` |
-| `./target/debug/myapp` → "no such file" | Binary built in subdirectory | Use `./loom/target/debug/myapp` |
-| Test passes locally, fails in stage | Different directory than stage | Verify working_dir matches local |
-| `test -f src/new.rs` → fails | Wrong relative path | Check if should be `loom/src/new.rs` |
-| artifact `loom/src/x.rs` not found | Double-path: working_dir + path | Remove `loom/` prefix if working_dir is "loom" |
+| Symptom | Fix |
+| ------- | --- |
+| "could not find Cargo.toml" | Set `working_dir: "loom"` (where Cargo.toml lives) |
+| "file not found" | Check path relative to working_dir |
+| Binary not found | Use full path: `./loom/target/debug/myapp` |
+| Double-path error (`loom/loom/...`) | Remove prefix if working_dir already includes it |
 
 #### Acceptance Criteria: Working Directory & Command Design
 
@@ -494,86 +575,40 @@ The `stage_type` field is **REQUIRED** on every stage: `knowledge`, `standard`, 
 □ Binary paths include correct subdirectory
 □ grep uses -q for silent mode
 
-**Examples:**
+**Example:**
 
 ```yaml
-# ❌ WRONG: Cargo.toml is in loom/ but working_dir is root
+# ❌ WRONG: working_dir is root but Cargo.toml is in loom/
 - id: build-check
-  acceptance:
-    - "cargo test" # FAILS: no Cargo.toml here
-    - "grep -q 'fn new' src/lib.rs" # FAILS: file is in loom/src/
   working_dir: "."
+  acceptance: ["cargo test"]  # FAILS: no Cargo.toml here
+  artifacts: ["loom/src/feature.rs"]  # Double-path if working_dir changes
 
-# ✅ CORRECT: Set working_dir to where Cargo.toml lives
+# ✅ CORRECT: Set working_dir where build tools expect, paths relative to it
 - id: build-check
-  acceptance:
-    - "cargo test" # WORKS: Cargo.toml is here
-    - "grep -q 'fn new' src/lib.rs" # WORKS: relative to loom/
   working_dir: "loom"
-
-# ✅ ALSO CORRECT: Keep root working_dir, use full paths
-- id: build-check
-  acceptance:
-    - "cd loom && cargo test"
-    - "grep -q 'fn new' loom/src/lib.rs"
-  working_dir: "."
+  acceptance: ["cargo test"]  # WORKS: Cargo.toml is here
+  artifacts: ["src/feature.rs"]  # Resolves to loom/src/feature.rs
 ```
 
-**Mixed directories?** Create separate stages instead of inline `cd`. Each stage = one working directory.
-
-**⚠️ CRITICAL: ALL PATHS ARE RELATIVE TO working_dir**
-
-This applies to ALL path fields, not just acceptance criteria:
-- `acceptance` commands
-- `artifacts` file paths
-- `wiring` source paths
-- `truths` command paths
-
-```yaml
-# ❌ WRONG: working_dir is "loom" but paths include "loom/" prefix
-- id: implement-feature
-  working_dir: "loom"
-  acceptance:
-    - "cargo test"
-  artifacts:
-    - "loom/src/feature.rs"      # WRONG: becomes loom/loom/src/feature.rs
-  wiring:
-    - source: "loom/src/main.rs" # WRONG: becomes loom/loom/src/main.rs
-      pattern: "mod feature"
-
-# ✅ CORRECT: Paths are relative to working_dir (loom/)
-- id: implement-feature
-  working_dir: "loom"
-  acceptance:
-    - "cargo test"
-  artifacts:
-    - "src/feature.rs"           # CORRECT: resolves to loom/src/feature.rs
-  wiring:
-    - source: "src/main.rs"      # CORRECT: resolves to loom/src/main.rs
-      pattern: "mod feature"
-```
-
-**Rule of thumb:** If `working_dir: "loom"`, pretend you're already IN the loom/ directory when writing paths.
+**Rule:** ALL paths (acceptance, artifacts, wiring, truths) are relative to working_dir. If `working_dir: "loom"`, pretend you're IN loom/ when writing paths.
 
 #### Parallelization Strategy
 
-**⚠️ PARALLELIZATION PRIORITY ORDER (FOLLOW EXACTLY)**
+**⚠️ PRIORITY: Parallel SUBAGENTS first, multiple STAGES only when necessary**
 
-1. FIRST: Maximize parallel SUBAGENTS within ONE stage
-2. SECOND: Only create multiple stages when files MUST conflict
+| Use | When |
+| --- | ---- |
+| **Parallel subagents (ONE stage)** | Tasks touch DIFFERENT files, no logical dependency |
+| **Multiple stages (DAG)** | File overlap OR sequential dependency (see below) |
 
-**COMMON MISTAKE:** 5 stages for 5 tasks touching different files. Wastes time on branch management.
-**CORRECT:** One stage with 5 parallel subagents.
+**Sequential dependencies that warrant multiple stages:**
+- **Code dependency**: B imports code A creates (A must compile first)
+- **Decision dependency**: B's approach depends on A's findings
+- **Verification checkpoint**: Don't build on broken foundation
 
-| Level | When to Use | Overhead |
-| ----- | ----------- | -------- |
-| **Parallel subagents in ONE stage** | DIFFERENT files | LOW - same worktree |
-| **Multiple stages in DAG** | SAME files | HIGH - worktrees, merges |
-
-**Example:** auth/, logging/, metrics/ — files don't overlap.
-❌ WRONG: 3 stages | ✅ CORRECT: 1 stage with 3 parallel subagents
-
-**Use multiple stages ONLY when:** Tasks modify SAME file, or have true sequential dependencies.
+**Example:** auth/, logging/, metrics/ with no dependencies → ONE stage, 3 parallel subagents
+**Example:** "data model" → "API using model" → TWO stages (B imports A's code)
 
 **Note:** Exploration tasks can ALWAYS run as parallel subagents — no file conflicts.
 
@@ -715,28 +750,11 @@ Never mention Claude, Claude Code, or any AI system in code, commits, docs, or c
 
 ### 10. WORKTREE ISOLATION
 
-Stay within worktree boundaries for clean parallel execution.
-
-**⚠️ WORKTREE ISOLATION - ENFORCED**
-
 Location: `.worktrees/<stage-id>/` | Branch: `loom/<stage-id>`
 
-**STAY IN YOUR WORKTREE. DO NOT ESCAPE.**
+**STAY IN YOUR WORKTREE.** FORBIDDEN: `git -C`, `git --work-tree`, `cd ../..`, `../../` paths, reading files outside worktree.
 
-**FORBIDDEN:**
-
-| Operation | Example | Why Forbidden |
-| --------- | ------- | ------------- |
-| `git -C <path>` | `git -C ../.. status` | Operates on main repo |
-| `git --work-tree=<path>` | `git --work-tree=/path/to/main` | Escapes worktree |
-| `git --git-dir=<path>` | `git --git-dir=../../.git` | Accesses main repo git |
-| `cd` outside worktree | `cd ../..`, `cd /home/user/project` | Escapes worktree context |
-| `../../` relative paths | `cat ../../src/main.rs` | Reads from main repo |
-| Reading main repo files | Any file outside `.worktrees/<stage-id>/` | Creates implicit dependencies |
-
-**ALLOWED:** Git commands in current directory, reading `.work/` (symlink to shared state), reading/writing within your worktree.
-
-**Need main repo context?** Your signal file (`.work/signals/<session-id>.md`) has it — DO NOT read from main repo.
+**ALLOWED:** Git in current dir, `.work/` (symlink), files within worktree. Need main repo context? Read your signal file.
 
 ### 11. BINARY USAGE
 
@@ -963,6 +981,7 @@ When context usage reaches the budget threshold, orchestrator triggers auto-hand
 | ------- | ----------- |
 | `loom verify <stage-id> [--suggest]` | Run goal-backward verification (truths, artifacts, wiring checks). Use --suggest for fixes. |
 | `loom map [--deep] [--focus <area>] [--overwrite]` | Analyze codebase structure and write to knowledge files. --deep for detailed analysis. |
+| `loom sandbox suggest` | Auto-detect project type and suggest sandbox configuration (network domains, etc.). |
 | `loom knowledge init` | Initialize knowledge directory |
 | `loom knowledge show` | Show all knowledge |
 | `loom knowledge update <file> <content>` | Append to knowledge file |
@@ -1041,6 +1060,8 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 □ Explore codebase FIRST (spawn Explore subagents)
 □ Review doc/loom/knowledge/ (especially architecture.md)
 □ Create TODO with "REUSE:" annotations
+□ ASK user about sandbox requirements (network access, sensitive paths)
+□ Run `loom sandbox suggest` and configure sandbox block
 
 **BEFORE COMPLETING ANY STAGE (Stage Completion Checklist):**
 □ loom memory note/decision recorded for insights
@@ -1055,6 +1076,7 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 □ Every stage has stage_type: knowledge, standard, or integration-verify
 □ NO path traversal (`../`) in any path field
 □ Parallel SUBAGENTS first, multiple stages only when files clash
+□ Sandbox block configured with network domains and filesystem restrictions
 □ Run `loom init <plan>` to validate YAML before finalizing
 
 ---
