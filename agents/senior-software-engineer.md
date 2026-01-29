@@ -1,7 +1,7 @@
 ---
 name: senior-software-engineer
 description: Use PROACTIVELY for architecture design, complex debugging, design patterns, code review, test strategy, data modeling, ML system design, UX strategy, documentation architecture, and strategic technical decisions across all domains.
-tools: Read, Edit, Write, Glob, Grep, Bash, Task, Skill
+tools: Read, Edit, Write, Glob, Grep, Bash, Task, Skill, WebFetch, WebSearch, TodoWrite
 model: opus
 ---
 
