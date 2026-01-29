@@ -7,6 +7,7 @@ use anyhow::{Context, Result};
 use std::path::Path;
 
 use crate::git::branch::branch_name_for_stage;
+use crate::git::cleanup::{cleanup_after_merge, CleanupConfig};
 use crate::git::get_branch_head;
 use crate::models::stage::Stage;
 use crate::orchestrator::{get_merge_point, merge_completed_stage, ProgressiveMergeResult};
@@ -117,6 +118,39 @@ pub fn complete_with_merge(stage: &mut Stage, repo_root: &Path, work_dir: &Path)
                     println!("  → {dep_id}");
                 }
             }
+
+            // Clean up worktree and branch after successful merge
+            let cleanup_config = CleanupConfig {
+                verbose: true,
+                force_worktree_removal: false,
+                force_branch_deletion: false,
+                prune_worktrees: true,
+            };
+
+            match cleanup_after_merge(&stage.id, repo_root, &cleanup_config) {
+                Ok(result) => {
+                    if result.worktree_removed {
+                        println!("  Removed worktree: .worktrees/{}", stage.id);
+                    }
+                    if result.branch_deleted {
+                        println!("  Deleted branch: loom/{}", stage.id);
+                    }
+                    if !result.warnings.is_empty() {
+                        for warning in &result.warnings {
+                            eprintln!("  Warning: {warning}");
+                        }
+                    }
+                }
+                Err(e) => {
+                    // Cleanup failure is not fatal - stage is already completed
+                    eprintln!("  Warning: Failed to clean up stage resources: {e}");
+                    eprintln!(
+                        "  You can manually clean up with: loom worktree remove {}",
+                        stage.id
+                    );
+                }
+            }
+
             Ok(true)
         }
         MergeOutcome::Conflict | MergeOutcome::Blocked => {
