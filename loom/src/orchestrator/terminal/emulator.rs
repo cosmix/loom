@@ -17,6 +17,18 @@ fn escape_applescript_string(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
+/// Escape a string for use in single-quoted shell strings.
+///
+/// In shell single quotes, the only character that needs special handling
+/// is the single quote itself, which cannot be escaped inside single quotes.
+/// The standard approach is to end the single-quoted string, add an escaped
+/// single quote, and start a new single-quoted string: ' → '\''
+///
+/// This prevents command injection when embedding untrusted input in shell commands.
+fn escape_shell_single_quote(s: &str) -> String {
+    s.replace('\'', "'\\''")
+}
+
 /// Supported terminal emulators
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TerminalEmulator {
@@ -180,22 +192,27 @@ impl TerminalEmulator {
                     .arg(cmd);
             }
             Self::MateTerminal => {
+                // SECURITY: Escape single quotes in cmd to prevent shell injection
+                let escaped_cmd = escape_shell_single_quote(cmd);
                 command
                     .arg("--title")
                     .arg(title)
                     .arg("--working-directory")
                     .arg(workdir)
                     .arg("-e")
-                    .arg(format!("bash -c '{cmd}'"));
+                    .arg(format!("bash -c '{escaped_cmd}'"));
             }
             Self::XTerm => {
+                // SECURITY: Escape the workdir path to prevent shell injection
+                // Use single quotes around path and escape any single quotes in it
+                let escaped_workdir = escape_shell_single_quote(&workdir.display().to_string());
                 command
                     .arg("-title")
                     .arg(title)
                     .arg("-e")
                     .arg("bash")
                     .arg("-c")
-                    .arg(format!("cd {} && {}", workdir.display(), cmd));
+                    .arg(format!("cd '{}' && {}", escaped_workdir, cmd));
             }
             Self::Urxvt => {
                 command
@@ -478,5 +495,58 @@ mod tests {
 
         // Both quotes and backslashes should be escaped
         assert!(script.contains(r#"echo \"path\\to\\file\""#));
+    }
+
+    #[test]
+    fn test_escape_shell_single_quote() {
+        use super::escape_shell_single_quote;
+
+        // Test no escaping needed
+        assert_eq!(escape_shell_single_quote("hello"), "hello");
+
+        // Test single quote escaping
+        assert_eq!(escape_shell_single_quote("it's"), "it'\\''s");
+
+        // Test multiple single quotes
+        assert_eq!(escape_shell_single_quote("'test'"), "'\\''test'\\''");
+
+        // Test potential injection attempt
+        // Input: '; rm -rf /; echo '
+        // Each ' becomes '\'' (end quote, escaped quote, start quote)
+        let malicious = "'; rm -rf /; echo '";
+        let escaped = escape_shell_single_quote(malicious);
+        // Expected: '\''  +  ; rm -rf /; echo   +  '\''
+        assert_eq!(escaped, "'\\''; rm -rf /; echo '\\''");
+    }
+
+    #[test]
+    fn test_mate_terminal_escapes_command() {
+        let emulator = TerminalEmulator::MateTerminal;
+        let workdir = Path::new("/tmp");
+
+        // Test with command containing single quotes (potential injection)
+        let cmd = emulator.build_command("Test", workdir, "echo 'hello'");
+        let args: Vec<_> = cmd.get_args().collect();
+        let last_arg = args.last().unwrap().to_str().unwrap();
+
+        // The single quotes should be escaped to prevent injection
+        assert!(last_arg.contains("'\\''"));
+        // Should still be wrapped in single quotes for bash -c
+        assert!(last_arg.starts_with("bash -c '"));
+    }
+
+    #[test]
+    fn test_xterm_escapes_workdir() {
+        let emulator = TerminalEmulator::XTerm;
+        // Test with workdir containing single quote (potential injection)
+        let workdir = Path::new("/tmp/test's dir");
+        let cmd = emulator.build_command("Test", workdir, "echo hello");
+        let args: Vec<_> = cmd.get_args().collect();
+        let last_arg = args.last().unwrap().to_str().unwrap();
+
+        // The workdir should be single-quoted with escaping
+        assert!(last_arg.contains("cd '"));
+        // The single quote in the path should be escaped
+        assert!(last_arg.contains("'\\''"));
     }
 }
