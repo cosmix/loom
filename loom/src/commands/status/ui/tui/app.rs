@@ -92,6 +92,25 @@ impl TuiApp {
             .set_read_timeout(Some(Duration::from_millis(50)))
             .ok();
 
+        // Install Ctrl+C handler to ensure terminal cleanup on signal
+        let running = self.running.clone();
+
+        ctrlc::set_handler(move || {
+            running.store(false, Ordering::SeqCst);
+
+            // Cleanup crossterm state - must be done in signal handler
+            // since Drop may not run on process exit
+            let _ = disable_raw_mode();
+            let _ = crossterm::execute!(
+                std::io::stdout(),
+                crossterm::event::DisableMouseCapture,
+                LeaveAlternateScreen
+            );
+
+            std::process::exit(0);
+        })
+        .context("Failed to set Ctrl+C handler")?;
+
         let result = self.run_event_loop(&mut stream);
 
         let _ = write_message(&mut stream, &Request::Unsubscribe);

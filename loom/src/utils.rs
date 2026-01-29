@@ -92,6 +92,51 @@ pub fn install_terminal_panic_hook() {
     });
 }
 
+/// Restore terminal from crossterm TUI state.
+///
+/// This handles the full crossterm cleanup:
+/// - Disables raw mode
+/// - Disables mouse capture
+/// - Leaves alternate screen
+/// - Shows cursor
+///
+/// Use this for TUI applications that use crossterm.
+/// Safe to call even if terminal wasn't in TUI mode.
+pub fn cleanup_terminal_crossterm() {
+    use crossterm::{
+        event::DisableMouseCapture,
+        execute,
+        terminal::{disable_raw_mode, LeaveAlternateScreen},
+    };
+
+    // Ignore errors - best effort cleanup
+    let _ = disable_raw_mode();
+    let mut stdout = std::io::stdout();
+    let _ = execute!(stdout, DisableMouseCapture, LeaveAlternateScreen);
+
+    // Also do basic cleanup
+    cleanup_terminal();
+}
+
+/// Install a panic hook that restores crossterm terminal state before panicking.
+///
+/// This is the TUI-aware version that handles alternate screen and raw mode.
+/// Safe to call multiple times - only installs once.
+pub fn install_crossterm_panic_hook() {
+    use std::sync::Once;
+    static CROSSTERM_HOOK_INSTALLED: Once = Once::new();
+
+    CROSSTERM_HOOK_INSTALLED.call_once(|| {
+        let default_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |panic_info| {
+            // Restore crossterm terminal state first
+            cleanup_terminal_crossterm();
+            // Then call the default panic handler
+            default_hook(panic_info);
+        }));
+    });
+}
+
 /// Display a path relative to work_dir, or just filename if outside.
 /// This prevents exposing full system paths to users.
 pub fn display_path(path: &Path, work_dir: &Path) -> String {
