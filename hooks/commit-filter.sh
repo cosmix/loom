@@ -69,15 +69,54 @@ fi
 # === SUBAGENT COMMIT PREVENTION ===
 # Block git commits from subagents (per ISSUES.md #3)
 # Main agent sets LOOM_MAIN_AGENT_PID in wrapper script
-# Subagents inherit this var but have different $PPID
+# Subagents inherit this var but run under a different Claude process
+
+# Find the nearest Claude Code process ancestor
+# Returns its PID if found, empty string if not found
+find_nearest_claude_ancestor() {
+	local current_pid="$$"
+
+	while [[ "$current_pid" != "1" && "$current_pid" != "0" && -n "$current_pid" ]]; do
+		# Check if this process is Claude Code
+		local cmdline=""
+		if [[ -r "/proc/$current_pid/cmdline" ]]; then
+			# Linux: read cmdline (null-separated)
+			cmdline=$(tr '\0' ' ' <"/proc/$current_pid/cmdline" 2>/dev/null || true)
+		else
+			# macOS: use ps
+			cmdline=$(ps -o command= -p "$current_pid" 2>/dev/null || true)
+		fi
+
+		# Claude Code runs as node with "claude" in the path/args
+		if echo "$cmdline" | grep -qi "claude"; then
+			echo "$current_pid"
+			return 0
+		fi
+
+		# Get parent PID
+		if [[ -r "/proc/$current_pid/stat" ]]; then
+			current_pid=$(awk '{print $4}' "/proc/$current_pid/stat" 2>/dev/null || true)
+		else
+			current_pid=$(ps -o ppid= -p "$current_pid" 2>/dev/null | tr -d ' ' || true)
+		fi
+	done
+
+	echo ""
+	return 1
+}
 
 if [[ -n "${LOOM_MAIN_AGENT_PID:-}" ]]; then
+	# Find the nearest Claude ancestor in our process tree
+	NEAREST_CLAUDE=$(find_nearest_claude_ancestor)
+
 	{
-		echo "DEBUG: LOOM_MAIN_AGENT_PID=$LOOM_MAIN_AGENT_PID, PPID=$PPID"
+		echo "DEBUG: LOOM_MAIN_AGENT_PID=$LOOM_MAIN_AGENT_PID, PPID=$PPID, NEAREST_CLAUDE=$NEAREST_CLAUDE"
 	} >>"$DEBUG_LOG" 2>&1
 
-	# Check if this is a subagent (PPID doesn't match main agent PID)
-	if [[ "$PPID" != "$LOOM_MAIN_AGENT_PID" ]]; then
+	# Check if this is a subagent (nearest Claude process doesn't match main agent PID)
+	# Main agent: nearest Claude = LOOM_MAIN_AGENT_PID (allow)
+	# Subagent: nearest Claude = subagent's PID ≠ LOOM_MAIN_AGENT_PID (block)
+	if [[ -n "$NEAREST_CLAUDE" && "$NEAREST_CLAUDE" != "$LOOM_MAIN_AGENT_PID" ]]; then
 		# Check if this is a git commit or loom stage complete command
 		if echo "$COMMAND" | grep -qiE 'git[[:space:]]+(commit|add[[:space:]]+-A|add[[:space:]]+\.)'; then
 			{
