@@ -54,6 +54,7 @@ pub(crate) fn compute_sha256_checksum(content: &[u8]) -> String {
 /// e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  agents.zip
 /// d14a028c2a3a2bc9476102bb288234c415a2b01f828ea62ac5b3e42f  skills.zip
 /// ```
+#[allow(dead_code)]
 pub(crate) fn parse_checksums(content: &str) -> HashMap<String, String> {
     let mut checksums = HashMap::new();
     for line in content.lines() {
@@ -74,6 +75,7 @@ pub(crate) fn parse_checksums(content: &str) -> HashMap<String, String> {
 
 /// Verify content matches expected SHA256 checksum.
 /// Returns Ok(()) if checksum matches, Err with details if verification fails.
+#[allow(dead_code)]
 pub(crate) fn verify_checksum(content: &[u8], expected: &str, asset_name: &str) -> Result<()> {
     let actual = compute_sha256_checksum(content);
     if actual != expected {
