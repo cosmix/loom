@@ -338,3 +338,10 @@ Solutions: 1) Use ./target/debug/loom path, 2) Accept failures until merge,
 
 - **Cleaned up dead logs_dir references in integration-verify stage rather than failing the stage**
   - _Rationale:_ The prior stage (remove-dead-code) missed these local variable references. Fixing in integration-verify stage completes the cleanup properly.
+
+## Promoted from Memory [2026-01-29 23:16]
+
+### Decisions
+
+- **Verified functional integration of terminal cleanup and stop command fixes**
+  - _Rationale:_ Both fixes are properly integrated: 1) TUI app has ctrlc signal handler at app.rs:98-112 that performs terminal cleanup on Ctrl+C, 2) Stop command has SIGTERM fallback at stop.rs:38-63 when socket communication fails. All 132+ tests pass, no clippy warnings.
