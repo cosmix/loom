@@ -13,18 +13,6 @@ use crate::models::constants::display::{CONTEXT_HEALTHY_PCT, CONTEXT_WARNING_PCT
 use crate::models::stage::StageStatus;
 use crate::utils::format_elapsed;
 
-// Unicode box-drawing constants for cleaner tree visualization (infrastructure for future use)
-#[allow(dead_code)]
-const BOX_HORIZONTAL: char = '─';
-#[allow(dead_code)]
-const BOX_VERTICAL: char = '│';
-#[allow(dead_code)]
-const BOX_DOWN_RIGHT: char = '┌';
-#[allow(dead_code)]
-const BOX_UP_RIGHT: char = '└';
-#[allow(dead_code)]
-const BOX_VERTICAL_RIGHT: char = '├';
-
 /// Available terminal colors for stage differentiation
 const STAGE_COLORS: [Color; 16] = [
     Color::Red,
@@ -64,15 +52,6 @@ const STAGE_COLORS: [Color; 16] = [
 /// Get a color by index, cycling through the palette
 fn color_by_index(index: usize) -> Color {
     STAGE_COLORS[index % STAGE_COLORS.len()]
-}
-
-/// Format multiple parallel stages on same line with brackets (infrastructure for future use)
-#[allow(dead_code)]
-fn render_parallel_group(stage_ids: &[&str]) -> String {
-    if stage_ids.len() == 1 {
-        return stage_ids[0].to_string();
-    }
-    format!("[{}]", stage_ids.join(", "))
 }
 
 /// Compute topological level for each stage (level = max(dep_levels) + 1)
