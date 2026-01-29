@@ -7,9 +7,10 @@
 
 use anyhow::{Context, Result};
 use colored::Colorize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::fs::work_dir::WorkDir;
+use crate::git::worktree::find_repo_root_from_cwd;
 use crate::models::stage::Stage;
 use crate::plan::parser::parse_plan;
 use crate::verify::criteria::run_acceptance;
@@ -18,7 +19,17 @@ use crate::verify::transitions::load_stage;
 
 /// Execute the verify command
 pub fn execute(stage_id: &str, suggest: bool) -> Result<()> {
-    let work_dir = WorkDir::new(".")?;
+    // Try local .work first (works in main repo and worktrees with symlink)
+    let work_dir_path = Path::new(".work");
+    let work_dir = if work_dir_path.exists() {
+        WorkDir::new(".")?
+    } else {
+        // Fall back to finding main repo root (handles worktree edge cases)
+        let cwd = std::env::current_dir().context("Failed to get current directory")?;
+        let repo_root = find_repo_root_from_cwd(&cwd)
+            .context("Could not find repository root. Run 'loom init' first.")?;
+        WorkDir::new(&repo_root)?
+    };
     work_dir.load()?;
 
     // Load stage
