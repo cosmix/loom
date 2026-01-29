@@ -136,6 +136,7 @@ fn test_orchestrator_respects_max_parallel_sessions() {
         enable_skill_routing: false,
         max_skill_recommendations: 5,
         sandbox_config: SandboxConfig::default(),
+        shutdown_flag: None,
     };
 
     let mut orchestrator = Orchestrator::new(config, graph).expect("Should create orchestrator");

@@ -202,8 +202,8 @@ impl DaemonServer {
                     });
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    // No connection available, sleep briefly
-                    thread::sleep(Duration::from_millis(100));
+                    // No connection available, sleep briefly but check shutdown frequently
+                    thread::sleep(Duration::from_millis(10));
                 }
                 Err(e) => {
                     eprintln!("Accept error: {e}");
@@ -212,14 +212,31 @@ impl DaemonServer {
             }
         }
 
-        // Wait for threads to finish
+        // Wait for threads to finish with timeout (5 seconds)
+        let join_timeout = Duration::from_secs(5);
+        let join_check_interval = Duration::from_millis(50);
+
+        // Helper closure to wait for a thread with timeout
+        let wait_with_timeout = |handle: thread::JoinHandle<()>, name: &str| {
+            let start = std::time::Instant::now();
+            while !handle.is_finished() && start.elapsed() < join_timeout {
+                thread::sleep(join_check_interval);
+            }
+            if handle.is_finished() {
+                let _ = handle.join();
+            } else {
+                eprintln!("Warning: {} thread did not terminate within timeout", name);
+                // Thread will be abandoned but the process is exiting anyway
+            }
+        };
+
         if let Some(handle) = orchestrator_handle {
-            let _ = handle.join();
+            wait_with_timeout(handle, "orchestrator");
         }
         if let Some(handle) = log_tail_handle {
-            let _ = handle.join();
+            wait_with_timeout(handle, "log_tail");
         }
-        let _ = status_broadcast_handle.join();
+        wait_with_timeout(status_broadcast_handle, "status_broadcast");
 
         self.cleanup()?;
         Ok(())

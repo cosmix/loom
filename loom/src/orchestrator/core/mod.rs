@@ -53,6 +53,7 @@ mod tests {
             enable_skill_routing: false, // Disable for tests
             max_skill_recommendations: 5,
             sandbox_config: SandboxConfig::default(),
+            shutdown_flag: None,
         }
     }
 

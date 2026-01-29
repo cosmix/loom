@@ -40,6 +40,7 @@ fn test_orchestrator_config_custom_values() {
         enable_skill_routing: false,
         max_skill_recommendations: 5,
         sandbox_config: SandboxConfig::default(),
+        shutdown_flag: None,
     };
 
     assert_eq!(config.max_parallel_sessions, 8);
