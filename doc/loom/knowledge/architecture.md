@@ -367,3 +367,10 @@ Worktrees get three symlinks:
 
 Functions: ensure_work_symlink():16, setup_claude_directory():40, setup_root_claude_md():85
 All use relative paths for portability. .claude/ is real dir for session-specific hooks.
+
+## .work Directory Structure (Updated 2026-01-29)
+
+WorkDir (fs/work_dir.rs) creates .work/ with subdirectories:
+signals, handoffs, archive, stages, sessions, crashes.
+
+REMOVED: runners, tracks, logs, checkpoints, task-state (dead code cleanup).
