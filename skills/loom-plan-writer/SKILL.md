@@ -103,13 +103,10 @@ loom:
         - "doc/loom/knowledge/**"    # Except knowledge/integration-verify stages
       allow_write:                   # Exceptions to deny rules
         - "src/**"
-    network:
-      allowed_domains:               # Domains agents CAN access (empty = no network)
-        - "github.com"
-        - "api.github.com"
-        - "crates.io"                # Add based on project type
-      allow_local_binding: false     # Bind to local ports
-      allow_unix_sockets: false      # Unix socket connections
+    network:                         # ⛔ MUST be struct, NOT string like "deny"
+      allowed_domains: []            # Empty = deny all network (or list domains to allow)
+      allow_local_binding: false
+      allow_unix_sockets: false
 ```
 
 **Per-Stage Overrides:**
@@ -281,6 +278,7 @@ loom:
 | Examples in descriptions | Use plain indented text | Do NOT use ``` fences |
 | stage_type values        | lowercase/kebab-case    | PascalCase            |
 | Path traversal           | NEVER use `../`         | Causes validation error |
+| network config           | `network: {allowed_domains: []}` | `network: deny` |
 
 **stage_type Field (REQUIRED on every stage):**
 
