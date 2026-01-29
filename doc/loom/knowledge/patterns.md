@@ -1063,3 +1063,10 @@ Signal sections for LLM cache optimization:
 
 Hash computed via SHA-256 (first 16 hex chars) for cache debugging.
 Stable prefixes are deterministic across invocations to maximize KV-cache hits.
+
+## Promoted from Memory [2026-01-29 18:44]
+
+### Decisions
+
+- **Fixed shell injection vulnerabilities in MateTerminal and XTerm emulator commands by adding escape_shell_single_quote() function**
+  - *Rationale:* MateTerminal used unescaped single quotes allowing command injection. XTerm concatenated workdir directly into shell command. Both now properly escape using standard shell escaping pattern.
