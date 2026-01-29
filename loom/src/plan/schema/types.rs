@@ -154,16 +154,26 @@ fn default_excluded_commands() -> Vec<String> {
 
 fn default_deny_read() -> Vec<String> {
     vec![
+        // Sensitive credential directories
         "~/.ssh/**".to_string(),
         "~/.aws/**".to_string(),
         "~/.config/gcloud/**".to_string(),
         "~/.gnupg/**".to_string(),
+        // Worktree escape prevention - block access to parent directories
+        "../../**".to_string(),
+        // Block access to other worktrees
+        "../.worktrees/**".to_string(),
     ]
 }
 
 fn default_deny_write() -> Vec<String> {
     vec![
+        // Worktree escape prevention - block writes to parent directories
+        "../../**".to_string(),
+        // Orchestration state files - managed by loom CLI only
         ".work/stages/**".to_string(),
+        ".work/sessions/**".to_string(),
+        // Knowledge files - protected by default, knowledge stages get explicit allow
         "doc/loom/knowledge/**".to_string(),
     ]
 }
