@@ -4,6 +4,8 @@ use colored::{ColoredString, Colorize};
 use std::collections::VecDeque;
 use std::time::Instant;
 
+use crate::models::constants::STALENESS_THRESHOLD_SECS;
+
 use super::super::data::ActivityStatus;
 
 /// Maximum number of activity entries to keep
@@ -124,8 +126,7 @@ pub fn render_activity_status(status: ActivityStatus) -> ColoredString {
 
 /// Render staleness warning if session appears hung
 pub fn render_staleness_warning(secs: u64) -> Option<String> {
-    if secs > 300 {
-        // 5 minutes
+    if secs > STALENESS_THRESHOLD_SECS {
         let mins = secs / 60;
         Some(format!(
             "  No activity for {mins} minutes - session may be hung"

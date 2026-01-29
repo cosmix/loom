@@ -1,15 +1,13 @@
 //! Persistence operations for memory journals (deletion, listing, archiving).
 
+use super::constants::MEMORY_HEADER;
 use super::parser::format_entry;
 use super::storage::{memory_dir, memory_file_path, read_journal};
 use super::types::{MemoryEntry, MemoryEntryType};
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use chrono::Utc;
 use std::fs;
 use std::path::{Path, PathBuf};
-
-/// Header for a memory journal file
-const MEMORY_HEADER: &str = "<!-- loom-memory-journal -->\n";
 
 /// Delete entries by type from a session's memory journal
 /// Returns the deleted entries for promotion to knowledge
@@ -128,11 +126,11 @@ pub fn extract_key_notes(journal: &super::types::MemoryJournal) -> Vec<String> {
 /// Validate memory entry content
 pub fn validate_content(content: &str) -> Result<()> {
     if content.is_empty() {
-        anyhow::bail!("Memory entry content cannot be empty");
+        bail!("Memory entry content cannot be empty");
     }
 
     if content.len() > 2000 {
-        anyhow::bail!(
+        bail!(
             "Memory entry content too long: {} characters (max 2000)",
             content.len()
         );

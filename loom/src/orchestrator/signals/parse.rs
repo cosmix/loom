@@ -4,7 +4,6 @@
 //! logging warnings when sections don't match expected patterns.
 
 use anyhow::{bail, Result};
-use tracing::warn;
 
 use super::types::SignalContent;
 
@@ -35,10 +34,8 @@ fn validate_signal_format(content: &str, session_id: &str) {
     // Check for required sections
     for required in REQUIRED_SECTIONS {
         if !found_sections.iter().any(|s| s == required) {
-            warn!(
-                session_id = %session_id,
-                section = %required,
-                "Signal file missing required section"
+            eprintln!(
+                "Warning: Signal file for session '{session_id}' missing required section '{required}'"
             );
         }
     }
@@ -56,10 +53,8 @@ fn validate_signal_format(content: &str, session_id: &str) {
         {
             // Only warn for truly unexpected sections, not variant sections
             if !section.contains("Context") && !section.contains("Handoff") {
-                warn!(
-                    session_id = %session_id,
-                    section = %section,
-                    "Signal file contains unexpected section"
+                eprintln!(
+                    "Warning: Signal file for session '{session_id}' contains unexpected section '{section}'"
                 );
             }
         }
@@ -70,10 +65,8 @@ fn validate_signal_format(content: &str, session_id: &str) {
 fn validate_field_format(line: &str, section: &str, session_id: &str) {
     // Check Target section field format
     if section == "Target" && line.starts_with("- ") && !line.starts_with("- **") {
-        warn!(
-            session_id = %session_id,
-            line = %line,
-            "Target field should use '- **Field**: value' format"
+        eprintln!(
+            "Warning: Signal file for session '{session_id}' has invalid Target field format: '{line}'. Expected '- **Field**: value'"
         );
     }
 
@@ -83,10 +76,8 @@ fn validate_field_format(line: &str, section: &str, session_id: &str) {
         && !line.starts_with("- [ ] ")
         && !line.starts_with("- [x] ")
     {
-        warn!(
-            session_id = %session_id,
-            line = %line,
-            "Acceptance criteria should use '- [ ] criterion' format"
+        eprintln!(
+            "Warning: Signal file for session '{session_id}' has invalid Acceptance Criteria format: '{line}'. Expected '- [ ] criterion'"
         );
     }
 }

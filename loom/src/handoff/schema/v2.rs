@@ -1,6 +1,6 @@
 //! HandoffV2 schema definition and builder methods.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use super::types::{CommitRef, CompletedTask, FileRef, KeyDecision};
@@ -156,7 +156,7 @@ impl HandoffV2 {
     /// Validate the handoff data
     pub fn validate(&self) -> Result<()> {
         if self.version != HANDOFF_SCHEMA_VERSION {
-            anyhow::bail!(
+            bail!(
                 "Unsupported handoff version: {}. Expected {}.",
                 self.version,
                 HANDOFF_SCHEMA_VERSION
@@ -164,15 +164,15 @@ impl HandoffV2 {
         }
 
         if self.session_id.is_empty() {
-            anyhow::bail!("Handoff session_id cannot be empty");
+            bail!("Handoff session_id cannot be empty");
         }
 
         if self.stage_id.is_empty() {
-            anyhow::bail!("Handoff stage_id cannot be empty");
+            bail!("Handoff stage_id cannot be empty");
         }
 
         if !(0.0..=100.0).contains(&self.context_percent) {
-            anyhow::bail!(
+            bail!(
                 "Handoff context_percent must be between 0.0 and 100.0, got {}",
                 self.context_percent
             );

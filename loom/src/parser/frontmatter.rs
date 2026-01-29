@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::de::DeserializeOwned;
 
 /// Parse a type from markdown content with YAML frontmatter
@@ -81,7 +81,7 @@ pub fn extract_yaml_frontmatter(content: &str) -> Result<serde_yaml::Value> {
     let lines: Vec<&str> = content.lines().collect();
 
     if lines.is_empty() || !lines[0].trim().starts_with("---") {
-        anyhow::bail!("No frontmatter delimiter found at start of content");
+        bail!("No frontmatter delimiter found at start of content");
     }
 
     // Track indentation of opening delimiter to match closing delimiter at same level.

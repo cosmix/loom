@@ -1,8 +1,9 @@
 //! Shared completion summary rendering for both TUI and foreground modes.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::io::{self, Write};
 
+use crate::commands::status::common::levels;
 use crate::daemon::{CompletionSummary, StageCompletionInfo};
 use crate::models::stage::StageStatus;
 use crate::utils::format_elapsed_verbose;
@@ -84,52 +85,8 @@ pub fn print_completion_summary(summary: &CompletionSummary) {
 
 /// Print a simple ASCII execution graph showing stage dependencies.
 fn print_execution_graph(stages: &[StageCompletionInfo]) {
-    // Compute dependency levels
-    let mut levels: HashMap<String, usize> = HashMap::new();
-    let stage_map: HashMap<&str, &StageCompletionInfo> =
-        stages.iter().map(|s| (s.id.as_str(), s)).collect();
-
-    fn compute_level(
-        stage_id: &str,
-        stage_map: &HashMap<&str, &StageCompletionInfo>,
-        levels: &mut HashMap<String, usize>,
-        visiting: &mut HashSet<String>,
-    ) -> usize {
-        if let Some(&level) = levels.get(stage_id) {
-            return level;
-        }
-
-        // Cycle detection
-        if visiting.contains(stage_id) {
-            return 0;
-        }
-        visiting.insert(stage_id.to_string());
-
-        let level = if let Some(stage) = stage_map.get(stage_id) {
-            if stage.dependencies.is_empty() {
-                0
-            } else {
-                stage
-                    .dependencies
-                    .iter()
-                    .map(|dep| compute_level(dep, stage_map, levels, visiting))
-                    .max()
-                    .unwrap_or(0)
-                    + 1
-            }
-        } else {
-            0
-        };
-
-        visiting.remove(stage_id);
-        levels.insert(stage_id.to_string(), level);
-        level
-    }
-
-    for stage in stages {
-        let mut visiting = HashSet::new();
-        compute_level(&stage.id, &stage_map, &mut levels, &mut visiting);
-    }
+    // Compute dependency levels using shared function
+    let levels = levels::compute_all_levels(stages, |s| s.id.as_str(), |s| &s.dependencies);
 
     // Group stages by level
     let mut stages_by_level: HashMap<usize, Vec<&StageCompletionInfo>> = HashMap::new();

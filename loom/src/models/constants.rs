@@ -30,3 +30,8 @@ pub mod display {
     /// Above WARNING percentage, context usage is critical (red).
     pub const CONTEXT_WARNING_PCT: f32 = 65.0;
 }
+
+/// Staleness threshold in seconds for session heartbeats.
+/// When a session hasn't sent a heartbeat for this duration,
+/// it is considered stale (possibly hung).
+pub const STALENESS_THRESHOLD_SECS: u64 = 300; // 5 minutes

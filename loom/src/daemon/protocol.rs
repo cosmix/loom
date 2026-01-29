@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
@@ -174,7 +174,7 @@ pub fn read_message<T: for<'de> Deserialize<'de>, R: Read>(stream: &mut R) -> Re
 
     // Sanity check: prevent DOS via huge length claim (max 10 MB)
     if len > 10 * 1024 * 1024 {
-        anyhow::bail!("Message too large: {len} bytes");
+        bail!("Message too large: {len} bytes");
     }
 
     let mut json_bytes = vec![0u8; len];

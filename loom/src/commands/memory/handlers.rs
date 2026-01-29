@@ -1,6 +1,6 @@
 //! Command handler implementations for memory subcommands.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use colored::Colorize;
 use std::env;
 
@@ -22,7 +22,7 @@ fn get_work_dir() -> Result<std::path::PathBuf> {
     let work_dir = cwd.join(".work");
 
     if !work_dir.exists() {
-        anyhow::bail!(".work directory not found. Run 'loom init' first.");
+        bail!(".work directory not found. Run 'loom init' first.");
     }
 
     Ok(work_dir)
@@ -31,7 +31,7 @@ fn get_work_dir() -> Result<std::path::PathBuf> {
 /// Validate session ID to prevent path traversal attacks
 fn validate_session_id(id: &str) -> Result<()> {
     if id.contains('/') || id.contains("..") || id.contains('\\') {
-        anyhow::bail!("Invalid session ID: contains path separators");
+        bail!("Invalid session ID: contains path separators");
     }
     Ok(())
 }
@@ -341,9 +341,7 @@ pub fn promote(entry_type: String, target: String, session_id: Option<String>) -
         "patterns" => KnowledgeFile::Patterns,
         "conventions" => KnowledgeFile::Conventions,
         "mistakes" => KnowledgeFile::Mistakes,
-        _ => anyhow::bail!(
-            "Invalid target: {target}. Use: entry-points, patterns, conventions, mistakes"
-        ),
+        _ => bail!("Invalid target: {target}. Use: entry-points, patterns, conventions, mistakes"),
     };
 
     // Get project root (go up from .work to find doc/loom/knowledge)
@@ -353,7 +351,7 @@ pub fn promote(entry_type: String, target: String, session_id: Option<String>) -
 
     let knowledge = KnowledgeDir::new(project_root);
     if !knowledge.exists() {
-        anyhow::bail!("Knowledge directory does not exist. Run 'loom knowledge init' first.");
+        bail!("Knowledge directory does not exist. Run 'loom knowledge init' first.");
     }
 
     // Delete and retrieve the matching entries

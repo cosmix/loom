@@ -1,5 +1,6 @@
 //! File storage operations for memory journals.
 
+use super::constants::MEMORY_HEADER;
 use super::parser::{format_entry, parse_journal};
 use super::types::{MemoryEntry, MemoryJournal};
 use anyhow::{Context, Result};
@@ -7,9 +8,6 @@ use chrono::Utc;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-
-/// Header for a memory journal file
-const MEMORY_HEADER: &str = "<!-- loom-memory-journal -->\n";
 
 /// Get the memory directory path
 pub fn memory_dir(work_dir: &Path) -> PathBuf {

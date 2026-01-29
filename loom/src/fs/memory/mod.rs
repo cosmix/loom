@@ -13,6 +13,7 @@
 //! - Decision: Choices made with rationale
 //! - Question: Open questions for future investigation
 
+mod constants;
 mod export;
 mod parser;
 mod persistence;

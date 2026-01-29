@@ -4,6 +4,7 @@ use std::fs;
 
 use crate::commands::status::merge_status::build_merge_report;
 use crate::fs::work_dir::WorkDir;
+use crate::models::constants::STALENESS_THRESHOLD_SECS;
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::get_merge_point;
@@ -15,9 +16,6 @@ use crate::verify::transitions::list_all_stages;
 use super::{
     ActivityStatus, MergeSummary, ProgressSummary, SessionSummary, StageSummary, StatusData,
 };
-
-/// Staleness threshold in seconds (5 minutes)
-const STALENESS_THRESHOLD_SECS: u64 = 300;
 
 /// Read heartbeat for a specific stage from the heartbeat directory
 fn read_heartbeat_for_stage(stage_id: &str, work_dir: &WorkDir) -> Option<Heartbeat> {

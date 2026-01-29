@@ -14,6 +14,7 @@ use ratatui::{
 };
 
 use super::theme::{StatusColors, Theme};
+use crate::commands::status::common::levels;
 use crate::models::constants::display::{CONTEXT_HEALTHY_PCT, CONTEXT_WARNING_PCT};
 use crate::models::stage::{Stage, StageStatus};
 use crate::utils::format_elapsed;
@@ -45,55 +46,7 @@ fn color_by_index(index: usize) -> Color {
 
 /// Compute topological level for each stage (level = max(dep_levels) + 1)
 fn compute_stage_levels(stages: &[Stage]) -> HashMap<String, usize> {
-    use std::collections::HashSet;
-
-    let stage_map: HashMap<&str, &Stage> = stages.iter().map(|s| (s.id.as_str(), s)).collect();
-    let mut levels: HashMap<String, usize> = HashMap::new();
-
-    fn get_level(
-        stage_id: &str,
-        stage_map: &HashMap<&str, &Stage>,
-        levels: &mut HashMap<String, usize>,
-        visiting: &mut HashSet<String>,
-    ) -> usize {
-        if let Some(&level) = levels.get(stage_id) {
-            return level;
-        }
-
-        // Cycle detection - treat as level 0 to avoid infinite recursion
-        if visiting.contains(stage_id) {
-            return 0;
-        }
-        visiting.insert(stage_id.to_string());
-
-        let stage = match stage_map.get(stage_id) {
-            Some(s) => s,
-            None => return 0,
-        };
-
-        let level = if stage.dependencies.is_empty() {
-            0
-        } else {
-            stage
-                .dependencies
-                .iter()
-                .map(|dep| get_level(dep, stage_map, levels, visiting))
-                .max()
-                .unwrap_or(0)
-                + 1
-        };
-
-        visiting.remove(stage_id);
-        levels.insert(stage_id.to_string(), level);
-        level
-    }
-
-    for stage in stages {
-        let mut visiting = HashSet::new();
-        get_level(&stage.id, &stage_map, &mut levels, &mut visiting);
-    }
-
-    levels
+    levels::compute_all_levels(stages, |s| s.id.as_str(), |s| &s.dependencies)
 }
 
 /// Get status indicator character

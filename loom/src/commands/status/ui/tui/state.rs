@@ -2,6 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::commands::status::common::levels;
 use crate::daemon::StageInfo;
 use crate::models::stage::StageStatus;
 
@@ -83,54 +84,7 @@ impl LiveStatus {
             .chain(self.blocked.iter())
             .collect();
 
-        let stage_map: HashMap<&str, &StageInfo> =
-            all_stages.iter().map(|s| (s.id.as_str(), *s)).collect();
-
-        let mut levels: HashMap<String, usize> = HashMap::new();
-
-        fn get_level(
-            stage_id: &str,
-            stage_map: &HashMap<&str, &StageInfo>,
-            levels: &mut HashMap<String, usize>,
-            visiting: &mut HashSet<String>,
-        ) -> usize {
-            if let Some(&level) = levels.get(stage_id) {
-                return level;
-            }
-
-            if visiting.contains(stage_id) {
-                return 0;
-            }
-            visiting.insert(stage_id.to_string());
-
-            let stage = match stage_map.get(stage_id) {
-                Some(s) => s,
-                None => return 0,
-            };
-
-            let level = if stage.dependencies.is_empty() {
-                0
-            } else {
-                stage
-                    .dependencies
-                    .iter()
-                    .map(|dep| get_level(dep, stage_map, levels, visiting))
-                    .max()
-                    .unwrap_or(0)
-                    + 1
-            };
-
-            visiting.remove(stage_id);
-            levels.insert(stage_id.to_string(), level);
-            level
-        }
-
-        for stage in &all_stages {
-            let mut visiting = HashSet::new();
-            get_level(&stage.id, &stage_map, &mut levels, &mut visiting);
-        }
-
-        levels
+        levels::compute_all_levels(&all_stages, |s| s.id.as_str(), |s| &s.dependencies)
     }
 
     /// Build unified list of all stages for table display, sorted by execution order.

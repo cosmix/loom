@@ -5,7 +5,7 @@ use super::broadcast::{spawn_log_tailer, spawn_status_broadcaster};
 use super::client::handle_client_connection;
 use super::core::{DaemonServer, MAX_CONNECTIONS};
 use super::orchestrator::spawn_orchestrator;
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use nix::unistd::{fork, setsid, ForkResult};
 use std::fs::{self, File, Permissions};
 use std::os::unix::fs::PermissionsExt;
@@ -29,7 +29,7 @@ impl DaemonServer {
         let socket_path = work_dir.join("orchestrator.sock");
 
         if !Self::is_running(work_dir) {
-            anyhow::bail!("Daemon is not running");
+            bail!("Daemon is not running");
         }
 
         let mut stream =
@@ -48,7 +48,7 @@ impl DaemonServer {
                     if io_err.kind() == std::io::ErrorKind::WouldBlock
                         || io_err.kind() == std::io::ErrorKind::TimedOut
                     {
-                        anyhow::bail!(
+                        bail!(
                             "Daemon did not respond within 5 seconds. \
                              It may be frozen. Try: kill $(cat {})",
                             work_dir.join("orchestrator.pid").display()
@@ -61,8 +61,8 @@ impl DaemonServer {
 
         match response {
             Response::Ok => Ok(()),
-            Response::Error { message } => anyhow::bail!("Daemon returned error: {message}"),
-            _ => anyhow::bail!("Unexpected response from daemon"),
+            Response::Error { message } => bail!("Daemon returned error: {message}"),
+            _ => bail!("Unexpected response from daemon"),
         }
     }
 
@@ -115,10 +115,10 @@ impl DaemonServer {
         unsafe {
             libc::close(0);
             if libc::dup2(log_fd, 1) < 0 {
-                anyhow::bail!("Failed to redirect stdout");
+                bail!("Failed to redirect stdout");
             }
             if libc::dup2(log_fd, 2) < 0 {
-                anyhow::bail!("Failed to redirect stderr");
+                bail!("Failed to redirect stderr");
             }
         }
 
