@@ -11,7 +11,9 @@ use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Seek, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+use crate::git::worktree::refresh_worktree_settings_local;
 
 /// Patterns that indicate a worktree-specific permission that should not be synced
 const WORKTREE_PATH_PATTERNS: &[&str] = &["../../", ".worktrees/"];
@@ -25,6 +27,7 @@ const WORKTREE_PATH_PATTERNS: &[&str] = &["../../", ".worktrees/"];
 /// 4. Acquires an exclusive file lock on the main settings.local.json
 /// 5. Merges new permissions (skipping duplicates)
 /// 6. Writes back atomically
+/// 7. Propagates the updated permissions to all other existing worktrees
 pub fn sync_worktree_permissions(
     worktree_path: &Path,
     main_repo_path: &Path,
@@ -54,11 +57,22 @@ pub fn sync_worktree_permissions(
         return Ok(SyncResult {
             allow_added: 0,
             deny_added: 0,
+            worktrees_updated: 0,
         });
     }
 
     // Acquire exclusive lock and merge permissions
-    merge_permissions_with_lock(&main_settings_path, &filtered_allow, &filtered_deny)
+    let mut result =
+        merge_permissions_with_lock(&main_settings_path, &filtered_allow, &filtered_deny)?;
+
+    // Propagate updated permissions to all other worktrees
+    // This ensures all worktrees have the latest permissions after a sync
+    if result.allow_added > 0 || result.deny_added > 0 {
+        result.worktrees_updated =
+            propagate_permissions_to_worktrees(main_repo_path, Some(worktree_path))?;
+    }
+
+    Ok(result)
 }
 
 /// Result of a permission sync operation
@@ -68,6 +82,8 @@ pub struct SyncResult {
     pub allow_added: usize,
     /// Number of deny permissions added
     pub deny_added: usize,
+    /// Number of worktrees updated with propagated permissions
+    pub worktrees_updated: usize,
 }
 
 /// Read and parse a settings.json file
@@ -206,6 +222,7 @@ fn merge_permission_arrays(
     Ok(SyncResult {
         allow_added,
         deny_added,
+        worktrees_updated: 0, // Set by caller after propagation
     })
 }
 
@@ -241,6 +258,94 @@ fn merge_permission_array(
     }
 
     Ok(added)
+}
+
+/// List all worktree directories in .worktrees/
+///
+/// Returns paths to worktree directories, excluding the optional source worktree.
+fn list_worktree_paths(main_repo_path: &Path, exclude: Option<&Path>) -> Result<Vec<PathBuf>> {
+    let worktrees_dir = main_repo_path.join(".worktrees");
+
+    if !worktrees_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut worktree_paths = Vec::new();
+
+    let entries = fs::read_dir(&worktrees_dir).with_context(|| {
+        format!(
+            "Failed to read worktrees directory: {}",
+            worktrees_dir.display()
+        )
+    })?;
+
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+
+        // Skip if not a directory
+        if !path.is_dir() {
+            continue;
+        }
+
+        // Skip the source worktree (the one that triggered the sync)
+        if let Some(exclude_path) = exclude {
+            // Canonicalize both paths for comparison, or fall back to comparing as-is
+            let path_canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
+            let exclude_canonical = exclude_path
+                .canonicalize()
+                .unwrap_or_else(|_| exclude_path.to_path_buf());
+            if path_canonical == exclude_canonical {
+                continue;
+            }
+        }
+
+        // Check if this is a valid worktree (has .claude directory)
+        let claude_dir = path.join(".claude");
+        if claude_dir.exists() {
+            worktree_paths.push(path);
+        }
+    }
+
+    Ok(worktree_paths)
+}
+
+/// Propagate permissions to all existing worktrees
+///
+/// After permissions are synced to the main repo, this function copies the updated
+/// settings.local.json to all other worktrees. This ensures all worktrees have
+/// the latest permissions without requiring a restart.
+///
+/// # Arguments
+/// * `main_repo_path` - Path to the main repository root
+/// * `exclude` - Optional path to exclude (typically the worktree that triggered the sync)
+///
+/// # Returns
+/// Number of worktrees updated
+fn propagate_permissions_to_worktrees(
+    main_repo_path: &Path,
+    exclude: Option<&Path>,
+) -> Result<usize> {
+    let worktree_paths = list_worktree_paths(main_repo_path, exclude)?;
+
+    let mut updated = 0;
+    for worktree_path in worktree_paths {
+        // Use refresh_worktree_settings_local which handles locking
+        match refresh_worktree_settings_local(&worktree_path, main_repo_path) {
+            Ok(true) => updated += 1,
+            Ok(false) => {} // No main settings.local.json exists, nothing to propagate
+            Err(e) => {
+                // Log warning but continue with other worktrees
+                eprintln!(
+                    "Warning: Failed to propagate permissions to {}: {}",
+                    worktree_path.display(),
+                    e
+                );
+            }
+        }
+    }
+
+    Ok(updated)
 }
 
 #[cfg(test)]

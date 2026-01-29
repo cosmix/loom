@@ -4,7 +4,11 @@
 //! Also supports hooks configuration when session context is available.
 
 use anyhow::{Context, Result};
+#[allow(unused_imports)] // Required for lock_shared() method on File
+use fs2::FileExt;
 use serde_json::{json, Value};
+use std::fs::File;
+use std::io::{Read, Write};
 use std::path::Path;
 
 use crate::hooks::{setup_hooks_for_worktree, HooksConfig};
@@ -67,10 +71,11 @@ pub fn setup_claude_directory(worktree_path: &Path, repo_root: &Path) -> Result<
         create_worktree_settings(&main_settings, &worktree_settings)?;
 
         // Copy settings.local.json if it exists (contains user-granted runtime permissions)
+        // Use file locking to prevent reading a partially written file during concurrent syncs
         let main_settings_local = main_claude_dir.join("settings.local.json");
         let worktree_settings_local = worktree_claude_dir.join("settings.local.json");
         if main_settings_local.exists() {
-            std::fs::copy(&main_settings_local, &worktree_settings_local)
+            copy_file_with_shared_lock(&main_settings_local, &worktree_settings_local)
                 .with_context(|| "Failed to copy settings.local.json to worktree")?;
         }
     }
@@ -100,6 +105,64 @@ pub fn setup_root_claude_md(worktree_path: &Path, repo_root: &Path) -> Result<()
     }
 
     Ok(())
+}
+
+/// Copy a file with a shared (read) lock on the source.
+///
+/// This prevents reading a partially written file during concurrent writes.
+/// The source file is locked with a shared lock (allowing other readers),
+/// and the content is read and written to the destination atomically.
+fn copy_file_with_shared_lock(src: &Path, dst: &Path) -> Result<()> {
+    // Open the source file and acquire a shared lock
+    let src_file = File::open(src)
+        .with_context(|| format!("Failed to open source file: {}", src.display()))?;
+
+    src_file
+        .lock_shared()
+        .with_context(|| format!("Failed to acquire shared lock on: {}", src.display()))?;
+
+    // Read content while holding the lock
+    let mut content = Vec::new();
+    let mut reader = &src_file;
+    reader
+        .read_to_end(&mut content)
+        .with_context(|| format!("Failed to read source file: {}", src.display()))?;
+
+    // Lock is released when src_file is dropped, but we can write to dst now
+    // since we have the complete content
+
+    // Write to destination
+    let mut dst_file = File::create(dst)
+        .with_context(|| format!("Failed to create destination file: {}", dst.display()))?;
+
+    dst_file
+        .write_all(&content)
+        .with_context(|| format!("Failed to write to destination file: {}", dst.display()))?;
+
+    Ok(())
+}
+
+/// Copy settings.local.json from main repo to a worktree with proper locking.
+///
+/// This is the public interface for refreshing permissions in a worktree.
+/// Uses shared locking to prevent reading partially written files.
+pub fn refresh_worktree_settings_local(worktree_path: &Path, repo_root: &Path) -> Result<bool> {
+    let main_settings_local = repo_root.join(".claude/settings.local.json");
+    let worktree_settings_local = worktree_path.join(".claude/settings.local.json");
+
+    if !main_settings_local.exists() {
+        return Ok(false);
+    }
+
+    // Ensure .claude directory exists in worktree
+    let worktree_claude_dir = worktree_path.join(".claude");
+    if !worktree_claude_dir.exists() {
+        std::fs::create_dir_all(&worktree_claude_dir)
+            .with_context(|| "Failed to create .claude directory in worktree")?;
+    }
+
+    copy_file_with_shared_lock(&main_settings_local, &worktree_settings_local)?;
+    Ok(true)
 }
 
 /// Create settings.json for a worktree with trust and auto-accept settings.

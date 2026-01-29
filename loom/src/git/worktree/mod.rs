@@ -32,4 +32,4 @@ pub use operations::{
 };
 pub use parser::WorktreeInfo;
 pub use paths::{find_repo_root_from_cwd, find_worktree_root_from_cwd};
-pub use settings::{ensure_work_symlink, setup_worktree_hooks};
+pub use settings::{ensure_work_symlink, refresh_worktree_settings_local, setup_worktree_hooks};

@@ -185,10 +185,22 @@ pub fn complete(
                 match sync_worktree_permissions(dir, root) {
                     Ok(result) => {
                         if result.allow_added > 0 || result.deny_added > 0 {
-                            println!(
+                            let mut msg = format!(
                                 "Synced permissions from worktree: {} allow, {} deny",
                                 result.allow_added, result.deny_added
                             );
+                            if result.worktrees_updated > 0 {
+                                msg.push_str(&format!(
+                                    " (propagated to {} other worktree{})",
+                                    result.worktrees_updated,
+                                    if result.worktrees_updated == 1 {
+                                        ""
+                                    } else {
+                                        "s"
+                                    }
+                                ));
+                            }
+                            println!("{}", msg);
                         }
                     }
                     Err(e) => {
