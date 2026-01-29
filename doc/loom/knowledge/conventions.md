@@ -546,3 +546,26 @@ Aliases for CLI:
 
 - stack: deps, dependencies, tech, tooling
 - concerns: debt, issues, warnings
+
+## Code Consolidation Opportunities (2026-01-29)
+
+When a pattern appears 3+ times, extract to a canonical location and import instead of duplicating.
+
+### Critical Duplications Found
+
+- parse_stage_from_markdown: 4 copies, canonical in verify/transitions/serialization.rs
+- branch_name_for_stage: 22+ inline format!() calls, canonical in git/branch/naming.rs
+- extract_yaml_frontmatter: 2 copies (parser/frontmatter.rs vs skills/index.rs)
+
+### Consolidation Actions Required
+
+- compute_level: 4 copies (status render/ui) → create status/common/levels.rs
+- MEMORY_HEADER: 2 copies (fs/memory/) → create fs/memory/constants.rs
+- Staleness threshold: 2 copies (status files) → move to models/constants.rs
+
+### Import Pattern Standard
+
+Good: use crate::verify::transitions::serialization::parse_stage_from_markdown;
+Bad: fn parse_stage_from_markdown(...) { ... } // duplicate copy
+
+Branch naming: always call git::branch::naming::branch_name_for_stage(stage_id), not format!("loom/{}", id)

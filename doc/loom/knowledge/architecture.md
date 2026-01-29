@@ -374,3 +374,33 @@ WorkDir (fs/work_dir.rs) creates .work/ with subdirectories:
 signals, handoffs, archive, stages, sessions, crashes.
 
 REMOVED: runners, tracks, logs, checkpoints, task-state (dead code cleanup).
+
+## Review Findings - Layering Violations (2026-01-29)
+
+The following architecture layering violations were identified and require refactoring to restore proper dependency direction.
+
+### Critical Violations
+
+1. **daemon imports commands** - daemon/server/orchestrator.rs imports mark_plan_done_if_all_merged from commands/run
+   - Fix: Move to fs/plan_lifecycle.rs
+
+2. **orchestrator imports commands** - orchestrator/core/merge_handler.rs imports check_merge_state from commands/status/merge_status
+   - Fix: Move to git/merge/status.rs
+
+### More Violations
+
+1. **git/worktree imports orchestrator** - git/worktree/settings.rs imports hook configuration from orchestrator/hooks
+   - Fix: Extract hooks/ as top-level module
+
+2. **models imports plan/schema** - Core types WiringCheck and StageType defined in plan/schema but used by models
+   - Fix: Move type definitions to models/, keep re-exports in plan/schema
+
+### Correct Dependency Direction
+
+commands/ → orchestrator/ → models/ (top layers)
+    ↓             ↓              ↓
+daemon/    git/          plan/schema/ (middle layers)
+              ↓
+            fs/ (bottom layer)
+
+CRITICAL RULE: Lower layers MUST NEVER import from higher layers. This violation creates maintenance hazard.
