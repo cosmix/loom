@@ -10,6 +10,7 @@ use crate::fs::memory::{
     append_entry, delete_entries_by_type, list_journals, query_entries, read_journal,
     validate_content, MemoryEntry, MemoryEntryType,
 };
+use crate::git::worktree::{find_repo_root_from_cwd, find_worktree_root_from_cwd};
 
 use super::formatters::{
     format_entries_for_knowledge, format_entry_compact, format_entry_full, format_record_success,
@@ -17,15 +18,36 @@ use super::formatters::{
 };
 
 /// Get the .work directory, handling worktree symlinks
+///
+/// When called from within a worktree (or its subdirectory), finds the worktree root
+/// which has a `.work` symlink pointing to the main repo's `.work`.
+/// When called from the main repo, walks up to find the repo root's `.work`.
 fn get_work_dir() -> Result<std::path::PathBuf> {
     let cwd = env::current_dir().context("Failed to get current directory")?;
-    let work_dir = cwd.join(".work");
 
-    if !work_dir.exists() {
-        bail!(".work directory not found. Run 'loom init' first.");
+    // First check if we're in a worktree
+    if let Some(worktree_root) = find_worktree_root_from_cwd(&cwd) {
+        let work_dir = worktree_root.join(".work");
+        if work_dir.exists() {
+            return Ok(work_dir);
+        }
     }
 
-    Ok(work_dir)
+    // Not in a worktree (or worktree missing .work) - find repo root
+    if let Some(repo_root) = find_repo_root_from_cwd(&cwd) {
+        let work_dir = repo_root.join(".work");
+        if work_dir.exists() {
+            return Ok(work_dir);
+        }
+    }
+
+    // Fallback: check current directory (original behavior)
+    let work_dir = cwd.join(".work");
+    if work_dir.exists() {
+        return Ok(work_dir);
+    }
+
+    bail!(".work directory not found. Run 'loom init' first.");
 }
 
 /// Validate session ID to prevent path traversal attacks

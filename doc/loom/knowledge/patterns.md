@@ -1167,3 +1167,11 @@ Location: `orchestrator/terminal/emulator.rs` - escape_applescript_string(), esc
 
 - Integration verification passed for worktree isolation enforcement: All acceptance criteria met (cargo test, clippy, build). Sandbox defaults include deny rules for path traversal. Signal generation includes Worktree Isolation section with ALLOWED and FORBIDDEN lists. Hook enforcement validates bash commands and file paths.
 - Goal-backward verification truths were prose descriptions instead of shell commands. Manually verified: 1) Sandbox defaults in types.rs:155-179 include deny_read with ../../** and ../.worktrees/**, deny_write with ../../** and .work/stages/**, .work/sessions/**. 2) Signal format/sections.rs includes Worktree Isolation section. 3) hooks/validators/bash.rs validates git -C, path traversal, cross-worktree access.
+
+## Worktree Isolation (2026-01-29)
+
+Three-layer defense:
+
+1. Sandbox defaults (types.rs:155-179): deny ../../**, ../.worktrees/**, .work/stages/**
+2. Signal generation (sections.rs:319-349): ALLOWED/FORBIDDEN lists
+3. Hook enforcement (worktree-isolation.sh): blocks git -C, path traversal
