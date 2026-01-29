@@ -404,3 +404,86 @@ daemon/    git/          plan/schema/ (middle layers)
             fs/ (bottom layer)
 
 CRITICAL RULE: Lower layers MUST NEVER import from higher layers. This violation creates maintenance hazard.
+
+## Worktree Isolation
+
+Loom enforces isolation at multiple layers to enable safe parallel stage execution.
+
+| Layer | Implementation | Purpose |
+|-------|----------------|---------|
+| Git | Separate worktrees with branches | File isolation |
+| Sandbox | settings.local.json | Permissions |
+| Signal | Stable prefix rules | Instructions |
+| Hooks | Shell scripts | Enforcement |
+
+### Git Worktree Layer (git/worktree/)
+
+Worktrees at `.worktrees/<stage-id>/` with branch `loom/<stage-id>`.
+
+**Symlinks for shared state:**
+
+- `.work` -> `../../.work` (orchestration state)
+- `.claude/CLAUDE.md` -> `../../../.claude/CLAUDE.md` (instructions)
+- Root `CLAUDE.md` -> `../../CLAUDE.md` (project guidance)
+
+**Key files:**
+
+- `git/worktree/operations.rs` - create_worktree(), get_or_create_worktree()
+- `git/worktree/settings.rs` - ensure_work_symlink(), setup_claude_directory()
+
+.claude/ is a real directory (not symlink) to allow session-specific settings.json.
+
+### Sandbox Layer (sandbox/)
+
+Generates Claude Code `settings.local.json` with permission boundaries.
+
+**MergedSandboxConfig** (config.rs) merges plan + stage configs:
+
+- `filesystem.deny_read/deny_write/allow_write` - File access
+- `network.allowed_domains` - Web access
+- `excluded_commands` - Blocked CLI commands
+
+**Special stage types:** Knowledge and IntegrationVerify stages auto-add `doc/loom/knowledge/**` to allow_write.
+
+**Key files:**
+
+- `sandbox/config.rs` - merge_config(), expand_paths()
+- `sandbox/settings.rs` - generate_settings_json(), write_settings()
+
+### Signal Isolation Layer (orchestrator/signals/cache.rs)
+
+Two stable prefixes with explicit isolation rules:
+
+**generate_stable_prefix()** for worktree stages:
+
+- Worktree Context header with self-contained signal claim
+- Isolation Boundaries (STRICT): CONFINED to worktree
+- Path Boundaries: ALLOWED (., .work) vs FORBIDDEN (../.., absolute)
+
+Git Staging warnings: Never use bulk staging. Subagent restrictions: Never commit or complete stage. Binary usage: Use loom from PATH only.
+
+generate_knowledge_stable_prefix() for knowledge stages: NO WORKTREE, NO COMMITS, NO MERGING. EXPLORATION FOCUS with knowledge update commands.
+
+### Hooks Enforcement Layer (hooks/)
+
+Shell scripts that enforce isolation at runtime via Claude Code hooks.
+
+**HookEvent types** (hooks/config.rs): SessionStart, PostToolUse, PreCompact, SessionEnd, Stop, PreferModernTools.
+
+**Key enforcement hooks (hooks/*.sh):**
+
+commit-guard.sh (Stop): Blocks exit if uncommitted changes or stage incomplete. Detects worktree via path or branch prefix. Returns JSON with blocking reason.
+
+commit-filter.sh (PreToolUse:Bash): Blocks forbidden patterns. 1) Subagent git operations via LOOM_MAIN_AGENT_PID comparison. 2) Claude/Anthropic Co-Authored-By attribution.
+
+### Subagent Isolation
+
+Three-layer defense against subagent conflicts:
+
+1. Documentation: CLAUDE.md.template Rule 5 with subagent restrictions
+2. Signal injection: cache.rs stable prefix includes subagent warnings
+3. Hook enforcement: commit-filter.sh blocks git ops from subagents
+
+**Detection mechanism:** Wrapper script exports LOOM_MAIN_AGENT_PID. Hook compares PPID to this value. Main agent: PPID matches. Subagent: PPID differs.
+
+**Environment variables for hooks:** LOOM_STAGE_ID, LOOM_SESSION_ID, LOOM_WORK_DIR, LOOM_MAIN_AGENT_PID. Set via settings.json env section and wrapper script.
