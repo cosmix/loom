@@ -1175,3 +1175,60 @@ Three-layer defense:
 1. Sandbox defaults (types.rs:155-179): deny ../../**, ../.worktrees/**, .work/stages/**
 2. Signal generation (sections.rs:319-349): ALLOWED/FORBIDDEN lists
 3. Hook enforcement (worktree-isolation.sh): blocks git -C, path traversal
+
+## Bug Fix Patterns (2026-01-29)
+
+### Permission Sync with File Locking
+
+Location: fs/permissions/sync.rs:120-180
+
+Pattern for atomic file updates:
+
+1. Open file with read/write/create/no-truncate
+2. Acquire exclusive lock (fs2::FileExt::lock_exclusive)
+3. Read current content from locked handle
+4. Modify in memory
+5. Truncate, seek to start, write to SAME locked handle
+6. Lock releases on drop
+
+CRITICAL: Writing to a new File handle bypasses the lock. Always use the locked handle.
+
+### Daemon Graceful Shutdown
+
+Location: daemon/server/lifecycle.rs
+
+Shutdown sequence:
+
+1. Client sends Request::Stop via socket
+2. Server checks shutdown_flag in accept loop (100ms sleep on WouldBlock)
+3. Server waits for orchestrator, log tailer, broadcaster threads
+4. cleanup() removes socket, PID, completion marker
+5. Drop impl ensures cleanup on panic
+
+Timeout handling: If 5s timeout, suggest manual kill with PID file path.
+
+### Session State Detection
+
+Location: orchestrator/monitor/detection.rs
+
+Detection struct tracks: last_stage_states, last_session_states, last_context_levels, reported_hung_sessions.
+
+Event deduplication: reported_hung_sessions HashSet prevents duplicate hung events. Cleared on fresh heartbeat.
+
+### Session Crash vs Hung Logic
+
+- Crash: PID dead AND stage not Completed
+- Hung: PID alive AND heartbeat stale > timeout
+- Normal exit: PID dead BUT stage already Completed (skip crash event)
+
+This prevents false crash reports when session exits normally after completing work.
+
+### Init Error Rollback
+
+Location: commands/init/execute.rs
+
+Error levels:
+
+- Fatal: validate_work_dir_state() - abort immediately
+- Fatal: plan parsing - cleanup with remove_work_directory_on_failure(), return error
+- Non-fatal: git hook install - log warning, continue
