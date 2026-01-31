@@ -294,17 +294,26 @@ pub fn create_wrapper_script(
 
     // Build the cd command if a working directory is specified
     // Use absolute path for working directory
-    let cd_section = if let Some(dir) = working_dir {
+    // Also export LOOM_WORKTREE_PATH for hook-based isolation enforcement
+    let (cd_section, worktree_path_export) = if let Some(dir) = working_dir {
         let dir_abs = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
-        format!(
-            r#"# Change to working directory
+        (
+            format!(
+                r#"# Change to working directory
 cd '{}' || {{ echo "Failed to cd to working directory"; exit 1; }}
 
 "#,
-            dir_abs.display()
+                dir_abs.display()
+            ),
+            format!(
+                r#"# Worktree boundary for file isolation hooks
+export LOOM_WORKTREE_PATH="{}"
+"#,
+                dir_abs.display()
+            ),
         )
     } else {
-        String::new()
+        (String::new(), String::new())
     };
 
     let script = format!(
@@ -319,7 +328,7 @@ export LOOM_WORK_DIR="{work_dir}"
 # CRITICAL: LOOM_MAIN_AGENT_PID allows hooks to detect subagents
 # Subagents inherit this var but have different $PPID - hooks can compare
 export LOOM_MAIN_AGENT_PID=$$
-
+{worktree_path_export}
 {cd_section}# Write our PID to the tracking file
 echo $$ > "{pid_file}"
 
@@ -329,6 +338,7 @@ exec {claude_cmd}
         stage_id = stage_id,
         session_id = session_id,
         work_dir = work_dir_abs.display(),
+        worktree_path_export = worktree_path_export,
         cd_section = cd_section,
         pid_file = pid_file_abs.display(),
         claude_cmd = claude_cmd
@@ -438,6 +448,9 @@ mod tests {
         assert!(content.contains("cd '/tmp/test-worktree'"));
         assert!(content.contains("echo $$"));
         assert!(content.contains(claude_cmd));
+        // Check worktree path is exported for file isolation hooks
+        assert!(content.contains("LOOM_WORKTREE_PATH"));
+        assert!(content.contains("/tmp/test-worktree"));
     }
 
     #[test]

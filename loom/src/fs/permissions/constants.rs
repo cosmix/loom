@@ -46,6 +46,10 @@ pub const HOOK_GIT_ADD_GUARD: &str = include_str!("../../../../hooks/git-add-gua
 /// WorktreeIsolation hook - enforces worktree boundaries (blocks git -C, path traversal, cross-worktree access)
 pub const HOOK_WORKTREE_ISOLATION: &str = include_str!("../../../../hooks/worktree-isolation.sh");
 
+/// WorktreeFileGuard hook - defense-in-depth for file tools (Read, Write, Edit, Glob, Grep)
+/// Validates target paths are within worktree boundary using LOOM_WORKTREE_PATH
+pub const HOOK_WORKTREE_FILE_GUARD: &str = include_str!("../../../../hooks/worktree-file-guard.sh");
+
 /// All loom hook scripts with their filenames (installed to ~/.claude/hooks/loom/)
 /// All hooks are installed to the loom/ subdirectory to keep them separate from user hooks.
 pub const LOOM_HOOKS: &[(&str, &str)] = &[
@@ -63,6 +67,7 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("commit-filter.sh", HOOK_COMMIT_FILTER),
     ("git-add-guard.sh", HOOK_GIT_ADD_GUARD),
     ("worktree-isolation.sh", HOOK_WORKTREE_ISOLATION),
+    ("worktree-file-guard.sh", HOOK_WORKTREE_FILE_GUARD),
     // Skill suggestion hooks
     ("skill-index-builder.sh", HOOK_SKILL_INDEX_BUILDER),
     ("skill-trigger.sh", HOOK_SKILL_TRIGGER),
