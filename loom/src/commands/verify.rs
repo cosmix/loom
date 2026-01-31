@@ -9,8 +9,9 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use std::path::{Path, PathBuf};
 
-use crate::fs::work_dir::WorkDir;
-use crate::git::worktree::find_repo_root_from_cwd;
+use crate::commands::stage::acceptance_runner::resolve_acceptance_dir;
+use crate::fs::work_dir::load_config_required;
+use crate::git::worktree::find_worktree_root_from_cwd;
 use crate::models::stage::Stage;
 use crate::plan::parser::parse_plan;
 use crate::verify::criteria::run_acceptance;
@@ -19,25 +20,18 @@ use crate::verify::transitions::load_stage;
 
 /// Execute the verify command
 pub fn execute(stage_id: &str, suggest: bool) -> Result<()> {
-    // Try local .work first (works in main repo and worktrees with symlink)
-    let work_dir_path = Path::new(".work");
-    let work_dir = if work_dir_path.exists() {
-        WorkDir::new(".")?
-    } else {
-        // Fall back to finding main repo root (handles worktree edge cases)
-        let cwd = std::env::current_dir().context("Failed to get current directory")?;
-        let repo_root = find_repo_root_from_cwd(&cwd)
-            .context("Could not find repository root. Run 'loom init' first.")?;
-        WorkDir::new(&repo_root)?
-    };
-    work_dir.load()?;
+    // Use .work directly (works in main repo and worktrees with symlink)
+    let work_dir = Path::new(".work");
+    if !work_dir.exists() {
+        anyhow::bail!(".work directory does not exist. Run 'loom init' first.");
+    }
 
     // Load stage
-    let stage = load_stage(stage_id, work_dir.root())
+    let stage = load_stage(stage_id, work_dir)
         .with_context(|| format!("Failed to load stage '{stage_id}'"))?;
 
     // Get plan source path
-    let config = work_dir.load_config_required()?;
+    let config = load_config_required(work_dir)?;
     let plan_path = config
         .source_path()
         .context("No plan source path configured in .work/config.toml")?;
@@ -52,8 +46,8 @@ pub fn execute(stage_id: &str, suggest: bool) -> Result<()> {
         .find(|s| s.id == stage_id)
         .with_context(|| format!("Stage '{stage_id}' not found in plan"))?;
 
-    // Resolve acceptance directory
-    let acceptance_dir = resolve_acceptance_dir_for_stage(&stage, &work_dir)?;
+    // Resolve acceptance directory using worktree-safe approach
+    let acceptance_dir = resolve_acceptance_dir_for_stage(&stage)?;
 
     println!(
         "{} Running goal-backward verification for '{}'...\n",
@@ -117,38 +111,30 @@ pub fn execute(stage_id: &str, suggest: bool) -> Result<()> {
 }
 
 /// Resolve the directory for running acceptance criteria
-fn resolve_acceptance_dir_for_stage(stage: &Stage, work_dir: &WorkDir) -> Result<Option<PathBuf>> {
-    // Check if stage has a worktree
-    if let Some(worktree) = &stage.worktree {
-        let worktree_path = work_dir
-            .root()
-            .parent()
-            .unwrap()
-            .join(".worktrees")
-            .join(worktree);
-        if worktree_path.exists() {
-            // Apply working_dir if set
-            if let Some(wd) = &stage.working_dir {
-                if wd != "." {
-                    return Ok(Some(worktree_path.join(wd)));
-                }
-            }
-            return Ok(Some(worktree_path));
-        }
-    }
+///
+/// Uses worktree-safe path resolution:
+/// 1. First tries to detect worktree from cwd
+/// 2. Falls back to looking for worktree in .worktrees/ directory
+/// 3. Falls back to current directory with working_dir applied
+fn resolve_acceptance_dir_for_stage(stage: &Stage) -> Result<Option<PathBuf>> {
+    // Resolve worktree path: first try detecting from cwd, then fall back to stage.worktree field
+    let cwd = std::env::current_dir().ok();
+    let worktree_root: Option<PathBuf> = cwd
+        .as_ref()
+        .and_then(|p| find_worktree_root_from_cwd(p))
+        .or_else(|| {
+            stage
+                .worktree
+                .as_ref()
+                .map(|w| PathBuf::from(".worktrees").join(w))
+                .filter(|p| p.exists())
+        });
 
-    // Fall back to project root with working_dir
-    if let Some(project_root) = work_dir.project_root() {
-        let base = project_root.to_path_buf();
-        if let Some(wd) = &stage.working_dir {
-            if wd != "." {
-                return Ok(Some(base.join(wd)));
-            }
-        }
-        return Ok(Some(base));
-    }
-
-    Ok(None)
+    // Use the shared resolve_acceptance_dir helper
+    Ok(resolve_acceptance_dir(
+        worktree_root.as_deref(),
+        stage.working_dir.as_deref(),
+    ))
 }
 
 /// Print acceptance criteria results
