@@ -2,6 +2,8 @@
 
 > Discovered coding conventions in the codebase.
 > This file is append-only - agents add discoveries, never delete.
+>
+> **Related files:** [patterns.md](patterns.md) for design patterns, [architecture.md](architecture.md) for system overview.
 
 ## File Naming Conventions
 
@@ -207,6 +209,8 @@ fn test_stage_file_with_missing_dependencies() { }
 
 ### Context Thresholds
 
+> **Canonical source** for context threshold values. Referenced by [patterns.md § Context Health Pattern](patterns.md#context-health-pattern).
+
 ```rust
 pub const DEFAULT_CONTEXT_LIMIT: u32 = 200_000;
 pub const CONTEXT_WARNING_THRESHOLD: f32 = 0.75;  // 75%
@@ -384,6 +388,8 @@ impl std::fmt::Display for StageStatus {
 ```
 
 ## Hook Conventions
+
+> **Hook patterns:** See [patterns.md § Hook Patterns](patterns.md#hook-patterns) for event pipeline, input/response patterns.
 
 ### Hook Location
 

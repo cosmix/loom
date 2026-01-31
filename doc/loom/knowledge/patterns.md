@@ -2,6 +2,30 @@
 
 > Discovered patterns in the codebase that help agents understand how things work.
 > This file is append-only - agents add discoveries, never delete.
+>
+> **Related files:** [architecture.md](architecture.md) for system overview, [conventions.md](conventions.md) for coding standards.
+
+## Table of Contents
+
+- [State Machine Pattern](#state-machine-pattern) - Stage/Session state machines
+- [File-Based State Pattern](#file-based-state-pattern) - .work/ directory persistence
+- [Signal Generation Patterns](#signal-generation-patterns) - Manus KV-cache optimization
+- [Progressive Merge Pattern](#progressive-merge-pattern) - Dependency-ordered merging
+- [Worktree Isolation Pattern](#worktree-isolation-pattern) - Git worktree isolation
+- [Daemon IPC Pattern](#daemon-ipc-pattern) - Unix socket communication
+- [Polling Orchestration Pattern](#polling-orchestration-pattern) - Main loop design
+- [Heartbeat Monitoring Pattern](#heartbeat-monitoring-pattern) - Session liveness
+- [Context Health Pattern](#context-health-pattern) - Context usage tiers
+- [Retry with Backoff Pattern](#retry-with-backoff-pattern) - Exponential backoff
+- [Terminal Spawning Patterns](#terminal-spawning-patterns) - Cross-platform terminals
+- [Hook Patterns](#hook-patterns) - Claude Code hook integration
+- [TUI Patterns](#tui-patterns) - Terminal UI with ratatui
+- [Memory/Knowledge Consolidation](#memoryknowledge-consolidation) - Agent knowledge systems
+- [Stage Completion Patterns](#stage-completion-patterns) - Completion workflows
+- [Error Handling Framework](#error-handling-framework) - anyhow patterns
+- [Security Validation Patterns](#security-validation-patterns-2026-01-29) - Input validation, shell escaping
+
+---
 
 ## State Machine Pattern
 
@@ -41,19 +65,11 @@ stage.status.try_transition(new_status)?  // Returns Err if invalid
 
 ## File-Based State Pattern
 
-All state persisted to `.work/` directory for git-friendliness and crash recovery:
+> **Directory structure:** See [architecture.md § Directory Structure](architecture.md#directory-structure) for complete file layout.
 
-```text
-.work/
-├── config.toml          # Active plan reference
-├── stages/*.md          # Stage state (YAML frontmatter + markdown)
-├── sessions/*.md        # Session tracking
-├── signals/*.md         # Agent instruction files
-├── handoffs/*.md        # Context handoff records
-├── heartbeat/*.json     # Session heartbeats
-├── checkpoints/         # Task completion records
-└── learnings/           # Protected learning files
-```
+All state persisted to `.work/` directory for git-friendliness and crash recovery.
+
+**Key directories:** config.toml (plan reference), stages/_.md (stage state), sessions/_.md (session tracking), signals/_.md (agent instructions), handoffs/_.md (context records).
 
 **Benefits:**
 
@@ -124,24 +140,13 @@ Stage A completes --> Merge A to main --> Stage B starts (uses main as base)
 
 ## Worktree Isolation Pattern
 
-Each stage gets isolated git worktree:
+> **Full details:** See [architecture.md § Worktree Isolation](architecture.md#worktree-isolation) for 4-layer defense (Git, Sandbox, Signal, Hooks).
 
-```text
-.worktrees/
-└── {stage-id}/
-    ├── .git              # Worktree git reference
-    ├── .work -> ../../.work  # Symlink to shared state
-    ├── .claude/          # Claude Code settings (symlinked)
-    └── [project files]   # Isolated copy
-```
+Each stage gets isolated git worktree at `.worktrees/{stage-id}/` with branch `loom/{stage-id}`.
 
-**Branch Naming:** `loom/{stage-id}` for each worktree
+**Symlinks:** `.work` → shared state, `.claude/CLAUDE.md` → instructions, `CLAUDE.md` → project guidance.
 
-**Benefits:**
-
-- Parallel execution without conflicts
-- Independent git branches
-- Shared `.work/` via symlink
+**Benefits:** Parallel execution without conflicts, independent git branches, shared `.work/` via symlink.
 
 ## Daemon IPC Pattern
 
@@ -200,6 +205,8 @@ Sessions write heartbeats for liveness detection:
 - PID dead = **Crashed session**
 
 ## Context Health Pattern
+
+> **Threshold constants:** See [conventions.md § Context Thresholds](conventions.md#context-thresholds) for exact values.
 
 Three-tier context monitoring:
 
@@ -1075,6 +1082,8 @@ Config in .claude/settings.json with env vars: LOOM_STAGE_ID, LOOM_SESSION_ID, L
 
 ## Signal Cache System
 
+> **See also:** [Signal Generation Patterns](#signal-generation-patterns) for full signal structure.
+
 ### Manus KV-Cache Pattern (orchestrator/signals/cache.rs)
 
 SignalMetrics tracks signal size, token estimates, stable prefix hash.
@@ -1085,8 +1094,6 @@ Signal sections for LLM cache optimization:
 2. Semi-stable: Plan overview, knowledge context
 3. Dynamic: Assignment, acceptance criteria
 4. Recitation: Context restoration hints
-
-## Signal Cache (continued)
 
 ### Prefix Generators
 
@@ -1159,20 +1166,22 @@ Location: `orchestrator/terminal/emulator.rs` - escape_applescript_string(), esc
 ### Decisions
 
 - **Fixed shell injection vulnerabilities in MateTerminal and XTerm emulator commands by adding escape_shell_single_quote() function**
-  - *Rationale:* MateTerminal used unescaped single quotes allowing command injection. XTerm concatenated workdir directly into shell command. Both now properly escape using standard shell escaping pattern.
+  - _Rationale:_ MateTerminal used unescaped single quotes allowing command injection. XTerm concatenated workdir directly into shell command. Both now properly escape using standard shell escaping pattern.
 
 ## Promoted from Memory [2026-01-29 21:33]
 
 ### Notes
 
 - Integration verification passed for worktree isolation enforcement: All acceptance criteria met (cargo test, clippy, build). Sandbox defaults include deny rules for path traversal. Signal generation includes Worktree Isolation section with ALLOWED and FORBIDDEN lists. Hook enforcement validates bash commands and file paths.
-- Goal-backward verification truths were prose descriptions instead of shell commands. Manually verified: 1) Sandbox defaults in types.rs:155-179 include deny_read with ../../** and ../.worktrees/**, deny_write with ../../** and .work/stages/**, .work/sessions/**. 2) Signal format/sections.rs includes Worktree Isolation section. 3) hooks/validators/bash.rs validates git -C, path traversal, cross-worktree access.
+- Goal-backward verification truths were prose descriptions instead of shell commands. Manually verified: 1) Sandbox defaults in types.rs:155-179 include deny_read with ../../**and ../.worktrees/**, deny_write with ../../** and .work/stages/**, .work/sessions/\*\*. 2) Signal format/sections.rs includes Worktree Isolation section. 3) hooks/validators/bash.rs validates git -C, path traversal, cross-worktree access.
 
-## Worktree Isolation (2026-01-29)
+## Worktree Isolation Details (2026-01-29)
 
-Three-layer defense:
+> **See also:** [Worktree Isolation Pattern](#worktree-isolation-pattern) above, [architecture.md § Worktree Isolation](architecture.md#worktree-isolation) for 4-layer defense.
 
-1. Sandbox defaults (types.rs:155-179): deny ../../**, ../.worktrees/**, .work/stages/**
+Implementation verification:
+
+1. Sandbox defaults (types.rs:155-179): deny ../../**, ../.worktrees/**, .work/stages/\*\*
 2. Signal generation (sections.rs:319-349): ALLOWED/FORBIDDEN lists
 3. Hook enforcement (worktree-isolation.sh): blocks git -C, path traversal
 
@@ -1232,3 +1241,29 @@ Error levels:
 - Fatal: validate_work_dir_state() - abort immediately
 - Fatal: plan parsing - cleanup with remove_work_directory_on_failure(), return error
 - Non-fatal: git hook install - log warning, continue
+
+## Worktree Path Resolution Patterns
+
+### Direct Path for .work Access
+
+For commands that only need to access .work state files, use direct Path:
+
+- CORRECT (complete.rs pattern): `let work_dir = Path::new(".work");`
+- Follows symlinks automatically
+- AVOID: `WorkDir::new(".")?.load()?` unless you need full functionality
+
+### main_project_root() for Cross-Worktree Operations
+
+When writing to main repo from a worktree (e.g., knowledge files):
+
+- Use `work_dir.main_project_root()` to resolve through symlinks
+- Returns the actual main repo path, not the worktree path
+- See knowledge.rs for the canonical pattern
+
+### Hook Regex Precision
+
+When matching file/path patterns in hook scripts:
+
+- AVOID: `.*\.work` matches .work as substring anywhere
+- PREFER: Word boundary or path segment matching for precision
+- Test hooks against edge cases like paths containing .workflow or myfile.work.txt

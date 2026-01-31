@@ -2,6 +2,8 @@
 
 > Key files agents should read first to understand the codebase.
 > This file is append-only - agents add discoveries, never delete.
+>
+> **Related files:** [architecture.md](architecture.md) for system overview, [patterns.md](patterns.md) for design patterns.
 
 ## CLI Entry Point
 
@@ -196,46 +198,34 @@ Comprehensive analysis of 288 discovery documentation files from `doc/discovery/
 
 ### Signal System (Manus KV-Cache Pattern)
 
-Signals in `.work/signals/{session-id}.md` use 4-section structure:
+> **Pattern details:** See [patterns.md § Signal Generation Patterns](patterns.md#signal-generation-patterns) for 4-section structure and 6 signal types.
 
-1. **STABLE PREFIX** - Fixed rules, CLAUDE.md reminders (cached)
-2. **SEMI-STABLE** - Knowledge summary, skill recommendations
-3. **DYNAMIC** - Target info, assignment, dependencies, handoff
-4. **RECITATION** - Task progression, immediate tasks, memory (max attention)
-
-Key files: `orchestrator/signals/generate.rs`, `format.rs`, `crud.rs`
+Key files: `orchestrator/signals/generate.rs`, `format.rs`, `crud.rs`, `cache.rs`
 
 ### Git Operations
 
-| Area      | Key Files                               | Operations                                                |
-| --------- | --------------------------------------- | --------------------------------------------------------- |
-| Worktrees | `git/worktree/operations.rs`, `base.rs` | Create at `.worktrees/{stage-id}/`, resolve base branch   |
-| Branches  | `git/branch/operations.rs`, `naming.rs` | `loom/{stage-id}` naming, ancestry checks                 |
-| Merge     | `git/merge.rs`                          | MergeResult: Success/Conflict/FastForward/AlreadyUpToDate |
-| Cleanup   | `git/cleanup/batch.rs`                  | Post-merge: remove worktree, delete branch, prune         |
+> **Git commands:** See [conventions.md § Git Operations](conventions.md#git-operations) for command patterns.
+
+| Area      | Key Files                               | Purpose                                  |
+| --------- | --------------------------------------- | ---------------------------------------- |
+| Worktrees | `git/worktree/operations.rs`, `base.rs` | Create worktrees, resolve base branch    |
+| Branches  | `git/branch/operations.rs`, `naming.rs` | Branch naming, ancestry checks           |
+| Merge     | `git/merge.rs`                          | Merge operations, conflict handling      |
+| Cleanup   | `git/cleanup/batch.rs`                  | Post-merge cleanup                       |
 
 ### File System State Structure
 
-```text
-.work/
-├── config.toml          # Active plan, base_branch
-├── stages/              # {depth}-{stage-id}.md (YAML frontmatter)
-├── sessions/            # {session-id}.md
-├── signals/             # Agent instruction signals
-├── handoffs/            # Context exhaustion dumps
-├── memory/              # Per-session journals
-├── task-state/          # Task progression YAML
-├── checkpoints/         # Task completion records
-├── crashes/             # Crash recovery logs
-├── heartbeat/           # Session heartbeat JSON
-└── hooks/events.jsonl   # Hook event log
-```
+> **Full directory layout:** See [architecture.md § Directory Structure](architecture.md#directory-structure) for complete .work/ structure.
+
+Key subdirectories: config.toml, stages/, sessions/, signals/, handoffs/, memory/, crashes/, heartbeat/.
 
 ### Data Models
 
-**Stage** (11 states): WaitingForDeps → Queued → Executing → Completed/Blocked/NeedsHandoff/WaitingForInput/MergeConflict/CompletedWithFailures/MergeBlocked/Skipped
+> **State machines:** See [patterns.md § State Machine Pattern](patterns.md#state-machine-pattern) for full diagrams and transition rules.
 
-**Session** (6 states): Spawning → Running → Completed/Crashed/ContextExhausted/Paused
+**Stage** (11 states): WaitingForDeps → Queued → Executing → terminal states
+
+**Session** (6 states): Spawning → Running → terminal states
 
 **Scheduling Invariant**: Stage ready only when ALL dependencies have `status == Completed` AND `merged == true`
 
@@ -285,6 +275,8 @@ Socket at `.work/orchestrator.sock` with 4-byte length-prefixed JSON:
 - **Responses**: StatusUpdate, OrchestrationComplete, LogLine, Pong, Error
 
 ### Key Design Patterns
+
+> **Full pattern documentation:** See [patterns.md](patterns.md) for detailed explanations with code examples.
 
 1. **File-Based State** - All state in .work/ as markdown/YAML for git-friendliness
 2. **Progressive Merge** - Merge immediately on completion to minimize conflict window

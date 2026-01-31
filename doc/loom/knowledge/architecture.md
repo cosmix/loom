@@ -2,6 +2,8 @@
 
 > High-level component relationships, data flow, and module dependencies.
 > This file is append-only - agents add discoveries, never delete.
+>
+> **Related files:** [patterns.md](patterns.md) for design patterns, [entry-points.md](entry-points.md) for code navigation, [conventions.md](conventions.md) for coding standards.
 
 ## Project Overview
 
@@ -223,11 +225,9 @@ started_at: "2024-01-15T10:30:00Z"
 
 ### Manus Signal Format
 
-Signal files use the "Manus" format optimized for LLM KV-cache:
+> **Full details:** See [patterns.md § Signal Generation Patterns](patterns.md#signal-generation-patterns) for complete 4-section structure and 6 signal types.
 
-- Static preamble (cacheable)
-- Dynamic assignment section
-- Context restoration hints
+Signal files use the "Manus" format optimized for LLM KV-cache: Static preamble (cacheable), Semi-stable (per-stage), Dynamic (per-session), Recitation (max attention).
 
 ### Trait-Based Composition
 
@@ -239,6 +239,8 @@ Orchestrator uses traits for extensibility:
 - `StageExecutor`: Stage lifecycle management
 
 ### Progressive Merge
+
+> **Full details:** See [patterns.md § Progressive Merge Pattern](patterns.md#progressive-merge-pattern) for base branch resolution logic.
 
 Stages merged in dependency order with invariant: a stage can only merge after all its dependencies have `merged: true`.
 
