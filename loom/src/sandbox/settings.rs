@@ -27,80 +27,81 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
 
 /// Generate Claude Code settings JSON from sandbox config
 pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
-    // If sandboxing is disabled, set dangerouslyDisableSandbox
-    if !config.enabled {
-        return json!({
-            "dangerouslyDisableSandbox": true
-        });
+    let mut settings = json!({});
+
+    // Build sandbox block with native sandbox configuration
+    let mut sandbox = json!({
+        "enabled": config.enabled
+    });
+
+    // Add autoAllowBashIfSandboxed if enabled
+    if config.auto_allow {
+        sandbox["autoAllowBashIfSandboxed"] = json!(true);
     }
 
+    // Add excluded commands if any
+    if !config.excluded_commands.is_empty() {
+        sandbox["excludedCommands"] = json!(config.excluded_commands);
+    }
+
+    // Add allowUnsandboxedCommands if enabled
+    if config.allow_unsandboxed_escape {
+        sandbox["allowUnsandboxedCommands"] = json!(true);
+    }
+
+    // Add network configuration
+    let mut network = json!({});
+    let mut domains = config.network.allowed_domains.clone();
+    domains.extend(config.network.additional_domains.clone());
+    if !domains.is_empty() {
+        network["allowedDomains"] = json!(domains);
+    }
+    if config.network.allow_local_binding {
+        network["allowLocalBinding"] = json!(true);
+    }
+    // Only add network block if it has content
+    if network.as_object().is_some_and(|o| !o.is_empty()) {
+        sandbox["network"] = network;
+    }
+
+    settings["sandbox"] = sandbox;
+
+    // Build permissions block for file tool restrictions (Read/Write/Edit prompting)
+    // These still work for prompting even though they don't provide OS-level isolation
     let mut permissions = json!({});
-
-    // Build deny permissions (filesystem)
-    // Format: "Read(path)" or "Write(path)" per Claude Code settings spec
     let mut deny: Vec<Value> = Vec::new();
+    let mut allow: Vec<Value> = Vec::new();
 
-    // Add deny_read paths
+    // Add deny_read paths (prompts before allowing Read tool on these)
     for path in &config.filesystem.deny_read {
         deny.push(json!(format!("Read({})", path)));
     }
 
-    // Add deny_write paths
+    // Add deny_write paths (prompts before allowing Write/Edit tools on these)
     for path in &config.filesystem.deny_write {
         deny.push(json!(format!("Write({})", path)));
     }
 
-    // Build allow permissions (filesystem allow_write exceptions)
-    let mut allow: Vec<Value> = Vec::new();
-
+    // Add allow_write paths as exceptions
     for path in &config.filesystem.allow_write {
         allow.push(json!(format!("Write({})", path)));
     }
 
-    // Add network permissions
-    // Format: "WebFetch(domain:example.com)" per Claude Code settings spec
-    if !config.network.allowed_domains.is_empty() || !config.network.additional_domains.is_empty() {
-        let mut domains = config.network.allowed_domains.clone();
-        domains.extend(config.network.additional_domains.clone());
-
-        for domain in domains {
-            allow.push(json!(format!("WebFetch(domain:{})", domain)));
-        }
-    }
-
-    // Note: allow_local_binding and allow_unix_sockets are not directly supported
-    // in Claude Code's settings.json format. These would need to be handled via
-    // sandbox configuration or other mechanisms if needed.
-
-    // Build permissions object
     if !allow.is_empty() {
         permissions["allow"] = json!(allow);
     }
     if !deny.is_empty() {
         permissions["deny"] = json!(deny);
     }
-
-    // Build final settings object
-    let mut settings = json!({
-        "permissions": permissions,
-        "dangerouslyDisableSandbox": false
-    });
+    if permissions.as_object().is_some_and(|o| !o.is_empty()) {
+        settings["permissions"] = permissions;
+    }
 
     // Add Linux-specific settings if configured
     if config.linux.enable_weaker_nested {
         settings["linux"] = json!({
             "enableWeakerNested": true
         });
-    }
-
-    // Add excluded commands if any
-    if !config.excluded_commands.is_empty() {
-        settings["excludedCommands"] = json!(config.excluded_commands);
-    }
-
-    // Add allow_unsandboxed_escape if enabled
-    if config.allow_unsandboxed_escape {
-        settings["allowUnsandboxedEscape"] = json!(true);
     }
 
     settings
@@ -124,7 +125,10 @@ mod tests {
         };
 
         let json = generate_settings_json(&config);
-        assert_eq!(json["dangerouslyDisableSandbox"], true);
+        // Sandbox block should have enabled: false
+        assert_eq!(json["sandbox"]["enabled"], false);
+        // dangerouslyDisableSandbox should NOT be present (deprecated)
+        assert!(json.get("dangerouslyDisableSandbox").is_none());
     }
 
     #[test]
@@ -144,8 +148,11 @@ mod tests {
         };
 
         let json = generate_settings_json(&config);
-        assert_eq!(json["dangerouslyDisableSandbox"], false);
+        // Sandbox enabled in sandbox block
+        assert_eq!(json["sandbox"]["enabled"], true);
+        assert_eq!(json["sandbox"]["autoAllowBashIfSandboxed"], true);
 
+        // Permissions for file tool restrictions
         let deny = json["permissions"]["deny"].as_array().unwrap();
         assert_eq!(deny.len(), 2);
         assert_eq!(deny[0], "Read(~/.ssh/**)");
@@ -175,15 +182,13 @@ mod tests {
 
         let json = generate_settings_json(&config);
 
-        let allow = json["permissions"]["allow"].as_array().unwrap();
-        // Only 2 domains (local binding and unix sockets not supported in settings.json format)
-        assert_eq!(allow.len(), 2);
-
-        // Check domain permissions use correct format
-        assert!(allow.iter().any(|p| p == "WebFetch(domain:*.github.com)"));
-        assert!(allow
-            .iter()
-            .any(|p| p == "WebFetch(domain:api.example.com)"));
+        // Network config is now in sandbox.network block
+        let network = &json["sandbox"]["network"];
+        let domains = network["allowedDomains"].as_array().unwrap();
+        assert_eq!(domains.len(), 2);
+        assert!(domains.iter().any(|d| d == "*.github.com"));
+        assert!(domains.iter().any(|d| d == "api.example.com"));
+        assert_eq!(network["allowLocalBinding"], true);
     }
 
     #[test]
@@ -217,7 +222,8 @@ mod tests {
         };
 
         let json = generate_settings_json(&config);
-        let excluded = json["excludedCommands"].as_array().unwrap();
+        // Excluded commands are now in sandbox block
+        let excluded = json["sandbox"]["excludedCommands"].as_array().unwrap();
         assert_eq!(excluded.len(), 2);
         assert_eq!(excluded[0], "loom");
         assert_eq!(excluded[1], "git");
@@ -236,6 +242,7 @@ mod tests {
         };
 
         let json = generate_settings_json(&config);
-        assert_eq!(json["allowUnsandboxedEscape"], true);
+        // allowUnsandboxedCommands is now in sandbox block
+        assert_eq!(json["sandbox"]["allowUnsandboxedCommands"], true);
     }
 }
