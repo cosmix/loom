@@ -9,8 +9,32 @@
 # Exit codes:
 #   0 - Allow the command
 #   2 - Block with guidance message
+#
+# Debug mode:
+#   Set GIT_ADD_GUARD_DEBUG=1 to see what patterns are being checked
+#
+# Test cases for Pattern 3 (.work detection):
+#   SHOULD BLOCK:
+#     git add .work          (direct .work)
+#     git add .work/         (directory)
+#     git add .work/foo      (subpath)
+#     git add foo .work bar  (.work as middle argument)
+#     git add .work other    (.work followed by other files)
+#   SHOULD ALLOW:
+#     git add .workspace     (.work is substring, not standalone)
+#     git add .working       (.work is substring)
+#     git add .workdir       (.work is substring)
+#     git add doc/foo.md     (no .work at all)
+#     git add network.md     (no .work at all)
 
 set -euo pipefail
+
+# Debug helper
+debug() {
+    if [[ "${GIT_ADD_GUARD_DEBUG:-}" == "1" ]]; then
+        echo "[git-add-guard DEBUG] $*" >&2
+    fi
+}
 
 # Read stdin JSON (Claude Code provides tool input)
 INPUT_JSON=$(timeout 1 cat 2>/dev/null || true)
@@ -18,9 +42,11 @@ INPUT_JSON=$(timeout 1 cat 2>/dev/null || true)
 # Extract tool name and command
 TOOL_NAME=$(echo "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
 COMMAND=$(echo "$INPUT_JSON" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
+debug "Tool: $TOOL_NAME, Command: $COMMAND"
 
 # Only process Bash tool calls
 if [[ "$TOOL_NAME" != "Bash" ]] || [[ -z "$COMMAND" ]]; then
+    debug "Skipping: not a Bash tool call"
     exit 0
 fi
 
@@ -31,9 +57,11 @@ check_dangerous_patterns() {
     # Normalize: remove extra whitespace, convert to lowercase for matching
     local normalized
     normalized=$(echo "$cmd" | tr -s ' ')
+    debug "Checking command: $normalized"
 
     # Pattern 1: git add -A or git add --all (anywhere in command)
     if [[ "$normalized" =~ git[[:space:]]+add[[:space:]].*(-A|--all) ]]; then
+        debug "BLOCKED by Pattern 1: git add -A/--all"
         return 1
     fi
 
@@ -42,14 +70,20 @@ check_dangerous_patterns() {
     if [[ "$normalized" =~ git[[:space:]]+add[[:space:]]+\.[[:space:]]*$ ]] || \
        [[ "$normalized" =~ git[[:space:]]+add[[:space:]]+\.[[:space:]]+[^/] ]] || \
        [[ "$normalized" =~ git[[:space:]]+add[[:space:]]+\.[[:space:]]*\&\& ]]; then
+        debug "BLOCKED by Pattern 2: git add ."
         return 1
     fi
 
-    # Pattern 3: Explicitly staging .work
-    if [[ "$normalized" =~ git[[:space:]]+add[[:space:]].*\.work ]]; then
+    # Pattern 3: Explicitly staging .work directory
+    # Match .work ONLY as a standalone argument (not as substring of longer name)
+    # .work must be followed by: space, forward slash, or end of string
+    # This prevents false positives for: .workspace, .working, .workdir, etc.
+    if [[ "$normalized" =~ git[[:space:]]+add[[:space:]].*\.work([[:space:]]|/|$) ]]; then
+        debug "BLOCKED by Pattern 3: .work directory"
         return 1
     fi
 
+    debug "ALLOWED: No dangerous patterns detected"
     return 0
 }
 
