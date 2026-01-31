@@ -1,7 +1,7 @@
 //! Stage state manipulation
 //! Usage: loom stage <id> [complete|block|reset|ready|merge-complete|recover|verify]
 
-mod acceptance_runner;
+pub(crate) mod acceptance_runner;
 mod complete;
 mod criteria_runner;
 mod knowledge_complete;
