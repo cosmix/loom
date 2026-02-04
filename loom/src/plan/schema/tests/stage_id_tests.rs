@@ -1,35 +1,20 @@
 //! Stage ID validation tests
 
-use crate::plan::schema::types::{
-    LoomConfig, LoomMetadata, SandboxConfig, StageDefinition, StageSandboxConfig, StageType,
-};
+use super::make_stage;
+use crate::plan::schema::types::{LoomConfig, LoomMetadata, SandboxConfig};
 use crate::plan::schema::validation::validate;
 
 #[test]
 fn test_validate_stage_id_path_traversal() {
+    let stage = make_stage("../etc/passwd", "Malicious Stage");
+
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
             auto_merge: None,
             sandbox: SandboxConfig::default(),
-            stages: vec![StageDefinition {
-                id: "../etc/passwd".to_string(),
-                name: "Malicious Stage".to_string(),
-                description: None,
-                dependencies: vec![],
-                parallel_group: None,
-                acceptance: vec![],
-                setup: vec![],
-                files: vec![],
-                auto_merge: None,
-                working_dir: ".".to_string(),
-                stage_type: StageType::default(),
-                truths: vec![],
-                artifacts: vec![],
-                wiring: vec![],
-                context_budget: None,
-                sandbox: StageSandboxConfig::default(),
-            }],
+            change_impact: None,
+            stages: vec![stage],
         },
     };
 
@@ -43,29 +28,15 @@ fn test_validate_stage_id_path_traversal() {
 
 #[test]
 fn test_validate_stage_id_with_slashes() {
+    let stage = make_stage("stage/with/slashes", "Stage");
+
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
             auto_merge: None,
             sandbox: SandboxConfig::default(),
-            stages: vec![StageDefinition {
-                id: "stage/with/slashes".to_string(),
-                name: "Stage".to_string(),
-                description: None,
-                dependencies: vec![],
-                parallel_group: None,
-                acceptance: vec![],
-                setup: vec![],
-                files: vec![],
-                auto_merge: None,
-                working_dir: ".".to_string(),
-                stage_type: StageType::default(),
-                truths: vec![],
-                artifacts: vec![],
-                wiring: vec![],
-                context_budget: None,
-                sandbox: StageSandboxConfig::default(),
-            }],
+            change_impact: None,
+            stages: vec![stage],
         },
     };
 
@@ -79,29 +50,15 @@ fn test_validate_stage_id_with_slashes() {
 
 #[test]
 fn test_validate_stage_id_with_dots() {
+    let stage = make_stage("stage.with.dots", "Stage");
+
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
             auto_merge: None,
             sandbox: SandboxConfig::default(),
-            stages: vec![StageDefinition {
-                id: "stage.with.dots".to_string(),
-                name: "Stage".to_string(),
-                description: None,
-                dependencies: vec![],
-                parallel_group: None,
-                acceptance: vec![],
-                setup: vec![],
-                files: vec![],
-                auto_merge: None,
-                working_dir: ".".to_string(),
-                stage_type: StageType::default(),
-                truths: vec![],
-                artifacts: vec![],
-                wiring: vec![],
-                context_budget: None,
-                sandbox: StageSandboxConfig::default(),
-            }],
+            change_impact: None,
+            stages: vec![stage],
         },
     };
 
@@ -115,29 +72,15 @@ fn test_validate_stage_id_with_dots() {
 
 #[test]
 fn test_validate_stage_id_reserved_name_dotdot() {
+    let stage = make_stage("..", "Stage");
+
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
             auto_merge: None,
             sandbox: SandboxConfig::default(),
-            stages: vec![StageDefinition {
-                id: "..".to_string(),
-                name: "Stage".to_string(),
-                description: None,
-                dependencies: vec![],
-                parallel_group: None,
-                acceptance: vec![],
-                setup: vec![],
-                files: vec![],
-                auto_merge: None,
-                working_dir: ".".to_string(),
-                stage_type: StageType::default(),
-                truths: vec![],
-                artifacts: vec![],
-                wiring: vec![],
-                context_budget: None,
-                sandbox: StageSandboxConfig::default(),
-            }],
+            change_impact: None,
+            stages: vec![stage],
         },
     };
 
@@ -147,29 +90,15 @@ fn test_validate_stage_id_reserved_name_dotdot() {
 
 #[test]
 fn test_validate_stage_id_reserved_name_con() {
+    let stage = make_stage("CON", "Stage");
+
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
             auto_merge: None,
             sandbox: SandboxConfig::default(),
-            stages: vec![StageDefinition {
-                id: "CON".to_string(),
-                name: "Stage".to_string(),
-                description: None,
-                dependencies: vec![],
-                parallel_group: None,
-                acceptance: vec![],
-                setup: vec![],
-                files: vec![],
-                auto_merge: None,
-                working_dir: ".".to_string(),
-                stage_type: StageType::default(),
-                truths: vec![],
-                artifacts: vec![],
-                wiring: vec![],
-                context_budget: None,
-                sandbox: StageSandboxConfig::default(),
-            }],
+            change_impact: None,
+            stages: vec![stage],
         },
     };
 
@@ -181,29 +110,16 @@ fn test_validate_stage_id_reserved_name_con() {
 
 #[test]
 fn test_validate_dependency_id_path_traversal() {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.dependencies = vec!["../etc/passwd".to_string()];
+
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
             auto_merge: None,
             sandbox: SandboxConfig::default(),
-            stages: vec![StageDefinition {
-                id: "stage-1".to_string(),
-                name: "Stage One".to_string(),
-                description: None,
-                dependencies: vec!["../etc/passwd".to_string()],
-                parallel_group: None,
-                acceptance: vec![],
-                setup: vec![],
-                files: vec![],
-                auto_merge: None,
-                working_dir: ".".to_string(),
-                stage_type: StageType::default(),
-                truths: vec![],
-                artifacts: vec![],
-                wiring: vec![],
-                context_budget: None,
-                sandbox: StageSandboxConfig::default(),
-            }],
+            change_impact: None,
+            stages: vec![stage],
         },
     };
 
@@ -218,29 +134,15 @@ fn test_validate_dependency_id_path_traversal() {
 #[test]
 fn test_validate_stage_id_too_long() {
     let long_id = "a".repeat(129);
+    let stage = make_stage(&long_id, "Stage");
+
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
             auto_merge: None,
             sandbox: SandboxConfig::default(),
-            stages: vec![StageDefinition {
-                id: long_id,
-                name: "Stage".to_string(),
-                description: None,
-                dependencies: vec![],
-                parallel_group: None,
-                acceptance: vec![],
-                setup: vec![],
-                files: vec![],
-                auto_merge: None,
-                working_dir: ".".to_string(),
-                stage_type: StageType::default(),
-                truths: vec![],
-                artifacts: vec![],
-                wiring: vec![],
-                context_budget: None,
-                sandbox: StageSandboxConfig::default(),
-            }],
+            change_impact: None,
+            stages: vec![stage],
         },
     };
 
@@ -252,29 +154,15 @@ fn test_validate_stage_id_too_long() {
 
 #[test]
 fn test_validate_stage_id_with_spaces() {
+    let stage = make_stage("stage with spaces", "Stage");
+
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
             auto_merge: None,
             sandbox: SandboxConfig::default(),
-            stages: vec![StageDefinition {
-                id: "stage with spaces".to_string(),
-                name: "Stage".to_string(),
-                description: None,
-                dependencies: vec![],
-                parallel_group: None,
-                acceptance: vec![],
-                setup: vec![],
-                files: vec![],
-                auto_merge: None,
-                working_dir: ".".to_string(),
-                stage_type: StageType::default(),
-                truths: vec![],
-                artifacts: vec![],
-                wiring: vec![],
-                context_budget: None,
-                sandbox: StageSandboxConfig::default(),
-            }],
+            change_impact: None,
+            stages: vec![stage],
         },
     };
 

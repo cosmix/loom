@@ -1,9 +1,8 @@
 //! Basic validation tests
 
-use super::create_valid_metadata;
+use super::{create_valid_metadata, make_stage};
 use crate::plan::schema::types::{
-    LoomConfig, LoomMetadata, SandboxConfig, StageDefinition, StageSandboxConfig, StageType,
-    ValidationError,
+    LoomConfig, LoomMetadata, SandboxConfig, StageDefinition, StageType, ValidationError,
 };
 use crate::plan::schema::validation::validate;
 
@@ -16,29 +15,16 @@ fn test_validate_valid_metadata() {
 #[test]
 fn test_validate_unsupported_version() {
     // Use Knowledge stages to avoid goal-backward check errors
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.stage_type = StageType::Knowledge;
+
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 2, // Invalid version
             auto_merge: None,
             sandbox: SandboxConfig::default(),
-            stages: vec![StageDefinition {
-                id: "stage-1".to_string(),
-                name: "Stage One".to_string(),
-                description: None,
-                dependencies: vec![],
-                parallel_group: None,
-                acceptance: vec![],
-                setup: vec![],
-                files: vec![],
-                auto_merge: None,
-                working_dir: ".".to_string(),
-                stage_type: StageType::Knowledge, // Knowledge stages don't require goal-backward checks
-                truths: vec![],
-                artifacts: vec![],
-                wiring: vec![],
-                context_budget: None,
-                sandbox: StageSandboxConfig::default(),
-            }],
+            change_impact: None,
+            stages: vec![stage],
         },
     };
 
@@ -56,6 +42,7 @@ fn test_validate_empty_stages() {
             version: 1,
             auto_merge: None,
             sandbox: SandboxConfig::default(),
+            change_impact: None,
             stages: vec![],
         },
     };
@@ -70,29 +57,15 @@ fn test_validate_empty_stages() {
 
 #[test]
 fn test_validate_empty_stage_id() {
+    let stage = make_stage("", "Test");
+
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
             auto_merge: None,
             sandbox: SandboxConfig::default(),
-            stages: vec![StageDefinition {
-                id: "".to_string(),
-                name: "Test".to_string(),
-                description: None,
-                dependencies: vec![],
-                parallel_group: None,
-                acceptance: vec![],
-                setup: vec![],
-                files: vec![],
-                auto_merge: None,
-                working_dir: ".".to_string(),
-                stage_type: StageType::default(),
-                truths: vec![],
-                artifacts: vec![],
-                wiring: vec![],
-                context_budget: None,
-                sandbox: StageSandboxConfig::default(),
-            }],
+            change_impact: None,
+            stages: vec![stage],
         },
     };
 
@@ -106,29 +79,15 @@ fn test_validate_empty_stage_id() {
 
 #[test]
 fn test_validate_empty_stage_name() {
+    let stage = make_stage("stage-1", "");
+
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
             auto_merge: None,
             sandbox: SandboxConfig::default(),
-            stages: vec![StageDefinition {
-                id: "stage-1".to_string(),
-                name: "".to_string(),
-                description: None,
-                dependencies: vec![],
-                parallel_group: None,
-                acceptance: vec![],
-                setup: vec![],
-                files: vec![],
-                auto_merge: None,
-                working_dir: ".".to_string(),
-                stage_type: StageType::default(),
-                truths: vec![],
-                artifacts: vec![],
-                wiring: vec![],
-                context_budget: None,
-                sandbox: StageSandboxConfig::default(),
-            }],
+            change_impact: None,
+            stages: vec![stage],
         },
     };
 
@@ -142,29 +101,16 @@ fn test_validate_empty_stage_name() {
 
 #[test]
 fn test_validate_unknown_dependency() {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.dependencies = vec!["nonexistent".to_string()];
+
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
             auto_merge: None,
             sandbox: SandboxConfig::default(),
-            stages: vec![StageDefinition {
-                id: "stage-1".to_string(),
-                name: "Stage One".to_string(),
-                description: None,
-                dependencies: vec!["nonexistent".to_string()],
-                parallel_group: None,
-                acceptance: vec![],
-                setup: vec![],
-                files: vec![],
-                auto_merge: None,
-                working_dir: ".".to_string(),
-                stage_type: StageType::default(),
-                truths: vec![],
-                artifacts: vec![],
-                wiring: vec![],
-                context_budget: None,
-                sandbox: StageSandboxConfig::default(),
-            }],
+            change_impact: None,
+            stages: vec![stage],
         },
     };
 
@@ -179,29 +125,16 @@ fn test_validate_unknown_dependency() {
 
 #[test]
 fn test_validate_self_dependency() {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.dependencies = vec!["stage-1".to_string()];
+
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
             auto_merge: None,
             sandbox: SandboxConfig::default(),
-            stages: vec![StageDefinition {
-                id: "stage-1".to_string(),
-                name: "Stage One".to_string(),
-                description: None,
-                dependencies: vec!["stage-1".to_string()],
-                parallel_group: None,
-                acceptance: vec![],
-                setup: vec![],
-                files: vec![],
-                auto_merge: None,
-                working_dir: ".".to_string(),
-                stage_type: StageType::default(),
-                truths: vec![],
-                artifacts: vec![],
-                wiring: vec![],
-                context_budget: None,
-                sandbox: StageSandboxConfig::default(),
-            }],
+            change_impact: None,
+            stages: vec![stage],
         },
     };
 
@@ -215,49 +148,17 @@ fn test_validate_self_dependency() {
 
 #[test]
 fn test_validate_multiple_errors() {
+    let stage1 = make_stage("", "");
+    let mut stage2 = make_stage("stage-2", "Stage Two");
+    stage2.dependencies = vec!["stage-2".to_string(), "nonexistent".to_string()];
+
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 2,
             auto_merge: None,
             sandbox: SandboxConfig::default(),
-            stages: vec![
-                StageDefinition {
-                    id: "".to_string(),
-                    name: "".to_string(),
-                    description: None,
-                    dependencies: vec![],
-                    parallel_group: None,
-                    acceptance: vec![],
-                    setup: vec![],
-                    files: vec![],
-                    auto_merge: None,
-                    working_dir: ".".to_string(),
-                    stage_type: StageType::default(),
-                    truths: vec![],
-                    artifacts: vec![],
-                    wiring: vec![],
-                    context_budget: None,
-                    sandbox: StageSandboxConfig::default(),
-                },
-                StageDefinition {
-                    id: "stage-2".to_string(),
-                    name: "Stage Two".to_string(),
-                    description: None,
-                    dependencies: vec!["stage-2".to_string(), "nonexistent".to_string()],
-                    parallel_group: None,
-                    acceptance: vec![],
-                    setup: vec![],
-                    files: vec![],
-                    auto_merge: None,
-                    working_dir: ".".to_string(),
-                    stage_type: StageType::default(),
-                    truths: vec![],
-                    artifacts: vec![],
-                    wiring: vec![],
-                    context_budget: None,
-                    sandbox: StageSandboxConfig::default(),
-                },
-            ],
+            change_impact: None,
+            stages: vec![stage1, stage2],
         },
     };
 
@@ -301,72 +202,32 @@ working_dir: "."
     assert_eq!(stage.files.len(), 0);
     assert_eq!(stage.auto_merge, None);
     assert_eq!(stage.working_dir, ".");
+    // New fields should also have defaults
+    assert_eq!(stage.truth_checks.len(), 0);
+    assert_eq!(stage.wiring_tests.len(), 0);
+    assert!(stage.dead_code_check.is_none());
 }
 
 #[test]
 fn test_complex_dependency_chain() {
+    let mut stage1 = make_stage("stage-1", "Stage 1");
+    stage1.truths = vec!["test -f README.md".to_string()];
+
+    let mut stage2 = make_stage("stage-2", "Stage 2");
+    stage2.dependencies = vec!["stage-1".to_string()];
+    stage2.truths = vec!["test -f README.md".to_string()];
+
+    let mut stage3 = make_stage("stage-3", "Stage 3");
+    stage3.dependencies = vec!["stage-1".to_string(), "stage-2".to_string()];
+    stage3.truths = vec!["test -f README.md".to_string()];
+
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
             auto_merge: None,
             sandbox: SandboxConfig::default(),
-            stages: vec![
-                StageDefinition {
-                    id: "stage-1".to_string(),
-                    name: "Stage 1".to_string(),
-                    description: None,
-                    dependencies: vec![],
-                    parallel_group: None,
-                    acceptance: vec![],
-                    setup: vec![],
-                    files: vec![],
-                    auto_merge: None,
-                    working_dir: ".".to_string(),
-                    stage_type: StageType::default(),
-                    // Standard stages require goal-backward checks
-                    truths: vec!["test -f README.md".to_string()],
-                    artifacts: vec![],
-                    wiring: vec![],
-                    context_budget: None,
-                    sandbox: StageSandboxConfig::default(),
-                },
-                StageDefinition {
-                    id: "stage-2".to_string(),
-                    name: "Stage 2".to_string(),
-                    description: None,
-                    dependencies: vec!["stage-1".to_string()],
-                    parallel_group: None,
-                    acceptance: vec![],
-                    setup: vec![],
-                    files: vec![],
-                    auto_merge: None,
-                    working_dir: ".".to_string(),
-                    stage_type: StageType::default(),
-                    truths: vec!["test -f README.md".to_string()],
-                    artifacts: vec![],
-                    wiring: vec![],
-                    context_budget: None,
-                    sandbox: StageSandboxConfig::default(),
-                },
-                StageDefinition {
-                    id: "stage-3".to_string(),
-                    name: "Stage 3".to_string(),
-                    description: None,
-                    dependencies: vec!["stage-1".to_string(), "stage-2".to_string()],
-                    parallel_group: None,
-                    acceptance: vec![],
-                    setup: vec![],
-                    files: vec![],
-                    auto_merge: None,
-                    working_dir: ".".to_string(),
-                    stage_type: StageType::default(),
-                    truths: vec!["test -f README.md".to_string()],
-                    artifacts: vec![],
-                    wiring: vec![],
-                    context_budget: None,
-                    sandbox: StageSandboxConfig::default(),
-                },
-            ],
+            change_impact: None,
+            stages: vec![stage1, stage2, stage3],
         },
     };
 
@@ -375,49 +236,16 @@ fn test_complex_dependency_chain() {
 
 #[test]
 fn test_validate_duplicate_stage_ids() {
+    let stage1 = make_stage("stage-1", "Stage One");
+    let mut stage2 = make_stage("stage-1", "Stage One Duplicate"); // Duplicate ID
+
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
             auto_merge: None,
             sandbox: SandboxConfig::default(),
-            stages: vec![
-                StageDefinition {
-                    id: "stage-1".to_string(),
-                    name: "Stage One".to_string(),
-                    description: None,
-                    dependencies: vec![],
-                    parallel_group: None,
-                    acceptance: vec![],
-                    setup: vec![],
-                    files: vec![],
-                    auto_merge: None,
-                    working_dir: ".".to_string(),
-                    stage_type: StageType::default(),
-                    truths: vec![],
-                    artifacts: vec![],
-                    wiring: vec![],
-                    context_budget: None,
-                    sandbox: StageSandboxConfig::default(),
-                },
-                StageDefinition {
-                    id: "stage-1".to_string(), // Duplicate ID
-                    name: "Stage One Duplicate".to_string(),
-                    description: None,
-                    dependencies: vec![],
-                    parallel_group: None,
-                    acceptance: vec![],
-                    setup: vec![],
-                    files: vec![],
-                    auto_merge: None,
-                    working_dir: ".".to_string(),
-                    stage_type: StageType::default(),
-                    truths: vec![],
-                    artifacts: vec![],
-                    wiring: vec![],
-                    context_budget: None,
-                    sandbox: StageSandboxConfig::default(),
-                },
-            ],
+            change_impact: None,
+            stages: vec![stage1, stage2],
         },
     };
 
@@ -431,29 +259,16 @@ fn test_validate_duplicate_stage_ids() {
 
 #[test]
 fn test_validate_working_dir_path_traversal() {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.working_dir = "../etc".to_string(); // Path traversal
+
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
             auto_merge: None,
             sandbox: SandboxConfig::default(),
-            stages: vec![StageDefinition {
-                id: "stage-1".to_string(),
-                name: "Stage One".to_string(),
-                description: None,
-                dependencies: vec![],
-                parallel_group: None,
-                acceptance: vec![],
-                setup: vec![],
-                files: vec![],
-                auto_merge: None,
-                working_dir: "../etc".to_string(), // Path traversal
-                stage_type: StageType::default(),
-                truths: vec![],
-                artifacts: vec![],
-                wiring: vec![],
-                context_budget: None,
-                sandbox: StageSandboxConfig::default(),
-            }],
+            change_impact: None,
+            stages: vec![stage],
         },
     };
 
@@ -465,29 +280,16 @@ fn test_validate_working_dir_path_traversal() {
 
 #[test]
 fn test_validate_working_dir_absolute_path() {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.working_dir = "/etc/passwd".to_string(); // Absolute path
+
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
             auto_merge: None,
             sandbox: SandboxConfig::default(),
-            stages: vec![StageDefinition {
-                id: "stage-1".to_string(),
-                name: "Stage One".to_string(),
-                description: None,
-                dependencies: vec![],
-                parallel_group: None,
-                acceptance: vec![],
-                setup: vec![],
-                files: vec![],
-                auto_merge: None,
-                working_dir: "/etc/passwd".to_string(), // Absolute path
-                stage_type: StageType::default(),
-                truths: vec![],
-                artifacts: vec![],
-                wiring: vec![],
-                context_budget: None,
-                sandbox: StageSandboxConfig::default(),
-            }],
+            change_impact: None,
+            stages: vec![stage],
         },
     };
 
@@ -501,30 +303,17 @@ fn test_validate_working_dir_absolute_path() {
 
 #[test]
 fn test_validate_working_dir_valid_subdirectory() {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.working_dir = "loom".to_string(); // Valid subdirectory
+    stage.truths = vec!["cargo build".to_string()]; // Standard stages require goal-backward checks
+
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
             auto_merge: None,
             sandbox: SandboxConfig::default(),
-            stages: vec![StageDefinition {
-                id: "stage-1".to_string(),
-                name: "Stage One".to_string(),
-                description: None,
-                dependencies: vec![],
-                parallel_group: None,
-                acceptance: vec![],
-                setup: vec![],
-                files: vec![],
-                auto_merge: None,
-                working_dir: "loom".to_string(), // Valid subdirectory
-                stage_type: StageType::default(),
-                // Standard stages require goal-backward checks
-                truths: vec!["cargo build".to_string()],
-                artifacts: vec![],
-                wiring: vec![],
-                context_budget: None,
-                sandbox: StageSandboxConfig::default(),
-            }],
+            change_impact: None,
+            stages: vec![stage],
         },
     };
 

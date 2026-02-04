@@ -32,6 +32,12 @@ pub struct StageFrontmatter {
     pub artifacts: Vec<String>,
     #[serde(default)]
     pub wiring: Vec<crate::plan::schema::WiringCheck>,
+    #[serde(default)]
+    pub truth_checks: Vec<crate::plan::schema::TruthCheck>,
+    #[serde(default)]
+    pub wiring_tests: Vec<crate::plan::schema::WiringTest>,
+    #[serde(default)]
+    pub dead_code_check: Option<crate::plan::schema::DeadCodeCheck>,
 }
 
 impl StageFrontmatter {
@@ -52,6 +58,9 @@ impl StageFrontmatter {
             truths: self.truths,
             artifacts: self.artifacts,
             wiring: self.wiring,
+            truth_checks: self.truth_checks,
+            wiring_tests: self.wiring_tests,
+            dead_code_check: self.dead_code_check,
             context_budget: None,
             sandbox: crate::plan::schema::StageSandboxConfig::default(),
         }

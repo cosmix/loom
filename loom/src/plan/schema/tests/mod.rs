@@ -11,53 +11,53 @@ use super::types::{
     LoomConfig, LoomMetadata, SandboxConfig, StageDefinition, StageSandboxConfig, StageType,
 };
 
+/// Create a minimal StageDefinition for tests with only required fields
+#[cfg(test)]
+pub(crate) fn make_stage(id: &str, name: &str) -> StageDefinition {
+    StageDefinition {
+        id: id.to_string(),
+        name: name.to_string(),
+        description: None,
+        dependencies: vec![],
+        parallel_group: None,
+        acceptance: vec![],
+        setup: vec![],
+        files: vec![],
+        auto_merge: None,
+        working_dir: ".".to_string(),
+        stage_type: StageType::default(),
+        truths: vec![],
+        artifacts: vec![],
+        wiring: vec![],
+        truth_checks: vec![],
+        wiring_tests: vec![],
+        dead_code_check: None,
+        context_budget: None,
+        sandbox: StageSandboxConfig::default(),
+    }
+}
+
 /// Helper function to create a valid LoomMetadata for testing
 pub(crate) fn create_valid_metadata() -> LoomMetadata {
+    let mut stage1 = make_stage("stage-1", "Stage One");
+    stage1.truths = vec!["test -f README.md".to_string()];
+
+    let mut stage2 = make_stage("stage-2", "Stage Two");
+    stage2.description = Some("Second stage".to_string());
+    stage2.dependencies = vec!["stage-1".to_string()];
+    stage2.parallel_group = Some("group-a".to_string());
+    stage2.acceptance = vec!["cargo test".to_string()];
+    stage2.setup = vec!["source .venv/bin/activate".to_string()];
+    stage2.files = vec!["src/*.rs".to_string()];
+    stage2.truths = vec!["cargo build".to_string()];
+
     LoomMetadata {
         loom: LoomConfig {
             version: 1,
             auto_merge: None,
             sandbox: SandboxConfig::default(),
-            stages: vec![
-                StageDefinition {
-                    id: "stage-1".to_string(),
-                    name: "Stage One".to_string(),
-                    description: None,
-                    dependencies: vec![],
-                    parallel_group: None,
-                    acceptance: vec![],
-                    setup: vec![],
-                    files: vec![],
-                    auto_merge: None,
-                    working_dir: ".".to_string(),
-                    stage_type: StageType::default(),
-                    // Standard stages require at least one goal-backward check
-                    truths: vec!["test -f README.md".to_string()],
-                    artifacts: vec![],
-                    wiring: vec![],
-                    context_budget: None,
-                    sandbox: StageSandboxConfig::default(),
-                },
-                StageDefinition {
-                    id: "stage-2".to_string(),
-                    name: "Stage Two".to_string(),
-                    description: Some("Second stage".to_string()),
-                    dependencies: vec!["stage-1".to_string()],
-                    parallel_group: Some("group-a".to_string()),
-                    acceptance: vec!["cargo test".to_string()],
-                    setup: vec!["source .venv/bin/activate".to_string()],
-                    files: vec!["src/*.rs".to_string()],
-                    auto_merge: None,
-                    working_dir: ".".to_string(),
-                    stage_type: StageType::default(),
-                    // Standard stages require at least one goal-backward check
-                    truths: vec!["cargo build".to_string()],
-                    artifacts: vec![],
-                    wiring: vec![],
-                    context_budget: None,
-                    sandbox: StageSandboxConfig::default(),
-                },
-            ],
+            change_impact: None,
+            stages: vec![stage1, stage2],
         },
     }
 }

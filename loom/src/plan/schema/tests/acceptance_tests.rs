@@ -1,8 +1,7 @@
 //! Acceptance criterion validation tests
 
-use crate::plan::schema::types::{
-    LoomConfig, LoomMetadata, SandboxConfig, StageDefinition, StageSandboxConfig, StageType,
-};
+use super::make_stage;
+use crate::plan::schema::types::{LoomConfig, LoomMetadata, SandboxConfig};
 use crate::plan::schema::validation::{validate, validate_acceptance_criterion};
 
 #[test]
@@ -49,29 +48,16 @@ fn test_validate_acceptance_criterion_allowed_whitespace() {
 
 #[test]
 fn test_validate_metadata_with_empty_acceptance() {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.acceptance = vec!["".to_string()];
+
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
             auto_merge: None,
             sandbox: SandboxConfig::default(),
-            stages: vec![StageDefinition {
-                id: "stage-1".to_string(),
-                name: "Stage One".to_string(),
-                description: None,
-                dependencies: vec![],
-                parallel_group: None,
-                acceptance: vec!["".to_string()],
-                setup: vec![],
-                files: vec![],
-                auto_merge: None,
-                working_dir: ".".to_string(),
-                stage_type: StageType::default(),
-                truths: vec![],
-                artifacts: vec![],
-                wiring: vec![],
-                context_budget: None,
-                sandbox: StageSandboxConfig::default(),
-            }],
+            change_impact: None,
+            stages: vec![stage],
         },
     };
 
@@ -86,33 +72,20 @@ fn test_validate_metadata_with_empty_acceptance() {
 
 #[test]
 fn test_validate_metadata_with_valid_acceptance() {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.acceptance = vec![
+        "cargo test".to_string(),
+        "cargo clippy -- -D warnings".to_string(),
+    ];
+    stage.truths = vec!["cargo build".to_string()];
+
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
             auto_merge: None,
             sandbox: SandboxConfig::default(),
-            stages: vec![StageDefinition {
-                id: "stage-1".to_string(),
-                name: "Stage One".to_string(),
-                description: None,
-                dependencies: vec![],
-                parallel_group: None,
-                acceptance: vec![
-                    "cargo test".to_string(),
-                    "cargo clippy -- -D warnings".to_string(),
-                ],
-                setup: vec![],
-                files: vec![],
-                auto_merge: None,
-                working_dir: ".".to_string(),
-                stage_type: StageType::default(),
-                // Standard stages require goal-backward checks
-                truths: vec!["cargo build".to_string()],
-                artifacts: vec![],
-                wiring: vec![],
-                context_budget: None,
-                sandbox: StageSandboxConfig::default(),
-            }],
+            change_impact: None,
+            stages: vec![stage],
         },
     };
 
@@ -122,29 +95,16 @@ fn test_validate_metadata_with_valid_acceptance() {
 
 #[test]
 fn test_validate_metadata_multiple_invalid_acceptance() {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.acceptance = vec!["".to_string(), "   ".to_string(), "cargo test".to_string()];
+
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
             auto_merge: None,
             sandbox: SandboxConfig::default(),
-            stages: vec![StageDefinition {
-                id: "stage-1".to_string(),
-                name: "Stage One".to_string(),
-                description: None,
-                dependencies: vec![],
-                parallel_group: None,
-                acceptance: vec!["".to_string(), "   ".to_string(), "cargo test".to_string()],
-                setup: vec![],
-                files: vec![],
-                auto_merge: None,
-                working_dir: ".".to_string(),
-                stage_type: StageType::default(),
-                truths: vec![],
-                artifacts: vec![],
-                wiring: vec![],
-                context_budget: None,
-                sandbox: StageSandboxConfig::default(),
-            }],
+            change_impact: None,
+            stages: vec![stage],
         },
     };
 

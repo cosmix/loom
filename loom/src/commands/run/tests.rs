@@ -17,6 +17,7 @@ fn create_test_plan(dir: &Path, stages: Vec<StageDefinition>) -> PathBuf {
             version: 1,
             auto_merge: None,
             sandbox: SandboxConfig::default(),
+            change_impact: None,
             stages,
         },
     };
@@ -51,6 +52,9 @@ fn setup_work_dir_with_plan(temp_dir: &TempDir) -> (PathBuf, WorkDir) {
         truths: vec!["test -f README.md".to_string()],
         artifacts: vec![],
         wiring: vec![],
+        truth_checks: vec![],
+        wiring_tests: vec![],
+        dead_code_check: None,
         context_budget: None,
         sandbox: StageSandboxConfig::default(),
     };

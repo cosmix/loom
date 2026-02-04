@@ -7,8 +7,9 @@ mod validation;
 mod tests;
 
 pub use types::{
-    FilesystemConfig, LinuxConfig, LoomConfig, LoomMetadata, NetworkConfig, SandboxConfig,
-    StageDefinition, StageSandboxConfig, StageType, ValidationError, WiringCheck,
+    ChangeImpactConfig, ChangeImpactPolicy, DeadCodeCheck, FilesystemConfig, LinuxConfig,
+    LoomConfig, LoomMetadata, NetworkConfig, SandboxConfig, StageDefinition, StageSandboxConfig,
+    StageType, SuccessCriteria, TruthCheck, ValidationError, WiringCheck, WiringTest,
 };
 pub use validation::{
     check_code_review_recommendations, check_knowledge_recommendations,

@@ -285,6 +285,9 @@ MEMORY RECORDING (use memory ONLY - never knowledge):
         truths: vec![],
         artifacts: vec![],
         wiring: vec![],
+        truth_checks: vec![],
+        wiring_tests: vec![],
+        dead_code_check: None,
         context_budget: None,
         sandbox: StageSandboxConfig::default(),
     }

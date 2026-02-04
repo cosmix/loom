@@ -199,6 +199,9 @@ pub struct LoomConfig {
     /// Plan-level sandbox configuration (defaults for all stages)
     #[serde(default)]
     pub sandbox: SandboxConfig,
+    /// Plan-level change impact configuration
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub change_impact: Option<ChangeImpactConfig>,
     pub stages: Vec<StageDefinition>,
 }
 
@@ -239,6 +242,15 @@ pub struct StageDefinition {
     /// Critical connections between components
     #[serde(default)]
     pub wiring: Vec<WiringCheck>,
+    /// Enhanced truth checks with extended success criteria
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub truth_checks: Vec<TruthCheck>,
+    /// Runtime wiring tests (command-based integration verification)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub wiring_tests: Vec<WiringTest>,
+    /// Dead code detection configuration
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dead_code_check: Option<DeadCodeCheck>,
     /// Context budget as percentage (1-100). Default is 65%.
     /// When context usage exceeds this, auto-handoff is triggered.
     #[serde(default)]
@@ -253,6 +265,117 @@ pub struct StageDefinition {
 /// Re-exported from models::stage for backward compatibility.
 /// The canonical definition is in crate::models::stage::WiringCheck.
 pub use crate::models::stage::WiringCheck;
+
+/// Enhanced truth check with extended success criteria.
+///
+/// TruthCheck allows verifying observable behaviors with more than just exit code.
+/// All extended fields are optional for backward compatibility.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TruthCheck {
+    /// Shell command to execute
+    pub command: String,
+    /// Strings that must appear in stdout
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stdout_contains: Vec<String>,
+    /// Strings that must NOT appear in stdout
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stdout_not_contains: Vec<String>,
+    /// Whether stderr must be empty (default: false, meaning stderr is ignored)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stderr_empty: Option<bool>,
+    /// Expected exit code (default: 0)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    /// Human-readable description of what this truth verifies
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+/// Success criteria for wiring tests.
+///
+/// Defines how to determine if a wiring test passed.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SuccessCriteria {
+    /// Expected exit code (default: 0)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    /// Strings that must appear in stdout
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stdout_contains: Vec<String>,
+    /// Strings that must NOT appear in stdout
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stdout_not_contains: Vec<String>,
+    /// Strings that must appear in stderr
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stderr_contains: Vec<String>,
+    /// Whether stderr must be empty
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stderr_empty: Option<bool>,
+}
+
+/// Wiring test to verify component integration.
+///
+/// Unlike WiringCheck (grep-based pattern matching), WiringTest runs
+/// actual commands to verify runtime behavior of component connections.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WiringTest {
+    /// Human-readable name for this test
+    pub name: String,
+    /// Shell command to execute
+    pub command: String,
+    /// Success criteria for this test
+    #[serde(default)]
+    pub success_criteria: SuccessCriteria,
+    /// Human-readable description of what this test verifies
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+/// Configuration for dead code detection.
+///
+/// Runs a command and checks output for patterns indicating dead code.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeadCodeCheck {
+    /// Command to run for dead code detection (e.g., "cargo build --message-format=json")
+    pub command: String,
+    /// Patterns in output that indicate dead code (e.g., "warning: unused")
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fail_patterns: Vec<String>,
+    /// Patterns to ignore (e.g., "allowed_unused_function")
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ignore_patterns: Vec<String>,
+}
+
+/// Policy for handling change impact failures.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ChangeImpactPolicy {
+    /// Fail the stage if impact check fails
+    #[default]
+    Fail,
+    /// Warn but allow stage to continue
+    Warn,
+    /// Skip impact checking entirely
+    Skip,
+}
+
+/// Configuration for change impact analysis.
+///
+/// Compares before/after states to detect unintended changes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChangeImpactConfig {
+    /// Command to generate baseline (run before changes)
+    pub baseline_command: String,
+    /// Command to generate comparison (run after changes)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compare_command: Option<String>,
+    /// Patterns in diff output that indicate failure
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub failure_patterns: Vec<String>,
+    /// Policy for handling failures
+    #[serde(default)]
+    pub policy: ChangeImpactPolicy,
+}
 
 /// Validation error with context
 #[derive(Debug)]

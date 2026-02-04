@@ -36,6 +36,9 @@ pub(crate) fn create_valid_stage(id: &str, name: &str) -> StageDefinition {
         truths: vec!["test -f README.md".to_string()],
         artifacts: vec![],
         wiring: vec![],
+        truth_checks: vec![],
+        wiring_tests: vec![],
+        dead_code_check: None,
         context_budget: None,
     }
 }
@@ -47,6 +50,7 @@ pub(crate) fn create_metadata(stages: Vec<StageDefinition>) -> LoomMetadata {
             version: 1,
             sandbox: Default::default(),
             auto_merge: None,
+            change_impact: None,
             stages,
         },
     }
