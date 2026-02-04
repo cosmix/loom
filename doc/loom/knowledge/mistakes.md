@@ -382,3 +382,14 @@ Solutions: 1) Use ./target/debug/loom path, 2) Accept failures until merge,
 ### Notes
 
 - Verified all goal-backward verification tests pass: truths (stdout_contains, stderr_empty, exit_code), wiring_tests (command-based validation), baseline (capture, compare, change impact). All 30 goal_backward tests, 63 validation tests, and 10 baseline tests pass.
+
+## Promoted from Memory [2026-02-04 22:29]
+
+### Notes
+
+- Integration verification passed for permission sync fix: All 14 sync tests pass, path transformation handles worktree absolute paths and relative parent traversal paths, refresh_worktree_settings_local merges (not overwrites) permissions, sync happens BEFORE acceptance criteria so permissions persist on retry
+
+### Decisions
+
+- **Verified three-fix approach for permission sync: 1) Path transformation handles worktree paths and parent traversals to portable format, 2) Merge not overwrite via merge_permission_vecs for union with dedup, 3) Sync before acceptance ensures permissions persist even if acceptance fails**
+  - _Rationale:_ Ensures permissions granted in worktrees propagate correctly to main repo and other worktrees
