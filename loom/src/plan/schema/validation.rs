@@ -358,17 +358,32 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
             }
         }
 
-        // Require goal-backward checks for standard stages
-        // Knowledge, IntegrationVerify, and CodeReview stages are exempt (they have different purposes)
-        if stage.stage_type == super::types::StageType::Standard {
-            let has_goal_checks =
-                !stage.truths.is_empty() || !stage.artifacts.is_empty() || !stage.wiring.is_empty();
+        // Require goal-backward checks for Standard and IntegrationVerify stages
+        // Knowledge and CodeReview stages are exempt (they have different purposes)
+        let requires_goal_backward = matches!(
+            stage.stage_type,
+            super::types::StageType::Standard | super::types::StageType::IntegrationVerify
+        );
+
+        if requires_goal_backward {
+            // IntegrationVerify should have functional verification, not just tests
+            // Check for truths, wiring_tests, or wiring
+            let has_goal_checks = !stage.truths.is_empty()
+                || !stage.artifacts.is_empty()
+                || !stage.wiring.is_empty()
+                || !stage.wiring_tests.is_empty();
 
             if !has_goal_checks {
+                let stage_type_desc = match stage.stage_type {
+                    super::types::StageType::IntegrationVerify => "IntegrationVerify",
+                    _ => "Standard",
+                };
                 errors.push(ValidationError {
-                    message: "Standard stages must define at least one truth, artifact, or wiring check. \
-                             These define observable outcomes that verify the stage actually works."
-                        .to_string(),
+                    message: format!(
+                        "{} stages must define at least one truth, artifact, wiring check, or wiring_test. \
+                         These define observable outcomes that verify the stage actually works.",
+                        stage_type_desc
+                    ),
                     stage_id: Some(stage.id.clone()),
                 });
             }
@@ -383,6 +398,109 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
     } else {
         Err(errors)
     }
+}
+
+/// Validate structural aspects of the plan before execution (pre-flight checks).
+///
+/// Returns a list of warning messages for issues that don't prevent execution but
+/// may indicate problems:
+/// - Regex patterns in wiring are syntactically valid (errors handled in validate())
+/// - Path traversal patterns (errors handled in validate())
+/// - working_dir prefix redundancy in acceptance criteria
+/// - Overly broad patterns in wiring checks
+pub fn validate_structural_preflight(stages: &[super::types::StageDefinition]) -> Vec<String> {
+    let mut warnings = Vec::new();
+
+    for stage in stages {
+        // Check for working_dir prefix redundancy in acceptance criteria
+        if !stage.working_dir.is_empty() && stage.working_dir != "." {
+            for (idx, criterion) in stage.acceptance.iter().enumerate() {
+                // Check if criterion starts with the working_dir prefix
+                if criterion.starts_with(&stage.working_dir)
+                    || criterion.starts_with(&format!("{}/", stage.working_dir))
+                    || criterion.contains(&format!(" {}/", stage.working_dir))
+                {
+                    warnings.push(format!(
+                        "Stage '{}': Acceptance criterion #{} may have redundant working_dir prefix '{}'. \
+                         Paths in acceptance criteria are relative to working_dir.",
+                        stage.id,
+                        idx + 1,
+                        stage.working_dir
+                    ));
+                }
+            }
+        }
+
+        // Check for weak wiring patterns
+        for (idx, wiring) in stage.wiring.iter().enumerate() {
+            if let Some(warning) = check_wiring_pattern_quality(&wiring.pattern) {
+                warnings.push(format!(
+                    "Stage '{}': Wiring #{} pattern '{}': {}",
+                    stage.id,
+                    idx + 1,
+                    wiring.pattern,
+                    warning
+                ));
+            }
+        }
+    }
+
+    warnings
+}
+
+/// Check wiring pattern quality and return a warning if the pattern is weak.
+///
+/// Returns Some(warning_message) if the pattern is:
+/// - Too short (< 5 characters)
+/// - Too generic (".*" or single character)
+/// - A common keyword that will match too broadly
+fn check_wiring_pattern_quality(pattern: &str) -> Option<String> {
+    // List of common keywords that are too generic
+    const GENERIC_KEYWORDS: &[&str] = &[
+        "use", "import", "require", "from", "const", "let", "var", "fn", "func", "def", "class",
+        "struct", "enum", "type", "pub", "mod", "crate",
+    ];
+
+    // Pattern is just ".*" - matches everything
+    if pattern == ".*" {
+        return Some("Pattern '.*' matches everything - use a more specific pattern".to_string());
+    }
+
+    // Pattern is a single character (not useful)
+    if pattern.len() == 1 {
+        return Some("Single character patterns are too generic".to_string());
+    }
+
+    // Pattern is too short (less than 5 chars, excluding regex metacharacters)
+    let non_meta: String = pattern
+        .chars()
+        .filter(|c| {
+            !matches!(
+                *c,
+                '.' | '*' | '+' | '?' | '^' | '$' | '[' | ']' | '(' | ')' | '{' | '}' | '|' | '\\'
+            )
+        })
+        .collect();
+
+    if non_meta.len() < 5 {
+        return Some(format!(
+            "Pattern has only {} significant characters - consider a more specific pattern",
+            non_meta.len()
+        ));
+    }
+
+    // Pattern is just a common keyword
+    let pattern_lower = pattern.to_lowercase();
+    for keyword in GENERIC_KEYWORDS {
+        if pattern_lower == *keyword || pattern == format!("^{}$", keyword) {
+            return Some(format!(
+                "Pattern '{}' is a common keyword and may match too broadly",
+                pattern
+            ));
+        }
+    }
+
+    None
 }
 
 /// Check for knowledge-related recommendations (non-fatal warnings)

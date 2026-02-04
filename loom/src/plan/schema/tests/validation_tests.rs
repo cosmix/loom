@@ -1,10 +1,12 @@
 //! Basic validation tests
 
 use super::{create_valid_metadata, make_stage};
+use crate::models::stage::WiringCheck;
 use crate::plan::schema::types::{
     LoomConfig, LoomMetadata, SandboxConfig, StageDefinition, StageType, ValidationError,
+    WiringTest,
 };
-use crate::plan::schema::validation::validate;
+use crate::plan::schema::validation::{validate, validate_structural_preflight};
 
 #[test]
 fn test_validate_valid_metadata() {
@@ -318,4 +320,252 @@ fn test_validate_working_dir_valid_subdirectory() {
     };
 
     assert!(validate(&metadata).is_ok());
+}
+
+// ============================================================================
+// IntegrationVerify goal-backward requirement tests
+// ============================================================================
+
+#[test]
+fn test_integration_verify_requires_goal_backward() {
+    let mut stage = make_stage("integration-verify", "Integration Verify");
+    stage.stage_type = StageType::IntegrationVerify;
+    // No truths, artifacts, wiring, or wiring_tests - should fail
+
+    let metadata = LoomMetadata {
+        loom: LoomConfig {
+            version: 1,
+            auto_merge: None,
+            sandbox: SandboxConfig::default(),
+            change_impact: None,
+            stages: vec![stage],
+        },
+    };
+
+    let result = validate(&metadata);
+    assert!(result.is_err());
+    let errors = result.unwrap_err();
+    assert!(errors
+        .iter()
+        .any(|e| e.message.contains("IntegrationVerify stages must define")));
+}
+
+#[test]
+fn test_integration_verify_with_truths_passes() {
+    let mut stage = make_stage("integration-verify", "Integration Verify");
+    stage.stage_type = StageType::IntegrationVerify;
+    stage.truths = vec!["cargo test".to_string()];
+
+    let metadata = LoomMetadata {
+        loom: LoomConfig {
+            version: 1,
+            auto_merge: None,
+            sandbox: SandboxConfig::default(),
+            change_impact: None,
+            stages: vec![stage],
+        },
+    };
+
+    assert!(validate(&metadata).is_ok());
+}
+
+#[test]
+fn test_integration_verify_with_wiring_tests_passes() {
+    let mut stage = make_stage("integration-verify", "Integration Verify");
+    stage.stage_type = StageType::IntegrationVerify;
+    stage.wiring_tests = vec![WiringTest {
+        name: "API endpoint test".to_string(),
+        command: "curl -f localhost:8080/health".to_string(),
+        success_criteria: Default::default(),
+        description: Some("Verify API is reachable".to_string()),
+    }];
+
+    let metadata = LoomMetadata {
+        loom: LoomConfig {
+            version: 1,
+            auto_merge: None,
+            sandbox: SandboxConfig::default(),
+            change_impact: None,
+            stages: vec![stage],
+        },
+    };
+
+    assert!(validate(&metadata).is_ok());
+}
+
+#[test]
+fn test_integration_verify_with_wiring_passes() {
+    let mut stage = make_stage("integration-verify", "Integration Verify");
+    stage.stage_type = StageType::IntegrationVerify;
+    stage.wiring = vec![WiringCheck {
+        source: "src/main.rs".to_string(),
+        pattern: "feature_function".to_string(),
+        description: "Feature is wired".to_string(),
+    }];
+
+    let metadata = LoomMetadata {
+        loom: LoomConfig {
+            version: 1,
+            auto_merge: None,
+            sandbox: SandboxConfig::default(),
+            change_impact: None,
+            stages: vec![stage],
+        },
+    };
+
+    assert!(validate(&metadata).is_ok());
+}
+
+#[test]
+fn test_knowledge_stage_exempt_from_goal_backward() {
+    let mut stage = make_stage("knowledge-bootstrap", "Knowledge Bootstrap");
+    stage.stage_type = StageType::Knowledge;
+    // No truths/artifacts/wiring - should pass because Knowledge is exempt
+
+    let metadata = LoomMetadata {
+        loom: LoomConfig {
+            version: 1,
+            auto_merge: None,
+            sandbox: SandboxConfig::default(),
+            change_impact: None,
+            stages: vec![stage],
+        },
+    };
+
+    assert!(validate(&metadata).is_ok());
+}
+
+#[test]
+fn test_code_review_stage_exempt_from_goal_backward() {
+    let mut stage = make_stage("code-review", "Code Review");
+    stage.stage_type = StageType::CodeReview;
+    // No truths/artifacts/wiring - should pass because CodeReview is exempt
+
+    let metadata = LoomMetadata {
+        loom: LoomConfig {
+            version: 1,
+            auto_merge: None,
+            sandbox: SandboxConfig::default(),
+            change_impact: None,
+            stages: vec![stage],
+        },
+    };
+
+    assert!(validate(&metadata).is_ok());
+}
+
+// ============================================================================
+// Pre-flight validation tests
+// ============================================================================
+
+#[test]
+fn test_preflight_warns_on_working_dir_redundancy() {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.working_dir = "loom".to_string();
+    stage.acceptance = vec![
+        "loom/src/main.rs".to_string(), // Redundant prefix
+        "cargo test".to_string(),       // No redundancy
+    ];
+    stage.truths = vec!["test -f README.md".to_string()];
+
+    let warnings = validate_structural_preflight(&[stage]);
+    assert!(!warnings.is_empty());
+    assert!(warnings
+        .iter()
+        .any(|w| w.contains("redundant working_dir prefix")));
+}
+
+#[test]
+fn test_preflight_no_warning_when_working_dir_is_dot() {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.working_dir = ".".to_string();
+    stage.acceptance = vec!["loom/src/main.rs".to_string()];
+    stage.truths = vec!["test -f README.md".to_string()];
+
+    let warnings = validate_structural_preflight(&[stage]);
+    // No warnings when working_dir is "."
+    assert!(warnings
+        .iter()
+        .all(|w| !w.contains("redundant working_dir prefix")));
+}
+
+#[test]
+fn test_preflight_warns_on_short_wiring_pattern() {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.wiring = vec![WiringCheck {
+        source: "src/main.rs".to_string(),
+        pattern: "fn".to_string(), // Too short
+        description: "Test wiring".to_string(),
+    }];
+    stage.truths = vec!["test -f README.md".to_string()];
+
+    let warnings = validate_structural_preflight(&[stage]);
+    assert!(!warnings.is_empty());
+    assert!(warnings
+        .iter()
+        .any(|w| w.contains("significant characters")));
+}
+
+#[test]
+fn test_preflight_warns_on_wildcard_pattern() {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.wiring = vec![WiringCheck {
+        source: "src/main.rs".to_string(),
+        pattern: ".*".to_string(), // Matches everything
+        description: "Test wiring".to_string(),
+    }];
+    stage.truths = vec!["test -f README.md".to_string()];
+
+    let warnings = validate_structural_preflight(&[stage]);
+    assert!(!warnings.is_empty());
+    assert!(warnings.iter().any(|w| w.contains("matches everything")));
+}
+
+#[test]
+fn test_preflight_warns_on_single_char_pattern() {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.wiring = vec![WiringCheck {
+        source: "src/main.rs".to_string(),
+        pattern: "x".to_string(), // Single character
+        description: "Test wiring".to_string(),
+    }];
+    stage.truths = vec!["test -f README.md".to_string()];
+
+    let warnings = validate_structural_preflight(&[stage]);
+    assert!(!warnings.is_empty());
+    assert!(warnings
+        .iter()
+        .any(|w| w.contains("Single character patterns")));
+}
+
+#[test]
+fn test_preflight_warns_on_generic_keyword() {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.wiring = vec![WiringCheck {
+        source: "src/main.rs".to_string(),
+        pattern: "import".to_string(), // Common keyword (6 chars to pass length check)
+        description: "Test wiring".to_string(),
+    }];
+    stage.truths = vec!["test -f README.md".to_string()];
+
+    let warnings = validate_structural_preflight(&[stage]);
+    assert!(!warnings.is_empty());
+    assert!(warnings.iter().any(|w| w.contains("common keyword")));
+}
+
+#[test]
+fn test_preflight_no_warning_for_specific_pattern() {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.wiring = vec![WiringCheck {
+        source: "src/main.rs".to_string(),
+        pattern: "validate_structural_preflight".to_string(), // Specific enough
+        description: "Pre-flight validation exists".to_string(),
+    }];
+    stage.truths = vec!["test -f README.md".to_string()];
+
+    let warnings = validate_structural_preflight(&[stage]);
+    // Should have no warnings about pattern quality for this specific pattern
+    assert!(warnings
+        .iter()
+        .all(|w| !w.contains("significant characters") && !w.contains("common keyword")));
 }

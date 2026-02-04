@@ -179,8 +179,9 @@ fn test_knowledge_stage_exempt_from_goal_backward_validation() {
 }
 
 #[test]
-fn test_integration_verify_stage_exempt_from_goal_backward_validation() {
-    // IntegrationVerify stage without goal-backward checks should pass validation
+fn test_integration_verify_stage_requires_goal_backward_validation() {
+    // IntegrationVerify stage without goal-backward checks should FAIL validation
+    // (Changed behavior: IntegrationVerify now requires functional verification)
     let mut stage = make_stage("integration-verify", "Integration Verification");
     stage.stage_type = StageType::IntegrationVerify;
 
@@ -194,7 +195,13 @@ fn test_integration_verify_stage_exempt_from_goal_backward_validation() {
         },
     };
 
-    assert!(validate(&metadata).is_ok());
+    // Should fail validation (IntegrationVerify requires goal-backward checks)
+    let result = validate(&metadata);
+    assert!(result.is_err());
+    let errors = result.unwrap_err();
+    assert!(errors
+        .iter()
+        .any(|e| e.message.contains("IntegrationVerify stages must define")));
 }
 
 #[test]
@@ -247,6 +254,8 @@ fn test_mixed_stage_types_validation() {
     let mut verify = make_stage("integration-verify", "Integration Verification");
     verify.dependencies = vec!["code-review".to_string()];
     verify.stage_type = StageType::IntegrationVerify;
+    // IntegrationVerify now requires goal-backward checks (functional verification)
+    verify.truths = vec!["cargo test".to_string()];
 
     let metadata = LoomMetadata {
         loom: LoomConfig {
