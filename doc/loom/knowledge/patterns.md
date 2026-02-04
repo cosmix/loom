@@ -1330,3 +1330,19 @@ linux block (line 100-105):
 
 - **extend truths vs new field: EXTEND existing truths field for baseline capture - StageOutput structure (types.rs:76-84) already supports arbitrary JSON via serde_json::Value, can store baseline data without schema changes**
   - _Rationale:_ Need to decide how to store baseline data. Existing infrastructure supports extension.
+
+## Permission Sync Pattern (CORRECTED 2026-02-05)
+
+Three-component fix for permission propagation in worktrees.
+
+### 1. Path Transformation (sync.rs:210-271)
+
+Transforms worktree-specific paths to portable format: absolute paths stripped to relative, parent traversal resolved, sibling refs filtered.
+
+### 2. Merge Not Overwrite (settings.rs:155-199)
+
+refresh_worktree_settings_local merges permissions via merge_permission_vecs (union with dedup), not overwrite.
+
+### 3. Sync Before Acceptance (complete.rs:166-200)
+
+Permission sync occurs BEFORE acceptance criteria, ensuring permissions persist for retry attempts.

@@ -393,3 +393,29 @@ Solutions: 1) Use ./target/debug/loom path, 2) Accept failures until merge,
 
 - **Verified three-fix approach for permission sync: 1) Path transformation handles worktree paths and parent traversals to portable format, 2) Merge not overwrite via merge_permission_vecs for union with dedup, 3) Sync before acceptance ensures permissions persist even if acceptance fails**
   - _Rationale:_ Ensures permissions granted in worktrees propagate correctly to main repo and other worktrees
+
+## Permission Sync Bugs [2026-02-04]
+
+### Bug 1: Propagation Overwrites
+
+**Location:** git/worktree/settings.rs:164
+**What:** copy_file_with_shared_lock overwrites worktree permissions
+**Fix:** Merge both permission sets before writing
+
+### Bug 2: Paths Dropped Instead of Transformed
+
+**Location:** fs/permissions/sync.rs:97-106
+**What:** Permissions with parent-relative or worktree paths filtered out entirely
+**Fix:** Transform to portable relative paths
+
+### Bug 3: Sync Skipped on Failure
+
+**Location:** commands/stage/complete.rs:179
+**What:** Sync only happens if acceptance_result != Some(false)
+**Fix:** Sync unconditionally before checking result
+
+## Promoted from Memory [2026-02-04 22:08]
+
+### Notes
+
+- Documented permission sync bugs in mistakes.md: 1) propagation overwrites, 2) paths dropped instead of transformed, 3) sync skipped on failure
