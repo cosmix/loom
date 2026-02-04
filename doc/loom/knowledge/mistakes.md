@@ -376,3 +376,9 @@ Solutions: 1) Use ./target/debug/loom path, 2) Accept failures until merge,
 
 - **Store baseline JSON in .work/stages/{stage-id}/baseline.json**
   - _Rationale:_ Using stage-specific subdirectory keeps baseline data colocated with stage state and allows for easy cleanup when stages are removed
+
+## Promoted from Memory [2026-02-04 21:33]
+
+### Notes
+
+- Verified all goal-backward verification tests pass: truths (stdout_contains, stderr_empty, exit_code), wiring_tests (command-based validation), baseline (capture, compare, change impact). All 30 goal_backward tests, 63 validation tests, and 10 baseline tests pass.
