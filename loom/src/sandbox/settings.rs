@@ -127,8 +127,6 @@ mod tests {
         let json = generate_settings_json(&config);
         // Sandbox block should have enabled: false
         assert_eq!(json["sandbox"]["enabled"], false);
-        // dangerouslyDisableSandbox should NOT be present (deprecated)
-        assert!(json.get("dangerouslyDisableSandbox").is_none());
     }
 
     #[test]

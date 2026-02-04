@@ -1270,11 +1270,7 @@ When matching file/path patterns in hook scripts:
 
 ## Claude Code Settings Format (SANDBOX)
 
-Current implementation generates WRONG format in settings.rs:
-
-- Line 84-87: dangerouslyDisableSandbox: false at root level
-- Line 97-99: excludedCommands at root level
-- Line 62-69: WebFetch(domain:X) format in permissions.allow
+The implementation in `src/sandbox/settings.rs` generates the correct Claude Code sandbox format.
 
 ### Correct Claude Code Sandbox Format
 
@@ -1282,14 +1278,18 @@ sandbox:
   enabled: true
   autoAllowBashIfSandboxed: true
   excludedCommands: [list]
+  allowUnsandboxedCommands: true  # optional, when escape hatch needed
   network:
     allowedDomains: [list]
+    allowLocalBinding: true  # optional
 permissions:
   deny: [list]
+  allow: [list]
 
-### Sandbox Format Key Differences
+### Key Format Rules
 
-1. Use sandbox.enabled: true (NOT dangerouslyDisableSandbox: false)
-2. excludedCommands goes INSIDE sandbox object, not root
-3. Network domains in sandbox.network.allowedDomains (not WebFetch format)
-4. autoAllowBashIfSandboxed required for proper bash command handling
+1. Use `sandbox.enabled` field to control sandbox state
+2. `excludedCommands` goes INSIDE sandbox object, not at root level
+3. Network domains in `sandbox.network.allowedDomains`
+4. `autoAllowBashIfSandboxed` enables automatic bash approval when sandbox is active
+5. File permissions (Read/Write/Edit) use `permissions.deny` and `permissions.allow`
