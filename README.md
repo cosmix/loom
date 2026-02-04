@@ -25,9 +25,11 @@ Together, they implement the **Signal Principle**: *"If you have a signal, answe
 
 ## Quick Start
 
+1. Clone the repo
+2. `bash ./dev-install.sh`
+3. Then:
+   
 ```bash
-# Install
-curl -fsSL https://raw.githubusercontent.com/cosmix/loom/main/install.sh | bash
 
 # Initialize and run
 cd /path/to/project
