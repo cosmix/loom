@@ -487,3 +487,18 @@ Three-layer defense against subagent conflicts:
 **Detection mechanism:** Wrapper script exports LOOM_MAIN_AGENT_PID. Hook compares PPID to this value. Main agent: PPID matches. Subagent: PPID differs.
 
 **Environment variables for hooks:** LOOM_STAGE_ID, LOOM_SESSION_ID, LOOM_WORK_DIR, LOOM_MAIN_AGENT_PID. Set via settings.json env section and wrapper script.
+
+## CodeReview Stage Type
+
+New stage type for code review. YAML: stage_type: code-review
+- Enum: StageType::CodeReview (models/stage/types.rs:26)
+- Sandbox: Special handling (sandbox/config.rs:69-73)
+- Validation: Exempt from goal-backward checks (validation.rs:362, 471)
+
+## CodeReview Stage Type (continued)
+
+- Signals: generate_code_review_stable_prefix() (signals/format/mod.rs:72)
+- Skill: skills/code-review/SKILL.md documents usage
+- Detection: Requires explicit stage_type field in plan YAML. ID/name detection happens after validation.
+
+## CodeReview Test Verification Entry
