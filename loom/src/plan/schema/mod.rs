@@ -11,6 +11,6 @@ pub use types::{
     StageDefinition, StageSandboxConfig, StageType, ValidationError, WiringCheck,
 };
 pub use validation::{
-    check_code_review_recommendations, check_knowledge_recommendations, check_sandbox_recommendations,
-    validate,
+    check_code_review_recommendations, check_knowledge_recommendations,
+    check_sandbox_recommendations, validate,
 };

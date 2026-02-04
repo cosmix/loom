@@ -300,9 +300,9 @@ fn test_code_review_stage_exempt_from_goal_backward_validation() {
                 auto_merge: None,
                 working_dir: ".".to_string(),
                 stage_type: StageType::CodeReview,
-                truths: vec![],     // No truths
-                artifacts: vec![],  // No artifacts
-                wiring: vec![],     // No wiring
+                truths: vec![],    // No truths
+                artifacts: vec![], // No artifacts
+                wiring: vec![],    // No wiring
                 context_budget: None,
                 sandbox: StageSandboxConfig::default(),
             }],
@@ -333,9 +333,9 @@ fn test_standard_stage_requires_goal_backward_validation() {
                 auto_merge: None,
                 working_dir: ".".to_string(),
                 stage_type: StageType::Standard,
-                truths: vec![],     // No truths
-                artifacts: vec![],  // No artifacts
-                wiring: vec![],     // No wiring
+                truths: vec![],    // No truths
+                artifacts: vec![], // No artifacts
+                wiring: vec![],    // No wiring
                 context_budget: None,
                 sandbox: StageSandboxConfig::default(),
             }],
@@ -346,7 +346,9 @@ fn test_standard_stage_requires_goal_backward_validation() {
     let result = validate(&metadata);
     assert!(result.is_err());
     let errors = result.unwrap_err();
-    assert!(errors.iter().any(|e| e.message.contains("must define at least one truth")));
+    assert!(errors
+        .iter()
+        .any(|e| e.message.contains("must define at least one truth")));
 }
 
 #[test]

@@ -5,8 +5,8 @@ use crate::fs::work_dir::WorkDir;
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::plan::parser::parse_plan;
 use crate::plan::schema::{
-    check_code_review_recommendations, check_knowledge_recommendations, check_sandbox_recommendations,
-    StageDefinition,
+    check_code_review_recommendations, check_knowledge_recommendations,
+    check_sandbox_recommendations, StageDefinition,
 };
 use crate::verify::serialize_stage_to_markdown;
 use anyhow::{Context, Result};
