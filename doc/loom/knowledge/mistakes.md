@@ -345,3 +345,13 @@ Solutions: 1) Use ./target/debug/loom path, 2) Accept failures until merge,
 
 - **Verified functional integration of terminal cleanup and stop command fixes**
   - _Rationale:_ Both fixes are properly integrated: 1) TUI app has ctrlc signal handler at app.rs:98-112 that performs terminal cleanup on Ctrl+C, 2) Stop command has SIGTERM fallback at stop.rs:38-63 when socket communication fails. All 132+ tests pass, no clippy warnings.
+
+## Promoted from Memory [2026-02-04 12:14]
+
+### Notes
+
+- Integration verification for code-review stage feature passed: 187 tests, clippy clean, build succeeds, plan parsing works with explicit stage_type field
+- Discovery: Validation exempts CodeReview from goal-backward checks using explicit stage_type field only. ID/name pattern detection happens in create_stage_from_definition (after validation). Plans should use stage_type: code-review explicitly.
+- Verified code-review warning: 'Code review stage has no dependencies' appears correctly when code-review stage defined without dependencies
+
+
