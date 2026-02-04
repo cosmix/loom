@@ -1173,7 +1173,7 @@ Location: `orchestrator/terminal/emulator.rs` - escape_applescript_string(), esc
 ### Notes
 
 - Integration verification passed for worktree isolation enforcement: All acceptance criteria met (cargo test, clippy, build). Sandbox defaults include deny rules for path traversal. Signal generation includes Worktree Isolation section with ALLOWED and FORBIDDEN lists. Hook enforcement validates bash commands and file paths.
-- Goal-backward verification truths were prose descriptions instead of shell commands. Manually verified: 1) Sandbox defaults in types.rs:155-179 include deny_read with ../../**and ../.worktrees/**, deny_write with ../../** and .work/stages/**, .work/sessions/\*\*. 2) Signal format/sections.rs includes Worktree Isolation section. 3) hooks/validators/bash.rs validates git -C, path traversal, cross-worktree access.
+- Goal-backward verification truths were prose descriptions instead of shell commands. Manually verified: 1) Sandbox defaults in types.rs:155-179 include deny_read with ../../**and ../.worktrees/**, deny_write with ../../**and .work/stages/**, .work/sessions/\*\*. 2) Signal format/sections.rs includes Worktree Isolation section. 3) hooks/validators/bash.rs validates git -C, path traversal, cross-worktree access.
 
 ## Worktree Isolation Details (2026-01-29)
 
@@ -1267,3 +1267,29 @@ When matching file/path patterns in hook scripts:
 - AVOID: `.*\.work` matches .work as substring anywhere
 - PREFER: Word boundary or path segment matching for precision
 - Test hooks against edge cases like paths containing .workflow or myfile.work.txt
+
+## Claude Code Settings Format (SANDBOX)
+
+Current implementation generates WRONG format in settings.rs:
+
+- Line 84-87: dangerouslyDisableSandbox: false at root level
+- Line 97-99: excludedCommands at root level
+- Line 62-69: WebFetch(domain:X) format in permissions.allow
+
+### Correct Claude Code Sandbox Format
+
+sandbox:
+  enabled: true
+  autoAllowBashIfSandboxed: true
+  excludedCommands: [list]
+  network:
+    allowedDomains: [list]
+permissions:
+  deny: [list]
+
+### Sandbox Format Key Differences
+
+1. Use sandbox.enabled: true (NOT dangerouslyDisableSandbox: false)
+2. excludedCommands goes INSIDE sandbox object, not root
+3. Network domains in sandbox.network.allowedDomains (not WebFetch format)
+4. autoAllowBashIfSandboxed required for proper bash command handling
