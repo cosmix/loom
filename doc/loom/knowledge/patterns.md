@@ -1293,3 +1293,33 @@ permissions:
 3. Network domains in `sandbox.network.allowedDomains`
 4. `autoAllowBashIfSandboxed` enables automatic bash approval when sandbox is active
 5. File permissions (Read/Write/Edit) use `permissions.deny` and `permissions.allow`
+
+## Claude Code Settings Format (SANDBOX) - CORRECTED 2026-02-04
+
+**Status: FIXED in commit 56cfaaf**
+
+Current settings.rs generates CORRECT nested sandbox block format. Test at line 131 verifies old dangerouslyDisableSandbox is NOT present.
+
+### Correct Generated Format
+
+settings.rs:29-108 produces:
+
+- sandbox.enabled: from config.enabled (line 34)
+- sandbox.autoAllowBashIfSandboxed: from config.auto_allow (line 39)
+- sandbox.excludedCommands: from config.excluded_commands (line 44)
+- sandbox.allowUnsandboxedCommands: from config.allow_unsandboxed_escape (line 49)
+- sandbox.network.allowedDomains: merged domains (line 57)
+- sandbox.network.allowLocalBinding: from config (line 61)
+
+### Permissions and Linux Blocks
+
+permissions block (line 69-98):
+
+- permissions.deny: Read/Write patterns for file tool restrictions
+- permissions.allow: Exception patterns from config.filesystem.allow_write
+
+linux block (line 100-105):
+
+- linux.enableWeakerNested: for container/VM compatibility
+
+**Note:** Previous patterns.md entry at lines 1271-1296 is OUTDATED and should be disregarded.
