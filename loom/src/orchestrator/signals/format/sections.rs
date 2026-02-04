@@ -34,7 +34,7 @@ pub(super) fn format_semi_stable_section(
 
     // Stage-type-aware reminder boxes
     match stage_type {
-        StageType::Knowledge | StageType::IntegrationVerify => {
+        StageType::Knowledge | StageType::IntegrationVerify | StageType::CodeReview => {
             // Knowledge and integration-verify stages: CAN use both memory and knowledge
             content.push_str("```text\n");
             content.push_str(
@@ -120,7 +120,7 @@ pub(super) fn format_semi_stable_section(
 
     // Knowledge Management section with stage-type-aware content
     match stage_type {
-        StageType::Knowledge | StageType::IntegrationVerify => {
+        StageType::Knowledge | StageType::IntegrationVerify | StageType::CodeReview => {
             content.push_str("## Knowledge Management\n\n");
 
             if !embedded_context.knowledge_has_content {

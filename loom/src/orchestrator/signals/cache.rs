@@ -176,6 +176,133 @@ pub fn generate_stable_prefix() -> String {
     content
 }
 
+/// Stable prefix for code review stages (runs in worktree with review focus)
+///
+/// Code review stages have unique rules:
+/// - Run in a worktree like standard stages
+/// - Emphasize parallel subagent execution with specialized agents
+/// - Review AND fix workflow - findings should be addressed
+/// - Can update knowledge (like integration-verify)
+pub fn generate_code_review_stable_prefix() -> String {
+    let mut content = String::new();
+
+    // Fixed header for code review stages
+    content.push_str("## Code Review Context\n\n");
+    content.push_str(
+        "You are running a **code review stage** in an **isolated git worktree**.\n\n",
+    );
+    content.push_str("**Code Review Mission:**\n\n");
+    content.push_str("1. **REVIEW** the code for quality, security, and correctness issues\n");
+    content.push_str("2. **FIX** issues you find - don't just report them\n");
+    content.push_str("3. **DOCUMENT** findings in memory for knowledge promotion\n\n");
+
+    // Parallel agent emphasis for code review
+    content.push_str("```text\n");
+    content.push_str("┌────────────────────────────────────────────────────────────────────┐\n");
+    content.push_str("│  🔍 CODE REVIEW EXECUTION STRATEGY                                 │\n");
+    content.push_str("│                                                                    │\n");
+    content.push_str("│  Use PARALLEL SPECIALIZED AGENTS for comprehensive review:        │\n");
+    content.push_str("│                                                                    │\n");
+    content.push_str("│  1. security-engineer    - Security vulnerabilities, OWASP        │\n");
+    content.push_str("│  2. senior-software-engineer - Architecture, patterns, quality    │\n");
+    content.push_str("│  3. /testing skill       - Test coverage, edge cases              │\n");
+    content.push_str("│                                                                    │\n");
+    content.push_str("│  Spawn these as PARALLEL subagents to maximize efficiency.        │\n");
+    content.push_str("│  Each agent reviews independently, then consolidate findings.     │\n");
+    content.push_str("└────────────────────────────────────────────────────────────────────┘\n");
+    content.push_str("```\n\n");
+
+    // Review workflow
+    content.push_str("**Review + Fix Workflow:**\n\n");
+    content.push_str("1. **Spawn review subagents** in parallel (security, architecture, testing)\n");
+    content.push_str("2. **Collect findings** from each specialized review\n");
+    content.push_str("3. **Prioritize issues** by severity and impact\n");
+    content.push_str("4. **Fix critical issues** directly in code\n");
+    content.push_str("5. **Record findings** using `loom memory note` for knowledge promotion\n");
+    content.push_str("6. **Commit fixes** with descriptive messages\n\n");
+
+    // Worktree isolation (same as standard stages)
+    content.push_str("**Isolation Boundaries (STRICT):**\n\n");
+    content.push_str("- You are **CONFINED** to this worktree - do not access files outside it\n");
+    content
+        .push_str("- Git commands must target THIS worktree only - no `git -C`, no `cd ../..`\n\n");
+
+    // Path boundaries
+    content.push_str("### Path Boundaries\n\n");
+    content.push_str("| Type | Paths |\n");
+    content.push_str("|------|-------|\n");
+    content
+        .push_str("| **ALLOWED** | `.` (this worktree), `.work/` (symlink to orchestration) |\n");
+    content.push_str(
+        "| **FORBIDDEN** | `../..`, absolute paths to main repo, any path outside worktree |\n\n",
+    );
+
+    content.push_str("## Execution Rules\n\n");
+    content.push_str("Follow your `~/.claude/CLAUDE.md` and project `CLAUDE.md` rules. Key reminders:\n\n");
+
+    // Delegation emphasis for code review
+    content.push_str("**Delegation & Efficiency (CRITICAL for Code Review):**\n\n");
+    content.push_str(
+        "**ALWAYS spawn specialized agents in PARALLEL for comprehensive review:**\n\n",
+    );
+    content.push_str("| Agent | Focus Area | Invoke |\n");
+    content.push_str("|-------|------------|--------|\n");
+    content.push_str(
+        "| `security-engineer` | Vulnerabilities, injection, auth | Task tool |\n",
+    );
+    content.push_str(
+        "| `senior-software-engineer` | Architecture, patterns, maintainability | Task tool |\n",
+    );
+    content.push_str("| `/testing` | Test coverage, edge cases | Skill tool |\n\n");
+
+    content.push_str("**Subagent Restrictions (CRITICAL - PREVENTS LOST WORK):**\n\n");
+    content.push_str("When spawning subagents via Task tool, they MUST be told:\n");
+    content.push_str("- ⛔ **NEVER run `git commit`** - only the main agent commits\n");
+    content.push_str(
+        "- ⛔ **NEVER run `loom stage complete`** - only the main agent completes stages\n",
+    );
+    content.push_str("- ⛔ **NEVER run `git add -A` or `git add .`** - only specific files\n");
+    content.push_str("- Subagents review/fix code and report results; main agent handles git\n\n");
+
+    content.push_str("**Completion:**\n");
+    content.push_str("- **Fix issues** - code review stages should fix, not just report\n");
+    content.push_str("- **Verify acceptance criteria** before marking stage complete\n");
+    content.push_str("- **Create handoff** if context exceeds 75%\n");
+    content.push_str("- **IMPORTANT: Before running `loom stage complete`, ensure you are at the worktree root directory**\n\n");
+
+    // Memory recording for code review (can update knowledge like integration-verify)
+    content.push_str("**Recording Findings (CAN UPDATE KNOWLEDGE):**\n\n");
+    content.push_str("```text\n");
+    content.push_str("✅ Code review stages CAN use both `loom memory` AND `loom knowledge`\n");
+    content.push_str("   Promote significant findings to knowledge for future sessions.\n");
+    content.push_str("```\n\n");
+    content.push_str(
+        "- **Record findings**: `loom memory note \"security: found SQL injection in...\"`\n",
+    );
+    content.push_str("- **Record decisions**: `loom memory decision \"refactored X\" --context \"why\"`\n");
+    content.push_str("- **Promote patterns**: `loom knowledge update patterns \"## Pattern\"`\n");
+    content.push_str("- **Record mistakes**: `loom knowledge update mistakes \"## Issue\"`\n\n");
+
+    // Git staging (same as standard stages)
+    content.push_str("**Git Staging (CRITICAL):**\n");
+    content
+        .push_str("- **ALWAYS** use `git add <specific-files>` - stage only files you modified\n");
+    content.push_str("- **NEVER** use `git add -A`, `git add --all`, or `git add .`\n");
+    content
+        .push_str("- **NEVER** stage `.work` - it is orchestration state shared across stages\n\n");
+
+    content.push_str("**Binary Usage (CRITICAL when working on loom):**\n");
+    content.push_str("- **ALWAYS use `loom`** - the installed binary from PATH\n");
+    content.push_str("- **NEVER use `target/debug/loom`** or `./loom/target/debug/loom`\n");
+    content.push_str("- Development binaries cause version mismatches and state corruption\n\n");
+    content.push_str("**State Files (CRITICAL):**\n");
+    content.push_str("- **NEVER edit `.work/` files directly** - always use loom CLI\n");
+    content.push_str("- State is managed by the orchestrator, not by agents\n");
+    content.push_str("- Direct edits corrupt state and cause phantom completions\n\n");
+
+    content
+}
+
 /// Stable prefix for knowledge stages (runs in main repo, no worktree)
 ///
 /// Knowledge stages have different rules:
@@ -375,6 +502,53 @@ mod tests {
         assert_eq!(
             prefix1, prefix2,
             "Knowledge stable prefix should be deterministic"
+        );
+    }
+
+    #[test]
+    fn test_code_review_stable_prefix_contains_required_sections() {
+        let prefix = generate_code_review_stable_prefix();
+
+        // Code review specific context
+        assert!(prefix.contains("## Code Review Context"));
+        assert!(prefix.contains("code review stage"));
+        assert!(prefix.contains("REVIEW"));
+        assert!(prefix.contains("FIX"));
+        assert!(prefix.contains("DOCUMENT"));
+
+        // Parallel agent emphasis
+        assert!(prefix.contains("CODE REVIEW EXECUTION STRATEGY"));
+        assert!(prefix.contains("security-engineer"));
+        assert!(prefix.contains("senior-software-engineer"));
+        assert!(prefix.contains("/testing"));
+        assert!(prefix.contains("PARALLEL"));
+
+        // Worktree isolation
+        assert!(prefix.contains("Isolation Boundaries"));
+        assert!(prefix.contains("Path Boundaries"));
+        assert!(prefix.contains("CONFINED"));
+
+        // Execution rules
+        assert!(prefix.contains("## Execution Rules"));
+        assert!(prefix.contains("git add <specific-files>"));
+
+        // Can update knowledge (unlike standard stages)
+        assert!(prefix.contains("CAN use both `loom memory` AND `loom knowledge`"));
+        assert!(prefix.contains("loom knowledge update"));
+
+        // Worktree root directory reminder
+        assert!(prefix.contains(
+            "Before running `loom stage complete`, ensure you are at the worktree root directory"
+        ));
+    }
+
+    #[test]
+    fn test_code_review_stable_prefix_is_stable() {
+        let prefix1 = generate_code_review_stable_prefix();
+        let prefix2 = generate_code_review_stable_prefix();
+        assert_eq!(
+            prefix1, prefix2,
+            "Code review stable prefix should be deterministic"
         );
     }
 }

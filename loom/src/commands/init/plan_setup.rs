@@ -5,7 +5,8 @@ use crate::fs::work_dir::WorkDir;
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::plan::parser::parse_plan;
 use crate::plan::schema::{
-    check_knowledge_recommendations, check_sandbox_recommendations, StageDefinition,
+    check_code_review_recommendations, check_knowledge_recommendations, check_sandbox_recommendations,
+    StageDefinition,
 };
 use crate::verify::serialize_stage_to_markdown;
 use anyhow::{Context, Result};
@@ -78,6 +79,12 @@ pub fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<usiz
     // Check for sandbox-related recommendations (non-fatal warnings)
     let sandbox_warnings = check_sandbox_recommendations(&parsed_plan.metadata);
     for warning in &sandbox_warnings {
+        println!("  {} {}", "⚠".yellow().bold(), warning.yellow());
+    }
+
+    // Check for code-review-related recommendations (non-fatal warnings)
+    let code_review_warnings = check_code_review_recommendations(&parsed_plan.stages);
+    for warning in &code_review_warnings {
         println!("  {} {}", "⚠".yellow().bold(), warning.yellow());
     }
 
@@ -170,19 +177,39 @@ pub fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<usiz
 
 /// Detect the stage type from the definition.
 ///
-/// Uses explicit `stage_type` field if set to Knowledge, otherwise
-/// falls back to detecting "knowledge" in ID or name (case-insensitive).
+/// Uses explicit `stage_type` field if set, otherwise falls back to
+/// detecting stage type based on ID or name patterns (case-insensitive):
+/// - "knowledge" -> Knowledge
+/// - "code-review" or "code review" -> CodeReview
+/// - "integration-verify" or "integration verify" -> IntegrationVerify
 fn detect_stage_type(stage_def: &StageDefinition) -> StageType {
-    // Check explicit stage_type field first
-    if stage_def.stage_type == StageType::Knowledge {
+    // Check explicit stage_type field first (if not default Standard)
+    if stage_def.stage_type != StageType::Standard {
+        return stage_def.stage_type;
+    }
+
+    let id_lower = stage_def.id.to_lowercase();
+    let name_lower = stage_def.name.to_lowercase();
+
+    // Detect Knowledge stage
+    if id_lower.contains("knowledge") || name_lower.contains("knowledge") {
         return StageType::Knowledge;
     }
 
-    // Fallback: detect based on ID or name containing "knowledge"
-    if stage_def.id.to_lowercase().contains("knowledge")
-        || stage_def.name.to_lowercase().contains("knowledge")
+    // Detect CodeReview stage
+    if id_lower.contains("code-review")
+        || name_lower.contains("code-review")
+        || name_lower.contains("code review")
     {
-        return StageType::Knowledge;
+        return StageType::CodeReview;
+    }
+
+    // Detect IntegrationVerify stage
+    if id_lower.contains("integration-verify")
+        || name_lower.contains("integration-verify")
+        || name_lower.contains("integration verify")
+    {
+        return StageType::IntegrationVerify;
     }
 
     StageType::Standard

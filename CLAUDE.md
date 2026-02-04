@@ -111,6 +111,9 @@ loom:
 
 Look in doc/plans for the plan files!
 
+**Stage Types:** Plans can include optional special stages:
+- `code-review` - Optional final stage after integration-verify. Performs security and code quality reviews using parallel subagents (security-engineer, senior-software-engineer). Fixes issues found rather than just reporting them.
+
 <!-- END loom METADATA -->
 
 ### Plan File Lifecycle

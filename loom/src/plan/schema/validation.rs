@@ -359,7 +359,7 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
         }
 
         // Require goal-backward checks for standard stages
-        // Knowledge and IntegrationVerify stages are exempt (they have different purposes)
+        // Knowledge, IntegrationVerify, and CodeReview stages are exempt (they have different purposes)
         if stage.stage_type == super::types::StageType::Standard {
             let has_goal_checks =
                 !stage.truths.is_empty() || !stage.artifacts.is_empty() || !stage.wiring.is_empty();
@@ -452,6 +452,37 @@ pub fn check_sandbox_recommendations(metadata: &LoomMetadata) -> Vec<String> {
              Explicit entry is redundant but harmless."
                 .to_string(),
         );
+    }
+
+    warnings
+}
+
+/// Check for code-review-related recommendations (non-fatal warnings)
+///
+/// Returns a list of warning messages when:
+/// - Plan contains code-review stages without proper configuration
+pub fn check_code_review_recommendations(stages: &[super::types::StageDefinition]) -> Vec<String> {
+    let mut warnings = Vec::new();
+
+    // Find stages that are code-review type
+    let code_review_stages: Vec<_> = stages
+        .iter()
+        .filter(|s| {
+            s.stage_type == super::types::StageType::CodeReview
+                || s.id.to_lowercase().contains("code-review")
+                || s.name.to_lowercase().contains("code review")
+        })
+        .collect();
+
+    // Warn if code-review stages have no dependencies (should review other stages' work)
+    for stage in &code_review_stages {
+        if stage.dependencies.is_empty() {
+            warnings.push(format!(
+                "Code review stage '{}' has no dependencies. \
+                 Consider adding dependencies on stages whose code it should review.",
+                stage.id
+            ));
+        }
     }
 
     warnings

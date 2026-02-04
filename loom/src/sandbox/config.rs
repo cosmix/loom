@@ -66,11 +66,11 @@ pub fn merge_config(
             .unwrap_or_else(|| plan_config.linux.clone()),
     };
 
-    // Special handling for Knowledge and IntegrationVerify stages
+    // Special handling for Knowledge, IntegrationVerify, and CodeReview stages
     // These stages need to write to doc/loom/knowledge/**
     if matches!(
         stage_type,
-        StageType::Knowledge | StageType::IntegrationVerify
+        StageType::Knowledge | StageType::IntegrationVerify | StageType::CodeReview
     ) {
         let knowledge_path = "doc/loom/knowledge/**".to_string();
         if !merged.filesystem.allow_write.contains(&knowledge_path) {
@@ -403,6 +403,29 @@ mod tests {
         let merged = merge_config(&plan, &stage, StageType::IntegrationVerify);
 
         // IntegrationVerify stage should have doc/loom/knowledge/** in allow_write
+        assert!(merged
+            .filesystem
+            .allow_write
+            .contains(&"doc/loom/knowledge/**".to_string()));
+    }
+
+    #[test]
+    fn test_merge_config_code_review_stage() {
+        let plan = SandboxConfig {
+            enabled: true,
+            auto_allow: true,
+            allow_unsandboxed_escape: false,
+            excluded_commands: vec!["loom".to_string()],
+            filesystem: FilesystemConfig::default(),
+            network: NetworkConfig::default(),
+            linux: LinuxConfig::default(),
+        };
+
+        let stage = StageSandboxConfig::default();
+
+        let merged = merge_config(&plan, &stage, StageType::CodeReview);
+
+        // CodeReview stage should have doc/loom/knowledge/** in allow_write
         assert!(merged
             .filesystem
             .allow_write

@@ -42,7 +42,7 @@ doc/plans/PLAN-<description>.md
 | ---- | ------ | --- |
 | 1 | Spawn Explore subagents for related modules | Find patterns to reuse |
 | 2 | Review `doc/loom/knowledge/*.md` | Learn from past mistakes |
-| 3 | Create TODO with "REUSE:" annotations | Track reuse explicitly |
+| 3 | Create task list with "REUSE:" annotations | Track reuse explicitly |
 | 4 | Identify integration points | Where new code connects |
 
 **Exploration Subagent Template:**
@@ -165,17 +165,18 @@ Every plan MUST follow this structure:
 │                                                                     │
 │  FIRST:  knowledge-bootstrap    (unless knowledge already exists)   │
 │  MIDDLE: implementation stages  (parallelized where possible)       │
-│  LAST:   integration-verify     (ALWAYS - no exceptions)            │
+│  THEN:   integration-verify     (ALWAYS - verifies functionality)   │
+│  LAST:   code-review           (OPTIONAL - security and quality)    │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
 Include a visual execution diagram:
 
 ```text
-[knowledge-bootstrap] --> [stage-a, stage-b] --> [stage-c] --> [integration-verify]
+[knowledge-bootstrap] --> [stage-a, stage-b] --> [stage-c] --> [integration-verify] --> [code-review]
 ```
 
-Stages in `[a, b]` notation run concurrently.
+Stages in `[a, b]` notation run concurrently. Code review is optional but recommended for production features.
 
 ### 7. Goal-Backward Verification (MANDATORY - VALIDATED)
 
@@ -287,8 +288,9 @@ loom:
 | `knowledge` | knowledge-bootstrap stage | Can write to doc/loom/knowledge/** |
 | `standard` | All implementation stages | Cannot write to knowledge files |
 | `integration-verify` | Final verification stage | Can write to doc/loom/knowledge/** |
+| `code-review` | Code review stage (optional) | Can write to doc/loom/knowledge/**, exempt from goal-backward checks |
 
-**NEVER use PascalCase** (Knowledge, Standard, IntegrationVerify) - the parser rejects these.
+**NEVER use PascalCase** (Knowledge, Standard, IntegrationVerify, CodeReview) - the parser rejects these.
 
 **Example — CORRECT way to show code in descriptions:**
 
@@ -570,7 +572,128 @@ Verifies all work integrates correctly after merges AND that the feature actuall
 | **Wiring verification** | **Features must be connected to actually work**    |
 | **Functional proof**    | **Smoke test proves the feature is usable**        |
 
-### 12. Memory Recording in Stage Descriptions
+### 12. Code Review Stage (Optional Last)
+
+Performs security and code quality review AFTER integration-verify using parallel specialized subagents.
+
+```text
+┌─────────────────────────────────────────────────────────────────────┐
+│  ⚠️ CODE REVIEW: FINDS AND FIXES ISSUES                             │
+│                                                                     │
+│  This is NOT a passive review stage - it actively fixes issues:     │
+│  - Security vulnerabilities (OWASP, auth, secrets)                  │
+│  - Code quality problems (patterns, readability, maintainability)   │
+│  - Test coverage gaps                                               │
+│                                                                     │
+│  Uses parallel subagents for efficiency:                            │
+│  - security-engineer for security review                            │
+│  - senior-software-engineer for architecture/code quality           │
+│  - /testing skill for test coverage                                 │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+```yaml
+- id: code-review
+  name: "Code Review and Quality Assurance"
+  stage_type: code-review
+  description: |
+    Comprehensive security and quality review using parallel specialized subagents.
+
+    CRITICAL: This stage REVIEWS AND FIXES issues, not just reports them.
+    Use parallel subagents and skills to maximize performance.
+
+    EXECUTION PLAN - Parallel Review Subagents:
+
+    Subagent 1 - Security Review (security-engineer):
+      Assignment: Security audit and fixes
+      Focus areas:
+        - OWASP Top 10 vulnerabilities
+        - Authentication and authorization flaws
+        - Input validation and sanitization
+        - Secrets and credential management
+        - Dependency vulnerabilities
+      Files owned: (can modify any file to fix security issues)
+      Files read-only: (none - security fixes may touch any code)
+      Acceptance:
+        - No hardcoded secrets or credentials
+        - Input validation at all boundaries
+        - Proper error handling (no info leakage)
+        - Dependencies have no known CVEs
+
+    Subagent 2 - Code Quality Review (senior-software-engineer):
+      Assignment: Architecture and code quality review
+      Focus areas:
+        - Code organization and modularity
+        - Design patterns and best practices
+        - Performance considerations
+        - Documentation completeness
+        - Maintainability and readability
+      Files owned: (can modify any file to improve quality)
+      Files read-only: (none - quality fixes may touch any code)
+      Acceptance:
+        - No code duplication
+        - Clear separation of concerns
+        - Adequate inline documentation
+        - No overly complex functions (>50 lines)
+
+    Subagent 3 - Test Coverage Review (use /testing skill):
+      Assignment: Test coverage analysis and gaps
+      Focus areas:
+        - Unit test coverage for critical paths
+        - Integration test completeness
+        - Edge case coverage
+        - Error handling tests
+      Files owned: tests/** (can add new tests)
+      Files read-only: src/** (analyzes but doesn't modify)
+      Acceptance:
+        - Critical paths have unit tests
+        - Integration tests cover main workflows
+        - Error cases are tested
+
+    IMPORTANT: Spawn these as parallel Task tool calls.
+
+    MEMORY RECORDING:
+    - Record all findings: loom memory note "issue found: ..."
+    - Record fixes applied: loom memory decision "fixed by ..." --context "rationale"
+    - Promote critical issues to knowledge: (done in acceptance)
+
+    KNOWLEDGE UPDATES (MANDATORY):
+    Before completing:
+      loom memory list
+      loom memory promote all mistakes
+      loom memory promote decision patterns
+      loom knowledge update mistakes "..." (for any critical issues found)
+  dependencies: ["integration-verify"]
+  acceptance:
+    - "cargo test"  # Fixes must not break tests
+    - "cargo clippy -- -D warnings"  # No new warnings introduced
+    - "loom memory list | grep -q 'Type: note'"  # Review findings recorded
+  files: [] # Can modify any files to fix issues
+  working_dir: "."
+  # code-review stages are EXEMPT from goal-backward verification
+  # (they're review stages, not feature stages)
+```
+
+**When to include code-review:**
+
+| Include If | Skip If |
+| ---------- | ------- |
+| Production feature | Internal tooling or experiments |
+| User-facing functionality | Refactoring or cleanup |
+| Security-sensitive code | Documentation-only changes |
+| Complex business logic | Prototype or proof-of-concept |
+
+**Why code-review is optional but recommended:**
+
+| Benefit | Explanation |
+| ------- | ----------- |
+| Security hardening | Specialized security-engineer agent catches vulnerabilities |
+| Quality assurance | senior-software-engineer reviews architecture and patterns |
+| Test completeness | /testing skill identifies coverage gaps |
+| Knowledge capture | Critical issues get promoted to knowledge base |
+| Parallel efficiency | Subagents review different aspects concurrently |
+
+### 13. Memory Recording in Stage Descriptions
 
 **Every stage description should remind agents to record memory.** Memory persists insights across sessions and prevents repeated mistakes.
 
@@ -606,7 +729,7 @@ description: |
 | Decision documentation | Records WHY choices were made, not just what was done |
 | Learning transfer | Memory → Knowledge transfer makes lessons permanent |
 
-### 13. Memory vs Knowledge Rules
+### 14. Memory vs Knowledge Rules
 
 **CRITICAL: Different stages have different recording permissions.**
 
@@ -615,6 +738,7 @@ description: |
 | knowledge-bootstrap | YES | YES |
 | Implementation stages | YES (ONLY) | **FORBIDDEN** |
 | integration-verify | YES | YES (promote only) |
+| code-review | YES | YES (promote only) |
 
 **Why this separation?**
 
@@ -627,6 +751,7 @@ description: |
 1. **knowledge-bootstrap**: Directly writes to knowledge files (architecture, patterns, conventions)
 2. **Implementation stages**: Record EVERYTHING to memory, NEVER touch knowledge
 3. **integration-verify**: Reviews memory, promotes valuable insights to knowledge
+4. **code-review** (optional): Reviews code quality/security, promotes critical findings to knowledge
 
 **Implementation Stage Rule:**
 
@@ -638,7 +763,7 @@ During implementation stages, you MUST:
 
 **Exception:** If you discover a CRITICAL MISTAKE that would block other stages, record it immediately with `loom knowledge update mistakes "..."` AND document why in your commit message.
 
-### 14. Plan Document Structure
+### 15. Plan Document Structure
 
 **Plans have TWO sections: human-readable content FIRST, YAML metadata LAST.**
 
@@ -668,7 +793,7 @@ During implementation stages, you MUST:
 | Maintainability | Humans can review/edit the readable section easily |
 | Machine processing | YAML at bottom still enables loom CLI parsing |
 
-### 15. After Writing Plan
+### 16. After Writing Plan
 
 1. Write plan to `doc/plans/PLAN-<name>.md`
 2. **STOP** - Do NOT implement
@@ -758,10 +883,10 @@ stages:
 ## Execution Diagram
 
 ```
-[knowledge-bootstrap] --> [stage-a, stage-b] --> [integration-verify]
+[knowledge-bootstrap] --> [stage-a, stage-b] --> [integration-verify] --> [code-review]
 ```
 
-Stages in `[a, b]` notation run concurrently in separate worktrees.
+Stages in `[a, b]` notation run concurrently in separate worktrees. Code review is optional.
 
 ---
 
