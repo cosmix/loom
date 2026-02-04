@@ -47,21 +47,21 @@ fn test_sync_basic_permissions() {
 }
 
 #[test]
-fn test_sync_filters_parent_traversal() {
+fn test_sync_transforms_worktree_paths() {
     let worktree_dir = TempDir::new().unwrap();
     let main_dir = TempDir::new().unwrap();
 
-    // Create worktree settings with both regular and worktree-specific permissions
+    // Create worktree settings with regular, transformable, and non-transformable permissions
     let worktree_claude_dir = worktree_dir.path().join(".claude");
     fs::create_dir_all(&worktree_claude_dir).unwrap();
 
     let worktree_settings = json!({
         "permissions": {
             "allow": [
-                "Read(src/**)",
-                "Read(../../.work/**)",
-                "Write(.worktrees/stage-1/**)",
-                "Bash(cargo:*)"
+                "Read(src/**)",                     // regular - keep as-is
+                "Read(../../.work/**)",             // transformable - becomes Read(.work/**)
+                "Write(.worktrees/stage-1/**)",    // non-transformable - filtered out
+                "Bash(cargo:*)"                     // regular - keep as-is
             ]
         }
     });
@@ -74,10 +74,12 @@ fn test_sync_filters_parent_traversal() {
     // Run sync
     let result = sync_worktree_permissions(worktree_dir.path(), main_dir.path()).unwrap();
 
-    // Only non-worktree-specific permissions should be synced
-    assert_eq!(result.allow_added, 2);
+    // Regular permissions + transformed permission should be synced
+    // (Read(src/**), Read(.work/**), Bash(cargo:*))
+    // Write(.worktrees/stage-1/**) is filtered out as non-transformable
+    assert_eq!(result.allow_added, 3);
 
-    // Verify main settings don't contain worktree-specific paths
+    // Verify main settings have correct permissions
     let main_settings_path = main_dir.path().join(".claude/settings.local.json");
     let content = fs::read_to_string(&main_settings_path).unwrap();
     let main_settings: Value = serde_json::from_str(&content).unwrap();
@@ -85,6 +87,9 @@ fn test_sync_filters_parent_traversal() {
     let allow = main_settings["permissions"]["allow"].as_array().unwrap();
     assert!(allow.iter().any(|v| v == "Read(src/**)"));
     assert!(allow.iter().any(|v| v == "Bash(cargo:*)"));
+    // Verify ../../.work/** was transformed to .work/**
+    assert!(allow.iter().any(|v| v == "Read(.work/**)"));
+    // Verify no raw worktree-specific patterns remain
     assert!(!allow.iter().any(|v| v.as_str().unwrap().contains("../../")));
     assert!(!allow
         .iter()

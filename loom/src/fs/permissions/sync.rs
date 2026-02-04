@@ -94,15 +94,27 @@ pub fn sync_worktree_permissions_with_working_dir(
     all_deny_perms.sort();
     all_deny_perms.dedup();
 
-    // Filter out worktree-specific paths
+    // Transform worktree-specific paths to portable paths, or keep as-is if not worktree-specific
     let filtered_allow: Vec<String> = all_allow_perms
         .into_iter()
-        .filter(|p| !is_worktree_specific_permission(p))
+        .filter_map(|p| {
+            if is_worktree_specific_permission(&p) {
+                transform_worktree_path(&p)
+            } else {
+                Some(p)
+            }
+        })
         .collect();
 
     let filtered_deny: Vec<String> = all_deny_perms
         .into_iter()
-        .filter(|p| !is_worktree_specific_permission(p))
+        .filter_map(|p| {
+            if is_worktree_specific_permission(&p) {
+                transform_worktree_path(&p)
+            } else {
+                Some(p)
+            }
+        })
         .collect();
 
     // If nothing to sync, return early
@@ -184,6 +196,78 @@ fn is_worktree_specific_permission(permission: &str) -> bool {
     WORKTREE_PATH_PATTERNS
         .iter()
         .any(|pattern| permission.contains(pattern))
+}
+
+/// Transform a worktree-specific permission path to a portable path
+///
+/// Returns Some(transformed_permission) if the path was transformed,
+/// None if the permission doesn't contain worktree-specific patterns or can't be transformed.
+///
+/// # Examples
+/// - `Read(/home/x/.worktrees/s1/loom/src/**)` → `Read(loom/src/**)`
+/// - `Read(../../.work/**)` → `Read(.work/**)`
+/// - `Write(../../doc/plans/**)` → `Write(doc/plans/**)`
+fn transform_worktree_path(permission: &str) -> Option<String> {
+    // Only transform if it contains worktree-specific patterns
+    if !is_worktree_specific_permission(permission) {
+        return None;
+    }
+
+    // Extract permission type and path: "Read(path)" -> ("Read", "path")
+    let open_paren = permission.find('(')?;
+    let close_paren = permission.rfind(')')?;
+    if close_paren <= open_paren {
+        return None;
+    }
+
+    let perm_type = &permission[..open_paren];
+    let path_str = &permission[open_paren + 1..close_paren];
+
+    // Try to transform the path
+    let transformed_path = if let Some(worktrees_idx) = path_str.find(".worktrees/") {
+        // Only transform if .worktrees/ is NOT at the start of the path.
+        // If at start (position 0), it's a relative path to the worktrees directory
+        // (e.g., .worktrees/stage-1/**) which references sibling worktrees and
+        // doesn't map cleanly to main repo paths - filter these out.
+        if worktrees_idx == 0 {
+            None
+        } else {
+            // Handle absolute path with .worktrees/stage-id/
+            // e.g., /home/user/.worktrees/stage-1/loom/src/** -> loom/src/**
+            let after_worktrees = &path_str[worktrees_idx + ".worktrees/".len()..];
+            // Skip stage-id (everything up to next /)
+            if let Some(stage_sep) = after_worktrees.find('/') {
+                let portable_path = &after_worktrees[stage_sep + 1..];
+                if portable_path.is_empty() {
+                    None
+                } else {
+                    Some(portable_path.to_string())
+                }
+            } else {
+                None
+            }
+        }
+    } else if path_str.starts_with("../../") {
+        // Handle relative path with ../../
+        // Resolve by stripping ../ prefixes
+        // ../../.work/** -> .work/**
+        // ../../doc/plans/** -> doc/plans/**
+        let mut path = path_str;
+        while path.starts_with("../") {
+            path = &path[3..];
+        }
+        if path.is_empty() {
+            None
+        } else {
+            Some(path.to_string())
+        }
+    } else {
+        // Contains .worktrees/ pattern but not at start of path or ../../
+        // This might be a more complex case, return None to keep original behavior
+        None
+    };
+
+    transformed_path.map(|p| format!("{}({})", perm_type, p))
 }
 
 /// Merge permissions into the main settings file with exclusive file locking
@@ -435,5 +519,58 @@ mod tests {
         let (allow, deny) = extract_permissions(&settings);
         assert!(allow.is_empty());
         assert!(deny.is_empty());
+    }
+
+    #[test]
+    fn test_transform_worktree_path_absolute() {
+        // Absolute path with .worktrees/stage-id/ should be transformed to relative
+        assert_eq!(
+            transform_worktree_path("Read(/home/user/.worktrees/stage-1/loom/src/**)"),
+            Some("Read(loom/src/**)".to_string())
+        );
+        assert_eq!(
+            transform_worktree_path("Write(/tmp/project/.worktrees/my-stage/doc/plans/**)"),
+            Some("Write(doc/plans/**)".to_string())
+        );
+    }
+
+    #[test]
+    fn test_transform_worktree_path_relative() {
+        // Relative path with ../../ should be resolved
+        assert_eq!(
+            transform_worktree_path("Read(../../.work/**)"),
+            Some("Read(.work/**)".to_string())
+        );
+        assert_eq!(
+            transform_worktree_path("Write(../../doc/plans/**)"),
+            Some("Write(doc/plans/**)".to_string())
+        );
+        // Multiple ../ levels
+        assert_eq!(
+            transform_worktree_path("Read(../../../foo/bar)"),
+            Some("Read(foo/bar)".to_string())
+        );
+    }
+
+    #[test]
+    fn test_transform_worktree_path_unchanged() {
+        // Normal path without worktree patterns should return None
+        assert_eq!(transform_worktree_path("Read(.work/**)"), None);
+        assert_eq!(transform_worktree_path("Bash(cargo:*)"), None);
+        assert_eq!(transform_worktree_path("Write(src/**)"), None);
+    }
+
+    #[test]
+    fn test_transform_worktree_path_edge_cases() {
+        // Invalid permission format
+        assert_eq!(transform_worktree_path("NoParens"), None);
+        assert_eq!(transform_worktree_path("BadFormat()"), None);
+
+        // Empty path after transformation
+        assert_eq!(transform_worktree_path("Read(.worktrees/stage/)"), None);
+        assert_eq!(transform_worktree_path("Read(../../)"), None);
+
+        // Just the stage id with no further path
+        assert_eq!(transform_worktree_path("Read(.worktrees/stage-id)"), None);
     }
 }
