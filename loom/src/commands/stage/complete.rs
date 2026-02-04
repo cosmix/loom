@@ -163,6 +163,42 @@ pub fn complete(
     let acceptance_dir: Option<PathBuf> =
         resolve_acceptance_dir(working_dir.as_deref(), stage.working_dir.as_deref());
 
+    // Sync worktree permissions to main repo BEFORE acceptance criteria
+    // This ensures permissions are synced even if acceptance fails, allowing
+    // approved permissions to persist for retry attempts
+    if let Some(ref dir) = working_dir {
+        // Find the main repo root from the worktree path
+        let repo_root = find_repo_root_from_cwd(dir);
+
+        if let Some(ref root) = repo_root {
+            match sync_worktree_permissions_with_working_dir(dir, root, acceptance_dir.as_deref()) {
+                Ok(result) => {
+                    if result.allow_added > 0 || result.deny_added > 0 {
+                        let mut msg = format!(
+                            "Synced permissions from worktree: {} allow, {} deny",
+                            result.allow_added, result.deny_added
+                        );
+                        if result.worktrees_updated > 0 {
+                            msg.push_str(&format!(
+                                " (propagated to {} other worktree{})",
+                                result.worktrees_updated,
+                                if result.worktrees_updated == 1 {
+                                    ""
+                                } else {
+                                    "s"
+                                }
+                            ));
+                        }
+                        println!("{}", msg);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Warning: Failed to sync worktree permissions: {e}");
+                }
+            }
+        }
+    }
+
     // Track whether acceptance criteria passed (None = skipped via --no-verify)
     let acceptance_result: Option<bool> = if no_verify {
         // --no-verify means we skip criteria entirely (deliberate skip)
@@ -195,46 +231,6 @@ pub fn complete(
         // No acceptance criteria defined - treat as passed
         Some(true)
     };
-
-    // Sync worktree permissions to main repo (non-fatal - warn on error)
-    if acceptance_result != Some(false) {
-        if let Some(ref dir) = working_dir {
-            // Find the main repo root from the worktree path
-            let repo_root = find_repo_root_from_cwd(dir);
-
-            if let Some(ref root) = repo_root {
-                match sync_worktree_permissions_with_working_dir(
-                    dir,
-                    root,
-                    acceptance_dir.as_deref(),
-                ) {
-                    Ok(result) => {
-                        if result.allow_added > 0 || result.deny_added > 0 {
-                            let mut msg = format!(
-                                "Synced permissions from worktree: {} allow, {} deny",
-                                result.allow_added, result.deny_added
-                            );
-                            if result.worktrees_updated > 0 {
-                                msg.push_str(&format!(
-                                    " (propagated to {} other worktree{})",
-                                    result.worktrees_updated,
-                                    if result.worktrees_updated == 1 {
-                                        ""
-                                    } else {
-                                        "s"
-                                    }
-                                ));
-                            }
-                            println!("{}", msg);
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("Warning: Failed to sync worktree permissions: {e}");
-                    }
-                }
-            }
-        }
-    }
 
     // Cleanup terminal resources based on backend type
     cleanup_terminal_for_stage(&stage_id, session_id.as_deref(), work_dir);
