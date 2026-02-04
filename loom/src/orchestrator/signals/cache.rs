@@ -296,6 +296,114 @@ pub fn generate_code_review_stable_prefix() -> String {
     content
 }
 
+/// Stable prefix for integration-verify stages (final quality gate)
+///
+/// Integration-verify stages have unique rules:
+/// - Run in a worktree like standard stages
+/// - ZERO TOLERANCE for issues - ALL warnings and errors must be fixed
+/// - Nothing is "pre-existing" or "too trivial" - fix everything
+/// - Final gate before merge - no shortcuts
+/// - Can update knowledge (promote learnings)
+pub fn generate_integration_verify_stable_prefix() -> String {
+    let mut content = String::new();
+
+    // Fixed header for integration-verify stages
+    content.push_str("## Integration Verification Context\n\n");
+    content.push_str(
+        "You are running an **integration-verify stage** - the **FINAL QUALITY GATE** before merge.\n\n",
+    );
+
+    // ZERO TOLERANCE emphasis
+    content.push_str("**ZERO TOLERANCE FOR ISSUES:**\n\n");
+    content.push_str("- **ALL** compiler warnings must be fixed - not suppressed, FIXED\n");
+    content.push_str("- **ALL** linter errors must be resolved - no exceptions\n");
+    content.push_str("- **ALL** test failures must be addressed\n");
+    content.push_str("- **ALL** IDE warnings should be investigated and resolved\n");
+    content.push_str("- **NOTHING** is \"pre-existing\" - if it's broken, fix it now\n");
+    content
+        .push_str("- **NOTHING** is \"too trivial\" - small issues compound into big problems\n\n");
+
+    content.push_str("**Your Mission:**\n\n");
+    content.push_str("1. **VERIFY** all acceptance criteria pass\n");
+    content.push_str("2. **FIX** every warning, error, and issue you encounter\n");
+    content.push_str("3. **TEST** that the feature actually works end-to-end\n");
+    content.push_str("4. **PROMOTE** valuable learnings to knowledge\n\n");
+
+    // Worktree isolation
+    content.push_str("**Isolation Boundaries (STRICT):**\n\n");
+    content.push_str("- You are **CONFINED** to this worktree - do not access files outside it\n");
+    content
+        .push_str("- Git commands must target THIS worktree only - no `git -C`, no `cd ../..`\n\n");
+
+    // Path boundaries
+    content.push_str("### Path Boundaries\n\n");
+    content.push_str("| Type | Paths |\n");
+    content.push_str("|------|-------|\n");
+    content
+        .push_str("| **ALLOWED** | `.` (this worktree), `.work/` (symlink to orchestration) |\n");
+    content.push_str(
+        "| **FORBIDDEN** | `../..`, absolute paths to main repo, any path outside worktree |\n\n",
+    );
+
+    content.push_str("## Execution Rules\n\n");
+    content.push_str(
+        "Follow your `~/.claude/CLAUDE.md` and project `CLAUDE.md` rules. Key reminders:\n\n",
+    );
+
+    // Delegation guidance
+    content.push_str("**Delegation & Efficiency (CRITICAL):**\n\n");
+    content.push_str("**USE THE TASK TOOL** to spawn parallel subagents for verification:\n");
+    content.push_str("- Run tests, linting, and build checks in parallel where possible\n");
+    content.push_str("- Pattern: `Task(subagent_type=\"software-engineer\", prompt=\"...\")` - send MULTIPLE in ONE message\n");
+    content.push_str("- Agents: `software-engineer`, `senior-software-engineer`, `Explore`\n");
+    content.push_str("- Skills: /testing, /auth, /ci-cd, /logging-observability\n\n");
+
+    content.push_str("**Subagent Restrictions (CRITICAL - PREVENTS LOST WORK):**\n\n");
+    content.push_str("When spawning subagents via Task tool, they MUST be told:\n");
+    content.push_str("- ⛔ **NEVER run `git commit`** - only the main agent commits\n");
+    content.push_str(
+        "- ⛔ **NEVER run `loom stage complete`** - only the main agent completes stages\n",
+    );
+    content.push_str("- ⛔ **NEVER run `git add -A` or `git add .`** - only specific files\n");
+    content.push_str("- Subagents fix issues and report results; main agent handles git\n\n");
+
+    content.push_str("**Completion:**\n");
+    content.push_str(
+        "- **Fix ALL issues** - do not mark complete with any warnings or errors remaining\n",
+    );
+    content.push_str("- **Verify acceptance criteria** before marking stage complete\n");
+    content.push_str("- **Create handoff** if context exceeds 75%\n");
+    content.push_str("- **IMPORTANT: Before running `loom stage complete`, ensure you are at the worktree root directory**\n\n");
+
+    // Knowledge promotion
+    content.push_str("**Recording & Knowledge Promotion (CAN UPDATE KNOWLEDGE):**\n\n");
+    content.push_str("Integration-verify stages CAN and SHOULD update knowledge:\n");
+    content.push_str("- `loom memory promote all mistakes` - promote session learnings\n");
+    content.push_str("- `loom knowledge update patterns \"...\"` - document patterns discovered\n");
+    content.push_str(
+        "- `loom knowledge update mistakes \"...\"` - record errors for future avoidance\n\n",
+    );
+
+    // Git staging
+    content.push_str("**Git Staging (CRITICAL):**\n");
+    content
+        .push_str("- **ALWAYS** use `git add <specific-files>` - stage only files you modified\n");
+    content.push_str("- **NEVER** use `git add -A`, `git add --all`, or `git add .`\n");
+    content
+        .push_str("- **NEVER** stage `.work` - it is orchestration state shared across stages\n\n");
+
+    content.push_str("**Binary Usage (CRITICAL when working on loom):**\n");
+    content.push_str("- **ALWAYS use `loom`** - the installed binary from PATH\n");
+    content.push_str("- **NEVER use `target/debug/loom`** or `./loom/target/debug/loom`\n");
+    content.push_str("- Development binaries cause version mismatches and state corruption\n\n");
+    content.push_str("**State Files (CRITICAL):**\n");
+    content.push_str("- **NEVER edit `.work/` files directly** - always use loom CLI\n");
+    content.push_str("- State is managed by the orchestrator, not by agents\n");
+    content.push_str("- Direct edits corrupt state and cause phantom completions\n\n");
+
+    content
+}
+
 /// Stable prefix for knowledge stages (runs in main repo, no worktree)
 ///
 /// Knowledge stages have different rules:
@@ -534,6 +642,54 @@ mod tests {
         assert_eq!(
             prefix1, prefix2,
             "Code review stable prefix should be deterministic"
+        );
+    }
+
+    #[test]
+    fn test_integration_verify_stable_prefix_contains_required_sections() {
+        let prefix = generate_integration_verify_stable_prefix();
+
+        // Integration-verify specific context
+        assert!(prefix.contains("## Integration Verification Context"));
+        assert!(prefix.contains("FINAL QUALITY GATE"));
+
+        // Zero tolerance emphasis - the key differentiator
+        assert!(prefix.contains("ZERO TOLERANCE"));
+        assert!(prefix.contains("ALL"));
+        assert!(prefix.contains("NOTHING"));
+        assert!(prefix.contains("pre-existing"));
+        assert!(prefix.contains("too trivial"));
+
+        // Worktree isolation
+        assert!(prefix.contains("Isolation Boundaries"));
+        assert!(prefix.contains("Path Boundaries"));
+        assert!(prefix.contains("CONFINED"));
+
+        // Execution rules
+        assert!(prefix.contains("## Execution Rules"));
+        assert!(prefix.contains("git add <specific-files>"));
+
+        // Task tool guidance
+        assert!(prefix.contains("USE THE TASK TOOL"));
+        assert!(prefix.contains("Task(subagent_type="));
+
+        // Can update knowledge
+        assert!(prefix.contains("CAN UPDATE KNOWLEDGE"));
+        assert!(prefix.contains("loom knowledge update"));
+
+        // Worktree root directory reminder
+        assert!(prefix.contains(
+            "Before running `loom stage complete`, ensure you are at the worktree root directory"
+        ));
+    }
+
+    #[test]
+    fn test_integration_verify_stable_prefix_is_stable() {
+        let prefix1 = generate_integration_verify_stable_prefix();
+        let prefix2 = generate_integration_verify_stable_prefix();
+        assert_eq!(
+            prefix1, prefix2,
+            "Integration-verify stable prefix should be deterministic"
         );
     }
 }

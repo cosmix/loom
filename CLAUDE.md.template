@@ -544,6 +544,19 @@ During standard implementation stages, you MUST:
 
 **Every plan MUST end with `integration-verify`.**
 
+**⚠️ ZERO TOLERANCE FOR ISSUES**
+
+integration-verify is the **FINAL QUALITY GATE**. ALL issues must be resolved:
+
+- **ALL** compiler warnings must be fixed - not suppressed, FIXED
+- **ALL** linter errors must be resolved - no exceptions
+- **ALL** test failures must be addressed
+- **ALL** IDE warnings should be investigated and resolved
+- **NOTHING** is "pre-existing" - if it's broken, fix it now
+- **NOTHING** is "too trivial" - small issues compound into big problems
+
+Do NOT mark the stage complete with any warnings or errors remaining.
+
 **⚠️ CRITICAL: TESTS PASSING ≠ FEATURE WORKING**
 
 We have had MANY instances where:
