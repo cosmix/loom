@@ -7,6 +7,7 @@ use anyhow::{Context, Result};
 #[allow(unused_imports)] // Required for lock_shared() method on File
 use fs2::FileExt;
 use serde_json::{json, Value};
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -142,10 +143,15 @@ fn copy_file_with_shared_lock(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Copy settings.local.json from main repo to a worktree with proper locking.
+/// Merge permissions from main repo's settings.local.json into a worktree.
 ///
 /// This is the public interface for refreshing permissions in a worktree.
-/// Uses shared locking to prevent reading partially written files.
+/// Instead of overwriting, it merges permissions from both sources:
+/// - Permissions from the main repo's settings.local.json
+/// - Existing permissions in the worktree's settings.local.json (if any)
+///
+/// This ensures worktree-specific permissions are preserved while still
+/// receiving updates from the main repo.
 pub fn refresh_worktree_settings_local(worktree_path: &Path, repo_root: &Path) -> Result<bool> {
     let main_settings_local = repo_root.join(".claude/settings.local.json");
     let worktree_settings_local = worktree_path.join(".claude/settings.local.json");
@@ -161,8 +167,129 @@ pub fn refresh_worktree_settings_local(worktree_path: &Path, repo_root: &Path) -
             .with_context(|| "Failed to create .claude directory in worktree")?;
     }
 
-    copy_file_with_shared_lock(&main_settings_local, &worktree_settings_local)?;
+    // Read main repo settings with shared lock
+    let main_settings = read_settings_with_shared_lock(&main_settings_local)?;
+
+    // Read existing worktree settings (if any)
+    let worktree_settings = if worktree_settings_local.exists() {
+        read_settings(&worktree_settings_local)?
+    } else {
+        json!({})
+    };
+
+    // Extract permissions from both
+    let (main_allow, main_deny) = extract_permissions(&main_settings);
+    let (wt_allow, wt_deny) = extract_permissions(&worktree_settings);
+
+    // Merge permissions (union with deduplication)
+    let merged_allow = merge_permission_vecs(main_allow, wt_allow);
+    let merged_deny = merge_permission_vecs(main_deny, wt_deny);
+
+    // Build merged settings (start with main settings as base)
+    let mut merged = main_settings.clone();
+    set_permissions(&mut merged, merged_allow, merged_deny)?;
+
+    // Write merged result
+    let content =
+        serde_json::to_string_pretty(&merged).with_context(|| "Failed to serialize settings")?;
+    std::fs::write(&worktree_settings_local, content)
+        .with_context(|| format!("Failed to write {}", worktree_settings_local.display()))?;
+
     Ok(true)
+}
+
+/// Read and parse a settings.json file with a shared lock
+fn read_settings_with_shared_lock(path: &Path) -> Result<Value> {
+    let file = File::open(path).with_context(|| format!("Failed to open {}", path.display()))?;
+
+    file.lock_shared()
+        .with_context(|| format!("Failed to acquire shared lock on {}", path.display()))?;
+
+    let mut content = String::new();
+    let mut reader = &file;
+    reader
+        .read_to_string(&mut content)
+        .with_context(|| format!("Failed to read {}", path.display()))?;
+
+    // Lock released when file is dropped
+    serde_json::from_str(&content)
+        .with_context(|| format!("Failed to parse {} as JSON", path.display()))
+}
+
+/// Read and parse a settings.json file
+fn read_settings(path: &Path) -> Result<Value> {
+    if !path.exists() {
+        return Ok(json!({}));
+    }
+
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Failed to read {}", path.display()))?;
+
+    serde_json::from_str(&content)
+        .with_context(|| format!("Failed to parse {} as JSON", path.display()))
+}
+
+/// Extract allow and deny permission arrays from settings
+fn extract_permissions(settings: &Value) -> (Vec<String>, Vec<String>) {
+    let permissions = settings.get("permissions");
+
+    let allow = permissions
+        .and_then(|p| p.get("allow"))
+        .and_then(|a| a.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let deny = permissions
+        .and_then(|p| p.get("deny"))
+        .and_then(|d| d.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    (allow, deny)
+}
+
+/// Merge two permission vectors, removing duplicates
+fn merge_permission_vecs(a: Vec<String>, b: Vec<String>) -> Vec<String> {
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut result = Vec::new();
+
+    for perm in a.into_iter().chain(b.into_iter()) {
+        if seen.insert(perm.clone()) {
+            result.push(perm);
+        }
+    }
+
+    result
+}
+
+/// Set permissions in a settings Value
+fn set_permissions(settings: &mut Value, allow: Vec<String>, deny: Vec<String>) -> Result<()> {
+    let obj = settings
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("Settings must be a JSON object"))?;
+
+    let permissions = obj
+        .entry("permissions")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("permissions must be a JSON object"))?;
+
+    if !allow.is_empty() {
+        permissions.insert("allow".to_string(), json!(allow));
+    }
+    if !deny.is_empty() {
+        permissions.insert("deny".to_string(), json!(deny));
+    }
+
+    Ok(())
 }
 
 /// Create settings.json for a worktree with trust and auto-accept settings.
@@ -285,5 +412,159 @@ pub fn cleanup_worktree_settings(worktree_path: &Path) {
     let root_claude_md = worktree_path.join("CLAUDE.md");
     if root_claude_md.exists() || root_claude_md.is_symlink() {
         std::fs::remove_file(&root_claude_md).ok(); // Ignore errors
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_extract_permissions() {
+        let settings = json!({
+            "permissions": {
+                "allow": ["Read(foo)", "Write(bar)"],
+                "deny": ["Bash(rm:*)"]
+            }
+        });
+
+        let (allow, deny) = extract_permissions(&settings);
+        assert_eq!(allow, vec!["Read(foo)", "Write(bar)"]);
+        assert_eq!(deny, vec!["Bash(rm:*)"]);
+    }
+
+    #[test]
+    fn test_extract_permissions_empty() {
+        let settings = json!({});
+        let (allow, deny) = extract_permissions(&settings);
+        assert!(allow.is_empty());
+        assert!(deny.is_empty());
+    }
+
+    #[test]
+    fn test_merge_permission_vecs() {
+        let a = vec!["Read(foo)".to_string(), "Write(bar)".to_string()];
+        let b = vec!["Write(bar)".to_string(), "Bash(cargo:*)".to_string()];
+
+        let merged = merge_permission_vecs(a, b);
+        assert_eq!(merged.len(), 3);
+        assert!(merged.contains(&"Read(foo)".to_string()));
+        assert!(merged.contains(&"Write(bar)".to_string()));
+        assert!(merged.contains(&"Bash(cargo:*)".to_string()));
+    }
+
+    #[test]
+    fn test_merge_permission_vecs_empty() {
+        let a: Vec<String> = vec![];
+        let b = vec!["Read(foo)".to_string()];
+
+        let merged = merge_permission_vecs(a, b);
+        assert_eq!(merged, vec!["Read(foo)"]);
+    }
+
+    #[test]
+    fn test_refresh_worktree_settings_local_merges_permissions() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        let worktree = temp_dir.path().join("worktree");
+
+        // Setup main repo with permission A
+        let main_claude = repo_root.join(".claude");
+        std::fs::create_dir_all(&main_claude).unwrap();
+        let main_settings = json!({
+            "permissions": {
+                "allow": ["Read(main_perm)"]
+            }
+        });
+        std::fs::write(
+            main_claude.join("settings.local.json"),
+            serde_json::to_string_pretty(&main_settings).unwrap(),
+        )
+        .unwrap();
+
+        // Setup worktree with permission B
+        let wt_claude = worktree.join(".claude");
+        std::fs::create_dir_all(&wt_claude).unwrap();
+        let wt_settings = json!({
+            "permissions": {
+                "allow": ["Write(worktree_perm)"]
+            }
+        });
+        std::fs::write(
+            wt_claude.join("settings.local.json"),
+            serde_json::to_string_pretty(&wt_settings).unwrap(),
+        )
+        .unwrap();
+
+        // Refresh should merge, not overwrite
+        let result = refresh_worktree_settings_local(&worktree, &repo_root).unwrap();
+        assert!(result);
+
+        // Verify merged result
+        let merged_content =
+            std::fs::read_to_string(wt_claude.join("settings.local.json")).unwrap();
+        let merged: Value = serde_json::from_str(&merged_content).unwrap();
+
+        let (allow, _deny) = extract_permissions(&merged);
+        assert!(allow.contains(&"Read(main_perm)".to_string()));
+        assert!(allow.contains(&"Write(worktree_perm)".to_string()));
+    }
+
+    #[test]
+    fn test_refresh_worktree_settings_local_no_existing_worktree_settings() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        let worktree = temp_dir.path().join("worktree");
+
+        // Setup main repo with permission
+        let main_claude = repo_root.join(".claude");
+        std::fs::create_dir_all(&main_claude).unwrap();
+        let main_settings = json!({
+            "permissions": {
+                "allow": ["Read(main_perm)"],
+                "deny": ["Bash(rm:*)"]
+            }
+        });
+        std::fs::write(
+            main_claude.join("settings.local.json"),
+            serde_json::to_string_pretty(&main_settings).unwrap(),
+        )
+        .unwrap();
+
+        // Worktree has no existing settings
+        std::fs::create_dir_all(&worktree).unwrap();
+
+        // Refresh should create new settings
+        let result = refresh_worktree_settings_local(&worktree, &repo_root).unwrap();
+        assert!(result);
+
+        // Verify result contains main permissions
+        let wt_settings_path = worktree.join(".claude/settings.local.json");
+        assert!(wt_settings_path.exists());
+
+        let content = std::fs::read_to_string(&wt_settings_path).unwrap();
+        let settings: Value = serde_json::from_str(&content).unwrap();
+
+        let (allow, deny) = extract_permissions(&settings);
+        assert_eq!(allow, vec!["Read(main_perm)"]);
+        assert_eq!(deny, vec!["Bash(rm:*)"]);
+    }
+
+    #[test]
+    fn test_refresh_worktree_settings_local_no_main_settings() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        let worktree = temp_dir.path().join("worktree");
+
+        // Setup repo without settings.local.json
+        let main_claude = repo_root.join(".claude");
+        std::fs::create_dir_all(&main_claude).unwrap();
+
+        std::fs::create_dir_all(&worktree).unwrap();
+
+        // Should return false when no main settings exist
+        let result = refresh_worktree_settings_local(&worktree, &repo_root).unwrap();
+        assert!(!result);
     }
 }
