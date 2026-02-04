@@ -15,6 +15,8 @@ pub enum GapType {
     ArtifactEmpty,
     /// A wiring pattern was not found in source file
     WiringBroken,
+    /// Dead code detected in output
+    DeadCodeFound,
 }
 
 /// A gap between expected and actual verification state
