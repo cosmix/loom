@@ -25,6 +25,8 @@ Together, they implement the **Signal Principle**: *"If you have a signal, answe
 
 ## Quick Start
 
+Pleaes note: As loom is still under active development, you need to use the `dev-install.sh` script and build loom locally. You will need the rust toolchain on your machine. Once 'stable' loom will be installable with a simple piped `curl [url] | sh` command on supported environments.
+
 1. Clone the repo
 2. `bash ./dev-install.sh`
 3. Then:
