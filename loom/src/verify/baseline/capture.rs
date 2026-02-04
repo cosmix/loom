@@ -4,7 +4,6 @@
 //! after changes are made to detect regressions.
 
 use anyhow::{Context, Result};
-use regex::Regex;
 use std::fs;
 use std::path::Path;
 use std::time::Duration;
@@ -12,6 +11,7 @@ use std::time::Duration;
 use super::types::TestBaseline;
 use crate::plan::schema::ChangeImpactConfig;
 use crate::verify::criteria::run_single_criterion_with_timeout;
+use crate::verify::utils::extract_matching_lines;
 
 /// Default timeout for baseline commands (5 minutes)
 const BASELINE_COMMAND_TIMEOUT: Duration = Duration::from_secs(300);
@@ -62,33 +62,6 @@ pub fn capture_baseline(
         failure_lines,
         warning_lines,
     ))
-}
-
-/// Extract lines from output that match any of the given patterns.
-///
-/// Each pattern is treated as a regex. Lines are deduplicated.
-fn extract_matching_lines(output: &str, patterns: &[String]) -> Result<Vec<String>> {
-    if patterns.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let mut matching_lines = Vec::new();
-    let regexes: Vec<Regex> = patterns
-        .iter()
-        .map(|p| Regex::new(p).with_context(|| format!("Invalid pattern: {p}")))
-        .collect::<Result<Vec<_>>>()?;
-
-    for line in output.lines() {
-        if regexes.iter().any(|re| re.is_match(line)) {
-            matching_lines.push(line.to_string());
-        }
-    }
-
-    // Deduplicate while preserving order
-    let mut seen = std::collections::HashSet::new();
-    matching_lines.retain(|line| seen.insert(line.clone()));
-
-    Ok(matching_lines)
 }
 
 /// Save a baseline to the stage's directory in .work/stages/{stage-id}/
@@ -149,34 +122,7 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    #[test]
-    fn test_extract_matching_lines() {
-        let output = "line 1\nFAILED: test_foo\nline 3\nFAILED: test_bar\nline 5";
-        let patterns = vec!["FAILED:".to_string()];
-
-        let matches = extract_matching_lines(output, &patterns).unwrap();
-        assert_eq!(matches.len(), 2);
-        assert!(matches[0].contains("test_foo"));
-        assert!(matches[1].contains("test_bar"));
-    }
-
-    #[test]
-    fn test_extract_matching_lines_empty_patterns() {
-        let output = "line 1\nFAILED: test_foo";
-        let patterns: Vec<String> = vec![];
-
-        let matches = extract_matching_lines(output, &patterns).unwrap();
-        assert!(matches.is_empty());
-    }
-
-    #[test]
-    fn test_extract_matching_lines_deduplication() {
-        let output = "FAILED: test_foo\nFAILED: test_foo\nFAILED: test_foo";
-        let patterns = vec!["FAILED:".to_string()];
-
-        let matches = extract_matching_lines(output, &patterns).unwrap();
-        assert_eq!(matches.len(), 1);
-    }
+    // Tests for extract_matching_lines moved to verify/utils.rs
 
     #[test]
     fn test_save_and_load_baseline() {

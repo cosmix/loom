@@ -7,6 +7,7 @@ use std::time::Duration;
 use super::result::{GapType, VerificationGap};
 use crate::plan::schema::TruthCheck;
 use crate::verify::criteria::run_single_criterion_with_timeout;
+use crate::verify::utils::truncate_string;
 
 /// Default timeout for truth commands (30 seconds)
 const TRUTH_TIMEOUT: Duration = Duration::from_secs(30);
@@ -171,15 +172,6 @@ pub fn verify_truth_checks(
     }
 
     Ok(gaps)
-}
-
-/// Truncate a string to a maximum length, adding ellipsis if needed
-fn truncate_string(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else {
-        format!("{}...", &s[..max_len])
-    }
 }
 
 #[cfg(test)]
@@ -363,10 +355,5 @@ mod tests {
         assert!(result[0].description.contains("Truth failed"));
     }
 
-    #[test]
-    fn test_truncate_string() {
-        assert_eq!(truncate_string("short", 100), "short");
-        assert_eq!(truncate_string("exactly", 7), "exactly");
-        assert_eq!(truncate_string("toolongstring", 7), "toolong...");
-    }
+    // Tests for truncate_string moved to verify/utils.rs
 }

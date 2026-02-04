@@ -7,6 +7,7 @@ use std::time::Duration;
 use super::result::{GapType, VerificationGap};
 use crate::plan::schema::WiringTest;
 use crate::verify::criteria::run_single_criterion_with_timeout;
+use crate::verify::utils::truncate_string;
 
 /// Default timeout for wiring test commands (30 seconds)
 const WIRING_TEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -130,11 +131,7 @@ pub fn verify_wiring_tests(
 
 /// Truncate output to a specified length for display in error messages
 fn truncate_output(output: &str, max_len: usize) -> String {
-    if output.len() <= max_len {
-        output.to_string()
-    } else {
-        format!("{}...", &output[..max_len])
-    }
+    truncate_string(output, max_len)
 }
 
 #[cfg(test)]

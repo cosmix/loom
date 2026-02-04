@@ -19,7 +19,19 @@ const STUB_PATTERNS: &[&str] = &[
     "throw new Error(\"Not implemented",
 ];
 
-/// Verify all artifact patterns match existing, non-stub files
+/// Verify all artifact patterns match existing, non-stub files.
+///
+/// Checks that files matching artifact glob patterns:
+/// 1. Exist (at least one file matches each pattern)
+/// 2. Are not empty
+/// 3. Do not contain stub patterns (TODO, FIXME, unimplemented!, etc.)
+///
+/// # Arguments
+/// * `artifacts` - Glob patterns for required artifact files
+/// * `working_dir` - Base directory to resolve patterns against
+///
+/// # Returns
+/// A Vec of VerificationGap for any missing, empty, or stub artifacts
 pub fn verify_artifacts(artifacts: &[String], working_dir: &Path) -> Result<Vec<VerificationGap>> {
     let mut gaps = Vec::new();
 

@@ -4,6 +4,7 @@ pub mod criteria;
 pub mod gates;
 pub mod goal_backward;
 pub mod transitions;
+pub mod utils;
 
 pub use baseline::{
     baseline_exists, compare_to_baseline, ensure_baseline_captured, load_baseline, save_baseline,

@@ -8,7 +8,19 @@ use std::path::Path;
 use super::result::{GapType, VerificationGap};
 use crate::plan::schema::WiringCheck;
 
-/// Verify all wiring checks find their patterns
+/// Verify all wiring checks find their patterns in source files.
+///
+/// For each wiring check, verifies that:
+/// 1. The source file exists
+/// 2. The file is readable
+/// 3. The regex pattern matches somewhere in the file content
+///
+/// # Arguments
+/// * `wiring` - Wiring check definitions with source file and pattern
+/// * `working_dir` - Base directory to resolve source paths against
+///
+/// # Returns
+/// A Vec of VerificationGap for any broken wiring connections
 pub fn verify_wiring(wiring: &[WiringCheck], working_dir: &Path) -> Result<Vec<VerificationGap>> {
     let mut gaps = Vec::new();
 

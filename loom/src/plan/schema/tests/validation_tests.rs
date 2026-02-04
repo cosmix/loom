@@ -239,7 +239,7 @@ fn test_complex_dependency_chain() {
 #[test]
 fn test_validate_duplicate_stage_ids() {
     let stage1 = make_stage("stage-1", "Stage One");
-    let mut stage2 = make_stage("stage-1", "Stage One Duplicate"); // Duplicate ID
+    let stage2 = make_stage("stage-1", "Stage One Duplicate"); // Duplicate ID
 
     let metadata = LoomMetadata {
         loom: LoomConfig {

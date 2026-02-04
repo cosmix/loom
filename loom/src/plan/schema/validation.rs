@@ -408,6 +408,7 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
 /// - Path traversal patterns (errors handled in validate())
 /// - working_dir prefix redundancy in acceptance criteria
 /// - Overly broad patterns in wiring checks
+#[cfg(test)]
 pub fn validate_structural_preflight(stages: &[super::types::StageDefinition]) -> Vec<String> {
     let mut warnings = Vec::new();
 
@@ -454,6 +455,7 @@ pub fn validate_structural_preflight(stages: &[super::types::StageDefinition]) -
 /// - Too short (< 5 characters)
 /// - Too generic (".*" or single character)
 /// - A common keyword that will match too broadly
+#[cfg(test)]
 fn check_wiring_pattern_quality(pattern: &str) -> Option<String> {
     // List of common keywords that are too generic
     const GENERIC_KEYWORDS: &[&str] = &[

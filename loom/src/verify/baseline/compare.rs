@@ -3,8 +3,7 @@
 //! Compares current test state against a captured baseline to detect
 //! new failures, fixed failures, and warning changes.
 
-use anyhow::{Context, Result};
-use regex::Regex;
+use anyhow::Result;
 use std::collections::HashSet;
 use std::path::Path;
 use std::time::Duration;
@@ -13,6 +12,7 @@ use super::capture::{load_baseline, save_baseline};
 use super::types::ChangeImpact;
 use crate::plan::schema::ChangeImpactConfig;
 use crate::verify::criteria::run_single_criterion_with_timeout;
+use crate::verify::utils::extract_matching_lines;
 
 /// Default timeout for comparison commands (5 minutes)
 const COMPARE_COMMAND_TIMEOUT: Duration = Duration::from_secs(300);
@@ -143,31 +143,6 @@ pub fn ensure_baseline_captured(
 
     save_baseline(&baseline, work_dir)?;
     Ok(())
-}
-
-/// Extract lines matching patterns (shared with capture module)
-fn extract_matching_lines(output: &str, patterns: &[String]) -> Result<Vec<String>> {
-    if patterns.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let mut matching_lines = Vec::new();
-    let regexes: Vec<Regex> = patterns
-        .iter()
-        .map(|p| Regex::new(p).with_context(|| format!("Invalid pattern: {p}")))
-        .collect::<Result<Vec<_>>>()?;
-
-    for line in output.lines() {
-        if regexes.iter().any(|re| re.is_match(line)) {
-            matching_lines.push(line.to_string());
-        }
-    }
-
-    // Deduplicate while preserving order
-    let mut seen = std::collections::HashSet::new();
-    matching_lines.retain(|line| seen.insert(line.clone()));
-
-    Ok(matching_lines)
 }
 
 #[cfg(test)]
