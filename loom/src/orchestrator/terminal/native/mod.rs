@@ -22,7 +22,10 @@ use crate::models::worktree::Worktree;
 pub use detection::detect_terminal;
 pub use pid_tracking::{check_pid_alive, cleanup_stage_files, read_pid_file};
 pub use spawner::spawn_in_terminal;
-pub use window_ops::{close_window_by_title, close_window_by_title_for_terminal, window_exists_by_title, window_exists_by_title_for_terminal};
+pub use window_ops::{
+    close_window_by_title, close_window_by_title_for_terminal, window_exists_by_title,
+    window_exists_by_title_for_terminal,
+};
 
 /// Find the absolute path to the claude binary
 ///

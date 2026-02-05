@@ -2,8 +2,8 @@
 //!
 //! Provides functions for closing and focusing terminal windows.
 
-use std::process::Command;
 use crate::orchestrator::terminal::emulator::TerminalEmulator;
+use std::process::Command;
 
 /// Close a window by its title using wmctrl or xdotool (Linux).
 ///
@@ -160,14 +160,12 @@ pub fn close_window_by_title_for_terminal(title: &str, terminal: &TerminalEmulat
     let escaped_title = title.replace('"', "\\\"");
 
     match terminal {
-        TerminalEmulator::TerminalApp => {
-            close_terminal_app_window(&escaped_title)
-        }
-        TerminalEmulator::ITerm2 => {
-            close_iterm2_window(&escaped_title)
-        }
-        TerminalEmulator::Ghostty | TerminalEmulator::Kitty |
-        TerminalEmulator::Alacritty | TerminalEmulator::Wezterm => {
+        TerminalEmulator::TerminalApp => close_terminal_app_window(&escaped_title),
+        TerminalEmulator::ITerm2 => close_iterm2_window(&escaped_title),
+        TerminalEmulator::Ghostty
+        | TerminalEmulator::Kitty
+        | TerminalEmulator::Alacritty
+        | TerminalEmulator::Wezterm => {
             close_cross_platform_terminal_window(&escaped_title, terminal)
         }
         _ => false,
@@ -335,14 +333,12 @@ pub fn window_exists_by_title_for_terminal(title: &str, terminal: &TerminalEmula
     let escaped_title = title.replace('"', "\\\"");
 
     match terminal {
-        TerminalEmulator::TerminalApp => {
-            terminal_app_window_exists(&escaped_title)
-        }
-        TerminalEmulator::ITerm2 => {
-            iterm2_window_exists(&escaped_title)
-        }
-        TerminalEmulator::Ghostty | TerminalEmulator::Kitty |
-        TerminalEmulator::Alacritty | TerminalEmulator::Wezterm => {
+        TerminalEmulator::TerminalApp => terminal_app_window_exists(&escaped_title),
+        TerminalEmulator::ITerm2 => iterm2_window_exists(&escaped_title),
+        TerminalEmulator::Ghostty
+        | TerminalEmulator::Kitty
+        | TerminalEmulator::Alacritty
+        | TerminalEmulator::Wezterm => {
             cross_platform_terminal_window_exists(&escaped_title, terminal)
         }
         _ => false,
