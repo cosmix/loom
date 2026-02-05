@@ -25,7 +25,7 @@ Together, they implement the **Signal Principle**: *"If you have a signal, answe
 
 ## Quick Start
 
-Pleaes note: As loom is still under active development, you need to use the `dev-install.sh` script and build loom locally. You will need the rust toolchain on your machine. Once 'stable' loom will be installable with a simple piped `curl [url] | sh` command on supported environments.
+Please note: As loom is still under active development, you need to use the `dev-install.sh` script and build loom locally. You will need the rust toolchain on your machine. Once 'stable', loom will be installable with a simple piped `curl [url] | sh` command on supported environments. Loom is primarily developed on linux, with partial support for macOS. Support for Windows is not planned, you may be able to use WSL, but ymmv and you're on your own.
 
 1. Clone the repo
 2. `bash ./dev-install.sh`
