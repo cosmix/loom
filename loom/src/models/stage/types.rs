@@ -131,6 +131,14 @@ pub struct Stage {
     /// Persisted so timing is retained even after completion.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_secs: Option<i64>,
+    /// Accumulated execution time in seconds across all attempts.
+    /// Only counts time spent in Executing state (excludes backoff/waiting).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_secs: Option<i64>,
+    /// Timestamp when the current execution attempt started.
+    /// Set on each transition to Executing, cleared when attempt ends.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attempt_started_at: Option<DateTime<Utc>>,
     pub close_reason: Option<String>,
     #[serde(default)]
     pub auto_merge: Option<bool>,
@@ -346,6 +354,8 @@ impl Default for Stage {
             completed_at: None,
             started_at: None,
             duration_secs: None,
+            execution_secs: None,
+            attempt_started_at: None,
             close_reason: None,
             auto_merge: None,
             working_dir: Some(".".to_string()),
@@ -367,6 +377,32 @@ impl Default for Stage {
             wiring: Vec::new(),
             sandbox: Default::default(),
             execution_mode: None,
+        }
+    }
+}
+
+impl Stage {
+    /// Begin a new execution attempt.
+    ///
+    /// Sets `attempt_started_at` to the given timestamp and initializes
+    /// `execution_secs` to 0 if not already set.
+    pub fn begin_attempt(&mut self, now: DateTime<Utc>) {
+        self.attempt_started_at = Some(now);
+        if self.execution_secs.is_none() {
+            self.execution_secs = Some(0);
+        }
+    }
+
+    /// Accumulate time from the current execution attempt.
+    ///
+    /// Calculates elapsed time since `attempt_started_at`, adds it to
+    /// `execution_secs`, and clears `attempt_started_at`.
+    /// No-op if `attempt_started_at` is None.
+    pub fn accumulate_attempt_time(&mut self, now: DateTime<Utc>) {
+        if let Some(start) = self.attempt_started_at.take() {
+            let elapsed = now.signed_duration_since(start).num_seconds().max(0);
+            let current = self.execution_secs.unwrap_or(0);
+            self.execution_secs = Some(current + elapsed);
         }
     }
 }

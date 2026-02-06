@@ -9,6 +9,7 @@ fn make_stage_summary(id: &str, deps: Vec<&str>, status: StageStatus) -> StageSu
         dependencies: deps.into_iter().map(String::from).collect(),
         context_pct: None,
         elapsed_secs: None,
+        execution_secs: None,
         base_branch: None,
         base_merged_from: vec![],
         failure_info: None,

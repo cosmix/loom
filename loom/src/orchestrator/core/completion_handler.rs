@@ -1,13 +1,21 @@
 //! Stage completion handling
 
 use anyhow::Result;
+use chrono::Utc;
 
 use crate::orchestrator::signals::remove_signal;
 
+use super::persistence::Persistence;
 use super::Orchestrator;
 
 impl Orchestrator {
     pub(super) fn handle_stage_completed(&mut self, stage_id: &str) -> Result<()> {
+        // Accumulate execution time for the final attempt
+        if let Ok(mut stage) = self.load_stage(stage_id) {
+            stage.accumulate_attempt_time(Utc::now());
+            let _ = self.save_stage(&stage);
+        }
+
         // Clean up session first
         if let Some(session) = self.active_sessions.remove(stage_id) {
             remove_signal(&session.id, &self.config.work_dir)?;

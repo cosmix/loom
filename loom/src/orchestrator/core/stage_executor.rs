@@ -78,6 +78,7 @@ impl StageExecutor for Orchestrator {
         // Knowledge stages run in main repo without a worktree - mark executing immediately
         if stage.stage_type == StageType::Knowledge {
             stage.try_mark_executing()?;
+            stage.begin_attempt(Utc::now());
             self.save_stage(&stage)?;
             self.graph
                 .mark_executing(stage_id)
@@ -152,6 +153,7 @@ impl StageExecutor for Orchestrator {
         // Worktree created successfully - NOW mark as Executing
         // This ensures we only reach Executing state after infrastructure is ready
         stage.try_mark_executing()?;
+        stage.begin_attempt(Utc::now());
         self.save_stage(&stage)?;
         self.graph
             .mark_executing(stage_id)

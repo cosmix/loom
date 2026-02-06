@@ -101,6 +101,8 @@ mod tests {
             failed_stages: vec![],
             needs_handoff: vec![],
             total_sessions_spawned: 1,
+            started_at: chrono::Utc::now(),
+            completed_at: chrono::Utc::now(),
         };
 
         assert!(result.is_success());
@@ -113,6 +115,8 @@ mod tests {
             failed_stages: vec!["stage-1".to_string()],
             needs_handoff: vec![],
             total_sessions_spawned: 1,
+            started_at: chrono::Utc::now(),
+            completed_at: chrono::Utc::now(),
         };
 
         assert!(!result.is_success());
@@ -125,6 +129,8 @@ mod tests {
             failed_stages: vec![],
             needs_handoff: vec!["stage-1".to_string()],
             total_sessions_spawned: 1,
+            started_at: chrono::Utc::now(),
+            completed_at: chrono::Utc::now(),
         };
 
         assert!(!result.is_success());

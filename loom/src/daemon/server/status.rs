@@ -399,11 +399,31 @@ pub fn collect_completion_summary(work_dir: &Path) -> Result<CompletionSummary> 
                             let duration_secs = completed_at
                                 .map(|completed| (completed - started_at).num_seconds());
 
+                            // Extract execution_secs from YAML frontmatter
+                            let execution_secs =
+                                if let Ok(yaml) = extract_yaml_frontmatter(&content) {
+                                    yaml.get("execution_secs").and_then(|v| v.as_i64())
+                                } else {
+                                    None
+                                };
+
+                            // Extract retry_count from YAML frontmatter
+                            let retry_count = if let Ok(yaml) = extract_yaml_frontmatter(&content) {
+                                yaml.get("retry_count")
+                                    .and_then(|v| v.as_u64())
+                                    .map(|v| v as u32)
+                                    .unwrap_or(0)
+                            } else {
+                                0
+                            };
+
                             stages.push(StageCompletionInfo {
                                 id: parsed.id,
                                 name: parsed.name,
                                 status: status_enum,
                                 duration_secs,
+                                execution_secs,
+                                retry_count,
                                 merged: parsed.merged,
                                 dependencies: parsed.dependencies,
                             });

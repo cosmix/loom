@@ -29,6 +29,8 @@ fn create_test_stage(id: &str, auto_merge: Option<bool>) -> Stage {
         completed_at: Some(Utc::now()),
         started_at: None,
         duration_secs: None,
+        execution_secs: None,
+        attempt_started_at: None,
         close_reason: None,
         auto_merge,
         working_dir: None,

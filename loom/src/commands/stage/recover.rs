@@ -265,6 +265,8 @@ mod tests {
             completed_at: None,
             started_at: None,
             duration_secs: None,
+            execution_secs: None,
+            attempt_started_at: None,
             close_reason: None,
             auto_merge: None,
             working_dir: Some(".".to_string()),

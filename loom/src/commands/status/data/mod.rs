@@ -62,6 +62,8 @@ pub struct StageSummary {
     pub dependencies: Vec<String>,
     pub context_pct: Option<f32>,
     pub elapsed_secs: Option<i64>,
+    /// Accumulated execution time (excludes wait/backoff time)
+    pub execution_secs: Option<i64>,
     pub base_branch: Option<String>,
     pub base_merged_from: Vec<String>,
     pub failure_info: Option<FailureInfo>,

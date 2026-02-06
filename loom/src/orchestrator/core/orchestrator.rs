@@ -1,6 +1,7 @@
 //! Main Orchestrator struct and public interface
 
 use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -156,6 +157,9 @@ impl Orchestrator {
     pub fn run(&mut self) -> Result<OrchestratorResult> {
         // Install panic hook to restore terminal on panic
         install_terminal_panic_hook();
+
+        // Record start time
+        let started_at = Utc::now();
 
         // Validate .work directory integrity before starting
         validate_work_dir_state(&self.config.repo_root)
@@ -319,6 +323,8 @@ impl Orchestrator {
             failed_stages,
             needs_handoff,
             total_sessions_spawned,
+            started_at,
+            completed_at: Utc::now(),
         })
     }
 
@@ -335,6 +341,10 @@ pub struct OrchestratorResult {
     pub failed_stages: Vec<String>,
     pub needs_handoff: Vec<String>,
     pub total_sessions_spawned: usize,
+    /// When the orchestrator started running
+    pub started_at: DateTime<Utc>,
+    /// When the orchestrator finished running
+    pub completed_at: DateTime<Utc>,
 }
 
 impl OrchestratorResult {
