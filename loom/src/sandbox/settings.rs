@@ -87,6 +87,16 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
         allow.push(json!(format!("Write({})", path)));
     }
 
+    // Add Bash permissions for excluded commands
+    for cmd in &config.excluded_commands {
+        allow.push(json!(format!("Bash({}:*)", cmd)));
+    }
+
+    // Add Read permissions for orchestration state files agents need
+    allow.push(json!("Read(.work/signals/**)"));
+    allow.push(json!("Read(.work/handoffs/**)"));
+    allow.push(json!("Read(.work/config.toml)"));
+
     if !allow.is_empty() {
         permissions["allow"] = json!(allow);
     }
@@ -157,8 +167,12 @@ mod tests {
         assert_eq!(deny[1], "Write(.work/**)");
 
         let allow = json["permissions"]["allow"].as_array().unwrap();
-        assert_eq!(allow.len(), 1);
+        // Now includes: Write(src/**) + Read(.work/signals/**) + Read(.work/handoffs/**) + Read(.work/config.toml)
+        assert_eq!(allow.len(), 4);
         assert_eq!(allow[0], "Write(src/**)");
+        assert_eq!(allow[1], "Read(.work/signals/**)");
+        assert_eq!(allow[2], "Read(.work/handoffs/**)");
+        assert_eq!(allow[3], "Read(.work/config.toml)");
     }
 
     #[test]
@@ -242,5 +256,136 @@ mod tests {
         let json = generate_settings_json(&config);
         // allowUnsandboxedCommands is now in sandbox block
         assert_eq!(json["sandbox"]["allowUnsandboxedCommands"], true);
+    }
+
+    #[test]
+    fn test_generate_settings_excluded_commands_get_bash_allow() {
+        let config = MergedSandboxConfig {
+            enabled: true,
+            auto_allow: true,
+            allow_unsandboxed_escape: false,
+            excluded_commands: vec!["loom".to_string(), "git".to_string()],
+            filesystem: FilesystemConfig::default(),
+            network: NetworkConfig::default(),
+            linux: LinuxConfig::default(),
+        };
+
+        let json = generate_settings_json(&config);
+        let allow = json["permissions"]["allow"].as_array().unwrap();
+
+        // Should have Bash(loom:*) and Bash(git:*) in allow
+        let allow_strs: Vec<&str> = allow.iter().map(|v| v.as_str().unwrap()).collect();
+        assert!(
+            allow_strs.contains(&"Bash(loom:*)"),
+            "Should have Bash(loom:*) in allow, got: {:?}",
+            allow_strs
+        );
+        assert!(
+            allow_strs.contains(&"Bash(git:*)"),
+            "Should have Bash(git:*) in allow, got: {:?}",
+            allow_strs
+        );
+    }
+
+    #[test]
+    fn test_generate_settings_includes_work_dir_read_allows() {
+        let config = MergedSandboxConfig {
+            enabled: true,
+            auto_allow: true,
+            allow_unsandboxed_escape: false,
+            excluded_commands: vec![],
+            filesystem: FilesystemConfig::default(),
+            network: NetworkConfig::default(),
+            linux: LinuxConfig::default(),
+        };
+
+        let json = generate_settings_json(&config);
+        let allow = json["permissions"]["allow"].as_array().unwrap();
+
+        let allow_strs: Vec<&str> = allow.iter().map(|v| v.as_str().unwrap()).collect();
+        assert!(
+            allow_strs.contains(&"Read(.work/signals/**)"),
+            "Should allow reading signals, got: {:?}",
+            allow_strs
+        );
+        assert!(
+            allow_strs.contains(&"Read(.work/handoffs/**)"),
+            "Should allow reading handoffs, got: {:?}",
+            allow_strs
+        );
+        assert!(
+            allow_strs.contains(&"Read(.work/config.toml)"),
+            "Should allow reading config, got: {:?}",
+            allow_strs
+        );
+    }
+
+    #[test]
+    fn test_no_path_in_both_allow_and_deny() {
+        use crate::plan::schema::{SandboxConfig, StageSandboxConfig, StageType};
+        use crate::sandbox::merge_config;
+
+        // Test all stage types
+        for stage_type in [
+            StageType::Standard,
+            StageType::Knowledge,
+            StageType::IntegrationVerify,
+            StageType::CodeReview,
+        ] {
+            let plan = SandboxConfig::default();
+            let stage = StageSandboxConfig::default();
+            let merged = merge_config(&plan, &stage, stage_type);
+            let json = generate_settings_json(&merged);
+
+            let permissions = &json["permissions"];
+            if permissions.is_null() {
+                continue;
+            }
+
+            let allow = permissions["allow"]
+                .as_array()
+                .map(|a| a.to_vec())
+                .unwrap_or_default();
+            let deny = permissions["deny"]
+                .as_array()
+                .map(|a| a.to_vec())
+                .unwrap_or_default();
+
+            // Extract just the path portion from entries like "Read(path)" or "Write(path)"
+            let allow_paths: Vec<String> = allow
+                .iter()
+                .filter_map(|v| v.as_str())
+                .filter_map(|s| {
+                    if let Some(start) = s.find('(') {
+                        if let Some(end) = s.find(')') {
+                            return Some(s[start + 1..end].to_string());
+                        }
+                    }
+                    None
+                })
+                .collect();
+
+            let deny_paths: Vec<String> = deny
+                .iter()
+                .filter_map(|v| v.as_str())
+                .filter_map(|s| {
+                    if let Some(start) = s.find('(') {
+                        if let Some(end) = s.find(')') {
+                            return Some(s[start + 1..end].to_string());
+                        }
+                    }
+                    None
+                })
+                .collect();
+
+            for path in &allow_paths {
+                assert!(
+                    !deny_paths.contains(path),
+                    "Stage type {:?}: path '{}' appears in both allow and deny",
+                    stage_type,
+                    path
+                );
+            }
+        }
     }
 }

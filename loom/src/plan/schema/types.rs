@@ -89,7 +89,7 @@ pub struct FilesystemConfig {
     pub deny_read: Vec<String>,
 
     /// Paths that agents cannot write (glob patterns)
-    /// Default: .work/stages/**, doc/loom/knowledge/**
+    /// Default: ../../**, doc/loom/knowledge/**
     #[serde(default = "default_deny_write")]
     pub deny_write: Vec<String>,
 
@@ -170,9 +170,6 @@ fn default_deny_write() -> Vec<String> {
     vec![
         // Worktree escape prevention - block writes to parent directories
         "../../**".to_string(),
-        // Orchestration state files - managed by loom CLI only
-        ".work/stages/**".to_string(),
-        ".work/sessions/**".to_string(),
         // Knowledge files - protected by default, knowledge stages get explicit allow
         "doc/loom/knowledge/**".to_string(),
     ]

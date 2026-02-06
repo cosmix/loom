@@ -38,10 +38,10 @@ pub struct MergedSandboxConfig {
 pub fn merge_config(
     plan_config: &SandboxConfig,
     stage_config: &StageSandboxConfig,
-    stage_type: StageType,
+    _stage_type: StageType,
 ) -> MergedSandboxConfig {
     // Start with plan-level config
-    let mut merged = MergedSandboxConfig {
+    MergedSandboxConfig {
         enabled: stage_config.enabled.unwrap_or(plan_config.enabled),
         auto_allow: stage_config.auto_allow.unwrap_or(plan_config.auto_allow),
         allow_unsandboxed_escape: stage_config
@@ -64,21 +64,7 @@ pub fn merge_config(
             .linux
             .clone()
             .unwrap_or_else(|| plan_config.linux.clone()),
-    };
-
-    // Special handling for Knowledge, IntegrationVerify, and CodeReview stages
-    // These stages need to write to doc/loom/knowledge/**
-    if matches!(
-        stage_type,
-        StageType::Knowledge | StageType::IntegrationVerify | StageType::CodeReview
-    ) {
-        let knowledge_path = "doc/loom/knowledge/**".to_string();
-        if !merged.filesystem.allow_write.contains(&knowledge_path) {
-            merged.filesystem.allow_write.push(knowledge_path);
-        }
     }
-
-    merged
 }
 
 /// Expand ~ to home directory in paths
@@ -379,8 +365,9 @@ mod tests {
 
         let merged = merge_config(&plan, &stage, StageType::Knowledge);
 
-        // Knowledge stage should have doc/loom/knowledge/** in allow_write
-        assert!(merged
+        // Knowledge stage should NOT have doc/loom/knowledge/** in allow_write
+        // (knowledge stages use `loom knowledge update` CLI which runs outside sandbox)
+        assert!(!merged
             .filesystem
             .allow_write
             .contains(&"doc/loom/knowledge/**".to_string()));
@@ -402,8 +389,9 @@ mod tests {
 
         let merged = merge_config(&plan, &stage, StageType::IntegrationVerify);
 
-        // IntegrationVerify stage should have doc/loom/knowledge/** in allow_write
-        assert!(merged
+        // IntegrationVerify stage should NOT have doc/loom/knowledge/** in allow_write
+        // (uses `loom knowledge update` CLI which runs outside sandbox)
+        assert!(!merged
             .filesystem
             .allow_write
             .contains(&"doc/loom/knowledge/**".to_string()));
@@ -425,8 +413,9 @@ mod tests {
 
         let merged = merge_config(&plan, &stage, StageType::CodeReview);
 
-        // CodeReview stage should have doc/loom/knowledge/** in allow_write
-        assert!(merged
+        // CodeReview stage should NOT have doc/loom/knowledge/** in allow_write
+        // (uses `loom knowledge update` CLI which runs outside sandbox)
+        assert!(!merged
             .filesystem
             .allow_write
             .contains(&"doc/loom/knowledge/**".to_string()));
@@ -463,16 +452,6 @@ mod tests {
         assert!(
             config.deny_write.contains(&"../../**".to_string()),
             "deny_write should contain ../../** to prevent parent escape"
-        );
-
-        // Verify orchestration state protection
-        assert!(
-            config.deny_write.contains(&".work/stages/**".to_string()),
-            "deny_write should protect .work/stages/**"
-        );
-        assert!(
-            config.deny_write.contains(&".work/sessions/**".to_string()),
-            "deny_write should protect .work/sessions/**"
         );
     }
 
