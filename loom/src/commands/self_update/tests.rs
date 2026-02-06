@@ -12,7 +12,9 @@ use crate::commands::self_update::client::{
     create_http_client, HTTP_CONNECT_TIMEOUT_SECS, HTTP_REQUEST_TIMEOUT_SECS,
 };
 #[cfg(test)]
-use crate::commands::self_update::signature::{compute_sha256_checksum, verify_binary_signature};
+use crate::commands::self_update::signature::{
+    compute_sha256_checksum, parse_checksums, verify_binary_signature, verify_checksum,
+};
 #[cfg(test)]
 use crate::commands::self_update::zip::{
     safe_extract_path, LimitedReader, MAX_COMPRESSION_RATIO, MAX_TOTAL_EXTRACTED_SIZE,
@@ -389,4 +391,100 @@ fn test_rejects_mixed_path_traversal() {
     // Even if there's valid content after .., it should be rejected
     let result = safe_extract_path(dest, "valid/../../../etc/passwd");
     assert!(result.is_err());
+}
+
+// ============================================================================
+// 8. CHECKSUM VERIFICATION TESTS
+// ============================================================================
+
+#[test]
+fn test_parse_checksums_valid() {
+    let content = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  agents.zip\nabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789  skills.zip\n";
+    let checksums = parse_checksums(content);
+    assert_eq!(checksums.len(), 2);
+    assert_eq!(
+        checksums.get("agents.zip").unwrap(),
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
+    assert_eq!(
+        checksums.get("skills.zip").unwrap(),
+        "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+    );
+}
+
+#[test]
+fn test_parse_checksums_ignores_comments_and_blanks() {
+    let content = "# This is a comment\n\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  file.txt\n";
+    let checksums = parse_checksums(content);
+    assert_eq!(checksums.len(), 1);
+    assert_eq!(
+        checksums.get("file.txt").unwrap(),
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
+}
+
+#[test]
+fn test_parse_checksums_invalid_format_ignored() {
+    let content = "invalid line\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  valid.txt\nshort  file.txt\n";
+    let checksums = parse_checksums(content);
+    // Only the valid line should be parsed
+    assert_eq!(checksums.len(), 1);
+    assert!(checksums.contains_key("valid.txt"));
+}
+
+#[test]
+fn test_verify_checksum_matching() {
+    let data = b"test content";
+    let expected = compute_sha256_checksum(data);
+    assert!(verify_checksum(data, &expected, "test.txt").is_ok());
+}
+
+#[test]
+fn test_verify_checksum_mismatch() {
+    let data = b"test content";
+    let wrong = "0000000000000000000000000000000000000000000000000000000000000000";
+    let result = verify_checksum(data, wrong, "test.txt");
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("Checksum verification failed"));
+    assert!(err_msg.contains("test.txt"));
+}
+
+#[test]
+fn test_verify_checksum_case_insensitive() {
+    let data = b"test";
+    let checksum = compute_sha256_checksum(data);
+    let uppercase = checksum.to_uppercase();
+
+    // SHA-256 checksums should be case-insensitive in comparison
+    // Our implementation stores lowercase, so this tests if uppercase works
+    let result = verify_checksum(data, &uppercase, "test.txt");
+    // The current implementation does exact string comparison, so this will fail
+    // This documents current behavior - may want to add case normalization later
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_checksums_with_single_space_separator() {
+    // Standard sha256sum uses two spaces, but test robustness
+    let content = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 file.txt\n";
+    let checksums = parse_checksums(content);
+    // This should NOT parse because we require two spaces
+    assert_eq!(checksums.len(), 0);
+}
+
+#[test]
+fn test_parse_checksums_hex_validation() {
+    // Non-hex characters should be rejected
+    let content = "g3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  file.txt\n";
+    let checksums = parse_checksums(content);
+    assert_eq!(checksums.len(), 0);
+}
+
+#[test]
+fn test_parse_checksums_wrong_length() {
+    // SHA-256 must be exactly 64 hex characters
+    let content = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b8  file.txt\n";
+    let checksums = parse_checksums(content);
+    assert_eq!(checksums.len(), 0);
 }

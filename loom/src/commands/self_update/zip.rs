@@ -148,6 +148,7 @@ pub(crate) fn safe_extract_path(dest_dir: &Path, entry_name: &str) -> Result<Pat
 
 /// Download and extract a zip file from a URL to a destination directory.
 /// Includes comprehensive security checks for zip slip and zip bomb attacks.
+#[allow(dead_code)]
 pub(crate) fn download_and_extract_zip(url: &str, dest_dir: &Path) -> Result<()> {
     let client = create_http_client()?;
     let response = client.get(url).send().context("Failed to download zip")?;

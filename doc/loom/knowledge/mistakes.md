@@ -419,3 +419,19 @@ Solutions: 1) Use ./target/debug/loom path, 2) Accept failures until merge,
 ### Notes
 
 - Documented permission sync bugs in mistakes.md: 1) propagation overwrites, 2) paths dropped instead of transformed, 3) sync skipped on failure
+
+## Promoted from Memory [2026-02-06 09:39]
+
+### Notes
+
+- Refactoring self_update to use download_verify_and_extract_zip made original download_and_extract_zip unused - added #[allow(dead_code)]
+- Output size limiting uses chunked 8KB reads with 10MB cap and drains remaining stream to prevent broken pipe errors
+
+### Decisions
+
+- **Replaced all raw libc::kill calls with nix::sys::signal::kill for safe PID checking - handles EPERM vs ESRCH correctly**
+  - *Rationale:* Raw libc::kill without errno check
+- **Used umask(0o077) before socket bind to prevent TOCTOU race between bind and chmod**
+  - *Rationale:* Setting permissions after bind leaves a window where socket has default permissions
+
+

@@ -383,7 +383,10 @@ exec {claude_cmd}
     {
         use std::os::unix::fs::PermissionsExt;
         let mut perms = fs::metadata(&wrapper_path)?.permissions();
-        perms.set_mode(0o755);
+        // Owner-only execute: wrapper scripts are run by the same user, no need for
+        // group/other execute permissions. This prevents other users from reading
+        // or executing the script, which contains session IDs and paths.
+        perms.set_mode(0o700);
         fs::set_permissions(&wrapper_path, perms)?;
     }
 

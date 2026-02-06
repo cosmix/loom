@@ -85,9 +85,7 @@ impl DaemonServer {
             // Clean up stale PID file if it exists
             if pid_path.exists() {
                 if let Some(pid) = Self::read_pid(work_dir) {
-                    let pid_exists = i32::try_from(pid)
-                        .map(|p| unsafe { libc::kill(p, 0) == 0 })
-                        .unwrap_or(false);
+                    let pid_exists = crate::process::is_process_alive(pid);
                     if !pid_exists {
                         let _ = std::fs::remove_file(&pid_path);
                     }
@@ -98,9 +96,7 @@ impl DaemonServer {
 
         // Check if PID file exists and process is alive
         if let Some(pid) = Self::read_pid(work_dir) {
-            let pid_exists = i32::try_from(pid)
-                .map(|p| unsafe { libc::kill(p, 0) == 0 })
-                .unwrap_or(false);
+            let pid_exists = crate::process::is_process_alive(pid);
 
             if !pid_exists {
                 // PID file exists but process is dead, clean up stale files

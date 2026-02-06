@@ -107,6 +107,10 @@ impl DaemonServer {
         fs::write(&self.pid_path, format!("{}", std::process::id()))
             .context("Failed to write PID file")?;
 
+        // Restrict PID file to owner-only access to prevent tampering
+        fs::set_permissions(&self.pid_path, Permissions::from_mode(0o600))
+            .context("Failed to set PID file permissions")?;
+
         // Redirect stdout and stderr to log file
         let log_file = File::create(&self.log_path).context("Failed to create log file")?;
         let log_fd = log_file.as_raw_fd();
@@ -135,6 +139,10 @@ impl DaemonServer {
         fs::write(&self.pid_path, format!("{}", std::process::id()))
             .context("Failed to write PID file")?;
 
+        // Restrict PID file to owner-only access to prevent tampering
+        fs::set_permissions(&self.pid_path, Permissions::from_mode(0o600))
+            .context("Failed to set PID file permissions")?;
+
         // Remove stale socket if it exists (ignore NotFound to avoid TOCTOU race)
         if let Err(e) = fs::remove_file(&self.socket_path) {
             if e.kind() != std::io::ErrorKind::NotFound {
@@ -147,10 +155,19 @@ impl DaemonServer {
 
     /// Main server loop (listens on socket and accepts connections).
     pub(super) fn run_server(&self) -> Result<()> {
+        // Set restrictive umask before socket bind to close TOCTOU window
+        // between bind() and chmod(). The socket is created with permissions
+        // determined by umask, so setting 0o077 ensures it's created as 0o600.
+        let old_umask = unsafe { libc::umask(0o077) };
         let listener =
             UnixListener::bind(&self.socket_path).context("Failed to bind Unix socket")?;
+        // Restore original umask immediately after bind
+        unsafe {
+            libc::umask(old_umask);
+        }
 
-        // Set restrictive permissions (owner read/write only) to prevent unauthorized access
+        // Explicitly set permissions as defense-in-depth (umask should have handled this,
+        // but being explicit is safer and documents intent)
         fs::set_permissions(&self.socket_path, Permissions::from_mode(0o600))
             .context("Failed to set socket permissions")?;
 
