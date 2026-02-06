@@ -239,6 +239,27 @@ pub(super) fn format_semi_stable_section(
         }
     }
 
+    // Agent Teams decision framework
+    content.push_str("## Agent Teams\n\n");
+    content.push_str("You have agent teams available (CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1).\n\n");
+    content.push_str("**When to use SUBAGENTS (Task tool):**\n");
+    content.push_str("- Tasks have clear, concrete file assignments\n");
+    content.push_str("- No inter-agent communication needed\n");
+    content.push_str("- Fire-and-forget parallel work\n\n");
+    content.push_str("**When to use AGENT TEAMS:**\n");
+    content.push_str("- Tasks require discussion or iterative discovery\n");
+    content.push_str("- Work scope may expand during execution\n");
+    content.push_str("- Multiple review dimensions (security, quality, tests)\n");
+    content.push_str("- Exploration across many code areas\n\n");
+    content.push_str("**If you create a team:**\n");
+    content.push_str("- Team name: loom-{stage_id} (using your stage ID)\n");
+    content.push_str("- YOU are the only agent that may run git commit\n");
+    content.push_str("- YOU are the only agent that may run loom stage complete\n");
+    content.push_str("- Record teammate findings: loom memory note \"Teammate found: ...\"\n");
+    content.push_str("- Keep your own context for coordination (aim for <40% utilization)\n");
+    content.push_str("- Delegate implementation, do not implement yourself\n");
+    content.push_str("- Shut down all teammates before completing the stage\n\n");
+
     // Embed sandbox restrictions (semi-stable - based on stage config)
     if let Some(sandbox_summary) = &embedded_context.sandbox_summary {
         content.push_str(&format_sandbox_section(sandbox_summary));

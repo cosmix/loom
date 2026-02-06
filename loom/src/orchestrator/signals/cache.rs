@@ -121,6 +121,16 @@ pub fn generate_stable_prefix() -> String {
     );
     content.push_str("- ⛔ **NEVER run `git add -A` or `git add .`** - only specific files\n");
     content.push_str("- Subagents write code and report results; main agent handles git\n\n");
+    content.push_str("**Agent Teams (WHEN AVAILABLE):**\n\n");
+    content.push_str("If CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 is set, you can create\n");
+    content.push_str("agent teams for richer coordination than subagents:\n");
+    content.push_str("- Teams provide: inter-agent messaging, shared task lists, idle/wake lifecycle\n");
+    content.push_str("- Teams cost ~7x tokens - use ONLY when coordination benefit justifies cost\n");
+    content.push_str("- YOU are the team lead - only YOU may run git commit and loom stage complete\n");
+    content.push_str("- Teammates CANNOT commit, complete stages, or update memory/knowledge\n");
+    content.push_str("- Record teammate insights: loom memory note \"Teammate found: ...\"\n");
+    content.push_str("- Keep context for coordination (<40% utilization), delegate implementation\n");
+    content.push_str("- Shut down ALL teammates before completing the stage\n\n");
     content.push_str("**Completion:**\n");
     content.push_str("- **Verify acceptance criteria** before marking stage complete\n");
     content.push_str("- **Create handoff** if context exceeds 75%\n");
@@ -212,6 +222,14 @@ pub fn generate_code_review_stable_prefix() -> String {
     content.push_str("4. **Fix critical issues** directly in code\n");
     content.push_str("5. **Record findings** using `loom memory note` for knowledge promotion\n");
     content.push_str("6. **Commit fixes** with descriptive messages\n\n");
+
+    // Agent Teams guidance for code review
+    content.push_str("**Agent Teams for Code Review:**\n\n");
+    content.push_str("Consider using an agent team for multi-dimension reviews:\n");
+    content.push_str("- Security review teammate: OWASP, auth, secrets, dependencies\n");
+    content.push_str("- Architecture review teammate: patterns, coupling, maintainability\n");
+    content.push_str("- Quality review teammate: error handling, edge cases, tests\n");
+    content.push_str("Teams allow reviewers to share findings that affect each other.\n\n");
 
     // Worktree isolation (same as standard stages)
     content.push_str("**Isolation Boundaries (STRICT):**\n\n");
@@ -329,6 +347,14 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("3. **TEST** that the feature actually works end-to-end\n");
     content.push_str("4. **PROMOTE** valuable learnings to knowledge\n\n");
 
+    // Agent Teams guidance for integration verification
+    content.push_str("**Agent Teams for Integration Verification:**\n\n");
+    content.push_str("Consider using an agent team for multi-dimension verification:\n");
+    content.push_str("- Build/test teammate: full test suite, clippy, compile\n");
+    content.push_str("- Functional verification teammate: wiring, reachability, smoke tests\n");
+    content.push_str("- Knowledge promotion teammate: review memory, promote to knowledge\n");
+    content.push_str("Teams allow verification tasks to coordinate on discovered issues.\n\n");
+
     // Worktree isolation
     content.push_str("**Isolation Boundaries (STRICT):**\n\n");
     content.push_str("- You are **CONFINED** to this worktree - do not access files outside it\n");
@@ -435,6 +461,14 @@ pub fn generate_knowledge_stable_prefix() -> String {
         "2. **Document** findings using `loom knowledge update <file> <content>` commands\n",
     );
     content.push_str("3. **Verify** acceptance criteria before completing\n\n");
+
+    // Agent Teams guidance for knowledge bootstrap
+    content.push_str("**Agent Teams for Knowledge Bootstrap:**\n\n");
+    content.push_str("Consider using an agent team for coordinated exploration:\n");
+    content.push_str("- Architecture explorer: component relationships, data flow\n");
+    content.push_str("- Patterns explorer: error handling, state management, idioms\n");
+    content.push_str("- Conventions explorer: naming, file structure, testing patterns\n");
+    content.push_str("Teams allow explorers to share discoveries that inform each other.\n\n");
 
     // Add prominent knowledge update reminder box for knowledge stages
     content.push_str("```text\n");
@@ -557,6 +591,11 @@ mod tests {
         assert!(prefix.contains("/auth"));
         assert!(prefix.contains("/testing"));
         assert!(prefix.contains("software-engineer"));
+        // Critical: Agent Teams guidance
+        assert!(prefix.contains("Agent Teams (WHEN AVAILABLE)"));
+        assert!(prefix.contains("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1"));
+        assert!(prefix.contains("~7x tokens"));
+        assert!(prefix.contains("Shut down ALL teammates"));
     }
 
     #[test]
@@ -586,6 +625,10 @@ mod tests {
         assert!(prefix.contains("/auth"));
         assert!(prefix.contains("/testing"));
         assert!(prefix.contains("Explore"));
+        // Agent Teams guidance for knowledge bootstrap
+        assert!(prefix.contains("Agent Teams for Knowledge Bootstrap"));
+        assert!(prefix.contains("coordinated exploration"));
+        assert!(prefix.contains("Architecture explorer"));
     }
 
     #[test]
@@ -633,6 +676,10 @@ mod tests {
         assert!(prefix.contains(
             "Before running `loom stage complete`, ensure you are at the worktree root directory"
         ));
+        // Agent Teams guidance for code review
+        assert!(prefix.contains("Agent Teams for Code Review"));
+        assert!(prefix.contains("multi-dimension reviews"));
+        assert!(prefix.contains("Security review teammate"));
     }
 
     #[test]
@@ -681,6 +728,10 @@ mod tests {
         assert!(prefix.contains(
             "Before running `loom stage complete`, ensure you are at the worktree root directory"
         ));
+        // Agent Teams guidance for integration verification
+        assert!(prefix.contains("Agent Teams for Integration Verification"));
+        assert!(prefix.contains("multi-dimension verification"));
+        assert!(prefix.contains("Build/test teammate"));
     }
 
     #[test]
