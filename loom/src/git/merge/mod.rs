@@ -2,11 +2,11 @@
 
 mod status;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use std::path::Path;
-use std::process::Command;
 
 use super::branch::{branch_exists, branch_name_for_stage, current_branch, is_ancestor_of};
+use crate::git::runner::{run_git, run_git_checked};
 
 // Re-export status types for use by other modules
 pub use status::{build_merge_report, check_merge_state, MergeState, MergeStatusReport};
@@ -55,19 +55,8 @@ pub fn merge_stage(stage_id: &str, target_branch: &str, repo_root: &Path) -> Res
     checkout_branch(target_branch, repo_root)?;
 
     // Attempt merge
-    let output = Command::new("git")
-        .args(["merge", "--no-ff", "-m"])
-        .arg(format!("Merge {branch_name} into {target_branch}"))
-        .arg(&branch_name)
-        .current_dir(repo_root)
-        .output()
-        .with_context(|| {
-            format!(
-                "Failed to execute git merge {} in {}",
-                branch_name,
-                repo_root.display()
-            )
-        })?;
+    let msg = format!("Merge {branch_name} into {target_branch}");
+    let output = run_git(&["merge", "--no-ff", "-m", &msg, &branch_name], repo_root)?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -161,18 +150,7 @@ fn parse_merge_stats(output: &str) -> (u32, u32, u32) {
 
 /// Get list of files with conflicts (during an active merge)
 pub fn get_conflicting_files(repo_root: &Path) -> Result<Vec<String>> {
-    let output = Command::new("git")
-        .args(["diff", "--name-only", "--diff-filter=U"])
-        .current_dir(repo_root)
-        .output()
-        .with_context(|| {
-            format!(
-                "Failed to execute git diff --name-only --diff-filter=U in {}",
-                repo_root.display()
-            )
-        })?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = run_git_checked(&["diff", "--name-only", "--diff-filter=U"], repo_root)?;
     let files: Vec<String> = stdout
         .lines()
         .filter(|s| !s.is_empty())
@@ -198,17 +176,7 @@ pub fn get_conflicting_files_from_status(
     checkout_branch(target_branch, repo_root)?;
 
     // Try merge with --no-commit to test for conflicts
-    let output = Command::new("git")
-        .args(["merge", "--no-commit", "--no-ff", source_branch])
-        .current_dir(repo_root)
-        .output()
-        .with_context(|| {
-            format!(
-                "Failed to execute test merge of {} in {}",
-                source_branch,
-                repo_root.display()
-            )
-        })?;
+    let output = run_git(&["merge", "--no-commit", "--no-ff", source_branch], repo_root)?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -231,16 +199,7 @@ pub fn get_conflicting_files_from_status(
 
 /// Abort a merge in progress
 pub fn abort_merge(repo_root: &Path) -> Result<()> {
-    let output = Command::new("git")
-        .args(["merge", "--abort"])
-        .current_dir(repo_root)
-        .output()
-        .with_context(|| {
-            format!(
-                "Failed to execute git merge --abort in {}",
-                repo_root.display()
-            )
-        })?;
+    let output = run_git(&["merge", "--abort"], repo_root)?;
 
     if !output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -275,17 +234,7 @@ pub fn abort_merge(repo_root: &Path) -> Result<()> {
 
 /// Checkout a branch
 pub fn checkout_branch(branch_name: &str, repo_root: &Path) -> Result<()> {
-    let output = Command::new("git")
-        .args(["checkout", branch_name])
-        .current_dir(repo_root)
-        .output()
-        .with_context(|| {
-            format!(
-                "Failed to execute git checkout {} in {}",
-                branch_name,
-                repo_root.display()
-            )
-        })?;
+    let output = run_git(&["checkout", branch_name], repo_root)?;
 
     if !output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);

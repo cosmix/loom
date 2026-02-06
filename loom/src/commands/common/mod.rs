@@ -88,10 +88,8 @@ pub fn detect_session_from_signals(work_dir: &Path) -> Result<String> {
 /// like `loom/_base`.
 pub fn detect_stage_id() -> Option<String> {
     // Get current branch name
-    let output = std::process::Command::new("git")
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .output()
-        .ok()?;
+    let cwd = std::env::current_dir().ok()?;
+    let output = crate::git::runner::run_git(&["rev-parse", "--abbrev-ref", "HEAD"], &cwd).ok()?;
 
     if !output.status.success() {
         return None;

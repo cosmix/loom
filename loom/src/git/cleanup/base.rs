@@ -4,11 +4,11 @@
 //! (`loom/_base/{stage-id}`) that are created when a stage has multiple
 //! dependencies that need to be merged together before work can begin.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::path::Path;
-use std::process::Command;
 
 use crate::git::branch::delete_branch;
+use crate::git::runner::{run_git_bool, run_git_checked};
 
 /// Clean up the base branch for a stage
 ///
@@ -25,17 +25,8 @@ pub fn cleanup_base_branch(stage_id: &str, repo_root: &Path) -> Result<bool> {
     let branch_name = format!("loom/_base/{stage_id}");
 
     // Check if branch exists first
-    let output = Command::new("git")
-        .args([
-            "rev-parse",
-            "--verify",
-            &format!("refs/heads/{branch_name}"),
-        ])
-        .current_dir(repo_root)
-        .output()
-        .with_context(|| "Failed to check base branch existence")?;
-
-    if !output.status.success() {
+    let ref_path = format!("refs/heads/{branch_name}");
+    if !run_git_bool(&["rev-parse", "--verify", &ref_path], repo_root) {
         // Branch doesn't exist
         return Ok(false);
     }
@@ -58,18 +49,8 @@ pub fn cleanup_base_branch(stage_id: &str, repo_root: &Path) -> Result<bool> {
 /// A vector of branch names that were deleted
 pub fn cleanup_all_base_branches(repo_root: &Path) -> Result<Vec<String>> {
     // List all branches matching the pattern
-    let output = Command::new("git")
-        .args(["branch", "--list", "loom/_base/*"])
-        .current_dir(repo_root)
-        .output()
-        .with_context(|| "Failed to list base branches")?;
+    let stdout = run_git_checked(&["branch", "--list", "loom/_base/*"], repo_root)?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("git branch --list failed: {stderr}");
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
     let branches: Vec<String> = stdout
         .lines()
         .map(|s| s.trim().trim_start_matches('*').trim().to_string())
@@ -96,24 +77,15 @@ pub fn cleanup_all_base_branches(repo_root: &Path) -> Result<Vec<String>> {
 /// `true` if the base branch exists, `false` otherwise
 pub fn base_branch_exists(stage_id: &str, repo_root: &Path) -> Result<bool> {
     let branch_name = format!("loom/_base/{stage_id}");
-
-    let output = Command::new("git")
-        .args([
-            "rev-parse",
-            "--verify",
-            &format!("refs/heads/{branch_name}"),
-        ])
-        .current_dir(repo_root)
-        .output()
-        .with_context(|| "Failed to check base branch existence")?;
-
-    Ok(output.status.success())
+    let ref_path = format!("refs/heads/{branch_name}");
+    Ok(run_git_bool(&["rev-parse", "--verify", &ref_path], repo_root))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
+    use std::process::Command;
     use tempfile::TempDir;
 
     fn setup_git_repo() -> TempDir {

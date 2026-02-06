@@ -15,23 +15,13 @@ use colored::Colorize;
 use serde::Serialize;
 use std::fs;
 use std::path::Path;
-use std::process::Command;
+
+use crate::git::runner::run_git_checked;
 
 /// Get the current git branch name
 fn get_current_branch() -> Result<String> {
-    let output = Command::new("git")
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .output()
-        .context("Failed to execute git rev-parse")?;
-
-    if !output.status.success() {
-        anyhow::bail!(
-            "git rev-parse failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    let cwd = std::env::current_dir().context("Failed to get current directory")?;
+    run_git_checked(&["rev-parse", "--abbrev-ref", "HEAD"], &cwd)
 }
 
 /// Configuration file structure for type-safe TOML serialization.

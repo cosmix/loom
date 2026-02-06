@@ -5,7 +5,8 @@
 
 use anyhow::{bail, Context, Result};
 use std::path::Path;
-use std::process::Command;
+
+use crate::git::runner::{run_git, run_git_checked};
 
 /// Ensure .work and .worktrees are in .gitignore
 ///
@@ -71,13 +72,11 @@ pub fn ensure_work_gitignored(repo_root: &Path) -> Result<()> {
 /// We detect if these files exist in the branch and create a fixup commit to remove them.
 pub fn remove_loom_dirs_from_branch(stage_id: &str, worktree_path: &Path) -> Result<()> {
     // Check if .work, .worktrees, or .claude exist in the branch's tree
-    let output = Command::new("git")
-        .args(["ls-files", ".work", ".worktrees", ".claude"])
-        .current_dir(worktree_path)
-        .output()
-        .with_context(|| "Failed to check for .work in branch")?;
+    let stdout = run_git_checked(
+        &["ls-files", ".work", ".worktrees", ".claude"],
+        worktree_path,
+    )?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
     let files_to_remove: Vec<&str> = stdout.lines().filter(|s| !s.is_empty()).collect();
 
     if files_to_remove.is_empty() {
@@ -93,27 +92,17 @@ pub fn remove_loom_dirs_from_branch(stage_id: &str, worktree_path: &Path) -> Res
     let mut rm_args = vec!["rm", "-r", "--cached", "--"];
     rm_args.extend(files_to_remove.iter());
 
-    let output = Command::new("git")
-        .args(&rm_args)
-        .current_dir(worktree_path)
-        .output()
-        .with_context(|| "Failed to remove .work from index")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("git rm failed: {stderr}");
-    }
+    run_git_checked(&rm_args, worktree_path)?;
 
     // Commit the removal
-    let output = Command::new("git")
-        .args([
+    let output = run_git(
+        &[
             "commit",
             "-m",
             &format!("chore: remove loom working directories from branch loom/{stage_id}"),
-        ])
-        .current_dir(worktree_path)
-        .output()
-        .with_context(|| "Failed to commit .work removal")?;
+        ],
+        worktree_path,
+    )?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -132,13 +121,14 @@ pub fn remove_loom_dirs_from_branch(stage_id: &str, worktree_path: &Path) -> Res
 /// Excludes .work and .worktrees directories (loom internal state)
 pub fn has_uncommitted_changes(worktree_path: &Path) -> Result<bool> {
     // Check for staged/unstaged changes
-    let status_output = Command::new("git")
-        .args(["status", "--porcelain"])
-        .current_dir(worktree_path)
-        .output()
-        .with_context(|| "Failed to check git status in worktree")?;
-
-    let stdout = String::from_utf8_lossy(&status_output.stdout);
+    // Note: use run_git (not run_git_checked) to preserve leading whitespace
+    // in porcelain format where position 0-1 are status codes
+    let output = run_git(&["status", "--porcelain"], worktree_path)?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("git status failed: {stderr}");
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
 
     // Filter out loom internal directories and .claude
     let has_changes = stdout.lines().filter(|l| !l.is_empty()).any(|l| {
@@ -154,13 +144,15 @@ pub fn has_uncommitted_changes(worktree_path: &Path) -> Result<bool> {
 /// Get list of uncommitted files in worktree
 /// Excludes .work and .worktrees directories (loom internal state)
 pub fn get_uncommitted_files(worktree_path: &Path) -> Result<Vec<String>> {
-    let output = Command::new("git")
-        .args(["status", "--porcelain"])
-        .current_dir(worktree_path)
-        .output()
-        .with_context(|| "Failed to check git status in worktree")?;
-
+    // Note: use run_git (not run_git_checked) to preserve leading whitespace
+    // in porcelain format where position 0-1 are status codes
+    let output = run_git(&["status", "--porcelain"], worktree_path)?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("git status failed: {stderr}");
+    }
     let stdout = String::from_utf8_lossy(&output.stdout);
+
     let files: Vec<String> = stdout
         .lines()
         .filter(|l| !l.is_empty())
@@ -183,13 +175,7 @@ pub fn get_uncommitted_files(worktree_path: &Path) -> Result<Vec<String>> {
 
 /// Check if there are unmerged paths (merge conflicts) in the repository
 pub fn has_merge_conflicts(repo_path: &Path) -> Result<bool> {
-    let output = Command::new("git")
-        .args(["diff", "--name-only", "--diff-filter=U"])
-        .current_dir(repo_path)
-        .output()
-        .with_context(|| "Failed to check for merge conflicts")?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = run_git_checked(&["diff", "--name-only", "--diff-filter=U"], repo_path)?;
     Ok(!stdout.trim().is_empty())
 }
 
@@ -218,11 +204,7 @@ pub fn stash_changes(repo_path: &Path, message: &str) -> Result<bool> {
 
     // Stash including untracked files (-u flag is critical for untracked files)
     // .work and .worktrees are excluded via .gitignore, so git skips them automatically
-    let output = Command::new("git")
-        .args(["stash", "push", "-u", "-m", message])
-        .current_dir(repo_path)
-        .output()
-        .with_context(|| "Failed to stash changes")?;
+    let output = run_git(&["stash", "push", "-u", "-m", message], repo_path)?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -239,11 +221,7 @@ pub fn stash_changes(repo_path: &Path, message: &str) -> Result<bool> {
 /// Pop the most recent stash
 /// Returns Ok even if pop has conflicts (just warns user)
 pub fn pop_stash(repo_path: &Path) -> Result<()> {
-    let output = Command::new("git")
-        .args(["stash", "pop"])
-        .current_dir(repo_path)
-        .output()
-        .with_context(|| "Failed to pop stash")?;
+    let output = run_git(&["stash", "pop"], repo_path)?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -277,27 +255,17 @@ pub fn auto_commit_changes(stage_id: &str, worktree_path: &Path) -> Result<()> {
     let mut add_args = vec!["add", "--"];
     add_args.extend(files.iter().map(|s| s.as_str()));
 
-    let add_output = Command::new("git")
-        .args(&add_args)
-        .current_dir(worktree_path)
-        .output()
-        .with_context(|| "Failed to stage changes")?;
-
-    if !add_output.status.success() {
-        let stderr = String::from_utf8_lossy(&add_output.stderr);
-        bail!("git add failed: {stderr}");
-    }
+    run_git_checked(&add_args, worktree_path)?;
 
     // Commit with a descriptive message
-    let commit_output = Command::new("git")
-        .args([
+    let commit_output = run_git(
+        &[
             "commit",
             "-m",
             &format!("loom: auto-commit before merge of stage '{stage_id}'"),
-        ])
-        .current_dir(worktree_path)
-        .output()
-        .with_context(|| "Failed to commit changes")?;
+        ],
+        worktree_path,
+    )?;
 
     if !commit_output.status.success() {
         let stderr = String::from_utf8_lossy(&commit_output.stderr);
@@ -313,6 +281,7 @@ pub fn auto_commit_changes(stage_id: &str, worktree_path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
     use tempfile::TempDir;
 
     fn init_git_repo(path: &Path) -> Result<()> {

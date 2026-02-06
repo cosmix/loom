@@ -1,7 +1,11 @@
 //! Branch ancestry and merge status checking
 
-use anyhow::{bail, Context, Result};
+use anyhow::Result;
 use std::path::Path;
+
+use crate::git::runner::{run_git_bool, run_git_checked};
+
+#[cfg(test)]
 use std::process::Command;
 
 /// Check if a commit is an ancestor of a branch.
@@ -19,12 +23,7 @@ use std::process::Command;
 /// * `Ok(false)` if the commit is not an ancestor
 /// * `Err` if the git command fails (e.g., invalid commit/branch)
 pub fn is_ancestor_of(commit_sha: &str, branch: &str, repo_root: &Path) -> Result<bool> {
-    let status = Command::new("git")
-        .args(["merge-base", "--is-ancestor", commit_sha, branch])
-        .current_dir(repo_root)
-        .status()
-        .with_context(|| format!("Failed to check if {commit_sha} is ancestor of {branch}"))?;
-    Ok(status.success())
+    Ok(run_git_bool(&["merge-base", "--is-ancestor", commit_sha, branch], repo_root))
 }
 
 /// Get the HEAD commit SHA of a branch
@@ -39,19 +38,7 @@ pub fn is_ancestor_of(commit_sha: &str, branch: &str, repo_root: &Path) -> Resul
 /// * `Ok(sha)` - The full commit SHA of the branch HEAD
 /// * `Err` if the branch doesn't exist or git command fails
 pub fn get_branch_head(branch: &str, repo_root: &Path) -> Result<String> {
-    let output = Command::new("git")
-        .args(["rev-parse", branch])
-        .current_dir(repo_root)
-        .output()
-        .with_context(|| format!("Failed to get HEAD of branch {branch}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("git rev-parse {branch} failed: {stderr}");
-    }
-
-    let sha = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Ok(sha)
+    run_git_checked(&["rev-parse", branch], repo_root)
 }
 
 /// Check if a branch has been fully merged into a target branch
@@ -70,18 +57,7 @@ pub fn get_branch_head(branch: &str, repo_root: &Path) -> Result<String> {
 /// * `Ok(false)` if the branch has not been merged
 /// * `Err` if git command fails
 pub fn is_branch_merged(branch: &str, target: &str, repo_root: &Path) -> Result<bool> {
-    let output = Command::new("git")
-        .args(["branch", "--merged", target, "--list", branch])
-        .current_dir(repo_root)
-        .output()
-        .with_context(|| format!("Failed to check if branch {branch} is merged into {target}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("git branch --merged failed: {stderr}");
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = run_git_checked(&["branch", "--merged", target, "--list", branch], repo_root)?;
     Ok(stdout
         .lines()
         .any(|line| line.trim().trim_start_matches('*').trim() == branch))

@@ -11,6 +11,7 @@ pub mod branch;
 pub mod cleanup;
 pub mod hooks;
 pub mod merge;
+pub mod runner;
 pub mod worktree;
 
 // Re-export commonly used types and functions
@@ -40,6 +41,8 @@ pub use cleanup::{
 };
 
 pub use hooks::{install_pre_commit_hook, is_pre_commit_hook_installed};
+
+pub use runner::{run_git, run_git_bool, run_git_checked};
 
 /// Initialize git module - check prerequisites
 pub fn init() -> anyhow::Result<()> {

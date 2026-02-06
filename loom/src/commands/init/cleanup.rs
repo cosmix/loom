@@ -4,23 +4,20 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 use crate::git::branch::branch_name_for_stage;
+use crate::git::runner::run_git;
 
 /// Prune stale git worktrees that have been deleted but are still registered
 pub fn prune_stale_worktrees(repo_root: &Path) -> Result<()> {
-    let output = Command::new("git")
-        .args(["worktree", "prune"])
-        .current_dir(repo_root)
-        .output();
+    let result = run_git(&["worktree", "prune"], repo_root);
 
-    match output {
-        Ok(result) if result.status.success() => {
+    match result {
+        Ok(output) if output.status.success() => {
             println!("  {} Stale worktrees pruned", "✓".green().bold());
         }
-        Ok(result) => {
-            let stderr = String::from_utf8_lossy(&result.stderr);
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
             println!(
                 "  {} Worktree prune: {}",
                 "⚠".yellow().bold(),
@@ -87,25 +84,16 @@ pub fn cleanup_worktrees_directory(repo_root: &Path) -> Result<()> {
             if path.is_dir() {
                 let stage_id = entry.file_name().to_string_lossy().to_string();
 
-                let _ = Command::new("git")
-                    .args(["worktree", "remove", "--force"])
-                    .arg(&path)
-                    .current_dir(repo_root)
-                    .output();
+                let path_str = path.to_string_lossy().to_string();
+                let _ = run_git(&["worktree", "remove", "--force", &path_str], repo_root);
 
                 let branch_name = branch_name_for_stage(&stage_id);
-                let _ = Command::new("git")
-                    .args(["branch", "-D", &branch_name])
-                    .current_dir(repo_root)
-                    .output();
+                let _ = run_git(&["branch", "-D", &branch_name], repo_root);
             }
         }
     }
 
-    let _ = Command::new("git")
-        .args(["worktree", "prune"])
-        .current_dir(repo_root)
-        .output();
+    let _ = run_git(&["worktree", "prune"], repo_root);
 
     if worktrees_dir.exists() {
         fs::remove_dir_all(&worktrees_dir).with_context(|| {

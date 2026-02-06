@@ -4,8 +4,8 @@
 
 use anyhow::{bail, Context, Result};
 use std::path::Path;
-use std::process::Command;
 
+use crate::git::runner::{run_git, run_git_checked};
 use crate::models::worktree::Worktree;
 use crate::validation::validate_id;
 
@@ -49,18 +49,14 @@ pub fn create_worktree(
     // Create the worktree with a new branch
     // If base_branch is Some: git worktree add -b loom/{stage_id} .worktrees/{stage_id} {base_branch}
     // If base_branch is None: git worktree add -b loom/{stage_id} .worktrees/{stage_id} (from HEAD)
-    let mut args = vec!["worktree", "add", "-b", &branch_name];
-    let worktree_path_str = worktree_path.to_string_lossy();
+    let worktree_path_str = worktree_path.to_string_lossy().to_string();
+    let mut args: Vec<&str> = vec!["worktree", "add", "-b", &branch_name];
     args.push(&worktree_path_str);
     if let Some(base) = base_branch {
         args.push(base);
     }
 
-    let output = Command::new("git")
-        .args(&args)
-        .current_dir(repo_root)
-        .output()
-        .with_context(|| "Failed to execute git worktree add")?;
+    let output = run_git(&args, repo_root)?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -69,23 +65,10 @@ pub fn create_worktree(
         // This ensures we always use the correct base branch, not a stale one
         if stderr.contains("already exists") {
             // Delete the existing branch
-            let delete_output = Command::new("git")
-                .args(["branch", "-D", &branch_name])
-                .current_dir(repo_root)
-                .output()
-                .with_context(|| format!("Failed to delete existing branch {branch_name}"))?;
-
-            if !delete_output.status.success() {
-                let delete_stderr = String::from_utf8_lossy(&delete_output.stderr);
-                bail!("Failed to delete existing branch {branch_name}: {delete_stderr}");
-            }
+            run_git_checked(&["branch", "-D", &branch_name], repo_root)?;
 
             // Retry creating the worktree with the correct base
-            let retry_output = Command::new("git")
-                .args(&args)
-                .current_dir(repo_root)
-                .output()
-                .with_context(|| "Failed to execute git worktree add after branch deletion")?;
+            let retry_output = run_git(&args, repo_root)?;
 
             if !retry_output.status.success() {
                 let retry_stderr = String::from_utf8_lossy(&retry_output.stderr);
@@ -127,17 +110,14 @@ pub fn remove_worktree(stage_id: &str, repo_root: &Path, force: bool) -> Result<
     // Clean up settings and symlinks first
     cleanup_worktree_settings(&worktree_path);
 
-    let mut args = vec!["worktree", "remove"];
+    let mut args: Vec<&str> = vec!["worktree", "remove"];
     if force {
         args.push("--force");
     }
+    let wt_str = worktree_path.to_string_lossy().to_string();
+    args.push(&wt_str);
 
-    let output = Command::new("git")
-        .args(&args)
-        .arg(&worktree_path)
-        .current_dir(repo_root)
-        .output()
-        .with_context(|| "Failed to execute git worktree remove")?;
+    let output = run_git(&args, repo_root)?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -149,34 +129,13 @@ pub fn remove_worktree(stage_id: &str, repo_root: &Path, force: bool) -> Result<
 
 /// List all worktrees
 pub fn list_worktrees(repo_root: &Path) -> Result<Vec<WorktreeInfo>> {
-    let output = Command::new("git")
-        .args(["worktree", "list", "--porcelain"])
-        .current_dir(repo_root)
-        .output()
-        .with_context(|| "Failed to execute git worktree list")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("git worktree list failed: {stderr}");
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = run_git_checked(&["worktree", "list", "--porcelain"], repo_root)?;
     parse_worktree_list(&stdout)
 }
 
 /// Clean orphaned worktrees (prune)
 pub fn clean_worktrees(repo_root: &Path) -> Result<()> {
-    let output = Command::new("git")
-        .args(["worktree", "prune"])
-        .current_dir(repo_root)
-        .output()
-        .with_context(|| "Failed to execute git worktree prune")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("git worktree prune failed: {stderr}");
-    }
-
+    run_git_checked(&["worktree", "prune"], repo_root)?;
     Ok(())
 }
 

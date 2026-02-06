@@ -3,9 +3,9 @@
 use anyhow::{bail, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use uuid::Uuid;
 
+use crate::git::runner::run_git;
 use crate::models::stage::StageStatus;
 use crate::verify::transitions::load_stage;
 
@@ -108,10 +108,7 @@ fn get_worktree_git_status(stage: &crate::models::stage::Stage, work_dir: &Path)
         return None;
     }
 
-    Command::new("git")
-        .args(["status", "--short"])
-        .current_dir(&worktree_path)
-        .output()
+    run_git(&["status", "--short"], &worktree_path)
         .ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
 }
@@ -125,10 +122,7 @@ fn get_worktree_git_diff(stage: &crate::models::stage::Stage, work_dir: &Path) -
         return None;
     }
 
-    Command::new("git")
-        .args(["diff", "HEAD~1..HEAD", "--stat"])
-        .current_dir(&worktree_path)
-        .output()
+    run_git(&["diff", "HEAD~1..HEAD", "--stat"], &worktree_path)
         .ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
 }

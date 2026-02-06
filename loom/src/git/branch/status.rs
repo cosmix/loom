@@ -1,7 +1,11 @@
 //! Git status checking for uncommitted changes
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use std::path::Path;
+
+use crate::git::runner::run_git;
+
+#[cfg(test)]
 use std::process::Command;
 
 /// Check if the repository has uncommitted changes (staged or unstaged)
@@ -19,17 +23,11 @@ use std::process::Command;
 /// * `Ok(false)` if the working tree is clean (no staged/unstaged changes)
 /// * `Err` if git command fails
 pub fn has_uncommitted_changes(repo_root: &Path) -> Result<bool> {
-    let output = Command::new("git")
-        .args(["status", "--porcelain"])
-        .current_dir(repo_root)
-        .output()
-        .with_context(|| "Failed to check git status")?;
-
+    let output = run_git(&["status", "--porcelain"], repo_root)?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         bail!("git status failed: {stderr}");
     }
-
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     // Check for staged or modified files (exclude untracked with ??)
@@ -54,17 +52,11 @@ pub fn has_uncommitted_changes(repo_root: &Path) -> Result<bool> {
 /// * `Ok(summary)` - A string describing the changes, empty if clean
 /// * `Err` if git command fails
 pub fn get_uncommitted_changes_summary(repo_root: &Path) -> Result<String> {
-    let output = Command::new("git")
-        .args(["status", "--porcelain"])
-        .current_dir(repo_root)
-        .output()
-        .with_context(|| "Failed to check git status")?;
-
+    let output = run_git(&["status", "--porcelain"], repo_root)?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         bail!("git status failed: {stderr}");
     }
-
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     let mut staged = Vec::new();
