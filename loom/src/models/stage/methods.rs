@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 
 use super::types::{Stage, StageOutput, StageStatus, StageType};
 
@@ -342,6 +342,29 @@ impl Stage {
             || self.name.to_lowercase().contains("knowledge")
     }
 
+    /// Begin a new execution attempt.
+    ///
+    /// Sets `attempt_started_at` to the given timestamp and initializes
+    /// `execution_secs` to 0 if not already set.
+    pub fn begin_attempt(&mut self, now: DateTime<Utc>) {
+        self.attempt_started_at = Some(now);
+        if self.execution_secs.is_none() {
+            self.execution_secs = Some(0);
+        }
+    }
+
+    /// Accumulate time from the current execution attempt.
+    ///
+    /// Calculates elapsed time since `attempt_started_at`, adds it to
+    /// `execution_secs`, and clears `attempt_started_at`.
+    /// No-op if `attempt_started_at` is None.
+    pub fn accumulate_attempt_time(&mut self, now: DateTime<Utc>) {
+        if let Some(start) = self.attempt_started_at.take() {
+            let elapsed = now.signed_duration_since(start).num_seconds().max(0);
+            let current = self.execution_secs.unwrap_or(0);
+            self.execution_secs = Some(current.saturating_add(elapsed));
+        }
+    }
 }
 
 #[cfg(test)]
@@ -364,8 +387,10 @@ mod tests {
 
     #[test]
     fn test_begin_attempt_preserves_existing_execution_secs() {
-        let mut stage = Stage::default();
-        stage.execution_secs = Some(60);
+        let mut stage = Stage {
+            execution_secs: Some(60),
+            ..Stage::default()
+        };
 
         let now = Utc::now();
         stage.begin_attempt(now);
@@ -389,10 +414,12 @@ mod tests {
 
     #[test]
     fn test_accumulate_attempt_time_adds_to_existing() {
-        let mut stage = Stage::default();
-        stage.execution_secs = Some(100);
         let start = Utc::now() - Duration::seconds(50);
-        stage.attempt_started_at = Some(start);
+        let mut stage = Stage {
+            execution_secs: Some(100),
+            attempt_started_at: Some(start),
+            ..Stage::default()
+        };
 
         stage.accumulate_attempt_time(Utc::now());
 
@@ -402,8 +429,10 @@ mod tests {
 
     #[test]
     fn test_accumulate_attempt_time_noop_without_started() {
-        let mut stage = Stage::default();
-        stage.execution_secs = Some(100);
+        let mut stage = Stage {
+            execution_secs: Some(100),
+            ..Stage::default()
+        };
         // attempt_started_at is None
 
         stage.accumulate_attempt_time(Utc::now());

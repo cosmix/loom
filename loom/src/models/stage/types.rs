@@ -381,28 +381,3 @@ impl Default for Stage {
     }
 }
 
-impl Stage {
-    /// Begin a new execution attempt.
-    ///
-    /// Sets `attempt_started_at` to the given timestamp and initializes
-    /// `execution_secs` to 0 if not already set.
-    pub fn begin_attempt(&mut self, now: DateTime<Utc>) {
-        self.attempt_started_at = Some(now);
-        if self.execution_secs.is_none() {
-            self.execution_secs = Some(0);
-        }
-    }
-
-    /// Accumulate time from the current execution attempt.
-    ///
-    /// Calculates elapsed time since `attempt_started_at`, adds it to
-    /// `execution_secs`, and clears `attempt_started_at`.
-    /// No-op if `attempt_started_at` is None.
-    pub fn accumulate_attempt_time(&mut self, now: DateTime<Utc>) {
-        if let Some(start) = self.attempt_started_at.take() {
-            let elapsed = now.signed_duration_since(start).num_seconds().max(0);
-            let current = self.execution_secs.unwrap_or(0);
-            self.execution_secs = Some(current + elapsed);
-        }
-    }
-}

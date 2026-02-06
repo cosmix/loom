@@ -42,6 +42,37 @@ fn stage_duration(stage: &StageCompletionInfo) -> Option<i64> {
     stage.execution_secs.or(stage.duration_secs)
 }
 
+/// Build the duration display string for a stage, including wall time and retry info when applicable.
+fn build_duration_display(stage: &StageCompletionInfo) -> String {
+    let primary_duration = stage_duration(stage)
+        .map(format_elapsed)
+        .unwrap_or_else(|| "-".to_string());
+
+    if stage.retry_count > 0 {
+        let retry_label = if stage.retry_count == 1 {
+            "retry"
+        } else {
+            "retries"
+        };
+        if let Some(wall) = stage.duration_secs {
+            format!(
+                "{} (wall: {}, {} {})",
+                primary_duration,
+                format_elapsed(wall),
+                stage.retry_count,
+                retry_label
+            )
+        } else {
+            format!(
+                "{} ({} {})",
+                primary_duration, stage.retry_count, retry_label
+            )
+        }
+    } else {
+        primary_duration
+    }
+}
+
 /// Render the completion screen to stdout
 pub fn render_completion_screen(summary: &CompletionSummary) {
     // Clear screen
@@ -95,39 +126,7 @@ pub fn render_completion_screen(summary: &CompletionSummary) {
     // Stage rows
     for stage in &sorted_stages {
         let icon = status_indicator(&stage.status);
-        let primary_duration = stage_duration(stage)
-            .map(format_elapsed)
-            .unwrap_or_else(|| "-".to_string());
-
-        // Build duration display with wall time and retries when applicable
-        let duration_display = if stage.retry_count > 0 {
-            if let Some(wall) = stage.duration_secs {
-                format!(
-                    "{} (wall: {}, {} {})",
-                    primary_duration,
-                    format_elapsed(wall),
-                    stage.retry_count,
-                    if stage.retry_count == 1 {
-                        "retry"
-                    } else {
-                        "retries"
-                    }
-                )
-            } else {
-                format!(
-                    "{} ({} {})",
-                    primary_duration,
-                    stage.retry_count,
-                    if stage.retry_count == 1 {
-                        "retry"
-                    } else {
-                        "retries"
-                    }
-                )
-            }
-        } else {
-            primary_duration
-        };
+        let duration_display = build_duration_display(stage);
 
         let status_str = match stage.status {
             StageStatus::Completed => "Completed".green(),
@@ -202,39 +201,7 @@ pub fn render_completion_lines(summary: &CompletionSummary) -> Vec<String> {
 
     for stage in &sorted_stages {
         let icon = status_indicator(&stage.status);
-        let primary_duration = stage_duration(stage)
-            .map(format_elapsed)
-            .unwrap_or_else(|| "-".to_string());
-
-        // Build duration display with wall time and retries when applicable
-        let duration_display = if stage.retry_count > 0 {
-            if let Some(wall) = stage.duration_secs {
-                format!(
-                    "{} (wall: {}, {} {})",
-                    primary_duration,
-                    format_elapsed(wall),
-                    stage.retry_count,
-                    if stage.retry_count == 1 {
-                        "retry"
-                    } else {
-                        "retries"
-                    }
-                )
-            } else {
-                format!(
-                    "{} ({} {})",
-                    primary_duration,
-                    stage.retry_count,
-                    if stage.retry_count == 1 {
-                        "retry"
-                    } else {
-                        "retries"
-                    }
-                )
-            }
-        } else {
-            primary_duration
-        };
+        let duration_display = build_duration_display(stage);
 
         let status_str = match stage.status {
             StageStatus::Completed => "Completed",

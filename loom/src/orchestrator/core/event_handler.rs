@@ -193,6 +193,7 @@ impl EventHandler for Orchestrator {
         eprintln!("Session '{session_id}' needs handoff for stage '{stage_id}'");
 
         let mut stage = self.load_stage(stage_id)?;
+        stage.accumulate_attempt_time(chrono::Utc::now());
         stage.try_mark_needs_handoff()?;
         self.save_stage(&stage)?;
 
@@ -259,6 +260,9 @@ impl Orchestrator {
             // session_mut goes out of scope here, ending the mutable borrow
             self.save_session(&session_to_save)?;
         }
+
+        // Accumulate execution time before transitioning
+        stage.accumulate_attempt_time(chrono::Utc::now());
 
         // Transition stage to NeedsHandoff
         stage.try_mark_needs_handoff()?;

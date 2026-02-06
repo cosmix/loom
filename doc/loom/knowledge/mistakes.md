@@ -531,3 +531,16 @@ Two plan criteria caused false negatives in integration-verify:
   - *Rationale:* cargo fmt fixed 3 files with whitespace/line-wrapping changes only in settings.rs, cache.rs, sections.rs. All were code from the implementation stages that just needed rustfmt.
 
 
+
+## Promoted from Memory [2026-02-06 16:38]
+
+### Notes
+
+- Code review found 6 issues in stage-timing feature: (1) missing accumulate_attempt_time on NeedsHandoff/BudgetExceeded transitions - execution time was permanently lost for stages that hit context limits, (2) silent error suppression via let _ = save_stage() in completion_handler, (3) double YAML parsing in status.rs, (4) unsafe u64->u32 cast for retry_count, (5) impl block in types.rs violated convention of methods in methods.rs, (6) duplicated duration display logic in completion.rs
+
+### Decisions
+
+- **Fixed all 6 issues directly in code rather than just reporting them. Used saturating_add for i64 overflow safety, extracted build_duration_display helper for DRY, used u32::try_from for safe numeric conversion.**
+  - *Rationale:* Code review stages should fix issues, not just report. All changes are backward-compatible.
+
+

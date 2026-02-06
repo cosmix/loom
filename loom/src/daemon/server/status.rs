@@ -399,23 +399,19 @@ pub fn collect_completion_summary(work_dir: &Path) -> Result<CompletionSummary> 
                             let duration_secs = completed_at
                                 .map(|completed| (completed - started_at).num_seconds());
 
-                            // Extract execution_secs from YAML frontmatter
-                            let execution_secs =
+                            // Extract execution_secs and retry_count from YAML frontmatter
+                            let (execution_secs, retry_count) =
                                 if let Ok(yaml) = extract_yaml_frontmatter(&content) {
-                                    yaml.get("execution_secs").and_then(|v| v.as_i64())
+                                    let exec = yaml.get("execution_secs").and_then(|v| v.as_i64());
+                                    let retries = yaml
+                                        .get("retry_count")
+                                        .and_then(|v| v.as_u64())
+                                        .and_then(|v| u32::try_from(v).ok())
+                                        .unwrap_or(0);
+                                    (exec, retries)
                                 } else {
-                                    None
+                                    (None, 0)
                                 };
-
-                            // Extract retry_count from YAML frontmatter
-                            let retry_count = if let Ok(yaml) = extract_yaml_frontmatter(&content) {
-                                yaml.get("retry_count")
-                                    .and_then(|v| v.as_u64())
-                                    .map(|v| v as u32)
-                                    .unwrap_or(0)
-                            } else {
-                                0
-                            };
 
                             stages.push(StageCompletionInfo {
                                 id: parsed.id,

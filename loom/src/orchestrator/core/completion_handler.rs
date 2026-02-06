@@ -13,7 +13,9 @@ impl Orchestrator {
         // Accumulate execution time for the final attempt
         if let Ok(mut stage) = self.load_stage(stage_id) {
             stage.accumulate_attempt_time(Utc::now());
-            let _ = self.save_stage(&stage);
+            if let Err(e) = self.save_stage(&stage) {
+                eprintln!("Warning: failed to save execution time for stage '{stage_id}': {e}");
+            }
         }
 
         // Clean up session first
