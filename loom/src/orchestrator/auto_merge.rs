@@ -80,7 +80,7 @@ pub fn attempt_auto_merge(
 
     // Attempt the merge
     let merge_result =
-        merge_stage(&stage.id, target_branch, repo_root).context("Auto-merge failed")?;
+        merge_stage(&stage.id, target_branch, repo_root, work_dir).context("Auto-merge failed")?;
 
     match merge_result {
         MergeResult::Success {

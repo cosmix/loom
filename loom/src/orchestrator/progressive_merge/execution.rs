@@ -8,7 +8,6 @@ use crate::git::branch::{branch_exists, branch_name_for_stage};
 use crate::git::merge::{merge_stage, MergeResult};
 use crate::models::stage::Stage;
 
-use super::lock::MergeLock;
 use super::ProgressiveMergeResult;
 
 /// Attempt to merge a just-completed stage into the merge point.
@@ -40,11 +39,14 @@ pub fn merge_completed_stage(
 }
 
 /// Attempt to merge with a custom lock timeout
+///
+/// Note: The lock_timeout parameter is now ignored. The merge_stage function
+/// handles locking internally with a fixed 30-second timeout.
 pub fn merge_completed_stage_with_timeout(
     stage: &Stage,
     repo_root: &Path,
     merge_point: &str,
-    lock_timeout: Duration,
+    _lock_timeout: Duration,
 ) -> Result<ProgressiveMergeResult> {
     let branch_name = branch_name_for_stage(&stage.id);
 
@@ -53,18 +55,14 @@ pub fn merge_completed_stage_with_timeout(
         return Ok(ProgressiveMergeResult::NoBranch);
     }
 
-    // Get the work directory for locking
+    // Get the work directory - merge_stage will acquire the lock
     let work_dir = repo_root.join(".work");
     if !work_dir.exists() {
         return Err(anyhow::anyhow!(".work directory not found"));
     }
 
-    // Acquire merge lock to prevent concurrent merges
-    let _lock = MergeLock::acquire(&work_dir, lock_timeout)
-        .context("Failed to acquire merge lock - another merge may be in progress")?;
-
-    // Attempt the merge
-    let result = merge_stage(&stage.id, merge_point, repo_root)
+    // Attempt the merge (merge_stage will acquire the lock internally)
+    let result = merge_stage(&stage.id, merge_point, repo_root, &work_dir)
         .with_context(|| format!("Failed to merge stage {} into {}", stage.id, merge_point))?;
 
     // Convert git::merge::MergeResult to ProgressiveMergeResult

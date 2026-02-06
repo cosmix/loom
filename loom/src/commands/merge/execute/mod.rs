@@ -197,7 +197,7 @@ pub fn execute(stage_id: String, force: bool) -> Result<()> {
 
     // Perform the merge (restore stash on error)
     println!("\nMerging loom/{stage_id} into {target_branch}...");
-    let merge_result = match merge_stage(&stage_id, &target_branch, &repo_root) {
+    let merge_result = match merge_stage(&stage_id, &target_branch, &repo_root, &work_dir) {
         Ok(result) => result,
         Err(e) => {
             // Restore .work symlink so worktree remains functional

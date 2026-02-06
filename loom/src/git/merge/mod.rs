@@ -4,9 +4,11 @@ mod status;
 
 use anyhow::{bail, Result};
 use std::path::Path;
+use std::time::Duration;
 
 use super::branch::{branch_exists, branch_name_for_stage, current_branch, is_ancestor_of};
 use crate::git::runner::{run_git, run_git_checked};
+use crate::orchestrator::progressive_merge::lock::MergeLock;
 
 // Re-export status types for use by other modules
 pub use status::{build_merge_report, check_merge_state, MergeState, MergeStatusReport};
@@ -37,10 +39,27 @@ pub enum MergeResult {
 /// Merge a stage branch to target branch (typically main)
 ///
 /// Steps:
-/// 1. Checkout target branch
-/// 2. Merge stage branch (loom/{stage_id})
-/// 3. Return merge result
-pub fn merge_stage(stage_id: &str, target_branch: &str, repo_root: &Path) -> Result<MergeResult> {
+/// 1. Acquire merge lock to prevent concurrent merges
+/// 2. Checkout target branch
+/// 3. Merge stage branch (loom/{stage_id})
+/// 4. Return merge result
+///
+/// The merge lock is held for the duration of the operation and automatically
+/// released when the function returns.
+pub fn merge_stage(
+    stage_id: &str,
+    target_branch: &str,
+    repo_root: &Path,
+    work_dir: &Path,
+) -> Result<MergeResult> {
+    // Acquire merge lock to prevent concurrent merges
+    let _lock = MergeLock::acquire(work_dir, Duration::from_secs(30)).map_err(|e| {
+        anyhow::anyhow!(
+            "Could not acquire merge lock: {}. Another merge may be in progress.",
+            e
+        )
+    })?;
+
     let branch_name = branch_name_for_stage(stage_id);
 
     // First, check that the branch exists
@@ -164,11 +183,23 @@ pub fn get_conflicting_files(repo_root: &Path) -> Result<Vec<String>> {
 ///
 /// This uses `git merge --no-commit` to test the merge, then aborts.
 /// Returns the list of conflicting files, or empty if merge would succeed.
+///
+/// Acquires the merge lock to prevent concurrent merge operations that could
+/// interfere with the test merge.
 pub fn get_conflicting_files_from_status(
     source_branch: &str,
     target_branch: &str,
     repo_root: &Path,
+    work_dir: &Path,
 ) -> Result<Vec<String>> {
+    // Acquire merge lock to prevent concurrent merge operations
+    let _lock = MergeLock::acquire(work_dir, Duration::from_secs(30)).map_err(|e| {
+        anyhow::anyhow!(
+            "Could not acquire merge lock: {}. Another merge may be in progress.",
+            e
+        )
+    })?;
+
     // Save current branch
     let original_branch = current_branch(repo_root)?;
 
