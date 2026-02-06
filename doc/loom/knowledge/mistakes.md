@@ -458,3 +458,17 @@ Solutions: 1) Use ./target/debug/loom path, 2) Accept failures until merge,
   - *Rationale:* Our locked_write intentionally opens without truncate (to truncate after lock via set_len(0)). Clippy flags this as suspicious but it is the correct pattern to prevent TOCTOU.
 
 
+
+## Promoted from Memory [2026-02-06 11:30]
+
+### Notes
+
+- Integration verification passed for PLAN-critical-high-fixes: 1406 tests pass, clippy clean, debug and release builds succeed, fmt clean after one fix in merge_handler.rs. All functional verification items confirmed: security fixes (nix crate for PID, XTerm escaping, checksum verification), git runner refactoring, signal consolidation, type unification, file locking.
+- Goal-backward truth check 'cargo test 2>&1 | tail -1 | rg -q test result: ok' fails because cargo test outputs trailing newline. Fix: pipe through 'rg test result: | tail -1' first to select the right line.
+
+### Decisions
+
+- **Applied cargo fmt fix to merge_handler.rs:228 - eprintln! macro arguments should be on single line per rustfmt rules**
+  - *Rationale:* cargo fmt --check caught a multi-line eprintln! that rustfmt wants on a single line
+
+

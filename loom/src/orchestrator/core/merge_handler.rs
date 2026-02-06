@@ -225,9 +225,7 @@ impl Orchestrator {
                         Err(e) => {
                             // Verification failed - do NOT mark as merged to prevent phantom merges
                             clear_status_line();
-                            eprintln!(
-                                "Stage '{stage_id}' merge verification error: {e}"
-                            );
+                            eprintln!("Stage '{stage_id}' merge verification error: {e}");
                             if let Err(e) = stage.try_mark_merge_blocked() {
                                 eprintln!("Warning: Failed to transition to MergeBlocked: {e}");
                                 stage.status = StageStatus::MergeBlocked;
