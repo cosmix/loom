@@ -563,3 +563,14 @@ Two plan criteria caused false negatives in integration-verify:
 
 - **Fixed test_no_path_in_both_allow_and_deny to compare full permission strings instead of just paths**
   - _Rationale:_ The test was stripping Read/Write/Bash prefixes and comparing raw paths, which would false-positive on Read(x) in allow vs Write(x) in deny (different permission types, valid config). Changed to compare full strings for true conflicts.
+
+## Promoted from Memory [2026-02-06 20:50]
+
+### Notes
+
+- Integration verification passed for fix-sandbox-settings: All 1417 tests pass (1227 unit + 132 e2e + 28 integration + 16 failure_resume + 3 stage_transitions + 3 completion + 8 doc-tests), clippy clean, build succeeds. All 30 sandbox-specific tests pass. Functional verification confirms: (1) no path in both allow and deny for all 4 stage types, (2) Bash(cmd:*) generated for excluded commands, (3) Read(.work/signals/**) in permissions.allow, (4) doc/loom/knowledge/** in deny_write but NOT in allow_write for any stage type, (5) .work/stages/**and .work/sessions/** removed from deny defaults.
+
+### Decisions
+
+- **Verified sandbox settings generation is correct by running all tests and manual code review**
+  - _Rationale:_ All 7 functional requirements verified: Bash permissions for excluded commands, signal read allows, no allow/deny conflicts, knowledge path protection, and .work/stages/.work/sessions removal from defaults
