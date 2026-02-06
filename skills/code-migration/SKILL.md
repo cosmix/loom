@@ -712,7 +712,7 @@ async def search(query: str, user_id: str):
 
 ```typescript
 // codemod-example.ts - Using jscodeshift for automated refactoring
-import jscodeshift, { API, FileInfo, Options } from 'jscodeshift';
+import jscodeshift, { API, FileInfo, Options } from "jscodeshift";
 
 /**
  * Codemod: Migrate from class components to function components
@@ -727,7 +727,11 @@ import jscodeshift, { API, FileInfo, Options } from 'jscodeshift';
  *     return <div>Hello</div>;
  *   }
  */
-export default function transformer(file: FileInfo, api: API, options: Options) {
+export default function transformer(
+  file: FileInfo,
+  api: API,
+  options: Options,
+) {
   const j = api.jscodeshift;
   const root = j(file.source);
 
@@ -742,41 +746,41 @@ export default function transformer(file: FileInfo, api: API, options: Options) 
       const extendsReact =
         (j.MemberExpression.check(superClass) &&
           j.Identifier.check(superClass.object) &&
-          superClass.object.name === 'React' &&
+          superClass.object.name === "React" &&
           j.Identifier.check(superClass.property) &&
-          superClass.property.name === 'Component') ||
-        (j.Identifier.check(superClass) && superClass.name === 'Component');
+          superClass.property.name === "Component") ||
+        (j.Identifier.check(superClass) && superClass.name === "Component");
 
       if (!extendsReact) return false;
 
       // Check if only has render method
       const methods = path.value.body.body.filter((node) =>
-        j.MethodDefinition.check(node)
+        j.MethodDefinition.check(node),
       );
       return (
         methods.length === 1 &&
         j.Identifier.check(methods[0].key) &&
-        methods[0].key.name === 'render'
+        methods[0].key.name === "render"
       );
     })
     .replaceWith((path) => {
-      const className = path.value.id?.name || 'Component';
+      const className = path.value.id?.name || "Component";
       const renderMethod = path.value.body.body.find(
         (node) =>
           j.MethodDefinition.check(node) &&
           j.Identifier.check(node.key) &&
-          node.key.name === 'render'
+          node.key.name === "render",
       ) as any;
 
       const returnStatement = renderMethod.value.body.body.find((stmt: any) =>
-        j.ReturnStatement.check(stmt)
+        j.ReturnStatement.check(stmt),
       );
 
       // Create function component
       return j.functionDeclaration(
         j.identifier(className),
         [],
-        j.blockStatement([returnStatement])
+        j.blockStatement([returnStatement]),
       );
     });
 
@@ -946,7 +950,7 @@ class StripeAdapter implements PaymentProcessor {
       amount,
       source: token,
     });
-    return { transactionId: charge.id, status: 'success' };
+    return { transactionId: charge.id, status: "success" };
   }
 
   async refund(transactionId: string): Promise<void> {
@@ -963,7 +967,7 @@ class BraintreeAdapter implements PaymentProcessor {
       amount: amount.toString(),
       paymentMethodNonce: token,
     });
-    return { transactionId: result.transaction.id, status: 'success' };
+    return { transactionId: result.transaction.id, status: "success" };
   }
 
   async refund(transactionId: string): Promise<void> {
@@ -976,11 +980,11 @@ class PaymentService {
   constructor(
     private stripeAdapter: StripeAdapter,
     private braintreeAdapter: BraintreeAdapter,
-    private featureFlags: FeatureFlagService
+    private featureFlags: FeatureFlagService,
   ) {}
 
   private getProcessor(userId: string): PaymentProcessor {
-    if (this.featureFlags.isEnabled('use_braintree', userId)) {
+    if (this.featureFlags.isEnabled("use_braintree", userId)) {
       return this.braintreeAdapter;
     }
     return this.stripeAdapter;
@@ -989,7 +993,7 @@ class PaymentService {
   async processPayment(
     userId: string,
     amount: number,
-    token: string
+    token: string,
   ): Promise<PaymentResult> {
     const processor = this.getProcessor(userId);
     return processor.processPayment(amount, token);

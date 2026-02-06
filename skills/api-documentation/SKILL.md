@@ -84,7 +84,7 @@ webhooks:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UserEvent'
+              $ref: "#/components/schemas/UserEvent"
 ```
 
 ### Content Negotiation
@@ -92,9 +92,9 @@ webhooks:
 ```yaml
 content:
   application/json:
-    schema: {...}
+    schema: { ... }
   application/xml:
-    schema: {...}
+    schema: { ... }
   text/csv:
     schema:
       type: string
@@ -1020,7 +1020,7 @@ docker run -p 80:8080 -e SWAGGER_JSON=/api/openapi.yaml -v $(pwd):/api swaggerap
 
 ```html
 <script src="https://unpkg.com/@stoplight/elements/web-components.min.js"></script>
-<elements-api apiDescriptionUrl="./openapi.yaml" router="hash"/>
+<elements-api apiDescriptionUrl="./openapi.yaml" router="hash" />
 ```
 
 ### Validation and Linting
@@ -1046,7 +1046,7 @@ spectral lint openapi.yaml --ruleset .spectral.yaml
 openapi-generator-cli generate -i openapi.yaml -g typescript-fetch -o ./client
 ```
 
-**Postman Collection Export**
+### Postman Collection Export
 
 ```bash
 npm install -g openapi-to-postmanv2

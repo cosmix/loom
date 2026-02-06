@@ -249,6 +249,7 @@ Brief paragraph summarizing the most important changes and their impact.
 ## New Features
 
 ### Feature Name
+
 Brief description of what the feature does and why users care.
 
 Example usage:
@@ -259,6 +260,7 @@ command --new-flag value
 **Who should use this**: Teams managing large codebases
 
 ### Another Feature
+
 Description and example.
 
 ## Improvements
@@ -338,34 +340,34 @@ functionName(param1: Type1, options?: Options): ReturnType
 
 ### Parameters
 
-| Parameter | Type     | Required | Description                    |
-| --------- | -------- | -------- | ------------------------------ |
-| `param1`  | `string` | Yes      | The primary input value        |
-| `options` | `Object` | No       | Configuration options (below)  |
+| Parameter | Type     | Required | Description                   |
+| --------- | -------- | -------- | ----------------------------- |
+| `param1`  | `string` | Yes      | The primary input value       |
+| `options` | `Object` | No       | Configuration options (below) |
 
 #### Options
 
-| Option      | Type      | Default | Description                      |
-| ----------- | --------- | ------- | -------------------------------- |
-| `timeout`   | `number`  | `5000`  | Request timeout in milliseconds  |
-| `retries`   | `number`  | `3`     | Number of retry attempts         |
+| Option    | Type     | Default | Description                     |
+| --------- | -------- | ------- | ------------------------------- |
+| `timeout` | `number` | `5000`  | Request timeout in milliseconds |
+| `retries` | `number` | `3`     | Number of retry attempts        |
 
 ### Returns
 
 Returns a `Promise<Result>` that resolves with:
 
-| Field     | Type     | Description                |
-| --------- | -------- | -------------------------- |
-| `success` | `boolean`| Whether operation succeeded|
-| `data`    | `any`    | Response data if successful|
-| `error`   | `string` | Error message if failed    |
+| Field     | Type      | Description                 |
+| --------- | --------- | --------------------------- |
+| `success` | `boolean` | Whether operation succeeded |
+| `data`    | `any`     | Response data if successful |
+| `error`   | `string`  | Error message if failed     |
 
 ### Errors
 
-| Error Code | Condition                    | Resolution                  |
-| ---------- | ---------------------------- | --------------------------- |
-| `TIMEOUT`  | Request exceeds timeout      | Increase timeout value      |
-| `INVALID`  | Parameter validation failed  | Check parameter types       |
+| Error Code | Condition                   | Resolution             |
+| ---------- | --------------------------- | ---------------------- |
+| `TIMEOUT`  | Request exceeds timeout     | Increase timeout value |
+| `INVALID`  | Parameter validation failed | Check parameter types  |
 
 ### Examples
 
@@ -373,26 +375,26 @@ Basic usage:
 \`\`\`typescript
 const result = await functionName('input-value');
 if (result.success) {
-  console.log(result.data);
+console.log(result.data);
 }
 \`\`\`
 
 With options:
 \`\`\`typescript
 const result = await functionName('input-value', {
-  timeout: 10000,
-  retries: 5
+timeout: 10000,
+retries: 5
 });
 \`\`\`
 
 Error handling:
 \`\`\`typescript
 try {
-  const result = await functionName('input-value');
+const result = await functionName('input-value');
 } catch (error) {
-  if (error.code === 'TIMEOUT') {
-    // Handle timeout
-  }
+if (error.code === 'TIMEOUT') {
+// Handle timeout
+}
 }
 \`\`\`
 

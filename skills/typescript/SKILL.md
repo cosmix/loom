@@ -278,7 +278,7 @@ function isSuccess<T>(result: Result<T>): result is { success: true; data: T } {
 // Assertion function
 function assertNonNull<T>(
   value: T | null | undefined,
-  message?: string
+  message?: string,
 ): asserts value is T {
   if (value === null || value === undefined) {
     throw new Error(message ?? "Value is null or undefined");
@@ -541,7 +541,7 @@ class TypedEventEmitter<T extends Record<string, any>> {
 
   on<K extends keyof T>(
     event: K,
-    listener: (payload: T[K]) => void
+    listener: (payload: T[K]) => void,
   ): () => void {
     if (!this.listeners[event]) {
       this.listeners[event] = [];
@@ -607,7 +607,7 @@ const OrderSchema = z.object({
       productId: z.string(),
       quantity: z.number().positive(),
       price: z.number().positive(),
-    })
+    }),
   ),
   total: z.number().positive(),
   status: z.enum(["pending", "paid", "shipped", "delivered"]),
@@ -1125,8 +1125,11 @@ declare global {
 }
 
 // Type-safe request handlers
-interface TypedRequest<TBody = unknown, TQuery = unknown, TParams = unknown>
-  extends Request {
+interface TypedRequest<
+  TBody = unknown,
+  TQuery = unknown,
+  TParams = unknown,
+> extends Request {
   body: TBody;
   query: TQuery;
   params: TParams;
@@ -1157,11 +1160,11 @@ type RouteHandler<
   TBody = unknown,
   TQuery = unknown,
   TParams = unknown,
-  TData = unknown
+  TData = unknown,
 > = (
   req: TypedRequest<TBody, TQuery, TParams>,
   res: TypedResponse<TData>,
-  next: NextFunction
+  next: NextFunction,
 ) => void | Promise<void>;
 
 // Example usage
@@ -1204,7 +1207,7 @@ function errorHandler(
   err: Error,
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) {
   if (err instanceof AppError) {
     switch (err.error.type) {
@@ -1230,9 +1233,7 @@ app.use(errorHandler);
 
 ```typescript
 // Result type for error handling without exceptions
-type Result<T, E = Error> =
-  | { ok: true; value: T }
-  | { ok: false; error: E };
+type Result<T, E = Error> = { ok: true; value: T } | { ok: false; error: E };
 
 async function fetchUser(id: string): Promise<Result<User>> {
   try {
@@ -1256,15 +1257,15 @@ if (result.ok) {
 }
 
 // Type-safe Promise utilities
-async function race<T extends readonly unknown[]>(
-  promises: { [K in keyof T]: Promise<T[K]> }
-): Promise<T[number]> {
+async function race<T extends readonly unknown[]>(promises: {
+  [K in keyof T]: Promise<T[K]>;
+}): Promise<T[number]> {
   return Promise.race(promises);
 }
 
-async function all<T extends readonly unknown[]>(
-  promises: { [K in keyof T]: Promise<T[K]> }
-): Promise<T> {
+async function all<T extends readonly unknown[]>(promises: {
+  [K in keyof T]: Promise<T[K]>;
+}): Promise<T> {
   return Promise.all(promises) as Promise<T>;
 }
 
@@ -1284,7 +1285,7 @@ async function retry<T>(
     initialDelay: number;
     maxDelay: number;
     backoffFactor: number;
-  }
+  },
 ): Promise<T> {
   let lastError: Error;
   let delay = options.initialDelay;

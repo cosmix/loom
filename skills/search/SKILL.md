@@ -447,10 +447,10 @@ POST /_reindex
 **Debounced Search Input:**
 
 ```javascript
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 
 function SearchBar({ onSearch }) {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -481,12 +481,12 @@ function FacetedSearch({ aggregations, selectedFilters, onFilterChange }) {
     <div className="facets">
       <div className="facet-group">
         <h3>Category</h3>
-        {aggregations.categories.buckets.map(bucket => (
+        {aggregations.categories.buckets.map((bucket) => (
           <label key={bucket.key}>
             <input
               type="checkbox"
               checked={selectedFilters.category?.includes(bucket.key)}
-              onChange={() => onFilterChange('category', bucket.key)}
+              onChange={() => onFilterChange("category", bucket.key)}
             />
             {bucket.key} ({bucket.doc_count})
           </label>
@@ -495,13 +495,13 @@ function FacetedSearch({ aggregations, selectedFilters, onFilterChange }) {
 
       <div className="facet-group">
         <h3>Price Range</h3>
-        {aggregations.price_ranges.buckets.map(bucket => (
+        {aggregations.price_ranges.buckets.map((bucket) => (
           <label key={bucket.key}>
             <input
               type="radio"
               name="price_range"
               checked={selectedFilters.priceRange === bucket.key}
-              onChange={() => onFilterChange('priceRange', bucket.key)}
+              onChange={() => onFilterChange("priceRange", bucket.key)}
             />
             {bucket.key} ({bucket.doc_count})
           </label>
@@ -518,20 +518,22 @@ function FacetedSearch({ aggregations, selectedFilters, onFilterChange }) {
 function SearchResult({ hit }) {
   const getHighlightedText = (text, highlights) => {
     if (!highlights) return text;
-    return { __html: highlights.join('...') };
+    return { __html: highlights.join("...") };
   };
 
   return (
     <div className="search-result">
       <h3
-        dangerouslySetInnerHTML={
-          getHighlightedText(hit.name, hit.highlight?.name)
-        }
+        dangerouslySetInnerHTML={getHighlightedText(
+          hit.name,
+          hit.highlight?.name,
+        )}
       />
       <p
-        dangerouslySetInnerHTML={
-          getHighlightedText(hit.description, hit.highlight?.description)
-        }
+        dangerouslySetInnerHTML={getHighlightedText(
+          hit.description,
+          hit.highlight?.description,
+        )}
       />
       <span className="score">Score: {hit._score.toFixed(2)}</span>
     </div>
@@ -547,15 +549,15 @@ function SearchResult({ hit }) {
 class RelevanceTest {
   async testQuery(query, expectedTopResults) {
     const results = await this.search(query);
-    const topIds = results.hits.slice(0, 3).map(h => h._id);
+    const topIds = results.hits.slice(0, 3).map((h) => h._id);
 
     console.log(`Query: "${query}"`);
-    console.log(`Expected: ${expectedTopResults.join(', ')}`);
-    console.log(`Actual: ${topIds.join(', ')}`);
+    console.log(`Expected: ${expectedTopResults.join(", ")}`);
+    console.log(`Actual: ${topIds.join(", ")}`);
 
-    const precision = topIds.filter(id =>
-      expectedTopResults.includes(id)
-    ).length / topIds.length;
+    const precision =
+      topIds.filter((id) => expectedTopResults.includes(id)).length /
+      topIds.length;
 
     return { precision, topIds };
   }
@@ -563,8 +565,8 @@ class RelevanceTest {
 
 // Test cases
 const tests = [
-  { query: 'wireless headphones', expected: ['prod-123', 'prod-456'] },
-  { query: 'bluetooth speaker', expected: ['prod-789', 'prod-012'] },
+  { query: "wireless headphones", expected: ["prod-123", "prod-456"] },
+  { query: "bluetooth speaker", expected: ["prod-789", "prod-012"] },
 ];
 ```
 

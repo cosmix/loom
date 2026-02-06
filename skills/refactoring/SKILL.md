@@ -389,7 +389,7 @@ function createUser(
   street: string,
   city: string,
   state: string,
-  zip: string
+  zip: string,
 ) {
   // ...
 }

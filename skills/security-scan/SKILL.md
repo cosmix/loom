@@ -12,20 +12,20 @@ This skill provides quick, routine security checks that should be run frequently
 
 ## Tool Selection Matrix
 
-| Scan Type | Best Tool | Alternative | Use Case |
-|-----------|-----------|-------------|----------|
-| **Secrets** | TruffleHog | Gitleaks | Hardcoded credentials, API keys |
-| **Dependencies (JS)** | npm audit | Snyk, OWASP | Known CVEs in packages |
-| **Dependencies (Python)** | pip-audit | safety | PyPI vulnerability database |
-| **Dependencies (Go)** | govulncheck | nancy | Official Go vuln DB |
-| **Dependencies (Rust)** | cargo audit | - | RustSec Advisory DB |
-| **Container Images** | Trivy | Grype, Snyk | Image vulnerabilities, secrets |
-| **SAST (Multi-lang)** | Semgrep | CodeQL | Security anti-patterns |
-| **SAST (Python)** | Bandit | Semgrep | Python-specific issues |
-| **SAST (Go)** | gosec | Semgrep | Go-specific issues |
-| **Dockerfile** | hadolint | Trivy config | Best practices, misconfig |
-| **IaC (Terraform)** | tfsec | Checkov, Trivy | Terraform misconfigurations |
-| **IaC (K8s)** | kubesec | Trivy, Checkov | Kubernetes YAML security |
+| Scan Type                 | Best Tool   | Alternative    | Use Case                        |
+| ------------------------- | ----------- | -------------- | ------------------------------- |
+| **Secrets**               | TruffleHog  | Gitleaks       | Hardcoded credentials, API keys |
+| **Dependencies (JS)**     | npm audit   | Snyk, OWASP    | Known CVEs in packages          |
+| **Dependencies (Python)** | pip-audit   | safety         | PyPI vulnerability database     |
+| **Dependencies (Go)**     | govulncheck | nancy          | Official Go vuln DB             |
+| **Dependencies (Rust)**   | cargo audit | -              | RustSec Advisory DB             |
+| **Container Images**      | Trivy       | Grype, Snyk    | Image vulnerabilities, secrets  |
+| **SAST (Multi-lang)**     | Semgrep     | CodeQL         | Security anti-patterns          |
+| **SAST (Python)**         | Bandit      | Semgrep        | Python-specific issues          |
+| **SAST (Go)**             | gosec       | Semgrep        | Go-specific issues              |
+| **Dockerfile**            | hadolint    | Trivy config   | Best practices, misconfig       |
+| **IaC (Terraform)**       | tfsec       | Checkov, Trivy | Terraform misconfigurations     |
+| **IaC (K8s)**             | kubesec     | Trivy, Checkov | Kubernetes YAML security        |
 
 ## When to Use
 
@@ -64,7 +64,7 @@ grep -rn --include="*.{js,ts,py,go,java,rb,php}" \
   -E "(password|secret|token)\s*[:=]\s*['\"][^'\"]{8,}" .
 ```
 
-**Better: Use dedicated tools**
+#### Better: Use Dedicated Tools
 
 ```bash
 # TruffleHog (recommended)
@@ -320,12 +320,12 @@ workflows:
 
 ### Severity Levels
 
-| Level | Action | Timeline |
-|-------|--------|----------|
-| **Critical** | Block merge, fix immediately | Hours |
-| **High** | Should fix before merge | Days |
-| **Medium** | Plan to fix | Sprint |
-| **Low** | Track, fix opportunistically | Backlog |
+| Level        | Action                       | Timeline |
+| ------------ | ---------------------------- | -------- |
+| **Critical** | Block merge, fix immediately | Hours    |
+| **High**     | Should fix before merge      | Days     |
+| **Medium**   | Plan to fix                  | Sprint   |
+| **Low**      | Track, fix opportunistically | Backlog  |
 
 ### Common False Positives
 
@@ -348,20 +348,23 @@ workflows:
 ## Scan Results Triage
 
 ### Confirmed Issues
-| Finding | Severity | File | Action |
-|---------|----------|------|--------|
+
+| Finding           | Severity | File         | Action             |
+| ----------------- | -------- | ------------ | ------------------ |
 | Hardcoded API key | Critical | config.js:42 | Remove, rotate key |
-| lodash CVE | High | package.json | Update to 4.17.21 |
+| lodash CVE        | High     | package.json | Update to 4.17.21  |
 
 ### False Positives
-| Finding | Reason | Action |
-|---------|--------|--------|
-| test_api_key | Test fixture | Add to .gitleaksignore |
-| dev dependency CVE | Not in prod | Document acceptance |
+
+| Finding            | Reason       | Action                 |
+| ------------------ | ------------ | ---------------------- |
+| test_api_key       | Test fixture | Add to .gitleaksignore |
+| dev dependency CVE | Not in prod  | Document acceptance    |
 
 ### Accepted Risks
-| Finding | Justification | Reviewer |
-|---------|---------------|----------|
+
+| Finding             | Justification     | Reviewer  |
+| ------------------- | ----------------- | --------- |
 | Low CVE in CLI tool | Internal use only | @security |
 ```
 

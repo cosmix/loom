@@ -234,11 +234,11 @@ async function fetchAll<T>(urls: string[]): Promise<T[]> {
 // Promise.allSettled for fault tolerance
 async function fetchAllSafe<T>(urls: string[]): Promise<Array<T | Error>> {
   const results = await Promise.allSettled(
-    urls.map((url) => fetch(url).then((r) => r.json()))
+    urls.map((url) => fetch(url).then((r) => r.json())),
   );
 
   return results.map((result) =>
-    result.status === "fulfilled" ? result.value : new Error(result.reason)
+    result.status === "fulfilled" ? result.value : new Error(result.reason),
   );
 }
 
@@ -246,7 +246,7 @@ async function fetchAllSafe<T>(urls: string[]): Promise<Array<T | Error>> {
 async function fetchWithConcurrencyLimit<T>(
   items: string[],
   fn: (item: string) => Promise<T>,
-  limit: number
+  limit: number,
 ): Promise<T[]> {
   const results: T[] = [];
   const executing: Promise<void>[] = [];
@@ -261,7 +261,7 @@ async function fetchWithConcurrencyLimit<T>(
       await Promise.race(executing);
       executing.splice(
         executing.findIndex((e) => e === p),
-        1
+        1,
       );
     }
   }

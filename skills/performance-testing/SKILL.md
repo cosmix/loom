@@ -26,67 +26,67 @@ Use this skill when you need to:
 
 ### Load Test Types
 
-| Test Type | Purpose | Pattern | When to Use |
-|-----------|---------|---------|-------------|
-| **Load Test** | Validate performance under expected load | Constant VUs over time | Establish baseline performance |
-| **Stress Test** | Find breaking point | Gradual ramp-up until failure | Determine system limits |
-| **Spike Test** | Test sudden traffic bursts | Rapid increase to high load | Validate autoscaling, caching |
-| **Soak Test** | Detect memory leaks, degradation | Moderate load for extended time (hours) | Production readiness |
-| **Breakpoint Test** | Find maximum capacity | Incremental load increases | Capacity planning |
+| Test Type           | Purpose                                  | Pattern                                 | When to Use                    |
+| ------------------- | ---------------------------------------- | --------------------------------------- | ------------------------------ |
+| **Load Test**       | Validate performance under expected load | Constant VUs over time                  | Establish baseline performance |
+| **Stress Test**     | Find breaking point                      | Gradual ramp-up until failure           | Determine system limits        |
+| **Spike Test**      | Test sudden traffic bursts               | Rapid increase to high load             | Validate autoscaling, caching  |
+| **Soak Test**       | Detect memory leaks, degradation         | Moderate load for extended time (hours) | Production readiness           |
+| **Breakpoint Test** | Find maximum capacity                    | Incremental load increases              | Capacity planning              |
 
 ### k6 Test Patterns
 
-**Pattern: Baseline Load Test**
+#### Pattern: Baseline Load Test
 
 ```javascript
 export const options = {
   vus: 50,
-  duration: '5m',
+  duration: "5m",
   thresholds: {
-    http_req_duration: ['p(95)<500'],
+    http_req_duration: ["p(95)<500"],
   },
 };
 ```
 
-**Pattern: Stress Test (Find Breaking Point)**
+#### Pattern: Stress Test (Find Breaking Point)
 
 ```javascript
 export const options = {
   stages: [
-    { duration: '2m', target: 100 },
-    { duration: '5m', target: 100 },
-    { duration: '2m', target: 200 },
-    { duration: '5m', target: 200 },
-    { duration: '2m', target: 300 },
-    { duration: '5m', target: 300 },
-    { duration: '5m', target: 0 },
+    { duration: "2m", target: 100 },
+    { duration: "5m", target: 100 },
+    { duration: "2m", target: 200 },
+    { duration: "5m", target: 200 },
+    { duration: "2m", target: 300 },
+    { duration: "5m", target: 300 },
+    { duration: "5m", target: 0 },
   ],
 };
 ```
 
-**Pattern: Spike Test**
+#### Pattern: Spike Test
 
 ```javascript
 export const options = {
   stages: [
-    { duration: '30s', target: 50 },   // Normal load
-    { duration: '10s', target: 500 },  // Spike!
-    { duration: '1m', target: 500 },   // Hold spike
-    { duration: '10s', target: 50 },   // Drop
-    { duration: '1m', target: 50 },    // Recovery
+    { duration: "30s", target: 50 }, // Normal load
+    { duration: "10s", target: 500 }, // Spike!
+    { duration: "1m", target: 500 }, // Hold spike
+    { duration: "10s", target: 50 }, // Drop
+    { duration: "1m", target: 50 }, // Recovery
   ],
 };
 ```
 
-**Pattern: Soak Test (Memory Leaks)**
+#### Pattern: Soak Test (Memory Leaks)
 
 ```javascript
 export const options = {
   vus: 100,
-  duration: '4h',  // Extended duration
+  duration: "4h", // Extended duration
   thresholds: {
-    http_req_duration: ['p(95)<500'],
-    http_req_failed: ['rate<0.01'],
+    http_req_duration: ["p(95)<500"],
+    http_req_failed: ["rate<0.01"],
   },
 };
 ```
@@ -338,76 +338,80 @@ artillery report report.json --output report.html
 
 ```javascript
 // k6 API load test with authentication and data variation
-import http from 'k6/http';
-import { check, sleep } from 'k6';
-import { SharedArray } from 'k6/data';
-import { randomIntBetween } from 'k6/x/util';
+import http from "k6/http";
+import { check, sleep } from "k6";
+import { SharedArray } from "k6/data";
+import { randomIntBetween } from "k6/x/util";
 
 // Load test data from CSV
-const testData = new SharedArray('users', function () {
-  return JSON.parse(open('./test-data.json'));
+const testData = new SharedArray("users", function () {
+  return JSON.parse(open("./test-data.json"));
 });
 
 export const options = {
   scenarios: {
     // Read-heavy workload (70% reads)
     reads: {
-      executor: 'constant-arrival-rate',
+      executor: "constant-arrival-rate",
       rate: 700,
-      timeUnit: '1s',
-      duration: '5m',
+      timeUnit: "1s",
+      duration: "5m",
       preAllocatedVUs: 50,
       maxVUs: 200,
-      exec: 'readScenario',
+      exec: "readScenario",
     },
     // Write workload (30% writes)
     writes: {
-      executor: 'constant-arrival-rate',
+      executor: "constant-arrival-rate",
       rate: 300,
-      timeUnit: '1s',
-      duration: '5m',
+      timeUnit: "1s",
+      duration: "5m",
       preAllocatedVUs: 30,
       maxVUs: 100,
-      exec: 'writeScenario',
+      exec: "writeScenario",
     },
   },
   thresholds: {
-    'http_req_duration{scenario:reads}': ['p(95)<200', 'p(99)<500'],
-    'http_req_duration{scenario:writes}': ['p(95)<500', 'p(99)<1000'],
-    'http_req_failed': ['rate<0.01'],
+    "http_req_duration{scenario:reads}": ["p(95)<200", "p(99)<500"],
+    "http_req_duration{scenario:writes}": ["p(95)<500", "p(99)<1000"],
+    http_req_failed: ["rate<0.01"],
   },
 };
 
 let authToken;
 
 export function setup() {
-  const loginRes = http.post(`${__ENV.API_URL}/auth/login`, JSON.stringify({
-    email: 'loadtest@example.com',
-    password: 'test123',
-  }), {
-    headers: { 'Content-Type': 'application/json' },
-  });
+  const loginRes = http.post(
+    `${__ENV.API_URL}/auth/login`,
+    JSON.stringify({
+      email: "loadtest@example.com",
+      password: "test123",
+    }),
+    {
+      headers: { "Content-Type": "application/json" },
+    },
+  );
 
-  return { token: loginRes.json('token') };
+  return { token: loginRes.json("token") };
 }
 
 export function readScenario(data) {
   const headers = {
-    'Authorization': `Bearer ${data.token}`,
-    'Content-Type': 'application/json',
+    Authorization: `Bearer ${data.token}`,
+    "Content-Type": "application/json",
   };
 
   // GET request with query parameters
   const userId = randomIntBetween(1, 10000);
-  const res = http.get(
-    `${__ENV.API_URL}/api/users/${userId}`,
-    { headers, tags: { name: 'GetUser' } }
-  );
+  const res = http.get(`${__ENV.API_URL}/api/users/${userId}`, {
+    headers,
+    tags: { name: "GetUser" },
+  });
 
   check(res, {
-    'status is 200': (r) => r.status === 200,
-    'has user data': (r) => r.json('id') === userId,
-    'response time OK': (r) => r.timings.duration < 200,
+    "status is 200": (r) => r.status === 200,
+    "has user data": (r) => r.json("id") === userId,
+    "response time OK": (r) => r.timings.duration < 200,
   });
 
   sleep(0.5);
@@ -415,8 +419,8 @@ export function readScenario(data) {
 
 export function writeScenario(data) {
   const headers = {
-    'Authorization': `Bearer ${data.token}`,
-    'Content-Type': 'application/json',
+    Authorization: `Bearer ${data.token}`,
+    "Content-Type": "application/json",
   };
 
   // POST request with dynamic payload
@@ -425,17 +429,15 @@ export function writeScenario(data) {
     `${__ENV.API_URL}/api/orders`,
     JSON.stringify({
       userId: user.id,
-      items: [
-        { productId: randomIntBetween(1, 100), quantity: 1 },
-      ],
+      items: [{ productId: randomIntBetween(1, 100), quantity: 1 }],
       timestamp: new Date().toISOString(),
     }),
-    { headers, tags: { name: 'CreateOrder' } }
+    { headers, tags: { name: "CreateOrder" } },
   );
 
   check(res, {
-    'status is 201': (r) => r.status === 201,
-    'order created': (r) => r.json('id') !== undefined,
+    "status is 201": (r) => r.status === 201,
+    "order created": (r) => r.json("id") !== undefined,
   });
 
   sleep(1);
@@ -445,10 +447,10 @@ export function writeScenario(data) {
 **GraphQL API Load Testing:**
 
 ```javascript
-import http from 'k6/http';
-import { check } from 'k6';
+import http from "k6/http";
+import { check } from "k6";
 
-export default function() {
+export default function () {
   const query = `
     query GetUserWithOrders($userId: ID!) {
       user(id: $userId) {
@@ -470,19 +472,23 @@ export default function() {
     userId: `${__VU}`,
   };
 
-  const res = http.post('https://api.example.com/graphql', JSON.stringify({
-    query,
-    variables,
-  }), {
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${__ENV.TOKEN}`,
+  const res = http.post(
+    "https://api.example.com/graphql",
+    JSON.stringify({
+      query,
+      variables,
+    }),
+    {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${__ENV.TOKEN}`,
+      },
     },
-  });
+  );
 
   check(res, {
-    'no GraphQL errors': (r) => !r.json('errors'),
-    'user data present': (r) => r.json('data.user.id') === variables.userId,
+    "no GraphQL errors": (r) => !r.json("errors"),
+    "user data present": (r) => r.json("data.user.id") === variables.userId,
   });
 }
 ```
@@ -490,28 +496,28 @@ export default function() {
 **WebSocket Load Testing:**
 
 ```javascript
-import ws from 'k6/ws';
-import { check } from 'k6';
+import ws from "k6/ws";
+import { check } from "k6";
 
-export default function() {
-  const url = 'wss://api.example.com/ws';
-  const params = { tags: { my_tag: 'websocket' } };
+export default function () {
+  const url = "wss://api.example.com/ws";
+  const params = { tags: { my_tag: "websocket" } };
 
   const res = ws.connect(url, params, function (socket) {
-    socket.on('open', () => {
-      console.log('Connected');
-      socket.send(JSON.stringify({ type: 'subscribe', channel: 'updates' }));
+    socket.on("open", () => {
+      console.log("Connected");
+      socket.send(JSON.stringify({ type: "subscribe", channel: "updates" }));
     });
 
-    socket.on('message', (data) => {
+    socket.on("message", (data) => {
       const msg = JSON.parse(data);
       check(msg, {
-        'valid message': (m) => m.type !== undefined,
+        "valid message": (m) => m.type !== undefined,
       });
     });
 
-    socket.on('error', (e) => {
-      console.log('Error:', e.error());
+    socket.on("error", (e) => {
+      console.log("Error:", e.error());
     });
 
     socket.setTimeout(() => {
@@ -519,7 +525,7 @@ export default function() {
     }, 60000);
   });
 
-  check(res, { 'status is 101': (r) => r && r.status === 101 });
+  check(res, { "status is 101": (r) => r && r.status === 101 });
 }
 ```
 
@@ -529,8 +535,8 @@ export default function() {
 
 ```typescript
 // database-perf-test.ts
-import { performance } from 'perf_hooks';
-import { Pool } from 'pg';
+import { performance } from "perf_hooks";
+import { Pool } from "pg";
 
 interface QueryBenchmark {
   query: string;
@@ -550,7 +556,7 @@ async function benchmarkQuery(
   pool: Pool,
   query: string,
   params: any[] = [],
-  iterations: number = 100
+  iterations: number = 100,
 ): Promise<QueryBenchmark> {
   const timings: number[] = [];
 
@@ -585,21 +591,23 @@ async function benchmarkQuery(
 
 // Compare query performance
 async function compareQueries() {
-  const pool = new Pool({ /* config */ });
+  const pool = new Pool({
+    /* config */
+  });
 
   const queries = [
     {
-      name: 'Without Index',
-      sql: 'SELECT * FROM users WHERE email = $1',
-      params: ['test@example.com'],
+      name: "Without Index",
+      sql: "SELECT * FROM users WHERE email = $1",
+      params: ["test@example.com"],
     },
     {
-      name: 'With Index',
-      sql: 'SELECT * FROM users WHERE id = $1',
+      name: "With Index",
+      sql: "SELECT * FROM users WHERE id = $1",
       params: [1],
     },
     {
-      name: 'Complex Join',
+      name: "Complex Join",
       sql: `
         SELECT u.*, COUNT(o.id) as order_count
         FROM users u
@@ -608,7 +616,7 @@ async function compareQueries() {
         GROUP BY u.id
         LIMIT 100
       `,
-      params: ['2024-01-01'],
+      params: ["2024-01-01"],
     },
   ];
 
@@ -626,13 +634,13 @@ async function compareQueries() {
 
 ```typescript
 // connection-pool-test.ts
-import { Pool } from 'pg';
-import { performance } from 'perf_hooks';
+import { Pool } from "pg";
+import { performance } from "perf_hooks";
 
 async function testConnectionPool(
   poolSize: number,
   concurrentQueries: number,
-  duration: number
+  duration: number,
 ) {
   const pool = new Pool({
     max: poolSize,
@@ -652,24 +660,26 @@ async function testConnectionPool(
   const workers: Promise<void>[] = [];
 
   for (let i = 0; i < concurrentQueries; i++) {
-    workers.push((async () => {
-      while (Date.now() - startTime < duration) {
-        try {
-          const start = performance.now();
-          await pool.query('SELECT 1');
-          const elapsed = performance.now() - start;
+    workers.push(
+      (async () => {
+        while (Date.now() - startTime < duration) {
+          try {
+            const start = performance.now();
+            await pool.query("SELECT 1");
+            const elapsed = performance.now() - start;
 
-          stats.queryTimes.push(elapsed);
-          stats.successfulQueries++;
-        } catch (err) {
-          stats.failedQueries++;
-          if (err.message.includes('timeout')) {
-            stats.timeouts++;
+            stats.queryTimes.push(elapsed);
+            stats.successfulQueries++;
+          } catch (err) {
+            stats.failedQueries++;
+            if (err.message.includes("timeout")) {
+              stats.timeouts++;
+            }
           }
+          stats.totalQueries++;
         }
-        stats.totalQueries++;
-      }
-    })());
+      })(),
+    );
   }
 
   await Promise.all(workers);
@@ -682,7 +692,8 @@ async function testConnectionPool(
     concurrentQueries,
     duration,
     ...stats,
-    avgQueryTime: stats.queryTimes.reduce((a, b) => a + b, 0) / stats.queryTimes.length,
+    avgQueryTime:
+      stats.queryTimes.reduce((a, b) => a + b, 0) / stats.queryTimes.length,
     p95QueryTime: stats.queryTimes[Math.floor(stats.queryTimes.length * 0.95)],
     qps: stats.successfulQueries / (duration / 1000),
   };
@@ -720,7 +731,9 @@ class QueryTracker {
     this.queries.set(normalized, (this.queries.get(normalized) || 0) + 1);
   }
 
-  detectNPlusOne(threshold: number = 10): Array<{ query: string; count: number }> {
+  detectNPlusOne(
+    threshold: number = 10,
+  ): Array<{ query: string; count: number }> {
     const suspicious: Array<{ query: string; count: number }> = [];
 
     for (const [query, count] of this.queries.entries()) {
@@ -735,9 +748,9 @@ class QueryTracker {
   private normalizeSql(sql: string): string {
     // Replace literals with placeholders for comparison
     return sql
-      .replace(/\d+/g, '?')
-      .replace(/'[^']*'/g, '?')
-      .replace(/\s+/g, ' ')
+      .replace(/\d+/g, "?")
+      .replace(/'[^']*'/g, "?")
+      .replace(/\s+/g, " ")
       .trim();
   }
 
@@ -747,10 +760,12 @@ class QueryTracker {
 
     console.log(`\nQuery Analysis (${duration}ms):`);
     console.log(`Total unique queries: ${this.queries.size}`);
-    console.log(`Total query executions: ${Array.from(this.queries.values()).reduce((a, b) => a + b, 0)}`);
+    console.log(
+      `Total query executions: ${Array.from(this.queries.values()).reduce((a, b) => a + b, 0)}`,
+    );
 
     if (nPlusOne.length > 0) {
-      console.log('\nPotential N+1 Queries:');
+      console.log("\nPotential N+1 Queries:");
       console.table(nPlusOne);
     }
   }
@@ -1319,7 +1334,7 @@ WHERE NOT blocked_locks.granted;
 
 ```typescript
 // test-data-generator.ts
-import { faker } from '@faker-js/faker';
+import { faker } from "@faker-js/faker";
 
 interface TestUser {
   id: number;
@@ -1336,9 +1351,9 @@ function generateUsers(count: number): TestUser[] {
     name: faker.person.fullName(),
     createdAt: faker.date.past({ years: 2 }),
     preferences: {
-      theme: faker.helpers.arrayElement(['light', 'dark']),
+      theme: faker.helpers.arrayElement(["light", "dark"]),
       notifications: faker.datatype.boolean(),
-      language: faker.helpers.arrayElement(['en', 'es', 'fr', 'de']),
+      language: faker.helpers.arrayElement(["en", "es", "fr", "de"]),
     },
   }));
 }
@@ -1381,7 +1396,12 @@ function generateOrder(userId: number, orderId: number) {
       quantity: faker.number.int({ min: 1, max: 5 }),
       price: parseFloat(faker.commerce.price()),
     })),
-    status: faker.helpers.arrayElement(['pending', 'processing', 'shipped', 'delivered']),
+    status: faker.helpers.arrayElement([
+      "pending",
+      "processing",
+      "shipped",
+      "delivered",
+    ]),
     createdAt: faker.date.recent({ days: 90 }),
   };
 }
@@ -1391,60 +1411,60 @@ function generateOrder(userId: number, orderId: number) {
 
 ```javascript
 // k6 realistic traffic patterns
-import http from 'k6/http';
-import { sleep } from 'k6';
+import http from "k6/http";
+import { sleep } from "k6";
 
 export const options = {
   scenarios: {
     // Morning traffic spike (9am)
     morning_spike: {
-      executor: 'ramping-arrival-rate',
+      executor: "ramping-arrival-rate",
       startRate: 10,
-      timeUnit: '1s',
+      timeUnit: "1s",
       preAllocatedVUs: 50,
       maxVUs: 200,
       stages: [
-        { duration: '5m', target: 50 },   // Ramp up
-        { duration: '10m', target: 50 },  // Sustained
-        { duration: '5m', target: 10 },   // Ramp down
+        { duration: "5m", target: 50 }, // Ramp up
+        { duration: "10m", target: 50 }, // Sustained
+        { duration: "5m", target: 10 }, // Ramp down
       ],
-      startTime: '0s',
+      startTime: "0s",
     },
     // Lunch traffic (12pm)
     lunch_traffic: {
-      executor: 'constant-arrival-rate',
+      executor: "constant-arrival-rate",
       rate: 30,
-      timeUnit: '1s',
-      duration: '30m',
+      timeUnit: "1s",
+      duration: "30m",
       preAllocatedVUs: 100,
       maxVUs: 150,
-      startTime: '20m',
+      startTime: "20m",
     },
     // Evening spike (6pm)
     evening_spike: {
-      executor: 'ramping-arrival-rate',
+      executor: "ramping-arrival-rate",
       startRate: 10,
-      timeUnit: '1s',
+      timeUnit: "1s",
       preAllocatedVUs: 50,
       maxVUs: 300,
       stages: [
-        { duration: '5m', target: 100 },
-        { duration: '15m', target: 100 },
-        { duration: '5m', target: 10 },
+        { duration: "5m", target: 100 },
+        { duration: "15m", target: 100 },
+        { duration: "5m", target: 10 },
       ],
-      startTime: '50m',
+      startTime: "50m",
     },
     // Background jobs (constant low load)
     background_jobs: {
-      executor: 'constant-vus',
+      executor: "constant-vus",
       vus: 5,
-      duration: '2h',
-      exec: 'backgroundJob',
+      duration: "2h",
+      exec: "backgroundJob",
     },
   },
 };
 
-export default function() {
+export default function () {
   // Simulate different user behaviors
   const userType = Math.random();
 
@@ -1452,7 +1472,9 @@ export default function() {
     // 60% - Browsers (fast, many requests)
     http.get(`${__ENV.API_URL}/api/products`);
     sleep(0.5);
-    http.get(`${__ENV.API_URL}/api/products/${Math.floor(Math.random() * 100)}`);
+    http.get(
+      `${__ENV.API_URL}/api/products/${Math.floor(Math.random() * 100)}`,
+    );
     sleep(0.5);
   } else if (userType < 0.9) {
     // 30% - Regular users (moderate pace)
@@ -1462,45 +1484,54 @@ export default function() {
     sleep(3);
   } else {
     // 10% - Power users (complex operations)
-    http.post(`${__ENV.API_URL}/api/orders`, JSON.stringify({
-      items: [{ productId: 1, quantity: 1 }],
-    }), {
-      headers: { 'Content-Type': 'application/json' },
-    });
+    http.post(
+      `${__ENV.API_URL}/api/orders`,
+      JSON.stringify({
+        items: [{ productId: 1, quantity: 1 }],
+      }),
+      {
+        headers: { "Content-Type": "application/json" },
+      },
+    );
     sleep(5);
   }
 }
 
 export function backgroundJob() {
   // Simulate cron jobs, workers
-  http.post(`${__ENV.API_URL}/internal/process-batch`, JSON.stringify({
-    batchId: Math.floor(Math.random() * 1000),
-  }), {
-    headers: { 'Content-Type': 'application/json' },
-  });
-  sleep(60);  // Every minute
+  http.post(
+    `${__ENV.API_URL}/internal/process-batch`,
+    JSON.stringify({
+      batchId: Math.floor(Math.random() * 1000),
+    }),
+    {
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+  sleep(60); // Every minute
 }
 ```
 
 **Think Time and User Behavior:**
 
 ```javascript
-import { sleep } from 'k6';
-import { randomIntBetween } from 'https://jslib.k6.io/k6-utils/1.2.0/index.js';
+import { sleep } from "k6";
+import { randomIntBetween } from "https://jslib.k6.io/k6-utils/1.2.0/index.js";
 
 // Human-like think time
 function thinkTime() {
   // Normal distribution around 2 seconds
   const mean = 2;
   const stdDev = 0.5;
-  const time = mean + stdDev * (Math.random() + Math.random() + Math.random() - 1.5);
+  const time =
+    mean + stdDev * (Math.random() + Math.random() + Math.random() - 1.5);
   sleep(Math.max(0.5, time));
 }
 
 // Simulate user session
-export default function() {
+export default function () {
   // Login
-  http.post(`${__ENV.API_URL}/auth/login`, /* ... */);
+  http.post(`${__ENV.API_URL}/auth/login` /* ... */);
   thinkTime();
 
   // Browse products (3-7 pages)
@@ -1512,13 +1543,13 @@ export default function() {
 
   // 30% add to cart
   if (Math.random() < 0.3) {
-    http.post(`${__ENV.API_URL}/api/cart`, /* ... */);
+    http.post(`${__ENV.API_URL}/api/cart` /* ... */);
     thinkTime();
 
     // 50% of those who add to cart complete checkout
     if (Math.random() < 0.5) {
-      http.post(`${__ENV.API_URL}/api/orders`, /* ... */);
-      sleep(3);  // Checkout takes longer
+      http.post(`${__ENV.API_URL}/api/orders` /* ... */);
+      sleep(3); // Checkout takes longer
     }
   }
 
@@ -1532,42 +1563,44 @@ export default function() {
 **Edge Cases and Error Scenarios:**
 
 ```javascript
-import http from 'k6/http';
-import { check } from 'k6';
+import http from "k6/http";
+import { check } from "k6";
 
-export default function() {
+export default function () {
   const scenarios = [
     // Happy path (70%)
     () => {
       const res = http.get(`${__ENV.API_URL}/api/products`);
-      check(res, { 'status is 200': (r) => r.status === 200 });
+      check(res, { "status is 200": (r) => r.status === 200 });
     },
     // Large payload (10%)
     () => {
       const res = http.get(`${__ENV.API_URL}/api/products?limit=1000`);
-      check(res, { 'handles large response': (r) => r.status === 200 });
+      check(res, { "handles large response": (r) => r.status === 200 });
     },
     // Invalid input (10%)
     () => {
       const res = http.get(`${__ENV.API_URL}/api/products/-1`);
-      check(res, { 'handles invalid ID': (r) => r.status === 400 });
+      check(res, { "handles invalid ID": (r) => r.status === 400 });
     },
     // Not found (5%)
     () => {
       const res = http.get(`${__ENV.API_URL}/api/products/999999`);
-      check(res, { 'handles not found': (r) => r.status === 404 });
+      check(res, { "handles not found": (r) => r.status === 404 });
     },
     // Timeout scenario (3%)
     () => {
       const res = http.get(`${__ENV.API_URL}/api/slow-endpoint`, {
-        timeout: '5s',
+        timeout: "5s",
       });
-      check(res, { 'handles timeout': (r) => r.status === 200 || r.error });
+      check(res, { "handles timeout": (r) => r.status === 200 || r.error });
     },
     // Unauthorized (2%)
     () => {
       const res = http.get(`${__ENV.API_URL}/api/admin/users`);
-      check(res, { 'enforces auth': (r) => r.status === 401 || r.status === 403 });
+      check(res, {
+        "enforces auth": (r) => r.status === 401 || r.status === 403,
+      });
     },
   ];
 
@@ -1656,25 +1689,25 @@ export default function() {
 ### Optimization and Iteration
 
 1. **Follow Scientific Method**
-    - Form hypothesis before optimization ("I think X is slow because Y")
-    - Change one variable at a time
-    - Measure impact with load tests before and after
-    - Document failed attempts (what didn't work and why)
-    - Validate optimizations don't break functionality
+   - Form hypothesis before optimization ("I think X is slow because Y")
+   - Change one variable at a time
+   - Measure impact with load tests before and after
+   - Document failed attempts (what didn't work and why)
+   - Validate optimizations don't break functionality
 
 2. **Set and Enforce Performance Budgets**
-    - Define acceptable latency targets per endpoint
-    - Set throughput requirements (RPS, concurrent users)
-    - Establish error rate thresholds
-    - Block deployments that violate budgets
-    - Review and adjust budgets quarterly based on business needs
+   - Define acceptable latency targets per endpoint
+   - Set throughput requirements (RPS, concurrent users)
+   - Establish error rate thresholds
+   - Block deployments that violate budgets
+   - Review and adjust budgets quarterly based on business needs
 
 3. **Test Database Performance Separately**
-    - Isolate database bottlenecks from application issues
-    - Benchmark queries under load (not just in dev)
-    - Test connection pool exhaustion scenarios
-    - Validate index effectiveness with production data volumes
-    - Monitor slow query logs during load tests
+   - Isolate database bottlenecks from application issues
+   - Benchmark queries under load (not just in dev)
+   - Test connection pool exhaustion scenarios
+   - Validate index effectiveness with production data volumes
+   - Monitor slow query logs during load tests
 
 ## Examples
 

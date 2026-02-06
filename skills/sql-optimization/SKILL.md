@@ -113,7 +113,7 @@ SHOW random_page_cost;      -- Lower for SSDs (1.1-2.0)
 
 ## Common Anti-Patterns
 
-### 1. SELECT * in Application Code
+### 1. SELECT \* in Application Code
 
 ```sql
 -- BAD: Fetches unnecessary columns

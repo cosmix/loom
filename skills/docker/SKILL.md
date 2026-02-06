@@ -142,10 +142,10 @@ Before creating container configurations:
 
 #### Interactive Debugging
 
-- **Shell Access**: docker exec -it <container> /bin/sh
+- **Shell Access**: docker exec -it `<container>` /bin/sh
 - **Debug Images**: Temporarily use non-minimal base for troubleshooting
 - **Ephemeral Containers**: Use debug sidecars in Kubernetes
-- **Log Inspection**: docker logs -f --tail 100 <container>
+- **Log Inspection**: docker logs -f --tail 100 `<container>`
 
 #### Common Issues
 

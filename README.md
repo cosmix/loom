@@ -313,13 +313,13 @@ This auto-detects your project type (Rust, Node, Python) and outputs recommended
 
 **Key sandbox options:**
 
-| Option | Description |
-|--------|-------------|
-| `filesystem.deny_read` | Paths agents cannot read (e.g., SSH keys, credentials) |
-| `filesystem.deny_write` | Paths agents cannot write |
-| `filesystem.allow_write` | Exceptions to write restrictions |
-| `network.allowed_domains` | Domains agents can access (empty = no network) |
-| `excluded_commands` | Commands exempt from sandboxing (default: `["loom"]`) |
+| Option                       | Description                                              |
+| ---------------------------- | -------------------------------------------------------- |
+| `filesystem.deny_read`       | Paths agents cannot read (e.g., SSH keys, credentials)   |
+| `filesystem.deny_write`      | Paths agents cannot write                                |
+| `filesystem.allow_write`     | Exceptions to write restrictions                         |
+| `network.allowed_domains`    | Domains agents can access (empty = no network)           |
+| `excluded_commands`          | Commands exempt from sandboxing (default: `["loom"]`)    |
 
 Stages can override plan-level settings with their own `sandbox` block. Knowledge and integration-verify stages automatically get write access to `doc/loom/knowledge/**`.
 

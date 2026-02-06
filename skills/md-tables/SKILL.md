@@ -22,19 +22,19 @@ python fix-md-tables.py document.md -i
 **Status tables:**
 
 ```markdown
-| Stage    | Status    | Branch       |
-| -------- | --------- | ------------ |
-| build    | Complete  | loom/build   |
-| test     | Executing | loom/test    |
+| Stage | Status    | Branch     |
+| ----- | --------- | ---------- |
+| build | Complete  | loom/build |
+| test  | Executing | loom/test  |
 ```
 
 **Configuration tables:**
 
 ```markdown
-| Option      | Default | Description           |
-| ----------- | ------- | --------------------- |
-| timeout     | 300     | Session timeout (sec) |
-| auto_merge  | false   | Enable auto merging   |
+| Option     | Default | Description           |
+| ---------- | ------- | --------------------- |
+| timeout    | 300     | Session timeout (sec) |
+| auto_merge | false   | Enable auto merging   |
 ```
 
 **Right-aligned numbers:**

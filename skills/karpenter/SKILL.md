@@ -906,25 +906,21 @@ resource "kubectl_manifest" "karpenter_nodepool_default" {
 ## Migration from Cluster Autoscaler
 
 1. **Plan the migration**
-
    - Identify current node groups and their characteristics
    - Map workloads to new NodePool configurations
    - Plan for coexistence period
 
 2. **Deploy Karpenter alongside Cluster Autoscaler**
-
    - Install Karpenter in the cluster
    - Create NodePools with distinct labels
    - Test with non-critical workloads first
 
 3. **Migrate workloads incrementally**
-
    - Update pod specs with Karpenter tolerations/node selectors
    - Monitor provisioning and consolidation behavior
    - Validate cost and performance metrics
 
 4. **Remove Cluster Autoscaler**
-
    - Once all workloads migrated, scale down CA node groups
    - Remove Cluster Autoscaler deployment
    - Clean up CA-specific resources

@@ -642,11 +642,11 @@ Prometheus supports multiple service discovery mechanisms for dynamic environmen
 
 ```yaml
 scrape_configs:
-  - job_name: 'static-targets'
+  - job_name: "static-targets"
     static_configs:
       - targets:
-          - 'host1:9100'
-          - 'host2:9100'
+          - "host1:9100"
+          - "host2:9100"
         labels:
           env: production
           region: us-east-1
@@ -680,7 +680,7 @@ scrape_configs:
 ```yaml
 scrape_configs:
   # Pod-based discovery
-  - job_name: 'kubernetes-pods'
+  - job_name: "kubernetes-pods"
     kubernetes_sd_configs:
       - role: pod
         namespaces:
@@ -700,7 +700,8 @@ scrape_configs:
         regex: (.+)
 
       # Extract custom port from annotation
-      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+      - source_labels:
+          [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
         action: replace
         regex: ([^:]+)(?::\d+)?;(\d+)
         replacement: $1:$2
@@ -715,14 +716,16 @@ scrape_configs:
         target_label: kubernetes_pod_name
 
   # Service-based discovery
-  - job_name: 'kubernetes-services'
+  - job_name: "kubernetes-services"
     kubernetes_sd_configs:
       - role: service
     relabel_configs:
-      - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+      - source_labels:
+          [__meta_kubernetes_service_annotation_prometheus_io_scrape]
         action: keep
         regex: true
-      - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
+      - source_labels:
+          [__meta_kubernetes_service_annotation_prometheus_io_scheme]
         action: replace
         target_label: __scheme__
         regex: (https?)
@@ -732,7 +735,7 @@ scrape_configs:
         regex: (.+)
 
   # Node-based discovery (for node exporters)
-  - job_name: 'kubernetes-nodes'
+  - job_name: "kubernetes-nodes"
     kubernetes_sd_configs:
       - role: node
     relabel_configs:
@@ -746,11 +749,12 @@ scrape_configs:
         replacement: /api/v1/nodes/${1}/proxy/metrics
 
   # Endpoints discovery (for service endpoints)
-  - job_name: 'kubernetes-endpoints'
+  - job_name: "kubernetes-endpoints"
     kubernetes_sd_configs:
       - role: endpoints
     relabel_configs:
-      - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+      - source_labels:
+          [__meta_kubernetes_service_annotation_prometheus_io_scrape]
         action: keep
         regex: true
       - source_labels: [__meta_kubernetes_endpoint_port_name]
@@ -762,12 +766,12 @@ scrape_configs:
 
 ```yaml
 scrape_configs:
-  - job_name: 'consul-services'
+  - job_name: "consul-services"
     consul_sd_configs:
-      - server: 'consul.example.com:8500'
-        datacenter: 'dc1'
-        services: ['web', 'api', 'cache']
-        tags: ['production']
+      - server: "consul.example.com:8500"
+        datacenter: "dc1"
+        services: ["web", "api", "cache"]
+        tags: ["production"]
     relabel_configs:
       - source_labels: [__meta_consul_service]
         target_label: service
@@ -779,7 +783,7 @@ scrape_configs:
 
 ```yaml
 scrape_configs:
-  - job_name: 'ec2-instances'
+  - job_name: "ec2-instances"
     ec2_sd_configs:
       - region: us-east-1
         access_key: YOUR_ACCESS_KEY
@@ -803,11 +807,11 @@ scrape_configs:
 
 ```yaml
 scrape_configs:
-  - job_name: 'dns-srv-records'
+  - job_name: "dns-srv-records"
     dns_sd_configs:
       - names:
-          - '_prometheus._tcp.example.com'
-        type: 'SRV'
+          - "_prometheus._tcp.example.com"
+        type: "SRV"
         refresh_interval: 30s
     relabel_configs:
       - source_labels: [__meta_dns_name]
@@ -816,15 +820,15 @@ scrape_configs:
 
 ### Relabeling Actions Reference
 
-| Action | Description | Use Case |
-|--------|-------------|----------|
-| `keep` | Keep targets where regex matches source labels | Filter targets by annotation/label |
-| `drop` | Drop targets where regex matches source labels | Exclude specific targets |
-| `replace` | Replace target label with value from source labels | Extract custom labels/paths/ports |
-| `labelmap` | Map source label names to target labels via regex | Copy all Kubernetes labels |
-| `labeldrop` | Drop labels matching regex | Remove internal metadata labels |
-| `labelkeep` | Keep only labels matching regex | Reduce cardinality |
-| `hashmod` | Set target label to hash of source labels modulo N | Sharding/routing |
+| Action      | Description                                        | Use Case                           |
+| ----------- | -------------------------------------------------- | ---------------------------------- |
+| `keep`      | Keep targets where regex matches source labels     | Filter targets by annotation/label |
+| `drop`      | Drop targets where regex matches source labels     | Exclude specific targets           |
+| `replace`   | Replace target label with value from source labels | Extract custom labels/paths/ports  |
+| `labelmap`  | Map source label names to target labels via regex  | Copy all Kubernetes labels         |
+| `labeldrop` | Drop labels matching regex                         | Remove internal metadata labels    |
+| `labelkeep` | Keep only labels matching regex                    | Reduce cardinality                 |
+| `hashmod`   | Set target label to hash of source labels modulo N | Sharding/routing                   |
 
 ## High Availability and Scalability
 
@@ -835,7 +839,7 @@ scrape_configs:
 # Use external labels to distinguish instances
 global:
   external_labels:
-    replica: prometheus-1  # Change to prometheus-2, etc.
+    replica: prometheus-1 # Change to prometheus-2, etc.
     cluster: production
 
 # Alertmanager will deduplicate alerts from multiple Prometheus instances
@@ -856,17 +860,17 @@ global:
   resolve_timeout: 5m
 
 route:
-  receiver: 'default'
-  group_by: ['alertname', 'cluster']
+  receiver: "default"
+  group_by: ["alertname", "cluster"]
   group_wait: 10s
   group_interval: 10s
   repeat_interval: 12h
 
 receivers:
-  - name: 'default'
+  - name: "default"
     slack_configs:
-      - api_url: 'https://hooks.slack.com/services/YOUR/WEBHOOK'
-        channel: '#alerts'
+      - api_url: "https://hooks.slack.com/services/YOUR/WEBHOOK"
+        channel: "#alerts"
 
 # Start Alertmanager cluster members
 # alertmanager-1: --cluster.peer=alertmanager-2:9094 --cluster.peer=alertmanager-3:9094
@@ -879,23 +883,23 @@ receivers:
 ```yaml
 # Global Prometheus federating from regional instances
 scrape_configs:
-  - job_name: 'federate'
+  - job_name: "federate"
     scrape_interval: 15s
     honor_labels: true
-    metrics_path: '/federate'
+    metrics_path: "/federate"
     params:
-      'match[]':
+      "match[]":
         # Pull aggregated metrics only
         - '{job="prometheus"}'
-        - '{__name__=~"job:.*"}'  # Recording rules
-        - 'up'
+        - '{__name__=~"job:.*"}' # Recording rules
+        - "up"
     static_configs:
       - targets:
-          - 'prometheus-us-east-1:9090'
-          - 'prometheus-us-west-2:9090'
-          - 'prometheus-eu-west-1:9090'
+          - "prometheus-us-east-1:9090"
+          - "prometheus-us-west-2:9090"
+          - "prometheus-eu-west-1:9090"
         labels:
-          region: 'us-east-1'
+          region: "us-east-1"
 ```
 
 ### Remote Storage for Long-term Retention
@@ -915,7 +919,7 @@ remote_write:
     write_relabel_configs:
       # Drop high-cardinality metrics before remote write
       - source_labels: [__name__]
-        regex: 'go_.*'
+        regex: "go_.*"
         action: drop
 
 # Prometheus remote read from long-term storage
@@ -964,7 +968,7 @@ thanos compact \
 ```yaml
 # Split scrape targets across multiple Prometheus instances using hashmod
 scrape_configs:
-  - job_name: 'kubernetes-pods-shard-0'
+  - job_name: "kubernetes-pods-shard-0"
     kubernetes_sd_configs:
       - role: pod
     relabel_configs:
@@ -977,7 +981,7 @@ scrape_configs:
         regex: "0"
         action: keep
 
-  - job_name: 'kubernetes-pods-shard-1'
+  - job_name: "kubernetes-pods-shard-1"
     kubernetes_sd_configs:
       - role: pod
     relabel_configs:
@@ -1560,23 +1564,23 @@ groups:
 
 ### Metric Naming Best Practices
 
-| Pattern | Good Example | Bad Example |
-|---------|-------------|-------------|
-| Counter suffix | `http_requests_total` | `http_requests` |
-| Base units | `http_request_duration_seconds` | `http_request_duration_ms` |
-| Ratio range | `cache_hit_ratio` (0.0-1.0) | `cache_hit_percentage` (0-100) |
-| Byte units | `response_size_bytes` | `response_size_kb` |
-| Namespace prefix | `myapp_http_requests_total` | `http_requests_total` |
-| Label naming | `{method="GET", status="200"}` | `{httpMethod="GET", statusCode="200"}` |
+| Pattern          | Good Example                    | Bad Example                            |
+| ---------------- | ------------------------------- | -------------------------------------- |
+| Counter suffix   | `http_requests_total`           | `http_requests`                        |
+| Base units       | `http_request_duration_seconds` | `http_request_duration_ms`             |
+| Ratio range      | `cache_hit_ratio` (0.0-1.0)     | `cache_hit_percentage` (0-100)         |
+| Byte units       | `response_size_bytes`           | `response_size_kb`                     |
+| Namespace prefix | `myapp_http_requests_total`     | `http_requests_total`                  |
+| Label naming     | `{method="GET", status="200"}`  | `{httpMethod="GET", statusCode="200"}` |
 
 ### Label Cardinality Guidelines
 
-| Cardinality | Examples | Recommendation |
-|-------------|----------|----------------|
-| Low (<10) | HTTP method, status code, environment | Safe for all labels |
-| Medium (10-100) | API endpoint, service name, pod name | Safe with aggregation |
-| High (100-1000) | Container ID, hostname | Use only when necessary |
-| Unbounded | User ID, IP address, timestamp, URL path | Never use as label |
+| Cardinality     | Examples                                 | Recommendation          |
+| --------------- | ---------------------------------------- | ----------------------- |
+| Low (<10)       | HTTP method, status code, environment    | Safe for all labels     |
+| Medium (10-100) | API endpoint, service name, pod name     | Safe with aggregation   |
+| High (100-1000) | Container ID, hostname                   | Use only when necessary |
+| Unbounded       | User ID, IP address, timestamp, URL path | Never use as label      |
 
 ### Kubernetes Annotation-based Scraping
 
@@ -1604,19 +1608,19 @@ spec:
 ```yaml
 route:
   receiver: default
-  group_by: ['alertname', 'cluster']
+  group_by: ["alertname", "cluster"]
   routes:
     # Critical alerts to PagerDuty
     - match:
         severity: critical
       receiver: pagerduty
-      continue: true  # Also send to default
+      continue: true # Also send to default
 
     # Team-based routing
     - match:
         team: database
       receiver: dba-team
-      group_by: ['alertname', 'instance']
+      group_by: ["alertname", "instance"]
 
     # Environment-based routing
     - match:
@@ -1635,9 +1639,9 @@ time_intervals:
   - name: business-hours
     time_intervals:
       - times:
-          - start_time: '09:00'
-            end_time: '17:00'
-        weekdays: ['monday:friday']
+          - start_time: "09:00"
+            end_time: "17:00"
+        weekdays: ["monday:friday"]
 ```
 
 ## Additional Resources

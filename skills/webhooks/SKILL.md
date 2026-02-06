@@ -133,7 +133,7 @@ class WebhookSigner {
 class WebhookVerifier {
   constructor(
     private secret: string,
-    private tolerance: number = 300 // 5 minutes
+    private tolerance: number = 300, // 5 minutes
   ) {}
 
   verify(payload: string, signature: string, timestamp: string): boolean {
@@ -144,7 +144,7 @@ class WebhookVerifier {
     if (Math.abs(now - ts) > this.tolerance) {
       throw new WebhookError(
         "Timestamp outside tolerance",
-        "TIMESTAMP_EXPIRED"
+        "TIMESTAMP_EXPIRED",
       );
     }
 
@@ -168,7 +168,7 @@ class WebhookVerifier {
     // Constant-time comparison
     const isValid = crypto.timingSafeEqual(
       Buffer.from(v1Sig),
-      Buffer.from(expectedSig)
+      Buffer.from(expectedSig),
     );
 
     if (!isValid) {
@@ -180,7 +180,10 @@ class WebhookVerifier {
 }
 
 class WebhookError extends Error {
-  constructor(message: string, public code: string) {
+  constructor(
+    message: string,
+    public code: string,
+  ) {
     super(message);
     this.name = "WebhookError";
   }
@@ -198,7 +201,7 @@ function webhookVerificationMiddleware(secret: string) {
   return (
     req: express.Request,
     res: express.Response,
-    next: express.NextFunction
+    next: express.NextFunction,
   ) => {
     const signature = req.headers["x-webhook-signature"] as string;
     const timestamp = req.headers["x-webhook-timestamp"] as string;
@@ -242,14 +245,14 @@ app.post(
       verifier.verify(
         req.body.toString(),
         req.headers["x-webhook-signature"] as string,
-        req.headers["x-webhook-timestamp"] as string
+        req.headers["x-webhook-timestamp"] as string,
       );
       req.body = JSON.parse(req.body.toString());
       next();
     } catch (error) {
       res.status(401).json({ error: "Invalid signature" });
     }
-  }
+  },
 );
 ```
 
@@ -278,7 +281,7 @@ function calculateNextRetry(attempt: number, config: RetryConfig): number {
   // Exponential backoff with jitter
   const delay = Math.min(
     config.initialDelay * Math.pow(config.backoffMultiplier, attempt),
-    config.maxDelay
+    config.maxDelay,
   );
 
   // Add random jitter (0-25% of delay)
@@ -296,7 +299,7 @@ import fetch from "node-fetch";
 class WebhookDeliveryService {
   constructor(
     private db: Database,
-    private retryConfig: RetryConfig = defaultRetryConfig
+    private retryConfig: RetryConfig = defaultRetryConfig,
   ) {}
 
   async deliver(endpoint: WebhookEndpoint, event: WebhookEvent): Promise<void> {
@@ -306,7 +309,7 @@ class WebhookDeliveryService {
 
   private async createDelivery(
     endpoint: WebhookEndpoint,
-    event: WebhookEvent
+    event: WebhookEvent,
   ): Promise<WebhookDelivery> {
     const payload = JSON.stringify(event);
     const signer = new WebhookSigner(endpoint.secret);
@@ -392,7 +395,7 @@ class WebhookDeliveryService {
       },
       {
         delay,
-      }
+      },
     );
   }
 }
@@ -408,7 +411,7 @@ class IdempotencyManager {
 
   async checkAndStore(
     key: string,
-    ttl: number = 86400 // 24 hours
+    ttl: number = 86400, // 24 hours
   ): Promise<{ isNew: boolean; existingResult?: any }> {
     const existing = await this.redis.get(`idempotency:${key}`);
 
@@ -425,7 +428,7 @@ class IdempotencyManager {
       JSON.stringify({ status: "processing" }),
       "EX",
       ttl,
-      "NX"
+      "NX",
     );
 
     return { isNew: acquired === "OK" };
@@ -434,13 +437,13 @@ class IdempotencyManager {
   async storeResult(
     key: string,
     result: any,
-    ttl: number = 86400
+    ttl: number = 86400,
   ): Promise<void> {
     await this.redis.set(
       `idempotency:${key}`,
       JSON.stringify({ status: "completed", result }),
       "EX",
-      ttl
+      ttl,
     );
   }
 
@@ -456,7 +459,7 @@ class IdempotencyManager {
 class WebhookHandler {
   constructor(
     private idempotency: IdempotencyManager,
-    private handlers: Map<string, (data: any) => Promise<any>>
+    private handlers: Map<string, (data: any) => Promise<any>>,
   ) {}
 
   async handleEvent(event: WebhookEvent): Promise<any> {
@@ -587,7 +590,7 @@ class WebhookDispatcher {
 
   async dispatch(
     event: WebhookEvent,
-    endpoints: WebhookEndpoint[]
+    endpoints: WebhookEndpoint[],
   ): Promise<void> {
     // Persist event first
     await this.db.events.create(event);
@@ -611,7 +614,7 @@ class WebhookDispatcher {
           },
           removeOnComplete: true,
           removeOnFail: false, // Keep failed jobs for inspection
-        }
+        },
       );
     }
   }
@@ -633,7 +636,10 @@ class WebhookDispatcher {
 
 ```typescript
 class DeadLetterHandler {
-  constructor(private db: Database, private alertService: AlertService) {}
+  constructor(
+    private db: Database,
+    private alertService: AlertService,
+  ) {}
 
   async handleFailedDelivery(delivery: WebhookDelivery): Promise<void> {
     // Move to dead letter queue
@@ -709,7 +715,7 @@ class WebhookMetricsService {
 
   async getMetrics(
     endpointId: string,
-    period: "hour" | "day" | "week"
+    period: "hour" | "day" | "week",
   ): Promise<WebhookMetrics> {
     const since = this.getPeriodStart(period);
 
@@ -764,7 +770,7 @@ class WebhookMetricsService {
       p95ResponseTime: this.calculateP95(data.durations || []),
       successRate: data.total > 0 ? data.successful / data.total : 0,
       errorBreakdown: Object.fromEntries(
-        errorBreakdown.map((e) => [e._id, e.count])
+        errorBreakdown.map((e) => [e._id, e.count]),
       ),
     };
   }
@@ -798,7 +804,7 @@ class WebhookMetricsService {
 class WebhookReplayService {
   constructor(
     private db: Database,
-    private deliveryService: WebhookDeliveryService
+    private deliveryService: WebhookDeliveryService,
   ) {}
 
   async replayEvent(eventId: string, endpointId?: string): Promise<void> {
@@ -826,7 +832,7 @@ class WebhookReplayService {
 
   async replayFailedDeliveries(
     endpointId: string,
-    since: Date
+    since: Date,
   ): Promise<number> {
     const failedDeliveries = await this.db.deliveries.find({
       endpointId,
@@ -1061,7 +1067,7 @@ const worker = new Worker(
   {
     connection: redis,
     limiter: { max: 100, duration: 1000 },
-  }
+  },
 );
 
 // Webhook receiver
@@ -1074,7 +1080,7 @@ app.post("/webhooks", express.raw({ type: "application/json" }), (req, res) => {
     verifier.verify(
       req.body.toString(),
       req.headers["x-webhook-signature"] as string,
-      req.headers["x-webhook-timestamp"] as string
+      req.headers["x-webhook-timestamp"] as string,
     );
   } catch (error) {
     return res.status(401).json({ error: "Invalid signature" });

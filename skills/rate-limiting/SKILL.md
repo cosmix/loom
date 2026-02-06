@@ -549,22 +549,19 @@ server {
 
 ```typescript
 // AWS CDK configuration
-import * as apigateway from 'aws-cdk-lib/aws-apigateway';
+import * as apigateway from "aws-cdk-lib/aws-apigateway";
 
-const api = new apigateway.RestApi(this, 'MyApi', {
+const api = new apigateway.RestApi(this, "MyApi", {
   deployOptions: {
-    throttlingRateLimit: 1000,  // Requests per second
+    throttlingRateLimit: 1000, // Requests per second
     throttlingBurstLimit: 2000, // Burst capacity
   },
 });
 
 // Per-method throttling
-const resource = api.root.addResource('users');
-resource.addMethod('GET', integration, {
-  methodResponses: [
-    { statusCode: '200' },
-    { statusCode: '429' },
-  ],
+const resource = api.root.addResource("users");
+resource.addMethod("GET", integration, {
+  methodResponses: [{ statusCode: "200" }, { statusCode: "429" }],
   throttling: {
     rateLimit: 100,
     burstLimit: 200,
@@ -572,7 +569,7 @@ resource.addMethod('GET', integration, {
 });
 
 // Per-client API key throttling
-const plan = api.addUsagePlan('BasicPlan', {
+const plan = api.addUsagePlan("BasicPlan", {
   throttle: {
     rateLimit: 10,
     burstLimit: 20,
@@ -686,7 +683,7 @@ Rate limiting in distributed systems involves trade-offs:
 
 ```typescript
 interface RateLimitStrategy {
-  consistency: 'strong' | 'eventual' | 'hybrid';
+  consistency: "strong" | "eventual" | "hybrid";
   tolerancePercent: number; // How much over-limit is acceptable
 }
 
@@ -706,14 +703,14 @@ class HybridDistributedLimiter {
   async checkLimit(userId: string, limit: number): Promise<boolean> {
     const local = this.localCount.get(userId) || 0;
 
-    if (this.strategy.consistency === 'strong') {
+    if (this.strategy.consistency === "strong") {
       // Always check global state
       const global = await this.getGlobalCount(userId);
       return global < limit;
     }
 
     // Eventual consistency: allow local buffer
-    const buffer = Math.ceil(limit * this.strategy.tolerancePercent / 100);
+    const buffer = Math.ceil((limit * this.strategy.tolerancePercent) / 100);
     const effectiveLimit = limit + buffer;
 
     if (local >= effectiveLimit) {

@@ -105,15 +105,15 @@ k8s/
 
 ### Common Operations
 
-| Task | Command |
-|------|---------|
-| Build manifests | `kustomize build k8s/overlays/prod` |
-| Preview changes | `kubectl diff -k k8s/overlays/prod` |
-| Apply to cluster | `kubectl apply -k k8s/overlays/prod` |
-| Validate syntax | `kustomize build k8s/overlays/prod \| kubectl apply --dry-run=client -f -` |
-| Update image tag | `kustomize edit set image myapp=registry/myapp:v1.2.3` |
-| Add resource | `kustomize edit add resource deployment.yaml` |
-| Add ConfigMap | `kustomize edit add configmap app-config --from-literal=KEY=value` |
+| Task             | Command                                                                    |
+| ---------------- | -------------------------------------------------------------------------- |
+| Build manifests  | `kustomize build k8s/overlays/prod`                                        |
+| Preview changes  | `kubectl diff -k k8s/overlays/prod`                                        |
+| Apply to cluster | `kubectl apply -k k8s/overlays/prod`                                       |
+| Validate syntax  | `kustomize build k8s/overlays/prod \| kubectl apply --dry-run=client -f -` |
+| Update image tag | `kustomize edit set image myapp=registry/myapp:v1.2.3`                     |
+| Add resource     | `kustomize edit add resource deployment.yaml`                              |
+| Add ConfigMap    | `kustomize edit add configmap app-config --from-literal=KEY=value`         |
 
 ### Multi-Environment Pattern
 
@@ -129,25 +129,25 @@ k8s/
 
 ### Generator Quick Start
 
-| Generator Type | Use Case | Example |
-|----------------|----------|---------|
-| ConfigMap literals | Simple key-value config | `configMapGenerator: - name: app-config literals: - LOG_LEVEL=info` |
-| ConfigMap files | Config files | `configMapGenerator: - name: app-config files: - application.properties` |
-| ConfigMap env file | Environment variables | `configMapGenerator: - name: app-config envs: - config.env` |
-| Secret literals | Simple secrets | `secretGenerator: - name: app-secrets literals: - username=admin` |
-| Secret files | Certificate/key files | `secretGenerator: - name: tls-secrets files: - tls.crt - tls.key type: kubernetes.io/tls` |
+| Generator Type     | Use Case                | Example                                                                                   |
+| ------------------ | ----------------------- | ----------------------------------------------------------------------------------------- |
+| ConfigMap literals | Simple key-value config | `configMapGenerator: - name: app-config literals: - LOG_LEVEL=info`                       |
+| ConfigMap files    | Config files            | `configMapGenerator: - name: app-config files: - application.properties`                  |
+| ConfigMap env file | Environment variables   | `configMapGenerator: - name: app-config envs: - config.env`                               |
+| Secret literals    | Simple secrets          | `secretGenerator: - name: app-secrets literals: - username=admin`                         |
+| Secret files       | Certificate/key files   | `secretGenerator: - name: tls-secrets files: - tls.crt - tls.key type: kubernetes.io/tls` |
 
 ### Transformer Quick Start
 
-| Transformer | Use Case | Example |
-|-------------|----------|---------|
-| namespace | Set namespace for all resources | `namespace: production` |
-| namePrefix | Add prefix to resource names | `namePrefix: myapp-` |
-| nameSuffix | Add suffix to resource names | `nameSuffix: -v2` |
-| commonLabels | Add labels to all resources | `commonLabels: app: myapp team: platform` |
+| Transformer       | Use Case                         | Example                                    |
+| ----------------- | -------------------------------- | ------------------------------------------ |
+| namespace         | Set namespace for all resources  | `namespace: production`                    |
+| namePrefix        | Add prefix to resource names     | `namePrefix: myapp-`                       |
+| nameSuffix        | Add suffix to resource names     | `nameSuffix: -v2`                          |
+| commonLabels      | Add labels to all resources      | `commonLabels: app: myapp team: platform`  |
 | commonAnnotations | Add annotations to all resources | `commonAnnotations: managed-by: kustomize` |
-| images | Update container images | `images: - name: myapp newTag: v1.2.3` |
-| replicas | Set replica count | `replicas: - name: myapp count: 5` |
+| images            | Update container images          | `images: - name: myapp newTag: v1.2.3`     |
+| replicas          | Set replica count                | `replicas: - name: myapp count: 5`         |
 
 ## Workflow
 
@@ -242,12 +242,12 @@ Components are reusable customization bundles that can be selectively included i
 
 ### When to Use Components
 
-| Pattern | Use Components For | Use Patches For |
-|---------|-------------------|-----------------|
-| Optional features | Monitoring, ingress, debug tools | Required modifications |
+| Pattern                 | Use Components For                | Use Patches For              |
+| ----------------------- | --------------------------------- | ---------------------------- |
+| Optional features       | Monitoring, ingress, debug tools  | Required modifications       |
 | Cross-environment reuse | Feature available in staging+prod | Environment-specific changes |
-| Clean composition | Independent feature sets | Tweaking existing resources |
-| Conditional inclusion | Enable per environment | Always apply in overlay |
+| Clean composition       | Independent feature sets          | Tweaking existing resources  |
+| Conditional inclusion   | Enable per environment            | Always apply in overlay      |
 
 ### Component Structure
 
@@ -1602,7 +1602,6 @@ parallel kustomize build k8s/overlays/{} ::: dev staging prod
 ## Security Considerations
 
 1. **Secret Management**: Never commit secrets to git
-
    - Use external secret operators (sealed-secrets, external-secrets-operator)
    - Use secret generators with gitignored files
    - Consider using SOPS for encrypted secrets in git
@@ -1616,12 +1615,10 @@ parallel kustomize build k8s/overlays/{} ::: dev staging prod
    ```
 
 3. **RBAC**: Separate access to base vs overlays
-
    - Base: Restricted to platform team
    - Overlays: Application teams can customize
 
 4. **Validation**: Use admission controllers
-
    - OPA Gatekeeper
    - Kyverno policies
    - Custom admission webhooks

@@ -104,7 +104,7 @@ emailQueue.process(async (job: Job<EmailJobData>) => {
 // Add job with options
 async function sendEmail(
   data: EmailJobData,
-  options?: JobOptions
+  options?: JobOptions,
 ): Promise<Job<EmailJobData>> {
   return emailQueue.add(data, {
     priority: options?.priority || 0,
@@ -116,7 +116,7 @@ async function sendEmail(
 
 // Bulk job addition
 async function sendBulkEmails(
-  emails: EmailJobData[]
+  emails: EmailJobData[],
 ): Promise<Job<EmailJobData>[]> {
   const jobs = emails.map((data, index) => ({
     data,
@@ -348,7 +348,7 @@ async function setupScheduledJobs(): Promise<void> {
     {
       repeat: { cron: "0 * * * *" }, // Every hour
       jobId: "cleanup-hourly",
-    }
+    },
   );
 
   // Daily report at 9 AM
@@ -358,7 +358,7 @@ async function setupScheduledJobs(): Promise<void> {
     {
       repeat: { cron: "0 9 * * *" },
       jobId: "daily-report",
-    }
+    },
   );
 
   // Every 5 minutes
@@ -368,7 +368,7 @@ async function setupScheduledJobs(): Promise<void> {
     {
       repeat: { every: 5 * 60 * 1000 }, // 5 minutes in ms
       jobId: "health-check",
-    }
+    },
   );
 
   // Weekly on Sunday at midnight
@@ -378,7 +378,7 @@ async function setupScheduledJobs(): Promise<void> {
     {
       repeat: { cron: "0 0 * * 0" },
       jobId: "weekly-cleanup",
-    }
+    },
   );
 }
 
@@ -520,7 +520,7 @@ class WorkerPool {
 
   registerQueue<T>(
     name: string,
-    processor: (job: Job<T>) => Promise<unknown>
+    processor: (job: Job<T>) => Promise<unknown>,
   ): Queue.Queue<T> {
     const queue = new Queue<T>(name, process.env.REDIS_URL!, {
       limiter: this.config.limiter,
@@ -560,7 +560,7 @@ class WorkerPool {
       async (queue) => {
         await queue.pause(true); // Pause and wait for active jobs
         await queue.close();
-      }
+      },
     );
 
     await Promise.all(closePromises);
@@ -683,7 +683,7 @@ const priorityMap = {
 };
 
 async function addPriorityJob(
-  data: PriorityJobData
+  data: PriorityJobData,
 ): Promise<Job<PriorityJobData>> {
   return queue.add(data, {
     priority: priorityMap[data.priority],
@@ -707,11 +707,11 @@ class FairScheduler {
 
   // Weighted round-robin processing
   async process(
-    handler: (queueName: string, job: Job) => Promise<void>
+    handler: (queueName: string, job: Job) => Promise<void>,
   ): Promise<void> {
     const totalWeight = Array.from(this.weights.values()).reduce(
       (a, b) => a + b,
-      0
+      0,
     );
 
     for (const [name, queue] of this.queues) {
@@ -756,7 +756,10 @@ class IdempotentProcessor<T> {
   private processedKeys: Set<string> = new Set();
   private redis: Redis;
 
-  constructor(private queue: Queue.Queue<T>, redis: Redis) {
+  constructor(
+    private queue: Queue.Queue<T>,
+    redis: Redis,
+  ) {
     this.redis = redis;
   }
 
@@ -778,7 +781,7 @@ class IdempotentProcessor<T> {
       await this.redis.setex(
         `processed:${idempotencyKey}`,
         86400, // 24 hours
-        JSON.stringify(result)
+        JSON.stringify(result),
       );
 
       return result;
@@ -979,7 +982,7 @@ class JobMonitor extends EventEmitter {
   }
 
   private calculateLatencyPercentiles(
-    durations: number[]
+    durations: number[],
   ): JobMetrics["latency"] {
     if (durations.length === 0) {
       return { avg: 0, p50: 0, p95: 0, p99: 0 };
@@ -1048,7 +1051,7 @@ class JobMonitor extends EventEmitter {
 
   async cleanDeadJobs(
     queueName: string,
-    olderThan: number = 86400000
+    olderThan: number = 86400000,
   ): Promise<number> {
     const queue = this.queues.find((q) => q.name === queueName);
     if (!queue) throw new Error(`Queue ${queueName} not found`);
@@ -1083,7 +1086,7 @@ function createMonitoringRouter(monitor: JobMonitor): express.Router {
         failedReason: j.failedReason,
         attemptsMade: j.attemptsMade,
         timestamp: j.timestamp,
-      }))
+      })),
     );
   });
 
@@ -1379,7 +1382,7 @@ inferenceQueue.process(4, async (job: Job<InferenceJob>) => {
 async function runBatchInference(
   modelId: string,
   dataset: Array<{ id: string; data: any }>,
-  batchSize: number = 100
+  batchSize: number = 100,
 ): Promise<string[]> {
   const batches: InferenceJob[] = [];
 
@@ -1395,7 +1398,7 @@ async function runBatchInference(
     batches.map((batch, idx) => ({
       data: batch,
       opts: { jobId: `inference_${modelId}_${idx}` },
-    }))
+    })),
   );
 
   return jobs.map((j) => j.id!);
@@ -1654,19 +1657,16 @@ observer.on("alert", (alert) => {
 ## Best Practices
 
 1. **Idempotency**
-
    - Design jobs to be safely re-executed
    - Use unique job IDs for deduplication
    - Store processed state externally
 
 2. **Retry Strategies**
-
    - Use exponential backoff with jitter
    - Set maximum retry limits
    - Distinguish between retryable and non-retryable errors
 
 3. **Monitoring and Observability**
-
    - Track queue depths, processing latency, and throughput
    - Alert on high error rates or growing queues
    - Monitor worker health and memory usage
@@ -1674,20 +1674,17 @@ observer.on("alert", (alert) => {
    - Export metrics to Prometheus, Datadog, or CloudWatch
 
 4. **Graceful Shutdown**
-
    - Complete in-progress jobs before shutdown
    - Use signals (SIGTERM, SIGINT) properly
    - Set reasonable timeouts for job completion
 
 5. **Resource Management**
-
    - Set appropriate concurrency limits
    - Use worker pools for CPU-bound tasks
    - Implement rate limiting for external APIs
    - Configure memory and time limits per job
 
 6. **Data Pipeline Design**
-
    - Break pipelines into stages with clear boundaries
    - Use fan-out/fan-in patterns for parallel processing
    - Checkpoint long-running jobs for recovery
@@ -1762,7 +1759,7 @@ class WorkerService {
 
     // Pause all queues
     await Promise.all(
-      Array.from(this.queues.values()).map((q) => q.pause(true))
+      Array.from(this.queues.values()).map((q) => q.pause(true)),
     );
 
     // Wait for active jobs to complete

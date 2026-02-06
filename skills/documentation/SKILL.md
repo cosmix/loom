@@ -186,11 +186,13 @@ events. Current state is derived by replaying events.
 **Consequences:**
 
 Positive:
+
 - Complete audit trail by design
 - Time-travel debugging capabilities
 - Natural fit for regulatory reporting
 
 Negative:
+
 - Increased storage requirements
 - Query complexity for current state
 - Team learning curve
@@ -215,25 +217,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
 - New feature description
 
 ### Changed
+
 - Changes in existing functionality
 
 ### Fixed
+
 - Bug fix description
 
 ## [1.2.0] - 2024-01-15
 
 ### Added
+
 - User profile management (#123)
 - Export to CSV functionality (#145)
 
 ### Changed
+
 - Updated dependencies to latest versions
 - Improved error messages for validation failures
 
 ### Fixed
+
 - Fixed race condition in payment processing (#156)
 - Corrected timezone handling in reports (#162)
 ```
@@ -276,7 +284,7 @@ def calculate_shipping_cost(
 
 ### Example 2: Rust Documentation
 
-```rust
+````rust
 /// Manages user authentication and session handling.
 ///
 /// This service handles the complete authentication lifecycle including
@@ -320,7 +328,7 @@ impl AuthService {
         // Implementation
     }
 }
-```
+````
 
 ### Example 3: API Endpoint Documentation
 

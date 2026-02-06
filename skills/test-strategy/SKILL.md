@@ -405,18 +405,18 @@ run "verify_security_group_rules" {
 
 **Common Causes of Flakiness:**
 
-| Cause                    | Symptoms                                | Solution                                  |
-| ------------------------ | --------------------------------------- | ----------------------------------------- |
-| Race conditions          | Fails intermittently on timing          | Add proper synchronization                |
-| Async operations         | Fails with "element not found"          | Use explicit waits, not sleeps            |
-| Shared state             | Fails when run with other tests         | Isolate test data, reset state            |
-| External dependencies    | Fails when service unavailable          | Mock external calls, use test doubles     |
-| Time-dependent logic     | Fails at specific times/dates           | Inject time, use fake clocks              |
-| Resource cleanup         | Fails after certain test order          | Ensure teardown always runs               |
-| Nondeterministic data    | Fails with random data variations       | Use fixed seeds, deterministic generators |
-| Environment differences  | Fails in CI but passes locally          | Containerize test environment             |
-| Insufficient timeouts    | Fails under load/slow machines          | Make timeouts configurable                |
-| Parallel execution races | Fails only when parallelized            | Use unique identifiers per test           |
+| Cause                    | Symptoms                          | Solution                                  |
+| ------------------------ | --------------------------------- | ----------------------------------------- |
+| Race conditions          | Fails intermittently on timing    | Add proper synchronization                |
+| Async operations         | Fails with "element not found"    | Use explicit waits, not sleeps            |
+| Shared state             | Fails when run with other tests   | Isolate test data, reset state            |
+| External dependencies    | Fails when service unavailable    | Mock external calls, use test doubles     |
+| Time-dependent logic     | Fails at specific times/dates     | Inject time, use fake clocks              |
+| Resource cleanup         | Fails after certain test order    | Ensure teardown always runs               |
+| Nondeterministic data    | Fails with random data variations | Use fixed seeds, deterministic generators |
+| Environment differences  | Fails in CI but passes locally    | Containerize test environment             |
+| Insufficient timeouts    | Fails under load/slow machines    | Make timeouts configurable                |
+| Parallel execution races | Fails only when parallelized      | Use unique identifiers per test           |
 
 **Flaky Test Diagnosis Workflow:**
 
@@ -463,7 +463,7 @@ run "verify_security_group_rules" {
 - [ ] Shared state is reset between tests
 - [ ] Test environment is reproducible (containerized)
 
-**Example: Fixing a Flaky Test**
+#### Example: Fixing a Flaky Test
 
 ```typescript
 // FLAKY: Race condition with async operation
@@ -519,7 +519,7 @@ test("expires session after 1 hour", () => {
 
 ```yaml
 # docker-compose.test.yml
-version: '3.8'
+version: "3.8"
 services:
   test-db:
     image: postgres:15
@@ -530,7 +530,7 @@ services:
     ports:
       - "5433:5432"
     tmpfs:
-      - /var/lib/postgresql/data  # In-memory for speed
+      - /var/lib/postgresql/data # In-memory for speed
 
   test-redis:
     image: redis:7-alpine
@@ -579,15 +579,15 @@ test("user search works", () => {
 
 **Test Parallelization Strategy:**
 
-| Strategy             | When to Use                           | Configuration                                  |
-| -------------------- | ------------------------------------- | ---------------------------------------------- |
-| File-level parallel  | Tests in different files independent  | Jest: `--maxWorkers=4`                         |
-| Database per worker  | Tests need database isolation         | Postgres: Create schema per worker             |
-| Test sharding        | CI with multiple machines             | Split tests by shard: `--shard=1/4`            |
-| Test prioritization  | Want fast feedback                    | Run fast tests first, slow tests in parallel   |
-| Smart test selection | Only run affected tests               | Use dependency graph to select changed tests   |
+| Strategy             | When to Use                          | Configuration                                |
+| -------------------- | ------------------------------------ | -------------------------------------------- |
+| File-level parallel  | Tests in different files independent | Jest: `--maxWorkers=4`                       |
+| Database per worker  | Tests need database isolation        | Postgres: Create schema per worker           |
+| Test sharding        | CI with multiple machines            | Split tests by shard: `--shard=1/4`          |
+| Test prioritization  | Want fast feedback                   | Run fast tests first, slow tests in parallel |
+| Smart test selection | Only run affected tests              | Use dependency graph to select changed tests |
 
-**Example: Parallel Test Configuration**
+#### Example: Parallel Test Configuration
 
 ```javascript
 // jest.config.js with parallel optimization

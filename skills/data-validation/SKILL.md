@@ -23,12 +23,12 @@ Use this skill when working with:
 
 ## Agent Assignments
 
-| Agent | Responsibility |
-|-------|----------------|
+| Agent                               | Responsibility                                                               |
+| ----------------------------------- | ---------------------------------------------------------------------------- |
 | **senior-software-engineer** (Opus) | Schema architecture, validation strategy design, complex validation patterns |
-| **software-engineer** (Sonnet) | Implements validation logic, integrates schema libraries, writes validators |
-| **senior-software-engineer** (Opus) | XSS prevention, injection prevention, sanitization strategies, encoding |
-| **senior-software-engineer** (Opus) | Infrastructure config validation, pipeline validation, data quality checks |
+| **software-engineer** (Sonnet)      | Implements validation logic, integrates schema libraries, writes validators  |
+| **senior-software-engineer** (Opus) | XSS prevention, injection prevention, sanitization strategies, encoding      |
+| **senior-software-engineer** (Opus) | Infrastructure config validation, pipeline validation, data quality checks   |
 
 ## Key Concepts
 

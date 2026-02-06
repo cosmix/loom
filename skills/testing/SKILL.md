@@ -273,30 +273,30 @@ def test_api_client(mock_get):
 ### JavaScript (Vitest/Jest)
 
 ```javascript
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
-describe('UserService', () => {
-  let mockDb
+describe("UserService", () => {
+  let mockDb;
 
   beforeEach(() => {
     mockDb = {
-      query: vi.fn()
-    }
-  })
+      query: vi.fn(),
+    };
+  });
 
-  it('finds user by email', async () => {
-    mockDb.query.mockResolvedValue([{ id: 1, email: 'test@example.com' }])
+  it("finds user by email", async () => {
+    mockDb.query.mockResolvedValue([{ id: 1, email: "test@example.com" }]);
 
-    const service = new UserService(mockDb)
-    const user = await service.findByEmail('test@example.com')
+    const service = new UserService(mockDb);
+    const user = await service.findByEmail("test@example.com");
 
-    expect(user.id).toBe(1)
+    expect(user.id).toBe(1);
     expect(mockDb.query).toHaveBeenCalledWith(
-      'SELECT * FROM users WHERE email = ?',
-      ['test@example.com']
-    )
-  })
-})
+      "SELECT * FROM users WHERE email = ?",
+      ["test@example.com"],
+    );
+  });
+});
 ```
 
 ### Rust (built-in + mockall)
@@ -418,80 +418,80 @@ class TestPaymentProcessor:
 ### Example 2: Integration Test with Database
 
 ```javascript
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { createServer } from '../server'
-import { db } from '../database'
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { createServer } from "../server";
+import { db } from "../database";
 
-describe('User API Integration', () => {
-  let server
+describe("User API Integration", () => {
+  let server;
 
   beforeEach(async () => {
-    server = await createServer()
-    await db.migrate.latest()
-    await db.seed.run()
-  })
+    server = await createServer();
+    await db.migrate.latest();
+    await db.seed.run();
+  });
 
   afterEach(async () => {
-    await db.migrate.rollback()
-    await server.close()
-  })
+    await db.migrate.rollback();
+    await server.close();
+  });
 
-  it('creates user and returns 201 with user data', async () => {
+  it("creates user and returns 201 with user data", async () => {
     const response = await server.inject({
-      method: 'POST',
-      url: '/api/users',
+      method: "POST",
+      url: "/api/users",
       payload: {
-        email: 'new@example.com',
-        name: 'New User'
-      }
-    })
+        email: "new@example.com",
+        name: "New User",
+      },
+    });
 
-    expect(response.statusCode).toBe(201)
+    expect(response.statusCode).toBe(201);
     expect(response.json()).toMatchObject({
-      email: 'new@example.com',
-      name: 'New User'
-    })
+      email: "new@example.com",
+      name: "New User",
+    });
 
     // Verify database state
-    const user = await db('users').where({ email: 'new@example.com' }).first()
-    expect(user).toBeDefined()
-  })
+    const user = await db("users").where({ email: "new@example.com" }).first();
+    expect(user).toBeDefined();
+  });
 
-  it('returns 400 for invalid email format', async () => {
+  it("returns 400 for invalid email format", async () => {
     const response = await server.inject({
-      method: 'POST',
-      url: '/api/users',
+      method: "POST",
+      url: "/api/users",
       payload: {
-        email: 'invalid-email',
-        name: 'Test User'
-      }
-    })
+        email: "invalid-email",
+        name: "Test User",
+      },
+    });
 
-    expect(response.statusCode).toBe(400)
-    expect(response.json().error).toContain('email')
-  })
-})
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toContain("email");
+  });
+});
 ```
 
 ### Example 3: Snapshot Testing
 
 ```javascript
-import { render } from '@testing-library/react'
-import { UserCard } from './UserCard'
+import { render } from "@testing-library/react";
+import { UserCard } from "./UserCard";
 
-it('renders user card correctly', () => {
+it("renders user card correctly", () => {
   const user = {
     id: 1,
-    name: 'Alice',
-    email: 'alice@example.com',
-    avatar: '/avatars/alice.jpg'
-  }
+    name: "Alice",
+    email: "alice@example.com",
+    avatar: "/avatars/alice.jpg",
+  };
 
-  const { container } = render(<UserCard user={user} />)
+  const { container } = render(<UserCard user={user} />);
 
   // Snapshot testing for UI components
-  expect(container.firstChild).toMatchSnapshot()
-})
+  expect(container.firstChild).toMatchSnapshot();
+});
 ```
 
 ## Summary

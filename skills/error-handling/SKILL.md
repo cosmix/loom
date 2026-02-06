@@ -99,7 +99,7 @@ class AppError extends Error {
   constructor(
     message: string,
     public code: string,
-    public details?: Record<string, unknown>
+    public details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = this.constructor.name;
@@ -259,7 +259,7 @@ class CircuitBreaker:
 async function withFallback<T>(
   primary: () => Promise<T>,
   fallback: () => Promise<T>,
-  shouldFallback: (error: Error) => boolean = () => true
+  shouldFallback: (error: Error) => boolean = () => true,
 ): Promise<T> {
   try {
     return await primary();
@@ -275,7 +275,7 @@ async function withFallback<T>(
 const data = await withFallback(
   () => fetchFromPrimaryAPI(),
   () => fetchFromCache(),
-  (error) => error instanceof ServiceError
+  (error) => error instanceof ServiceError,
 );
 ```
 
@@ -402,7 +402,6 @@ def log_error(error: Exception, context: dict = None):
 5. **Distinguish Recoverable vs Unrecoverable**: Design your error hierarchy to clearly indicate which errors can be retried.
 
 6. **Use Appropriate Recovery Strategies**:
-
    - Retry: For transient failures (network timeouts, rate limits)
    - Fallback: When alternatives exist (cache, default values)
    - Circuit Breaker: To prevent cascade failures

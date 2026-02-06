@@ -38,12 +38,12 @@ doc/plans/PLAN-<description>.md
 
 **Solution:** ALWAYS explore BEFORE planning:
 
-| Step | Action | Why |
-| ---- | ------ | --- |
-| 1 | Spawn Explore subagents for related modules | Find patterns to reuse |
-| 2 | Review `doc/loom/knowledge/*.md` | Learn from past mistakes |
-| 3 | Create task list with "REUSE:" annotations | Track reuse explicitly |
-| 4 | Identify integration points | Where new code connects |
+| Step | Action                                      | Why                      |
+| ---- | ------------------------------------------- | ------------------------ |
+| 1    | Spawn Explore subagents for related modules | Find patterns to reuse   |
+| 2    | Review `doc/loom/knowledge/*.md`            | Learn from past mistakes |
+| 3    | Create task list with "REUSE:" annotations  | Track reuse explicitly   |
+| 4    | Identify integration points                 | Where new code connects  |
 
 **Exploration Subagent Template:**
 
@@ -63,7 +63,7 @@ Return findings as knowledge update commands.
 
 ### 3. Pre-Planning: Sandbox Configuration
 
-**⚠️ BEFORE WRITING ANY PLAN, ASK THE USER ABOUT SANDBOX SETTINGS**
+#### Ask User About Sandbox Settings
 
 Gather sandbox requirements by asking:
 
@@ -88,23 +88,23 @@ Gather sandbox requirements by asking:
 loom:
   version: 1
   sandbox:
-    enabled: true                    # Master switch (default: true)
-    auto_allow: true                 # Auto-grant permissions at stage start
-    excluded_commands:               # Commands exempt from sandboxing
+    enabled: true # Master switch (default: true)
+    auto_allow: true # Auto-grant permissions at stage start
+    excluded_commands: # Commands exempt from sandboxing
       - "loom"
     filesystem:
-      deny_read:                     # Paths agents CANNOT read
+      deny_read: # Paths agents CANNOT read
         - "~/.ssh/**"
         - "~/.aws/**"
         - "~/.config/gcloud/**"
         - "~/.gnupg/**"
-      deny_write:                    # Paths agents CANNOT write
+      deny_write: # Paths agents CANNOT write
         - ".work/stages/**"
-        - "doc/loom/knowledge/**"    # Except knowledge/integration-verify stages
-      allow_write:                   # Exceptions to deny rules
+        - "doc/loom/knowledge/**" # Except knowledge/integration-verify stages
+      allow_write: # Exceptions to deny rules
         - "src/**"
-    network:                         # ⛔ MUST be struct, NOT string like "deny"
-      allowed_domains: []            # Empty = deny all network (or list domains to allow)
+    network: # ⛔ MUST be struct, NOT string like "deny"
+      allowed_domains: [] # Empty = deny all network (or list domains to allow)
       allow_local_binding: false
       allow_unix_sockets: false
 ```
@@ -114,10 +114,10 @@ loom:
 ```yaml
 - id: my-stage
   sandbox:
-    enabled: false                   # Disable for this stage only
+    enabled: false # Disable for this stage only
     filesystem:
       allow_write:
-        - "build/**"                 # Additional write access
+        - "build/**" # Additional write access
 ```
 
 **Special Stage Behavior:**
@@ -145,11 +145,11 @@ Maximize parallel execution at THREE levels:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-| Files Overlap? | Inter-agent Comms Needed? | Solution |
-| -------------- | ------------------------- | -------- |
-| NO | NO | Same stage, parallel subagents |
-| NO | YES | Same stage, agent team |
-| YES | Any | Separate stages, loom merges |
+| Files Overlap? | Inter-agent Comms Needed? | Solution                       |
+| -------------- | ------------------------- | ------------------------------ |
+| NO             | NO                        | Same stage, parallel subagents |
+| NO             | YES                       | Same stage, agent team         |
+| YES            | Any                       | Separate stages, loom merges   |
 
 **Stage-Specific Defaults:**
 
@@ -213,11 +213,11 @@ Stages in `[a, b]` notation run concurrently. Code review is optional but recomm
 
 **Quick Reference:**
 
-| Field | Purpose | Example |
-|-------|---------|---------|
-| `truths` | Observable behaviors | `"myapp --help"`, `"curl -f localhost:8080"` |
-| `artifacts` | Files that must exist | `"src/feature.rs"`, `"tests/feature_test.rs"` |
-| `wiring` | Integration patterns | `source: "src/main.rs"`, `pattern: "mod feature"` |
+| Field       | Purpose               | Example                                           |
+| ----------- | --------------------- | ------------------------------------------------- |
+| `truths`    | Observable behaviors  | `"myapp --help"`, `"curl -f localhost:8080"`      |
+| `artifacts` | Files that must exist | `"src/feature.rs"`, `"tests/feature_test.rs"`     |
+| `wiring`    | Integration patterns  | `source: "src/main.rs"`, `pattern: "mod feature"` |
 
 ### 8. Loom Metadata Format
 
@@ -248,7 +248,7 @@ loom:
       files: # Optional: target file globs for scope
         - "src/**/*.rs"
       working_dir: "." # Required: "." for worktree root, or subdirectory like "loom"
-      execution_mode: team  # Optional hint: single or team, agent decides
+      execution_mode: team # Optional hint: single or team, agent decides
       # REQUIRED: At least ONE of truths/artifacts/wiring per stage
       truths: # Observable behaviors proving feature works
         - "myapp --help"
@@ -265,7 +265,7 @@ loom:
 
 **YAML Formatting Rules:**
 
-```text
+````text
 ┌─────────────────────────────────────────────────────────────────────┐
 │  ⛔ NEVER PUT TRIPLE BACKTICKS INSIDE YAML DESCRIPTIONS             │
 │                                                                     │
@@ -284,25 +284,25 @@ loom:
 │                 ## Title                                            │
 │                 Content here (plain indented text)                  │
 └─────────────────────────────────────────────────────────────────────┘
-```
+````
 
-| Rule                     | Correct                 | Incorrect             |
-| ------------------------ | ----------------------- | --------------------- |
-| Code fence               | 3 backticks             | 4 backticks           |
-| Nested code blocks       | NEVER in descriptions   | Breaks YAML parser    |
-| Examples in descriptions | Use plain indented text | Do NOT use ``` fences |
-| stage_type values        | lowercase/kebab-case    | PascalCase            |
-| Path traversal           | NEVER use `../`         | Causes validation error |
-| network config           | `network: {allowed_domains: []}` | `network: deny` |
+| Rule                     | Correct                          | Incorrect               |
+| ------------------------ | -------------------------------- | ----------------------- |
+| Code fence               | 3 backticks                      | 4 backticks             |
+| Nested code blocks       | NEVER in descriptions            | Breaks YAML parser      |
+| Examples in descriptions | Use plain indented text          | Do NOT use ``` fences   |
+| stage_type values        | lowercase/kebab-case             | PascalCase              |
+| Path traversal           | NEVER use `../`                  | Causes validation error |
+| network config           | `network: {allowed_domains: []}` | `network: deny`         |
 
 **stage_type Field (REQUIRED on every stage):**
 
-| Value | Use For | Special Behavior |
-| ----- | ------- | ---------------- |
-| `knowledge` | knowledge-bootstrap stage | Can write to doc/loom/knowledge/** |
-| `standard` | All implementation stages | Cannot write to knowledge files |
-| `integration-verify` | Final verification stage | Can write to doc/loom/knowledge/** |
-| `code-review` | Code review stage (optional) | Can write to doc/loom/knowledge/**, exempt from goal-backward checks |
+| Value                | Use For                      | Special Behavior                                                       |
+| -------------------- | ---------------------------- | ---------------------------------------------------------------------- |
+| `knowledge`          | knowledge-bootstrap stage    | Can write to doc/loom/knowledge/\*\*                                   |
+| `standard`           | All implementation stages    | Cannot write to knowledge files                                        |
+| `integration-verify` | Final verification stage     | Can write to doc/loom/knowledge/\*\*                                   |
+| `code-review`        | Code review stage (optional) | Can write to doc/loom/knowledge/\*\*, exempt from goal-backward checks |
 
 **NEVER use PascalCase** (Knowledge, Standard, IntegrationVerify, CodeReview) - the parser rejects these.
 
@@ -317,7 +317,7 @@ description: |
 
 **NEVER** put triple backticks inside YAML descriptions — they break parsing.
 
-**Working Directory Requirement:**
+#### Working Directory Requirement
 
 The `working_dir` field is **REQUIRED** on every stage. This forces explicit choice of where acceptance criteria run:
 
@@ -346,7 +346,7 @@ working_dir: "loom"   # Run from loom/ subdirectory
 
 **Mixed directories?** Create separate stages instead of inline `cd`. Each stage = one working directory.
 
-**⚠️ CRITICAL: ALL PATHS ARE RELATIVE TO working_dir**
+#### Critical: All Paths are Relative to working_dir
 
 This is a very common mistake. ALL path fields resolve relative to `working_dir`:
 
@@ -360,7 +360,7 @@ This is a very common mistake. ALL path fields resolve relative to `working_dir`
 - id: implement-feature
   working_dir: "loom"
   artifacts:
-    - "loom/src/feature.rs"      # WRONG: becomes loom/loom/src/feature.rs
+    - "loom/src/feature.rs" # WRONG: becomes loom/loom/src/feature.rs
   wiring:
     - source: "loom/src/main.rs" # WRONG: becomes loom/loom/src/main.rs
       pattern: "mod feature"
@@ -369,9 +369,9 @@ This is a very common mistake. ALL path fields resolve relative to `working_dir`
 - id: implement-feature
   working_dir: "loom"
   artifacts:
-    - "src/feature.rs"           # CORRECT: resolves to loom/src/feature.rs
+    - "src/feature.rs" # CORRECT: resolves to loom/src/feature.rs
   wiring:
-    - source: "src/main.rs"      # CORRECT: resolves to loom/src/main.rs
+    - source: "src/main.rs" # CORRECT: resolves to loom/src/main.rs
       pattern: "mod feature"
 ```
 
@@ -387,20 +387,20 @@ Knowledge and integration-verify stages are exempt (they have different purposes
 
 These fields verify the feature actually works, not just that tests pass:
 
-| Field | Purpose | Example |
-|-------|---------|---------|
-| `truths` | Observable behaviors proving feature works | `"myapp --help"`, `"curl -f localhost:8080/health"` |
-| `artifacts` | Files that must exist with real implementation | `"src/auth/*.rs"`, `"tests/auth_test.rs"` |
-| `wiring` | Code patterns proving integration | source + pattern + description |
+| Field       | Purpose                                        | Example                                             |
+| ----------- | ---------------------------------------------- | --------------------------------------------------- |
+| `truths`    | Observable behaviors proving feature works     | `"myapp --help"`, `"curl -f localhost:8080/health"` |
+| `artifacts` | Files that must exist with real implementation | `"src/auth/*.rs"`, `"tests/auth_test.rs"`           |
+| `wiring`    | Code patterns proving integration              | source + pattern + description                      |
 
 **Why required?** We have had MANY instances where tests pass but the feature is never wired up or functional. These fields catch that.
 
 ```yaml
 # Example: CLI command stage
 truths:
-  - "myapp new-command --help"  # Command is registered and callable
+  - "myapp new-command --help" # Command is registered and callable
 artifacts:
-  - "src/commands/new_command.rs"  # Implementation file exists
+  - "src/commands/new_command.rs" # Implementation file exists
 wiring:
   - source: "src/main.rs"
     pattern: "mod new_command"
@@ -488,7 +488,7 @@ Captures codebase understanding before implementation:
     - "rg -q '## ' doc/loom/knowledge/conventions.md"
   files:
     - "doc/loom/knowledge/**"
-  working_dir: "."  # REQUIRED: "." for worktree root
+  working_dir: "." # REQUIRED: "." for worktree root
   # REQUIRED: At least one verification field
   artifacts:
     - "doc/loom/knowledge/architecture.md"
@@ -565,10 +565,10 @@ Verifies all work integrates correctly after merges AND that the feature actuall
     # - "curl -s localhost:8080/api/new-endpoint | jq .status"  # API wired
     # - "grep -q 'NewComponent' src/app/routes.tsx"  # UI wired
   files: [] # Verification only - no file modifications
-  working_dir: "."  # REQUIRED: "." for worktree root, or subdirectory like "loom"
+  working_dir: "." # REQUIRED: "." for worktree root, or subdirectory like "loom"
   # REQUIRED: At least one verification field
   truths:
-    - "myapp new-command --help"  # Feature is callable (adapt to YOUR feature)
+    - "myapp new-command --help" # Feature is callable (adapt to YOUR feature)
   wiring:
     - source: "src/main.rs"
       pattern: "new_feature"
@@ -679,9 +679,9 @@ Performs security and code quality review AFTER integration-verify using paralle
       loom knowledge update mistakes "..." (for any critical issues found)
   dependencies: ["integration-verify"]
   acceptance:
-    - "cargo test"  # Fixes must not break tests
-    - "cargo clippy -- -D warnings"  # No new warnings introduced
-    - "loom memory list | grep -q 'Type: note'"  # Review findings recorded
+    - "cargo test" # Fixes must not break tests
+    - "cargo clippy -- -D warnings" # No new warnings introduced
+    - "loom memory list | grep -q 'Type: note'" # Review findings recorded
   files: [] # Can modify any files to fix issues
   working_dir: "."
   # code-review stages are EXEMPT from goal-backward verification
@@ -690,22 +690,22 @@ Performs security and code quality review AFTER integration-verify using paralle
 
 **When to include code-review:**
 
-| Include If | Skip If |
-| ---------- | ------- |
-| Production feature | Internal tooling or experiments |
-| User-facing functionality | Refactoring or cleanup |
-| Security-sensitive code | Documentation-only changes |
-| Complex business logic | Prototype or proof-of-concept |
+| Include If                | Skip If                         |
+| ------------------------- | ------------------------------- |
+| Production feature        | Internal tooling or experiments |
+| User-facing functionality | Refactoring or cleanup          |
+| Security-sensitive code   | Documentation-only changes      |
+| Complex business logic    | Prototype or proof-of-concept   |
 
 **Why code-review is optional but recommended:**
 
-| Benefit | Explanation |
-| ------- | ----------- |
-| Security hardening | Specialized security-engineer agent catches vulnerabilities |
-| Quality assurance | senior-software-engineer reviews architecture and patterns |
-| Test completeness | /testing skill identifies coverage gaps |
-| Knowledge capture | Critical issues get promoted to knowledge base |
-| Parallel efficiency | Subagents review different aspects concurrently |
+| Benefit             | Explanation                                                 |
+| ------------------- | ----------------------------------------------------------- |
+| Security hardening  | Specialized security-engineer agent catches vulnerabilities |
+| Quality assurance   | senior-software-engineer reviews architecture and patterns  |
+| Test completeness   | /testing skill identifies coverage gaps                     |
+| Knowledge capture   | Critical issues get promoted to knowledge base              |
+| Parallel efficiency | Subagents review different aspects concurrently             |
 
 ### 13. Memory Recording in Stage Descriptions
 
@@ -736,23 +736,23 @@ description: |
 
 **Why this is mandatory:**
 
-| Benefit | Explanation |
-| ------- | ----------- |
-| Insight persistence | Memory entries persist across sessions and context resets |
-| Mistake prevention | Promoted mistakes become knowledge that future agents read |
-| Decision documentation | Records WHY choices were made, not just what was done |
-| Learning transfer | Memory → Knowledge transfer makes lessons permanent |
+| Benefit                | Explanation                                                |
+| ---------------------- | ---------------------------------------------------------- |
+| Insight persistence    | Memory entries persist across sessions and context resets  |
+| Mistake prevention     | Promoted mistakes become knowledge that future agents read |
+| Decision documentation | Records WHY choices were made, not just what was done      |
+| Learning transfer      | Memory → Knowledge transfer makes lessons permanent        |
 
 ### 14. Memory vs Knowledge Rules
 
 **CRITICAL: Different stages have different recording permissions.**
 
-| Stage Type | `loom memory` | `loom knowledge` |
-|------------|---------------|------------------|
-| knowledge-bootstrap | YES | YES |
-| Implementation stages | YES (ONLY) | **FORBIDDEN** |
-| integration-verify | YES | YES (promote only) |
-| code-review | YES | YES (promote only) |
+| Stage Type            | `loom memory` | `loom knowledge`   |
+| --------------------- | ------------- | ------------------ |
+| knowledge-bootstrap   | YES           | YES                |
+| Implementation stages | YES (ONLY)    | **FORBIDDEN**      |
+| integration-verify    | YES           | YES (promote only) |
+| code-review           | YES           | YES (promote only) |
 
 **Why this separation?**
 
@@ -800,12 +800,12 @@ During implementation stages, you MUST:
 
 **Why this structure?**
 
-| Benefit | Explanation |
-| ------- | ----------- |
-| Human review | Users can quickly understand the plan without parsing YAML |
-| Context for agents | Stage descriptions give agents fuller understanding |
-| Maintainability | Humans can review/edit the readable section easily |
-| Machine processing | YAML at bottom still enables loom CLI parsing |
+| Benefit            | Explanation                                                |
+| ------------------ | ---------------------------------------------------------- |
+| Human review       | Users can quickly understand the plan without parsing YAML |
+| Context for agents | Stage descriptions give agents fuller understanding        |
+| Maintainability    | Humans can review/edit the readable section easily         |
+| Machine processing | YAML at bottom still enables loom CLI parsing              |
 
 ### 16. After Writing Plan
 
@@ -911,6 +911,7 @@ Stages in `[a, b]` notation run concurrently in separate worktrees. Code review 
 **Purpose:** Explore codebase and populate knowledge base before implementation.
 
 **Tasks:**
+
 - Map high-level architecture and component relationships
 - Identify entry points (CLI commands, API endpoints, main modules)
 - Document patterns (error handling, state management, idioms)
@@ -929,6 +930,7 @@ Stages in `[a, b]` notation run concurrently in separate worktrees. Code review 
 **Dependencies:** knowledge-bootstrap
 
 **Tasks:**
+
 - [Specific task 1 with clear requirements]
 - [Specific task 2 with clear requirements]
 - Use parallel subagents for independent subtasks
@@ -948,6 +950,7 @@ Stages in `[a, b]` notation run concurrently in separate worktrees. Code review 
 **Dependencies:** knowledge-bootstrap (runs parallel with Feature A)
 
 **Tasks:**
+
 - [Specific task 1 with clear requirements]
 - [Specific task 2 with clear requirements]
 - Use parallel subagents for independent subtasks
@@ -968,17 +971,20 @@ Stages in `[a, b]` notation run concurrently in separate worktrees. Code review 
 
 **Tasks:**
 
-*Build & Test:*
+_Build & Test:_
+
 - Run full test suite (all tests, not just affected)
 - Run linting with warnings as errors
 - Verify build succeeds (debug and release)
 
-*Functional Verification (CRITICAL):*
+_Functional Verification (CRITICAL):_
+
 - Verify features are WIRED INTO the application (not just compiled)
 - Execute smoke test of primary use case end-to-end
 - Confirm user-visible behavior works as expected
 
-*Knowledge:*
+_Knowledge:_
+
 - Promote session memory insights to knowledge
 - Update architecture.md if structure changed
 
@@ -1085,7 +1091,7 @@ loom:
       files: []
       working_dir: "."
       truths:
-        - "myapp --help"  # Adapt to YOUR feature
+        - "myapp --help" # Adapt to YOUR feature
       wiring:
         - source: "src/main.rs"
           pattern: "feature_a"

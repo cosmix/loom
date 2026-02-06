@@ -550,11 +550,11 @@ groups:
 
 #### Alert Severity Levels
 
-| Level        | Response Time | Examples                                      |
-| ------------ | ------------- | --------------------------------------------- |
-| **Critical** | Immediate     | Service down, high error rate, data loss      |
-| **Warning**  | Business hrs  | High latency, approaching limits, retry spikes|
-| **Info**     | Log only      | Deployment started, config changed            |
+| Level        | Response Time | Examples                                       |
+| ------------ | ------------- | ---------------------------------------------- |
+| **Critical** | Immediate     | Service down, high error rate, data loss       |
+| **Warning**  | Business hrs  | High latency, approaching limits, retry spikes |
+| **Info**     | Log only      | Deployment started, config changed             |
 
 ## Best Practices
 

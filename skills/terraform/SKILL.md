@@ -277,7 +277,7 @@ tofu init -migrate-state -backend-config="bucket=new-bucket"
 
 ### 5. Multi-Environment Management
 
-**Strategy 1: Workspaces (Simple, Same Backend)**
+#### Strategy 1: Workspaces (Simple, Same Backend)
 
 ```bash
 # Create and switch workspaces
@@ -302,7 +302,7 @@ locals {
 }
 ```
 
-**Strategy 2: Directory Structure (Complex, Isolated)**
+#### Strategy 2: Directory Structure (Complex, Isolated)
 
 ```text
 terraform/
@@ -317,7 +317,7 @@ terraform/
 │   └── prod/
 ```
 
-**Strategy 3: tfvars Files (Flexible)**
+#### Strategy 3: tfvars Files (Flexible)
 
 ```bash
 # environments/dev.tfvars
@@ -742,7 +742,7 @@ resource "aws_instance" "app" {
 
 ### 9. Troubleshooting Common Issues
 
-**Issue: State Lock Timeout**
+#### Issue: State Lock Timeout
 
 ```bash
 # Problem: Another process has state locked
@@ -751,7 +751,7 @@ resource "aws_instance" "app" {
 tofu force-unlock <LOCK_ID>
 ```
 
-**Issue: Provider Plugin Errors**
+#### Issue: Provider Plugin Errors
 
 ```bash
 # Problem: Corrupted provider cache
@@ -761,7 +761,7 @@ rm .terraform.lock.hcl
 tofu init
 ```
 
-**Issue: Resource Already Exists**
+#### Issue: Resource Already Exists
 
 ```bash
 # Problem: Resource exists but not in state
@@ -771,7 +771,7 @@ tofu import aws_instance.example i-1234567890abcdef0
 # Or: Remove from code and manage outside Terraform
 ```
 
-**Issue: Circular Dependency**
+#### Issue: Circular Dependency
 
 ```hcl
 # Problem: Resources depend on each other
@@ -789,7 +789,7 @@ resource "aws_security_group_rule" "app_to_db" {
 # Solution 2: Restructure dependencies to be unidirectional
 ```
 
-**Issue: Sensitive Data in State**
+#### Issue: Sensitive Data in State
 
 ```bash
 # Problem: Passwords/keys visible in state file
@@ -798,7 +798,7 @@ resource "aws_security_group_rule" "app_to_db" {
 # Use AWS Secrets Manager / Vault for secrets
 ```
 
-**Issue: Resource Drift**
+#### Issue: Resource Drift
 
 ```bash
 # Detect drift
@@ -814,7 +814,7 @@ tofu apply -refresh-only
 tofu apply
 ```
 
-**Issue: Module Source Changes**
+#### Issue: Module Source Changes
 
 ```bash
 # Problem: Module source or version changed
@@ -825,7 +825,7 @@ tofu init -upgrade
 tofu providers lock
 ```
 
-**Issue: Large Plan Output**
+#### Issue: Large Plan Output
 
 ```bash
 # Filter plan output
@@ -839,7 +839,7 @@ tofu show tfplan
 tofu plan | grep "aws_instance"
 ```
 
-**Issue: Timeout Errors**
+#### Issue: Timeout Errors
 
 ```hcl
 # Configure timeouts for long-running operations
@@ -904,18 +904,18 @@ terraform-compliance -f compliance/ -p .
 
 ## OpenTofu vs Terraform Commands
 
-| Terraform            | OpenTofu (Preferred) |
-| -------------------- | -------------------- |
-| `terraform init`     | `tofu init`          |
-| `terraform plan`     | `tofu plan`          |
-| `terraform apply`    | `tofu apply`         |
-| `terraform destroy`  | `tofu destroy`       |
-| `terraform fmt`      | `tofu fmt`           |
-| `terraform validate` | `tofu validate`      |
-| `terraform state`    | `tofu state`         |
-| `terraform import`   | `tofu import`        |
-| `terraform output`   | `tofu output`        |
-| `terraform workspace`| `tofu workspace`     |
+| Terraform             | OpenTofu (Preferred) |
+| --------------------- | -------------------- |
+| `terraform init`      | `tofu init`          |
+| `terraform plan`      | `tofu plan`          |
+| `terraform apply`     | `tofu apply`         |
+| `terraform destroy`   | `tofu destroy`       |
+| `terraform fmt`       | `tofu fmt`           |
+| `terraform validate`  | `tofu validate`      |
+| `terraform state`     | `tofu state`         |
+| `terraform import`    | `tofu import`        |
+| `terraform output`    | `tofu output`        |
+| `terraform workspace` | `tofu workspace`     |
 
 ## Examples
 

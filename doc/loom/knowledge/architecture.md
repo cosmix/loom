@@ -326,7 +326,7 @@ Module at loom/src/verify/goal_backward/:
 
 Flow: StageDefinition (truths/artifacts/wiring) → run_goal_backward_verification() → GoalBackwardResult
 
-Storage: .work/verifications/<stage-id>.json via loom/src/fs/verifications.rs
+Storage: .work/verifications/`<stage-id>`.json via loom/src/fs/verifications.rs
 
 ## Codebase Mapping System
 
@@ -412,7 +412,7 @@ CRITICAL RULE: Lower layers MUST NEVER import from higher layers. This violation
 Loom enforces isolation at multiple layers to enable safe parallel stage execution.
 
 | Layer | Implementation | Purpose |
-|-------|----------------|---------|
+| ------- | ----------------- | ------------- |
 | Git | Separate worktrees with branches | File isolation |
 | Sandbox | settings.local.json | Permissions |
 | Signal | Stable prefix rules | Instructions |
@@ -605,6 +605,7 @@ Signal includes: crash report, git status, diff, failure info, acceptance criter
 ## Settings Management Architecture
 
 Two permission sets in constants.rs:
+
 - LOOM_PERMISSIONS (main repo): Read/Write .work/**, Read .claude/CLAUDE.md, Bash(loom:*)
 - LOOM_PERMISSIONS_WORKTREE (worktree): Same set, paths resolve relative to worktree root
 
@@ -621,6 +622,7 @@ settings.json env duplicates vars but OMITS MAIN_AGENT_PID (must be dynamic).
 ## Signal Stable Prefix Functions (cache.rs)
 
 Four stage-type-specific prefix generators for KV-cache optimization:
+
 - generate_stable_prefix(): Standard stages - isolation rules, git warnings
 - generate_knowledge_stable_prefix(): Knowledge stages - exploration, no commits
 - generate_code_review_stable_prefix(): Review - parallel review agents
@@ -631,6 +633,7 @@ Hash via SHA-256 (first 16 hex chars) for cache debugging.
 ## Schema-to-Runtime Field Pipeline
 
 StageDefinition (plan/schema/types.rs:209) -> Stage (models/stage/types.rs:86):
+
 - create_stage_from_definition() at plan_setup.rs:327-381 converts
 - Most fields direct, working_dir wraps String -> Option
 - status computed: empty deps -> Queued, else WaitingForDeps
@@ -641,28 +644,32 @@ StageDefinition (plan/schema/types.rs:209) -> Stage (models/stage/types.rs:86):
 ### Timing Fields (models/stage/types.rs:125-133)
 
 Three timing fields on Stage struct:
-- started_at: Option<DateTime<Utc>> - Set on FIRST execution only (preserved across retries)
-- completed_at: Option<DateTime<Utc>> - Set when stage transitions to Completed
-- duration_secs: Option<i64> - Computed as completed_at - started_at on completion
+
+- started_at: `Option<DateTime<Utc>>` - Set on FIRST execution only (preserved across retries)
+- completed_at: `Option<DateTime<Utc>>` - Set when stage transitions to Completed
+- duration_secs: `Option<i64>` - Computed as completed_at - started_at on completion
 
 All three use #[serde(default, skip_serializing_if = "Option::is_none")].
 
 ### Timing Mutation Points
 
 started_at set via try_mark_executing() (methods.rs:163-169):
+
 - Only if self.started_at.is_none() - preserves across retries
 - Called from: stage_executor.rs:79/154, resume.rs:90/101, state.rs:121
 
 completed_at + duration_secs set via try_complete() (methods.rs:128-138):
+
 - duration = now.signed_duration_since(started_at).num_seconds()
 - Called from: complete.rs:368, knowledge_complete.rs:137, verify.rs:107/178
 
 ### Completion Summary (daemon/server/status.rs:323-433)
 
 collect_completion_summary() reads all stage files, computes:
+
 - Per-stage duration_secs: completed_at - started_at
 - total_duration_secs: latest_completion - earliest_start
 - success_count/failure_count by status
 
-Returns CompletionSummary with Vec<StageCompletionInfo> (protocol.rs:14-21).
+Returns CompletionSummary with `Vec<StageCompletionInfo>` (protocol.rs:14-21).
 Display: format_elapsed() (utils.rs:21) compact, format_elapsed_verbose() (utils.rs:40) verbose.

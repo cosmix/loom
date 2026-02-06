@@ -284,6 +284,7 @@ server_tokens off;
 ## REST API Security
 
 Authentication & Authorization:
+
 - [ ] JWT tokens validated on every request
 - [ ] Token expiration enforced (access: 15min, refresh: 7days)
 - [ ] Token revocation mechanism implemented
@@ -292,6 +293,7 @@ Authentication & Authorization:
 - [ ] Authorization checked at resource level (not just endpoint)
 
 Input Validation:
+
 - [ ] Request body validated against schema (JSON Schema, Pydantic)
 - [ ] Path parameters validated (type, format, range)
 - [ ] Query parameters validated and sanitized
@@ -300,6 +302,7 @@ Input Validation:
 - [ ] URL parameters encoded to prevent injection
 
 Rate Limiting & DoS Protection:
+
 - [ ] Rate limiting per API key/user/IP
 - [ ] Burst protection implemented
 - [ ] Request size limits enforced
@@ -307,18 +310,21 @@ Rate Limiting & DoS Protection:
 - [ ] Circuit breakers for downstream services
 
 CORS & Origin Validation:
-- [ ] CORS policies restrictive (not wildcard *)
+
+- [ ] CORS policies restrictive (not wildcard \*)
 - [ ] Allowed origins whitelisted
 - [ ] Credentials flag used correctly
 - [ ] Preflight requests handled securely
 
 Error Handling:
+
 - [ ] Generic error messages to clients
 - [ ] Stack traces never exposed
 - [ ] Error codes documented without leaking internals
 - [ ] Sensitive data redacted from logs
 
 GraphQL Specific:
+
 - [ ] Query depth limiting (max 7-10 levels)
 - [ ] Query complexity scoring implemented
 - [ ] Introspection disabled in production
@@ -326,6 +332,7 @@ GraphQL Specific:
 - [ ] Field-level authorization implemented
 
 gRPC Specific:
+
 - [ ] mTLS for service-to-service communication
 - [ ] Interceptors for authentication/authorization
 - [ ] Message size limits configured
@@ -369,12 +376,14 @@ bandit -r . -f json -o bandit-results.json
 ## Data Flow Security
 
 Data Classification:
+
 - [ ] Data classified (Public, Internal, Confidential, Restricted)
 - [ ] PII/PHI identified and tagged
 - [ ] Sensitive data inventory maintained
 - [ ] Data retention policies defined per classification
 
 Encryption:
+
 - [ ] Data encrypted at rest (AES-256 or equivalent)
 - [ ] Data encrypted in transit (TLS 1.2+)
 - [ ] Key management via KMS/vault (not hardcoded)
@@ -382,6 +391,7 @@ Encryption:
 - [ ] Encryption verified at each pipeline stage
 
 Access Controls:
+
 - [ ] Role-based access to data sources
 - [ ] Service accounts with least privilege
 - [ ] Data access logged and monitored
@@ -389,12 +399,14 @@ Access Controls:
 - [ ] Row-level security where applicable
 
 Data Validation:
+
 - [ ] Schema validation at ingestion
 - [ ] Data quality checks prevent malicious inputs
 - [ ] Anomaly detection for unusual patterns
 - [ ] PII detection and masking automated
 
 Compliance:
+
 - [ ] GDPR: Right to erasure implemented
 - [ ] GDPR: Data minimization applied
 - [ ] GDPR: Consent tracking for EU subjects
@@ -403,6 +415,7 @@ Compliance:
 - [ ] Data residency requirements met
 
 Audit Trail:
+
 - [ ] Data lineage tracked end-to-end
 - [ ] Access logs immutable and retained
 - [ ] Change tracking for schema/permissions
@@ -415,6 +428,7 @@ Audit Trail:
 ## ML Security Threats
 
 Training Phase:
+
 - [ ] Training data provenance verified
 - [ ] Data poisoning detection (outlier detection, statistical tests)
 - [ ] Training environment isolated and hardened
@@ -422,12 +436,14 @@ Training Phase:
 - [ ] Training logs sanitized (no PII/secrets)
 
 Model Artifacts:
+
 - [ ] Models versioned and signed
 - [ ] Model registry access-controlled
 - [ ] Model artifacts scanned for embedded secrets
 - [ ] Model provenance tracked (data, hyperparameters, code)
 
 Inference Phase:
+
 - [ ] Input validation and sanitization
 - [ ] Adversarial input detection
 - [ ] Rate limiting on inference API
@@ -435,6 +451,7 @@ Inference Phase:
 - [ ] Inference logs sanitized
 
 Attack Vectors:
+
 - [ ] Model inversion attacks: Cannot reconstruct training data from model
 - [ ] Membership inference: Cannot determine if data was in training set
 - [ ] Model extraction: API rate limits prevent model stealing
@@ -442,12 +459,14 @@ Attack Vectors:
 - [ ] Backdoor attacks: Model audited for hidden triggers
 
 Privacy Preservation:
+
 - [ ] Differential privacy applied (if required)
 - [ ] Federated learning for sensitive data (if applicable)
 - [ ] Synthetic data used for testing
 - [ ] PII removed from training data or anonymized
 
 Monitoring:
+
 - [ ] Model drift detection
 - [ ] Inference anomaly detection
 - [ ] Performance degradation alerting
@@ -460,6 +479,7 @@ Monitoring:
 ## SOC2 Type II Controls
 
 CC6.1 Logical and Physical Access Controls:
+
 - [ ] MFA enforced for all users
 - [ ] Password complexity requirements
 - [ ] Account lockout after failed attempts
@@ -467,12 +487,14 @@ CC6.1 Logical and Physical Access Controls:
 - [ ] Privileged access monitored
 
 CC6.6 Logical Access - Encryption:
+
 - [ ] Data encrypted at rest (AES-256)
 - [ ] Data encrypted in transit (TLS 1.2+)
 - [ ] Key management documented
 - [ ] Encryption verified in audits
 
 CC7.2 System Monitoring - Detection:
+
 - [ ] SIEM deployed and configured
 - [ ] Intrusion detection system active
 - [ ] Log aggregation and retention
@@ -482,12 +504,14 @@ CC7.2 System Monitoring - Detection:
 ## PCI-DSS Requirements
 
 Requirement 3: Protect Stored Cardholder Data
+
 - [ ] Cardholder data encrypted (AES-256)
 - [ ] Encryption keys managed securely
 - [ ] Card data retention minimized
 - [ ] PAN masked in logs/UI (show last 4 only)
 
 Requirement 6: Develop Secure Systems
+
 - [ ] Secure coding guidelines followed
 - [ ] Code review for security
 - [ ] Web application firewall deployed
@@ -495,6 +519,7 @@ Requirement 6: Develop Secure Systems
 - [ ] Penetration testing annually
 
 Requirement 10: Track and Monitor Access
+
 - [ ] Audit trails for all access to cardholder data
 - [ ] Logs protected from modification
 - [ ] Log retention 90 days immediate, 1 year archive
@@ -503,6 +528,7 @@ Requirement 10: Track and Monitor Access
 ## GDPR Compliance
 
 Data Subject Rights:
+
 - [ ] Right to access: Export user data API
 - [ ] Right to rectification: Update mechanisms
 - [ ] Right to erasure: Delete all user data
@@ -510,6 +536,7 @@ Data Subject Rights:
 - [ ] Right to object: Opt-out mechanisms
 
 Privacy by Design:
+
 - [ ] Data minimization applied
 - [ ] Purpose limitation enforced
 - [ ] Storage limitation policies
@@ -517,6 +544,7 @@ Privacy by Design:
 - [ ] DPO designated (if required)
 
 Security Measures:
+
 - [ ] Pseudonymization where possible
 - [ ] Encryption for sensitive data
 - [ ] Regular security testing
@@ -529,6 +557,7 @@ Security Measures:
 ## Severity Classification
 
 CRITICAL (CVSS 9.0-10.0):
+
 - Remote code execution (RCE)
 - SQL injection with data exfiltration
 - Authentication bypass
@@ -538,6 +567,7 @@ CRITICAL (CVSS 9.0-10.0):
 Action: Patch immediately, emergency change process
 
 HIGH (CVSS 7.0-8.9):
+
 - Privilege escalation
 - Cross-site scripting (XSS) in admin panel
 - Insecure deserialization
@@ -547,6 +577,7 @@ HIGH (CVSS 7.0-8.9):
 Action: Patch within 7 days
 
 MEDIUM (CVSS 4.0-6.9):
+
 - Information disclosure (stack traces, versions)
 - CSRF on non-critical operations
 - Missing rate limiting
@@ -556,6 +587,7 @@ MEDIUM (CVSS 4.0-6.9):
 Action: Patch within 30 days
 
 LOW (CVSS 0.1-3.9):
+
 - Missing security headers
 - Verbose error messages
 - Directory listing enabled
@@ -565,6 +597,7 @@ LOW (CVSS 0.1-3.9):
 Action: Patch in next release
 
 INFO (CVSS 0.0):
+
 - Security best practice recommendations
 - Hardening opportunities
 - Defense in depth suggestions

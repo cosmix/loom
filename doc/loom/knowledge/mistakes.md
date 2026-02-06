@@ -168,7 +168,7 @@ Used loom/src/... when working_dir=loom. Should use src/... (relative to working
 
 ### Decisions
 
-- **Used chars().take().collect::<String>() pattern for UTF-8 safe string truncation**
+- **Used chars().take().collect::`<String>`() pattern for UTF-8 safe string truncation**
   - _Rationale:_ Byte-level slicing like &s[..n] can panic on multi-byte UTF-8 characters (emoji are 4 bytes, CJK are 3 bytes). Using chars().count() and chars().take(n) ensures we truncate at character boundaries, not byte boundaries.
 - **Fixed file lock issue by writing directly to locked file handle**
   - _Rationale:_ fs::write() opens a NEW file handle which doesn't respect locks held by other handles. Instead, use file.set_len(0), file.seek(Start(0)), file.write_all() to write to the same locked handle.

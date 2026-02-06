@@ -384,15 +384,15 @@ function Notification({ message, type }) {
 
 #### Standard Keyboard Patterns
 
-| Pattern | Keys | Behavior |
-|---------|------|----------|
-| **Tab navigation** | Tab, Shift+Tab | Move focus forward/backward through interactive elements |
-| **Arrow navigation** | Arrow keys | Navigate within composite widgets (menus, tabs, lists) |
-| **Action keys** | Enter, Space | Activate buttons/links (Enter for both, Space for buttons) |
-| **Escape** | Esc | Close dialogs, cancel operations, exit modes |
-| **Home/End** | Home, End | Move to first/last item in a group |
-| **Page Up/Down** | PgUp, PgDn | Scroll or navigate by page |
-| **Type-ahead** | Letter keys | Find items by typing first letter |
+| Pattern              | Keys           | Behavior                                                   |
+| -------------------- | -------------- | ---------------------------------------------------------- |
+| **Tab navigation**   | Tab, Shift+Tab | Move focus forward/backward through interactive elements   |
+| **Arrow navigation** | Arrow keys     | Navigate within composite widgets (menus, tabs, lists)     |
+| **Action keys**      | Enter, Space   | Activate buttons/links (Enter for both, Space for buttons) |
+| **Escape**           | Esc            | Close dialogs, cancel operations, exit modes               |
+| **Home/End**         | Home, End      | Move to first/last item in a group                         |
+| **Page Up/Down**     | PgUp, PgDn     | Scroll or navigate by page                                 |
+| **Type-ahead**       | Letter keys    | Find items by typing first letter                          |
 
 #### Common Widget Patterns
 
@@ -560,13 +560,13 @@ function SkipLink({ targetId, children = "Skip to main content" }) {
 
 #### Screen Reader Reference
 
-| Reader | Platform | Cost | Enable | Key Shortcuts |
-|--------|----------|------|--------|---------------|
-| **NVDA** | Windows | Free | Auto-start | Start: NVDA+Down, Stop: Ctrl, Next heading: H, Next link: K, Next form: F, Landmarks: D, Elements list: NVDA+F7 |
-| **JAWS** | Windows | Paid | Auto-start | Start: Insert+Down, Stop: Ctrl, Next heading: H, Headings list: Insert+F6 |
-| **VoiceOver** | macOS/iOS | Built-in | Cmd+F5 | Next: VO+Right, Previous: VO+Left, Rotor: VO+U, Activate: VO+Space |
-| **TalkBack** | Android | Built-in | Settings | Next: Swipe right, Previous: Swipe left, Activate: Double tap, Scroll: Two-finger swipe |
-| **Narrator** | Windows | Built-in | Ctrl+Win+Enter | Scan mode: Caps Lock+Space, Next heading: H, Next link: K |
+| Reader        | Platform  | Cost     | Enable         | Key Shortcuts                                                                                                   |
+| ------------- | --------- | -------- | -------------- | --------------------------------------------------------------------------------------------------------------- |
+| **NVDA**      | Windows   | Free     | Auto-start     | Start: NVDA+Down, Stop: Ctrl, Next heading: H, Next link: K, Next form: F, Landmarks: D, Elements list: NVDA+F7 |
+| **JAWS**      | Windows   | Paid     | Auto-start     | Start: Insert+Down, Stop: Ctrl, Next heading: H, Headings list: Insert+F6                                       |
+| **VoiceOver** | macOS/iOS | Built-in | Cmd+F5         | Next: VO+Right, Previous: VO+Left, Rotor: VO+U, Activate: VO+Space                                              |
+| **TalkBack**  | Android   | Built-in | Settings       | Next: Swipe right, Previous: Swipe left, Activate: Double tap, Scroll: Two-finger swipe                         |
+| **Narrator**  | Windows   | Built-in | Ctrl+Win+Enter | Scan mode: Caps Lock+Space, Next heading: H, Next link: K                                                       |
 
 #### Screen Reader Testing Checklist
 

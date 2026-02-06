@@ -68,14 +68,12 @@ For specialized reviews, use relevant skills such as `/security-audit` for secur
 ### Security Review Checklist
 
 - **Authentication/Authorization**
-
   - Proper credential storage (hashed, salted passwords)
   - Session management (expiry, secure cookies, CSRF tokens)
   - Access control checks on all sensitive operations
   - OAuth/JWT token validation and expiry
 
 - **Input Validation**
-
   - SQL injection prevention (parameterized queries)
   - XSS prevention (output encoding)
   - Command injection prevention (no shell execution with user input)
@@ -83,7 +81,6 @@ For specialized reviews, use relevant skills such as `/security-audit` for secur
   - SSRF prevention (validate URLs)
 
 - **Data Protection**
-
   - Sensitive data encryption at rest and in transit
   - PII handling compliance (GDPR, CCPA)
   - Secrets not in code or logs
@@ -98,7 +95,6 @@ For specialized reviews, use relevant skills such as `/security-audit` for secur
 ### Infrastructure Code Review Checklist
 
 - **Terraform/IaC**
-
   - No hardcoded credentials or secrets
   - State file backend configured securely
   - Resource tagging for cost tracking
@@ -107,7 +103,6 @@ For specialized reviews, use relevant skills such as `/security-audit` for secur
   - Disaster recovery configuration (backups, multi-region)
 
 - **Kubernetes**
-
   - Resource limits and requests defined
   - Pod security policies/admission controllers
   - Network policies for isolation
@@ -116,7 +111,6 @@ For specialized reviews, use relevant skills such as `/security-audit` for secur
   - RBAC configured properly
 
 - **Docker**
-
   - Minimal base images (distroless, alpine)
   - No secrets in layers
   - Multi-stage builds for size
@@ -132,21 +126,18 @@ For specialized reviews, use relevant skills such as `/security-audit` for secur
 ### Data Pipeline Review Checklist
 
 - **Data Quality**
-
   - Schema validation
   - Null handling strategy
   - Duplicate detection
   - Data type enforcement
 
 - **Reliability**
-
   - Idempotent operations
   - Exactly-once processing guarantees
   - Dead letter queues for failures
   - Monitoring and alerting
 
 - **Performance**
-
   - Batch processing where appropriate
   - Partitioning strategy
   - Compression usage
@@ -160,21 +151,18 @@ For specialized reviews, use relevant skills such as `/security-audit` for secur
 ### ML Code Review Checklist
 
 - **Model Development**
-
   - Reproducible experiments (seed setting)
   - Data versioning
   - Model versioning
   - Feature engineering documentation
 
 - **Training**
-
   - Training/validation/test split correctness
   - Overfitting checks
   - Hyperparameter tracking
   - Gradient explosion/vanishing checks
 
 - **Production**
-
   - Model serving latency requirements
   - Model monitoring (drift detection)
   - A/B testing capability

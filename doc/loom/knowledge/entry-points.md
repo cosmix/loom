@@ -287,12 +287,12 @@ Socket at `.work/orchestrator.sock` with 4-byte length-prefixed JSON:
 
 ## New CLI Commands
 
-loom verify <stage-id> [--suggest]
+loom verify `<stage-id>` [--suggest]
   Entry: loom/src/commands/verify.rs
   Runs goal-backward verification (truths, artifacts, wiring)
-  
-loom map [--deep] [--focus <area>] [--overwrite]
-  Entry: loom/src/commands/map.rs  
+
+loom map [--deep] [--focus `<area>`] [--overwrite]
+  Entry: loom/src/commands/map.rs
   Analyzes codebase structure, writes to knowledge files
 
 ## Merge Verification Entry Points
@@ -350,6 +350,7 @@ New completion handlers added:
 ## Agent Teams Integration Points
 
 ### Settings System
+
 - fs/permissions/settings.rs:35 - ensure_loom_permissions() entry
 - fs/permissions/settings.rs:131 - create_worktree_settings() entry
 - fs/permissions/constants.rs:79 - LOOM_PERMISSIONS constant
@@ -357,6 +358,7 @@ New completion handlers added:
 - fs/permissions/hooks.rs:14 - loom_hooks_config() returns hook JSON
 
 ## Schema Transformation Points
+
 - plan/schema/types.rs:209 - StageDefinition struct (YAML input)
 - models/stage/types.rs:86 - Stage struct (runtime model)
 - commands/init/plan_setup.rs:327 - create_stage_from_definition() converter
@@ -374,16 +376,19 @@ format_recitation_section(). Assembly (format/mod.rs): format_signal_with_metric
 ## Stage Timing Code Paths
 
 ### Setting Timestamps
+
 - models/stage/methods.rs:163-169 - try_mark_executing() sets started_at
 - models/stage/methods.rs:128-138 - try_complete() sets completed_at + duration_secs
 - models/stage/methods.rs:218-229 - try_complete_merge() also sets timing
 - commands/stage/state.rs:44-49 - reset() clears all timing fields
 
 ### Duration Formatting
+
 - utils.rs:21-29 - format_elapsed() compact (30s, 1m30s, 1h1m)
 - utils.rs:40-52 - format_elapsed_verbose() with spaces
 
 ### Status Display Timing
+
 - daemon/server/status.rs:257-274 - get_stage_started_at() from frontmatter
 - daemon/server/status.rs:279-288 - get_stage_completed_at() from frontmatter
 - daemon/server/status.rs:323-433 - collect_completion_summary()
@@ -392,6 +397,7 @@ format_recitation_section(). Assembly (format/mod.rs): format_signal_with_metric
 - commands/status/ui/tui/renderer.rs:83-89 - TUI stage duration calc
 
 ### Retry/Recovery Code Path
+
 - orchestrator/monitor/detection.rs - PID liveness + heartbeat checks
 - orchestrator/core/crash_handler.rs:14-109 - handle_session_crashed()
 - orchestrator/retry.rs - classify_failure(), calculate_backoff()

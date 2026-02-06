@@ -20,17 +20,17 @@ Istio is an open-source service mesh that provides traffic management, security,
 
 ### Quick Reference: Common Tasks
 
-| Task | Resources | Section |
-|------|-----------|---------|
-| Enable mTLS between services | PeerAuthentication | mTLS PeerAuthentication |
-| Route traffic to new version | VirtualService + DestinationRule | Traffic Splitting for Canary |
-| Add circuit breaker | DestinationRule (outlierDetection) | Circuit Breaker and Retry |
-| Configure retries/timeouts | VirtualService (retries, timeout) | Circuit Breaker and Retry |
-| Expose service to internet | Gateway + VirtualService | Gateway and VirtualService |
-| Control egress traffic | Sidecar + ServiceEntry | Sidecar Resource for Egress |
-| Add authorization rules | AuthorizationPolicy | AuthorizationPolicy for RBAC |
-| Configure load balancing | DestinationRule (loadBalancer) | DestinationRule with Traffic Policies |
-| Test resilience | VirtualService (fault injection) | Fault Injection for Testing |
+| Task                         | Resources                          | Section                               |
+| ---------------------------- | ---------------------------------- | ------------------------------------- |
+| Enable mTLS between services | PeerAuthentication                 | mTLS PeerAuthentication               |
+| Route traffic to new version | VirtualService + DestinationRule   | Traffic Splitting for Canary          |
+| Add circuit breaker          | DestinationRule (outlierDetection) | Circuit Breaker and Retry             |
+| Configure retries/timeouts   | VirtualService (retries, timeout)  | Circuit Breaker and Retry             |
+| Expose service to internet   | Gateway + VirtualService           | Gateway and VirtualService            |
+| Control egress traffic       | Sidecar + ServiceEntry             | Sidecar Resource for Egress           |
+| Add authorization rules      | AuthorizationPolicy                | AuthorizationPolicy for RBAC          |
+| Configure load balancing     | DestinationRule (loadBalancer)     | DestinationRule with Traffic Policies |
+| Test resilience              | VirtualService (fault injection)   | Fault Injection for Testing           |
 
 ### Architecture Components
 

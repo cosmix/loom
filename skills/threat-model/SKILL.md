@@ -24,25 +24,25 @@ This skill provides structured methodologies for identifying, analyzing, and mit
 
 Categorize threats by type:
 
-| Threat | Description | Security Property |
-|--------|-------------|-------------------|
-| **S**poofing | Impersonating users or systems | Authentication |
-| **T**ampering | Modifying data or code | Integrity |
-| **R**epudiation | Denying actions occurred | Non-repudiation |
-| **I**nformation Disclosure | Exposing data to unauthorized parties | Confidentiality |
-| **D**enial of Service | Making system unavailable | Availability |
-| **E**levation of Privilege | Gaining unauthorized access | Authorization |
+| Threat                     | Description                           | Security Property |
+| -------------------------- | ------------------------------------- | ----------------- |
+| **S**poofing               | Impersonating users or systems        | Authentication    |
+| **T**ampering              | Modifying data or code                | Integrity         |
+| **R**epudiation            | Denying actions occurred              | Non-repudiation   |
+| **I**nformation Disclosure | Exposing data to unauthorized parties | Confidentiality   |
+| **D**enial of Service      | Making system unavailable             | Availability      |
+| **E**levation of Privilege | Gaining unauthorized access           | Authorization     |
 
 ### DREAD (Risk Scoring)
 
 Score each threat (1-10) across five dimensions:
 
-| Factor | Question |
-|--------|----------|
-| **D**amage | How severe is the impact? |
-| **R**eproducibility | How easily can it be reproduced? |
-| **E**xploitability | How much skill/resources needed? |
-| **A**ffected Users | How many users impacted? |
+| Factor              | Question                            |
+| ------------------- | ----------------------------------- |
+| **D**amage          | How severe is the impact?           |
+| **R**eproducibility | How easily can it be reproduced?    |
+| **E**xploitability  | How much skill/resources needed?    |
+| **A**ffected Users  | How many users impacted?            |
 | **D**iscoverability | How easy to find the vulnerability? |
 
 **Risk Score** = (D + R + E + A + D) / 5
@@ -69,16 +69,18 @@ Seven-stage process:
 
 ```markdown
 ## System Overview
+
 - **Name**: [System name]
 - **Purpose**: [What it does]
 - **Sensitivity**: [Data classification]
 
 ## Assets to Protect
-| Asset | Classification | Impact if Compromised |
-|-------|---------------|----------------------|
-| User credentials | Confidential | Account takeover |
-| Payment data | PCI-DSS | Financial loss, compliance |
-| Personal data | PII/GDPR | Privacy breach, fines |
+
+| Asset            | Classification | Impact if Compromised      |
+| ---------------- | -------------- | -------------------------- |
+| User credentials | Confidential   | Account takeover           |
+| Payment data     | PCI-DSS        | Financial loss, compliance |
+| Personal data    | PII/GDPR       | Privacy breach, fines      |
 ```
 
 ### Step 2: Create Data Flow Diagram
@@ -123,23 +125,25 @@ Identify:
 ## Threat Analysis
 
 ### API Gateway
-| STRIDE | Threat | Likelihood | Impact |
-|--------|--------|------------|--------|
-| S | Forged JWT tokens | Medium | High |
-| T | Request body manipulation | Low | Medium |
-| R | Missing audit logs | Medium | Medium |
-| I | Verbose error messages | High | Medium |
-| D | Rate limiting bypass | Medium | High |
-| E | IDOR to access other users | Medium | Critical |
+
+| STRIDE | Threat                     | Likelihood | Impact   |
+| ------ | -------------------------- | ---------- | -------- |
+| S      | Forged JWT tokens          | Medium     | High     |
+| T      | Request body manipulation  | Low        | Medium   |
+| R      | Missing audit logs         | Medium     | Medium   |
+| I      | Verbose error messages     | High       | Medium   |
+| D      | Rate limiting bypass       | Medium     | High     |
+| E      | IDOR to access other users | Medium     | Critical |
 
 ### Database
-| STRIDE | Threat | Likelihood | Impact |
-|--------|--------|------------|--------|
-| S | Connection impersonation | Low | Critical |
-| T | SQL injection | Medium | Critical |
-| I | Unencrypted backups | Medium | High |
-| D | Resource exhaustion | Low | High |
-| E | Privilege escalation via SQLi | Medium | Critical |
+
+| STRIDE | Threat                        | Likelihood | Impact   |
+| ------ | ----------------------------- | ---------- | -------- |
+| S      | Connection impersonation      | Low        | Critical |
+| T      | SQL injection                 | Medium     | Critical |
+| I      | Unencrypted backups           | Medium     | High     |
+| D      | Resource exhaustion           | Low        | High     |
+| E      | Privilege escalation via SQLi | Medium     | Critical |
 ```
 
 ### Step 4: Build Attack Trees
@@ -173,13 +177,13 @@ Identify:
 ```markdown
 ## Mitigation Plan
 
-| Threat | Mitigation | Priority | Status |
-|--------|------------|----------|--------|
-| SQL Injection | Parameterized queries, input validation | P0 | In Progress |
-| IDOR | Authorization checks on all endpoints | P0 | Not Started |
-| JWT Forgery | RS256 signing, short expiry, rotation | P1 | Done |
-| Brute Force | Rate limiting, account lockout, MFA | P1 | Partial |
-| Verbose Errors | Generic error messages in prod | P2 | Not Started |
+| Threat         | Mitigation                              | Priority | Status      |
+| -------------- | --------------------------------------- | -------- | ----------- |
+| SQL Injection  | Parameterized queries, input validation | P0       | In Progress |
+| IDOR           | Authorization checks on all endpoints   | P0       | Not Started |
+| JWT Forgery    | RS256 signing, short expiry, rotation   | P1       | Done        |
+| Brute Force    | Rate limiting, account lockout, MFA     | P1       | Partial     |
+| Verbose Errors | Generic error messages in prod          | P2       | Not Started |
 ```
 
 ## Threat Model Document Template
@@ -193,35 +197,48 @@ Identify:
 **Reviewers**: [Names]
 
 ## 1. Executive Summary
+
 [High-level findings and recommendations]
 
 ## 2. System Description
+
 ### 2.1 Purpose
+
 ### 2.2 Architecture Overview
+
 ### 2.3 Data Classification
+
 ### 2.4 Trust Boundaries
 
 ## 3. Assets
+
 | Asset | Classification | Owner |
-|-------|---------------|-------|
+| ----- | -------------- | ----- |
 
 ## 4. Threat Analysis
+
 ### 4.1 Data Flow Diagram
+
 ### 4.2 STRIDE Analysis by Component
+
 ### 4.3 Attack Trees
 
 ## 5. Risk Assessment
+
 | Threat | DREAD Score | Risk Level |
-|--------|-------------|------------|
+| ------ | ----------- | ---------- |
 
 ## 6. Mitigations
+
 | Threat | Mitigation | Owner | Timeline |
-|--------|------------|-------|----------|
+| ------ | ---------- | ----- | -------- |
 
 ## 7. Residual Risks
+
 [Accepted risks and justification]
 
 ## 8. Review Schedule
+
 [When to revisit this threat model]
 ```
 
@@ -231,35 +248,35 @@ Identify:
 
 Focus areas for REST, GraphQL, and gRPC APIs:
 
-**Authentication & Authorization**
+#### Authentication & Authorization
 
 - Token-based auth vulnerabilities (JWT, OAuth 2.0)
 - Broken object-level authorization (BOLA/IDOR)
 - Broken function-level authorization
 - API key leakage and rotation issues
 
-**Data Exposure**
+#### Data Exposure
 
 - Excessive data exposure in responses
 - Mass assignment vulnerabilities
 - GraphQL introspection in production
 - Verbose error messages leaking architecture
 
-**Rate Limiting & Abuse**
+#### Rate Limiting & Abuse
 
 - Missing or bypassable rate limits
 - Resource exhaustion (large payloads, deep queries)
 - Batch request abuse
 - Pagination vulnerabilities
 
-**Input Validation**
+#### Input Validation
 
 - Injection attacks (SQL, NoSQL, command, LDAP)
 - XML external entity (XXE) attacks
 - Server-side request forgery (SSRF)
 - GraphQL query complexity attacks
 
-**API-Specific Mitigations**
+#### API-Specific Mitigations
 
 - Schema validation (OpenAPI, GraphQL schema)
 - Query depth/complexity limiting
@@ -271,7 +288,7 @@ Focus areas for REST, GraphQL, and gRPC APIs:
 
 Focus areas for cloud, containers, and orchestration:
 
-**Cloud Services**
+#### Cloud Services
 
 - Misconfigured S3 buckets/blob storage (public access)
 - IAM privilege escalation paths
@@ -279,7 +296,7 @@ Focus areas for cloud, containers, and orchestration:
 - Unencrypted storage/transit
 - Network security group misconfigurations
 
-**Container Security**
+#### Container Security
 
 - Vulnerable base images
 - Secrets in environment variables/layers
@@ -287,7 +304,7 @@ Focus areas for cloud, containers, and orchestration:
 - Container escape vulnerabilities
 - Registry security (image signing, scanning)
 
-**Orchestration (Kubernetes, Docker Swarm)**
+#### Orchestration (Kubernetes, Docker Swarm)
 
 - Exposed API servers (unauthenticated kubelet)
 - RBAC misconfigurations
@@ -295,7 +312,7 @@ Focus areas for cloud, containers, and orchestration:
 - Network policy gaps
 - Secrets management (etcd encryption, external vaults)
 
-**CI/CD Pipeline**
+#### CI/CD Pipeline
 
 - Compromised build agents
 - Dependency confusion/substitution
@@ -303,7 +320,7 @@ Focus areas for cloud, containers, and orchestration:
 - Unsigned artifacts
 - Pipeline injection attacks
 
-**Infrastructure Mitigations**
+#### Infrastructure Mitigations
 
 - Infrastructure as Code security scanning
 - Least privilege IAM policies
@@ -315,35 +332,35 @@ Focus areas for cloud, containers, and orchestration:
 
 Focus areas for machine learning systems:
 
-**Adversarial Attacks**
+#### Adversarial Attacks
 
 - Evasion attacks (adversarial examples at inference)
 - Poisoning attacks (training data manipulation)
 - Model inversion (extracting training data)
 - Membership inference (detecting if data was in training set)
 
-**Model Theft**
+#### Model Theft
 
 - Model extraction via API queries
 - Intellectual property leakage
 - Hyperparameter discovery
 - Architecture reverse engineering
 
-**Data Privacy**
+#### Data Privacy
 
 - Training data exposure
 - PII leakage in model outputs
 - Differential privacy violations
 - GDPR right-to-explanation challenges
 
-**Deployment Risks**
+#### Deployment Risks
 
 - Model serving API vulnerabilities
 - Feature store poisoning
 - Model registry security
 - A/B testing exploitation
 
-**ML-Specific Mitigations**
+#### ML-Specific Mitigations
 
 - Adversarial training and robustness testing
 - Input sanitization and anomaly detection

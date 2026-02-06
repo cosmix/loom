@@ -135,17 +135,17 @@ Horizontally scalable long-term Prometheus storage
 
 ### Panel Types and When to Use Them
 
-| Panel Type | Use Case | Best For |
-|------------|----------|----------|
-| **Time Series / Graph** | Trends over time | Request rates, latency, resource usage |
-| **Stat** | Single metric value | Error rates, current values, percentage |
-| **Gauge** | Progress toward limit | CPU usage, memory, disk space |
-| **Bar Gauge** | Comparative values | Top N items, distribution |
-| **Table** | Structured data | Service lists, error details, resource inventory |
-| **Pie Chart** | Proportions | Traffic distribution, error breakdown |
-| **Heatmap** | Distribution over time | Latency percentiles, request patterns |
-| **Logs** | Log streams | Error investigation, debugging |
-| **Traces** | Distributed tracing | Performance analysis, dependency mapping |
+| Panel Type              | Use Case               | Best For                                         |
+| ----------------------- | ---------------------- | ------------------------------------------------ |
+| **Time Series / Graph** | Trends over time       | Request rates, latency, resource usage           |
+| **Stat**                | Single metric value    | Error rates, current values, percentage          |
+| **Gauge**               | Progress toward limit  | CPU usage, memory, disk space                    |
+| **Bar Gauge**           | Comparative values     | Top N items, distribution                        |
+| **Table**               | Structured data        | Service lists, error details, resource inventory |
+| **Pie Chart**           | Proportions            | Traffic distribution, error breakdown            |
+| **Heatmap**             | Distribution over time | Latency percentiles, request patterns            |
+| **Logs**                | Log streams            | Error investigation, debugging                   |
+| **Traces**              | Distributed tracing    | Performance analysis, dependency mapping         |
 
 ### Panel Configuration Best Practices
 
@@ -195,14 +195,14 @@ Dashboard variables enable reusable, dynamic dashboards that work across environ
 
 #### Variable Types
 
-| Type | Purpose | Example |
-|------|---------|---------|
-| **Query** | Populate from data source | Namespaces, services, pods |
-| **Custom** | Static list of options | Environments (prod/staging/dev) |
-| **Interval** | Time interval selection | Auto-adjusted query intervals |
-| **Datasource** | Switch between data sources | Multiple Prometheus instances |
-| **Constant** | Hidden values for queries | Cluster name, region |
-| **Text box** | Free-form input | Custom filters |
+| Type           | Purpose                     | Example                         |
+| -------------- | --------------------------- | ------------------------------- |
+| **Query**      | Populate from data source   | Namespaces, services, pods      |
+| **Custom**     | Static list of options      | Environments (prod/staging/dev) |
+| **Interval**   | Time interval selection     | Auto-adjusted query intervals   |
+| **Datasource** | Switch between data sources | Multiple Prometheus instances   |
+| **Constant**   | Hidden values for queries   | Cluster name, region            |
+| **Text box**   | Free-form input             | Custom filters                  |
 
 #### Common Variable Patterns
 
@@ -374,9 +374,9 @@ File: `/etc/grafana/provisioning/dashboards/dashboards.yaml`
 apiVersion: 1
 
 providers:
-  - name: 'default'
+  - name: "default"
     orgId: 1
-    folder: ''
+    folder: ""
     type: file
     disableDeletion: false
     updateIntervalSeconds: 10
@@ -384,18 +384,18 @@ providers:
     options:
       path: /etc/grafana/provisioning/dashboards
 
-  - name: 'application'
+  - name: "application"
     orgId: 1
-    folder: 'Applications'
+    folder: "Applications"
     type: file
     disableDeletion: true
     editable: false
     options:
       path: /var/lib/grafana/dashboards/application
 
-  - name: 'infrastructure'
+  - name: "infrastructure"
     orgId: 1
-    folder: 'Infrastructure'
+    folder: "Infrastructure"
     type: file
     options:
       path: /var/lib/grafana/dashboards/infrastructure

@@ -829,11 +829,11 @@ resume, completion checklist, and exit hook.
 
 Loom uses a three-level directory model for stage execution:
 
-| Level        | Path                   | Purpose                          |
-| ------------ | ---------------------- | -------------------------------- |
-| Project Root | /path/to/project       | Main repo where doc/plans/ lives |
-| Worktree     | .worktrees/<stage-id>/ | Isolated copy mirroring project  |
-| working_dir  | YAML field             | Subdirectory within worktree     |
+| Level        | Path                       | Purpose                          |
+| ------------ | -------------------------- | -------------------------------- |
+| Project Root | /path/to/project           | Main repo where doc/plans/ lives |
+| Worktree     | `.worktrees/<stage-id>/`   | Isolated copy mirroring project  |
+| working_dir  | YAML field                 | Subdirectory within worktree     |
 
 ### Path Resolution Formula
 
@@ -842,7 +842,7 @@ EXECUTION_PATH = worktree_root + working_dir
 Resolution logic (acceptance_runner.rs:16-45):
 
 1. working_dir = "." → Use worktree root directly
-2. working_dir = "loom" → Join: .worktrees/<stage>/loom/
+2. working_dir = "loom" → Join: `.worktrees/<stage>/loom/`
 3. Subdirectory missing → Fall back to worktree root with warning
 
 ### working_dir Common Mistakes
@@ -861,9 +861,9 @@ Agents must check stage definition for working_dir context.
 
 ## Error Handling Framework
 
-Uses anyhow::Result<T> (main.rs:3, Cargo.toml:12-13)
-Context patterns: .context(), .with_context(|| format!())
-Validation: bail!() for explicit errors
+Uses `anyhow::Result<T>` (main.rs:3, Cargo.toml:12-13)
+Context patterns: `.context()`, `.with_context(|| format!())`
+Validation: `bail!()` for explicit errors
 
 Key examples:
 
@@ -1296,7 +1296,7 @@ permissions:
 
 ## Claude Code Settings Format (SANDBOX) - CORRECTED 2026-02-04
 
-**Status: FIXED in commit 56cfaaf**
+### Status: FIXED in commit 56cfaaf
 
 Current settings.rs generates CORRECT nested sandbox block format. Test at line 131 verifies old dangerouslyDisableSandbox is NOT present.
 
@@ -1357,7 +1357,7 @@ cleanup_stage_files() removes PID file and wrapper script.
 
 ### PID Discovery Fallbacks
 
-Linux: Scans /proc/*/cmdline and /proc/*/cwd for Claude processes.
+Linux: Scans /proc/_/cmdline and /proc/_/cwd for Claude processes.
 macOS: Uses ps aux and lsof -p to locate processes and working dirs.
 
 ## Process Management (continued)
@@ -1420,14 +1420,17 @@ Key: LOOM_MAIN_AGENT_PID removed from settings.json env (must come from wrapper 
 ## Signal Section Content Map
 
 Semi-stable section (sections.rs format_semi_stable_section):
+
 - Knowledge CLI reference, stage-type-aware instruction box
 - Standard: SESSION MEMORY REQUIRED (memory only)
 - Knowledge/CodeReview/IntegrationVerify: KNOWLEDGE UPDATES REQUIRED
 
 Dynamic section (format_dynamic_section):
+
 - Target, assignment, deps status, handoff, git history, acceptance
 
 Recitation section (format_recitation_section):
+
 - Context budget warning, immediate tasks, last 10 memory entries
 
 ## EmbeddedContext Pattern (signals/types.rs)
@@ -1459,11 +1462,11 @@ Built by build_signal_context() in generate.rs. Memory placed in recitation for 
 
 ### Retry State Fields (models/stage/types.rs:141-151)
 
-- retry_count: u32 (incremented each failure)
-- max_retries: Option<u32> (default 3 if None)
-- last_failure_at: Option<DateTime<Utc>> (for backoff calc)
-- failure_info: Option<FailureInfo> (type, detected_at, evidence)
-- close_reason: Option<String>
+- retry_count: `u32` (incremented each failure)
+- max_retries: `Option<u32>` (default 3 if None)
+- last_failure_at: `Option<DateTime<Utc>>` (for backoff calc)
+- failure_info: `Option<FailureInfo>` (type, detected_at, evidence)
+- close_reason: `Option<String>`
 
 Retryable types: SessionCrash, Timeout only.
 Non-retryable: ContextExhausted (handoff), TestFailure, BuildFailure, CodeError.
@@ -1473,7 +1476,7 @@ Non-retryable: ContextExhausted (handoff), TestFailure, BuildFailure, CodeError.
 Files at .work/stages/{depth}-{stage-id}.md: markdown + YAML frontmatter.
 
 Write (persistence.rs): serde_yaml::to_string(stage) -> --- delimiters + markdown body
-Read: extract_yaml_frontmatter() -> parse_from_markdown::<Stage>()
+Read: extract_yaml_frontmatter() -> `parse_from_markdown::<Stage>()`
 File locked during write for concurrent safety.
 
 StageFrontmatter (fs/stage_loading.rs) for loading. Stage struct (types.rs) for serialization.

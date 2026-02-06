@@ -174,7 +174,7 @@ class FeatureFlagService {
 
   async evaluate(
     key: string,
-    context: EvaluationContext = {}
+    context: EvaluationContext = {},
   ): Promise<boolean> {
     const flag = await this.getFlag(key);
     if (!flag) return false;
@@ -197,7 +197,7 @@ class FeatureFlagService {
 
   async evaluateVariant<T>(
     key: string,
-    context: EvaluationContext = {}
+    context: EvaluationContext = {},
   ): Promise<T | null> {
     const flag = await this.getFlag(key);
     if (!flag || !flag.enabled || !flag.variants) return null;
@@ -229,7 +229,7 @@ class FeatureFlagService {
 
   private evaluateTargeting(
     flag: FeatureFlag,
-    context: EvaluationContext
+    context: EvaluationContext,
   ): boolean {
     if (!flag.rules || flag.rules.length === 0) return true;
 
@@ -278,7 +278,7 @@ class FeatureFlagService {
     this.cache.delete(key);
     await this.redis.publish(
       "flag-updates",
-      JSON.stringify({ key, deleted: true })
+      JSON.stringify({ key, deleted: true }),
     );
   }
 }
@@ -303,7 +303,7 @@ class RolloutManager {
 
   async startRollout(
     flagKey: string,
-    strategy: RolloutStrategy
+    strategy: RolloutStrategy,
   ): Promise<void> {
     const flag = await this.flags.getFlag(flagKey);
     if (!flag) throw new Error("Flag not found");
@@ -320,7 +320,7 @@ class RolloutManager {
 
   private async scheduleIncrement(
     flagKey: string,
-    strategy: RolloutStrategy
+    strategy: RolloutStrategy,
   ): Promise<void> {
     const incrementJob = async () => {
       const flag = await this.flags.getFlag(flagKey);
@@ -332,7 +332,7 @@ class RolloutManager {
       if (strategy.type === "linear") {
         newPercentage = Math.min(
           current + strategy.incrementPercentage,
-          strategy.targetPercentage
+          strategy.targetPercentage,
         );
       } else {
         // Exponential: double each time
@@ -398,7 +398,7 @@ class ABTestingService {
   async trackExposure(
     experimentId: string,
     variantName: string,
-    userId: string
+    userId: string,
   ): Promise<void> {
     // Record that user was exposed to variant
     await this.analytics.track({
@@ -415,19 +415,19 @@ class ABTestingService {
     await this.redis.hincrby(
       `experiment:${experimentId}:${variantName}`,
       "impressions",
-      1
+      1,
     );
   }
 
   async trackConversion(
     experimentId: string,
     userId: string,
-    metric: string
+    metric: string,
   ): Promise<void> {
     // Get user's assigned variant
     const variant = await this.redis.hget(
       `experiment:${experimentId}:assignments`,
-      userId
+      userId,
     );
     if (!variant) return;
 
@@ -445,7 +445,7 @@ class ABTestingService {
     await this.redis.hincrby(
       `experiment:${experimentId}:${variant}`,
       "conversions",
-      1
+      1,
     );
   }
 
@@ -455,7 +455,7 @@ class ABTestingService {
     const results = await Promise.all(
       experiment.variants.map(async (variant) => {
         const data = await this.redis.hgetall(
-          `experiment:${experimentId}:${variant.name}`
+          `experiment:${experimentId}:${variant.name}`,
         );
         return {
           name: variant.name,
@@ -465,7 +465,7 @@ class ABTestingService {
             parseInt(data.conversions || "0") /
             parseInt(data.impressions || "1"),
         };
-      })
+      }),
     );
 
     // Calculate statistical significance
@@ -476,7 +476,11 @@ class ABTestingService {
       experimentId,
       results,
       winners: treatments.filter((t) =>
-        this.isStatisticallySignificant(control!, t, experiment.confidenceLevel)
+        this.isStatisticallySignificant(
+          control!,
+          t,
+          experiment.confidenceLevel,
+        ),
       ),
     };
   }
@@ -484,7 +488,7 @@ class ABTestingService {
   private isStatisticallySignificant(
     control: VariantResult,
     treatment: VariantResult,
-    confidenceLevel: number
+    confidenceLevel: number,
   ): boolean {
     // Z-test for proportions
     const p1 = control.conversionRate;
@@ -523,7 +527,7 @@ class KillSwitchService {
   async activate(
     key: string,
     reason: string,
-    activatedBy: string
+    activatedBy: string,
   ): Promise<void> {
     const killSwitch = await this.getKillSwitch(key);
     if (!killSwitch) throw new Error("Kill switch not found");
@@ -537,14 +541,14 @@ class KillSwitchService {
     // Broadcast to all instances immediately
     await this.redis.publish(
       "killswitch-activated",
-      JSON.stringify(killSwitch)
+      JSON.stringify(killSwitch),
     );
 
     // Alert on-call
     await this.alerting.sendCritical({
       title: `Kill Switch Activated: ${key}`,
       message: `Reason: ${reason}\nActivated by: ${activatedBy}\nAffected: ${killSwitch.affectedServices.join(
-        ", "
+        ", ",
       )}`,
     });
 
@@ -552,7 +556,7 @@ class KillSwitchService {
     if (killSwitch.autoRecoveryMinutes) {
       setTimeout(
         () => this.deactivate(key, "Auto-recovery"),
-        killSwitch.autoRecoveryMinutes * 60 * 1000
+        killSwitch.autoRecoveryMinutes * 60 * 1000,
       );
     }
   }
@@ -568,7 +572,7 @@ class KillSwitchService {
     await this.redis.set(`killswitch:${key}`, JSON.stringify(killSwitch));
     await this.redis.publish(
       "killswitch-deactivated",
-      JSON.stringify({ key, reason })
+      JSON.stringify({ key, reason }),
     );
 
     await this.alerting.sendInfo({
@@ -590,7 +594,7 @@ async function processPayment(payment: Payment): Promise<PaymentResult> {
   // Check kill switch first
   if (await killSwitches.isActive("payments-disabled")) {
     throw new ServiceUnavailableError(
-      "Payment processing temporarily disabled"
+      "Payment processing temporarily disabled",
     );
   }
 
@@ -704,7 +708,7 @@ interface LDUser {
 async function evaluateFlag(
   flagKey: string,
   user: LDUser,
-  defaultValue: boolean
+  defaultValue: boolean,
 ): Promise<boolean> {
   await ldClient.waitForInitialization();
   return ldClient.variation(flagKey, user, defaultValue);
@@ -713,7 +717,7 @@ async function evaluateFlag(
 async function evaluateFlagWithReason(
   flagKey: string,
   user: LDUser,
-  defaultValue: boolean
+  defaultValue: boolean,
 ) {
   await ldClient.waitForInitialization();
   const detail = await ldClient.variationDetail(flagKey, user, defaultValue);
@@ -729,7 +733,7 @@ async function evaluateFlagWithReason(
 function trackConversion(
   user: LDUser,
   eventKey: string,
-  data?: Record<string, unknown>
+  data?: Record<string, unknown>,
 ): void {
   ldClient.track(eventKey, user, data);
 }
@@ -737,7 +741,7 @@ function trackConversion(
 // React hook for client-side
 function useFeatureFlag(
   flagKey: string,
-  defaultValue: boolean = false
+  defaultValue: boolean = false,
 ): boolean {
   const ldClient = useLDClient();
   const [value, setValue] = useState(defaultValue);
@@ -782,7 +786,7 @@ interface ModelVariant {
 class ModelFlagService {
   async evaluateModel(
     flagKey: string,
-    context: { userId?: string; inputSize?: number }
+    context: { userId?: string; inputSize?: number },
   ): Promise<ModelVariant> {
     const flag = await this.getModelFlag(flagKey);
 
@@ -808,14 +812,14 @@ class ModelFlagService {
         variant,
         latency: await this.getAverageLatency(variant.modelId),
         errorRate: await this.getErrorRate(variant.modelId),
-      }))
+      })),
     );
 
     // Filter models meeting performance thresholds
     const eligible = metrics.filter(
       (m) =>
         m.latency < flag.performanceThresholds!.latencyMs &&
-        m.errorRate < flag.performanceThresholds!.errorRate
+        m.errorRate < flag.performanceThresholds!.errorRate,
     );
 
     // Return best performing model or fallback
@@ -834,31 +838,31 @@ class ModelFlagService {
       success: boolean;
       inputTokens: number;
       outputTokens: number;
-    }
+    },
   ): Promise<void> {
     // Track metrics for performance-based routing
     await this.redis.zadd(
       `model:${modelVariant.modelId}:latency`,
       Date.now(),
-      metrics.latencyMs
+      metrics.latencyMs,
     );
 
     await this.redis.hincrby(
       `model:${modelVariant.modelId}:stats`,
       metrics.success ? "success" : "failure",
-      1
+      1,
     );
 
     // Track costs
     await this.redis.hincrby(
       `model:${modelVariant.modelId}:tokens`,
       "input",
-      metrics.inputTokens
+      metrics.inputTokens,
     );
     await this.redis.hincrby(
       `model:${modelVariant.modelId}:tokens`,
       "output",
-      metrics.outputTokens
+      metrics.outputTokens,
     );
   }
 }
@@ -866,7 +870,7 @@ class ModelFlagService {
 // Usage example
 async function generateResponse(
   prompt: string,
-  userId: string
+  userId: string,
 ): Promise<string> {
   const modelVariant = await modelFlags.evaluateModel("chat-model", { userId });
 
@@ -1082,8 +1086,8 @@ class FlagCleanupService {
           impact.complexityScore < 5
             ? "small"
             : impact.complexityScore < 15
-            ? "medium"
-            : "large",
+              ? "medium"
+              : "large",
         affectedCodePaths:
           impact.fileCount > 0
             ? Array.from(new Set(impact.references.map((r) => r.file)))
@@ -1109,7 +1113,7 @@ class FlagCleanupService {
       flagsWithCleanupTasks: tasks.length,
       completedCleanups: tasks.filter((t) => t.status === "completed").length,
       averageAgeOfStaleFlags: this.calculateAverageAge(
-        allFlags.filter((f) => this.isStale(f))
+        allFlags.filter((f) => this.isStale(f)),
       ),
       projectedCleanupDate: this.estimateCompletionDate(tasks),
     };
@@ -1142,8 +1146,8 @@ class FlagCleanupMonitor {
           impact.complexityScore < 5
             ? "low"
             : impact.complexityScore < 15
-            ? "medium"
-            : "high",
+              ? "medium"
+              : "high",
         labels: ["technical-debt", "feature-flags", "cleanup"],
         assignee: flag.lifecycle.owner,
       });
@@ -1161,26 +1165,22 @@ class FlagCleanupMonitor {
 ## Best Practices
 
 1. **Flag Naming Conventions**
-
    - Use descriptive, consistent names: `feature-checkout-v2`, `experiment-button-color`
    - Include type prefix: `release-*`, `experiment-*`, `ops-*`, `kill-*`
    - Avoid abbreviations and ensure team-wide understanding
 
 2. **Flag Hygiene**
-
    - Set expiration dates for temporary flags
    - Remove flags after features are fully rolled out
    - Track flag ownership and associated tickets
    - Regular cleanup audits (monthly)
 
 3. **Testing**
-
    - Test all flag states (on, off, each variant)
    - Include flag states in integration tests
    - Test rollback scenarios
 
 4. **Monitoring**
-
    - Track flag evaluation counts and latency
    - Alert on unusual patterns (sudden spikes, failures)
    - Log flag decisions for debugging
@@ -1285,13 +1285,13 @@ Use the feature-flags skill for:
 
 ## Agent Selection Guide
 
-| Task                           | Agent                          | Why                                                 |
-| ------------------------------ | ------------------------------ | --------------------------------------------------- |
-| Design flag architecture       | senior-software-engineer       | Strategic decisions on flag types, rollout strategy |
-| Implement flag service         | software-engineer              | Build evaluation logic, integrations                |
-| Review flag security           | senior-software-engineer              | Access controls, audit logging, sensitive data      |
+| Task                           | Agent                    | Why                                                 |
+| ------------------------------ | ------------------------ | --------------------------------------------------- |
+| Design flag architecture       | senior-software-engineer | Strategic decisions on flag types, rollout strategy |
+| Implement flag service         | software-engineer        | Build evaluation logic, integrations                |
+| Review flag security           | senior-software-engineer | Access controls, audit logging, sensitive data      |
 | Scale flag infrastructure      | senior-software-engineer | Distributed caching, performance, failover          |
-| Integrate LaunchDarkly/Unleash | software-engineer              | SDK integration, webhook setup                      |
-| Plan ML model rollout          | senior-software-engineer       | Performance routing, fallback strategy              |
-| Implement cleanup automation   | software-engineer              | Code scanning, impact analysis                      |
-| Design flag lifecycle policy   | senior-software-engineer       | Governance, technical debt prevention               |
+| Integrate LaunchDarkly/Unleash | software-engineer        | SDK integration, webhook setup                      |
+| Plan ML model rollout          | senior-software-engineer | Performance routing, fallback strategy              |
+| Implement cleanup automation   | software-engineer        | Code scanning, impact analysis                      |
+| Design flag lifecycle policy   | senior-software-engineer | Governance, technical debt prevention               |
