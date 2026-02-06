@@ -1,6 +1,7 @@
 //! Plan initialization and stage creation for loom init.
 
-use crate::fs::stage_files::{compute_stage_depths, stage_file_path, StageDependencies};
+use crate::commands::status::common::levels::compute_all_levels;
+use crate::fs::stage_files::stage_file_path;
 use crate::fs::work_dir::WorkDir;
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::plan::parser::parse_plan;
@@ -109,15 +110,7 @@ pub fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<usiz
         "config.toml".dimmed()
     );
 
-    let stage_deps: Vec<StageDependencies> = stages
-        .iter()
-        .map(|s| StageDependencies {
-            id: s.id.clone(),
-            dependencies: s.dependencies.clone(),
-        })
-        .collect();
-
-    let depths = compute_stage_depths(&stage_deps).context("Failed to compute stage depths")?;
+    let depths = compute_all_levels(&stages, |s| s.id.as_str(), |s| &s.dependencies);
 
     let stages_dir = work_dir.root().join("stages");
     if !stages_dir.exists() {

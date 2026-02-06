@@ -3,13 +3,12 @@
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
-use crate::git::branch::branch_name_for_stage;
-use crate::git::get_branch_head;
 use crate::git::worktree::find_repo_root_from_cwd;
 use crate::models::stage::{StageStatus, StageType};
-use crate::orchestrator::{get_merge_point, merge_completed_stage, ProgressiveMergeResult};
 use crate::verify::criteria::run_acceptance;
 use crate::verify::transitions::{load_stage, save_stage, trigger_dependents};
+
+use super::progressive_complete::attempt_progressive_merge;
 
 use super::acceptance_runner::resolve_acceptance_dir;
 use super::criteria_runner::reload_acceptance_from_plan;
@@ -58,7 +57,7 @@ pub fn verify(stage_id: String, no_reload: bool) -> Result<()> {
 
     // Resolve acceptance criteria working directory
     let acceptance_dir: Option<PathBuf> =
-        resolve_acceptance_dir(worktree_path.as_deref(), stage.working_dir.as_deref());
+        resolve_acceptance_dir(worktree_path.as_deref(), stage.working_dir.as_deref())?;
 
     // Run acceptance criteria
     let acceptance_result = if !stage.acceptance.is_empty() {
@@ -124,74 +123,35 @@ pub fn verify(stage_id: String, no_reload: bool) -> Result<()> {
     // For standard stages: attempt progressive merge
     let cwd = std::env::current_dir().context("Failed to get current directory")?;
     let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or_else(|| cwd.clone());
-    let merge_point = get_merge_point(work_dir)?;
 
-    // Capture the completed commit SHA before merge
-    let branch_name = branch_name_for_stage(&stage_id);
-    let completed_commit = get_branch_head(&branch_name, &repo_root).ok();
+    // Use the shared progressive merge logic
+    use super::progressive_complete::MergeOutcome;
+    match attempt_progressive_merge(&mut stage, &repo_root, work_dir)? {
+        MergeOutcome::Success => {
+            // Mark stage as completed
+            stage.try_complete(None)?;
+            save_stage(&stage, work_dir)?;
 
-    println!("Attempting progressive merge into '{merge_point}'...");
-    match merge_completed_stage(&stage, &repo_root, &merge_point) {
-        Ok(ProgressiveMergeResult::Success { files_changed }) => {
-            println!("  ✓ Merged {files_changed} file(s) into '{merge_point}'");
-            stage.completed_commit = completed_commit;
-            stage.merged = true;
-        }
-        Ok(ProgressiveMergeResult::FastForward) => {
-            println!("  ✓ Fast-forward merge into '{merge_point}'");
-            stage.completed_commit = completed_commit;
-            stage.merged = true;
-        }
-        Ok(ProgressiveMergeResult::AlreadyMerged) => {
-            println!("  ✓ Already up to date with '{merge_point}'");
-            stage.completed_commit = completed_commit;
-            stage.merged = true;
-        }
-        Ok(ProgressiveMergeResult::NoBranch) => {
-            println!("  → No branch to merge (already cleaned up)");
-            stage.merged = true;
-        }
-        Ok(ProgressiveMergeResult::Conflict { conflicting_files }) => {
-            println!("  ✗ Merge conflict detected!");
-            println!("    Conflicting files:");
-            for file in &conflicting_files {
-                println!("      - {file}");
+            println!("Stage '{stage_id}' verified and completed!");
+
+            // Trigger dependent stages
+            let triggered = trigger_dependents(&stage_id, work_dir)
+                .context("Failed to trigger dependent stages")?;
+
+            if !triggered.is_empty() {
+                println!("Triggered {} dependent stage(s):", triggered.len());
+                for dep_id in &triggered {
+                    println!("  → {dep_id}");
+                }
             }
-            println!();
-            println!("    Stage transitioning to MergeConflict status.");
-            println!("    Resolve conflicts and run: loom stage merge-complete {stage_id}");
-            stage.try_mark_merge_conflict()?;
-            save_stage(&stage, work_dir)?;
-            return Ok(());
+
+            Ok(())
         }
-        Err(e) => {
-            eprintln!("Progressive merge failed: {e}");
-            stage.try_mark_merge_blocked()?;
-            save_stage(&stage, work_dir)?;
-            eprintln!("Stage '{stage_id}' marked as MergeBlocked");
-            eprintln!("  Fix the issue and run: loom stage verify {stage_id}");
-            return Ok(());
+        MergeOutcome::Conflict | MergeOutcome::Blocked => {
+            // Stage already saved in conflict/blocked state by attempt_progressive_merge
+            Ok(())
         }
     }
-
-    // Mark stage as completed
-    stage.try_complete(None)?;
-    save_stage(&stage, work_dir)?;
-
-    println!("Stage '{stage_id}' verified and completed!");
-
-    // Trigger dependent stages
-    let triggered =
-        trigger_dependents(&stage_id, work_dir).context("Failed to trigger dependent stages")?;
-
-    if !triggered.is_empty() {
-        println!("Triggered {} dependent stage(s):", triggered.len());
-        for dep_id in &triggered {
-            println!("  → {dep_id}");
-        }
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]

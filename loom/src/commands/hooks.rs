@@ -4,9 +4,9 @@
 //! Useful for developers who want to use loom hooks without running a full plan.
 
 use anyhow::{Context, Result};
-use std::env;
 
 use crate::fs::permissions::{ensure_loom_permissions, install_loom_hooks};
+use crate::git::worktree::find_repo_root_from_cwd;
 
 /// Install loom hooks to the current project
 ///
@@ -20,7 +20,9 @@ pub fn install() -> Result<()> {
     println!("Installing loom hooks...\n");
 
     // Find repository root (where .git is)
-    let repo_root = find_repo_root().context("Not in a git repository")?;
+    let cwd = std::env::current_dir().context("Failed to get current directory")?;
+    let repo_root =
+        find_repo_root_from_cwd(&cwd).ok_or_else(|| anyhow::anyhow!("Not in a git repository"))?;
 
     // Install hooks to ~/.claude/hooks/loom/
     let scripts_installed = install_loom_hooks()?;
@@ -54,7 +56,9 @@ pub fn install() -> Result<()> {
 /// List available loom hooks and their status
 pub fn list() -> Result<()> {
     // Find repository root
-    let repo_root = find_repo_root().context("Not in a git repository")?;
+    let cwd = std::env::current_dir().context("Failed to get current directory")?;
+    let repo_root =
+        find_repo_root_from_cwd(&cwd).ok_or_else(|| anyhow::anyhow!("Not in a git repository"))?;
     let settings_path = repo_root.join(".claude/settings.json");
 
     // Check if hooks are configured in this project
@@ -153,20 +157,4 @@ pub fn list() -> Result<()> {
     }
 
     Ok(())
-}
-
-/// Find the repository root directory (containing .git)
-fn find_repo_root() -> Result<std::path::PathBuf> {
-    let current_dir = env::current_dir().context("Failed to get current directory")?;
-    let mut dir = current_dir.as_path();
-
-    loop {
-        if dir.join(".git").exists() {
-            return Ok(dir.to_path_buf());
-        }
-        match dir.parent() {
-            Some(parent) => dir = parent,
-            None => anyhow::bail!("Not in a git repository"),
-        }
-    }
 }

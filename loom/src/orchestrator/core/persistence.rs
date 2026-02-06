@@ -6,10 +6,9 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 
+use crate::commands::status::common::levels::compute_all_levels;
 use crate::fs::locking::{locked_read, locked_write};
-use crate::fs::stage_files::{
-    compute_stage_depths, find_stage_file, stage_file_path, StageDependencies,
-};
+use crate::fs::stage_files::{find_stage_file, stage_file_path};
 use crate::models::session::Session;
 use crate::models::stage::Stage;
 use crate::parser::frontmatter::parse_from_markdown;
@@ -91,19 +90,11 @@ pub(super) trait Persistence {
 
     /// Compute stage depth using the execution graph
     fn compute_stage_depth(&self, stage_id: &str) -> usize {
-        // Build dependency info from the graph
-        let stage_deps: Vec<StageDependencies> = self
-            .persistence_graph()
-            .all_nodes()
-            .iter()
-            .map(|node| StageDependencies {
-                id: node.id.clone(),
-                dependencies: node.dependencies.clone(),
-            })
-            .collect();
+        // Get all nodes from the graph
+        let nodes = self.persistence_graph().all_nodes();
 
         // Compute depths for all stages
-        let depths = compute_stage_depths(&stage_deps).unwrap_or_default();
+        let depths = compute_all_levels(&nodes, |node| node.id.as_str(), |node| &node.dependencies);
 
         // Return depth for this stage
         depths.get(stage_id).copied().unwrap_or(0)

@@ -7,10 +7,9 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::Path;
 
+use crate::commands::status::common::levels::compute_all_levels;
 use crate::fs::locking::{locked_read, locked_write};
-use crate::fs::stage_files::{
-    compute_stage_depths, find_stage_file, stage_file_path, StageDependencies,
-};
+use crate::fs::stage_files::{find_stage_file, stage_file_path};
 use crate::models::stage::Stage;
 
 use super::serialization::{parse_stage_from_markdown, serialize_stage_to_markdown};
@@ -92,27 +91,15 @@ pub fn save_stage(stage: &Stage, work_dir: &Path) -> Result<()> {
 /// The depth (0-indexed)
 fn compute_stage_depth(stage: &Stage, work_dir: &Path) -> Result<usize> {
     // Load all existing stages to get their dependency info
-    let existing_stages = list_all_stages(work_dir).unwrap_or_default();
-
-    // Build dependency info including the new stage
-    let mut stage_deps: Vec<StageDependencies> = existing_stages
-        .iter()
-        .map(|s| StageDependencies {
-            id: s.id.clone(),
-            dependencies: s.dependencies.clone(),
-        })
-        .collect();
+    let mut existing_stages = list_all_stages(work_dir).unwrap_or_default();
 
     // Add the current stage if not already present
-    if !stage_deps.iter().any(|s| s.id == stage.id) {
-        stage_deps.push(StageDependencies {
-            id: stage.id.clone(),
-            dependencies: stage.dependencies.clone(),
-        });
+    if !existing_stages.iter().any(|s| s.id == stage.id) {
+        existing_stages.push(stage.clone());
     }
 
     // Compute depths for all stages
-    let depths = compute_stage_depths(&stage_deps)?;
+    let depths = compute_all_levels(&existing_stages, |s| s.id.as_str(), |s| &s.dependencies);
 
     // Return depth for this stage
     Ok(depths.get(&stage.id).copied().unwrap_or(0))
