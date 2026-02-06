@@ -1,6 +1,12 @@
 //! State persistence - loading and saving stages, sessions, and related data
+//!
+//! File locking operations (lock_exclusive|lock_shared|fs2 crate) prevent
+//! data corruption from concurrent orchestrator and agent access.
 
 use anyhow::{Context, Result};
+use fs2::FileExt;
+use std::fs::{File, OpenOptions};
+use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
 
 use crate::fs::stage_files::{
@@ -11,6 +17,36 @@ use crate::models::stage::Stage;
 use crate::parser::frontmatter::parse_from_markdown;
 
 use super::Orchestrator;
+
+/// Read file contents with a shared (read) lock
+fn locked_read(path: &Path) -> Result<String> {
+    let file =
+        File::open(path).with_context(|| format!("Failed to open file: {}", path.display()))?;
+    file.lock_shared()
+        .with_context(|| format!("Failed to acquire shared lock: {}", path.display()))?;
+    let mut content = String::new();
+    BufReader::new(&file)
+        .read_to_string(&mut content)
+        .with_context(|| format!("Failed to read file: {}", path.display()))?;
+    Ok(content)
+}
+
+/// Write file contents with an exclusive (write) lock
+fn locked_write(path: &Path, content: &str) -> Result<()> {
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)
+        .with_context(|| format!("Failed to open file for writing: {}", path.display()))?;
+    file.lock_exclusive()
+        .with_context(|| format!("Failed to acquire exclusive lock: {}", path.display()))?;
+    let mut writer = BufWriter::new(&file);
+    writer
+        .write_all(content.as_bytes())
+        .with_context(|| format!("Failed to write file: {}", path.display()))?;
+    Ok(())
+}
 
 /// Trait for persistence operations
 pub(super) trait Persistence {
@@ -46,8 +82,7 @@ pub(super) trait Persistence {
         }
 
         let stage_path = stage_path.unwrap();
-        let content = std::fs::read_to_string(&stage_path)
-            .with_context(|| format!("Failed to read stage file: {}", stage_path.display()))?;
+        let content = locked_read(&stage_path)?;
 
         parse_from_markdown(&content, "Stage")
     }
@@ -81,8 +116,7 @@ pub(super) trait Persistence {
                 .unwrap_or("No description provided.")
         );
 
-        std::fs::write(&stage_path, content)
-            .with_context(|| format!("Failed to write stage file: {}", stage_path.display()))?;
+        locked_write(&stage_path, &content)?;
 
         Ok(())
     }
@@ -124,8 +158,7 @@ pub(super) trait Persistence {
             yaml, session.id, session.status
         );
 
-        std::fs::write(&session_path, content)
-            .with_context(|| format!("Failed to write session file: {}", session_path.display()))?;
+        locked_write(&session_path, &content)?;
 
         Ok(())
     }
@@ -138,5 +171,73 @@ impl Persistence for Orchestrator {
 
     fn persistence_graph(&self) -> &crate::plan::ExecutionGraph {
         &self.graph
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::thread;
+
+    #[test]
+    fn test_concurrent_stage_write_safety() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("test-stage.md");
+
+        // Write initial content
+        locked_write(&path, "initial").unwrap();
+
+        // Spawn threads that write concurrently
+        let handles: Vec<_> = (0..10)
+            .map(|i| {
+                let path = path.clone();
+                thread::spawn(move || {
+                    let content = format!("content from thread {i}");
+                    locked_write(&path, &content).unwrap();
+                })
+            })
+            .collect();
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        // Verify final content is valid (not corrupted/interleaved)
+        let final_content = locked_read(&path).unwrap();
+        assert!(final_content.starts_with("content from thread"));
+        // Verify no corruption - should be a complete thread message
+        assert!(final_content.len() >= "content from thread 0".len());
+        assert!(final_content.len() <= "content from thread 9".len());
+    }
+
+    #[test]
+    fn test_concurrent_read_write() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("test-read-write.md");
+
+        // Initial write
+        locked_write(&path, "initial content").unwrap();
+
+        // Spawn reader and writer threads
+        let read_path = path.clone();
+        let read_handle = thread::spawn(move || {
+            for _ in 0..50 {
+                let _ = locked_read(&read_path);
+            }
+        });
+
+        let write_path = path.clone();
+        let write_handle = thread::spawn(move || {
+            for i in 0..50 {
+                locked_write(&write_path, &format!("write {i}")).unwrap();
+            }
+        });
+
+        read_handle.join().unwrap();
+        write_handle.join().unwrap();
+
+        // Should be able to read final state
+        let final_content = locked_read(&path).unwrap();
+        assert!(final_content.starts_with("write "));
     }
 }

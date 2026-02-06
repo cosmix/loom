@@ -217,7 +217,10 @@ impl TerminalEmulator {
                     .arg("-e")
                     .arg("bash")
                     .arg("-c")
-                    .arg(format!("cd '{}' && bash -c '{}'", escaped_workdir, escaped_cmd));
+                    .arg(format!(
+                        "cd '{}' && bash -c '{}'",
+                        escaped_workdir, escaped_cmd
+                    ));
             }
             Self::Urxvt => {
                 command

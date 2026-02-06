@@ -8,7 +8,8 @@ use anyhow::{bail, Result};
 use std::path::Path;
 
 use crate::git::branch::{branch_exists, branch_name_for_stage, default_branch};
-use crate::plan::graph::{ExecutionGraph, NodeStatus};
+use crate::models::stage::StageStatus;
+use crate::plan::graph::ExecutionGraph;
 
 /// Result of resolving the base branch for a stage
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,8 +62,11 @@ pub fn resolve_base_branch(
     repo_root: &Path,
     init_base_branch: Option<&str>,
 ) -> Result<ResolvedBase> {
-    eprintln!(
-        "[resolve_base_branch] stage={stage_id}, deps={dependencies:?}, init_base_branch={init_base_branch:?}"
+    tracing::debug!(
+        stage_id,
+        ?dependencies,
+        ?init_base_branch,
+        "resolving base branch"
     );
 
     // No deps → use init_base_branch if provided, otherwise fall back to default
@@ -70,7 +74,7 @@ pub fn resolve_base_branch(
         let base = init_base_branch
             .map(String::from)
             .unwrap_or_else(|| default_branch(repo_root).unwrap_or_else(|_| "main".to_string()));
-        eprintln!("[resolve_base_branch] No deps, using base: {base}");
+        tracing::debug!(base, "no deps, using base");
         return Ok(ResolvedBase::Main(base));
     }
 
@@ -82,13 +86,10 @@ pub fn resolve_base_branch(
             .get_node(dep)
             .ok_or_else(|| anyhow::anyhow!("Dependency '{dep}' not found in graph"))?;
 
-        let is_completed = dep_node.status == NodeStatus::Completed;
+        let is_completed = dep_node.status == StageStatus::Completed;
         let is_merged = dep_node.merged;
 
-        eprintln!(
-            "[resolve_base_branch] Dep '{}': status={:?}, completed={}, merged={}",
-            dep, dep_node.status, is_completed, is_merged
-        );
+        tracing::debug!(dep, status = ?dep_node.status, is_completed, is_merged, "checking dependency");
 
         if !is_completed || !is_merged {
             unmerged_deps.push((dep.as_str(), is_completed, is_merged));
@@ -100,7 +101,7 @@ pub fn resolve_base_branch(
         let base = init_base_branch
             .map(String::from)
             .unwrap_or_else(|| default_branch(repo_root).unwrap_or_else(|_| "main".to_string()));
-        eprintln!("[resolve_base_branch] All deps merged, using base: {base}");
+        tracing::debug!(base, "all deps merged, using base");
         return Ok(ResolvedBase::Main(base));
     }
 

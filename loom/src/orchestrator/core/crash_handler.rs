@@ -86,7 +86,7 @@ impl Orchestrator {
             match stage.try_mark_blocked() {
                 Ok(()) => {
                     self.save_stage(&stage)?;
-                    self.graph.mark_blocked(&sid)?;
+                    self.graph.mark_status(&sid, StageStatus::Blocked)?;
                 }
                 Err(e) => {
                     eprintln!("Warning: Failed to transition stage to Blocked: {e}");

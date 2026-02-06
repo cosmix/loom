@@ -43,20 +43,8 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
                             let worktree_status = detect_worktree_status(&parsed.id, &repo_root);
 
                             // Map status string to StageStatus enum
-                            let status_enum = match parsed.status.as_str() {
-                                "executing" => StageStatus::Executing,
-                                "waiting-for-deps" | "pending" => StageStatus::WaitingForDeps,
-                                "queued" | "ready" => StageStatus::Queued,
-                                "completed" | "verified" => StageStatus::Completed,
-                                "blocked" => StageStatus::Blocked,
-                                "needs-handoff" => StageStatus::NeedsHandoff,
-                                "waiting-for-input" => StageStatus::WaitingForInput,
-                                "merge-conflict" => StageStatus::MergeConflict,
-                                "completed-with-failures" => StageStatus::CompletedWithFailures,
-                                "merge-blocked" => StageStatus::MergeBlocked,
-                                "skipped" => StageStatus::Skipped,
-                                _ => StageStatus::WaitingForDeps,
-                            };
+                            let status_enum: StageStatus =
+                                parsed.status.parse().unwrap_or(StageStatus::WaitingForDeps);
 
                             let stage_info = StageInfo {
                                 id: parsed.id,
@@ -390,20 +378,8 @@ pub fn collect_completion_summary(work_dir: &Path) -> Result<CompletionSummary> 
                             }
 
                             // Map status string to enum
-                            let status_enum = match parsed.status.as_str() {
-                                "executing" => StageStatus::Executing,
-                                "waiting-for-deps" | "pending" => StageStatus::WaitingForDeps,
-                                "queued" | "ready" => StageStatus::Queued,
-                                "completed" | "verified" => StageStatus::Completed,
-                                "blocked" => StageStatus::Blocked,
-                                "needs-handoff" => StageStatus::NeedsHandoff,
-                                "waiting-for-input" => StageStatus::WaitingForInput,
-                                "merge-conflict" => StageStatus::MergeConflict,
-                                "completed-with-failures" => StageStatus::CompletedWithFailures,
-                                "merge-blocked" => StageStatus::MergeBlocked,
-                                "skipped" => StageStatus::Skipped,
-                                _ => StageStatus::WaitingForDeps,
-                            };
+                            let status_enum: StageStatus =
+                                parsed.status.parse().unwrap_or(StageStatus::WaitingForDeps);
 
                             // Count successes and failures
                             match status_enum {

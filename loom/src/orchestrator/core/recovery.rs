@@ -7,7 +7,6 @@ use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::retry::{calculate_backoff, is_backoff_elapsed, should_auto_retry};
 use crate::parser::frontmatter::parse_from_markdown;
-use crate::plan::graph::NodeStatus;
 
 use super::clear_status_line;
 use super::persistence::Persistence;
@@ -94,9 +93,11 @@ impl Recovery for Orchestrator {
             // NOTE: We use stage.id (from YAML frontmatter) for graph operations,
             // not stage_id (from filename), because the graph is built using frontmatter IDs.
             if let Ok(mut stage) = self.load_stage(stage_id) {
-                eprintln!(
-                    "[sync_graph_with_stage_files] Loaded stage '{}': status={:?}, merged={}",
-                    stage.id, stage.status, stage.merged
+                tracing::debug!(
+                    stage_id = %stage.id,
+                    status = ?stage.status,
+                    merged = stage.merged,
+                    "[sync_graph_with_stage_files] Loaded stage"
                 );
                 // Always sync outputs to the graph so they're available for dependent stages
                 if !stage.outputs.is_empty() {
@@ -109,9 +110,10 @@ impl Recovery for Orchestrator {
                         // IMPORTANT: Set merged status FIRST, before mark_completed().
                         // mark_completed() triggers update_ready_status() which needs the
                         // correct merged value to determine if dependent stages are ready.
-                        eprintln!(
-                            "[sync_graph_with_stage_files] Completed stage '{}': merged={}",
-                            stage.id, stage.merged
+                        tracing::debug!(
+                            stage_id = %stage.id,
+                            merged = stage.merged,
+                            "[sync_graph_with_stage_files] Completed stage"
                         );
                         self.graph.set_node_merged(&stage.id, stage.merged);
                         // Now mark as completed - this triggers update_ready_status() which
@@ -133,10 +135,10 @@ impl Recovery for Orchestrator {
                             // Re-queue the stage for retry
                             if stage.try_mark_queued().is_ok() {
                                 clear_status_line();
-                                eprintln!(
-                                    "Auto-retrying stage '{}' (attempt {})",
-                                    stage.id,
-                                    stage.retry_count + 1
+                                tracing::warn!(
+                                    stage_id = %stage.id,
+                                    attempt = stage.retry_count + 1,
+                                    "Auto-retrying stage"
                                 );
 
                                 // ATOMIC UPDATE PATTERN:
@@ -152,45 +154,47 @@ impl Recovery for Orchestrator {
 
                                 // Now save the file
                                 if let Err(e) = self.save_stage(&stage) {
-                                    eprintln!("Warning: Failed to save stage during retry: {e}");
+                                    tracing::warn!(error = %e, "Failed to save stage during retry");
                                     // Rollback graph to original state
-                                    if let Some(NodeStatus::Blocked) = original_graph_status {
-                                        let _ = self.graph.mark_blocked(&stage.id);
+                                    if let Some(StageStatus::Blocked) = original_graph_status {
+                                        let _ =
+                                            self.graph.mark_status(&stage.id, StageStatus::Blocked);
                                     }
                                 }
                             }
                         } else {
                             // Not eligible for retry, just mark as blocked in graph
-                            let _ = self.graph.mark_blocked(&stage.id);
+                            let _ = self.graph.mark_status(&stage.id, StageStatus::Blocked);
                         }
                     }
                     StageStatus::WaitingForInput => {
-                        // Stage is paused waiting for user input
-                        let _ = self.graph.mark_waiting_for_input(&stage.id);
+                        let _ = self
+                            .graph
+                            .mark_status(&stage.id, StageStatus::WaitingForInput);
                     }
                     StageStatus::NeedsHandoff => {
-                        // Stage hit context limit and needs handoff to new session
-                        let _ = self.graph.mark_needs_handoff(&stage.id);
+                        let _ = self.graph.mark_status(&stage.id, StageStatus::NeedsHandoff);
                     }
                     StageStatus::MergeConflict => {
-                        // Stage has merge conflicts that need resolution
-                        let _ = self.graph.mark_merge_conflict(&stage.id);
+                        let _ = self
+                            .graph
+                            .mark_status(&stage.id, StageStatus::MergeConflict);
                     }
                     StageStatus::CompletedWithFailures => {
-                        // Stage completed but acceptance criteria failed
-                        let _ = self.graph.mark_completed_with_failures(&stage.id);
+                        let _ = self
+                            .graph
+                            .mark_status(&stage.id, StageStatus::CompletedWithFailures);
                     }
                     StageStatus::MergeBlocked => {
-                        // Stage merge failed with error (not conflicts)
-                        let _ = self.graph.mark_merge_blocked(&stage.id);
+                        let _ = self.graph.mark_status(&stage.id, StageStatus::MergeBlocked);
                     }
                     StageStatus::Skipped => {
-                        // Stage was intentionally skipped
-                        let _ = self.graph.mark_skipped(&stage.id);
+                        let _ = self.graph.mark_status(&stage.id, StageStatus::Skipped);
                     }
                     StageStatus::WaitingForDeps => {
-                        // Stage is still waiting for dependencies
-                        let _ = self.graph.mark_waiting_for_deps(&stage.id);
+                        let _ = self
+                            .graph
+                            .mark_status(&stage.id, StageStatus::WaitingForDeps);
                     }
                 }
             }
@@ -210,7 +214,7 @@ impl Recovery for Orchestrator {
             .graph
             .all_nodes()
             .iter()
-            .filter(|node| node.status == NodeStatus::Queued)
+            .filter(|node| node.status == StageStatus::Queued)
             .map(|node| node.id.clone())
             .collect();
 
@@ -269,9 +273,10 @@ impl Recovery for Orchestrator {
                                 | StageStatus::Blocked
                         ) {
                             clear_status_line();
-                            eprintln!(
-                                "Recovering orphaned stage: {} (was {:?})",
-                                stage_id, stage.status
+                            tracing::warn!(
+                                stage_id = %stage_id,
+                                status = ?stage.status,
+                                "Recovering orphaned stage"
                             );
 
                             // Reset stage to Ready using validated transition
@@ -280,16 +285,16 @@ impl Recovery for Orchestrator {
                             if stage.status == StageStatus::Executing {
                                 // Executing -> Blocked (intermediate step for recovery)
                                 if let Err(e) = stage.try_mark_blocked() {
-                                    eprintln!("Warning: Failed to transition Executing -> Blocked during recovery: {e}");
+                                    tracing::warn!(error = %e, "Failed to transition Executing -> Blocked during recovery");
                                 }
                             }
                             // Now Blocked/NeedsHandoff -> Queued is valid
                             if let Err(e) = stage.try_mark_queued() {
                                 // Log a warning that validation was bypassed for recovery
-                                eprintln!("Warning: State transition validation failed during orphaned session recovery: {e}");
-                                eprintln!(
-                                    "         Bypassing validation for recovery (was: {:?})",
-                                    stage.status
+                                tracing::warn!(
+                                    error = %e,
+                                    status = ?stage.status,
+                                    "State transition validation failed during orphaned session recovery, bypassing"
                                 );
                                 stage.status = StageStatus::Queued;
                             }
@@ -307,7 +312,7 @@ impl Recovery for Orchestrator {
 
                             // Update graph first - only if not in terminal state
                             let graph_updated = if let Some(node) = self.graph.get_node(stage_id) {
-                                if node.status != NodeStatus::Completed {
+                                if node.status != StageStatus::Completed {
                                     let _ = self.graph.mark_queued(stage_id);
                                     true
                                 } else {
@@ -322,18 +327,7 @@ impl Recovery for Orchestrator {
                                 // Rollback graph to original state if we updated it
                                 if graph_updated {
                                     if let Some(original_status) = original_graph_status {
-                                        match original_status {
-                                            NodeStatus::Executing => {
-                                                let _ = self.graph.mark_executing(stage_id);
-                                            }
-                                            NodeStatus::Blocked => {
-                                                let _ = self.graph.mark_blocked(stage_id);
-                                            }
-                                            NodeStatus::NeedsHandoff => {
-                                                let _ = self.graph.mark_needs_handoff(stage_id);
-                                            }
-                                            _ => {} // Other states unlikely during recovery
-                                        }
+                                        let _ = self.graph.mark_status(stage_id, original_status);
                                     }
                                 }
                                 return Err(e);
@@ -369,17 +363,17 @@ impl Recovery for Orchestrator {
         for node in self.graph.all_nodes() {
             // Check graph status first
             match node.status {
-                NodeStatus::Completed => continue,
-                NodeStatus::Blocked => continue,
-                NodeStatus::Skipped => continue,
-                NodeStatus::MergeConflict => continue, // Terminal until resolved
-                NodeStatus::CompletedWithFailures => continue, // Terminal until retried
-                NodeStatus::MergeBlocked => continue,  // Terminal until fixed
-                NodeStatus::WaitingForDeps
-                | NodeStatus::Queued
-                | NodeStatus::Executing
-                | NodeStatus::WaitingForInput
-                | NodeStatus::NeedsHandoff => {
+                StageStatus::Completed => continue,
+                StageStatus::Blocked => continue,
+                StageStatus::Skipped => continue,
+                StageStatus::MergeConflict => continue, // Terminal until resolved
+                StageStatus::CompletedWithFailures => continue, // Terminal until retried
+                StageStatus::MergeBlocked => continue,  // Terminal until fixed
+                StageStatus::WaitingForDeps
+                | StageStatus::Queued
+                | StageStatus::Executing
+                | StageStatus::WaitingForInput
+                | StageStatus::NeedsHandoff => {
                     // Need to check the actual stage file for held status
                     if let Ok(stage) = self.load_stage(&node.id) {
                         match stage.status {
@@ -409,16 +403,16 @@ impl Recovery for Orchestrator {
 
         for node in nodes {
             match node.status {
-                NodeStatus::Executing => running += 1,
-                NodeStatus::WaitingForDeps | NodeStatus::Queued => pending += 1,
-                NodeStatus::Completed => completed += 1,
-                NodeStatus::Blocked => blocked += 1,
-                NodeStatus::Skipped => completed += 1, // Count skipped as completed for status display
-                NodeStatus::WaitingForInput => running += 1, // Paused but still active
-                NodeStatus::NeedsHandoff => running += 1, // Needs continuation but still in progress
-                NodeStatus::MergeConflict => blocked += 1, // Blocked on conflict resolution
-                NodeStatus::CompletedWithFailures => blocked += 1, // Failed acceptance, needs retry
-                NodeStatus::MergeBlocked => blocked += 1, // Blocked on merge error
+                StageStatus::Executing => running += 1,
+                StageStatus::WaitingForDeps | StageStatus::Queued => pending += 1,
+                StageStatus::Completed => completed += 1,
+                StageStatus::Blocked => blocked += 1,
+                StageStatus::Skipped => completed += 1, // Count skipped as completed for status display
+                StageStatus::WaitingForInput => running += 1, // Paused but still active
+                StageStatus::NeedsHandoff => running += 1, // Needs continuation but still in progress
+                StageStatus::MergeConflict => blocked += 1, // Blocked on conflict resolution
+                StageStatus::CompletedWithFailures => blocked += 1, // Failed acceptance, needs retry
+                StageStatus::MergeBlocked => blocked += 1,          // Blocked on merge error
             }
         }
 

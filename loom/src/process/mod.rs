@@ -44,10 +44,10 @@ pub fn is_process_alive(pid: u32) -> bool {
     // actually delivering a signal. The kernel returns different errors
     // depending on whether the process exists vs. permission denied.
     match kill(Pid::from_raw(pid_i32), None) {
-        Ok(()) => true,           // Process exists and we can signal it
-        Err(Errno::EPERM) => true, // Process exists but we lack permission
+        Ok(()) => true,             // Process exists and we can signal it
+        Err(Errno::EPERM) => true,  // Process exists but we lack permission
         Err(Errno::ESRCH) => false, // No such process
-        Err(_) => false,           // Other error, treat as non-existent
+        Err(_) => false,            // Other error, treat as non-existent
     }
 }
 
@@ -83,7 +83,10 @@ mod tests {
         let result = is_process_alive(0);
         // On macOS and Linux, PID 0 exists (kernel) but we get EPERM.
         // With our EPERM handling, this should return true.
-        assert!(result, "PID 0 (kernel) should be detected as alive via EPERM");
+        assert!(
+            result,
+            "PID 0 (kernel) should be detected as alive via EPERM"
+        );
     }
 
     #[test]

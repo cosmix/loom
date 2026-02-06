@@ -4,6 +4,7 @@ use anyhow::Result;
 use colored::Colorize;
 use std::path::PathBuf;
 
+use crate::models::stage::StageStatus;
 use crate::orchestrator::monitor::MonitorEvent;
 
 use super::clear_status_line;
@@ -52,7 +53,7 @@ impl EventHandler for Orchestrator {
                 MonitorEvent::StageBlocked { stage_id, reason } => {
                     clear_status_line();
                     eprintln!("Stage '{stage_id}' blocked: {reason}");
-                    self.graph.mark_blocked(&stage_id)?;
+                    self.graph.mark_status(&stage_id, StageStatus::Blocked)?;
                 }
                 MonitorEvent::SessionContextWarning {
                     session_id,

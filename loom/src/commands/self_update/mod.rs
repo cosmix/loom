@@ -24,8 +24,13 @@ use client::{
     create_http_client, download_text_with_limit, download_with_limit, validate_response_status,
 };
 use install::install_binary;
-use signature::{compute_sha256_checksum, parse_checksums, verify_binary_signature, verify_checksum};
-use zip::{safe_extract_path, validate_zip_entry, LimitedReader, MAX_TOTAL_EXTRACTED_SIZE, MAX_UNCOMPRESSED_SIZE};
+use signature::{
+    compute_sha256_checksum, parse_checksums, verify_binary_signature, verify_checksum,
+};
+use zip::{
+    safe_extract_path, validate_zip_entry, LimitedReader, MAX_TOTAL_EXTRACTED_SIZE,
+    MAX_UNCOMPRESSED_SIZE,
+};
 
 // Import ZipArchive from the zip crate for in-memory extraction
 use ::zip::ZipArchive;
@@ -214,19 +219,29 @@ fn update_config_files(release: &Release) -> Result<()> {
     let client = create_http_client()?;
 
     // Try to download checksums file for verification
-    let checksums = if let Some(checksum_asset) = release.assets.iter().find(|a| a.name == "checksums.txt") {
-        println!("  {} Downloading checksums...", "→".blue());
-        let response = client.get(&checksum_asset.browser_download_url).send()
-            .context("Failed to download checksums")?;
-        validate_response_status(&response, "Checksums download failed")?;
-        let content = download_text_with_limit(response, MAX_TEXT_SIZE, "Checksums download")?;
-        let parsed = parse_checksums(&content);
-        println!("  {} Checksums loaded ({} entries)", "✓".green(), parsed.len());
-        Some(parsed)
-    } else {
-        eprintln!("  {} No checksums.txt in release, skipping verification", "!".yellow().bold());
-        None
-    };
+    let checksums =
+        if let Some(checksum_asset) = release.assets.iter().find(|a| a.name == "checksums.txt") {
+            println!("  {} Downloading checksums...", "→".blue());
+            let response = client
+                .get(&checksum_asset.browser_download_url)
+                .send()
+                .context("Failed to download checksums")?;
+            validate_response_status(&response, "Checksums download failed")?;
+            let content = download_text_with_limit(response, MAX_TEXT_SIZE, "Checksums download")?;
+            let parsed = parse_checksums(&content);
+            println!(
+                "  {} Checksums loaded ({} entries)",
+                "✓".green(),
+                parsed.len()
+            );
+            Some(parsed)
+        } else {
+            eprintln!(
+                "  {} No checksums.txt in release, skipping verification",
+                "!".yellow().bold()
+            );
+            None
+        };
 
     // Update CLAUDE.md.template -> CLAUDE.md
     if let Some(asset) = release
@@ -235,10 +250,13 @@ fn update_config_files(release: &Release) -> Result<()> {
         .find(|a| a.name == "CLAUDE.md.template")
     {
         println!("  {} Downloading CLAUDE.md.template...", "→".blue());
-        let response = client.get(&asset.browser_download_url).send()
+        let response = client
+            .get(&asset.browser_download_url)
+            .send()
             .context("Failed to download CLAUDE.md.template")?;
         validate_response_status(&response, "CLAUDE.md.template download failed")?;
-        let content = download_text_with_limit(response, MAX_TEXT_SIZE, "CLAUDE.md.template download")?;
+        let content =
+            download_text_with_limit(response, MAX_TEXT_SIZE, "CLAUDE.md.template download")?;
 
         // Verify checksum if available
         if let Some(ref checksums) = checksums {
@@ -257,7 +275,13 @@ fn update_config_files(release: &Release) -> Result<()> {
     if let Some(asset) = release.assets.iter().find(|a| a.name == "agents.zip") {
         println!("  {} Downloading agents...", "→".blue());
         let agents_dir = claude_dir.join("agents");
-        download_verify_and_extract_zip(&client, &asset.browser_download_url, &agents_dir, "agents.zip", &checksums)?;
+        download_verify_and_extract_zip(
+            &client,
+            &asset.browser_download_url,
+            &agents_dir,
+            "agents.zip",
+            &checksums,
+        )?;
         println!("  {} agents/ updated", "✓".green());
     }
 
@@ -265,7 +289,13 @@ fn update_config_files(release: &Release) -> Result<()> {
     if let Some(asset) = release.assets.iter().find(|a| a.name == "skills.zip") {
         println!("  {} Downloading skills...", "→".blue());
         let skills_dir = claude_dir.join("skills");
-        download_verify_and_extract_zip(&client, &asset.browser_download_url, &skills_dir, "skills.zip", &checksums)?;
+        download_verify_and_extract_zip(
+            &client,
+            &asset.browser_download_url,
+            &skills_dir,
+            "skills.zip",
+            &checksums,
+        )?;
         println!("  {} skills/ updated", "✓".green());
     }
 
@@ -294,8 +324,7 @@ fn download_verify_and_extract_zip(
     asset_name: &str,
     checksums: &Option<HashMap<String, String>>,
 ) -> Result<()> {
-    let response = client.get(url).send()
-        .context("Failed to download zip")?;
+    let response = client.get(url).send().context("Failed to download zip")?;
     validate_response_status(&response, "Zip download failed")?;
     let bytes = download_with_limit(response, zip::MAX_ZIP_SIZE, asset_name)?;
 
@@ -309,8 +338,7 @@ fn download_verify_and_extract_zip(
 
     // Extract using zip crate directly (replicating safe extraction from zip.rs)
     let cursor = Cursor::new(&bytes);
-    let mut archive = ZipArchive::new(cursor)
-        .context("Failed to open zip archive")?;
+    let mut archive = ZipArchive::new(cursor).context("Failed to open zip archive")?;
 
     // Pre-validate all entries before extraction (fail fast on malicious archives)
     let mut total_uncompressed_size: u64 = 0;
@@ -357,8 +385,7 @@ fn download_verify_and_extract_zip(
 
     // Re-open archive for extraction (we consumed it during validation)
     let cursor = Cursor::new(&bytes);
-    let mut archive = ZipArchive::new(cursor)
-        .context("Failed to reopen zip archive")?;
+    let mut archive = ZipArchive::new(cursor).context("Failed to reopen zip archive")?;
 
     fs::create_dir_all(dest)?;
 

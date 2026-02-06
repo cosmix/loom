@@ -136,9 +136,20 @@ impl Orchestrator {
             }
         };
 
-        // Check if auto-merge is enabled for this stage
-        // TODO: In the future, load plan_auto_merge from config file
-        let plan_auto_merge = None;
+        // Load plan-level auto_merge setting from config
+        let plan_auto_merge = (|| -> Option<bool> {
+            let config = crate::fs::load_config(&self.config.work_dir).ok()??;
+            let source_path = config.source_path()?;
+            // source_path is relative to project root
+            let plan_path = self.config.repo_root.join(&source_path);
+            let plan_content = std::fs::read_to_string(&plan_path).ok()?;
+
+            // Extract YAML metadata from plan content
+            let yaml_content = crate::plan::parser::extract_yaml_metadata(&plan_content).ok()?;
+            let metadata = crate::plan::parser::parse_and_validate(&yaml_content).ok()?;
+
+            metadata.loom.auto_merge
+        })();
 
         if !is_auto_merge_enabled(&stage, self.config.auto_merge, plan_auto_merge) {
             // Auto-merge disabled - mark as merged without attempting merge
@@ -202,7 +213,9 @@ impl Orchestrator {
                             if let Err(e) = self.save_stage(&stage) {
                                 eprintln!("Warning: Failed to save stage: {e}");
                             }
-                            if let Err(e) = self.graph.mark_merge_blocked(stage_id) {
+                            if let Err(e) =
+                                self.graph.mark_status(stage_id, StageStatus::MergeBlocked)
+                            {
                                 eprintln!(
                                     "Warning: Failed to mark stage as merge blocked in graph: {e}"
                                 );
@@ -265,7 +278,9 @@ impl Orchestrator {
                             if let Err(e) = self.save_stage(&stage) {
                                 eprintln!("Warning: Failed to save stage: {e}");
                             }
-                            if let Err(e) = self.graph.mark_merge_blocked(stage_id) {
+                            if let Err(e) =
+                                self.graph.mark_status(stage_id, StageStatus::MergeBlocked)
+                            {
                                 eprintln!(
                                     "Warning: Failed to mark stage as merge blocked in graph: {e}"
                                 );
@@ -323,7 +338,9 @@ impl Orchestrator {
                             if let Err(e) = self.save_stage(&stage) {
                                 eprintln!("Warning: Failed to save stage: {e}");
                             }
-                            if let Err(e) = self.graph.mark_merge_blocked(stage_id) {
+                            if let Err(e) =
+                                self.graph.mark_status(stage_id, StageStatus::MergeBlocked)
+                            {
                                 eprintln!(
                                     "Warning: Failed to mark stage as merge blocked in graph: {e}"
                                 );
@@ -368,7 +385,7 @@ impl Orchestrator {
                 }
 
                 // Also update the graph to reflect MergeConflict status
-                if let Err(e) = self.graph.mark_merge_conflict(stage_id) {
+                if let Err(e) = self.graph.mark_status(stage_id, StageStatus::MergeConflict) {
                     eprintln!("Warning: Failed to mark stage as merge conflict in graph: {e}");
                 }
 
@@ -410,7 +427,9 @@ impl Orchestrator {
                             if let Err(e) = self.save_stage(&stage) {
                                 eprintln!("Warning: Failed to save stage: {e}");
                             }
-                            if let Err(e) = self.graph.mark_merge_blocked(stage_id) {
+                            if let Err(e) =
+                                self.graph.mark_status(stage_id, StageStatus::MergeBlocked)
+                            {
                                 eprintln!(
                                     "Warning: Failed to mark stage as merge blocked in graph: {e}"
                                 );
@@ -447,7 +466,7 @@ impl Orchestrator {
                 if let Err(e) = self.save_stage(&stage) {
                     eprintln!("Warning: Failed to save stage after merge error: {e}");
                 }
-                if let Err(e) = self.graph.mark_merge_blocked(stage_id) {
+                if let Err(e) = self.graph.mark_status(stage_id, StageStatus::MergeBlocked) {
                     eprintln!("Warning: Failed to mark stage as merge blocked in graph: {e}");
                 }
                 // Return false - merge failed, stage should not be marked Completed
@@ -618,5 +637,85 @@ impl Orchestrator {
         self.save_session(&spawned_session)?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_plan_auto_merge_extraction_true() {
+        let plan_content = r#"# Test Plan
+
+<!-- loom METADATA -->
+
+```yaml
+loom:
+  version: 1
+  auto_merge: true
+  stages:
+    - id: test-stage
+      name: "Test"
+      stage_type: knowledge
+      working_dir: "."
+      dependencies: []
+      acceptance: []
+```
+
+<!-- END loom METADATA -->
+"#;
+        let yaml_content = crate::plan::parser::extract_yaml_metadata(plan_content).unwrap();
+        let metadata = crate::plan::parser::parse_and_validate(&yaml_content).unwrap();
+        assert_eq!(metadata.loom.auto_merge, Some(true));
+    }
+
+    #[test]
+    fn test_plan_auto_merge_extraction_false() {
+        let plan_content = r#"# Test Plan
+
+<!-- loom METADATA -->
+
+```yaml
+loom:
+  version: 1
+  auto_merge: false
+  stages:
+    - id: test-stage
+      name: "Test"
+      stage_type: knowledge
+      working_dir: "."
+      dependencies: []
+      acceptance: []
+```
+
+<!-- END loom METADATA -->
+"#;
+        let yaml_content = crate::plan::parser::extract_yaml_metadata(plan_content).unwrap();
+        let metadata = crate::plan::parser::parse_and_validate(&yaml_content).unwrap();
+        assert_eq!(metadata.loom.auto_merge, Some(false));
+    }
+
+    #[test]
+    fn test_plan_auto_merge_default_none() {
+        let plan_content = r#"# Test Plan
+
+<!-- loom METADATA -->
+
+```yaml
+loom:
+  version: 1
+  stages:
+    - id: test-stage
+      name: "Test"
+      stage_type: knowledge
+      working_dir: "."
+      dependencies: []
+      acceptance: []
+```
+
+<!-- END loom METADATA -->
+"#;
+        let yaml_content = crate::plan::parser::extract_yaml_metadata(plan_content).unwrap();
+        let metadata = crate::plan::parser::parse_and_validate(&yaml_content).unwrap();
+        assert_eq!(metadata.loom.auto_merge, None);
     }
 }
