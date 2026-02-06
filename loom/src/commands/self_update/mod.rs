@@ -219,29 +219,26 @@ fn update_config_files(release: &Release) -> Result<()> {
     let client = create_http_client()?;
 
     // Try to download checksums file for verification
-    let checksums =
-        if let Some(checksum_asset) = release.assets.iter().find(|a| a.name == "checksums.txt") {
-            println!("  {} Downloading checksums...", "→".blue());
-            let response = client
-                .get(&checksum_asset.browser_download_url)
-                .send()
-                .context("Failed to download checksums")?;
-            validate_response_status(&response, "Checksums download failed")?;
-            let content = download_text_with_limit(response, MAX_TEXT_SIZE, "Checksums download")?;
-            let parsed = parse_checksums(&content);
-            println!(
-                "  {} Checksums loaded ({} entries)",
-                "✓".green(),
-                parsed.len()
-            );
-            Some(parsed)
-        } else {
-            eprintln!(
-                "  {} No checksums.txt in release, skipping verification",
-                "!".yellow().bold()
-            );
-            None
-        };
+    let checksums = if let Some(checksum_asset) =
+        release.assets.iter().find(|a| a.name == "checksums.txt")
+    {
+        println!("  {} Downloading checksums...", "→".blue());
+        let response = client
+            .get(&checksum_asset.browser_download_url)
+            .send()
+            .context("Failed to download checksums")?;
+        validate_response_status(&response, "Checksums download failed")?;
+        let content = download_text_with_limit(response, MAX_TEXT_SIZE, "Checksums download")?;
+        let parsed = parse_checksums(&content);
+        println!(
+            "  {} Checksums loaded ({} entries)",
+            "✓".green(),
+            parsed.len()
+        );
+        Some(parsed)
+    } else {
+        anyhow::bail!("Release is missing checksums.txt — cannot verify config file integrity. This may indicate a compromised release.");
+    };
 
     // Update CLAUDE.md.template -> CLAUDE.md
     if let Some(asset) = release

@@ -131,10 +131,7 @@ fn resolve_acceptance_dir_for_stage(stage: &Stage) -> Result<Option<PathBuf>> {
         });
 
     // Use the shared resolve_acceptance_dir helper
-    Ok(resolve_acceptance_dir(
-        worktree_root.as_deref(),
-        stage.working_dir.as_deref(),
-    ))
+    resolve_acceptance_dir(worktree_root.as_deref(), stage.working_dir.as_deref())
 }
 
 /// Print acceptance criteria results

@@ -3,6 +3,7 @@
 //! This module provides helpers for resolving the working directory
 //! where acceptance criteria should be executed.
 
+use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
 /// Resolve acceptance directory from worktree root and working_dir.
@@ -16,31 +17,41 @@ use std::path::{Path, PathBuf};
 pub fn resolve_acceptance_dir(
     worktree_root: Option<&Path>,
     working_dir: Option<&str>,
-) -> Option<PathBuf> {
+) -> Result<Option<PathBuf>> {
     match (worktree_root, working_dir) {
         (Some(root), Some(subdir)) => {
             // Handle "." special case - use worktree root directly
             if subdir == "." {
-                Some(root.to_path_buf())
-            } else {
-                let full_path = root.join(subdir);
-                if full_path.exists() {
-                    Some(full_path)
-                } else {
-                    // Fall back to worktree root if subdirectory doesn't exist
-                    eprintln!(
-                        "Warning: stage working_dir '{subdir}' does not exist in worktree at '{}', using worktree root",
-                        full_path.display()
-                    );
-                    Some(root.to_path_buf())
-                }
+                return Ok(Some(root.to_path_buf()));
             }
+
+            let full_path = root.join(subdir);
+
+            // Canonicalize and check containment for path traversal defense
+            let canonical = full_path.canonicalize().with_context(|| {
+                format!(
+                    "Failed to resolve acceptance directory: {}",
+                    full_path.display()
+                )
+            })?;
+
+            // Defense-in-depth: verify resolved path is within worktree
+            let canonical_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+            if !canonical.starts_with(&canonical_root) {
+                anyhow::bail!(
+                    "Acceptance directory {} escapes worktree root {}",
+                    canonical.display(),
+                    canonical_root.display()
+                );
+            }
+
+            Ok(Some(canonical))
         }
         (Some(root), None) => {
             // No working_dir specified, use worktree root
-            Some(root.to_path_buf())
+            Ok(Some(root.to_path_buf()))
         }
-        _ => None,
+        _ => Ok(None),
     }
 }
 
@@ -54,7 +65,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let worktree_root = temp_dir.path();
 
-        let result = resolve_acceptance_dir(Some(worktree_root), Some("."));
+        let result = resolve_acceptance_dir(Some(worktree_root), Some(".")).unwrap();
 
         assert!(result.is_some());
         assert_eq!(result.unwrap(), worktree_root.to_path_buf());
@@ -69,22 +80,23 @@ mod tests {
         let subdir_path = worktree_root.join("loom");
         std::fs::create_dir_all(&subdir_path).unwrap();
 
-        let result = resolve_acceptance_dir(Some(worktree_root), Some("loom"));
+        let result = resolve_acceptance_dir(Some(worktree_root), Some("loom")).unwrap();
 
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), subdir_path);
+        // Canonicalize for comparison
+        let expected = subdir_path.canonicalize().unwrap();
+        assert_eq!(result.unwrap(), expected);
     }
 
     #[test]
-    fn test_resolve_acceptance_dir_missing_subdir_falls_back_to_worktree_root() {
+    fn test_resolve_acceptance_dir_missing_subdir_returns_error() {
         let temp_dir = TempDir::new().unwrap();
         let worktree_root = temp_dir.path();
 
-        // Don't create the subdirectory - it should fall back to root
+        // Don't create the subdirectory - should return error
         let result = resolve_acceptance_dir(Some(worktree_root), Some("nonexistent"));
 
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), worktree_root.to_path_buf());
+        assert!(result.is_err());
     }
 
     #[test]
@@ -92,7 +104,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let worktree_root = temp_dir.path();
 
-        let result = resolve_acceptance_dir(Some(worktree_root), None);
+        let result = resolve_acceptance_dir(Some(worktree_root), None).unwrap();
 
         assert!(result.is_some());
         assert_eq!(result.unwrap(), worktree_root.to_path_buf());
@@ -100,7 +112,7 @@ mod tests {
 
     #[test]
     fn test_resolve_acceptance_dir_no_worktree_returns_none() {
-        let result = resolve_acceptance_dir(None, Some("."));
+        let result = resolve_acceptance_dir(None, Some(".")).unwrap();
 
         assert!(result.is_none());
     }
@@ -114,9 +126,11 @@ mod tests {
         let subdir_path = worktree_root.join("packages/core");
         std::fs::create_dir_all(&subdir_path).unwrap();
 
-        let result = resolve_acceptance_dir(Some(worktree_root), Some("packages/core"));
+        let result = resolve_acceptance_dir(Some(worktree_root), Some("packages/core")).unwrap();
 
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), subdir_path);
+        // Canonicalize for comparison
+        let expected = subdir_path.canonicalize().unwrap();
+        assert_eq!(result.unwrap(), expected);
     }
 }

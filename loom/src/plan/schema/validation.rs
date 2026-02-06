@@ -342,6 +342,13 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
                     stage_id: Some(stage.id.clone()),
                 });
             }
+            // Validate pattern length (DoS prevention)
+            if wiring.pattern.len() > 500 {
+                errors.push(ValidationError {
+                    message: format!("Wiring #{} pattern exceeds 500 character limit", idx + 1),
+                    stage_id: Some(stage.id.clone()),
+                });
+            }
             // Validate pattern is valid regex
             if let Err(e) = regex::Regex::new(&wiring.pattern) {
                 errors.push(ValidationError {

@@ -1,11 +1,9 @@
 //! Zip extraction with security protections against zip slip and zip bomb attacks.
 
 use anyhow::{bail, Context, Result};
-use std::fs::{self, File};
+use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-
-use super::client::{create_http_client, download_with_limit, validate_response_status};
 
 // Zip Extraction Security Constants
 /// Maximum uncompressed size for any single zip entry (100 MB)
@@ -144,117 +142,4 @@ pub(crate) fn safe_extract_path(dest_dir: &Path, entry_name: &str) -> Result<Pat
     }
 
     Ok(normalized)
-}
-
-/// Download and extract a zip file from a URL to a destination directory.
-/// Includes comprehensive security checks for zip slip and zip bomb attacks.
-#[allow(dead_code)]
-pub(crate) fn download_and_extract_zip(url: &str, dest_dir: &Path) -> Result<()> {
-    let client = create_http_client()?;
-    let response = client.get(url).send().context("Failed to download zip")?;
-
-    validate_response_status(&response, "Zip download failed")?;
-    let bytes = download_with_limit(response, MAX_ZIP_SIZE, "Zip download")?;
-
-    // Create temp file
-    let temp_path = dest_dir.with_extension("zip.tmp");
-    fs::write(&temp_path, &bytes).context("Failed to write temp zip")?;
-
-    // Open and validate archive before any extraction
-    let file = File::open(&temp_path).context("Failed to open temp zip")?;
-    let mut archive = zip::ZipArchive::new(file).context("Failed to read zip archive")?;
-
-    // Pre-validate all entries before extraction (fail fast on malicious archives)
-    let mut total_uncompressed_size: u64 = 0;
-    for i in 0..archive.len() {
-        let file = archive.by_index(i).context("Failed to read zip entry")?;
-
-        // Validate against zip bombs
-        validate_zip_entry(&file)?;
-
-        // Track total size with overflow protection
-        total_uncompressed_size = total_uncompressed_size
-            .checked_add(file.size())
-            .ok_or_else(|| {
-                anyhow::anyhow!("Total uncompressed size overflow - possible zip bomb")
-            })?;
-
-        if total_uncompressed_size > MAX_TOTAL_EXTRACTED_SIZE {
-            bail!(
-                "Total uncompressed size {total_uncompressed_size} exceeds maximum {MAX_TOTAL_EXTRACTED_SIZE} bytes - possible zip bomb"
-            );
-        }
-
-        // Validate path safety (using enclosed_name for additional safety, falling back to mangled_name)
-        let entry_name = file
-            .enclosed_name()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| file.mangled_name().to_string_lossy().to_string());
-
-        // Skip empty names (root directory entries)
-        if !entry_name.is_empty() {
-            safe_extract_path(dest_dir, &entry_name)?;
-        }
-    }
-
-    // Backup existing directory (only after validation passes)
-    if dest_dir.exists() {
-        let backup = dest_dir.with_extension("bak");
-        if backup.exists() {
-            fs::remove_dir_all(&backup).ok();
-        }
-        fs::rename(dest_dir, &backup).context("Failed to backup directory")?;
-    }
-
-    // Re-open archive for extraction (we consumed it during validation)
-    let file = File::open(&temp_path).context("Failed to reopen temp zip")?;
-    let mut archive = zip::ZipArchive::new(file).context("Failed to reread zip archive")?;
-
-    fs::create_dir_all(dest_dir)?;
-
-    // Extract with validated paths
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i)?;
-
-        // Get safe entry name (prefer enclosed_name, fall back to mangled_name)
-        let entry_name = file
-            .enclosed_name()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| file.mangled_name().to_string_lossy().to_string());
-
-        // Skip empty names
-        if entry_name.is_empty() {
-            continue;
-        }
-
-        // Get safe output path (already validated, but re-verify for defense in depth)
-        let outpath = safe_extract_path(dest_dir, &entry_name)?;
-
-        if file.name().ends_with('/') {
-            fs::create_dir_all(&outpath)?;
-        } else {
-            if let Some(parent) = outpath.parent() {
-                fs::create_dir_all(parent)?;
-            }
-
-            // Extract with size limit enforcement during decompression
-            let mut outfile = File::create(&outpath)
-                .with_context(|| format!("Failed to create file: {}", outpath.display()))?;
-
-            // Use a limited reader to enforce size during extraction
-            // This catches zip bombs that lie about their uncompressed size in headers
-            let mut limited_reader = LimitedReader::new(&mut file, MAX_UNCOMPRESSED_SIZE);
-            io::copy(&mut limited_reader, &mut outfile)
-                .with_context(|| format!("Failed to extract file: {entry_name}"))?;
-        }
-    }
-
-    // Cleanup
-    fs::remove_file(&temp_path).ok();
-    let backup = dest_dir.with_extension("bak");
-    if backup.exists() {
-        fs::remove_dir_all(&backup).ok();
-    }
-
-    Ok(())
 }

@@ -60,6 +60,10 @@ pub fn add_worktrees_to_global_trust(repo_root: &Path) -> Result<()> {
     }
 
     // Add worktrees path to trusted directories
+    eprintln!(
+        "  Adding worktree directory to Claude Code trust list: {}",
+        worktrees_path
+    );
     trusted_arr.push(json!(worktrees_path));
 
     // Write back

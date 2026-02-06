@@ -1,7 +1,7 @@
 //! Wiring verification - connections between components
 
-use anyhow::Result;
-use regex::Regex;
+use anyhow::{bail, Result};
+use regex::RegexBuilder;
 use std::fs;
 use std::path::Path;
 
@@ -40,6 +40,29 @@ pub fn verify_wiring(wiring: &[WiringCheck], working_dir: &Path) -> Result<Vec<V
             continue;
         }
 
+        // Check file size to prevent DoS on large files
+        let metadata = match fs::metadata(&source_path) {
+            Ok(m) => m,
+            Err(e) => {
+                gaps.push(VerificationGap::new(
+                    GapType::WiringBroken,
+                    format!(
+                        "Cannot read wiring source metadata: {} - {}",
+                        check.source, e
+                    ),
+                    "Ensure file exists and is accessible".to_string(),
+                ));
+                continue;
+            }
+        };
+
+        if metadata.len() > 10 * 1024 * 1024 {
+            bail!(
+                "Source file {} exceeds 10MB limit for wiring verification",
+                source_path.display()
+            );
+        }
+
         // Read file content
         let content = match fs::read_to_string(&source_path) {
             Ok(c) => c,
@@ -53,8 +76,11 @@ pub fn verify_wiring(wiring: &[WiringCheck], working_dir: &Path) -> Result<Vec<V
             }
         };
 
-        // Check pattern
-        let regex = match Regex::new(&check.pattern) {
+        // Check pattern with size limits to prevent ReDoS
+        let regex = match RegexBuilder::new(&check.pattern)
+            .size_limit(1 << 20) // 1MB compiled size limit
+            .build()
+        {
             Ok(r) => r,
             Err(e) => {
                 gaps.push(VerificationGap::new(

@@ -4,15 +4,13 @@
 //! instead of relying on the terminal emulator's PID.
 
 use anyhow::{Context, Result};
+use shell_escape::escape;
 use std::fs;
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
 use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
-
-// Re-export is_process_alive from the process module for backwards compatibility
-pub use crate::process::is_process_alive as check_pid_alive;
 
 /// Get the path to the pids directory
 pub fn pids_dir(work_dir: &Path) -> PathBuf {
@@ -48,15 +46,6 @@ pub fn wrapper_script_path(work_dir: &Path, stage_id: &str) -> PathBuf {
     wrappers_dir(work_dir).join(format!("{stage_id}-wrapper.sh"))
 }
 
-/// Write a PID to the PID file for a stage
-#[allow(dead_code)] // Used by wrapper scripts via shell, not directly called
-pub fn write_pid_file(work_dir: &Path, stage_id: &str, pid: u32) -> Result<()> {
-    create_pid_dir(work_dir)?;
-    let path = pid_file_path(work_dir, stage_id);
-    fs::write(&path, pid.to_string())
-        .with_context(|| format!("Failed to write PID file: {}", path.display()))
-}
-
 /// Read the PID from a PID file for a stage
 ///
 /// Returns None if the file doesn't exist or is invalid
@@ -65,37 +54,6 @@ pub fn read_pid_file(work_dir: &Path, stage_id: &str) -> Option<u32> {
     fs::read_to_string(&path)
         .ok()
         .and_then(|s| s.trim().parse().ok())
-}
-
-/// Wait for a PID file to appear and contain a valid, alive PID.
-///
-/// # Arguments
-/// * `work_dir` - The .work directory path
-/// * `stage_id` - The stage identifier
-/// * `timeout` - Maximum time to wait
-/// * `poll_interval` - How often to check
-///
-/// # Returns
-/// The PID if found and alive within the timeout, None otherwise
-#[allow(dead_code)] // Available for monitor to use in the future
-pub fn wait_for_pid_file(
-    work_dir: &Path,
-    stage_id: &str,
-    timeout: Duration,
-    poll_interval: Duration,
-) -> Option<u32> {
-    let deadline = std::time::Instant::now() + timeout;
-
-    while std::time::Instant::now() < deadline {
-        if let Some(pid) = read_pid_file(work_dir, stage_id) {
-            if check_pid_alive(pid) {
-                return Some(pid);
-            }
-        }
-        thread::sleep(poll_interval);
-    }
-
-    None
 }
 
 /// Remove the PID file for a stage
@@ -328,24 +286,29 @@ pub fn create_wrapper_script(
     // Also export LOOM_WORKTREE_PATH for hook-based isolation enforcement
     let (cd_section, worktree_path_export) = if let Some(dir) = working_dir {
         let dir_abs = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+        let dir_escaped = escape(dir_abs.display().to_string().into());
         (
             format!(
                 r#"# Change to working directory
-cd '{}' || {{ echo "Failed to cd to working directory"; exit 1; }}
+cd {dir_escaped} || {{ echo "Failed to cd to working directory"; exit 1; }}
 
 "#,
-                dir_abs.display()
             ),
             format!(
                 r#"# Worktree boundary for file isolation hooks
-export LOOM_WORKTREE_PATH="{}"
+export LOOM_WORKTREE_PATH={dir_escaped}
 "#,
-                dir_abs.display()
             ),
         )
     } else {
         (String::new(), String::new())
     };
+
+    // Shell-escape all interpolated values to prevent command injection
+    let stage_id_escaped = escape(stage_id.into());
+    let session_id_escaped = escape(session_id.into());
+    let work_dir_escaped = escape(work_dir_abs.display().to_string().into());
+    let pid_file_escaped = escape(pid_file_abs.display().to_string().into());
 
     let script = format!(
         r#"#!/bin/bash
@@ -353,9 +316,9 @@ export LOOM_WORKTREE_PATH="{}"
 # Writes PID to file before exec'ing claude
 
 # Set loom environment variables for hooks and memory commands
-export LOOM_SESSION_ID="{session_id}"
-export LOOM_STAGE_ID="{stage_id}"
-export LOOM_WORK_DIR="{work_dir}"
+export LOOM_SESSION_ID={session_id}
+export LOOM_STAGE_ID={stage_id}
+export LOOM_WORK_DIR={work_dir}
 # CRITICAL: LOOM_MAIN_AGENT_PID allows hooks to detect subagents
 # Subagents inherit this var but have different $PPID - hooks can compare
 export LOOM_MAIN_AGENT_PID=$$
@@ -363,17 +326,17 @@ export LOOM_MAIN_AGENT_PID=$$
 export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 {worktree_path_export}
 {cd_section}# Write our PID to the tracking file
-echo $$ > "{pid_file}"
+echo $$ > {pid_file}
 
 # Replace this process with claude
 exec {claude_cmd}
 "#,
-        stage_id = stage_id,
-        session_id = session_id,
-        work_dir = work_dir_abs.display(),
+        stage_id = stage_id_escaped,
+        session_id = session_id_escaped,
+        work_dir = work_dir_escaped,
         worktree_path_export = worktree_path_export,
         cd_section = cd_section,
-        pid_file = pid_file_abs.display(),
+        pid_file = pid_file_escaped,
         claude_cmd = claude_cmd
     );
 
@@ -399,26 +362,6 @@ exec {claude_cmd}
 mod tests {
     use super::*;
     use tempfile::TempDir;
-
-    #[test]
-    fn test_pid_file_operations() {
-        let temp_dir = TempDir::new().unwrap();
-        let work_dir = temp_dir.path();
-        let stage_id = "test-stage";
-
-        // Initially no PID file
-        assert!(read_pid_file(work_dir, stage_id).is_none());
-
-        // Write PID
-        write_pid_file(work_dir, stage_id, 12345).unwrap();
-
-        // Read PID back
-        assert_eq!(read_pid_file(work_dir, stage_id), Some(12345));
-
-        // Remove PID file
-        remove_pid_file(work_dir, stage_id);
-        assert!(read_pid_file(work_dir, stage_id).is_none());
-    }
 
     #[test]
     fn test_wrapper_script_creation() {
@@ -492,35 +435,22 @@ mod tests {
     }
 
     #[test]
-    fn test_check_pid_alive() {
-        // Current process should be alive
-        let our_pid = std::process::id();
-        assert!(check_pid_alive(our_pid));
-
-        // Non-existent PID should not be alive (using a very high PID)
-        assert!(!check_pid_alive(999999999));
-    }
-
-    #[test]
     fn test_cleanup_stage_files() {
         let temp_dir = TempDir::new().unwrap();
         let work_dir = temp_dir.path();
         let stage_id = "test-stage";
         let session_id = "session-cleanup-1234567890";
 
-        // Create files
-        write_pid_file(work_dir, stage_id, 12345).unwrap();
+        // Create wrapper script
         create_wrapper_script(work_dir, stage_id, session_id, "claude 'test'", None).unwrap();
 
-        // Verify they exist
-        assert!(pid_file_path(work_dir, stage_id).exists());
+        // Verify it exists
         assert!(wrapper_script_path(work_dir, stage_id).exists());
 
         // Cleanup
         cleanup_stage_files(work_dir, stage_id);
 
-        // Verify they're gone
-        assert!(!pid_file_path(work_dir, stage_id).exists());
+        // Verify it's gone
         assert!(!wrapper_script_path(work_dir, stage_id).exists());
     }
 }
