@@ -37,9 +37,9 @@ fn status_indicator(status: &StageStatus) -> &'static str {
     }
 }
 
-/// Get stage duration from duration_secs field
+/// Get stage duration - prefer execution_secs (excludes wait time) over duration_secs (wall clock)
 fn stage_duration(stage: &StageCompletionInfo) -> Option<i64> {
-    stage.duration_secs
+    stage.execution_secs.or(stage.duration_secs)
 }
 
 /// Render the completion screen to stdout
@@ -81,7 +81,7 @@ pub fn render_completion_screen(summary: &CompletionSummary) {
     // Stage table header
     println!("\n{}", "Stage Results".bold());
     println!("{}", "\u{2500}".repeat(50));
-    println!("{:2} {:30} {:10} {:>8}", "", "Stage", "Status", "Duration");
+    println!("{:2} {:30} {:10} Duration", "", "Stage", "Status");
     println!("{}", "\u{2500}".repeat(50));
 
     // Sort stages by completion (completed first, then by id)
@@ -95,9 +95,39 @@ pub fn render_completion_screen(summary: &CompletionSummary) {
     // Stage rows
     for stage in &sorted_stages {
         let icon = status_indicator(&stage.status);
-        let duration = stage_duration(stage)
+        let primary_duration = stage_duration(stage)
             .map(format_elapsed)
             .unwrap_or_else(|| "-".to_string());
+
+        // Build duration display with wall time and retries when applicable
+        let duration_display = if stage.retry_count > 0 {
+            if let Some(wall) = stage.duration_secs {
+                format!(
+                    "{} (wall: {}, {} {})",
+                    primary_duration,
+                    format_elapsed(wall),
+                    stage.retry_count,
+                    if stage.retry_count == 1 {
+                        "retry"
+                    } else {
+                        "retries"
+                    }
+                )
+            } else {
+                format!(
+                    "{} ({} {})",
+                    primary_duration,
+                    stage.retry_count,
+                    if stage.retry_count == 1 {
+                        "retry"
+                    } else {
+                        "retries"
+                    }
+                )
+            }
+        } else {
+            primary_duration
+        };
 
         let status_str = match stage.status {
             StageStatus::Completed => "Completed".green(),
@@ -122,7 +152,7 @@ pub fn render_completion_screen(summary: &CompletionSummary) {
         // Truncate stage id if too long (UTF-8 safe)
         let id_display = truncate_chars(&stage.id, 28);
 
-        println!("{icon_colored:2} {id_display:30} {status_str:10} {duration:>8}");
+        println!("{icon_colored:2} {id_display:30} {status_str:10} {duration_display}");
     }
 
     println!("{}", "\u{2500}".repeat(50));
@@ -160,10 +190,7 @@ pub fn render_completion_lines(summary: &CompletionSummary) -> Vec<String> {
     lines.push(String::new());
     lines.push("Stage Results".to_string());
     lines.push("\u{2500}".repeat(50));
-    lines.push(format!(
-        "{:2} {:30} {:10} {:>8}",
-        "", "Stage", "Status", "Duration"
-    ));
+    lines.push(format!("{:2} {:30} {:10} Duration", "", "Stage", "Status"));
     lines.push("\u{2500}".repeat(50));
 
     let mut sorted_stages = summary.stages.clone();
@@ -175,9 +202,39 @@ pub fn render_completion_lines(summary: &CompletionSummary) -> Vec<String> {
 
     for stage in &sorted_stages {
         let icon = status_indicator(&stage.status);
-        let duration = stage_duration(stage)
+        let primary_duration = stage_duration(stage)
             .map(format_elapsed)
             .unwrap_or_else(|| "-".to_string());
+
+        // Build duration display with wall time and retries when applicable
+        let duration_display = if stage.retry_count > 0 {
+            if let Some(wall) = stage.duration_secs {
+                format!(
+                    "{} (wall: {}, {} {})",
+                    primary_duration,
+                    format_elapsed(wall),
+                    stage.retry_count,
+                    if stage.retry_count == 1 {
+                        "retry"
+                    } else {
+                        "retries"
+                    }
+                )
+            } else {
+                format!(
+                    "{} ({} {})",
+                    primary_duration,
+                    stage.retry_count,
+                    if stage.retry_count == 1 {
+                        "retry"
+                    } else {
+                        "retries"
+                    }
+                )
+            }
+        } else {
+            primary_duration
+        };
 
         let status_str = match stage.status {
             StageStatus::Completed => "Completed",
@@ -193,7 +250,7 @@ pub fn render_completion_lines(summary: &CompletionSummary) -> Vec<String> {
         let id_display = truncate_chars(&stage.id, 28);
 
         lines.push(format!(
-            "{icon:2} {id_display:30} {status_str:10} {duration:>8}"
+            "{icon:2} {id_display:30} {status_str:10} {duration_display}"
         ));
     }
 
@@ -214,6 +271,8 @@ mod tests {
             name: id.to_string(),
             status,
             duration_secs: if completed { Some(120) } else { None },
+            execution_secs: None,
+            retry_count: 0,
             merged: completed,
             dependencies: vec![],
         }

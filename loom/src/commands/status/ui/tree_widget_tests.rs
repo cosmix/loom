@@ -26,6 +26,8 @@ fn make_stage(id: &str, deps: Vec<&str>, status: StageStatus) -> Stage {
         completed_at: None,
         started_at: None,
         duration_secs: None,
+        execution_secs: None,
+        attempt_started_at: None,
         close_reason: None,
         auto_merge: None,
         working_dir: None,

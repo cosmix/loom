@@ -17,6 +17,12 @@ pub struct StageCompletionInfo {
     pub status: StageStatus,
     /// Duration in seconds from start to completion (None if never started)
     pub duration_secs: Option<i64>,
+    /// Accumulated execution time (excludes wait/backoff time)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_secs: Option<i64>,
+    /// Number of retry attempts
+    #[serde(default)]
+    pub retry_count: u32,
     /// Whether the stage was merged
     pub merged: bool,
     /// Dependencies of this stage
@@ -319,6 +325,8 @@ mod tests {
                         name: "First Stage".to_string(),
                         status: StageStatus::Completed,
                         duration_secs: Some(60),
+                        execution_secs: None,
+                        retry_count: 0,
                         merged: true,
                         dependencies: vec![],
                     },
@@ -327,6 +335,8 @@ mod tests {
                         name: "Second Stage".to_string(),
                         status: StageStatus::Blocked,
                         duration_secs: Some(45),
+                        execution_secs: None,
+                        retry_count: 0,
                         merged: false,
                         dependencies: vec!["stage-1".to_string()],
                     },

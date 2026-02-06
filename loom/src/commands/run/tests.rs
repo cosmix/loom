@@ -284,6 +284,8 @@ fn test_orchestrator_result_success() {
         failed_stages: vec![],
         needs_handoff: vec![],
         total_sessions_spawned: 2,
+        started_at: chrono::Utc::now(),
+        completed_at: chrono::Utc::now(),
     };
 
     assert!(result.is_success());
@@ -296,6 +298,8 @@ fn test_orchestrator_result_with_failures() {
         failed_stages: vec!["stage-2".to_string()],
         needs_handoff: vec![],
         total_sessions_spawned: 2,
+        started_at: chrono::Utc::now(),
+        completed_at: chrono::Utc::now(),
     };
 
     assert!(!result.is_success());
@@ -308,6 +312,8 @@ fn test_orchestrator_result_with_handoffs() {
         failed_stages: vec![],
         needs_handoff: vec!["stage-1".to_string()],
         total_sessions_spawned: 1,
+        started_at: chrono::Utc::now(),
+        completed_at: chrono::Utc::now(),
     };
 
     assert!(!result.is_success());

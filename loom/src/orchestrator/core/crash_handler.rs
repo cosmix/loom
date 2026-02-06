@@ -47,6 +47,9 @@ impl Orchestrator {
             // Classify the failure
             let failure_type = classify_failure(&reason);
 
+            // Accumulate execution time before updating retry count
+            stage.accumulate_attempt_time(Utc::now());
+
             // Update failure information
             stage.failure_info = Some(FailureInfo {
                 failure_type: failure_type.clone(),

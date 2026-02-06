@@ -88,6 +88,8 @@ pub fn unified_stage_to_stage(us: &UnifiedStage) -> Stage {
             us.started_at
                 .map(|start| end.signed_duration_since(start).num_seconds())
         }),
+        execution_secs: None,
+        attempt_started_at: None,
         close_reason: None,
         auto_merge: None,
         working_dir: None,
