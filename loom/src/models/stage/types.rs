@@ -32,7 +32,7 @@ pub enum StageType {
 /// - `Single`: Default mode, single agent executes the stage
 /// - `Team`: Stage benefits from coordinated multi-agent work
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "kebab-case")]
 pub enum ExecutionMode {
     /// Single agent executes the stage (default)
     #[default]

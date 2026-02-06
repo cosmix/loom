@@ -38,6 +38,8 @@ pub struct StageFrontmatter {
     pub wiring_tests: Vec<crate::plan::schema::WiringTest>,
     #[serde(default)]
     pub dead_code_check: Option<crate::plan::schema::DeadCodeCheck>,
+    #[serde(default)]
+    pub execution_mode: Option<crate::models::stage::ExecutionMode>,
 }
 
 impl StageFrontmatter {
@@ -63,7 +65,7 @@ impl StageFrontmatter {
             dead_code_check: self.dead_code_check,
             context_budget: None,
             sandbox: crate::plan::schema::StageSandboxConfig::default(),
-            execution_mode: None,
+            execution_mode: self.execution_mode,
         }
     }
 }

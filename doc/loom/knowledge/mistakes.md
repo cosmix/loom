@@ -492,3 +492,17 @@ Two plan criteria caused false negatives in integration-verify:
   - *Rationale:* Follows subagents-first parallelization strategy
 
 
+
+## Promoted from Memory [2026-02-06 15:25]
+
+### Notes
+
+- Code review found 4 actionable issues: (1) UTF-8 unsafe string truncation in sections.rs:672 using byte slicing - fixed with chars().take().collect(), (2) StageFrontmatter missing execution_mode field causing data loss on stage re-load - fixed by adding field and propagating, (3) ExecutionMode serde uses lowercase instead of kebab-case inconsistent with StageType - fixed, (4) Misleading backward compatibility comments in plan/schema/types.rs - fixed to say API convenience
+- Non-actionable findings noted: (1) Triple env var redundancy in settings.rs + pid_tracking.rs is intentional belt-and-suspenders, (2) Agent teams guidance always present in signals regardless of execution_mode - by design, (3) cache.rs DRY violation at 747 lines approaching limits - pre-existing, (4) ExecutionMode not used in any runtime logic - advisory only, (5) No tests for ExecutionMode::Team variant
+
+### Decisions
+
+- **Fixed 4 issues: UTF-8 truncation, StageFrontmatter data loss, serde inconsistency, misleading comments. Did NOT fix: DRY violation in cache.rs (out of scope, pre-existing), triple env var redundancy (intentional), unconditional agent teams guidance (by design)**
+  - *Rationale:* Focused on bugs and correctness issues that could cause runtime panics or data loss. Left design decisions and refactoring opportunities as noted observations.
+
+

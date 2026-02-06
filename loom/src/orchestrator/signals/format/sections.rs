@@ -667,9 +667,9 @@ pub fn format_skill_recommendations(skills: &[SkillMatch]) -> String {
     content.push_str("|-------|-------------|--------|\n");
 
     for skill in skills {
-        // Truncate description if too long for table
-        let desc = if skill.description.len() > 60 {
-            format!("{}...", &skill.description[..57])
+        // Truncate description if too long for table (UTF-8 safe)
+        let desc = if skill.description.chars().count() > 60 {
+            format!("{}...", skill.description.chars().take(57).collect::<String>())
         } else {
             skill.description.clone()
         };

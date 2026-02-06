@@ -186,7 +186,7 @@ pub use crate::models::stage::StageType;
 
 /// Execution mode hint.
 ///
-/// Re-exported from models::stage for backward compatibility.
+/// Re-exported from models::stage for API convenience.
 /// The canonical definition is in crate::models::stage::ExecutionMode.
 pub use crate::models::stage::ExecutionMode;
 
