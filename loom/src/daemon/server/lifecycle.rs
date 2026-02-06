@@ -6,10 +6,10 @@ use super::client::handle_client_connection;
 use super::core::{DaemonServer, MAX_CONNECTIONS};
 use super::orchestrator::spawn_orchestrator;
 use anyhow::{bail, Context, Result};
-use nix::unistd::{fork, setsid, ForkResult};
+use nix::unistd::{close, dup2, fork, setsid, ForkResult};
 use std::fs::{self, File, Permissions};
 use std::os::unix::fs::PermissionsExt;
-use std::os::unix::io::AsRawFd;
+use std::os::unix::io::{FromRawFd, IntoRawFd, OwnedFd};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::sync::atomic::Ordering;
@@ -113,18 +113,16 @@ impl DaemonServer {
 
         // Redirect stdout and stderr to log file
         let log_file = File::create(&self.log_path).context("Failed to create log file")?;
-        let log_fd = log_file.as_raw_fd();
 
         // Close stdin and redirect stdout/stderr to log file
-        unsafe {
-            libc::close(0);
-            if libc::dup2(log_fd, 1) < 0 {
-                bail!("Failed to redirect stdout");
-            }
-            if libc::dup2(log_fd, 2) < 0 {
-                bail!("Failed to redirect stderr");
-            }
-        }
+        close(0).ok();
+        // SAFETY: fds 1 and 2 are valid open descriptors in this double-forked daemon process
+        let mut stdout_fd = unsafe { OwnedFd::from_raw_fd(1) };
+        dup2(&log_file, &mut stdout_fd).context("Failed to redirect stdout")?;
+        let _ = stdout_fd.into_raw_fd(); // Release ownership — fd 1 stays open as redirected stdout
+        let mut stderr_fd = unsafe { OwnedFd::from_raw_fd(2) };
+        dup2(&log_file, &mut stderr_fd).context("Failed to redirect stderr")?;
+        let _ = stderr_fd.into_raw_fd(); // Release ownership — fd 2 stays open as redirected stderr
 
         // Run the server
         self.run_server()
