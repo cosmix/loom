@@ -1,4 +1,5 @@
 pub mod knowledge;
+pub mod locking;
 pub mod memory;
 pub mod permissions;
 pub mod plan_lifecycle;

@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use std::path::Path;
 use std::time::Duration;
 
-use crate::git::branch::branch_exists;
+use crate::git::branch::{branch_exists, branch_name_for_stage};
 use crate::git::merge::{merge_stage, MergeResult};
 use crate::models::stage::Stage;
 
@@ -46,7 +46,7 @@ pub fn merge_completed_stage_with_timeout(
     merge_point: &str,
     lock_timeout: Duration,
 ) -> Result<ProgressiveMergeResult> {
-    let branch_name = format!("loom/{}", stage.id);
+    let branch_name = branch_name_for_stage(&stage.id);
 
     // Check if branch exists before trying to merge
     if !branch_exists(&branch_name, repo_root)? {

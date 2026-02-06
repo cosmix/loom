@@ -4,11 +4,9 @@
 //! data corruption from concurrent orchestrator and agent access.
 
 use anyhow::{Context, Result};
-use fs2::FileExt;
-use std::fs::{File, OpenOptions};
-use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
 
+use crate::fs::locking::{locked_read, locked_write};
 use crate::fs::stage_files::{
     compute_stage_depths, find_stage_file, stage_file_path, StageDependencies,
 };
@@ -17,36 +15,6 @@ use crate::models::stage::Stage;
 use crate::parser::frontmatter::parse_from_markdown;
 
 use super::Orchestrator;
-
-/// Read file contents with a shared (read) lock
-fn locked_read(path: &Path) -> Result<String> {
-    let file =
-        File::open(path).with_context(|| format!("Failed to open file: {}", path.display()))?;
-    file.lock_shared()
-        .with_context(|| format!("Failed to acquire shared lock: {}", path.display()))?;
-    let mut content = String::new();
-    BufReader::new(&file)
-        .read_to_string(&mut content)
-        .with_context(|| format!("Failed to read file: {}", path.display()))?;
-    Ok(content)
-}
-
-/// Write file contents with an exclusive (write) lock
-fn locked_write(path: &Path, content: &str) -> Result<()> {
-    let file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(path)
-        .with_context(|| format!("Failed to open file for writing: {}", path.display()))?;
-    file.lock_exclusive()
-        .with_context(|| format!("Failed to acquire exclusive lock: {}", path.display()))?;
-    let mut writer = BufWriter::new(&file);
-    writer
-        .write_all(content.as_bytes())
-        .with_context(|| format!("Failed to write file: {}", path.display()))?;
-    Ok(())
-}
 
 /// Trait for persistence operations
 pub(super) trait Persistence {

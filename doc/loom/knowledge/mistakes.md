@@ -441,3 +441,20 @@ Solutions: 1) Use ./target/debug/loom path, 2) Accept failures until merge,
 - Knowledge bootstrap: Coverage was 83% (15/18 modules). Added documentation for 3 missing modules: process (PID liveness), completions (shell completion), diagnosis (failure analysis). Also added specific knowledge for plan areas: PID handling, signal generation, git commands, type system, persistence.
 
 
+
+## Promoted from Memory [2026-02-06 11:20]
+
+### Notes
+
+- Code review found TOCTOU race in locked_write: truncate before lock acquisition in both orchestrator/core/persistence.rs and verify/transitions/persistence.rs. Fixed by extracting shared fs/locking.rs module with correct open→lock→truncate→write→flush sequence.
+- Code review found 4 merge verification Err fallbacks in merge_handler.rs that incorrectly marked stages as merged=true on verification error. Fixed by treating verification errors as MergeBlocked to prevent phantom merges.
+- Code review found 8 instances of format!("loom/{}") instead of branch_name_for_stage() across merge_handler.rs, verify.rs, progressive_merge/execution.rs, git/worktree/operations.rs, and signals/merge_conflict.rs. Fixed all to use canonical function.
+
+### Decisions
+
+- **Extracted locked_read/locked_write to shared fs/locking.rs module**
+  - *Rationale:* Two identical copies existed in orchestrator/core/persistence.rs and verify/transitions/persistence.rs. Both had the same TOCTOU bug. Consolidating prevents bug fixes from needing to be applied in multiple places.
+- **Used clippy allow attribute for suspicious_open_options on locked_write**
+  - *Rationale:* Our locked_write intentionally opens without truncate (to truncate after lock via set_len(0)). Clippy flags this as suspicious but it is the correct pattern to prevent TOCTOU.
+
+

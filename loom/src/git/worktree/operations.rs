@@ -5,6 +5,7 @@
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 
+use crate::git::branch::branch_name_for_stage;
 use crate::git::runner::{run_git, run_git_checked};
 use crate::models::worktree::Worktree;
 use crate::validation::validate_id;
@@ -32,7 +33,7 @@ pub fn create_worktree(
     validate_id(stage_id).context("Invalid stage ID for worktree")?;
 
     let worktree_path = repo_root.join(".worktrees").join(stage_id);
-    let branch_name = format!("loom/{stage_id}");
+    let branch_name = branch_name_for_stage(stage_id);
 
     // Ensure .worktrees directory exists
     let worktrees_dir = repo_root.join(".worktrees");
@@ -158,7 +159,7 @@ pub fn get_or_create_worktree(
     validate_id(stage_id).context("Invalid stage ID for worktree")?;
 
     let worktree_path = repo_root.join(".worktrees").join(stage_id);
-    let branch_name = format!("loom/{stage_id}");
+    let branch_name = branch_name_for_stage(stage_id);
 
     if worktree_path.exists() {
         // Check if it's a valid git worktree by looking for the .git file

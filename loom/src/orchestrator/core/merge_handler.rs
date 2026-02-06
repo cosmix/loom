@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 
-use crate::git::branch::default_branch;
+use crate::git::branch::{branch_name_for_stage, default_branch};
 use crate::git::merge::{check_merge_state, MergeState};
 use crate::git::merge::{get_conflicting_files_from_status, verify_merge_succeeded};
 use crate::models::session::Session;
@@ -223,17 +223,26 @@ impl Orchestrator {
                             false
                         }
                         Err(e) => {
-                            // Verification failed - log warning but allow merge to proceed
-                            eprintln!("Warning: Could not verify merge for '{stage_id}': {e}");
-                            stage.merged = true;
-                            if let Err(e) = self.save_stage(&stage) {
-                                eprintln!("Warning: Failed to save stage after merge: {e}");
-                            }
+                            // Verification failed - do NOT mark as merged to prevent phantom merges
                             clear_status_line();
                             eprintln!(
-                                "Stage '{stage_id}' merged (unverified): {files_changed} files, +{insertions} -{deletions}"
+                                "Stage '{stage_id}' merge verification error: {e}"
                             );
-                            true
+                            if let Err(e) = stage.try_mark_merge_blocked() {
+                                eprintln!("Warning: Failed to transition to MergeBlocked: {e}");
+                                stage.status = StageStatus::MergeBlocked;
+                            }
+                            if let Err(e) = self.save_stage(&stage) {
+                                eprintln!("Warning: Failed to save stage: {e}");
+                            }
+                            if let Err(e) =
+                                self.graph.mark_status(stage_id, StageStatus::MergeBlocked)
+                            {
+                                eprintln!(
+                                    "Warning: Failed to mark stage as merge blocked in graph: {e}"
+                                );
+                            }
+                            false
                         }
                     }
                 } else {
@@ -288,14 +297,25 @@ impl Orchestrator {
                             false
                         }
                         Err(e) => {
-                            eprintln!("Warning: Could not verify merge for '{stage_id}': {e}");
-                            stage.merged = true;
-                            if let Err(e) = self.save_stage(&stage) {
-                                eprintln!("Warning: Failed to save stage after merge: {e}");
-                            }
                             clear_status_line();
-                            eprintln!("Stage '{stage_id}' merged (fast-forward, unverified)");
-                            true
+                            eprintln!(
+                                "Stage '{stage_id}' fast-forward merge verification error: {e}"
+                            );
+                            if let Err(e) = stage.try_mark_merge_blocked() {
+                                eprintln!("Warning: Failed to transition to MergeBlocked: {e}");
+                                stage.status = StageStatus::MergeBlocked;
+                            }
+                            if let Err(e) = self.save_stage(&stage) {
+                                eprintln!("Warning: Failed to save stage: {e}");
+                            }
+                            if let Err(e) =
+                                self.graph.mark_status(stage_id, StageStatus::MergeBlocked)
+                            {
+                                eprintln!(
+                                    "Warning: Failed to mark stage as merge blocked in graph: {e}"
+                                );
+                            }
+                            false
                         }
                     }
                 } else {
@@ -348,14 +368,25 @@ impl Orchestrator {
                             false
                         }
                         Err(e) => {
-                            eprintln!("Warning: Could not verify merge for '{stage_id}': {e}");
-                            stage.merged = true;
-                            if let Err(e) = self.save_stage(&stage) {
-                                eprintln!("Warning: Failed to save stage after merge: {e}");
-                            }
                             clear_status_line();
-                            eprintln!("Stage '{stage_id}' already up to date (unverified)");
-                            true
+                            eprintln!(
+                                "Stage '{stage_id}' up-to-date merge verification error: {e}"
+                            );
+                            if let Err(e) = stage.try_mark_merge_blocked() {
+                                eprintln!("Warning: Failed to transition to MergeBlocked: {e}");
+                                stage.status = StageStatus::MergeBlocked;
+                            }
+                            if let Err(e) = self.save_stage(&stage) {
+                                eprintln!("Warning: Failed to save stage: {e}");
+                            }
+                            if let Err(e) =
+                                self.graph.mark_status(stage_id, StageStatus::MergeBlocked)
+                            {
+                                eprintln!(
+                                    "Warning: Failed to mark stage as merge blocked in graph: {e}"
+                                );
+                            }
+                            false
                         }
                     }
                 } else {
@@ -437,13 +468,25 @@ impl Orchestrator {
                             false
                         }
                         Err(e) => {
-                            // Verification failed - log warning but allow to proceed
-                            eprintln!("Warning: Could not verify commit for '{stage_id}': {e}");
-                            stage.merged = true;
+                            clear_status_line();
+                            eprintln!(
+                                "Stage '{stage_id}' no-worktree merge verification error: {e}"
+                            );
+                            if let Err(e) = stage.try_mark_merge_blocked() {
+                                eprintln!("Warning: Failed to transition to MergeBlocked: {e}");
+                                stage.status = StageStatus::MergeBlocked;
+                            }
                             if let Err(e) = self.save_stage(&stage) {
                                 eprintln!("Warning: Failed to save stage: {e}");
                             }
-                            true
+                            if let Err(e) =
+                                self.graph.mark_status(stage_id, StageStatus::MergeBlocked)
+                            {
+                                eprintln!(
+                                    "Warning: Failed to mark stage as merge blocked in graph: {e}"
+                                );
+                            }
+                            false
                         }
                     }
                 } else {
@@ -581,7 +624,7 @@ impl Orchestrator {
         &mut self,
         stage: &crate::models::stage::Stage,
     ) -> Result<()> {
-        let source_branch = format!("loom/{}", stage.id);
+        let source_branch = branch_name_for_stage(&stage.id);
 
         // Get target branch
         let target_branch = self.config.base_branch.clone().unwrap_or_else(|| {

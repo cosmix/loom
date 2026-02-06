@@ -9,6 +9,7 @@ use anyhow::{bail, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::git::branch::branch_name_for_stage;
 use crate::models::session::Session;
 use crate::models::stage::Stage;
 
@@ -88,7 +89,7 @@ pub(super) fn format_merge_conflict_signal_content(
 
     // Task instructions
     content.push_str("## Your Task\n\n");
-    let source_branch = format!("loom/{}", stage.id);
+    let source_branch = branch_name_for_stage(&stage.id);
     content.push_str(&format!(
         "1. If not in merge state, run: `git merge {source_branch}`\n"
     ));
@@ -120,7 +121,7 @@ pub(super) fn format_merge_conflict_signal_content(
     content.push_str(&helpers::format_target_section(
         &session.id,
         &stage.id,
-        Some(&format!("loom/{}", stage.id)),
+        Some(&branch_name_for_stage(&stage.id)),
         merge_point,
     ));
 

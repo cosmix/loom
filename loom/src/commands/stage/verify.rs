@@ -3,6 +3,7 @@
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
+use crate::git::branch::branch_name_for_stage;
 use crate::git::get_branch_head;
 use crate::git::worktree::find_repo_root_from_cwd;
 use crate::models::stage::{StageStatus, StageType};
@@ -126,7 +127,7 @@ pub fn verify(stage_id: String, no_reload: bool) -> Result<()> {
     let merge_point = get_merge_point(work_dir)?;
 
     // Capture the completed commit SHA before merge
-    let branch_name = format!("loom/{stage_id}");
+    let branch_name = branch_name_for_stage(&stage_id);
     let completed_commit = get_branch_head(&branch_name, &repo_root).ok();
 
     println!("Attempting progressive merge into '{merge_point}'...");
