@@ -184,6 +184,12 @@ fn default_deny_write() -> Vec<String> {
 /// The canonical definition is in crate::models::stage::StageType.
 pub use crate::models::stage::StageType;
 
+/// Execution mode hint.
+///
+/// Re-exported from models::stage for backward compatibility.
+/// The canonical definition is in crate::models::stage::ExecutionMode.
+pub use crate::models::stage::ExecutionMode;
+
 /// Root structure of the loom metadata block
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoomMetadata {
@@ -258,6 +264,9 @@ pub struct StageDefinition {
     /// Per-stage sandbox configuration (overrides plan-level defaults)
     #[serde(default)]
     pub sandbox: StageSandboxConfig,
+    /// Hint for execution mode (single agent vs team)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_mode: Option<ExecutionMode>,
 }
 
 /// Wiring check to verify component connections.

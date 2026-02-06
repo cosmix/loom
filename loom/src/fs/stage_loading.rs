@@ -63,6 +63,7 @@ impl StageFrontmatter {
             dead_code_check: self.dead_code_check,
             context_budget: None,
             sandbox: crate::plan::schema::StageSandboxConfig::default(),
+            execution_mode: None,
         }
     }
 }

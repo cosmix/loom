@@ -34,6 +34,7 @@ pub(crate) fn make_stage(id: &str, name: &str) -> StageDefinition {
         dead_code_check: None,
         context_budget: None,
         sandbox: StageSandboxConfig::default(),
+        execution_mode: None,
     }
 }
 

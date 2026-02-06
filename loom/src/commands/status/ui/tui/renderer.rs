@@ -108,6 +108,7 @@ pub fn unified_stage_to_stage(us: &UnifiedStage) -> Stage {
         artifacts: vec![],
         wiring: vec![],
         sandbox: Default::default(),
+        execution_mode: None,
     }
 }
 

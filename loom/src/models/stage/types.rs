@@ -26,6 +26,21 @@ pub enum StageType {
     CodeReview,
 }
 
+/// Hint for how the stage should be executed.
+///
+/// This is an advisory field for orchestration tooling:
+/// - `Single`: Default mode, single agent executes the stage
+/// - `Team`: Stage benefits from coordinated multi-agent work
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ExecutionMode {
+    /// Single agent executes the stage (default)
+    #[default]
+    Single,
+    /// Coordinated multi-agent team execution
+    Team,
+}
+
 /// Wiring check to verify component connections.
 ///
 /// Used in goal-backward verification to ensure critical connections
@@ -187,6 +202,9 @@ pub struct Stage {
     /// Per-stage sandbox configuration
     #[serde(default)]
     pub sandbox: crate::plan::schema::StageSandboxConfig,
+    /// Hint for execution mode (single agent vs team)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_mode: Option<ExecutionMode>,
 }
 
 /// Status of a stage in the execution lifecycle.
@@ -348,6 +366,7 @@ impl Default for Stage {
             artifacts: Vec::new(),
             wiring: Vec::new(),
             sandbox: Default::default(),
+            execution_mode: None,
         }
     }
 }

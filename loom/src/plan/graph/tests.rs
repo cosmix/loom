@@ -24,6 +24,7 @@ fn make_stage(id: &str, deps: Vec<&str>, group: Option<&str>) -> StageDefinition
         dead_code_check: None,
         context_budget: None,
         sandbox: StageSandboxConfig::default(),
+        execution_mode: None,
     }
 }
 

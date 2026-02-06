@@ -102,8 +102,25 @@ pub fn ensure_loom_permissions(repo_root: &Path) -> Result<()> {
     // Configure hooks (only if not already present)
     let hooks_configured = configure_loom_hooks(settings_obj)?;
 
+    // Configure agent teams environment variable
+    let env_obj = settings_obj
+        .entry("env")
+        .or_insert_with(|| json!({}));
+    let env_map = env_obj
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("env must be a JSON object"))?;
+    let env_configured = if !env_map.contains_key("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS") {
+        env_map.insert(
+            "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS".to_string(),
+            json!("1"),
+        );
+        true
+    } else {
+        false
+    };
+
     // Write back if we made any changes
-    if added_permissions > 0 || hooks_configured {
+    if added_permissions > 0 || hooks_configured || env_configured {
         let content = serde_json::to_string_pretty(&settings)
             .context("Failed to serialize settings to JSON")?;
 
@@ -115,6 +132,9 @@ pub fn ensure_loom_permissions(repo_root: &Path) -> Result<()> {
         }
         if hooks_configured {
             println!("  Configured loom hooks in .claude/settings.json");
+        }
+        if env_configured {
+            println!("  Configured agent teams environment variable in .claude/settings.json");
         }
     } else {
         println!("  Claude Code permissions and hooks already configured");
@@ -147,7 +167,10 @@ pub fn create_worktree_settings(worktree_path: &Path) -> Result<()> {
         "permissions": {
             "allow": LOOM_PERMISSIONS_WORKTREE
         },
-        "hooks": loom_hooks_config()
+        "hooks": loom_hooks_config(),
+        "env": {
+            "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+        }
     });
 
     let content = serde_json::to_string_pretty(&settings)
@@ -157,4 +180,93 @@ pub fn create_worktree_settings(worktree_path: &Path) -> Result<()> {
         .with_context(|| format!("Failed to write {}", settings_path.display()))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_ensure_loom_permissions_creates_env_var() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path();
+
+        // Call ensure_loom_permissions
+        ensure_loom_permissions(repo_root).unwrap();
+
+        // Read back settings.json
+        let settings_path = repo_root.join(".claude/settings.json");
+        assert!(settings_path.exists());
+
+        let content = fs::read_to_string(&settings_path).unwrap();
+        let settings: Value = serde_json::from_str(&content).unwrap();
+
+        // Verify env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS == "1"
+        assert_eq!(
+            settings["env"]["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"],
+            "1"
+        );
+    }
+
+    #[test]
+    fn test_create_worktree_settings_includes_env_var() {
+        let temp_dir = TempDir::new().unwrap();
+        let worktree_path = temp_dir.path();
+
+        // Call create_worktree_settings
+        create_worktree_settings(worktree_path).unwrap();
+
+        // Read back settings.json
+        let settings_path = worktree_path.join(".claude/settings.json");
+        assert!(settings_path.exists());
+
+        let content = fs::read_to_string(&settings_path).unwrap();
+        let settings: Value = serde_json::from_str(&content).unwrap();
+
+        // Verify env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS == "1"
+        assert_eq!(
+            settings["env"]["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"],
+            "1"
+        );
+    }
+
+    #[test]
+    fn test_ensure_loom_permissions_preserves_existing_env_vars() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path();
+
+        // Create .claude directory
+        let claude_dir = repo_root.join(".claude");
+        fs::create_dir_all(&claude_dir).unwrap();
+
+        // Pre-create settings.json with custom env var
+        let initial_settings = json!({
+            "env": {
+                "MY_CUSTOM_VAR": "hello"
+            }
+        });
+        let settings_path = claude_dir.join("settings.json");
+        fs::write(
+            &settings_path,
+            serde_json::to_string_pretty(&initial_settings).unwrap(),
+        )
+        .unwrap();
+
+        // Call ensure_loom_permissions
+        ensure_loom_permissions(repo_root).unwrap();
+
+        // Read back settings.json
+        let content = fs::read_to_string(&settings_path).unwrap();
+        let settings: Value = serde_json::from_str(&content).unwrap();
+
+        // Verify both env vars exist
+        assert_eq!(settings["env"]["MY_CUSTOM_VAR"], "hello");
+        assert_eq!(
+            settings["env"]["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"],
+            "1"
+        );
+    }
 }

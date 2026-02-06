@@ -250,6 +250,7 @@ mod tests {
                 dead_code_check: None,
                 context_budget: None,
                 sandbox: StageSandboxConfig::default(),
+                execution_mode: None,
             })
             .collect();
 

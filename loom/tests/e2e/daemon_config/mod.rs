@@ -41,5 +41,6 @@ pub fn create_stage_def(id: &str, name: &str, deps: Vec<String>) -> StageDefinit
         wiring_tests: vec![],
         dead_code_check: None,
         context_budget: None,
+        execution_mode: None,
     }
 }

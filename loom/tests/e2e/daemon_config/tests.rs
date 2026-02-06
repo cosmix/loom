@@ -78,6 +78,7 @@ fn test_auto_merge_config_cascade() {
         wiring_tests: vec![],
         dead_code_check: None,
         context_budget: None,
+        execution_mode: None,
     };
 
     assert_eq!(stage_with_auto_merge.auto_merge, Some(true));
@@ -103,6 +104,7 @@ fn test_auto_merge_config_cascade() {
         wiring_tests: vec![],
         dead_code_check: None,
         context_budget: None,
+        execution_mode: None,
     };
 
     assert_eq!(stage_without_override.auto_merge, None);

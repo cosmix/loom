@@ -359,6 +359,8 @@ export LOOM_WORK_DIR="{work_dir}"
 # CRITICAL: LOOM_MAIN_AGENT_PID allows hooks to detect subagents
 # Subagents inherit this var but have different $PPID - hooks can compare
 export LOOM_MAIN_AGENT_PID=$$
+# Enable agent teams for coordinated multi-agent work
+export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 {worktree_path_export}
 {cd_section}# Write our PID to the tracking file
 echo $$ > "{pid_file}"
@@ -445,6 +447,7 @@ mod tests {
         assert!(content.contains("LOOM_WORK_DIR"));
         // Check main agent PID tracking for subagent detection
         assert!(content.contains("LOOM_MAIN_AGENT_PID"));
+        assert!(content.contains("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"));
 
         // Check executable
         #[cfg(unix)]
@@ -485,6 +488,7 @@ mod tests {
         // Check worktree path is exported for file isolation hooks
         assert!(content.contains("LOOM_WORKTREE_PATH"));
         assert!(content.contains("/tmp/test-worktree"));
+        assert!(content.contains("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"));
     }
 
     #[test]

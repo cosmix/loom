@@ -57,6 +57,7 @@ fn setup_work_dir_with_plan(temp_dir: &TempDir) -> (PathBuf, WorkDir) {
         dead_code_check: None,
         context_budget: None,
         sandbox: StageSandboxConfig::default(),
+        execution_mode: None,
     };
 
     let plan_path = create_test_plan(temp_dir.path(), vec![stage_def]);

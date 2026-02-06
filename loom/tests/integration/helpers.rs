@@ -108,6 +108,7 @@ pub fn build_test_graph(stages: Vec<(&str, Vec<&str>)>) -> ExecutionGraph {
             wiring_tests: vec![],
             dead_code_check: None,
             context_budget: None,
+            execution_mode: None,
         })
         .collect();
 

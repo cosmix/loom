@@ -280,6 +280,7 @@ MEMORY RECORDING (use memory ONLY - never knowledge):
         dead_code_check: None,
         context_budget: None,
         sandbox: StageSandboxConfig::default(),
+        execution_mode: None,
     }
 }
 
@@ -377,5 +378,6 @@ pub(crate) fn create_stage_from_definition(stage_def: &StageDefinition, plan_id:
         artifacts: stage_def.artifacts.clone(),
         wiring: stage_def.wiring.clone(),
         sandbox: stage_def.sandbox.clone(),
+        execution_mode: stage_def.execution_mode,
     }
 }
