@@ -2,7 +2,7 @@
 //!
 //! Provides functions for closing and focusing terminal windows.
 
-use crate::orchestrator::terminal::emulator::TerminalEmulator;
+use crate::orchestrator::terminal::emulator::{escape_applescript_string, TerminalEmulator};
 use std::process::Command;
 
 /// Close a window by its title using wmctrl or xdotool (Linux).
@@ -157,7 +157,7 @@ end tell"#,
 /// Returns `true` if the window was successfully closed, `false` otherwise.
 #[cfg(target_os = "macos")]
 pub fn close_window_by_title_for_terminal(title: &str, terminal: &TerminalEmulator) -> bool {
-    let escaped_title = title.replace('"', "\\\"");
+    let escaped_title = escape_applescript_string(title);
 
     match terminal {
         TerminalEmulator::TerminalApp => close_terminal_app_window(&escaped_title),
@@ -190,7 +190,7 @@ pub fn close_window_by_title(title: &str) -> bool {
     }
 
     // Fallback: try all known terminals
-    let escaped_title = title.replace('"', "\\\"");
+    let escaped_title = escape_applescript_string(title);
 
     // Try Terminal.app
     if close_terminal_app_window(&escaped_title) {
@@ -330,7 +330,7 @@ end tell"#,
 /// Returns true if found, false otherwise.
 #[cfg(target_os = "macos")]
 pub fn window_exists_by_title_for_terminal(title: &str, terminal: &TerminalEmulator) -> bool {
-    let escaped_title = title.replace('"', "\\\"");
+    let escaped_title = escape_applescript_string(title);
 
     match terminal {
         TerminalEmulator::TerminalApp => terminal_app_window_exists(&escaped_title),
@@ -362,7 +362,7 @@ pub fn window_exists_by_title(title: &str) -> bool {
     }
 
     // Fallback: try all known terminals
-    let escaped_title = title.replace('"', "\\\"");
+    let escaped_title = escape_applescript_string(title);
 
     // Check Terminal.app
     if terminal_app_window_exists(&escaped_title) {

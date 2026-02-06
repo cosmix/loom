@@ -13,7 +13,7 @@ use std::process::Command;
 ///
 /// This prevents injection attacks where malicious stage IDs or commands
 /// could break out of the AppleScript string context.
-fn escape_applescript_string(s: &str) -> String {
+pub fn escape_applescript_string(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
@@ -207,16 +207,17 @@ impl TerminalEmulator {
                     .arg(format!("bash -c '{escaped_cmd}'"));
             }
             Self::XTerm => {
-                // SECURITY: Escape the workdir path to prevent shell injection
-                // Use single quotes around path and escape any single quotes in it
+                // SECURITY: Escape both workdir and cmd to prevent shell injection
+                // Use single quotes around both and escape any single quotes in them
                 let escaped_workdir = escape_shell_single_quote(&workdir.display().to_string());
+                let escaped_cmd = escape_shell_single_quote(cmd);
                 command
                     .arg("-title")
                     .arg(title)
                     .arg("-e")
                     .arg("bash")
                     .arg("-c")
-                    .arg(format!("cd '{}' && {}", escaped_workdir, cmd));
+                    .arg(format!("cd '{}' && bash -c '{}'", escaped_workdir, escaped_cmd));
             }
             Self::Urxvt => {
                 command
@@ -564,5 +565,19 @@ mod tests {
         assert!(last_arg.contains("cd '"));
         // The single quote in the path should be escaped
         assert!(last_arg.contains("'\\''"));
+    }
+
+    #[test]
+    fn test_xterm_escapes_command() {
+        let emulator = TerminalEmulator::XTerm;
+        let workdir = Path::new("/tmp");
+        // Command with shell metacharacters that could be injection vectors
+        let cmd = emulator.build_command("Test", workdir, "echo 'hello'; rm -rf /");
+        let args: Vec<_> = cmd.get_args().collect();
+        let last_arg = args.last().unwrap().to_str().unwrap();
+        // The single quotes in the command should be escaped
+        assert!(last_arg.contains("'\\''"));
+        // Should contain bash -c wrapper
+        assert!(last_arg.contains("bash -c '"));
     }
 }

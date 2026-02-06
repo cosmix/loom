@@ -47,7 +47,7 @@ pub fn execute() -> Result<()> {
                     thread::sleep(Duration::from_millis(100));
 
                     // Check if process is gone
-                    let still_alive = unsafe { libc::kill(pid as i32, 0) == 0 };
+                    let still_alive = crate::process::is_process_alive(pid);
                     if !still_alive {
                         break;
                     }

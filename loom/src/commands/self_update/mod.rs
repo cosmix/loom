@@ -14,16 +14,21 @@ mod tests;
 use anyhow::{bail, Context, Result};
 use colored::Colorize;
 use semver::Version;
+use std::collections::HashMap;
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::io::Cursor;
+use std::path::{Path, PathBuf};
 
 use client::{
     create_http_client, download_text_with_limit, download_with_limit, validate_response_status,
 };
 use install::install_binary;
-use signature::{compute_sha256_checksum, verify_binary_signature};
-use zip::download_and_extract_zip;
+use signature::{compute_sha256_checksum, parse_checksums, verify_binary_signature, verify_checksum};
+use zip::{safe_extract_path, validate_zip_entry, LimitedReader, MAX_TOTAL_EXTRACTED_SIZE, MAX_UNCOMPRESSED_SIZE};
+
+// Import ZipArchive from the zip crate for in-memory extraction
+use ::zip::ZipArchive;
 
 // Repository and version constants
 const GITHUB_REPO: &str = "cosmix/claude-loom";
@@ -206,6 +211,22 @@ fn get_claude_dir() -> Result<PathBuf> {
 /// Update configuration files (CLAUDE.md, agents, skills).
 fn update_config_files(release: &Release) -> Result<()> {
     let claude_dir = get_claude_dir()?;
+    let client = create_http_client()?;
+
+    // Try to download checksums file for verification
+    let checksums = if let Some(checksum_asset) = release.assets.iter().find(|a| a.name == "checksums.txt") {
+        println!("  {} Downloading checksums...", "→".blue());
+        let response = client.get(&checksum_asset.browser_download_url).send()
+            .context("Failed to download checksums")?;
+        validate_response_status(&response, "Checksums download failed")?;
+        let content = download_text_with_limit(response, MAX_TEXT_SIZE, "Checksums download")?;
+        let parsed = parse_checksums(&content);
+        println!("  {} Checksums loaded ({} entries)", "✓".green(), parsed.len());
+        Some(parsed)
+    } else {
+        eprintln!("  {} No checksums.txt in release, skipping verification", "!".yellow().bold());
+        None
+    };
 
     // Update CLAUDE.md.template -> CLAUDE.md
     if let Some(asset) = release
@@ -214,7 +235,21 @@ fn update_config_files(release: &Release) -> Result<()> {
         .find(|a| a.name == "CLAUDE.md.template")
     {
         println!("  {} Downloading CLAUDE.md.template...", "→".blue());
-        download_and_save(&asset.browser_download_url, &claude_dir.join("CLAUDE.md"))?;
+        let response = client.get(&asset.browser_download_url).send()
+            .context("Failed to download CLAUDE.md.template")?;
+        validate_response_status(&response, "CLAUDE.md.template download failed")?;
+        let content = download_text_with_limit(response, MAX_TEXT_SIZE, "CLAUDE.md.template download")?;
+
+        // Verify checksum if available
+        if let Some(ref checksums) = checksums {
+            if let Some(expected) = checksums.get("CLAUDE.md.template") {
+                verify_checksum(content.as_bytes(), expected, "CLAUDE.md.template")?;
+                println!("  {} CLAUDE.md.template checksum verified", "✓".green());
+            }
+        }
+
+        // Save with timestamp header
+        save_with_header(&content, &claude_dir.join("CLAUDE.md"))?;
         println!("  {} CLAUDE.md updated", "✓".green());
     }
 
@@ -222,7 +257,7 @@ fn update_config_files(release: &Release) -> Result<()> {
     if let Some(asset) = release.assets.iter().find(|a| a.name == "agents.zip") {
         println!("  {} Downloading agents...", "→".blue());
         let agents_dir = claude_dir.join("agents");
-        download_and_extract_zip(&asset.browser_download_url, &agents_dir)?;
+        download_verify_and_extract_zip(&client, &asset.browser_download_url, &agents_dir, "agents.zip", &checksums)?;
         println!("  {} agents/ updated", "✓".green());
     }
 
@@ -230,22 +265,15 @@ fn update_config_files(release: &Release) -> Result<()> {
     if let Some(asset) = release.assets.iter().find(|a| a.name == "skills.zip") {
         println!("  {} Downloading skills...", "→".blue());
         let skills_dir = claude_dir.join("skills");
-        download_and_extract_zip(&asset.browser_download_url, &skills_dir)?;
+        download_verify_and_extract_zip(&client, &asset.browser_download_url, &skills_dir, "skills.zip", &checksums)?;
         println!("  {} skills/ updated", "✓".green());
     }
 
     Ok(())
 }
 
-/// Download a text file and save it with a timestamp header.
-fn download_and_save(url: &str, dest: &std::path::Path) -> Result<()> {
-    let client = create_http_client()?;
-    let response = client.get(url).send().context("Failed to download file")?;
-
-    validate_response_status(&response, "File download failed")?;
-    let content = download_text_with_limit(response, MAX_TEXT_SIZE, "File download")?;
-
-    // Prepend header like install.sh does
+/// Save text content with a timestamp header.
+fn save_with_header(content: &str, dest: &Path) -> Result<()> {
     let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S");
     let full_content = format!(
         "# ───────────────────────────────────────────────────────────\n\
@@ -255,5 +283,123 @@ fn download_and_save(url: &str, dest: &std::path::Path) -> Result<()> {
     );
 
     fs::write(dest, full_content).context("Failed to write file")?;
+    Ok(())
+}
+
+/// Download, verify checksum, and extract a zip file.
+fn download_verify_and_extract_zip(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    dest: &Path,
+    asset_name: &str,
+    checksums: &Option<HashMap<String, String>>,
+) -> Result<()> {
+    let response = client.get(url).send()
+        .context("Failed to download zip")?;
+    validate_response_status(&response, "Zip download failed")?;
+    let bytes = download_with_limit(response, zip::MAX_ZIP_SIZE, asset_name)?;
+
+    // Verify checksum if available
+    if let Some(ref checksums) = checksums {
+        if let Some(expected) = checksums.get(asset_name) {
+            verify_checksum(&bytes, expected, asset_name)?;
+            println!("  {} {} checksum verified", "✓".green(), asset_name);
+        }
+    }
+
+    // Extract using zip crate directly (replicating safe extraction from zip.rs)
+    let cursor = Cursor::new(&bytes);
+    let mut archive = ZipArchive::new(cursor)
+        .context("Failed to open zip archive")?;
+
+    // Pre-validate all entries before extraction (fail fast on malicious archives)
+    let mut total_uncompressed_size: u64 = 0;
+    for i in 0..archive.len() {
+        let file = archive.by_index(i).context("Failed to read zip entry")?;
+
+        // Validate against zip bombs
+        validate_zip_entry(&file)?;
+
+        // Track total size with overflow protection
+        total_uncompressed_size = total_uncompressed_size
+            .checked_add(file.size())
+            .ok_or_else(|| {
+                anyhow::anyhow!("Total uncompressed size overflow - possible zip bomb")
+            })?;
+
+        if total_uncompressed_size > MAX_TOTAL_EXTRACTED_SIZE {
+            bail!(
+                "Total uncompressed size {} exceeds maximum {} bytes - possible zip bomb",
+                total_uncompressed_size,
+                MAX_TOTAL_EXTRACTED_SIZE
+            );
+        }
+
+        // Validate path safety
+        let entry_name = file
+            .enclosed_name()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| file.mangled_name().to_string_lossy().to_string());
+
+        if !entry_name.is_empty() {
+            safe_extract_path(dest, &entry_name)?;
+        }
+    }
+
+    // Backup existing directory (only after validation passes)
+    if dest.exists() {
+        let backup = dest.with_extension("bak");
+        if backup.exists() {
+            fs::remove_dir_all(&backup).ok();
+        }
+        fs::rename(dest, &backup).context("Failed to backup directory")?;
+    }
+
+    // Re-open archive for extraction (we consumed it during validation)
+    let cursor = Cursor::new(&bytes);
+    let mut archive = ZipArchive::new(cursor)
+        .context("Failed to reopen zip archive")?;
+
+    fs::create_dir_all(dest)?;
+
+    // Extract with validated paths
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+
+        // Get safe entry name
+        let entry_name = file
+            .enclosed_name()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| file.mangled_name().to_string_lossy().to_string());
+
+        if entry_name.is_empty() {
+            continue;
+        }
+
+        let outpath = safe_extract_path(dest, &entry_name)?;
+
+        if file.name().ends_with('/') {
+            fs::create_dir_all(&outpath)?;
+        } else {
+            if let Some(parent) = outpath.parent() {
+                fs::create_dir_all(parent)?;
+            }
+
+            // Extract with size limit enforcement during decompression
+            let mut outfile = fs::File::create(&outpath)
+                .with_context(|| format!("Failed to create file: {}", outpath.display()))?;
+
+            let mut limited_reader = LimitedReader::new(&mut file, MAX_UNCOMPRESSED_SIZE);
+            std::io::copy(&mut limited_reader, &mut outfile)
+                .with_context(|| format!("Failed to extract file: {}", entry_name))?;
+        }
+    }
+
+    // Cleanup backup
+    let backup = dest.with_extension("bak");
+    if backup.exists() {
+        fs::remove_dir_all(&backup).ok();
+    }
+
     Ok(())
 }
