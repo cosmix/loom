@@ -12,10 +12,12 @@ use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::models::stage::StageStatus;
+
 use super::schema::StageDefinition;
 
 pub use loader::build_execution_graph;
-pub use nodes::{NodeStatus, StageNode};
+pub use nodes::StageNode;
 
 /// Execution graph representing stages and their dependencies
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,7 +44,7 @@ impl ExecutionGraph {
                 name: stage.name.clone(),
                 dependencies: stage.dependencies.clone(),
                 parallel_group: stage.parallel_group.clone(),
-                status: NodeStatus::WaitingForDeps,
+                status: StageStatus::WaitingForDeps,
                 description: stage.description.clone(),
                 acceptance: stage.acceptance.clone(),
                 setup: stage.setup.clone(),
@@ -117,7 +119,7 @@ impl ExecutionGraph {
     pub fn ready_stages(&self) -> Vec<&StageNode> {
         self.nodes
             .values()
-            .filter(|n| n.status == NodeStatus::Queued)
+            .filter(|n| n.status == StageStatus::Queued)
             .collect()
     }
 
@@ -130,14 +132,16 @@ impl ExecutionGraph {
             .unwrap_or_default()
     }
 
-    /// Mark a stage as executing
+    /// Mark a stage as executing.
+    ///
+    /// Validates that the stage is currently in `Queued` status.
     pub fn mark_executing(&mut self, stage_id: &str) -> Result<()> {
         let node = self
             .nodes
             .get_mut(stage_id)
             .ok_or_else(|| anyhow::anyhow!("Stage not found: {stage_id}"))?;
 
-        if node.status != NodeStatus::Queued {
+        if node.status != StageStatus::Queued {
             bail!(
                 "Stage '{}' is not ready (status: {:?})",
                 stage_id,
@@ -145,7 +149,7 @@ impl ExecutionGraph {
             );
         }
 
-        node.status = NodeStatus::Executing;
+        node.status = StageStatus::Executing;
         Ok(())
     }
 
@@ -162,7 +166,7 @@ impl ExecutionGraph {
             .get_mut(stage_id)
             .ok_or_else(|| anyhow::anyhow!("Stage not found: {stage_id}"))?;
 
-        node.status = NodeStatus::Completed;
+        node.status = StageStatus::Completed;
 
         // Update ready status for all nodes - this returns stages that became ready
         let newly_ready = self.update_ready_status();
@@ -170,83 +174,21 @@ impl ExecutionGraph {
         Ok(newly_ready)
     }
 
-    /// Mark a stage as blocked
-    pub fn mark_blocked(&mut self, stage_id: &str) -> Result<()> {
+    /// Set a stage to an arbitrary status without validation.
+    ///
+    /// Use this for simple status updates where no side effects (like updating
+    /// dependent stages) are needed. For statuses that have special semantics,
+    /// prefer the dedicated methods:
+    /// - `mark_executing()` - validates current status is Queued
+    /// - `mark_completed()` - triggers dependent stage readiness check
+    /// - `mark_merged()` - validates Completed status and triggers readiness check
+    /// - `mark_queued()` - validates all dependencies are completed
+    pub fn mark_status(&mut self, stage_id: &str, status: StageStatus) -> Result<()> {
         let node = self
             .nodes
             .get_mut(stage_id)
             .ok_or_else(|| anyhow::anyhow!("Stage not found: {stage_id}"))?;
-        node.status = NodeStatus::Blocked;
-        Ok(())
-    }
-
-    /// Mark a stage as skipped
-    pub fn mark_skipped(&mut self, stage_id: &str) -> Result<()> {
-        let node = self
-            .nodes
-            .get_mut(stage_id)
-            .ok_or_else(|| anyhow::anyhow!("Stage not found: {stage_id}"))?;
-        node.status = NodeStatus::Skipped;
-        Ok(())
-    }
-
-    /// Mark a stage as waiting for input
-    pub fn mark_waiting_for_input(&mut self, stage_id: &str) -> Result<()> {
-        let node = self
-            .nodes
-            .get_mut(stage_id)
-            .ok_or_else(|| anyhow::anyhow!("Stage not found: {stage_id}"))?;
-        node.status = NodeStatus::WaitingForInput;
-        Ok(())
-    }
-
-    /// Mark a stage as needs handoff
-    pub fn mark_needs_handoff(&mut self, stage_id: &str) -> Result<()> {
-        let node = self
-            .nodes
-            .get_mut(stage_id)
-            .ok_or_else(|| anyhow::anyhow!("Stage not found: {stage_id}"))?;
-        node.status = NodeStatus::NeedsHandoff;
-        Ok(())
-    }
-
-    /// Mark a stage as having merge conflicts
-    pub fn mark_merge_conflict(&mut self, stage_id: &str) -> Result<()> {
-        let node = self
-            .nodes
-            .get_mut(stage_id)
-            .ok_or_else(|| anyhow::anyhow!("Stage not found: {stage_id}"))?;
-        node.status = NodeStatus::MergeConflict;
-        Ok(())
-    }
-
-    /// Mark a stage as completed with failures
-    pub fn mark_completed_with_failures(&mut self, stage_id: &str) -> Result<()> {
-        let node = self
-            .nodes
-            .get_mut(stage_id)
-            .ok_or_else(|| anyhow::anyhow!("Stage not found: {stage_id}"))?;
-        node.status = NodeStatus::CompletedWithFailures;
-        Ok(())
-    }
-
-    /// Mark a stage as merge blocked
-    pub fn mark_merge_blocked(&mut self, stage_id: &str) -> Result<()> {
-        let node = self
-            .nodes
-            .get_mut(stage_id)
-            .ok_or_else(|| anyhow::anyhow!("Stage not found: {stage_id}"))?;
-        node.status = NodeStatus::MergeBlocked;
-        Ok(())
-    }
-
-    /// Mark a stage as waiting for dependencies
-    pub fn mark_waiting_for_deps(&mut self, stage_id: &str) -> Result<()> {
-        let node = self
-            .nodes
-            .get_mut(stage_id)
-            .ok_or_else(|| anyhow::anyhow!("Stage not found: {stage_id}"))?;
-        node.status = NodeStatus::WaitingForDeps;
+        node.status = status;
         Ok(())
     }
 
@@ -267,7 +209,7 @@ impl ExecutionGraph {
         // Verify all dependencies are completed
         for dep in &deps {
             if let Some(dep_node) = self.nodes.get(dep) {
-                if dep_node.status != NodeStatus::Completed {
+                if dep_node.status != StageStatus::Completed {
                     bail!(
                         "Cannot mark '{}' as ready: dependency '{}' is {:?}",
                         stage_id,
@@ -283,7 +225,7 @@ impl ExecutionGraph {
             .nodes
             .get_mut(stage_id)
             .ok_or_else(|| anyhow::anyhow!("Stage not found: {stage_id}"))?;
-        node.status = NodeStatus::Queued;
+        node.status = StageStatus::Queued;
         Ok(())
     }
 
@@ -309,7 +251,7 @@ impl ExecutionGraph {
     pub fn is_complete(&self) -> bool {
         self.nodes
             .values()
-            .all(|n| n.status == NodeStatus::Completed || n.status == NodeStatus::Skipped)
+            .all(|n| n.status == StageStatus::Completed || n.status == StageStatus::Skipped)
     }
 
     /// Get all leaf stages (stages with no dependents).
@@ -357,7 +299,7 @@ impl ExecutionGraph {
             .get_mut(stage_id)
             .ok_or_else(|| anyhow::anyhow!("Stage not found: {stage_id}"))?;
 
-        if node.status != NodeStatus::Completed {
+        if node.status != StageStatus::Completed {
             bail!(
                 "Cannot mark '{}' as merged: status is {:?}, expected Completed",
                 stage_id,

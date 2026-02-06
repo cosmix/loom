@@ -158,7 +158,6 @@ fn extract_tasks_from_stage(stage: &Stage) -> Vec<String> {
 mod tests {
     use super::*;
     use crate::models::stage::StageStatus;
-    use chrono::Utc;
 
     fn create_test_stage() -> Stage {
         Stage {
@@ -166,46 +165,14 @@ mod tests {
             name: "Bootstrap Knowledge Base".to_string(),
             description: Some("Explore the codebase and document findings.".to_string()),
             status: StageStatus::Queued,
-            dependencies: vec![],
-            parallel_group: None,
             acceptance: vec![
                 "grep -q '## ' doc/loom/knowledge/entry-points.md".to_string(),
                 "grep -q '## ' doc/loom/knowledge/patterns.md".to_string(),
             ],
-            setup: vec![],
             files: vec!["src/**/*.rs".to_string()],
             stage_type: crate::models::stage::StageType::Knowledge,
             plan_id: Some("test-plan".to_string()),
-            worktree: None,
-            session: None,
-            held: false,
-            parent_stage: None,
-            child_stages: vec![],
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            completed_at: None,
-            started_at: None,
-            duration_secs: None,
-            close_reason: None,
-            auto_merge: None,
-            working_dir: Some(".".to_string()),
-            retry_count: 0,
-            max_retries: None,
-            last_failure_at: None,
-            failure_info: None,
-            resolved_base: None,
-            base_branch: None,
-            base_merged_from: vec![],
-            outputs: vec![],
-            completed_commit: None,
-            merged: false,
-            merge_conflict: false,
-            verification_status: Default::default(),
-            context_budget: None,
-            truths: Vec::new(),
-            artifacts: Vec::new(),
-            wiring: Vec::new(),
-            sandbox: Default::default(),
+            ..Stage::default()
         }
     }
 

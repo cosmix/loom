@@ -3,7 +3,8 @@
 use anyhow::{bail, Result};
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use super::nodes::{NodeStatus, StageNode};
+use super::nodes::StageNode;
+use crate::models::stage::StageStatus;
 
 /// Update which stages are ready (all deps satisfied AND merged).
 ///
@@ -20,8 +21,8 @@ pub fn update_ready_status(nodes: &mut HashMap<String, StageNode>) -> Vec<String
 
     // Stages with no dependencies are immediately ready
     for node in nodes.values_mut() {
-        if node.status == NodeStatus::WaitingForDeps && node.dependencies.is_empty() {
-            node.status = NodeStatus::Queued;
+        if node.status == StageStatus::WaitingForDeps && node.dependencies.is_empty() {
+            node.status = StageStatus::Queued;
             newly_ready.push(node.id.clone());
         }
     }
@@ -29,19 +30,19 @@ pub fn update_ready_status(nodes: &mut HashMap<String, StageNode>) -> Vec<String
     // Collect stages that are completed AND merged - only these satisfy dependencies
     let completed_and_merged: HashSet<_> = nodes
         .values()
-        .filter(|n| n.status == NodeStatus::Completed && n.merged)
+        .filter(|n| n.status == StageStatus::Completed && n.merged)
         .map(|n| n.id.clone())
         .collect();
 
     for node in nodes.values_mut() {
-        if node.status == NodeStatus::WaitingForDeps {
+        if node.status == StageStatus::WaitingForDeps {
             // All deps must be completed AND merged
             let deps_satisfied = node
                 .dependencies
                 .iter()
                 .all(|d| completed_and_merged.contains(d));
             if deps_satisfied {
-                node.status = NodeStatus::Queued;
+                node.status = StageStatus::Queued;
                 newly_ready.push(node.id.clone());
             }
         }

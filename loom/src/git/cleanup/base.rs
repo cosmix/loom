@@ -78,7 +78,10 @@ pub fn cleanup_all_base_branches(repo_root: &Path) -> Result<Vec<String>> {
 pub fn base_branch_exists(stage_id: &str, repo_root: &Path) -> Result<bool> {
     let branch_name = format!("loom/_base/{stage_id}");
     let ref_path = format!("refs/heads/{branch_name}");
-    Ok(run_git_bool(&["rev-parse", "--verify", &ref_path], repo_root))
+    Ok(run_git_bool(
+        &["rev-parse", "--verify", &ref_path],
+        repo_root,
+    ))
 }
 
 #[cfg(test)]

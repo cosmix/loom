@@ -4,7 +4,9 @@
 //! - Loading and saving stage state to/from `.work/stages/` markdown files
 
 use anyhow::{Context, Result};
-use std::fs;
+use fs2::FileExt;
+use std::fs::{self, File, OpenOptions};
+use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
 
 use crate::fs::stage_files::{
@@ -13,6 +15,36 @@ use crate::fs::stage_files::{
 use crate::models::stage::Stage;
 
 use super::serialization::{parse_stage_from_markdown, serialize_stage_to_markdown};
+
+/// Read file contents with a shared (read) lock
+fn locked_read(path: &Path) -> Result<String> {
+    let file =
+        File::open(path).with_context(|| format!("Failed to open file: {}", path.display()))?;
+    file.lock_shared()
+        .with_context(|| format!("Failed to acquire shared lock: {}", path.display()))?;
+    let mut content = String::new();
+    BufReader::new(&file)
+        .read_to_string(&mut content)
+        .with_context(|| format!("Failed to read file: {}", path.display()))?;
+    Ok(content)
+}
+
+/// Write file contents with an exclusive (write) lock
+fn locked_write(path: &Path, content: &str) -> Result<()> {
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)
+        .with_context(|| format!("Failed to open file for writing: {}", path.display()))?;
+    file.lock_exclusive()
+        .with_context(|| format!("Failed to acquire exclusive lock: {}", path.display()))?;
+    let mut writer = BufWriter::new(&file);
+    writer
+        .write_all(content.as_bytes())
+        .with_context(|| format!("Failed to write file: {}", path.display()))?;
+    Ok(())
+}
 
 /// Load a stage from disk
 ///
@@ -31,8 +63,7 @@ pub fn load_stage(stage_id: &str, work_dir: &Path) -> Result<Stage> {
     let stage_path = find_stage_file(&stages_dir, stage_id)?
         .ok_or_else(|| anyhow::anyhow!("Stage file not found for: {stage_id}"))?;
 
-    let content = fs::read_to_string(&stage_path)
-        .with_context(|| format!("Failed to read stage file: {}", stage_path.display()))?;
+    let content = locked_read(&stage_path)?;
 
     parse_stage_from_markdown(&content)
         .with_context(|| format!("Failed to parse stage from: {}", stage_path.display()))
@@ -76,8 +107,7 @@ pub fn save_stage(stage: &Stage, work_dir: &Path) -> Result<()> {
 
     let content = serialize_stage_to_markdown(stage)?;
 
-    fs::write(&stage_path, content)
-        .with_context(|| format!("Failed to write stage file: {}", stage_path.display()))?;
+    locked_write(&stage_path, &content)?;
 
     Ok(())
 }
@@ -164,8 +194,7 @@ pub fn list_all_stages(work_dir: &Path) -> Result<Vec<Stage>> {
 
 /// Load a stage from a specific file path
 fn load_stage_from_path(path: &Path) -> Result<Stage> {
-    let content = fs::read_to_string(path)
-        .with_context(|| format!("Failed to read stage file: {}", path.display()))?;
+    let content = locked_read(path)?;
 
     parse_stage_from_markdown(&content)
         .with_context(|| format!("Failed to parse stage from: {}", path.display()))

@@ -10,6 +10,6 @@ pub mod parser;
 pub mod schema;
 
 // Re-export commonly used types
-pub use graph::{ExecutionGraph, NodeStatus, StageNode};
+pub use graph::{ExecutionGraph, StageNode};
 pub use parser::{parse_plan, parse_plan_content, ParsedPlan};
 pub use schema::{validate, LoomConfig, LoomMetadata, StageDefinition, ValidationError};

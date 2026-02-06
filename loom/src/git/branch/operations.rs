@@ -3,8 +3,8 @@
 use anyhow::Result;
 use std::path::Path;
 
-use crate::git::runner::{run_git, run_git_bool, run_git_checked};
 use super::info::{parse_branch_list, BranchInfo};
+use crate::git::runner::{run_git, run_git_bool, run_git_checked};
 
 /// Create a new branch from a base
 pub fn create_branch(name: &str, base: Option<&str>, repo_root: &Path) -> Result<()> {
@@ -39,7 +39,10 @@ pub fn list_branches(repo_root: &Path) -> Result<Vec<BranchInfo>> {
 /// Check if a branch exists
 pub fn branch_exists(name: &str, repo_root: &Path) -> Result<bool> {
     let ref_path = format!("refs/heads/{name}");
-    Ok(run_git_bool(&["rev-parse", "--verify", &ref_path], repo_root))
+    Ok(run_git_bool(
+        &["rev-parse", "--verify", &ref_path],
+        repo_root,
+    ))
 }
 
 /// Get the default branch (main or master)

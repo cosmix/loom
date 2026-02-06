@@ -92,13 +92,13 @@ fn test_mark_completed() {
     );
     assert_eq!(
         graph.get_node("b").unwrap().status,
-        NodeStatus::WaitingForDeps
+        StageStatus::WaitingForDeps
     );
 
     // Now mark as merged - this should make "b" ready
     let newly_ready = graph.mark_merged("a").unwrap();
     assert_eq!(newly_ready, vec!["b"]);
-    assert_eq!(graph.get_node("b").unwrap().status, NodeStatus::Queued);
+    assert_eq!(graph.get_node("b").unwrap().status, StageStatus::Queued);
 }
 
 #[test]
@@ -132,14 +132,14 @@ fn test_skipped_does_not_satisfy_deps() {
     let mut graph = ExecutionGraph::build(stages).unwrap();
 
     // Mark stage 'a' as skipped
-    graph.mark_skipped("a").unwrap();
-    assert_eq!(graph.get_node("a").unwrap().status, NodeStatus::Skipped);
+    graph.mark_status("a", StageStatus::Skipped).unwrap();
+    assert_eq!(graph.get_node("a").unwrap().status, StageStatus::Skipped);
 
     // Update ready status - stage 'b' should remain WaitingForDeps
     graph.update_ready_status();
     assert_eq!(
         graph.get_node("b").unwrap().status,
-        NodeStatus::WaitingForDeps
+        StageStatus::WaitingForDeps
     );
 
     // Verify that 'b' is not in the ready stages list
@@ -156,7 +156,7 @@ fn test_is_complete_with_skipped() {
     // Complete one stage and skip another
     graph.mark_executing("a").unwrap();
     graph.mark_completed("a").unwrap();
-    graph.mark_skipped("b").unwrap();
+    graph.mark_status("b", StageStatus::Skipped).unwrap();
 
     // Graph should be considered complete
     assert!(graph.is_complete());

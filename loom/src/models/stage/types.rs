@@ -207,7 +207,7 @@ pub struct Stage {
 /// - `merged == true` (changes merged to main)
 ///
 /// This ensures dependent stages can use main as their base, containing all
-/// dependency work. See also [`crate::plan::graph::NodeStatus`].
+/// dependency work.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum StageStatus {
     /// Stage is waiting for upstream dependencies to complete AND merge.
@@ -278,6 +278,76 @@ impl std::fmt::Display for StageStatus {
             StageStatus::MergeConflict => write!(f, "MergeConflict"),
             StageStatus::CompletedWithFailures => write!(f, "CompletedWithFailures"),
             StageStatus::MergeBlocked => write!(f, "MergeBlocked"),
+        }
+    }
+}
+
+impl std::str::FromStr for StageStatus {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "executing" => Ok(StageStatus::Executing),
+            "waiting-for-deps" | "pending" => Ok(StageStatus::WaitingForDeps),
+            "queued" | "ready" => Ok(StageStatus::Queued),
+            "completed" | "verified" => Ok(StageStatus::Completed),
+            "blocked" => Ok(StageStatus::Blocked),
+            "needs-handoff" | "needshandoff" => Ok(StageStatus::NeedsHandoff),
+            "waiting-for-input" => Ok(StageStatus::WaitingForInput),
+            "merge-conflict" => Ok(StageStatus::MergeConflict),
+            "completed-with-failures" => Ok(StageStatus::CompletedWithFailures),
+            "merge-blocked" => Ok(StageStatus::MergeBlocked),
+            "skipped" => Ok(StageStatus::Skipped),
+            _ => anyhow::bail!("Unknown stage status: '{s}'"),
+        }
+    }
+}
+
+impl Default for Stage {
+    fn default() -> Self {
+        let now = chrono::Utc::now();
+        Self {
+            id: String::new(),
+            name: String::new(),
+            description: None,
+            status: StageStatus::WaitingForDeps,
+            dependencies: Vec::new(),
+            parallel_group: None,
+            acceptance: Vec::new(),
+            setup: Vec::new(),
+            files: Vec::new(),
+            stage_type: StageType::default(),
+            plan_id: None,
+            worktree: None,
+            session: None,
+            held: false,
+            parent_stage: None,
+            child_stages: Vec::new(),
+            created_at: now,
+            updated_at: now,
+            completed_at: None,
+            started_at: None,
+            duration_secs: None,
+            close_reason: None,
+            auto_merge: None,
+            working_dir: Some(".".to_string()),
+            retry_count: 0,
+            max_retries: None,
+            last_failure_at: None,
+            failure_info: None,
+            resolved_base: None,
+            base_branch: None,
+            base_merged_from: Vec::new(),
+            outputs: Vec::new(),
+            completed_commit: None,
+            merged: false,
+            merge_conflict: false,
+            verification_status: Default::default(),
+            context_budget: None,
+            truths: Vec::new(),
+            artifacts: Vec::new(),
+            wiring: Vec::new(),
+            sandbox: Default::default(),
         }
     }
 }

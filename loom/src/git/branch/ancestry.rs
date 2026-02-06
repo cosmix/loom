@@ -23,7 +23,10 @@ use std::process::Command;
 /// * `Ok(false)` if the commit is not an ancestor
 /// * `Err` if the git command fails (e.g., invalid commit/branch)
 pub fn is_ancestor_of(commit_sha: &str, branch: &str, repo_root: &Path) -> Result<bool> {
-    Ok(run_git_bool(&["merge-base", "--is-ancestor", commit_sha, branch], repo_root))
+    Ok(run_git_bool(
+        &["merge-base", "--is-ancestor", commit_sha, branch],
+        repo_root,
+    ))
 }
 
 /// Get the HEAD commit SHA of a branch

@@ -197,7 +197,6 @@ pub fn verify(stage_id: String, no_reload: bool) -> Result<()> {
 mod tests {
     use super::*;
     use crate::models::stage::Stage;
-    use chrono::Utc;
     use serial_test::serial;
     use tempfile::TempDir;
 
@@ -205,45 +204,10 @@ mod tests {
         Stage {
             id: id.to_string(),
             name: "Test Stage".to_string(),
-            description: None,
             status,
-            dependencies: vec![],
-            parallel_group: None,
             acceptance: vec!["echo test".to_string()],
-            setup: vec![],
-            files: vec![],
-            stage_type: StageType::Standard,
-            plan_id: None,
             worktree: Some(id.to_string()),
-            session: None,
-            held: false,
-            parent_stage: None,
-            child_stages: vec![],
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            completed_at: None,
-            started_at: None,
-            duration_secs: None,
-            close_reason: None,
-            auto_merge: None,
-            working_dir: Some(".".to_string()),
-            retry_count: 0,
-            max_retries: None,
-            last_failure_at: None,
-            failure_info: None,
-            resolved_base: None,
-            base_branch: None,
-            base_merged_from: vec![],
-            outputs: vec![],
-            completed_commit: None,
-            merged: false,
-            merge_conflict: false,
-            verification_status: Default::default(),
-            context_budget: None,
-            truths: Vec::new(),
-            artifacts: Vec::new(),
-            wiring: Vec::new(),
-            sandbox: Default::default(),
+            ..Stage::default()
         }
     }
 

@@ -184,52 +184,15 @@ fn parse_base_conflict_signal_content(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::stage::{StageStatus, StageType};
-    use chrono::Utc;
+    use crate::models::stage::Stage;
 
     fn create_test_stage(id: &str) -> Stage {
         Stage {
             id: id.to_string(),
             name: format!("Test Stage {id}"),
             description: Some("A test stage for conflict resolution".to_string()),
-            status: StageStatus::WaitingForDeps,
             dependencies: vec!["dep-1".to_string(), "dep-2".to_string()],
-            parallel_group: None,
-            acceptance: vec![],
-            setup: vec![],
-            files: vec![],
-            stage_type: StageType::default(),
-            plan_id: None,
-            worktree: None,
-            session: None,
-            held: false,
-            parent_stage: None,
-            child_stages: vec![],
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            completed_at: None,
-            started_at: None,
-            duration_secs: None,
-            close_reason: None,
-            auto_merge: None,
-            working_dir: Some(".".to_string()),
-            retry_count: 0,
-            max_retries: None,
-            last_failure_at: None,
-            failure_info: None,
-            resolved_base: None,
-            base_branch: None,
-            base_merged_from: vec![],
-            outputs: vec![],
-            completed_commit: None,
-            merged: false,
-            merge_conflict: false,
-            verification_status: Default::default(),
-            context_budget: None,
-            truths: Vec::new(),
-            artifacts: Vec::new(),
-            wiring: Vec::new(),
-            sandbox: Default::default(),
+            ..Stage::default()
         }
     }
 

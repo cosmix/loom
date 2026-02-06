@@ -176,7 +176,10 @@ pub fn get_conflicting_files_from_status(
     checkout_branch(target_branch, repo_root)?;
 
     // Try merge with --no-commit to test for conflicts
-    let output = run_git(&["merge", "--no-commit", "--no-ff", source_branch], repo_root)?;
+    let output = run_git(
+        &["merge", "--no-commit", "--no-ff", source_branch],
+        repo_root,
+    )?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
