@@ -518,3 +518,16 @@ Two plan criteria caused false negatives in integration-verify:
   - *Rationale:* Focused on bugs and correctness issues that could cause runtime panics or data loss. Left design decisions and refactoring opportunities as noted observations.
 
 
+
+## Promoted from Memory [2026-02-06 15:54]
+
+### Notes
+
+- Integration verification passed for agent-teams-integration: 1409 tests pass, clippy clean, build succeeds, fmt fixed in 3 files. All 10 functional verification checks pass - env var in settings.rs and pid_tracking.rs, team guidance in all 4 cache.rs prefixes and sections.rs, Rule 6b in CLAUDE.md.template, 3-level hierarchy in SKILL.md, ExecutionMode in schema/stage/plan_setup types.
+
+### Decisions
+
+- **Formatting fixes only - no logic changes needed during integration verify**
+  - *Rationale:* cargo fmt fixed 3 files with whitespace/line-wrapping changes only in settings.rs, cache.rs, sections.rs. All were code from the implementation stages that just needed rustfmt.
+
+
