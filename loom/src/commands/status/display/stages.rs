@@ -34,26 +34,36 @@ pub fn display_stages(work_dir: &WorkDir) -> Result<()> {
     println!("\n{}", "Active Stages".bold());
 
     let status_order = [
-        (StageStatus::Completed, "✓", "Completed"),
-        (StageStatus::Executing, "▶", "Executing"),
-        (StageStatus::Queued, "○", "Ready"),
-        (StageStatus::WaitingForInput, "?", "Waiting for Input"),
-        (StageStatus::NeedsHandoff, "↻", "Needs Handoff"),
-        (StageStatus::MergeConflict, "⚡", "Merge Conflict"),
-        (
-            StageStatus::CompletedWithFailures,
-            "✗",
-            "Completed with Failures",
-        ),
-        (StageStatus::MergeBlocked, "⚠", "Merge Blocked"),
-        (StageStatus::Blocked, "✗", "Blocked"),
-        (StageStatus::WaitingForDeps, "·", "Pending"),
-        (StageStatus::Skipped, "⊘", "Skipped"),
+        StageStatus::Completed,
+        StageStatus::Executing,
+        StageStatus::Queued,
+        StageStatus::WaitingForInput,
+        StageStatus::NeedsHandoff,
+        StageStatus::MergeConflict,
+        StageStatus::CompletedWithFailures,
+        StageStatus::MergeBlocked,
+        StageStatus::Blocked,
+        StageStatus::WaitingForDeps,
+        StageStatus::Skipped,
     ];
 
     let max_id_len = stages.iter().map(|s| s.id.len()).max().unwrap_or(0);
 
-    for (status, icon, label) in status_order {
+    for status in status_order {
+        let icon = status.icon();
+        let label = match status {
+            StageStatus::Completed => "Completed",
+            StageStatus::Executing => "Executing",
+            StageStatus::Queued => "Ready",
+            StageStatus::WaitingForInput => "Waiting for Input",
+            StageStatus::NeedsHandoff => "Needs Handoff",
+            StageStatus::MergeConflict => "Merge Conflict",
+            StageStatus::CompletedWithFailures => "Completed with Failures",
+            StageStatus::MergeBlocked => "Merge Blocked",
+            StageStatus::Blocked => "Blocked",
+            StageStatus::WaitingForDeps => "Pending",
+            StageStatus::Skipped => "Skipped",
+        };
         let matching: Vec<_> = stages.iter().filter(|s| s.status == status).collect();
         if matching.is_empty() {
             continue;

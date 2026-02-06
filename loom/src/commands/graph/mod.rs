@@ -9,9 +9,9 @@
 //! - `levels`: Topological level computation
 //! - `colors`: Stage color assignment for visual differentiation
 
-mod colors;
+pub mod colors;
 mod display;
-mod indicators;
+pub mod indicators;
 mod levels;
 mod tree;
 

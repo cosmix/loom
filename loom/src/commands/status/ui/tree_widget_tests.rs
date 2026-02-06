@@ -122,9 +122,9 @@ fn test_stage_levels_computed_correctly() {
 
 #[test]
 fn test_status_indicators() {
-    assert_eq!(status_char(&StageStatus::Completed), "✓");
-    assert_eq!(status_char(&StageStatus::Executing), "●");
-    assert_eq!(status_char(&StageStatus::Blocked), "✗");
+    assert_eq!(StageStatus::Completed.icon(), "✓");
+    assert_eq!(StageStatus::Executing.icon(), "●");
+    assert_eq!(StageStatus::Blocked.icon(), "✗");
 }
 
 #[test]

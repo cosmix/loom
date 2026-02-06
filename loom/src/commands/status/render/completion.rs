@@ -7,35 +7,10 @@ use std::io::{self, Write};
 
 use colored::Colorize;
 
+use crate::commands::common::truncate;
 use crate::daemon::{CompletionSummary, StageCompletionInfo};
 use crate::models::stage::StageStatus;
 use crate::utils::format_elapsed;
-
-/// Truncate string to max characters (UTF-8 safe)
-fn truncate_chars(s: &str, max: usize) -> String {
-    let char_count = s.chars().count();
-    if char_count <= max {
-        s.to_string()
-    } else {
-        format!(
-            "{}...",
-            s.chars().take(max.saturating_sub(3)).collect::<String>()
-        )
-    }
-}
-
-/// Status indicator character for display
-fn status_indicator(status: &StageStatus) -> &'static str {
-    match status {
-        StageStatus::Completed => "\u{2713}",             // ✓
-        StageStatus::Skipped => "\u{2298}",               // ⊘
-        StageStatus::Blocked => "\u{2717}",               // ✗
-        StageStatus::MergeConflict => "\u{26A1}",         // ⚡
-        StageStatus::CompletedWithFailures => "\u{26A0}", // ⚠
-        StageStatus::MergeBlocked => "\u{2297}",          // ⊗
-        _ => "\u{25CB}",                                  // ○
-    }
-}
 
 /// Get stage duration - prefer execution_secs (excludes wait time) over duration_secs (wall clock)
 fn stage_duration(stage: &StageCompletionInfo) -> Option<i64> {
@@ -125,7 +100,7 @@ pub fn render_completion_screen(summary: &CompletionSummary) {
 
     // Stage rows
     for stage in &sorted_stages {
-        let icon = status_indicator(&stage.status);
+        let icon = stage.status.icon();
         let duration_display = build_duration_display(stage);
 
         let status_str = match stage.status {
@@ -149,7 +124,7 @@ pub fn render_completion_screen(summary: &CompletionSummary) {
         };
 
         // Truncate stage id if too long (UTF-8 safe)
-        let id_display = truncate_chars(&stage.id, 28);
+        let id_display = truncate(&stage.id, 28);
 
         println!("{icon_colored:2} {id_display:30} {status_str:10} {duration_display}");
     }
@@ -200,21 +175,13 @@ pub fn render_completion_lines(summary: &CompletionSummary) -> Vec<String> {
     });
 
     for stage in &sorted_stages {
-        let icon = status_indicator(&stage.status);
+        let icon = stage.status.icon();
         let duration_display = build_duration_display(stage);
 
-        let status_str = match stage.status {
-            StageStatus::Completed => "Completed",
-            StageStatus::Skipped => "Skipped",
-            StageStatus::Blocked => "Blocked",
-            StageStatus::MergeConflict => "Conflict",
-            StageStatus::CompletedWithFailures => "Failed",
-            StageStatus::MergeBlocked => "MergeBlk",
-            _ => "Other",
-        };
+        let status_str = stage.status.label();
 
         // Truncate stage id if too long (UTF-8 safe)
-        let id_display = truncate_chars(&stage.id, 28);
+        let id_display = truncate(&stage.id, 28);
 
         lines.push(format!(
             "{icon:2} {id_display:30} {status_str:10} {duration_display}"
@@ -243,13 +210,6 @@ mod tests {
             merged: completed,
             dependencies: vec![],
         }
-    }
-
-    #[test]
-    fn test_status_indicator() {
-        assert_eq!(status_indicator(&StageStatus::Completed), "\u{2713}");
-        assert_eq!(status_indicator(&StageStatus::Blocked), "\u{2717}");
-        assert_eq!(status_indicator(&StageStatus::Skipped), "\u{2298}");
     }
 
     #[test]
@@ -288,41 +248,5 @@ mod tests {
         let lines = render_completion_lines(&summary);
         assert!(lines.iter().any(|l| l.contains("with failures")));
         assert!(lines.iter().any(|l| l.contains("failing")));
-    }
-
-    #[test]
-    fn test_truncate_chars_short() {
-        assert_eq!(truncate_chars("hello", 10), "hello");
-    }
-
-    #[test]
-    fn test_truncate_chars_exact() {
-        assert_eq!(truncate_chars("hello", 5), "hello");
-    }
-
-    #[test]
-    fn test_truncate_chars_long() {
-        // 28 chars max: truncate to 25 + "..."
-        let long_id = "a".repeat(30);
-        let result = truncate_chars(&long_id, 28);
-        assert_eq!(result.len(), 28);
-        assert!(result.ends_with("..."));
-    }
-
-    #[test]
-    fn test_truncate_chars_utf8_emoji() {
-        // Emoji are 4 bytes each, but only 1 char
-        let input = "🎉🎊🎁🎈🎂🎄🎅🎆"; // 8 emoji = 8 chars
-        let result = truncate_chars(input, 6);
-        // Should be 3 emoji + "..."
-        assert_eq!(result, "🎉🎊🎁...");
-    }
-
-    #[test]
-    fn test_truncate_chars_utf8_cjk() {
-        // CJK are 3 bytes each
-        let input = "你好世界测试安全"; // 8 CJK chars
-        let result = truncate_chars(input, 6);
-        assert_eq!(result, "你好世...");
     }
 }

@@ -2,6 +2,8 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::sync::Once;
 
+use crate::models::constants::display::{CONTEXT_HEALTHY_PCT, CONTEXT_WARNING_PCT};
+
 /// ANSI escape codes for terminal control
 const CURSOR_SHOW: &str = "\x1B[?25h";
 const ATTR_RESET: &str = "\x1B[0m";
@@ -147,6 +149,32 @@ pub fn display_path(path: &Path, work_dir: &Path) -> String {
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| "[path]".to_string())
         })
+}
+
+/// Get the terminal color for a context percentage.
+///
+/// Returns red if >= WARNING threshold, yellow if >= HEALTHY threshold, green otherwise.
+pub fn context_pct_terminal_color(pct: f32) -> colored::Color {
+    if pct >= CONTEXT_WARNING_PCT {
+        colored::Color::Red
+    } else if pct >= CONTEXT_HEALTHY_PCT {
+        colored::Color::Yellow
+    } else {
+        colored::Color::Green
+    }
+}
+
+/// Get the TUI color for a context percentage.
+///
+/// Returns red if >= WARNING threshold, yellow if >= HEALTHY threshold, green otherwise.
+pub fn context_pct_tui_color(pct: f32) -> ratatui::style::Color {
+    if pct >= CONTEXT_WARNING_PCT {
+        ratatui::style::Color::Red
+    } else if pct >= CONTEXT_HEALTHY_PCT {
+        ratatui::style::Color::Yellow
+    } else {
+        ratatui::style::Color::Green
+    }
 }
 
 #[cfg(test)]

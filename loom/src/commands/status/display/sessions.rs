@@ -3,12 +3,10 @@ use colored::Colorize;
 use std::fs;
 
 use crate::fs::work_dir::WorkDir;
-use crate::models::constants::DEFAULT_CONTEXT_LIMIT;
-use crate::models::keys::frontmatter;
 use crate::models::session::{Session, SessionStatus};
-use crate::orchestrator::terminal::native::check_pid_alive;
 use crate::orchestrator::terminal::BackendType;
-use crate::parser::markdown::MarkdownDocument;
+use crate::parser::frontmatter::parse_from_markdown;
+use crate::process::is_process_alive;
 
 pub fn display_sessions(work_dir: &WorkDir) -> Result<()> {
     let sessions_dir = work_dir.sessions_dir();
@@ -23,10 +21,8 @@ pub fn display_sessions(work_dir: &WorkDir) -> Result<()> {
 
         if path.is_file() && path.extension().is_some_and(|e| e == "md") {
             if let Ok(content) = fs::read_to_string(&path) {
-                if let Ok(doc) = MarkdownDocument::parse(&content) {
-                    if let Some(session) = parse_session_from_doc(&doc) {
-                        sessions.push(session);
-                    }
+                if let Ok(session) = parse_from_markdown::<Session>(&content, "Session") {
+                    sessions.push(session);
                 }
             }
         }
@@ -63,44 +59,6 @@ pub fn display_sessions(work_dir: &WorkDir) -> Result<()> {
     Ok(())
 }
 
-fn parse_session_from_doc(doc: &MarkdownDocument) -> Option<Session> {
-    let id = doc.get_frontmatter(frontmatter::ID)?.clone();
-    let status_str = doc.get_frontmatter(frontmatter::STATUS)?;
-    let status = match status_str.as_str() {
-        "spawning" => SessionStatus::Spawning,
-        "running" => SessionStatus::Running,
-        "paused" => SessionStatus::Paused,
-        "completed" => SessionStatus::Completed,
-        "crashed" => SessionStatus::Crashed,
-        "context-exhausted" => SessionStatus::ContextExhausted,
-        _ => return None,
-    };
-
-    let context_tokens = doc
-        .get_frontmatter("context_tokens")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
-    let context_limit = doc
-        .get_frontmatter("context_limit")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(DEFAULT_CONTEXT_LIMIT);
-
-    Some(Session {
-        id,
-        stage_id: doc.get_frontmatter("stage_id").cloned(),
-        worktree_path: doc.get_frontmatter("worktree_path").map(|s| s.into()),
-        pid: doc.get_frontmatter("pid").and_then(|s| s.parse().ok()),
-        status,
-        context_tokens,
-        context_limit,
-        created_at: chrono::Utc::now(),
-        last_active: chrono::Utc::now(),
-        session_type: crate::models::session::SessionType::default(),
-        merge_source_branch: None,
-        merge_target_branch: None,
-    })
-}
-
 pub fn is_session_orphaned(session: &Session) -> bool {
     if !matches!(
         session.status,
@@ -118,7 +76,7 @@ pub fn is_session_orphaned(session: &Session) -> bool {
     match backend_type {
         Some(BackendType::Native) => {
             if let Some(pid) = session.pid {
-                !check_pid_alive(pid)
+                !is_process_alive(pid)
             } else {
                 false
             }

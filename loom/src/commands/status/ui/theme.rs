@@ -1,6 +1,6 @@
 use ratatui::style::{Color, Modifier, Style};
 
-use crate::models::constants::display::{CONTEXT_HEALTHY_PCT, CONTEXT_WARNING_PCT};
+use crate::utils::context_pct_tui_color;
 
 /// Color scheme for status indicators
 pub struct StatusColors;
@@ -75,14 +75,8 @@ impl Theme {
     }
 
     pub fn context_style(pct: f32) -> Style {
-        // pct is 0.0-1.0, constants are percentages (0-100)
-        let color = if pct * 100.0 < CONTEXT_HEALTHY_PCT {
-            StatusColors::CONTEXT_LOW
-        } else if pct * 100.0 < CONTEXT_WARNING_PCT {
-            StatusColors::CONTEXT_MED
-        } else {
-            StatusColors::CONTEXT_HIGH
-        };
+        // pct is 0.0-1.0, convert to percentage for helper
+        let color = context_pct_tui_color(pct * 100.0);
         Style::default().fg(color)
     }
 

@@ -9,7 +9,7 @@ use std::hash::{Hash, Hasher};
 use colored::Color;
 
 /// Available terminal colors that work well on both dark and light backgrounds
-const STAGE_COLORS: [Color; 16] = [
+pub const STAGE_COLORS: [Color; 16] = [
     Color::Red,
     Color::Green,
     Color::Yellow,

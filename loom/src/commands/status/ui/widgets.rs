@@ -63,36 +63,12 @@ pub fn context_bar(pct: f32, width: usize) -> Line<'static> {
 ///
 /// Returns a styled Span with the appropriate Unicode symbol
 pub fn status_indicator(status: &StageStatus) -> Span<'static> {
-    match status {
-        StageStatus::Completed => Span::styled("✓", Theme::status_completed()),
-        StageStatus::Executing => Span::styled("●", Theme::status_executing()),
-        StageStatus::Queued => Span::styled("▶", Theme::status_queued()),
-        StageStatus::WaitingForDeps => Span::styled("○", Theme::status_pending()),
-        StageStatus::Blocked => Span::styled("✗", Theme::status_blocked()),
-        StageStatus::NeedsHandoff => Span::styled("⟳", Theme::status_warning()),
-        StageStatus::WaitingForInput => Span::styled("?", Theme::status_warning()),
-        StageStatus::Skipped => Span::styled("⊘", Theme::dimmed()),
-        StageStatus::MergeConflict => Span::styled("⚡", Theme::status_blocked()),
-        StageStatus::CompletedWithFailures => Span::styled("⚠", Theme::status_warning()),
-        StageStatus::MergeBlocked => Span::styled("⊗", Theme::status_blocked()),
-    }
+    Span::styled(status.icon().to_string(), status.tui_style())
 }
 
 /// Get status text description
 pub fn status_text(status: &StageStatus) -> &'static str {
-    match status {
-        StageStatus::Completed => "Completed",
-        StageStatus::Executing => "Executing",
-        StageStatus::Queued => "Queued",
-        StageStatus::WaitingForDeps => "Waiting",
-        StageStatus::Blocked => "Blocked",
-        StageStatus::NeedsHandoff => "Handoff",
-        StageStatus::WaitingForInput => "Input",
-        StageStatus::Skipped => "Skipped",
-        StageStatus::MergeConflict => "Conflict",
-        StageStatus::CompletedWithFailures => "Failed",
-        StageStatus::MergeBlocked => "MergeErr",
-    }
+    status.label()
 }
 
 /// Merged status indicator

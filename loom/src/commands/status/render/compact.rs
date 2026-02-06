@@ -4,7 +4,7 @@ use colored::Colorize;
 use std::io::Write;
 
 use crate::commands::status::data::StatusData;
-use crate::models::constants::display::{CONTEXT_HEALTHY_PCT, CONTEXT_WARNING_PCT};
+use crate::utils::context_pct_terminal_color;
 
 /// Render single-line compact status (for scripting/monitoring)
 /// Format: [4/12] ●2 ○6 ✗1 ⟳1 | ctx:67% | conflicts:0
@@ -40,13 +40,8 @@ pub fn render_compact<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result
         .fold(0.0f32, |a, b| a.max(b));
     if max_ctx > 0.0 {
         let ctx_str = format!("{:.0}%", max_ctx * 100.0);
-        let colored = if max_ctx * 100.0 >= CONTEXT_WARNING_PCT {
-            ctx_str.red()
-        } else if max_ctx * 100.0 >= CONTEXT_HEALTHY_PCT {
-            ctx_str.yellow()
-        } else {
-            ctx_str.normal()
-        };
+        let color = context_pct_terminal_color(max_ctx * 100.0);
+        let colored = ctx_str.color(color);
         write!(w, " | ctx:{colored}")?;
     }
 

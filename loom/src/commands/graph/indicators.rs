@@ -8,19 +8,21 @@ use crate::models::stage::StageStatus;
 
 /// Status indicator with color for display
 pub fn status_indicator(status: &StageStatus) -> ColoredString {
-    match status {
-        StageStatus::Completed => "✓".green().bold(),
-        StageStatus::Executing => "●".blue().bold(),
-        StageStatus::Queued => "▶".cyan().bold(),
-        StageStatus::WaitingForDeps => "○".white().dimmed(),
-        StageStatus::WaitingForInput => "?".magenta().bold(),
-        StageStatus::Blocked => "✗".red().bold(),
-        StageStatus::NeedsHandoff => "⟳".yellow().bold(),
-        StageStatus::Skipped => "⊘".white().dimmed().strikethrough(),
-        StageStatus::MergeConflict => "⚡".yellow().bold(),
-        StageStatus::CompletedWithFailures => "✗".red().bold(),
-        StageStatus::MergeBlocked => "⚠".red().bold(),
+    let icon = status.icon();
+    let color = status.terminal_color();
+    let mut colored = icon.color(color);
+
+    if status.is_bold() {
+        colored = colored.bold();
     }
+    if status.is_dimmed() {
+        colored = colored.dimmed();
+    }
+    if status.is_strikethrough() {
+        colored = colored.strikethrough();
+    }
+
+    colored
 }
 
 /// Sort stages by status priority (executing first, then ready, then others)

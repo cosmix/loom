@@ -331,6 +331,102 @@ impl std::str::FromStr for StageStatus {
     }
 }
 
+impl StageStatus {
+    /// Returns the icon character for this status
+    pub fn icon(&self) -> &'static str {
+        match self {
+            Self::Completed => "\u{2713}",      // ✓
+            Self::Executing => "\u{25CF}",      // ●
+            Self::Queued => "\u{25B6}",         // ▶
+            Self::WaitingForDeps => "\u{25CB}", // ○
+            Self::WaitingForInput => "?",
+            Self::Blocked => "\u{2717}",               // ✗
+            Self::NeedsHandoff => "\u{27F3}",          // ⟳
+            Self::Skipped => "\u{2298}",               // ⊘
+            Self::MergeConflict => "\u{26A1}",         // ⚡
+            Self::CompletedWithFailures => "\u{26A0}", // ⚠
+            Self::MergeBlocked => "\u{2297}",          // ⊗
+        }
+    }
+
+    /// Returns the terminal color for this status (for the `colored` crate)
+    pub fn terminal_color(&self) -> colored::Color {
+        use colored::Color;
+        match self {
+            Self::Completed => Color::Green,
+            Self::Executing => Color::Blue,
+            Self::Queued => Color::Cyan,
+            Self::WaitingForDeps => Color::White,
+            Self::WaitingForInput => Color::Magenta,
+            Self::Blocked => Color::Red,
+            Self::NeedsHandoff => Color::Yellow,
+            Self::Skipped => Color::White,
+            Self::MergeConflict => Color::Yellow,
+            Self::CompletedWithFailures => Color::Red,
+            Self::MergeBlocked => Color::Red,
+        }
+    }
+
+    /// Returns whether this status should be bold
+    pub fn is_bold(&self) -> bool {
+        !matches!(self, Self::WaitingForDeps | Self::Skipped)
+    }
+
+    /// Returns whether this status should be dimmed
+    pub fn is_dimmed(&self) -> bool {
+        matches!(self, Self::WaitingForDeps)
+    }
+
+    /// Returns whether this status should be strikethrough
+    pub fn is_strikethrough(&self) -> bool {
+        matches!(self, Self::Skipped)
+    }
+
+    /// Returns the ratatui style for this status
+    pub fn tui_style(&self) -> ratatui::style::Style {
+        use ratatui::style::{Color, Modifier, Style};
+        let mut style = Style::default();
+
+        let color = match self {
+            Self::Completed => Color::Green,
+            Self::Executing => Color::Blue,
+            Self::Queued => Color::Cyan,
+            Self::WaitingForDeps => Color::Gray,
+            Self::WaitingForInput => Color::Magenta,
+            Self::Blocked => Color::Red,
+            Self::NeedsHandoff => Color::Yellow,
+            Self::Skipped => Color::DarkGray,
+            Self::MergeConflict => Color::Yellow,
+            Self::CompletedWithFailures => Color::Red,
+            Self::MergeBlocked => Color::Red,
+        };
+        style = style.fg(color);
+
+        if self.is_bold() {
+            style = style.add_modifier(Modifier::BOLD);
+        }
+
+        style
+    }
+
+    /// Returns a short label for this status
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Completed => "Completed",
+            Self::Executing => "Executing",
+            Self::Queued => "Queued",
+            Self::WaitingForDeps => "Waiting",
+            Self::WaitingForInput => "Input",
+            Self::Blocked => "Blocked",
+            Self::NeedsHandoff => "Handoff",
+            Self::Skipped => "Skipped",
+            Self::MergeConflict => "Conflict",
+            Self::CompletedWithFailures => "Failed",
+            Self::MergeBlocked => "MergeErr",
+        }
+    }
+}
+
 impl Default for Stage {
     fn default() -> Self {
         let now = chrono::Utc::now();

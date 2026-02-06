@@ -5,7 +5,7 @@ use std::io::{self, Write};
 
 use crate::commands::status::common::levels;
 use crate::daemon::{CompletionSummary, StageCompletionInfo};
-use crate::models::stage::StageStatus;
+
 use crate::utils::format_elapsed_verbose;
 
 /// Print completion summary to stdout.
@@ -50,24 +50,8 @@ pub fn print_completion_summary(summary: &CompletionSummary) {
     // Print detailed stage table
     println!("Stages:");
     for stage in &summary.stages {
-        let icon = match stage.status {
-            StageStatus::Completed => "\u{2713}",
-            StageStatus::Skipped => "\u{2298}",
-            StageStatus::Blocked => "\u{2717}",
-            StageStatus::MergeConflict => "\u{26A1}",
-            StageStatus::CompletedWithFailures => "\u{26A0}",
-            StageStatus::MergeBlocked => "\u{2297}",
-            _ => "\u{25CB}",
-        };
-        let status_text = match stage.status {
-            StageStatus::Completed => "Completed",
-            StageStatus::Skipped => "Skipped",
-            StageStatus::Blocked => "Blocked",
-            StageStatus::MergeConflict => "Conflict",
-            StageStatus::CompletedWithFailures => "Failed",
-            StageStatus::MergeBlocked => "MergeBlk",
-            _ => "Other",
-        };
+        let icon = stage.status.icon();
+        let status_text = stage.status.label();
         let duration = stage
             .duration_secs
             .map(format_elapsed_verbose)

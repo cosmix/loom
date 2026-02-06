@@ -8,16 +8,15 @@ use std::collections::HashMap;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Widget},
 };
 
 use super::theme::{StatusColors, Theme};
 use crate::commands::status::common::levels;
-use crate::models::constants::display::{CONTEXT_HEALTHY_PCT, CONTEXT_WARNING_PCT};
 use crate::models::stage::{Stage, StageStatus};
-use crate::utils::format_elapsed;
+use crate::utils::{context_pct_tui_color, format_elapsed};
 
 /// Available terminal colors for stage differentiation
 const STAGE_COLORS: [Color; 16] = [
@@ -47,58 +46,6 @@ fn color_by_index(index: usize) -> Color {
 /// Compute topological level for each stage (level = max(dep_levels) + 1)
 fn compute_stage_levels(stages: &[Stage]) -> HashMap<String, usize> {
     levels::compute_all_levels(stages, |s| s.id.as_str(), |s| &s.dependencies)
-}
-
-/// Get status indicator character
-fn status_char(status: &StageStatus) -> &'static str {
-    match status {
-        StageStatus::Completed => "✓",
-        StageStatus::Executing => "●",
-        StageStatus::Queued => "▶",
-        StageStatus::WaitingForDeps => "○",
-        StageStatus::WaitingForInput => "?",
-        StageStatus::Blocked => "✗",
-        StageStatus::NeedsHandoff => "⟳",
-        StageStatus::Skipped => "⊘",
-        StageStatus::MergeConflict => "⚡",
-        StageStatus::CompletedWithFailures => "✗",
-        StageStatus::MergeBlocked => "⚠",
-    }
-}
-
-/// Get style for a stage status indicator
-fn status_style(status: &StageStatus) -> Style {
-    match status {
-        StageStatus::Completed => Style::default()
-            .fg(StatusColors::COMPLETED)
-            .add_modifier(Modifier::BOLD),
-        StageStatus::Executing => Style::default()
-            .fg(StatusColors::EXECUTING)
-            .add_modifier(Modifier::BOLD),
-        StageStatus::Queued => Style::default()
-            .fg(StatusColors::QUEUED)
-            .add_modifier(Modifier::BOLD),
-        StageStatus::WaitingForDeps => Theme::dimmed(),
-        StageStatus::WaitingForInput => Style::default()
-            .fg(StatusColors::WARNING)
-            .add_modifier(Modifier::BOLD),
-        StageStatus::Blocked => Style::default()
-            .fg(StatusColors::BLOCKED)
-            .add_modifier(Modifier::BOLD),
-        StageStatus::NeedsHandoff => Style::default()
-            .fg(StatusColors::WARNING)
-            .add_modifier(Modifier::BOLD),
-        StageStatus::Skipped => Theme::dimmed(),
-        StageStatus::MergeConflict => Style::default()
-            .fg(StatusColors::WARNING)
-            .add_modifier(Modifier::BOLD),
-        StageStatus::CompletedWithFailures => Style::default()
-            .fg(StatusColors::BLOCKED)
-            .add_modifier(Modifier::BOLD),
-        StageStatus::MergeBlocked => Style::default()
-            .fg(StatusColors::BLOCKED)
-            .add_modifier(Modifier::BOLD),
-    }
 }
 
 /// Tree-based execution graph widget
@@ -190,10 +137,10 @@ impl<'a> TreeWidget<'a> {
             spans.push(Span::styled(connector, Theme::dimmed()));
 
             // Status indicator
-            let indicator = status_char(&stage.status);
+            let indicator = stage.status.icon();
             spans.push(Span::styled(
                 indicator.to_string(),
-                status_style(&stage.status),
+                stage.status.tui_style(),
             ));
             spans.push(Span::raw(" "));
 
@@ -233,13 +180,8 @@ impl<'a> TreeWidget<'a> {
             if matches!(stage.status, StageStatus::Executing) {
                 if let Some(&ctx_pct) = self.context_percentages.get(&stage.id) {
                     let ctx_str = format!(" [{:.0}%]", ctx_pct * 100.0);
-                    let ctx_style = if ctx_pct * 100.0 >= CONTEXT_WARNING_PCT {
-                        Style::default().fg(StatusColors::CONTEXT_HIGH)
-                    } else if ctx_pct * 100.0 >= CONTEXT_HEALTHY_PCT {
-                        Style::default().fg(StatusColors::CONTEXT_MED)
-                    } else {
-                        Theme::dimmed()
-                    };
+                    let color = context_pct_tui_color(ctx_pct * 100.0);
+                    let ctx_style = Style::default().fg(color);
                     spans.push(Span::styled(ctx_str, ctx_style));
                 }
 

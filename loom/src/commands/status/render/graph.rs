@@ -8,52 +8,12 @@ use std::io::Write;
 
 use colored::{Color, Colorize};
 
+use crate::commands::graph::colors::color_by_index;
+use crate::commands::graph::indicators::status_indicator;
 use crate::commands::status::common::levels;
 use crate::commands::status::data::{StageSummary, StatusData};
-use crate::models::constants::display::{CONTEXT_HEALTHY_PCT, CONTEXT_WARNING_PCT};
 use crate::models::stage::StageStatus;
-use crate::utils::format_elapsed;
-
-/// Available terminal colors for stage differentiation
-const STAGE_COLORS: [Color; 16] = [
-    Color::Red,
-    Color::Green,
-    Color::Yellow,
-    Color::Blue,
-    Color::Magenta,
-    Color::Cyan,
-    Color::BrightRed,
-    Color::BrightGreen,
-    Color::BrightYellow,
-    Color::BrightBlue,
-    Color::BrightMagenta,
-    Color::BrightCyan,
-    Color::TrueColor {
-        r: 255,
-        g: 165,
-        b: 0,
-    }, // Orange
-    Color::TrueColor {
-        r: 128,
-        g: 0,
-        b: 128,
-    }, // Purple
-    Color::TrueColor {
-        r: 0,
-        g: 128,
-        b: 128,
-    }, // Teal
-    Color::TrueColor {
-        r: 255,
-        g: 192,
-        b: 203,
-    }, // Pink
-];
-
-/// Get a color by index, cycling through the palette
-fn color_by_index(index: usize) -> Color {
-    STAGE_COLORS[index % STAGE_COLORS.len()]
-}
+use crate::utils::{context_pct_terminal_color, format_elapsed};
 
 /// Compute topological level for each stage (level = max(dep_levels) + 1)
 fn compute_stage_levels(stages: &[StageSummary]) -> HashMap<String, usize> {
@@ -79,23 +39,6 @@ fn compute_connector(
     } else {
         // Other stages at non-root levels: use ├──
         format!("{indent}├── ")
-    }
-}
-
-/// Status indicator with color for display
-fn status_indicator(status: &StageStatus) -> colored::ColoredString {
-    match status {
-        StageStatus::Completed => "✓".green().bold(),
-        StageStatus::Executing => "●".blue().bold(),
-        StageStatus::Queued => "▶".cyan().bold(),
-        StageStatus::WaitingForDeps => "○".white().dimmed(),
-        StageStatus::WaitingForInput => "?".magenta().bold(),
-        StageStatus::Blocked => "✗".red().bold(),
-        StageStatus::NeedsHandoff => "⟳".yellow().bold(),
-        StageStatus::Skipped => "⊘".white().dimmed(),
-        StageStatus::MergeConflict => "⚡".yellow().bold(),
-        StageStatus::CompletedWithFailures => "✗".red().bold(),
-        StageStatus::MergeBlocked => "⚠".red().bold(),
     }
 }
 
@@ -243,13 +186,8 @@ pub fn render_graph<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<(
         if matches!(stage.status, StageStatus::Executing) {
             if let Some(ctx_pct) = stage.context_pct {
                 let ctx_str = format!(" [{:.0}%]", ctx_pct * 100.0);
-                let colored_ctx = if ctx_pct * 100.0 >= CONTEXT_WARNING_PCT {
-                    ctx_str.red()
-                } else if ctx_pct * 100.0 >= CONTEXT_HEALTHY_PCT {
-                    ctx_str.yellow()
-                } else {
-                    ctx_str.dimmed()
-                };
+                let color = context_pct_terminal_color(ctx_pct * 100.0);
+                let colored_ctx = ctx_str.color(color);
                 write!(w, "{colored_ctx}")?;
             }
             if let Some(secs) = stage.elapsed_secs {
