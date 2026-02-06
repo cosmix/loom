@@ -133,10 +133,12 @@ pub struct Stage {
     pub duration_secs: Option<i64>,
     /// Accumulated execution time in seconds across all attempts.
     /// Only counts time spent in Executing state (excludes backoff/waiting).
+    /// Managed by `begin_attempt()` and `accumulate_attempt_time()` in methods.rs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_secs: Option<i64>,
     /// Timestamp when the current execution attempt started.
     /// Set on each transition to Executing, cleared when attempt ends.
+    /// See `begin_attempt()` and `accumulate_attempt_time()` in methods.rs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attempt_started_at: Option<DateTime<Utc>>,
     pub close_reason: Option<String>,
@@ -380,4 +382,3 @@ impl Default for Stage {
         }
     }
 }
-
