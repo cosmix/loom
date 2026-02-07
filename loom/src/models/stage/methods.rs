@@ -54,7 +54,6 @@ impl Stage {
             fix_attempts: 0,
             sandbox: Default::default(),
             execution_mode: None,
-            fix_attempts: 0,
             max_fix_attempts: None,
             review_reason: None,
         }

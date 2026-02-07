@@ -152,7 +152,6 @@ fn test_serialize_stage_to_markdown_minimal() {
         fix_attempts: 0,
         sandbox: Default::default(),
         execution_mode: None,
-        fix_attempts: 0,
         max_fix_attempts: None,
         review_reason: None,
     };
@@ -212,7 +211,6 @@ fn test_serialize_stage_to_markdown_with_all_fields() {
         fix_attempts: 0,
         sandbox: Default::default(),
         execution_mode: None,
-        fix_attempts: 0,
         max_fix_attempts: None,
         review_reason: None,
     };

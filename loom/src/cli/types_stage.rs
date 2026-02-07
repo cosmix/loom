@@ -157,6 +157,21 @@ pub enum StageCommands {
         stage_id: String,
     },
 
+    /// Dispute acceptance criteria and request human review
+    ///
+    /// Use this when acceptance criteria are incorrect or inappropriate.
+    /// Transitions the stage to NeedsHumanReview so a human can decide
+    /// whether to approve, force-complete, or reject.
+    DisputeCriteria {
+        /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
+        #[arg(value_parser = clap_id_validator)]
+        stage_id: String,
+
+        /// Reason why the acceptance criteria are wrong (max 500 characters)
+        #[arg(value_parser = clap_description_validator)]
+        reason: String,
+    },
+
     /// Manage stage outputs (structured values passed to dependent stages)
     Output {
         #[command(subcommand)]

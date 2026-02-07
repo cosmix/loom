@@ -383,7 +383,6 @@ pub(crate) fn create_stage_from_definition(stage_def: &StageDefinition, plan_id:
         fix_attempts: 0,
         sandbox: stage_def.sandbox.clone(),
         execution_mode: stage_def.execution_mode,
-        fix_attempts: 0,
         max_fix_attempts: None,
         review_reason: None,
     }

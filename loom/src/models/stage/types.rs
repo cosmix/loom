@@ -209,7 +209,7 @@ pub struct Stage {
     /// Critical connections between components
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub wiring: Vec<WiringCheck>,
-    /// Number of check-acceptance runs that found failures (does not change stage status)
+    /// Number of fix attempts made for this stage (acceptance/review cycles)
     #[serde(default)]
     pub fix_attempts: u32,
     /// Per-stage sandbox configuration
@@ -218,9 +218,6 @@ pub struct Stage {
     /// Hint for execution mode (single agent vs team)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_mode: Option<ExecutionMode>,
-    /// Number of fix attempts made for this stage (acceptance/review cycles)
-    #[serde(default)]
-    pub fix_attempts: u32,
     /// Maximum fix attempts allowed (None = use default of 3)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_fix_attempts: Option<u32>,
@@ -502,7 +499,6 @@ impl Default for Stage {
             fix_attempts: 0,
             sandbox: Default::default(),
             execution_mode: None,
-            fix_attempts: 0,
             max_fix_attempts: None,
             review_reason: None,
         }
