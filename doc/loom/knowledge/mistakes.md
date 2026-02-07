@@ -719,3 +719,9 @@ Two plan criteria caused false negatives in integration-verify:
 
 - **Fixed 4 issues: stdin take() cap, DRY validation, defense-in-depth, accurate error message**
   - _Rationale:_ Security review found unbounded stdin read. Architecture review found duplicate validation and missing defense-in-depth. Both found bytes-vs-chars mismatch in error message.
+
+## Promoted from Memory [2026-02-07 15:38]
+
+### Notes
+
+- Knowledge bootstrap for fix-merge-session-respawn: Coverage 83% (15/18). Existing knowledge well covers merge/session handling: Progressive Merge Pattern, Merge Lock, Session Lifecycle, Phantom Merges. Plan targets auto_merge.rs (AutoMergeResult enum) and merge_handler.rs (session tracking + signal cleanup). No knowledge gaps found.
