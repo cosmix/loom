@@ -59,24 +59,6 @@ pub enum MonitorEvent {
         context_percent: Option<f32>,
         last_tool: Option<String>,
     },
-    /// Session recovery initiated
-    RecoveryInitiated {
-        stage_id: String,
-        session_id: String,
-        recovery_type: RecoveryType,
-    },
-    /// Stage has exceeded maximum failure count
-    StageEscalated {
-        stage_id: String,
-        failure_count: u32,
-        reason: String,
-    },
-    /// PreCompact hook fired - context refresh needed
-    ContextRefreshNeeded {
-        stage_id: String,
-        session_id: String,
-        context_percent: f32,
-    },
     /// Context budget has been exceeded - forced handoff required
     BudgetExceeded {
         session_id: String,
@@ -89,17 +71,4 @@ pub enum MonitorEvent {
         stage_id: String,
         review_reason: Option<String>,
     },
-}
-
-/// Type of recovery being initiated
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RecoveryType {
-    /// Recovering from a crashed session (PID dead)
-    Crash,
-    /// Recovering from a hung session (PID alive, no heartbeat)
-    Hung,
-    /// Recovering from context exhaustion (graceful refresh)
-    ContextRefresh,
-    /// Manual recovery triggered by user
-    Manual,
 }

@@ -72,12 +72,6 @@ impl HandoffContent {
         self
     }
 
-    /// Set test status
-    pub fn with_test_status(mut self, status: Option<String>) -> Self {
-        self.test_status = status;
-        self
-    }
-
     /// Add modified files
     pub fn with_files_modified(mut self, files: Vec<String>) -> Self {
         self.files_modified = files;

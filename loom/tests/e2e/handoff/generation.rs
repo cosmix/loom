@@ -36,7 +36,6 @@ fn test_handoff_generation() {
             "Follows Rust best practices".to_string(),
         )])
         .with_current_branch(Some("feat-test-feature".to_string()))
-        .with_test_status(Some("2 passing, 1 pending".to_string()))
         .with_files_modified(vec![
             "src/test_feature.rs".to_string(),
             "tests/test_feature_tests.rs".to_string(),
@@ -168,7 +167,6 @@ fn test_handoff_content_builder_chain() {
             ("Decision B".to_string(), "Reason B".to_string()),
         ])
         .with_current_branch(Some("test-branch".to_string()))
-        .with_test_status(Some("all passing".to_string()))
         .with_files_modified(vec!["file1.rs".to_string(), "file2.rs".to_string()])
         .with_next_steps(vec![
             "Step 1".to_string(),
@@ -184,7 +182,7 @@ fn test_handoff_content_builder_chain() {
     assert_eq!(content.completed_work.len(), 2);
     assert_eq!(content.decisions.len(), 2);
     assert_eq!(content.current_branch, Some("test-branch".to_string()));
-    assert_eq!(content.test_status, Some("all passing".to_string()));
+    assert_eq!(content.test_status, None);
     assert_eq!(content.files_modified.len(), 2);
     assert_eq!(content.next_steps.len(), 3);
     assert_eq!(content.plan_id, Some("plan-xyz".to_string()));

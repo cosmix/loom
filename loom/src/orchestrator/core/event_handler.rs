@@ -130,36 +130,6 @@ impl EventHandler for Orchestrator {
                 } => {
                     // Heartbeat events are silent - just used for internal tracking
                 }
-                MonitorEvent::RecoveryInitiated {
-                    stage_id,
-                    session_id,
-                    recovery_type,
-                } => {
-                    clear_status_line();
-                    eprintln!(
-                        "Recovery initiated for stage '{stage_id}' (session '{session_id}', type: {recovery_type:?})"
-                    );
-                }
-                MonitorEvent::StageEscalated {
-                    stage_id,
-                    failure_count,
-                    reason,
-                } => {
-                    clear_status_line();
-                    eprintln!(
-                        "Stage '{stage_id}' escalated after {failure_count} failures: {reason}"
-                    );
-                }
-                MonitorEvent::ContextRefreshNeeded {
-                    stage_id,
-                    session_id,
-                    context_percent,
-                } => {
-                    clear_status_line();
-                    eprintln!(
-                        "Context refresh needed for stage '{stage_id}' (session '{session_id}', context at {context_percent:.1}%)"
-                    );
-                }
                 MonitorEvent::BudgetExceeded {
                     session_id,
                     stage_id,

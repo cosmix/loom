@@ -93,18 +93,6 @@ impl HandoffV2 {
         self
     }
 
-    /// Set discovered facts
-    pub fn with_discovered_facts(mut self, facts: Vec<String>) -> Self {
-        self.discovered_facts = facts;
-        self
-    }
-
-    /// Set open questions
-    pub fn with_open_questions(mut self, questions: Vec<String>) -> Self {
-        self.open_questions = questions;
-        self
-    }
-
     /// Set next actions
     pub fn with_next_actions(mut self, actions: Vec<String>) -> Self {
         self.next_actions = actions;
@@ -130,6 +118,7 @@ impl HandoffV2 {
     }
 
     /// Set files read
+    #[cfg(test)]
     pub fn with_files_read(mut self, files: Vec<FileRef>) -> Self {
         self.files_read = files;
         self

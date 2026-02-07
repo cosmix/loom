@@ -48,19 +48,93 @@ pub fn compute_hash(content: &str) -> String {
     hex::encode(&result[..8])
 }
 
+// ── Shared content blocks ────────────────────────────────────────────
+
+/// Append path boundaries table (shared by standard and integration-verify prefixes)
+fn append_path_boundaries(content: &mut String) {
+    content.push_str("### Path Boundaries\n\n");
+    content.push_str("| Type | Paths |\n");
+    content.push_str("|------|-------|\n");
+    content
+        .push_str("| **ALLOWED** | `.` (this worktree), `.work/` (symlink to orchestration) |\n");
+    content.push_str(
+        "| **FORBIDDEN** | `../..`, absolute paths to main repo, any path outside worktree |\n\n",
+    );
+}
+
+/// Append subagent restrictions (shared by standard and integration-verify, last line differs)
+fn append_subagent_restrictions(content: &mut String, agents_role: &str) {
+    content.push_str("**Subagent Restrictions (CRITICAL - PREVENTS LOST WORK):**\n\n");
+    content.push_str("When spawning subagents via Task tool, they MUST be told:\n");
+    content.push_str("- ⛔ **NEVER run `git commit`** - only the main agent commits\n");
+    content.push_str(
+        "- ⛔ **NEVER run `loom stage complete`** - only the main agent completes stages\n",
+    );
+    content.push_str("- ⛔ **NEVER run `git add -A` or `git add .`** - only specific files\n");
+    content.push_str(agents_role);
+}
+
+/// Append completion rules shared between standard and integration-verify prefixes
+fn append_completion_rules(content: &mut String) {
+    content.push_str("- **Verify acceptance criteria** before marking stage complete\n");
+    content.push_str("- **Create handoff** if context exceeds 75%\n");
+    content.push_str("- **IMPORTANT: Before running `loom stage complete`, ensure you are at the worktree root directory**\n");
+    content.push_str("- **If acceptance criteria fail**: Fix the issues and run `loom stage complete <stage-id>` again\n");
+    content.push_str("- **NEVER use `loom stage retry` from an active session** — it creates a parallel session\n\n");
+}
+
+/// Append binary usage, state files, and context recovery (shared by all prefix types)
+fn append_common_footer(content: &mut String) {
+    content.push_str("**Binary Usage (CRITICAL when working on loom):**\n");
+    content.push_str("- **ALWAYS use `loom`** - the installed binary from PATH\n");
+    content.push_str("- **NEVER use `target/debug/loom`** or `./loom/target/debug/loom`\n");
+    content.push_str("- Development binaries cause version mismatches and state corruption\n\n");
+    content.push_str("**State Files (CRITICAL):**\n");
+    content.push_str("- **NEVER edit `.work/` files directly** - always use loom CLI\n");
+    content.push_str("- State is managed by the orchestrator, not by agents\n");
+    content.push_str("- Direct edits corrupt state and cause phantom completions\n\n");
+    content.push_str("**Context Recovery (after compaction):**\n\n");
+    content.push_str("If your context was recently compacted or you feel disoriented:\n");
+    content.push_str("1. Run: `loom memory list` (see your session notes)\n");
+    content.push_str("2. Check: `.work/handoffs/` for handoff files for your stage\n");
+    content.push_str("3. Read the latest handoff to restore working context\n");
+    content.push_str("4. Resume from where you left off - do NOT restart from scratch\n\n");
+}
+
+/// Append git staging rules with danger box (standard prefix only)
+fn append_git_staging_full(content: &mut String) {
+    content.push_str("**Git Staging (CRITICAL - READ CAREFULLY):**\n\n");
+    content.push_str("```text\n");
+    content.push_str("  ⛔ DANGER: .work is a SYMLINK to shared state in worktrees\n");
+    content.push_str("     Committing it CORRUPTS the main repository!\n");
+    content.push_str("```\n\n");
+    append_git_staging_rules(content);
+    content.push_str("**Example:**\n");
+    content.push_str("```bash\n");
+    content.push_str("# CORRECT:\n");
+    content.push_str("git add src/main.rs src/lib.rs tests/\n\n");
+    content.push_str("# WRONG (will stage .work):\n");
+    content.push_str("git add -A  # DON'T DO THIS\n");
+    content.push_str("git add .   # DON'T DO THIS\n");
+    content.push_str("```\n\n");
+}
+
+/// Append the 3 core git staging rules (shared by standard and integration-verify)
+fn append_git_staging_rules(content: &mut String) {
+    content
+        .push_str("- **ALWAYS** use `git add <specific-files>` - stage only files you modified\n");
+    content.push_str("- **NEVER** use `git add -A`, `git add --all`, or `git add .`\n");
+    content
+        .push_str("- **NEVER** stage `.work` - it is orchestration state shared across stages\n\n");
+}
+
+// ── Prefix generators ────────────────────────────────────────────────
+
 /// Stable prefix content that rarely changes (Manus KV-cache pattern)
-///
-/// This section contains:
-/// - Fixed header with execution rules
-/// - Worktree context and isolation boundaries
-/// - CLAUDE.md rule reminders
-///
-/// These elements are constant across signals for the same agent type,
-/// enabling KV-cache reuse when the LLM sees the same prefix.
 pub fn generate_stable_prefix() -> String {
     let mut content = String::new();
 
-    // Fixed header that NEVER changes
+    // Worktree context header
     content.push_str("## Worktree Context\n\n");
     content.push_str(
         "You are in an **isolated git worktree**. This signal contains everything you need:\n\n",
@@ -71,7 +145,7 @@ pub fn generate_stable_prefix() -> String {
         "- **Commit to your worktree branch** - it will be merged after verification\n\n",
     );
 
-    // Explicit isolation boundaries
+    // Isolation boundaries
     content.push_str("**Isolation Boundaries (STRICT):**\n\n");
     content.push_str("- You are **CONFINED** to this worktree - do not access files outside it\n");
     content.push_str(
@@ -80,23 +154,15 @@ pub fn generate_stable_prefix() -> String {
     content
         .push_str("- Git commands must target THIS worktree only - no `git -C`, no `cd ../..`\n\n");
 
-    // Path boundaries subsection
-    content.push_str("### Path Boundaries\n\n");
-    content.push_str("| Type | Paths |\n");
-    content.push_str("|------|-------|\n");
-    content
-        .push_str("| **ALLOWED** | `.` (this worktree), `.work/` (symlink to orchestration) |\n");
-    content.push_str(
-        "| **FORBIDDEN** | `../..`, absolute paths to main repo, any path outside worktree |\n\n",
-    );
+    append_path_boundaries(&mut content);
 
-    // working_dir reminder for acceptance criteria
+    // working_dir reminder
     content.push_str(
         "**working_dir Reminder:** Acceptance criteria execute from `WORKTREE + working_dir`.\n",
     );
     content.push_str("Check the Target section below for the exact execution path.\n\n");
 
-    // Add reminder to follow CLAUDE.md rules
+    // Execution rules
     content.push_str("## Execution Rules\n\n");
     content.push_str("Follow your `~/.claude/CLAUDE.md` and project `CLAUDE.md` rules (both are symlinked into this worktree). Key reminders:\n\n");
     content.push_str("**Worktree Isolation (CRITICAL):**\n");
@@ -113,14 +179,10 @@ pub fn generate_stable_prefix() -> String {
     content.push_str("- Pattern: `Task(subagent_type=\"software-engineer\", prompt=\"...\")` - send MULTIPLE in ONE message\n");
     content.push_str("- Agents: `software-engineer`, `senior-software-engineer`, `Explore`\n");
     content.push_str("- Skills: /auth, /testing, /ci-cd, /logging-observability\n\n");
-    content.push_str("**Subagent Restrictions (CRITICAL - PREVENTS LOST WORK):**\n\n");
-    content.push_str("When spawning subagents via Task tool, they MUST be told:\n");
-    content.push_str("- ⛔ **NEVER run `git commit`** - only the main agent commits\n");
-    content.push_str(
-        "- ⛔ **NEVER run `loom stage complete`** - only the main agent completes stages\n",
+    append_subagent_restrictions(
+        &mut content,
+        "- Subagents write code and report results; main agent handles git\n\n",
     );
-    content.push_str("- ⛔ **NEVER run `git add -A` or `git add .`** - only specific files\n");
-    content.push_str("- Subagents write code and report results; main agent handles git\n\n");
     content.push_str("**Agent Teams (WHEN AVAILABLE):**\n\n");
     content.push_str("If CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 is set, you can create\n");
     content.push_str("agent teams for richer coordination than subagents:\n");
@@ -138,11 +200,7 @@ pub fn generate_stable_prefix() -> String {
         .push_str("- Keep context for coordination (<40% utilization), delegate implementation\n");
     content.push_str("- Shut down ALL teammates before completing the stage\n\n");
     content.push_str("**Completion:**\n");
-    content.push_str("- **Verify acceptance criteria** before marking stage complete\n");
-    content.push_str("- **Create handoff** if context exceeds 75%\n");
-    content.push_str("- **IMPORTANT: Before running `loom stage complete`, ensure you are at the worktree root directory**\n");
-    content.push_str("- **If acceptance criteria fail**: Fix the issues and run `loom stage complete <stage-id>` again\n");
-    content.push_str("- **NEVER use `loom stage retry` from an active session** — it creates a parallel session\n\n");
+    append_completion_rules(&mut content);
     content.push_str("**Stage Memory - MEMORY ONLY (MANDATORY):**\n\n");
     content.push_str("```text\n");
     content.push_str("⚠️  IMPLEMENTATION STAGES USE `loom memory` ONLY - NEVER `loom knowledge`\n");
@@ -156,62 +214,23 @@ pub fn generate_stable_prefix() -> String {
     content.push_str("- **FORBIDDEN**: `loom knowledge update` commands - these are ONLY for knowledge-bootstrap and integration-verify stages\n");
     content
         .push_str("- Memory entries persist across sessions - they will be reviewed and curated into knowledge during integration-verify\n\n");
-    content.push_str("**Git Staging (CRITICAL - READ CAREFULLY):**\n\n");
-    content.push_str("```text\n");
-    content.push_str("  ⛔ DANGER: .work is a SYMLINK to shared state in worktrees\n");
-    content.push_str("     Committing it CORRUPTS the main repository!\n");
-    content.push_str("```\n\n");
-    content
-        .push_str("- **ALWAYS** use `git add <specific-files>` - stage only files you modified\n");
-    content.push_str("- **NEVER** use `git add -A`, `git add --all`, or `git add .`\n");
-    content
-        .push_str("- **NEVER** stage `.work` - it is orchestration state shared across stages\n\n");
-    content.push_str("**Example:**\n");
-    content.push_str("```bash\n");
-    content.push_str("# CORRECT:\n");
-    content.push_str("git add src/main.rs src/lib.rs tests/\n\n");
-    content.push_str("# WRONG (will stage .work):\n");
-    content.push_str("git add -A  # DON'T DO THIS\n");
-    content.push_str("git add .   # DON'T DO THIS\n");
-    content.push_str("```\n\n");
-    content.push_str("**Binary Usage (CRITICAL when working on loom):**\n");
-    content.push_str("- **ALWAYS use `loom`** - the installed binary from PATH\n");
-    content.push_str("- **NEVER use `target/debug/loom`** or `./loom/target/debug/loom`\n");
-    content.push_str("- Development binaries cause version mismatches and state corruption\n\n");
-    content.push_str("**State Files (CRITICAL):**\n");
-    content.push_str("- **NEVER edit `.work/` files directly** - always use loom CLI\n");
-    content.push_str("- State is managed by the orchestrator, not by agents\n");
-    content.push_str("- Direct edits corrupt state and cause phantom completions\n\n");
-
-    // Context recovery instructions
-    content.push_str("**Context Recovery (after compaction):**\n\n");
-    content.push_str("If your context was recently compacted or you feel disoriented:\n");
-    content.push_str("1. Run: `loom memory list` (see your session notes)\n");
-    content.push_str("2. Check: `.work/handoffs/` for handoff files for your stage\n");
-    content.push_str("3. Read the latest handoff to restore working context\n");
-    content.push_str("4. Resume from where you left off - do NOT restart from scratch\n\n");
+    append_git_staging_full(&mut content);
+    append_common_footer(&mut content);
 
     content
 }
 
 /// Stable prefix for integration-verify stages (final quality gate)
-///
-/// Integration-verify stages have unique rules:
-/// - Run in a worktree like standard stages
-/// - ZERO TOLERANCE for issues - ALL warnings and errors must be fixed
-/// - Nothing is "pre-existing" or "too trivial" - fix everything
-/// - Final gate before merge - no shortcuts
-/// - Can update knowledge (curate learnings)
 pub fn generate_integration_verify_stable_prefix() -> String {
     let mut content = String::new();
 
-    // Fixed header for integration-verify stages
+    // Integration-verify header
     content.push_str("## Integration Verification Context\n\n");
     content.push_str(
         "You are running an **integration-verify stage** - the **FINAL QUALITY GATE** before merge.\n\n",
     );
 
-    // ZERO TOLERANCE emphasis
+    // Zero tolerance
     content.push_str("**ZERO TOLERANCE FOR ISSUES:**\n\n");
     content.push_str("- **ALL** compiler warnings must be fixed - not suppressed, FIXED\n");
     content.push_str("- **ALL** linter errors must be resolved - no exceptions\n");
@@ -221,6 +240,7 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content
         .push_str("- **NOTHING** is \"too trivial\" - small issues compound into big problems\n\n");
 
+    // Mission
     content.push_str("**Your Mission:**\n\n");
     content.push_str("1. **REVIEW** code for quality, security, and correctness issues\n");
     content.push_str("2. **FIX** every warning, error, and issue you encounter\n");
@@ -228,7 +248,7 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("4. **TEST** that the feature actually works end-to-end\n");
     content.push_str("5. **PROMOTE** valuable learnings to knowledge\n\n");
 
-    // Code review execution strategy box
+    // Code review box
     content.push_str("```text\n");
     content.push_str("┌────────────────────────────────────────────────────────────────────┐\n");
     content.push_str("│  🔍 CODE REVIEW + VERIFICATION EXECUTION STRATEGY                  │\n");
@@ -244,7 +264,7 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("└────────────────────────────────────────────────────────────────────┘\n");
     content.push_str("```\n\n");
 
-    // Agent Teams guidance for integration verification
+    // Agent teams for IV
     content.push_str("**Agent Teams for Integration Verification:**\n\n");
     content.push_str("Consider using an agent team for multi-dimension review and verification:\n");
     content.push_str("- Security review teammate: OWASP, auth, secrets, dependencies\n");
@@ -256,28 +276,20 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("- Knowledge curation teammate: review memory, curate to knowledge\n");
     content.push_str("Teams allow verification tasks to coordinate on discovered issues.\n\n");
 
-    // Worktree isolation
+    // Isolation + path boundaries (shared)
     content.push_str("**Isolation Boundaries (STRICT):**\n\n");
     content.push_str("- You are **CONFINED** to this worktree - do not access files outside it\n");
     content
         .push_str("- Git commands must target THIS worktree only - no `git -C`, no `cd ../..`\n\n");
 
-    // Path boundaries
-    content.push_str("### Path Boundaries\n\n");
-    content.push_str("| Type | Paths |\n");
-    content.push_str("|------|-------|\n");
-    content
-        .push_str("| **ALLOWED** | `.` (this worktree), `.work/` (symlink to orchestration) |\n");
-    content.push_str(
-        "| **FORBIDDEN** | `../..`, absolute paths to main repo, any path outside worktree |\n\n",
-    );
+    append_path_boundaries(&mut content);
 
+    // Execution rules
     content.push_str("## Execution Rules\n\n");
     content.push_str(
         "Follow your `~/.claude/CLAUDE.md` and project `CLAUDE.md` rules. Key reminders:\n\n",
     );
 
-    // Delegation guidance
     content.push_str("**Delegation & Efficiency (CRITICAL):**\n\n");
     content.push_str("**USE THE TASK TOOL** to spawn parallel subagents for verification:\n");
     content.push_str("- Run tests, linting, and build checks in parallel where possible\n");
@@ -285,24 +297,16 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("- Agents: `software-engineer`, `senior-software-engineer`, `Explore`\n");
     content.push_str("- Skills: /testing, /auth, /ci-cd, /logging-observability\n\n");
 
-    content.push_str("**Subagent Restrictions (CRITICAL - PREVENTS LOST WORK):**\n\n");
-    content.push_str("When spawning subagents via Task tool, they MUST be told:\n");
-    content.push_str("- ⛔ **NEVER run `git commit`** - only the main agent commits\n");
-    content.push_str(
-        "- ⛔ **NEVER run `loom stage complete`** - only the main agent completes stages\n",
+    append_subagent_restrictions(
+        &mut content,
+        "- Subagents fix issues and report results; main agent handles git\n\n",
     );
-    content.push_str("- ⛔ **NEVER run `git add -A` or `git add .`** - only specific files\n");
-    content.push_str("- Subagents fix issues and report results; main agent handles git\n\n");
 
     content.push_str("**Completion:**\n");
     content.push_str(
         "- **Fix ALL issues** - do not mark complete with any warnings or errors remaining\n",
     );
-    content.push_str("- **Verify acceptance criteria** before marking stage complete\n");
-    content.push_str("- **Create handoff** if context exceeds 75%\n");
-    content.push_str("- **IMPORTANT: Before running `loom stage complete`, ensure you are at the worktree root directory**\n");
-    content.push_str("- **If acceptance criteria fail**: Fix the issues and run `loom stage complete <stage-id>` again\n");
-    content.push_str("- **NEVER use `loom stage retry` from an active session** — it creates a parallel session\n\n");
+    append_completion_rules(&mut content);
 
     // Knowledge curation
     content.push_str("**Knowledge Curation (CAN UPDATE KNOWLEDGE):**\n\n");
@@ -315,45 +319,20 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     );
     content.push_str("4. DO NOT blindly copy entries — synthesize and curate\n\n");
 
-    // Git staging
+    // Git staging (shorter version)
     content.push_str("**Git Staging (CRITICAL):**\n");
-    content
-        .push_str("- **ALWAYS** use `git add <specific-files>` - stage only files you modified\n");
-    content.push_str("- **NEVER** use `git add -A`, `git add --all`, or `git add .`\n");
-    content
-        .push_str("- **NEVER** stage `.work` - it is orchestration state shared across stages\n\n");
+    append_git_staging_rules(&mut content);
 
-    content.push_str("**Binary Usage (CRITICAL when working on loom):**\n");
-    content.push_str("- **ALWAYS use `loom`** - the installed binary from PATH\n");
-    content.push_str("- **NEVER use `target/debug/loom`** or `./loom/target/debug/loom`\n");
-    content.push_str("- Development binaries cause version mismatches and state corruption\n\n");
-    content.push_str("**State Files (CRITICAL):**\n");
-    content.push_str("- **NEVER edit `.work/` files directly** - always use loom CLI\n");
-    content.push_str("- State is managed by the orchestrator, not by agents\n");
-    content.push_str("- Direct edits corrupt state and cause phantom completions\n\n");
-
-    // Context recovery instructions
-    content.push_str("**Context Recovery (after compaction):**\n\n");
-    content.push_str("If your context was recently compacted or you feel disoriented:\n");
-    content.push_str("1. Run: `loom memory list` (see your session notes)\n");
-    content.push_str("2. Check: `.work/handoffs/` for handoff files for your stage\n");
-    content.push_str("3. Read the latest handoff to restore working context\n");
-    content.push_str("4. Resume from where you left off - do NOT restart from scratch\n\n");
+    append_common_footer(&mut content);
 
     content
 }
 
 /// Stable prefix for knowledge stages (runs in main repo, no worktree)
-///
-/// Knowledge stages have different rules:
-/// - Run in the main repository, not a worktree
-/// - No commits or merges required
-/// - Focus on exploring codebase and populating doc/loom/knowledge/
-/// - No git staging restrictions (they don't commit)
 pub fn generate_knowledge_stable_prefix() -> String {
     let mut content = String::new();
 
-    // Fixed header for knowledge stages
+    // Knowledge header
     content.push_str("## Knowledge Stage Context\n\n");
     content.push_str(
         "You are running a **knowledge-gathering stage** in the **main repository**.\n\n",
@@ -367,7 +346,7 @@ pub fn generate_knowledge_stable_prefix() -> String {
         "- **EXPLORATION FOCUS** - Your goal is to understand and document the codebase\n\n",
     );
 
-    // What knowledge stages DO
+    // Mission
     content.push_str("**Your Mission:**\n\n");
     content.push_str("1. **Explore** the codebase hierarchically (entry points → modules → patterns → conventions)\n");
     content.push_str(
@@ -375,7 +354,7 @@ pub fn generate_knowledge_stable_prefix() -> String {
     );
     content.push_str("3. **Verify** acceptance criteria before completing\n\n");
 
-    // Agent Teams guidance for knowledge bootstrap
+    // Agent teams for knowledge
     content.push_str("**Agent Teams for Knowledge Bootstrap:**\n\n");
     content.push_str("Consider using an agent team for coordinated exploration:\n");
     content.push_str("- Architecture explorer: component relationships, data flow\n");
@@ -383,7 +362,7 @@ pub fn generate_knowledge_stable_prefix() -> String {
     content.push_str("- Conventions explorer: naming, file structure, testing patterns\n");
     content.push_str("Teams allow explorers to share discoveries that inform each other.\n\n");
 
-    // Add prominent knowledge update reminder box for knowledge stages
+    // Record discoveries box
     content.push_str("```text\n");
     content.push_str("┌────────────────────────────────────────────────────────────────────┐\n");
     content.push_str("│  📝 RECORD YOUR DISCOVERIES                                        │\n");
@@ -398,7 +377,7 @@ pub fn generate_knowledge_stable_prefix() -> String {
     content.push_str("└────────────────────────────────────────────────────────────────────┘\n");
     content.push_str("```\n\n");
 
-    // Add reminder to follow CLAUDE.md rules
+    // Execution rules
     content.push_str("## Execution Rules\n\n");
     content.push_str(
         "Follow your `~/.claude/CLAUDE.md` and project `CLAUDE.md` rules. Key reminders:\n\n",
@@ -415,24 +394,9 @@ pub fn generate_knowledge_stable_prefix() -> String {
     content.push_str("- **Run `loom stage complete <stage-id>`** when done (from the repo root)\n");
     content.push_str("- **If acceptance criteria fail**: Fix the issues and run `loom stage complete <stage-id>` again\n");
     content.push_str("- **NEVER use `loom stage retry` from an active session** — it creates a parallel session\n\n");
-    content.push_str("**Binary Usage (CRITICAL when working on loom):**\n");
-    content.push_str("- **ALWAYS use `loom`** - the installed binary from PATH\n");
-    content.push_str("- **NEVER use `target/debug/loom`** or `./loom/target/debug/loom`\n");
-    content.push_str("- Development binaries cause version mismatches and state corruption\n\n");
-    content.push_str("**State Files (CRITICAL):**\n");
-    content.push_str("- **NEVER edit `.work/` files directly** - always use loom CLI\n");
-    content.push_str("- State is managed by the orchestrator, not by agents\n");
-    content.push_str("- Direct edits corrupt state and cause phantom completions\n\n");
+    append_common_footer(&mut content);
 
-    // Context recovery instructions
-    content.push_str("**Context Recovery (after compaction):**\n\n");
-    content.push_str("If your context was recently compacted or you feel disoriented:\n");
-    content.push_str("1. Run: `loom memory list` (see your session notes)\n");
-    content.push_str("2. Check: `.work/handoffs/` for handoff files for your stage\n");
-    content.push_str("3. Read the latest handoff to restore working context\n");
-    content.push_str("4. Resume from where you left off - do NOT restart from scratch\n\n");
-
-    // Knowledge-specific instructions
+    // Knowledge-specific commands
     content.push_str("**Knowledge Commands:**\n\n");
     content.push_str("```bash\n");
     content.push_str("# Update a knowledge file\n");

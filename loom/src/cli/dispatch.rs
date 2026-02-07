@@ -119,12 +119,12 @@ pub fn dispatch(command: Commands) -> Result<()> {
                 min_coverage,
                 src_path,
                 quiet,
-            } => knowledge::check(min_coverage, src_path, quiet),
+            } => knowledge::check::check(min_coverage, src_path, quiet),
             KnowledgeCommands::Gc {
                 max_file_lines,
                 max_total_lines,
                 quiet,
-            } => knowledge::gc(max_file_lines, max_total_lines, quiet),
+            } => knowledge::gc::gc(max_file_lines, max_total_lines, quiet),
         },
         Commands::Memory { command } => match command {
             MemoryCommands::Note { text, stage } => memory::note(text, stage),

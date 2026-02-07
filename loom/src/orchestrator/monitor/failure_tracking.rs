@@ -85,17 +85,6 @@ impl StageFailureState {
         self.is_escalated = false;
     }
 
-    /// Check if stage should be escalated
-    pub fn should_escalate(&self, max_failures: u32) -> bool {
-        self.consecutive_failures >= max_failures && !self.is_escalated
-    }
-
-    /// Mark as escalated
-    pub fn mark_escalated(&mut self) {
-        self.is_escalated = true;
-        self.last_escalation = Some(Utc::now());
-    }
-
     /// Get the most recent failure
     pub fn last_failure(&self) -> Option<&FailureRecord> {
         self.failure_history.last()
@@ -107,50 +96,30 @@ impl StageFailureState {
 pub struct FailureTracker {
     /// Failure states by stage ID
     states: HashMap<String, StageFailureState>,
-    /// Maximum consecutive failures before escalation
-    max_failures: u32,
 }
 
 impl FailureTracker {
-    /// Create a new failure tracker with default threshold
+    /// Create a new failure tracker
     pub fn new() -> Self {
         Self {
             states: HashMap::new(),
-            max_failures: DEFAULT_MAX_FAILURES,
-        }
-    }
-
-    /// Create with custom threshold
-    pub fn with_max_failures(max_failures: u32) -> Self {
-        Self {
-            states: HashMap::new(),
-            max_failures,
         }
     }
 
     /// Record a failure for a stage
-    ///
-    /// Returns true if this failure triggers an escalation
     pub fn record_failure(
         &mut self,
         stage_id: &str,
         session_id: String,
         failure_type: FailureType,
         description: String,
-    ) -> bool {
+    ) {
         let state = self
             .states
             .entry(stage_id.to_string())
             .or_insert_with(|| StageFailureState::new(stage_id.to_string()));
 
         state.record_failure(session_id, failure_type, description);
-
-        if state.should_escalate(self.max_failures) {
-            state.mark_escalated();
-            true
-        } else {
-            false
-        }
     }
 
     /// Reset failure count for a stage (on success or manual reset)
@@ -158,16 +127,6 @@ impl FailureTracker {
         if let Some(state) = self.states.get_mut(stage_id) {
             state.reset();
         }
-    }
-
-    /// Get failure state for a stage
-    pub fn get_state(&self, stage_id: &str) -> Option<&StageFailureState> {
-        self.states.get(stage_id)
-    }
-
-    /// Get mutable failure state for a stage
-    pub fn get_state_mut(&mut self, stage_id: &str) -> Option<&mut StageFailureState> {
-        self.states.get_mut(stage_id)
     }
 
     /// Check if a stage is currently escalated
@@ -288,42 +247,38 @@ mod tests {
 
     #[test]
     fn test_failure_recording() {
-        let mut tracker = FailureTracker::with_max_failures(3);
+        let mut tracker = FailureTracker::new();
 
-        // Record first two failures - should not escalate
-        let escalated = tracker.record_failure(
+        // Record first two failures
+        tracker.record_failure(
             "stage-1",
             "session-1".to_string(),
             FailureType::SessionCrash,
             "First crash".to_string(),
         );
-        assert!(!escalated);
         assert_eq!(tracker.failure_count("stage-1"), 1);
 
-        let escalated = tracker.record_failure(
+        tracker.record_failure(
             "stage-1",
             "session-2".to_string(),
             FailureType::SessionCrash,
             "Second crash".to_string(),
         );
-        assert!(!escalated);
         assert_eq!(tracker.failure_count("stage-1"), 2);
 
-        // Third failure should trigger escalation
-        let escalated = tracker.record_failure(
+        // Third failure
+        tracker.record_failure(
             "stage-1",
             "session-3".to_string(),
             FailureType::SessionCrash,
             "Third crash".to_string(),
         );
-        assert!(escalated);
         assert_eq!(tracker.failure_count("stage-1"), 3);
-        assert!(tracker.is_escalated("stage-1"));
     }
 
     #[test]
     fn test_reset() {
-        let mut tracker = FailureTracker::with_max_failures(3);
+        let mut tracker = FailureTracker::new();
 
         // Record some failures
         for i in 1..=3 {
@@ -335,7 +290,6 @@ mod tests {
             );
         }
 
-        assert!(tracker.is_escalated("stage-1"));
         assert_eq!(tracker.failure_count("stage-1"), 3);
 
         // Reset
@@ -350,7 +304,7 @@ mod tests {
         let tmp = TempDir::new()?;
         let work_dir = tmp.path();
 
-        let mut tracker = FailureTracker::with_max_failures(3);
+        let mut tracker = FailureTracker::new();
         tracker.record_failure(
             "stage-1",
             "session-1".to_string(),
@@ -361,7 +315,7 @@ mod tests {
         tracker.save_to_work_dir(work_dir)?;
 
         // Create new tracker and load
-        let mut loaded_tracker = FailureTracker::with_max_failures(3);
+        let mut loaded_tracker = FailureTracker::new();
         loaded_tracker.load_from_work_dir(work_dir)?;
 
         assert_eq!(loaded_tracker.failure_count("stage-1"), 1);

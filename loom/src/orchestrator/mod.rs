@@ -16,7 +16,6 @@ pub use continuation::{
     ContinuationContext,
 };
 pub use core::{Orchestrator, OrchestratorConfig, OrchestratorResult};
-pub use monitor::events::RecoveryType;
 pub use monitor::{
     build_failure_info, context_health, context_usage_percent, failure_state_path, heartbeat_path,
     read_heartbeat, remove_heartbeat, write_heartbeat, ContextHealth, FailureRecord,

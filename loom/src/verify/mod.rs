@@ -2,7 +2,6 @@ pub mod baseline;
 pub mod before_after;
 pub mod context;
 pub mod criteria;
-pub mod gates;
 pub mod goal_backward;
 pub mod transitions;
 pub mod utils;
@@ -18,7 +17,6 @@ pub use criteria::{
     run_single_criterion_with_timeout, AcceptanceResult, CriteriaConfig, CriterionResult,
     DEFAULT_COMMAND_TIMEOUT,
 };
-pub use gates::{human_gate, GateConfig, GateDecision};
 pub use goal_backward::{
     run_goal_backward_verification, GapType, GoalBackwardResult, VerificationGap,
 };

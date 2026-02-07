@@ -41,26 +41,6 @@ pub enum FailureType {
     Unknown,
 }
 
-impl FailureType {
-    /// Returns a short human-readable label for the failure type
-    ///
-    /// Used for concise display in status messages, logs, and UI.
-    pub fn short_label(&self) -> &'static str {
-        match self {
-            FailureType::SessionCrash => "crash",
-            FailureType::ContextExhausted => "context",
-            FailureType::TestFailure => "test",
-            FailureType::BuildFailure => "build",
-            FailureType::CodeError => "code",
-            FailureType::Timeout => "timeout",
-            FailureType::UserBlocked => "blocked",
-            FailureType::MergeConflict => "conflict",
-            FailureType::InfrastructureError => "infra",
-            FailureType::Unknown => "unknown",
-        }
-    }
-}
-
 /// Information about a failure that occurred during stage execution.
 ///
 /// This struct captures the type of failure, when it was detected,
