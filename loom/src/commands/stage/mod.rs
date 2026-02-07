@@ -1,7 +1,8 @@
 //! Stage state manipulation
-//! Usage: loom stage <id> [complete|block|reset|ready|merge-complete|recover|verify]
+//! Usage: loom stage <id> [complete|block|reset|ready|merge-complete|recover|verify|check-acceptance]
 
 pub(crate) mod acceptance_runner;
+mod check_acceptance;
 mod complete;
 mod criteria_runner;
 mod knowledge_complete;
@@ -18,6 +19,7 @@ mod verify;
 mod tests;
 
 // Re-export public API
+pub use check_acceptance::check_acceptance;
 pub use complete::complete;
 pub use merge_complete::merge_complete;
 pub use output::{

@@ -79,6 +79,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
                 stage_id,
                 no_reload,
             } => stage::verify(stage_id, no_reload),
+            StageCommands::CheckAcceptance { stage_id } => stage::check_acceptance(stage_id),
             StageCommands::Output { command } => match command {
                 OutputCommands::Set {
                     stage_id,

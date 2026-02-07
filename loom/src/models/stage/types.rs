@@ -209,6 +209,9 @@ pub struct Stage {
     /// Critical connections between components
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub wiring: Vec<WiringCheck>,
+    /// Number of check-acceptance runs that found failures (does not change stage status)
+    #[serde(default)]
+    pub fix_attempts: u32,
     /// Per-stage sandbox configuration
     #[serde(default)]
     pub sandbox: crate::plan::schema::StageSandboxConfig,
@@ -496,6 +499,7 @@ impl Default for Stage {
             truths: Vec::new(),
             artifacts: Vec::new(),
             wiring: Vec::new(),
+            fix_attempts: 0,
             sandbox: Default::default(),
             execution_mode: None,
             fix_attempts: 0,

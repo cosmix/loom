@@ -600,3 +600,14 @@ Two plan criteria caused false negatives in integration-verify:
 
 - **Used parallel Explore subagents (3) for targeted codebase analysis: state machine, CLI/commands, hooks/notifications**
   - _Rationale:_ Coverage already at 100%, so loom map unnecessary. Parallel exploration efficient for gathering integration-point details.
+
+## Promoted from Memory [2026-02-07 13:10]
+
+### Notes
+
+- Stage struct has many explicit constructors in tests/init that don't use ..Default. Adding new fields requires updating ~10 locations. Consider using ..Stage::default() pattern in test helpers.
+
+### Decisions
+
+- **Used max_retries field as the fix_attempts limit (with fallback to DEFAULT_MAX_FIX_ATTEMPTS=3) rather than adding a new max_fix_attempts field. This keeps the Stage struct simpler and reuses an existing concept.**
+  - _Rationale:_ fix_attempts limit should share the same configurable limit as retries since they represent similar concepts of 'how many times to try before escalating'
