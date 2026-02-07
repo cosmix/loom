@@ -741,3 +741,14 @@ Two plan criteria caused false negatives in integration-verify:
   - _Rationale:_ Both arms had identical 20+ line blocks for stage transition, graph update, signal cleanup, and session removal
 - **Used canonical extract_stage_id from fs::stage_files instead of inline parsing**
   - _Rationale:_ Inline logic used different algorithm (strip any leading digits) vs canonical (strip exactly 2 digits). Could disagree on edge cases.
+
+## Promoted from Memory [2026-02-07 16:33]
+
+### Notes
+
+- integration-verify for fix-merge-session-respawn: All acceptance criteria pass. Key fix: ConflictResolutionSpawned now returns Session (not just session_id), enabling merge_handler to track session in active_sessions and persist to disk. Signal files are kept as anti-respawn guards when merge is unresolved.
+
+### Decisions
+
+- **Verified signal file lifecycle: kept on unresolved merge (anti-respawn guard), removed on successful merge. This prevents the poll-cycle respawn bug.**
+  - _Rationale:_ The has_merge_signal_for_stage check in spawn_merge_resolution_sessions guards against respawning when a signal already exists
