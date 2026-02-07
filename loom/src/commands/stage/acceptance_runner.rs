@@ -281,8 +281,10 @@ mod tests {
         std::fs::create_dir_all(&expected_root).unwrap();
         std::fs::create_dir_all(&other_root).unwrap();
 
-        let mut stage = Stage::default();
-        stage.worktree = Some("expected-stage".to_string());
+        let stage = Stage {
+            worktree: Some("expected-stage".to_string()),
+            ..Default::default()
+        };
 
         let original_dir = std::env::current_dir().unwrap();
         std::env::set_current_dir(&other_root).unwrap();
@@ -304,8 +306,10 @@ mod tests {
         let expected_root = temp_dir.path().join(".worktrees/expected-stage");
         std::fs::create_dir_all(&expected_root).unwrap();
 
-        let mut stage = Stage::default();
-        stage.worktree = Some("expected-stage".to_string());
+        let stage = Stage {
+            worktree: Some("expected-stage".to_string()),
+            ..Default::default()
+        };
 
         let original_dir = std::env::current_dir().unwrap();
         std::env::set_current_dir(&expected_root).unwrap();

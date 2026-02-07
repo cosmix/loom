@@ -60,10 +60,12 @@ mod tests {
         let stages_dir = temp.path().join("stages");
         std::fs::create_dir_all(&stages_dir).unwrap();
 
-        let mut stage = Stage::default();
-        stage.id = "test-stage".to_string();
-        stage.name = "Test Stage".to_string();
-        stage.status = status;
+        let stage = Stage {
+            id: "test-stage".to_string(),
+            name: "Test Stage".to_string(),
+            status,
+            ..Default::default()
+        };
 
         let work_dir = temp.path();
         crate::verify::transitions::save_stage(&stage, work_dir).unwrap();
@@ -106,8 +108,10 @@ mod tests {
 
     #[test]
     fn test_dispute_from_invalid_state() {
-        let mut stage = Stage::default();
-        stage.status = StageStatus::Queued;
+        let mut stage = Stage {
+            status: StageStatus::Queued,
+            ..Default::default()
+        };
 
         let result = stage.try_request_human_review("reason".to_string());
         assert!(result.is_err());

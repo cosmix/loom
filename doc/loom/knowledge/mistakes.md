@@ -641,3 +641,14 @@ Two plan criteria caused false negatives in integration-verify:
 
 - **Used crate::daemon::DaemonServer instead of crate::daemon::server::DaemonServer because server module is private**
   - _Rationale:_ daemon/mod.rs re-exports DaemonServer at crate::daemon level
+
+## Promoted from Memory [2026-02-07 14:09]
+
+### Notes
+
+- Code review of merge-conflict-auto-resolver found: (1) String sentinel 'daemon-managed' pattern in merge_resolver.rs - replaced with MergeResolverResult enum for type safety, (2) Missing stage status validation in spawn_merge_resolver - added defensive check for MergeConflict/MergeBlocked status, (3) Inline branch name format 'loom/{}' in progressive_complete.rs:158 - replaced with branch_name_for_stage(), (4) Pre-existing clippy field_reassign_with_default warnings in 3 test files - fixed to use struct initialization with ..Default::default()
+
+### Decisions
+
+- **Fixed 4 issues in code review: replaced string sentinel with enum, added defensive status check, fixed inline branch naming, fixed pre-existing clippy warnings in test code**
+  - _Rationale:_ Code review stage for merge-conflict-auto-resolver. All fixes are backward-compatible and improve type safety. Security review found no critical issues - TOCTOU race in daemon check is low practical risk.

@@ -168,12 +168,14 @@ mod tests {
         let stages_dir = temp.path().join("stages");
         std::fs::create_dir_all(&stages_dir).unwrap();
 
-        let mut stage = Stage::default();
-        stage.id = "test-stage".to_string();
-        stage.name = "Test Stage".to_string();
-        stage.status = status;
-        stage.review_reason = review_reason.map(|s| s.to_string());
-        stage.fix_attempts = 5;
+        let stage = Stage {
+            id: "test-stage".to_string(),
+            name: "Test Stage".to_string(),
+            status,
+            review_reason: review_reason.map(|s| s.to_string()),
+            fix_attempts: 5,
+            ..Default::default()
+        };
 
         crate::verify::transitions::save_stage(&stage, temp.path()).unwrap();
         stage
@@ -231,13 +233,13 @@ mod tests {
 
     #[test]
     fn test_human_review_wrong_state() {
-        let mut stage = Stage::default();
-        stage.status = StageStatus::Queued;
-
         // Queued -> Executing is valid via try_approve_review's inner transition,
         // but the command-level check for NeedsHumanReview status should catch it.
         // Test the transition method directly from a truly invalid state.
-        stage.status = StageStatus::Completed;
+        let mut stage = Stage {
+            status: StageStatus::Completed,
+            ..Default::default()
+        };
         let result = stage.try_approve_review();
         assert!(result.is_err());
     }

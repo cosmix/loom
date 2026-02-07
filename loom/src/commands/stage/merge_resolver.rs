@@ -3,17 +3,25 @@
 //! When the daemon is not running, this module handles spawning
 //! a merge resolution session directly from the CLI.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 use crate::daemon::DaemonServer;
 use crate::git::branch::branch_name_for_stage;
 use crate::models::session::Session;
-use crate::models::stage::Stage;
+use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::continuation::save_session;
 use crate::orchestrator::signals::generate_merge_signal;
 use crate::orchestrator::terminal::native::NativeBackend;
 use crate::orchestrator::terminal::TerminalBackend;
+
+/// Result of attempting to spawn a merge resolver session.
+pub enum MergeResolverResult {
+    /// Daemon is running and will handle merge resolution automatically.
+    DaemonManaged,
+    /// A merge resolver session was spawned with the given session ID.
+    Spawned(String),
+}
 
 /// Spawn a merge conflict resolver session from the CLI.
 ///
@@ -22,24 +30,33 @@ use crate::orchestrator::terminal::TerminalBackend;
 /// since the daemon handles merge resolution automatically.
 ///
 /// # Arguments
-/// * `stage` - The stage with merge conflicts
+/// * `stage` - The stage with merge conflicts (must be in MergeConflict or MergeBlocked status)
 /// * `conflicting_files` - List of files with conflicts
 /// * `merge_point` - The target branch to merge into
 /// * `repo_root` - Path to the main repository root
 /// * `work_dir` - Path to the .work directory
-///
-/// # Returns
-/// * `Ok(session_id)` - The ID of the spawned resolver session
 pub fn spawn_merge_resolver(
     stage: &Stage,
     conflicting_files: &[String],
     merge_point: &str,
     repo_root: &Path,
     work_dir: &Path,
-) -> Result<String> {
+) -> Result<MergeResolverResult> {
+    // Validate stage is in an appropriate status for merge resolution
+    if !matches!(
+        stage.status,
+        StageStatus::MergeConflict | StageStatus::MergeBlocked
+    ) {
+        bail!(
+            "Cannot spawn merge resolver for stage '{}' in status '{}' (expected MergeConflict or MergeBlocked)",
+            stage.id,
+            stage.status
+        );
+    }
+
     // If daemon is running, it handles merge resolution automatically
     if DaemonServer::is_running(work_dir) {
-        return Ok("daemon-managed".to_string());
+        return Ok(MergeResolverResult::DaemonManaged);
     }
 
     // Create terminal backend for spawning
@@ -72,5 +89,5 @@ pub fn spawn_merge_resolver(
     // Save the session file
     save_session(&spawned_session, work_dir).context("Failed to save merge resolver session")?;
 
-    Ok(session_id)
+    Ok(MergeResolverResult::Spawned(session_id))
 }

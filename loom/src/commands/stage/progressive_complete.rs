@@ -80,6 +80,7 @@ pub fn attempt_progressive_merge(
             save_stage(stage, work_dir)?;
 
             // Try to auto-spawn a merge resolver session
+            use super::merge_resolver::MergeResolverResult;
             match super::merge_resolver::spawn_merge_resolver(
                 stage,
                 &conflicting_files,
@@ -87,12 +88,12 @@ pub fn attempt_progressive_merge(
                 repo_root,
                 work_dir,
             ) {
-                Ok(id) if id == "daemon-managed" => {
+                Ok(MergeResolverResult::DaemonManaged) => {
                     println!(
                         "    Daemon is running - merge resolution will be handled automatically."
                     );
                 }
-                Ok(id) => {
+                Ok(MergeResolverResult::Spawned(id)) => {
                     println!("    Spawned merge resolver session: {id}");
                 }
                 Err(e) => {
@@ -155,7 +156,7 @@ pub fn complete_with_merge(stage: &mut Stage, repo_root: &Path, work_dir: &Path)
                         println!("  Removed worktree: .worktrees/{}", stage.id);
                     }
                     if result.branch_deleted {
-                        println!("  Deleted branch: loom/{}", stage.id);
+                        println!("  Deleted branch: {}", branch_name_for_stage(&stage.id));
                     }
                     if !result.warnings.is_empty() {
                         for warning in &result.warnings {
