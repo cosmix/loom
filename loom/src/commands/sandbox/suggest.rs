@@ -4,10 +4,12 @@ use anyhow::Result;
 use std::env;
 use std::path::Path;
 
+use crate::language::{detect_project_languages, DetectedLanguage};
+
 /// Detect project type and suggest sandbox network domains
 pub fn execute() -> Result<()> {
     let current_dir = env::current_dir()?;
-    let suggestions = detect_project_and_suggest(&current_dir)?;
+    let (suggestions, detected_languages) = detect_project_and_suggest(&current_dir)?;
 
     // Print YAML snippet that users can copy to their plan
     println!("# Suggested sandbox configuration for your plan");
@@ -25,22 +27,26 @@ pub fn execute() -> Result<()> {
     }
 
     // Print explanatory text
-    if !suggestions.is_empty() {
+    if !detected_languages.is_empty() {
         println!();
         println!("# Detected project types:");
-        if suggestions.iter().any(|d| d.contains("crates.io")) {
-            println!("#   - Rust (Cargo.toml found)");
+        for lang in &detected_languages {
+            match lang {
+                DetectedLanguage::Rust => {
+                    println!("#   - Rust (Cargo.toml found)");
+                }
+                DetectedLanguage::TypeScript => {
+                    println!("#   - TypeScript/Node.js (package.json or tsconfig.json found)");
+                }
+                DetectedLanguage::Python => {
+                    println!("#   - Python (pyproject.toml or requirements.txt found)");
+                }
+                DetectedLanguage::Go => {
+                    println!("#   - Go (go.mod found)");
+                }
+            }
         }
-        if suggestions.iter().any(|d| d.contains("npmjs")) {
-            println!("#   - Node.js (package.json found)");
-        }
-        if suggestions
-            .iter()
-            .any(|d| d.contains("pypi") || d.contains("pythonhosted"))
-        {
-            println!("#   - Python (requirements.txt or pyproject.toml found)");
-        }
-        if suggestions.iter().any(|d| d.contains("github")) {
+        if !suggestions.is_empty() {
             println!("#   - Git repository");
         }
     }
@@ -48,8 +54,8 @@ pub fn execute() -> Result<()> {
     Ok(())
 }
 
-/// Detect project types and return suggested domains
-fn detect_project_and_suggest(project_root: &Path) -> Result<Vec<String>> {
+/// Detect project types and return suggested domains and detected languages
+fn detect_project_and_suggest(project_root: &Path) -> Result<(Vec<String>, Vec<DetectedLanguage>)> {
     let mut domains = Vec::new();
 
     // Always add git domains (very common)
@@ -57,29 +63,42 @@ fn detect_project_and_suggest(project_root: &Path) -> Result<Vec<String>> {
     domains.push("api.github.com".to_string());
     domains.push("raw.githubusercontent.com".to_string());
 
-    // Check for Rust project
-    if project_root.join("Cargo.toml").exists() {
-        domains.extend_from_slice(&[
-            "crates.io".to_string(),
-            "static.crates.io".to_string(),
-            "static.rust-lang.org".to_string(),
-            "doc.rust-lang.org".to_string(),
-        ]);
+    // Detect project languages using shared module
+    let detected_languages = detect_project_languages(project_root);
+
+    // Map each detected language to its domain list
+    for lang in &detected_languages {
+        match lang {
+            DetectedLanguage::Rust => {
+                domains.extend_from_slice(&[
+                    "crates.io".to_string(),
+                    "static.crates.io".to_string(),
+                    "static.rust-lang.org".to_string(),
+                    "doc.rust-lang.org".to_string(),
+                ]);
+            }
+            DetectedLanguage::TypeScript => {
+                domains.extend_from_slice(&[
+                    "registry.npmjs.org".to_string(),
+                    "npmjs.com".to_string(),
+                ]);
+            }
+            DetectedLanguage::Python => {
+                domains.extend_from_slice(&[
+                    "pypi.org".to_string(),
+                    "files.pythonhosted.org".to_string(),
+                ]);
+            }
+            DetectedLanguage::Go => {
+                domains.extend_from_slice(&[
+                    "proxy.golang.org".to_string(),
+                    "sum.golang.org".to_string(),
+                ]);
+            }
+        }
     }
 
-    // Check for Node.js project
-    if project_root.join("package.json").exists() {
-        domains.extend_from_slice(&["registry.npmjs.org".to_string(), "npmjs.com".to_string()]);
-    }
-
-    // Check for Python project
-    if project_root.join("requirements.txt").exists()
-        || project_root.join("pyproject.toml").exists()
-    {
-        domains.extend_from_slice(&["pypi.org".to_string(), "files.pythonhosted.org".to_string()]);
-    }
-
-    Ok(domains)
+    Ok((domains, detected_languages))
 }
 
 #[cfg(test)]
@@ -100,7 +119,7 @@ mod tests {
         )
         .unwrap();
 
-        let domains = detect_project_and_suggest(project_root).unwrap();
+        let (domains, _languages) = detect_project_and_suggest(project_root).unwrap();
 
         assert!(domains.contains(&"crates.io".to_string()));
         assert!(domains.contains(&"static.crates.io".to_string()));
@@ -115,7 +134,7 @@ mod tests {
         // Create package.json
         fs::write(project_root.join("package.json"), "{}").unwrap();
 
-        let domains = detect_project_and_suggest(project_root).unwrap();
+        let (domains, _languages) = detect_project_and_suggest(project_root).unwrap();
 
         assert!(domains.contains(&"registry.npmjs.org".to_string()));
         assert!(domains.contains(&"npmjs.com".to_string()));
@@ -130,7 +149,7 @@ mod tests {
         // Create requirements.txt
         fs::write(project_root.join("requirements.txt"), "requests==2.28.0").unwrap();
 
-        let domains = detect_project_and_suggest(project_root).unwrap();
+        let (domains, _languages) = detect_project_and_suggest(project_root).unwrap();
 
         assert!(domains.contains(&"pypi.org".to_string()));
         assert!(domains.contains(&"files.pythonhosted.org".to_string()));
@@ -150,7 +169,7 @@ mod tests {
         .unwrap();
         fs::write(project_root.join("package.json"), "{}").unwrap();
 
-        let domains = detect_project_and_suggest(project_root).unwrap();
+        let (domains, _languages) = detect_project_and_suggest(project_root).unwrap();
 
         // Should have Rust domains
         assert!(domains.contains(&"crates.io".to_string()));
@@ -165,7 +184,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let project_root = temp_dir.path();
 
-        let domains = detect_project_and_suggest(project_root).unwrap();
+        let (domains, _languages) = detect_project_and_suggest(project_root).unwrap();
 
         // Should only have Git domains (always included)
         assert!(domains.contains(&"github.com".to_string()));

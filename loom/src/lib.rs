@@ -6,6 +6,7 @@ pub mod fs;
 pub mod git;
 pub mod handoff;
 pub mod hooks;
+pub mod language;
 pub mod map;
 pub mod models;
 pub mod orchestrator;
