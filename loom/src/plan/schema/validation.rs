@@ -407,6 +407,31 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
     }
 }
 
+/// Check if a command string uses a specific build tool at a word boundary.
+///
+/// This prevents false positives like "cargo test" matching the "go " tool pattern,
+/// since the "go " substring appears inside "cargo " but is not a standalone tool invocation.
+fn criterion_uses_build_tool(criterion: &str, tool_cmd: &str) -> bool {
+    let mut search_from = 0;
+    while search_from < criterion.len() {
+        match criterion[search_from..].find(tool_cmd) {
+            Some(relative_pos) => {
+                let abs_pos = search_from + relative_pos;
+                // Check that the character before the match is a word boundary
+                // (start of string, space, pipe, semicolon, ampersand, etc.)
+                let at_word_boundary =
+                    abs_pos == 0 || !criterion.as_bytes()[abs_pos - 1].is_ascii_alphanumeric();
+                if at_word_boundary {
+                    return true;
+                }
+                search_from = abs_pos + 1;
+            }
+            None => break,
+        }
+    }
+    false
+}
+
 /// Validate structural aspects of the plan before execution (pre-flight checks).
 ///
 /// Returns a list of warning messages for issues that don't prevent execution but
@@ -427,9 +452,10 @@ pub fn validate_structural_preflight(
         // Check for working_dir prefix redundancy in acceptance criteria
         if !stage.working_dir.is_empty() && stage.working_dir != "." {
             for (idx, criterion) in stage.acceptance.iter().enumerate() {
-                // Check if criterion starts with the working_dir prefix
-                if criterion.starts_with(&stage.working_dir)
-                    || criterion.starts_with(&format!("{}/", stage.working_dir))
+                // Check if criterion references working_dir as a path prefix
+                // Only match "{working_dir}/" to avoid false positives with CLI commands
+                // that happen to share the same name (e.g. "loom" CLI vs "loom" directory)
+                if criterion.starts_with(&format!("{}/", stage.working_dir))
                     || criterion.contains(&format!(" {}/", stage.working_dir))
                 {
                     warnings.push(format!(
@@ -479,7 +505,9 @@ pub fn validate_structural_preflight(
             // Check if acceptance criteria reference build tools whose config files are missing
             for criterion in &stage.acceptance {
                 for &(tool_cmd, config_file) in BUILD_TOOL_CHECKS {
-                    if criterion.contains(tool_cmd) && !working_dir.join(config_file).exists() {
+                    if criterion_uses_build_tool(criterion, tool_cmd)
+                        && !working_dir.join(config_file).exists()
+                    {
                         warnings.push(format!(
                             "Stage '{}': Acceptance criterion '{}' uses '{}' but {} not found at {}",
                             stage.id,
