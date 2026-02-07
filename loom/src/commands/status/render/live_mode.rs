@@ -15,9 +15,7 @@ use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use crate::daemon::{
     read_auth_token, read_message, write_message, CompletionSummary, Request, Response, StageInfo,
 };
-use crate::utils::{
-    cleanup_terminal, cleanup_terminal_crossterm, format_elapsed, install_terminal_panic_hook,
-};
+use crate::utils::{cleanup_terminal_crossterm, format_elapsed, install_crossterm_panic_hook};
 
 use super::activity::{ActivityLog, ActivityType};
 use super::completion::render_completion_screen;
@@ -46,7 +44,7 @@ impl LiveMode {
 
     /// Run live mode event loop
     pub fn run(&mut self, work_path: &Path) -> Result<()> {
-        install_terminal_panic_hook();
+        install_crossterm_panic_hook();
 
         let socket_path = work_path.join("orchestrator.sock");
         let mut stream = self.connect(&socket_path)?;
@@ -111,7 +109,7 @@ impl LiveMode {
                 auth_token: read_auth_token(Path::new(".work")).unwrap_or_default(),
             },
         );
-        cleanup_terminal();
+        cleanup_terminal_crossterm();
 
         Ok(())
     }

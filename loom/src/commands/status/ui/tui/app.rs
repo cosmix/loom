@@ -1,7 +1,7 @@
 //! TUI application state and main loop.
 
 use std::collections::HashMap;
-use std::io::{self, Stdout, Write};
+use std::io::{self, Stdout};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -104,18 +104,7 @@ impl TuiApp {
 
             // Cleanup crossterm state - must be done in signal handler
             // since Drop may not run on process exit
-            let _ = disable_raw_mode();
-            let mut stdout = std::io::stdout();
-            let _ = crossterm::execute!(
-                stdout,
-                crossterm::event::DisableMouseCapture,
-                LeaveAlternateScreen,
-                crossterm::cursor::Show
-            );
-            // Belt-and-suspenders: raw escape sequences for mouse disable
-            // in case crossterm state tracking is confused
-            let _ = stdout.write_all(b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l");
-            let _ = stdout.flush();
+            crate::utils::cleanup_terminal_crossterm();
 
             std::process::exit(0);
         })
@@ -131,7 +120,7 @@ impl TuiApp {
         self.cleanup_terminal();
 
         // Print completion summary AFTER cleanup since it needs normal terminal
-        if let Some(summary) = self.completion_summary.clone() {
+        if let Some(summary) = self.completion_summary.take() {
             print_completion_summary(&summary);
         }
 
@@ -338,18 +327,6 @@ impl TuiApp {
 
 impl Drop for TuiApp {
     fn drop(&mut self) {
-        // Skip if already cleaned up (e.g., for completion exit)
-        if self.cleaned_up {
-            return;
-        }
-        let _ = disable_raw_mode();
-        if self.mouse_enabled {
-            let _ = crossterm::execute!(
-                self.terminal.backend_mut(),
-                crossterm::event::DisableMouseCapture
-            );
-        }
-        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
-        let _ = self.terminal.show_cursor();
+        self.cleanup_terminal();
     }
 }

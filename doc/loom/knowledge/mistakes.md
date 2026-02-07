@@ -752,3 +752,15 @@ Two plan criteria caused false negatives in integration-verify:
 
 - **Verified signal file lifecycle: kept on unresolved merge (anti-respawn guard), removed on successful merge. This prevents the poll-cycle respawn bug.**
   - _Rationale:_ The has_merge_signal_for_stage check in spawn_merge_resolution_sessions guards against respawning when a signal already exists
+
+## Promoted from Memory [2026-02-07 16:51]
+
+### Notes
+
+- Code review of fix-tui-terminal-cleanup found 5 actionable issues: (1) Drop impl duplicates cleanup_terminal() logic - should delegate, (2) Ctrl+C handler in app.rs inlines cleanup instead of calling cleanup_terminal_crossterm(), (3) live_mode.rs normal exit calls basic cleanup_terminal() not cleanup_terminal_crossterm() - raw mode leak risk, (4) live_mode.rs installs wrong panic hook (terminal not crossterm), (5) unnecessary .clone() on completion_summary - should use .take()
+- Non-actionable findings noted: (1) Race between signal handler cleanup and main-thread cleanup - both write to stdout concurrently. Window is small due to process::exit(0). (2) process::exit(0) skips Drop and unsubscribe in app.rs (live_mode.rs handles this better). (3) TuiApp::new() partial failure could leave raw mode enabled (low risk). (4) No test coverage for cleanup functions (inherently hard to test). (5) render() in app.rs at 79 lines exceeds 50-line limit (pre-existing). (6) run_live_mode/LiveMode may be dead code (pre-existing).
+
+### Decisions
+
+- **Fixed 5 issues in code review: (1) Drop delegates to cleanup_terminal(), (2) Ctrl+C handler calls cleanup_terminal_crossterm() instead of inlining, (3) live_mode normal exit uses cleanup_terminal_crossterm() not basic cleanup, (4) live_mode uses install_crossterm_panic_hook() for correct raw mode handling, (5) completion_summary uses .take() instead of .clone()**
+  - _Rationale:_ Code review found DRY violations, cleanup inconsistencies, and unnecessary clone. All fixes are backward-compatible.
