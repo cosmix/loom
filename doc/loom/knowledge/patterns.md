@@ -179,3 +179,34 @@ Failed stage → loom diagnose <stage-id> → collect DiagnosisContext (crash_re
 ## Signal Generation Update (2026-02-07)
 
 Three stage-type-specific stable prefix generators exist in cache.rs (standard, knowledge, integration-verify). The code-review prefix was removed and its content merged into the integration-verify prefix. Goal-backward verification is required for Standard and IntegrationVerify stages; only Knowledge stages are exempt.
+
+## Before/After Verification Pattern
+
+before_stage and after_stage fields use TruthCheck definitions:
+
+- before_stage: Runs in stage_executor.rs AFTER worktree creation, BEFORE marking Executing
+- after_stage: Runs in complete.rs run_verification_phase() when agent calls loom stage complete
+- Both delegate to verify_truth_checks() - same logic, different lifecycle timing
+- before_stage errors are advisory (logged but don't block) - design decision for resilience
+- Key functions: run_before_stage_checks(), run_after_stage_checks() in verify/before_after.rs
+
+## Regression Test Requirement Pattern
+
+bug_fix + regression_test fields enforce test-driven bug fixes:
+
+- bug_fix: true requires regression_test with file path and must_contain patterns
+- Validation is bidirectional: bug_fix without regression_test fails, regression_test without bug_fix fails
+- verify_regression_test() in goal_backward/artifacts.rs checks file exists, not empty, patterns present
+- regression_test.file validated against path traversal (..) and absolute paths
+
+## Field Propagation Checklist (Updated)
+
+When adding new fields to StageDefinition:
+
+1. plan/schema/types.rs - StageDefinition struct
+2. models/stage/types.rs - Stage struct + Default impl
+3. commands/init/plan_setup.rs - create_stage_from_definition mapping
+4. plan/schema/tests/mod.rs - make_stage() test helper
+5. ALL test files constructing Stage directly (check tests/ directory too!)
+6. plan/schema/validation.rs - validation rules
+7. fs/stage_loading.rs, plan/graph/tests.rs, models/stage/methods.rs - any file constructing Stage

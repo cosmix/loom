@@ -331,20 +331,26 @@ truths:
 
 ## YAML Structure Reference
 
-Loom doesn't have explicit `before_stage` / `after_stage` fields. Instead, capture delta-proof thinking in:
+Loom has explicit `before_stage` and `after_stage` fields that accept TruthCheck definitions. These run at specific points in the stage lifecycle:
 
-### 1. Stage Description (Document the Delta)
+- `before_stage`: Runs BEFORE the agent starts working (verifies pre-conditions in a fresh worktree)
+- `after_stage`: Runs when the agent calls `loom stage complete` (verifies post-conditions)
+
+### 1. Before/After Stage Fields (Explicit Delta Proof)
 
 ```yaml
-description: |
-  Implement feature X.
+before_stage:
+  - command: "cargo test test_feature"
+    exit_code: 1
+    description: "Feature test fails before implementation"
 
-  DELTA PROOF:
-  - BEFORE: <what's true before this stage>
-  - AFTER: <what should be true after this stage>
-
-  [Implementation details...]
+after_stage:
+  - command: "cargo test test_feature"
+    exit_code: 0
+    description: "Feature test passes after implementation"
 ```
+
+Each entry is a TruthCheck with fields: `command` (required), `exit_code` (default 0), `description`, `stdout_contains`, `stdout_not_contains`, `stderr_empty`.
 
 ### 2. Truths (Capture the After State)
 
@@ -373,6 +379,21 @@ artifacts:
   - "tests/feature_tests.rs"
 ```
 
+### 5. Stage Description (Document the Delta)
+
+Also document delta-proof thinking in the stage description for human readers:
+
+```yaml
+description: |
+  Implement feature X.
+
+  DELTA PROOF:
+  - BEFORE: <what's true before this stage>
+  - AFTER: <what should be true after this stage>
+
+  [Implementation details...]
+```
+
 ### Complete Example
 
 ```yaml
@@ -394,6 +415,19 @@ artifacts:
     - Export request_count and response_time gauges
 
   dependencies: ["add-middleware-support"]
+
+  before_stage:
+    - command: "curl -sf localhost:8080/metrics"
+      exit_code: 1
+      description: "Metrics endpoint does not exist yet"
+
+  after_stage:
+    - command: "curl -sf localhost:8080/metrics | grep -q 'request_count'"
+      exit_code: 0
+      description: "Metrics endpoint returns request_count"
+    - command: "curl -sf localhost:8080/metrics | grep -q 'response_time'"
+      exit_code: 0
+      description: "Metrics endpoint returns response_time"
 
   truths:
     - "curl -sf localhost:8080/metrics | grep -q 'request_count'"
@@ -541,6 +575,6 @@ Before/after verification proves your stage changed the system:
 - **Bug fixes**: Before succeeds (bug exists) → After fails (bug gone)
 - **Behavior changes**: Before shows old behavior → After shows new behavior
 
-Use `description` to document the delta, `truths` to capture the after state, `wiring` to prove integration, and `artifacts` to prove files exist.
+Use `before_stage`/`after_stage` for explicit automated delta-proof, `truths` to capture the after state, `wiring` to prove integration, and `artifacts` to prove files exist.
 
 Always think: "What can I measure that PROVES this stage made a difference?"

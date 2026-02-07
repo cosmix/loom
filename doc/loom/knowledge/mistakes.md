@@ -866,3 +866,15 @@ Two plan criteria caused false negatives in integration-verify:
 - integration-verify: handoff command properly wired - Commands enum, dispatch.rs match arm, commands/mod.rs module, clap_id_validator on stage/session args
 - integration-verify: compaction recovery text present in all 3 signal stable prefix generators (standard, knowledge, integration-verify) in cache.rs and in CLAUDE.md.template rule 3b
 - integration-verify: hooks verified - pre-compact.sh has block-then-allow pattern with compaction-pending flag and exit 2, session-end.sh uses glob for stage file lookup, post-tool-use.sh has compaction recovery detection
+
+## Test Files Outside src/ When Adding Struct Fields (2026-02-08)
+
+When adding fields to Stage or StageDefinition, ALWAYS check test files in tests/ directory (integration/helpers.rs, e2e/*, etc.) - not just src/ tests. The before-after-verify stage missed several e2e test files that construct Stage directly, requiring main agent fixes.
+
+## Skill Documentation Freshness (2026-02-08)
+
+When implementing features that change the schema (adding/removing YAML fields), check if any skill files reference the old state. The before-after skill incorrectly stated before_stage/after_stage fields don't exist after they were added. Skill files and feature code should be updated together.
+
+## loom knowledge update Path Resolution (2026-02-08)
+
+When running `loom knowledge update` from a subdirectory (e.g., `loom/`), the CLI creates knowledge files relative to the cwd, not the worktree root. This results in spurious files like `loom/doc/loom/knowledge/` instead of `doc/loom/knowledge/`. Always run knowledge commands from the worktree root.
