@@ -24,9 +24,9 @@ Loom is an agent orchestration system for Claude Code. It coordinates AI agent s
 - macOS: supported for build/terminal integration, CI does build-only verification
 - Windows: not supported (WSL may work but is best-effort)
 
-## Quick Start (Development)
+## Quick Start
 
-Loom is under active development. Build/install locally with Rust toolchain available.
+Loom is under active development and not yet published to GitHub Releases. You need to build locally with the Rust toolchain installed.
 
 ```bash
 git clone https://github.com/cosmix/loom.git
@@ -41,27 +41,16 @@ loom status --live
 loom stop
 ```
 
-## Installation Options
-
-### Dev Install (recommended for contributors)
-
-```bash
-bash ./dev-install.sh
-```
-
-### Install Script
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/cosmix/loom/main/install.sh | bash
-```
+`dev-install.sh` builds the release binary (`cargo build --release`) and runs `install.sh`, which copies agents, skills, hooks, and configuration into `~/.claude/` and the CLI binary to `~/.local/bin/loom`.
 
 ### What Gets Installed
 
 | Location | Contents |
 | --- | --- |
-| `~/.claude/agents/` | Loom agents |
-| `~/.claude/skills/` | Loom skills |
-| `~/.claude/CLAUDE.md` | Loom orchestration guidance |
+| `~/.claude/agents/` | Specialized subagents |
+| `~/.claude/skills/` | Domain knowledge modules |
+| `~/.claude/hooks/loom/` | Session lifecycle hooks |
+| `~/.claude/CLAUDE.md` | Orchestration rules |
 | `~/.local/bin/loom` | Loom CLI |
 
 ## Core Workflow
