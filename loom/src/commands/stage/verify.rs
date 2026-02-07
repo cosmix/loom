@@ -80,7 +80,6 @@ pub fn verify(stage_id: String, no_reload: bool) -> Result<()> {
 
     // Run goal-backward verification if defined
     {
-        let work_dir = Path::new(".work");
         let config = crate::fs::work_dir::load_config_required(work_dir)?;
         let plan_path = config
             .source_path()
