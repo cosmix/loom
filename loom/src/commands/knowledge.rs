@@ -4,7 +4,9 @@
 //! We curate high-level knowledge that helps agents know WHERE to look,
 //! not raw indexing.
 
-use crate::fs::knowledge::{KnowledgeDir, KnowledgeFile};
+use crate::fs::knowledge::{
+    KnowledgeDir, KnowledgeFile, DEFAULT_MAX_FILE_LINES, DEFAULT_MAX_TOTAL_LINES,
+};
 use crate::fs::work_dir::WorkDir;
 use anyhow::{bail, Context, Result};
 use colored::Colorize;
@@ -154,7 +156,7 @@ pub fn gc(max_file_lines: usize, max_total_lines: usize, quiet: bool) -> Result<
     let main_project_root = work_dir
         .main_project_root()
         .context("Could not determine main project root")?;
-    let knowledge = KnowledgeDir::new(&main_project_root);
+    let knowledge = KnowledgeDir::new(main_project_root);
 
     if !knowledge.exists() {
         println!(
@@ -173,11 +175,7 @@ pub fn gc(max_file_lines: usize, max_total_lines: usize, quiet: bool) -> Result<
     // Files section
     println!("{}", "Files:".cyan().bold());
     for file_metric in &metrics.per_file {
-        let has_issues = file_metric.line_count > max_file_lines
-            || !file_metric.duplicate_headers.is_empty()
-            || file_metric.promoted_block_count > 3;
-
-        let icon = if has_issues {
+        let icon = if file_metric.has_issues {
             "⚠".yellow().to_string()
         } else {
             "─".dimmed().to_string()
@@ -210,7 +208,7 @@ pub fn gc(max_file_lines: usize, max_total_lines: usize, quiet: bool) -> Result<
             println!("  2. Merge duplicate headers into single consolidated sections");
             println!("  3. Summarize promoted memory blocks into concise knowledge");
             println!("  4. Remove any content that is no longer accurate");
-            println!("  5. Use the Edit tool directly on doc/loom/knowledge/ files");
+            println!("  5. Edit files directly in doc/loom/knowledge/");
         }
     } else {
         println!(
@@ -309,9 +307,13 @@ pub fn check(min_coverage: u8, src_path: Option<String>, quiet: bool) -> Result<
         }
     }
 
-    // GC advisory (non-blocking)
     if !quiet {
-        if let Ok(gc_metrics) = knowledge.analyze_gc_metrics(200, 800) {
+        print_check_results(&result);
+
+        // GC advisory (non-blocking, shown after main results)
+        if let Ok(gc_metrics) =
+            knowledge.analyze_gc_metrics(DEFAULT_MAX_FILE_LINES, DEFAULT_MAX_TOTAL_LINES)
+        {
             println!();
             println!("{}", "GC Analysis:".cyan().bold());
             for file_metric in &gc_metrics.per_file {
@@ -327,10 +329,7 @@ pub fn check(min_coverage: u8, src_path: Option<String>, quiet: bool) -> Result<
                 }
             }
         }
-    }
 
-    if !quiet {
-        print_check_results(&result);
         println!("\n{} Knowledge check passed", "✓".green().bold());
     }
 

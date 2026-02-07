@@ -652,3 +652,15 @@ Two plan criteria caused false negatives in integration-verify:
 
 - **Fixed 4 issues in code review: replaced string sentinel with enum, added defensive status check, fixed inline branch naming, fixed pre-existing clippy warnings in test code**
   - _Rationale:_ Code review stage for merge-conflict-auto-resolver. All fixes are backward-compatible and improve type safety. Security review found no critical issues - TOCTOU race in daemon check is low practical risk.
+
+## Promoted from Memory [2026-02-07 14:47]
+
+### Notes
+
+- Code review of knowledge GC feature found: (1) duplicated magic number 3 for promoted block threshold, (2) missing Debug derives on GcMetrics structs, (3) presentation logic in gc() re-deriving threshold checks, (4) hardcoded 200/800 defaults in check() duplicating CLI defaults, (5) agent-specific language in compaction instructions, (6) GC advisory output appearing before main check results, (7) inconsistent borrow style. All fixed.
+- Test review noted command-level tests (test_gc_clean, test_gc_large_file) only assert is_ok() without verifying metrics. Unit-level tests in fs/knowledge.rs are solid. No boundary threshold tests exist. Not fixing weak tests in code-review stage - these are advisory findings.
+
+### Decisions
+
+- **Extracted DEFAULT_MAX_FILE_LINES, DEFAULT_MAX_TOTAL_LINES, DEFAULT_MAX_PROMOTED_BLOCKS constants and added has_issues field to FileGcMetrics to be single source of truth for per-file issue detection**
+  - _Rationale:_ Eliminated duplicated threshold logic between analyze_gc_metrics() and gc() presentation code. Constants shared between CLI defaults and check() advisory.

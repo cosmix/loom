@@ -353,6 +353,20 @@ impl KnowledgeDir {
         max_file_lines: usize,
         max_total_lines: usize,
     ) -> Result<GcMetrics> {
+        self.analyze_gc_metrics_with_promoted(
+            max_file_lines,
+            max_total_lines,
+            DEFAULT_MAX_PROMOTED_BLOCKS,
+        )
+    }
+
+    /// Analyze GC metrics with configurable promoted block threshold
+    pub fn analyze_gc_metrics_with_promoted(
+        &self,
+        max_file_lines: usize,
+        max_total_lines: usize,
+        max_promoted_blocks: usize,
+    ) -> Result<GcMetrics> {
         let mut per_file = Vec::new();
         let mut total_lines = 0;
 
@@ -389,11 +403,16 @@ impl KnowledgeDir {
                 .filter(|line| line.starts_with("## Promoted from Memory"))
                 .count();
 
+            let has_issues = line_count > max_file_lines
+                || !duplicate_headers.is_empty()
+                || promoted_block_count > max_promoted_blocks;
+
             per_file.push(FileGcMetrics {
                 file_type: *file_type,
                 line_count,
                 duplicate_headers,
                 promoted_block_count,
+                has_issues,
             });
         }
 
@@ -401,7 +420,6 @@ impl KnowledgeDir {
         let mut reasons = Vec::new();
 
         for file_metrics in &per_file {
-            // Check file size
             if file_metrics.line_count > max_file_lines {
                 reasons.push(format!(
                     "{} has {} lines (max: {})",
@@ -411,7 +429,6 @@ impl KnowledgeDir {
                 ));
             }
 
-            // Check for duplicate headers
             if !file_metrics.duplicate_headers.is_empty() {
                 reasons.push(format!(
                     "{} has duplicate headers: {}",
@@ -420,8 +437,7 @@ impl KnowledgeDir {
                 ));
             }
 
-            // Check for too many promoted blocks
-            if file_metrics.promoted_block_count > 3 {
+            if file_metrics.promoted_block_count > max_promoted_blocks {
                 reasons.push(format!(
                     "{} has {} promoted blocks (consider consolidating)",
                     file_metrics.file_type.filename(),
@@ -430,7 +446,6 @@ impl KnowledgeDir {
             }
         }
 
-        // Check total lines
         if total_lines > max_total_lines {
             reasons.push(format!(
                 "Total lines {} exceeds max {}",
@@ -449,15 +464,27 @@ impl KnowledgeDir {
     }
 }
 
+/// Default maximum lines per knowledge file before GC is recommended
+pub const DEFAULT_MAX_FILE_LINES: usize = 200;
+
+/// Default maximum total lines across all knowledge files before GC is recommended
+pub const DEFAULT_MAX_TOTAL_LINES: usize = 800;
+
+/// Default maximum promoted memory blocks per file before GC is recommended
+pub const DEFAULT_MAX_PROMOTED_BLOCKS: usize = 3;
+
 /// Metrics for a single knowledge file's GC analysis
+#[derive(Debug)]
 pub struct FileGcMetrics {
     pub file_type: KnowledgeFile,
     pub line_count: usize,
     pub duplicate_headers: Vec<String>,
     pub promoted_block_count: usize,
+    pub has_issues: bool,
 }
 
 /// Overall GC metrics across all knowledge files
+#[derive(Debug)]
 pub struct GcMetrics {
     pub total_lines: usize,
     pub per_file: Vec<FileGcMetrics>,

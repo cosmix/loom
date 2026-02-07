@@ -1,6 +1,7 @@
 //! Memory and knowledge CLI command types
 
 use clap::Subcommand;
+use loom::fs::knowledge::{DEFAULT_MAX_FILE_LINES, DEFAULT_MAX_TOTAL_LINES};
 use loom::validation::{clap_description_validator, clap_id_validator};
 
 #[derive(Subcommand)]
@@ -43,14 +44,14 @@ pub enum KnowledgeCommands {
         quiet: bool,
     },
 
-    /// Analyze knowledge files and print compaction instructions
+    /// Analyze knowledge files for size, duplicates, and promoted blocks
     Gc {
         /// Max lines per file before GC is recommended
-        #[arg(long, default_value = "200")]
+        #[arg(long, default_value_t = DEFAULT_MAX_FILE_LINES)]
         max_file_lines: usize,
 
         /// Max total lines before GC is recommended
-        #[arg(long, default_value = "800")]
+        #[arg(long, default_value_t = DEFAULT_MAX_TOTAL_LINES)]
         max_total_lines: usize,
 
         /// Only show metrics, skip compaction instructions
