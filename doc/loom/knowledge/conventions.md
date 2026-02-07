@@ -7,15 +7,15 @@
 
 ## File & Branch Naming
 
-| Type | Pattern | Location |
-|------|---------|----------|
-| Stage files | `{depth:02}-{stage-id}.md` (depth 0 = `01-` prefix) | `.work/stages/` |
-| Session files | `{session-id}.md` (ID: `session-{uuid_short}-{timestamp}`) | `.work/sessions/` |
-| Signal files | `{session-id}.md` | `.work/signals/` |
-| Handoff files | `{stage-id}-handoff-{NNN:03d}.md` | `.work/handoffs/` |
-| Plan files | `PLAN-*` -> `IN_PROGRESS-PLAN-*` -> `DONE-PLAN-*` | `doc/plans/` |
-| Stage branches | `loom/{stage-id}` | |
-| Base branches | `loom/_base/{stage-id}` (multi-dep merges) | |
+| Type           | Pattern                                                    | Location          |
+| -------------- | ---------------------------------------------------------- | ----------------- |
+| Stage files    | `{depth:02}-{stage-id}.md` (depth 0 = `01-` prefix)        | `.work/stages/`   |
+| Session files  | `{session-id}.md` (ID: `session-{uuid_short}-{timestamp}`) | `.work/sessions/` |
+| Signal files   | `{session-id}.md`                                          | `.work/signals/`  |
+| Handoff files  | `{stage-id}-handoff-{NNN:03d}.md`                          | `.work/handoffs/` |
+| Plan files     | `PLAN-*` -> `IN_PROGRESS-PLAN-*` -> `DONE-PLAN-*`          | `doc/plans/`      |
+| Stage branches | `loom/{stage-id}`                                          |                   |
+| Base branches  | `loom/_base/{stage-id}` (multi-dep merges)                 |                   |
 
 ## Error Handling
 
@@ -51,10 +51,10 @@ Re-export rules in `mod.rs`:
 
 ## ID and Input Validation
 
-| Field | Rules |
-|-------|-------|
-| Stage ID | Max 128 chars, `[a-zA-Z0-9_-]`, no `/\.`, no reserved OS names |
-| Fact Key | Max 64 chars, `[a-zA-Z0-9_-]` |
+| Field               | Rules                                                               |
+| ------------------- | ------------------------------------------------------------------- |
+| Stage ID            | Max 128 chars, `[a-zA-Z0-9_-]`, no `/\.`, no reserved OS names      |
+| Fact Key            | Max 64 chars, `[a-zA-Z0-9_-]`                                       |
 | Acceptance criteria | Max 1024 chars, no control chars (except tab/newline/CR), non-empty |
 
 ## Constants

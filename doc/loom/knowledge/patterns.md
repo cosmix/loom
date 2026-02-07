@@ -113,3 +113,18 @@ Three-component flow: path transformation (absolute->relative, parent traversal 
 ## Agent Anti-Patterns
 
 **Binary usage**: Agents use `target/debug/loom` instead of `loom` from PATH, causing version mismatch and state corruption. **Direct state editing**: Agents edit `.work/stages/*.md` directly instead of using loom CLI, corrupting state. Both are prohibited in CLAUDE.md and signal stable prefix.
+
+## Merge Session Anti-Respawn Pattern
+
+When a merge conflict resolution session dies without resolving the conflict:
+
+1. The session is removed from `active_sessions` (so monitor stops tracking PID)
+2. The signal file is KEPT on disk as an anti-respawn guard
+3. `spawn_merge_resolution_sessions()` checks `has_merge_signal_for_stage()` before spawning
+4. This prevents a new merge session from being spawned every poll cycle
+
+Signal file lifecycle:
+
+- Created when merge conflict detected and session spawned
+- Kept when session dies without resolving (Pending/Conflict/Unknown states)
+- Removed when merge succeeds (finalize_merge_resolution or early merged=true check)
