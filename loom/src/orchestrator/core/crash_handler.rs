@@ -84,6 +84,31 @@ impl Orchestrator {
                 eprintln!("Crash report generated: {}", path.display());
             }
 
+            // Best-effort permission sync before transitioning to Blocked
+            // This preserves permissions granted during the crashed session
+            let worktree_path = self.config.repo_root.join(".worktrees").join(&sid);
+            if worktree_path.exists() {
+                let working_dir_path = stage.working_dir.as_ref().map(|wd| worktree_path.join(wd));
+                match crate::fs::permissions::sync_worktree_permissions_with_working_dir(
+                    &worktree_path,
+                    &self.config.repo_root,
+                    working_dir_path.as_deref(),
+                ) {
+                    Ok(result) => {
+                        if result.allow_added > 0 || result.deny_added > 0 {
+                            eprintln!(
+                                "Synced {} permissions from crashed session for stage '{}'",
+                                result.allow_added + result.deny_added,
+                                sid
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Warning: Failed to sync permissions from crashed session: {e}");
+                    }
+                }
+            }
+
             // Transition to Blocked status with validation
             // Only persist state if transition succeeds to avoid inconsistent state
             match stage.try_mark_blocked() {

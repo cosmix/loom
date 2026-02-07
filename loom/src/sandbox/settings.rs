@@ -1,6 +1,7 @@
 use super::config::MergedSandboxConfig;
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
@@ -13,7 +14,22 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
         .with_context(|| format!("Failed to create .claude directory at {:?}", claude_dir))?;
 
     let settings_path = claude_dir.join("settings.local.json");
-    let settings_json = generate_settings_json(config);
+
+    // Read existing settings if they exist
+    let existing_settings = if settings_path.exists() {
+        let content = fs::read_to_string(&settings_path)
+            .with_context(|| format!("Failed to read existing settings at {:?}", settings_path))?;
+        serde_json::from_str(&content)
+            .with_context(|| format!("Failed to parse existing settings at {:?}", settings_path))?
+    } else {
+        json!({})
+    };
+
+    // Generate new sandbox settings
+    let mut settings_json = generate_settings_json(config);
+
+    // Merge existing permissions into the new settings
+    merge_existing_permissions(&mut settings_json, &existing_settings);
 
     // Write settings file with pretty formatting
     let settings_string = serde_json::to_string_pretty(&settings_json)
@@ -123,6 +139,101 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     }
 
     settings
+}
+
+/// Merge existing permissions from an old settings file into new settings
+///
+/// This preserves user-approved permissions that were granted in a previous settings file,
+/// while still applying sandbox-generated permissions. Only `permissions.allow` and
+/// `permissions.deny` are merged - sandbox/network/linux config always comes from the generator.
+///
+/// Uses HashSet for deduplication to avoid duplicate permissions in the merged result.
+fn merge_existing_permissions(new_settings: &mut Value, existing_settings: &Value) {
+    // Extract existing permissions if they exist
+    let existing_permissions = existing_settings.get("permissions");
+    if existing_permissions.is_none() || existing_permissions.unwrap().is_null() {
+        return; // No permissions to merge
+    }
+
+    let existing_allow = existing_permissions
+        .and_then(|p| p.get("allow"))
+        .and_then(|a| a.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect::<Vec<String>>()
+        })
+        .unwrap_or_default();
+
+    let existing_deny = existing_permissions
+        .and_then(|p| p.get("deny"))
+        .and_then(|d| d.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect::<Vec<String>>()
+        })
+        .unwrap_or_default();
+
+    // Get or create permissions block in new settings
+    let new_permissions = new_settings
+        .as_object_mut()
+        .and_then(|obj| obj.get_mut("permissions"))
+        .and_then(|p| p.as_object_mut());
+
+    if new_permissions.is_none() {
+        return; // New settings has no permissions block, nothing to merge into
+    }
+
+    let new_permissions = new_permissions.unwrap();
+
+    // Merge allow permissions
+    if !existing_allow.is_empty() {
+        let new_allow = new_permissions
+            .entry("allow")
+            .or_insert_with(|| json!([]))
+            .as_array_mut();
+
+        if let Some(new_allow_arr) = new_allow {
+            // Collect all permissions into a HashSet for deduplication
+            let mut all_allow: HashSet<String> = new_allow_arr
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect();
+
+            // Add existing permissions
+            for perm in existing_allow {
+                all_allow.insert(perm);
+            }
+
+            // Replace array with deduplicated permissions
+            *new_allow_arr = all_allow.into_iter().map(|s| json!(s)).collect();
+        }
+    }
+
+    // Merge deny permissions
+    if !existing_deny.is_empty() {
+        let new_deny = new_permissions
+            .entry("deny")
+            .or_insert_with(|| json!([]))
+            .as_array_mut();
+
+        if let Some(new_deny_arr) = new_deny {
+            // Collect all permissions into a HashSet for deduplication
+            let mut all_deny: HashSet<String> = new_deny_arr
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect();
+
+            // Add existing permissions
+            for perm in existing_deny {
+                all_deny.insert(perm);
+            }
+
+            // Replace array with deduplicated permissions
+            *new_deny_arr = all_deny.into_iter().map(|s| json!(s)).collect();
+        }
+    }
 }
 
 #[cfg(test)]
@@ -374,5 +485,212 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_write_settings_preserves_existing_permissions() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let worktree_path = temp_dir.path();
+
+        // Create existing settings.local.json with user-approved permissions
+        let claude_dir = worktree_path.join(".claude");
+        fs::create_dir_all(&claude_dir).unwrap();
+        let settings_path = claude_dir.join("settings.local.json");
+
+        let existing_settings = json!({
+            "permissions": {
+                "allow": [
+                    "Read(~/.ssh/config)",
+                    "Bash(docker:*)"
+                ],
+                "deny": [
+                    "Write(~/.bashrc)"
+                ]
+            }
+        });
+        fs::write(
+            &settings_path,
+            serde_json::to_string_pretty(&existing_settings).unwrap(),
+        )
+        .unwrap();
+
+        // Now call write_settings with sandbox config
+        let config = MergedSandboxConfig {
+            enabled: true,
+            auto_allow: true,
+            allow_unsandboxed_escape: false,
+            excluded_commands: vec![],
+            filesystem: FilesystemConfig {
+                deny_read: vec![],
+                deny_write: vec![],
+                allow_write: vec!["src/**".to_string()],
+            },
+            network: NetworkConfig::default(),
+            linux: LinuxConfig::default(),
+        };
+
+        write_settings(&config, worktree_path).unwrap();
+
+        // Read the result
+        let result_content = fs::read_to_string(&settings_path).unwrap();
+        let result: Value = serde_json::from_str(&result_content).unwrap();
+
+        // Verify sandbox-generated permissions are present
+        let allow = result["permissions"]["allow"].as_array().unwrap();
+        let allow_strs: Vec<&str> = allow.iter().filter_map(|v| v.as_str()).collect();
+        assert!(allow_strs.contains(&"Write(src/**)"));
+        assert!(allow_strs.contains(&"Read(.work/signals/**)"));
+
+        // Verify existing permissions are preserved
+        assert!(allow_strs.contains(&"Read(~/.ssh/config)"));
+        assert!(allow_strs.contains(&"Bash(docker:*)"));
+
+        let deny = result["permissions"]["deny"].as_array().unwrap();
+        let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
+        assert!(deny_strs.contains(&"Write(~/.bashrc)"));
+    }
+
+    #[test]
+    fn test_write_settings_deduplicates() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let worktree_path = temp_dir.path();
+
+        // Create existing settings.local.json with overlapping permissions
+        let claude_dir = worktree_path.join(".claude");
+        fs::create_dir_all(&claude_dir).unwrap();
+        let settings_path = claude_dir.join("settings.local.json");
+
+        let existing_settings = json!({
+            "permissions": {
+                "allow": [
+                    "Read(.work/signals/**)",  // This will also be generated by sandbox
+                    "Read(custom/path/**)"
+                ]
+            }
+        });
+        fs::write(
+            &settings_path,
+            serde_json::to_string_pretty(&existing_settings).unwrap(),
+        )
+        .unwrap();
+
+        // Call write_settings
+        let config = MergedSandboxConfig {
+            enabled: true,
+            auto_allow: true,
+            allow_unsandboxed_escape: false,
+            excluded_commands: vec![],
+            filesystem: FilesystemConfig::default(),
+            network: NetworkConfig::default(),
+            linux: LinuxConfig::default(),
+        };
+
+        write_settings(&config, worktree_path).unwrap();
+
+        // Read the result
+        let result_content = fs::read_to_string(&settings_path).unwrap();
+        let result: Value = serde_json::from_str(&result_content).unwrap();
+
+        let allow = result["permissions"]["allow"].as_array().unwrap();
+        let allow_strs: Vec<String> = allow
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect();
+
+        // Count occurrences of the overlapping permission
+        let signal_count = allow_strs
+            .iter()
+            .filter(|s| *s == "Read(.work/signals/**)")
+            .count();
+        assert_eq!(
+            signal_count, 1,
+            "Read(.work/signals/**) should appear exactly once"
+        );
+
+        // Verify custom permission is preserved
+        assert!(allow_strs.contains(&"Read(custom/path/**)".to_string()));
+    }
+
+    #[test]
+    fn test_write_settings_no_existing_file() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let worktree_path = temp_dir.path();
+
+        // Call write_settings with no existing file
+        let config = MergedSandboxConfig {
+            enabled: true,
+            auto_allow: true,
+            allow_unsandboxed_escape: false,
+            excluded_commands: vec![],
+            filesystem: FilesystemConfig {
+                deny_read: vec!["~/.ssh/**".to_string()],
+                deny_write: vec![],
+                allow_write: vec!["src/**".to_string()],
+            },
+            network: NetworkConfig::default(),
+            linux: LinuxConfig::default(),
+        };
+
+        write_settings(&config, worktree_path).unwrap();
+
+        // Read the result
+        let settings_path = worktree_path.join(".claude/settings.local.json");
+        let result_content = fs::read_to_string(&settings_path).unwrap();
+        let result: Value = serde_json::from_str(&result_content).unwrap();
+
+        // Verify expected permissions (same as before, no existing to merge)
+        let allow = result["permissions"]["allow"].as_array().unwrap();
+        let allow_strs: Vec<&str> = allow.iter().filter_map(|v| v.as_str()).collect();
+        assert!(allow_strs.contains(&"Write(src/**)"));
+        assert!(allow_strs.contains(&"Read(.work/signals/**)"));
+
+        let deny = result["permissions"]["deny"].as_array().unwrap();
+        let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
+        assert!(deny_strs.contains(&"Read(~/.ssh/**)"));
+    }
+
+    #[test]
+    fn test_merge_existing_permissions_empty() {
+        // Existing file has no permissions block
+        let existing = json!({
+            "sandbox": {
+                "enabled": true
+            }
+        });
+
+        let config = MergedSandboxConfig {
+            enabled: true,
+            auto_allow: true,
+            allow_unsandboxed_escape: false,
+            excluded_commands: vec![],
+            filesystem: FilesystemConfig {
+                allow_write: vec!["src/**".to_string()],
+                deny_read: vec![],
+                deny_write: vec![],
+            },
+            network: NetworkConfig::default(),
+            linux: LinuxConfig::default(),
+        };
+
+        let mut new_settings = generate_settings_json(&config);
+        let original_allow_count = new_settings["permissions"]["allow"]
+            .as_array()
+            .unwrap()
+            .len();
+
+        // Merge should be a no-op
+        merge_existing_permissions(&mut new_settings, &existing);
+
+        let after_allow_count = new_settings["permissions"]["allow"]
+            .as_array()
+            .unwrap()
+            .len();
+        assert_eq!(original_allow_count, after_allow_count);
     }
 }

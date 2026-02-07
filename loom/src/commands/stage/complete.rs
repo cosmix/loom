@@ -148,6 +148,15 @@ fn handle_force_unsafe_completion(
     eprintln!("⚠️  Use only for manual recovery scenarios.");
     eprintln!();
 
+    // Best-effort permission sync before force-completing
+    // Uses resolve_stage_execution_paths to get worktree paths, same as normal completion
+    if let Ok(execution_paths) = resolve_stage_execution_paths(&stage) {
+        sync_worktree_permissions(
+            &execution_paths.worktree_root,
+            &execution_paths.acceptance_dir,
+        );
+    }
+
     println!(
         "Force-completing stage '{}' (was: {:?})",
         stage_id, stage.status
