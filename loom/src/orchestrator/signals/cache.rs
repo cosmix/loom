@@ -183,6 +183,14 @@ pub fn generate_stable_prefix() -> String {
     content.push_str("- State is managed by the orchestrator, not by agents\n");
     content.push_str("- Direct edits corrupt state and cause phantom completions\n\n");
 
+    // Context recovery instructions
+    content.push_str("**Context Recovery (after compaction):**\n\n");
+    content.push_str("If your context was recently compacted or you feel disoriented:\n");
+    content.push_str("1. Run: `loom memory list` (see your session notes)\n");
+    content.push_str("2. Check: `.work/handoffs/` for handoff files for your stage\n");
+    content.push_str("3. Read the latest handoff to restore working context\n");
+    content.push_str("4. Resume from where you left off - do NOT restart from scratch\n\n");
+
     content
 }
 
@@ -322,6 +330,14 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("- State is managed by the orchestrator, not by agents\n");
     content.push_str("- Direct edits corrupt state and cause phantom completions\n\n");
 
+    // Context recovery instructions
+    content.push_str("**Context Recovery (after compaction):**\n\n");
+    content.push_str("If your context was recently compacted or you feel disoriented:\n");
+    content.push_str("1. Run: `loom memory list` (see your session notes)\n");
+    content.push_str("2. Check: `.work/handoffs/` for handoff files for your stage\n");
+    content.push_str("3. Read the latest handoff to restore working context\n");
+    content.push_str("4. Resume from where you left off - do NOT restart from scratch\n\n");
+
     content
 }
 
@@ -405,6 +421,14 @@ pub fn generate_knowledge_stable_prefix() -> String {
     content.push_str("- **NEVER edit `.work/` files directly** - always use loom CLI\n");
     content.push_str("- State is managed by the orchestrator, not by agents\n");
     content.push_str("- Direct edits corrupt state and cause phantom completions\n\n");
+
+    // Context recovery instructions
+    content.push_str("**Context Recovery (after compaction):**\n\n");
+    content.push_str("If your context was recently compacted or you feel disoriented:\n");
+    content.push_str("1. Run: `loom memory list` (see your session notes)\n");
+    content.push_str("2. Check: `.work/handoffs/` for handoff files for your stage\n");
+    content.push_str("3. Read the latest handoff to restore working context\n");
+    content.push_str("4. Resume from where you left off - do NOT restart from scratch\n\n");
 
     // Knowledge-specific instructions
     content.push_str("**Knowledge Commands:**\n\n");
@@ -497,6 +521,10 @@ mod tests {
         assert!(prefix.contains("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1"));
         assert!(prefix.contains("~7x tokens"));
         assert!(prefix.contains("Shut down ALL teammates"));
+        // Context recovery instructions
+        assert!(prefix.contains("Context Recovery"));
+        assert!(prefix.contains("loom memory list"));
+        assert!(prefix.contains("handoffs"));
     }
 
     #[test]
@@ -530,6 +558,8 @@ mod tests {
         assert!(prefix.contains("Agent Teams for Knowledge Bootstrap"));
         assert!(prefix.contains("coordinated exploration"));
         assert!(prefix.contains("Architecture explorer"));
+        // Context recovery instructions
+        assert!(prefix.contains("Context Recovery"));
     }
 
     #[test]
@@ -589,6 +619,8 @@ mod tests {
         assert!(prefix.contains("multi-dimension"));
         assert!(prefix.contains("Build/test teammate"));
         assert!(prefix.contains("Security review teammate"));
+        // Context recovery instructions
+        assert!(prefix.contains("Context Recovery"));
     }
 
     #[test]

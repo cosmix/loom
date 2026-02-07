@@ -1,15 +1,16 @@
 use anyhow::Result;
 use loom::commands::{
-    clean, diagnose, graph, hooks, init, knowledge, map, memory, merge, repair, resume, run,
-    sandbox, self_update, sessions, stage, status, stop, verify, worktree_cmd,
+    clean, diagnose, graph, handoff, hooks, init, knowledge, map, memory, merge, repair, resume,
+    run, sandbox, self_update, sessions, stage, status, stop, verify, worktree_cmd,
 };
 use loom::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use std::path::PathBuf;
 use std::str::FromStr;
 
 use super::types::{
-    Cli, Commands, GraphCommands, HooksCommands, KnowledgeCommands, MemoryCommands, OutputCommands,
-    SandboxCommands, SessionsCommands, StageCommands, WorktreeCommands,
+    Cli, Commands, GraphCommands, HandoffCommands, HooksCommands, KnowledgeCommands,
+    MemoryCommands, OutputCommands, SandboxCommands, SessionsCommands, StageCommands,
+    WorktreeCommands,
 };
 
 pub fn dispatch(command: Commands) -> Result<()> {
@@ -52,6 +53,14 @@ pub fn dispatch(command: Commands) -> Result<()> {
         Commands::Hooks { command } => match command {
             HooksCommands::Install => hooks::install(),
             HooksCommands::List => hooks::list(),
+        },
+        Commands::Handoff { command } => match command {
+            HandoffCommands::Create {
+                stage,
+                session,
+                trigger,
+                message,
+            } => handoff::create::execute(stage, session, trigger, message),
         },
         Commands::Stage { command } => match command {
             StageCommands::Complete {

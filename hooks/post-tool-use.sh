@@ -71,6 +71,24 @@ cat >"$HEARTBEAT_FILE" <<EOF
 }
 EOF
 
+# === COMPACTION RECOVERY DETECTION ===
+# After compaction, remind the agent to restore context
+RECOVERY_DIR="${LOOM_WORK_DIR}/compaction-recovery"
+RECOVERY_MARKER="${RECOVERY_DIR}/${LOOM_SESSION_ID}"
+
+if [[ -f "$RECOVERY_MARKER" ]]; then
+	# Remove marker (one-time notification)
+	rm -f "$RECOVERY_MARKER"
+
+	cat >&2 <<'RECOVERY'
+
+Context was recently compacted. Restore your working state:
+  loom memory list
+  Check .work/handoffs/ for your latest handoff file.
+
+RECOVERY
+fi
+
 # === POST-COMMIT KNOWLEDGE/MEMORY REMINDER ===
 # After a git commit in a loom stage, remind Claude to update knowledge/memory
 # This is non-blocking - just a prompt to help capture lessons learned

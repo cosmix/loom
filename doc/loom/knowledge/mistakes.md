@@ -845,3 +845,15 @@ Two plan criteria caused false negatives in integration-verify:
   - _Rationale:_ README.md, CLAUDE.md, and knowledge files (architecture.md, conventions.md, patterns.md) still listed code-review as valid stage type. Updated all to reflect 3-type model.
 - **Extended markdown skip in artifacts.rs to handle .markdown extension and case-insensitive matching**
   - _Rationale:_ Original code only checked md/mdx with exact case. Added .markdown extension and to_ascii_lowercase for robustness on case-sensitive filesystems.
+
+## Promoted from Memory [2026-02-07 18:34]
+
+### Notes
+
+- All 3 subagents completed successfully. Subagent A: CLI handoff create command (5 unit tests). Subagent B: Hook fixes (pre-compact block-then-allow, session-end glob fix, post-tool-use recovery). Subagent C: Template rule 3b, cache.rs recovery sections, sections.rs budget warnings.
+- Key discovery: Stage files use depth prefix (e.g., 02-implement-handoff-fix.md), which was the root cause of session-end.sh bug. The load_stage function in verify::transitions handles this, but the shell hook was doing direct path construction.
+
+### Decisions
+
+- **Using parallel subagents for 3 independent work areas: CLI command (Subagent A), hook fixes (Subagent B), signal/template improvements (Subagent C). No file overlap between them.**
+  - _Rationale:_ Plan execution requires parallel subagents per EXECUTION PLAN in signal file. Each has exclusive file ownership.

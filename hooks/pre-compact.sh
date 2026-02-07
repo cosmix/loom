@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # pre-compact.sh - Claude Code PreCompact hook for loom
 #
-# Called before Claude Code compacts context (context exhaustion).
-# This triggers automatic handoff creation.
+# Implements block-then-allow pattern for context compaction:
+# - First attempt: Blocks compaction, creates handoff, asks agent to dump context
+# - Second attempt: Allows compaction after capturing updated state
 #
 # Input: JSON from stdin (if any - hook doesn't need it)
 #
@@ -11,9 +12,9 @@
 #   LOOM_SESSION_ID  - The session ID
 #   LOOM_WORK_DIR    - Path to the .work directory
 #
-# Actions:
-#   1. Calls loom handoff create --trigger precompact
-#   2. Logs PreCompact event
+# Exit codes:
+#   0 = Allow compaction
+#   2 = Block compaction (non-zero, non-1 to avoid hook failure)
 
 set -euo pipefail
 
@@ -50,34 +51,72 @@ mkdir -p "$HOOKS_DIR" 2>/dev/null || {
 EVENTS_FILE="${HOOKS_DIR}/events.jsonl"
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 
-# Try to create handoff
-HANDOFF_FILE=""
-HANDOFF_ERROR=""
+# Check for compaction-pending flag file
+PENDING_DIR="${LOOM_WORK_DIR}/compaction-pending"
+PENDING_FLAG="${PENDING_DIR}/${LOOM_SESSION_ID}"
+RECOVERY_DIR="${LOOM_WORK_DIR}/compaction-recovery"
 
-# Check if loom command is available
-if command -v loom &>/dev/null; then
-	# Create handoff with precompact trigger
-	if HANDOFF_OUTPUT=$(loom handoff create --stage "${LOOM_STAGE_ID}" --session "${LOOM_SESSION_ID}" --trigger precompact 2>&1); then
-		HANDOFF_FILE=$(echo "$HANDOFF_OUTPUT" | grep -oE '[^/]+\.md$' || echo "")
-	else
-		HANDOFF_ERROR="$HANDOFF_OUTPUT"
+if [[ -f "$PENDING_FLAG" ]]; then
+	# SECOND compaction attempt - flag exists, allow compaction
+	rm -f "$PENDING_FLAG"
+
+	# Create handoff (captures updated memory)
+	HANDOFF_FILE=""
+	if command -v loom &>/dev/null; then
+		if HANDOFF_OUTPUT=$(loom handoff create --stage "${LOOM_STAGE_ID}" --session "${LOOM_SESSION_ID}" --trigger precompact 2>&1); then
+			HANDOFF_FILE=$(echo "$HANDOFF_OUTPUT" | grep -oE '[^/]+\.md$' || echo "")
+		fi
 	fi
-fi
 
-# Build payload JSON
-if [[ -n "$HANDOFF_FILE" ]]; then
-	PAYLOAD="{\"type\":\"PreCompact\",\"handoff_file\":\"${HANDOFF_FILE}\"}"
-else
-	PAYLOAD="{\"type\":\"PreCompact\"}"
-fi
+	# Create recovery marker for post-tool-use hook
+	mkdir -p "$RECOVERY_DIR" 2>/dev/null || true
+	touch "${RECOVERY_DIR}/${LOOM_SESSION_ID}" 2>/dev/null || true
 
-cat >>"$EVENTS_FILE" <<EOF
+	# Build payload JSON
+	if [[ -n "$HANDOFF_FILE" ]]; then
+		PAYLOAD="{\"type\":\"PreCompact\",\"phase\":\"allow\",\"handoff_file\":\"${HANDOFF_FILE}\"}"
+	else
+		PAYLOAD="{\"type\":\"PreCompact\",\"phase\":\"allow\"}"
+	fi
+
+	cat >>"$EVENTS_FILE" <<EOF
 {"timestamp":"${TIMESTAMP}","stage_id":"${LOOM_STAGE_ID}","session_id":"${LOOM_SESSION_ID}","event":"PreCompact","payload":${PAYLOAD}}
 EOF
 
-# Log error if handoff creation failed
-if [[ -n "$HANDOFF_ERROR" ]]; then
-	echo "Warning: Handoff creation failed: $HANDOFF_ERROR" >&2
-fi
+	exit 0
+else
+	# FIRST compaction attempt - block and capture state
+	mkdir -p "$PENDING_DIR" 2>/dev/null || true
+	touch "$PENDING_FLAG"
 
-exit 0
+	# Create initial handoff
+	HANDOFF_FILE=""
+	if command -v loom &>/dev/null; then
+		if HANDOFF_OUTPUT=$(loom handoff create --stage "${LOOM_STAGE_ID}" --session "${LOOM_SESSION_ID}" --trigger precompact 2>&1); then
+			HANDOFF_FILE=$(echo "$HANDOFF_OUTPUT" | grep -oE '[^/]+\.md$' || echo "")
+		fi
+	fi
+
+	# Build payload JSON
+	if [[ -n "$HANDOFF_FILE" ]]; then
+		PAYLOAD="{\"type\":\"PreCompact\",\"phase\":\"block\",\"handoff_file\":\"${HANDOFF_FILE}\"}"
+	else
+		PAYLOAD="{\"type\":\"PreCompact\",\"phase\":\"block\"}"
+	fi
+
+	cat >>"$EVENTS_FILE" <<EOF
+{"timestamp":"${TIMESTAMP}","stage_id":"${LOOM_STAGE_ID}","session_id":"${LOOM_SESSION_ID}","event":"PreCompact","payload":${PAYLOAD}}
+EOF
+
+	# Instruct agent to dump context before compaction proceeds
+	cat >&2 <<'INTERCEPT'
+
+CONTEXT COMPACTION INTERCEPTED
+Before compaction, record your working state:
+  loom memory note "CONTEXT DUMP: Working on [TASK]. Next: [NEXT]. Key context: [INFO]"
+After recording, continue work. Compaction will proceed on next cycle.
+
+INTERCEPT
+
+	exit 2
+fi
