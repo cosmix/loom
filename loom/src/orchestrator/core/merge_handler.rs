@@ -8,7 +8,7 @@ use crate::git::merge::{get_conflicting_files_from_status, verify_merge_succeede
 use crate::models::session::Session;
 use crate::models::stage::StageStatus;
 use crate::orchestrator::auto_merge::{attempt_auto_merge, is_auto_merge_enabled, AutoMergeResult};
-use crate::orchestrator::signals::{generate_merge_signal, remove_signal};
+use crate::orchestrator::signals::{generate_merge_signal, read_merge_signal, remove_signal};
 use crate::verify::transitions::load_stage;
 
 use super::persistence::Persistence;
@@ -46,72 +46,20 @@ impl Orchestrator {
         // Check if the merge was actually successful by examining git state
         match check_merge_state(&stage, &merge_point, &self.config.repo_root) {
             Ok(MergeState::Merged) => {
-                // Merge succeeded - transition stage to Completed and mark as merged
-                stage.merged = true;
-                stage.merge_conflict = false;
-
-                // Transition from MergeConflict to Completed (valid per transitions.rs)
-                if stage.status == StageStatus::MergeConflict {
-                    if let Err(e) = stage.status.try_transition(StageStatus::Completed) {
-                        eprintln!("Warning: Failed to transition stage to Completed: {e}");
-                    } else {
-                        stage.status = StageStatus::Completed;
-                    }
-                }
-
-                if let Err(e) = self.save_stage(&stage) {
-                    eprintln!(
-                        "Warning: Failed to save stage after detecting successful merge: {e}"
-                    );
-                }
-
-                // Update graph to mark as completed and merged
-                self.graph.set_node_merged(stage_id, true);
-                if let Err(e) = self.graph.mark_completed(stage_id) {
-                    eprintln!("Warning: Failed to mark stage as completed in graph: {e}");
-                }
-
-                // Merge resolved - clean up signal and active session
-                if let Err(e) = remove_signal(session_id, &self.config.work_dir) {
-                    eprintln!("Warning: Failed to remove merge signal: {e}");
-                }
-                self.active_sessions.remove(stage_id);
-
-                clear_status_line();
-                eprintln!("Stage '{stage_id}' merge verified and marked as complete");
+                self.finalize_merge_resolution(
+                    &mut stage,
+                    session_id,
+                    stage_id,
+                    "merge verified and marked as complete",
+                );
             }
             Ok(MergeState::BranchMissing) => {
-                // Branch was deleted (likely by `loom worktree remove`) - assume merge succeeded
-                stage.merged = true;
-                stage.merge_conflict = false;
-
-                // Transition from MergeConflict to Completed (valid per transitions.rs)
-                if stage.status == StageStatus::MergeConflict {
-                    if let Err(e) = stage.status.try_transition(StageStatus::Completed) {
-                        eprintln!("Warning: Failed to transition stage to Completed: {e}");
-                    } else {
-                        stage.status = StageStatus::Completed;
-                    }
-                }
-
-                if let Err(e) = self.save_stage(&stage) {
-                    eprintln!("Warning: Failed to save stage after branch cleanup: {e}");
-                }
-
-                // Update graph to mark as completed and merged
-                self.graph.set_node_merged(stage_id, true);
-                if let Err(e) = self.graph.mark_completed(stage_id) {
-                    eprintln!("Warning: Failed to mark stage as completed in graph: {e}");
-                }
-
-                // Merge resolved - clean up signal and active session
-                if let Err(e) = remove_signal(session_id, &self.config.work_dir) {
-                    eprintln!("Warning: Failed to remove merge signal: {e}");
-                }
-                self.active_sessions.remove(stage_id);
-
-                clear_status_line();
-                eprintln!("Stage '{stage_id}' branch cleaned up, marking as merged");
+                self.finalize_merge_resolution(
+                    &mut stage,
+                    session_id,
+                    stage_id,
+                    "branch cleaned up, marking as merged",
+                );
             }
             Ok(MergeState::Pending) | Ok(MergeState::Conflict) | Ok(MergeState::Unknown) => {
                 // PID dead but merge not resolved - remove active session but KEEP signal
@@ -138,6 +86,46 @@ impl Orchestrator {
         }
 
         Ok(())
+    }
+
+    /// Common logic for resolving a merge session (Merged or BranchMissing outcomes).
+    ///
+    /// Transitions the stage to Completed, updates the graph, and cleans up
+    /// the signal file and active session tracking.
+    fn finalize_merge_resolution(
+        &mut self,
+        stage: &mut crate::models::stage::Stage,
+        session_id: &str,
+        stage_id: &str,
+        log_message: &str,
+    ) {
+        stage.merged = true;
+        stage.merge_conflict = false;
+
+        if stage.status == StageStatus::MergeConflict {
+            if let Err(e) = stage.status.try_transition(StageStatus::Completed) {
+                eprintln!("Warning: Failed to transition stage to Completed: {e}");
+            } else {
+                stage.status = StageStatus::Completed;
+            }
+        }
+
+        if let Err(e) = self.save_stage(stage) {
+            eprintln!("Warning: Failed to save stage after merge resolution: {e}");
+        }
+
+        self.graph.set_node_merged(stage_id, true);
+        if let Err(e) = self.graph.mark_completed(stage_id) {
+            eprintln!("Warning: Failed to mark stage as completed in graph: {e}");
+        }
+
+        if let Err(e) = remove_signal(session_id, &self.config.work_dir) {
+            eprintln!("Warning: Failed to remove merge signal: {e}");
+        }
+        self.active_sessions.remove(stage_id);
+
+        clear_status_line();
+        eprintln!("Stage '{stage_id}' {log_message}");
     }
 
     /// Verify merge succeeded and update stage state accordingly.
@@ -321,6 +309,9 @@ impl Orchestrator {
                     .insert(stage_id.to_string(), session.clone());
                 if let Err(e) = self.save_session(&session) {
                     eprintln!("Warning: Failed to save merge session: {e}");
+                    // Remove from active_sessions to avoid tracking a session
+                    // that the monitor can't reload from disk after restart
+                    self.active_sessions.remove(stage_id);
                 }
 
                 clear_status_line();
@@ -377,20 +368,15 @@ impl Orchestrator {
                 continue;
             }
 
-            // Extract stage ID from filename
-            let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-            let stage_id = if let Some(rest) = filename.strip_prefix(|c: char| c.is_ascii_digit()) {
-                rest.trim_start_matches(|c: char| c.is_ascii_digit() || c == '-')
-            } else {
-                filename
+            // Extract stage ID from filename using the canonical parser
+            let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+            let stage_id = match crate::fs::stage_files::extract_stage_id(filename) {
+                Some(id) => id,
+                None => continue,
             };
 
-            if stage_id.is_empty() {
-                continue;
-            }
-
             // Load stage and check status
-            let stage = match self.load_stage(stage_id) {
+            let stage = match self.load_stage(&stage_id) {
                 Ok(s) => s,
                 Err(_) => continue,
             };
@@ -404,14 +390,13 @@ impl Orchestrator {
             }
 
             // Skip if there's already an active session for this stage
-            if self.active_sessions.contains_key(stage_id) {
+            if self.active_sessions.contains_key(&stage_id) {
                 continue;
             }
 
             // Skip if there's already a merge signal for this stage
             // (indicates a merge session was previously spawned)
-            let has_existing_signal = self.has_merge_signal_for_stage(stage_id);
-            if has_existing_signal {
+            if self.has_merge_signal_for_stage(&stage_id) {
                 continue;
             }
 
@@ -430,27 +415,22 @@ impl Orchestrator {
     }
 
     /// Check if there's already a merge signal for a stage.
+    ///
+    /// Uses the structured `read_merge_signal` parser rather than raw string
+    /// matching, so this stays correct if the signal file format changes.
     fn has_merge_signal_for_stage(&self, stage_id: &str) -> bool {
-        let signals_dir = self.config.work_dir.join("signals");
-        if !signals_dir.exists() {
-            return false;
-        }
+        let signal_ids = match crate::orchestrator::signals::list_signals(&self.config.work_dir) {
+            Ok(ids) => ids,
+            Err(e) => {
+                eprintln!("Warning: Failed to list signals while checking for merge signal: {e}");
+                return false;
+            }
+        };
 
-        // Check all signal files to see if any is a merge signal for this stage
-        if let Ok(entries) = std::fs::read_dir(&signals_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().and_then(|s| s.to_str()) != Some("md") {
-                    continue;
-                }
-
-                if let Ok(content) = std::fs::read_to_string(&path) {
-                    // Check if this is a merge signal for our stage
-                    if content.contains("# Merge Signal:")
-                        && content.contains(&format!("- **Stage**: {stage_id}"))
-                    {
-                        return true;
-                    }
+        for signal_id in &signal_ids {
+            if let Ok(Some(merge_signal)) = read_merge_signal(signal_id, &self.config.work_dir) {
+                if merge_signal.stage_id == stage_id {
+                    return true;
                 }
             }
         }

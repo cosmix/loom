@@ -725,3 +725,19 @@ Two plan criteria caused false negatives in integration-verify:
 ### Notes
 
 - Knowledge bootstrap for fix-merge-session-respawn: Coverage 83% (15/18). Existing knowledge well covers merge/session handling: Progressive Merge Pattern, Merge Lock, Session Lifecycle, Phantom Merges. Plan targets auto_merge.rs (AutoMergeResult enum) and merge_handler.rs (session tracking + signal cleanup). No knowledge gaps found.
+
+## Promoted from Memory [2026-02-07 16:28]
+
+### Notes
+
+- Code review of fix-merge-respawn: 3 subagents identified High issues (stale signal files blocking future merges, fragile string matching in has_merge_signal_for_stage) and Medium issues (code duplication in Merged/BranchMissing arms, inconsistent stage ID extraction, save_session failure not cleaning up active_sessions)
+- Unresolved: stale signal files (kept as respawn guard) have no cleanup mechanism. If user resolves merge manually, orphaned signal blocks future merge sessions. Needs a staleness-based cleanup or integration with loom merge/worktree remove.
+
+### Decisions
+
+- **Refactored has_merge_signal_for_stage to use list_signals + read_merge_signal parser instead of raw string matching**
+  - _Rationale:_ Fragile content.contains() matching duplicated signal format knowledge and could silently break if format changes
+- **Extracted finalize_merge_resolution helper to deduplicate Merged/BranchMissing match arms**
+  - _Rationale:_ Both arms had identical 20+ line blocks for stage transition, graph update, signal cleanup, and session removal
+- **Used canonical extract_stage_id from fs::stage_files instead of inline parsing**
+  - _Rationale:_ Inline logic used different algorithm (strip any leading digits) vs canonical (strip exactly 2 digits). Could disagree on edge cases.
