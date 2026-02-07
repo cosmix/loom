@@ -588,3 +588,15 @@ Two plan criteria caused false negatives in integration-verify:
 **What:** default_deny_write() included .work/stages/**and .work/sessions/**. This was overly broad and could block legitimate operations.
 
 **Fix:** Removed from deny defaults. State protection handled by: signal instructions, hook enforcement, and loom CLI as sanctioned interface.
+
+## Promoted from Memory [2026-02-07 13:02]
+
+### Notes
+
+- Knowledge bootstrap for controlled-failure-recovery: Coverage was already 100%. Added targeted knowledge about StageStatus enum (11 variants), failure states (Blocked, MergeConflict, CompletedWithFailures, MergeBlocked), FailureType enum, integration points for new commands and notifications.
+- Key finding: No desktop notifications exist in loom yet. The hooks system (post-tool-use, pre-compact) only logs to stderr and .work/hooks/events.jsonl. NeedsHumanReview will be the first feature to add notify-send/osascript.
+
+### Decisions
+
+- **Used parallel Explore subagents (3) for targeted codebase analysis: state machine, CLI/commands, hooks/notifications**
+  - _Rationale:_ Coverage already at 100%, so loom map unnecessary. Parallel exploration efficient for gathering integration-point details.

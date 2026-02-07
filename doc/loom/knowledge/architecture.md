@@ -673,3 +673,43 @@ collect_completion_summary() reads all stage files, computes:
 
 Returns CompletionSummary with `Vec<StageCompletionInfo>` (protocol.rs:14-21).
 Display: format_elapsed() (utils.rs:21) compact, format_elapsed_verbose() (utils.rs:40) verbose.
+
+## StageStatus Enum (11 variants, types.rs:240-293)
+
+WaitingForDeps, Queued, Executing, WaitingForInput, Blocked, Completed, NeedsHandoff, Skipped, MergeConflict, CompletedWithFailures, MergeBlocked. Terminal: Completed, Skipped.
+
+## Failure States and Transitions
+
+Blocked: pre-execution failure -> Queued, Skipped
+MergeConflict: merge conflicts detected -> Completed, Blocked
+CompletedWithFailures: acceptance failed -> Queued, Executing, Completed
+MergeBlocked: merge error -> Queued, Executing
+
+Retry: retry_count, max_retries (default 3), last_failure_at, failure_info
+
+## FailureType Enum (models/failure.rs:12-42)
+
+SessionCrash, ContextExhausted, TestFailure, BuildFailure, CodeError, Timeout, UserBlocked, MergeConflict, InfrastructureError, Unknown.
+
+Retryable: SessionCrash, Timeout. Non-retryable: others.
+
+## Controlled Failure Recovery - New State Integration
+
+Add NeedsHumanReview to types.rs:240-293 with serde rename.
+Add icon/color/label in types.rs:334-427.
+Add transitions in transitions.rs:26-72.
+Add methods in methods.rs (try_request_human_review, try_approve_review etc).
+
+## New CLI Command Integration Points
+
+cli/types_stage.rs - Add StageCommands variant with clap_id_validator.
+cli/dispatch.rs:56-93 - Add match arm.
+commands/stage/mod.rs - Add module + pub use.
+Pattern: load_stage -> validate state -> try_*() -> save_stage -> print.
+
+## Notification Integration Points
+
+No desktop notifications exist yet. Need notify-send (Linux) / osascript (macOS).
+Status display: attention.rs:13-21 filters problem stages.
+Status grouping: stages.rs:36-48 priority ordering.
+Monitor: detection.rs watches stage.status transitions.

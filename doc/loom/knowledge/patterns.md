@@ -1480,3 +1480,27 @@ Read: extract_yaml_frontmatter() -> `parse_from_markdown::<Stage>()`
 File locked during write for concurrent safety.
 
 StageFrontmatter (fs/stage_loading.rs) for loading. Stage struct (types.rs) for serialization.
+
+## Acceptance Failure Handling Flow (Current)
+
+1. Agent runs loom stage complete
+2. complete.rs:235 runs run_acceptance_phase()
+3. If fails -> CompletedWithFailures
+4. Agent fixes and retries via loom stage retry
+5. retry -> Queued/Executing, orchestrator re-spawns
+
+## Merge Failure Handling Flow (Current)
+
+1. After acceptance, complete.rs attempts progressive merge
+2. Git conflicts -> MergeConflict state
+3. Orchestrator spawns merge session (merge_handler.rs:278-307)
+4. Non-conflict error -> MergeBlocked state (manual only)
+5. Agent runs loom stage merge-complete after resolution
+
+## Controlled Failure Recovery Gaps (Addressed by Plan)
+
+No agent self-service acceptance re-run (without completing).
+No agent merge re-attempt from worktree.
+No dispute mechanism for bad acceptance criteria.
+No human review flow or fix attempt tracking.
+No desktop notifications for stages needing attention.

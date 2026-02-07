@@ -1,387 +1,312 @@
 # Loom
 
-Loom is an agent orchestration system for Claude Code. It coordinates AI agent sessions across git worktrees, enabling parallel task execution with automatic crash recovery and context handoffs. When context runs low, agents externalize their state and signal fresh sessions to continue seamlessly.
+Loom is an agent orchestration system for Claude Code. It coordinates AI agent sessions across git worktrees, enabling parallel task execution with crash recovery, context handoffs, and structured verification.
 
-## The Problem
+## What Loom Solves
 
-AI agent sessions hit hard limits:
+- Context exhaustion in long agent sessions
+- Lost execution state when sessions crash or end
+- Manual handoff/restart overhead
+- Weak coordination across multi-stage work
 
-- **Context exhaustion** - Long tasks exceed the context window
-- **Lost state** - Work-in-progress vanishes when sessions end
-- **Manual handoffs** - Resuming requires re-explaining context and decisions
-- **No coordination** - Multiple agents cannot easily pass work between each other
+## Key Capabilities
 
-## The Solution
+- Persistent orchestration state in `.work/`
+- Git worktree isolation for parallel stage execution
+- Stage-aware signals and recovery flows
+- Goal-backward verification (`truths`, `artifacts`, `wiring`, `wiring_tests`)
+- Plan-level and stage-level sandbox controls
+- Optional agent teams guidance in stage signals
 
-Loom solves these problems with three integrated components:
+## Platform Support
 
-| Component    | Purpose                                          |
-| ------------ | ------------------------------------------------ |
-| **loom CLI** | Manages persistent work state across sessions    |
-| **Agents**   | 3 specialized AI agents (2 Opus, 1 Sonnet)       |
-| **Skills**   | Reusable knowledge modules loaded dynamically    |
+- Linux: primary development and full CI test runs
+- macOS: supported for build/terminal integration, CI does build-only verification
+- Windows: not supported (WSL may work but is best-effort)
 
-Together, they implement the **Signal Principle**: *"If you have a signal, answer it."* Agents check for pending signals on startup and resume work automatically.
+## Quick Start (Development)
 
-## Quick Start
-
-Please note: As loom is still under active development, you need to use the `dev-install.sh` script and build loom locally. You will need the rust toolchain on your machine. Once 'stable', loom will be installable with a simple piped `curl [url] | sh` command on supported environments. Loom is primarily developed on linux, with partial support for macOS. Support for Windows is not planned, you may be able to use WSL, but ymmv and you're on your own.
-
-1. Clone the repo
-2. `bash ./dev-install.sh`
-3. Then:
+Loom is under active development. Build/install locally with Rust toolchain available.
 
 ```bash
+git clone https://github.com/cosmix/loom.git
+cd loom
+bash ./dev-install.sh
 
-# Initialize and run
+# in your target repo
 cd /path/to/project
-loom init doc/plans/my-plan.md   # Initialize with a plan
-loom run                          # Start daemon and execute stages
-loom status                       # Live dashboard (Ctrl+C to exit)
-loom stop                         # Stop the daemon
+loom init doc/plans/my-plan.md
+loom run
+loom status --live
+loom stop
 ```
 
-Loom creates git worktrees for parallel stages and spawns Claude Code sessions in terminal windows automatically.
+## Installation Options
 
-## Core Concepts
+### Dev Install (recommended for contributors)
 
-| Concept      | Description                                        |
-| ------------ | -------------------------------------------------- |
-| **Plan**     | Parent container for stages, lives in `doc/plans/` |
-| **Stage**    | A unit of work within a plan, with dependencies    |
-| **Session**  | A Claude Code instance executing a stage           |
-| **Worktree** | Git worktree for parallel stage isolation          |
-| **Handoff**  | Context dump when session exhausts context         |
-
-### The Signal Principle
-
-On every session start, agents:
-
-1. Check `.work/signals/` for pending work matching their role
-2. If a signal exists, load context and execute immediately
-3. If no signal, ask the user what to do
-
-This creates continuity across sessions without manual intervention.
-
-### Context Management
-
-Agents monitor context usage and create handoffs before hitting limits:
-
-| Level  | Usage  | Action                          |
-| ------ | ------ | ------------------------------- |
-| Green  | < 50%  | Normal operation                |
-| Yellow | 50-64% | Prepare handoff soon            |
-| Red    | >= 65% | Create handoff, start fresh     |
-
-Stages can customize their budget via `context_budget` (1-100%, default: 65%).
-
-## Architecture
-
-```text
-┌─────────────────────────────────────────────────────────────┐
-│                        loom run                             │
-└──────────────────────────┬──────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│              Daemon Process (background)                    │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │  Unix Socket - CLI connections, live updates        │    │
-│  └─────────────────────────────────────────────────────┘    │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │  Orchestrator Loop (every 5s)                       │    │
-│  │  - Poll stage/session files                         │    │
-│  │  - Start ready stages in terminal windows           │    │
-│  │  - Detect crashed sessions, generate handoffs       │    │
-│  └─────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
-                           │
-           ┌───────────────┼───────────────┐
-           ▼               ▼               ▼
-      ┌─────────┐    ┌─────────┐    ┌─────────┐
-      │ Terminal│    │ Terminal│    │ Terminal│
-      │ stage-1 │    │ stage-2 │    │ stage-3 │
-      └─────────┘    └─────────┘    └─────────┘
+```bash
+bash ./dev-install.sh
 ```
 
-### State Directory
-
-All state lives in `.work/` as structured files:
-
-```text
-project/
-├── .work/                    # Loom state (version controlled)
-│   ├── config.toml           # Active plan, settings
-│   ├── stages/               # Stage state files
-│   ├── sessions/             # Session tracking
-│   ├── signals/              # Agent assignments
-│   └── handoffs/             # Context dumps
-├── .worktrees/               # Git worktrees for parallel stages
-└── doc/plans/                # Plan documents
-```
-
-## Installation
-
-### Quick Install (Recommended)
+### Install Script
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/cosmix/loom/main/install.sh | bash
 ```
 
-### Manual Install
-
-```bash
-git clone https://github.com/cosmix/loom.git
-cd loom
-bash install.sh
-```
-
 ### What Gets Installed
 
-| Location              | Contents                              |
-| --------------------- | ------------------------------------- |
-| `~/.claude/agents/`   | 3 specialized AI agents               |
-| `~/.claude/skills/`   | Reusable knowledge modules            |
-| `~/.claude/CLAUDE.md` | Orchestration rules and configuration |
-| `~/.local/bin/loom`   | Loom CLI binary                       |
+| Location | Contents |
+| --- | --- |
+| `~/.claude/agents/` | Loom agents |
+| `~/.claude/skills/` | Loom skills |
+| `~/.claude/CLAUDE.md` | Loom orchestration guidance |
+| `~/.local/bin/loom` | Loom CLI |
 
-### Shell Completions
+## Core Workflow
 
-```bash
-# Bash
-eval "$(loom completions bash)"
-
-# Zsh
-eval "$(loom completions zsh)"
-
-# Fish
-loom completions fish > ~/.config/fish/completions/loom.fish
-```
+1. Create/update a plan in `doc/plans/`.
+2. Run `loom init <plan-path>` to parse metadata and create stage state.
+3. Run `loom run` to start daemon + orchestrator.
+4. Track progress with `loom status --live`.
+5. Recover, verify, merge, or retry stages as needed.
 
 ## CLI Reference
 
 ### Primary Commands
 
 ```bash
-loom init <plan-path> [--clean]       # Initialize with a plan
-loom run [--stage <id>] [--watch]     # Execute stages (starts daemon)
-loom status [--live]                  # Live dashboard
-loom stop                             # Stop the daemon
-loom resume <stage-id>                # Resume from handoff
-loom merge <stage-id>                 # Merge completed stage to main
-loom diagnose <stage-id>              # Diagnose a failed stage
+loom init <plan-path> [--clean]
+loom run [--manual] [--max-parallel N] [--foreground] [--watch] [--no-merge]
+loom status [--live] [--compact] [--verbose]
+loom stop
+loom resume <stage-id>
+loom merge <stage-id> [--force]
+loom verify <stage-id> [--suggest]
+loom diagnose <stage-id>
 ```
 
-### Stage Management
+### Stage Commands
 
 ```bash
-loom stage complete <stage-id>        # Mark stage complete
-loom stage block <stage-id> <reason>  # Block with reason
-loom stage reset <stage-id>           # Reset to ready state
-loom stage hold <stage-id>            # Prevent auto-execution
-loom stage release <stage-id>         # Allow held stage to execute
-loom stage skip <stage-id>            # Skip a stage
-loom stage retry <stage-id>           # Retry a blocked stage
+loom stage complete <stage-id> [--session <id>] [--no-verify] [--force-unsafe --assume-merged]
+loom stage block <stage-id> <reason>
+loom stage reset <stage-id> [--hard] [--kill-session]
+loom stage waiting <stage-id>
+loom stage resume <stage-id>
+loom stage hold <stage-id>
+loom stage release <stage-id>
+loom stage skip <stage-id> [--reason <text>]
+loom stage retry <stage-id> [--force]
+loom stage recover <stage-id> [--force]
+loom stage merge-complete <stage-id>
+loom stage verify <stage-id> [--no-reload]
 ```
 
-### Knowledge Management
+### Stage Outputs
 
 ```bash
-loom knowledge init                   # Initialize knowledge directory
-loom knowledge show [file]            # Show knowledge
-loom knowledge update <file> <text>   # Append to knowledge file
-
-loom memory note <text>               # Record a note
-loom memory decision <text>           # Record a decision
-loom memory promote <type> <target>   # Promote to permanent knowledge
+loom stage output set <stage-id> <key> <value> [--description <text>]
+loom stage output get <stage-id> <key>
+loom stage output list <stage-id>
+loom stage output remove <stage-id> <key>
 ```
 
-### Verification
+### Knowledge / Memory
 
 ```bash
-loom verify <stage-id> [--suggest]    # Verify stage outcomes
-loom map [--deep] [--focus <area>]    # Map codebase to knowledge files
+loom knowledge show [file]
+loom knowledge update <file> <content>
+loom knowledge init
+loom knowledge list
+loom knowledge check [--min-coverage N] [--src-path <path>] [--quiet]
+
+loom memory note <text> [--session <id>]
+loom memory decision <text> [--context <why>] [--session <id>]
+loom memory question <text> [--session <id>]
+loom memory query <search> [--session <id>]
+loom memory list [--session <id>] [--entry-type <type>]
+loom memory show [--session <id>]
+loom memory sessions
+loom memory promote <entry-type|all> <target> [--session <id>]
 ```
 
-### Sandbox
+### Other Commands
 
 ```bash
-loom sandbox suggest                  # Auto-detect project type and suggest config
-```
-
-### Utilities
-
-```bash
-loom sessions list                    # List active sessions
-loom sessions kill <id>               # Kill a session
-loom worktree list                    # List worktrees
-loom worktree clean                   # Clean unused worktrees
-loom clean [--all]                    # Clean up resources
-loom self-update                      # Update loom
+loom sessions list
+loom sessions kill <session-id...> | --stage <stage-id>
+loom worktree list
+loom worktree clean
+loom worktree remove <stage-id>
+loom graph show
+loom graph edit
+loom hooks install
+loom hooks list
+loom sandbox suggest
+loom map [--deep] [--focus <area>] [--overwrite]
+loom repair [--fix]
+loom clean [--all|--worktrees|--sessions|--state]
+loom self-update
+loom completions <bash|zsh|fish>
 ```
 
 ## Plan Format
 
-Plans live in `doc/plans/` with embedded YAML metadata:
+Plans live in `doc/plans/` with metadata in fenced YAML between loom markers.
 
 ````markdown
 # PLAN-0001: Feature Name
 
-## Problem Statement
-...
-
 <!-- loom METADATA -->
-
 ```yaml
 loom:
   version: 1
+  sandbox:
+    enabled: true
   stages:
-    - id: stage-1
-      name: "Stage Name"
-      description: "What this stage accomplishes"
+    - id: implement-api
+      name: Implement API
+      description: Add endpoint + tests
+      working_dir: "."
+      stage_type: standard
       dependencies: []
       acceptance:
         - "cargo test"
       files:
-        - "src/**/*.rs"
+        - "loom/src/**/*.rs"
+      truths:
+        - "cargo test api_integration::returns_200"
+      artifacts:
+        - "loom/src/api/*.rs"
+      wiring:
+        - source: "loom/src/main.rs"
+          pattern: "mod api;"
+          description: "API module registered"
+      execution_mode: team
 
-    - id: stage-2
-      name: "Dependent Stage"
-      dependencies: ["stage-1"]
+    - id: integration-verify
+      name: Integration Verify
+      working_dir: "."
+      stage_type: integration-verify
+      dependencies: ["implement-api"]
       acceptance:
-        - "cargo test"
+        - "cargo test --all-targets"
+      truths:
+        - "cargo test api_integration::returns_200"
 ```
-
 <!-- END loom METADATA -->
 ````
 
 ### Stage Fields
 
-| Field            | Required | Description                                      |
-| ---------------- | -------- | ------------------------------------------------ |
-| `id`             | Yes      | Unique identifier (kebab-case)                   |
-| `name`           | Yes      | Human-readable name                              |
-| `description`    | Yes      | What this stage accomplishes                     |
-| `dependencies`   | No       | Stage IDs that must complete first               |
-| `acceptance`     | No       | Shell commands to verify completion              |
-| `files`          | No       | Glob patterns for modified files                 |
-| `context_budget` | No       | Max context % before handoff (default: 65)       |
-| `truths`         | No       | Observable behaviors to verify                   |
-| `artifacts`      | No       | Files that must exist with real implementation   |
-| `wiring`         | No       | Critical connections to verify                   |
+| Field | Required | Notes |
+| --- | --- | --- |
+| `id` | Yes | Stage identifier |
+| `name` | Yes | Human-readable title |
+| `working_dir` | Yes | Relative execution directory (`.` allowed) |
+| `description` | No | Optional summary |
+| `dependencies` | No | Upstream stage IDs |
+| `acceptance` | No | Shell criteria for stage completion |
+| `setup` | No | Setup commands |
+| `files` | No | File glob scope |
+| `stage_type` | No | `standard` (default), `knowledge`, `code-review`, `integration-verify` |
+| `truths` / `artifacts` / `wiring` | Conditionally required | Required for `standard` and `integration-verify` stages |
+| `truth_checks` / `wiring_tests` / `dead_code_check` | No | Extended verification |
+| `context_budget` | No | Context threshold (%) for handoff |
+| `sandbox` | No | Per-stage sandbox override |
+| `execution_mode` | No | `single` (default) or `team` hint |
 
-### Goal-Backward Verification
+### Stage Type Behavior
 
-Standard tests don't guarantee a feature works end-to-end. Goal-backward verification validates **outcomes**:
+- `knowledge`: knowledge/bootstrap work, different verification expectations
+- `standard`: implementation stage; must define goal-backward checks
+- `code-review`: review-focused stage (exempt from goal-backward requirement)
+- `integration-verify`: final quality gate; must define goal-backward checks
 
-```yaml
-truths:
-  - "curl -sf localhost:8080/login"          # Feature is reachable
-artifacts:
-  - "src/auth/*.rs"                          # Real code exists
-wiring:
-  - source: "src/main.rs"
-    pattern: "use auth::"                    # Module is imported
-```
+`loom init` automatically inserts a `code-review` stage before `integration-verify` when missing.
 
-Run `loom verify <stage-id>` to check all layers.
+## Verification Model
 
-### Sandbox Configuration
+`loom verify <stage-id>` validates outcomes, not just compilation/tests:
 
-Loom integrates with Claude Code's sandboxing to control agent permissions:
+- `truths`: observable behaviors that must succeed
+- `artifacts`: real implementation files exist
+- `wiring`: critical integration links exist
+- `wiring_tests`: runtime integration checks
+
+For `standard` and `integration-verify` stages, at least one goal-backward check must be defined.
+
+## Sandbox Configuration
+
+Loom supports plan-level defaults plus stage-level overrides.
 
 ```yaml
 loom:
   version: 1
   sandbox:
     enabled: true
+    auto_allow: true
+    excluded_commands: ["loom"]
     filesystem:
-      deny_read: ["~/.ssh/**", "~/.aws/**"]
-      deny_write: [".work/stages/**"]
-      allow_write: ["src/**"]
+      deny_read:
+        - "~/.ssh/**"
+        - "~/.aws/**"
+        - "../../**"
+        - "../.worktrees/**"
+      deny_write:
+        - "../../**"
+        - "doc/loom/knowledge/**"
+      allow_write:
+        - "src/**"
     network:
       allowed_domains: ["github.com", "crates.io"]
+      additional_domains: []
+      allow_local_binding: false
+      allow_unix_sockets: false
 ```
 
-**Get project-specific suggestions:**
+Generate project-specific domain suggestions:
 
 ```bash
 loom sandbox suggest
 ```
 
-This auto-detects your project type (Rust, Node, Python) and outputs recommended domain allowlists.
+Note: knowledge file writes are intentionally protected by sandbox defaults; knowledge updates should be done via `loom knowledge ...` commands.
 
-**Key sandbox options:**
+## Agent Teams (Experimental)
 
-| Option                       | Description                                              |
-| ---------------------------- | -------------------------------------------------------- |
-| `filesystem.deny_read`       | Paths agents cannot read (e.g., SSH keys, credentials)   |
-| `filesystem.deny_write`      | Paths agents cannot write                                |
-| `filesystem.allow_write`     | Exceptions to write restrictions                         |
-| `network.allowed_domains`    | Domains agents can access (empty = no network)           |
-| `excluded_commands`          | Commands exempt from sandboxing (default: `["loom"]`)    |
+Loom enables agent teams in spawned sessions (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) and injects team-usage guidance into stage signals.
 
-Stages can override plan-level settings with their own `sandbox` block. Knowledge and integration-verify stages automatically get write access to `doc/loom/knowledge/**`.
+Use teams when work needs coordination/discussion across agents (multi-dimension review, exploratory analysis). Use subagents for independent, concrete file-level tasks.
 
-## Agent Hierarchy
+## State Layout
 
-| Agent                      | Model  | Purpose                                              |
-| -------------------------- | ------ | ---------------------------------------------------- |
-| `senior-software-engineer` | Opus   | Architecture, design patterns, complex debugging     |
-| `software-engineer`        | Sonnet | Feature implementation, bug fixes, tests             |
-| `code-reviewer`            | Opus   | Read-only code review, security review, architecture |
-
-## Skills Library
-
-Skills are knowledge modules loaded dynamically. Key categories:
-
-| Category       | Examples                                              |
-| -------------- | ----------------------------------------------------- |
-| Languages      | `python`, `golang`, `rust`, `typescript`              |
-| Code Quality   | `code-review`, `refactoring`, `testing`               |
-| Infrastructure | `docker`, `kubernetes`, `terraform`, `ci-cd`          |
-| Security       | `security-audit`, `threat-model`, `auth`              |
-| Architecture   | `event-driven`, `feature-flags`, `background-jobs`    |
-| Observability  | `logging-observability`, `grafana`, `prometheus`      |
-
-## Customization
-
-### Adding Agents
-
-Create `~/.claude/agents/my-agent.md`:
-
-```markdown
----
-name: my-agent
-description: What this agent does.
-tools: Read, Edit, Write, Glob, Grep, Bash
-model: sonnet
----
-
-Your agent's system prompt here.
+```text
+project/
+├── .work/
+│   ├── config.toml
+│   ├── stages/
+│   ├── sessions/
+│   ├── signals/
+│   └── handoffs/
+├── .worktrees/
+└── doc/plans/
 ```
 
-### Adding Skills
+## Shell Completions
 
-Create `~/.claude/skills/my-skill/SKILL.md`:
+```bash
+# bash
+eval "$(loom completions bash)"
 
-```markdown
----
-name: my-skill
-description: What this skill does.
-allowed-tools: Read, Grep, Glob
----
+# zsh
+eval "$(loom completions zsh)"
 
-# My Skill
-
-## Instructions
-...
+# fish
+loom completions fish > ~/.config/fish/completions/loom.fish
 ```
-
-## Further Reading
-
-- [Claude Code Documentation](https://code.claude.com/docs/en/overview)
-- [Claude Code Best Practices](https://www.anthropic.com/engineering/claude-code-best-practices)
 
 ## License
 
