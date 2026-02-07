@@ -49,8 +49,34 @@ pub fn show(file: Option<String>) -> Result<()> {
     Ok(())
 }
 
+/// Read content from stdin
+fn read_content_from_stdin() -> Result<String> {
+    use std::io::Read;
+    let mut buffer = String::new();
+    std::io::stdin()
+        .read_to_string(&mut buffer)
+        .context("Failed to read from stdin")?;
+    let trimmed = buffer.trim().to_string();
+    if trimmed.is_empty() {
+        bail!("No content received from stdin");
+    }
+    if trimmed.len() > crate::validation::MAX_KNOWLEDGE_CONTENT_LENGTH {
+        bail!(
+            "Content from stdin too long: {} characters (max {})",
+            trimmed.len(),
+            crate::validation::MAX_KNOWLEDGE_CONTENT_LENGTH
+        );
+    }
+    Ok(trimmed)
+}
+
 /// Update (append to) a knowledge file
-pub fn update(file: String, content: String) -> Result<()> {
+pub fn update(file: String, content: Option<String>) -> Result<()> {
+    let content = match content {
+        Some(c) if c == "-" => read_content_from_stdin()?,
+        Some(c) => c,
+        None => read_content_from_stdin()?,
+    };
     let work_dir = WorkDir::new(".")?;
 
     let main_project_root = work_dir
@@ -728,10 +754,10 @@ mod tests {
         // Initialize first
         init().expect("Failed to init knowledge");
 
-        // Update entry-points
+        // Update entry-points with explicit content
         let result = update(
             "entry-points".to_string(),
-            "## New Section\n\n- New entry".to_string(),
+            Some("## New Section\n\n- New entry".to_string()),
         );
         assert!(result.is_ok());
 
@@ -814,7 +840,7 @@ mod tests {
         // Update knowledge - should also write to main repo
         let result = update(
             "entry-points".to_string(),
-            "## Test Entry\n\n- test/file.rs - Test description".to_string(),
+            Some("## Test Entry\n\n- test/file.rs - Test description".to_string()),
         );
         assert!(result.is_ok(), "update() failed: {result:?}");
 
@@ -946,7 +972,7 @@ More description
         init().expect("Failed to init knowledge");
         update(
             "architecture".to_string(),
-            "## Overview\n\nProject architecture here".to_string(),
+            Some("## Overview\n\nProject architecture here".to_string()),
         )
         .expect("Failed to update architecture");
 
@@ -976,7 +1002,7 @@ More description
         init().expect("Failed to init knowledge");
         update(
             "architecture".to_string(),
-            "## Overview\n\n- commands/ - CLI\n- models/ - Data".to_string(),
+            Some("## Overview\n\n- commands/ - CLI\n- models/ - Data".to_string()),
         )
         .expect("Failed to update architecture");
 
@@ -1020,7 +1046,7 @@ More description
         init().expect("Failed to init knowledge");
         update(
             "architecture".to_string(),
-            "## Overview\n\nSmall content".to_string(),
+            Some("## Overview\n\nSmall content".to_string()),
         )
         .expect("Failed to update");
 
@@ -1044,7 +1070,7 @@ More description
         for i in 0..250 {
             big_content.push_str(&format!("- Line {}\n", i));
         }
-        update("architecture".to_string(), big_content).expect("Failed to update");
+        update("architecture".to_string(), Some(big_content)).expect("Failed to update");
 
         let result = gc(200, 800, true);
         assert!(result.is_ok());
@@ -1062,13 +1088,36 @@ More description
         init().expect("Failed to init knowledge");
         update(
             "architecture".to_string(),
-            "## Overview\n\nProject architecture here".to_string(),
+            Some("## Overview\n\nProject architecture here".to_string()),
         )
         .expect("Failed to update architecture");
 
         // check should still pass - GC analysis is advisory only
         let result = check(50, None, false);
         assert!(result.is_ok());
+
+        std::env::set_current_dir(original_dir).expect("Failed to restore dir");
+    }
+
+    #[test]
+    #[serial]
+    fn test_update_with_explicit_content() {
+        let (_temp_dir, test_dir) = setup_test_env();
+        let original_dir = std::env::current_dir().expect("Failed to get current dir");
+        std::env::set_current_dir(&test_dir).expect("Failed to change dir");
+
+        init().expect("Failed to init knowledge");
+
+        // Test with explicit content
+        let result = update(
+            "patterns".to_string(),
+            Some("## Test Pattern\n\nExplicit content".to_string()),
+        );
+        assert!(result.is_ok());
+
+        let content = fs::read_to_string(test_dir.join("doc/loom/knowledge/patterns.md")).unwrap();
+        assert!(content.contains("## Test Pattern"));
+        assert!(content.contains("Explicit content"));
 
         std::env::set_current_dir(original_dir).expect("Failed to restore dir");
     }

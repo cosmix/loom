@@ -2,7 +2,7 @@
 
 use clap::Subcommand;
 use loom::fs::knowledge::{DEFAULT_MAX_FILE_LINES, DEFAULT_MAX_TOTAL_LINES};
-use loom::validation::{clap_description_validator, clap_id_validator};
+use loom::validation::{clap_id_validator, clap_knowledge_content_validator};
 
 #[derive(Subcommand)]
 pub enum KnowledgeCommands {
@@ -18,9 +18,9 @@ pub enum KnowledgeCommands {
         /// File to update (entry-points, patterns, conventions)
         file: String,
 
-        /// Content to append (markdown format)
-        #[arg(value_parser = clap_description_validator)]
-        content: String,
+        /// Content to append (markdown format). Omit or use "-" to read from stdin.
+        #[arg(value_parser = clap_knowledge_content_validator)]
+        content: Option<String>,
     },
 
     /// Initialize the knowledge directory
