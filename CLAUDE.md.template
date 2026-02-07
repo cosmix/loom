@@ -606,6 +606,16 @@ The code-review stage performs security and quality review using parallel subage
 
 **Every plan MUST end with `integration-verify`.**
 
+**⚠️ CONTEXT GATHERING (FIRST STEP)**
+
+integration-verify starts WITHOUT context from prior stages. Before doing ANY verification, you MUST:
+
+1. **Read the plan** — Read the plan file from `doc/plans/` (check `.work/config.toml` for `source_path`) to understand what was implemented, the stage descriptions, and acceptance criteria
+2. **Read ALL session memory** — Run `loom memory sessions` to list all journals, then `loom memory show --session <id>` for EACH session to understand decisions made, issues encountered, and insights recorded during implementation
+3. **Read knowledge files** — Read `doc/loom/knowledge/*.md` for architecture context and any mistakes recorded
+
+Without this context, you will miss wiring issues, misunderstand design decisions, and fail to verify the actual intent of the feature.
+
 **⚠️ ZERO TOLERANCE FOR ISSUES**
 
 integration-verify is the **FINAL QUALITY GATE**. ALL issues must be resolved:
