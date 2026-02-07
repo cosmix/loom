@@ -173,7 +173,7 @@ Every `stage_type: standard` stage MUST define at least ONE of:
 
 **This is VALIDATED by `loom init` and will REJECT plans that violate it.**
 
-Knowledge and integration-verify stages are EXEMPT from this requirement.
+Only knowledge and code-review stages are EXEMPT from this requirement. **integration-verify stages REQUIRE at least one of truths/artifacts/wiring** for functional verification.
 
 **⛔ NEVER PUT TRIPLE BACKTICKS INSIDE YAML DESCRIPTIONS:**
 
@@ -834,7 +834,7 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 □ code-review BEFORE integration-verify (auto-inserted by loom init if missing)
 □ integration-verify LAST (TESTS ≠ WORKING)
 □ Every stage has stage_type: knowledge, standard, code-review, or integration-verify
-□ **Every standard stage has at least ONE of: truths, artifacts, or wiring**
+□ **Every standard AND integration-verify stage has at least ONE of: truths, artifacts, or wiring**
 □ NO path traversal (`../`) in any path field
 □ Parallel SUBAGENTS first, multiple stages only when files clash
 □ Sandbox block configured with network domains and filesystem restrictions
