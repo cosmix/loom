@@ -624,3 +624,9 @@ Two plan criteria caused false negatives in integration-verify:
   - _Rationale:_ Analysis of existing code shows NeedsHumanReview has icon/color/label in types.rs but is missing from status_order in display/stages.rs and attention filter in render/attention.rs
 - **Desktop notifications via notify-send (Linux) and osascript (macOS) triggered from orchestrator event handler when StageNeedsHumanReview event detected. New notify module under src/orchestrator/ for notification logic**
   - _Rationale:_ Monitor already detects stage state changes in detection.rs but NeedsHumanReview falls through to catch-all. Need new MonitorEvent variant and handler
+
+## Promoted from Memory [2026-02-07 13:51]
+
+### Notes
+
+- Knowledge bootstrap for merge-conflict-auto-resolver: Coverage already 100% (18/18). Existing knowledge covers progressive merge, 6 signal types, merge failure handling, phantom merge verification. Minor gap: no documented comparison of the 3 merge signal types (merge vs merge_conflict vs base_conflict) or the MergeLock concurrency mechanism.

@@ -1504,3 +1504,30 @@ No agent merge re-attempt from worktree.
 No dispute mechanism for bad acceptance criteria.
 No human review flow or fix attempt tracking.
 No desktop notifications for stages needing attention.
+
+## Merge Signal Type Comparison
+
+Three merge-specific signal types, all in main repo (not worktrees):
+
+| Type | Header | When |
+|------|--------|------|
+| Merge | Merge Signal: | Auto-merge fails in progressive merge |
+| MergeConflict | Merge Conflict Resolution: | Stage MergeConflict status |
+| BaseConflict | Base Conflict Signal: | Multi-dep base branch merge fails |
+
+### Merge Signal Differences
+
+Merge: single source_branch, basic stage context.
+MergeConflict: single source (from stage), full stage context (name, desc, files touched).
+BaseConflict: multiple source_branches[], uses ALL instead of BOTH in preservation wording.
+
+None use Manus KV-cache pattern (simple markdown only).
+Detection: header-based via read_*_signal() returning None if header mismatch.
+
+## Merge Lock Mechanism (progressive_merge/lock.rs)
+
+MergeLock prevents concurrent merges via exclusive file at .work/merge.lock.
+Uses create_new(true) for atomic creation. Writes PID + timestamp.
+Timeout: 30s default. Stale lock: 5min auto-cleanup.
+Acquired by merge_stage() before git operations. Released via Drop trait.
+Prevents race conditions during parallel stage merges.
