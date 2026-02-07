@@ -697,3 +697,15 @@ Two plan criteria caused false negatives in integration-verify:
 
 - **Used parallel subagents for validation.rs and CLI/command changes since files have no overlap**
   - _Rationale:_ Follows subagents-first strategy from CLAUDE.md rules
+
+## Promoted from Memory [2026-02-07 15:20]
+
+### Notes
+
+- Code review of knowledge-update-long-content found 4 actionable issues: (1) Unbounded stdin read before length check - DoS vector via cat /dev/urandom, fixed with stdin().take(limit), (2) Duplicate validation in read_content_from_stdin() - replaced with call to validate_knowledge_content(), (3) No defense-in-depth validation in update() for non-CLI callers - added explicit validation after content resolution, (4) Error message said 'characters' but .len() measures bytes - fixed to say 'bytes'
+- Non-actionable findings noted: (1) knowledge.rs at 953 lines exceeds 400-line limit (pre-existing), (2) cache.rs at 686 lines exceeds limit (pre-existing, already noted in mistakes.md), (3) sections.rs at 639 lines exceeds limit (pre-existing), (4) stdin blocks on TTY - needs atty/IsTerminal dep, out of scope, (5) No stdin test coverage - tricky to unit test, (6) fs/knowledge.rs append() has no validation - pre-existing
+
+### Decisions
+
+- **Fixed 4 issues: stdin take() cap, DRY validation, defense-in-depth, accurate error message**
+  - _Rationale:_ Security review found unbounded stdin read. Architecture review found duplicate validation and missing defense-in-depth. Both found bytes-vs-chars mismatch in error message.

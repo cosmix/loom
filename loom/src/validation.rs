@@ -115,7 +115,7 @@ pub fn validate_knowledge_content(content: &str) -> Result<()> {
 
     if content.len() > MAX_KNOWLEDGE_CONTENT_LENGTH {
         bail!(
-            "Knowledge content too long: {} characters (max {})",
+            "Knowledge content too long: {} bytes (max {})",
             content.len(),
             MAX_KNOWLEDGE_CONTENT_LENGTH
         );
