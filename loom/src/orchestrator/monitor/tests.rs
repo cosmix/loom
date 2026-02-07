@@ -461,3 +461,87 @@ fn test_check_session_alive_with_pid_file() {
     // PID file should be cleaned up after detecting dead process
     assert!(!pid_file.exists());
 }
+
+#[test]
+fn test_merge_conflict_stage_session_not_reported_as_crash() {
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let work_dir = temp_dir.path().to_path_buf();
+
+    let config = MonitorConfig {
+        work_dir,
+        ..Default::default()
+    };
+    let handlers = Handlers::new(config);
+    let mut detection = Detection::new();
+
+    let mut session = Session::new();
+    session.id = "session-1".to_string();
+    session.stage_id = Some("stage-1".to_string());
+    session.status = SessionStatus::Running;
+    session.set_pid(99999); // Non-existent PID
+
+    let mut stage = Stage::new("test".to_string(), Some("Test stage".to_string()));
+    stage.id = "stage-1".to_string();
+    stage.status = StageStatus::MergeConflict;
+
+    // First poll establishes Running state in detection tracking
+    detection.detect_session_changes(&[session.clone()], &[stage.clone()], &handlers);
+
+    // Second poll: PID dead + stage is MergeConflict → treat as normal exit, not crash
+    let events = detection.detect_session_changes(&[session.clone()], &[stage], &handlers);
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, MonitorEvent::SessionCrashed { .. })),
+        "MergeConflict stage should prevent crash report when session PID dies"
+    );
+    assert_eq!(
+        detection.last_session_states.get("session-1"),
+        Some(&SessionStatus::Completed),
+        "Session should be marked Completed, not Crashed"
+    );
+}
+
+#[test]
+fn test_merge_blocked_stage_session_not_reported_as_crash() {
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let work_dir = temp_dir.path().to_path_buf();
+
+    let config = MonitorConfig {
+        work_dir,
+        ..Default::default()
+    };
+    let handlers = Handlers::new(config);
+    let mut detection = Detection::new();
+
+    let mut session = Session::new();
+    session.id = "session-2".to_string();
+    session.stage_id = Some("stage-2".to_string());
+    session.status = SessionStatus::Running;
+    session.set_pid(99998); // Non-existent PID
+
+    let mut stage = Stage::new("test".to_string(), Some("Test stage".to_string()));
+    stage.id = "stage-2".to_string();
+    stage.status = StageStatus::MergeBlocked;
+
+    // First poll establishes Running state
+    detection.detect_session_changes(&[session.clone()], &[stage.clone()], &handlers);
+
+    // Second poll: PID dead + stage is MergeBlocked → normal exit, not crash
+    let events = detection.detect_session_changes(&[session.clone()], &[stage], &handlers);
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, MonitorEvent::SessionCrashed { .. })),
+        "MergeBlocked stage should prevent crash report when session PID dies"
+    );
+    assert_eq!(
+        detection.last_session_states.get("session-2"),
+        Some(&SessionStatus::Completed),
+        "Session should be marked Completed, not Crashed"
+    );
+}
