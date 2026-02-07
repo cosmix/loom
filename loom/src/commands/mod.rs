@@ -2,6 +2,7 @@ pub mod clean;
 pub mod common;
 pub mod diagnose;
 pub mod graph;
+pub mod handoff;
 pub mod hooks;
 pub mod init;
 pub mod knowledge;

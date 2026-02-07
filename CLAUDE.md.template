@@ -240,6 +240,17 @@ Write complete code NOW. Unknown? ASK. Complex? DECOMPOSE.
 
 At 75% context: STOP immediately. Write handoff to `.work/handoffs/`. No new tasks.
 
+### 3b. POST-COMPACTION RECOVERY
+
+After any context compaction or loss, IMMEDIATELY:
+
+1. Run `loom memory list` to see session insights
+2. Check `.work/handoffs/` for latest handoff for your stage
+3. Read the handoff to understand completed work and next steps
+4. Resume work from where the previous context left off
+
+Do NOT start fresh - always recover prior context first.
+
 ### 4. COMMIT AND COMPLETE (HOOK-ENFORCED)
 
 **BEFORE ending ANY loom worktree session:**

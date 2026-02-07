@@ -129,6 +129,12 @@ pub enum Commands {
         command: StageCommands,
     },
 
+    /// Create and manage handoff files
+    Handoff {
+        #[command(subcommand)]
+        command: HandoffCommands,
+    },
+
     /// Manage curated codebase knowledge
     Knowledge {
         #[command(subcommand)]
@@ -301,4 +307,26 @@ pub enum HooksCommands {
 
     /// List available loom hooks and their status
     List,
+}
+
+#[derive(Subcommand)]
+pub enum HandoffCommands {
+    /// Create a handoff file capturing current session state
+    Create {
+        /// Stage ID (auto-detected from LOOM_STAGE_ID env var if not provided)
+        #[arg(long, value_parser = clap_id_validator)]
+        stage: Option<String>,
+
+        /// Session ID (auto-detected from LOOM_SESSION_ID env var if not provided)
+        #[arg(long)]
+        session: Option<String>,
+
+        /// Trigger type (e.g., precompact, session_end, manual)
+        #[arg(long, default_value = "manual")]
+        trigger: String,
+
+        /// Optional message to include in the handoff
+        #[arg(long)]
+        message: Option<String>,
+    },
 }

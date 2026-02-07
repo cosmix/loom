@@ -51,9 +51,15 @@ EVENTS_FILE="${HOOKS_DIR}/events.jsonl"
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 
 # Check if stage was already completed
-STAGE_FILE="${LOOM_WORK_DIR}/stages/${LOOM_STAGE_ID}.md"
+# Stage files have depth prefix: e.g., 02-implement-handoff-fix.md
+STAGE_FILE=$(ls "${LOOM_WORK_DIR}/stages/"*"-${LOOM_STAGE_ID}.md" 2>/dev/null | head -1)
+# Fallback to exact match (no prefix)
+if [[ -z "$STAGE_FILE" ]]; then
+	STAGE_FILE="${LOOM_WORK_DIR}/stages/${LOOM_STAGE_ID}.md"
+fi
+
 COMPLETED=false
-if [[ -f "$STAGE_FILE" ]]; then
+if [[ -n "$STAGE_FILE" ]] && [[ -f "$STAGE_FILE" ]]; then
 	if grep -q "status: Completed" "$STAGE_FILE" 2>/dev/null || grep -q "status: Verified" "$STAGE_FILE" 2>/dev/null; then
 		COMPLETED=true
 	fi

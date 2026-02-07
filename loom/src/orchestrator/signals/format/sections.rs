@@ -516,6 +516,19 @@ pub(super) fn format_recitation_section(
 ) -> String {
     let mut content = String::new();
 
+    // Context-aware handoff reminders (independent of budget)
+    if let Some(usage) = embedded_context.context_usage {
+        if usage >= 75.0 {
+            content.push_str("## COMPACTION IMMINENT\n\n");
+            content.push_str("**Context is at critical level.** Run NOW:\n");
+            content.push_str("```\nloom handoff create --message \"what I was doing\"\n```\n\n");
+        } else if usage >= 60.0 {
+            content.push_str("## Context Preservation Reminder\n\n");
+            content.push_str("Consider creating a handoff to preserve your working state:\n");
+            content.push_str("```\nloom handoff create --message \"current state\"\n```\n\n");
+        }
+    }
+
     // Context Budget Warning (high attention position - before tasks)
     if let (Some(usage), Some(budget)) = (
         embedded_context.context_usage,
