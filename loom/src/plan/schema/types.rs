@@ -266,6 +266,18 @@ pub struct StageDefinition {
     pub execution_mode: Option<ExecutionMode>,
 }
 
+impl StageDefinition {
+    /// Check if this stage definition has any goal-backward verification checks defined.
+    pub fn has_any_goal_checks(&self) -> bool {
+        !self.truths.is_empty()
+            || !self.artifacts.is_empty()
+            || !self.wiring.is_empty()
+            || !self.truth_checks.is_empty()
+            || !self.wiring_tests.is_empty()
+            || self.dead_code_check.is_some()
+    }
+}
+
 /// Wiring check to verify component connections.
 ///
 /// Re-exported from models::stage for backward compatibility.

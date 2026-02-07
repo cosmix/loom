@@ -78,6 +78,39 @@ pub fn verify(stage_id: String, no_reload: bool) -> Result<()> {
         bail!("Verification failed for stage '{stage_id}'");
     }
 
+    // Run goal-backward verification if defined
+    {
+        let work_dir = Path::new(".work");
+        let config = crate::fs::work_dir::load_config_required(work_dir)?;
+        let plan_path = config
+            .source_path()
+            .context("No plan source path configured in .work/config.toml")?;
+        let plan = crate::plan::parser::parse_plan(&plan_path)
+            .with_context(|| format!("Failed to parse plan: {}", plan_path.display()))?;
+
+        if let Some(stage_def) = plan.stages.iter().find(|s| s.id == stage_id) {
+            if stage_def.has_any_goal_checks() {
+                println!("Running goal-backward verification...");
+                let verify_dir = acceptance_dir.as_deref().unwrap_or(Path::new("."));
+                let goal_result = crate::verify::goal_backward::run_goal_backward_verification(
+                    stage_def, verify_dir,
+                )?;
+
+                if !goal_result.is_passed() {
+                    for gap in goal_result.gaps() {
+                        eprintln!("  ✗ {:?}: {}", gap.gap_type, gap.description);
+                        eprintln!("    → {}", gap.suggestion);
+                    }
+                    eprintln!();
+                    eprintln!("Goal-backward verification FAILED for stage '{stage_id}'");
+                    eprintln!("  Fix the issues and run 'loom stage verify {stage_id}' again");
+                    bail!("Goal-backward verification failed for stage '{stage_id}'");
+                }
+                println!("Goal-backward verification passed!");
+            }
+        }
+    }
+
     // Handle knowledge stages (no merge required)
     if stage.stage_type == StageType::Knowledge {
         stage.merged = true;

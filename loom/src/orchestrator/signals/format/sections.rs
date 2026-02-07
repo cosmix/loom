@@ -459,10 +459,7 @@ pub(super) fn format_dynamic_section(
     content.push('\n');
 
     // Goal-backward verification criteria (if defined)
-    let has_goal_checks =
-        !stage.truths.is_empty() || !stage.artifacts.is_empty() || !stage.wiring.is_empty();
-
-    if has_goal_checks {
+    if stage.has_any_goal_checks() {
         content.push_str("\n## Goal-Backward Verification\n\n");
         content.push_str("Beyond acceptance criteria, verify these OUTCOMES work:\n\n");
 
@@ -487,6 +484,93 @@ pub(super) fn format_dynamic_section(
                 content.push_str(&format!(
                     "- **{}**: pattern `{}` in `{}`\n",
                     check.description, check.pattern, check.source
+                ));
+            }
+            content.push('\n');
+        }
+
+        // Enhanced truth checks (truth_checks field)
+        if !stage.truth_checks.is_empty() {
+            content.push_str("### Truth Checks (enhanced verifications)\n\n");
+            for check in &stage.truth_checks {
+                content.push_str(&format!("**Command:** `{}`\n", check.command));
+                if let Some(desc) = &check.description {
+                    content.push_str(&format!("  *{}*\n", desc));
+                }
+                let mut criteria = Vec::new();
+                if !check.stdout_contains.is_empty() {
+                    criteria.push(format!(
+                        "stdout contains: {}",
+                        check.stdout_contains.join(", ")
+                    ));
+                }
+                if !check.stdout_not_contains.is_empty() {
+                    criteria.push(format!(
+                        "stdout must NOT contain: {}",
+                        check.stdout_not_contains.join(", ")
+                    ));
+                }
+                if let Some(true) = check.stderr_empty {
+                    criteria.push("stderr must be empty".to_string());
+                }
+                if let Some(code) = check.exit_code {
+                    criteria.push(format!("exit code: {}", code));
+                }
+                if !criteria.is_empty() {
+                    content.push_str(&format!("  Criteria: {}\n", criteria.join("; ")));
+                }
+                content.push('\n');
+            }
+        }
+
+        // Wiring tests (wiring_tests field)
+        if !stage.wiring_tests.is_empty() {
+            content.push_str("### Wiring Tests (integration commands)\n\n");
+            for test in &stage.wiring_tests {
+                content.push_str(&format!("**{}:** `{}`\n", test.name, test.command));
+                if let Some(desc) = &test.description {
+                    content.push_str(&format!("  *{}*\n", desc));
+                }
+                let mut criteria = Vec::new();
+                if let Some(code) = test.success_criteria.exit_code {
+                    criteria.push(format!("exit code: {}", code));
+                }
+                if !test.success_criteria.stdout_contains.is_empty() {
+                    criteria.push(format!(
+                        "stdout contains: {}",
+                        test.success_criteria.stdout_contains.join(", ")
+                    ));
+                }
+                if !test.success_criteria.stdout_not_contains.is_empty() {
+                    criteria.push(format!(
+                        "stdout must NOT contain: {}",
+                        test.success_criteria.stdout_not_contains.join(", ")
+                    ));
+                }
+                if let Some(true) = test.success_criteria.stderr_empty {
+                    criteria.push("stderr must be empty".to_string());
+                }
+                if !criteria.is_empty() {
+                    content.push_str(&format!("  Success: {}\n", criteria.join("; ")));
+                }
+                content.push('\n');
+            }
+        }
+
+        // Dead code check (dead_code_check field)
+        if let Some(dead_code) = &stage.dead_code_check {
+            content.push_str("### Dead Code Check\n\n");
+            content.push_str(&format!("**Build command:** `{}`\n", dead_code.command));
+            if !dead_code.fail_patterns.is_empty() {
+                content.push_str(&format!(
+                    "  Fail patterns: {}\n",
+                    dead_code.fail_patterns.join(", ")
+                ));
+            }
+            if !dead_code.ignore_patterns.is_empty() {
+                content.push_str(&format!(
+                    "  Ignore patterns: {}\n",
+                    dead_code.ignore_patterns.join(", ")
                 ));
             }
             content.push('\n');

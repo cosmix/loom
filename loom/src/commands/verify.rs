@@ -68,11 +68,7 @@ pub fn execute(stage_id: &str, suggest: bool) -> Result<()> {
     )?;
 
     // 2. Run goal-backward verification
-    let has_goal_checks = !stage_def.truths.is_empty()
-        || !stage_def.artifacts.is_empty()
-        || !stage_def.wiring.is_empty();
-
-    if has_goal_checks {
+    if stage_def.has_any_goal_checks() {
         println!("\n{}", "Goal-Backward Verification:".bold());
 
         // Use acceptance_dir or fall back to current directory

@@ -51,6 +51,9 @@ impl Stage {
             truths: Vec::new(),
             artifacts: Vec::new(),
             wiring: Vec::new(),
+            truth_checks: Vec::new(),
+            wiring_tests: Vec::new(),
+            dead_code_check: None,
             fix_attempts: 0,
             sandbox: Default::default(),
             execution_mode: None,
@@ -418,6 +421,16 @@ impl Stage {
         self.stage_type == StageType::Knowledge
             || self.id.to_lowercase().contains("knowledge")
             || self.name.to_lowercase().contains("knowledge")
+    }
+
+    /// Check if this stage has any goal-backward verification checks defined.
+    pub fn has_any_goal_checks(&self) -> bool {
+        !self.truths.is_empty()
+            || !self.artifacts.is_empty()
+            || !self.wiring.is_empty()
+            || !self.truth_checks.is_empty()
+            || !self.wiring_tests.is_empty()
+            || self.dead_code_check.is_some()
     }
 
     /// Begin a new execution attempt.

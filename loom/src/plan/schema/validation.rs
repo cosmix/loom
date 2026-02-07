@@ -375,12 +375,7 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
         if requires_goal_backward {
             // IntegrationVerify should have functional verification, not just tests
             // Check for truths, wiring_tests, or wiring
-            let has_goal_checks = !stage.truths.is_empty()
-                || !stage.artifacts.is_empty()
-                || !stage.wiring.is_empty()
-                || !stage.wiring_tests.is_empty();
-
-            if !has_goal_checks {
+            if !stage.has_any_goal_checks() {
                 let stage_type_desc = match stage.stage_type {
                     super::types::StageType::IntegrationVerify => "IntegrationVerify",
                     _ => "Standard",

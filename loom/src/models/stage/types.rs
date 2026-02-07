@@ -205,6 +205,15 @@ pub struct Stage {
     /// Critical connections between components
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub wiring: Vec<WiringCheck>,
+    /// Enhanced truth checks with extended success criteria
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub truth_checks: Vec<crate::plan::schema::TruthCheck>,
+    /// Runtime wiring tests (command-based integration verification)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub wiring_tests: Vec<crate::plan::schema::WiringTest>,
+    /// Dead code detection configuration
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dead_code_check: Option<crate::plan::schema::DeadCodeCheck>,
     /// Number of fix attempts made for this stage (acceptance/review cycles)
     #[serde(default)]
     pub fix_attempts: u32,
@@ -492,6 +501,9 @@ impl Default for Stage {
             truths: Vec::new(),
             artifacts: Vec::new(),
             wiring: Vec::new(),
+            truth_checks: Vec::new(),
+            wiring_tests: Vec::new(),
+            dead_code_check: None,
             fix_attempts: 0,
             sandbox: Default::default(),
             execution_mode: None,

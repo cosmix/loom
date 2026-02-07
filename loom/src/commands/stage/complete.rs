@@ -280,11 +280,7 @@ fn run_verification_phase(
     if !no_verify {
         // Run goal-backward verification (truths, artifacts, wiring)
         if let Some(stage_def) = load_stage_definition_from_plan(stage_id, work_dir)? {
-            let has_goal_checks = !stage_def.truths.is_empty()
-                || !stage_def.artifacts.is_empty()
-                || !stage_def.wiring.is_empty();
-
-            if has_goal_checks {
+            if stage_def.has_any_goal_checks() {
                 println!("Running goal-backward verification...");
                 let verification_dir = acceptance_dir.as_deref().unwrap_or(Path::new("."));
                 let goal_result = run_goal_backward_verification(&stage_def, verification_dir)?;
