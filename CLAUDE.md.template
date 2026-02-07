@@ -61,7 +61,7 @@ You waste user's time implementing unapproved work. Your work will be rejected.
 
 The skill provides complete guidance for:
 - Plan document structure (human-readable content + YAML metadata)
-- Parallelization strategy (subagents FIRST, stages SECOND)
+- Parallelization strategy (subagents FIRST, agent teams SECOND—if available, stages THIRD)
 - Mandatory bookend stages (knowledge-bootstrap, code-review, integration-verify)
 - YAML metadata format and validation rules
 - Sandbox configuration
@@ -74,8 +74,8 @@ The skill provides complete guidance for:
 
 Before writing any plan:
 
-1. **Explore the codebase** — Spawn Explore subagents to find patterns, integration points
-2. **Review knowledge** — Read `doc/loom/knowledge/*.md` (especially `mistakes.md`)
+1. **Review knowledge** — Read `doc/loom/knowledge/*.md` BEFORE exploring the code
+2. **Explore the codebase** — Spawn Explore subagents to find patterns, integration points
 3. **Ask about sandbox** — Network access, sensitive paths, build tools needed
 4. **Run `loom sandbox suggest`** — Get project-specific recommendations
 
