@@ -770,3 +770,9 @@ Two plan criteria caused false negatives in integration-verify:
 
 - **Fixed 5 issues in code review: (1) Drop delegates to cleanup_terminal(), (2) Ctrl+C handler calls cleanup_terminal_crossterm() instead of inlining, (3) live_mode normal exit uses cleanup_terminal_crossterm() not basic cleanup, (4) live_mode uses install_crossterm_panic_hook() for correct raw mode handling, (5) completion_summary uses .take() instead of .clone()**
   - _Rationale:_ Code review found DRY violations, cleanup inconsistencies, and unnecessary clone. All fixes are backward-compatible.
+
+## Promoted from Memory [2026-02-07 16:56]
+
+### Notes
+
+- Integration verification passed for fix-tui-terminal-cleanup: All 1258+ tests pass, clippy clean, build succeeds, fmt clean. All 6 acceptance criteria pass. Functional verification confirms three-layer cleanup system: (1) panic hook via install_crossterm_panic_hook() in both TuiApp::new() and LiveMode::run(), (2) Ctrl+C signal handlers call cleanup_terminal_crossterm() in both app.rs and live_mode.rs, (3) TuiApp::cleanup_terminal() called unconditionally in run() with Drop delegation and cleaned_up flag preventing double cleanup.
