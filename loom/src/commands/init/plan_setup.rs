@@ -380,6 +380,7 @@ pub(crate) fn create_stage_from_definition(stage_def: &StageDefinition, plan_id:
         truths: stage_def.truths.clone(),
         artifacts: stage_def.artifacts.clone(),
         wiring: stage_def.wiring.clone(),
+        fix_attempts: 0,
         sandbox: stage_def.sandbox.clone(),
         execution_mode: stage_def.execution_mode,
     }

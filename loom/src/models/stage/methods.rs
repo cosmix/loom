@@ -51,6 +51,7 @@ impl Stage {
             truths: Vec::new(),
             artifacts: Vec::new(),
             wiring: Vec::new(),
+            fix_attempts: 0,
             sandbox: Default::default(),
             execution_mode: None,
         }

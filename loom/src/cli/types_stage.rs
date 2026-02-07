@@ -146,6 +146,17 @@ pub enum StageCommands {
         no_reload: bool,
     },
 
+    /// Run acceptance criteria and show detailed results without changing stage status
+    ///
+    /// Use this to check if acceptance criteria pass after making fixes.
+    /// Shows full stdout/stderr for each criterion. Increments fix_attempts
+    /// counter on failure but does NOT change stage status.
+    CheckAcceptance {
+        /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
+        #[arg(value_parser = clap_id_validator)]
+        stage_id: String,
+    },
+
     /// Manage stage outputs (structured values passed to dependent stages)
     Output {
         #[command(subcommand)]
