@@ -192,3 +192,23 @@
 - loom/src/sandbox/config.rs — merge_config() (plan + stage config merging)
 - loom/src/sandbox/settings.rs — Claude Code settings.local.json generation
 - loom/src/plan/schema/types.rs — SandboxConfig, NetworkConfig, FilesystemConfig schemas
+
+## Handoff CLI Registration (for new commands)
+
+- `loom/src/cli/types.rs:29-238` — Commands enum (23 variants, dispatched in cli/dispatch.rs)
+- `loom/src/cli/types_stage.rs` — StageCommands subcommand enum (pattern for nested commands)
+- `loom/src/cli/types_memory.rs` — MemoryCommands subcommand enum
+- `loom/src/cli/dispatch.rs:16-171` — match-based command dispatch, two-level for nested commands
+- Pattern: define parent variant in types.rs with `#[command(subcommand)]`, child enum in types_*.rs, dispatch in dispatch.rs
+
+## Handoff System (Added by integration-verify)
+
+- `loom/src/commands/handoff/create.rs` - CLI command `loom handoff create` implementation
+- `loom/src/commands/handoff/mod.rs` - Handoff command module
+- `loom/src/cli/types.rs:313` - HandoffCommands enum definition
+- `loom/src/cli/dispatch.rs:57-63` - Handoff command dispatch
+- `hooks/pre-compact.sh` - Block-then-allow compaction pattern
+- `hooks/session-end.sh` - Session end with stage glob lookup
+- `hooks/post-tool-use.sh` - Compaction recovery detection
+- `loom/src/orchestrator/signals/cache.rs` - Signal stable prefixes with compaction recovery
+- `loom/src/orchestrator/signals/format/sections.rs` - Budget warnings with handoff create

@@ -215,3 +215,27 @@ StageType now has 3 variants (CodeReview was removed and consolidated into Integ
 - **IntegrationVerify** -- Final quality gate combining code review AND functional verification
 
 Signal generation has 3 prefix generators in cache.rs (standard, knowledge, integration-verify). The integration-verify prefix includes code review guidance (security-engineer, senior-software-engineer review agents).
+
+## Handoff System Issues (2026-02-07)
+
+Three critical bugs in the handoff chain cause complete handoff failure:
+
+1. **Missing CLI command**: `loom handoff create` does not exist. Both hooks/pre-compact.sh:60 and hooks/session-end.sh:64 call it, fail silently, no handoff is ever created.
+
+2. **pre-compact.sh allows compaction on failure**: Even when handoff creation fails, exits 0. Agent's context is destroyed without any record.
+
+3. **session-end.sh stage lookup broken**: Line 54 uses exact path `stages/${LOOM_STAGE_ID}.md` but stage files have depth prefixes (e.g., `01-stage-id.md`). The status check always fails.
+
+### Handoff Generation API
+
+`generate_handoff(_session, stage, content, work_dir)` in handoff/generator/mod.rs:
+
+- `_session: &Session` — UNUSED (underscore prefix), accepts minimal Session
+- `stage: &Stage` — needs stage.id and stage.description
+- `content: HandoffContent` — builder pattern with with_*() methods
+- `work_dir: &Path` — path to `.work/` directory
+- Returns: `Result<PathBuf>` — path to written handoff file
+
+### Signal System - No Recovery Text
+
+3 stable prefix generators in cache.rs (standard, knowledge, integration-verify). None contain compaction recovery instructions. Budget warning in format_recitation_section() triggers at 80%+ but only shows promote/complete instructions.
