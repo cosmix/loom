@@ -831,3 +831,17 @@ Two plan criteria caused false negatives in integration-verify:
 
 - **Merged code-review guidance into integration-verify prefix**
   - _Rationale:_ Reduces stage count, same quality gate - integration-verify now serves as both review and verification
+
+## Promoted from Memory [2026-02-07 18:07]
+
+### Notes
+
+- Code review found: 6 documentation files still reference removed CodeReview stage type (README.md, CLAUDE.md, architecture.md, conventions.md, patterns.md, mistakes.md). Also found markdown skip in artifacts.rs missing .markdown extension.
+- Backward compatibility: old stage_type: code-review in YAML will hard-fail deserialization. Per project policy NO BACKWARDS COMPAT needed. Users must clean up old .work/ state manually.
+
+### Decisions
+
+- **Fixed 6 stale documentation files referencing removed CodeReview stage type**
+  - _Rationale:_ README.md, CLAUDE.md, and knowledge files (architecture.md, conventions.md, patterns.md) still listed code-review as valid stage type. Updated all to reflect 3-type model.
+- **Extended markdown skip in artifacts.rs to handle .markdown extension and case-insensitive matching**
+  - _Rationale:_ Original code only checked md/mdx with exact case. Added .markdown extension and to_ascii_lowercase for robustness on case-sensitive filesystems.

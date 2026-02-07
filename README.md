@@ -205,7 +205,7 @@ loom:
 | `acceptance` | No | Shell criteria for stage completion |
 | `setup` | No | Setup commands |
 | `files` | No | File glob scope |
-| `stage_type` | No | `standard` (default), `knowledge`, `code-review`, `integration-verify` |
+| `stage_type` | No | `standard` (default), `knowledge`, `integration-verify` |
 | `truths` / `artifacts` / `wiring` | Conditionally required | Required for `standard` and `integration-verify` stages |
 | `truth_checks` / `wiring_tests` / `dead_code_check` | No | Extended verification |
 | `context_budget` | No | Context threshold (%) for handoff |
@@ -216,10 +216,7 @@ loom:
 
 - `knowledge`: knowledge/bootstrap work, different verification expectations
 - `standard`: implementation stage; must define goal-backward checks
-- `code-review`: review-focused stage (exempt from goal-backward requirement)
-- `integration-verify`: final quality gate; must define goal-backward checks
-
-`loom init` automatically inserts a `code-review` stage before `integration-verify` when missing.
+- `integration-verify`: final quality gate combining code review and functional verification; must define goal-backward checks
 
 ## Verification Model
 

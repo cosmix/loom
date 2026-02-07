@@ -111,9 +111,7 @@ loom:
 
 Look in doc/plans for the plan files!
 
-**Stage Types:** Plans can include optional special stages:
-
-- `code-review` - Optional stage before integration-verify. Performs security and code quality reviews using parallel subagents (security-engineer, senior-software-engineer). Fixes issues found rather than just reporting them. If not present in plan, `loom init` will auto-insert it before integration-verify.
+**Stage Types:** `standard` (default), `knowledge`, `integration-verify`. The `integration-verify` stage serves as the final quality gate, combining code review (security, architecture, quality) with functional verification.
 
 <!-- END loom METADATA -->
 

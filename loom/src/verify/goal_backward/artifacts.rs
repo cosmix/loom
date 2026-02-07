@@ -57,9 +57,10 @@ pub fn verify_artifacts(artifacts: &[String], working_dir: &Path) -> Result<Vec<
         for path in matches {
             // Skip stub detection for markdown files - they naturally reference
             // TODO/FIXME in rule text and templates
-            let is_markdown = path
-                .extension()
-                .is_some_and(|ext| ext == "md" || ext == "mdx");
+            let is_markdown = path.extension().is_some_and(|ext| {
+                let ext_lower = ext.to_ascii_lowercase();
+                ext_lower == "md" || ext_lower == "mdx" || ext_lower == "markdown"
+            });
 
             if let Ok(content) = fs::read_to_string(&path) {
                 // Check for empty files
