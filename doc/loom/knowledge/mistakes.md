@@ -675,3 +675,14 @@ Two plan criteria caused false negatives in integration-verify:
 
 - **Used local build binary (./loom/target/debug/loom) for functional verification of gc command since installed binary does not have the feature yet**
   - _Rationale:_ Standard approach for integration-verify of unreleased features per mistakes.md precedent
+
+## Promoted from Memory [2026-02-07 15:03]
+
+### Notes
+
+- Successfully updated agent guidance across 4 files: CLAUDE.md.template (heredoc examples replacing 'break into multiple invocations'), cache.rs (heredoc note in knowledge stable prefix), sections.rs (stdin note after knowledge table), SKILL.md (heredoc example replacing 'break into multiple CLI invocations'). All 1439 tests pass, clippy clean.
+
+### Decisions
+
+- **Used parallel subagents for the two independent file groups as specified by the execution plan**
+  - _Rationale:_ CLAUDE.md.template is completely independent from cache.rs/sections.rs/SKILL.md, making parallel subagents the correct choice

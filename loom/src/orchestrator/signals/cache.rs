@@ -533,6 +533,11 @@ pub fn generate_knowledge_stable_prefix() -> String {
     content.push_str("loom knowledge update patterns \"## Pattern Name\\n\\n- How it works\"\n");
     content.push_str("loom knowledge update conventions \"## Convention\\n\\n- Details\"\n");
     content.push_str("loom knowledge update mistakes \"## What happened\\n\\n- Details\"\n");
+    content.push_str("\n# For long content, use heredoc/stdin:\n");
+    content.push_str("loom knowledge update patterns - <<'EOF'\n");
+    content.push_str("## Section Title\n");
+    content.push_str("Content here, can be as long as needed.\n");
+    content.push_str("EOF\n");
     content.push_str("\n# Show current knowledge\n");
     content.push_str("loom knowledge show\n");
     content.push_str("loom knowledge show entry-points\n");

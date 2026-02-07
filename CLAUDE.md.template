@@ -495,7 +495,7 @@ DO NOT manually edit doc/loom/knowledge/\*.md files. DO NOT use Write/Edit/echo/
 | `loom knowledge init` | Initialize knowledge directory |
 | `loom knowledge check` | Check coverage of knowledge files (use in knowledge-bootstrap) |
 | `loom knowledge show` | Show all knowledge |
-| `loom knowledge update <file> <content>` | Append to file (architecture, entry-points, patterns, conventions, mistakes) |
+| `loom knowledge update <file> <content>` | Append to file. Use `-` as content for stdin/heredoc |
 
 **Knowledge Files:**
 
@@ -509,16 +509,24 @@ DO NOT manually edit doc/loom/knowledge/\*.md files. DO NOT use Write/Edit/echo/
 | `stack.md` | Dependencies, frameworks, tooling (aliases: deps, tech) |
 | `concerns.md` | Technical debt, warnings, issues (aliases: debt, issues) |
 
-**For long content, break into multiple invocations (~20-30 lines each):**
+**For long content, use heredoc/stdin:**
 
 ```bash
-loom knowledge update patterns "## Authentication
+loom knowledge update patterns - <<'EOF'
+## Authentication
 
 ### Overview
-Uses JWT with refresh token rotation."
+Uses JWT with refresh token rotation.
 
-loom knowledge update patterns "### Key Files
-- src/auth/jwt.ts:15-80 - Token generation"
+### Key Files
+- src/auth/jwt.ts:15-80 - Token generation
+EOF
+```
+
+**For short content, use inline:**
+
+```bash
+loom knowledge update mistakes "## Short description of a lesson learned"
 ```
 
 #### Recording Mistakes (MANDATORY)

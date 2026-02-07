@@ -471,7 +471,11 @@ Captures codebase understanding before implementation:
       loom knowledge update patterns "## Pattern\n\nContent..."
       loom knowledge update conventions "## Convention\n\nContent..."
 
-    If content is long, break into multiple CLI invocations (~20-30 lines each).
+    For long content, use heredoc/stdin:
+      loom knowledge update patterns - <<'EOF'
+      ## Section Title
+      Content here, can be as long as needed.
+      EOF
 
     IMPORTANT: Before completing, review existing mistakes.md to avoid repeating errors.
 
