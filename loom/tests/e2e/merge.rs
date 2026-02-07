@@ -53,7 +53,6 @@ fn create_test_stage(id: &str, auto_merge: Option<bool>) -> Stage {
         artifacts: Vec::new(),
         wiring: Vec::new(),
         execution_mode: None,
-        fix_attempts: 0,
         max_fix_attempts: None,
         review_reason: None,
     }

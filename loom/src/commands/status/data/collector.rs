@@ -139,6 +139,7 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         last_activity,
         staleness_secs,
         context_budget_pct: None, // TODO: Read from plan if needed
+        review_reason: stage.review_reason.clone(),
     }
 }
 

@@ -69,6 +69,12 @@ impl Detection {
                             session_id: stage.session.clone(),
                         });
                     }
+                    StageStatus::NeedsHumanReview => {
+                        events.push(MonitorEvent::StageNeedsHumanReview {
+                            stage_id: stage.id.clone(),
+                            review_reason: stage.review_reason.clone(),
+                        });
+                    }
                     _ => {}
                 }
 

@@ -84,6 +84,11 @@ pub enum MonitorEvent {
         usage_percent: f32,
         budget_percent: f32,
     },
+    /// Stage needs human review - agent flagged something for human judgment
+    StageNeedsHumanReview {
+        stage_id: String,
+        review_reason: Option<String>,
+    },
 }
 
 /// Type of recovery being initiated

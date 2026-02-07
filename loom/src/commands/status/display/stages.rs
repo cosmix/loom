@@ -41,6 +41,7 @@ pub fn display_stages(work_dir: &WorkDir) -> Result<()> {
         StageStatus::NeedsHandoff,
         StageStatus::MergeConflict,
         StageStatus::CompletedWithFailures,
+        StageStatus::NeedsHumanReview,
         StageStatus::MergeBlocked,
         StageStatus::Blocked,
         StageStatus::WaitingForDeps,
@@ -119,6 +120,12 @@ pub fn display_stages(work_dir: &WorkDir) -> Result<()> {
                     failure_label, stage.retry_count, max
                 )
                 .red()
+            } else if stage.status == StageStatus::NeedsHumanReview {
+                if let Some(ref reason) = stage.review_reason {
+                    format!(" - {}", reason).yellow()
+                } else {
+                    "".normal()
+                }
             } else {
                 "".normal()
             };

@@ -104,3 +104,34 @@ updated_at: 2025-01-10T12:00:00Z
     assert_eq!(stage.name, "Skipped Stage");
     assert_eq!(stage.status, StageStatus::Skipped);
 }
+
+#[test]
+fn test_parse_stage_needs_human_review() {
+    let content = r#"---
+id: stage-test-3
+name: Review Required Stage
+status: needs-human-review
+dependencies: []
+acceptance: []
+setup: []
+files: []
+child_stages: []
+created_at: 2025-01-10T12:00:00Z
+updated_at: 2025-01-10T12:00:00Z
+review_reason: "Acceptance criteria appear to test implementation details rather than behavior"
+---
+
+# Stage: Review Required Stage
+"#;
+
+    let stage = parse_stage_from_markdown(content).expect("Should parse stage from markdown");
+
+    assert_eq!(stage.id, "stage-test-3");
+    assert_eq!(stage.name, "Review Required Stage");
+    assert_eq!(stage.status, StageStatus::NeedsHumanReview);
+    assert!(stage.review_reason.is_some());
+    assert_eq!(
+        stage.review_reason.unwrap(),
+        "Acceptance criteria appear to test implementation details rather than behavior"
+    );
+}

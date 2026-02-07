@@ -17,6 +17,7 @@ pub fn render_attention<W: Write>(w: &mut W, stages: &[StageSummary]) -> std::io
                     | StageStatus::MergeConflict
                     | StageStatus::CompletedWithFailures
                     | StageStatus::MergeBlocked
+                    | StageStatus::NeedsHumanReview
             )
         })
         .collect();
@@ -42,6 +43,7 @@ fn render_problem_stage<W: Write>(w: &mut W, stage: &StageSummary) -> std::io::R
         StageStatus::MergeConflict => "MERGE CONFLICT",
         StageStatus::CompletedWithFailures => "ACCEPTANCE FAILED",
         StageStatus::MergeBlocked => "MERGE ERROR",
+        StageStatus::NeedsHumanReview => "NEEDS REVIEW",
         _ => "ISSUE",
     };
 
@@ -70,12 +72,18 @@ fn render_problem_stage<W: Write>(w: &mut W, stage: &StageSummary) -> std::io::R
         }
     }
 
+    // Show review reason if available (NeedsHumanReview stages)
+    if let Some(ref reason) = stage.review_reason {
+        writeln!(w, "    Reason: {}", reason.yellow())?;
+    }
+
     // Suggest recovery action
     let hint = match &stage.status {
         StageStatus::Blocked => format!("loom stage retry {}", stage.id),
         StageStatus::MergeConflict => format!("loom merge {}", stage.id),
         StageStatus::CompletedWithFailures => format!("loom stage retry {}", stage.id),
         StageStatus::MergeBlocked => format!("loom merge {} --force", stage.id),
+        StageStatus::NeedsHumanReview => format!("loom stage resume {}", stage.id),
         _ => "loom status".to_string(),
     };
     writeln!(w, "    {}: {}", "Hint".cyan(), hint.dimmed())?;

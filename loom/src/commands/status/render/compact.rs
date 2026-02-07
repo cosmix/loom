@@ -32,6 +32,25 @@ pub fn render_compact<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result
         write!(w, " ⟳{handoff_count}")?;
     }
 
+    // Review count
+    let review_count = data
+        .stages
+        .iter()
+        .filter(|s| {
+            matches!(
+                s.status,
+                crate::models::stage::StageStatus::NeedsHumanReview
+            )
+        })
+        .count();
+    if review_count > 0 {
+        write!(
+            w,
+            " {}",
+            format!("⏸{review_count}").color(colored::Color::Magenta)
+        )?;
+    }
+
     // Max context usage
     let max_ctx = data
         .stages
