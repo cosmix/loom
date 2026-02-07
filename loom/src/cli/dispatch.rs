@@ -75,6 +75,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
             StageCommands::Retry { stage_id, force } => stage::retry(stage_id, force),
             StageCommands::Recover { stage_id, force } => stage::recover(stage_id, force),
             StageCommands::MergeComplete { stage_id } => stage::merge_complete(stage_id),
+            StageCommands::RetryMerge { stage_id } => stage::retry_merge(stage_id),
             StageCommands::Verify {
                 stage_id,
                 no_reload,

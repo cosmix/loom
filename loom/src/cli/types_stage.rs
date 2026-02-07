@@ -172,6 +172,17 @@ pub enum StageCommands {
         reason: String,
     },
 
+    /// Re-attempt merge to main from a worktree
+    ///
+    /// Use this when a stage is in MergeConflict or MergeBlocked status and you
+    /// want to retry the merge. Must be run from within the stage worktree.
+    /// Increments fix_attempts and suggests human review when at limit.
+    RetryMerge {
+        /// Stage ID (auto-detected from branch if omitted)
+        #[arg(value_parser = clap_id_validator)]
+        stage_id: Option<String>,
+    },
+
     /// Manage stage outputs (structured values passed to dependent stages)
     Output {
         #[command(subcommand)]
