@@ -12,6 +12,9 @@ pub const MAX_ID_LENGTH: usize = 128;
 /// Maximum allowed length for descriptions.
 pub const MAX_DESCRIPTION_LENGTH: usize = 500;
 
+/// Maximum allowed length for knowledge content.
+pub const MAX_KNOWLEDGE_CONTENT_LENGTH: usize = 50_000;
+
 /// Reserved names that cannot be used as IDs (case-insensitive).
 const RESERVED_NAMES: &[&str] = &[
     ".", "..", "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7",
@@ -95,6 +98,32 @@ pub fn validate_description(description: &str) -> Result<()> {
     Ok(())
 }
 
+/// Validates that knowledge content is within acceptable length limits.
+///
+/// # Arguments
+///
+/// * `content` - The knowledge content string to validate
+///
+/// # Returns
+///
+/// * `Ok(())` if the content is valid
+/// * `Err` with a descriptive message if validation fails
+pub fn validate_knowledge_content(content: &str) -> Result<()> {
+    if content.is_empty() {
+        bail!("Knowledge content cannot be empty");
+    }
+
+    if content.len() > MAX_KNOWLEDGE_CONTENT_LENGTH {
+        bail!(
+            "Knowledge content too long: {} characters (max {})",
+            content.len(),
+            MAX_KNOWLEDGE_CONTENT_LENGTH
+        );
+    }
+
+    Ok(())
+}
+
 /// Clap value parser for validating ID arguments.
 ///
 /// Use this with clap's `value_parser` attribute to validate IDs at parse time.
@@ -113,6 +142,12 @@ pub fn clap_id_validator(s: &str) -> Result<String, String> {
 /// Clap value parser for validating description arguments.
 pub fn clap_description_validator(s: &str) -> Result<String, String> {
     validate_description(s).map_err(|e| e.to_string())?;
+    Ok(s.to_string())
+}
+
+/// Clap value parser for validating knowledge content arguments.
+pub fn clap_knowledge_content_validator(s: &str) -> Result<String, String> {
+    validate_knowledge_content(s).map_err(|e| e.to_string())?;
     Ok(s.to_string())
 }
 
@@ -180,5 +215,41 @@ mod tests {
         assert!(clap_id_validator("../invalid").is_err());
 
         assert!(clap_description_validator("Valid description").is_ok());
+    }
+
+    #[test]
+    fn test_validate_knowledge_content_valid() {
+        assert!(validate_knowledge_content("Some knowledge content").is_ok());
+        assert!(validate_knowledge_content(
+            "A longer piece of knowledge with multiple lines\nand more details"
+        )
+        .is_ok());
+
+        let long_content = "a".repeat(MAX_KNOWLEDGE_CONTENT_LENGTH);
+        assert!(validate_knowledge_content(&long_content).is_ok());
+    }
+
+    #[test]
+    fn test_validate_knowledge_content_empty() {
+        let result = validate_knowledge_content("");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("cannot be empty"));
+    }
+
+    #[test]
+    fn test_validate_knowledge_content_too_long() {
+        let too_long = "a".repeat(MAX_KNOWLEDGE_CONTENT_LENGTH + 1);
+        let result = validate_knowledge_content(&too_long);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("too long"));
+    }
+
+    #[test]
+    fn test_clap_knowledge_content_validator() {
+        assert!(clap_knowledge_content_validator("Valid knowledge content").is_ok());
+        assert!(clap_knowledge_content_validator("").is_err());
+
+        let too_long = "a".repeat(MAX_KNOWLEDGE_CONTENT_LENGTH + 1);
+        assert!(clap_knowledge_content_validator(&too_long).is_err());
     }
 }

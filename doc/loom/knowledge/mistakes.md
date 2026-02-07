@@ -686,3 +686,14 @@ Two plan criteria caused false negatives in integration-verify:
 
 - **Used parallel subagents for the two independent file groups as specified by the execution plan**
   - _Rationale:_ CLAUDE.md.template is completely independent from cache.rs/sections.rs/SKILL.md, making parallel subagents the correct choice
+
+## Promoted from Memory [2026-02-07 15:04]
+
+### Notes
+
+- Knowledge content limit raised from 500 to 50000 chars. Stdin support via read_content_from_stdin() with Optional content arg and '-' sentinel. All 1444 tests pass, clippy clean.
+
+### Decisions
+
+- **Used parallel subagents for validation.rs and CLI/command changes since files have no overlap**
+  - _Rationale:_ Follows subagents-first strategy from CLAUDE.md rules
