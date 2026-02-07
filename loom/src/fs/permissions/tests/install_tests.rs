@@ -12,7 +12,7 @@ fn test_embedded_commit_guard_hook_is_valid() {
     assert!(HOOK_COMMIT_GUARD.contains("detect_loom_worktree"));
     assert!(HOOK_COMMIT_GUARD.contains("check_git_clean"));
     assert!(HOOK_COMMIT_GUARD.contains("get_stage_status"));
-    assert!(HOOK_COMMIT_GUARD.contains("block_with_reason"));
+    assert!(HOOK_COMMIT_GUARD.contains("warn_with_reason"));
 }
 
 #[test]
