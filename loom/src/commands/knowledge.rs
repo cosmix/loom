@@ -49,24 +49,21 @@ pub fn show(file: Option<String>) -> Result<()> {
     Ok(())
 }
 
-/// Read content from stdin
+/// Read content from stdin, capped at MAX_KNOWLEDGE_CONTENT_LENGTH + 1 bytes
+/// to prevent unbounded memory allocation from large piped inputs.
 fn read_content_from_stdin() -> Result<String> {
     use std::io::Read;
+    let limit = (crate::validation::MAX_KNOWLEDGE_CONTENT_LENGTH + 1) as u64;
     let mut buffer = String::new();
     std::io::stdin()
+        .take(limit)
         .read_to_string(&mut buffer)
         .context("Failed to read from stdin")?;
     let trimmed = buffer.trim().to_string();
     if trimmed.is_empty() {
         bail!("No content received from stdin");
     }
-    if trimmed.len() > crate::validation::MAX_KNOWLEDGE_CONTENT_LENGTH {
-        bail!(
-            "Content from stdin too long: {} characters (max {})",
-            trimmed.len(),
-            crate::validation::MAX_KNOWLEDGE_CONTENT_LENGTH
-        );
-    }
+    crate::validation::validate_knowledge_content(&trimmed)?;
     Ok(trimmed)
 }
 
@@ -77,6 +74,11 @@ pub fn update(file: String, content: Option<String>) -> Result<()> {
         Some(c) => c,
         None => read_content_from_stdin()?,
     };
+
+    // Defense-in-depth: validate regardless of source (CLI arg is validated
+    // by clap, but this function may be called from non-CLI code paths)
+    crate::validation::validate_knowledge_content(&content)?;
+
     let work_dir = WorkDir::new(".")?;
 
     let main_project_root = work_dir
