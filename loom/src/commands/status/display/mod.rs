@@ -1,4 +1,3 @@
-mod sessions;
 mod stages;
 mod worktrees;
 
@@ -8,8 +7,8 @@ mod tests;
 use anyhow::Result;
 use std::fs;
 
-pub use sessions::display_sessions;
 pub use stages::display_stages;
+pub use stages::SessionInfo;
 pub use worktrees::display_worktrees;
 
 pub fn count_files(dir: &std::path::Path) -> Result<usize> {

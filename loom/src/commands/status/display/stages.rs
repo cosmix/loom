@@ -1,5 +1,6 @@
 use anyhow::Result;
 use colored::Colorize;
+use std::collections::HashMap;
 use std::fs;
 
 use crate::fs::work_dir::WorkDir;
@@ -7,7 +8,13 @@ use crate::models::failure::FailureType;
 use crate::models::stage::StageStatus;
 use crate::verify::transitions::parse_stage_from_markdown;
 
-pub fn display_stages(work_dir: &WorkDir) -> Result<()> {
+/// Session info for annotating stage display
+pub struct SessionInfo {
+    pub pid: Option<u32>,
+    pub is_alive: bool,
+}
+
+pub fn display_stages(work_dir: &WorkDir, sessions: &HashMap<String, SessionInfo>) -> Result<()> {
     let stages_dir = work_dir.stages_dir();
     if !stages_dir.exists() {
         return Ok(());
@@ -130,12 +137,31 @@ pub fn display_stages(work_dir: &WorkDir) -> Result<()> {
                 "".normal()
             };
 
+            let session_annotation = if stage.status == StageStatus::Executing {
+                if let Some(info) = sessions.get(&stage.id) {
+                    if let Some(pid) = info.pid {
+                        if info.is_alive {
+                            format!(" [PID {}]", pid).dimmed()
+                        } else {
+                            " [orphaned]".red()
+                        }
+                    } else {
+                        "".normal()
+                    }
+                } else {
+                    "".normal()
+                }
+            } else {
+                "".normal()
+            };
+
             println!(
-                "    {}  {}{}{}",
+                "    {}  {}{}{}{}",
                 padded_id.dimmed(),
                 stage.name,
                 held_indicator,
-                status_suffix
+                status_suffix,
+                session_annotation
             );
         }
         println!();

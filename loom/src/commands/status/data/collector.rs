@@ -10,12 +10,14 @@ use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::get_merge_point;
 use crate::orchestrator::monitor::heartbeat::{read_heartbeat, Heartbeat};
 use crate::parser::frontmatter::parse_from_markdown;
-use crate::process::is_process_alive;
 use crate::verify::transitions::list_all_stages;
 
-use super::{
-    ActivityStatus, MergeSummary, ProgressSummary, SessionSummary, StageSummary, StatusData,
-};
+use super::{ActivityStatus, MergeSummary, ProgressSummary, StageSummary, StatusData};
+
+#[cfg(test)]
+use super::SessionSummary;
+#[cfg(test)]
+use crate::process::is_process_alive;
 
 /// Read heartbeat for a specific stage from the heartbeat directory
 fn read_heartbeat_for_stage(stage_id: &str, work_dir: &WorkDir) -> Option<Heartbeat> {
@@ -48,7 +50,7 @@ fn determine_activity_status(
 }
 
 /// Load all sessions from .work/sessions/ directory
-fn load_all_sessions(work_dir: &WorkDir) -> Result<Vec<Session>> {
+pub fn load_all_sessions(work_dir: &WorkDir) -> Result<Vec<Session>> {
     let sessions_dir = work_dir.sessions_dir();
     if !sessions_dir.exists() {
         return Ok(Vec::new());
@@ -144,6 +146,7 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
 }
 
 /// Build a SessionSummary from a Session
+#[cfg(test)]
 fn build_session_summary(session: &Session) -> SessionSummary {
     let uptime_secs = (Utc::now() - session.created_at).num_seconds();
     let is_alive = session.pid.map(is_process_alive).unwrap_or(false);
@@ -216,10 +219,6 @@ pub fn collect_status_data(work_dir: &WorkDir) -> Result<StatusData> {
         .map(|stage| build_stage_summary(stage, &sessions, work_dir))
         .collect();
 
-    // Build session summaries
-    let session_summaries: Vec<SessionSummary> =
-        sessions.iter().map(build_session_summary).collect();
-
     // Get merge point for merge report
     let merge_point = if let Some(project_root) = work_dir.project_root() {
         get_merge_point(project_root).unwrap_or_else(|_| "main".to_string())
@@ -241,7 +240,6 @@ pub fn collect_status_data(work_dir: &WorkDir) -> Result<StatusData> {
 
     Ok(StatusData {
         stages: stage_summaries,
-        sessions: session_summaries,
         merge: merge_summary,
         progress,
     })

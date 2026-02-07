@@ -25,7 +25,6 @@ fn make_stage_summary(id: &str, deps: Vec<&str>, status: StageStatus) -> StageSu
 fn make_status_data(stages: Vec<StageSummary>) -> StatusData {
     StatusData {
         stages,
-        sessions: vec![],
         merge: MergeSummary {
             merged: vec![],
             pending: vec![],

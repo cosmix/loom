@@ -1,6 +1,6 @@
 mod collector;
 
-pub use collector::collect_status_data;
+pub use collector::{collect_status_data, load_all_sessions};
 
 use serde::{Deserialize, Serialize};
 
@@ -48,7 +48,6 @@ impl ActivityStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatusData {
     pub stages: Vec<StageSummary>,
-    pub sessions: Vec<SessionSummary>,
     pub merge: MergeSummary,
     pub progress: ProgressSummary,
 }

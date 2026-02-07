@@ -1,42 +1,5 @@
-use super::sessions::is_session_orphaned;
-use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::StageStatus;
 use crate::verify::transitions::parse_stage_from_markdown;
-
-#[test]
-fn test_is_session_orphaned_with_native_backend() {
-    let mut session = Session::new();
-    session.status = SessionStatus::Running;
-    session.set_pid(std::process::id());
-
-    assert!(!is_session_orphaned(&session));
-
-    session.set_pid(999999);
-    assert!(is_session_orphaned(&session));
-}
-
-#[test]
-fn test_is_session_orphaned_terminal_states() {
-    let mut session = Session::new();
-    session.set_pid(999999);
-
-    session.status = SessionStatus::Completed;
-    assert!(!is_session_orphaned(&session));
-
-    session.status = SessionStatus::Crashed;
-    assert!(!is_session_orphaned(&session));
-
-    session.status = SessionStatus::ContextExhausted;
-    assert!(!is_session_orphaned(&session));
-}
-
-#[test]
-fn test_is_session_orphaned_no_backend_info() {
-    let mut session = Session::new();
-    session.status = SessionStatus::Running;
-
-    assert!(!is_session_orphaned(&session));
-}
 
 #[test]
 fn test_parse_stage_with_retry_info() {

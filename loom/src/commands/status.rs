@@ -13,7 +13,7 @@ use anyhow::Result;
 use colored::Colorize;
 
 use diagnostics::{check_directory_structure, check_parsing_errors};
-use display::{count_files, display_sessions, display_stages, display_worktrees};
+use display::{count_files, display_stages, display_worktrees};
 use validation::{validate_markdown_files, validate_references};
 
 /// Show the status dashboard with context health
@@ -85,26 +85,34 @@ fn execute_static(work_dir: &WorkDir, verbose: bool) -> Result<()> {
     // Show progress bar with stage counts
     render::render_progress(&mut out, &status_data.progress)?;
 
-    let signal_count = count_files(&work_dir.signals_dir())?;
-    let handoff_count = count_files(&work_dir.handoffs_dir())?;
     let stage_count = count_files(&work_dir.stages_dir())?;
-    let session_count = count_files(&work_dir.sessions_dir())?;
 
-    println!("\n{}", "Entities".bold());
-    println!("  Signals:  {signal_count}");
-    println!("  Handoffs: {handoff_count}");
-
-    if stage_count > 0 || session_count > 0 {
-        println!("  Stages:   {stage_count}");
-        println!("  Sessions: {session_count}");
-    }
+    // Build session info map for stage annotations
+    let session_map = {
+        use display::SessionInfo;
+        use std::collections::HashMap;
+        let sessions = data::load_all_sessions(work_dir)?;
+        let mut map = HashMap::new();
+        for session in &sessions {
+            if let Some(stage_id) = &session.stage_id {
+                let is_alive = session
+                    .pid
+                    .map(crate::process::is_process_alive)
+                    .unwrap_or(false);
+                map.insert(
+                    stage_id.clone(),
+                    SessionInfo {
+                        pid: session.pid,
+                        is_alive,
+                    },
+                );
+            }
+        }
+        map
+    };
 
     if stage_count > 0 {
-        display_stages(work_dir)?;
-    }
-
-    if session_count > 0 {
-        display_sessions(work_dir)?;
+        display_stages(work_dir, &session_map)?;
     }
 
     // Show worktrees status
@@ -121,11 +129,6 @@ fn execute_static(work_dir: &WorkDir, verbose: bool) -> Result<()> {
     // Show execution graph if stages exist
     if stage_count > 0 {
         render::render_graph(&mut out, &status_data)?;
-    }
-
-    // Show active sessions using new render module
-    if !status_data.sessions.is_empty() {
-        render::render_sessions(&mut out, &status_data.sessions)?;
     }
 
     // Verbose mode: show detailed failure information

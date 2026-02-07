@@ -6,7 +6,6 @@ pub mod graph;
 pub mod live_mode;
 pub mod merge;
 pub mod progress;
-pub mod sessions;
 pub mod spinner;
 pub mod summary;
 
@@ -18,5 +17,4 @@ pub use graph::render_graph;
 pub use live_mode::run_live_mode;
 pub use merge::render_merge_status;
 pub use progress::{render_context_bar, render_progress};
-pub use sessions::render_sessions;
 pub use summary::print_completion_summary;
