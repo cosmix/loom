@@ -53,6 +53,9 @@ impl Stage {
             wiring: Vec::new(),
             sandbox: Default::default(),
             execution_mode: None,
+            fix_attempts: 0,
+            max_fix_attempts: None,
+            review_reason: None,
         }
     }
 
@@ -250,6 +253,81 @@ impl Stage {
     /// `Ok(())` if the transition succeeded, `Err` if invalid
     pub fn try_mark_merge_blocked(&mut self) -> Result<()> {
         self.try_transition(StageStatus::MergeBlocked)
+    }
+
+    /// Request human review for this stage.
+    ///
+    /// Transitions from Executing to NeedsHumanReview and records the reason.
+    ///
+    /// # Arguments
+    /// * `reason` - Why the stage needs human review
+    ///
+    /// # Returns
+    /// `Ok(())` if the transition succeeded, `Err` if invalid
+    pub fn try_request_human_review(&mut self, reason: String) -> Result<()> {
+        self.try_transition(StageStatus::NeedsHumanReview)?;
+        self.review_reason = Some(reason);
+        Ok(())
+    }
+
+    /// Approve human review and resume execution.
+    ///
+    /// Transitions from NeedsHumanReview back to Executing.
+    ///
+    /// # Returns
+    /// `Ok(())` if the transition succeeded, `Err` if invalid
+    pub fn try_approve_review(&mut self) -> Result<()> {
+        self.try_transition(StageStatus::Executing)?;
+        self.review_reason = None;
+        Ok(())
+    }
+
+    /// Force-complete a stage that is in human review.
+    ///
+    /// Transitions from NeedsHumanReview to Completed.
+    ///
+    /// # Returns
+    /// `Ok(())` if the transition succeeded, `Err` if invalid
+    pub fn try_force_complete_review(&mut self) -> Result<()> {
+        self.try_transition(StageStatus::Completed)?;
+        let now = Utc::now();
+        self.completed_at = Some(now);
+        if let Some(start) = self.started_at {
+            self.duration_secs = Some(now.signed_duration_since(start).num_seconds());
+        }
+        Ok(())
+    }
+
+    /// Reject human review and block the stage.
+    ///
+    /// Transitions from NeedsHumanReview to Blocked and updates the review reason.
+    ///
+    /// # Arguments
+    /// * `reason` - Why the review was rejected
+    ///
+    /// # Returns
+    /// `Ok(())` if the transition succeeded, `Err` if invalid
+    pub fn try_reject_review(&mut self, reason: String) -> Result<()> {
+        self.try_transition(StageStatus::Blocked)?;
+        self.review_reason = Some(reason);
+        Ok(())
+    }
+
+    /// Increment the fix attempt counter and return the new count.
+    pub fn increment_fix_attempts(&mut self) -> u32 {
+        self.fix_attempts += 1;
+        self.updated_at = Utc::now();
+        self.fix_attempts
+    }
+
+    /// Check if the stage has reached its fix attempt limit.
+    pub fn is_at_fix_limit(&self) -> bool {
+        self.fix_attempts >= self.get_effective_max_fix_attempts()
+    }
+
+    /// Get the effective maximum fix attempts (default 3 if not set).
+    pub fn get_effective_max_fix_attempts(&self) -> u32 {
+        self.max_fix_attempts.unwrap_or(3)
     }
 
     pub fn hold(&mut self) {

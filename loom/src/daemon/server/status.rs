@@ -70,7 +70,8 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
                                 | StageStatus::WaitingForInput
                                 | StageStatus::MergeConflict
                                 | StageStatus::CompletedWithFailures
-                                | StageStatus::MergeBlocked => {
+                                | StageStatus::MergeBlocked
+                                | StageStatus::NeedsHumanReview => {
                                     stages_blocked.push(stage_info);
                                 }
                             }

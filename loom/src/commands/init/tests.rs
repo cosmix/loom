@@ -151,6 +151,9 @@ fn test_serialize_stage_to_markdown_minimal() {
         wiring: Vec::new(),
         sandbox: Default::default(),
         execution_mode: None,
+        fix_attempts: 0,
+        max_fix_attempts: None,
+        review_reason: None,
     };
 
     let content = serialize_stage_to_markdown(&stage).unwrap();
@@ -207,6 +210,9 @@ fn test_serialize_stage_to_markdown_with_all_fields() {
         wiring: Vec::new(),
         sandbox: Default::default(),
         execution_mode: None,
+        fix_attempts: 0,
+        max_fix_attempts: None,
+        review_reason: None,
     };
 
     let content = serialize_stage_to_markdown(&stage).unwrap();

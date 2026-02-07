@@ -275,6 +275,18 @@ impl Recovery for Orchestrator {
                             );
                         }
                     }
+                    StageStatus::NeedsHumanReview => {
+                        if let Err(e) = self
+                            .graph
+                            .mark_status(&stage.id, StageStatus::NeedsHumanReview)
+                        {
+                            tracing::warn!(
+                                "Failed to sync graph status for stage {}: {}",
+                                stage.id,
+                                e
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -454,6 +466,7 @@ impl Recovery for Orchestrator {
                 StageStatus::MergeConflict => continue, // Terminal until resolved
                 StageStatus::CompletedWithFailures => continue, // Terminal until retried
                 StageStatus::MergeBlocked => continue,  // Terminal until fixed
+                StageStatus::NeedsHumanReview => continue, // Waiting for human review
                 StageStatus::WaitingForDeps
                 | StageStatus::Queued
                 | StageStatus::Executing
@@ -498,6 +511,7 @@ impl Recovery for Orchestrator {
                 StageStatus::MergeConflict => blocked += 1, // Blocked on conflict resolution
                 StageStatus::CompletedWithFailures => blocked += 1, // Failed acceptance, needs retry
                 StageStatus::MergeBlocked => blocked += 1,          // Blocked on merge error
+                StageStatus::NeedsHumanReview => blocked += 1,      // Waiting for human review
             }
         }
 

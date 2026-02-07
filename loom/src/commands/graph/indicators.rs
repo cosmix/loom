@@ -35,9 +35,10 @@ pub fn status_priority(status: &StageStatus) -> u8 {
         StageStatus::MergeConflict => 4, // Needs attention, similar to handoff
         StageStatus::CompletedWithFailures => 5, // Needs retry
         StageStatus::MergeBlocked => 6,  // Merge failed, needs attention
-        StageStatus::WaitingForDeps => 7,
-        StageStatus::Blocked => 8,
-        StageStatus::Completed => 9,
-        StageStatus::Skipped => 10,
+        StageStatus::NeedsHumanReview => 7, // Needs human attention
+        StageStatus::WaitingForDeps => 8,
+        StageStatus::Blocked => 9,
+        StageStatus::Completed => 10,
+        StageStatus::Skipped => 11,
     }
 }

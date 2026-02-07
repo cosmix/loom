@@ -8,13 +8,14 @@ impl StageStatus {
     /// Valid transitions:
     /// - `WaitingForDeps` -> `Queued` | `Skipped` (when dependencies satisfied or user skips)
     /// - `Queued` -> `Executing` | `Skipped` | `Blocked` (when session spawns, user skips, or pre-execution failure)
-    /// - `Executing` -> `Completed` | `Blocked` | `NeedsHandoff` | `WaitingForInput` | `MergeConflict` | `CompletedWithFailures` | `MergeBlocked`
+    /// - `Executing` -> `Completed` | `Blocked` | `NeedsHandoff` | `WaitingForInput` | `MergeConflict` | `CompletedWithFailures` | `MergeBlocked` | `NeedsHumanReview`
     /// - `Blocked` -> `Queued` | `Skipped` (when unblocked or user skips)
     /// - `NeedsHandoff` -> `Queued` (when resumed)
     /// - `WaitingForInput` -> `Executing` (when input provided)
     /// - `MergeConflict` -> `Completed` | `Blocked` (when conflicts resolved or resolution fails)
     /// - `CompletedWithFailures` -> `Queued` | `Executing` | `Completed` (for retry or re-verify)
     /// - `MergeBlocked` -> `Queued` | `Executing` (for retry)
+    /// - `NeedsHumanReview` -> `Executing` | `Completed` | `Blocked` (when approved, force-completed, or rejected)
     /// - `Completed` is a terminal state
     /// - `Skipped` is a terminal state
     ///
@@ -48,6 +49,7 @@ impl StageStatus {
                     | StageStatus::MergeConflict
                     | StageStatus::CompletedWithFailures
                     | StageStatus::MergeBlocked
+                    | StageStatus::NeedsHumanReview
             ),
             StageStatus::WaitingForInput => matches!(new_status, StageStatus::Executing),
             StageStatus::Completed => false, // Terminal state
@@ -67,6 +69,12 @@ impl StageStatus {
             }
             StageStatus::MergeBlocked => {
                 matches!(new_status, StageStatus::Queued | StageStatus::Executing)
+            }
+            StageStatus::NeedsHumanReview => {
+                matches!(
+                    new_status,
+                    StageStatus::Executing | StageStatus::Completed | StageStatus::Blocked
+                )
             }
         }
     }
@@ -105,6 +113,7 @@ impl StageStatus {
                 StageStatus::MergeConflict,
                 StageStatus::CompletedWithFailures,
                 StageStatus::MergeBlocked,
+                StageStatus::NeedsHumanReview,
             ],
             StageStatus::WaitingForInput => vec![StageStatus::Executing],
             StageStatus::Completed => vec![], // Terminal state
@@ -120,6 +129,11 @@ impl StageStatus {
                 ]
             }
             StageStatus::MergeBlocked => vec![StageStatus::Queued, StageStatus::Executing],
+            StageStatus::NeedsHumanReview => vec![
+                StageStatus::Executing,
+                StageStatus::Completed,
+                StageStatus::Blocked,
+            ],
         }
     }
 }

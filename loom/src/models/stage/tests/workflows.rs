@@ -119,3 +119,112 @@ fn test_stage_new_initializes_retry_fields() {
     assert_eq!(stage.last_failure_at, None);
     assert_eq!(stage.failure_info, None);
 }
+
+#[test]
+fn test_stage_new_initializes_fix_attempt_fields() {
+    let stage = Stage::new("Test".to_string(), Some("Description".to_string()));
+    assert_eq!(stage.fix_attempts, 0);
+    assert_eq!(stage.max_fix_attempts, None);
+    assert_eq!(stage.review_reason, None);
+}
+
+#[test]
+fn test_human_review_approve_workflow() {
+    let mut stage = create_test_stage(StageStatus::Executing);
+
+    // Executing -> NeedsHumanReview
+    assert!(stage
+        .try_request_human_review("Suspicious changes detected".to_string())
+        .is_ok());
+    assert_eq!(stage.status, StageStatus::NeedsHumanReview);
+    assert_eq!(
+        stage.review_reason,
+        Some("Suspicious changes detected".to_string())
+    );
+
+    // NeedsHumanReview -> Executing (approved)
+    assert!(stage.try_approve_review().is_ok());
+    assert_eq!(stage.status, StageStatus::Executing);
+    assert_eq!(stage.review_reason, None);
+}
+
+#[test]
+fn test_human_review_reject_workflow() {
+    let mut stage = create_test_stage(StageStatus::Executing);
+
+    // Executing -> NeedsHumanReview
+    assert!(stage
+        .try_request_human_review("Code quality issues".to_string())
+        .is_ok());
+    assert_eq!(stage.status, StageStatus::NeedsHumanReview);
+
+    // NeedsHumanReview -> Blocked (rejected)
+    assert!(stage
+        .try_reject_review("Needs refactoring".to_string())
+        .is_ok());
+    assert_eq!(stage.status, StageStatus::Blocked);
+    assert_eq!(stage.review_reason, Some("Needs refactoring".to_string()));
+}
+
+#[test]
+fn test_human_review_force_complete_workflow() {
+    let mut stage = create_test_stage(StageStatus::Executing);
+    stage.started_at = Some(chrono::Utc::now());
+
+    // Executing -> NeedsHumanReview
+    assert!(stage
+        .try_request_human_review("Minor issues found".to_string())
+        .is_ok());
+    assert_eq!(stage.status, StageStatus::NeedsHumanReview);
+
+    // NeedsHumanReview -> Completed (force-completed)
+    assert!(stage.try_force_complete_review().is_ok());
+    assert_eq!(stage.status, StageStatus::Completed);
+    assert!(stage.completed_at.is_some());
+    assert!(stage.duration_secs.is_some());
+}
+
+#[test]
+fn test_fix_attempts_tracking() {
+    let mut stage = Stage::new("Test".to_string(), None);
+
+    assert_eq!(stage.fix_attempts, 0);
+    assert!(!stage.is_at_fix_limit());
+    assert_eq!(stage.get_effective_max_fix_attempts(), 3);
+
+    assert_eq!(stage.increment_fix_attempts(), 1);
+    assert_eq!(stage.increment_fix_attempts(), 2);
+    assert!(!stage.is_at_fix_limit());
+
+    assert_eq!(stage.increment_fix_attempts(), 3);
+    assert!(stage.is_at_fix_limit());
+}
+
+#[test]
+fn test_fix_attempts_custom_limit() {
+    let mut stage = Stage::new("Test".to_string(), None);
+    stage.max_fix_attempts = Some(2);
+
+    assert_eq!(stage.get_effective_max_fix_attempts(), 2);
+    assert!(!stage.is_at_fix_limit());
+
+    stage.increment_fix_attempts();
+    assert!(!stage.is_at_fix_limit());
+
+    stage.increment_fix_attempts();
+    assert!(stage.is_at_fix_limit());
+}
+
+#[test]
+fn test_display_needs_human_review() {
+    assert_eq!(
+        format!("{}", StageStatus::NeedsHumanReview),
+        "NeedsHumanReview"
+    );
+}
+
+#[test]
+fn test_needs_human_review_request_from_invalid_state() {
+    let mut stage = create_test_stage(StageStatus::Queued);
+    assert!(stage.try_request_human_review("test".to_string()).is_err());
+}

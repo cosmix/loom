@@ -176,6 +176,7 @@ fn calculate_progress(stages: &[Stage]) -> ProgressSummary {
             | StageStatus::CompletedWithFailures
             | StageStatus::MergeBlocked => blocked += 1,
             StageStatus::NeedsHandoff | StageStatus::WaitingForInput => executing += 1,
+            StageStatus::NeedsHumanReview => blocked += 1,
             StageStatus::Skipped => {}
         }
     }
@@ -297,6 +298,9 @@ mod tests {
             wiring: Vec::new(),
             sandbox: Default::default(),
             execution_mode: None,
+            fix_attempts: 0,
+            max_fix_attempts: None,
+            review_reason: None,
         }
     }
 

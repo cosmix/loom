@@ -62,6 +62,11 @@ pub fn recover(stage_id: String, force: bool) -> Result<()> {
                     "Stage '{stage_id}' has merge conflicts. Use 'loom merge {stage_id}' to resolve."
                 );
             }
+            StageStatus::NeedsHumanReview => {
+                bail!(
+                    "Stage '{stage_id}' is awaiting human review. Use 'loom stage approve {stage_id}' or 'loom stage reject {stage_id}'."
+                );
+            }
         }
     }
 
@@ -288,6 +293,9 @@ mod tests {
             wiring: Vec::new(),
             sandbox: Default::default(),
             execution_mode: None,
+            fix_attempts: 0,
+            max_fix_attempts: None,
+            review_reason: None,
         };
 
         // No reason - should be Manual

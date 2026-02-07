@@ -215,6 +215,15 @@ pub struct Stage {
     /// Hint for execution mode (single agent vs team)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_mode: Option<ExecutionMode>,
+    /// Number of fix attempts made for this stage (acceptance/review cycles)
+    #[serde(default)]
+    pub fix_attempts: u32,
+    /// Maximum fix attempts allowed (None = use default of 3)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_fix_attempts: Option<u32>,
+    /// Reason the stage was flagged for human review
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_reason: Option<String>,
 }
 
 /// Status of a stage in the execution lifecycle.
@@ -290,6 +299,11 @@ pub enum StageStatus {
     /// Can be retried by transitioning back to Executing.
     #[serde(rename = "merge-blocked")]
     MergeBlocked,
+
+    /// Stage needs human review before continuing.
+    /// The agent has flagged something that requires human judgment.
+    #[serde(rename = "needs-human-review")]
+    NeedsHumanReview,
 }
 
 impl std::fmt::Display for StageStatus {
@@ -306,6 +320,7 @@ impl std::fmt::Display for StageStatus {
             StageStatus::MergeConflict => write!(f, "MergeConflict"),
             StageStatus::CompletedWithFailures => write!(f, "CompletedWithFailures"),
             StageStatus::MergeBlocked => write!(f, "MergeBlocked"),
+            StageStatus::NeedsHumanReview => write!(f, "NeedsHumanReview"),
         }
     }
 }
@@ -326,6 +341,7 @@ impl std::str::FromStr for StageStatus {
             "completed-with-failures" => Ok(StageStatus::CompletedWithFailures),
             "merge-blocked" => Ok(StageStatus::MergeBlocked),
             "skipped" => Ok(StageStatus::Skipped),
+            "needs-human-review" => Ok(StageStatus::NeedsHumanReview),
             _ => anyhow::bail!("Unknown stage status: '{s}'"),
         }
     }
@@ -346,6 +362,7 @@ impl StageStatus {
             Self::MergeConflict => "\u{26A1}",         // ⚡
             Self::CompletedWithFailures => "\u{26A0}", // ⚠
             Self::MergeBlocked => "\u{2297}",          // ⊗
+            Self::NeedsHumanReview => "\u{23F8}",      // ⏸
         }
     }
 
@@ -364,12 +381,16 @@ impl StageStatus {
             Self::MergeConflict => Color::Yellow,
             Self::CompletedWithFailures => Color::Red,
             Self::MergeBlocked => Color::Red,
+            Self::NeedsHumanReview => Color::Magenta,
         }
     }
 
     /// Returns whether this status should be bold
     pub fn is_bold(&self) -> bool {
-        !matches!(self, Self::WaitingForDeps | Self::Skipped)
+        !matches!(
+            self,
+            Self::WaitingForDeps | Self::Skipped | Self::NeedsHumanReview
+        )
     }
 
     /// Returns whether this status should be dimmed
@@ -399,6 +420,7 @@ impl StageStatus {
             Self::MergeConflict => Color::Yellow,
             Self::CompletedWithFailures => Color::Red,
             Self::MergeBlocked => Color::Red,
+            Self::NeedsHumanReview => Color::Magenta,
         };
         style = style.fg(color);
 
@@ -423,6 +445,7 @@ impl StageStatus {
             Self::MergeConflict => "Conflict",
             Self::CompletedWithFailures => "Failed",
             Self::MergeBlocked => "MergeErr",
+            Self::NeedsHumanReview => "Review",
         }
     }
 }
@@ -475,6 +498,9 @@ impl Default for Stage {
             wiring: Vec::new(),
             sandbox: Default::default(),
             execution_mode: None,
+            fix_attempts: 0,
+            max_fix_attempts: None,
+            review_reason: None,
         }
     }
 }

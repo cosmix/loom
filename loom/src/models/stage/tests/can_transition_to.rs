@@ -122,6 +122,7 @@ fn test_same_status_transition_is_valid() {
         StageStatus::MergeConflict,
         StageStatus::CompletedWithFailures,
         StageStatus::MergeBlocked,
+        StageStatus::NeedsHumanReview,
     ];
 
     for status in statuses {
@@ -130,4 +131,37 @@ fn test_same_status_transition_is_valid() {
             "Same-state transition should be valid for {status:?}"
         );
     }
+}
+
+#[test]
+fn test_executing_can_transition_to_needs_human_review() {
+    let status = StageStatus::Executing;
+    assert!(status.can_transition_to(&StageStatus::NeedsHumanReview));
+}
+
+#[test]
+fn test_needs_human_review_can_transition_to_executing() {
+    let status = StageStatus::NeedsHumanReview;
+    assert!(status.can_transition_to(&StageStatus::Executing));
+}
+
+#[test]
+fn test_needs_human_review_can_transition_to_completed() {
+    let status = StageStatus::NeedsHumanReview;
+    assert!(status.can_transition_to(&StageStatus::Completed));
+}
+
+#[test]
+fn test_needs_human_review_can_transition_to_blocked() {
+    let status = StageStatus::NeedsHumanReview;
+    assert!(status.can_transition_to(&StageStatus::Blocked));
+}
+
+#[test]
+fn test_needs_human_review_cannot_transition_to_invalid_states() {
+    let status = StageStatus::NeedsHumanReview;
+    assert!(!status.can_transition_to(&StageStatus::WaitingForDeps));
+    assert!(!status.can_transition_to(&StageStatus::Queued));
+    assert!(!status.can_transition_to(&StageStatus::NeedsHandoff));
+    assert!(!status.can_transition_to(&StageStatus::Skipped));
 }

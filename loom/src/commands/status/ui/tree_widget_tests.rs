@@ -49,6 +49,9 @@ fn make_stage(id: &str, deps: Vec<&str>, status: StageStatus) -> Stage {
         wiring: Vec::new(),
         sandbox: Default::default(),
         execution_mode: None,
+        fix_attempts: 0,
+        max_fix_attempts: None,
+        review_reason: None,
     }
 }
 
