@@ -664,3 +664,14 @@ Two plan criteria caused false negatives in integration-verify:
 
 - **Extracted DEFAULT_MAX_FILE_LINES, DEFAULT_MAX_TOTAL_LINES, DEFAULT_MAX_PROMOTED_BLOCKS constants and added has_issues field to FileGcMetrics to be single source of truth for per-file issue detection**
   - _Rationale:_ Eliminated duplicated threshold logic between analyze_gc_metrics() and gc() presentation code. Constants shared between CLI defaults and check() advisory.
+
+## Promoted from Memory [2026-02-07 14:53]
+
+### Notes
+
+- Integration verification passed for knowledge GC: 1439 tests pass (1249 unit + 132 e2e + 28 integration + 16 failure_resume + 3 stage_transitions + 3 completion + 8 doc-tests), clippy clean, fmt clean, build succeeds. All functional verification: gc --help, gc metrics, gc --quiet, gc --max-file-lines, knowledge check GC section, knowledge show/list backward compat.
+
+### Decisions
+
+- **Used local build binary (./loom/target/debug/loom) for functional verification of gc command since installed binary does not have the feature yet**
+  - _Rationale:_ Standard approach for integration-verify of unreleased features per mistakes.md precedent
