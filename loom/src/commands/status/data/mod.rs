@@ -77,6 +77,8 @@ pub struct StageSummary {
     pub staleness_secs: Option<u64>,
     /// Stage-specific context budget percentage (if set in plan)
     pub context_budget_pct: Option<f32>,
+    /// Reason the stage was flagged for human review
+    pub review_reason: Option<String>,
 }
 
 /// Session display data

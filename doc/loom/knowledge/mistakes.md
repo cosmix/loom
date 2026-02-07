@@ -611,3 +611,16 @@ Two plan criteria caused false negatives in integration-verify:
 
 - **Used max_retries field as the fix_attempts limit (with fallback to DEFAULT_MAX_FIX_ATTEMPTS=3) rather than adding a new max_fix_attempts field. This keeps the Stage struct simpler and reuses an existing concept.**
   - _Rationale:_ fix_attempts limit should share the same configurable limit as retries since they represent similar concepts of 'how many times to try before escalating'
+
+## Promoted from Memory [2026-02-07 13:35]
+
+### Notes
+
+- Implementation complete: NeedsHumanReview status display in all views (stages, attention, compact) with review_reason display, plus desktop notifications via notify-send/osascript triggered from monitor event detection
+
+### Decisions
+
+- **NeedsHumanReview status display: add to status_order array in display/stages.rs (currently missing), add review_reason to StageSummary, include in attention.rs filter, add NeedsHumanReview count to compact view**
+  - _Rationale:_ Analysis of existing code shows NeedsHumanReview has icon/color/label in types.rs but is missing from status_order in display/stages.rs and attention filter in render/attention.rs
+- **Desktop notifications via notify-send (Linux) and osascript (macOS) triggered from orchestrator event handler when StageNeedsHumanReview event detected. New notify module under src/orchestrator/ for notification logic**
+  - _Rationale:_ Monitor already detects stage state changes in detection.rs but NeedsHumanReview falls through to catch-all. Need new MonitorEvent variant and handler

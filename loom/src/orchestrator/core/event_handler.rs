@@ -168,6 +168,23 @@ impl EventHandler for Orchestrator {
                 } => {
                     self.on_budget_exceeded(&session_id, &stage_id, usage_percent, budget_percent)?;
                 }
+                MonitorEvent::StageNeedsHumanReview {
+                    stage_id,
+                    review_reason,
+                } => {
+                    clear_status_line();
+                    let reason_str = review_reason.as_deref().unwrap_or("No reason provided");
+                    eprintln!(
+                        "{} Stage '{}' needs human review: {}",
+                        "REVIEW NEEDED:".magenta().bold(),
+                        stage_id,
+                        reason_str
+                    );
+                    crate::orchestrator::notify::notify_needs_human_review(
+                        &stage_id,
+                        review_reason.as_deref(),
+                    );
+                }
             }
         }
         Ok(())

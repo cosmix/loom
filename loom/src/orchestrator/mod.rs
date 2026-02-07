@@ -2,6 +2,7 @@ pub mod auto_merge;
 pub mod continuation;
 pub mod core;
 pub mod monitor;
+pub mod notify;
 pub mod progressive_merge;
 pub mod retry;
 pub mod signals;
@@ -23,6 +24,7 @@ pub use monitor::{
     MonitorEvent, StageFailureState, DEFAULT_HEARTBEAT_POLL_SECS, DEFAULT_HUNG_TIMEOUT_SECS,
     DEFAULT_MAX_FAILURES,
 };
+pub use notify::{notify_needs_human_review, send_desktop_notification};
 pub use progressive_merge::{
     get_merge_point, merge_completed_stage, merge_completed_stage_with_timeout, MergeLock,
     ProgressiveMergeResult,
