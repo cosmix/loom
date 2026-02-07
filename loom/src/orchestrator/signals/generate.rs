@@ -6,10 +6,11 @@ use crate::fs::knowledge::KnowledgeDir;
 use crate::fs::memory::format_memory_for_signal;
 use crate::handoff::git_handoff::GitHistory;
 use crate::handoff::schema::ParsedHandoff;
+use crate::language::DetectedLanguage;
 use crate::models::session::Session;
 use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
-use crate::skills::SkillIndex;
+use crate::skills::{SkillIndex, SkillMatch};
 
 use super::cache::SignalMetrics;
 use super::format::{format_signal_content, format_signal_with_metrics};
@@ -36,6 +37,7 @@ pub fn generate_signal(
         git_history,
         work_dir,
         None, // No skill index - backward compatible
+        &[],  // No detected languages - backward compatible
     )
 }
 
@@ -50,6 +52,7 @@ pub fn generate_signal_with_skills(
     git_history: Option<&GitHistory>,
     work_dir: &Path,
     skill_index: Option<&SkillIndex>,
+    detected_languages: &[DetectedLanguage],
 ) -> Result<PathBuf> {
     // Build embedded context with shared setup logic
     let mut embedded_context = build_signal_context(session, stage, work_dir, handoff_file);
@@ -59,6 +62,28 @@ pub fn generate_signal_with_skills(
         let text_to_match = build_skill_match_text(stage);
         embedded_context.skill_recommendations =
             index.match_skills(&text_to_match, DEFAULT_MAX_SKILL_RECOMMENDATIONS);
+    }
+
+    // Inject skills for detected project languages
+    if let Some(index) = skill_index {
+        for lang in detected_languages {
+            let skill_name = lang.to_string().to_lowercase();
+            if let Some(metadata) = index.get_by_name(&skill_name) {
+                // Only add if not already in recommendations (dedup by name)
+                if !embedded_context
+                    .skill_recommendations
+                    .iter()
+                    .any(|s| s.name == skill_name)
+                {
+                    embedded_context.skill_recommendations.push(SkillMatch::new(
+                        metadata.name.clone(),
+                        metadata.description.clone(),
+                        10.0, // High score for project-language detection
+                        vec!["project-language".to_string()],
+                    ));
+                }
+            }
+        }
     }
 
     let content = format_signal_content(

@@ -198,6 +198,7 @@ impl StageExecutor for Orchestrator {
             None, // git_history will be extracted from worktree in future enhancement
             &self.config.work_dir,
             self.skill_index.as_ref(),
+            &self.detected_languages,
         )
         .context("Failed to generate signal file")?;
 

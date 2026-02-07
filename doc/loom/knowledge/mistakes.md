@@ -789,3 +789,14 @@ Two plan criteria caused false negatives in integration-verify:
 
 - **Implementing types+index+tests myself rather than spawning 2 subagents — the work touches only 2 files (types.rs, index.rs) and tests are inline in those files, making parallel work impractical due to file ownership overlap**
   - _Rationale:_ Subagent 2 would write tests inline in index.rs which subagent 1 also owns. Creating a separate tests.rs adds unnecessary complexity for ~50 lines of test code.
+
+## Promoted from Memory [2026-02-07 17:19]
+
+### Notes
+
+- All acceptance criteria and goal-backward verification passed: cargo test (1283+28+3+15 tests), cargo clippy clean, detected_languages wired in orchestrator.rs and generate.rs, artifacts exist.
+
+### Decisions
+
+- **Mapping DetectedLanguage to skill names using Display trait lowercase (Rust→rust, TypeScript→typescript, etc.). Language-injected skills get score 10.0 and 'project-language' matched trigger to ensure they appear at top and are distinguishable from keyword-matched skills.**
+  - _Rationale:_ Need a convention for looking up language-specific skills in the SkillIndex. Using the Display trait's output lowercased is consistent and extensible.

@@ -683,9 +683,20 @@ pub fn format_skill_recommendations(skills: &[SkillMatch]) -> String {
         // Escape pipe characters in description
         let desc = desc.replace('|', "\\|");
 
+        // Annotate language-detected skills
+        let is_language_detected = skill
+            .matched_triggers
+            .iter()
+            .any(|t| t == "project-language");
+        let name_display = if is_language_detected {
+            format!("{} (detected)", skill.name)
+        } else {
+            skill.name.clone()
+        };
+
         content.push_str(&format!(
             "| {} | {} | `/{}`|\n",
-            skill.name, desc, skill.name
+            name_display, desc, skill.name
         ));
     }
     content.push('\n');
@@ -697,6 +708,16 @@ pub fn format_skill_recommendations(skills: &[SkillMatch]) -> String {
             let triggers = skill.matched_triggers.join(", ");
             content.push_str(&format!("- `{}`: {}\n", skill.name, triggers));
         }
+    }
+
+    // Add legend for project-language detected skills
+    if skills
+        .iter()
+        .any(|s| s.matched_triggers.iter().any(|t| t == "project-language"))
+    {
+        content.push_str(
+            "\n*Skills marked (detected) were recommended based on project language detection.*\n",
+        );
     }
     content.push('\n');
 

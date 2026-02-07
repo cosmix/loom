@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::fs::work_integrity::validate_work_dir_state;
+use crate::language::{detect_project_languages, DetectedLanguage};
 use crate::models::session::Session;
 use crate::models::stage::StageStatus;
 use crate::models::worktree::Worktree;
@@ -89,6 +90,8 @@ pub struct Orchestrator {
     pub(super) backend: Box<dyn TerminalBackend>,
     /// Skill index for generating skill recommendations in signals
     pub(super) skill_index: Option<SkillIndex>,
+    /// Detected project languages for signal skill injection
+    pub(super) detected_languages: Vec<DetectedLanguage>,
 }
 
 impl Orchestrator {
@@ -113,6 +116,9 @@ impl Orchestrator {
             None
         };
 
+        // Detect project languages for skill recommendations
+        let detected_languages = detect_project_languages(&config.repo_root);
+
         Ok(Self {
             config,
             graph,
@@ -122,6 +128,7 @@ impl Orchestrator {
             reported_crashes: HashSet::new(),
             backend,
             skill_index,
+            detected_languages,
         })
     }
 
