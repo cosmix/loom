@@ -79,6 +79,9 @@ pub fn dispatch(command: Commands) -> Result<()> {
                 stage_id,
                 no_reload,
             } => stage::verify(stage_id, no_reload),
+            StageCommands::DisputeCriteria { stage_id, reason } => {
+                stage::dispute_criteria(stage_id, reason)
+            }
             StageCommands::Output { command } => match command {
                 OutputCommands::Set {
                     stage_id,
