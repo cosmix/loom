@@ -1,6 +1,6 @@
 //! Artifact verification - files that must exist with real implementation
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use glob::glob;
 use std::fs;
 use std::path::Path;
@@ -89,4 +89,141 @@ pub fn verify_artifacts(artifacts: &[String], working_dir: &Path) -> Result<Vec<
     }
 
     Ok(gaps)
+}
+
+/// Verify a regression test file exists and contains required patterns.
+///
+/// This is used by bug-fix stages to ensure regression tests are in place.
+///
+/// # Arguments
+/// * `regression_test` - The regression test requirement
+/// * `working_dir` - Base directory to resolve paths against
+///
+/// # Returns
+/// A Vec of VerificationGap for any missing file or missing patterns
+pub fn verify_regression_test(
+    regression_test: &crate::plan::schema::RegressionTest,
+    working_dir: &Path,
+) -> Result<Vec<VerificationGap>> {
+    let mut gaps = Vec::new();
+    let file_path = working_dir.join(&regression_test.file);
+
+    if !file_path.exists() {
+        gaps.push(VerificationGap::new(
+            GapType::ArtifactMissing,
+            format!("Regression test file missing: {}", regression_test.file),
+            format!("Create regression test file: {}", regression_test.file),
+        ));
+        return Ok(gaps);
+    }
+
+    let content = fs::read_to_string(&file_path).with_context(|| {
+        format!(
+            "Failed to read regression test file: {}",
+            file_path.display()
+        )
+    })?;
+
+    if content.trim().is_empty() {
+        gaps.push(VerificationGap::new(
+            GapType::ArtifactEmpty,
+            format!("Regression test file is empty: {}", regression_test.file),
+            "Add regression test implementation".to_string(),
+        ));
+        return Ok(gaps);
+    }
+
+    for pattern in &regression_test.must_contain {
+        if !content.contains(pattern.as_str()) {
+            gaps.push(VerificationGap::new(
+                GapType::ArtifactStub,
+                format!(
+                    "Regression test file '{}' missing required pattern: {}",
+                    regression_test.file, pattern
+                ),
+                format!("Add test code containing '{}'", pattern),
+            ));
+        }
+    }
+
+    Ok(gaps)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plan::schema::RegressionTest;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_regression_test_file_missing() {
+        let dir = TempDir::new().unwrap();
+        let rt = RegressionTest {
+            file: "tests/regression_test.rs".to_string(),
+            must_contain: vec!["test_bug_fix".to_string()],
+        };
+        let gaps = verify_regression_test(&rt, dir.path()).unwrap();
+        assert_eq!(gaps.len(), 1);
+        assert!(matches!(gaps[0].gap_type, GapType::ArtifactMissing));
+    }
+
+    #[test]
+    fn test_regression_test_file_empty() {
+        let dir = TempDir::new().unwrap();
+        let test_file = dir.path().join("test.rs");
+        std::fs::write(&test_file, "   \n  ").unwrap();
+        let rt = RegressionTest {
+            file: "test.rs".to_string(),
+            must_contain: vec!["test_bug_fix".to_string()],
+        };
+        let gaps = verify_regression_test(&rt, dir.path()).unwrap();
+        assert_eq!(gaps.len(), 1);
+        assert!(matches!(gaps[0].gap_type, GapType::ArtifactEmpty));
+    }
+
+    #[test]
+    fn test_regression_test_missing_pattern() {
+        let dir = TempDir::new().unwrap();
+        let test_file = dir.path().join("test.rs");
+        std::fs::write(&test_file, "fn test_something() { assert!(true); }").unwrap();
+        let rt = RegressionTest {
+            file: "test.rs".to_string(),
+            must_contain: vec!["test_bug_fix".to_string(), "regression".to_string()],
+        };
+        let gaps = verify_regression_test(&rt, dir.path()).unwrap();
+        assert_eq!(gaps.len(), 2);
+        assert!(gaps
+            .iter()
+            .all(|g| matches!(g.gap_type, GapType::ArtifactStub)));
+    }
+
+    #[test]
+    fn test_regression_test_all_patterns_present() {
+        let dir = TempDir::new().unwrap();
+        let test_file = dir.path().join("test.rs");
+        std::fs::write(
+            &test_file,
+            "#[test]\nfn test_bug_fix() {\n    // regression test\n    assert!(true);\n}",
+        )
+        .unwrap();
+        let rt = RegressionTest {
+            file: "test.rs".to_string(),
+            must_contain: vec!["test_bug_fix".to_string(), "regression".to_string()],
+        };
+        let gaps = verify_regression_test(&rt, dir.path()).unwrap();
+        assert!(gaps.is_empty());
+    }
+
+    #[test]
+    fn test_regression_test_empty_must_contain() {
+        let dir = TempDir::new().unwrap();
+        let test_file = dir.path().join("test.rs");
+        std::fs::write(&test_file, "fn test_something() {}").unwrap();
+        let rt = RegressionTest {
+            file: "test.rs".to_string(),
+            must_contain: vec![],
+        };
+        let gaps = verify_regression_test(&rt, dir.path()).unwrap();
+        assert!(gaps.is_empty()); // No patterns to check = pass
+    }
 }

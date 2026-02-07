@@ -251,5 +251,7 @@ pub(crate) fn create_stage_from_definition(stage_def: &StageDefinition, plan_id:
         execution_mode: stage_def.execution_mode,
         max_fix_attempts: None,
         review_reason: None,
+        bug_fix: stage_def.bug_fix,
+        regression_test: stage_def.regression_test.clone(),
     }
 }

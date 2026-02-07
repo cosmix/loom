@@ -68,6 +68,8 @@ impl StageFrontmatter {
             context_budget: None,
             sandbox: crate::plan::schema::StageSandboxConfig::default(),
             execution_mode: self.execution_mode,
+            bug_fix: None,
+            regression_test: None,
         }
     }
 }

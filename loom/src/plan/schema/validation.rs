@@ -451,6 +451,54 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
 
         // Validate stage-level sandbox configuration
         validate_stage_sandbox_config(&stage.sandbox, &mut errors, &stage.id);
+
+        // Validate bug_fix / regression_test consistency
+        if stage.bug_fix == Some(true) && stage.regression_test.is_none() {
+            errors.push(ValidationError {
+                message: "bug_fix stages must define a regression_test with file path and patterns"
+                    .to_string(),
+                stage_id: Some(stage.id.clone()),
+            });
+        }
+
+        if let Some(ref rt) = stage.regression_test {
+            // Validate file path
+            if rt.file.trim().is_empty() {
+                errors.push(ValidationError {
+                    message: "regression_test.file cannot be empty".to_string(),
+                    stage_id: Some(stage.id.clone()),
+                });
+            }
+            if rt.file.contains("..") {
+                errors.push(ValidationError {
+                    message: "regression_test.file cannot contain path traversal (..)".to_string(),
+                    stage_id: Some(stage.id.clone()),
+                });
+            }
+            if rt.file.starts_with('/') {
+                errors.push(ValidationError {
+                    message: "regression_test.file must be relative path".to_string(),
+                    stage_id: Some(stage.id.clone()),
+                });
+            }
+            // Validate must_contain has entries
+            if rt.must_contain.is_empty() {
+                errors.push(ValidationError {
+                    message: "regression_test.must_contain must have at least one pattern"
+                        .to_string(),
+                    stage_id: Some(stage.id.clone()),
+                });
+            }
+            // Warn: regression_test without bug_fix flag
+            if stage.bug_fix != Some(true) {
+                // This is a warning-level issue, but we include it as an error
+                // to enforce consistency (regression tests should accompany bug_fix flag)
+                errors.push(ValidationError {
+                    message: "regression_test defined but bug_fix is not true — regression tests should accompany bug_fix: true".to_string(),
+                    stage_id: Some(stage.id.clone()),
+                });
+            }
+        }
     }
 
     if errors.is_empty() {
@@ -619,6 +667,21 @@ pub fn validate_structural_preflight(
                             stage.id,
                             idx + 1,
                             wiring.source,
+                            stage.working_dir
+                        ));
+                    }
+                }
+
+                // Check for double-path in regression_test file
+                if let Some(ref rt) = stage.regression_test {
+                    if rt.file.starts_with(&stage.working_dir)
+                        || rt.file.starts_with(&format!("{}/", stage.working_dir))
+                    {
+                        warnings.push(format!(
+                            "Stage '{}': regression_test.file '{}' may have redundant working_dir prefix '{}'. \
+                             Regression test paths are relative to working_dir.",
+                            stage.id,
+                            rt.file,
                             stage.working_dir
                         ));
                     }

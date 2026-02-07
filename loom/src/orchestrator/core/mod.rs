@@ -81,6 +81,8 @@ mod tests {
             context_budget: None,
             sandbox: StageSandboxConfig::default(),
             execution_mode: None,
+            bug_fix: None,
+            regression_test: None,
         }];
 
         ExecutionGraph::build(stages).unwrap()

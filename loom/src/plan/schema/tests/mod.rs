@@ -3,6 +3,7 @@
 mod acceptance_tests;
 mod auto_merge_tests;
 mod knowledge_recommendations_tests;
+mod regression_test_tests;
 mod stage_id_tests;
 mod validation_tests;
 
@@ -36,6 +37,8 @@ pub(crate) fn make_stage(id: &str, name: &str) -> StageDefinition {
         context_budget: None,
         sandbox: StageSandboxConfig::default(),
         execution_mode: None,
+        bug_fix: None,
+        regression_test: None,
     }
 }
 

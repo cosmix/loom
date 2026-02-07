@@ -27,6 +27,8 @@ fn make_stage(id: &str, deps: Vec<&str>, group: Option<&str>) -> StageDefinition
         context_budget: None,
         sandbox: StageSandboxConfig::default(),
         execution_mode: None,
+        bug_fix: None,
+        regression_test: None,
     }
 }
 

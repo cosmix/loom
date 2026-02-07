@@ -12,7 +12,7 @@ pub mod truths;
 pub mod wiring;
 pub mod wiring_tests;
 
-pub use artifacts::verify_artifacts;
+pub use artifacts::{verify_artifacts, verify_regression_test};
 pub use dead_code::run_dead_code_check;
 pub use result::{GapType, GoalBackwardResult, VerificationGap};
 pub use truths::{verify_truth_checks, verify_truths};
@@ -58,6 +58,14 @@ pub fn run_goal_backward_verification(
     // 6. Run dead code check if configured
     if let Some(dead_code_check) = &stage_def.dead_code_check {
         gaps.extend(run_dead_code_check(dead_code_check, working_dir)?);
+    }
+
+    // 7. Verify regression test (for bug-fix stages)
+    if let Some(ref regression_test) = stage_def.regression_test {
+        gaps.extend(artifacts::verify_regression_test(
+            regression_test,
+            working_dir,
+        )?);
     }
 
     Ok(GoalBackwardResult::from_gaps(gaps))

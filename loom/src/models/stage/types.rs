@@ -235,6 +235,12 @@ pub struct Stage {
     /// Reason the stage was flagged for human review
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review_reason: Option<String>,
+    /// Whether this stage is a bug fix that requires a regression test
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bug_fix: Option<bool>,
+    /// Regression test requirement (required when bug_fix is true)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub regression_test: Option<crate::plan::schema::RegressionTest>,
 }
 
 /// Status of a stage in the execution lifecycle.
@@ -517,6 +523,8 @@ impl Default for Stage {
             execution_mode: None,
             max_fix_attempts: None,
             review_reason: None,
+            bug_fix: None,
+            regression_test: None,
         }
     }
 }

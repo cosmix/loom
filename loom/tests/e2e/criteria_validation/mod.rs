@@ -43,6 +43,8 @@ pub(crate) fn create_valid_stage(id: &str, name: &str) -> StageDefinition {
         after_stage: vec![],
         context_budget: None,
         execution_mode: None,
+        bug_fix: None,
+        regression_test: None,
     }
 }
 

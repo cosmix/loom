@@ -274,6 +274,12 @@ pub struct StageDefinition {
     /// Hint for execution mode (single agent vs team)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_mode: Option<ExecutionMode>,
+    /// Whether this stage is a bug fix that requires a regression test
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bug_fix: Option<bool>,
+    /// Regression test requirement (required when bug_fix is true)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub regression_test: Option<RegressionTest>,
 }
 
 impl StageDefinition {
@@ -372,6 +378,19 @@ pub struct DeadCodeCheck {
     /// Patterns to ignore (e.g., "allowed_unused_function")
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ignore_patterns: Vec<String>,
+}
+
+/// Regression test requirement for bug-fix stages.
+///
+/// When a stage is marked as `bug_fix: true`, a regression test must be defined
+/// to verify the fix is actually tested and won't regress.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegressionTest {
+    /// Path to the test file (relative to working_dir)
+    pub file: String,
+    /// Patterns that must appear in the test file content
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub must_contain: Vec<String>,
 }
 
 /// Policy for handling change impact failures.
