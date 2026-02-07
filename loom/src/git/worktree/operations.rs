@@ -5,6 +5,7 @@
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 
+use crate::fs::permissions::{trust_worktree, untrust_worktree};
 use crate::git::branch::branch_name_for_stage;
 use crate::git::runner::{run_git, run_git_checked};
 use crate::models::worktree::Worktree;
@@ -89,6 +90,11 @@ pub fn create_worktree(
     // Symlink project-root CLAUDE.md
     setup_root_claude_md(&worktree_path, repo_root)?;
 
+    // Register worktree as trusted so Claude Code skips the "trust this folder?" prompt
+    if let Err(e) = trust_worktree(&worktree_path) {
+        eprintln!("Warning: Failed to register worktree trust: {e}");
+    }
+
     let mut worktree = Worktree::new(stage_id.to_string(), worktree_path, branch_name);
     worktree.mark_active();
 
@@ -110,6 +116,11 @@ pub fn remove_worktree(stage_id: &str, repo_root: &Path, force: bool) -> Result<
 
     // Clean up settings and symlinks first
     cleanup_worktree_settings(&worktree_path);
+
+    // Remove worktree from Claude Code's trusted projects
+    if let Err(e) = untrust_worktree(&worktree_path) {
+        eprintln!("Warning: Failed to remove worktree trust: {e}");
+    }
 
     let mut args: Vec<&str> = vec!["worktree", "remove"];
     if force {

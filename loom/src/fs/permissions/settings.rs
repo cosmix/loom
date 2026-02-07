@@ -19,8 +19,8 @@ use serde_json::{json, Value};
 use std::fs;
 use std::path::Path;
 
-use super::constants::{LOOM_PERMISSIONS, LOOM_PERMISSIONS_WORKTREE};
-use super::hooks::{configure_loom_hooks, install_loom_hooks, loom_hooks_config};
+use super::constants::LOOM_PERMISSIONS;
+use super::hooks::{configure_loom_hooks, install_loom_hooks};
 
 /// Ensure `.claude/settings.json` has loom permissions and hooks configured
 ///
@@ -141,45 +141,6 @@ pub fn ensure_loom_permissions(repo_root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Create `.claude/settings.json` for a worktree with worktree-specific permissions
-///
-/// This creates a NEW settings file (not symlinked) with permissions that use
-/// parent traversal (../../.work/**) since worktrees are at .worktrees/stage-X/
-/// and .work is symlinked to ../../.work
-pub fn create_worktree_settings(worktree_path: &Path) -> Result<()> {
-    let claude_dir = worktree_path.join(".claude");
-    let settings_path = claude_dir.join("settings.json");
-
-    // Create .claude directory if needed
-    if !claude_dir.exists() {
-        fs::create_dir_all(&claude_dir).with_context(|| {
-            format!(
-                "Failed to create .claude directory at {}",
-                claude_dir.display()
-            )
-        })?;
-    }
-
-    // Generate settings with worktree-specific permissions and hooks
-    let settings = json!({
-        "permissions": {
-            "allow": LOOM_PERMISSIONS_WORKTREE
-        },
-        "hooks": loom_hooks_config(),
-        "env": {
-            "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
-        }
-    });
-
-    let content = serde_json::to_string_pretty(&settings)
-        .context("Failed to serialize worktree settings to JSON")?;
-
-    fs::write(&settings_path, content)
-        .with_context(|| format!("Failed to write {}", settings_path.display()))?;
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -197,25 +158,6 @@ mod tests {
 
         // Read back settings.json
         let settings_path = repo_root.join(".claude/settings.json");
-        assert!(settings_path.exists());
-
-        let content = fs::read_to_string(&settings_path).unwrap();
-        let settings: Value = serde_json::from_str(&content).unwrap();
-
-        // Verify env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS == "1"
-        assert_eq!(settings["env"]["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"], "1");
-    }
-
-    #[test]
-    fn test_create_worktree_settings_includes_env_var() {
-        let temp_dir = TempDir::new().unwrap();
-        let worktree_path = temp_dir.path();
-
-        // Call create_worktree_settings
-        create_worktree_settings(worktree_path).unwrap();
-
-        // Read back settings.json
-        let settings_path = worktree_path.join(".claude/settings.json");
         assert!(settings_path.exists());
 
         let content = fs::read_to_string(&settings_path).unwrap();

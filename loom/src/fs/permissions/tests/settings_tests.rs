@@ -1,6 +1,6 @@
 //! Tests for settings functions
 
-use crate::fs::permissions::settings::{create_worktree_settings, ensure_loom_permissions};
+use crate::fs::permissions::settings::ensure_loom_permissions;
 use serde_json::{json, Value};
 use std::fs;
 use tempfile::TempDir;
@@ -130,21 +130,4 @@ fn test_hooks_not_duplicated_on_rerun() {
     // Should still have exactly one Stop hook entry
     let stop_hooks = settings["hooks"]["Stop"].as_array().unwrap();
     assert_eq!(stop_hooks.len(), 1);
-}
-
-#[test]
-fn test_worktree_settings_includes_hooks() {
-    let temp_dir = TempDir::new().unwrap();
-    let worktree_path = temp_dir.path();
-
-    create_worktree_settings(worktree_path).unwrap();
-
-    let settings_path = worktree_path.join(".claude/settings.json");
-    let content = fs::read_to_string(&settings_path).unwrap();
-    let settings: Value = serde_json::from_str(&content).unwrap();
-
-    // Check hooks are present
-    let hooks = settings.get("hooks").expect("hooks should be present");
-    let hooks_obj = hooks.as_object().unwrap();
-    assert!(hooks_obj.contains_key("Stop"));
 }

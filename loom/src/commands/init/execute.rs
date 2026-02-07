@@ -1,6 +1,6 @@
 //! Main execution entry point for loom init command.
 
-use crate::fs::permissions::{add_worktrees_to_global_trust, ensure_loom_permissions};
+use crate::fs::permissions::{ensure_loom_permissions, migrate_legacy_trust};
 use crate::fs::work_dir::WorkDir;
 use crate::fs::work_integrity::validate_work_dir_state;
 use crate::git::install_pre_commit_hook;
@@ -117,8 +117,10 @@ pub fn execute(plan_path: Option<PathBuf>, clean: bool) -> Result<()> {
     ensure_loom_permissions(&repo_root)?;
     println!("  {} Permissions configured", "✓".green().bold());
 
-    add_worktrees_to_global_trust(&repo_root)?;
-    println!("  {} Worktrees directory trusted", "✓".green().bold());
+    // Clean up legacy trustedDirectories entries (no-op if none exist)
+    if let Err(e) = migrate_legacy_trust(&repo_root) {
+        eprintln!("  {} Legacy trust migration: {}", "!".yellow().bold(), e);
+    }
 
     if let Some(path) = plan_path {
         let stage_count = initialize_with_plan(&work_dir, &path)?;
