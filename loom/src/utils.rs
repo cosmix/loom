@@ -106,6 +106,7 @@ pub fn install_terminal_panic_hook() {
 /// Safe to call even if terminal wasn't in TUI mode.
 pub fn cleanup_terminal_crossterm() {
     use crossterm::{
+        cursor::Show,
         event::DisableMouseCapture,
         execute,
         terminal::{disable_raw_mode, LeaveAlternateScreen},
@@ -114,7 +115,12 @@ pub fn cleanup_terminal_crossterm() {
     // Ignore errors - best effort cleanup
     let _ = disable_raw_mode();
     let mut stdout = std::io::stdout();
-    let _ = execute!(stdout, DisableMouseCapture, LeaveAlternateScreen);
+    let _ = execute!(stdout, DisableMouseCapture, LeaveAlternateScreen, Show);
+
+    // Belt-and-suspenders: raw escape sequences for mouse disable
+    // in case crossterm state tracking is confused
+    let _ = stdout.write_all(b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l");
+    let _ = stdout.flush();
 
     // Also do basic cleanup
     cleanup_terminal();

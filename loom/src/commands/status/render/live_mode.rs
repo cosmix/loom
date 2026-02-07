@@ -15,7 +15,9 @@ use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use crate::daemon::{
     read_auth_token, read_message, write_message, CompletionSummary, Request, Response, StageInfo,
 };
-use crate::utils::{cleanup_terminal, format_elapsed, install_terminal_panic_hook};
+use crate::utils::{
+    cleanup_terminal, cleanup_terminal_crossterm, format_elapsed, install_terminal_panic_hook,
+};
 
 use super::activity::{ActivityLog, ActivityType};
 use super::completion::render_completion_screen;
@@ -65,7 +67,7 @@ impl LiveMode {
                     },
                 );
             }
-            cleanup_terminal();
+            cleanup_terminal_crossterm();
             std::process::exit(0);
         })
         .context("Failed to set Ctrl+C handler")?;
