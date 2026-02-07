@@ -19,6 +19,11 @@ use super::types::{DependencyStatus, EmbeddedContext, SandboxSummary};
 /// Default maximum number of skill recommendations to include in signals
 pub const DEFAULT_MAX_SKILL_RECOMMENDATIONS: usize = 5;
 
+/// Score assigned to skills injected via project language detection.
+/// Higher than trigger-based scores (1.0 word, 2.0 phrase) to ensure
+/// language-detected skills appear prominently in recommendations.
+const LANGUAGE_DETECTION_SCORE: f32 = 10.0;
+
 pub fn generate_signal(
     session: &Session,
     stage: &Stage,
@@ -62,13 +67,11 @@ pub fn generate_signal_with_skills(
         let text_to_match = build_skill_match_text(stage);
         embedded_context.skill_recommendations =
             index.match_skills(&text_to_match, DEFAULT_MAX_SKILL_RECOMMENDATIONS);
-    }
 
-    // Inject skills for detected project languages
-    if let Some(index) = skill_index {
+        // Inject skills for detected project languages
         for lang in detected_languages {
-            let skill_name = lang.to_string().to_lowercase();
-            if let Some(metadata) = index.get_by_name(&skill_name) {
+            let skill_name = lang.skill_name();
+            if let Some(metadata) = index.get_by_name(skill_name) {
                 // Only add if not already in recommendations (dedup by name)
                 if !embedded_context
                     .skill_recommendations
@@ -78,7 +81,7 @@ pub fn generate_signal_with_skills(
                     embedded_context.skill_recommendations.push(SkillMatch::new(
                         metadata.name.clone(),
                         metadata.description.clone(),
-                        10.0, // High score for project-language detection
+                        LANGUAGE_DETECTION_SCORE,
                         vec!["project-language".to_string()],
                     ));
                 }

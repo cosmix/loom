@@ -800,3 +800,16 @@ Two plan criteria caused false negatives in integration-verify:
 
 - **Mapping DetectedLanguage to skill names using Display trait lowercase (Rust→rust, TypeScript→typescript, etc.). Language-injected skills get score 10.0 and 'project-language' matched trigger to ensure they appear at top and are distinguishable from keyword-matched skills.**
   - _Rationale:_ Need a convention for looking up language-specific skills in the SkillIndex. Using the Display trait's output lowercased is consistent and extensible.
+
+## Promoted from Memory [2026-02-07 17:27]
+
+### Notes
+
+- Code review findings: (1) Go skill mapping broken - DetectedLanguage::Go produces 'go' but skill is named 'golang', (2) Trailing punctuation in description trigger extraction pollutes last trigger, (3) Pipe escaping missing for skill.name in markdown table, (4) Duplicate if-let blocks in generate.rs, (5) Magic score constant 10.0 needs naming
+
+### Decisions
+
+- **Added skill_name() method to DetectedLanguage instead of relying on Display::to_lowercase()**
+  - _Rationale:_ Decouples display names from skill lookup names. Go displays as 'Go' but the skill is 'golang'. Using Display for lookup created a silent bug.
+- **Fixed trailing punctuation in trigger extraction by adding trim_end_matches for ASCII punctuation**
+  - _Rationale:_ parse_csv_triggers was including trailing periods from description text like 'TRIGGERS: a, b, c.' producing 'c.' as a trigger

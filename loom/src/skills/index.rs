@@ -159,7 +159,11 @@ impl SkillIndex {
 /// Parse a CSV string of trigger keywords into individual triggers
 fn parse_csv_triggers(csv: &str) -> Vec<String> {
     csv.split(',')
-        .map(|s| s.trim().to_string())
+        .map(|s| {
+            s.trim()
+                .trim_end_matches(|c: char| c.is_ascii_punctuation() && c != '-' && c != '_')
+                .to_string()
+        })
         .filter(|s| !s.is_empty())
         .collect()
 }
@@ -385,10 +389,8 @@ triggers:
     fn test_extract_description_triggers_multiline() {
         let desc = "Some description.\n\nUSE WHEN: things.\n\nTRIGGERS: a, b, c.";
         let result = extract_description_triggers(desc);
-        // Trailing period gets included as part of last trigger "c."
-        assert_eq!(result.len(), 3);
-        assert_eq!(result[0], "a");
-        assert_eq!(result[1], "b");
+        // Trailing punctuation is stripped from triggers
+        assert_eq!(result, vec!["a", "b", "c"]);
     }
 
     // --- trigger-keywords YAML field tests ---

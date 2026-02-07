@@ -683,21 +683,21 @@ pub fn format_skill_recommendations(skills: &[SkillMatch]) -> String {
         // Escape pipe characters in description
         let desc = desc.replace('|', "\\|");
 
+        // Escape pipe characters in name
+        let name = skill.name.replace('|', "\\|");
+
         // Annotate language-detected skills
         let is_language_detected = skill
             .matched_triggers
             .iter()
             .any(|t| t == "project-language");
         let name_display = if is_language_detected {
-            format!("{} (detected)", skill.name)
+            format!("{name} (detected)")
         } else {
-            skill.name.clone()
+            name.clone()
         };
 
-        content.push_str(&format!(
-            "| {} | {} | `/{}`|\n",
-            name_display, desc, skill.name
-        ));
+        content.push_str(&format!("| {} | {} | `/{}`|\n", name_display, desc, name));
     }
     content.push('\n');
 

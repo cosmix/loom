@@ -23,6 +23,22 @@ impl fmt::Display for DetectedLanguage {
     }
 }
 
+impl DetectedLanguage {
+    /// Return the skill name for this language.
+    ///
+    /// This is the name used to look up skills in the skill index
+    /// (e.g., the directory name under ~/.claude/skills/).
+    /// Decoupled from Display to avoid breakage if display names diverge.
+    pub fn skill_name(&self) -> &'static str {
+        match self {
+            DetectedLanguage::Rust => "rust",
+            DetectedLanguage::TypeScript => "typescript",
+            DetectedLanguage::Python => "python",
+            DetectedLanguage::Go => "golang",
+        }
+    }
+}
+
 /// Detect programming languages used in a project
 ///
 /// Returns a Vec of detected languages based on manifest files:
@@ -159,5 +175,13 @@ mod tests {
         assert_eq!(format!("{}", DetectedLanguage::TypeScript), "TypeScript");
         assert_eq!(format!("{}", DetectedLanguage::Python), "Python");
         assert_eq!(format!("{}", DetectedLanguage::Go), "Go");
+    }
+
+    #[test]
+    fn test_skill_name() {
+        assert_eq!(DetectedLanguage::Rust.skill_name(), "rust");
+        assert_eq!(DetectedLanguage::TypeScript.skill_name(), "typescript");
+        assert_eq!(DetectedLanguage::Python.skill_name(), "python");
+        assert_eq!(DetectedLanguage::Go.skill_name(), "golang");
     }
 }
