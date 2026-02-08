@@ -80,7 +80,8 @@ pub struct StageSummary {
     pub review_reason: Option<String>,
 }
 
-/// Session display data
+/// Session display data (test-only: production code uses SessionInfo in display/stages.rs)
+#[cfg(test)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionSummary {
     pub id: String,

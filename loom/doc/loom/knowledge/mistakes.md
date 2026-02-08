@@ -18,3 +18,16 @@
 **What happened:** `truncate`/`truncate_for_display` were defined in `commands/common/mod.rs` but used by `orchestrator/`, `fs/`, `verify/` — all lower layers. This created upward imports violating layering.
 **Why:** Functions grew organically in `commands/common` without considering which layers need them.
 **How to avoid:** Generic utility functions that cross layer boundaries belong in `utils.rs`, not in any specific layer module.
+
+## Cross-Cutting Struct Changes Need Manual Integration Fixes
+
+When removing a field from a shared struct (like `StatusData.sessions`), all consumers
+must be updated — including test files that construct the struct. Subagents that own
+different files cannot fix tests outside their file ownership boundary. Plan for
+manual integration fixes after parallel subagent work.
+
+## Unused Imports in Test Modules
+
+`use super::*` in test modules triggers warnings when the test doesn't actually use
+any parent imports. Prefer importing only what's needed, or remove the import if
+the test is self-contained.

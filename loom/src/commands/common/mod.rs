@@ -114,8 +114,6 @@ pub use crate::utils::{truncate, truncate_for_display};
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_detect_stage_id_format() {
         let parse_branch = |branch: &str| -> Option<String> {
