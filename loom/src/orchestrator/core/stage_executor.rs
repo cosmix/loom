@@ -5,6 +5,7 @@ use chrono::Utc;
 
 use crate::git;
 use crate::git::worktree::setup_worktree_hooks;
+use crate::handoff::find_latest_handoff;
 use crate::hooks::{find_hooks_dir, setup_hooks_for_worktree, HooksConfig};
 use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::session::Session;
@@ -228,12 +229,18 @@ impl StageExecutor for Orchestrator {
 
         let deps = get_dependency_status(&stage, &self.graph);
 
+        // Check for existing handoff file to include in signal for continuation
+        let handoff_file = find_latest_handoff(&stage.id, &self.config.work_dir)
+            .ok()
+            .flatten()
+            .and_then(|p| p.file_stem().and_then(|s| s.to_str().map(|s| s.to_string())));
+
         let signal_path = generate_signal_with_skills(
             &session,
             &stage,
             &worktree,
             &deps,
-            None,
+            handoff_file.as_deref(),
             None, // git_history will be extracted from worktree in future enhancement
             &self.config.work_dir,
             self.skill_index.as_ref(),
@@ -333,6 +340,12 @@ impl StageExecutor for Orchestrator {
 
         let deps = get_dependency_status(&stage, &self.graph);
 
+        // Check for existing handoff file to include in signal for continuation
+        let handoff_file = find_latest_handoff(&stage.id, &self.config.work_dir)
+            .ok()
+            .flatten()
+            .and_then(|p| p.file_stem().and_then(|s| s.to_str().map(|s| s.to_string())));
+
         // Generate knowledge-specific signal (runs in main repo, no commit required)
         let signal_path = generate_knowledge_signal(
             &session,
@@ -340,6 +353,7 @@ impl StageExecutor for Orchestrator {
             &self.config.repo_root,
             &deps,
             &self.config.work_dir,
+            handoff_file.as_deref(),
         )
         .context("Failed to generate knowledge signal file")?;
 

@@ -29,7 +29,7 @@ pub use window_ops::{close_window_by_title_for_terminal, window_exists_by_title_
 fn close_window_for_terminal(title: &str, terminal: &super::emulator::TerminalEmulator) -> bool {
     #[cfg(target_os = "macos")]
     {
-        return close_window_by_title_for_terminal(title, terminal);
+        close_window_by_title_for_terminal(title, terminal)
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -42,7 +42,7 @@ fn close_window_for_terminal(title: &str, terminal: &super::emulator::TerminalEm
 fn window_exists_for_terminal(title: &str, terminal: &super::emulator::TerminalEmulator) -> bool {
     #[cfg(target_os = "macos")]
     {
-        return window_exists_by_title_for_terminal(title, terminal);
+        window_exists_by_title_for_terminal(title, terminal)
     }
 
     #[cfg(not(target_os = "macos"))]

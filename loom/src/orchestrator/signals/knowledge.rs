@@ -26,9 +26,10 @@ pub fn generate_knowledge_signal(
     repo_root: &Path,
     dependencies_status: &[DependencyStatus],
     work_dir: &Path,
+    handoff_file: Option<&str>,
 ) -> Result<PathBuf> {
     // Build embedded context
-    let embedded_context = build_embedded_context_for_stage(work_dir, None, &stage.id);
+    let embedded_context = build_embedded_context_for_stage(work_dir, handoff_file, &stage.id);
 
     let content = format_knowledge_signal_content(
         session,
