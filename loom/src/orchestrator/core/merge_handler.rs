@@ -395,9 +395,23 @@ impl Orchestrator {
                 continue;
             }
 
-            // Skip if there's already an active session for this stage
+            // Skip if there's already an active session for this stage —
+            // but only if the session is actually still alive. When `loom stage complete`
+            // detects a merge conflict, the original execution session exits normally.
+            // The monitor silently marks it as completed (no event), leaving a stale
+            // entry in active_sessions that would otherwise block merge resolution spawning.
             if self.active_sessions.contains_key(&stage_id) {
-                continue;
+                let is_alive = self
+                    .active_sessions
+                    .get(&stage_id)
+                    .and_then(|s| s.pid)
+                    .map(is_process_alive)
+                    .unwrap_or(false);
+                if is_alive {
+                    continue;
+                }
+                // Session is dead — remove stale entry and fall through to spawn
+                self.active_sessions.remove(&stage_id);
             }
 
             // Check if there's already a merge signal for this stage
