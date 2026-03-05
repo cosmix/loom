@@ -133,17 +133,41 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     // ~/.gitconfig (breaks git) and ~/.claude/shell-snapshots/ (breaks zsh).
     // Read restrictions are enforced via permissions.deny Read() entries
     // which work at the tool level without affecting the OS sandbox.
+    //
+    // IMPORTANT: Do NOT emit parent-traversal paths (../) in denyWrite.
+    // macOS sandbox-exec resolves these relative to the project root,
+    // causing overly broad restrictions. For example, "../../**" from a
+    // worktree at .worktrees/<stage>/ resolves to the project root,
+    // blocking writes to the worktree's OWN files. From the main project,
+    // it resolves to the home directory, blocking ~/.claude/shell-snapshots/
+    // and breaking loom CLI (getcwd fails). Parent-traversal write
+    // restrictions are enforced via permissions.deny Write() entries instead.
     let mut fs_sandbox = json!({});
     if !config.filesystem.deny_write.is_empty() {
-        fs_sandbox["denyWrite"] = json!(config.filesystem.deny_write);
+        let safe_deny_write: Vec<&str> = config
+            .filesystem
+            .deny_write
+            .iter()
+            .filter(|p| !p.contains("../"))
+            .map(|s| s.as_str())
+            .collect();
+        if !safe_deny_write.is_empty() {
+            fs_sandbox["denyWrite"] = json!(safe_deny_write);
+        }
     }
-    if !config.filesystem.allow_write.is_empty() {
-        fs_sandbox["allowWrite"] = json!(config.filesystem.allow_write);
+    // Always emit allowWrite for OS-level containment.
+    // "." constrains writes to the project/worktree root.
+    // "~/.claude/**" ensures Claude Code can write shell-snapshots, debug logs, etc.
+    // Plan-specified allow_write paths are merged in.
+    let mut allow_write = config.filesystem.allow_write.clone();
+    if !allow_write.contains(&".".to_string()) {
+        allow_write.push(".".to_string());
     }
-    // Only add filesystem block if it has content
-    if fs_sandbox.as_object().is_some_and(|o| !o.is_empty()) {
-        sandbox["filesystem"] = fs_sandbox;
+    if !allow_write.iter().any(|p| p == "~/.claude/**") {
+        allow_write.push("~/.claude/**".to_string());
     }
+    fs_sandbox["allowWrite"] = json!(allow_write);
+    sandbox["filesystem"] = fs_sandbox;
 
     // Add Linux-specific settings if configured
     if config.linux.enable_weaker_nested {
@@ -366,8 +390,13 @@ mod tests {
         assert_eq!(deny_write.len(), 1);
         assert_eq!(deny_write[0], ".work/**");
         let allow_write = fs_block["allowWrite"].as_array().unwrap();
-        assert_eq!(allow_write.len(), 1);
-        assert_eq!(allow_write[0], "src/**");
+        let aw_strs: Vec<&str> = allow_write.iter().filter_map(|v| v.as_str()).collect();
+        assert!(aw_strs.contains(&"src/**"), "Plan-specified allow_write preserved");
+        assert!(aw_strs.contains(&"."), "Worktree root always in allowWrite");
+        assert!(
+            aw_strs.contains(&"~/.claude/**"),
+            "~/.claude/** always in allowWrite for shell-snapshots"
+        );
     }
 
     #[test]
@@ -520,7 +549,7 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_settings_filesystem_empty_omitted() {
+    fn test_generate_settings_filesystem_always_has_allowwrite() {
         let config = MergedSandboxConfig {
             enabled: true,
             auto_allow: true,
@@ -536,8 +565,14 @@ mod tests {
         };
 
         let json = generate_settings_json(&config);
-        // Sandbox filesystem block should be absent when all lists are empty
-        assert!(json["sandbox"]["filesystem"].is_null());
+        // Filesystem block always present because allowWrite always has defaults
+        let fs_block = &json["sandbox"]["filesystem"];
+        assert!(!fs_block.is_null(), "filesystem block should always exist");
+        let aw = fs_block["allowWrite"].as_array().unwrap();
+        let aw_strs: Vec<&str> = aw.iter().filter_map(|v| v.as_str()).collect();
+        assert!(aw_strs.contains(&"."), "Must contain worktree root");
+        assert!(aw_strs.contains(&"~/.claude/**"), "Must contain ~/.claude/**");
+        assert!(fs_block["denyWrite"].is_null(), "No denyWrite when list is empty");
     }
 
     #[test]
@@ -600,6 +635,62 @@ mod tests {
         assert!(deny_strs.contains(&"Read(~/.ssh/**)"));
         assert!(deny_strs.contains(&"Read(../../**)"));
         assert!(deny_strs.contains(&"Read(../.worktrees/**)"));
+    }
+
+    #[test]
+    fn test_deny_write_parent_traversal_not_in_os_sandbox() {
+        // Parent-traversal paths (../) in deny_write must NOT appear in
+        // sandbox.filesystem.denyWrite. macOS sandbox-exec resolves them
+        // relative to the project root, causing overly broad restrictions:
+        // - From worktrees: "../../**" blocks the worktree's own files
+        // - From main project: "../../**" blocks the entire home directory
+        // These are enforced via permissions.deny Write() entries instead.
+        let config = MergedSandboxConfig {
+            enabled: true,
+            auto_allow: true,
+            allow_unsandboxed_escape: false,
+            excluded_commands: vec![],
+            filesystem: FilesystemConfig {
+                deny_read: vec![],
+                deny_write: vec![
+                    "../../**".to_string(),
+                    "doc/loom/knowledge/**".to_string(),
+                ],
+                allow_write: vec![],
+            },
+            network: NetworkConfig::default(),
+            linux: LinuxConfig::default(),
+        };
+
+        let json = generate_settings_json(&config);
+
+        // OS sandbox denyWrite must NOT contain parent-traversal paths
+        let deny_write = json["sandbox"]["filesystem"]["denyWrite"]
+            .as_array()
+            .expect("denyWrite should exist for project-relative paths");
+        let deny_write_strs: Vec<&str> =
+            deny_write.iter().filter_map(|v| v.as_str()).collect();
+        assert!(
+            !deny_write_strs.contains(&"../../**"),
+            "../../** must NOT be in sandbox.filesystem.denyWrite"
+        );
+        // Project-relative paths should remain
+        assert!(
+            deny_write_strs.contains(&"doc/loom/knowledge/**"),
+            "Project-relative paths should stay in sandbox.filesystem.denyWrite"
+        );
+
+        // permissions.deny should have ALL paths (including parent-traversal)
+        let deny = json["permissions"]["deny"].as_array().unwrap();
+        let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
+        assert!(
+            deny_strs.contains(&"Write(../../**)"),
+            "Parent-traversal should be in permissions.deny"
+        );
+        assert!(
+            deny_strs.contains(&"Write(doc/loom/knowledge/**)"),
+            "Project-relative should also be in permissions.deny"
+        );
     }
 
     #[test]
