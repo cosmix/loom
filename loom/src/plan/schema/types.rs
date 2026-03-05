@@ -125,9 +125,13 @@ pub struct NetworkConfig {
     #[serde(default)]
     pub allow_local_binding: bool,
 
-    /// Allow Unix socket connections (default: false)
+    /// Allow specific Unix socket paths (glob patterns)
     #[serde(default)]
-    pub allow_unix_sockets: bool,
+    pub allow_unix_sockets: Vec<String>,
+
+    /// Allow all Unix socket connections (default: false)
+    #[serde(default)]
+    pub allow_all_unix_sockets: bool,
 }
 
 /// Linux-specific sandbox configuration

@@ -75,9 +75,37 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     if config.network.allow_local_binding {
         network["allowLocalBinding"] = json!(true);
     }
+    // Add unix socket configuration
+    if !config.network.allow_unix_sockets.is_empty() {
+        network["allowUnixSockets"] = json!(config.network.allow_unix_sockets);
+    }
+    if config.network.allow_all_unix_sockets {
+        network["allowAllUnixSockets"] = json!(true);
+    }
     // Only add network block if it has content
     if network.as_object().is_some_and(|o| !o.is_empty()) {
         sandbox["network"] = network;
+    }
+
+    // Add filesystem configuration for OS-level sandbox enforcement
+    let mut fs_sandbox = json!({});
+    if !config.filesystem.deny_read.is_empty() {
+        fs_sandbox["denyRead"] = json!(config.filesystem.deny_read);
+    }
+    if !config.filesystem.deny_write.is_empty() {
+        fs_sandbox["denyWrite"] = json!(config.filesystem.deny_write);
+    }
+    if !config.filesystem.allow_write.is_empty() {
+        fs_sandbox["allowWrite"] = json!(config.filesystem.allow_write);
+    }
+    // Only add filesystem block if it has content
+    if fs_sandbox.as_object().is_some_and(|o| !o.is_empty()) {
+        sandbox["filesystem"] = fs_sandbox;
+    }
+
+    // Add Linux-specific settings if configured
+    if config.linux.enable_weaker_nested {
+        sandbox["enableWeakerNestedSandbox"] = json!(true);
     }
 
     settings["sandbox"] = sandbox;
@@ -111,7 +139,7 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
         if cmd_trimmed.is_empty() {
             continue;
         }
-        allow.push(json!(format!("Bash({}:*)", cmd_trimmed)));
+        allow.push(json!(format!("Bash({} *)", cmd_trimmed)));
     }
 
     // Add narrow Read permissions for orchestration state files agents need.
@@ -129,13 +157,6 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     }
     if permissions.as_object().is_some_and(|o| !o.is_empty()) {
         settings["permissions"] = permissions;
-    }
-
-    // Add Linux-specific settings if configured
-    if config.linux.enable_weaker_nested {
-        settings["linux"] = json!({
-            "enableWeakerNested": true
-        });
     }
 
     settings
@@ -292,6 +313,18 @@ mod tests {
         assert_eq!(allow[1], "Read(.work/signals/**)");
         assert_eq!(allow[2], "Read(.work/handoffs/**)");
         assert_eq!(allow[3], "Read(.work/config.toml)");
+
+        // Sandbox filesystem block for OS-level enforcement
+        let fs_block = &json["sandbox"]["filesystem"];
+        let deny_read = fs_block["denyRead"].as_array().unwrap();
+        assert_eq!(deny_read.len(), 1);
+        assert_eq!(deny_read[0], "~/.ssh/**");
+        let deny_write = fs_block["denyWrite"].as_array().unwrap();
+        assert_eq!(deny_write.len(), 1);
+        assert_eq!(deny_write[0], ".work/**");
+        let allow_write = fs_block["allowWrite"].as_array().unwrap();
+        assert_eq!(allow_write.len(), 1);
+        assert_eq!(allow_write[0], "src/**");
     }
 
     #[test]
@@ -306,7 +339,8 @@ mod tests {
                 allowed_domains: vec!["*.github.com".to_string()],
                 additional_domains: vec!["api.example.com".to_string()],
                 allow_local_binding: true,
-                allow_unix_sockets: true,
+                allow_unix_sockets: vec!["/tmp/*.sock".to_string()],
+                allow_all_unix_sockets: false,
             },
             linux: LinuxConfig::default(),
         };
@@ -320,6 +354,9 @@ mod tests {
         assert!(domains.iter().any(|d| d == "*.github.com"));
         assert!(domains.iter().any(|d| d == "api.example.com"));
         assert_eq!(network["allowLocalBinding"], true);
+        let sockets = network["allowUnixSockets"].as_array().unwrap();
+        assert_eq!(sockets.len(), 1);
+        assert_eq!(sockets[0], "/tmp/*.sock");
     }
 
     #[test]
@@ -337,7 +374,7 @@ mod tests {
         };
 
         let json = generate_settings_json(&config);
-        assert_eq!(json["linux"]["enableWeakerNested"], true);
+        assert_eq!(json["sandbox"]["enableWeakerNestedSandbox"], true);
     }
 
     #[test]
@@ -392,16 +429,16 @@ mod tests {
         let json = generate_settings_json(&config);
         let allow = json["permissions"]["allow"].as_array().unwrap();
 
-        // Should have Bash(loom:*) and Bash(git:*) in allow
+        // Should have Bash(loom *) and Bash(git *) in allow
         let allow_strs: Vec<&str> = allow.iter().map(|v| v.as_str().unwrap()).collect();
         assert!(
-            allow_strs.contains(&"Bash(loom:*)"),
-            "Should have Bash(loom:*) in allow, got: {:?}",
+            allow_strs.contains(&"Bash(loom *)"),
+            "Should have Bash(loom *) in allow, got: {:?}",
             allow_strs
         );
         assert!(
-            allow_strs.contains(&"Bash(git:*)"),
-            "Should have Bash(git:*) in allow, got: {:?}",
+            allow_strs.contains(&"Bash(git *)"),
+            "Should have Bash(git *) in allow, got: {:?}",
             allow_strs
         );
     }
@@ -437,6 +474,49 @@ mod tests {
             "Should allow reading config, got: {:?}",
             allow_strs
         );
+    }
+
+    #[test]
+    fn test_generate_settings_filesystem_empty_omitted() {
+        let config = MergedSandboxConfig {
+            enabled: true,
+            auto_allow: true,
+            allow_unsandboxed_escape: false,
+            excluded_commands: vec![],
+            filesystem: FilesystemConfig {
+                deny_read: vec![],
+                deny_write: vec![],
+                allow_write: vec![],
+            },
+            network: NetworkConfig::default(),
+            linux: LinuxConfig::default(),
+        };
+
+        let json = generate_settings_json(&config);
+        // Sandbox filesystem block should be absent when all lists are empty
+        assert!(json["sandbox"]["filesystem"].is_null());
+    }
+
+    #[test]
+    fn test_generate_settings_with_all_unix_sockets() {
+        let config = MergedSandboxConfig {
+            enabled: true,
+            auto_allow: true,
+            allow_unsandboxed_escape: false,
+            excluded_commands: vec![],
+            filesystem: FilesystemConfig::default(),
+            network: NetworkConfig {
+                allowed_domains: vec![],
+                additional_domains: vec![],
+                allow_local_binding: false,
+                allow_unix_sockets: vec![],
+                allow_all_unix_sockets: true,
+            },
+            linux: LinuxConfig::default(),
+        };
+
+        let json = generate_settings_json(&config);
+        assert_eq!(json["sandbox"]["network"]["allowAllUnixSockets"], true);
     }
 
     #[test]
@@ -652,6 +732,9 @@ mod tests {
         let deny = result["permissions"]["deny"].as_array().unwrap();
         let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
         assert!(deny_strs.contains(&"Read(~/.ssh/**)"));
+
+        // Sandbox filesystem block should also be present
+        assert!(result["sandbox"]["filesystem"]["denyRead"].is_array());
     }
 
     #[test]
