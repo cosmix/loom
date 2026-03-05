@@ -63,6 +63,8 @@ pub fn parse_journal(content: &str, stage_id: &str) -> Result<MemoryJournal> {
                     MemoryEntryType::Decision
                 } else if type_str.contains("Question") {
                     MemoryEntryType::Question
+                } else if type_str.contains("Change") {
+                    MemoryEntryType::Change
                 } else {
                     continue;
                 };
@@ -121,6 +123,7 @@ pub fn format_entry(entry: &MemoryEntry) -> String {
         MemoryEntryType::Note => "📝",
         MemoryEntryType::Decision => "✅",
         MemoryEntryType::Question => "❓",
+        MemoryEntryType::Change => "🔧",
     };
 
     output.push_str(&format!(

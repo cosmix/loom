@@ -132,6 +132,12 @@ pub enum Commands {
         command: MemoryCommands,
     },
 
+    /// Generate code review documents from stage memories
+    Review {
+        #[command(subcommand)]
+        command: ReviewCommands,
+    },
+
     /// Manage sandbox configuration
     Sandbox {
         #[command(subcommand)]
@@ -226,6 +232,12 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+}
+
+#[derive(Subcommand)]
+pub enum ReviewCommands {
+    /// Generate a structured code review document from stage memories
+    Generate,
 }
 
 #[derive(Subcommand)]

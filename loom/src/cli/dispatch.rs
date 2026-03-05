@@ -1,7 +1,7 @@
 use anyhow::Result;
 use loom::commands::{
-    clean, diagnose, graph, handoff, hooks, init, knowledge, map, memory, repair, resume, run,
-    sandbox, self_update, sessions, stage, status, stop, verify, worktree_cmd,
+    clean, diagnose, graph, handoff, hooks, init, knowledge, map, memory, repair, resume, review,
+    run, sandbox, self_update, sessions, stage, status, stop, verify, worktree_cmd,
 };
 use loom::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use std::path::PathBuf;
@@ -9,8 +9,8 @@ use std::str::FromStr;
 
 use super::types::{
     Cli, Commands, GraphCommands, HandoffCommands, HooksCommands, KnowledgeCommands,
-    MemoryCommands, OutputCommands, SandboxCommands, SessionsCommands, StageCommands,
-    WorktreeCommands,
+    MemoryCommands, OutputCommands, ReviewCommands, SandboxCommands, SessionsCommands,
+    StageCommands, WorktreeCommands,
 };
 
 pub fn dispatch(command: Commands) -> Result<()> {
@@ -133,10 +133,14 @@ pub fn dispatch(command: Commands) -> Result<()> {
                 context,
                 stage,
             } => memory::decision(text, context, stage),
+            MemoryCommands::Change { text, stage } => memory::change(text, stage),
             MemoryCommands::Question { text, stage } => memory::question(text, stage),
             MemoryCommands::Query { search, stage } => memory::query(search, stage),
             MemoryCommands::List { stage, entry_type } => memory::list(stage, entry_type),
             MemoryCommands::Show { stage, all } => memory::show(stage, all),
+        },
+        Commands::Review { command } => match command {
+            ReviewCommands::Generate => review::execute(),
         },
         Commands::Sandbox { command } => match command {
             SandboxCommands::Suggest => sandbox::suggest(),

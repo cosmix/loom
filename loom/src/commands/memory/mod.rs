@@ -12,6 +12,7 @@ mod formatters;
 mod handlers;
 
 // Re-export all public command handlers
+pub use handlers::change;
 pub use handlers::decision;
 pub use handlers::list;
 pub use handlers::note;

@@ -96,6 +96,16 @@ pub enum MemoryCommands {
         stage: Option<String>,
     },
 
+    /// Record a file change
+    Change {
+        /// Description of what changed (e.g., "src/foo.rs - Added bar() function")
+        text: String,
+
+        /// Stage ID (auto-detected from LOOM_STAGE_ID if not provided)
+        #[arg(short = 'S', long, value_parser = clap_id_validator)]
+        stage: Option<String>,
+    },
+
     /// Search memory entries
     Query {
         /// Search term

@@ -107,6 +107,29 @@ pub fn decision(text: String, context: Option<String>, stage_id: Option<String>)
     Ok(())
 }
 
+/// Record a file change in the memory journal
+pub fn change(text: String, stage_id: Option<String>) -> Result<()> {
+    validate_content(&text)?;
+    if let Some(ref id) = stage_id {
+        validate_stage_id(id)?;
+    }
+
+    let work_dir = get_work_dir()?;
+    let stage = stage_id
+        .or_else(|| std::env::var("LOOM_STAGE_ID").ok())
+        .ok_or_else(|| anyhow::anyhow!("No stage ID provided or detected. Use --stage <id>"))?;
+
+    let entry = MemoryEntry::new(MemoryEntryType::Change, text.clone());
+    append_entry(&work_dir, &stage, &entry)?;
+
+    println!(
+        "{}",
+        format_record_success(&MemoryEntryType::Change, &stage, &text)
+    );
+
+    Ok(())
+}
+
 /// Record a question in the memory journal
 pub fn question(text: String, stage_id: Option<String>) -> Result<()> {
     validate_content(&text)?;
@@ -220,6 +243,11 @@ pub fn list(stage_id: Option<String>, entry_type: Option<String>) -> Result<()> 
                         .iter()
                         .filter(|e| e.entry_type == MemoryEntryType::Question)
                         .count();
+                    let changes = journal
+                        .entries
+                        .iter()
+                        .filter(|e| e.entry_type == MemoryEntryType::Change)
+                        .count();
                     println!(
                         "{}",
                         format_stage_summary(
@@ -227,7 +255,8 @@ pub fn list(stage_id: Option<String>, entry_type: Option<String>) -> Result<()> 
                             journal.entries.len(),
                             notes,
                             decisions,
-                            questions
+                            questions,
+                            changes
                         )
                     );
                 }

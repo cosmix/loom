@@ -97,10 +97,13 @@ pub(super) fn format_semi_stable_section(
                 "│  - Mistakes: What went wrong and how to avoid it                   │\n",
             );
             content.push_str(
+                "│  - Changes: Files modified and what you changed                    │\n",
+            );
+            content.push_str(
                 "│                                                                    │\n",
             );
             content.push_str(
-                "│  Commands: loom memory note/decision/question                      │\n",
+                "│  Commands: loom memory note/decision/question/change               │\n",
             );
             content.push_str(
                 "│                                                                    │\n",
@@ -216,6 +219,13 @@ pub(super) fn format_semi_stable_section(
             content.push_str(
                 "**For long content, use stdin:** `loom knowledge update <file> - <<'EOF'`\n\n",
             );
+
+            // Review document generation (integration-verify only)
+            if stage_type == StageType::IntegrationVerify {
+                content.push_str("**Review Document:**\n\n");
+                content.push_str("Generate a change summary for human reviewers:\n");
+                content.push_str("```bash\nloom review generate\n```\n\n");
+            }
         }
         StageType::Standard => {
             // Standard implementation stages: Show MEMORY guidance instead
@@ -238,6 +248,7 @@ pub(super) fn format_semi_stable_section(
             );
             content
                 .push_str("| Question | `loom memory question \"open question to address\"` |\n");
+            content.push_str("| Change | `loom memory change \"file.rs - what changed\"` |\n");
             content.push_str("| List | `loom memory list` |\n\n");
         }
     }
@@ -683,6 +694,7 @@ pub(super) fn format_recitation_section(
         "- `loom memory decision \"choice\" --context \"rationale\"` - Record a decision\n",
     );
     content.push_str("- `loom memory question \"open question\"` - Record an open question\n");
+    content.push_str("- `loom memory change \"file.rs - description\"` - Record a file change\n");
     content.push_str("- `loom memory list` - Review your stage entries\n");
     content.push_str("- `loom memory show --all` - Show all stage memories\n\n");
 

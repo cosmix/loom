@@ -10,6 +10,7 @@ pub mod map;
 pub mod memory;
 pub mod repair;
 pub mod resume;
+pub mod review;
 pub mod run;
 pub mod sandbox;
 pub mod self_update;

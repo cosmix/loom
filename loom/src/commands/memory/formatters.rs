@@ -12,6 +12,7 @@ pub fn format_entry_compact(entry: &MemoryEntry) -> String {
         MemoryEntryType::Note => "📝",
         MemoryEntryType::Decision => "✅",
         MemoryEntryType::Question => "❓",
+        MemoryEntryType::Change => "🔧",
     };
 
     let main_line = format!(
@@ -41,6 +42,7 @@ pub fn format_entry_full(entry: &MemoryEntry) -> String {
         MemoryEntryType::Note => "📝",
         MemoryEntryType::Decision => "✅",
         MemoryEntryType::Question => "❓",
+        MemoryEntryType::Change => "🔧",
     };
 
     let mut output = format!(
@@ -66,14 +68,16 @@ pub fn format_stage_summary(
     notes: usize,
     decisions: usize,
     questions: usize,
+    changes: usize,
 ) -> String {
     format!(
-        "{} - {} entries (📝 {} / ✅ {} / ❓ {})",
+        "{} - {} entries (📝 {} / ✅ {} / ❓ {} / 🔧 {})",
         stage_id.cyan(),
         total,
         notes,
         decisions,
-        questions
+        questions,
+        changes
     )
 }
 
@@ -83,6 +87,7 @@ pub fn format_record_success(entry_type: &MemoryEntryType, stage_id: &str, text:
         MemoryEntryType::Note => ("📝", "Recorded note"),
         MemoryEntryType::Decision => ("✅", "Recorded decision"),
         MemoryEntryType::Question => ("❓", "Recorded question"),
+        MemoryEntryType::Change => ("🔧", "Recorded change"),
     };
 
     format!(

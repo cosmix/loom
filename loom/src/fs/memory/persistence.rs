@@ -66,6 +66,13 @@ pub fn extract_key_notes(journal: &super::types::MemoryJournal) -> Vec<String> {
         }
     }
 
+    // Extract all changes as key notes (important for tracking work done)
+    for entry in &journal.entries {
+        if entry.entry_type == MemoryEntryType::Change {
+            key_notes.push(entry.content.clone());
+        }
+    }
+
     key_notes
 }
 

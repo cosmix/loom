@@ -38,6 +38,10 @@ pub fn format_memory_for_signal(
         .iter()
         .filter(|e| e.entry_type == MemoryEntryType::Question)
         .collect();
+    let changes: Vec<_> = recent
+        .iter()
+        .filter(|e| e.entry_type == MemoryEntryType::Change)
+        .collect();
 
     if !notes.is_empty() {
         output.push_str("### Notes\n\n");
@@ -81,6 +85,18 @@ pub fn format_memory_for_signal(
         output.push('\n');
     }
 
+    if !changes.is_empty() {
+        output.push_str("### Changes\n\n");
+        for entry in changes {
+            output.push_str(&format!(
+                "- **[{}]** {}\n",
+                entry.timestamp.format("%H:%M"),
+                truncate_for_display(&entry.content, 150)
+            ));
+        }
+        output.push('\n');
+    }
+
     Some(output)
 }
 
@@ -100,7 +116,7 @@ pub fn format_memory_for_handoff(work_dir: &Path, stage_id: &str) -> Option<Stri
         journal.entries.len()
     ));
 
-    // Include all decisions and questions (they're important for handoffs)
+    // Include all decisions, questions, and changes (they're important for handoffs)
     let decisions: Vec<_> = journal
         .entries
         .iter()
@@ -110,6 +126,11 @@ pub fn format_memory_for_handoff(work_dir: &Path, stage_id: &str) -> Option<Stri
         .entries
         .iter()
         .filter(|e| e.entry_type == MemoryEntryType::Question)
+        .collect();
+    let changes: Vec<_> = journal
+        .entries
+        .iter()
+        .filter(|e| e.entry_type == MemoryEntryType::Change)
         .collect();
 
     if !decisions.is_empty() {
@@ -130,6 +151,18 @@ pub fn format_memory_for_handoff(work_dir: &Path, stage_id: &str) -> Option<Stri
     if !questions.is_empty() {
         output.push_str("### Open Questions\n\n");
         for entry in &questions {
+            output.push_str(&format!(
+                "- **[{}]** {}\n",
+                entry.timestamp.format("%H:%M"),
+                entry.content
+            ));
+        }
+        output.push('\n');
+    }
+
+    if !changes.is_empty() {
+        output.push_str("### Files Changed\n\n");
+        for entry in &changes {
             output.push_str(&format!(
                 "- **[{}]** {}\n",
                 entry.timestamp.format("%H:%M"),

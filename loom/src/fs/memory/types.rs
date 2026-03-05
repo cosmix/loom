@@ -13,6 +13,8 @@ pub enum MemoryEntryType {
     Decision,
     /// Open questions for future investigation
     Question,
+    /// File changes made during implementation
+    Change,
 }
 
 impl MemoryEntryType {
@@ -22,6 +24,7 @@ impl MemoryEntryType {
             MemoryEntryType::Note => "Note",
             MemoryEntryType::Decision => "Decision",
             MemoryEntryType::Question => "Question",
+            MemoryEntryType::Change => "Change",
         }
     }
 
@@ -31,6 +34,7 @@ impl MemoryEntryType {
             MemoryEntryType::Note,
             MemoryEntryType::Decision,
             MemoryEntryType::Question,
+            MemoryEntryType::Change,
         ]
     }
 }
@@ -41,6 +45,7 @@ impl std::fmt::Display for MemoryEntryType {
             MemoryEntryType::Note => write!(f, "note"),
             MemoryEntryType::Decision => write!(f, "decision"),
             MemoryEntryType::Question => write!(f, "question"),
+            MemoryEntryType::Change => write!(f, "change"),
         }
     }
 }
@@ -53,7 +58,8 @@ impl std::str::FromStr for MemoryEntryType {
             "note" | "notes" => Ok(MemoryEntryType::Note),
             "decision" | "decisions" => Ok(MemoryEntryType::Decision),
             "question" | "questions" => Ok(MemoryEntryType::Question),
-            _ => anyhow::bail!("Invalid entry type: {s}. Use: note, decision, question"),
+            "change" | "changes" => Ok(MemoryEntryType::Change),
+            _ => anyhow::bail!("Invalid entry type: {s}. Use: note, decision, question, change"),
         }
     }
 }

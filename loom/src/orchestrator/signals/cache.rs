@@ -204,6 +204,7 @@ pub fn generate_stable_prefix() -> String {
     content.push_str("**Stage Memory - MEMORY ONLY (MANDATORY):**\n\n");
     content.push_str("```text\n");
     content.push_str("⚠️  IMPLEMENTATION STAGES USE `loom memory` ONLY - NEVER `loom knowledge`\n");
+    content.push_str("    Commands: note, decision, question, change\n");
     content.push_str("    Only integration-verify stages can curate memories into knowledge.\n");
     content.push_str("```\n\n");
     content.push_str(
@@ -211,6 +212,7 @@ pub fn generate_stable_prefix() -> String {
     );
     content.push_str("- **Record decisions** when you choose between alternatives: `loom memory decision \"choice\" --context \"why\"`\n");
     content.push_str("- **Record mistakes** immediately when they occur: `loom memory note \"mistake: description\"`\n");
+    content.push_str("- **Record file changes** before completing: `loom memory change \"src/file.rs - Description of what changed\"`\n");
     content.push_str("- **FORBIDDEN**: `loom knowledge update` commands - these are ONLY for knowledge-bootstrap and integration-verify stages\n");
     content
         .push_str("- Memory entries persist across sessions - they will be reviewed and curated into knowledge during integration-verify\n\n");
@@ -246,7 +248,8 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("2. **FIX** every warning, error, and issue you encounter\n");
     content.push_str("3. **VERIFY** all acceptance criteria pass\n");
     content.push_str("4. **TEST** that the feature actually works end-to-end\n");
-    content.push_str("5. **PROMOTE** valuable learnings to knowledge\n\n");
+    content.push_str("5. **PROMOTE** valuable learnings to knowledge\n");
+    content.push_str("6. **GENERATE** review document: `loom review generate`\n\n");
 
     // Code review box
     content.push_str("```text\n");
@@ -317,7 +320,9 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str(
         "   Focus on: mistakes worth avoiding, patterns worth reusing, architectural decisions\n",
     );
-    content.push_str("4. DO NOT blindly copy entries — synthesize and curate\n\n");
+    content.push_str("4. DO NOT blindly copy entries — synthesize and curate\n");
+    content.push_str("5. Generate review document: `loom review generate`\n");
+    content.push_str("   This creates a structured summary of all changes for human reviewers\n\n");
 
     // Git staging (shorter version)
     content.push_str("**Git Staging (CRITICAL):**\n");
@@ -491,6 +496,8 @@ mod tests {
         assert!(prefix.contains("Context Recovery"));
         assert!(prefix.contains("loom memory list"));
         assert!(prefix.contains("handoffs"));
+        // File change tracking
+        assert!(prefix.contains("loom memory change"));
     }
 
     #[test]
@@ -588,6 +595,8 @@ mod tests {
         assert!(prefix.contains("Security review teammate"));
         // Context recovery instructions
         assert!(prefix.contains("Context Recovery"));
+        // Review document generation
+        assert!(prefix.contains("loom review generate"));
     }
 
     #[test]
