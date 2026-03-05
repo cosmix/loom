@@ -14,6 +14,7 @@ use crate::fs::work_integrity::{
     check_work_dir_state, is_work_dir_git_ignored, is_worktrees_git_ignored, WorkDirState,
 };
 use crate::git::{install_pre_commit_hook, is_pre_commit_hook_installed};
+use crate::sandbox;
 
 /// Issue detected during repair check
 #[derive(Debug)]
@@ -210,6 +211,39 @@ fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
         });
     }
 
+    // Check 5: Claude Code hooks installed
+    {
+        let settings_path = repo_root.join(".claude/settings.json");
+        let has_hooks = if settings_path.exists() {
+            std::fs::read_to_string(&settings_path)
+                .ok()
+                .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
+                .and_then(|v| v.get("hooks").cloned())
+                .is_some()
+        } else {
+            false
+        };
+        if !has_hooks {
+            issues.push(RepairIssue {
+                severity: Severity::Info,
+                description: "Claude Code hooks not configured".to_string(),
+                fix_description: "Install loom hooks to .claude/settings.json".to_string(),
+            });
+        }
+    }
+
+    // Check 6: Sandbox settings.local.json exists
+    {
+        let settings_local = repo_root.join(".claude/settings.local.json");
+        if !settings_local.exists() {
+            issues.push(RepairIssue {
+                severity: Severity::Info,
+                description: "Sandbox settings not found (.claude/settings.local.json)".to_string(),
+                fix_description: "Apply default sandbox settings".to_string(),
+            });
+        }
+    }
+
     issues
 }
 
@@ -271,6 +305,12 @@ fn fix_issue(repo_root: &Path, issue: &RepairIssue) -> Result<bool> {
     } else if issue.description.contains("pre-commit hook not installed") {
         install_pre_commit_hook(repo_root)?;
         Ok(true)
+    } else if issue.description.contains("Claude Code hooks not configured") {
+        fix_hooks(repo_root)?;
+        Ok(true)
+    } else if issue.description.contains("Sandbox settings not found") {
+        fix_sandbox_settings(repo_root)?;
+        Ok(true)
     } else {
         Ok(false)
     }
@@ -325,6 +365,25 @@ fn fix_gitignore_work(repo_root: &Path) -> Result<()> {
         fs::write(&gitignore_path, content)?;
     }
 
+    Ok(())
+}
+
+/// Install Claude Code hooks
+fn fix_hooks(repo_root: &Path) -> Result<()> {
+    use crate::fs::permissions::{ensure_loom_permissions, install_loom_hooks};
+    install_loom_hooks()?;
+    ensure_loom_permissions(repo_root)?;
+    Ok(())
+}
+
+/// Apply default sandbox settings
+fn fix_sandbox_settings(repo_root: &Path) -> Result<()> {
+    use crate::plan::schema::{SandboxConfig, StageSandboxConfig, StageType};
+    let config = SandboxConfig::default();
+    let stage_config = StageSandboxConfig::default();
+    let mut merged = sandbox::merge_config(&config, &stage_config, StageType::Standard);
+    sandbox::expand_paths(&mut merged);
+    sandbox::write_settings(&merged, repo_root)?;
     Ok(())
 }
 

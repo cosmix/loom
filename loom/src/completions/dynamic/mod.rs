@@ -120,8 +120,8 @@ pub fn complete_dynamic(ctx: &CompletionContext) -> Result<()> {
             complete_stage_ids(cwd, prefix)?
         }
 
-        // Top-level commands that take stage_id (verify/merge/resume outside stage context)
-        "verify" | "merge" | "resume" | "diagnose" => complete_stage_ids(cwd, prefix)?,
+        // Top-level commands that take stage_id (check/merge/resume outside stage context)
+        "check" | "merge" | "resume" | "diagnose" => complete_stage_ids(cwd, prefix)?,
 
         _ => Vec::new(),
     };

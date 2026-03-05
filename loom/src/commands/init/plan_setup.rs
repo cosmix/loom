@@ -66,6 +66,51 @@ pub fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<usiz
         println!("  {} {}", "⚠".yellow().bold(), warning.yellow());
     }
 
+    // If plan has no sandbox network domains, suggest some based on project type
+    if parsed_plan
+        .metadata
+        .loom
+        .sandbox
+        .network
+        .allowed_domains
+        .is_empty()
+    {
+        let current_dir = std::env::current_dir()?;
+        let detected = crate::language::detect_project_languages(&current_dir);
+        if !detected.is_empty() {
+            use crate::language::DetectedLanguage;
+            let mut domains = vec![
+                "github.com".to_string(),
+                "api.github.com".to_string(),
+            ];
+            for lang in &detected {
+                match lang {
+                    DetectedLanguage::Rust => {
+                        domains.push("crates.io".to_string());
+                        domains.push("static.crates.io".to_string());
+                    }
+                    DetectedLanguage::TypeScript => {
+                        domains.push("registry.npmjs.org".to_string());
+                    }
+                    DetectedLanguage::Python => {
+                        domains.push("pypi.org".to_string());
+                    }
+                    DetectedLanguage::Go => {
+                        domains.push("proxy.golang.org".to_string());
+                    }
+                }
+            }
+            println!(
+                "  {} {}",
+                "💡".blue(),
+                "No sandbox network domains configured. Suggested domains for your project:".blue()
+            );
+            for d in &domains {
+                println!("      - \"{}\"", d);
+            }
+        }
+    }
+
     let stages = parsed_plan.stages.clone();
 
     // Run structural preflight validation (non-fatal warnings)
