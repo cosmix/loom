@@ -66,7 +66,7 @@ pub fn execute() -> Result<()> {
 
 /// Suggest build tool commands to exclude from OS sandbox based on detected languages
 fn suggest_excluded_commands(detected_languages: &[DetectedLanguage]) -> Vec<String> {
-    let mut commands = vec!["loom".to_string()];
+    let mut commands = vec!["loom".to_string(), "git".to_string()];
 
     for lang in detected_languages {
         match lang {
@@ -256,6 +256,6 @@ mod tests {
     #[test]
     fn test_suggest_excluded_commands_empty() {
         let commands = suggest_excluded_commands(&[]);
-        assert_eq!(commands, vec!["loom"]);
+        assert_eq!(commands, vec!["loom", "git"]);
     }
 }

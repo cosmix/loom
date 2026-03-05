@@ -244,6 +244,8 @@ pub enum ReviewCommands {
 pub enum SandboxCommands {
     /// Suggest sandbox network domains based on project dependencies
     Suggest,
+    /// Apply sandbox settings to .claude/settings.local.json for the current project
+    Apply,
 }
 
 #[derive(Subcommand)]

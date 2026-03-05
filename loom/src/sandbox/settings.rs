@@ -1,4 +1,5 @@
 use super::config::MergedSandboxConfig;
+use crate::language::{detect_project_languages, DetectedLanguage};
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
 use std::collections::HashSet;
@@ -25,8 +26,19 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
         json!({})
     };
 
+    // Auto-detect project build tools and add them to excluded commands
+    let mut config = config.clone();
+    let detected_languages = detect_project_languages(worktree_path);
+    let build_commands = build_tool_commands(&detected_languages);
+    let existing: HashSet<String> = config.excluded_commands.iter().cloned().collect();
+    for cmd in build_commands {
+        if !existing.contains(&cmd) {
+            config.excluded_commands.push(cmd);
+        }
+    }
+
     // Generate new sandbox settings
-    let mut settings_json = generate_settings_json(config);
+    let mut settings_json = generate_settings_json(&config);
 
     // Merge existing permissions into the new settings
     merge_existing_permissions(&mut settings_json, &existing_settings);
@@ -39,6 +51,32 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
         .with_context(|| format!("Failed to write settings to {:?}", settings_path))?;
 
     Ok(())
+}
+
+/// Return build tool commands that should be excluded from sandboxing for detected languages
+fn build_tool_commands(detected_languages: &[DetectedLanguage]) -> Vec<String> {
+    let mut commands = Vec::new();
+    for lang in detected_languages {
+        match lang {
+            DetectedLanguage::Rust => {
+                commands.push("cargo".to_string());
+            }
+            DetectedLanguage::TypeScript => {
+                commands.push("bun".to_string());
+                commands.push("npm".to_string());
+                commands.push("npx".to_string());
+            }
+            DetectedLanguage::Python => {
+                commands.push("uv".to_string());
+                commands.push("pip".to_string());
+                commands.push("python".to_string());
+            }
+            DetectedLanguage::Go => {
+                commands.push("go".to_string());
+            }
+        }
+    }
+    commands
 }
 
 /// Generate Claude Code settings JSON from sandbox config

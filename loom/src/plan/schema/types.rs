@@ -174,7 +174,7 @@ where
 }
 
 fn default_excluded_commands() -> Vec<String> {
-    vec!["loom".to_string()]
+    vec!["loom".to_string(), "git".to_string()]
 }
 
 fn default_deny_read() -> Vec<String> {

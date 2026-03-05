@@ -144,6 +144,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
         },
         Commands::Sandbox { command } => match command {
             SandboxCommands::Suggest => sandbox::suggest(),
+            SandboxCommands::Apply => sandbox::apply(),
         },
         Commands::SelfUpdate => self_update::execute(),
         Commands::Clean {
