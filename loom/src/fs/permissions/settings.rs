@@ -9,7 +9,7 @@
 //! Contains permissions and hooks that apply to all Claude Code sessions in the project.
 //! This file is checked into the repository and shared across the team.
 //!
-//! - **Permissions**: File access rules (e.g., `Read(.work/**)`, `Bash(loom:*)`)
+//! - **Permissions**: File access rules (e.g., `Read(.work/**)`, `Bash(loom *)`)
 //! - **Hooks**: Global event-triggered scripts (e.g., `commit-guard.sh`, `ask-user-pre.sh`)
 //!
 //! Created/updated by `loom init`. Worktrees merge this with session-specific hooks at creation time.

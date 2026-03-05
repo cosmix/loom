@@ -19,7 +19,7 @@ fn test_ensure_loom_permissions_creates_new_file() {
     let settings: Value = serde_json::from_str(&content).unwrap();
 
     let allow = settings["permissions"]["allow"].as_array().unwrap();
-    assert!(allow.iter().any(|v| v == "Bash(loom:*)"));
+    assert!(allow.iter().any(|v| v == "Bash(loom *)"));
 }
 
 #[test]
@@ -53,7 +53,7 @@ fn test_ensure_loom_permissions_merges_existing() {
     assert!(allow.iter().any(|v| v == "Read(src/**)"));
 
     // Check loom CLI permissions added
-    assert!(allow.iter().any(|v| v == "Bash(loom:*)"));
+    assert!(allow.iter().any(|v| v == "Bash(loom *)"));
 
     // Check deny list preserved
     let deny = settings["permissions"]["deny"].as_array().unwrap();
@@ -73,7 +73,7 @@ fn test_ensure_loom_permissions_no_duplicates() {
     // Create existing settings with some loom permissions already
     let existing = json!({
         "permissions": {
-            "allow": ["Bash(loom:*)"]
+            "allow": ["Bash(loom *)"]
         }
     });
     fs::write(
@@ -89,8 +89,8 @@ fn test_ensure_loom_permissions_no_duplicates() {
 
     let allow = settings["permissions"]["allow"].as_array().unwrap();
 
-    // Count occurrences of Bash(loom:*) - should be exactly 1
-    let loom_count = allow.iter().filter(|v| *v == "Bash(loom:*)").count();
+    // Count occurrences of Bash(loom *) - should be exactly 1
+    let loom_count = allow.iter().filter(|v| *v == "Bash(loom *)").count();
     assert_eq!(loom_count, 1);
 }
 

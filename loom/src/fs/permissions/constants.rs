@@ -86,7 +86,7 @@ pub const LOOM_PERMISSIONS: &[&str] = &[
     // Read access to loom hooks (Claude Code needs to execute these)
     "Read(~/.claude/hooks/loom/**)",
     // Loom CLI commands (use :* for prefix matching)
-    "Bash(loom:*)",
+    "Bash(loom *)",
 ];
 
 /// Loom permissions for WORKTREE context
@@ -101,5 +101,5 @@ pub const LOOM_PERMISSIONS_WORKTREE: &[&str] = &[
     // Read access to loom hooks (Claude Code needs to execute these)
     "Read(~/.claude/hooks/loom/**)",
     // Loom CLI commands (use :* for prefix matching)
-    "Bash(loom:*)",
+    "Bash(loom *)",
 ];

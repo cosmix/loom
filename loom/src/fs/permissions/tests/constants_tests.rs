@@ -5,7 +5,7 @@ use crate::fs::permissions::constants::{LOOM_PERMISSIONS, LOOM_PERMISSIONS_WORKT
 #[test]
 fn test_loom_permissions_constant() {
     // Main repo permissions - tightened to minimum necessary
-    assert!(LOOM_PERMISSIONS.contains(&"Bash(loom:*)"));
+    assert!(LOOM_PERMISSIONS.contains(&"Bash(loom *)"));
     assert!(LOOM_PERMISSIONS.contains(&"Read(.work/**)"));
     assert!(LOOM_PERMISSIONS.contains(&"Write(.work/**)"));
     // Only CLAUDE.md files, not all of .claude/
@@ -25,5 +25,5 @@ fn test_worktree_permissions_constant() {
     assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Read(~/.claude/CLAUDE.md)"));
     // Loom hooks only
     assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Read(~/.claude/hooks/loom/**)"));
-    assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Bash(loom:*)"));
+    assert!(LOOM_PERMISSIONS_WORKTREE.contains(&"Bash(loom *)"));
 }
