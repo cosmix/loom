@@ -1,5 +1,5 @@
 //! Worktree management commands
-//! Usage: loom worktree [list|clean|remove <stage-id>]
+//! Usage: loom worktree [list|remove <stage-id>]
 
 use anyhow::{bail, Context, Result};
 use colored::Colorize;
