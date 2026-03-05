@@ -1,15 +1,14 @@
 use anyhow::Result;
 use loom::commands::{
-    clean, diagnose, graph, handoff, hooks, init, knowledge, map, memory, repair, resume, review,
-    run, sandbox, self_update, sessions, stage, status, stop, verify, worktree_cmd,
+    clean, diagnose, graph, handoff, init, knowledge, map, memory, repair, resume, review, run,
+    self_update, sessions, stage, status, stop, verify, worktree_cmd,
 };
 use loom::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use std::path::PathBuf;
 use std::str::FromStr;
 
 use super::types::{
-    Cli, Commands, GraphCommands, HandoffCommands, HooksCommands, KnowledgeCommands,
-    MemoryCommands, OutputCommands, ReviewCommands, SandboxCommands, SessionsCommands,
+    Cli, Commands, KnowledgeCommands, MemoryCommands, OutputCommands, SessionsCommands,
     StageCommands, WorktreeCommands,
 };
 
@@ -42,25 +41,21 @@ pub fn dispatch(command: Commands) -> Result<()> {
         },
         Commands::Worktree { command } => match command {
             WorktreeCommands::List => worktree_cmd::list(),
-            WorktreeCommands::Clean => worktree_cmd::clean(),
             WorktreeCommands::Remove { stage_id } => worktree_cmd::remove(stage_id),
         },
-        Commands::Graph { command } => match command {
-            GraphCommands::Show => graph::show(),
-            GraphCommands::Edit => graph::edit(),
-        },
-        Commands::Hooks { command } => match command {
-            HooksCommands::Install => hooks::install(),
-            HooksCommands::List => hooks::list(),
-        },
-        Commands::Handoff { command } => match command {
-            HandoffCommands::Create {
-                stage,
-                session,
-                trigger,
-                message,
-            } => handoff::create::execute(stage, session, trigger, message),
-        },
+        Commands::Graph { edit } => {
+            if edit {
+                graph::edit()
+            } else {
+                graph::show()
+            }
+        }
+        Commands::Handoff {
+            stage,
+            session,
+            trigger,
+            message,
+        } => handoff::create::execute(stage, session, trigger, message),
         Commands::Stage { command } => match command {
             StageCommands::Complete {
                 stage_id,
@@ -87,8 +82,14 @@ pub fn dispatch(command: Commands) -> Result<()> {
             StageCommands::Verify {
                 stage_id,
                 no_reload,
-            } => stage::verify(stage_id, no_reload),
-            StageCommands::CheckAcceptance { stage_id } => stage::check_acceptance(stage_id),
+                dry_run,
+            } => {
+                if dry_run {
+                    stage::check_acceptance(stage_id)
+                } else {
+                    stage::verify(stage_id, no_reload)
+                }
+            }
             StageCommands::HumanReview {
                 stage_id,
                 approve,
@@ -139,13 +140,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
             MemoryCommands::List { stage, entry_type } => memory::list(stage, entry_type),
             MemoryCommands::Show { stage, all } => memory::show(stage, all),
         },
-        Commands::Review { command } => match command {
-            ReviewCommands::Generate => review::execute(),
-        },
-        Commands::Sandbox { command } => match command {
-            SandboxCommands::Suggest => sandbox::suggest(),
-            SandboxCommands::Apply => sandbox::apply(),
-        },
+        Commands::Review => review::execute(),
         Commands::SelfUpdate => self_update::execute(),
         Commands::Clean {
             all,
@@ -161,7 +156,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
         } => map::execute(deep, focus, overwrite),
         Commands::Stop => stop::execute(),
         Commands::Diagnose { stage_id } => diagnose::execute(&stage_id),
-        Commands::Verify { stage_id, suggest } => verify::execute(&stage_id, suggest),
+        Commands::Check { stage_id, suggest } => verify::execute(&stage_id, suggest),
         Commands::Completions { shell } => {
             let shell = Shell::from_str(&shell)?;
             let mut cmd = <Cli as clap::CommandFactory>::command();

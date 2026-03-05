@@ -96,16 +96,11 @@ pub enum Commands {
         command: WorktreeCommands,
     },
 
-    /// Manage the execution graph
+    /// Show or edit the execution graph
     Graph {
-        #[command(subcommand)]
-        command: GraphCommands,
-    },
-
-    /// Manage loom hooks (install/configure without a plan)
-    Hooks {
-        #[command(subcommand)]
-        command: HooksCommands,
+        /// Edit the graph instead of showing it
+        #[arg(long)]
+        edit: bool,
     },
 
     /// Manage individual stages
@@ -114,10 +109,23 @@ pub enum Commands {
         command: StageCommands,
     },
 
-    /// Create and manage handoff files
+    /// Create a handoff file capturing current session state
     Handoff {
-        #[command(subcommand)]
-        command: HandoffCommands,
+        /// Stage ID (auto-detected from LOOM_STAGE_ID env var if not provided)
+        #[arg(long, value_parser = clap_id_validator)]
+        stage: Option<String>,
+
+        /// Session ID (auto-detected from LOOM_SESSION_ID env var if not provided)
+        #[arg(long)]
+        session: Option<String>,
+
+        /// Trigger type (e.g., precompact, session_end, manual)
+        #[arg(long, default_value = "manual")]
+        trigger: String,
+
+        /// Optional message to include in the handoff
+        #[arg(long)]
+        message: Option<String>,
     },
 
     /// Manage curated codebase knowledge
@@ -133,16 +141,7 @@ pub enum Commands {
     },
 
     /// Generate code review documents from stage memories
-    Review {
-        #[command(subcommand)]
-        command: ReviewCommands,
-    },
-
-    /// Manage sandbox configuration
-    Sandbox {
-        #[command(subcommand)]
-        command: SandboxCommands,
-    },
+    Review,
 
     /// Update loom and configuration files
     SelfUpdate,
@@ -166,7 +165,7 @@ pub enum Commands {
         state: bool,
     },
 
-    /// Repair loom workspace issues (corrupted .work, missing hooks, etc.)
+    /// Repair loom workspace issues (corrupted .work, missing hooks, sandbox settings, etc.)
     ///
     /// By default runs in dry-run mode (reports issues without fixing).
     /// Use --fix to apply repairs.
@@ -207,7 +206,7 @@ pub enum Commands {
     /// - TRUTHS: Observable behaviors that must work
     /// - ARTIFACTS: Files that exist with real implementation
     /// - WIRING: Critical connections between components
-    Verify {
+    Check {
         /// Stage ID to verify (alphanumeric, dash, underscore only; max 128 characters)
         #[arg(value_parser = clap_id_validator)]
         stage_id: String,
@@ -235,20 +234,6 @@ pub enum Commands {
 }
 
 #[derive(Subcommand)]
-pub enum ReviewCommands {
-    /// Generate a structured code review document from stage memories
-    Generate,
-}
-
-#[derive(Subcommand)]
-pub enum SandboxCommands {
-    /// Suggest sandbox network domains based on project dependencies
-    Suggest,
-    /// Apply sandbox settings to .claude/settings.local.json for the current project
-    Apply,
-}
-
-#[derive(Subcommand)]
 pub enum SessionsCommands {
     /// List all active sessions
     List,
@@ -270,9 +255,6 @@ pub enum WorktreeCommands {
     /// List all worktrees
     List,
 
-    /// Clean up unused worktrees
-    Clean,
-
     /// Remove a specific worktree and branch after merge conflict resolution
     ///
     /// Use this command after resolving merge conflicts (manually or via Claude Code).
@@ -281,51 +263,5 @@ pub enum WorktreeCommands {
         /// Stage ID to clean up (alphanumeric, dash, underscore only; max 128 characters)
         #[arg(value_parser = clap_id_validator)]
         stage_id: String,
-    },
-}
-
-#[derive(Subcommand)]
-pub enum GraphCommands {
-    /// Show the execution graph
-    Show,
-
-    /// Edit the execution graph
-    Edit,
-}
-
-#[derive(Subcommand)]
-pub enum HooksCommands {
-    /// Install loom hooks to the current project
-    ///
-    /// Installs hook scripts to ~/.claude/hooks/loom/ and configures
-    /// .claude/settings.local.json with permissions and hooks.
-    ///
-    /// This allows using loom hooks (like prefer-modern-tools and commit-guard)
-    /// in any Claude Code session without running `loom init` with a plan.
-    Install,
-
-    /// List available loom hooks and their status
-    List,
-}
-
-#[derive(Subcommand)]
-pub enum HandoffCommands {
-    /// Create a handoff file capturing current session state
-    Create {
-        /// Stage ID (auto-detected from LOOM_STAGE_ID env var if not provided)
-        #[arg(long, value_parser = clap_id_validator)]
-        stage: Option<String>,
-
-        /// Session ID (auto-detected from LOOM_SESSION_ID env var if not provided)
-        #[arg(long)]
-        session: Option<String>,
-
-        /// Trigger type (e.g., precompact, session_end, manual)
-        #[arg(long, default_value = "manual")]
-        trigger: String,
-
-        /// Optional message to include in the handoff
-        #[arg(long)]
-        message: Option<String>,
     },
 }

@@ -136,6 +136,8 @@ pub enum StageCommands {
     /// Use this to re-verify a stage in CompletedWithFailures or Executing state.
     /// Reloads acceptance criteria from the plan file (unless --no-reload),
     /// runs them, and if they pass, completes the stage with merge.
+    ///
+    /// Use --dry-run to check criteria without changing stage status.
     Verify {
         /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
         #[arg(value_parser = clap_id_validator)]
@@ -144,17 +146,10 @@ pub enum StageCommands {
         /// Skip reloading acceptance criteria from plan file
         #[arg(long)]
         no_reload: bool,
-    },
 
-    /// Run acceptance criteria and show detailed results without changing stage status
-    ///
-    /// Use this to check if acceptance criteria pass after making fixes.
-    /// Shows full stdout/stderr for each criterion. Increments fix_attempts
-    /// counter on failure but does NOT change stage status.
-    CheckAcceptance {
-        /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
-        #[arg(value_parser = clap_id_validator)]
-        stage_id: String,
+        /// Check criteria without changing stage status (shows detailed results)
+        #[arg(long)]
+        dry_run: bool,
     },
 
     /// Respond to a stage flagged for human review

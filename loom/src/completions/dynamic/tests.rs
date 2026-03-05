@@ -203,16 +203,16 @@ fn test_complete_dynamic_init() {
 }
 
 #[test]
-fn test_complete_dynamic_verify() {
+fn test_complete_dynamic_check() {
     let temp_dir = setup_test_workspace();
     let root = temp_dir.path();
 
     let ctx = CompletionContext {
         cwd: root.to_string_lossy().to_string(),
         shell: "bash".to_string(),
-        cmdline: "loom verify".to_string(),
+        cmdline: "loom check".to_string(),
         current_word: "core".to_string(),
-        prev_word: "verify".to_string(),
+        prev_word: "check".to_string(),
     };
 
     assert!(complete_dynamic(&ctx).is_ok());
