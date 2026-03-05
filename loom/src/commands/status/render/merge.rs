@@ -5,57 +5,30 @@ use std::io::Write;
 
 use crate::commands::status::data::MergeSummary;
 
-/// Render merge status with CLI hints
+/// Render merge status (only pending/conflicts that need action)
 pub fn render_merge_status<W: Write>(w: &mut W, merge: &MergeSummary) -> std::io::Result<()> {
-    let total = merge.merged.len() + merge.pending.len() + merge.conflicts.len();
-    if total == 0 {
+    if merge.pending.is_empty() && merge.conflicts.is_empty() {
         return Ok(());
     }
 
     writeln!(w)?;
-    writeln!(w, "{}", "Merge Status".bold())?;
-    writeln!(w, "{}", "─".repeat(50))?;
-
-    // Merged stages
-    if !merge.merged.is_empty() {
-        writeln!(w, "  {} {} merged", "✓".green(), merge.merged.len())?;
-    }
+    writeln!(w, "{}", "Pending Merges".bold())?;
 
     // Pending stages
-    if !merge.pending.is_empty() {
-        writeln!(
-            w,
-            "  {} {} pending merge:",
-            "○".yellow(),
-            merge.pending.len()
-        )?;
-        for stage_id in &merge.pending {
-            writeln!(w, "    {} {}", "→".dimmed(), stage_id)?;
-        }
-        writeln!(
-            w,
-            "    {}",
-            "Run: loom stage retry-merge <stage-id>".dimmed()
-        )?;
+    for stage_id in &merge.pending {
+        writeln!(w, "  {} {}", "○".yellow(), stage_id)?;
     }
 
     // Conflicts
-    if !merge.conflicts.is_empty() {
-        writeln!(
-            w,
-            "  {} {} with conflicts:",
-            "✗".red().bold(),
-            merge.conflicts.len()
-        )?;
-        for stage_id in &merge.conflicts {
-            writeln!(w, "    {} {}", "⚡".red(), stage_id)?;
-        }
-        writeln!(
-            w,
-            "    {}",
-            "Run: loom stage retry-merge <stage-id> to start resolution".dimmed()
-        )?;
+    for stage_id in &merge.conflicts {
+        writeln!(w, "  {} {} {}", "⚡".red(), stage_id, "conflict".red())?;
     }
+
+    writeln!(
+        w,
+        "  {}",
+        "Run: loom stage retry-merge <stage-id>".dimmed()
+    )?;
 
     Ok(())
 }

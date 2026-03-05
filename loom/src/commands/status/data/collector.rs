@@ -99,13 +99,18 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         .iter()
         .find(|s| s.stage_id.as_ref() == Some(&stage.id));
 
-    let context_pct = session.map(|s| {
-        if s.context_limit == 0 {
-            0.0
+    let context_pct = session.and_then(|s| {
+        if s.context_limit == 0 || s.context_tokens == 0 {
+            None
         } else {
-            s.context_tokens as f32 / s.context_limit as f32
+            Some(s.context_tokens as f32 / s.context_limit as f32)
         }
     });
+
+    let pid = session.and_then(|s| s.pid);
+    let session_alive = pid
+        .map(crate::process::is_process_alive)
+        .unwrap_or(false);
 
     let elapsed_secs = (Utc::now() - stage.created_at).num_seconds();
 
@@ -142,6 +147,12 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         staleness_secs,
         context_budget_pct: None, // TODO: Read from plan if needed
         review_reason: stage.review_reason.clone(),
+        merged: stage.merged,
+        held: stage.held,
+        retry_count: stage.retry_count,
+        max_retries: stage.max_retries,
+        pid,
+        session_alive,
     }
 }
 

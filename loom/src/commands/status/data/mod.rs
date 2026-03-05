@@ -78,9 +78,21 @@ pub struct StageSummary {
     pub context_budget_pct: Option<f32>,
     /// Reason the stage was flagged for human review
     pub review_reason: Option<String>,
+    /// Whether stage changes have been merged to the merge point
+    pub merged: bool,
+    /// Whether the stage is held
+    pub held: bool,
+    /// Current retry count
+    pub retry_count: u32,
+    /// Maximum retries allowed
+    pub max_retries: Option<u32>,
+    /// Session PID (if executing)
+    pub pid: Option<u32>,
+    /// Whether the session process is alive
+    pub session_alive: bool,
 }
 
-/// Session display data (test-only: production code uses SessionInfo in display/stages.rs)
+/// Session display data (test-only)
 #[cfg(test)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionSummary {

@@ -1,7 +1,7 @@
 //! Tree-based execution graph display for status command
 //!
-//! Renders stages as a vertical tree with connectors and dependency annotations,
-//! matching the display format used by `loom graph`.
+//! Renders stages as a vertical tree with connectors, dependency annotations,
+//! and inline status details (session, failure, merge info).
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -11,6 +11,7 @@ use colored::{Color, Colorize};
 use crate::commands::graph::colors::color_by_index;
 use crate::commands::graph::indicators::status_indicator;
 use crate::commands::status::data::{StageSummary, StatusData};
+use crate::models::failure::FailureType;
 use crate::models::stage::StageStatus;
 use crate::plan::graph::levels;
 use crate::utils::{context_pct_terminal_color, format_elapsed};
@@ -74,63 +75,97 @@ fn format_dep_annotation(
     )
 }
 
-/// Format base branch info for a stage
-fn format_base_branch_info(
-    stage: &StageSummary,
-    color_map: &HashMap<&str, Color>,
-) -> Option<String> {
-    let base_branch = stage.base_branch.as_ref()?;
+/// Format inline annotations for a stage (session, failure, merge, held)
+fn format_stage_annotations(stage: &StageSummary) -> String {
+    let mut parts: Vec<String> = Vec::new();
 
-    let base_info = if stage.base_merged_from.is_empty() {
-        // Single dependency - show which stage it inherited from
-        if let Some(dep_id) = stage.dependencies.first() {
-            let colored_dep = if let Some(&color) = color_map.get(dep_id.as_str()) {
-                format!("{}", dep_id.color(color))
-            } else {
-                dep_id.clone()
-            };
-            format!(
-                "  {} {} {}",
-                "Base:".dimmed(),
-                base_branch.cyan(),
-                format!("(inherited from {colored_dep})").dimmed()
-            )
-        } else {
-            format!("  {} {}", "Base:".dimmed(), base_branch.cyan())
+    // Context percentage (only when meaningful)
+    if matches!(stage.status, StageStatus::Executing) {
+        if let Some(ctx_pct) = stage.context_pct {
+            let pct_val = ctx_pct * 100.0;
+            let ctx_str = format!("[{:.0}%]", pct_val);
+            let color = context_pct_terminal_color(pct_val);
+            parts.push(format!("{}", ctx_str.color(color)));
         }
-    } else {
-        // Multiple dependencies - show merged sources
-        let colored_sources: Vec<String> = stage
-            .base_merged_from
-            .iter()
-            .map(|dep| {
-                if let Some(&color) = color_map.get(dep.as_str()) {
-                    format!("{}", dep.color(color))
-                } else {
-                    dep.clone()
-                }
-            })
-            .collect();
-        format!(
-            "  {} {} {}",
-            "Base:".dimmed(),
-            base_branch.cyan(),
-            format!("(merged from: {})", colored_sources.join(", ")).dimmed()
-        )
-    };
 
-    Some(base_info)
+        if let Some(secs) = stage.elapsed_secs {
+            parts.push(format!("{}", format_elapsed(secs).dimmed()));
+        }
+
+        // Activity icon
+        let activity_icon = stage.activity_status.icon();
+        parts.push(activity_icon.to_string());
+
+        // Staleness warning
+        if let Some(staleness) = stage.staleness_secs {
+            if staleness > 300 {
+                parts.push(format!("{}", "(stale)".yellow()));
+            }
+        }
+
+        // Session PID or orphaned
+        if let Some(pid) = stage.pid {
+            if stage.session_alive {
+                parts.push(format!("{}", format!("PID {pid}").dimmed()));
+            } else {
+                parts.push(format!("{}", "orphaned".red()));
+            }
+        }
+    }
+
+    // Held indicator
+    if stage.held {
+        parts.push(format!("{}", "HELD".yellow()));
+    }
+
+    // Failure info for blocked stages
+    if stage.status == StageStatus::Blocked {
+        let max = stage.max_retries.unwrap_or(3);
+        let failure_label = stage
+            .failure_info
+            .as_ref()
+            .map(|i| match i.failure_type {
+                FailureType::SessionCrash => "crash",
+                FailureType::TestFailure => "test",
+                FailureType::BuildFailure => "build",
+                FailureType::CodeError => "code",
+                FailureType::Timeout => "timeout",
+                FailureType::ContextExhausted => "context",
+                FailureType::UserBlocked => "user",
+                FailureType::MergeConflict => "merge",
+                FailureType::InfrastructureError => "infra",
+                FailureType::Unknown => "error",
+            })
+            .unwrap_or("error");
+        parts.push(format!(
+            "{}",
+            format!("{failure_label} ({}/{max})", stage.retry_count).red()
+        ));
+    }
+
+    // Review reason for NeedsHumanReview
+    if stage.status == StageStatus::NeedsHumanReview {
+        if let Some(ref reason) = stage.review_reason {
+            parts.push(format!("{}", reason.yellow()));
+        }
+    }
+
+    // Merge status for completed stages
+    if stage.status == StageStatus::Completed && stage.merged {
+        parts.push(format!("{}", "merged".green().dimmed()));
+    }
+
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!("  {}", parts.join("  "))
+    }
 }
 
 /// Render execution graph with tree display
 pub fn render_graph<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<()> {
-    writeln!(w, "{}", "Execution Graph".bold())?;
-    writeln!(w, "{}", "─".repeat(50))?;
-
     if data.stages.is_empty() {
         writeln!(w, "  {}", "(no stages found)".dimmed())?;
-        writeln!(w)?;
-        render_legend(w)?;
         return Ok(());
     }
 
@@ -179,45 +214,14 @@ pub fn render_graph<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<(
         let color = color_by_index(global_index);
         let colored_id = stage.id.color(color);
 
-        // Build the main line: connector + indicator + stage_id + deps
-        write!(w, "{connector}{indicator} {colored_id}{deps}")?;
+        // Build inline annotations
+        let annotations = format_stage_annotations(stage);
 
-        // Add context percentage and elapsed time for executing stages
-        if matches!(stage.status, StageStatus::Executing) {
-            if let Some(ctx_pct) = stage.context_pct {
-                let ctx_str = format!(" [{:.0}%]", ctx_pct * 100.0);
-                let color = context_pct_terminal_color(ctx_pct * 100.0);
-                let colored_ctx = ctx_str.color(color);
-                write!(w, "{colored_ctx}")?;
-            }
-            if let Some(secs) = stage.elapsed_secs {
-                let elapsed = format_elapsed(secs);
-                write!(w, " {}", elapsed.dimmed())?;
-            }
-
-            // Show activity status for executing stages
-            let activity_icon = stage.activity_status.icon();
-            write!(w, " {activity_icon}")?;
-
-            // Add staleness warning
-            if let Some(staleness) = stage.staleness_secs {
-                if staleness > 300 {
-                    write!(w, " {}", "(stale)".yellow())?;
-                }
-            }
-        }
-
-        writeln!(w)?;
+        // Build the main line: connector + indicator + stage_id + annotations + deps
+        writeln!(w, "{connector}{indicator} {colored_id}{annotations}{deps}")?;
 
         // Increment index for this level
         *level_indices.get_mut(&level).unwrap() += 1;
-
-        // Show base branch info for executing or queued stages with base branch set
-        if matches!(stage.status, StageStatus::Executing | StageStatus::Queued) {
-            if let Some(base_info) = format_base_branch_info(stage, &color_map) {
-                writeln!(w, "{base_info}")?;
-            }
-        }
     }
 
     writeln!(w)?;
@@ -228,7 +232,6 @@ pub fn render_graph<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<(
 
 /// Render the legend explaining status indicators
 fn render_legend<W: Write>(w: &mut W) -> std::io::Result<()> {
-    write!(w, "  {} ", "Legend:".dimmed())?;
     write!(w, "{} ", "✓".green())?;
     write!(w, "done  ")?;
     write!(w, "{} ", "●".blue())?;

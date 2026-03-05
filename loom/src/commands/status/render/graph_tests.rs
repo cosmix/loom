@@ -19,6 +19,12 @@ fn make_stage_summary(id: &str, deps: Vec<&str>, status: StageStatus) -> StageSu
         staleness_secs: None,
         context_budget_pct: None,
         review_reason: None,
+        merged: false,
+        held: false,
+        retry_count: 0,
+        max_retries: None,
+        pid: None,
+        session_alive: false,
     }
 }
 

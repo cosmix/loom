@@ -13,7 +13,7 @@ use anyhow::Result;
 use colored::Colorize;
 
 use diagnostics::{check_directory_structure, check_parsing_errors};
-use display::{count_files, display_stages, display_worktrees};
+use display::count_files;
 use validation::{validate_markdown_files, validate_references};
 
 /// Show the status dashboard with context health
@@ -56,18 +56,18 @@ fn execute_compact(work_dir: &WorkDir) -> Result<()> {
     Ok(())
 }
 
-/// Show static status dashboard (original implementation)
+/// Show static status dashboard
 fn execute_static(work_dir: &WorkDir, verbose: bool) -> Result<()> {
     use data::collect_status_data;
     use std::io::stdout;
 
-    // Collect all status data
     let status_data = collect_status_data(work_dir)?;
     let mut out = stdout();
+    let stage_count = count_files(&work_dir.stages_dir())?;
 
     println!();
-    println!("{}", "Loom Status Dashboard".bold().blue());
-    println!("{}", "=".repeat(50));
+    println!("{}", "Loom Status".bold().blue());
+    println!("{}", "─".repeat(40));
 
     // Show daemon status hint
     if DaemonServer::is_running(work_dir.root()) {
@@ -82,53 +82,18 @@ fn execute_static(work_dir: &WorkDir, verbose: bool) -> Result<()> {
         );
     }
 
-    // Show progress bar with stage counts
+    // Progress bar with stage counts
     render::render_progress(&mut out, &status_data.progress)?;
 
-    let stage_count = count_files(&work_dir.stages_dir())?;
-
-    // Build session info map for stage annotations
-    let session_map = {
-        use display::SessionInfo;
-        use std::collections::HashMap;
-        let sessions = data::load_all_sessions(work_dir)?;
-        let mut map = HashMap::new();
-        for session in &sessions {
-            if let Some(stage_id) = &session.stage_id {
-                let is_alive = session
-                    .pid
-                    .map(crate::process::is_process_alive)
-                    .unwrap_or(false);
-                map.insert(
-                    stage_id.clone(),
-                    SessionInfo {
-                        pid: session.pid,
-                        is_alive,
-                    },
-                );
-            }
-        }
-        map
-    };
-
+    // Unified stage graph (replaces separate Active Stages, Worktrees, Merge sections)
     if stage_count > 0 {
-        display_stages(work_dir, &session_map)?;
-    }
-
-    // Show worktrees status
-    display_worktrees(work_dir)?;
-
-    // Show merge status using new render module
-    if !status_data.merge.merged.is_empty()
-        || !status_data.merge.pending.is_empty()
-        || !status_data.merge.conflicts.is_empty()
-    {
-        render::render_merge_status(&mut out, &status_data.merge)?;
-    }
-
-    // Show execution graph if stages exist
-    if stage_count > 0 {
+        println!();
         render::render_graph(&mut out, &status_data)?;
+    }
+
+    // Merge status: only show if there are pending merges or conflicts
+    if !status_data.merge.pending.is_empty() || !status_data.merge.conflicts.is_empty() {
+        render::render_merge_status(&mut out, &status_data.merge)?;
     }
 
     // Verbose mode: show detailed failure information

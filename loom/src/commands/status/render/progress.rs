@@ -32,16 +32,16 @@ pub fn render_progress<W: Write>(w: &mut W, progress: &ProgressSummary) -> std::
     // Build status line
     write!(
         w,
-        "[{}] {}/{} stages",
+        "[{}] {}/{}",
         colored_bar, progress.completed, progress.total
     )?;
 
     if progress.executing > 0 {
-        write!(w, " | {} {}", progress.executing, "executing".blue())?;
+        write!(w, "  {} {}", progress.executing, "executing".blue())?;
     }
 
     if progress.blocked > 0 {
-        write!(w, " | {} {} (!)", progress.blocked, "blocked".red().bold())?;
+        write!(w, "  {} {}", progress.blocked, "blocked".red().bold())?;
     }
 
     writeln!(w)?;

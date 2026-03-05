@@ -1,15 +1,8 @@
-mod stages;
-mod worktrees;
-
 #[cfg(test)]
 mod tests;
 
 use anyhow::Result;
 use std::fs;
-
-pub use stages::display_stages;
-pub use stages::SessionInfo;
-pub use worktrees::display_worktrees;
 
 pub fn count_files(dir: &std::path::Path) -> Result<usize> {
     if !dir.exists() {
