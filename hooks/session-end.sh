@@ -67,7 +67,7 @@ fi
 
 # If not completed and loom is available, try to create handoff
 if [[ "$COMPLETED" != "true" ]] && command -v loom &>/dev/null; then
-	loom handoff create --stage "${LOOM_STAGE_ID}" --session "${LOOM_SESSION_ID}" --trigger session_end 2>/dev/null || true
+	loom handoff --stage "${LOOM_STAGE_ID}" --session "${LOOM_SESSION_ID}" --trigger session_end 2>/dev/null || true
 fi
 
 # Build payload

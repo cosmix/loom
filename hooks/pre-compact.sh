@@ -63,7 +63,7 @@ if [[ -f "$PENDING_FLAG" ]]; then
 	# Create handoff (captures updated memory)
 	HANDOFF_FILE=""
 	if command -v loom &>/dev/null; then
-		if HANDOFF_OUTPUT=$(loom handoff create --stage "${LOOM_STAGE_ID}" --session "${LOOM_SESSION_ID}" --trigger precompact 2>&1); then
+		if HANDOFF_OUTPUT=$(loom handoff --stage "${LOOM_STAGE_ID}" --session "${LOOM_SESSION_ID}" --trigger precompact 2>&1); then
 			HANDOFF_FILE=$(echo "$HANDOFF_OUTPUT" | grep -oE '[^/]+\.md$' || echo "")
 		fi
 	fi
@@ -92,7 +92,7 @@ else
 	# Create initial handoff
 	HANDOFF_FILE=""
 	if command -v loom &>/dev/null; then
-		if HANDOFF_OUTPUT=$(loom handoff create --stage "${LOOM_STAGE_ID}" --session "${LOOM_SESSION_ID}" --trigger precompact 2>&1); then
+		if HANDOFF_OUTPUT=$(loom handoff --stage "${LOOM_STAGE_ID}" --session "${LOOM_SESSION_ID}" --trigger precompact 2>&1); then
 			HANDOFF_FILE=$(echo "$HANDOFF_OUTPUT" | grep -oE '[^/]+\.md$' || echo "")
 		fi
 	fi

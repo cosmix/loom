@@ -1,6 +1,6 @@
 //! Execution graph display and editing
 //!
-//! Usage: loom graph [show|edit]
+//! Usage: loom graph [--edit]
 //!
 //! ## Module Organization
 //!
