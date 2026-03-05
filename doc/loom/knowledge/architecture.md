@@ -273,3 +273,31 @@ To add a new field from plan YAML to stage:
 ### TruthCheck Struct (plan/schema/types.rs:292-310)
 
 Fields: command (String), stdout_contains (Vec<String>), stdout_not_contains (Vec<String>), stderr_empty (Option<bool>), exit_code (Option<i32>), description (Option<String>). All optional fields use serde(default, skip_serializing_if).
+
+## Handoff System (Updated 2026-03-05)
+
+The handoff system is FULLY FUNCTIONAL. Previously documented bugs have been fixed:
+
+1. **loom handoff create EXISTS**: CLI at cli/types.rs:298-317, handler at commands/handoff/create.rs:14-120, dispatched at cli/dispatch.rs:62. Accepts --stage, --session, --trigger, --message flags.
+
+2. **pre-compact.sh uses two-phase block-then-allow**: Phase 1 blocks compaction (exit 2), creates handoff, agent dumps context. Phase 2 allows compaction (exit 0), creates recovery marker at .work/compaction-recovery/{SESSION_ID}.
+
+3. **session-end.sh handles depth prefixes**: Line 54 uses glob `*-${LOOM_STAGE_ID}.md` with fallback to exact match.
+
+4. **Signals include recovery text**: cache.rs:96-101 append_common_footer() adds compaction recovery instructions to ALL signal types.
+
+5. **Post-tool-use.sh detects compaction recovery**: Checks .work/compaction-recovery/{SESSION_ID} marker, prints recovery instructions, removes marker.
+
+### Stage State Count Correction
+
+StageStatus has 12 variants (not 11): WaitingForDeps, Queued, Executing, Completed, Blocked, NeedsHandoff, WaitingForInput, Skipped, MergeConflict, CompletedWithFailures, MergeBlocked, NeedsHumanReview. Terminal: Completed, Skipped.
+
+### macOS Terminal Detection Priority
+
+1. LOOM_TERMINAL env var (explicit override)
+2. TERMINAL env var (user preference)
+3. Parent process detection (walks process tree up to 10 levels via ps)
+4. Cross-platform binary check (ghostty, kitty, alacritty, wezterm via which)
+5. macOS native apps (/Applications/Ghostty.app, /Applications/iTerm.app, Terminal.app fallback)
+
+Note: $TERM_PROGRAM is NOT checked. Ghostty detection only checks /Applications path.
