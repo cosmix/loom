@@ -254,7 +254,7 @@ loom:
       allowed_domains: ["github.com", "crates.io"]
       additional_domains: []
       allow_local_binding: false
-      allow_unix_sockets: false
+      allow_unix_sockets: []
 ```
 
 Generate project-specific domain suggestions:

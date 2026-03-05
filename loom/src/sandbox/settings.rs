@@ -88,10 +88,14 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     }
 
     // Add filesystem configuration for OS-level sandbox enforcement
+    //
+    // IMPORTANT: Do NOT emit denyRead in sandbox.filesystem.
+    // Claude Code's OS-level sandbox (macOS sandbox-exec) becomes overly
+    // restrictive when denyRead is present, blocking access to files like
+    // ~/.gitconfig (breaks git) and ~/.claude/shell-snapshots/ (breaks zsh).
+    // Read restrictions are enforced via permissions.deny Read() entries
+    // which work at the tool level without affecting the OS sandbox.
     let mut fs_sandbox = json!({});
-    if !config.filesystem.deny_read.is_empty() {
-        fs_sandbox["denyRead"] = json!(config.filesystem.deny_read);
-    }
     if !config.filesystem.deny_write.is_empty() {
         fs_sandbox["denyWrite"] = json!(config.filesystem.deny_write);
     }
@@ -287,7 +291,7 @@ mod tests {
             allow_unsandboxed_escape: false,
             excluded_commands: vec![],
             filesystem: FilesystemConfig {
-                deny_read: vec!["~/.ssh/**".to_string()],
+                deny_read: vec!["~/.ssh/**".to_string(), "../../**".to_string()],
                 deny_write: vec![".work/**".to_string()],
                 allow_write: vec!["src/**".to_string()],
             },
@@ -300,25 +304,26 @@ mod tests {
         assert_eq!(json["sandbox"]["enabled"], true);
         assert_eq!(json["sandbox"]["autoAllowBashIfSandboxed"], true);
 
-        // Permissions for file tool restrictions
+        // Permissions for file tool restrictions (ALL deny_read paths)
         let deny = json["permissions"]["deny"].as_array().unwrap();
-        assert_eq!(deny.len(), 2);
+        assert_eq!(deny.len(), 3);
         assert_eq!(deny[0], "Read(~/.ssh/**)");
-        assert_eq!(deny[1], "Write(.work/**)");
+        assert_eq!(deny[1], "Read(../../**)");
+        assert_eq!(deny[2], "Write(.work/**)");
 
         let allow = json["permissions"]["allow"].as_array().unwrap();
-        // Now includes: Write(src/**) + Read(.work/signals/**) + Read(.work/handoffs/**) + Read(.work/config.toml)
         assert_eq!(allow.len(), 4);
         assert_eq!(allow[0], "Write(src/**)");
         assert_eq!(allow[1], "Read(.work/signals/**)");
         assert_eq!(allow[2], "Read(.work/handoffs/**)");
         assert_eq!(allow[3], "Read(.work/config.toml)");
 
-        // Sandbox filesystem block for OS-level enforcement
+        // Sandbox filesystem block: NO denyRead (OS sandbox breaks with it)
         let fs_block = &json["sandbox"]["filesystem"];
-        let deny_read = fs_block["denyRead"].as_array().unwrap();
-        assert_eq!(deny_read.len(), 1);
-        assert_eq!(deny_read[0], "~/.ssh/**");
+        assert!(
+            fs_block["denyRead"].is_null(),
+            "denyRead must NOT be in sandbox.filesystem (breaks OS sandbox)"
+        );
         let deny_write = fs_block["denyWrite"].as_array().unwrap();
         assert_eq!(deny_write.len(), 1);
         assert_eq!(deny_write[0], ".work/**");
@@ -520,6 +525,46 @@ mod tests {
     }
 
     #[test]
+    fn test_deny_read_not_in_os_sandbox() {
+        // deny_read paths must NEVER appear in sandbox.filesystem.denyRead because
+        // Claude Code's OS sandbox (macOS sandbox-exec) becomes overly restrictive
+        // when denyRead is present, blocking ~/.gitconfig and shell initialization.
+        // deny_read paths are enforced via permissions.deny Read() entries instead.
+        let config = MergedSandboxConfig {
+            enabled: true,
+            auto_allow: true,
+            allow_unsandboxed_escape: false,
+            excluded_commands: vec![],
+            filesystem: FilesystemConfig {
+                deny_read: vec![
+                    "~/.ssh/**".to_string(),
+                    "../../**".to_string(),
+                    "../.worktrees/**".to_string(),
+                ],
+                deny_write: vec![],
+                allow_write: vec![],
+            },
+            network: NetworkConfig::default(),
+            linux: LinuxConfig::default(),
+        };
+
+        let json = generate_settings_json(&config);
+
+        // OS sandbox must NOT have denyRead at all
+        assert!(
+            json["sandbox"]["filesystem"]["denyRead"].is_null(),
+            "denyRead must NOT be in sandbox.filesystem"
+        );
+
+        // permissions.deny should have ALL paths
+        let deny = json["permissions"]["deny"].as_array().unwrap();
+        let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
+        assert!(deny_strs.contains(&"Read(~/.ssh/**)"));
+        assert!(deny_strs.contains(&"Read(../../**)"));
+        assert!(deny_strs.contains(&"Read(../.worktrees/**)"));
+    }
+
+    #[test]
     fn test_no_path_in_both_allow_and_deny() {
         use crate::plan::schema::{SandboxConfig, StageSandboxConfig, StageType};
         use crate::sandbox::merge_config;
@@ -708,7 +753,7 @@ mod tests {
             allow_unsandboxed_escape: false,
             excluded_commands: vec![],
             filesystem: FilesystemConfig {
-                deny_read: vec!["~/.ssh/**".to_string()],
+                deny_read: vec!["~/.ssh/**".to_string(), "../../**".to_string()],
                 deny_write: vec![],
                 allow_write: vec!["src/**".to_string()],
             },
@@ -729,12 +774,16 @@ mod tests {
         assert!(allow_strs.contains(&"Write(src/**)"));
         assert!(allow_strs.contains(&"Read(.work/signals/**)"));
 
+        // permissions.deny includes ALL paths (including ~/)
         let deny = result["permissions"]["deny"].as_array().unwrap();
         let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
         assert!(deny_strs.contains(&"Read(~/.ssh/**)"));
 
-        // Sandbox filesystem block should also be present
-        assert!(result["sandbox"]["filesystem"]["denyRead"].is_array());
+        // Sandbox filesystem should NOT have denyRead
+        assert!(
+            result["sandbox"]["filesystem"]["denyRead"].is_null(),
+            "denyRead must not appear in sandbox.filesystem"
+        );
     }
 
     #[test]

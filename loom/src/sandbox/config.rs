@@ -107,16 +107,24 @@ pub fn expand_env_vars(s: &str) -> String {
 }
 
 /// Expand all paths in the config
+///
+/// Only expands environment variables (`${VAR}`), NOT tildes (`~`).
+/// Tilde paths are passed through to Claude Code's settings file as-is.
+/// Claude Code's OS-level sandbox mangles absolute paths by prepending
+/// the project root, so we must NOT expand `~` to absolute form here.
 pub fn expand_paths(config: &mut MergedSandboxConfig) {
-    // Expand filesystem paths
+    // Only expand env vars — NOT tildes.
+    // Claude Code handles ~ in permission patterns, and expanding tildes
+    // causes the OS sandbox to create invalid paths like:
+    //   /project/root/Users/user/.ssh (instead of /Users/user/.ssh)
     for path in &mut config.filesystem.deny_read {
-        *path = expand_env_vars(&expand_tilde(path));
+        *path = expand_env_vars(path);
     }
     for path in &mut config.filesystem.deny_write {
-        *path = expand_env_vars(&expand_tilde(path));
+        *path = expand_env_vars(path);
     }
     for path in &mut config.filesystem.allow_write {
-        *path = expand_env_vars(&expand_tilde(path));
+        *path = expand_env_vars(path);
     }
 }
 

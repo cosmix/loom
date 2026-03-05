@@ -106,7 +106,7 @@ loom:
     network: # ⛔ MUST be struct, NOT string like "deny"
       allowed_domains: [] # Empty = deny all network (or list domains to allow)
       allow_local_binding: false
-      allow_unix_sockets: false
+      allow_unix_sockets: []
 ```
 
 **Per-Stage Overrides:**

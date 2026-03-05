@@ -1,6 +1,6 @@
 //! Plan YAML schema type definitions
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// Plan-level sandbox configuration (defaults for all stages)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,7 +126,8 @@ pub struct NetworkConfig {
     pub allow_local_binding: bool,
 
     /// Allow specific Unix socket paths (glob patterns)
-    #[serde(default)]
+    /// Accepts either a list of paths or `false` (treated as empty list)
+    #[serde(default, deserialize_with = "deserialize_bool_or_string_vec")]
     pub allow_unix_sockets: Vec<String>,
 
     /// Allow all Unix socket connections (default: false)
@@ -150,6 +151,26 @@ fn default_sandbox_enabled() -> bool {
 
 fn default_auto_allow() -> bool {
     true
+}
+
+/// Deserializes a field that can be either a boolean `false` (→ empty vec) or a list of strings.
+/// This allows plan authors to write `allow_unix_sockets: false` as shorthand for an empty list.
+fn deserialize_bool_or_string_vec<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum BoolOrVec {
+        #[allow(dead_code)]
+        Bool(bool),
+        Vec(Vec<String>),
+    }
+
+    match BoolOrVec::deserialize(deserializer)? {
+        BoolOrVec::Bool(_) => Ok(Vec::new()),
+        BoolOrVec::Vec(v) => Ok(v),
+    }
 }
 
 fn default_excluded_commands() -> Vec<String> {
