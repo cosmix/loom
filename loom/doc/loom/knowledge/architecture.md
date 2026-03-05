@@ -30,3 +30,9 @@
 - `handoff/mod.rs` re-exports from `orchestrator/continuation/` (workaround for spawner dependencies)
 - `models/stage/types.rs` imports TruthCheck, WiringTest, etc. from `plan/schema/types.rs` (circular dep)
 - `plan/schema/types.rs` re-exports StageType, ExecutionMode, WiringCheck from models (circular dep)
+
+## CLI Simplification (2026-03-05)
+
+The Handoff System section above references `loom handoff create` — this is now just `loom handoff` (subcommands removed). The underlying handler at `commands/handoff/create.rs` is unchanged. The `HandoffCommands` enum was removed; args are on `Commands::Handoff` directly.
+
+Similarly, `sandbox` and `hooks` CLI commands were removed. Their functionality is now in `loom repair --fix`.

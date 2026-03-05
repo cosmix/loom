@@ -11,7 +11,7 @@ use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::Stage;
 use crate::verify::transitions::load_stage;
 
-/// Execute the `loom handoff create` command
+/// Execute the `loom handoff` command
 ///
 /// Creates a handoff file capturing current session state for context recovery.
 ///

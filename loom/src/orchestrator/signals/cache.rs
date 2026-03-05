@@ -249,7 +249,7 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("3. **VERIFY** all acceptance criteria pass\n");
     content.push_str("4. **TEST** that the feature actually works end-to-end\n");
     content.push_str("5. **PROMOTE** valuable learnings to knowledge\n");
-    content.push_str("6. **GENERATE** review document: `loom review generate`\n\n");
+    content.push_str("6. **GENERATE** review document: `loom review`\n\n");
 
     // Code review box
     content.push_str("```text\n");
@@ -321,7 +321,7 @@ pub fn generate_integration_verify_stable_prefix() -> String {
         "   Focus on: mistakes worth avoiding, patterns worth reusing, architectural decisions\n",
     );
     content.push_str("4. DO NOT blindly copy entries — synthesize and curate\n");
-    content.push_str("5. Generate review document: `loom review generate`\n");
+    content.push_str("5. Generate review document: `loom review`\n");
     content.push_str("   This creates a structured summary of all changes for human reviewers\n\n");
 
     // Git staging (shorter version)
@@ -596,7 +596,7 @@ mod tests {
         // Context recovery instructions
         assert!(prefix.contains("Context Recovery"));
         // Review document generation
-        assert!(prefix.contains("loom review generate"));
+        assert!(prefix.contains("loom review"));
     }
 
     #[test]

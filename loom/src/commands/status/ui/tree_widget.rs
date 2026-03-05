@@ -1,7 +1,7 @@
 //! Tree-based execution graph widget for TUI display
 //!
 //! Renders stages as a vertical tree with connectors and dependency annotations,
-//! matching the display format used by `loom graph show`.
+//! matching the display format used by `loom graph`.
 
 use std::collections::HashMap;
 

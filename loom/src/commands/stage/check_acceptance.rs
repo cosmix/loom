@@ -122,7 +122,7 @@ pub fn check_acceptance(stage_id: String) -> Result<()> {
             );
         } else {
             println!(
-                "Hint: Fix the issues and run 'loom stage check-acceptance {stage_id}' again."
+                "Hint: Fix the issues and run 'loom stage verify {stage_id}' again."
             );
         }
 
