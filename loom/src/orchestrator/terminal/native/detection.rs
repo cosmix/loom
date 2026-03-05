@@ -156,6 +156,15 @@ pub fn detect_terminal() -> Result<TerminalEmulator> {
         }
     }
 
+    // 1.5. Check TERM_PROGRAM environment variable (set by most macOS terminals)
+    if let Ok(term_program) = std::env::var("TERM_PROGRAM") {
+        if !term_program.is_empty() {
+            if let Some(emulator) = TerminalEmulator::from_name(&term_program) {
+                return Ok(emulator);
+            }
+        }
+    }
+
     // 2. Detect currently running terminal from parent process chain
     // This is the most reliable method - we're almost certainly running inside a terminal
     if let Some(terminal) = detect_parent_terminal() {
@@ -327,6 +336,44 @@ mod tests {
             std::env::set_var("LOOM_TERMINAL", val);
         } else {
             std::env::remove_var("LOOM_TERMINAL");
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_term_program_env_var_detection() {
+        // Save existing env vars
+        let original_loom = std::env::var("LOOM_TERMINAL").ok();
+        let original_terminal = std::env::var("TERMINAL").ok();
+        let original_term_program = std::env::var("TERM_PROGRAM").ok();
+
+        // Clear higher-priority vars so TERM_PROGRAM is used
+        std::env::remove_var("LOOM_TERMINAL");
+        std::env::remove_var("TERMINAL");
+
+        // Test Apple_Terminal (what Terminal.app sets)
+        std::env::set_var("TERM_PROGRAM", "Apple_Terminal");
+        let result = detect_terminal();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), TerminalEmulator::TerminalApp);
+
+        // Test iTerm.app (what iTerm2 sets)
+        std::env::set_var("TERM_PROGRAM", "iTerm.app");
+        let result = detect_terminal();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), TerminalEmulator::ITerm2);
+
+        // Restore original values
+        if let Some(val) = original_loom {
+            std::env::set_var("LOOM_TERMINAL", val);
+        }
+        if let Some(val) = original_terminal {
+            std::env::set_var("TERMINAL", val);
+        }
+        if let Some(val) = original_term_program {
+            std::env::set_var("TERM_PROGRAM", val);
+        } else {
+            std::env::remove_var("TERM_PROGRAM");
         }
     }
 
