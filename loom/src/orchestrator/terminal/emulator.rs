@@ -93,7 +93,7 @@ impl TerminalEmulator {
     /// Parse a terminal emulator from an application name (for macOS apps)
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
-            "Terminal" | "Terminal.app" => Some(Self::TerminalApp),
+            "Terminal" | "Terminal.app" | "Apple_Terminal" => Some(Self::TerminalApp),
             "iTerm" | "iTerm2" | "iTerm.app" | "iTerm2.app" => Some(Self::ITerm2),
             "Ghostty" | "Ghostty.app" | "ghostty" => Some(Self::Ghostty),
             // Fall back to binary matching for non-macOS terminals
@@ -375,6 +375,12 @@ mod tests {
         assert_eq!(
             TerminalEmulator::from_name("iTerm2.app"),
             Some(TerminalEmulator::ITerm2)
+        );
+
+        // Test TERM_PROGRAM values
+        assert_eq!(
+            TerminalEmulator::from_name("Apple_Terminal"),
+            Some(TerminalEmulator::TerminalApp)
         );
 
         // from_name falls back to from_binary for Linux terminals
