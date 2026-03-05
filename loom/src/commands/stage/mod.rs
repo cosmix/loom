@@ -1,5 +1,5 @@
 //! Stage state manipulation
-//! Usage: loom stage <id> [complete|block|reset|ready|merge-complete|recover|verify|check-acceptance]
+//! Usage: loom stage <id> [complete|block|reset|ready|merge-complete|recover|verify]
 
 pub(crate) mod acceptance_runner;
 mod check_acceptance;

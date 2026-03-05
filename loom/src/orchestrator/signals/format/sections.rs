@@ -224,7 +224,7 @@ pub(super) fn format_semi_stable_section(
             if stage_type == StageType::IntegrationVerify {
                 content.push_str("**Review Document:**\n\n");
                 content.push_str("Generate a change summary for human reviewers:\n");
-                content.push_str("```bash\nloom review generate\n```\n\n");
+                content.push_str("```bash\nloom review\n```\n\n");
             }
         }
         StageType::Standard => {
@@ -588,7 +588,7 @@ pub(super) fn format_dynamic_section(
         }
 
         content
-            .push_str("Run `loom verify <stage-id> --suggest` to check these automatically.\n\n");
+            .push_str("Run `loom check <stage-id> --suggest` to check these automatically.\n\n");
     }
 
     // Files to modify
@@ -616,11 +616,11 @@ pub(super) fn format_recitation_section(
         if usage >= 75.0 {
             content.push_str("## COMPACTION IMMINENT\n\n");
             content.push_str("**Context is at critical level.** Run NOW:\n");
-            content.push_str("```\nloom handoff create --message \"what I was doing\"\n```\n\n");
+            content.push_str("```\nloom handoff --message \"what I was doing\"\n```\n\n");
         } else if usage >= 60.0 {
             content.push_str("## Context Preservation Reminder\n\n");
             content.push_str("Consider creating a handoff to preserve your working state:\n");
-            content.push_str("```\nloom handoff create --message \"current state\"\n```\n\n");
+            content.push_str("```\nloom handoff --message \"current state\"\n```\n\n");
         }
     }
 

@@ -1,7 +1,7 @@
 //! Tree-based execution graph display for status command
 //!
 //! Renders stages as a vertical tree with connectors and dependency annotations,
-//! matching the display format used by `loom graph show`.
+//! matching the display format used by `loom graph`.
 
 use std::collections::HashMap;
 use std::io::Write;

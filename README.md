@@ -89,8 +89,7 @@ loom stage skip <stage-id> [--reason <text>]
 loom stage retry <stage-id> [--force]
 loom stage recover <stage-id> [--force]
 loom stage merge-complete <stage-id>
-loom stage verify <stage-id> [--no-reload]
-loom stage check-acceptance <stage-id>
+loom stage verify <stage-id> [--no-reload] [--dry-run]
 loom stage human-review <stage-id> [--approve|--force-complete|--reject <reason>]
 loom stage dispute-criteria <stage-id> <reason>
 loom stage retry-merge [stage-id]
@@ -131,10 +130,8 @@ loom memory promote <entry-type|all> <target> [--session <id>]
 loom sessions list
 loom sessions kill <session-id...> | --stage <stage-id>
 loom worktree list
-loom worktree clean
 loom worktree remove <stage-id>
-loom graph show
-loom graph edit
+loom graph [--edit]
 loom map [--deep] [--focus <area>] [--overwrite]
 loom repair [--fix]
 loom clean [--all|--worktrees|--sessions|--state]

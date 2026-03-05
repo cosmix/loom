@@ -221,7 +221,7 @@ fn render_stage_section(stage: &StageInfo, entries: &[&MemoryEntry]) -> String {
     out
 }
 
-/// Execute the `loom review generate` command.
+/// Execute the `loom review` command.
 pub fn execute() -> Result<()> {
     let work_dir = get_work_dir()?;
 
