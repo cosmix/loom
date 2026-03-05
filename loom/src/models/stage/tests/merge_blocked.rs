@@ -21,10 +21,15 @@ fn test_merge_blocked_can_transition_to_queued() {
 }
 
 #[test]
+fn test_merge_blocked_can_transition_to_completed() {
+    let status = StageStatus::MergeBlocked;
+    assert!(status.can_transition_to(&StageStatus::Completed));
+}
+
+#[test]
 fn test_merge_blocked_cannot_transition_to_other_states() {
     let status = StageStatus::MergeBlocked;
     assert!(!status.can_transition_to(&StageStatus::WaitingForDeps));
-    assert!(!status.can_transition_to(&StageStatus::Completed));
     assert!(!status.can_transition_to(&StageStatus::Blocked));
     assert!(!status.can_transition_to(&StageStatus::NeedsHandoff));
     assert!(!status.can_transition_to(&StageStatus::WaitingForInput));

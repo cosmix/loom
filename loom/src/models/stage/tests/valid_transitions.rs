@@ -93,7 +93,8 @@ fn test_valid_transitions_merge_blocked() {
     let transitions = StageStatus::MergeBlocked.valid_transitions();
     assert!(transitions.contains(&StageStatus::Queued));
     assert!(transitions.contains(&StageStatus::Executing));
-    assert_eq!(transitions.len(), 2);
+    assert!(transitions.contains(&StageStatus::Completed));
+    assert_eq!(transitions.len(), 3);
 }
 
 #[test]

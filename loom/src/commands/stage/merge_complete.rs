@@ -1,8 +1,8 @@
-//! Merge conflict resolution completion command
+//! Merge resolution completion command
 //!
-//! This command is called after a user (or agent) resolves merge conflicts
-//! for a stage in MergeConflict status. It verifies the merge is complete
-//! and transitions the stage to Completed.
+//! This command is called after a user (or agent) resolves merge issues
+//! for a stage in MergeConflict or MergeBlocked status. It verifies the
+//! merge is complete and transitions the stage to Completed.
 
 use anyhow::{bail, Context, Result};
 use std::path::Path;
@@ -11,10 +11,10 @@ use crate::git::get_conflicting_files;
 use crate::models::stage::StageStatus;
 use crate::verify::transitions::{load_stage, save_stage, trigger_dependents};
 
-/// Complete merge conflict resolution for a stage.
+/// Complete merge resolution for a stage.
 ///
 /// This command:
-/// 1. Verifies the stage is in MergeConflict status
+/// 1. Verifies the stage is in MergeConflict or MergeBlocked status
 /// 2. Checks that git working tree is clean (no unmerged files)
 /// 3. Transitions stage to Completed with merged=true
 /// 4. Triggers dependent stages
@@ -23,11 +23,11 @@ pub fn merge_complete(stage_id: String) -> Result<()> {
 
     let mut stage = load_stage(&stage_id, work_dir)?;
 
-    // Verify stage is in MergeConflict status
-    if stage.status != StageStatus::MergeConflict {
+    // Verify stage is in a merge-failed status
+    if stage.status != StageStatus::MergeConflict && stage.status != StageStatus::MergeBlocked {
         bail!(
-            "Stage '{}' is not in MergeConflict status (current: {}). \
-             Use this command only after merge conflicts have been resolved.",
+            "Stage '{}' is not in MergeConflict or MergeBlocked status (current: {}). \
+             Use this command only after merge issues have been resolved.",
             stage_id,
             stage.status
         );

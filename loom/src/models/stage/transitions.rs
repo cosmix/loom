@@ -68,7 +68,10 @@ impl StageStatus {
                 )
             }
             StageStatus::MergeBlocked => {
-                matches!(new_status, StageStatus::Queued | StageStatus::Executing)
+                matches!(
+                    new_status,
+                    StageStatus::Queued | StageStatus::Executing | StageStatus::Completed
+                )
             }
             StageStatus::NeedsHumanReview => {
                 matches!(
@@ -128,7 +131,11 @@ impl StageStatus {
                     StageStatus::Completed,
                 ]
             }
-            StageStatus::MergeBlocked => vec![StageStatus::Queued, StageStatus::Executing],
+            StageStatus::MergeBlocked => vec![
+                StageStatus::Queued,
+                StageStatus::Executing,
+                StageStatus::Completed,
+            ],
             StageStatus::NeedsHumanReview => vec![
                 StageStatus::Executing,
                 StageStatus::Completed,

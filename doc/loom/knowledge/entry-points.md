@@ -208,3 +208,38 @@
 - `hooks/post-tool-use.sh` - Compaction recovery detection
 - `loom/src/orchestrator/signals/cache.rs` - Signal stable prefixes with compaction recovery
 - `loom/src/orchestrator/signals/format/sections.rs` - Budget warnings with handoff create
+
+## Command Dispatch (Updated 2026-03-05)
+
+The previous command dispatch table is STALE. The following commands NO LONGER EXIST:
+- `merge` (was commands/merge/execute/mod.rs) — REMOVED
+- `attach` (was commands/attach.rs) — REMOVED
+
+Current CLI commands (from cli/types.rs):
+
+| Command      | Entry File                       | Purpose                              |
+| ------------ | -------------------------------- | ------------------------------------ |
+| `init`       | `commands/init/execute.rs`       | Initialize `.work/` from plan        |
+| `run`        | `commands/run/mod.rs`            | Start orchestrator daemon            |
+| `status`     | `commands/status.rs`             | Dashboard with stage/session info    |
+| `stop`       | `commands/stop.rs`               | Shutdown daemon                      |
+| `resume`     | `commands/resume.rs`             | Resume work on a stage               |
+| `sessions`   | `commands/sessions.rs`           | List/kill active sessions            |
+| `worktree`   | `commands/worktree_cmd.rs`       | List/clean/remove worktrees          |
+| `graph`      | `commands/graph/mod.rs`          | Show/edit execution graph            |
+| `hooks`      | `commands/hooks.rs`              | Hook install/list                    |
+| `stage`      | `commands/stage/`                | Stage lifecycle (15+ subcommands)    |
+| `handoff`    | `commands/handoff/create.rs`     | Create handoff files                 |
+| `knowledge`  | `commands/knowledge/mod.rs`      | Manage codebase knowledge            |
+| `memory`     | `commands/memory/handlers.rs`    | Session memory journal               |
+| `review`     | `commands/review/mod.rs`         | Generate review docs from memories   |
+| `sandbox`    | `commands/sandbox/`              | Suggest/apply sandbox config         |
+| `self-update`| `commands/self_update/mod.rs`    | Update loom binary                   |
+| `clean`      | `commands/clean.rs`              | Clean up resources                   |
+| `repair`     | `commands/repair.rs`             | Fix workspace issues                 |
+| `map`        | `commands/map.rs`                | Codebase structure analysis          |
+| `diagnose`   | `commands/diagnose.rs`           | Stage failure diagnosis              |
+| `verify`     | `commands/verify.rs`             | Goal-backward verification           |
+| `completions`| Static shell completion          | Generate shell completions           |
+
+Total: 22 visible commands + 1 hidden (complete for dynamic completions)

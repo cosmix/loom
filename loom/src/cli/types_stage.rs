@@ -120,11 +120,11 @@ pub enum StageCommands {
         force: bool,
     },
 
-    /// Complete merge conflict resolution and mark stage as completed
+    /// Complete merge resolution and mark stage as completed
     ///
-    /// Use this after resolving merge conflicts for a stage in MergeConflict status.
-    /// Verifies there are no remaining unmerged files and the merge is complete,
-    /// then transitions the stage to Completed with merged=true.
+    /// Use this after resolving merge issues for a stage in MergeConflict or
+    /// MergeBlocked status. Verifies there are no remaining unmerged files and
+    /// the merge is complete, then transitions the stage to Completed with merged=true.
     MergeComplete {
         /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
         #[arg(value_parser = clap_id_validator)]
