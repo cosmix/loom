@@ -77,7 +77,7 @@ Before writing any plan:
 1. **Review knowledge** — Read `doc/loom/knowledge/*.md` BEFORE exploring the code
 2. **Explore the codebase** — Spawn Explore subagents to find patterns, integration points
 3. **Ask about sandbox** — Network access, sensitive paths, build tools needed
-4. **Run `loom sandbox suggest`** — Get project-specific recommendations
+4. **Run `loom repair`** — Detect and fix common project issues
 
 #### Stage Completion Checklist
 
@@ -104,7 +104,7 @@ Complete ALL items before marking stage complete:
 □ No obvious OWASP vulnerabilities
 
 **VERIFICATION (OPTIONAL):**
-□ loom verify <stage-id> --suggest
+□ loom check <stage-id> --suggest
 
 **COMMIT:**
 □ git add <specific-files> (NOT git add . or -A)
@@ -746,9 +746,9 @@ When context usage reaches the budget threshold, orchestrator triggers auto-hand
 
 | Command | Description |
 | ------- | ----------- |
-| `loom verify <stage-id> [--suggest]` | Run goal-backward verification (truths, artifacts, wiring checks). Use --suggest for fixes. |
+| `loom check <stage-id> [--suggest]` | Run goal-backward verification (truths, artifacts, wiring checks). Use --suggest for fixes. |
 | `loom map [--deep] [--focus <area>] [--overwrite]` | Analyze codebase structure and write to knowledge files. --deep for detailed analysis. |
-| `loom sandbox suggest` | Auto-detect project type and suggest sandbox configuration (network domains, etc.). |
+| `loom repair [--fix]` | Detect and repair common project issues (stale state, missing files, etc.). |
 | `loom knowledge init` | Initialize knowledge directory |
 | `loom knowledge show` | Show all knowledge |
 | `loom knowledge update <file> <content>` | Append to knowledge file |
@@ -828,7 +828,7 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 □ Review doc/loom/knowledge/ (especially architecture.md)
 □ Create TODO with "REUSE:" annotations
 □ ASK user about sandbox requirements (network access, sensitive paths)
-□ Run `loom sandbox suggest` and configure sandbox block
+□ Run `loom repair` to detect and fix project issues
 
 **BEFORE COMPLETING ANY STAGE (Stage Completion Checklist):**
 □ loom memory note/decision recorded for insights

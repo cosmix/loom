@@ -56,12 +56,12 @@ wiring:
 
 ### CLI Command
 
-For a new CLI command (e.g., `loom verify <stage-id>`):
+For a new CLI command (e.g., `loom check <stage-id>`):
 
 ```yaml
 truths:
-  - "loom verify --help"  # Command responds
-  - "loom verify stage-1 --suggest"  # Primary use case works
+  - "loom check --help"  # Command responds
+  - "loom check stage-1 --suggest"  # Primary use case works
 
 artifacts:
   - "src/commands/verify.rs"  # Implementation exists
@@ -177,8 +177,8 @@ wiring: []  # Missing — no integration proof
 
 ```yaml
 truths:
-  - "loom verify stage-1 --suggest"  # Proves verify command works end-to-end
-  - "loom verify --help | grep -q 'suggest'"  # Proves --suggest flag exists
+  - "loom check stage-1 --suggest"  # Proves check command works end-to-end
+  - "loom check --help | grep -q 'suggest'"  # Proves --suggest flag exists
 
 artifacts:
   - "src/commands/verify.rs"  # Implementation file
@@ -347,13 +347,13 @@ wiring:
 
 ## Integration with Loom Verify Command
 
-The `loom verify <stage-id>` command executes these checks:
+The `loom check <stage-id>` command executes these checks:
 
 1. **Truths:** Runs each shell command, expects exit 0
 2. **Artifacts:** Checks files exist and are non-empty (> 100 bytes by default)
 3. **Wiring:** Greps for patterns in source files, expects at least one match
 
-Use `loom verify <stage-id> --suggest` to get fix suggestions when checks fail.
+Use `loom check <stage-id> --suggest` to get fix suggestions when checks fail.
 
 ## Final Checklist
 
@@ -371,7 +371,7 @@ Before finalizing your wiring verification:
 
 1. **Tests Pass ≠ Feature Works**
    - Bad: `truths: ["cargo test"]`
-   - Good: `truths: ["loom verify stage-1"]`
+   - Good: `truths: ["loom check stage-1"]`
 
 2. **Generic Patterns Match Too Much**
    - Bad: `pattern: "verify"` (matches comments, strings)
