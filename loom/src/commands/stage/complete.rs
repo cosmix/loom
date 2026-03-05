@@ -390,16 +390,12 @@ fn run_verification_phase(
 
         complete_with_merge(stage, &repo_root, work_dir)?;
     } else {
-        // --no-verify: Skip verifications and merge, just mark as completed
-        // Merged flag semantics for this path:
-        // - merged=false (merge was skipped entirely)
-        // - Dependents will NOT be triggered automatically
-        // - User must manually merge and use --force-unsafe --assume-merged to trigger dependents
+        // --no-verify: Skip verifications, just mark as completed
+        // The orchestrator daemon will auto-merge and trigger dependents
         stage.try_complete(None)?;
         save_stage(stage, work_dir)?;
-        println!("Stage '{stage_id}' completed (skipped verification)");
-        println!("⚠️  Note: Merge was skipped. Stage NOT marked as merged.");
-        println!("⚠️  Dependent stages will NOT be automatically triggered.");
+        println!("Stage '{stage_id}' completed (skipped verification).");
+        println!("The orchestrator will handle merge and dependent triggering.");
     }
 
     Ok(())
