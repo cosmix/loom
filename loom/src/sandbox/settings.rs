@@ -142,6 +142,14 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     // it resolves to the home directory, blocking ~/.claude/shell-snapshots/
     // and breaking loom CLI (getcwd fails). Parent-traversal write
     // restrictions are enforced via permissions.deny Write() entries instead.
+    //
+    // IMPORTANT: Do NOT emit allowWrite in sandbox.filesystem.
+    // Claude Code already constrains writes to the project root by default.
+    // Adding explicit allowWrite causes the OS sandbox (macOS sandbox-exec)
+    // to become overly restrictive about reads, blocking access to
+    // ~/.gitconfig (breaks git) and ~/.claude/shell-snapshots/ (breaks zsh).
+    // Plan-specified allow_write paths are still emitted as permissions.allow
+    // Write() entries for tool-level enforcement.
     let mut fs_sandbox = json!({});
     if !config.filesystem.deny_write.is_empty() {
         let safe_deny_write: Vec<&str> = config
@@ -155,19 +163,9 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
             fs_sandbox["denyWrite"] = json!(safe_deny_write);
         }
     }
-    // Always emit allowWrite for OS-level containment.
-    // "." constrains writes to the project/worktree root.
-    // "~/.claude/**" ensures Claude Code can write shell-snapshots, debug logs, etc.
-    // Plan-specified allow_write paths are merged in.
-    let mut allow_write = config.filesystem.allow_write.clone();
-    if !allow_write.contains(&".".to_string()) {
-        allow_write.push(".".to_string());
+    if fs_sandbox.as_object().is_some_and(|o| !o.is_empty()) {
+        sandbox["filesystem"] = fs_sandbox;
     }
-    if !allow_write.iter().any(|p| p == "~/.claude/**") {
-        allow_write.push("~/.claude/**".to_string());
-    }
-    fs_sandbox["allowWrite"] = json!(allow_write);
-    sandbox["filesystem"] = fs_sandbox;
 
     // Add Linux-specific settings if configured
     if config.linux.enable_weaker_nested {
@@ -380,23 +378,19 @@ mod tests {
         assert_eq!(allow[2], "Read(.work/handoffs/**)");
         assert_eq!(allow[3], "Read(.work/config.toml)");
 
-        // Sandbox filesystem block: NO denyRead (OS sandbox breaks with it)
+        // Sandbox filesystem block: NO denyRead, NO allowWrite (OS sandbox breaks with both)
         let fs_block = &json["sandbox"]["filesystem"];
         assert!(
             fs_block["denyRead"].is_null(),
             "denyRead must NOT be in sandbox.filesystem (breaks OS sandbox)"
         );
+        assert!(
+            fs_block["allowWrite"].is_null(),
+            "allowWrite must NOT be in sandbox.filesystem (causes OS sandbox to block reads)"
+        );
         let deny_write = fs_block["denyWrite"].as_array().unwrap();
         assert_eq!(deny_write.len(), 1);
         assert_eq!(deny_write[0], ".work/**");
-        let allow_write = fs_block["allowWrite"].as_array().unwrap();
-        let aw_strs: Vec<&str> = allow_write.iter().filter_map(|v| v.as_str()).collect();
-        assert!(aw_strs.contains(&"src/**"), "Plan-specified allow_write preserved");
-        assert!(aw_strs.contains(&"."), "Worktree root always in allowWrite");
-        assert!(
-            aw_strs.contains(&"~/.claude/**"),
-            "~/.claude/** always in allowWrite for shell-snapshots"
-        );
     }
 
     #[test]
@@ -549,7 +543,7 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_settings_filesystem_always_has_allowwrite() {
+    fn test_generate_settings_no_filesystem_when_empty() {
         let config = MergedSandboxConfig {
             enabled: true,
             auto_allow: true,
@@ -565,14 +559,12 @@ mod tests {
         };
 
         let json = generate_settings_json(&config);
-        // Filesystem block always present because allowWrite always has defaults
-        let fs_block = &json["sandbox"]["filesystem"];
-        assert!(!fs_block.is_null(), "filesystem block should always exist");
-        let aw = fs_block["allowWrite"].as_array().unwrap();
-        let aw_strs: Vec<&str> = aw.iter().filter_map(|v| v.as_str()).collect();
-        assert!(aw_strs.contains(&"."), "Must contain worktree root");
-        assert!(aw_strs.contains(&"~/.claude/**"), "Must contain ~/.claude/**");
-        assert!(fs_block["denyWrite"].is_null(), "No denyWrite when list is empty");
+        // No filesystem block when there are no deny_write paths to emit
+        // (allowWrite is never emitted to avoid OS sandbox read-blocking)
+        assert!(
+            json["sandbox"]["filesystem"].is_null(),
+            "filesystem block should not exist when empty"
+        );
     }
 
     #[test]
@@ -623,10 +615,10 @@ mod tests {
 
         let json = generate_settings_json(&config);
 
-        // OS sandbox must NOT have denyRead at all
+        // No filesystem block at all (no deny_write, no allowWrite)
         assert!(
-            json["sandbox"]["filesystem"]["denyRead"].is_null(),
-            "denyRead must NOT be in sandbox.filesystem"
+            json["sandbox"]["filesystem"].is_null(),
+            "filesystem block should not exist when no deny_write paths"
         );
 
         // permissions.deny should have ALL paths
@@ -678,6 +670,11 @@ mod tests {
         assert!(
             deny_write_strs.contains(&"doc/loom/knowledge/**"),
             "Project-relative paths should stay in sandbox.filesystem.denyWrite"
+        );
+        // allowWrite must NOT be present (causes OS sandbox to block reads)
+        assert!(
+            json["sandbox"]["filesystem"]["allowWrite"].is_null(),
+            "allowWrite must NOT be in sandbox.filesystem"
         );
 
         // permissions.deny should have ALL paths (including parent-traversal)
@@ -908,10 +905,10 @@ mod tests {
         let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
         assert!(deny_strs.contains(&"Read(~/.ssh/**)"));
 
-        // Sandbox filesystem should NOT have denyRead
+        // Sandbox filesystem should NOT have denyRead or allowWrite
         assert!(
-            result["sandbox"]["filesystem"]["denyRead"].is_null(),
-            "denyRead must not appear in sandbox.filesystem"
+            result["sandbox"]["filesystem"].is_null(),
+            "filesystem block should not exist when no project-relative deny_write paths"
         );
     }
 
