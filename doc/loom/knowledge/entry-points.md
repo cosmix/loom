@@ -19,13 +19,10 @@
 | `status`   | `commands/status.rs`            | Dashboard with stage/session info |
 | `stop`     | `commands/stop.rs`              | Shutdown daemon                   |
 | `stage`    | `commands/stage/`               | Stage lifecycle (complete, verify) |
-| `merge`    | `commands/merge/execute/mod.rs` | Merge completed stages            |
 | `memory`   | `commands/memory/handlers.rs`   | Session memory journal            |
-| `verify`   | `commands/verify.rs`            | Goal-backward verification        |
+| `check`    | `commands/check.rs`             | Goal-backward verification        |
 | `map`      | `commands/map.rs`               | Codebase structure analysis       |
 | `diagnose` | `commands/diagnose.rs`          | Stage failure diagnosis           |
-| `attach`   | `commands/attach.rs`            | Attach to running sessions        |
-| `hooks`    | `commands/hooks.rs`             | Hook install/list                 |
 
 ## Orchestrator Core
 
@@ -185,10 +182,9 @@
 - loom/src/orchestrator/core/stage_executor.rs:192 — Signal generation trigger point
 - loom/src/orchestrator/core/stage_executor.rs:358 — get_dependency_status() (computes from ExecutionGraph)
 
-## Sandbox Suggest Entry Points
+## Repair Command Entry Points
 
-- loom/src/commands/sandbox/suggest.rs — detect_project_and_suggest(), YAML output formatting
-- loom/src/commands/sandbox/mod.rs — Sandbox command module
+- loom/src/commands/repair.rs — Repair command implementation (replaces sandbox suggest)
 - loom/src/sandbox/config.rs — merge_config() (plan + stage config merging)
 - loom/src/sandbox/settings.rs — Claude Code settings.local.json generation
 - loom/src/plan/schema/types.rs — SandboxConfig, NetworkConfig, FilesystemConfig schemas

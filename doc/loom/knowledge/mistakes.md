@@ -895,8 +895,8 @@ When running `loom knowledge update` from a subdirectory (e.g., `loom/`), the CL
 
 **How to avoid:** When adding new terminal/expected stage statuses, always check detection.rs to ensure the session monitor recognizes them as normal exits.
 
-## loom verify wiring check: negation patterns are literal
+## loom check wiring check: negation patterns are literal
 
-**What happened:** Wiring check for `!Merge` in dispatch.rs was a false positive. The verify tool treats `!` as a literal character, not negation.
+**What happened:** Wiring check for `!Merge` in dispatch.rs was a false positive. The check tool treats `!` as a literal character, not negation.
 
 **How to avoid:** Use positive patterns in wiring checks (e.g., check for what SHOULD be there), not negated patterns for what should be absent. Use `truths` with shell commands for absence checks.

@@ -97,20 +97,20 @@ When adding a new CLI command, prove it didn't exist before.
 
 ```yaml
 - id: add-verify-command
-  name: "Add loom verify command"
+  name: "Add loom check command"
   stage_type: standard
   working_dir: "loom"
   description: |
-    Implement the `loom verify <stage-id>` CLI command.
+    Implement the `loom check <stage-id>` CLI command.
 
     DELTA PROOF:
-    - BEFORE: `loom verify --help` fails (command not registered)
-    - AFTER: `loom verify --help` succeeds
-    - AFTER: `loom verify test-stage` runs verification logic
+    - BEFORE: `loom check --help` fails (command not registered)
+    - AFTER: `loom check --help` succeeds
+    - AFTER: `loom check test-stage` runs verification logic
 
   truths:
-    - "loom verify --help"
-    - "loom verify nonexistent-stage 2>&1 | grep -q 'Stage not found'"
+    - "loom check --help"
+    - "loom check nonexistent-stage 2>&1 | grep -q 'Stage not found'"
 
   wiring:
     - source: "src/main.rs"

@@ -78,7 +78,7 @@ Gather sandbox requirements by asking:
 
 **After gathering answers:**
 
-1. Run `loom sandbox suggest` for project-specific recommendations
+1. Run `loom repair` to detect and fix project issues
 2. Merge user requirements with suggestions
 3. Add the `sandbox` block to plan YAML
 

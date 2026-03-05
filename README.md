@@ -71,7 +71,7 @@ loom run [--manual] [--max-parallel N] [--foreground] [--watch] [--no-merge]
 loom status [--live] [--compact] [--verbose]
 loom stop
 loom resume <stage-id>
-loom verify <stage-id> [--suggest]
+loom check <stage-id> [--suggest]
 loom diagnose <stage-id>
 ```
 
@@ -135,9 +135,6 @@ loom worktree clean
 loom worktree remove <stage-id>
 loom graph show
 loom graph edit
-loom hooks install
-loom hooks list
-loom sandbox suggest
 loom map [--deep] [--focus <area>] [--overwrite]
 loom repair [--fix]
 loom clean [--all|--worktrees|--sessions|--state]
@@ -219,7 +216,7 @@ loom:
 
 ## Verification Model
 
-`loom verify <stage-id>` validates outcomes, not just compilation/tests:
+`loom check <stage-id>` validates outcomes, not just compilation/tests:
 
 - `truths`: observable behaviors that must succeed
 - `artifacts`: real implementation files exist
@@ -255,12 +252,6 @@ loom:
       additional_domains: []
       allow_local_binding: false
       allow_unix_sockets: []
-```
-
-Generate project-specific domain suggestions:
-
-```bash
-loom sandbox suggest
 ```
 
 Note: knowledge file writes are intentionally protected by sandbox defaults; knowledge updates should be done via `loom knowledge ...` commands.

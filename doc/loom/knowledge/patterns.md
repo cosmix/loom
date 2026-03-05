@@ -160,7 +160,7 @@ Stage Ready (Queued) → Orchestrator.start_ready_stages() → start_stage() →
 
 ## Sandbox Detection Pattern
 
-loom sandbox suggest uses simple file-existence checks at project root:
+loom repair uses simple file-existence checks at project root to detect project type and suggest sandbox configuration:
 
 - Cargo.toml → Rust domains (crates.io, static.crates.io, static.rust-lang.org, doc.rust-lang.org)
 - package.json → Node.js domains (registry.npmjs.org, npmjs.com)
