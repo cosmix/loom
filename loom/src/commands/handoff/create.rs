@@ -176,6 +176,7 @@ fn get_modified_files() -> Result<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn test_resolve_stage_id_from_arg() {
@@ -186,21 +187,33 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_resolve_stage_id_from_env() {
+        let original = env::var("LOOM_STAGE_ID").ok();
         env::set_var("LOOM_STAGE_ID", "env-stage");
         let stage_arg = None;
         let result = resolve_stage_id(&stage_arg);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "env-stage");
-        env::remove_var("LOOM_STAGE_ID");
+        // Restore original value
+        match original {
+            Some(val) => env::set_var("LOOM_STAGE_ID", val),
+            None => env::remove_var("LOOM_STAGE_ID"),
+        }
     }
 
     #[test]
+    #[serial]
     fn test_resolve_stage_id_missing() {
+        let original = env::var("LOOM_STAGE_ID").ok();
         env::remove_var("LOOM_STAGE_ID");
         let stage_arg = None;
         let result = resolve_stage_id(&stage_arg);
         assert!(result.is_err());
+        // Restore original value
+        if let Some(val) = original {
+            env::set_var("LOOM_STAGE_ID", val);
+        }
     }
 
     #[test]

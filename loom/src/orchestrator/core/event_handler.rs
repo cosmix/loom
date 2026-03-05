@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 use crate::models::stage::StageStatus;
 use crate::orchestrator::monitor::MonitorEvent;
+use crate::orchestrator::signals::remove_signal;
 
 use super::clear_status_line;
 use super::persistence::Persistence;
@@ -184,6 +185,26 @@ impl EventHandler for Orchestrator {
         stage.try_mark_needs_handoff()?;
         self.save_stage(&stage)?;
 
+        // Kill old session if still tracked
+        if let Some(session) = self.active_sessions.get(stage_id) {
+            let session_clone = session.clone();
+            if let Err(e) = self.backend.kill_session(&session_clone) {
+                eprintln!("Warning: Failed to kill session '{session_id}': {e}");
+            }
+            // Remove old signal file
+            if let Err(e) = remove_signal(&session_clone.id, &self.config.work_dir) {
+                eprintln!("Warning: Failed to remove signal for session '{session_id}': {e}");
+            }
+        }
+        self.active_sessions.remove(stage_id);
+
+        // Re-queue the stage so the next poll cycle picks it up
+        stage.try_mark_queued()?;
+        self.save_stage(&stage)?;
+        self.graph.mark_queued(stage_id)?;
+
+        eprintln!("Stage '{stage_id}' re-queued for continuation after handoff");
+
         Ok(())
     }
 
@@ -202,6 +223,12 @@ impl EventHandler for Orchestrator {
         // Implementation in event_handler.rs
         self.handle_budget_exceeded(session_id, stage_id, usage_percent, budget_percent)
     }
+}
+
+/// Helper to check if a stage is in the ready list of the graph
+#[cfg(test)]
+fn graph_has_ready_stage(graph: &crate::plan::ExecutionGraph, stage_id: &str) -> bool {
+    graph.ready_stages().iter().any(|n| n.id == stage_id)
 }
 
 impl Orchestrator {
@@ -258,6 +285,114 @@ impl Orchestrator {
         // Remove from active sessions
         self.active_sessions.remove(stage_id);
 
+        // Re-queue the stage so the next poll cycle picks it up
+        stage.try_mark_queued()?;
+        self.save_stage(&stage)?;
+        self.graph.mark_queued(stage_id)?;
+
+        eprintln!("Stage '{stage_id}' re-queued for continuation after budget exceeded");
+
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::stage::{Stage, StageStatus};
+    use crate::plan::schema::{StageSandboxConfig, StageDefinition};
+    use crate::plan::ExecutionGraph;
+
+    fn create_test_graph() -> ExecutionGraph {
+        let stages = vec![StageDefinition {
+            id: "test-stage".to_string(),
+            name: "Test Stage".to_string(),
+            description: None,
+            dependencies: vec![],
+            parallel_group: None,
+            acceptance: vec![],
+            setup: vec![],
+            files: vec![],
+            auto_merge: None,
+            working_dir: ".".to_string(),
+            stage_type: crate::plan::schema::StageType::default(),
+            truths: vec![],
+            artifacts: vec![],
+            wiring: vec![],
+            truth_checks: vec![],
+            wiring_tests: vec![],
+            dead_code_check: None,
+            before_stage: vec![],
+            after_stage: vec![],
+            context_budget: None,
+            sandbox: StageSandboxConfig::default(),
+            execution_mode: None,
+            bug_fix: None,
+            regression_test: None,
+        }];
+        ExecutionGraph::build(stages).unwrap()
+    }
+
+    #[test]
+    fn test_needs_handoff_transitions_stage_to_queued() {
+        // Verify that the NeedsHandoff -> Queued transition works correctly
+        // This is the core logic that on_needs_handoff relies on
+        let mut stage = Stage {
+            id: "test-stage".to_string(),
+            name: "Test Stage".to_string(),
+            status: StageStatus::Executing,
+            ..Stage::default()
+        };
+
+        // Transition: Executing -> NeedsHandoff
+        stage.try_mark_needs_handoff().unwrap();
+        assert_eq!(stage.status, StageStatus::NeedsHandoff);
+
+        // Transition: NeedsHandoff -> Queued (the fix)
+        stage.try_mark_queued().unwrap();
+        assert_eq!(stage.status, StageStatus::Queued);
+    }
+
+    #[test]
+    fn test_needs_handoff_requeues_in_graph() {
+        // Verify that graph correctly tracks the stage as ready after re-queuing
+        let mut graph = create_test_graph();
+
+        // Initially the stage should be ready (WaitingForDeps with no deps = ready)
+        assert!(graph_has_ready_stage(&graph, "test-stage"));
+
+        // Mark as executing
+        graph.mark_executing("test-stage").unwrap();
+        assert!(!graph_has_ready_stage(&graph, "test-stage"));
+
+        // Mark as NeedsHandoff then re-queue
+        graph
+            .mark_status("test-stage", StageStatus::NeedsHandoff)
+            .unwrap();
+        graph.mark_queued("test-stage").unwrap();
+
+        // Stage should be ready again for the next poll cycle
+        assert!(graph_has_ready_stage(&graph, "test-stage"));
+    }
+
+    #[test]
+    fn test_budget_exceeded_transitions_to_queued() {
+        // Verify the full budget exceeded transition path:
+        // Executing -> NeedsHandoff -> Queued
+        let mut stage = Stage {
+            id: "test-stage".to_string(),
+            name: "Test Stage".to_string(),
+            status: StageStatus::Executing,
+            ..Stage::default()
+        };
+
+        // Simulate budget exceeded flow
+        stage.accumulate_attempt_time(chrono::Utc::now());
+        stage.try_mark_needs_handoff().unwrap();
+        assert_eq!(stage.status, StageStatus::NeedsHandoff);
+
+        // Re-queue for continuation
+        stage.try_mark_queued().unwrap();
+        assert_eq!(stage.status, StageStatus::Queued);
     }
 }
