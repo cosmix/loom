@@ -143,6 +143,13 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     // and breaking loom CLI (getcwd fails). Parent-traversal write
     // restrictions are enforced via permissions.deny Write() entries instead.
     //
+    // IMPORTANT: Do NOT emit doc/loom/knowledge/** in denyWrite.
+    // The `loom knowledge update` CLI command needs to write to this path.
+    // excludedCommands does NOT bypass OS-level filesystem restrictions,
+    // so the loom binary gets blocked by sandbox-exec. Knowledge writes
+    // are protected via permissions.deny Write() entries instead, which
+    // block Claude Code's Write/Edit tools but not CLI commands.
+    //
     // IMPORTANT: Do NOT emit allowWrite in sandbox.filesystem.
     // Claude Code already constrains writes to the project root by default.
     // Adding explicit allowWrite causes the OS sandbox (macOS sandbox-exec)
@@ -156,7 +163,7 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
             .filesystem
             .deny_write
             .iter()
-            .filter(|p| !p.contains("../"))
+            .filter(|p| !p.contains("../") && !p.starts_with("doc/loom/knowledge"))
             .map(|s| s.as_str())
             .collect();
         if !safe_deny_write.is_empty() {
@@ -688,24 +695,18 @@ mod tests {
 
         let json = generate_settings_json(&config);
 
-        // OS sandbox denyWrite must NOT contain parent-traversal paths
-        let deny_write = json["sandbox"]["filesystem"]["denyWrite"]
-            .as_array()
-            .expect("denyWrite should exist for project-relative paths");
-        let deny_write_strs: Vec<&str> =
-            deny_write.iter().filter_map(|v| v.as_str()).collect();
+        // OS sandbox denyWrite must NOT contain parent-traversal paths or knowledge paths
+        // Both are filtered: parent-traversal resolves too broadly in sandbox-exec,
+        // and knowledge paths block `loom knowledge update` CLI (excludedCommands
+        // doesn't bypass OS-level filesystem restrictions).
         assert!(
-            !deny_write_strs.contains(&"../../**"),
-            "../../** must NOT be in sandbox.filesystem.denyWrite"
-        );
-        // Project-relative paths should remain
-        assert!(
-            deny_write_strs.contains(&"doc/loom/knowledge/**"),
-            "Project-relative paths should stay in sandbox.filesystem.denyWrite"
+            json["sandbox"]["filesystem"].is_null(),
+            "filesystem block should not exist when all deny_write paths are filtered"
         );
         // allowWrite must NOT be present (causes OS sandbox to block reads)
         assert!(
-            json["sandbox"]["filesystem"]["allowWrite"].is_null(),
+            json["sandbox"]["filesystem"].is_null()
+                || json["sandbox"]["filesystem"]["allowWrite"].is_null(),
             "allowWrite must NOT be in sandbox.filesystem"
         );
 
