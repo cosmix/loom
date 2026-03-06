@@ -181,7 +181,19 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     let mut allow: Vec<Value> = Vec::new();
 
     // Add deny_read paths (prompts before allowing Read tool on these)
+    //
+    // IMPORTANT: Filter out parent-traversal paths (../) from deny_read.
+    // Claude Code leaks permissions.deny entries into the OS-level sandbox
+    // (macOS sandbox-exec). Parent-traversal paths like ../../** get resolved
+    // relative to the project root — from /Users/foo/src/project, ../../**
+    // resolves to /Users/foo/**, blocking reads to the ENTIRE home directory.
+    // This breaks git (~/.gitconfig) and zsh (~/.claude/shell-snapshots/).
+    // Write-side parent-traversal in permissions.deny is harmless because
+    // the write sandbox already uses allowOnly with a narrow list.
     for path in &config.filesystem.deny_read {
+        if path.contains("../") {
+            continue;
+        }
         deny.push(json!(format!("Read({})", path)));
     }
 
@@ -310,8 +322,15 @@ fn merge_existing_permissions(new_settings: &mut Value, existing_settings: &Valu
                 .filter_map(|v| v.as_str().map(String::from))
                 .collect();
 
-            // Add existing permissions
+            // Add existing permissions, filtering out stale entries that
+            // would be harmful if leaked into the OS sandbox:
+            // - Read() entries with parent-traversal (../) resolve too broadly
+            // - Read() entries with absolute home paths from old loom versions
+            //   get mangled by Claude Code (project root prepended)
             for perm in existing_deny {
+                if perm.starts_with("Read(") && (perm.contains("../") || perm.starts_with("Read(/")) {
+                    continue;
+                }
                 all_deny.insert(perm);
             }
 
@@ -364,12 +383,13 @@ mod tests {
         assert_eq!(json["sandbox"]["enabled"], true);
         assert_eq!(json["sandbox"]["autoAllowBashIfSandboxed"], true);
 
-        // Permissions for file tool restrictions (ALL deny_read paths)
+        // Permissions for file tool restrictions
+        // Parent-traversal deny_read paths (../../**) are filtered out because
+        // Claude Code leaks them into the OS sandbox where they resolve too broadly
         let deny = json["permissions"]["deny"].as_array().unwrap();
-        assert_eq!(deny.len(), 3);
+        assert_eq!(deny.len(), 2);
         assert_eq!(deny[0], "Read(~/.ssh/**)");
-        assert_eq!(deny[1], "Read(../../**)");
-        assert_eq!(deny[2], "Write(.work/**)");
+        assert_eq!(deny[1], "Write(.work/**)");
 
         let allow = json["permissions"]["allow"].as_array().unwrap();
         assert_eq!(allow.len(), 4);
@@ -595,6 +615,10 @@ mod tests {
         // Claude Code's OS sandbox (macOS sandbox-exec) becomes overly restrictive
         // when denyRead is present, blocking ~/.gitconfig and shell initialization.
         // deny_read paths are enforced via permissions.deny Read() entries instead.
+        // Parent-traversal paths (../) must also be filtered from permissions.deny
+        // because Claude Code leaks these into the OS sandbox, where sandbox-exec
+        // resolves them relative to the project root (e.g. ../../** from
+        // /Users/foo/src/project → /Users/foo/**, blocking the entire home dir).
         let config = MergedSandboxConfig {
             enabled: true,
             auto_allow: true,
@@ -621,12 +645,20 @@ mod tests {
             "filesystem block should not exist when no deny_write paths"
         );
 
-        // permissions.deny should have ALL paths
+        // permissions.deny should have non-traversal paths only
         let deny = json["permissions"]["deny"].as_array().unwrap();
         let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
         assert!(deny_strs.contains(&"Read(~/.ssh/**)"));
-        assert!(deny_strs.contains(&"Read(../../**)"));
-        assert!(deny_strs.contains(&"Read(../.worktrees/**)"));
+        // Parent-traversal paths must NOT be in permissions.deny because Claude Code
+        // leaks them into the OS sandbox where they resolve too broadly
+        assert!(
+            !deny_strs.contains(&"Read(../../**)"),
+            "../../** must NOT be in permissions.deny Read() (leaks into OS sandbox)"
+        );
+        assert!(
+            !deny_strs.contains(&"Read(../.worktrees/**)"),
+            "../.worktrees/** must NOT be in permissions.deny Read() (leaks into OS sandbox)"
+        );
     }
 
     #[test]
@@ -900,10 +932,12 @@ mod tests {
         assert!(allow_strs.contains(&"Write(src/**)"));
         assert!(allow_strs.contains(&"Read(.work/signals/**)"));
 
-        // permissions.deny includes ALL paths (including ~/)
+        // permissions.deny includes non-traversal deny_read paths
         let deny = result["permissions"]["deny"].as_array().unwrap();
         let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
         assert!(deny_strs.contains(&"Read(~/.ssh/**)"));
+        // Parent-traversal paths filtered out (leaked into OS sandbox otherwise)
+        assert!(!deny_strs.contains(&"Read(../../**)"));
 
         // Sandbox filesystem should NOT have denyRead or allowWrite
         assert!(
