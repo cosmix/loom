@@ -1,7 +1,7 @@
 //! Tree-based execution graph widget for TUI display
 //!
-//! Renders stages as a vertical tree with connectors and dependency annotations,
-//! matching the display format used by `loom graph`.
+//! Renders stages as a vertical tree with connectors, dependency annotations,
+//! and elapsed time for executing and completed stages.
 
 use std::collections::HashMap;
 
@@ -16,7 +16,7 @@ use ratatui::{
 use super::theme::{StatusColors, Theme};
 use crate::models::stage::{Stage, StageStatus};
 use crate::plan::graph::levels;
-use crate::utils::{context_pct_tui_color, format_elapsed};
+use crate::utils::format_elapsed;
 
 /// Available terminal colors for stage differentiation
 const STAGE_COLORS: [Color; 16] = [
@@ -48,12 +48,49 @@ fn compute_stage_levels(stages: &[Stage]) -> HashMap<String, usize> {
     levels::compute_all_levels(stages, |s| s.id.as_str(), |s| &s.dependencies)
 }
 
+/// Compute elapsed time string for a stage based on its status and timestamps
+fn compute_stage_elapsed(stage: &Stage) -> Option<String> {
+    match stage.status {
+        StageStatus::Executing => stage.started_at.map(|start| {
+            let secs = chrono::Utc::now()
+                .signed_duration_since(start)
+                .num_seconds();
+            format_elapsed(secs)
+        }),
+        StageStatus::Completed | StageStatus::CompletedWithFailures | StageStatus::Skipped => {
+            if let Some(d) = stage.duration_secs {
+                Some(format_elapsed(d))
+            } else {
+                match (stage.started_at, stage.completed_at) {
+                    (Some(start), Some(end)) => {
+                        Some(format_elapsed(end.signed_duration_since(start).num_seconds()))
+                    }
+                    _ => None,
+                }
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Truncate a string to fit within budget, appending ".." if truncated
+fn truncate_id(id: &str, budget: usize) -> String {
+    if id.len() <= budget {
+        id.to_string()
+    } else if budget >= 5 {
+        format!("{}..", &id[..budget - 2])
+    } else if budget > 0 {
+        id[..budget].to_string()
+    } else {
+        String::new()
+    }
+}
+
 /// Tree-based execution graph widget
 pub struct TreeWidget<'a> {
     stages: &'a [Stage],
     block: Option<Block<'a>>,
-    context_percentages: HashMap<String, f32>,
-    elapsed_times: HashMap<String, i64>,
+    max_width: Option<usize>,
 }
 
 impl<'a> TreeWidget<'a> {
@@ -61,8 +98,7 @@ impl<'a> TreeWidget<'a> {
         Self {
             stages,
             block: None,
-            context_percentages: HashMap::new(),
-            elapsed_times: HashMap::new(),
+            max_width: None,
         }
     }
 
@@ -71,13 +107,8 @@ impl<'a> TreeWidget<'a> {
         self
     }
 
-    pub fn context_percentages(mut self, percentages: HashMap<String, f32>) -> Self {
-        self.context_percentages = percentages;
-        self
-    }
-
-    pub fn elapsed_times(mut self, times: HashMap<String, i64>) -> Self {
-        self.elapsed_times = times;
+    pub fn max_width(mut self, width: usize) -> Self {
+        self.max_width = Some(width);
         self
     }
 
@@ -113,8 +144,7 @@ impl<'a> TreeWidget<'a> {
             *level_counts.entry(level).or_insert(0) += 1;
         }
 
-        let max_id_width = sorted_stages.iter().map(|s| s.id.len()).max().unwrap_or(0);
-
+        let max_w = self.max_width.unwrap_or(200);
         let mut lines = Vec::new();
 
         for (global_index, stage) in sorted_stages.iter().enumerate() {
@@ -122,8 +152,6 @@ impl<'a> TreeWidget<'a> {
             let index_in_level = *level_indices.entry(level).or_insert(0);
             let level_size = level_counts.get(&level).copied().unwrap_or(1);
             let is_last_level = level == max_level;
-
-            let mut spans = Vec::new();
 
             // Tree connector
             let indent = "    ".repeat(level);
@@ -134,60 +162,74 @@ impl<'a> TreeWidget<'a> {
             } else {
                 format!("{indent}├── ")
             };
-            spans.push(Span::styled(connector, Theme::dimmed()));
 
-            // Status indicator
-            let indicator = stage.status.icon();
-            spans.push(Span::styled(
-                indicator.to_string(),
-                stage.status.tui_style(),
-            ));
-            spans.push(Span::raw(" "));
+            // Pre-compute parts for width calculation
+            let elapsed = compute_stage_elapsed(stage);
+            let elapsed_text = elapsed
+                .as_ref()
+                .map(|s| format!("  {s}"))
+                .unwrap_or_default();
 
-            // Stage ID with color
+            let deps_joined = stage.dependencies.join(", ");
+            let deps_prefix = if stage.dependencies.is_empty() {
+                ""
+            } else {
+                "  ← "
+            };
+
+            // Width accounting
+            let connector_w = connector.chars().count();
+            let icon_w = 2; // icon char + space
+            let elapsed_w = elapsed_text.chars().count();
+            let deps_w = deps_prefix.len() + deps_joined.len();
+
+            // Budget for stage ID (runtime always visible, deps can shrink)
+            let fixed_w = connector_w + icon_w + elapsed_w + deps_w;
+            let id_budget = max_w.saturating_sub(fixed_w).max(8);
+            let id_display = truncate_id(&stage.id, id_budget);
+
+            // Recalculate available space for deps after ID truncation
+            let used_w = connector_w + icon_w + id_display.len() + elapsed_w;
+            let deps_budget = max_w.saturating_sub(used_w);
+
+            // Build spans
             let stage_color = color_by_index(global_index);
-            spans.push(Span::styled(
-                stage.id.clone(),
-                Style::default().fg(stage_color),
-            ));
+            let mut spans = vec![
+                Span::styled(connector, Theme::dimmed()),
+                Span::styled(stage.status.icon().to_string(), stage.status.tui_style()),
+                Span::raw(" "),
+                Span::styled(id_display, Style::default().fg(stage_color)),
+            ];
 
-            // Dependency annotation
-            if !stage.dependencies.is_empty() {
-                let padding = max_id_width.saturating_sub(stage.id.len()) + 2;
-                spans.push(Span::raw(" ".repeat(padding)));
-                spans.push(Span::styled("← ", Theme::dimmed()));
+            // Elapsed time (for executing and completed stages)
+            if let Some(ref el) = elapsed {
+                spans.push(Span::styled(format!("  {el}"), Theme::dimmed()));
+            }
 
-                let dep_spans: Vec<Span> = stage
-                    .dependencies
-                    .iter()
-                    .enumerate()
-                    .flat_map(|(i, dep)| {
-                        let mut dep_span_list = Vec::new();
+            // Dependencies
+            if !stage.dependencies.is_empty() && deps_budget >= 7 {
+                spans.push(Span::styled("  ← ", Theme::dimmed()));
+                let deps_content_budget = deps_budget.saturating_sub(4);
+
+                if deps_joined.len() <= deps_content_budget {
+                    // Full deps with colors
+                    for (i, dep) in stage.dependencies.iter().enumerate() {
                         if i > 0 {
-                            dep_span_list.push(Span::styled(", ", Theme::dimmed()));
+                            spans.push(Span::styled(", ", Theme::dimmed()));
                         }
                         let dep_color =
                             color_map.get(dep.as_str()).copied().unwrap_or(Color::White);
-                        dep_span_list
-                            .push(Span::styled(dep.clone(), Style::default().fg(dep_color)));
-                        dep_span_list
-                    })
-                    .collect();
-                spans.extend(dep_spans);
-            }
-
-            // Context percentage and elapsed time for executing stages
-            if matches!(stage.status, StageStatus::Executing) {
-                if let Some(&ctx_pct) = self.context_percentages.get(&stage.id) {
-                    let ctx_str = format!(" [{:.0}%]", ctx_pct * 100.0);
-                    let color = context_pct_tui_color(ctx_pct * 100.0);
-                    let ctx_style = Style::default().fg(color);
-                    spans.push(Span::styled(ctx_str, ctx_style));
-                }
-
-                if let Some(&secs) = self.elapsed_times.get(&stage.id) {
-                    let elapsed = format_elapsed(secs);
-                    spans.push(Span::styled(format!(" {elapsed}"), Theme::dimmed()));
+                        spans.push(Span::styled(
+                            dep.clone(),
+                            Style::default().fg(dep_color),
+                        ));
+                    }
+                } else if deps_content_budget >= 5 {
+                    let truncated =
+                        format!("{}..", &deps_joined[..deps_content_budget.saturating_sub(2)]);
+                    spans.push(Span::styled(truncated, Theme::dimmed()));
+                } else {
+                    spans.push(Span::styled("...", Theme::dimmed()));
                 }
             }
 
@@ -196,7 +238,7 @@ impl<'a> TreeWidget<'a> {
             // Increment index for this level
             *level_indices.get_mut(&level).unwrap() += 1;
 
-            // Show base branch info for executing or queued stages
+            // Base branch info for executing or queued stages (if available)
             if matches!(stage.status, StageStatus::Executing | StageStatus::Queued) {
                 if let Some(ref base_branch) = stage.base_branch {
                     let mut base_spans = Vec::new();
@@ -218,8 +260,10 @@ impl<'a> TreeWidget<'a> {
                                 if i > 0 {
                                     list.push(Span::styled(", ", Theme::dimmed()));
                                 }
-                                let dep_color =
-                                    color_map.get(dep.as_str()).copied().unwrap_or(Color::White);
+                                let dep_color = color_map
+                                    .get(dep.as_str())
+                                    .copied()
+                                    .unwrap_or(Color::White);
                                 list.push(Span::styled(
                                     dep.clone(),
                                     Style::default().fg(dep_color),
@@ -251,7 +295,7 @@ impl<'a> TreeWidget<'a> {
 }
 
 impl Widget for TreeWidget<'_> {
-    fn render(self, area: Rect, buf: &mut Buffer) {
+    fn render(mut self, area: Rect, buf: &mut Buffer) {
         // Apply block if present
         let inner_area = if let Some(ref block) = self.block {
             let inner = block.inner(area);
@@ -263,6 +307,11 @@ impl Widget for TreeWidget<'_> {
 
         if inner_area.width < 2 || inner_area.height < 1 {
             return;
+        }
+
+        // Auto-set max_width from render area if not explicitly set
+        if self.max_width.is_none() {
+            self.max_width = Some(inner_area.width as usize);
         }
 
         let lines = self.build_lines();

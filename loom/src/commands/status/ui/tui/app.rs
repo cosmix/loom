@@ -1,6 +1,5 @@
 //! TUI application state and main loop.
 
-use std::collections::HashMap;
 use std::io::{self, Stdout};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -23,21 +22,26 @@ use ratatui::{
 use super::daemon_client::{connect, is_socket_disconnected, subscribe};
 use super::event_handler::{handle_key_event, handle_mouse_event, KeyEventResult};
 use super::renderer::{
-    render_compact_footer, render_compact_header, render_completion, render_tree_graph,
-    render_unified_table, unified_stage_to_stage, GRAPH_AREA_HEIGHT,
+    render_activity_log, render_compact_footer, render_compact_header, render_completion,
+    render_tree_graph, stage_info_to_stage,
 };
-use super::state::{GraphState, LiveStatus};
+use super::state::{GraphState, LiveStatus, TuiActivityLog};
 use crate::commands::status::render::print_completion_summary;
 use crate::daemon::{
     read_auth_token, read_message, write_message, CompletionSummary, Request, Response,
 };
-use crate::models::stage::StageStatus;
 
 /// Poll timeout for event loop (100ms for responsive UI).
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
 /// Delay before auto-exit after completion (500ms).
 const COMPLETION_EXIT_DELAY: Duration = Duration::from_millis(500);
+
+/// Minimum height for the activity log area.
+const ACTIVITY_MIN_HEIGHT: u16 = 5;
+
+/// Maximum height for the activity log area.
+const ACTIVITY_MAX_HEIGHT: u16 = 10;
 
 /// TUI application state.
 pub struct TuiApp {
@@ -47,6 +51,7 @@ pub struct TuiApp {
     spinner_frame: usize,
     last_error: Option<String>,
     graph_state: GraphState,
+    activity_log: TuiActivityLog,
     mouse_enabled: bool,
     exiting: bool,
     completion_summary: Option<CompletionSummary>,
@@ -78,6 +83,7 @@ impl TuiApp {
             spinner_frame: 0,
             last_error: None,
             graph_state: GraphState::default(),
+            activity_log: TuiActivityLog::new(),
             mouse_enabled,
             exiting: false,
             completion_summary: None,
@@ -139,7 +145,6 @@ impl TuiApp {
             // Check if completion delay has elapsed for auto-exit
             if let Some(received_at) = self.completion_received_at {
                 if received_at.elapsed() >= COMPLETION_EXIT_DELAY {
-                    // Delay elapsed, exit cleanly
                     break;
                 }
             }
@@ -150,7 +155,6 @@ impl TuiApp {
                 }
                 Err(e) => {
                     if is_socket_disconnected(&e) {
-                        // If we already have completion summary, don't show error
                         if self.completion_summary.is_some() {
                             break;
                         }
@@ -200,6 +204,11 @@ impl TuiApp {
                     completed: stages_completed,
                     blocked: stages_blocked,
                 };
+
+                // Update activity log by detecting state transitions
+                let all_stages = self.status.all_stages();
+                self.activity_log.update(&all_stages);
+
                 self.last_error = None;
             }
             Response::OrchestrationComplete { summary } => {
@@ -252,33 +261,26 @@ impl TuiApp {
         let total = status.total();
         let completed_count = status.completed.len();
 
-        let unified_stages = status.unified_stages();
+        // Convert all stages to Stage structs for tree widget
+        let all_stages = status.all_stages();
+        let stages_for_graph: Vec<_> = all_stages.iter().map(|s| stage_info_to_stage(s)).collect();
 
-        let stages_for_graph: Vec<_> = unified_stages.iter().map(unified_stage_to_stage).collect();
-
-        let total_lines = unified_stages.iter().fold(0_u16, |acc, s| {
-            let base = 1;
-            let extra = if matches!(s.status, StageStatus::Executing | StageStatus::Queued) {
-                1
-            } else {
-                0
-            };
-            acc + base + extra
-        });
+        // Count lines for scroll tracking
+        let total_lines = stages_for_graph.len() as u16;
         self.graph_state.total_lines = total_lines;
 
         let scroll_y = self.graph_state.scroll_y;
 
-        let context_pcts = HashMap::new();
-        let mut elapsed_times = HashMap::new();
-        for stage in &unified_stages {
-            if let (Some(start), StageStatus::Executing) = (stage.started_at, &stage.status) {
-                let elapsed = chrono::Utc::now()
-                    .signed_duration_since(start)
-                    .num_seconds();
-                elapsed_times.insert(stage.id.clone(), elapsed);
-            }
-        }
+        // Calculate activity log height (adaptive)
+        let activity_count = self.activity_log.len();
+        let activity_height = if activity_count == 0 {
+            ACTIVITY_MIN_HEIGHT
+        } else {
+            // Inner height = entries shown + 2 (borders)
+            ((activity_count as u16) + 2).clamp(ACTIVITY_MIN_HEIGHT, ACTIVITY_MAX_HEIGHT)
+        };
+
+        let activity_log = &self.activity_log;
 
         self.terminal.draw(|frame| {
             let area = frame.area();
@@ -286,31 +288,28 @@ impl TuiApp {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(5),
-                    Constraint::Length(1),
-                    Constraint::Length(GRAPH_AREA_HEIGHT),
-                    Constraint::Length(1),
-                    Constraint::Min(6),
-                    Constraint::Length(1),
+                    Constraint::Length(5),              // Header (logo + progress)
+                    Constraint::Length(1),              // Spacer
+                    Constraint::Min(6),                 // Graph (adaptive, takes remaining)
+                    Constraint::Length(1),              // Spacer
+                    Constraint::Length(activity_height), // Activity log
+                    Constraint::Length(1),              // Footer
                 ])
                 .split(area);
 
             render_compact_header(frame, chunks[0], spinner, pct, completed_count, total);
 
-            render_tree_graph(
-                frame,
-                chunks[2],
-                &stages_for_graph,
-                scroll_y,
-                &context_pcts,
-                &elapsed_times,
-            );
+            render_tree_graph(frame, chunks[2], &stages_for_graph, scroll_y);
 
-            render_unified_table(frame, chunks[4], &unified_stages);
+            render_activity_log(frame, chunks[4], activity_log);
+
             render_compact_footer(frame, chunks[5], &last_error);
         })?;
 
-        self.graph_state.viewport_height = GRAPH_AREA_HEIGHT.saturating_sub(2);
+        // Update viewport height for scroll bounds (graph inner height)
+        let graph_height = self.terminal.size()?.height;
+        let graph_inner = graph_height.saturating_sub(5 + 1 + 1 + activity_height + 1 + 2); // borders
+        self.graph_state.viewport_height = graph_inner;
 
         Ok(())
     }

@@ -138,21 +138,41 @@ fn test_status_indicators() {
 }
 
 #[test]
-fn test_with_context_and_elapsed() {
-    let stages = vec![make_stage("exec", vec![], StageStatus::Executing)];
+fn test_with_elapsed_time() {
+    let mut stage = make_stage("exec", vec![], StageStatus::Executing);
+    stage.started_at = Some(Utc::now() - chrono::Duration::seconds(120));
+    let stages = vec![stage];
 
-    let mut ctx = HashMap::new();
-    ctx.insert("exec".to_string(), 0.45);
-
-    let mut elapsed = HashMap::new();
-    elapsed.insert("exec".to_string(), 120_i64);
-
-    let widget = TreeWidget::new(&stages)
-        .context_percentages(ctx)
-        .elapsed_times(elapsed);
-
+    let widget = TreeWidget::new(&stages);
     let lines = widget.build_lines();
     assert_eq!(lines.len(), 1);
+}
+
+#[test]
+fn test_completed_stage_shows_duration() {
+    let mut stage = make_stage("done", vec![], StageStatus::Completed);
+    stage.duration_secs = Some(300);
+    let stages = vec![stage];
+
+    let widget = TreeWidget::new(&stages);
+    let lines = widget.build_lines();
+    assert_eq!(lines.len(), 1);
+}
+
+#[test]
+fn test_truncation_with_max_width() {
+    let stages = vec![
+        make_stage("knowledge-bootstrap", vec![], StageStatus::Completed),
+        make_stage(
+            "very-long-stage-name-that-should-truncate",
+            vec!["knowledge-bootstrap"],
+            StageStatus::Executing,
+        ),
+    ];
+
+    let widget = TreeWidget::new(&stages).max_width(50);
+    let lines = widget.build_lines();
+    assert_eq!(lines.len(), 2);
 }
 
 #[test]

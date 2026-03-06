@@ -32,8 +32,11 @@ else
 	INPUT_JSON=$(cat 2>/dev/null || true)
 fi
 
-# Debug logging
+# Debug logging (fallback to /dev/null if log path not writable)
 DEBUG_LOG="/tmp/commit-filter-debug.log"
+if ! touch "$DEBUG_LOG" 2>/dev/null; then
+	DEBUG_LOG=/dev/null
+fi
 {
 	echo "=== $(date) ==="
 	echo "INPUT_JSON: $INPUT_JSON"
