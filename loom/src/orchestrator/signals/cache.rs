@@ -208,7 +208,7 @@ pub fn generate_stable_prefix() -> String {
     content.push_str("- **Silent Failure Check**: Review ALL command output. Did stderr contain warnings despite exit 0?\n");
     content.push_str("  Look for: \"connection refused\", \"permission denied\", \"failed to download\", \"blocked\", \"error:\"\n");
     content.push_str("  If sandbox blocked something you need — STOP and report as blocker, do NOT work around silently\n");
-    content.push_str("- **Code Correctness**: Error paths handled? No TODO/FIXME? Tests actually test the feature?\n");
+    content.push_str("- **Code Correctness**: Error paths handled? No incomplete stubs or placeholders? Tests actually test the feature?\n");
     content.push_str("- **Integration Points**: Callbacks connected? Events published? Dependencies available?\n\n");
 
     content.push_str("**Stage Memory - MEMORY ONLY (MANDATORY):**\n\n");

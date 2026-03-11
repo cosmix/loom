@@ -94,7 +94,7 @@ Complete ALL items before marking stage complete:
 □ Integration points connected
 
 **CODE QUALITY:**
-□ No TODO/FIXME comments
+□ No incomplete stubs or placeholder comments
 □ Error handling complete
 □ Tests exist for new functionality
 
@@ -238,7 +238,7 @@ one stage over creating additional stages.
 
 ### 2. NO PLACEHOLDERS
 
-**BANNED:** `TODO`, `FIXME`, `pass`, stubs, empty bodies, pseudocode
+**BANNED:** Incomplete markers, placeholder tags, `pass`, stubs, empty bodies, pseudocode
 
 Write complete code NOW. Unknown? ASK. Complex? DECOMPOSE.
 
@@ -863,7 +863,7 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 **BEFORE EVERY PLAN:**
 □ Explore codebase FIRST (spawn Explore subagents)
 □ Review doc/loom/knowledge/ (especially architecture.md)
-□ Create TODO with "REUSE:" annotations
+□ Create task list with "REUSE:" annotations
 □ ASK user about sandbox requirements (network access, sensitive paths)
 □ Run `loom repair` to detect and fix project issues
 
@@ -871,7 +871,7 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 □ loom memory note/decision recorded for insights
 □ loom memory list (verify insights captured)
 □ Feature wired in and smoke test passes
-□ No TODO/FIXME, no security issues
+□ No incomplete stubs or placeholders, no security issues
 □ git add <specific-files> && commit
 
 **PLAN STRUCTURE:**
