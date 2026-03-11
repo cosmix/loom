@@ -1,3 +1,4 @@
+pub mod claude;
 pub mod commands;
 pub mod completions;
 pub mod daemon;
