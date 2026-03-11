@@ -71,8 +71,8 @@ pub fn execute(model: Option<String>, skip_map: bool, quick: bool) -> Result<()>
 
     if !status.success() {
         let code = status.code().unwrap_or(-1);
-        if code == 130 || code == 2 {
-            // User interrupted (Ctrl+C)
+        if code == 130 {
+            // User interrupted (Ctrl+C / SIGINT)
             println!("\n{} Session interrupted by user.", "─".dimmed());
         } else {
             println!(
@@ -246,4 +246,78 @@ fn print_summary(knowledge: &KnowledgeDir) -> Result<()> {
     println!("  Run '{}' to view results.", "loom knowledge show".cyan());
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_system_prompt_without_existing_knowledge() {
+        let prompt = build_system_prompt("");
+        assert!(prompt.contains("senior software architect"));
+        assert!(prompt.contains("loom knowledge update"));
+        assert!(prompt.contains("architecture.md"));
+        assert!(!prompt.contains("Existing Knowledge"));
+    }
+
+    #[test]
+    fn test_build_system_prompt_with_existing_knowledge() {
+        let existing = "## Existing Knowledge (DO NOT DUPLICATE)\n\nSome prior knowledge.";
+        let prompt = build_system_prompt(existing);
+        assert!(prompt.contains("senior software architect"));
+        assert!(prompt.contains("Existing Knowledge"));
+        assert!(prompt.contains("Some prior knowledge."));
+    }
+
+    #[test]
+    fn test_build_initial_prompt_contains_agent_instructions() {
+        let prompt = build_initial_prompt();
+        assert!(prompt.contains("Agent 1"));
+        assert!(prompt.contains("Agent 2"));
+        assert!(prompt.contains("Agent 3"));
+        assert!(prompt.contains("Agent 4"));
+        assert!(prompt.contains("architecture.md"));
+        assert!(prompt.contains("conventions.md"));
+        assert!(prompt.contains("concerns.md"));
+    }
+
+    #[test]
+    fn test_read_existing_knowledge_empty_dir() {
+        let knowledge = KnowledgeDir::new("/nonexistent/path");
+        let result = read_existing_knowledge(&knowledge);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_read_existing_knowledge_skips_short_files() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let knowledge = KnowledgeDir::new(temp.path());
+        // Create a knowledge dir with only a short file (<=5 lines)
+        std::fs::create_dir_all(knowledge.root()).unwrap();
+        std::fs::write(
+            knowledge.file_path(KnowledgeFile::Architecture),
+            "# Architecture\n\n> Short.\n",
+        )
+        .unwrap();
+        let result = read_existing_knowledge(&knowledge);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_read_existing_knowledge_includes_populated_files() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let knowledge = KnowledgeDir::new(temp.path());
+        knowledge.initialize().unwrap();
+        // Add substantial content that exceeds 5-line threshold
+        knowledge
+            .append(
+                KnowledgeFile::Architecture,
+                "## Overview\n\nLine 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6",
+            )
+            .unwrap();
+        let result = read_existing_knowledge(&knowledge);
+        assert!(result.contains("Existing Knowledge"));
+        assert!(result.contains("## Overview"));
+    }
 }
