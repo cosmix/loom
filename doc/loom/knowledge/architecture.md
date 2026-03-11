@@ -301,3 +301,35 @@ StageStatus has 12 variants (not 11): WaitingForDeps, Queued, Executing, Complet
 5. macOS native apps (/Applications/Ghostty.app, /Applications/iTerm.app, Terminal.app fallback)
 
 Note: $TERM_PROGRAM is NOT checked. Ghostty detection only checks /Applications path.
+
+## find_claude_path() Function (orchestrator/terminal/native/mod.rs)
+
+Binary resolution strategy:
+
+1. `which::which("claude")` — PATH lookup
+2. `~/.claude/local/claude` — Official Claude Code install (priority fallback)
+3. `~/.local/bin/claude` — Linux user-local
+4. `~/.cargo/bin/claude` — Cargo installations
+5. `/usr/local/bin/claude` — Standard UNIX
+6. `/opt/homebrew/bin/claude` — Homebrew macOS
+
+Dependencies: `which` crate, `dirs` crate (home dir), `anyhow` (error handling). Returns `Result<PathBuf>`.
+
+Planned extraction: Move to `crate::claude::find_claude_path()` as shared module to avoid duplication between terminal spawner and bootstrap command.
+
+## KnowledgeDir API (fs/knowledge/dir.rs)
+
+Core API for knowledge file management:
+
+- `KnowledgeDir::new(project_root)` — Constructor from project root path
+- `exists() -> bool` — Check if knowledge directory exists
+- `has_content() -> bool` — Check if files have content
+- `initialize() -> Result<()>` — Create directory with template files (idempotent)
+- `file_path(KnowledgeFile) -> PathBuf` — Resolve file path
+- `read(KnowledgeFile) -> Result<String>` — Read single file
+- `read_all() -> Result<Vec<(KnowledgeFile, String)>>` — Read all files
+- `append(KnowledgeFile, content) -> Result<()>` — Append content (append-only design)
+- `generate_summary() -> Result<String>` — Summary of all knowledge
+- `list_files() -> Result<Vec<(KnowledgeFile, PathBuf)>>` — List file paths
+
+KnowledgeFile enum: Architecture, EntryPoints, Patterns, Conventions, Mistakes, Stack, Concerns. Has `filename()`, `from_filename()`, `all()` methods.

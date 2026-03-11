@@ -262,3 +262,53 @@ Key files:
 - `src/orchestrator/monitor/detection.rs:147-148` - Session exit recognition
 - `src/orchestrator/core/merge_handler.rs` - Recovery session spawning
 - `src/commands/worktree_cmd.rs:239` - mark_stage_merged function
+
+## CLI Subcommand Registration Pattern (for KnowledgeCommands)
+
+Three-step pattern to add a new knowledge subcommand:
+
+### Step 1: Define variant in cli/types_memory.rs
+
+- Add variant to KnowledgeCommands enum with `#[derive(Subcommand)]`
+- Use `///` doc comments for help text
+- Positional args: `#[arg(value_name = "NAME")]`
+- Named flags: `#[arg(long)]` or `#[arg(short = 'x', long)]`
+- Defaults: `#[arg(long, default_value = "...")]`
+- Booleans: `#[arg(short, long)]` with type `bool`
+
+### Step 2: Add dispatch arm in cli/dispatch.rs (lines 114-128)
+
+- Destructure variant fields in match arm
+- Call handler function: `knowledge::submodule::execute(args...)` for complex commands
+- Or `knowledge::verb(args...)` for simple commands
+
+### Step 3: Implement handler in commands/knowledge/
+
+- Add `pub mod submodule;` to commands/knowledge/mod.rs
+- Create submodule file with `pub fn execute(...) -> Result<()>`
+
+### Existing variants for reference
+
+- Check { min_coverage, src_path, quiet } → knowledge::check::check()
+- Gc { max_file_lines, max_total_lines, quiet } → knowledge::gc::gc()
+- Show { file } → knowledge::show()
+- Update { file, content } → knowledge::update()
+- Init (unit) → knowledge::init()
+- List (unit) → knowledge::list()
+
+## Process Spawning Pattern (for bootstrap)
+
+The bootstrap command will spawn claude as a direct child process (not via terminal emulator). Pattern:
+
+1. Resolve claude path via find_claude_path()
+2. Build Command::new(claude_path) with args, env, inherited stdio
+3. Wait for exit, check status
+
+This differs from orchestrator spawning which uses terminal emulators + wrapper scripts + PID tracking. Bootstrap uses simple inherited-stdio child process.
+
+## Subprocess Spawning Pattern (bootstrap.rs)
+
+- Use `std::process::Command` with inherited stdio for interactive subprocesses
+- `--permission-mode auto` + `--allowedTools` for restricted tool access
+- `--system-prompt` for behavior control, positional arg for initial prompt
+- Handle Ctrl+C (exit codes 130, 2) separately from other failures

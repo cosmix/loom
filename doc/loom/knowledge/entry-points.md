@@ -212,6 +212,7 @@
 ## Command Dispatch (Updated 2026-03-05)
 
 The previous command dispatch table is STALE. The following commands NO LONGER EXIST:
+
 - `merge` (was commands/merge/execute/mod.rs) — REMOVED
 - `attach` (was commands/attach.rs) — REMOVED
 
@@ -243,3 +244,27 @@ Current CLI commands (from cli/types.rs):
 | `completions`| Static shell completion          | Generate shell completions           |
 
 Total: 22 visible commands + 1 hidden (complete for dynamic completions)
+
+## Knowledge Bootstrap Command (Planned)
+
+### CLI Registration Points
+
+- `loom/src/cli/types_memory.rs` — KnowledgeCommands enum: Add `Bootstrap` variant with `--model`, `--skip-map`, `--quick` flags
+- `loom/src/cli/dispatch.rs:114-128` — Knowledge dispatch match arm: Add `KnowledgeCommands::Bootstrap { ... } => knowledge::bootstrap::execute(...)`
+- `loom/src/commands/knowledge/mod.rs` — Add `pub mod bootstrap;` export
+
+### find_claude_path() Extraction Target
+
+- `loom/src/orchestrator/terminal/native/mod.rs` — Current location of find_claude_path() (4 callers: spawn_session, spawn_merge_session, spawn_base_conflict_session, spawn_knowledge_session)
+- `loom/src/claude.rs` — Planned extraction target (shared module)
+
+### Map Module Reuse Points
+
+- `loom/src/map/analyzer.rs` — `analyze_codebase(root, deep, focus) -> AnalysisResult`
+- `loom/src/commands/map.rs` — `write_analysis_results(knowledge, result, overwrite)` pattern
+- `loom/src/map/mod.rs` — Exports: `analyze_codebase`, `AnalysisResult`
+
+## Knowledge Bootstrap Command
+
+- `src/commands/knowledge/bootstrap.rs` - `loom knowledge bootstrap` implementation: spawns Claude Code as interactive subprocess to explore and populate knowledge files
+- `src/claude.rs` - Shared `find_claude_path()` utility: resolves claude binary via PATH then fallback locations (~/.claude/local/claude, ~/.local/bin, etc.)
