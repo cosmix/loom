@@ -114,6 +114,7 @@ pub fn stage_info_to_stage(info: &StageInfo) -> Stage {
         review_reason: None,
         bug_fix: None,
         regression_test: None,
+        model: None,
     }
 }
 

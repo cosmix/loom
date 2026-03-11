@@ -63,6 +63,7 @@ fn test_create_stage_from_definition_no_dependencies() {
         execution_mode: None,
         bug_fix: None,
         regression_test: None,
+        model: None,
     };
 
     let stage = create_stage_from_definition(&stage_def, "plan-001");
@@ -102,6 +103,7 @@ fn test_create_stage_from_definition_with_dependencies() {
         execution_mode: None,
         bug_fix: None,
         regression_test: None,
+        model: None,
     };
 
     let stage = create_stage_from_definition(&stage_def, "plan-002");
@@ -169,6 +171,7 @@ fn test_serialize_stage_to_markdown_minimal() {
         review_reason: None,
         bug_fix: None,
         regression_test: None,
+        model: None,
     };
 
     let content = serialize_stage_to_markdown(&stage).unwrap();
@@ -235,6 +238,7 @@ fn test_serialize_stage_to_markdown_with_all_fields() {
         review_reason: None,
         bug_fix: None,
         regression_test: None,
+        model: None,
     };
 
     let content = serialize_stage_to_markdown(&stage).unwrap();
@@ -297,6 +301,7 @@ fn test_initialize_with_plan_creates_config() {
         execution_mode: None,
         bug_fix: None,
         regression_test: None,
+        model: None,
     };
 
     let plan_path = create_test_plan(temp_dir.path(), vec![stage_def]);
@@ -347,6 +352,7 @@ fn test_initialize_with_plan_creates_stage_files() {
             execution_mode: None,
             bug_fix: None,
             regression_test: None,
+            model: None,
         },
         StageDefinition {
             id: "stage-2".to_string(),
@@ -373,6 +379,7 @@ fn test_initialize_with_plan_creates_stage_files() {
             execution_mode: None,
             bug_fix: None,
             regression_test: None,
+            model: None,
         },
     ];
 

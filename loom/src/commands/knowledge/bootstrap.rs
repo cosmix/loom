@@ -40,20 +40,20 @@ pub fn execute(model: Option<String>, skip_map: bool, quick: bool) -> Result<()>
     let initial_prompt = build_initial_prompt();
 
     // Spawn Claude session
+    let effective_model = model.unwrap_or_else(|| "sonnet".to_string());
+
     println!(
         "\n{} Spawning Claude session for knowledge exploration...\n",
         "→".cyan().bold()
     );
+    println!("  {} Model: {}", "→".cyan(), effective_model.cyan());
 
     let mut cmd = Command::new(&claude_path);
     cmd.arg("--permission-mode").arg("auto");
     cmd.arg("--allowedTools")
         .arg("Read,Glob,Grep,Bash(loom knowledge*),Agent");
     cmd.arg("--system-prompt").arg(&system_prompt);
-
-    if let Some(ref m) = model {
-        cmd.arg("--model").arg(m);
-    }
+    cmd.arg("--model").arg(&effective_model);
 
     if quick {
         cmd.arg("-p");

@@ -46,5 +46,6 @@ pub fn create_stage_def(id: &str, name: &str, deps: Vec<String>) -> StageDefinit
         execution_mode: None,
         bug_fix: None,
         regression_test: None,
+        model: None,
     }
 }

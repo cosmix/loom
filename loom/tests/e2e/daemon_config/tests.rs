@@ -83,6 +83,7 @@ fn test_auto_merge_config_cascade() {
         execution_mode: None,
         bug_fix: None,
         regression_test: None,
+        model: None,
     };
 
     assert_eq!(stage_with_auto_merge.auto_merge, Some(true));
@@ -113,6 +114,7 @@ fn test_auto_merge_config_cascade() {
         execution_mode: None,
         bug_fix: None,
         regression_test: None,
+        model: None,
     };
 
     assert_eq!(stage_without_override.auto_merge, None);

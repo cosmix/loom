@@ -83,6 +83,7 @@ mod tests {
             execution_mode: None,
             bug_fix: None,
             regression_test: None,
+            model: None,
         }];
 
         ExecutionGraph::build(stages).unwrap()

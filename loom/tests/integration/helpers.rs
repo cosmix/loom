@@ -113,6 +113,7 @@ pub fn build_test_graph(stages: Vec<(&str, Vec<&str>)>) -> ExecutionGraph {
             execution_mode: None,
             bug_fix: None,
             regression_test: None,
+            model: None,
         })
         .collect();
 

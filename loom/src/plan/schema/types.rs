@@ -305,6 +305,10 @@ pub struct StageDefinition {
     /// Regression test requirement (required when bug_fix is true)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub regression_test: Option<RegressionTest>,
+    /// Model override for this stage (e.g., "sonnet", "opus", "haiku")
+    /// When set, Claude Code sessions for this stage use this model
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 impl StageDefinition {

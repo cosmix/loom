@@ -70,6 +70,7 @@ impl StageFrontmatter {
             execution_mode: self.execution_mode,
             bug_fix: None,
             regression_test: None,
+            model: None,
         }
     }
 }

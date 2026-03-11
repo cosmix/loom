@@ -62,6 +62,7 @@ fn setup_work_dir_with_plan(temp_dir: &TempDir) -> (PathBuf, WorkDir) {
         execution_mode: None,
         bug_fix: None,
         regression_test: None,
+        model: None,
     };
 
     let plan_path = create_test_plan(temp_dir.path(), vec![stage_def]);

@@ -316,6 +316,7 @@ mod tests {
             review_reason: None,
             bug_fix: None,
             regression_test: None,
+            model: None,
         }
     }
 
