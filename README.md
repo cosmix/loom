@@ -43,6 +43,8 @@ loom stop
 
 `dev-install.sh` builds the release binary (`cargo build --release`) and runs `install.sh`, which copies agents, skills, hooks, and configuration into `~/.claude/` and the CLI binary to `~/.local/bin/loom`.
 
+`loom init` now also installs/configures project hook wiring automatically. For an existing repo that is missing Claude Code hook setup, run `loom repair --fix`.
+
 ### What Gets Installed
 
 | Location | Contents |
@@ -113,16 +115,18 @@ loom knowledge init
 loom knowledge list
 loom knowledge check [--min-coverage N] [--src-path <path>] [--quiet]
 loom knowledge gc [--max-file-lines N] [--max-total-lines N] [--quiet]
+loom knowledge bootstrap [--model <name>] [--skip-map] [--quick]
 
-loom memory note <text> [--session <id>]
-loom memory decision <text> [--context <why>] [--session <id>]
-loom memory question <text> [--session <id>]
-loom memory query <search> [--session <id>]
-loom memory list [--session <id>] [--entry-type <type>]
-loom memory show [--session <id>]
-loom memory sessions
-loom memory promote <entry-type|all> <target> [--session <id>]
+loom memory note <text> [--stage <id>]
+loom memory decision <text> [--context <why>] [--stage <id>]
+loom memory change <text> [--stage <id>]
+loom memory question <text> [--stage <id>]
+loom memory query <search> [--stage <id>]
+loom memory list [--stage <id>] [--entry-type <type>]
+loom memory show [--stage <id>] [--all]
 ```
+
+`loom knowledge bootstrap` launches a Claude-driven exploration session that populates `doc/loom/knowledge/`. By default it runs a deep `loom map` pass first, then starts Claude with permission to update knowledge files via `loom knowledge update`.
 
 ### Other Commands
 
