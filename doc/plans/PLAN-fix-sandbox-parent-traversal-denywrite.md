@@ -5,11 +5,13 @@
 Two errors are occurring in loom-managed worktree sessions (and even the main project session when `settings.local.json` was written by loom):
 
 1. **Shell snapshots blocked:**
+
    ```
    zsh:source:1: operation not permitted: /Users/dkaponis/.claude/shell-snapshots/snapshot-zsh-*.sh
    ```
 
 2. **`loom` CLI can't get CWD:**
+
    ```
    Error: Failed to get current directory
    Caused by: Operation not permitted (os error 1)
@@ -27,7 +29,8 @@ Filter parent-traversal paths (`../`) out of `sandbox.filesystem.denyWrite`. The
 
 Project-relative paths like `doc/loom/knowledge/**` are safe to keep in `sandbox.filesystem.denyWrite`.
 
-### Before (lines 136-146):
+### Before (lines 136-146)
+
 ```rust
 let mut fs_sandbox = json!({});
 if !config.filesystem.deny_write.is_empty() {
@@ -35,7 +38,8 @@ if !config.filesystem.deny_write.is_empty() {
 }
 ```
 
-### After:
+### After
+
 ```rust
 let mut fs_sandbox = json!({});
 // Filter parent-traversal paths from OS-level denyWrite.
@@ -74,5 +78,6 @@ cargo clippy -- -D warnings         # No warnings
 ```
 
 After building and installing, run a loom session and verify:
+
 - No `zsh:source: operation not permitted` errors on shell-snapshots
 - `loom memory` commands work without "Failed to get current directory"
