@@ -126,11 +126,9 @@ pub fn dispatch(command: Commands) -> Result<()> {
                 max_total_lines,
                 quiet,
             } => knowledge::gc::gc(max_file_lines, max_total_lines, quiet),
-            KnowledgeCommands::Bootstrap {
-                model,
-                skip_map,
-                quick,
-            } => knowledge::bootstrap::execute(model, skip_map, quick),
+            KnowledgeCommands::Bootstrap { model, skip_map } => {
+                knowledge::bootstrap::execute(model, skip_map)
+            }
         },
         Commands::Memory { command } => match command {
             MemoryCommands::Note { text, stage } => memory::note(text, stage),

@@ -1,8 +1,8 @@
-//! Knowledge bootstrap command - spawn interactive Claude session to explore and populate knowledge.
+//! Knowledge bootstrap command - spawn non-interactive Claude session to explore and populate knowledge.
 
 use anyhow::{Context, Result};
 use colored::Colorize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::claude::find_claude_path;
@@ -11,7 +11,7 @@ use crate::fs::work_dir::WorkDir;
 use crate::map::{analyze_codebase, AnalysisResult};
 
 /// Execute the knowledge bootstrap command
-pub fn execute(model: Option<String>, skip_map: bool, quick: bool) -> Result<()> {
+pub fn execute(model: Option<String>, skip_map: bool) -> Result<()> {
     let project_root = resolve_project_root()?;
     let claude_path = find_claude_path()?;
 
@@ -35,12 +35,15 @@ pub fn execute(model: Option<String>, skip_map: bool, quick: bool) -> Result<()>
     // Read existing knowledge for context embedding
     let existing_knowledge = read_existing_knowledge(&knowledge);
 
-    // Build prompts
-    let system_prompt = build_system_prompt(&existing_knowledge);
-    let initial_prompt = build_initial_prompt();
-
     // Spawn Claude session
     let effective_model = model.unwrap_or_else(|| "sonnet".to_string());
+
+    // Build prompts (model is embedded so subagents use the same model)
+    let system_prompt = build_system_prompt(&existing_knowledge, &effective_model);
+    let initial_prompt = build_initial_prompt(&effective_model);
+
+    // Write sandbox settings to restrict Claude's access
+    let settings_backup = write_bootstrap_sandbox(&project_root)?;
 
     println!(
         "\n{} Spawning Claude session for knowledge exploration...\n",
@@ -55,19 +58,20 @@ pub fn execute(model: Option<String>, skip_map: bool, quick: bool) -> Result<()>
     cmd.arg("--system-prompt").arg(&system_prompt);
     cmd.arg("--model").arg(&effective_model);
 
-    if quick {
-        cmd.arg("-p");
-    }
+    cmd.arg("-p");
 
     cmd.arg(&initial_prompt);
 
     cmd.env("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "1");
     cmd.current_dir(&project_root);
-    cmd.stdin(std::process::Stdio::inherit());
+    cmd.stdin(std::process::Stdio::null());
     cmd.stdout(std::process::Stdio::inherit());
     cmd.stderr(std::process::Stdio::inherit());
 
     let status = cmd.status().context("Failed to spawn Claude session")?;
+
+    // Restore original settings
+    restore_sandbox_settings(&project_root, settings_backup)?;
 
     if !status.success() {
         let code = status.code().unwrap_or(-1);
@@ -157,8 +161,8 @@ fn read_existing_knowledge(knowledge: &KnowledgeDir) -> String {
 }
 
 /// Build the system prompt for the Claude session.
-fn build_system_prompt(existing_knowledge: &str) -> String {
-    let mut prompt = String::from(
+fn build_system_prompt(existing_knowledge: &str, model: &str) -> String {
+    let mut prompt = format!(
         "You are a senior software architect exploring this codebase to populate knowledge files.\n\n\
          ## Your Goal\n\n\
          Populate the project's knowledge files using `loom knowledge update` commands.\n\n\
@@ -168,9 +172,10 @@ fn build_system_prompt(existing_knowledge: &str) -> String {
          3. Valid files: architecture, entry-points, patterns, conventions, mistakes, stack, concerns\n\
          4. Be specific: include file paths with line numbers (e.g., `src/auth.ts:45-80`)\n\
          5. Focus on PATTERNS and RELATIONSHIPS, not just listing files\n\
-         6. Each knowledge update should add a complete section with a ## heading\n\n\
+         6. Each knowledge update should add a complete section with a ## heading\n\
+         7. When spawning Agent subagents, ALWAYS set model: \"{model}\" so they use the same model\n\n\
          ## Strategy\n\n\
-         Use parallel Agent calls to explore 4 dimensions simultaneously:\n\
+         Use parallel Agent calls (with model: \"{model}\") to explore 4 dimensions simultaneously:\n\
          - Architecture and data flow -> architecture.md\n\
          - Patterns and conventions -> patterns.md, conventions.md\n\
          - Stack and entry points -> stack.md, entry-points.md\n\
@@ -188,10 +193,10 @@ fn build_system_prompt(existing_knowledge: &str) -> String {
 }
 
 /// Build the initial user prompt for the Claude session.
-fn build_initial_prompt() -> String {
-    String::from(
+fn build_initial_prompt(model: &str) -> String {
+    format!(
         "Explore this codebase and populate the knowledge files. \
-         Spawn 4 parallel agents to explore different dimensions:\n\n\
+         Spawn 4 parallel agents (set model: \"{model}\" on each) to explore different dimensions:\n\n\
          Agent 1 - Architecture: Map component relationships, data flow, module dependencies. \
          Write findings to architecture.md.\n\n\
          Agent 2 - Patterns & Conventions: Identify error handling patterns, state management, \
@@ -219,6 +224,71 @@ fn write_map_results(knowledge: &KnowledgeDir, result: &AnalysisResult) -> Resul
     if !result.concerns.is_empty() {
         knowledge.append(KnowledgeFile::Concerns, &result.concerns)?;
     }
+    Ok(())
+}
+
+/// Write sandbox settings for bootstrap session.
+///
+/// Returns the original settings content (if any) for restoration after the session.
+fn write_bootstrap_sandbox(project_root: &Path) -> Result<Option<String>> {
+    let claude_dir = project_root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).context("Failed to create .claude directory")?;
+
+    let settings_path = claude_dir.join("settings.local.json");
+
+    // Back up existing settings if present
+    let backup = if settings_path.exists() {
+        Some(
+            std::fs::read_to_string(&settings_path)
+                .context("Failed to read existing settings.local.json")?,
+        )
+    } else {
+        None
+    };
+
+    let settings = serde_json::json!({
+        "sandbox": {
+            "enabled": true,
+            "autoAllowBashIfSandboxed": true,
+            "excludedCommands": ["loom"]
+        },
+        "permissions": {
+            "allow": [
+                "Write(doc/loom/knowledge/**)",
+                "Bash(loom *)"
+            ],
+            "deny": [
+                "Read(~/.ssh/**)",
+                "Read(~/.aws/**)",
+                "Read(~/.config/gcloud/**)",
+                "Read(~/.gnupg/**)",
+                "Write(**)"
+            ]
+        }
+    });
+
+    let content =
+        serde_json::to_string_pretty(&settings).context("Failed to serialize sandbox settings")?;
+    std::fs::write(&settings_path, content).context("Failed to write sandbox settings")?;
+
+    Ok(backup)
+}
+
+/// Restore original settings after bootstrap session completes.
+fn restore_sandbox_settings(project_root: &Path, backup: Option<String>) -> Result<()> {
+    let settings_path = project_root.join(".claude").join("settings.local.json");
+
+    match backup {
+        Some(original) => {
+            std::fs::write(&settings_path, original)
+                .context("Failed to restore original settings.local.json")?;
+        }
+        None => {
+            // No original file existed — remove the one we created
+            let _ = std::fs::remove_file(&settings_path);
+        }
+    }
+
     Ok(())
 }
 
@@ -254,17 +324,18 @@ mod tests {
 
     #[test]
     fn test_build_system_prompt_without_existing_knowledge() {
-        let prompt = build_system_prompt("");
+        let prompt = build_system_prompt("", "sonnet");
         assert!(prompt.contains("senior software architect"));
         assert!(prompt.contains("loom knowledge update"));
         assert!(prompt.contains("architecture.md"));
         assert!(!prompt.contains("Existing Knowledge"));
+        assert!(prompt.contains("model: \"sonnet\""));
     }
 
     #[test]
     fn test_build_system_prompt_with_existing_knowledge() {
         let existing = "## Existing Knowledge (DO NOT DUPLICATE)\n\nSome prior knowledge.";
-        let prompt = build_system_prompt(existing);
+        let prompt = build_system_prompt(existing, "sonnet");
         assert!(prompt.contains("senior software architect"));
         assert!(prompt.contains("Existing Knowledge"));
         assert!(prompt.contains("Some prior knowledge."));
@@ -272,7 +343,7 @@ mod tests {
 
     #[test]
     fn test_build_initial_prompt_contains_agent_instructions() {
-        let prompt = build_initial_prompt();
+        let prompt = build_initial_prompt("sonnet");
         assert!(prompt.contains("Agent 1"));
         assert!(prompt.contains("Agent 2"));
         assert!(prompt.contains("Agent 3"));
@@ -280,6 +351,7 @@ mod tests {
         assert!(prompt.contains("architecture.md"));
         assert!(prompt.contains("conventions.md"));
         assert!(prompt.contains("concerns.md"));
+        assert!(prompt.contains("model: \"sonnet\""));
     }
 
     #[test]
