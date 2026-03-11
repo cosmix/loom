@@ -667,7 +667,7 @@ loom run                                 # Git branches preserve prior work
 
 ### Lifecycle
 
-```
+```bash
 loom repair --fix                    # Pre-flight health check
 loom init <plan>                     # Initialize from plan
 loom run                             # Start daemon
@@ -678,7 +678,7 @@ loom clean [--all|--worktrees]       # Cleanup
 
 ### Stage Management
 
-```
+```bash
 loom stage retry <id>                # Retry failed stage
 loom stage reset <id>                # Reset to queued
 loom stage recover <id>              # Recovery from crash
@@ -691,7 +691,7 @@ loom stage skip <id> --reason "..."  # Skip intentionally
 
 ### Debugging
 
-```
+```bash
 loom status --verbose                # Detailed failure info
 loom check <id> --suggest            # Goal-backward + fix suggestions
 loom diagnose <id>                   # Spawn diagnostic session
@@ -701,7 +701,7 @@ loom graph                           # Visualize execution DAG
 
 ### Memory & Knowledge
 
-```
+```bash
 loom memory note "..."               # Record insight
 loom memory decision "..." --context "..."  # Record decision
 loom memory list                     # Review entries
