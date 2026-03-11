@@ -177,7 +177,7 @@ Components:
 
 - types.rs: SkillMetadata (name, description, triggers), SkillMatch (name, description, score, matched_triggers)
 - matcher.rs: Keyword matching algorithm. Normalizes text (lowercase, underscore/hyphen → space). Phrase matches = 2 points, word matches = 1 point. Returns top N results above configurable threshold.
-- index.rs: SkillIndex - main API. load_from_directory() reads ~/.claude/skills/*/SKILL.md files, parses YAML frontmatter, builds trigger_map HashMap. match_skills() enforces score threshold of 2.0.
+- index.rs: SkillIndex - main API. load_from_directory() reads ~/.claude/skills/\*/SKILL.md files, parses YAML frontmatter, builds trigger_map HashMap. match_skills() enforces score threshold of 2.0.
 
 Integration: Exported via lib.rs (pub mod skills). Used by signal generation (generate_signal_with_skills in orchestrator/signals/generate.rs) to embed up to 5 skill recommendations in agent signals.
 
@@ -232,7 +232,7 @@ Three critical bugs in the handoff chain cause complete handoff failure:
 
 - `_session: &Session` — UNUSED (underscore prefix), accepts minimal Session
 - `stage: &Stage` — needs stage.id and stage.description
-- `content: HandoffContent` — builder pattern with with_*() methods
+- `content: HandoffContent` — builder pattern with with\_\*() methods
 - `work_dir: &Path` — path to `.work/` directory
 - Returns: `Result<PathBuf>` — path to written handoff file
 
@@ -333,3 +333,21 @@ Core API for knowledge file management:
 - `list_files() -> Result<Vec<(KnowledgeFile, PathBuf)>>` — List file paths
 
 KnowledgeFile enum: Architecture, EntryPoints, Patterns, Conventions, Mistakes, Stack, Concerns. Has `filename()`, `from_filename()`, `all()` methods.
+
+## Stale Reference Corrections (2026-03-11)
+
+### Signal Prefix Count Fix
+
+architecture.md:127 previously stated "Four stage-type-specific stable prefix generators in cache.rs (standard, knowledge, code-review, integration-verify)". Corrected: There are THREE prefix generators (standard, knowledge, integration-verify). The code-review variant was removed when CodeReview was consolidated into IntegrationVerify.
+
+### StageStatus Variant Count Fix
+
+architecture.md:68 previously stated "11 variants total". Corrected: StageStatus has 12 variants (WaitingForDeps, Queued, Executing, Completed, Blocked, NeedsHandoff, WaitingForInput, Skipped, MergeConflict, CompletedWithFailures, MergeBlocked, NeedsHumanReview). This was already corrected at line 293 but the earlier reference was stale.
+
+## Corrections (2026-03-11)
+
+- Signal generation has 3 stable prefix generators in cache.rs (standard, knowledge, integration-verify). The code-review prefix was removed and merged into integration-verify.
+- StageStatus has 12 variants (not 11): WaitingForDeps, Queued, Executing, Completed, Blocked, NeedsHandoff, WaitingForInput, Skipped, MergeConflict, CompletedWithFailures, MergeBlocked, NeedsHumanReview.
+- The standard prefix now includes a Self-Review Before Completion section.
+- The integration-verify prefix now includes detailed per-dimension review instructions and SILENT FAILURE DETECTION.
+- verify/criteria/runner.rs now includes detect_stderr_warnings() for advisory stderr pattern matching after acceptance criteria.

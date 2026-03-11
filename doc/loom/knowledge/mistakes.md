@@ -335,8 +335,7 @@ Stage marked complete without verifying acceptance criteria passed.
 Acceptance criteria using loom commands run system-installed binary, not local build.
 Features in current branch unavailable until merged.
 
-Solutions: 1) Use ./target/debug/loom path, 2) Accept failures until merge,
-3) Use --force-unsafe after manual verification.
+Solutions: 1) Use ./target/debug/loom path, 2) Accept failures until merge, 3) Use --force-unsafe after manual verification.
 
 ## Promoted from Memory [2026-01-29 14:06]
 
@@ -483,7 +482,7 @@ Two plan criteria caused false negatives in integration-verify:
 
 1. Truth 'cargo test 2>&1 | tail -1' fails because cargo test outputs trailing newline as last line. Fix: filter test result lines first then check.
 
-2. Wiring pattern 'pub fn write_signal_file' does not match 'pub(super) fn write_signal_file'. Fix: use regex 'pub.*fn write_signal_file' to match visibility modifiers.
+2. Wiring pattern 'pub fn write_signal_file' does not match 'pub(super) fn write_signal_file'. Fix: use regex 'pub.\*fn write_signal_file' to match visibility modifiers.
 
 ## Promoted from Memory [2026-02-06 12:03]
 
@@ -538,13 +537,13 @@ Two plan criteria caused false negatives in integration-verify:
 
 - Knowledge bootstrap for stage-timing: Coverage was already 100% (18/18). Added targeted timing docs: timing fields architecture, mutation points, completion summary collection, retry flow pattern, retry state fields, stage file serialization, and entry-points for all timing/retry/display code paths.
 - Key timing insight: started_at is preserved across retries (only set if None), duration_secs computed at completion from started_at to now. Completion summary calculates total_duration as latest_completion - earliest_start across all stages.
-- Retry flow: crash detection (PID/heartbeat) -> classify_failure() -> crash_handler increments retry_count -> Blocked status -> recovery.rs checks backoff elapsed -> Queued -> re-spawn. Exponential backoff: 30*2^(n-1), cap 300s. Max retries default 3.
+- Retry flow: crash detection (PID/heartbeat) -> classify_failure() -> crash_handler increments retry_count -> Blocked status -> recovery.rs checks backoff elapsed -> Queued -> re-spawn. Exponential backoff: 30\*2^(n-1), cap 300s. Max retries default 3.
 
 ## Promoted from Memory [2026-02-06 16:38]
 
 ### Notes
 
-- Code review found 6 issues in stage-timing feature: (1) missing accumulate_attempt_time on NeedsHandoff/BudgetExceeded transitions - execution time was permanently lost for stages that hit context limits, (2) silent error suppression via let _= save_stage() in completion_handler, (3) double YAML parsing in status.rs, (4) unsafe u64->u32 cast for retry_count, (5) impl block in types.rs violated convention of methods in methods.rs, (6) duplicated duration display logic in completion.rs
+- Code review found 6 issues in stage-timing feature: (1) missing accumulate*attempt_time on NeedsHandoff/BudgetExceeded transitions - execution time was permanently lost for stages that hit context limits, (2) silent error suppression via let*= save_stage() in completion_handler, (3) double YAML parsing in status.rs, (4) unsafe u64->u32 cast for retry_count, (5) impl block in types.rs violated convention of methods in methods.rs, (6) duplicated duration display logic in completion.rs
 
 ### Decisions
 
@@ -565,9 +564,9 @@ Two plan criteria caused false negatives in integration-verify:
 
 ### Notes
 
-- Code review of fix-sandbox-settings: 3 files changed (settings.rs, config.rs, types.rs). Found and fixed: (1) empty excluded_commands could produce malformed Bash(:_) permission - added skip for empty/whitespace, (2) test_no_path_in_both_allow_and_deny compared only extracted paths across permission types - fixed to compare full permission strings, (3) _stage_type param in merge_config had no documentation - added doc comment, (4) stale knowledge docs said Knowledge/IntegrationVerify auto-add to allow_write - updated to reflect CLI-based approach, (5) added explanatory comments for Bash(cmd:_) + excludedCommands relationship and narrow .work/ read allows
+- Code review of fix-sandbox-settings: 3 files changed (settings.rs, config.rs, types.rs). Found and fixed: (1) empty excluded*commands could produce malformed Bash(:*) permission - added skip for empty/whitespace, (2) test*no_path_in_both_allow_and_deny compared only extracted paths across permission types - fixed to compare full permission strings, (3) \_stage_type param in merge_config had no documentation - added doc comment, (4) stale knowledge docs said Knowledge/IntegrationVerify auto-add to allow_write - updated to reflect CLI-based approach, (5) added explanatory comments for Bash(cmd:*) + excludedCommands relationship and narrow .work/ read allows
 - Pre-existing issue found: test_loom_terminal_env_var_takes_precedence in detection.rs uses std::env::set_var without serial_test, causing intermittent race condition failures when run with full test suite. Not in scope for this review but should be addressed.
-- Security review: No critical/high issues. Medium: excluded_commands lacks input validation (could contain special chars). The existing layers (hooks, signals) adequately protect .work/ state after deny_write removal. The Bash(cmd:*) + excludedCommands dual mechanism is belt-and-suspenders (sandbox exemption + prompt auto-approve).
+- Security review: No critical/high issues. Medium: excluded_commands lacks input validation (could contain special chars). The existing layers (hooks, signals) adequately protect .work/ state after deny_write removal. The Bash(cmd:\*) + excludedCommands dual mechanism is belt-and-suspenders (sandbox exemption + prompt auto-approve).
 
 ### Decisions
 
@@ -578,7 +577,7 @@ Two plan criteria caused false negatives in integration-verify:
 
 ### Notes
 
-- Integration verification passed for fix-sandbox-settings: All 1417 tests pass (1227 unit + 132 e2e + 28 integration + 16 failure_resume + 3 stage_transitions + 3 completion + 8 doc-tests), clippy clean, build succeeds. All 30 sandbox-specific tests pass. Functional verification confirms: (1) no path in both allow and deny for all 4 stage types, (2) Bash(cmd:*) generated for excluded commands, (3) Read(.work/signals/**) in permissions.allow, (4) doc/loom/knowledge/** in deny_write but NOT in allow_write for any stage type, (5) .work/stages/**and .work/sessions/** removed from deny defaults.
+- Integration verification passed for fix-sandbox-settings: All 1417 tests pass (1227 unit + 132 e2e + 28 integration + 16 failure_resume + 3 stage_transitions + 3 completion + 8 doc-tests), clippy clean, build succeeds. All 30 sandbox-specific tests pass. Functional verification confirms: (1) no path in both allow and deny for all 4 stage types, (2) Bash(cmd:\*) generated for excluded commands, (3) Read(.work/signals/**) in permissions.allow, (4) doc/loom/knowledge/** in deny_write but NOT in allow_write for any stage type, (5) .work/stages/**and .work/sessions/** removed from deny defaults.
 
 ### Decisions
 
@@ -587,7 +586,7 @@ Two plan criteria caused false negatives in integration-verify:
 
 ## Sandbox: Knowledge Path Protection (2026-02-06)
 
-**What:** merge_config() auto-added doc/loom/knowledge/** to allow_write for Knowledge/IntegrationVerify stages, contradicting deny_write default.
+**What:** merge_config() auto-added doc/loom/knowledge/\*\* to allow_write for Knowledge/IntegrationVerify stages, contradicting deny_write default.
 
 **Why:** Same path in both allow and deny is contradictory and confusing.
 
@@ -869,7 +868,7 @@ Two plan criteria caused false negatives in integration-verify:
 
 ## Test Files Outside src/ When Adding Struct Fields (2026-02-08)
 
-When adding fields to Stage or StageDefinition, ALWAYS check test files in tests/ directory (integration/helpers.rs, e2e/*, etc.) - not just src/ tests. The before-after-verify stage missed several e2e test files that construct Stage directly, requiring main agent fixes.
+When adding fields to Stage or StageDefinition, ALWAYS check test files in tests/ directory (integration/helpers.rs, e2e/\*, etc.) - not just src/ tests. The before-after-verify stage missed several e2e test files that construct Stage directly, requiring main agent fixes.
 
 ## Skill Documentation Freshness (2026-02-08)
 

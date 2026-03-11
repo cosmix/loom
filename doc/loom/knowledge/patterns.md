@@ -143,7 +143,7 @@ Key design: all cleanup is best-effort (`let _`), `cleaned_up` bool prevents dou
 
 ## Skill Matching Pattern
 
-Skills are loaded from ~/.claude/skills/*/SKILL.md files with YAML frontmatter containing name, description, triggers list. An inverted index maps normalized trigger keywords to skill names. Matching uses: normalize text (lowercase, separator→space), split words, check against trigger index. Phrase matches score 2 points, word matches 1 point. Threshold of 2.0 filters low-quality matches. Up to 5 recommendations embedded in agent signals.
+Skills are loaded from ~/.claude/skills/\*/SKILL.md files with YAML frontmatter containing name, description, triggers list. An inverted index maps normalized trigger keywords to skill names. Matching uses: normalize text (lowercase, separator→space), split words, check against trigger index. Phrase matches score 2 points, word matches 1 point. Threshold of 2.0 filters low-quality matches. Up to 5 recommendations embedded in agent signals.
 
 ## Signal Generation Manus Pattern (KV-cache Optimization)
 
@@ -166,7 +166,7 @@ loom repair uses simple file-existence checks at project root to detect project 
 - package.json → Node.js domains (registry.npmjs.org, npmjs.com)
 - requirements.txt | pyproject.toml → Python domains (pypi.org, files.pythonhosted.org)
 - Always: Git domains (github.com, api.github.com, raw.githubusercontent.com)
-Output is copy-paste-ready YAML for plan sandbox block.
+  Output is copy-paste-ready YAML for plan sandbox block.
 
 ## Sandbox Config Merging
 
@@ -312,3 +312,15 @@ This differs from orchestrator spawning which uses terminal emulators + wrapper 
 - `--permission-mode auto` + `--allowedTools` for restricted tool access
 - `--system-prompt` for behavior control, positional arg for initial prompt
 - Handle Ctrl+C (exit codes 130, 2) separately from other failures
+
+## Signal Generation Update (2026-03-11)
+
+Standard stage stable prefix now includes a "Self-Review Before Completion (MANDATORY)" section in cache.rs:generate_stable_prefix() with 4 checks: Wiring Check, Silent Failure Check, Code Correctness, Integration Points. This was added after the completion rules block via a new content section.
+
+Integration-verify stable prefix was strengthened with: (1) detailed per-dimension review instructions for each review agent type (security-engineer, senior-software-engineer, build/test/sandbox, functional), (2) a SILENT FAILURE DETECTION section, (3) agent teams changed from "Consider using" to "MUST use when available".
+
+Both changes maintain the Manus KV-cache 4-section pattern (stable prefix, semi-stable, dynamic, recitation).
+
+## Stderr Warning Detection Pattern (2026-03-11)
+
+Advisory stderr warning detection added to verify/criteria/runner.rs:detect_stderr_warnings(). After acceptance criteria loop completes, scans successful command results for 9 suspicious patterns in stderr (connection refused, permission denied, failed to download, blocked, EACCES, ECONNREFUSED, unable to connect, network error, sandbox). Case-insensitive matching via to_lowercase(). Warnings are advisory only — do NOT change pass/fail logic. Uses eprintln! for output.

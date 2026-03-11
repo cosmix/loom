@@ -12,17 +12,17 @@
 
 ## Command Dispatch
 
-| Command    | Entry File                      | Purpose                           |
-| ---------- | ------------------------------- | --------------------------------- |
-| `init`     | `commands/init/execute.rs`      | Initialize `.work/` from plan     |
-| `run`      | `commands/run/mod.rs`           | Start orchestrator daemon         |
-| `status`   | `commands/status.rs`            | Dashboard with stage/session info |
-| `stop`     | `commands/stop.rs`              | Shutdown daemon                   |
-| `stage`    | `commands/stage/`               | Stage lifecycle (complete, verify) |
-| `memory`   | `commands/memory/handlers.rs`   | Session memory journal            |
-| `check`    | `commands/check.rs`             | Goal-backward verification        |
-| `map`      | `commands/map.rs`               | Codebase structure analysis       |
-| `diagnose` | `commands/diagnose.rs`          | Stage failure diagnosis           |
+| Command    | Entry File                    | Purpose                            |
+| ---------- | ----------------------------- | ---------------------------------- |
+| `init`     | `commands/init/execute.rs`    | Initialize `.work/` from plan      |
+| `run`      | `commands/run/mod.rs`         | Start orchestrator daemon          |
+| `status`   | `commands/status.rs`          | Dashboard with stage/session info  |
+| `stop`     | `commands/stop.rs`            | Shutdown daemon                    |
+| `stage`    | `commands/stage/`             | Stage lifecycle (complete, verify) |
+| `memory`   | `commands/memory/handlers.rs` | Session memory journal             |
+| `check`    | `commands/check.rs`           | Goal-backward verification         |
+| `map`      | `commands/map.rs`             | Codebase structure analysis        |
+| `diagnose` | `commands/diagnose.rs`        | Stage failure diagnosis            |
 
 ## Orchestrator Core
 
@@ -195,7 +195,7 @@
 - `loom/src/cli/types_stage.rs` — StageCommands subcommand enum (pattern for nested commands)
 - `loom/src/cli/types_memory.rs` — MemoryCommands subcommand enum
 - `loom/src/cli/dispatch.rs:16-171` — match-based command dispatch, two-level for nested commands
-- Pattern: define parent variant in types.rs with `#[command(subcommand)]`, child enum in types_*.rs, dispatch in dispatch.rs
+- Pattern: define parent variant in types.rs with `#[command(subcommand)]`, child enum in types\_\*.rs, dispatch in dispatch.rs
 
 ## Handoff System (Added by integration-verify)
 
@@ -218,30 +218,30 @@ The previous command dispatch table is STALE. The following commands NO LONGER E
 
 Current CLI commands (from cli/types.rs):
 
-| Command      | Entry File                       | Purpose                              |
-| ------------ | -------------------------------- | ------------------------------------ |
-| `init`       | `commands/init/execute.rs`       | Initialize `.work/` from plan        |
-| `run`        | `commands/run/mod.rs`            | Start orchestrator daemon            |
-| `status`     | `commands/status.rs`             | Dashboard with stage/session info    |
-| `stop`       | `commands/stop.rs`               | Shutdown daemon                      |
-| `resume`     | `commands/resume.rs`             | Resume work on a stage               |
-| `sessions`   | `commands/sessions.rs`           | List/kill active sessions            |
-| `worktree`   | `commands/worktree_cmd.rs`       | List/clean/remove worktrees          |
-| `graph`      | `commands/graph/mod.rs`          | Show/edit execution graph            |
-| `hooks`      | `commands/hooks.rs`              | Hook install/list                    |
-| `stage`      | `commands/stage/`                | Stage lifecycle (15+ subcommands)    |
-| `handoff`    | `commands/handoff/create.rs`     | Create handoff files                 |
-| `knowledge`  | `commands/knowledge/mod.rs`      | Manage codebase knowledge            |
-| `memory`     | `commands/memory/handlers.rs`    | Session memory journal               |
-| `review`     | `commands/review/mod.rs`         | Generate review docs from memories   |
-| `sandbox`    | `commands/sandbox/`              | Suggest/apply sandbox config         |
-| `self-update`| `commands/self_update/mod.rs`    | Update loom binary                   |
-| `clean`      | `commands/clean.rs`              | Clean up resources                   |
-| `repair`     | `commands/repair.rs`             | Fix workspace issues                 |
-| `map`        | `commands/map.rs`                | Codebase structure analysis          |
-| `diagnose`   | `commands/diagnose.rs`           | Stage failure diagnosis              |
-| `verify`     | `commands/verify.rs`             | Goal-backward verification           |
-| `completions`| Static shell completion          | Generate shell completions           |
+| Command       | Entry File                    | Purpose                            |
+| ------------- | ----------------------------- | ---------------------------------- |
+| `init`        | `commands/init/execute.rs`    | Initialize `.work/` from plan      |
+| `run`         | `commands/run/mod.rs`         | Start orchestrator daemon          |
+| `status`      | `commands/status.rs`          | Dashboard with stage/session info  |
+| `stop`        | `commands/stop.rs`            | Shutdown daemon                    |
+| `resume`      | `commands/resume.rs`          | Resume work on a stage             |
+| `sessions`    | `commands/sessions.rs`        | List/kill active sessions          |
+| `worktree`    | `commands/worktree_cmd.rs`    | List/clean/remove worktrees        |
+| `graph`       | `commands/graph/mod.rs`       | Show/edit execution graph          |
+| `hooks`       | `commands/hooks.rs`           | Hook install/list                  |
+| `stage`       | `commands/stage/`             | Stage lifecycle (15+ subcommands)  |
+| `handoff`     | `commands/handoff/create.rs`  | Create handoff files               |
+| `knowledge`   | `commands/knowledge/mod.rs`   | Manage codebase knowledge          |
+| `memory`      | `commands/memory/handlers.rs` | Session memory journal             |
+| `review`      | `commands/review/mod.rs`      | Generate review docs from memories |
+| `sandbox`     | `commands/sandbox/`           | Suggest/apply sandbox config       |
+| `self-update` | `commands/self_update/mod.rs` | Update loom binary                 |
+| `clean`       | `commands/clean.rs`           | Clean up resources                 |
+| `repair`      | `commands/repair.rs`          | Fix workspace issues               |
+| `map`         | `commands/map.rs`             | Codebase structure analysis        |
+| `diagnose`    | `commands/diagnose.rs`        | Stage failure diagnosis            |
+| `verify`      | `commands/verify.rs`          | Goal-backward verification         |
+| `completions` | Static shell completion       | Generate shell completions         |
 
 Total: 22 visible commands + 1 hidden (complete for dynamic completions)
 
@@ -268,3 +268,23 @@ Total: 22 visible commands + 1 hidden (complete for dynamic completions)
 
 - `src/commands/knowledge/bootstrap.rs` - `loom knowledge bootstrap` implementation: spawns Claude Code as interactive subprocess to explore and populate knowledge files
 - `src/claude.rs` - Shared `find_claude_path()` utility: resolves claude binary via PATH then fallback locations (~/.claude/local/claude, ~/.local/bin, etc.)
+
+## Entry Points Corrections (2026-03-11)
+
+### StageStatus Count Fix
+
+entry-points.md:39 references "StageStatus enum (11 states)" — correct count is 12 states (NeedsHumanReview was added).
+
+### Signal Cache Variant Count Fix
+
+entry-points.md:87 references "Stable prefix generation (4 stage-type variants, SHA-256 hash)" — correct count is 3 stage-type variants (standard, knowledge, integration-verify). The code-review variant was removed.
+
+## Signal Prefix Self-Review (2026-03-11)
+
+- loom/src/orchestrator/signals/cache.rs:205 — Self-Review Before Completion section in standard prefix
+- loom/src/orchestrator/signals/cache.rs:264-315 — Strengthened IV code review + SILENT FAILURE DETECTION
+- loom/src/verify/criteria/runner.rs:116 — detect_stderr_warnings() advisory function
+- CLAUDE.md.template:106-111 — SELF-REVIEW checklist in Stage Completion
+- CLAUDE.md.template:692-718 — Rule 14: SILENT FAILURE DETECTION
+- skills/code-review/SKILL.md:62 — SILENT_FAILURE severity level
+- skills/code-review/SKILL.md:178-204 — Loom Orchestration Review section
