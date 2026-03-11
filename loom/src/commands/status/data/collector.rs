@@ -108,9 +108,7 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
     });
 
     let pid = session.and_then(|s| s.pid);
-    let session_alive = pid
-        .map(crate::process::is_process_alive)
-        .unwrap_or(false);
+    let session_alive = pid.map(crate::process::is_process_alive).unwrap_or(false);
 
     let elapsed_secs = (Utc::now() - stage.created_at).num_seconds();
 

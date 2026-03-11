@@ -24,11 +24,7 @@ pub fn render_merge_status<W: Write>(w: &mut W, merge: &MergeSummary) -> std::io
         writeln!(w, "  {} {} {}", "⚡".red(), stage_id, "conflict".red())?;
     }
 
-    writeln!(
-        w,
-        "  {}",
-        "Run: loom stage retry-merge <stage-id>".dimmed()
-    )?;
+    writeln!(w, "  {}", "Run: loom stage retry-merge <stage-id>".dimmed())?;
 
     Ok(())
 }

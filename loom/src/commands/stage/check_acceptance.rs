@@ -121,9 +121,7 @@ pub fn check_acceptance(stage_id: String) -> Result<()> {
                  'loom stage dispute-criteria {stage_id}' to challenge them."
             );
         } else {
-            println!(
-                "Hint: Fix the issues and run 'loom stage verify {stage_id}' again."
-            );
+            println!("Hint: Fix the issues and run 'loom stage verify {stage_id}' again.");
         }
 
         let failed = result.failed_count();

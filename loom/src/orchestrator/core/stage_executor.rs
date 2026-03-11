@@ -233,7 +233,10 @@ impl StageExecutor for Orchestrator {
         let handoff_file = find_latest_handoff(&stage.id, &self.config.work_dir)
             .ok()
             .flatten()
-            .and_then(|p| p.file_stem().and_then(|s| s.to_str().map(|s| s.to_string())));
+            .and_then(|p| {
+                p.file_stem()
+                    .and_then(|s| s.to_str().map(|s| s.to_string()))
+            });
 
         let signal_path = generate_signal_with_skills(
             &session,
@@ -344,7 +347,10 @@ impl StageExecutor for Orchestrator {
         let handoff_file = find_latest_handoff(&stage.id, &self.config.work_dir)
             .ok()
             .flatten()
-            .and_then(|p| p.file_stem().and_then(|s| s.to_str().map(|s| s.to_string())));
+            .and_then(|p| {
+                p.file_stem()
+                    .and_then(|s| s.to_str().map(|s| s.to_string()))
+            });
 
         // Generate knowledge-specific signal (runs in main repo, no commit required)
         let signal_path = generate_knowledge_signal(

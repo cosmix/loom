@@ -78,9 +78,9 @@ pub fn stage_info_to_stage(info: &StageInfo) -> Stage {
         updated_at: Utc::now(),
         completed_at: info.completed_at,
         started_at: Some(info.started_at),
-        duration_secs: info.completed_at.map(|end| {
-            end.signed_duration_since(info.started_at).num_seconds()
-        }),
+        duration_secs: info
+            .completed_at
+            .map(|end| end.signed_duration_since(info.started_at).num_seconds()),
         execution_secs: None,
         attempt_started_at: None,
         close_reason: None,
@@ -118,12 +118,7 @@ pub fn stage_info_to_stage(info: &StageInfo) -> Stage {
 }
 
 /// Render the tree-based execution graph.
-pub fn render_tree_graph(
-    frame: &mut Frame,
-    area: Rect,
-    stages: &[Stage],
-    scroll_y: u16,
-) {
+pub fn render_tree_graph(frame: &mut Frame, area: Rect, stages: &[Stage], scroll_y: u16) {
     let graph_block = Block::default()
         .title(" Execution Graph ")
         .borders(Borders::ALL)
@@ -156,8 +151,8 @@ pub fn render_activity_log(frame: &mut Frame, area: Rect, activity: &TuiActivity
     let max_lines = inner.height as usize;
 
     if activity.is_empty() {
-        let empty = Paragraph::new(Span::styled("Waiting for events...", Theme::dimmed()))
-            .block(block);
+        let empty =
+            Paragraph::new(Span::styled("Waiting for events...", Theme::dimmed())).block(block);
         frame.render_widget(empty, area);
         return;
     }

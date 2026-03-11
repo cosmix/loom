@@ -305,7 +305,10 @@ fn fix_issue(repo_root: &Path, issue: &RepairIssue) -> Result<bool> {
     } else if issue.description.contains("pre-commit hook not installed") {
         install_pre_commit_hook(repo_root)?;
         Ok(true)
-    } else if issue.description.contains("Claude Code hooks not configured") {
+    } else if issue
+        .description
+        .contains("Claude Code hooks not configured")
+    {
         fix_hooks(repo_root)?;
         Ok(true)
     } else if issue.description.contains("Sandbox settings not found") {

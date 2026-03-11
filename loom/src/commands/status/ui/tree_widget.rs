@@ -62,9 +62,9 @@ fn compute_stage_elapsed(stage: &Stage) -> Option<String> {
                 Some(format_elapsed(d))
             } else {
                 match (stage.started_at, stage.completed_at) {
-                    (Some(start), Some(end)) => {
-                        Some(format_elapsed(end.signed_duration_since(start).num_seconds()))
-                    }
+                    (Some(start), Some(end)) => Some(format_elapsed(
+                        end.signed_duration_since(start).num_seconds(),
+                    )),
                     _ => None,
                 }
             }
@@ -219,14 +219,13 @@ impl<'a> TreeWidget<'a> {
                         }
                         let dep_color =
                             color_map.get(dep.as_str()).copied().unwrap_or(Color::White);
-                        spans.push(Span::styled(
-                            dep.clone(),
-                            Style::default().fg(dep_color),
-                        ));
+                        spans.push(Span::styled(dep.clone(), Style::default().fg(dep_color)));
                     }
                 } else if deps_content_budget >= 5 {
-                    let truncated =
-                        format!("{}..", &deps_joined[..deps_content_budget.saturating_sub(2)]);
+                    let truncated = format!(
+                        "{}..",
+                        &deps_joined[..deps_content_budget.saturating_sub(2)]
+                    );
                     spans.push(Span::styled(truncated, Theme::dimmed()));
                 } else {
                     spans.push(Span::styled("...", Theme::dimmed()));
@@ -260,10 +259,8 @@ impl<'a> TreeWidget<'a> {
                                 if i > 0 {
                                     list.push(Span::styled(", ", Theme::dimmed()));
                                 }
-                                let dep_color = color_map
-                                    .get(dep.as_str())
-                                    .copied()
-                                    .unwrap_or(Color::White);
+                                let dep_color =
+                                    color_map.get(dep.as_str()).copied().unwrap_or(Color::White);
                                 list.push(Span::styled(
                                     dep.clone(),
                                     Style::default().fg(dep_color),

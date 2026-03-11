@@ -335,7 +335,8 @@ fn merge_existing_permissions(new_settings: &mut Value, existing_settings: &Valu
             // - Read() entries with absolute home paths from old loom versions
             //   get mangled by Claude Code (project root prepended)
             for perm in existing_deny {
-                if perm.starts_with("Read(") && (perm.contains("../") || perm.starts_with("Read(/")) {
+                if perm.starts_with("Read(") && (perm.contains("../") || perm.starts_with("Read(/"))
+                {
                     continue;
                 }
                 all_deny.insert(perm);
@@ -683,10 +684,7 @@ mod tests {
             excluded_commands: vec![],
             filesystem: FilesystemConfig {
                 deny_read: vec![],
-                deny_write: vec![
-                    "../../**".to_string(),
-                    "doc/loom/knowledge/**".to_string(),
-                ],
+                deny_write: vec!["../../**".to_string(), "doc/loom/knowledge/**".to_string()],
                 allow_write: vec![],
             },
             network: NetworkConfig::default(),

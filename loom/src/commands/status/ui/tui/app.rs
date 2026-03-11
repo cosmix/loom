@@ -288,12 +288,12 @@ impl TuiApp {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(5),              // Header (logo + progress)
-                    Constraint::Length(1),              // Spacer
-                    Constraint::Min(6),                 // Graph (adaptive, takes remaining)
-                    Constraint::Length(1),              // Spacer
+                    Constraint::Length(5),               // Header (logo + progress)
+                    Constraint::Length(1),               // Spacer
+                    Constraint::Min(6),                  // Graph (adaptive, takes remaining)
+                    Constraint::Length(1),               // Spacer
                     Constraint::Length(activity_height), // Activity log
-                    Constraint::Length(1),              // Footer
+                    Constraint::Length(1),               // Footer
                 ])
                 .split(area);
 

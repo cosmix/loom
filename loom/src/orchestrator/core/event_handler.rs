@@ -300,7 +300,7 @@ impl Orchestrator {
 mod tests {
     use super::*;
     use crate::models::stage::{Stage, StageStatus};
-    use crate::plan::schema::{StageSandboxConfig, StageDefinition};
+    use crate::plan::schema::{StageDefinition, StageSandboxConfig};
     use crate::plan::ExecutionGraph;
 
     fn create_test_graph() -> ExecutionGraph {

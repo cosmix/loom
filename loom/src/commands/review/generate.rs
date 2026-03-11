@@ -240,10 +240,7 @@ pub fn execute() -> Result<()> {
     // Load config.toml
     let config = load_config(&work_dir)?.context("No active plan. Run 'loom init' first.")?;
 
-    let plan_id = config
-        .plan_id()
-        .unwrap_or("unknown")
-        .to_string();
+    let plan_id = config.plan_id().unwrap_or("unknown").to_string();
 
     let plan_name = config
         .get_plan_str("plan_name")
@@ -274,8 +271,7 @@ pub fn execute() -> Result<()> {
 
     // Load stage infos
     let stages_dir = work_dir.join("stages");
-    let stages = load_stage_infos(&stages_dir)
-        .context("Failed to load stage files")?;
+    let stages = load_stage_infos(&stages_dir).context("Failed to load stage files")?;
 
     // Load all memory journals, keyed by stage_id
     let journal_names = list_journals(&work_dir).context("Failed to list memory journals")?;
@@ -310,9 +306,8 @@ pub fn execute() -> Result<()> {
     let mut has_any_stage = false;
     for stage in &stages {
         let entries_opt = journals.get(&stage.id);
-        let entries: Vec<&MemoryEntry> = entries_opt
-            .map(|v| v.iter().collect())
-            .unwrap_or_default();
+        let entries: Vec<&MemoryEntry> =
+            entries_opt.map(|v| v.iter().collect()).unwrap_or_default();
 
         // Skip stages with no memory entries
         if entries.is_empty() {

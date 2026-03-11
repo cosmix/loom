@@ -79,10 +79,7 @@ pub fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<usiz
         let detected = crate::language::detect_project_languages(&current_dir);
         if !detected.is_empty() {
             use crate::language::DetectedLanguage;
-            let mut domains = vec![
-                "github.com".to_string(),
-                "api.github.com".to_string(),
-            ];
+            let mut domains = vec!["github.com".to_string(), "api.github.com".to_string()];
             for lang in &detected {
                 match lang {
                     DetectedLanguage::Rust => {

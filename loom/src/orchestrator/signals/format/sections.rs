@@ -587,8 +587,7 @@ pub(super) fn format_dynamic_section(
             content.push('\n');
         }
 
-        content
-            .push_str("Run `loom check <stage-id> --suggest` to check these automatically.\n\n");
+        content.push_str("Run `loom check <stage-id> --suggest` to check these automatically.\n\n");
     }
 
     // Files to modify
