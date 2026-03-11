@@ -96,9 +96,123 @@ pub fn run_acceptance_with_config(
         results.push(result_with_original);
     }
 
+    // Advisory: warn about suspicious stderr patterns in successful commands
+    for result in &results {
+        for warning in detect_stderr_warnings(result) {
+            eprintln!("warning: {}", warning);
+        }
+    }
+
     if failures.is_empty() {
         Ok(AcceptanceResult::AllPassed { results })
     } else {
         Ok(AcceptanceResult::Failed { results, failures })
+    }
+}
+
+/// Detect suspicious patterns in stderr that may indicate silent failures.
+/// Only checks results that reported success (exit code 0).
+/// Returns a list of warning messages for each suspicious pattern found.
+fn detect_stderr_warnings(result: &super::result::CriterionResult) -> Vec<String> {
+    if !result.success || result.stderr.is_empty() {
+        return Vec::new();
+    }
+
+    let patterns = [
+        "connection refused",
+        "permission denied",
+        "failed to download",
+        "blocked",
+        "EACCES",
+        "ECONNREFUSED",
+        "unable to connect",
+        "network error",
+        "sandbox",
+    ];
+
+    let stderr_lower = result.stderr.to_lowercase();
+    let mut warnings = Vec::new();
+
+    for pattern in &patterns {
+        let pattern_lower = pattern.to_lowercase();
+        if stderr_lower.contains(&pattern_lower) {
+            warnings.push(format!(
+                "Command '{}' succeeded (exit 0) but stderr contains '{}' — may indicate a silent failure",
+                result.command, pattern
+            ));
+        }
+    }
+
+    warnings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::result::CriterionResult;
+    use super::*;
+    use std::time::Duration;
+
+    fn make_result(success: bool, stderr: &str) -> CriterionResult {
+        CriterionResult::new(
+            "test-command".to_string(),
+            success,
+            String::new(),
+            stderr.to_string(),
+            if success { Some(0) } else { Some(1) },
+            Duration::from_millis(100),
+            false,
+        )
+    }
+
+    #[test]
+    fn test_detect_stderr_warnings_no_warnings_on_clean_stderr() {
+        let result = make_result(true, "");
+        assert!(detect_stderr_warnings(&result).is_empty());
+    }
+
+    #[test]
+    fn test_detect_stderr_warnings_no_warnings_on_failure() {
+        let result = make_result(false, "connection refused");
+        assert!(detect_stderr_warnings(&result).is_empty());
+    }
+
+    #[test]
+    fn test_detect_stderr_warnings_detects_connection_refused() {
+        let result = make_result(true, "warning: connection refused to example.com");
+        let warnings = detect_stderr_warnings(&result);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("connection refused"));
+    }
+
+    #[test]
+    fn test_detect_stderr_warnings_detects_permission_denied() {
+        let result = make_result(true, "error: Permission Denied when accessing /tmp/file");
+        let warnings = detect_stderr_warnings(&result);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("permission denied"));
+    }
+
+    #[test]
+    fn test_detect_stderr_warnings_case_insensitive() {
+        let result = make_result(true, "BLOCKED by firewall");
+        let warnings = detect_stderr_warnings(&result);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("blocked"));
+    }
+
+    #[test]
+    fn test_detect_stderr_warnings_multiple_patterns() {
+        let result = make_result(
+            true,
+            "blocked request, connection refused, sandbox restricted",
+        );
+        let warnings = detect_stderr_warnings(&result);
+        assert_eq!(warnings.len(), 3); // blocked, connection refused, sandbox
+    }
+
+    #[test]
+    fn test_detect_stderr_warnings_normal_stderr_no_match() {
+        let result = make_result(true, "Compiling myproject v0.1.0\nFinished dev target");
+        assert!(detect_stderr_warnings(&result).is_empty());
     }
 }

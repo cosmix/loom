@@ -201,6 +201,16 @@ pub fn generate_stable_prefix() -> String {
     content.push_str("- Shut down ALL teammates before completing the stage\n\n");
     content.push_str("**Completion:**\n");
     append_completion_rules(&mut content);
+
+    content.push_str("**Self-Review Before Completion (MANDATORY):**\n\n");
+    content.push_str("Before running `loom stage complete`, perform these checks:\n\n");
+    content.push_str("- **Wiring Check**: Is the module imported? Is the command/endpoint/component registered? Can the user reach it?\n");
+    content.push_str("- **Silent Failure Check**: Review ALL command output. Did stderr contain warnings despite exit 0?\n");
+    content.push_str("  Look for: \"connection refused\", \"permission denied\", \"failed to download\", \"blocked\", \"error:\"\n");
+    content.push_str("  If sandbox blocked something you need — STOP and report as blocker, do NOT work around silently\n");
+    content.push_str("- **Code Correctness**: Error paths handled? No incomplete stubs or placeholders? Tests actually test the feature?\n");
+    content.push_str("- **Integration Points**: Callbacks connected? Events published? Dependencies available?\n\n");
+
     content.push_str("**Stage Memory - MEMORY ONLY (MANDATORY):**\n\n");
     content.push_str("```text\n");
     content.push_str("⚠️  IMPLEMENTATION STAGES USE `loom memory` ONLY - NEVER `loom knowledge`\n");
@@ -251,32 +261,70 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("5. **PROMOTE** valuable learnings to knowledge\n");
     content.push_str("6. **GENERATE** review document: `loom review`\n\n");
 
-    // Code review box
+    // Code review execution strategy - detailed instructions
     content.push_str("```text\n");
     content.push_str("┌────────────────────────────────────────────────────────────────────┐\n");
     content.push_str("│  🔍 CODE REVIEW + VERIFICATION EXECUTION STRATEGY                  │\n");
     content.push_str("│                                                                    │\n");
-    content.push_str("│  Use PARALLEL SPECIALIZED AGENTS for comprehensive review:        │\n");
+    content.push_str("│  MUST use PARALLEL SPECIALIZED AGENTS for comprehensive review:   │\n");
     content.push_str("│                                                                    │\n");
-    content.push_str("│  1. security-engineer    - Security vulnerabilities, OWASP, auth  │\n");
-    content.push_str("│  2. senior-software-engineer - Architecture, patterns, quality    │\n");
-    content.push_str("│  3. Build/test runner    - Full test suite, clippy, compile       │\n");
-    content.push_str("│  4. Functional verifier  - Wiring, reachability, smoke tests      │\n");
+    content.push_str("│  1. security-engineer    - OWASP Top 10, secrets, dependencies    │\n");
+    content.push_str("│  2. senior-software-engineer - Coupling, error handling, dead code │\n");
+    content.push_str("│  3. Build/test/sandbox   - Full suite + stderr + sandbox verify    │\n");
+    content.push_str("│  4. Functional verifier  - End-to-end test, wiring, reachability   │\n");
     content.push_str("│                                                                    │\n");
     content.push_str("│  Spawn these as PARALLEL subagents to maximize efficiency.        │\n");
     content.push_str("└────────────────────────────────────────────────────────────────────┘\n");
     content.push_str("```\n\n");
 
-    // Agent teams for IV
-    content.push_str("**Agent Teams for Integration Verification:**\n\n");
-    content.push_str("Consider using an agent team for multi-dimension review and verification:\n");
-    content.push_str("- Security review teammate: OWASP, auth, secrets, dependencies\n");
-    content.push_str("- Architecture review teammate: patterns, coupling, maintainability\n");
-    content.push_str("- Build/test teammate: full test suite, clippy, compile, format check\n");
+    // Detailed review dimension instructions
+    content.push_str("**Review Dimension Details:**\n\n");
     content.push_str(
-        "- Functional verification teammate: wiring, reachability, smoke tests, end-to-end\n",
+        "1. **security-engineer** — Check for OWASP Top 10 (injection, XSS, auth bypass). ",
     );
-    content.push_str("- Knowledge curation teammate: review memory, curate to knowledge\n");
+    content.push_str("Verify no hardcoded secrets or credentials. ");
+    content.push_str("Check dependency security (known vulnerabilities). ");
+    content.push_str("Validate input sanitization at boundaries. ");
+    content.push_str("Review error messages for information leakage.\n\n");
+    content.push_str(
+        "2. **senior-software-engineer** — Check code organization and module coupling. ",
+    );
+    content.push_str("Verify error handling is complete (no swallowed errors). ");
+    content.push_str("Check for proper abstraction (not over/under-engineered). ");
+    content.push_str("Verify naming conventions and code style consistency. ");
+    content.push_str("Check for dead code, unused imports, unreachable paths.\n\n");
+    content.push_str(
+        "3. **Build/test/sandbox verifier** — Run full test suite AND read ALL stderr output. ",
+    );
+    content.push_str("Check for warnings even when tests pass. ");
+    content.push_str("Verify no sandbox interference (blocked downloads, denied writes). ");
+    content.push_str("If ANY stderr contains \"blocked\", \"denied\", \"connection refused\", ");
+    content.push_str("\"failed to download\" — investigate and resolve. ");
+    content.push_str("Confirm all external dependencies are actually present.\n\n");
+    content.push_str("4. **Functional verifier** — Actually RUN the feature end-to-end. ");
+    content.push_str("Verify output is correct (not just that it doesn't crash). ");
+    content.push_str("Check wiring: is feature registered, mounted, callable? ");
+    content.push_str("Test primary use case with realistic inputs.\n\n");
+
+    // SILENT FAILURE DETECTION section
+    content.push_str("**SILENT FAILURE DETECTION:**\n\n");
+    content.push_str("- EXIT CODE 0 does NOT mean success\n");
+    content.push_str("- Sandbox can block downloads silently (tool uses cached/stale data)\n");
+    content.push_str("- MUST check stderr of ALL commands for failure indicators\n");
+    content.push_str("- If sandbox blocked something needed, report as BLOCKER\n");
+    content.push_str("- Verify external dependencies are present, not just referenced\n\n");
+
+    // Agent teams for IV - changed to MUST
+    content.push_str("**Agent Teams for Integration Verification:**\n\n");
+    content.push_str(
+        "MUST use an agent team when available for multi-dimension review and verification:\n",
+    );
+    content.push_str("- Security review: specific OWASP checks, dependency audit\n");
+    content
+        .push_str("- Architecture review: coupling analysis, pattern compliance, error handling\n");
+    content.push_str("- Build/test/sandbox: full suite + stderr analysis + sandbox verification\n");
+    content.push_str("- Functional verification: end-to-end feature test, wiring check\n");
+    content.push_str("- Knowledge curation: memory review, insight synthesis\n");
     content.push_str("Teams allow verification tasks to coordinate on discovered issues.\n\n");
 
     // Isolation + path boundaries (shared)
@@ -498,6 +546,10 @@ mod tests {
         assert!(prefix.contains("handoffs"));
         // File change tracking
         assert!(prefix.contains("loom memory change"));
+        // Self-review before completion
+        assert!(prefix.contains("Self-Review Before Completion"));
+        assert!(prefix.contains("Wiring Check"));
+        assert!(prefix.contains("Silent Failure Check"));
     }
 
     #[test]
@@ -590,9 +642,16 @@ mod tests {
         ));
         // Agent Teams guidance for integration verification (now includes review dimensions)
         assert!(prefix.contains("Agent Teams for Integration Verification"));
-        assert!(prefix.contains("multi-dimension"));
-        assert!(prefix.contains("Build/test teammate"));
-        assert!(prefix.contains("Security review teammate"));
+        assert!(prefix.contains("multi-dimension review"));
+        assert!(prefix.contains("Build/test/sandbox"));
+        assert!(prefix.contains("Security review"));
+        // Silent failure detection
+        assert!(prefix.contains("SILENT FAILURE DETECTION"));
+        assert!(prefix.contains("EXIT CODE 0 does NOT mean success"));
+        assert!(prefix.contains("MUST check stderr"));
+        // Review dimension details
+        assert!(prefix.contains("Review Dimension Details"));
+        assert!(prefix.contains("OWASP Top 10"));
         // Context recovery instructions
         assert!(prefix.contains("Context Recovery"));
         // Review document generation

@@ -94,7 +94,7 @@ Complete ALL items before marking stage complete:
 □ Integration points connected
 
 **CODE QUALITY:**
-□ No TODO/FIXME comments
+□ No incomplete stubs or placeholder comments
 □ Error handling complete
 □ Tests exist for new functionality
 
@@ -102,6 +102,13 @@ Complete ALL items before marking stage complete:
 □ Input validation at boundaries
 □ No hardcoded secrets
 □ No obvious OWASP vulnerabilities
+
+**SELF-REVIEW (BEFORE loom stage complete):**
+□ Code wired in (imported, registered, callable by user)
+□ All command output checked for hidden errors (stderr with exit 0)
+□ No sandbox-blocked operations went unaddressed
+□ Feature invocable by user (not just compiled)
+□ External dependencies actually present (not just referenced)
 
 **VERIFICATION (OPTIONAL):**
 □ loom check <stage-id> --suggest
@@ -231,7 +238,7 @@ one stage over creating additional stages.
 
 ### 2. NO PLACEHOLDERS
 
-**BANNED:** `TODO`, `FIXME`, `pass`, stubs, empty bodies, pseudocode
+**BANNED:** Incomplete markers, placeholder tags, `pass`, stubs, empty bodies, pseudocode
 
 Write complete code NOW. Unknown? ASK. Complex? DECOMPOSE.
 
@@ -656,6 +663,7 @@ integration-verify MUST include FUNCTIONAL VERIFICATION:
 | Wiring | Is the feature registered/mounted in the application? |
 | Reachability | Can you invoke it (CLI command, API endpoint, UI)? |
 | End-to-end | Does the primary use case produce expected behavior? |
+| Silent Failures | Did any command stderr contain warnings despite exit 0? |
 
 **integration-verify ALSO performs CODE REVIEW:**
 
@@ -664,8 +672,10 @@ integration-verify MUST include FUNCTIONAL VERIFICATION:
 | Security | security-engineer | OWASP, auth, secrets, injection |
 | Architecture | senior-software-engineer | patterns, coupling, quality |
 | Testing | /testing skill | coverage gaps, edge cases |
+| Sandbox Awareness | Build/test verifier | Were any operations blocked by sandbox restrictions? |
 
 Spawn these as PARALLEL subagents. FIX issues found, don't just report.
+If sandbox blocked something needed, report as BLOCKER. Do NOT mark integration-verify complete with unresolved sandbox blocks.
 
 **Example acceptance criteria:**
 
@@ -678,6 +688,33 @@ acceptance:
   - "myapp new-command --help" # CLI wired (NOTE: for loom itself, always use `loom` not target/debug/loom)
   - "curl -f localhost:8080/api/endpoint" # API reachable
 ```
+
+### 14. SILENT FAILURE DETECTION
+
+**⚠️ EXIT CODE 0 ≠ SUCCESS**
+
+```text
+┌────────────────────────────────────────────────────────────────────┐
+│  ⚠️  EXIT CODE 0 DOES NOT MEAN SUCCESS                             │
+│                                                                    │
+│  When this happens:                                                │
+│  - Sandbox blocks download (tool uses cached/stale data)           │
+│  - Dependency fetch blocked (stale version used)                   │
+│  - File write denied (silently skipped)                            │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+**MANDATORY CHECKS:**
+
+1. Read stderr of ALL command output — warnings matter even with exit 0
+2. If stderr contains "blocked", "denied", "connection refused",
+   "failed to download" — STOP and investigate
+3. Verify external dependencies are actually present
+4. If sandbox blocked something you need, report as blocker — do NOT
+   work around it silently or mark stage complete
+
+**AGENT RESPONSIBILITY:** You are accountable for catching silent failures.
+Loom will warn you about suspicious stderr patterns, but you must investigate.
 
 ---
 
@@ -826,7 +863,7 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 **BEFORE EVERY PLAN:**
 □ Explore codebase FIRST (spawn Explore subagents)
 □ Review doc/loom/knowledge/ (especially architecture.md)
-□ Create TODO with "REUSE:" annotations
+□ Create task list with "REUSE:" annotations
 □ ASK user about sandbox requirements (network access, sensitive paths)
 □ Run `loom repair` to detect and fix project issues
 
@@ -834,7 +871,7 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 □ loom memory note/decision recorded for insights
 □ loom memory list (verify insights captured)
 □ Feature wired in and smoke test passes
-□ No TODO/FIXME, no security issues
+□ No incomplete stubs or placeholders, no security issues
 □ git add <specific-files> && commit
 
 **PLAN STRUCTURE:**

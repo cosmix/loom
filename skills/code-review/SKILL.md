@@ -59,6 +59,7 @@ For specialized reviews, use relevant skills such as `/security-audit` for secur
 ## Review Severity Levels
 
 - **BLOCKER**: Must fix before merge - security issues, data loss, crashes
+- **SILENT_FAILURE**: A command or operation appeared to succeed (exit 0) but actually failed. This includes sandbox-blocked downloads, partial fetches, and stale cached data. Always a BLOCKER — must investigate before merge.
 - **CRITICAL**: Should fix before merge - logic errors, major bugs, performance issues
 - **MAJOR**: Fix soon - code quality, maintainability, tech debt
 - **MINOR**: Nice to have - style preferences, suggestions, nits
@@ -173,6 +174,34 @@ For specialized reviews, use relevant skills such as `/security-audit` for secur
   - Fairness metrics
   - Explainability/interpretability
   - Privacy preservation (differential privacy)
+
+### Loom Orchestration Review
+
+When reviewing code produced by loom orchestration stages, apply these additional checks:
+
+- **Silent Failure Patterns**
+  - BLOCKER: Command exited 0 but stderr contains error/warning patterns
+  - BLOCKER: Sandbox blocked a download but stage marked complete
+  - BLOCKER: External dependency referenced but not actually available
+  - CRITICAL: Feature compiles and tests pass but is never wired up
+  - CRITICAL: Acceptance criteria pass but feature is not callable by user
+
+- **Wiring Verification Checklist**
+  - Is the module/component imported in the entry point?
+  - Is the command/endpoint/route registered?
+  - Can a user invoke the feature through the normal interface?
+  - Are event handlers connected?
+  - Are dependency injection bindings configured?
+
+- **Sandbox Awareness**
+  - Check if network restrictions may have blocked needed downloads
+  - Verify filesystem restrictions didn't prevent needed file operations
+  - Look for signs of stale cached data being used instead of fresh downloads
+
+- **Dependency Verification**
+  - Are external packages actually installed (not just in manifest)?
+  - Are data files actually downloaded (not just referenced)?
+  - Are API endpoints actually reachable (not just configured)?
 
 ## Best Practices
 
