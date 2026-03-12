@@ -70,6 +70,13 @@ if [[ -z "$COMMAND" ]]; then
 	exit 0
 fi
 
+# Skip loom knowledge/memory commands — their text payloads often contain
+# words like "find" or "grep" that are not actual command invocations
+if echo "$COMMAND" | grep -qE '(^|[;&|[:space:]])loom[[:space:]]+(knowledge|memory)[[:space:]]'; then
+	echo "Skipping: loom knowledge/memory command" >>"$DEBUG_LOG" 2>&1
+	exit 0
+fi
+
 # Check if command uses grep (but not rg)
 uses_grep() {
 	local cmd="$1"
