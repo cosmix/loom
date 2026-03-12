@@ -28,22 +28,44 @@ Loom is an agent orchestration system for Claude Code. It coordinates AI agent s
 
 Loom is under active development and not yet published to GitHub Releases. You need to build locally with the Rust toolchain installed.
 
+### 1. Install Loom
+
 ```bash
 git clone https://github.com/cosmix/loom.git
 cd loom
 bash ./dev-install.sh
+```
 
-# in your target repo
+`dev-install.sh` builds the release binary (`cargo build --release`) and runs `install.sh`, which copies agents, skills, hooks, and configuration into `~/.claude/` and the CLI binary to `~/.local/bin/loom`.
+
+### 2. Write a Plan
+
+Plans are how loom knows what to build. Open Claude Code in your target project and use the `/loom-plan-writer` skill to create one:
+
+```bash
 cd /path/to/project
-loom init doc/plans/my-plan.md
+claude  # start Claude Code CLI
+```
+
+Inside the Claude Code session:
+
+1. Enter plan mode (`/plan`)
+2. Load the plan-writing skill by typing `/loom-plan-writer`
+3. Describe what you want to build and discuss with Claude
+4. Claude will write the plan to `doc/plans/PLAN-<name>.md`
+
+### 3. Run Loom
+
+Once your plan is written:
+
+```bash
+loom init doc/plans/PLAN-<name>.md
 loom run
 loom status --live
 loom stop
 ```
 
-`dev-install.sh` builds the release binary (`cargo build --release`) and runs `install.sh`, which copies agents, skills, hooks, and configuration into `~/.claude/` and the CLI binary to `~/.local/bin/loom`.
-
-`loom init` now also installs/configures project hook wiring automatically. For an existing repo that is missing Claude Code hook setup, run `loom repair --fix`.
+`loom init` parses the plan, creates stage state, and installs/configures project hook wiring automatically. For an existing repo that is missing Claude Code hook setup, run `loom repair --fix`.
 
 ### What Gets Installed
 
@@ -57,7 +79,7 @@ loom stop
 
 ## Core Workflow
 
-1. Create/update a plan in `doc/plans/`.
+1. Open Claude Code, enter plan mode (`/plan`), and use `/loom-plan-writer` to write a plan to `doc/plans/`.
 2. Run `loom init <plan-path>` to parse metadata and create stage state.
 3. Run `loom run` to start daemon + orchestrator.
 4. Track progress with `loom status --live`.
