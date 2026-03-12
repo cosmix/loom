@@ -33,6 +33,24 @@ SKILLS_DIR="${HOME}/.claude/skills"
 OUTPUT_DIR="${HOME}/.claude/hooks/loom"
 OUTPUT_FILE="${OUTPUT_DIR}/skill-keywords.json"
 
+# Single-word keywords that are too generic to be useful as skill triggers.
+# Multi-word keywords containing these are still indexed (e.g. "access control").
+STOPWORDS="add build change check close copy create debug delete deploy find fix get help install list make move open pull push read remove run send set show start stop test update use write app bug class code config data error file function issue log method new old output plan project script setup tool type value claude loom"
+
+is_stopword() {
+	local word="$1"
+	# Only filter single-word keywords (no spaces)
+	if [[ "$word" == *" "* ]]; then
+		return 1
+	fi
+	for sw in $STOPWORDS; do
+		if [[ "$word" == "$sw" ]]; then
+			return 0
+		fi
+	done
+	return 1
+}
+
 # Ensure output directory exists
 mkdir -p "$OUTPUT_DIR"
 
@@ -164,6 +182,11 @@ while IFS= read -r -d '' skill_file; do
 
 		# Skip empty triggers
 		if [[ -z "$normalized" ]]; then
+			continue
+		fi
+
+		# Skip single-word stopwords (too generic for meaningful matching)
+		if is_stopword "$normalized"; then
 			continue
 		fi
 

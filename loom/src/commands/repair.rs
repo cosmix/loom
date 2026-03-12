@@ -371,11 +371,30 @@ fn fix_gitignore_work(repo_root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Install Claude Code hooks
+/// Install Claude Code hooks and rebuild the skill keyword index
 fn fix_hooks(repo_root: &Path) -> Result<()> {
     use crate::fs::permissions::{ensure_loom_permissions, install_loom_hooks};
     install_loom_hooks()?;
     ensure_loom_permissions(repo_root)?;
+    rebuild_skill_index()?;
+    Ok(())
+}
+
+/// Rebuild the skill keyword index by running skill-index-builder.sh
+fn rebuild_skill_index() -> Result<()> {
+    use crate::fs::permissions::get_installed_hooks_dir;
+    let Some(hooks_dir) = get_installed_hooks_dir() else {
+        return Ok(());
+    };
+    let builder: std::path::PathBuf = hooks_dir.join("skill-index-builder.sh");
+    if !builder.exists() {
+        return Ok(());
+    }
+    std::process::Command::new(&builder)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .with_context(|| format!("Failed to run {}", builder.display()))?;
     Ok(())
 }
 
