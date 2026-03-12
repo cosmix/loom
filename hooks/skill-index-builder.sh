@@ -15,6 +15,11 @@
 #   2. Comma-separated format:
 #      trigger-keywords: keyword1, keyword2, keyword3
 #
+#   3. Keywords embedded in description field:
+#      description: Some text. Trigger keywords: keyword1, keyword2.
+#      description: Some text. Triggers: keyword1, keyword2.
+#      description: Some text. Keywords: keyword1, keyword2.
+#
 # Usage:
 #   ./skill-index-builder.sh
 #
@@ -123,10 +128,39 @@ while IFS= read -r -d '' skill_file; do
 		done
 	fi
 
+	# Method 3: Keywords embedded in description field
+	# Handles: "Trigger keywords:", "Triggers:", "Keywords:", "TRIGGERS:" in description
+	if [[ ${#triggers[@]} -eq 0 ]]; then
+		desc_text=$(echo "$frontmatter" | tr '\n' ' ')
+		keywords_str=""
+
+		for marker in "trigger keywords:" "triggers:" "keywords:"; do
+			if echo "$desc_text" | tr '[:upper:]' '[:lower:]' | grep -q "$marker"; then
+				# Extract everything after the marker, stop at ". [A-Z]" (next sentence/field) or end
+				keywords_str=$(echo "$desc_text" | perl -pe "s/.*${marker}\\s*//i" | sed 's/\. [A-Z].*//' | sed 's/\.[[:space:]]*$//' | sed 's/\.$//')
+				break
+			fi
+		done
+
+		if [[ -n "$keywords_str" ]]; then
+			IFS=',' read -ra keyword_array <<<"$keywords_str"
+			for keyword in "${keyword_array[@]}"; do
+				keyword=$(echo "$keyword" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+				if [[ -n "$keyword" ]]; then
+					triggers+=("$keyword")
+				fi
+			done
+		fi
+	fi
+
 	# Add triggers to index
 	for trigger in "${triggers[@]}"; do
 		# Normalize: lowercase
 		normalized=$(echo "$trigger" | tr '[:upper:]' '[:lower:]')
+
+		# Strip surrounding quotes (some SKILL.md files wrap triggers in quotes)
+		normalized="${normalized#\"}"
+		normalized="${normalized%\"}"
 
 		# Skip empty triggers
 		if [[ -z "$normalized" ]]; then

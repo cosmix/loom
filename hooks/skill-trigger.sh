@@ -1,231 +1,123 @@
-#!/usr/bin/env bash
-# skill-trigger.sh - UserPromptSubmit hook for keyword-based skill suggestions
-#
-# This hook reads user prompts and suggests relevant skills based on keyword matching.
-#
-# Input: JSON from stdin with user prompt
-#   {"session_id": "...", "message": "Help me implement JWT authentication"}
-#
-# Output: Skill suggestions to stdout (injected into context)
-#   SKILL SUGGESTIONS: Based on your prompt, consider:
-#   - /auth - Authentication patterns (matched: "JWT", "authentication")
-#   - /testing - Test implementation (matched: "implement")
-#
-# Environment variables:
-#   None required
-#
-# Exit codes:
-#   0 - Continue with suggestions in stdout (context injection)
-#   0 - Continue without suggestions (no matches)
-#
-# Dependencies:
-#   ~/.claude/hooks/loom/skill-keywords.json (built by skill-index-builder.sh)
+#!/usr/bin/env python3
+"""skill-trigger - UserPromptSubmit hook for keyword-based skill suggestions.
 
-set -euo pipefail
+Reads user prompts via stdin JSON and outputs skill suggestions to stdout.
+Suggestions are injected into Claude's context to encourage skill usage.
 
-INDEX_FILE="${HOME}/.claude/hooks/loom/skill-keywords.json"
-MATCH_THRESHOLD=2 # Minimum score to suggest a skill
-MAX_SUGGESTIONS=3 # Maximum number of skills to suggest
+Input: JSON from stdin with structure:
+  {"session_id": "...", "prompt": "Help me implement JWT authentication"}
 
-# Read JSON input from stdin
-input=""
-if [[ ! -t 0 ]]; then
-	input=$(cat)
-fi
+Output: Plain text skill suggestions to stdout (context injection).
 
-# Exit silently if no input
-if [[ -z "$input" ]]; then
-	exit 0
-fi
+Dependencies:
+  ~/.claude/hooks/loom/skill-keywords.json (built by skill-index-builder.sh)
+"""
 
-# Check if index file exists
-if [[ ! -f "$INDEX_FILE" ]]; then
-	exit 0
-fi
+import json
+import os
+import re
+import sys
 
-# Extract message from JSON input
-# Handle both "message" and "prompt" fields
-message=""
-if echo "$input" | grep -q '"message"'; then
-	message=$(echo "$input" | sed -n 's/.*"message"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-fi
-if [[ -z "$message" ]] && echo "$input" | grep -q '"prompt"'; then
-	message=$(echo "$input" | sed -n 's/.*"prompt"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-fi
+INDEX_FILE = os.path.expanduser("~/.claude/hooks/loom/skill-keywords.json")
+SKILLS_DIR = os.path.expanduser("~/.claude/skills")
+MAX_SUGGESTIONS = 3
 
-# Exit if no message found
-if [[ -z "$message" ]]; then
-	exit 0
-fi
 
-# Read the keyword index
-index_content=$(cat "$INDEX_FILE")
+def main():
+    if sys.stdin.isatty():
+        return
 
-# Tokenize and normalize the message (lowercase, split on whitespace/punctuation)
-# Use tr to lowercase and split on common delimiters
-tokens=$(echo "$message" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]' '\n' | sort -u)
+    try:
+        data = json.load(sys.stdin)
+    except (json.JSONDecodeError, ValueError):
+        return
 
-# Create associative array for skill scores and matched keywords
-declare -A skill_scores
-declare -A skill_matches
+    prompt = data.get("prompt", "")
+    if not prompt or not os.path.isfile(INDEX_FILE):
+        return
 
-# Match tokens against keyword index
-while IFS= read -r token; do
-	# Skip empty tokens or very short ones
-	if [[ -z "$token" ]] || [[ ${#token} -lt 2 ]]; then
-		continue
-	fi
+    try:
+        with open(INDEX_FILE) as f:
+            index = json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return
 
-	# Check if token exists in index (exact match)
-	# Extract skills for this keyword using grep/sed
-	if echo "$index_content" | grep -q "\"$token\"[[:space:]]*:"; then
-		# Extract the skill array for this keyword
-		skills_json=$(echo "$index_content" | grep -o "\"$token\"[[:space:]]*:[[:space:]]*\[[^]]*\]" | sed 's/.*\[\([^]]*\)\].*/\1/')
+    # Tokenize: lowercase, keep special chars like / - . within words
+    words = re.findall(r"[a-z0-9]+(?:[/._-][a-z0-9]+)*", prompt.lower())
+    tokens = set(w for w in words if len(w) > 1)
 
-		# Parse skill names from the array
-		while IFS= read -r skill; do
-			# Clean up the skill name (remove quotes and whitespace)
-			skill=$(echo "$skill" | sed 's/[",[:space:]]//g')
-			if [[ -n "$skill" ]]; then
-				# Increment score
-				current_score="${skill_scores[$skill]:-0}"
-				skill_scores[$skill]=$((current_score + 1))
+    # Generate bigrams and trigrams for multi-word keyword matching
+    # e.g. "event sourcing", "api key", "access control"
+    for i in range(len(words) - 1):
+        tokens.add(f"{words[i]} {words[i + 1]}")
+    for i in range(len(words) - 2):
+        tokens.add(f"{words[i]} {words[i + 1]} {words[i + 2]}")
 
-				# Track matched keywords
-				current_matches="${skill_matches[$skill]:-}"
-				if [[ -z "$current_matches" ]]; then
-					skill_matches[$skill]="$token"
-				else
-					skill_matches[$skill]="$current_matches, $token"
-				fi
-			fi
-		done <<<"$(echo "$skills_json" | tr ',' '\n')"
-	fi
+    # Score skills by keyword matches
+    scores = {}
+    matched = {}
+    for token in tokens:
+        if token in index:
+            for skill in index[token]:
+                scores[skill] = scores.get(skill, 0) + 1
+                matched.setdefault(skill, []).append(token)
 
-	# Also check for partial matches (token is substring of keyword or vice versa)
-	# This helps catch variations like "testing" matching "test"
-	while IFS= read -r keyword_entry; do
-		keyword=$(echo "$keyword_entry" | sed 's/"\([^"]*\)":.*/\1/')
-		if [[ -z "$keyword" ]]; then
-			continue
-		fi
+    if not scores:
+        return
 
-		# Check if token is a prefix of keyword (at least 3 chars) or keyword is prefix of token
-		if [[ ${#token} -ge 3 ]]; then
-			if [[ "$keyword" == "$token"* ]] || [[ "$token" == "$keyword"* ]]; then
-				# Skip if we already matched this keyword exactly
-				if [[ "$keyword" != "$token" ]]; then
-					# Extract skills for this keyword
-					skills_json=$(echo "$index_content" | grep -o "\"$keyword\"[[:space:]]*:[[:space:]]*\[[^]]*\]" | sed 's/.*\[\([^]]*\)\].*/\1/')
+    # Sort by score descending, take top N
+    top = sorted(scores.items(), key=lambda x: -x[1])[:MAX_SUGGESTIONS]
 
-					while IFS= read -r skill; do
-						skill=$(echo "$skill" | sed 's/[",[:space:]]//g')
-						if [[ -n "$skill" ]]; then
-							# Add partial match with lower weight (0.5)
-							current_score="${skill_scores[$skill]:-0}"
-							# For bash integer math, add 1 for every 2 partial matches
-							if (((current_score % 2) == 0)); then
-								skill_scores[$skill]=$((current_score + 1))
-							fi
+    lines = []
+    for skill, _score in top:
+        kws = ", ".join(matched[skill][:4])
+        desc = _get_description(skill)
+        if desc:
+            lines.append(f"  - /{skill} -- {desc} (matched: {kws})")
+        else:
+            lines.append(f"  - /{skill} (matched: {kws})")
 
-							# Track matched keywords (mark as partial)
-							current_matches="${skill_matches[$skill]:-}"
-							if [[ -z "$current_matches" ]]; then
-								skill_matches[$skill]="$token~$keyword"
-							elif [[ "$current_matches" != *"$keyword"* ]]; then
-								skill_matches[$skill]="$current_matches, $token~$keyword"
-							fi
-						fi
-					done <<<"$(echo "$skills_json" | tr ',' '\n')"
-				fi
-			fi
-		fi
-	done <<<"$(echo "$index_content" | grep -o '"[^"]*":' | sed 's/:$//')"
+    if lines:
+        print(
+            "SKILL MATCH: These skills are relevant to this task."
+            ' Invoke the best match with Skill(skill="name") before implementing:'
+        )
+        for line in lines:
+            print(line)
 
-done <<<"$tokens"
 
-# Sort skills by score and collect top suggestions
-suggestions=()
-suggestion_count=0
+def _get_description(skill_name):
+    """Extract short description from SKILL.md frontmatter."""
+    path = os.path.join(SKILLS_DIR, skill_name, "SKILL.md")
+    if not os.path.isfile(path):
+        return ""
+    try:
+        with open(path) as f:
+            text = f.read(2000)
+        m = re.search(r"^---\s*\n(.*?)\n---", text, re.DOTALL)
+        if not m:
+            return ""
+        fm = m.group(1)
+        # Multiline description (|)
+        m = re.search(r"^description:\s*\|\s*\n\s+(.+)", fm, re.MULTILINE)
+        if m:
+            d = m.group(1).strip()
+        else:
+            # Inline description
+            m = re.search(r"^description:\s*(.+)", fm, re.MULTILINE)
+            if not m:
+                return ""
+            d = m.group(1).strip()
+        # Truncate at first natural break point
+        for marker in [". Trigger", ". Use when", ". Covers", ". Keywords", ". Primary"]:
+            idx = d.find(marker)
+            if 0 < idx < 80:
+                d = d[: idx + 1]
+                break
+        return d[:80]
+    except IOError:
+        return ""
 
-# Sort skills by score (descending)
-for skill in "${!skill_scores[@]}"; do
-	score="${skill_scores[$skill]}"
-	if ((score >= MATCH_THRESHOLD)); then
-		suggestions+=("$score:$skill")
-	fi
-done
 
-# Sort by score (numeric, descending)
-IFS=$'\n' sorted_suggestions=($(sort -t: -k1 -rn <<<"${suggestions[*]:-}"))
-unset IFS
-
-# Build output
-output=""
-for suggestion in "${sorted_suggestions[@]:-}"; do
-	# Skip empty suggestions (can happen when array is empty)
-	if [[ -z "$suggestion" ]]; then
-		continue
-	fi
-
-	if ((suggestion_count >= MAX_SUGGESTIONS)); then
-		break
-	fi
-
-	score="${suggestion%%:*}"
-	skill="${suggestion#*:}"
-
-	# Skip if skill is empty
-	if [[ -z "$skill" ]]; then
-		continue
-	fi
-
-	matches="${skill_matches[$skill]:-}"
-
-	# Clean up matches (take first 3)
-	match_list=$(echo "$matches" | tr ',' '\n' | head -3 | tr '\n' ',' | sed 's/,$//' | sed 's/,/, /g')
-
-	# Get skill description from SKILL.md if available
-	skill_file="${HOME}/.claude/skills/${skill}/SKILL.md"
-	description=""
-	if [[ -f "$skill_file" ]]; then
-		# Extract description from YAML frontmatter
-		# Handle both inline and multiline (|) YAML format
-		frontmatter=$(sed -n '/^---$/,/^---$/p' "$skill_file")
-		desc_line=$(echo "$frontmatter" | grep -E '^description:' | head -1)
-
-		if [[ -n "$desc_line" ]]; then
-			# Check if it's a multiline description (ends with | or |-)
-			if echo "$desc_line" | grep -qE ':\s*\|[-]?\s*$'; then
-				# Multiline: get the first non-empty indented line after description:
-				description=$(echo "$frontmatter" | sed -n '/^description:/,/^[a-z]/p' | grep -E '^  [^ ]' | head -1 | sed 's/^  //')
-			else
-				# Inline: extract value after description:
-				description=$(echo "$desc_line" | sed 's/^description:[[:space:]]*//')
-			fi
-		fi
-
-		# Truncate to first sentence or 80 chars
-		if [[ -n "$description" ]]; then
-			description=$(echo "$description" | cut -c1-80 | sed 's/\. .*/\./')
-		fi
-	fi
-
-	if [[ -z "$description" ]]; then
-		description="(matched: $match_list)"
-	else
-		description="$description (matched: $match_list)"
-	fi
-
-	output+="- /${skill} - ${description}"$'\n'
-	suggestion_count=$((suggestion_count + 1))
-done
-
-# Output suggestions if any
-if [[ -n "$output" ]] && ((suggestion_count > 0)); then
-	echo "SKILL SUGGESTIONS: Based on your prompt, consider using:"
-	echo "$output"
-	echo "Use Skill(skill_name) to invoke the most relevant skill."
-fi
-
-exit 0
+if __name__ == "__main__":
+    main()
