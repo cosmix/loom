@@ -443,6 +443,22 @@ Before completing any stage: `loom memory list` and `loom memory show --all`
 
 FIX issues found, don't just report. Sandbox blocks = BLOCKER.
 
+**DOCUMENTATION UPDATE (MANDATORY):**
+
+integration-verify MUST update user-facing documentation to reflect changes made by the plan:
+
+| Doc File | Update When |
+| --- | --- |
+| `README.md` | New commands, features, config options, workflows, or API changes |
+| `CONTRIBUTING.md` | New development patterns, build steps, or contribution guidelines |
+| Other user-facing docs | Any doc that references changed functionality |
+
+**Rules:**
+- Only update sections relevant to the changes — do NOT rewrite entire files
+- Add new sections for new features; update existing sections for changed behavior
+- Remove references to removed functionality
+- If no user-facing behavior changed, skip this step (but document WHY in memory)
+
 **Example acceptance criteria:**
 
 ```yaml

@@ -586,6 +586,15 @@ Verifies all work integrates correctly after merges AND that the feature actuall
         - Architectural decisions → loom knowledge update architecture "..."
     13. Update architecture.md if structure changed
     14. Record any lessons learned
+
+    DOCUMENTATION UPDATE (MANDATORY):
+    15. Review user-facing documentation files (README.md, CONTRIBUTING.md, etc.)
+    16. Update documentation to reflect changes made by this plan:
+        - New CLI commands, features, config options, workflows
+        - Changed behavior or API surfaces
+        - Removed functionality (remove stale references)
+    17. Only update sections relevant to the changes — do NOT rewrite entire files
+    18. If no user-facing behavior changed, skip but record WHY in memory
   dependencies: ["stage-a", "stage-b", "stage-c"] # ALL feature stages
   acceptance:
     - "cargo test"
@@ -595,7 +604,10 @@ Verifies all work integrates correctly after merges AND that the feature actuall
     # - "./target/debug/myapp --help | grep 'new-command'"  # CLI wired
     # - "curl -s localhost:8080/api/new-endpoint | jq .status"  # API wired
     # - "grep -q 'NewComponent' src/app/routes.tsx"  # UI wired
-  files: [] # Verification only - no file modifications
+  files:
+    - "README.md"
+    - "CONTRIBUTING.md"
+    - "doc/**/*.md"
   working_dir: "." # REQUIRED: "." for worktree root, or subdirectory like "loom"
   # REQUIRED: At least one verification field
   truths:
@@ -902,7 +914,13 @@ _Knowledge:_
 - Read all stage memory and curate valuable insights to knowledge
 - Update architecture.md if structure changed
 
-**Files:** None (verification only)
+_Documentation:_
+
+- Update README.md, CONTRIBUTING.md, and other user-facing docs to reflect changes
+- Add new sections for new features; update existing sections for changed behavior
+- Remove references to removed functionality
+
+**Files:** `README.md`, `CONTRIBUTING.md`, `doc/**/*.md` (documentation updates)
 
 **Acceptance:** Build passes, tests pass, features callable via CLI/API.
 
@@ -1001,13 +1019,22 @@ loom:
         - Verify features are WIRED into the application
         - Execute smoke test of primary use case
         - Confirm user-visible behavior works end-to-end
+
+        DOCUMENTATION UPDATE (MANDATORY):
+        - Review and update README.md, CONTRIBUTING.md, and other user-facing docs
+        - Add new sections for new features; update existing for changed behavior
+        - Remove references to removed functionality
+        - If no user-facing behavior changed, skip but record WHY in memory
       dependencies: ["stage-a", "stage-b"]
       acceptance:
         - "cargo test"
         - "cargo clippy -- -D warnings"
         - "cargo build"
         # ADD: Functional acceptance criteria for YOUR feature
-      files: []
+      files:
+        - "README.md"
+        - "CONTRIBUTING.md"
+        - "doc/**/*.md"
       working_dir: "."
       truths:
         - "myapp --help" # Adapt to YOUR feature

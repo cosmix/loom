@@ -225,6 +225,40 @@ pub(super) fn format_semi_stable_section(
                 content.push_str("**Review Document:**\n\n");
                 content.push_str("Generate a change summary for human reviewers:\n");
                 content.push_str("```bash\nloom review\n```\n\n");
+
+                // Documentation update reminder (integration-verify only)
+                content.push_str("```text\n");
+                content.push_str(
+                    "┌────────────────────────────────────────────────────────────────────┐\n",
+                );
+                content.push_str(
+                    "│  📄 DOCUMENTATION UPDATE REQUIRED                                  │\n",
+                );
+                content.push_str(
+                    "│                                                                    │\n",
+                );
+                content.push_str(
+                    "│  Update user-facing docs to reflect this plan's changes:           │\n",
+                );
+                content.push_str(
+                    "│  - README.md: new commands, features, config, workflows            │\n",
+                );
+                content.push_str(
+                    "│  - CONTRIBUTING.md: new dev patterns, build steps                  │\n",
+                );
+                content.push_str(
+                    "│  - Other docs referencing changed functionality                    │\n",
+                );
+                content.push_str(
+                    "│                                                                    │\n",
+                );
+                content.push_str(
+                    "│  Only update relevant sections. Skip if no user-facing changes.    │\n",
+                );
+                content.push_str(
+                    "└────────────────────────────────────────────────────────────────────┘\n",
+                );
+                content.push_str("```\n\n");
             }
         }
         StageType::Standard => {
