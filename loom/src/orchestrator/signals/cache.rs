@@ -248,7 +248,7 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("- **ALL** linter errors must be resolved - no exceptions\n");
     content.push_str("- **ALL** test failures must be addressed\n");
     content.push_str("- **ALL** IDE warnings should be investigated and resolved\n");
-    content.push_str("- **NOTHING** is \"pre-existing\" - if it's broken, fix it now\n");
+    content.push_str("- **NOTHING** is \"pre-existing\" or \"out of scope\" - every issue is YOUR issue, treat it as relevant and critical\n");
     content
         .push_str("- **NOTHING** is \"too trivial\" - small issues compound into big problems\n\n");
 
