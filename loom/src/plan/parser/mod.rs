@@ -141,6 +141,10 @@ loom:
       working_dir: "."
       artifacts:
         - "target/debug/myapp"
+      wiring:
+        - source: "Cargo.toml"
+          pattern: "name.*=.*myapp"
+          description: "Binary target defined in Cargo.toml"
 ```
 
 <!-- END loom METADATA -->

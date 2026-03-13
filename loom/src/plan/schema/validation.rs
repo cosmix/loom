@@ -447,6 +447,37 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
                     stage_id: Some(stage.id.clone()),
                 });
             }
+
+            // Leaf stage error: Standard stage with artifacts but no wiring verification
+            // is risky when it is a leaf because nothing downstream can catch missing wiring.
+            if matches!(stage.stage_type, super::types::StageType::Standard)
+                && !stage.artifacts.is_empty()
+                && stage.wiring.is_empty()
+                && stage.wiring_tests.is_empty()
+            {
+                // A stage is a leaf if no other stage lists it in its dependencies.
+                let is_leaf =
+                    !metadata.loom.stages.iter().any(|other| {
+                        other.id != stage.id && other.dependencies.contains(&stage.id)
+                    });
+
+                // Also check if any integration-verify stage provides wiring coverage
+                let any_iv_has_wiring = metadata.loom.stages.iter().any(|other| {
+                    other.stage_type == super::types::StageType::IntegrationVerify
+                        && (!other.wiring.is_empty() || !other.wiring_tests.is_empty())
+                });
+
+                if is_leaf && !any_iv_has_wiring {
+                    errors.push(ValidationError {
+                        message:
+                            "Standard leaf stage has artifacts but no wiring or wiring_tests. \
+                                  Add wiring checks to verify the artifacts are integrated, \
+                                  or add a downstream stage that verifies integration."
+                                .to_string(),
+                        stage_id: Some(stage.id.clone()),
+                    });
+                }
+            }
         }
 
         // Validate stage-level sandbox configuration
@@ -598,7 +629,28 @@ pub fn validate_structural_preflight(
                 stage.id
             ));
         }
+
+        // Recommend before/after checks for feature stages that have artifacts and acceptance
+        // criteria but no before_stage/after_stage checks.
+        if matches!(stage.stage_type, super::types::StageType::Standard)
+            && !stage.artifacts.is_empty()
+            && !stage.acceptance.is_empty()
+            && stage.before_stage.is_empty()
+            && stage.after_stage.is_empty()
+        {
+            warnings.push(format!(
+                "Stage '{}': feature stage with artifacts and acceptance criteria has no \
+                 before_stage/after_stage checks. Consider adding them to capture pre/post \
+                 conditions (e.g., a failing test before, a passing test after).",
+                stage.id
+            ));
+        }
     }
+
+    // Cross-stage wiring coverage: warn when artifact coverage is absent across the DAG.
+    // This is a superset of check_artifact_wiring_coherence, so we only call this one
+    // to avoid duplicate warnings.
+    warnings.extend(check_cross_stage_wiring_coverage(stages));
 
     // Build tool command patterns and their expected config files
     const BUILD_TOOL_CHECKS: &[(&str, &str)] = &[
@@ -746,6 +798,115 @@ pub(crate) fn check_wiring_pattern_quality(pattern: &str) -> Option<String> {
     }
 
     None
+}
+
+/// Check coherence between artifact declarations and wiring checks within each stage.
+///
+/// Returns warnings for Standard stages that declare artifacts but provide no wiring
+/// verification. Artifacts without wiring checks are a red flag because the plan says
+/// "these files will exist" but never verifies that they are actually connected to
+/// anything the system uses.
+///
+/// Note: `check_cross_stage_wiring_coverage` is a superset of this check and is used
+/// in `validate_structural_preflight` instead to avoid duplicate warnings. This function
+/// is retained for targeted per-stage use.
+#[allow(dead_code)]
+pub fn check_artifact_wiring_coherence(stages: &[super::types::StageDefinition]) -> Vec<String> {
+    let mut warnings = Vec::new();
+
+    for stage in stages {
+        if !matches!(stage.stage_type, super::types::StageType::Standard) {
+            continue;
+        }
+        if stage.artifacts.is_empty() {
+            continue;
+        }
+        if !stage.wiring.is_empty() || !stage.wiring_tests.is_empty() {
+            continue;
+        }
+
+        warnings.push(format!(
+            "Stage '{}': declares {} artifact(s) but has no wiring or wiring_tests checks. \
+             Consider adding wiring checks to verify the artifacts are actually integrated.",
+            stage.id,
+            stage.artifacts.len()
+        ));
+    }
+
+    warnings
+}
+
+/// Check that artifact-producing stages are covered by wiring verification somewhere in the DAG.
+///
+/// For each Standard stage that declares artifacts, this function checks whether:
+/// - The stage itself has wiring checks, OR
+/// - Any of its direct dependents have wiring checks, OR
+/// - Any integration-verify stage in the plan has wiring checks.
+///
+/// If none of the above hold, the artifacts risk going unverified.
+pub fn check_cross_stage_wiring_coverage(stages: &[super::types::StageDefinition]) -> Vec<String> {
+    let mut warnings = Vec::new();
+
+    // Build a forward-dependency map: stage_id → Vec<dependent_stage_ids>
+    let mut forward_deps: std::collections::HashMap<&str, Vec<&str>> =
+        std::collections::HashMap::new();
+    for stage in stages {
+        // Ensure every stage has an entry even if no one depends on it
+        forward_deps.entry(stage.id.as_str()).or_default();
+        for dep in &stage.dependencies {
+            forward_deps
+                .entry(dep.as_str())
+                .or_default()
+                .push(stage.id.as_str());
+        }
+    }
+
+    // Check if any integration-verify stage has wiring checks
+    let any_iv_has_wiring = stages.iter().any(|s| {
+        matches!(s.stage_type, super::types::StageType::IntegrationVerify)
+            && (!s.wiring.is_empty() || !s.wiring_tests.is_empty())
+    });
+
+    for stage in stages {
+        if !matches!(stage.stage_type, super::types::StageType::Standard) {
+            continue;
+        }
+        if stage.artifacts.is_empty() {
+            continue;
+        }
+
+        // Stage itself has wiring: covered
+        if !stage.wiring.is_empty() || !stage.wiring_tests.is_empty() {
+            continue;
+        }
+
+        // Any integration-verify stage has wiring: covered
+        if any_iv_has_wiring {
+            continue;
+        }
+
+        // Check direct dependents
+        let dependents = forward_deps
+            .get(stage.id.as_str())
+            .cloned()
+            .unwrap_or_default();
+        let dependent_has_wiring = dependents.iter().any(|dep_id| {
+            stages
+                .iter()
+                .any(|s| s.id == *dep_id && (!s.wiring.is_empty() || !s.wiring_tests.is_empty()))
+        });
+
+        if !dependent_has_wiring {
+            warnings.push(format!(
+                "Stage '{}': artifacts are not covered by wiring checks in the stage itself, \
+                 its dependents, or any integration-verify stage. \
+                 Add wiring checks to verify these artifacts are integrated.",
+                stage.id
+            ));
+        }
+    }
+
+    warnings
 }
 
 /// Check for knowledge-related recommendations (non-fatal warnings)
