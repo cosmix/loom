@@ -12,7 +12,9 @@ use crate::models::stage::{StageStatus, StageType};
 use crate::plan::parser::{parse_plan, ParsedPlan};
 use crate::plan::schema::{ChangeImpactConfig, ChangeImpactPolicy};
 use crate::verify::baseline::compare_to_baseline;
+use crate::verify::duplicate_detection::detect_duplicate_symbols;
 use crate::verify::transitions::{load_stage, save_stage, trigger_dependents};
+use crate::verify::wiring_detection::detect_unwired_files;
 
 use super::acceptance_runner::{
     resolve_stage_execution_paths, run_acceptance_with_display, AcceptanceDisplayOptions,
@@ -39,6 +41,15 @@ fn load_parsed_plan(work_dir: &Path) -> Result<Option<ParsedPlan>> {
         .with_context(|| format!("Failed to parse plan: {}", source_path.display()))?;
 
     Ok(Some(parsed_plan))
+}
+
+/// Resolve the base branch from config, falling back to "main"
+fn resolve_base_branch(work_dir: &Path) -> String {
+    load_config(work_dir)
+        .ok()
+        .flatten()
+        .and_then(|c| c.base_branch())
+        .unwrap_or_else(|| "main".to_string())
 }
 
 /// Load change impact config from the active plan
@@ -224,6 +235,115 @@ fn sync_worktree_permissions(working_dir: &Option<PathBuf>, acceptance_dir: &Opt
     }
 }
 
+/// Check if a stage has downstream dependents (other stages that depend on it)
+fn has_downstream_dependents(stage_id: &str, work_dir: &Path) -> bool {
+    // Load all stages and check if any depend on this one
+    match crate::verify::transitions::list_all_stages(work_dir) {
+        Ok(stages) => stages
+            .iter()
+            .any(|s| s.dependencies.contains(&stage_id.to_string())),
+        Err(_) => false, // Conservative: assume no dependents
+    }
+}
+
+/// Check if memory entries mention unwired files
+fn check_memory_covers_unwired(
+    stage_id: &str,
+    unwired_files: &[crate::verify::wiring_detection::UnwiredFile],
+    work_dir: &Path,
+) -> bool {
+    let memory_path = work_dir.join("memory").join(format!("{stage_id}.md"));
+    let memory_content = match std::fs::read_to_string(&memory_path) {
+        Ok(content) => content.to_lowercase(),
+        Err(_) => return false,
+    };
+
+    // Check for general wiring-related terms in memory
+    let wiring_keywords = [
+        "wire",
+        "wiring",
+        "register",
+        "mount",
+        "import",
+        "downstream",
+        "integrate",
+    ];
+    let has_wiring_context = wiring_keywords.iter().any(|kw| memory_content.contains(kw));
+
+    // Check if memory mentions any of the unwired files by name or path
+    let mentions_any_file = unwired_files.iter().any(|uf| {
+        let name = uf.importable_name.to_lowercase();
+        let path = uf.path.to_lowercase();
+        memory_content.contains(&name) || memory_content.contains(&path)
+    });
+
+    has_wiring_context || mentions_any_file
+}
+
+/// Run aggregated wiring re-verification across all completed stages
+///
+/// When completing an integration-verify stage, re-runs all wiring checks
+/// from all prior stages on the merged codebase.
+fn run_aggregated_wiring_reverification(
+    _stage_id: &str,
+    verification_dir: &Path,
+    work_dir: &Path,
+) -> Result<()> {
+    // Load all stages
+    let stages = crate::verify::transitions::list_all_stages(work_dir)?;
+
+    // Load plan to get stage definitions with wiring checks
+    let parsed_plan = load_parsed_plan(work_dir)?;
+    let plan = match parsed_plan {
+        Some(plan) => plan,
+        None => {
+            eprintln!("Warning: Could not load plan for aggregated wiring verification");
+            return Ok(());
+        }
+    };
+
+    let mut all_gaps = Vec::new();
+
+    for stage in &stages {
+        // Skip non-completed stages and stages without wiring checks in the plan
+        if stage.status != StageStatus::Completed {
+            continue;
+        }
+
+        // Find the stage definition in the plan
+        if let Some(stage_def) = plan.metadata.loom.stages.iter().find(|s| s.id == stage.id) {
+            // Re-run wiring checks from this stage on the merged codebase
+            if !stage_def.wiring.is_empty() {
+                println!("  Re-verifying wiring from stage '{}'...", stage.id);
+                let gaps = crate::verify::goal_backward::verify_wiring(
+                    &stage_def.wiring,
+                    verification_dir,
+                )?;
+                if !gaps.is_empty() {
+                    for gap in &gaps {
+                        eprintln!("    ✗ {}: {}", stage.id, gap.description);
+                    }
+                }
+                all_gaps.extend(gaps);
+            }
+        }
+    }
+
+    if all_gaps.is_empty() {
+        println!("Aggregated wiring re-verification passed!");
+    } else {
+        eprintln!();
+        eprintln!(
+            "Aggregated wiring re-verification found {} issue(s)",
+            all_gaps.len()
+        );
+        eprintln!("Fix wiring issues in the merged codebase before completing integration-verify.");
+        anyhow::bail!("Aggregated wiring re-verification failed");
+    }
+
+    Ok(())
+}
+
 /// Run acceptance criteria phase
 ///
 /// Returns Some(true) if criteria passed, Some(false) if failed, None if skipped.
@@ -264,6 +384,9 @@ fn run_verification_phase(
     work_dir: &Path,
 ) -> Result<()> {
     if !no_verify {
+        // Resolve the base branch once for all detection calls
+        let base_branch = resolve_base_branch(work_dir);
+
         // Load stage definition once for verification checks
         let stage_def = load_stage_definition_from_plan(stage_id, work_dir)?;
 
@@ -318,6 +441,116 @@ fn run_verification_phase(
                     anyhow::bail!("After-stage verification failed for stage '{stage_id}'");
                 }
                 println!("After-stage verification passed!");
+            }
+        }
+
+        // Unwired file detection (2a + 2b)
+        if let Some(ref verification_dir) = *acceptance_dir {
+            match detect_unwired_files(verification_dir, &base_branch) {
+                Ok(result) => {
+                    if !result.unwired_files.is_empty() {
+                        // Check if this stage has downstream dependents
+                        let has_dependents = has_downstream_dependents(stage_id, work_dir);
+
+                        if has_dependents {
+                            // Warning + memory check (2b)
+                            eprintln!(
+                                "Warning: {} potentially unwired file(s):",
+                                result.unwired_files.len()
+                            );
+                            for uf in &result.unwired_files {
+                                eprintln!(
+                                    "  - {} (importable as '{}')",
+                                    uf.path, uf.importable_name
+                                );
+                            }
+
+                            // Check if memory entries mention the unwired files
+                            let has_memory_coverage = check_memory_covers_unwired(
+                                stage_id,
+                                &result.unwired_files,
+                                work_dir,
+                            );
+
+                            if !has_memory_coverage {
+                                eprintln!();
+                                eprintln!(
+                                    "New files not yet wired and no memory notes explain downstream wiring."
+                                );
+                                eprintln!("Record memory notes explaining what needs to happen:");
+                                for uf in &result.unwired_files {
+                                    eprintln!(
+                                        "  loom memory note \"{} needs to be wired in by downstream stage\"",
+                                        uf.path
+                                    );
+                                }
+                                anyhow::bail!(
+                                    "Unwired files detected with no memory notes for downstream wiring. \
+                                     Record memory notes explaining the wiring plan."
+                                );
+                            }
+                            println!("Unwired files found but memory notes cover downstream wiring plan.");
+                        } else {
+                            // No downstream dependents = leaf stage = ERROR (blocking)
+                            eprintln!(
+                                "ERROR: Unwired files in leaf stage (no downstream dependents):"
+                            );
+                            for uf in &result.unwired_files {
+                                eprintln!(
+                                    "  - {} (importable as '{}')",
+                                    uf.path, uf.importable_name
+                                );
+                            }
+                            eprintln!();
+                            eprintln!(
+                                "Leaf stages must wire all new files. Import/register them or remove them."
+                            );
+                            anyhow::bail!(
+                                "Unwired files detected in leaf stage '{}'. Wire them or remove them.",
+                                stage_id
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    // Non-fatal - detection is best-effort
+                    eprintln!("Warning: Wiring detection skipped: {e}");
+                }
+            }
+        }
+
+        // Duplicate symbol detection (2c - advisory only)
+        if let Some(ref verification_dir) = *acceptance_dir {
+            match detect_duplicate_symbols(verification_dir, &base_branch) {
+                Ok(duplicates) => {
+                    if !duplicates.is_empty() {
+                        println!("Potential duplicate symbols detected:");
+                        for dup in &duplicates {
+                            println!(
+                                "  Warning: New {} '{}' in {}:{} may duplicate existing '{}' in {}:{}",
+                                dup.symbol_type,
+                                dup.symbol_name,
+                                dup.new_file,
+                                dup.new_line,
+                                dup.symbol_name,
+                                dup.existing_file,
+                                dup.existing_line
+                            );
+                        }
+                        println!("  (These are advisory warnings - verify they are intentional)");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Warning: Duplicate detection skipped: {e}");
+                }
+            }
+        }
+
+        // Aggregated wiring re-verification for integration-verify stages (3d)
+        if stage.stage_type == StageType::IntegrationVerify {
+            if let Some(ref verification_dir) = *acceptance_dir {
+                println!("Running aggregated wiring re-verification...");
+                run_aggregated_wiring_reverification(stage_id, verification_dir, work_dir)?;
             }
         }
 
