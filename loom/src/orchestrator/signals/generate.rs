@@ -8,9 +8,10 @@ use crate::handoff::git_handoff::GitHistory;
 use crate::handoff::schema::ParsedHandoff;
 use crate::language::DetectedLanguage;
 use crate::models::session::Session;
-use crate::models::stage::Stage;
+use crate::models::stage::{Stage, StageType};
 use crate::models::worktree::Worktree;
 use crate::skills::{SkillIndex, SkillMatch};
+use crate::verify::transitions::load_stage;
 
 use super::cache::SignalMetrics;
 use super::format::{format_signal_content, format_signal_with_metrics};
@@ -300,6 +301,173 @@ pub fn generate_signal_with_metrics(
     Ok((signal_path, formatted.metrics))
 }
 
+/// Build cross-stage change summary for integration-verify stages.
+///
+/// For each completed dependency, aggregates file assignments and stage metadata
+/// to give integration-verify agents a bird's eye view of all changes.
+fn build_cross_stage_summary(work_dir: &Path, stage: &Stage) -> Option<String> {
+    if stage.stage_type != StageType::IntegrationVerify {
+        return None;
+    }
+
+    if stage.dependencies.is_empty() {
+        return None;
+    }
+
+    let mut summary = String::from("## Cross-Stage Changes\n\n");
+    let mut has_content = false;
+    let mut all_files: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+
+    for dep_id in &stage.dependencies {
+        match load_stage(dep_id, work_dir) {
+            Ok(dep_stage) => {
+                has_content = true;
+                summary.push_str(&format!(
+                    "### Stage: {} ({})\n",
+                    dep_stage.name,
+                    format_stage_status(&dep_stage.status)
+                ));
+                summary.push_str(&format!("Branch: loom/{dep_id}\n"));
+
+                if !dep_stage.files.is_empty() {
+                    summary.push_str("Files:\n");
+                    for file in &dep_stage.files {
+                        summary.push_str(&format!("- {file}\n"));
+                        all_files
+                            .entry(file.clone())
+                            .or_default()
+                            .push(dep_id.clone());
+                    }
+                }
+                summary.push('\n');
+            }
+            Err(_) => {
+                // Stage file not found or unreadable - skip gracefully
+            }
+        }
+    }
+
+    if !has_content {
+        return None;
+    }
+
+    // Identify files touched by multiple stages
+    let multi_stage_files: Vec<_> = all_files
+        .iter()
+        .filter(|(_, stages)| stages.len() > 1)
+        .collect();
+
+    let new_file_count: usize = all_files.values().filter(|s| s.len() == 1).count();
+
+    if !multi_stage_files.is_empty() || new_file_count > 0 {
+        summary.push_str("### Potential Concerns\n");
+        for (file, stages) in &multi_stage_files {
+            summary.push_str(&format!(
+                "- `{}` modified by {} stages — verify no conflicts\n",
+                file,
+                stages.len()
+            ));
+        }
+        if new_file_count > 0 {
+            summary.push_str(&format!(
+                "- {} new file(s) added — verify all are wired\n",
+                new_file_count
+            ));
+        }
+        summary.push('\n');
+    }
+
+    Some(summary)
+}
+
+/// Format a stage status for display
+fn format_stage_status(status: &crate::models::stage::StageStatus) -> &'static str {
+    use crate::models::stage::StageStatus;
+    match status {
+        StageStatus::Completed => "completed",
+        StageStatus::Executing => "executing",
+        StageStatus::Queued => "queued",
+        StageStatus::WaitingForDeps => "waiting",
+        StageStatus::Blocked => "blocked",
+        StageStatus::NeedsHandoff => "needs-handoff",
+        StageStatus::WaitingForInput => "waiting-for-input",
+        StageStatus::MergeConflict => "merge-conflict",
+        StageStatus::Skipped => "skipped",
+        StageStatus::CompletedWithFailures => "completed-with-failures",
+        StageStatus::MergeBlocked => "merge-blocked",
+        StageStatus::NeedsHumanReview => "needs-human-review",
+    }
+}
+
+/// Build wiring checklist from stage memories for integration-verify.
+///
+/// Reads memory entries from all completed stages and extracts
+/// wiring-related notes into an actionable checklist.
+fn build_wiring_checklist(work_dir: &Path, stage: &Stage) -> Option<String> {
+    if stage.stage_type != StageType::IntegrationVerify {
+        return None;
+    }
+
+    if stage.dependencies.is_empty() {
+        return None;
+    }
+
+    // Keywords indicating wiring-relevant notes
+    let wiring_keywords = [
+        "needs", "wire", "wiring", "register", "mount", "import", "add to", "connect",
+    ];
+
+    let mut checklist = String::from("## Downstream Wiring Checklist\n\n");
+    let mut has_items = false;
+
+    for dep_id in &stage.dependencies {
+        let memory_path = work_dir.join("memory").join(format!("{dep_id}.md"));
+
+        let content = match fs::read_to_string(&memory_path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        // Load stage name for display
+        let stage_name = load_stage(dep_id, work_dir)
+            .map(|s| s.name)
+            .unwrap_or_else(|_| dep_id.clone());
+
+        let mut stage_items: Vec<String> = Vec::new();
+
+        for line in content.lines() {
+            let lower = line.to_lowercase();
+            if wiring_keywords.iter().any(|kw| lower.contains(kw)) {
+                // Strip common markdown prefixes for cleaner display
+                let stripped = line
+                    .trim_start_matches('-')
+                    .trim_start_matches('*')
+                    .trim_start_matches('#')
+                    .trim();
+                if !stripped.is_empty() {
+                    stage_items.push(stripped.to_string());
+                }
+            }
+        }
+
+        if !stage_items.is_empty() {
+            has_items = true;
+            checklist.push_str(&format!("From stage '{stage_name}':\n"));
+            for item in stage_items {
+                checklist.push_str(&format!("- [ ] {item}\n"));
+            }
+            checklist.push('\n');
+        }
+    }
+
+    if !has_items {
+        return None;
+    }
+
+    Some(checklist)
+}
+
 /// Build signal context with all shared setup logic
 ///
 /// This consolidates the context building, budget, usage, and sandbox setup
@@ -329,6 +497,12 @@ fn build_signal_context(
 
     // Populate sandbox summary from stage config
     embedded_context.sandbox_summary = Some(build_sandbox_summary(stage));
+
+    // Build integration-verify enrichments
+    if stage.stage_type == StageType::IntegrationVerify {
+        embedded_context.cross_stage_summary = build_cross_stage_summary(work_dir, stage);
+        embedded_context.wiring_checklist = build_wiring_checklist(work_dir, stage);
+    }
 
     embedded_context
 }

@@ -41,6 +41,10 @@ pub struct EmbeddedContext {
     pub context_usage: Option<f32>,
     /// Merged sandbox configuration summary for display in signal
     pub sandbox_summary: Option<SandboxSummary>,
+    /// Cross-stage change summary for integration-verify stages
+    pub cross_stage_summary: Option<String>,
+    /// Memory-based wiring checklist aggregated from all stages
+    pub wiring_checklist: Option<String>,
 }
 
 #[derive(Debug, Clone)]

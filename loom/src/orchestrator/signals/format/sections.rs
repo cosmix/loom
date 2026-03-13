@@ -392,6 +392,18 @@ pub(super) fn format_dynamic_section(
         content.push_str("\n</plan-overview>\n\n");
     }
 
+    // Cross-stage change summary (integration-verify only)
+    if let Some(summary) = &embedded_context.cross_stage_summary {
+        content.push_str(summary);
+        content.push_str("\n\n");
+    }
+
+    // Wiring checklist from stage memories
+    if let Some(checklist) = &embedded_context.wiring_checklist {
+        content.push_str(checklist);
+        content.push_str("\n\n");
+    }
+
     // Assignment section
     content.push_str("## Assignment\n\n");
     content.push_str(&format!("{}: ", &stage.name));

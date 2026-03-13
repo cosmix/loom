@@ -171,6 +171,8 @@ fn test_format_signal_content_with_embedded_context() {
         context_budget: None,
         context_usage: None,
         sandbox_summary: None,
+        cross_stage_summary: None,
+        wiring_checklist: None,
     };
 
     let content = format_signal_content(
