@@ -30,6 +30,7 @@ fn make_stage(id: &str, deps: Vec<&str>, group: Option<&str>) -> StageDefinition
         bug_fix: None,
         regression_test: None,
         model: None,
+        code_review: None,
     }
 }
 

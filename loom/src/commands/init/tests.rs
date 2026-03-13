@@ -64,6 +64,7 @@ fn test_create_stage_from_definition_no_dependencies() {
         bug_fix: None,
         regression_test: None,
         model: None,
+        code_review: None,
     };
 
     let stage = create_stage_from_definition(&stage_def, "plan-001");
@@ -104,6 +105,7 @@ fn test_create_stage_from_definition_with_dependencies() {
         bug_fix: None,
         regression_test: None,
         model: None,
+        code_review: None,
     };
 
     let stage = create_stage_from_definition(&stage_def, "plan-002");
@@ -302,6 +304,7 @@ fn test_initialize_with_plan_creates_config() {
         bug_fix: None,
         regression_test: None,
         model: None,
+        code_review: None,
     };
 
     let plan_path = create_test_plan(temp_dir.path(), vec![stage_def]);
@@ -353,6 +356,7 @@ fn test_initialize_with_plan_creates_stage_files() {
             bug_fix: None,
             regression_test: None,
             model: None,
+            code_review: None,
         },
         StageDefinition {
             id: "stage-2".to_string(),
@@ -380,6 +384,7 @@ fn test_initialize_with_plan_creates_stage_files() {
             bug_fix: None,
             regression_test: None,
             model: None,
+            code_review: None,
         },
     ];
 

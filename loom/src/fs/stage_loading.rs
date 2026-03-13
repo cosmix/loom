@@ -71,6 +71,7 @@ impl StageFrontmatter {
             bug_fix: None,
             regression_test: None,
             model: None,
+            code_review: None,
         }
     }
 }

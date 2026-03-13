@@ -40,6 +40,7 @@ pub(crate) fn make_stage(id: &str, name: &str) -> StageDefinition {
         bug_fix: None,
         regression_test: None,
         model: None,
+        code_review: None,
     }
 }
 

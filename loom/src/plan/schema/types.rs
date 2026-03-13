@@ -200,6 +200,23 @@ fn default_deny_write() -> Vec<String> {
     ]
 }
 
+/// Configuration for structured code review in integration-verify stages.
+///
+/// Declares review dimensions that integration-verify agents must address.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CodeReviewConfig {
+    /// Review dimensions to cover (e.g., "security", "architecture", "testing", "wiring")
+    #[serde(default)]
+    pub dimensions: Vec<String>,
+    /// Whether all dimensions must be explicitly covered (default: true)
+    #[serde(default = "default_require_all")]
+    pub require_all: bool,
+}
+
+fn default_require_all() -> bool {
+    true
+}
+
 /// Type of stage for specialized handling.
 ///
 /// Re-exported from models::stage for backward compatibility.
@@ -309,6 +326,9 @@ pub struct StageDefinition {
     /// When set, Claude Code sessions for this stage use this model
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Structured code review configuration (recommended for integration-verify)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code_review: Option<CodeReviewConfig>,
 }
 
 impl StageDefinition {
