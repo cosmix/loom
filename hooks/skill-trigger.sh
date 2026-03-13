@@ -7,7 +7,8 @@ Suggestions are injected into Claude's context to encourage skill usage.
 Input: JSON from stdin with structure:
   {"session_id": "...", "prompt": "Help me implement JWT authentication"}
 
-Output: Plain text skill suggestions to stdout (context injection).
+Output: JSON with hookSpecificOutput.additionalContext for context injection.
+  Plain text stdout from UserPromptSubmit hooks is unreliable (see claude-code#13912).
 
 Dependencies:
   ~/.claude/hooks/loom/skill-keywords.json (built by skill-index-builder.sh)
@@ -20,8 +21,10 @@ import sys
 
 INDEX_FILE = os.path.expanduser("~/.claude/hooks/loom/skill-keywords.json")
 SKILLS_DIR = os.path.expanduser("~/.claude/skills")
+DEBUG_LOG = os.path.expanduser("~/.claude/hooks/loom/skill-trigger.log")
 MAX_SUGGESTIONS = 3
 MIN_SCORE = 2  # Minimum weighted score to suggest a skill
+DEBUG = os.environ.get("LOOM_SKILL_DEBUG", "") == "1"
 
 # Words too generic to be meaningful skill triggers on their own.
 # Multi-word keywords containing these are still allowed (e.g. "access control").
@@ -40,17 +43,48 @@ STOPWORDS = frozenset({
 })
 
 
+def _is_name_match(keyword, skill_name):
+    """True when keyword strongly identifies the skill by name.
+
+    Exact match ("rust" == "rust") or prefix match with min length 4
+    ("refactor" -> "refactoring") to avoid short false matches.
+    """
+    if keyword == skill_name:
+        return True
+    if len(keyword) >= 4 and skill_name.startswith(keyword):
+        return True
+    return False
+
+
+def _debug(msg):
+    """Write debug message to log file if LOOM_SKILL_DEBUG=1."""
+    if not DEBUG:
+        return
+    try:
+        import datetime
+
+        ts = datetime.datetime.now().strftime("%H:%M:%S")
+        with open(DEBUG_LOG, "a") as f:
+            f.write(f"[{ts}] {msg}\n")
+    except IOError:
+        pass
+
+
 def main():
     if sys.stdin.isatty():
+        _debug("SKIP: stdin is tty")
         return
 
     try:
         data = json.load(sys.stdin)
     except (json.JSONDecodeError, ValueError):
+        _debug("SKIP: invalid JSON on stdin")
         return
 
     prompt = data.get("prompt", "")
+    _debug(f"FIRED: prompt={prompt[:80]!r}")
     if not prompt or not os.path.isfile(INDEX_FILE):
+        _debug(f"SKIP: empty prompt or no index (index exists: {os.path.isfile(INDEX_FILE)})")
         return
 
     try:
@@ -74,13 +108,19 @@ def main():
 
     # Score skills by keyword matches
     # Multi-word matches (containing space) count double since they're more specific
+    # Direct skill-name matches get boosted weight (high-confidence signal)
     scores = {}
     matched = {}
     for token in tokens:
         if token in index:
-            weight = 2 if " " in token else 1
+            base_weight = 2 if " " in token else 1
             for skill in index[token]:
-                scores[skill] = scores.get(skill, 0) + weight
+                w = base_weight
+                # Boost: keyword directly identifies the skill by name
+                # e.g., "rust" -> "rust", "refactor" -> "refactoring"
+                if base_weight == 1 and _is_name_match(token, skill):
+                    w = 2
+                scores[skill] = scores.get(skill, 0) + w
                 matched.setdefault(skill, []).append(token)
 
     if not scores:
@@ -104,12 +144,22 @@ def main():
             lines.append(f"  - /{skill} (matched: {kws})")
 
     if lines:
-        print(
+        context = (
             "SKILL MATCH: These skills are relevant to this task."
-            ' Invoke the best match with Skill(skill="name") before implementing:'
+            ' Invoke the best match with Skill(skill="name") before implementing:\n'
         )
-        for line in lines:
-            print(line)
+        context += "\n".join(lines)
+        _debug(f"SUGGEST: {context}")
+        # Use JSON additionalContext format — plain text stdout is unreliable
+        # for UserPromptSubmit hooks (see claude-code#13912)
+        print(json.dumps({
+            "hookSpecificOutput": {
+                "hookEventName": "UserPromptSubmit",
+                "additionalContext": context,
+            }
+        }))
+    elif DEBUG:
+        _debug(f"NO MATCH: scores={scores}")
 
 
 def _get_description(skill_name):
