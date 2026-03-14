@@ -4,6 +4,18 @@
 
 ---
 
+## ⚠️ KNOWLEDGE-FIRST: READ BEFORE ANYTHING ELSE
+
+**If `doc/loom/knowledge/` exists, read ALL files there BEFORE doing any work — including before exploring the codebase.**
+
+These files contain curated, authoritative knowledge about the system under development: architecture, entry points, patterns, conventions, mistakes, and tech stack. For understanding the codebase, these files are your primary source of truth. CLAUDE.md governs your rules and process — loom knowledge describes the actual system you're working on.
+
+**Reading order:** `architecture.md` first, then `entry-points.md`, then remaining files.
+
+**Where to record system knowledge:** All knowledge about the codebase (architecture, patterns, conventions, entry points, mistakes) belongs in `doc/loom/knowledge/` via `loom knowledge update`. Do NOT write system knowledge into the project's CLAUDE.md — that file is maintained by the user.
+
+---
+
 ## CRITICAL RULES
 
 ### 1. PLANS ARE TO BE WRITTEN ONLY IN `doc/plans/` IN THE PROJECT ROOT
@@ -505,9 +517,11 @@ Never hand-edit manifests. Use: `bun add`, `cargo add`, `uv add`, `go get`
 
 File: 400 lines | Function: 50 lines | Class: 300 lines — Exceed = refactor immediately.
 
-### 18. SESSION STATE
+### 18. SESSION STATE & KNOWLEDGE PLACEMENT
 
-Update `CLAUDE.md` during work. On completion, replace updates with summary.
+**System knowledge** (architecture, patterns, conventions, entry points, mistakes, tech stack) belongs in `doc/loom/knowledge/` — use `loom knowledge update`.
+
+**Do NOT modify the project's CLAUDE.md** — it is maintained by the user. Loom agents record system knowledge exclusively via `loom knowledge update`.
 
 ---
 

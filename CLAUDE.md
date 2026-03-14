@@ -1,7 +1,8 @@
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-CRITICAL: BEFORE exploring the codebase READ doc/loom/knowledge files.
+
+**⚠️ KNOWLEDGE-FIRST:** If `doc/loom/knowledge/` exists, read ALL files there BEFORE doing any work — they are your primary source of truth for understanding this codebase. Read `architecture.md` first, then `entry-points.md`, then the rest.
 
 ## Project Overview
 
