@@ -304,6 +304,7 @@ mod tests {
             bug_fix: None,
             regression_test: None,
             model: None,
+            reasoning_effort: None,
         };
 
         // No reason - should be Manual

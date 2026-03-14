@@ -64,7 +64,24 @@ impl Stage {
             bug_fix: None,
             regression_test: None,
             model: None,
+            reasoning_effort: None,
         }
+    }
+
+    /// Returns the effective model for this stage.
+    /// Uses the explicit override if set, otherwise falls back to the stage-type default.
+    pub fn effective_model(&self) -> &str {
+        self.model
+            .as_deref()
+            .unwrap_or_else(|| self.stage_type.default_model())
+    }
+
+    /// Returns the effective reasoning effort for this stage.
+    /// Uses the explicit override if set, otherwise falls back to the stage-type default.
+    pub fn effective_reasoning_effort(&self) -> &str {
+        self.reasoning_effort
+            .as_deref()
+            .unwrap_or_else(|| self.stage_type.default_reasoning_effort())
     }
 
     pub fn generate_id(name: &str) -> String {

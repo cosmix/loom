@@ -22,6 +22,24 @@ pub enum StageType {
     IntegrationVerify,
 }
 
+impl StageType {
+    /// Default model for this stage type.
+    /// All stage types default to opus for maximum capability.
+    pub fn default_model(&self) -> &'static str {
+        "opus"
+    }
+
+    /// Default reasoning effort for this stage type.
+    /// Knowledge stages use medium (exploration doesn't need deep reasoning).
+    /// Standard and integration-verify stages use high (implementation and verification need it).
+    pub fn default_reasoning_effort(&self) -> &'static str {
+        match self {
+            StageType::Knowledge => "medium",
+            StageType::Standard | StageType::IntegrationVerify => "high",
+        }
+    }
+}
+
 /// Hint for how the stage should be executed.
 ///
 /// This is an advisory field for orchestration tooling:
@@ -245,6 +263,10 @@ pub struct Stage {
     /// When set, Claude Code sessions for this stage use this model
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Reasoning effort override for this stage (e.g., "low", "medium", "high", "max")
+    /// When set, Claude Code sessions for this stage use this effort level
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
 }
 
 /// Status of a stage in the execution lifecycle.
@@ -530,6 +552,7 @@ impl Default for Stage {
             bug_fix: None,
             regression_test: None,
             model: None,
+            reasoning_effort: None,
         }
     }
 }

@@ -326,6 +326,10 @@ pub struct StageDefinition {
     /// When set, Claude Code sessions for this stage use this model
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Reasoning effort override for this stage (e.g., "low", "medium", "high", "max")
+    /// When set, Claude Code sessions for this stage use this effort level
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
     /// Structured code review configuration (recommended for integration-verify)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code_review: Option<CodeReviewConfig>,

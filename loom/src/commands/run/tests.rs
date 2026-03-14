@@ -63,6 +63,7 @@ fn setup_work_dir_with_plan(temp_dir: &TempDir) -> (PathBuf, WorkDir) {
         bug_fix: None,
         regression_test: None,
         model: None,
+        reasoning_effort: None,
         code_review: None,
     };
 

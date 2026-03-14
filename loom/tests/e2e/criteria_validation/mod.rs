@@ -46,6 +46,7 @@ pub(crate) fn create_valid_stage(id: &str, name: &str) -> StageDefinition {
         bug_fix: None,
         regression_test: None,
         model: None,
+        reasoning_effort: None,
         code_review: None,
     }
 }

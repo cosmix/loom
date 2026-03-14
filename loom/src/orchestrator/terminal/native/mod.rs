@@ -107,17 +107,15 @@ impl TerminalBackend for NativeBackend {
 
         // Find claude's absolute path (needed for macOS where terminals don't inherit PATH)
         let claude_path = find_claude_path()?;
-        let model_flag = stage
-            .model
-            .as_ref()
-            .map(|m| {
-                format!(
-                    " --model {}",
-                    shell_escape::escape(std::borrow::Cow::Borrowed(m))
-                )
-            })
-            .unwrap_or_default();
-        let claude_cmd = format!("{}{model_flag} {escaped_prompt}", claude_path.display());
+        let model_flag = format!(
+            " --model {}",
+            escape(Cow::Borrowed(stage.effective_model()))
+        );
+        let effort_flag = format!(" --effort {}", stage.effective_reasoning_effort());
+        let claude_cmd = format!(
+            "{}{model_flag}{effort_flag} {escaped_prompt}",
+            claude_path.display()
+        );
 
         // Create wrapper script that writes PID before exec'ing claude
         // Pass the worktree path so the script can cd there (important for macOS)
@@ -184,17 +182,15 @@ impl TerminalBackend for NativeBackend {
 
         // Find claude's absolute path (needed for macOS where terminals don't inherit PATH)
         let claude_path = find_claude_path()?;
-        let model_flag = stage
-            .model
-            .as_ref()
-            .map(|m| {
-                format!(
-                    " --model {}",
-                    shell_escape::escape(std::borrow::Cow::Borrowed(m))
-                )
-            })
-            .unwrap_or_default();
-        let claude_cmd = format!("{}{model_flag} {escaped_prompt}", claude_path.display());
+        let model_flag = format!(
+            " --model {}",
+            escape(Cow::Borrowed(stage.effective_model()))
+        );
+        let effort_flag = format!(" --effort {}", stage.effective_reasoning_effort());
+        let claude_cmd = format!(
+            "{}{model_flag}{effort_flag} {escaped_prompt}",
+            claude_path.display()
+        );
 
         // Create wrapper script for merge session
         // Pass repo root so the script can cd there (important for macOS)
@@ -262,17 +258,15 @@ impl TerminalBackend for NativeBackend {
 
         // Find claude's absolute path (needed for macOS where terminals don't inherit PATH)
         let claude_path = find_claude_path()?;
-        let model_flag = stage
-            .model
-            .as_ref()
-            .map(|m| {
-                format!(
-                    " --model {}",
-                    shell_escape::escape(std::borrow::Cow::Borrowed(m))
-                )
-            })
-            .unwrap_or_default();
-        let claude_cmd = format!("{}{model_flag} {escaped_prompt}", claude_path.display());
+        let model_flag = format!(
+            " --model {}",
+            escape(Cow::Borrowed(stage.effective_model()))
+        );
+        let effort_flag = format!(" --effort {}", stage.effective_reasoning_effort());
+        let claude_cmd = format!(
+            "{}{model_flag}{effort_flag} {escaped_prompt}",
+            claude_path.display()
+        );
 
         // Create wrapper script for base conflict session
         // Pass repo root so the script can cd there (important for macOS)
@@ -339,17 +333,15 @@ impl TerminalBackend for NativeBackend {
 
         // Find claude's absolute path (needed for macOS where terminals don't inherit PATH)
         let claude_path = find_claude_path()?;
-        let model_flag = stage
-            .model
-            .as_ref()
-            .map(|m| {
-                format!(
-                    " --model {}",
-                    shell_escape::escape(std::borrow::Cow::Borrowed(m))
-                )
-            })
-            .unwrap_or_default();
-        let claude_cmd = format!("{}{model_flag} {escaped_prompt}", claude_path.display());
+        let model_flag = format!(
+            " --model {}",
+            escape(Cow::Borrowed(stage.effective_model()))
+        );
+        let effort_flag = format!(" --effort {}", stage.effective_reasoning_effort());
+        let claude_cmd = format!(
+            "{}{model_flag}{effort_flag} {escaped_prompt}",
+            claude_path.display()
+        );
 
         // Create wrapper script for knowledge session
         // Pass repo root so the script can cd there (important for macOS)

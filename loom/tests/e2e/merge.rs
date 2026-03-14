@@ -63,6 +63,7 @@ fn create_test_stage(id: &str, auto_merge: Option<bool>) -> Stage {
         bug_fix: None,
         regression_test: None,
         model: None,
+        reasoning_effort: None,
     }
 }
 

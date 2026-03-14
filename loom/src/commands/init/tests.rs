@@ -64,6 +64,7 @@ fn test_create_stage_from_definition_no_dependencies() {
         bug_fix: None,
         regression_test: None,
         model: None,
+        reasoning_effort: None,
         code_review: None,
     };
 
@@ -105,6 +106,7 @@ fn test_create_stage_from_definition_with_dependencies() {
         bug_fix: None,
         regression_test: None,
         model: None,
+        reasoning_effort: None,
         code_review: None,
     };
 
@@ -174,6 +176,7 @@ fn test_serialize_stage_to_markdown_minimal() {
         bug_fix: None,
         regression_test: None,
         model: None,
+        reasoning_effort: None,
     };
 
     let content = serialize_stage_to_markdown(&stage).unwrap();
@@ -241,6 +244,7 @@ fn test_serialize_stage_to_markdown_with_all_fields() {
         bug_fix: None,
         regression_test: None,
         model: None,
+        reasoning_effort: None,
     };
 
     let content = serialize_stage_to_markdown(&stage).unwrap();
@@ -304,6 +308,7 @@ fn test_initialize_with_plan_creates_config() {
         bug_fix: None,
         regression_test: None,
         model: None,
+        reasoning_effort: None,
         code_review: None,
     };
 
@@ -356,6 +361,7 @@ fn test_initialize_with_plan_creates_stage_files() {
             bug_fix: None,
             regression_test: None,
             model: None,
+            reasoning_effort: None,
             code_review: None,
         },
         StageDefinition {
@@ -384,6 +390,7 @@ fn test_initialize_with_plan_creates_stage_files() {
             bug_fix: None,
             regression_test: None,
             model: None,
+            reasoning_effort: None,
             code_review: None,
         },
     ];

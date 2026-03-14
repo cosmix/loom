@@ -84,6 +84,7 @@ fn test_auto_merge_config_cascade() {
         bug_fix: None,
         regression_test: None,
         model: None,
+        reasoning_effort: None,
         code_review: None,
     };
 
@@ -116,6 +117,7 @@ fn test_auto_merge_config_cascade() {
         bug_fix: None,
         regression_test: None,
         model: None,
+        reasoning_effort: None,
         code_review: None,
     };
 

@@ -40,6 +40,10 @@ pub struct StageFrontmatter {
     pub dead_code_check: Option<crate::plan::schema::DeadCodeCheck>,
     #[serde(default)]
     pub execution_mode: Option<crate::models::stage::ExecutionMode>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
 }
 
 impl StageFrontmatter {
@@ -70,7 +74,8 @@ impl StageFrontmatter {
             execution_mode: self.execution_mode,
             bug_fix: None,
             regression_test: None,
-            model: None,
+            model: self.model,
+            reasoning_effort: self.reasoning_effort,
             code_review: None,
         }
     }
