@@ -25,10 +25,8 @@ Use this skill when working with:
 
 | Agent                               | Responsibility                                                               |
 | ----------------------------------- | ---------------------------------------------------------------------------- |
-| **senior-software-engineer** (Opus) | Schema architecture, validation strategy design, complex validation patterns |
-| **software-engineer** (Sonnet)      | Implements validation logic, integrates schema libraries, writes validators  |
-| **senior-software-engineer** (Opus) | XSS prevention, injection prevention, sanitization strategies, encoding      |
-| **senior-software-engineer** (Opus) | Infrastructure config validation, pipeline validation, data quality checks   |
+| **senior-software-engineer** (Opus) | DEFAULT. Schema architecture, validation strategy, implementation, XSS/injection prevention, sanitization, infrastructure config validation, pipeline validation, data quality checks |
+| **software-engineer** (Sonnet)      | ONLY for unit tests or boilerplate validators following established patterns |
 
 ## Key Concepts
 

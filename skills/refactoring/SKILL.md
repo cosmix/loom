@@ -59,14 +59,7 @@ Use this skill when the user requests:
 - Data pipeline restructuring
 - Safe refactoring with test coverage
 
-**When to escalate to senior-software-engineer:**
-
-- Architectural changes affecting multiple modules
-- API redesign requiring migration paths
-- Cross-cutting refactoring with unclear scope
-- Performance optimization requiring profiling
-- Infrastructure refactoring (use infrastructure-related skills like /terraform, /kubernetes)
-- Security-sensitive refactoring (use /security-audit and /threat-model skills)
+**Agent selection:** Use `senior-software-engineer` (Opus) for all refactoring work. Use `software-engineer` (Sonnet) ONLY for mechanical renames or boilerplate following established patterns.
 
 ## Instructions
 
@@ -593,4 +586,4 @@ func TestUserWithNewsletter(t *testing.T) {
 
 - Commit current progress
 - Document remaining work
-- Escalate to senior-software-engineer or relevant specialist
+- Use senior-software-engineer or relevant specialist to continue

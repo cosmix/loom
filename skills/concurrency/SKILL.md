@@ -13,10 +13,8 @@ Concurrency enables programs to handle multiple tasks efficiently. This skill co
 
 When implementing concurrency, delegate to the appropriate specialist:
 
-1. **senior-software-engineer** (Opus) - Architectural decisions for concurrent systems, choosing between threading models, designing message-passing vs shared-state architectures
-2. **software-engineer** (Sonnet) - Implementing concurrent code following established patterns, writing async functions, worker pools, rate limiters
-3. **senior-software-engineer** (Opus) - Identifying race conditions, time-of-check-time-of-use vulnerabilities, reviewing lock ordering for deadlocks
-4. **senior-software-engineer** (Opus) - Distributed systems concurrency, consistency models, distributed locks, saga patterns
+1. **senior-software-engineer** (Opus) - DEFAULT. Architectural decisions, threading models, message-passing vs shared-state, implementing concurrent code, async functions, worker pools, rate limiters, identifying race conditions, TOCTOU vulnerabilities, lock ordering, distributed concurrency, consistency models, distributed locks, saga patterns
+2. **software-engineer** (Sonnet) - ONLY for unit tests or boilerplate async handlers following established patterns
 
 ## Instructions
 

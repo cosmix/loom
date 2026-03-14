@@ -65,8 +65,8 @@ This skill covers setup, configuration, dashboard creation, panel design, queryi
 
 ### Who Uses This Skill
 
-- **senior-software-engineer** (PRIMARY): Production observability setup, LGTM stack deployment, dashboard architecture (use infrastructure skills for deployment)
-- **software-engineer**: Application dashboards, service metrics visualization
+- **senior-software-engineer** (DEFAULT): Production observability setup, LGTM stack deployment, dashboard architecture, application dashboards, service metrics visualization
+- **software-engineer**: ONLY for boilerplate dashboard panels following established patterns or scaffolding from a concrete plan
 
 ## LGTM Stack Components
 

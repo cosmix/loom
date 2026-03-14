@@ -13,9 +13,10 @@ Feature flags (also called feature toggles or feature gates) enable runtime cont
 ## Agents
 
 - **senior-software-engineer** - Feature flag strategy, architecture decisions, rollout planning
-- **software-engineer** - Implements feature flags, integrations, and flag evaluation logic
+- **senior-software-engineer** - Implements feature flags, integrations, and flag evaluation logic
 - **senior-software-engineer** - Feature flag security, access controls, audit logging
 - **senior-software-engineer** - Feature flag infrastructure, distributed systems, caching strategies
+- **software-engineer** - ONLY for unit tests, boilerplate flag checks, or scaffolding from a concrete plan
 
 ## Key Concepts
 
@@ -1288,10 +1289,10 @@ Use the feature-flags skill for:
 | Task                           | Agent                    | Why                                                 |
 | ------------------------------ | ------------------------ | --------------------------------------------------- |
 | Design flag architecture       | senior-software-engineer | Strategic decisions on flag types, rollout strategy |
-| Implement flag service         | software-engineer        | Build evaluation logic, integrations                |
-| Review flag security           | senior-software-engineer | Access controls, audit logging, sensitive data      |
+| Implement flag service         | senior-software-engineer | Build evaluation logic, integrations                |
+| Review flag security           | code-reviewer            | Access controls, audit logging, sensitive data      |
 | Scale flag infrastructure      | senior-software-engineer | Distributed caching, performance, failover          |
-| Integrate LaunchDarkly/Unleash | software-engineer        | SDK integration, webhook setup                      |
+| Integrate LaunchDarkly/Unleash | senior-software-engineer | SDK integration, webhook setup                      |
 | Plan ML model rollout          | senior-software-engineer | Performance routing, fallback strategy              |
-| Implement cleanup automation   | software-engineer        | Code scanning, impact analysis                      |
+| Implement cleanup automation   | senior-software-engineer | Code scanning, impact analysis                      |
 | Design flag lifecycle policy   | senior-software-engineer | Governance, technical debt prevention               |

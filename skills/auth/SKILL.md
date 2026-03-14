@@ -61,27 +61,27 @@ This skill covers comprehensive authentication and authorization strategies for 
 
 ## When to Use
 
-**software-engineer (Sonnet)** - Use when:
-
-- Implementing standard auth flows (login, logout, password reset)
-- Adding JWT or session handling to existing applications
-- Implementing RBAC/ABAC patterns with defined requirements
-- Integrating with established OAuth2 providers
-- Adding MFA or API key authentication
-
-**senior-software-engineer (Opus)** - Escalate to when:
+**senior-software-engineer (Opus)** - DEFAULT for all auth work:
 
 - Designing auth architecture from scratch
 - Choosing between authentication strategies (JWT vs sessions, OAuth flows)
 - Evaluating trade-offs between different access control models
 - Planning token rotation, refresh strategies, or session lifecycle
 - Making cross-cutting security decisions
-
-**senior-software-engineer (Opus)** - Request review when:
-
+- Implementing auth flows (login, logout, password reset)
+- Adding JWT or session handling to existing applications
+- Implementing RBAC/ABAC patterns
+- Integrating with OAuth2 providers
+- Adding MFA or API key authentication
 - Implementing password hashing or credential storage
 - Handling sensitive tokens (refresh tokens, API keys)
 - Implementing rate limiting or brute force protection
+
+**software-engineer (Sonnet)** - ONLY for:
+
+- Writing unit tests for existing auth code
+- Boilerplate auth middleware following established patterns
+- Scaffolding from a concrete, detailed plan
 - Adding MFA or step-up authentication
 - Dealing with PII, compliance, or regulatory requirements
 - ANY authentication/authorization implementation before production

@@ -11,10 +11,8 @@ Error handling is a critical aspect of robust software development. This skill c
 
 ## Agent Delegation
 
-- **senior-software-engineer** (Opus) - Error architecture design, choosing error strategies
-- **software-engineer** (Sonnet) - Implements error handling patterns
-- **senior-software-engineer** (Opus) - Secure error handling (no info leakage, sanitization)
-- **senior-software-engineer** (Opus) - Infrastructure error handling (retry, circuit breakers)
+- **senior-software-engineer** (Opus) - DEFAULT. Error architecture design, choosing error strategies, implementing error handling patterns, secure error handling (no info leakage, sanitization), infrastructure error handling (retry, circuit breakers)
+- **software-engineer** (Sonnet) - ONLY for unit tests or boilerplate error types following established patterns
 
 ## Instructions
 

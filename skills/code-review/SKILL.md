@@ -14,8 +14,9 @@ This skill provides thorough code review capabilities across multiple domains, a
 
 When performing code reviews, consider using specialized skills for domain-specific expertise:
 
-- **senior-software-engineer** (Opus) - Architecture, design patterns, complex logic review, security review (use `/security-audit` skill), infrastructure review
-- **software-engineer** (Sonnet) - Responds to review feedback, implements fixes
+- **code-reviewer** - Architecture, design patterns, complex logic review, security review (use `/security-audit` skill), infrastructure review
+- **senior-software-engineer** (Opus) - Responds to review feedback, implements fixes requiring judgment
+- **software-engineer** (Sonnet) - ONLY for mechanical fixes (unit tests, boilerplate) identified during review
 
 For specialized reviews, use relevant skills such as `/security-audit` for security concerns, `/concurrency` for thread safety, `/data-validation` for input validation, etc.
 

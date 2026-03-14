@@ -39,9 +39,10 @@ Event-driven architecture (EDA) enables loosely coupled, scalable systems by com
 ## Available Agents
 
 - **senior-software-engineer** (Opus) - Architecture design, pattern selection, distributed system design
-- **software-engineer** (Sonnet) - Event handler implementation, consumer/producer code
+- **senior-software-engineer** (Opus) - Event handler implementation, consumer/producer code
 - **senior-software-engineer** (Opus) - Event security, authorization patterns, message encryption
 - **senior-software-engineer** (Opus) - Message broker setup, Kafka clusters, queue configuration
+- **software-engineer** (Sonnet) - ONLY for unit tests, boilerplate event handlers following established patterns, or scaffolding from a concrete plan
 
 ## Key Concepts
 

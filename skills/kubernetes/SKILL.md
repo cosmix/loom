@@ -12,9 +12,9 @@ This skill covers Kubernetes resource configuration, deployment strategies, clus
 
 ## Agent Delegation
 
-**software-engineer** (Sonnet) - Writes K8s manifests, implements configs
-**senior-software-engineer** (Opus) - Application architecture on K8s, multi-service design, cluster architecture AND implementation, operators, CRDs, RBAC, NetworkPolicies, PodSecurityStandards, admission control
-**code-reviewer** (Sonnet) - Reviews K8s YAML for best practices and security issues
+**senior-software-engineer** (Opus) - DEFAULT. Application architecture on K8s, multi-service design, cluster architecture AND implementation, operators, CRDs, RBAC, NetworkPolicies, PodSecurityStandards, admission control, manifests, and configs
+**software-engineer** (Sonnet) - ONLY for boilerplate manifests following established patterns or scaffolding from a concrete plan
+**code-reviewer** - Reviews K8s YAML for best practices and security issues
 
 Note: For cluster architecture and security hardening, use senior-software-engineer with /kubernetes, /security-audit, and /threat-model skills
 
