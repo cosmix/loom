@@ -176,8 +176,8 @@ pub fn generate_stable_prefix() -> String {
     content.push_str("**Delegation & Efficiency (CRITICAL):**\n\n");
     content.push_str("**USE THE TASK TOOL** to spawn parallel subagents for multi-part work:\n");
     content.push_str("- Independent file changes, multiple components, tests + implementation → spawn parallel subagents\n");
-    content.push_str("- Pattern: `Task(subagent_type=\"software-engineer\", prompt=\"...\")` - send MULTIPLE in ONE message\n");
-    content.push_str("- Agents: `software-engineer`, `senior-software-engineer`, `Explore`\n");
+    content.push_str("- Pattern: `Task(subagent_type=\"senior-software-engineer\", prompt=\"...\")` - send MULTIPLE in ONE message\n");
+    content.push_str("- Agents: `senior-software-engineer` (DEFAULT — use for all work requiring judgment), `software-engineer` (ONLY for unit tests, boilerplate, scaffolding), `Explore`\n");
     content.push_str("- Skills: /auth, /testing, /ci-cd, /logging-observability\n\n");
     append_subagent_restrictions(
         &mut content,
@@ -344,8 +344,8 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("**Delegation & Efficiency (CRITICAL):**\n\n");
     content.push_str("**USE THE TASK TOOL** to spawn parallel subagents for verification:\n");
     content.push_str("- Run tests, linting, and build checks in parallel where possible\n");
-    content.push_str("- Pattern: `Task(subagent_type=\"software-engineer\", prompt=\"...\")` - send MULTIPLE in ONE message\n");
-    content.push_str("- Agents: `software-engineer`, `senior-software-engineer`, `Explore`\n");
+    content.push_str("- Pattern: `Task(subagent_type=\"senior-software-engineer\", prompt=\"...\")` - send MULTIPLE in ONE message\n");
+    content.push_str("- Agents: `senior-software-engineer` (DEFAULT — use for all work requiring judgment), `software-engineer` (ONLY for unit tests, boilerplate, scaffolding), `Explore`\n");
     content.push_str("- Skills: /testing, /auth, /ci-cd, /logging-observability\n\n");
 
     append_subagent_restrictions(
@@ -439,7 +439,7 @@ pub fn generate_knowledge_stable_prefix() -> String {
     content.push_str("**USE THE TASK TOOL** to spawn parallel subagents for exploration:\n");
     content.push_str("- Different codebase areas, multiple knowledge files, independent research → spawn parallel Explore agents\n");
     content.push_str("- Pattern: `Task(subagent_type=\"Explore\", prompt=\"...\")` - send MULTIPLE in ONE message\n");
-    content.push_str("- Agents: `Explore`, `software-engineer`, `senior-software-engineer`\n");
+    content.push_str("- Agents: `Explore`, `senior-software-engineer` (DEFAULT for implementation), `software-engineer` (ONLY for unit tests, boilerplate, scaffolding)\n");
     content.push_str("- Skills: /auth, /testing, /ci-cd, /logging-observability\n\n");
     content.push_str("**Completion:**\n");
     content.push_str("- **Verify acceptance criteria** before marking stage complete\n");
