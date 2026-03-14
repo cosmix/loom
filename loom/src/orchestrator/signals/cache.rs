@@ -360,17 +360,30 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     append_completion_rules(&mut content);
 
     // Knowledge curation
-    content.push_str("**Knowledge Curation (CAN UPDATE KNOWLEDGE):**\n\n");
-    content.push_str("Integration-verify stages CURATE memory into knowledge:\n");
-    content.push_str("1. Read ALL stage memory: `loom memory show --all`\n");
-    content.push_str("2. Evaluate each insight — is it worth keeping permanently?\n");
-    content.push_str("3. Write curated content: `loom knowledge update <file> \"content\"`\n");
+    content.push_str("**Knowledge Distillation (MANDATORY):**\n\n");
+    content.push_str("Integration-verify is where stage memories become permanent knowledge.\n");
+    content.push_str("You have full context: code review findings, implementation memories, and the actual code.\n");
+    content.push_str("DISTILL this into `loom knowledge`:\n\n");
+    content.push_str("1. Read ALL stage memories: `loom memory show --all`\n");
+    content.push_str("2. Review the code changes to understand what was actually built\n");
+    content.push_str("3. Update knowledge files with synthesized insights:\n");
+    content.push_str("   - `architecture` — new components, data flows, integration points\n");
+    content.push_str("   - `entry-points` — new files, commands, endpoints added\n");
+    content.push_str("   - `patterns` — patterns introduced or discovered during implementation\n");
     content.push_str(
-        "   Focus on: mistakes worth avoiding, patterns worth reusing, architectural decisions\n",
+        "   - `conventions` — coding conventions learned from user feedback or code review\n",
     );
-    content.push_str("4. DO NOT blindly copy entries — synthesize and curate\n");
-    content.push_str("5. Generate review document: `loom review`\n");
-    content.push_str("   This creates a structured summary of all changes for human reviewers\n\n");
+    content.push_str("   - `mistakes` — errors made and how to avoid them\n");
+    content.push_str("   - `stack` — new dependencies, tooling changes\n");
+    content.push_str("   - `concerns` — tech debt introduced, known issues\n");
+    content.push_str("4. DO NOT blindly copy memory entries — synthesize and curate\n");
+    content.push_str("5. Generate review document: `loom review`\n\n");
+    content.push_str("**IMPORTANT — Do NOT modify the project's CLAUDE.md:**\n\n");
+    content.push_str("- CLAUDE.md is the user's file — loom agents must not write to it\n");
+    content.push_str("- ALL system knowledge belongs in `loom knowledge update` exclusively\n");
+    content.push_str(
+        "- This includes architecture, conventions, best practices, and lessons learned\n\n",
+    );
 
     // Git staging (shorter version)
     content.push_str("**Git Staging (CRITICAL):**\n");
@@ -401,11 +414,23 @@ pub fn generate_knowledge_stable_prefix() -> String {
 
     // Mission
     content.push_str("**Your Mission:**\n\n");
+    content.push_str(
+        "Capture a thorough snapshot of the system AS IT EXISTS NOW. Implementation stages\n",
+    );
+    content.push_str(
+        "will build on this foundation, and integration-verify will later distill new learnings.\n",
+    );
+    content.push_str(
+        "The more complete your picture, the fewer mistakes implementation stages will make.\n\n",
+    );
     content.push_str("1. **Explore** the codebase hierarchically (entry points → modules → patterns → conventions)\n");
     content.push_str(
         "2. **Document** findings using `loom knowledge update <file> <content>` commands\n",
     );
-    content.push_str("3. **Verify** acceptance criteria before completing\n\n");
+    content.push_str("3. **Backfill** any knowledge gaps — if existing knowledge files are sparse, enrich them\n");
+    content.push_str("4. **Contextualize the plan** — understand what the plan intends to change and document the current state of those areas\n");
+    content.push_str("5. **Verify** acceptance criteria before completing\n\n");
+    content.push_str("**Do NOT modify the project's CLAUDE.md** — it is the user's file. All knowledge goes to `loom knowledge update`.\n\n");
 
     // Agent teams for knowledge
     content.push_str("**Agent Teams for Knowledge Bootstrap:**\n\n");
@@ -631,10 +656,12 @@ mod tests {
         assert!(prefix.contains("USE THE TASK TOOL"));
         assert!(prefix.contains("Task(subagent_type="));
 
-        // Can update knowledge
-        assert!(prefix.contains("CAN UPDATE KNOWLEDGE"));
+        // Knowledge distillation
+        assert!(prefix.contains("Knowledge Distillation (MANDATORY)"));
         assert!(prefix.contains("loom memory show --all"));
         assert!(prefix.contains("loom knowledge update"));
+        // Must not modify CLAUDE.md
+        assert!(prefix.contains("Do NOT modify the project's CLAUDE.md"));
 
         // Worktree root directory reminder
         assert!(prefix.contains(

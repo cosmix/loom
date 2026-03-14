@@ -256,6 +256,15 @@ pub(super) fn format_semi_stable_section(
                     "│  Only update relevant sections. Skip if no user-facing changes.    │\n",
                 );
                 content.push_str(
+                    "│                                                                    │\n",
+                );
+                content.push_str(
+                    "│  ⚠️  System knowledge → loom knowledge update                      │\n",
+                );
+                content.push_str(
+                    "│  Do NOT modify the project's CLAUDE.md — it is the user's file.   │\n",
+                );
+                content.push_str(
                     "└────────────────────────────────────────────────────────────────────┘\n",
                 );
                 content.push_str("```\n\n");
