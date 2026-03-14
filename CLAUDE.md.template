@@ -285,13 +285,22 @@ Agent teams provide richer coordination than subagents: inter-agent messaging, s
 
 #### Specialized Agents
 
-| Agent | Use Cases |
-| ----- | --------- |
-| `senior-software-engineer` | Architecture, complex debugging, design patterns, code review, test strategy |
-| `software-engineer` | Feature implementation, bug fixes, tests, data pipelines, documentation |
+`senior-software-engineer` uses Opus. `software-engineer` uses Sonnet. Choose accordingly — Sonnet mistakes cause rework that costs more than Opus tokens.
+
+| Agent | When to Use |
+| ----- | ----------- |
+| `senior-software-engineer` | **DEFAULT.** All implementation, architecture, bug fixes, debugging, refactoring, test strategy, verification, and any task requiring judgment |
+| `software-engineer` | ONLY: (1) writing unit tests for existing code, (2) boilerplate/low-complexity code with detailed instructions, (3) scaffolding/skeleton generation from a concrete plan |
 | `code-reviewer` | Read-only code review, security review, architecture review |
 
-**Agent Selection:** Architecture/patterns/strategy → senior-software-engineer | Standard implementation → software-engineer | Code review (read-only) → code-reviewer | Exploration → Explore agent | Domain expertise → use skills
+**Agent Selection:**
+- **Needs judgment?** → `senior-software-engineer` (architecture, implementation, bug fixes, debugging, verification, refactoring, test strategy, ambiguous tasks)
+- **Mechanical/prescribed work?** → `software-engineer` (unit tests, boilerplate, scaffolding — only when the _what_ and _how_ are already decided)
+- **Read-only review?** → `code-reviewer`
+- **Codebase exploration?** → `Explore` agent
+- **Domain expertise?** → use skills
+
+**⚠️ Unit tests vs. verification:** `software-engineer` can write unit tests from existing code. But verification (proving a feature is wired up, reachable, and working end-to-end) requires `senior-software-engineer`.
 
 #### Skills by Domain
 
