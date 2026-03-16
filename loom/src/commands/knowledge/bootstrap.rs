@@ -36,7 +36,7 @@ pub fn execute(model: Option<String>, skip_map: bool) -> Result<()> {
     let existing_knowledge = read_existing_knowledge(&knowledge);
 
     // Spawn Claude session
-    let effective_model = model.unwrap_or_else(|| "sonnet".to_string());
+    let effective_model = model.unwrap_or_else(|| "sonnet[1m]".to_string());
 
     // Build prompts (model is embedded so subagents use the same model)
     let system_prompt = build_system_prompt(&existing_knowledge, &effective_model);
