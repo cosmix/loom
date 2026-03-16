@@ -24,9 +24,9 @@ pub enum StageType {
 
 impl StageType {
     /// Default model for this stage type.
-    /// All stage types default to opus for maximum capability.
+    /// All stage types default to opus with 1M context for maximum capability.
     pub fn default_model(&self) -> &'static str {
-        "opus"
+        "opus[1m]"
     }
 
     /// Default reasoning effort for this stage type.
