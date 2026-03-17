@@ -96,12 +96,8 @@ pub enum Commands {
         command: WorktreeCommands,
     },
 
-    /// Show or edit the execution graph
-    Graph {
-        /// Edit the graph instead of showing it
-        #[arg(long)]
-        edit: bool,
-    },
+    /// Show the execution graph
+    Graph,
 
     /// Manage individual stages
     Stage {

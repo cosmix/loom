@@ -20,7 +20,7 @@ The following entry-points have changed due to CLI simplification:
 - `loom handoff create` → now just `loom handoff` (no subcommand). Handler still at `commands/handoff/create.rs`.
 - `HandoffCommands` enum removed — handoff args are now directly on the `Commands::Handoff` variant in `cli/types.rs`
 - `ReviewCommands`, `GraphCommands` enums removed — flattened to direct variants
-- `loom graph show` → `loom graph`, `loom graph edit` → `loom graph --edit`
+- `loom graph show` → `loom graph` (`--edit` flag removed)
 - `loom review generate` → `loom review`
 - `loom verify <stage-id>` → `loom check <stage-id>`
 - `loom stage check-acceptance` → `loom stage verify --dry-run`

@@ -1,6 +1,6 @@
-//! Execution graph display and editing
+//! Execution graph display
 //!
-//! Usage: loom graph [--edit]
+//! Usage: loom graph
 //!
 //! ## Module Organization
 //!
@@ -18,7 +18,7 @@ mod tree;
 #[cfg(test)]
 mod tests;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use colored::Colorize;
 
 use crate::commands::common::find_work_dir;
@@ -62,49 +62,6 @@ pub fn show() -> Result<()> {
     print!("{} ", "⟳".yellow().bold());
     println!("handoff");
     println!();
-
-    Ok(())
-}
-
-/// Edit the execution graph by opening the stages directory
-///
-/// The execution graph is dynamically built from stage files in `.work/stages/`.
-/// This command opens the stages directory in the configured editor, allowing
-/// direct modification of stage files.
-pub fn edit() -> Result<()> {
-    let work_dir = find_work_dir()?;
-
-    let stages_dir = work_dir.join("stages");
-    if !stages_dir.exists() {
-        bail!("No stages directory found. Run 'loom init <plan>' first.");
-    }
-
-    // Check if there are any stage files
-    let stage_files: Vec<_> = std::fs::read_dir(&stages_dir)?
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("md"))
-        .collect();
-
-    if stage_files.is_empty() {
-        bail!("No stage files found. Run 'loom init <plan>' first.");
-    }
-
-    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vim".to_string());
-    println!(
-        "The execution graph is built from stage files in: {}",
-        stages_dir.display()
-    );
-    println!();
-    println!("Stage files:");
-    for entry in &stage_files {
-        println!("  - {}", entry.path().display());
-    }
-    println!();
-    println!("To edit a stage, run:");
-    println!("  {editor} {}/[stage-id].md", stages_dir.display());
-    println!();
-    println!("Each stage file contains YAML frontmatter with:");
-    println!("  - id, name, status, dependencies, parallel_group, acceptance, files");
 
     Ok(())
 }

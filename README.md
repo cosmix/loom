@@ -157,7 +157,7 @@ loom sessions list
 loom sessions kill <session-id...> | --stage <stage-id>
 loom worktree list
 loom worktree remove <stage-id>
-loom graph [--edit]
+loom graph
 loom map [--deep] [--focus <area>] [--overwrite]
 loom repair [--fix]
 loom clean [--all|--worktrees|--sessions|--state]

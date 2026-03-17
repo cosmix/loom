@@ -43,13 +43,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
             WorktreeCommands::List => worktree_cmd::list(),
             WorktreeCommands::Remove { stage_id } => worktree_cmd::remove(stage_id),
         },
-        Commands::Graph { edit } => {
-            if edit {
-                graph::edit()
-            } else {
-                graph::show()
-            }
-        }
+        Commands::Graph => graph::show(),
         Commands::Handoff {
             stage,
             session,

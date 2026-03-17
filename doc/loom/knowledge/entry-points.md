@@ -227,7 +227,7 @@ Current CLI commands (from cli/types.rs):
 | `resume`      | `commands/resume.rs`          | Resume work on a stage             |
 | `sessions`    | `commands/sessions.rs`        | List/kill active sessions          |
 | `worktree`    | `commands/worktree_cmd.rs`    | List/clean/remove worktrees        |
-| `graph`       | `commands/graph/mod.rs`       | Show/edit execution graph          |
+| `graph`       | `commands/graph/mod.rs`       | Show execution graph               |
 | `hooks`       | `commands/hooks.rs`           | Hook install/list                  |
 | `stage`       | `commands/stage/`             | Stage lifecycle (15+ subcommands)  |
 | `handoff`     | `commands/handoff/create.rs`  | Create handoff files               |
