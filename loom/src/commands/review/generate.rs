@@ -7,7 +7,9 @@ use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
+use crate::claude::find_claude_path;
 use crate::fs::memory::{list_journals, read_journal, MemoryEntry, MemoryEntryType};
 use crate::fs::work_dir::load_config;
 use crate::git::worktree::{find_repo_root_from_cwd, find_worktree_root_from_cwd};
@@ -113,38 +115,87 @@ fn load_stage_infos(stages_dir: &Path) -> Result<Vec<StageInfo>> {
     Ok(stages)
 }
 
-/// Extract plan description from the plan markdown file.
+/// Summarize a plan file by passing its content to Claude Haiku.
 ///
-/// Tries to read the text between the first `#` heading and the
-/// `<!-- loom METADATA -->` marker. Falls back to a default message.
-fn extract_plan_description(plan_path: &Path) -> String {
+/// Falls back to the plan's first paragraph if claude is unavailable.
+fn summarize_plan(plan_path: &Path) -> String {
     let content = match fs::read_to_string(plan_path) {
         Ok(c) => c,
         Err(_) => return "No plan description available.".to_string(),
     };
 
-    // Find the loom metadata marker
+    let claude_path = match find_claude_path() {
+        Ok(p) => p,
+        Err(_) => return fallback_description(&content),
+    };
+
+    let prompt = "Summarize this execution plan in 2-4 concise sentences. \
+                  Focus on what the plan accomplishes, not its structure. \
+                  Output only the summary, no preamble.";
+
+    let result = Command::new(&claude_path)
+        .args(["-p", "--model", "haiku", prompt])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            if let Some(ref mut stdin) = child.stdin {
+                let _ = stdin.write_all(content.as_bytes());
+            }
+            child.wait_with_output()
+        });
+
+    match result {
+        Ok(output) if output.status.success() => {
+            let summary = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if summary.is_empty() {
+                fallback_description(&content)
+            } else {
+                summary
+            }
+        }
+        _ => fallback_description(&content),
+    }
+}
+
+/// Extract the first paragraph after the heading as a fallback description.
+fn fallback_description(content: &str) -> String {
     let metadata_marker = "<!-- loom METADATA -->";
     let body = if let Some(idx) = content.find(metadata_marker) {
         &content[..idx]
     } else {
-        &content
+        content
     };
 
-    // Skip past the first `#` heading line
     let mut lines = body.lines().peekable();
+    // Skip to first heading
     while let Some(line) = lines.peek() {
         if line.trim_start().starts_with('#') {
-            lines.next(); // consume the heading
+            lines.next();
             break;
         }
         lines.next();
     }
+    // Skip blank lines after heading
+    while let Some(line) = lines.peek() {
+        if line.trim().is_empty() {
+            lines.next();
+        } else {
+            break;
+        }
+    }
+    // Collect until next blank line (first paragraph only)
+    let mut paragraph = Vec::new();
+    for line in lines {
+        if line.trim().is_empty() {
+            break;
+        }
+        paragraph.push(line);
+    }
 
-    // Collect remaining non-empty lines as the description
-    let description: Vec<&str> = lines.collect();
-    let trimmed = description.join("\n").trim().to_string();
-
+    let trimmed = paragraph.join("\n").trim().to_string();
     if trimmed.is_empty() {
         "No plan description available.".to_string()
     } else {
@@ -255,16 +306,19 @@ pub fn execute() -> Result<()> {
         plan_name.bold()
     );
 
-    // Extract plan description from the plan file
+    // Summarize the plan file via Claude Haiku (falls back to first paragraph)
     let plan_description = match &source_path {
         Some(path) => {
-            // source_path may be relative to project root or absolute
             let resolved = if path.is_absolute() {
                 path.clone()
             } else {
                 project_root.join(path)
             };
-            extract_plan_description(&resolved)
+            println!(
+                "{} Summarizing plan with Claude Haiku...",
+                "→".cyan().bold()
+            );
+            summarize_plan(&resolved)
         }
         None => "No plan description available.".to_string(),
     };
