@@ -170,11 +170,78 @@ Maximize parallel execution at THREE levels:
 | NO             | YES                       | Same stage, agent team         |
 | YES            | Any                       | Separate stages, loom merges   |
 
+#### SUBAGENT FILE EXCLUSIVITY (CRITICAL)
+
+- **Each subagent MUST have EXCLUSIVE write access to its files**
+- **Two subagents writing the same file = LOST WORK** (overwrites, conflicts)
+- **Stage descriptions MUST include a file ownership table**
+- If two tasks need to modify the same file, they MUST be in the same subagent OR handled sequentially by the main agent
+
+**File Ownership Table Template:**
+
+| Subagent | Files Owned (write) | Files Read-Only |
+| -------- | ------------------- | --------------- |
+| Subagent 1 — [role] | `src/auth/*.rs` | `src/config.rs` |
+| Subagent 2 — [role] | `src/logging/*.rs` | `src/config.rs` |
+| Subagent 3 — [role] | `tests/auth_test.rs` | `src/auth/*.rs` |
+
 **Stage-Specific Defaults:**
 
 - knowledge-bootstrap: Default to TEAM (coordinated exploration, researchers share discoveries that inform each other)
 - standard (implementation): Default to SUBAGENTS (concrete file assignments, fire-and-forget). Use team only for wide/exploratory scope
 - integration-verify: Default to TEAM (build + functional + code review + knowledge promotion tasks that may require iterative fixes)
+
+### 4b. Stage Necessity Test (MANDATORY)
+
+**BEFORE creating any stage beyond knowledge-bootstrap and integration-verify, evaluate:**
+
+```text
+┌─────────────────────────────────────────────────────────────────────┐
+│  STAGE NECESSITY TEST - evaluate for EACH proposed stage:           │
+│                                                                     │
+│  Q1: Does this stage create code that another stage                 │
+│      imports/calls/extends?                                         │
+│      YES → Separate stages required (code dependency)               │
+│      NO  → Continue to Q2                                           │
+│                                                                     │
+│  Q2: Does this stage write to files that another stage              │
+│      also writes to?                                                │
+│      YES → Separate stages required (file conflict)                 │
+│      NO  → Continue to Q3                                           │
+│                                                                     │
+│  Q3: Does this stage need a verification checkpoint before          │
+│      later work proceeds?                                           │
+│      YES → Separate stage justified (quality gate)                  │
+│      NO  → MERGE into one stage with parallel subagents             │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+```text
+┌─────────────────────────────────────────────────────────────────────┐
+│  ⚠️  COMMON MISTAKE                                                  │
+│                                                                     │
+│  ❌ 4 stages editing independent config files:                       │
+│     Stage 1: edit nginx.conf                                        │
+│     Stage 2: edit docker-compose.yml                                │
+│     Stage 3: edit .env.production                                   │
+│     Stage 4: edit Caddyfile                                         │
+│                                                                     │
+│  ✅ 1 stage with 4 parallel subagents:                               │
+│     Stage 1: edit all config files                                  │
+│       Subagent A: nginx.conf                                        │
+│       Subagent B: docker-compose.yml                                │
+│       Subagent C: .env.production                                   │
+│       Subagent D: Caddyfile                                         │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**WHEN STAGES ARE JUSTIFIED — concrete examples:**
+
+| Scenario | Why Separate Stages |
+| -------- | ------------------- |
+| Data model stage → API stage | Code dependency: API imports model types |
+| Same handler file modified by auth + logging | File conflict: both write to same file |
+| Core library → multiple consumers | Verification checkpoint: consumers need stable base |
 
 ### 5. Stage Description Requirement
 
@@ -185,6 +252,36 @@ Use parallel subagents and skills to maximize performance.
 ```
 
 This ensures Claude Code instances spawn concurrent subagents for independent tasks.
+
+**Stage descriptions using subagents MUST also include:**
+
+- A `SUBAGENT FILE ASSIGNMENTS` block listing each subagent
+- Each subagent's owned files and read-only files
+- Explicit statement that NO file overlap exists between subagents
+
+**Example in stage description:**
+
+```yaml
+description: |
+  Implement auth, logging, and metrics modules.
+
+  Use parallel subagents and skills to maximize performance.
+
+  SUBAGENT FILE ASSIGNMENTS:
+    Subagent 1 — Auth:
+      Files Owned: src/auth/*.rs
+      Files Read-Only: src/config.rs
+    Subagent 2 — Logging:
+      Files Owned: src/logging/*.rs
+      Files Read-Only: src/config.rs
+    Subagent 3 — Metrics:
+      Files Owned: src/metrics/*.rs
+      Files Read-Only: src/config.rs
+
+  NO FILE OVERLAP between subagents confirmed.
+```
+
+IMPORTANT: Do NOT use triple backticks in YAML descriptions — use plain indented text instead.
 
 ### 6. Plan Structure
 
@@ -1046,3 +1143,63 @@ loom:
 
 <!-- END loom METADATA -->
 ````
+
+### Example 4: Merged Stage with File Ownership (vs Wrong: Separate Stages)
+
+```yaml
+# ❌ WRONG: 3 separate stages for independent file changes
+stages:
+  - id: add-auth
+    dependencies: ["knowledge-bootstrap"]
+    files: ["src/auth/**"]
+    working_dir: "."
+    artifacts: ["src/auth/mod.rs"]
+  - id: add-logging
+    dependencies: ["knowledge-bootstrap"]
+    files: ["src/logging/**"]
+    working_dir: "."
+    artifacts: ["src/logging/mod.rs"]
+  - id: add-metrics
+    dependencies: ["knowledge-bootstrap"]
+    files: ["src/metrics/**"]
+    working_dir: "."
+    artifacts: ["src/metrics/mod.rs"]
+
+# ✅ CORRECT: 1 stage with 3 parallel subagents and file ownership
+stages:
+  - id: implement-modules
+    dependencies: ["knowledge-bootstrap"]
+    description: |
+      Implement auth, logging, and metrics modules.
+
+      Use parallel subagents and skills to maximize performance.
+
+      SUBAGENT FILE ASSIGNMENTS:
+        Subagent 1 — Auth:
+          Files Owned: src/auth/*.rs
+          Files Read-Only: src/config.rs
+        Subagent 2 — Logging:
+          Files Owned: src/logging/*.rs
+          Files Read-Only: src/config.rs
+        Subagent 3 — Metrics:
+          Files Owned: src/metrics/*.rs
+          Files Read-Only: src/config.rs
+
+      NO FILE OVERLAP between subagents confirmed.
+    files: ["src/auth/**", "src/logging/**", "src/metrics/**"]
+    working_dir: "."
+    artifacts:
+      - "src/auth/mod.rs"
+      - "src/logging/mod.rs"
+      - "src/metrics/mod.rs"
+```
+
+**Why this is better:**
+
+| Aspect | 3 Stages | 1 Stage + 3 Subagents |
+| ------ | -------- | --------------------- |
+| Worktrees created | 3 | 1 |
+| Sessions spawned | 3 | 1 (spawns 3 subagents) |
+| Token cost | ~3x | ~1x |
+| Merge operations | 3 | 1 |
+| Risk of conflicts | Higher (3 merges) | None (exclusive files) |

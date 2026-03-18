@@ -189,6 +189,14 @@ Only knowledge stages are EXEMPT. **integration-verify stages REQUIRE at least o
 
 Exploration tasks can ALWAYS run as parallel subagents. Stage descriptions MUST specify subagent assignments, file ownership, or why sequential.
 
+**Stage Necessity Test:** BEFORE creating a stage, ask:
+
+1. Does it share files with another stage? → If YES, merge or make sequential
+2. Does it depend on code another stage creates? → If YES, separate stages needed
+3. Does it need a verification checkpoint? → If YES, separate stage justified
+
+If ALL answers are NO → **merge into one stage with parallel subagents.**
+
 ### 2. NO PLACEHOLDERS
 
 **BANNED:** Incomplete markers, placeholder tags, `pass`, stubs, empty bodies, pseudocode
@@ -266,7 +274,19 @@ For ANY non-trivial work, spawn parallel subagents: independent file changes, mu
 
 If plan says "sequential" — execute in order with explicit dependencies.
 
-**File Ownership:** Each subagent MUST have exclusive write access. Overlap = merge conflicts.
+#### SUBAGENT FILE EXCLUSIVITY (CRITICAL)
+
+- **Each subagent MUST have EXCLUSIVE write access to its files**
+- **Two subagents writing the same file = LOST WORK** (overwrites, merge conflicts)
+- **Stage descriptions MUST list file ownership per subagent**
+- If overlap is unavoidable: sequential work in one subagent, or separate stages
+
+**Include in every subagent Task prompt:**
+
+| Subagent | Files Owned (write) | Files Read-Only |
+| -------- | ------------------- | --------------- |
+| Subagent 1 — [role] | `path/to/files` | `shared/config` |
+| Subagent 2 — [role] | `other/files` | `shared/config` |
 
 ### 6b. AGENT TEAMS (WHEN AVAILABLE)
 
