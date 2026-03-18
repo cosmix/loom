@@ -17,14 +17,9 @@ use crate::fs::work_integrity::{
 use crate::git::{install_pre_commit_hook, is_pre_commit_hook_installed};
 use crate::sandbox;
 
-/// Loom-specific skill names that should have the `loom-` prefix.
-const LOOM_SKILL_NAMES: &[&str] = &[
-    "before-after",
-    "dead-code-check",
-    "loom-plan-writer",
-    "loom-usage",
-    "wiring-test",
-];
+/// Old-style loom skill names (without loom- prefix) that need migration.
+/// Excludes loom-plan-writer and loom-usage which were always prefixed.
+const LOOM_SKILL_NAMES: &[&str] = &["before-after", "dead-code-check", "wiring-test"];
 
 /// Loom-specific agent names that should have the `loom-` prefix.
 const LOOM_AGENT_NAMES: &[&str] = &[
@@ -265,9 +260,6 @@ fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
     if let Some(home) = dirs::home_dir() {
         let skills_dir = home.join(".claude/skills");
         for name in LOOM_SKILL_NAMES {
-            if name.starts_with("loom-") {
-                continue;
-            }
             let old_path = skills_dir.join(name);
             if old_path.is_dir() {
                 issues.push(RepairIssue {
@@ -337,12 +329,9 @@ fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
         let settings_path = home.join(".claude/settings.json");
         if settings_path.exists() {
             if let Ok(content) = fs::read_to_string(&settings_path) {
-                let has_old_refs = LOOM_SKILL_NAMES.iter().any(|name| {
-                    if name.starts_with("loom-") {
-                        return false;
-                    }
-                    content.contains(&format!("Skill({}", name))
-                });
+                let has_old_refs = LOOM_SKILL_NAMES
+                    .iter()
+                    .any(|name| content.contains(&format!("Skill({}", name)));
                 if has_old_refs {
                     issues.push(RepairIssue {
                         severity: Severity::Info,
@@ -658,9 +647,6 @@ fn fix_settings_skill_refs() -> Result<()> {
         .with_context(|| format!("Failed to read {}", settings_path.display()))?;
 
     for name in LOOM_SKILL_NAMES {
-        if name.starts_with("loom-") {
-            continue;
-        }
         let old_ref = format!("Skill({}", name);
         let new_ref = format!("Skill(loom-{}", name);
         content = content.replace(&old_ref, &new_ref);

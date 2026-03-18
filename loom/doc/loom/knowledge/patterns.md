@@ -37,3 +37,14 @@ When removing display sections from `loom status`:
 Key insight: When folding information from a removed section into another section,
 use a lightweight struct (like `SessionInfo`) rather than reusing the full data type.
 Build the mapping in `execute_static` and pass it to the display function.
+
+## Non-Destructive Install Pattern (2026-03-18)
+
+install.sh uses per-item loom-* glob loops instead of directory-level backup/replace:
+
+- Agents: `for agent_file in "$SCRIPT_DIR/agents"/loom-*.md` → copies each individually
+- Skills: `for skill_dir in "$SCRIPT_DIR/skills"/loom-*/` → copies each individually
+- CLAUDE.md: Rules go to CLAUDE.loom.md, CLAUDE.md becomes a pointer with `@import CLAUDE.loom.md`
+- This preserves user-created agents/skills that don't have the loom- prefix
+
+Migration is handled by `loom repair --fix` which detects and renames old-style names.
