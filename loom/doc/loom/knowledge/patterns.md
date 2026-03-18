@@ -44,7 +44,7 @@ install.sh uses per-item loom-* glob loops instead of directory-level backup/rep
 
 - Agents: `for agent_file in "$SCRIPT_DIR/agents"/loom-*.md` → copies each individually
 - Skills: `for skill_dir in "$SCRIPT_DIR/skills"/loom-*/` → copies each individually
-- CLAUDE.md: Rules go to CLAUDE.loom.md, CLAUDE.md becomes a pointer with `@import CLAUDE.loom.md`
+- CLAUDE.md: Rules written directly to CLAUDE.md (existing file backed up)
 - This preserves user-created agents/skills that don't have the loom- prefix
 
 Migration is handled by `loom repair --fix` which detects and renames old-style names.

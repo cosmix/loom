@@ -117,14 +117,11 @@ pub fn execute(plan_path: Option<PathBuf>, clean: bool) -> Result<()> {
     ensure_loom_permissions(&repo_root)?;
     println!("  {} Permissions configured", "✓".green().bold());
 
-    // Check for CLAUDE.loom.md
+    // Check for CLAUDE.md
     if let Some(home) = dirs::home_dir() {
-        let loom_md = home.join(".claude/CLAUDE.loom.md");
-        if !loom_md.exists() {
-            println!(
-                "  {} ~/.claude/CLAUDE.loom.md not found",
-                "!".yellow().bold()
-            );
+        let claude_md = home.join(".claude/CLAUDE.md");
+        if !claude_md.exists() {
+            println!("  {} ~/.claude/CLAUDE.md not found", "!".yellow().bold());
             println!(
                 "    {}",
                 "Run install.sh or loom self-update to install loom rules.".dimmed()

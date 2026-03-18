@@ -36,7 +36,7 @@ cd loom
 bash ./dev-install.sh
 ```
 
-`dev-install.sh` builds the release binary (`cargo build --release`) and runs `install.sh`, which installs `loom-*` prefixed agents and skills (non-destructively, preserving user customizations), hooks, and configuration into `~/.claude/` and the CLI binary to `~/.local/bin/loom`. Orchestration rules live in `~/.claude/CLAUDE.loom.md` with a pointer in `~/.claude/CLAUDE.md`.
+`dev-install.sh` builds the release binary (`cargo build --release`) and runs `install.sh`, which installs `loom-*` prefixed agents and skills (non-destructively, preserving user customizations), hooks, and configuration into `~/.claude/` and the CLI binary to `~/.local/bin/loom`. Orchestration rules are written directly to `~/.claude/CLAUDE.md` (existing file is backed up).
 
 ### 2. Write a Plan
 
@@ -74,8 +74,7 @@ loom stop
 | `~/.claude/agents/loom-*.md` | Specialized subagents (per-item, non-destructive) |
 | `~/.claude/skills/loom-*/` | Domain knowledge modules (per-item, non-destructive) |
 | `~/.claude/hooks/loom/` | Session lifecycle hooks |
-| `~/.claude/CLAUDE.loom.md` | Orchestration rules |
-| `~/.claude/CLAUDE.md` | Pointer file (imports CLAUDE.loom.md) |
+| `~/.claude/CLAUDE.md` | Orchestration rules |
 | `~/.local/bin/loom` | Loom CLI |
 
 ## Core Workflow

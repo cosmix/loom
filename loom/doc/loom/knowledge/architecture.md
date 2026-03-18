@@ -37,11 +37,6 @@ The Handoff System section above references `loom handoff create` — this is no
 
 Similarly, `sandbox` and `hooks` CLI commands were removed. Their functionality is now in `loom repair --fix`.
 
-## CLAUDE.loom.md Separation (2026-03-18)
+## CLAUDE.md Install
 
-Loom orchestration rules now live in `~/.claude/CLAUDE.loom.md` instead of directly in `~/.claude/CLAUDE.md`.
-
-- CLAUDE.md is a thin pointer file with `@import CLAUDE.loom.md`
-- This allows users to keep their own content in CLAUDE.md alongside loom rules
-- install.sh creates both files; `loom repair --fix` migrates old installations
-- init/execute.rs warns if CLAUDE.loom.md is missing
+Orchestration rules are written directly to `~/.claude/CLAUDE.md` by install.sh. Existing user CLAUDE.md is backed up before overwrite. init/execute.rs warns if CLAUDE.md is missing.

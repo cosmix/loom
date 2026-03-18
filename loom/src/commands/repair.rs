@@ -8,7 +8,6 @@
 use anyhow::{Context, Result};
 use colored::Colorize;
 use std::fs;
-use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use crate::fs::work_integrity::{
@@ -17,15 +16,67 @@ use crate::fs::work_integrity::{
 use crate::git::{install_pre_commit_hook, is_pre_commit_hook_installed};
 use crate::sandbox;
 
-/// Old-style loom skill names (without loom- prefix) that need migration.
-/// Excludes loom-plan-writer and loom-usage which were always prefixed.
-const LOOM_SKILL_NAMES: &[&str] = &["before-after", "dead-code-check", "wiring-test"];
-
-/// Loom-specific agent names that should have the `loom-` prefix.
-const LOOM_AGENT_NAMES: &[&str] = &[
-    "code-reviewer",
-    "senior-software-engineer",
-    "software-engineer",
+/// Loom-specific skill names referenced in settings.json that may need prefix migration.
+const LOOM_SKILL_NAMES: &[&str] = &[
+    "accessibility",
+    "api-design",
+    "api-documentation",
+    "argocd",
+    "auth",
+    "background-jobs",
+    "before-after",
+    "caching",
+    "ci-cd",
+    "code-migration",
+    "code-review",
+    "concurrency",
+    "crossplane",
+    "data-validation",
+    "data-visualization",
+    "database-design",
+    "dead-code-check",
+    "debugging",
+    "dependency-scan",
+    "diagramming",
+    "docker",
+    "documentation",
+    "e2e-testing",
+    "error-handling",
+    "event-driven",
+    "feature-flags",
+    "fluxcd",
+    "git-workflow",
+    "golang",
+    "grafana",
+    "i18n",
+    "istio",
+    "karpenter",
+    "kubernetes",
+    "kustomize",
+    "logging-observability",
+    "md-tables",
+    "model-evaluation",
+    "performance-testing",
+    "prometheus",
+    "prompt-engineering",
+    "python",
+    "rate-limiting",
+    "react",
+    "refactoring",
+    "rust",
+    "search",
+    "security-audit",
+    "security-scan",
+    "serialization",
+    "sql-optimization",
+    "technical-writing",
+    "terraform",
+    "test-strategy",
+    "testing",
+    "threat-model",
+    "typescript",
+    "webhooks",
+    "wiring-test",
 ];
 
 /// Issue detected during repair check
@@ -256,70 +307,61 @@ fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
         }
     }
 
-    // Check 7: Old-style skills (missing loom- prefix)
+    // Check 7: Old unprefixed skills that have a loom- counterpart
     if let Some(home) = dirs::home_dir() {
         let skills_dir = home.join(".claude/skills");
-        for name in LOOM_SKILL_NAMES {
-            let old_path = skills_dir.join(name);
-            if old_path.is_dir() {
-                issues.push(RepairIssue {
-                    severity: Severity::Warning,
-                    description: format!(
-                        "Old-style skill '{}' found (should be 'loom-{}')",
-                        name, name
-                    ),
-                    fix_description: format!("Rename ~/.claude/skills/{} to loom-{}", name, name),
-                });
+        if skills_dir.is_dir() {
+            if let Ok(entries) = fs::read_dir(&skills_dir) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if name.starts_with("loom-") || !entry.path().is_dir() {
+                        continue;
+                    }
+                    let prefixed = skills_dir.join(format!("loom-{}", name));
+                    if prefixed.is_dir() {
+                        issues.push(RepairIssue {
+                            severity: Severity::Warning,
+                            description: format!(
+                                "Old unprefixed skill '{}' found (superseded by 'loom-{}')",
+                                name, name
+                            ),
+                            fix_description: format!(
+                                "Remove ~/.claude/skills/{} (loom-{} already installed)",
+                                name, name
+                            ),
+                        });
+                    }
+                }
             }
         }
     }
 
-    // Check 8: Old-style agents (missing loom- prefix)
+    // Check 8: Old unprefixed agents that have a loom- counterpart
     if let Some(home) = dirs::home_dir() {
         let agents_dir = home.join(".claude/agents");
-        for name in LOOM_AGENT_NAMES {
-            let old_path = agents_dir.join(format!("{}.md", name));
-            let new_path = agents_dir.join(format!("loom-{}.md", name));
-            if old_path.exists() && !new_path.exists() {
-                issues.push(RepairIssue {
-                    severity: Severity::Warning,
-                    description: format!(
-                        "Old-style agent '{}' found (should be 'loom-{}')",
-                        name, name
-                    ),
-                    fix_description: format!(
-                        "Rename ~/.claude/agents/{}.md to loom-{}.md",
-                        name, name
-                    ),
-                });
-            }
-        }
-    }
-
-    // Check 9: Old-style CLAUDE.md (rules should be in CLAUDE.loom.md)
-    if let Some(home) = dirs::home_dir() {
-        let claude_md = home.join(".claude/CLAUDE.md");
-        let claude_loom_md = home.join(".claude/CLAUDE.loom.md");
-        if claude_md.exists() && !claude_loom_md.exists() {
-            let has_loom_header = fs::File::open(&claude_md)
-                .ok()
-                .map(|f| {
-                    BufReader::new(f).lines().take(5).any(|line| {
-                        line.as_ref()
-                            .map(|l| l.contains("# claude-loom"))
-                            .unwrap_or(false)
-                    })
-                })
-                .unwrap_or(false);
-
-            if has_loom_header {
-                issues.push(RepairIssue {
-                    severity: Severity::Warning,
-                    description: "Old-style CLAUDE.md found (rules should be in CLAUDE.loom.md)"
-                        .to_string(),
-                    fix_description: "Move rules to CLAUDE.loom.md, replace CLAUDE.md with pointer"
-                        .to_string(),
-                });
+        if agents_dir.is_dir() {
+            if let Ok(entries) = fs::read_dir(&agents_dir) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if name.starts_with("loom-") || !name.ends_with(".md") {
+                        continue;
+                    }
+                    let prefixed = agents_dir.join(format!("loom-{}", name));
+                    if prefixed.exists() {
+                        let bare = name.trim_end_matches(".md");
+                        issues.push(RepairIssue {
+                            severity: Severity::Warning,
+                            description: format!(
+                                "Old unprefixed agent '{}' found (superseded by 'loom-{}')",
+                                bare, bare
+                            ),
+                            fix_description: format!(
+                                "Remove ~/.claude/agents/{} (loom-{} already installed)",
+                                name, name
+                            ),
+                        });
+                    }
+                }
             }
         }
     }
@@ -415,14 +457,11 @@ fn fix_issue(repo_root: &Path, issue: &RepairIssue) -> Result<bool> {
     } else if issue.description.contains("Sandbox settings not found") {
         fix_sandbox_settings(repo_root)?;
         Ok(true)
-    } else if issue.description.contains("Old-style skill") {
+    } else if issue.description.contains("Old unprefixed skill") {
         fix_old_skill(&issue.description)?;
         Ok(true)
-    } else if issue.description.contains("Old-style agent") {
+    } else if issue.description.contains("Old unprefixed agent") {
         fix_old_agent(&issue.description)?;
-        Ok(true)
-    } else if issue.description.contains("Old-style CLAUDE.md found") {
-        fix_old_claude_md()?;
         Ok(true)
     } else if issue
         .description
@@ -559,80 +598,31 @@ fn fix_gitignore_worktrees(repo_root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Rename an old-style skill directory to use the loom- prefix.
-///
-/// Extracts the skill name from the issue description and renames
-/// `~/.claude/skills/{name}` to `~/.claude/skills/loom-{name}`.
+/// Remove an old unprefixed skill directory (loom- version already installed).
 fn fix_old_skill(description: &str) -> Result<()> {
     let name = description
-        .strip_prefix("Old-style skill '")
+        .strip_prefix("Old unprefixed skill '")
         .and_then(|s| s.split('\'').next())
         .with_context(|| format!("Cannot parse skill name from: {}", description))?;
 
     let home = dirs::home_dir().context("Cannot determine home directory")?;
-    let skills_dir = home.join(".claude/skills");
-    let old_path = skills_dir.join(name);
-    let new_path = skills_dir.join(format!("loom-{}", name));
-    fs::rename(&old_path, &new_path).with_context(|| {
-        format!(
-            "Failed to rename {} to {}",
-            old_path.display(),
-            new_path.display()
-        )
-    })?;
+    let old_path = home.join(".claude/skills").join(name);
+    fs::remove_dir_all(&old_path)
+        .with_context(|| format!("Failed to remove {}", old_path.display()))?;
     Ok(())
 }
 
-/// Rename an old-style agent file to use the loom- prefix.
-///
-/// Extracts the agent name from the issue description and renames
-/// `~/.claude/agents/{name}.md` to `~/.claude/agents/loom-{name}.md`.
+/// Remove an old unprefixed agent file (loom- version already installed).
 fn fix_old_agent(description: &str) -> Result<()> {
     let name = description
-        .strip_prefix("Old-style agent '")
+        .strip_prefix("Old unprefixed agent '")
         .and_then(|s| s.split('\'').next())
         .with_context(|| format!("Cannot parse agent name from: {}", description))?;
 
     let home = dirs::home_dir().context("Cannot determine home directory")?;
-    let agents_dir = home.join(".claude/agents");
-    let old_path = agents_dir.join(format!("{}.md", name));
-    let new_path = agents_dir.join(format!("loom-{}.md", name));
-    fs::rename(&old_path, &new_path).with_context(|| {
-        format!(
-            "Failed to rename {} to {}",
-            old_path.display(),
-            new_path.display()
-        )
-    })?;
-    Ok(())
-}
-
-/// Migrate old-style CLAUDE.md to CLAUDE.loom.md with a pointer file.
-///
-/// Renames `~/.claude/CLAUDE.md` to `~/.claude/CLAUDE.loom.md` and creates
-/// a new `~/.claude/CLAUDE.md` that imports the loom rules file.
-fn fix_old_claude_md() -> Result<()> {
-    let home = dirs::home_dir().context("Cannot determine home directory")?;
-    let claude_md = home.join(".claude/CLAUDE.md");
-    let claude_loom_md = home.join(".claude/CLAUDE.loom.md");
-
-    fs::rename(&claude_md, &claude_loom_md).with_context(|| {
-        format!(
-            "Failed to rename {} to {}",
-            claude_md.display(),
-            claude_loom_md.display()
-        )
-    })?;
-
-    let pointer = "\
-# ───────────────────────────────────────────────────────────
-# claude-loom | pointer — DO NOT EDIT, rules live in CLAUDE.loom.md
-# ───────────────────────────────────────────────────────────
-
-@import CLAUDE.loom.md
-";
-    fs::write(&claude_md, pointer)
-        .with_context(|| format!("Failed to write pointer file at {}", claude_md.display()))?;
+    let old_path = home.join(".claude/agents").join(format!("{}.md", name));
+    fs::remove_file(&old_path)
+        .with_context(|| format!("Failed to remove {}", old_path.display()))?;
     Ok(())
 }
 
