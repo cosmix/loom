@@ -288,3 +288,19 @@ entry-points.md:87 references "Stable prefix generation (4 stage-type variants, 
 - CLAUDE.md.template:692-718 — Rule 14: SILENT FAILURE DETECTION
 - skills/code-review/SKILL.md:62 — SILENT_FAILURE severity level
 - skills/code-review/SKILL.md:178-204 — Loom Orchestration Review section
+
+## Install & Repair Entry Points
+
+- install.sh — Main installer script (local + remote paths)
+  - install_agents() line 258 — Local agent installation (cp -r)
+  - install_skills() line 268 — Local skill installation (cp -r)
+  - install_claude_md() line 278 — Local CLAUDE.md installation
+  - install_agents_remote() line 128 — Remote agent download
+  - install_skills_remote() line 141 — Remote skill download
+  - install_claude_md_remote() line 154 — Remote CLAUDE.md download
+- loom/src/commands/repair.rs — Repair command (RepairIssue pattern)
+  - check_all_issues() line 164 — Issue detection
+  - apply_fixes() line 251 — Fix application
+  - fix_issue() line 288 — Individual fix handler
+- loom/src/commands/init/execute.rs — Init command
+  - ensure_loom_permissions() call at line 117

@@ -324,3 +324,26 @@ Both changes maintain the Manus KV-cache 4-section pattern (stable prefix, semi-
 ## Stderr Warning Detection Pattern (2026-03-11)
 
 Advisory stderr warning detection added to verify/criteria/runner.rs:detect_stderr_warnings(). After acceptance criteria loop completes, scans successful command results for 9 suspicious patterns in stderr (connection refused, permission denied, failed to download, blocked, EACCES, ECONNREFUSED, unable to connect, network error, sandbox). Case-insensitive matching via to_lowercase(). Warnings are advisory only — do NOT change pass/fail logic. Uses eprintln! for output.
+
+## Install System Pattern
+
+Two install paths in install.sh: **local** (from cloned repo) and **remote** (curl-pipe from GitHub).
+
+**Local path** (main function lines 498-507):
+
+- check_requirements → confirm_overwrites → ensure_claude_dir
+- install_loom_local → install_agents → install_skills → install_hooks → install_claude_md
+- cleanup_backups (offers to delete .bak files)
+
+**Remote path** (main function lines 488-497):
+
+- check_dependencies → ensure_claude_dir
+- install_loom_remote → install_agents_remote → install_skills_remote → install_hooks_remote → install_claude_md_remote
+
+**Current behavior (destructive):**
+
+- agents/skills: backup_if_exists (mv to .bak) then cp -r entire directory (local) or download+extract zip (remote)
+- CLAUDE.md: backup_if_exists then overwrite with template + timestamp header
+- hooks: already non-destructive (installed to loom/ subdirectory, per-file)
+
+**Naming:** Currently no prefix convention for skills/agents. 61 skill dirs, 3 agent files.
