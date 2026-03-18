@@ -176,9 +176,11 @@ pub fn generate_stable_prefix() -> String {
     content.push_str("**Delegation & Efficiency (CRITICAL):**\n\n");
     content.push_str("**USE THE TASK TOOL** to spawn parallel subagents for multi-part work:\n");
     content.push_str("- Independent file changes, multiple components, tests + implementation → spawn parallel subagents\n");
-    content.push_str("- Pattern: `Task(subagent_type=\"senior-software-engineer\", prompt=\"...\")` - send MULTIPLE in ONE message\n");
-    content.push_str("- Agents: `senior-software-engineer` (DEFAULT — use for all work requiring judgment), `software-engineer` (ONLY for unit tests, boilerplate, scaffolding), `Explore`\n");
-    content.push_str("- Skills: /auth, /testing, /ci-cd, /logging-observability\n\n");
+    content.push_str("- Pattern: `Task(subagent_type=\"loom-senior-software-engineer\", prompt=\"...\")` - send MULTIPLE in ONE message\n");
+    content.push_str("- Agents: `loom-senior-software-engineer` (DEFAULT — use for all work requiring judgment), `loom-software-engineer` (ONLY for unit tests, boilerplate, scaffolding), `Explore`\n");
+    content.push_str(
+        "- Skills: /loom-auth, /loom-testing, /loom-ci-cd, /loom-logging-observability\n\n",
+    );
     append_subagent_restrictions(
         &mut content,
         "- Subagents write code and report results; main agent handles git\n\n",
@@ -269,7 +271,8 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("│  MUST use PARALLEL SPECIALIZED AGENTS for comprehensive review:   │\n");
     content.push_str("│                                                                    │\n");
     content.push_str("│  1. security-engineer    - OWASP Top 10, secrets, dependencies    │\n");
-    content.push_str("│  2. senior-software-engineer - Coupling, error handling, dead code │\n");
+    content
+        .push_str("│  2. loom-senior-software-engineer - Coupling, error handling, dead code│\n");
     content.push_str("│  3. Build/test/sandbox   - Full suite + stderr + sandbox verify    │\n");
     content.push_str("│  4. Functional verifier  - End-to-end test, wiring, reachability   │\n");
     content.push_str("│                                                                    │\n");
@@ -287,7 +290,7 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("Validate input sanitization at boundaries. ");
     content.push_str("Review error messages for information leakage.\n\n");
     content.push_str(
-        "2. **senior-software-engineer** — Check code organization and module coupling. ",
+        "2. **loom-senior-software-engineer** — Check code organization and module coupling. ",
     );
     content.push_str("Verify error handling is complete (no swallowed errors). ");
     content.push_str("Check for proper abstraction (not over/under-engineered). ");
@@ -344,9 +347,11 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("**Delegation & Efficiency (CRITICAL):**\n\n");
     content.push_str("**USE THE TASK TOOL** to spawn parallel subagents for verification:\n");
     content.push_str("- Run tests, linting, and build checks in parallel where possible\n");
-    content.push_str("- Pattern: `Task(subagent_type=\"senior-software-engineer\", prompt=\"...\")` - send MULTIPLE in ONE message\n");
-    content.push_str("- Agents: `senior-software-engineer` (DEFAULT — use for all work requiring judgment), `software-engineer` (ONLY for unit tests, boilerplate, scaffolding), `Explore`\n");
-    content.push_str("- Skills: /testing, /auth, /ci-cd, /logging-observability\n\n");
+    content.push_str("- Pattern: `Task(subagent_type=\"loom-senior-software-engineer\", prompt=\"...\")` - send MULTIPLE in ONE message\n");
+    content.push_str("- Agents: `loom-senior-software-engineer` (DEFAULT — use for all work requiring judgment), `loom-software-engineer` (ONLY for unit tests, boilerplate, scaffolding), `Explore`\n");
+    content.push_str(
+        "- Skills: /loom-testing, /loom-auth, /loom-ci-cd, /loom-logging-observability\n\n",
+    );
 
     append_subagent_restrictions(
         &mut content,
@@ -464,8 +469,10 @@ pub fn generate_knowledge_stable_prefix() -> String {
     content.push_str("**USE THE TASK TOOL** to spawn parallel subagents for exploration:\n");
     content.push_str("- Different codebase areas, multiple knowledge files, independent research → spawn parallel Explore agents\n");
     content.push_str("- Pattern: `Task(subagent_type=\"Explore\", prompt=\"...\")` - send MULTIPLE in ONE message\n");
-    content.push_str("- Agents: `Explore`, `senior-software-engineer` (DEFAULT for implementation), `software-engineer` (ONLY for unit tests, boilerplate, scaffolding)\n");
-    content.push_str("- Skills: /auth, /testing, /ci-cd, /logging-observability\n\n");
+    content.push_str("- Agents: `Explore`, `loom-senior-software-engineer` (DEFAULT for implementation), `loom-software-engineer` (ONLY for unit tests, boilerplate, scaffolding)\n");
+    content.push_str(
+        "- Skills: /loom-auth, /loom-testing, /loom-ci-cd, /loom-logging-observability\n\n",
+    );
     content.push_str("**Completion:**\n");
     content.push_str("- **Verify acceptance criteria** before marking stage complete\n");
     content.push_str("- **Create handoff** if context exceeds 75%\n");
@@ -557,9 +564,9 @@ mod tests {
             "Before running `loom stage complete`, ensure you are at the worktree root directory"
         ));
         // Critical: specific skill examples
-        assert!(prefix.contains("/auth"));
-        assert!(prefix.contains("/testing"));
-        assert!(prefix.contains("software-engineer"));
+        assert!(prefix.contains("/loom-auth"));
+        assert!(prefix.contains("/loom-testing"));
+        assert!(prefix.contains("loom-software-engineer"));
         // Critical: Agent Teams guidance
         assert!(prefix.contains("Agent Teams (WHEN AVAILABLE)"));
         assert!(prefix.contains("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1"));
@@ -601,8 +608,8 @@ mod tests {
         assert!(prefix.contains("Task(subagent_type="));
         assert!(prefix.contains("MULTIPLE in ONE message"));
         // Critical: specific skill examples
-        assert!(prefix.contains("/auth"));
-        assert!(prefix.contains("/testing"));
+        assert!(prefix.contains("/loom-auth"));
+        assert!(prefix.contains("/loom-testing"));
         assert!(prefix.contains("Explore"));
         // Agent Teams guidance for knowledge bootstrap
         assert!(prefix.contains("Agent Teams for Knowledge Bootstrap"));
@@ -640,7 +647,7 @@ mod tests {
         // Code review content (merged from code-review prefix)
         assert!(prefix.contains("REVIEW"));
         assert!(prefix.contains("security-engineer"));
-        assert!(prefix.contains("senior-software-engineer"));
+        assert!(prefix.contains("loom-senior-software-engineer"));
         assert!(prefix.contains("CODE REVIEW + VERIFICATION EXECUTION STRATEGY"));
 
         // Worktree isolation

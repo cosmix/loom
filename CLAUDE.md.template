@@ -297,32 +297,32 @@ Agent teams provide richer coordination than subagents: inter-agent messaging, s
 
 #### Specialized Agents
 
-`senior-software-engineer` uses Opus. `software-engineer` uses Sonnet. Choose accordingly — Sonnet mistakes cause rework that costs more than Opus tokens.
+`loom-senior-software-engineer` uses Opus. `loom-software-engineer` uses Sonnet. Choose accordingly — Sonnet mistakes cause rework that costs more than Opus tokens.
 
 | Agent | When to Use |
 | ----- | ----------- |
-| `senior-software-engineer` | **DEFAULT.** All implementation, architecture, bug fixes, debugging, refactoring, test strategy, verification, and any task requiring judgment |
-| `software-engineer` | ONLY: (1) writing unit tests for existing code, (2) boilerplate/low-complexity code with detailed instructions, (3) scaffolding/skeleton generation from a concrete plan |
-| `code-reviewer` | Read-only code review, security review, architecture review |
+| `loom-senior-software-engineer` | **DEFAULT.** All implementation, architecture, bug fixes, debugging, refactoring, test strategy, verification, and any task requiring judgment |
+| `loom-software-engineer` | ONLY: (1) writing unit tests for existing code, (2) boilerplate/low-complexity code with detailed instructions, (3) scaffolding/skeleton generation from a concrete plan |
+| `loom-code-reviewer` | Read-only code review, security review, architecture review |
 
 **Agent Selection:**
-- **Needs judgment?** → `senior-software-engineer` (architecture, implementation, bug fixes, debugging, verification, refactoring, test strategy, ambiguous tasks)
-- **Mechanical/prescribed work?** → `software-engineer` (unit tests, boilerplate, scaffolding — only when the _what_ and _how_ are already decided)
-- **Read-only review?** → `code-reviewer`
+- **Needs judgment?** → `loom-senior-software-engineer` (architecture, implementation, bug fixes, debugging, verification, refactoring, test strategy, ambiguous tasks)
+- **Mechanical/prescribed work?** → `loom-software-engineer` (unit tests, boilerplate, scaffolding — only when the _what_ and _how_ are already decided)
+- **Read-only review?** → `loom-code-reviewer`
 - **Codebase exploration?** → `Explore` agent
 - **Domain expertise?** → use skills
 
-**⚠️ Unit tests vs. verification:** `software-engineer` can write unit tests from existing code. But verification (proving a feature is wired up, reachable, and working end-to-end) requires `senior-software-engineer`.
+**⚠️ Unit tests vs. verification:** `loom-software-engineer` can write unit tests from existing code. But verification (proving a feature is wired up, reachable, and working end-to-end) requires `loom-senior-software-engineer`.
 
 #### Skills by Domain
 
 | Domain | Skills |
 | ------ | ------ |
-| Security & Auth | `/auth` — OAuth2, JWT, RBAC/ABAC, session management, MFA, password hashing |
-| Testing | `/testing` — Unit, integration, e2e, security tests, TDD/BDD, coverage analysis |
-| Infrastructure & DevOps | `/ci-cd`, `/karpenter`, `/prometheus` |
-| Observability | `/logging-observability` — Structured logging, distributed tracing, OpenTelemetry |
-| Architecture Patterns | `/event-driven`, `/background-jobs`, `/feature-flags`, `/data-validation` |
+| Security & Auth | `/loom-auth` — OAuth2, JWT, RBAC/ABAC, session management, MFA, password hashing |
+| Testing | `/loom-testing` — Unit, integration, e2e, security tests, TDD/BDD, coverage analysis |
+| Infrastructure & DevOps | `/loom-ci-cd`, `/loom-karpenter`, `/loom-prometheus` |
+| Observability | `/loom-logging-observability` — Structured logging, distributed tracing, OpenTelemetry |
+| Architecture Patterns | `/loom-event-driven`, `/loom-background-jobs`, `/loom-feature-flags`, `/loom-data-validation` |
 
 When delegating to subagents, include the SUBAGENT PREAMBLE (Rule 5), skill hints, file assignments, and acceptance criteria.
 
@@ -458,8 +458,8 @@ Before completing any stage: `loom memory list` and `loom memory show --all`
 | Dimension | Agent | Focus |
 | --- | --- | --- |
 | Security | security-engineer | OWASP, auth, secrets, injection |
-| Architecture | senior-software-engineer | patterns, coupling, quality |
-| Testing | /testing skill | coverage gaps, edge cases |
+| Architecture | loom-senior-software-engineer | patterns, coupling, quality |
+| Testing | /loom-testing skill | coverage gaps, edge cases |
 | Sandbox | Build/test verifier | Were operations blocked by sandbox? |
 
 FIX issues found, don't just report. Sandbox blocks = BLOCKER.
