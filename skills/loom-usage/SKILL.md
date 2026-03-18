@@ -12,8 +12,8 @@ description: |
   multi-stage execution.
 
   DO NOT USE: For writing loom plans (use /loom-plan-writer), for designing
-  wiring checks (use /wiring-test), for before/after verification pairs
-  (use /before-after), or for dead code detection config (use /dead-code-check).
+  wiring checks (use /loom-wiring-test), for before/after verification pairs
+  (use /loom-before-after), or for dead code detection config (use /loom-dead-code-check).
 triggers:
   - "loom run"
   - "loom init"
@@ -67,9 +67,9 @@ working inside a loom worktree as an agent.
 | Skill | Use For |
 | --- | --- |
 | `/loom-plan-writer` | Creating new plan files |
-| `/wiring-test` | Designing wiring verification YAML |
-| `/before-after` | Before/after delta-proof verification pairs |
-| `/dead-code-check` | Dead code detection configuration |
+| `/loom-wiring-test` | Designing wiring verification YAML |
+| `/loom-before-after` | Before/after delta-proof verification pairs |
+| `/loom-dead-code-check` | Dead code detection configuration |
 | **This skill** | Everything after the plan is written |
 
 ---

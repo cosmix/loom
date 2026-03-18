@@ -560,7 +560,7 @@ Verifies all work integrates correctly after merges AND that the feature actuall
          secrets, credential management, dependency vulnerabilities
        - senior-software-engineer: code organization, design patterns,
          performance, documentation, maintainability
-       - /testing skill: unit test coverage, integration tests, edge cases
+       - /loom-testing skill: unit test coverage, integration tests, edge cases
     6. Fix ALL issues found by reviewers - do not just report them
     7. Verify no code duplication, proper separation of concerns
 
@@ -899,7 +899,7 @@ _Build & Test:_
 
 _Code Review (MANDATORY):_
 
-- Spawn parallel review subagents (security-engineer, senior-software-engineer, /testing skill)
+- Spawn parallel review subagents (security-engineer, senior-software-engineer, /loom-testing skill)
 - Fix ALL issues found - do not just report them
 - Verify no code duplication, proper separation of concerns
 
@@ -1011,7 +1011,7 @@ loom:
         - Build verification
 
         CODE REVIEW (MANDATORY):
-        - Spawn parallel review subagents (security-engineer, senior-software-engineer, /testing skill)
+        - Spawn parallel review subagents (security-engineer, senior-software-engineer, /loom-testing skill)
         - Fix ALL issues found - do not just report them
         - Verify no code duplication, proper separation of concerns
 
