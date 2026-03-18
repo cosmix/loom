@@ -97,7 +97,7 @@ pub(super) fn format_merge_signal_content(
     content.push_str("3. Stage resolved files: `git add <resolved-files>`\n");
     content.push_str("4. Review changes and complete the merge: `git commit`\n");
     content.push_str(&format!(
-        "5. Run: `loom stage merge-complete {}`\n",
+        "5. Run: `loom stage merge {} --resolved`\n",
         stage.id
     ));
     content.push_str(&format!(

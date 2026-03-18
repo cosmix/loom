@@ -255,7 +255,7 @@ When auto-merge fails during orchestration:
 1. **MergeConflict**: Stage transitions to MergeConflict status
 2. **Session exits**: detection.rs recognizes MergeConflict/MergeBlocked as normal exits (not crashes)
 3. **Recovery spawn**: `spawn_merge_resolution_sessions()` in merge_handler.rs picks up stages in MergeConflict/MergeBlocked status
-4. **User guidance**: Error messages direct to `loom stage retry-merge <stage-id>`
+4. **User guidance**: Error messages direct to `loom stage merge <stage-id>`
 
 Key files:
 

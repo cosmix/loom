@@ -1,6 +1,6 @@
 //! Tests for state transition commands
 
-use super::super::state::{block, hold, ready, release, reset, resume_from_waiting, waiting};
+use super::super::state::{block, hold, release, reset, resume_from_waiting, waiting};
 use super::{create_test_stage, save_test_stage, setup_work_dir};
 use crate::models::stage::StageStatus;
 use crate::verify::transitions::load_stage;
@@ -77,28 +77,6 @@ fn test_reset_hard_clears_session() {
 
     let loaded_stage = load_stage("test-stage", &work_dir_path).unwrap();
     assert_eq!(loaded_stage.session, None);
-}
-
-#[test]
-#[serial]
-fn test_ready_marks_as_ready() {
-    let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".work");
-
-    let stage = create_test_stage("test-stage", StageStatus::WaitingForDeps);
-    save_test_stage(&work_dir_path, &stage);
-
-    let original_dir = std::env::current_dir().unwrap();
-    std::env::set_current_dir(temp_dir.path()).unwrap();
-
-    let result = ready("test-stage".to_string());
-
-    std::env::set_current_dir(original_dir).unwrap();
-
-    assert!(result.is_ok());
-
-    let loaded_stage = load_stage("test-stage", &work_dir_path).unwrap();
-    assert_eq!(loaded_stage.status, StageStatus::Queued);
 }
 
 #[test]

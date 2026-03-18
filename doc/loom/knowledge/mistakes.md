@@ -730,7 +730,7 @@ Two plan criteria caused false negatives in integration-verify:
 ### Notes
 
 - Code review of fix-merge-respawn: 3 subagents identified High issues (stale signal files blocking future merges, fragile string matching in has_merge_signal_for_stage) and Medium issues (code duplication in Merged/BranchMissing arms, inconsistent stage ID extraction, save_session failure not cleaning up active_sessions)
-- Unresolved: stale signal files (kept as respawn guard) have no cleanup mechanism. If user resolves merge manually, orphaned signal blocks future merge sessions. Needs a staleness-based cleanup or integration with loom stage retry-merge/worktree remove.
+- Unresolved: stale signal files (kept as respawn guard) have no cleanup mechanism. If user resolves merge manually, orphaned signal blocks future merge sessions. Needs a staleness-based cleanup or integration with loom stage merge/worktree remove.
 
 ### Decisions
 
@@ -880,7 +880,7 @@ When running `loom knowledge update` from a subdirectory (e.g., `loom/`), the CL
 
 ## loom merge command removed (2026-02-07)
 
-**What happened:** The `loom merge` command was found to be redundant with 5 bugs preventing it from working. `loom stage complete` already handles merging, and `loom stage retry-merge` / `loom stage merge-complete` cover recovery.
+**What happened:** The `loom merge` command was found to be redundant with 5 bugs preventing it from working. `loom stage complete` already handles merging, and `loom stage merge` (with `--resolved` for manual resolution) covers recovery.
 
 **Decision:** Removed entirely rather than fixing. The `mark_stage_merged` function was relocated from `commands/merge/execute/operations.rs` to `commands/worktree_cmd.rs` (its only consumer).
 

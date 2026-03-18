@@ -20,6 +20,11 @@ use crate::verify::transitions::{load_stage, save_stage};
 /// 1. Loads the stage and validates it's in a recoverable state
 /// 2. Creates a recovery signal with context from the last session
 /// 3. Resets the stage to Queued status for a new session
+///
+/// Note: This function is kept as an internal implementation but the CLI
+/// now routes through `retry --context` instead. The helper functions in
+/// this module are used by the retry command.
+#[allow(dead_code)]
 pub fn recover(stage_id: String, force: bool) -> Result<()> {
     let work_dir = Path::new(".work");
 
@@ -59,7 +64,7 @@ pub fn recover(stage_id: String, force: bool) -> Result<()> {
             }
             StageStatus::MergeConflict => {
                 bail!(
-                    "Stage '{stage_id}' has merge conflicts. Use 'loom stage retry-merge {stage_id}' to resolve."
+                    "Stage '{stage_id}' has merge conflicts. Use 'loom stage merge {stage_id}' to resolve."
                 );
             }
             StageStatus::NeedsHumanReview => {
@@ -164,7 +169,7 @@ pub fn recover(stage_id: String, force: bool) -> Result<()> {
 }
 
 /// Load last heartbeat information for a stage
-fn load_last_heartbeat(work_dir: &Path, stage_id: &str) -> Option<LastHeartbeatInfo> {
+pub(crate) fn load_last_heartbeat(work_dir: &Path, stage_id: &str) -> Option<LastHeartbeatInfo> {
     let hb_path = heartbeat_path(work_dir, stage_id);
     let heartbeat = read_heartbeat(&hb_path).ok()?;
 
@@ -177,7 +182,7 @@ fn load_last_heartbeat(work_dir: &Path, stage_id: &str) -> Option<LastHeartbeatI
 }
 
 /// Determine recovery reason from stage state
-fn determine_recovery_reason(stage: &crate::models::stage::Stage) -> RecoveryReason {
+pub(crate) fn determine_recovery_reason(stage: &crate::models::stage::Stage) -> RecoveryReason {
     if let Some(ref reason) = stage.close_reason {
         let reason_lower = reason.to_lowercase();
         if reason_lower.contains("crash") || reason_lower.contains("orphan") {
@@ -196,7 +201,7 @@ fn determine_recovery_reason(stage: &crate::models::stage::Stage) -> RecoveryRea
 }
 
 /// Generate a session ID for recovery
-fn generate_recovery_session_id(stage_id: &str) -> String {
+pub(crate) fn generate_recovery_session_id(stage_id: &str) -> String {
     let uuid_part = uuid::Uuid::new_v4().to_string();
     let short_uuid = &uuid_part[..8];
     let timestamp = chrono::Utc::now().timestamp();
@@ -204,7 +209,7 @@ fn generate_recovery_session_id(stage_id: &str) -> String {
 }
 
 /// Find crash report for a session
-fn find_crash_report(work_dir: &Path, session_id: &str) -> Option<std::path::PathBuf> {
+pub(crate) fn find_crash_report(work_dir: &Path, session_id: &str) -> Option<std::path::PathBuf> {
     let crashes_dir = work_dir.join("crashes");
     if !crashes_dir.exists() {
         return None;
@@ -224,7 +229,7 @@ fn find_crash_report(work_dir: &Path, session_id: &str) -> Option<std::path::Pat
 }
 
 /// Extract context percentage from close reason string
-fn extract_context_percent(reason: &str) -> Option<f32> {
+pub(crate) fn extract_context_percent(reason: &str) -> Option<f32> {
     // Look for patterns like "75%", "75.5%", "context: 75%"
     let re = regex::Regex::new(r"(\d+(?:\.\d+)?)\s*%").ok()?;
     re.captures(reason)

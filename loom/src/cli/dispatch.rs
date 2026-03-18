@@ -69,10 +69,12 @@ pub fn dispatch(command: Commands) -> Result<()> {
             StageCommands::Hold { stage_id } => stage::hold(stage_id),
             StageCommands::Release { stage_id } => stage::release(stage_id),
             StageCommands::Skip { stage_id, reason } => stage::skip(stage_id, reason),
-            StageCommands::Retry { stage_id, force } => stage::retry(stage_id, force),
-            StageCommands::Recover { stage_id, force } => stage::recover(stage_id, force),
-            StageCommands::MergeComplete { stage_id } => stage::merge_complete(stage_id),
-            StageCommands::RetryMerge { stage_id } => stage::retry_merge(stage_id),
+            StageCommands::Retry {
+                stage_id,
+                force,
+                context,
+            } => stage::retry(stage_id, force, context),
+            StageCommands::Merge { stage_id, resolved } => stage::merge(stage_id, resolved),
             StageCommands::Verify {
                 stage_id,
                 no_reload,

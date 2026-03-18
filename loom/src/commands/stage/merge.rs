@@ -1,30 +1,40 @@
-//! Retry merge command for re-attempting merge from a worktree
+//! Unified merge command for stages
 //!
-//! Usage: loom stage retry-merge [stage_id]
-//!
-//! This command is used when a stage is in MergeConflict or MergeBlocked status
-//! and the agent (or user) wants to re-attempt the merge to main from the worktree.
+//! Combines retry-merge and merge-complete into a single command.
+//! Default: re-attempt merge to main from a worktree.
+//! --resolved: complete manual merge resolution.
 
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 use crate::commands::common::detect_stage_id;
 use crate::git::branch::branch_name_for_stage;
-use crate::git::{default_branch, merge_stage, MergeResult};
+use crate::git::{default_branch, get_conflicting_files, merge_stage, MergeResult};
 use crate::models::stage::StageStatus;
 use crate::verify::transitions::{load_stage, save_stage, trigger_dependents};
 
-/// Re-attempt merge for a stage in MergeConflict or MergeBlocked status.
+/// Unified merge command entry point.
 ///
-/// This command:
-/// 1. Loads the stage and verifies it is in MergeConflict or MergeBlocked status
-/// 2. Verifies we're running from a worktree (not the main repo)
-/// 3. Increments fix_attempts on the stage
-/// 4. Attempts the merge to the default branch using existing merge logic
-/// 5. On success: marks stage as completed+merged, triggers dependents
-/// 6. On failure: prints detailed error with conflicting files
-/// 7. If at fix limit: suggests dispute-criteria or human-review
-pub fn retry_merge(stage_id: Option<String>) -> Result<()> {
+/// If `resolved` is true, validates that manual merge resolution is complete
+/// and transitions the stage to Completed. Otherwise, re-attempts the merge
+/// programmatically.
+pub fn merge(stage_id: Option<String>, resolved: bool) -> Result<()> {
+    if resolved {
+        merge_resolved(stage_id)
+    } else {
+        merge_retry(stage_id)
+    }
+}
+
+/// Complete merge resolution for a stage after manual conflict resolution.
+///
+/// This path:
+/// 1. Resolves stage ID (provided or auto-detected from branch)
+/// 2. Verifies the stage is in MergeConflict or MergeBlocked status
+/// 3. Checks that git working tree is clean (no unmerged files)
+/// 4. Transitions stage to Completed with merged=true
+/// 5. Triggers dependent stages
+fn merge_resolved(stage_id: Option<String>) -> Result<()> {
     let work_dir = Path::new(".work");
 
     // Resolve stage ID: use provided or detect from current worktree branch
@@ -33,7 +43,87 @@ pub fn retry_merge(stage_id: Option<String>) -> Result<()> {
         None => detect_stage_id().ok_or_else(|| {
             anyhow::anyhow!(
                 "Could not detect stage ID from current branch.\n\
-                 Please provide the stage ID explicitly: loom stage retry-merge <stage-id>"
+                 Please provide the stage ID explicitly: loom stage merge --resolved <stage-id>"
+            )
+        })?,
+    };
+
+    let mut stage = load_stage(&stage_id, work_dir)?;
+
+    // Verify stage is in a merge-failed status
+    if stage.status != StageStatus::MergeConflict && stage.status != StageStatus::MergeBlocked {
+        bail!(
+            "Stage '{}' is not in MergeConflict or MergeBlocked status (current: {}). \
+             Use this command only after merge issues have been resolved.",
+            stage_id,
+            stage.status
+        );
+    }
+
+    // Check git status for unmerged files
+    let repo_root = std::env::current_dir().context("Failed to get current directory")?;
+    if !get_conflicting_files(&repo_root)?.is_empty() {
+        bail!(
+            "There are still unmerged files in the repository. \
+             Please resolve all conflicts before running this command.\n\
+             Run `git status` to see remaining conflicts."
+        );
+    }
+
+    // Check if we're in the middle of a merge
+    if is_merge_in_progress(&repo_root)? {
+        bail!(
+            "A merge is still in progress. \
+             Please complete the merge with `git commit` before running this command."
+        );
+    }
+
+    // Transition to Completed with merged=true
+    stage.try_complete_merge()?;
+    save_stage(&stage, work_dir)?;
+
+    println!("Stage '{stage_id}' merge conflict resolution complete!");
+    println!("  Status: Completed (merged: true)");
+
+    // Trigger dependent stages
+    let triggered =
+        trigger_dependents(&stage_id, work_dir).context("Failed to trigger dependent stages")?;
+
+    if !triggered.is_empty() {
+        println!("Triggered {} dependent stage(s):", triggered.len());
+        for dep_id in &triggered {
+            println!("  -> {dep_id}");
+        }
+    }
+
+    // Suggest cleanup
+    println!();
+    println!("Consider cleaning up the worktree:");
+    println!("  loom worktree remove {stage_id}");
+
+    Ok(())
+}
+
+/// Re-attempt merge for a stage in MergeConflict or MergeBlocked status.
+///
+/// This path:
+/// 1. Loads the stage and verifies it is in MergeConflict or MergeBlocked status
+/// 2. Verifies we're running from a worktree (not the main repo)
+/// 3. Increments fix_attempts on the stage
+/// 4. Attempts the merge to the default branch using existing merge logic
+/// 5. On success: marks stage as completed+merged, triggers dependents
+/// 6. On failure: prints detailed error with conflicting files
+/// 7. If at fix limit: suggests dispute-criteria or human-review
+fn merge_retry(stage_id: Option<String>) -> Result<()> {
+    let work_dir = Path::new(".work");
+
+    // Resolve stage ID: use provided or detect from current worktree branch
+    let stage_id = match stage_id {
+        Some(id) => id,
+        None => detect_stage_id().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Could not detect stage ID from current branch.\n\
+                 Please provide the stage ID explicitly: loom stage merge <stage-id>"
             )
         })?,
     };
@@ -48,13 +138,13 @@ pub fn retry_merge(stage_id: Option<String>) -> Result<()> {
 
     if !is_merge_state {
         bail!(
-            "Stage '{}' is in '{}' status. Only MergeConflict or MergeBlocked stages can use retry-merge.\n\
+            "Stage '{}' is in '{}' status. Only MergeConflict or MergeBlocked stages can use merge.\n\
              \n\
              Current status: {}\n\
              \n\
              For other failure states, use:\n\
              - loom stage retry {stage_id}       (for Blocked or CompletedWithFailures)\n\
-             - loom stage merge-complete {stage_id} (after manually resolving conflicts)",
+             - loom stage merge {stage_id} --resolved (after manually resolving conflicts)",
             stage_id,
             stage.status,
             stage.status,
@@ -66,7 +156,7 @@ pub fn retry_merge(stage_id: Option<String>) -> Result<()> {
     let cwd_str = cwd.to_string_lossy();
     if !cwd_str.contains(".worktrees") {
         bail!(
-            "retry-merge must be run from within a worktree.\n\
+            "merge must be run from within a worktree.\n\
              \n\
              Current directory: {}\n\
              \n\
@@ -96,7 +186,9 @@ pub fn retry_merge(stage_id: Option<String>) -> Result<()> {
         println!();
         println!("Options:");
         println!("  - Request human review:  loom stage waiting {stage_id}");
-        println!("  - Force retry:           loom stage reset {stage_id} && loom stage retry-merge {stage_id}");
+        println!(
+            "  - Force retry:           loom stage reset {stage_id} && loom stage merge {stage_id}"
+        );
         println!(
             "  - Skip this stage:       loom stage skip {stage_id} --reason \"merge too complex\""
         );
@@ -206,7 +298,7 @@ pub fn retry_merge(stage_id: Option<String>) -> Result<()> {
                 println!("  - Skip this stage:       loom stage skip {stage_id} --reason \"unresolvable conflicts\"");
             } else {
                 println!("Resolve the conflicts above, then run:");
-                println!("  loom stage retry-merge {stage_id}");
+                println!("  loom stage merge {stage_id}");
                 println!();
                 println!(
                     "Remaining attempts: {}/{max_attempts}",
@@ -235,12 +327,18 @@ pub fn retry_merge(stage_id: Option<String>) -> Result<()> {
                     "Remaining attempts: {}/{max_attempts}",
                     max_attempts - attempts
                 );
-                println!("Investigate the error and try again: loom stage retry-merge {stage_id}");
+                println!("Investigate the error and try again: loom stage merge {stage_id}");
             }
         }
     }
 
     Ok(())
+}
+
+/// Check if a merge is in progress
+fn is_merge_in_progress(repo_root: &Path) -> Result<bool> {
+    let merge_head = repo_root.join(".git").join("MERGE_HEAD");
+    Ok(merge_head.exists())
 }
 
 /// Walk up from the current directory to find the repo root (parent of .worktrees).
@@ -278,6 +376,7 @@ fn find_repo_root(cwd: &Path) -> Result<std::path::PathBuf> {
 mod tests {
     use super::*;
     use crate::models::stage::Stage;
+    use std::process::Command;
     use tempfile::TempDir;
 
     fn create_test_stage(id: &str, status: StageStatus) -> Stage {
@@ -291,8 +390,43 @@ mod tests {
         }
     }
 
+    // Tests from merge_complete
+
     #[test]
-    fn test_retry_merge_rejects_wrong_status() {
+    fn test_get_conflicting_files_clean() {
+        // In a clean repo, there should be no conflicting files
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path();
+
+        // Initialize a git repo
+        Command::new("git")
+            .args(["init"])
+            .current_dir(repo_root)
+            .output()
+            .unwrap();
+
+        assert!(get_conflicting_files(repo_root).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_is_merge_in_progress_clean() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path();
+
+        // Initialize a git repo
+        Command::new("git")
+            .args(["init"])
+            .current_dir(repo_root)
+            .output()
+            .unwrap();
+
+        assert!(!is_merge_in_progress(repo_root).unwrap());
+    }
+
+    // Tests from retry_merge
+
+    #[test]
+    fn test_merge_rejects_wrong_status() {
         let temp_dir = TempDir::new().unwrap();
         let work_dir = temp_dir.path();
 
@@ -305,7 +439,7 @@ mod tests {
         let content = crate::verify::transitions::serialize_stage_to_markdown(&stage).unwrap();
         std::fs::write(stage_path, content).unwrap();
 
-        // retry_merge should fail since we're not in a worktree and status is wrong
+        // merge should fail since we're not in a worktree and status is wrong
         // We test the status check by calling the function parts directly
         assert!(!matches!(
             stage.status,
@@ -314,7 +448,7 @@ mod tests {
     }
 
     #[test]
-    fn test_retry_merge_accepts_merge_conflict() {
+    fn test_merge_accepts_merge_conflict() {
         let stage = create_test_stage("test-stage", StageStatus::MergeConflict);
         assert!(matches!(
             stage.status,
@@ -323,7 +457,7 @@ mod tests {
     }
 
     #[test]
-    fn test_retry_merge_accepts_merge_blocked() {
+    fn test_merge_accepts_merge_blocked() {
         let stage = create_test_stage("test-stage", StageStatus::MergeBlocked);
         assert!(matches!(
             stage.status,

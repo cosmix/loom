@@ -95,7 +95,10 @@ pub enum StageCommands {
         reason: Option<String>,
     },
 
-    /// Retry a blocked stage
+    /// Retry a failed, crashed, or hung stage
+    ///
+    /// Generates a recovery signal with context when the stage was crashed or
+    /// hung, or when --context is provided. Replaces the old `recover` command.
     Retry {
         /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
         #[arg(value_parser = clap_id_validator)]
@@ -104,31 +107,26 @@ pub enum StageCommands {
         /// Ignore retry limit and reset retry count
         #[arg(long)]
         force: bool,
+
+        /// Recovery context message (triggers recovery signal generation)
+        #[arg(long)]
+        context: Option<String>,
     },
 
-    /// Manually trigger recovery for a crashed or hung stage
+    /// Merge a stage's worktree branch into main
     ///
-    /// Creates a recovery signal with context from the last session
-    /// and resets the stage to Queued status for a new session.
-    Recover {
-        /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
+    /// Re-attempts the merge for a stage in MergeConflict or MergeBlocked status.
+    /// Must be run from within the stage worktree.
+    /// Use --resolved after manually resolving conflicts to mark the merge complete.
+    Merge {
+        /// Stage ID (auto-detected from branch if omitted)
         #[arg(value_parser = clap_id_validator)]
-        stage_id: String,
+        stage_id: Option<String>,
 
-        /// Force recovery even if stage is not in a failed state
-        #[arg(short, long)]
-        force: bool,
-    },
-
-    /// Complete merge resolution and mark stage as completed
-    ///
-    /// Use this after resolving merge issues for a stage in MergeConflict or
-    /// MergeBlocked status. Verifies there are no remaining unmerged files and
-    /// the merge is complete, then transitions the stage to Completed with merged=true.
-    MergeComplete {
-        /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
-        #[arg(value_parser = clap_id_validator)]
-        stage_id: String,
+        /// Mark manually resolved merge conflicts as complete
+        /// (validates clean git state before completing)
+        #[arg(long)]
+        resolved: bool,
     },
 
     /// Re-run acceptance criteria and complete a stage that previously failed
@@ -187,17 +185,6 @@ pub enum StageCommands {
         /// Reason why the acceptance criteria are wrong (max 500 characters)
         #[arg(value_parser = clap_description_validator)]
         reason: String,
-    },
-
-    /// Re-attempt merge to main from a worktree
-    ///
-    /// Use this when a stage is in MergeConflict or MergeBlocked status and you
-    /// want to retry the merge. Must be run from within the stage worktree.
-    /// Increments fix_attempts and suggests human review when at limit.
-    RetryMerge {
-        /// Stage ID (auto-detected from branch if omitted)
-        #[arg(value_parser = clap_id_validator)]
-        stage_id: Option<String>,
     },
 
     /// Manage stage outputs (structured values passed to dependent stages)

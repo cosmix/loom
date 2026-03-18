@@ -290,14 +290,14 @@ Stage completed but merge to main failed.
 
 ```bash
 # Option 1: Retry the merge (if conflict was transient)
-loom stage retry-merge <stage-id>
+loom stage merge <stage-id>
 
 # Option 2: Manual resolution
 cd .worktrees/<stage-id>
 git merge main                    # Resolve conflicts
 git add <resolved-files>
 git commit -m "resolve merge conflict"
-loom stage merge-complete <stage-id>
+loom stage merge <stage-id> --resolved
 ```
 
 #### Context Exhausted
@@ -320,11 +320,11 @@ Claude Code process died unexpectedly.
 # Check crash report
 ls .work/crashes/
 
-# Recover — creates recovery signal and requeues
-loom stage recover <stage-id>
+# Retry with recovery signal (auto-detected from crash context)
+loom stage retry <stage-id>
 
-# Or force retry if recovery doesn't help
-loom stage retry <stage-id> --force
+# Or force retry with custom context
+loom stage retry <stage-id> --force --context "crashed during compilation"
 ```
 
 #### Stage Stuck in Executing
@@ -559,7 +559,7 @@ Is the plan initialized?
         │   ├── Fix underlying issue
         │   └── loom stage retry <id>
         ├── Stage MergeConflict → Resolve
-        │   ├── loom stage retry-merge <id> (if transient)
+        │   ├── loom stage merge <id> (if transient)
         │   └── Manual resolution in worktree
         ├── Stage NeedsHandoff → Resume
         │   └── loom resume <id>
@@ -597,7 +597,7 @@ loom check failed-stage --suggest        # Get fix suggestions
 loom stage retry failed-stage            # Retry after fixing
 
 # 6. If merge conflict
-loom stage retry-merge conflicted-stage  # Try auto-resolve
+loom stage merge conflicted-stage        # Try auto-resolve
 
 # 7. If context exhaustion
 loom resume exhausted-stage              # Resume with handoff
@@ -681,10 +681,9 @@ loom clean [--all|--worktrees]       # Cleanup
 ```bash
 loom stage retry <id>                # Retry failed stage
 loom stage reset <id>                # Reset to queued
-loom stage recover <id>              # Recovery from crash
 loom stage complete <id>             # Mark done (runs acceptance)
-loom stage retry-merge <id>          # Retry failed merge
-loom stage merge-complete <id>       # After manual merge resolution
+loom stage merge <id>                # Retry failed merge
+loom stage merge <id> --resolved     # After manual merge resolution
 loom stage hold/release <id>         # Pause/unpause auto-execution
 loom stage skip <id> --reason "..."  # Skip intentionally
 ```

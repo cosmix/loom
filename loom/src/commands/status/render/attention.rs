@@ -80,9 +80,9 @@ fn render_problem_stage<W: Write>(w: &mut W, stage: &StageSummary) -> std::io::R
     // Suggest recovery action
     let hint = match &stage.status {
         StageStatus::Blocked => format!("loom stage retry {}", stage.id),
-        StageStatus::MergeConflict => format!("loom stage retry-merge {}", stage.id),
+        StageStatus::MergeConflict => format!("loom stage merge {}", stage.id),
         StageStatus::CompletedWithFailures => format!("loom stage retry {}", stage.id),
-        StageStatus::MergeBlocked => format!("loom stage retry-merge {}", stage.id),
+        StageStatus::MergeBlocked => format!("loom stage merge {}", stage.id),
         StageStatus::NeedsHumanReview => format!("loom stage resume {}", stage.id),
         _ => "loom status".to_string(),
     };

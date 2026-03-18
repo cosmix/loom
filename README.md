@@ -110,13 +110,11 @@ loom stage resume <stage-id>
 loom stage hold <stage-id>
 loom stage release <stage-id>
 loom stage skip <stage-id> [--reason <text>]
-loom stage retry <stage-id> [--force]
-loom stage recover <stage-id> [--force]
-loom stage merge-complete <stage-id>
+loom stage retry <stage-id> [--force] [--context <message>]
+loom stage merge [stage-id] [--resolved]
 loom stage verify <stage-id> [--no-reload] [--dry-run]
 loom stage human-review <stage-id> [--approve|--force-complete|--reject <reason>]
 loom stage dispute-criteria <stage-id> <reason>
-loom stage retry-merge [stage-id]
 ```
 
 ### Stage Outputs

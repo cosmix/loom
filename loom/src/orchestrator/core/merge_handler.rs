@@ -75,7 +75,7 @@ impl Orchestrator {
                 eprintln!("Merge may not be complete. To finish:");
                 eprintln!("  1. Verify the merge was successful: git status");
                 eprintln!("  2. If merge is complete, run: loom worktree remove {stage_id}");
-                eprintln!("  3. If issues remain, run: loom stage retry-merge {stage_id}");
+                eprintln!("  3. If issues remain, run: loom stage merge {stage_id}");
             }
             Err(e) => {
                 // PID dead but merge state unknown - remove active session but KEEP signal
@@ -86,7 +86,7 @@ impl Orchestrator {
                 eprintln!("To complete:");
                 eprintln!("  1. Verify the merge was successful: git status");
                 eprintln!("  2. If merge is complete, run: loom worktree remove {stage_id}");
-                eprintln!("  3. If issues remain, run: loom stage retry-merge {stage_id}");
+                eprintln!("  3. If issues remain, run: loom stage merge {stage_id}");
             }
         }
 

@@ -99,7 +99,7 @@ pub fn attempt_progressive_merge(
                 Err(e) => {
                     eprintln!("    Failed to spawn merge resolver: {e}");
                     println!(
-                        "    Resolve conflicts manually and run: loom stage merge-complete {}",
+                        "    Resolve conflicts manually and run: loom stage merge {} --resolved",
                         stage.id
                     );
                 }

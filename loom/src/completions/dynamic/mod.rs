@@ -114,7 +114,7 @@ pub fn complete_dynamic(ctx: &CompletionContext) -> Result<()> {
 
         // Stage subcommands that take stage_id (all in one pattern)
         "complete" | "block" | "reset" | "waiting" | "hold" | "release" | "skip" | "retry"
-        | "recover" | "resume" | "verify" | "merge-complete"
+        | "resume" | "verify" | "merge"
             if ctx.cmdline.contains("stage") =>
         {
             complete_stage_ids(cwd, prefix)?

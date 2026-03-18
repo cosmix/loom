@@ -546,7 +546,7 @@ Also: `Blocked`, `NeedsHandoff`, `WaitingForInput`
 
 - Path: `.worktrees/<stage-id>/`
 - Branch: `loom/<stage-id>`
-- Retry merge: `loom stage retry-merge <stage-id>`
+- Retry merge: `loom stage merge <stage-id>`
 
 ### Context Thresholds
 

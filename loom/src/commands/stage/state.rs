@@ -68,6 +68,10 @@ pub fn reset(stage_id: String, hard: bool, _kill_session: bool) -> Result<()> {
 }
 
 /// Mark a stage as ready for execution
+///
+/// Note: This is an internal function not exposed via CLI. The orchestrator
+/// handles WaitingForDeps -> Queued transitions automatically.
+#[allow(dead_code)]
 pub fn ready(stage_id: String) -> Result<()> {
     let work_dir = Path::new(".work");
 
