@@ -71,6 +71,7 @@ fn append_subagent_restrictions(content: &mut String, agents_role: &str) {
         "- ⛔ **NEVER run `loom stage complete`** - only the main agent completes stages\n",
     );
     content.push_str("- ⛔ **NEVER run `git add -A` or `git add .`** - only specific files\n");
+    content.push_str("- Each subagent MUST own exclusive files - two subagents writing the same file = LOST WORK\n");
     content.push_str(agents_role);
 }
 
@@ -181,6 +182,7 @@ pub fn generate_stable_prefix() -> String {
     content.push_str(
         "- Skills: /loom-auth, /loom-testing, /loom-ci-cd, /loom-logging-observability\n\n",
     );
+    content.push_str("- **FILE EXCLUSIVITY**: Each subagent must own exclusive write files. Overlap = lost work. List file assignments in each Task prompt.\n");
     append_subagent_restrictions(
         &mut content,
         "- Subagents write code and report results; main agent handles git\n\n",
@@ -582,6 +584,9 @@ mod tests {
         assert!(prefix.contains("Self-Review Before Completion"));
         assert!(prefix.contains("Wiring Check"));
         assert!(prefix.contains("Silent Failure Check"));
+        // File exclusivity guidance
+        assert!(prefix.contains("FILE EXCLUSIVITY"));
+        assert!(prefix.contains("exclusive"));
     }
 
     #[test]
