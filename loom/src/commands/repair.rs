@@ -535,21 +535,9 @@ fn fix_hooks(repo_root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Rebuild the skill keyword index by running skill-index-builder.sh
+/// Rebuild the skill keyword index using the built-in skill_index command
 fn rebuild_skill_index() -> Result<()> {
-    use crate::fs::permissions::get_installed_hooks_dir;
-    let Some(hooks_dir) = get_installed_hooks_dir() else {
-        return Ok(());
-    };
-    let builder: std::path::PathBuf = hooks_dir.join("skill-index-builder.sh");
-    if !builder.exists() {
-        return Ok(());
-    }
-    std::process::Command::new(&builder)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .with_context(|| format!("Failed to run {}", builder.display()))?;
+    super::skill_index::execute().ok();
     Ok(())
 }
 

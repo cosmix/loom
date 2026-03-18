@@ -121,8 +121,9 @@ download_and_extract_zip() {
 }
 
 build_skill_index() {
-	local index_builder="$CLAUDE_DIR/hooks/loom/skill-index-builder.sh"
-	[[ -x "$index_builder" ]] && "$index_builder" >/dev/null 2>&1 || true
+	# Use the loom binary to build the index (faster, more robust than bash)
+	local loom_bin="$HOME/.local/bin/loom"
+	[[ -x "$loom_bin" ]] && "$loom_bin" skill-index >/dev/null 2>&1 || true
 }
 
 install_agents_remote() {
@@ -218,7 +219,6 @@ install_hooks_remote() {
 		"ask-user-pre.sh"
 		"ask-user-post.sh"
 		"prefer-modern-tools.sh"
-		"skill-index-builder.sh"
 		"skill-trigger.sh"
 	)
 
@@ -235,6 +235,9 @@ install_hooks_remote() {
 	fi
 
 	ok "$COUNT_HOOKS hooks"
+
+	# Remove replaced bash script (now handled by loom skill-index)
+	rm -f "$hooks_dir/skill-index-builder.sh"
 
 	# Build skill keyword index
 	build_skill_index
@@ -350,7 +353,6 @@ install_hooks() {
 		"ask-user-pre.sh"
 		"ask-user-post.sh"
 		"prefer-modern-tools.sh"
-		"skill-index-builder.sh"
 		"skill-trigger.sh"
 	)
 
@@ -366,6 +368,9 @@ install_hooks() {
 	fi
 
 	ok "$COUNT_HOOKS hooks"
+
+	# Remove replaced bash script (now handled by loom skill-index)
+	rm -f "$hooks_dir/skill-index-builder.sh"
 
 	# Build skill keyword index
 	build_skill_index

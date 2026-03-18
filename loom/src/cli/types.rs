@@ -212,6 +212,9 @@ pub enum Commands {
         suggest: bool,
     },
 
+    /// Build skill keyword index for skill-trigger hook
+    SkillIndex,
+
     /// Generate shell completion script
     Completions {
         /// Shell to generate completions for (bash, zsh, fish)

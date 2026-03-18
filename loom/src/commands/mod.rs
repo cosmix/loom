@@ -13,6 +13,7 @@ pub mod review;
 pub mod run;
 pub mod self_update;
 pub mod sessions;
+pub mod skill_index;
 pub mod stage;
 pub mod status;
 pub mod stop;

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use loom::commands::{
     clean, diagnose, graph, handoff, init, knowledge, map, memory, repair, resume, review, run,
-    self_update, sessions, stage, status, stop, verify, worktree_cmd,
+    self_update, sessions, skill_index, stage, status, stop, verify, worktree_cmd,
 };
 use loom::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use std::path::PathBuf;
@@ -154,6 +154,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
         Commands::Stop => stop::execute(),
         Commands::Diagnose { stage_id } => diagnose::execute(&stage_id),
         Commands::Check { stage_id, suggest } => verify::execute(&stage_id, suggest),
+        Commands::SkillIndex => skill_index::execute(),
         Commands::Completions { shell } => {
             let shell = Shell::from_str(&shell)?;
             let mut cmd = <Cli as clap::CommandFactory>::command();
