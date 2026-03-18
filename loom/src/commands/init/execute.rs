@@ -117,6 +117,21 @@ pub fn execute(plan_path: Option<PathBuf>, clean: bool) -> Result<()> {
     ensure_loom_permissions(&repo_root)?;
     println!("  {} Permissions configured", "✓".green().bold());
 
+    // Check for CLAUDE.loom.md
+    if let Some(home) = dirs::home_dir() {
+        let loom_md = home.join(".claude/CLAUDE.loom.md");
+        if !loom_md.exists() {
+            println!(
+                "  {} ~/.claude/CLAUDE.loom.md not found",
+                "!".yellow().bold()
+            );
+            println!(
+                "    {}",
+                "Run install.sh or loom self-update to install loom rules.".dimmed()
+            );
+        }
+    }
+
     // Clean up legacy trustedDirectories entries (no-op if none exist)
     if let Err(e) = migrate_legacy_trust(&repo_root) {
         eprintln!("  {} Legacy trust migration: {}", "!".yellow().bold(), e);

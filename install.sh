@@ -128,26 +128,41 @@ build_skill_index() {
 install_agents_remote() {
 	step "agents"
 
-	backup_if_exists "$CLAUDE_DIR/agents" || true
-	download_and_extract_zip "${GITHUB_RELEASES}/agents.zip" "$CLAUDE_DIR/agents" || {
+	mkdir -p "$CLAUDE_DIR/agents"
+	download_and_extract_zip "${GITHUB_RELEASES}/agents.zip" "/tmp/loom_agents_$$" || {
 		warn "failed to download agents"
 		return 1
 	}
 
-	COUNT_AGENTS=$(find "$CLAUDE_DIR/agents" -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
+	for agent_file in /tmp/loom_agents_$$/loom-*.md; do
+		[ -f "$agent_file" ] || continue
+		cp "$agent_file" "$CLAUDE_DIR/agents/"
+	done
+	rm -rf "/tmp/loom_agents_$$"
+
+	COUNT_AGENTS=$(find "$CLAUDE_DIR/agents" -name "loom-*.md" 2>/dev/null | wc -l | tr -d ' ')
 	ok "$COUNT_AGENTS agents"
 }
 
 install_skills_remote() {
 	step "skills"
 
-	backup_if_exists "$CLAUDE_DIR/skills" || true
-	download_and_extract_zip "${GITHUB_RELEASES}/skills.zip" "$CLAUDE_DIR/skills" || {
+	mkdir -p "$CLAUDE_DIR/skills"
+	download_and_extract_zip "${GITHUB_RELEASES}/skills.zip" "/tmp/loom_skills_$$" || {
 		warn "failed to download skills"
 		return 1
 	}
 
-	COUNT_SKILLS=$(find "$CLAUDE_DIR/skills" -name "SKILL.md" 2>/dev/null | wc -l | tr -d ' ')
+	for skill_dir in /tmp/loom_skills_$$/loom-*/; do
+		[ -d "$skill_dir" ] || continue
+		local name
+		name=$(basename "$skill_dir")
+		mkdir -p "$CLAUDE_DIR/skills/$name"
+		cp "$skill_dir/SKILL.md" "$CLAUDE_DIR/skills/$name/"
+	done
+	rm -rf "/tmp/loom_skills_$$"
+
+	COUNT_SKILLS=$(find "$CLAUDE_DIR/skills"/loom-* -name "SKILL.md" 2>/dev/null | wc -l | tr -d ' ')
 	ok "$COUNT_SKILLS skills"
 }
 
@@ -155,25 +170,38 @@ install_claude_md_remote() {
 	step "config"
 
 	local claude_md="$CLAUDE_DIR/CLAUDE.md"
+	local loom_md="$CLAUDE_DIR/CLAUDE.loom.md"
 	local temp_file="/tmp/CLAUDE.md.template.$$"
-
-	backup_if_exists "$claude_md" || true
 
 	download_file "${GITHUB_RELEASES}/CLAUDE.md.template" "$temp_file" || {
 		warn "failed to download config"
 		return 1
 	}
 
+	# Always write rules to CLAUDE.loom.md
 	{
 		echo "# ───────────────────────────────────────────────────────────"
 		echo "# claude-loom | installed $(date '+%Y-%m-%d %H:%M:%S')"
 		echo "# ───────────────────────────────────────────────────────────"
 		echo ""
 		cat "$temp_file"
-	} >"$claude_md"
-
+	} > "$loom_md"
 	rm -f "$temp_file"
-	ok "CLAUDE.md"
+	ok "CLAUDE.loom.md"
+
+	# Handle CLAUDE.md based on state
+	if [[ ! -f "$claude_md" ]]; then
+		write_pointer_claude_md "$claude_md"
+		ok "CLAUDE.md (pointer created)"
+	elif head -5 "$claude_md" | grep -q "# claude-loom"; then
+		backup_if_exists "$claude_md" || true
+		write_pointer_claude_md "$claude_md"
+		ok "CLAUDE.md (migrated to pointer)"
+	else
+		warn "CLAUDE.md exists with user content — not modified"
+		info "add this line to your CLAUDE.md to include loom rules:"
+		info "  @import CLAUDE.loom.md"
+	fi
 }
 
 install_hooks_remote() {
@@ -226,8 +254,8 @@ check_requirements() {
 confirm_overwrites() {
 	local found=()
 
-	[[ -d "$CLAUDE_DIR/agents" ]] && found+=("agents/")
-	[[ -d "$CLAUDE_DIR/skills" ]] && found+=("skills/")
+	[[ -d "$CLAUDE_DIR/agents" ]] && found+=("agents/ (loom-* only)")
+	[[ -d "$CLAUDE_DIR/skills" ]] && found+=("skills/ (loom-* only)")
 	[[ -f "$CLAUDE_DIR/CLAUDE.md" ]] && found+=("CLAUDE.md")
 
 	if [[ ${#found[@]} -eq 0 ]]; then
@@ -235,12 +263,10 @@ confirm_overwrites() {
 	fi
 
 	echo ""
-	warn "existing files will be replaced:"
+	warn "existing loom files may be updated:"
 	for item in "${found[@]}"; do
 		echo -e "     ${D}~/.claude/$item${N}"
 	done
-	echo ""
-	info "backups saved as *.bak.$TIMESTAMP"
 	echo ""
 	echo -en "   ${B}proceed? [y/N]${N} "
 	read -r response
@@ -258,39 +284,75 @@ ensure_claude_dir() {
 install_agents() {
 	step "agents"
 
-	backup_if_exists "$CLAUDE_DIR/agents" || true
-	cp -r "$SCRIPT_DIR/agents" "$CLAUDE_DIR/"
+	mkdir -p "$CLAUDE_DIR/agents"
+	for agent_file in "$SCRIPT_DIR/agents"/loom-*.md; do
+		[ -f "$agent_file" ] || continue
+		cp "$agent_file" "$CLAUDE_DIR/agents/"
+	done
 
-	COUNT_AGENTS=$(find "$CLAUDE_DIR/agents" -name "*.md" | wc -l | tr -d ' ')
+	COUNT_AGENTS=$(find "$CLAUDE_DIR/agents" -name "loom-*.md" 2>/dev/null | wc -l | tr -d ' ')
 	ok "$COUNT_AGENTS agents"
 }
 
 install_skills() {
 	step "skills"
 
-	backup_if_exists "$CLAUDE_DIR/skills" || true
-	cp -r "$SCRIPT_DIR/skills" "$CLAUDE_DIR/"
+	mkdir -p "$CLAUDE_DIR/skills"
+	for skill_dir in "$SCRIPT_DIR/skills"/loom-*/; do
+		[ -d "$skill_dir" ] || continue
+		local name
+		name=$(basename "$skill_dir")
+		mkdir -p "$CLAUDE_DIR/skills/$name"
+		cp "$skill_dir/SKILL.md" "$CLAUDE_DIR/skills/$name/"
+	done
 
-	COUNT_SKILLS=$(find "$CLAUDE_DIR/skills" -name "SKILL.md" | wc -l | tr -d ' ')
+	COUNT_SKILLS=$(find "$CLAUDE_DIR/skills"/loom-* -name "SKILL.md" 2>/dev/null | wc -l | tr -d ' ')
 	ok "$COUNT_SKILLS skills"
+}
+
+write_pointer_claude_md() {
+	local claude_md="$1"
+	cat > "$claude_md" <<'POINTER'
+# ───────────────────────────────────────────────────────────
+# claude-loom | pointer — DO NOT EDIT, rules live in CLAUDE.loom.md
+# ───────────────────────────────────────────────────────────
+
+@import CLAUDE.loom.md
+POINTER
 }
 
 install_claude_md() {
 	step "config"
 
 	local claude_md="$CLAUDE_DIR/CLAUDE.md"
+	local loom_md="$CLAUDE_DIR/CLAUDE.loom.md"
 
-	backup_if_exists "$claude_md" || true
-
+	# Always write rules to CLAUDE.loom.md
 	{
 		echo "# ───────────────────────────────────────────────────────────"
 		echo "# claude-loom | installed $(date '+%Y-%m-%d %H:%M:%S')"
 		echo "# ───────────────────────────────────────────────────────────"
 		echo ""
 		cat "$SCRIPT_DIR/CLAUDE.md.template"
-	} >"$claude_md"
+	} > "$loom_md"
+	ok "CLAUDE.loom.md"
 
-	ok "CLAUDE.md"
+	# Handle CLAUDE.md based on state
+	if [[ ! -f "$claude_md" ]]; then
+		# Does not exist: create pointer
+		write_pointer_claude_md "$claude_md"
+		ok "CLAUDE.md (pointer created)"
+	elif head -5 "$claude_md" | grep -q "# claude-loom"; then
+		# Loom-generated: backup + replace with pointer
+		backup_if_exists "$claude_md" || true
+		write_pointer_claude_md "$claude_md"
+		ok "CLAUDE.md (migrated to pointer)"
+	else
+		# User-generated: don't touch
+		warn "CLAUDE.md exists with user content — not modified"
+		info "add this line to your CLAUDE.md to include loom rules:"
+		info "  @import CLAUDE.loom.md"
+	fi
 }
 
 install_hooks() {
@@ -470,7 +532,7 @@ print_summary() {
 	echo -e "     agents/     ${D}$COUNT_AGENTS specialized subagents${N}"
 	echo -e "     skills/     ${D}$COUNT_SKILLS domain knowledge modules${N}"
 	echo -e "     hooks/      ${D}$COUNT_HOOKS lifecycle event handlers${N}"
-	echo -e "     CLAUDE.md   ${D}orchestration rules${N}"
+	echo -e "     CLAUDE.loom.md  ${D}orchestration rules${N}"
 	echo ""
 	echo -e "   ${D}~/.local/bin/${N}"
 	echo -e "     loom        ${D}parallel work orchestrator${N}"
