@@ -899,3 +899,21 @@ When running `loom knowledge update` from a subdirectory (e.g., `loom/`), the CL
 **What happened:** Wiring check for `!Merge` in dispatch.rs was a false positive. The check tool treats `!` as a literal character, not negation.
 
 **How to avoid:** Use positive patterns in wiring checks (e.g., check for what SHOULD be there), not negated patterns for what should be absent. Use `truths` with shell commands for absence checks.
+
+## Subagent File Overlap Causes Lost Work
+
+**What happened:** Multiple subagents writing the same file leads to lost work — one subagent's changes silently overwrite another's.
+
+**Why:** When parallel subagents modify the same file, the last one to finish wins. There's no merge — it's a race condition.
+
+**How to avoid:** Every subagent MUST have exclusive write access to its files. Use a file ownership table in stage descriptions. If two tasks need the same file, put them in one subagent or handle sequentially.
+
+**Pattern location:** CLAUDE.md.template Rule 6, skills/loom-plan-writer/SKILL.md Section 4.
+
+## Using npx Instead of bunx
+
+**What happened:** Used npx instead of bunx during implementation.
+
+**Why:** Habit from other projects. CLAUDE.md rules require bun/bunx, not npm/npx.
+
+**How to avoid:** Always use `bun`/`bunx` per project conventions. Check CLAUDE.md tool preferences before running package managers.

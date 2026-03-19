@@ -347,3 +347,25 @@ Two install paths in install.sh: **local** (from cloned repo) and **remote** (cu
 - hooks: already non-destructive (installed to loom/ subdirectory, per-file)
 
 **Naming:** Currently no prefix convention for skills/agents. 61 skill dirs, 3 agent files.
+
+## Three-Layer Guidance Reinforcement
+
+When introducing new agent behavioral guidance, reinforce it at three layers:
+
+1. **Skill file** (e.g., SKILL.md) — Detailed guidance with examples, flowcharts, tables
+2. **Binding rules** (CLAUDE.md.template) — Concise mandatory rules read by all agents
+3. **Runtime signals** (cache.rs) — Generated into actual signal files agents receive
+
+This ensures guidance reaches agents regardless of which context they read first. Each layer serves a different purpose: skills provide depth, binding rules provide authority, signals provide runtime enforcement.
+
+**Applied in:** File Exclusivity + Stage Necessity guidance across skills/loom-plan-writer/SKILL.md, CLAUDE.md.template, loom/src/orchestrator/signals/cache.rs.
+
+## Stage Necessity Test (Q1/Q2/Q3)
+
+Before creating any stage beyond knowledge-bootstrap and integration-verify:
+
+- Q1: Does this stage create code that another stage imports? → Separate stages
+- Q2: Does this stage write files another stage also writes? → Separate stages
+- Q3: Does this stage need a verification checkpoint? → Separate stage
+
+If ALL answers NO → merge into one stage with parallel subagents.
