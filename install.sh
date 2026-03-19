@@ -386,6 +386,8 @@ install_loom_local() {
 	# Check for local binary first
 	if [[ -x "$local_loom" ]]; then
 		mkdir -p "$install_dir"
+		# Remove old binary first to avoid "Text file busy" when loom is running
+		rm -f "$loom_bin"
 		cp "$local_loom" "$loom_bin"
 		chmod +x "$loom_bin"
 		ok "loom"
@@ -454,15 +456,18 @@ install_loom_remote() {
 	esac
 
 	local download_url="${GITHUB_RELEASES}/$target"
+	local temp_bin="${loom_bin}.tmp.$$"
 
 	if command -v curl &>/dev/null; then
-		if ! curl -fsSL "$download_url" -o "$loom_bin"; then
+		if ! curl -fsSL "$download_url" -o "$temp_bin"; then
+			rm -f "$temp_bin"
 			warn "download failed"
 			info "manual install: $download_url"
 			return 0
 		fi
 	elif command -v wget &>/dev/null; then
-		if ! wget -q "$download_url" -O "$loom_bin"; then
+		if ! wget -q "$download_url" -O "$temp_bin"; then
+			rm -f "$temp_bin"
 			warn "download failed"
 			info "manual install: $download_url"
 			return 0
@@ -471,6 +476,10 @@ install_loom_remote() {
 		warn "curl or wget required"
 		return 0
 	fi
+
+	# Remove old binary first to avoid "Text file busy" when loom is running
+	rm -f "$loom_bin"
+	mv "$temp_bin" "$loom_bin"
 
 	chmod +x "$loom_bin"
 	ok "loom"
