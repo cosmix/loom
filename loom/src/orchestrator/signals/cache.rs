@@ -354,6 +354,7 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str(
         "- Skills: /loom-testing, /loom-auth, /loom-ci-cd, /loom-logging-observability\n\n",
     );
+    content.push_str("- **FILE EXCLUSIVITY**: Each subagent must own exclusive write files. Overlap = lost work. List file assignments in each Task prompt.\n");
 
     append_subagent_restrictions(
         &mut content,
@@ -695,6 +696,9 @@ mod tests {
         assert!(prefix.contains("Context Recovery"));
         // Review document generation
         assert!(prefix.contains("loom review"));
+        // File exclusivity guidance (must match standard prefix)
+        assert!(prefix.contains("FILE EXCLUSIVITY"));
+        assert!(prefix.contains("exclusive"));
     }
 
     #[test]

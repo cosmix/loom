@@ -191,8 +191,8 @@ Exploration tasks can ALWAYS run as parallel subagents. Stage descriptions MUST 
 
 **Stage Necessity Test:** BEFORE creating a stage, ask:
 
-1. Does it share files with another stage? → If YES, merge or make sequential
-2. Does it depend on code another stage creates? → If YES, separate stages needed
+1. Does it depend on code another stage creates? → If YES, separate stages needed
+2. Does it share files with another stage? → If YES, merge or make sequential
 3. Does it need a verification checkpoint? → If YES, separate stage justified
 
 If ALL answers are NO → **merge into one stage with parallel subagents.**
