@@ -10,6 +10,7 @@ use colored::Colorize;
 use std::fs;
 use std::path::Path;
 
+use crate::fs::permissions::LOOM_PERMISSIONS;
 use crate::fs::work_integrity::{
     check_work_dir_state, is_work_dir_git_ignored, is_worktrees_git_ignored, WorkDirState,
 };
@@ -274,23 +275,59 @@ fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
         });
     }
 
-    // Check 5: Claude Code hooks installed
+    // Check 5: .claude/settings.json completeness (permissions, hooks, env vars)
     {
         let settings_path = repo_root.join(".claude/settings.json");
-        let has_hooks = if settings_path.exists() {
+        let parsed = if settings_path.exists() {
             std::fs::read_to_string(&settings_path)
                 .ok()
                 .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
-                .and_then(|v| v.get("hooks").cloned())
-                .is_some()
         } else {
-            false
+            None
         };
-        if !has_hooks {
+
+        let mut missing_reasons: Vec<&str> = Vec::new();
+
+        if let Some(ref val) = parsed {
+            // Check permissions.allow contains all LOOM_PERMISSIONS entries
+            let has_all_perms = val
+                .get("permissions")
+                .and_then(|p| p.get("allow"))
+                .and_then(|a| a.as_array())
+                .map(|arr| {
+                    let allowed: Vec<&str> = arr.iter().filter_map(|v| v.as_str()).collect();
+                    LOOM_PERMISSIONS.iter().all(|perm| allowed.contains(perm))
+                })
+                .unwrap_or(false);
+            if !has_all_perms {
+                missing_reasons.push("permissions missing");
+            }
+
+            // Check hooks key exists
+            if val.get("hooks").is_none() {
+                missing_reasons.push("hooks missing");
+            }
+
+            // Check env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS exists
+            let has_agent_teams_env = val
+                .get("env")
+                .and_then(|e| e.get("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"))
+                .is_some();
+            if !has_agent_teams_env {
+                missing_reasons.push("env vars missing");
+            }
+        } else {
+            // File missing or unparseable
+            missing_reasons.push("file missing");
+        }
+
+        if !missing_reasons.is_empty() {
+            let reasons = missing_reasons.join(", ");
             issues.push(RepairIssue {
                 severity: Severity::Info,
-                description: "Claude Code hooks not configured".to_string(),
-                fix_description: "Install loom hooks to .claude/settings.json".to_string(),
+                description: format!("Project .claude/settings.json incomplete ({})", reasons),
+                fix_description:
+                    "Restore permissions, hooks, and env vars to .claude/settings.json".to_string(),
             });
         }
     }
@@ -450,7 +487,7 @@ fn fix_issue(repo_root: &Path, issue: &RepairIssue) -> Result<bool> {
         Ok(true)
     } else if issue
         .description
-        .contains("Claude Code hooks not configured")
+        .contains("Project .claude/settings.json incomplete")
     {
         fix_hooks(repo_root)?;
         Ok(true)
