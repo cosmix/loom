@@ -1,2 +1,4 @@
 doc/plans/
 loom/tests/fixtures/
+.work/
+.worktrees/

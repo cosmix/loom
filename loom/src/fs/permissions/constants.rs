@@ -31,9 +31,6 @@ pub const HOOK_PREFER_MODERN_TOOLS: &str = include_str!("../../../../hooks/prefe
 /// CommitFilter hook - blocks forbidden patterns in git commits (e.g., Claude attribution)
 pub const HOOK_COMMIT_FILTER: &str = include_str!("../../../../hooks/commit-filter.sh");
 
-/// SkillIndexBuilder hook - builds keyword index from SKILL.md files
-pub const HOOK_SKILL_INDEX_BUILDER: &str = include_str!("../../../../hooks/skill-index-builder.sh");
-
 /// SkillTrigger hook - suggests skills based on prompt keywords (UserPromptSubmit)
 pub const HOOK_SKILL_TRIGGER: &str = include_str!("../../../../hooks/skill-trigger.sh");
 
@@ -69,7 +66,6 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("worktree-isolation.sh", HOOK_WORKTREE_ISOLATION),
     ("worktree-file-guard.sh", HOOK_WORKTREE_FILE_GUARD),
     // Skill suggestion hooks
-    ("skill-index-builder.sh", HOOK_SKILL_INDEX_BUILDER),
     ("skill-trigger.sh", HOOK_SKILL_TRIGGER),
 ];
 
