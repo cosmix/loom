@@ -297,13 +297,16 @@ Every plan MUST follow this structure:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-Include a visual execution diagram:
+Include a visual execution diagram using Mermaid:
 
-```text
-[knowledge-bootstrap] --> [stage-a, stage-b] --> [stage-c] --> [integration-verify]
+```mermaid
+graph LR
+    knowledge-bootstrap --> stage-a & stage-b
+    stage-a & stage-b --> stage-c
+    stage-c --> integration-verify
 ```
 
-Stages in `[a, b]` notation run concurrently.
+Parallel stages are expressed using Mermaid's `&` operator (e.g., `A --> B & C` means A feeds both B and C concurrently).
 
 ### 7. Goal-Backward Verification (MANDATORY - VALIDATED)
 
@@ -913,11 +916,13 @@ stages:
 
 ## Execution Diagram
 
-```
-[knowledge-bootstrap] --> [stage-a, stage-b] --> [integration-verify]
+```mermaid
+graph LR
+    knowledge-bootstrap --> stage-a & stage-b
+    stage-a & stage-b --> integration-verify
 ```
 
-Stages in `[a, b]` notation run concurrently in separate worktrees.
+Parallel stages are expressed using Mermaid's `&` operator. Each node is a worktree stage.
 
 ---
 
