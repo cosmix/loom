@@ -412,6 +412,122 @@ loom:
 | Path traversal           | NEVER use `../`                  | Causes validation error |
 | network config           | `network: {allowed_domains: []}` | `network: deny`         |
 
+#### Shell Command Escaping in YAML (CRITICAL)
+
+Acceptance criteria, truths, and setup commands are shell commands inside YAML strings. **Most acceptance criteria failures are caused by YAML quoting/escaping issues, not incorrect commands.** The command itself may be perfectly valid shell, but YAML consumes or misinterprets characters before the shell ever sees them.
+
+**THE GOLDEN RULES:**
+
+1. **ALWAYS quote YAML string values** — never leave acceptance criteria unquoted
+2. **Default to YAML single quotes** (`'...'`) for any command with double quotes, backslashes, or regex patterns — in YAML single quotes, NOTHING is special (no escape sequences)
+3. **Use YAML double quotes** (`"..."`) only for simple commands or commands that contain literal single quotes
+4. **Simplify commands** — prefer `grep -q`/`rg -q` over pipes; prefer `-F` for fixed strings over regex
+5. **Never nest shell invocations** — loom already wraps commands with `sh -c`, so NEVER write `sh -c '...'` in acceptance criteria
+
+**Why YAML single quotes are safer:** In YAML single-quoted strings, the ONLY special sequence is `''` (two single quotes = one literal single quote). Backslashes, double quotes, dollar signs, brackets — all literal. In YAML double-quoted strings, `\` is an escape character and `"` terminates the string.
+
+**Common Escaping Failures and Fixes:**
+
+```yaml
+# ━━━ DOUBLE QUOTE CONFLICTS ━━━
+
+# ❌ BREAKS: Inner double quotes terminate the YAML string
+acceptance:
+  - "grep -q "fn main" src/main.rs"
+  # YAML sees: "grep -q " then fn main as bare text — parse error
+
+# ✅ FIX: YAML single quotes make inner double quotes literal
+acceptance:
+  - 'grep -q "fn main" src/main.rs'
+
+# ━━━ BACKSLASH CONSUMPTION ━━━
+
+# ❌ BREAKS: YAML double quotes consume backslashes
+truths:
+  - "rg -q 'use\s+crate' src/lib.rs"
+  # YAML turns \s into just s — shell sees 'uses+crate'
+
+# ✅ FIX: YAML single quotes preserve backslashes
+truths:
+  - 'rg -q "use\s+crate" src/lib.rs'
+
+# ━━━ NESTED SHELL QUOTING ━━━
+
+# ❌ WRONG: Don't nest sh -c — loom already wraps with sh -c
+acceptance:
+  - "sh -c 'grep -q \"pattern\" file'"
+
+# ✅ FIX: Write the command directly
+acceptance:
+  - 'grep -q "pattern" file'
+
+# ━━━ COMPLEX PATTERNS ━━━
+
+# ❌ FRAGILE: Mixed quotes and regex in YAML double quotes
+acceptance:
+  - "rg -q \"impl\\s+MyTrait\" src/lib.rs"
+
+# ✅ ROBUST: YAML single quotes — everything is literal
+acceptance:
+  - 'rg -q "impl\s+MyTrait" src/lib.rs'
+
+# ━━━ FIXED STRING MATCHING ━━━
+
+# ❌ FRAGILE: Regex special chars in pattern
+acceptance:
+  - 'grep -q "Vec<String>" src/types.rs'
+  # The < and > are regex metacharacters in some grep versions
+
+# ✅ ROBUST: Use -F for fixed/literal string matching
+acceptance:
+  - 'grep -qF "Vec<String>" src/types.rs'
+```
+
+**YAML Quoting Decision Table:**
+
+| Command Contains | Use YAML | Example |
+|---|---|---|
+| Nothing special | Either works | `"cargo test"` |
+| Double quotes `"` | Single quotes | `'grep -q "pattern" file'` |
+| Backslashes `\` | Single quotes | `'rg "\bword\b" file'` |
+| Regex `[]{}()+*` | Single quotes | `'rg -q "fn\s+\w+" file'` |
+| Single quotes `'` | Double quotes | `"grep -qF \"it's\" file"` |
+| Both quote types | Double + escape `\"` | `"rg -qF \"it's a \\\"test\\\"\" file"` — or better: restructure the command |
+
+**Prefer robust, simple commands:**
+
+| Fragile Pattern | Robust Alternative |
+|---|---|
+| `grep "pattern" file \| wc -l \| grep -q "1"` | `grep -qc "pattern" file` or simply `grep -q "pattern" file` |
+| `cat file \| grep "pattern"` | `grep -q "pattern" file` |
+| `test "$(cmd)" = "value"` | `cmd \| grep -qxF "value"` |
+| Regex with special chars | `grep -qF` or `rg -qF` for literal/fixed string matching |
+| `echo "..." \| grep ...` | `rg -q "pattern" file` (search file directly) |
+
+**Cross-Platform Compatibility (Linux + macOS):**
+
+Loom runs on both Linux and macOS. Shell commands in acceptance criteria MUST work on both. Key differences:
+
+| Tool/Feature | Linux | macOS | Safe Alternative |
+|---|---|---|---|
+| `grep` | GNU grep (supports `-P`) | BSD grep (NO `-P` flag) | Use `rg` instead of `grep` |
+| `grep -P` (Perl regex) | Works | **FAILS** | `rg` natively supports Perl regex |
+| `grep -oP` | Works | **FAILS** | `rg -o` |
+| `readlink -f` | Works | **FAILS** | Avoid; use `test -f` or `test -d` |
+| `sed -i` | `sed -i 's/...'` | `sed -i '' 's/...'` | Don't use `sed` in acceptance — use `rg` |
+| `stat` format flags | `stat -c` | `stat -f` | Avoid `stat` in acceptance criteria |
+| `sh -c` | POSIX sh (dash/bash) | POSIX sh (zsh backend) | Stick to POSIX features |
+
+**Rules for cross-platform acceptance criteria:**
+
+1. **Use `rg` instead of `grep`** — `rg` (ripgrep) behaves identically on both platforms
+2. **Use `rg -qF` for fixed strings, `rg -q` for regex** — never rely on `grep -P`
+3. **Use `test -f` / `test -d`** for file/directory existence checks — never `readlink`
+4. **Stick to POSIX shell features** — no `[[ ]]`, no `echo -e`, no bash-specific syntax
+5. **Prefer built-in loom verification fields** (`artifacts`, `wiring`) over shell commands for file existence and pattern checks
+
+**When in doubt:** Use YAML single quotes and `rg -qF` for fixed string matching. This combination avoids YAML escaping issues, regex interpretation issues, AND cross-platform differences.
+
 **stage_type Field (REQUIRED on every stage):**
 
 | Value                | Use For                   | Special Behavior                         |
@@ -444,6 +560,20 @@ working_dir: "loom"   # Run from loom/ subdirectory
 
 **Why required?** Prevents acceptance failures due to forgotten directory context. Every stage must consciously declare its execution directory.
 
+**Path Resolution Formula:**
+
+```text
+EXECUTION_PATH = WORKTREE_ROOT / working_dir
+```
+
+All acceptance commands, truths, artifacts, and wiring paths resolve relative to `EXECUTION_PATH`. When you write an acceptance criterion, imagine you have `cd`-ed into `EXECUTION_PATH` first — that is where your command runs.
+
+| `working_dir` | Worktree Root | Commands run from | `Cargo.toml` reference |
+|---|---|---|---|
+| `"."` | `.worktrees/my-stage/` | `.worktrees/my-stage/` | `Cargo.toml` (if at root) |
+| `"loom"` | `.worktrees/my-stage/` | `.worktrees/my-stage/loom/` | `Cargo.toml` (NOT `loom/Cargo.toml`) |
+| `"packages/core"` | `.worktrees/my-stage/` | `.worktrees/my-stage/packages/core/` | `Cargo.toml` (if it exists there) |
+
 **Examples:**
 
 ```yaml
@@ -462,14 +592,68 @@ working_dir: "loom"   # Run from loom/ subdirectory
 
 **Mixed directories?** Create separate stages instead of inline `cd`. Each stage = one working directory.
 
+#### Pre-Flight Checklist for Acceptance Criteria (MANDATORY)
+
+**Before writing ANY acceptance criterion, answer these three questions:**
+
+```text
+┌─────────────────────────────────────────────────────────────────────┐
+│  PRE-FLIGHT: ANSWER BEFORE WRITING ACCEPTANCE CRITERIA              │
+│                                                                     │
+│  Q1: What is my working_dir?                                        │
+│      → All commands execute from WORKTREE_ROOT / working_dir        │
+│                                                                     │
+│  Q2: Do the build files exist at that path?                          │
+│      → If working_dir is "loom", Cargo.toml must be at loom/       │
+│      → If working_dir is ".", Cargo.toml must be at repo root      │
+│                                                                     │
+│  Q3: Are ALL my paths relative to working_dir (not repo root)?      │
+│      → If working_dir is "loom", use "src/main.rs" NOT "loom/src/"│
+│      → If working_dir is ".", use "loom/src/main.rs" for files     │
+│        inside the loom subdirectory                                 │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Common Path Mistakes and Fixes:**
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `could not find Cargo.toml` | `working_dir: "."` but Cargo.toml is in `loom/` | Set `working_dir: "loom"` |
+| `No such file or directory` | Path not relative to `working_dir` | Remove redundant prefix |
+| Double-path `loom/loom/src/...` | `working_dir: "loom"` with `loom/src/...` paths | Use `src/...` (already inside `loom/`) |
+| Binary not found | Wrong path to compiled binary | Use path relative to `working_dir` |
+| `rg` finds nothing | Searching from wrong directory | Check `working_dir` matches where files live |
+
+**Binary path resolution:**
+
+```yaml
+# ❌ WRONG: Binary path ignores working_dir context
+- id: test-cli
+  working_dir: "loom"
+  truths:
+    - "loom/target/debug/myapp --help"  # Becomes loom/loom/target/debug/myapp
+
+# ✅ CORRECT: Path relative to working_dir
+- id: test-cli
+  working_dir: "loom"
+  truths:
+    - "./target/debug/myapp --help"  # Becomes loom/target/debug/myapp
+
+# ✅ ALSO CORRECT: Use installed binary name if on PATH
+- id: test-cli
+  working_dir: "loom"
+  truths:
+    - "myapp --help"  # Uses binary from PATH
+```
+
 #### Critical: All Paths are Relative to working_dir
 
 This is a very common mistake. ALL path fields resolve relative to `working_dir`:
 
-- `acceptance` commands
-- `artifacts` file paths
-- `wiring` source paths
-- `truths` command paths
+- `acceptance` commands execute with `working_dir` as CWD
+- `artifacts` file paths are checked relative to `working_dir`
+- `wiring` source paths are read relative to `working_dir`
+- `truths` commands execute with `working_dir` as CWD
 
 ```yaml
 # ❌ WRONG: working_dir is "loom" but paths redundantly include "loom/"
@@ -602,10 +786,10 @@ Captures codebase understanding before implementation:
   dependencies: []
   acceptance:
     - "loom knowledge check --min-coverage 50"
-    - "rg -q '## ' doc/loom/knowledge/architecture.md"
-    - "rg -q '## ' doc/loom/knowledge/entry-points.md"
-    - "rg -q '## ' doc/loom/knowledge/patterns.md"
-    - "rg -q '## ' doc/loom/knowledge/conventions.md"
+    - 'rg -q "## " doc/loom/knowledge/architecture.md'
+    - 'rg -q "## " doc/loom/knowledge/entry-points.md'
+    - 'rg -q "## " doc/loom/knowledge/patterns.md'
+    - 'rg -q "## " doc/loom/knowledge/conventions.md'
   files:
     - "doc/loom/knowledge/**"
   working_dir: "." # REQUIRED: "." for worktree root
@@ -701,9 +885,9 @@ Verifies all work integrates correctly after merges AND that the feature actuall
     - "cargo clippy -- -D warnings"
     - "cargo build"
     # ADD FUNCTIONAL ACCEPTANCE CRITERIA - examples:
-    # - "./target/debug/myapp --help | grep 'new-command'"  # CLI wired
-    # - "curl -s localhost:8080/api/new-endpoint | jq .status"  # API wired
-    # - "grep -q 'NewComponent' src/app/routes.tsx"  # UI wired
+    # - 'myapp --help | rg -q "new-command"'  # CLI wired
+    # - "curl -sf localhost:8080/api/new-endpoint"  # API wired
+    # - 'rg -qF "NewComponent" src/app/routes.tsx'  # UI wired
   files:
     - "README.md"
     - "CONTRIBUTING.md"
@@ -844,10 +1028,12 @@ During implementation stages, you MUST:
 2. **Explicit Dependencies**: Never create unnecessary sequential dependencies
 3. **Clear File Scopes**: Define `files:` arrays to make overlap analysis explicit
 4. **Actionable Descriptions**: Each description should be a complete task specification
-5. **Testable Acceptance**: Every acceptance criterion must be a runnable command
+5. **Testable Acceptance**: Every acceptance criterion must be a runnable command that works on BOTH Linux and macOS
 6. **Bookend Compliance**: Always include knowledge-bootstrap first and integration-verify last
-7. **Working Directory**: Every stage must declare its `working_dir` explicitly
+7. **Working Directory**: Every stage must declare its `working_dir` explicitly — run the pre-flight checklist before writing criteria
 8. **Goal-Backward Verification**: Every `standard` stage MUST have at least one of `truths`, `artifacts`, or `wiring` (VALIDATED - plans will be REJECTED without this)
+9. **YAML Single Quotes for Commands**: Default to YAML single quotes (`'...'`) for acceptance/truths commands containing double quotes, backslashes, or regex — prevents YAML escaping from mangling the command
+10. **Use `rg` over `grep`**: `rg` (ripgrep) works identically on Linux and macOS; `grep` has BSD vs GNU differences that cause cross-platform failures
 
 ## Examples
 
@@ -1049,7 +1235,7 @@ loom:
         - Document patterns and conventions
       dependencies: []
       acceptance:
-        - "rg -q '## ' doc/loom/knowledge/entry-points.md"
+        - 'rg -q "## " doc/loom/knowledge/entry-points.md'
       files:
         - "doc/loom/knowledge/**"
       working_dir: "."
