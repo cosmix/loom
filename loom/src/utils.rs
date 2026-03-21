@@ -1,7 +1,11 @@
 use std::io::{self, Write};
-use std::sync::Once;
+use std::path::{Path, PathBuf};
+use std::sync::{Once, OnceLock};
 
 use crate::models::constants::display::{CONTEXT_HEALTHY_PCT, CONTEXT_WARNING_PCT};
+
+/// Global path to the TUI marker file, set when TUI mode is entered.
+static TUI_MARKER_PATH: OnceLock<PathBuf> = OnceLock::new();
 
 /// ANSI escape codes for terminal control
 const CURSOR_SHOW: &str = "\x1B[?25h";
@@ -49,6 +53,62 @@ pub fn format_elapsed_verbose(seconds: i64) -> String {
         format!("{minutes}m {secs}s")
     } else {
         format!("{secs}s")
+    }
+}
+
+/// Write a TUI marker file so we can detect unclean exits.
+///
+/// The marker contains the current PID. On the next loom command,
+/// if the PID is dead, we know the TUI exited without cleanup
+/// (e.g., SIGKILL) and can restore the terminal.
+pub fn write_tui_marker(work_path: &Path) {
+    let marker = work_path.join("tui.pid");
+    let _ = std::fs::write(&marker, std::process::id().to_string());
+    TUI_MARKER_PATH.set(marker).ok();
+}
+
+/// Remove the TUI marker file (called during normal cleanup).
+pub fn remove_tui_marker() {
+    if let Some(path) = TUI_MARKER_PATH.get() {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+/// Check for a stale TUI marker and recover terminal state if needed.
+///
+/// If a previous `loom status --live` was killed (SIGKILL, OOM, etc.)
+/// without cleanup, the terminal may still be in raw mode with mouse
+/// capture enabled. This function detects that situation and resets
+/// the terminal.
+///
+/// Call this early in main() before dispatching any command.
+pub fn recover_terminal_if_needed() {
+    let marker = Path::new(".work/tui.pid");
+    if !marker.exists() {
+        return;
+    }
+
+    let contents = match std::fs::read_to_string(marker) {
+        Ok(c) => c,
+        Err(_) => {
+            // Can't read marker — remove it and reset just in case
+            let _ = std::fs::remove_file(marker);
+            cleanup_terminal_crossterm();
+            return;
+        }
+    };
+
+    if let Ok(pid) = contents.trim().parse::<u32>() {
+        if !crate::process::is_process_alive(pid) {
+            // Previous TUI process is dead — terminal likely corrupted
+            cleanup_terminal_crossterm();
+            let _ = std::fs::remove_file(marker);
+        }
+        // If still alive, another TUI instance is running — don't interfere
+    } else {
+        // Malformed marker — clean up
+        let _ = std::fs::remove_file(marker);
+        cleanup_terminal_crossterm();
     }
 }
 
@@ -123,6 +183,9 @@ pub fn cleanup_terminal_crossterm() {
 
     // Also do basic cleanup
     cleanup_terminal();
+
+    // Remove TUI marker so the next loom command doesn't try to recover again
+    remove_tui_marker();
 }
 
 /// Install a panic hook that restores crossterm terminal state before panicking.

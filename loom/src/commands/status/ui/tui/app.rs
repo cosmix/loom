@@ -102,7 +102,10 @@ impl TuiApp {
             .set_read_timeout(Some(Duration::from_millis(50)))
             .ok();
 
-        // Install Ctrl+C handler to ensure terminal cleanup on signal
+        // Write TUI marker so we can detect unclean exits (SIGKILL, OOM, etc.)
+        crate::utils::write_tui_marker(work_path);
+
+        // Install Ctrl+C/SIGTERM handler to ensure terminal cleanup on signal
         let running = self.running.clone();
 
         ctrlc::set_handler(move || {
