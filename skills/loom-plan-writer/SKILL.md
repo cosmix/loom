@@ -935,9 +935,17 @@ Include a MEMORY RECORDING block in stage descriptions:
 description: |
   [Task description here]
 
-  MEMORY RECORDING (use memory ONLY - never knowledge):
-  - Record insights: loom memory note "observation"
-  - Record decisions: loom memory decision "choice" --context "why"
+  MEMORY RECORDING (use memory ONLY — never knowledge):
+  Record IMMEDIATELY when these happen — not at stage end:
+  - MISTAKE: tried X, failed → loom memory note "mistake: tried X, failed because Y, fixed by Z"
+  - DECISION: chose X over Y → loom memory decision "chose X" --context "Y was worse because Z"
+  - SURPRISE: unexpected behavior → loom memory note "found: description in file:line"
+  - GOTCHA: trap for future agents → loom memory note "gotcha: X seems right but actually Y"
+  Do NOT record: procedural actions, obvious outcomes, task restatements
+
+  SUBAGENT MEMORY — subagents MUST also record memories:
+  Include in every subagent Task prompt: "Record mistakes, decisions, and surprises
+  using loom memory. Do NOT record procedural actions like 'read file' or 'ran tests'."
 ```
 
 **Why this is mandatory:**
@@ -948,6 +956,30 @@ description: |
 | Mistake prevention     | Curated mistakes become knowledge that future agents read  |
 | Decision documentation | Records WHY choices were made, not just what was done      |
 | Learning transfer      | Memory → Knowledge curation makes lessons permanent        |
+
+**Subagent Memory Recording:**
+
+Subagents (spawned via Task tool) MUST also record memories. The subagent preamble in CLAUDE.md includes memory guidance, but stage descriptions should reinforce it:
+
+```yaml
+description: |
+  [Task description]
+
+  SUBAGENT FILE ASSIGNMENTS:
+  ...
+
+  SUBAGENT MEMORY — ALL subagents must record memories:
+  - Mistakes and corrections: loom memory note "mistake: ..."
+  - Non-obvious decisions: loom memory decision "..." --context "..."
+  - Surprising discoveries: loom memory note "found: ..."
+  - Do NOT record procedural actions ("read file", "ran tests", "spawned agents")
+```
+
+**Why subagent memory matters:**
+
+- Subagent context is lost when the subagent completes — memory is the ONLY way to preserve insights
+- Main agents cannot observe subagent mistakes — if the subagent doesn't record them, they're lost forever
+- Integration-verify reads memory to curate knowledge — subagent insights are valuable input
 
 ### 13. Memory vs Knowledge Rules
 
