@@ -72,6 +72,20 @@ fn append_subagent_restrictions(content: &mut String, agents_role: &str) {
     );
     content.push_str("- ⛔ **NEVER run `git add -A` or `git add .`** - only specific files\n");
     content.push_str("- Each subagent MUST own exclusive files - two subagents writing the same file = LOST WORK\n");
+    content
+        .push_str("- 📝 **MUST record memories** — subagents MUST use `loom memory` to record:\n");
+    content.push_str(
+        "  - Mistakes: `loom memory note \"mistake: tried X, failed because Y, fixed by Z\"`\n",
+    );
+    content.push_str(
+        "  - Decisions: `loom memory decision \"chose X over Y\" --context \"because Z\"`\n",
+    );
+    content.push_str(
+        "  - Surprises: `loom memory note \"found: unexpected behavior in file:line\"`\n",
+    );
+    content.push_str(
+        "  - Do NOT record procedural actions (\"read file\", \"ran tests\", \"spawned agents\")\n",
+    );
     content.push_str(agents_role);
 }
 
@@ -218,18 +232,24 @@ pub fn generate_stable_prefix() -> String {
     content.push_str("**Stage Memory - MEMORY ONLY (MANDATORY):**\n\n");
     content.push_str("```text\n");
     content.push_str("⚠️  IMPLEMENTATION STAGES USE `loom memory` ONLY - NEVER `loom knowledge`\n");
-    content.push_str("    Commands: note, decision, question, change\n");
     content.push_str("    Only integration-verify stages can curate memories into knowledge.\n");
     content.push_str("```\n\n");
+    content.push_str("**WHEN to record (triggers — do it IMMEDIATELY, not at stage end):**\n\n");
+    content.push_str("- **Mistake/error** → `loom memory note \"mistake: tried X, failed because Y, fixed by Z\"`\n");
+    content.push_str("- **User correction** → `loom memory note \"mistake: user said do Y instead of X because Z\"`\n");
+    content.push_str("- **Approach chosen** → `loom memory decision \"chose X over Y\" --context \"because Z\"`\n");
+    content.push_str("- **Surprising discovery** → `loom memory note \"found: unexpected behavior in file:line\"`\n");
+    content.push_str("- **Gotcha/trap** → `loom memory note \"gotcha: X looks like it should work but actually Y\"`\n");
     content.push_str(
-        "- **Record discoveries** as you find them: `loom memory note \"observation\"`\n",
+        "- **File changes** → `loom memory change \"src/file.rs - what changed and why\"`\n\n",
     );
-    content.push_str("- **Record decisions** when you choose between alternatives: `loom memory decision \"choice\" --context \"why\"`\n");
-    content.push_str("- **Record mistakes** immediately when they occur: `loom memory note \"mistake: description\"`\n");
-    content.push_str("- **Record file changes** before completing: `loom memory change \"src/file.rs - Description of what changed\"`\n");
-    content.push_str("- **FORBIDDEN**: `loom knowledge update` commands - these are ONLY for knowledge-bootstrap and integration-verify stages\n");
+    content.push_str("**What NOT to record** (these waste memory and obscure real insights):\n\n");
+    content.push_str("- Procedural narration: \"spawned 3 subagents\", \"read the config\", \"ran cargo test\"\n");
     content
-        .push_str("- Memory entries persist across sessions - they will be reviewed and curated into knowledge during integration-verify\n\n");
+        .push_str("- Obvious outcomes: \"tests passed\", \"build succeeded\", \"file created\"\n");
+    content.push_str("- Task restating: repeating the assignment or acceptance criteria\n\n");
+    content.push_str("- **FORBIDDEN**: `loom knowledge update` commands (ONLY for knowledge-bootstrap and integration-verify)\n");
+    content.push_str("- Memory persists across sessions and is curated into knowledge during integration-verify\n\n");
     append_git_staging_full(&mut content);
     append_common_footer(&mut content);
 
@@ -562,6 +582,8 @@ mod tests {
         assert!(prefix.contains("USE THE TASK TOOL"));
         assert!(prefix.contains("Task(subagent_type="));
         assert!(prefix.contains("MULTIPLE in ONE message"));
+        // Subagent memory recording requirement
+        assert!(prefix.contains("MUST record memories"));
         // Critical: worktree root directory reminder for loom stage complete
         assert!(prefix.contains(
             "Before running `loom stage complete`, ensure you are at the worktree root directory"
@@ -581,6 +603,10 @@ mod tests {
         assert!(prefix.contains("handoffs"));
         // File change tracking
         assert!(prefix.contains("loom memory change"));
+        // Memory quality guidance
+        assert!(prefix.contains("WHEN to record"));
+        assert!(prefix.contains("What NOT to record"));
+        assert!(prefix.contains("Procedural narration"));
         // Self-review before completion
         assert!(prefix.contains("Self-Review Before Completion"));
         assert!(prefix.contains("Wiring Check"));

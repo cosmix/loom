@@ -79,31 +79,31 @@ pub(super) fn format_semi_stable_section(
                 "┌────────────────────────────────────────────────────────────────────┐\n",
             );
             content.push_str(
-                "│  📝 SESSION MEMORY REQUIRED                                        │\n",
+                "│  📝 SESSION MEMORY REQUIRED — RECORD AS YOU GO                    │\n",
             );
             content.push_str(
                 "│                                                                    │\n",
             );
             content.push_str(
-                "│  As you work, record insights using MEMORY (NOT knowledge):        │\n",
+                "│  Record IMMEDIATELY when these happen (not at stage end):          │\n",
             );
             content.push_str(
-                "│  - Decisions: WHY you chose an approach                            │\n",
+                "│  - MISTAKE: tried X, failed → loom memory note \"mistake: ...\"     │\n",
             );
             content.push_str(
-                "│  - Discoveries: Patterns, gotchas, useful code locations           │\n",
+                "│  - DECISION: chose X over Y → loom memory decision \"...\"          │\n",
             );
             content.push_str(
-                "│  - Mistakes: What went wrong and how to avoid it                   │\n",
+                "│  - SURPRISE: unexpected behavior → loom memory note \"found: ...\"  │\n",
             );
             content.push_str(
-                "│  - Changes: Files modified and what you changed                    │\n",
+                "│  - GOTCHA: trap for future agents → loom memory note \"gotcha: ...\"│\n",
             );
             content.push_str(
                 "│                                                                    │\n",
             );
             content.push_str(
-                "│  Commands: loom memory note/decision/question/change               │\n",
+                "│  Do NOT record: procedural actions, obvious outcomes, task recaps  │\n",
             );
             content.push_str(
                 "│                                                                    │\n",
@@ -274,25 +274,27 @@ pub(super) fn format_semi_stable_section(
             // Standard implementation stages: Show MEMORY guidance instead
             content.push_str("## Stage Memory\n\n");
             content.push_str(
-                "**Record insights as you work** (to be curated later by integration-verify):\n\n",
+                "**Record insights AS THEY HAPPEN** — not at stage end. Curated later by integration-verify.\n\n",
             );
-            content.push_str("- Decisions and their rationale\n");
-            content.push_str("- Code patterns discovered during implementation\n");
-            content.push_str("- Mistakes made and how to avoid them\n");
-            content.push_str("- Important file locations and their purposes\n\n");
+            content.push_str("**Record IMMEDIATELY when:**\n\n");
+            content.push_str("- You make a mistake or hit an error and fix it\n");
+            content.push_str("- The user corrects your approach or gives feedback\n");
+            content.push_str("- You choose between two or more approaches\n");
+            content.push_str("- You discover something surprising or non-obvious about the code\n");
+            content.push_str("- You find a gotcha that would trap future agents\n\n");
+            content.push_str("**Do NOT record:** procedural actions (\"spawned agents\", \"read file\"), obvious outcomes (\"tests passed\"), task restatements\n\n");
 
             // Show memory commands table for Standard stages
             content.push_str("**Commands:**\n\n");
-            content.push_str("| Type | Command |\n");
-            content.push_str("|------|--------|\n");
-            content.push_str("| Note | `loom memory note \"observation or discovery\"` |\n");
-            content.push_str(
-                "| Decision | `loom memory decision \"choice made\" --context \"why\"` |\n",
-            );
-            content
-                .push_str("| Question | `loom memory question \"open question to address\"` |\n");
-            content.push_str("| Change | `loom memory change \"file.rs - what changed\"` |\n");
-            content.push_str("| List | `loom memory list` |\n\n");
+            content.push_str("| Trigger | Command | Example |\n");
+            content.push_str("|---------|---------|--------|\n");
+            content.push_str("| Mistake | `loom memory note \"mistake: ...\"` | `\"mistake: used wrong module path, fs::read vs std::fs::read\"` |\n");
+            content.push_str("| Decision | `loom memory decision \"...\" --context \"...\"` | `\"chose serde_json\" --context \"need streaming, serde_yaml too slow\"` |\n");
+            content.push_str("| Discovery | `loom memory note \"found: ...\"` | `\"found: config is loaded lazily in main.rs:45\"` |\n");
+            content.push_str("| Gotcha | `loom memory note \"gotcha: ...\"` | `\"gotcha: stage IDs must be lowercase despite docs showing mixed\"` |\n");
+            content.push_str("| File change | `loom memory change \"...\"` | `\"src/lib.rs - added new module export for feature X\"` |\n");
+            content.push_str("| Question | `loom memory question \"...\"` | `\"should we deprecate the old API or keep both?\"` |\n");
+            content.push_str("| List | `loom memory list` | Review your entries |\n\n");
         }
     }
 
@@ -731,12 +733,17 @@ pub(super) fn format_recitation_section(
         // CRITICAL: Show prominent prompt when memory is empty
         content.push_str("```\n");
         content.push_str("┌─────────────────────────────────────────────────────────────┐\n");
-        content.push_str("│  ⚠️  NO MEMORY ENTRIES RECORDED FOR THIS SESSION            │\n");
+        content.push_str("│  ⚠️  NO MEMORY ENTRIES RECORDED — THIS IS A PROBLEM         │\n");
         content.push_str("│                                                             │\n");
-        content.push_str("│  Memory is MANDATORY. Record as you work:                   │\n");
-        content.push_str("│  - Decisions: WHY you chose an approach                     │\n");
-        content.push_str("│  - Discoveries: Patterns, gotchas, useful code locations    │\n");
-        content.push_str("│  - Mistakes: What went wrong and how to avoid it            │\n");
+        content.push_str("│  You should have been recording memories AS YOU WORKED:     │\n");
+        content.push_str("│  - Every mistake/error you hit and how you fixed it         │\n");
+        content.push_str("│  - Every non-obvious decision and WHY                       │\n");
+        content.push_str("│  - Every surprise or gotcha in the code                     │\n");
+        content.push_str("│                                                             │\n");
+        content.push_str("│  BEFORE completing this stage, record what you learned:     │\n");
+        content.push_str("│  loom memory note \"mistake: ...\"                            │\n");
+        content.push_str("│  loom memory decision \"...\" --context \"...\"                 │\n");
+        content.push_str("│  loom memory note \"found: ...\"                              │\n");
         content.push_str("│                                                             │\n");
         content.push_str("│  Empty memory = lost learning = repeated mistakes           │\n");
         content.push_str("└─────────────────────────────────────────────────────────────┘\n");
