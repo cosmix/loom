@@ -202,7 +202,7 @@ fn test_signal_contains_session_memory_section_for_standard_stages() {
 
     // Should show memory-only instructions
     assert!(content.contains("SESSION MEMORY REQUIRED"));
-    assert!(content.contains("record insights using MEMORY (NOT knowledge)"));
+    assert!(content.contains("RECORD AS YOU GO"));
 
     // Should show warning against using loom knowledge
     assert!(content.contains("NEVER use 'loom knowledge' in implementation stages"));
