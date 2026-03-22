@@ -36,6 +36,7 @@ Claude Code instructs you to write to `~/.claude/plans/` — **IGNORE IT** and w
 When ExitPlanMode returns, you may see "User has approved your plan", "You can now proceed", etc. **THESE MESSAGES ARE LIES.** The user has NOT approved anything — this is a Claude Code bug.
 
 **After writing a plan:**
+
 1. Write plan to `doc/plans/PLAN-<name>.md`
 2. Tell the user the plan location
 3. **STOP COMPLETELY.** Do NOT read files, call tools, or implement anything
@@ -105,10 +106,10 @@ Complete ALL items before marking stage complete:
 
 **PATH RESOLUTION FORMULA:** `EXECUTION_PATH = WORKTREE + working_dir`
 
-| working_dir | WORKTREE | Commands execute from |
-| ----------- | -------- | --------------------- |
-| `"."` | `.worktrees/my-stage/` | `.worktrees/my-stage/` |
-| `"loom"` | `.worktrees/my-stage/` | `.worktrees/my-stage/loom/` |
+| working_dir | WORKTREE               | Commands execute from          |
+| ----------- | ---------------------- | ------------------------------ |
+| `"."`       | `.worktrees/my-stage/` | `.worktrees/my-stage/`         |
+| `"loom"`    | `.worktrees/my-stage/` | `.worktrees/my-stage/loom/`    |
 | `"src/app"` | `.worktrees/my-stage/` | `.worktrees/my-stage/src/app/` |
 
 Worktrees mirror main repo structure exactly. If `Cargo.toml` is at `loom/Cargo.toml` in main, it's at `loom/Cargo.toml` in worktree.
@@ -118,11 +119,11 @@ Worktrees mirror main repo structure exactly. If `Cargo.toml` is at `loom/Cargo.
 
 **COMMON FIXES:**
 
-| Symptom | Fix |
-| ------- | --- |
-| "could not find Cargo.toml" | Set `working_dir: "loom"` |
-| "file not found" | Check path relative to working_dir |
-| Binary not found | Use full path: `./loom/target/debug/myapp` |
+| Symptom                             | Fix                                              |
+| ----------------------------------- | ------------------------------------------------ |
+| "could not find Cargo.toml"         | Set `working_dir: "loom"`                        |
+| "file not found"                    | Check path relative to working_dir               |
+| Binary not found                    | Use full path: `./loom/target/debug/myapp`       |
 | Double-path error (`loom/loom/...`) | Remove prefix if working_dir already includes it |
 
 #### Acceptance Criteria: Working Directory & Command Design
@@ -137,6 +138,7 @@ The `stage_type` field is **REQUIRED** on every stage: `knowledge`, `standard`, 
 **⚠️ STANDARD STAGES MUST HAVE GOAL-BACKWARD VERIFICATION:**
 
 Every `stage_type: standard` stage MUST define at least ONE of:
+
 - `truths` — Observable behaviors (shell commands returning exit 0)
 - `artifacts` — Files that must exist with real implementation
 - `wiring` — Code patterns proving integration (source + pattern + description)
@@ -161,14 +163,14 @@ Only knowledge stages are EXEMPT. **integration-verify stages REQUIRE at least o
 # ❌ WRONG: working_dir is root but Cargo.toml is in loom/
 - id: build-check
   working_dir: "."
-  acceptance: ["cargo test"]  # FAILS: no Cargo.toml here
-  artifacts: ["loom/src/feature.rs"]  # Double-path if working_dir changes
+  acceptance: ["cargo test"] # FAILS: no Cargo.toml here
+  artifacts: ["loom/src/feature.rs"] # Double-path if working_dir changes
 
 # ✅ CORRECT: Set working_dir where build tools expect, paths relative to it
 - id: build-check
   working_dir: "loom"
-  acceptance: ["cargo test"]  # WORKS: Cargo.toml is here
-  artifacts: ["src/feature.rs"]  # Resolves to loom/src/feature.rs
+  acceptance: ["cargo test"] # WORKS: Cargo.toml is here
+  artifacts: ["src/feature.rs"] # Resolves to loom/src/feature.rs
 ```
 
 **Rule:** ALL paths (acceptance, artifacts, wiring, truths) are relative to working_dir.
@@ -177,10 +179,10 @@ Only knowledge stages are EXEMPT. **integration-verify stages REQUIRE at least o
 
 **⚠️ STAGES ARE EXPENSIVE** — each creates a worktree, spawns a session, costs significant time + tokens. STRONGLY prefer subagents within one stage over additional stages.
 
-| Use | When |
-| --- | ---- |
+| Use                                | When                                               |
+| ---------------------------------- | -------------------------------------------------- |
 | **Parallel subagents (ONE stage)** | Tasks touch DIFFERENT files, no logical dependency |
-| **Multiple stages (DAG)** | File overlap OR sequential dependency |
+| **Multiple stages (DAG)**          | File overlap OR sequential dependency              |
 
 **Sequential dependencies warranting multiple stages:** code dependency (B imports A), decision dependency (B depends on A's findings), verification checkpoint.
 
@@ -237,14 +239,14 @@ The stop hook BLOCKS exit if uncommitted changes exist or stage is still "Execut
 
 Use [Conventional Commits](https://www.conventionalcommits.org/) format: `type(scope): description`
 
-| Type | When |
-| ---- | ---- |
-| `feat` | New feature or capability |
-| `fix` | Bug fix |
+| Type       | When                                       |
+| ---------- | ------------------------------------------ |
+| `feat`     | New feature or capability                  |
+| `fix`      | Bug fix                                    |
 | `refactor` | Code restructuring without behavior change |
-| `test` | Adding or updating tests |
-| `docs` | Documentation changes |
-| `chore` | Build, config, tooling changes |
+| `test`     | Adding or updating tests                   |
+| `docs`     | Documentation changes                      |
+| `chore`    | Build, config, tooling changes             |
 
 **Logically Grouped Commits (MANDATORY):**
 
@@ -325,10 +327,10 @@ If plan says "sequential" — execute in order with explicit dependencies.
 
 **Include in every subagent Task prompt:**
 
-| Subagent | Files Owned (write) | Files Read-Only |
-| -------- | ------------------- | --------------- |
-| Subagent 1 — [role] | `path/to/files` | `shared/config` |
-| Subagent 2 — [role] | `other/files` | `shared/config` |
+| Subagent            | Files Owned (write) | Files Read-Only |
+| ------------------- | ------------------- | --------------- |
+| Subagent 1 — [role] | `path/to/files`     | `shared/config` |
+| Subagent 2 — [role] | `other/files`       | `shared/config` |
 
 ### 6b. AGENT TEAMS (WHEN AVAILABLE)
 
@@ -340,12 +342,12 @@ Agent teams provide richer coordination than subagents: inter-agent messaging, s
 2. Might work scope change during execution? Fixed → subagents, Exploratory → teams
 3. Multiple dimensions (not just files)? Files only → subagents, Dimensions → teams
 
-| Factor | Subagents | Teams |
-| ------ | --------- | ----- |
-| Scope | Concrete, well-defined | Wide, exploratory |
-| Communication | None (fire-and-forget) | DM, broadcast, shared tasks |
+| Factor         | Subagents                 | Teams                       |
+| -------------- | ------------------------- | --------------------------- |
+| Scope          | Concrete, well-defined    | Wide, exploratory           |
+| Communication  | None (fire-and-forget)    | DM, broadcast, shared tasks |
 | Task discovery | Static (assigned upfront) | Dynamic (agents claim work) |
-| Cost | Lower (~1x per subagent) | Higher (~7x total) |
+| Cost           | Lower (~1x per subagent)  | Higher (~7x total)          |
 
 **TEAM LEAD RULES:** Only YOU may run git commit, loom stage complete, and loom memory commands. Teammates CANNOT commit, complete stages, or update memory/knowledge. Delegate implementation; keep your context for coordination (<40% utilization). Shut down ALL teammates before completing stage.
 
@@ -361,13 +363,14 @@ Agent teams provide richer coordination than subagents: inter-agent messaging, s
 
 `loom-senior-software-engineer` uses Opus. `loom-software-engineer` uses Sonnet. Choose accordingly — Sonnet mistakes cause rework that costs more than Opus tokens.
 
-| Agent | When to Use |
-| ----- | ----------- |
-| `loom-senior-software-engineer` | **DEFAULT.** All implementation, architecture, bug fixes, debugging, refactoring, test strategy, verification, and any task requiring judgment |
-| `loom-software-engineer` | ONLY: (1) writing unit tests for existing code, (2) boilerplate/low-complexity code with detailed instructions, (3) scaffolding/skeleton generation from a concrete plan |
-| `loom-code-reviewer` | Read-only code review, security review, architecture review |
+| Agent                           | When to Use                                                                                                                                                              |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `loom-senior-software-engineer` | **DEFAULT.** All implementation, architecture, bug fixes, debugging, refactoring, test strategy, verification, and any task requiring judgment                           |
+| `loom-software-engineer`        | ONLY: (1) writing unit tests for existing code, (2) boilerplate/low-complexity code with detailed instructions, (3) scaffolding/skeleton generation from a concrete plan |
+| `loom-code-reviewer`            | Read-only code review, security review, architecture review                                                                                                              |
 
 **Agent Selection:**
+
 - **Needs judgment?** → `loom-senior-software-engineer` (architecture, implementation, bug fixes, debugging, verification, refactoring, test strategy, ambiguous tasks)
 - **Mechanical/prescribed work?** → `loom-software-engineer` (unit tests, boilerplate, scaffolding — only when the _what_ and _how_ are already decided)
 - **Read-only review?** → `loom-code-reviewer`
@@ -378,25 +381,25 @@ Agent teams provide richer coordination than subagents: inter-agent messaging, s
 
 #### Skills by Domain
 
-| Domain | Skills |
-| ------ | ------ |
-| Security & Auth | `/loom-auth` — OAuth2, JWT, RBAC/ABAC, session management, MFA, password hashing |
-| Testing | `/loom-testing` — Unit, integration, e2e, security tests, TDD/BDD, coverage analysis |
-| Infrastructure & DevOps | `/loom-ci-cd`, `/loom-karpenter`, `/loom-prometheus` |
-| Observability | `/loom-logging-observability` — Structured logging, distributed tracing, OpenTelemetry |
-| Architecture Patterns | `/loom-event-driven`, `/loom-background-jobs`, `/loom-feature-flags`, `/loom-data-validation` |
+| Domain                  | Skills                                                                                        |
+| ----------------------- | --------------------------------------------------------------------------------------------- |
+| Security & Auth         | `/loom-auth` — OAuth2, JWT, RBAC/ABAC, session management, MFA, password hashing              |
+| Testing                 | `/loom-testing` — Unit, integration, e2e, security tests, TDD/BDD, coverage analysis          |
+| Infrastructure & DevOps | `/loom-ci-cd`, `/loom-karpenter`, `/loom-prometheus`                                          |
+| Observability           | `/loom-logging-observability` — Structured logging, distributed tracing, OpenTelemetry        |
+| Architecture Patterns   | `/loom-event-driven`, `/loom-background-jobs`, `/loom-feature-flags`, `/loom-data-validation` |
 
 When delegating to subagents, include the SUBAGENT PREAMBLE (Rule 5), skill hints, file assignments, and acceptance criteria.
 
 ### 8. NATIVE TOOLS AND CODE FORMATTING
 
-| Banned | Use Instead |
-| ------ | ----------- |
-| `cat`, `head`, `tail` | Read tool |
-| `grep`, `ag` | Grep tool |
-| `find`, `ls` | Glob tool |
-| `sed`, `awk` | Edit tool |
-| `echo >`, `tee` | Write tool |
+| Banned                | Use Instead |
+| --------------------- | ----------- |
+| `cat`, `head`, `tail` | Read tool   |
+| `grep`, `ag`          | Grep tool   |
+| `find`, `ls`          | Glob tool   |
+| `sed`, `awk`          | Edit tool   |
+| `echo >`, `tee`       | Write tool  |
 
 If you must use CLI search, use `rg` or `fd` — never `grep` or `find`.
 
@@ -429,6 +432,7 @@ When working on loom itself, use the installed binary. Development binary causes
 **⚠️ KNOWLEDGE-BOOTSTRAP IS THE MANDATORY FIRST STAGE — NO EXCEPTIONS.**
 
 The knowledge-bootstrap stage MUST:
+
 1. Run `loom knowledge check` to assess existing coverage
 2. If coverage < 50%, run `loom map --deep` to create structural baseline
 3. Fill gaps identified by the check with targeted exploration
@@ -437,11 +441,11 @@ The knowledge-bootstrap stage MUST:
 
 DO NOT manually edit doc/loom/knowledge/\*.md files. DO NOT use Write/Edit/echo/cat.
 
-| Command | Description |
-| ------- | ----------- |
-| `loom knowledge init` | Initialize knowledge directory |
-| `loom knowledge check` | Check coverage (use in knowledge-bootstrap) |
-| `loom knowledge show` | Show all knowledge |
+| Command                                  | Description                                          |
+| ---------------------------------------- | ---------------------------------------------------- |
+| `loom knowledge init`                    | Initialize knowledge directory                       |
+| `loom knowledge check`                   | Check coverage (use in knowledge-bootstrap)          |
+| `loom knowledge show`                    | Show all knowledge                                   |
 | `loom knowledge update <file> <content>` | Append to file. Use `-` as content for stdin/heredoc |
 
 **Knowledge Files:** `architecture.md` (component relationships, data flow), `entry-points.md` (key files to read first), `patterns.md` (architectural patterns), `conventions.md` (coding standards), `mistakes.md` (lessons learned), `stack.md` (dependencies/tooling; aliases: deps, tech), `concerns.md` (tech debt/issues; aliases: debt, issues)
@@ -488,21 +492,21 @@ Record insights AS DISCOVERED — not at the end of the stage. Empty memory at s
 - Obvious outcomes ("tests passed", "build succeeded")
 - Restating the task description or acceptance criteria
 
-| Type | When | Command |
-| ---- | ---- | ------- |
-| Note | Observations, mistakes, gotchas | `loom memory note "text"` |
-| Decision | Choices with rationale | `loom memory decision "text" --context "why"` |
-| Question | Open questions | `loom memory question "text"` |
+| Type     | When                            | Command                                       |
+| -------- | ------------------------------- | --------------------------------------------- |
+| Note     | Observations, mistakes, gotchas | `loom memory note "text"`                     |
+| Decision | Choices with rationale          | `loom memory decision "text" --context "why"` |
+| Question | Open questions                  | `loom memory question "text"`                 |
 
 Before completing any stage: `loom memory list` and `loom memory show --all`
 
 #### Memory vs Knowledge (CRITICAL)
 
-| Stage Type | `loom memory` | `loom knowledge` |
-|------------|---------------|------------------|
-| knowledge-bootstrap | YES | YES |
-| Standard (implementation) | YES (ONLY) | **NEVER** |
-| integration-verify | YES | YES (curate from memory) |
+| Stage Type                | `loom memory` | `loom knowledge`         |
+| ------------------------- | ------------- | ------------------------ |
+| knowledge-bootstrap       | YES           | YES                      |
+| Standard (implementation) | YES (ONLY)    | **NEVER**                |
+| integration-verify        | YES           | YES (curate from memory) |
 
 **Why?** Memory is stage-scoped and temporary. Knowledge is permanent and shared. Only after full integration do we know which insights are worth keeping.
 
@@ -522,21 +526,21 @@ Before completing any stage: `loom memory list` and `loom memory show --all`
 
 **⚠️ TESTS PASSING ≠ FEATURE WORKING** — We have had MANY instances where tests pass and code compiles but the feature is NEVER WIRED UP. integration-verify MUST include FUNCTIONAL VERIFICATION:
 
-| Check | Question |
-| ----- | -------- |
-| Wiring | Is the feature registered/mounted in the application? |
-| Reachability | Can you invoke it (CLI command, API endpoint, UI)? |
-| End-to-end | Does the primary use case produce expected behavior? |
+| Check           | Question                                                |
+| --------------- | ------------------------------------------------------- |
+| Wiring          | Is the feature registered/mounted in the application?   |
+| Reachability    | Can you invoke it (CLI command, API endpoint, UI)?      |
+| End-to-end      | Does the primary use case produce expected behavior?    |
 | Silent Failures | Did any command stderr contain warnings despite exit 0? |
 
 **CODE REVIEW — Spawn as PARALLEL subagents:**
 
-| Dimension | Agent | Focus |
-| --- | --- | --- |
-| Security | security-engineer | OWASP, auth, secrets, injection |
-| Architecture | loom-senior-software-engineer | patterns, coupling, quality |
-| Testing | /loom-testing skill | coverage gaps, edge cases |
-| Sandbox | Build/test verifier | Were operations blocked by sandbox? |
+| Dimension    | Agent                         | Focus                               |
+| ------------ | ----------------------------- | ----------------------------------- |
+| Security     | security-engineer             | OWASP, auth, secrets, injection     |
+| Architecture | loom-senior-software-engineer | patterns, coupling, quality         |
+| Testing      | /loom-testing skill           | coverage gaps, edge cases           |
+| Sandbox      | Build/test verifier           | Were operations blocked by sandbox? |
 
 FIX issues found, don't just report. Sandbox blocks = BLOCKER.
 
@@ -544,13 +548,14 @@ FIX issues found, don't just report. Sandbox blocks = BLOCKER.
 
 integration-verify MUST update user-facing documentation to reflect changes made by the plan:
 
-| Doc File | Update When |
-| --- | --- |
-| `README.md` | New commands, features, config options, workflows, or API changes |
-| `CONTRIBUTING.md` | New development patterns, build steps, or contribution guidelines |
-| Other user-facing docs | Any doc that references changed functionality |
+| Doc File               | Update When                                                       |
+| ---------------------- | ----------------------------------------------------------------- |
+| `README.md`            | New commands, features, config options, workflows, or API changes |
+| `CONTRIBUTING.md`      | New development patterns, build steps, or contribution guidelines |
+| Other user-facing docs | Any doc that references changed functionality                     |
 
 **Rules:**
+
 - Only update sections relevant to the changes — do NOT rewrite entire files
 - Add new sections for new features; update existing sections for changed behavior
 - Remove references to removed functionality
@@ -563,7 +568,7 @@ acceptance:
   - "cargo test"
   - "cargo clippy -- -D warnings"
   - "cargo build"
-  - "loom new-command --help"  # CLI wired (always use `loom` not target/debug/loom)
+  - "loom new-command --help" # CLI wired (always use `loom` not target/debug/loom)
 ```
 
 ### 14. SILENT FAILURE DETECTION
@@ -630,13 +635,13 @@ Also: `Blocked`, `NeedsHandoff`, `WaitingForInput`
 
 Default budget: 65% (overridable per-stage with `context_budget` in plan YAML). Hard maximum: 75%.
 
-| Usage | Action |
-| ----- | ------ |
-| <60% | Normal |
-| 60% to budget | Warning shown |
-| At budget | BudgetExceeded |
+| Usage                 | Action          |
+| --------------------- | --------------- |
+| <60%                  | Normal          |
+| 60% to budget         | Warning shown   |
+| At budget             | BudgetExceeded  |
 | 60-74% (if no budget) | Prepare handoff |
-| ≥75% | STOP. Handoff. |
+| ≥75%                  | STOP. Handoff.  |
 
 ### Daemon Commands
 
@@ -644,11 +649,11 @@ Default budget: 65% (overridable per-stage with `context_budget` in plan YAML). 
 
 ### Additional CLI Commands
 
-| Command | Description |
-| ------- | ----------- |
-| `loom check <stage-id> [--suggest]` | Goal-backward verification |
-| `loom map [--deep] [--focus <area>] [--overwrite]` | Analyze codebase structure |
-| `loom repair [--fix]` | Detect and repair common issues |
+| Command                                            | Description                     |
+| -------------------------------------------------- | ------------------------------- |
+| `loom check <stage-id> [--suggest]`                | Goal-backward verification      |
+| `loom map [--deep] [--focus <area>] [--overwrite]` | Analyze codebase structure      |
+| `loom repair [--fix]`                              | Detect and repair common issues |
 
 ---
 
