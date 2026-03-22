@@ -65,9 +65,9 @@ Before writing any plan:
 Complete ALL items before marking stage complete:
 
 **MEMORY & KNOWLEDGE (BEFORE COMMIT):**
-□ loom memory list (verify insights captured)
-□ loom memory decision/note "..." for key decisions
-□ loom knowledge update mistakes "..." for errors made
+□ loom memory list (verify insights captured — NOT empty, NOT just procedural notes)
+□ loom memory decision/note "..." for key decisions, mistakes, and surprises
+□ loom knowledge update mistakes "..." for errors made (knowledge-bootstrap/integration-verify only)
 
 **INTEGRATION:**
 □ Feature wired in (registered, mounted, callable)
@@ -96,7 +96,7 @@ Complete ALL items before marking stage complete:
 
 **COMMIT:**
 □ git add <specific-files> (NOT git add . or -A)
-□ Meaningful commit message
+□ Semantic commit messages: `type(scope): description` — logically grouped, not monolithic
 □ loom stage complete <stage-id>
 
 #### DIRECTORY HIERARCHY — Understanding Where Commands Execute
@@ -233,6 +233,42 @@ If you `cd` into subdirectories, return first. Path shown in signal file under "
 
 The stop hook BLOCKS exit if uncommitted changes exist or stage is still "Executing".
 
+**Semantic Commit Messages (MANDATORY):**
+
+Use [Conventional Commits](https://www.conventionalcommits.org/) format: `type(scope): description`
+
+| Type | When |
+| ---- | ---- |
+| `feat` | New feature or capability |
+| `fix` | Bug fix |
+| `refactor` | Code restructuring without behavior change |
+| `test` | Adding or updating tests |
+| `docs` | Documentation changes |
+| `chore` | Build, config, tooling changes |
+
+**Logically Grouped Commits (MANDATORY):**
+
+Do NOT squash all work into a single commit. Group changes by logical unit:
+
+- Separate commits for: new module, its tests, wiring/registration, documentation
+- Each commit should be independently meaningful — a reviewer reading `git log` should understand the progression
+- If you changed 5 files across 3 concerns, that is 3 commits, not 1 or 5
+
+**Example** (good):
+
+```text
+feat(signals): add memory quality guidance to stable prefix
+test(signals): add assertions for memory quality content
+docs(plan-writer): add subagent memory recording guidance
+```
+
+**Example** (bad):
+
+```text
+update files     ← vague, no type, no scope
+feat: everything ← monolithic, unreviable
+```
+
 ### 5. SUBAGENT RESTRICTIONS (CRITICAL - PREVENTS LOST WORK)
 
 **⛔ SUBAGENTS MUST NEVER:**
@@ -255,6 +291,12 @@ The stop hook BLOCKS exit if uncommitted changes exist or stage is still "Execut
 - NEVER run loom stage complete - the main agent will complete the stage
 - NEVER run git add -A or git add . - the main agent handles staging
 - DO write code, run tests, and report results back
+
+📝 MEMORY RECORDING - REQUIRED FOR SUBAGENTS:
+- Record mistakes IMMEDIATELY: `loom memory note "mistake: tried X, failed because Y, fixed by Z"`
+- Record non-obvious decisions: `loom memory decision "chose X over Y" --context "because Z"`
+- Record surprising discoveries: `loom memory note "found: unexpected pattern/behavior in file:line"`
+- Do NOT record procedural actions (e.g. "spawned agents", "read files", "ran tests")
 ```
 
 ### 6. EXECUTING PARALLEL SUBAGENTS (MANDATORY)
@@ -267,7 +309,7 @@ For ANY non-trivial work, spawn parallel subagents: independent file changes, mu
 2. Spawn ALL in ONE message (multiple Task calls)
 3. DO NOT work sequentially — parallel means parallel
 
-**Each Task call MUST include:** The SUBAGENT PREAMBLE (Rule 5), then Assignment, Files Owned, Files Read-Only, Acceptance criteria, and detailed task description.
+**Each Task call MUST include:** The SUBAGENT PREAMBLE (Rule 5 — including memory recording guidance), then Assignment, Files Owned, Files Read-Only, Acceptance criteria, and detailed task description.
 
 **WRONG:** Spawn one → wait → spawn next (SEQUENTIAL)
 **CORRECT:** All spawned in ONE message (PARALLEL)
@@ -430,12 +472,26 @@ loom knowledge update mistakes "## [Short description]
 
 #### Stage Memory (MANDATORY)
 
-Record insights AS DISCOVERED. Empty memory at stage end = lost learning.
+Record insights AS DISCOVERED — not at the end of the stage. Empty memory at stage end = lost learning.
+
+**WHEN to record (triggers):**
+
+- **Mistake made** → IMMEDIATELY record: `loom memory note "mistake: tried X, failed because Y, fixed by Z"`
+- **User correction** → IMMEDIATELY record: `loom memory note "mistake: user corrected X, should have done Y instead"`
+- **Approach chosen** → Record the WHY: `loom memory decision "chose X over Y" --context "because Z"`
+- **Surprising discovery** → Record with location: `loom memory note "found: unexpected behavior in file:line — description"`
+- **Gotcha encountered** → Record for future agents: `loom memory note "gotcha: X looks like it should work but actually Y"`
+
+**WHAT NOT to record:**
+
+- Procedural actions ("spawned 3 subagents", "read the config file", "ran cargo test")
+- Obvious outcomes ("tests passed", "build succeeded")
+- Restating the task description or acceptance criteria
 
 | Type | When | Command |
 | ---- | ---- | ------- |
-| Note | Observations | `loom memory note "text"` |
-| Decision | Choices made | `loom memory decision "text" --context "why"` |
+| Note | Observations, mistakes, gotchas | `loom memory note "text"` |
+| Decision | Choices with rationale | `loom memory decision "text" --context "why"` |
 | Question | Open questions | `loom memory question "text"` |
 
 Before completing any stage: `loom memory list` and `loom memory show --all`
@@ -528,6 +584,8 @@ acceptance:
 ### 15. QUALITY GATES
 
 Before completion: zero lint errors, tests passing, self-reviewed for security.
+
+**NOTHING IS "PRE-EXISTING".** Every warning, lint error, and test failure you see is YOUR responsibility. Do not dismiss issues as "pre-existing" or "out of scope" — if you see it, fix it. If fixing is genuinely blocked, report it as a blocker with a clear reason, do not silently skip it.
 
 ### 16. DEPENDENCIES
 
