@@ -115,6 +115,15 @@ pub(super) fn format_semi_stable_section(
                 "│      Memory gets curated into knowledge by integration-verify      │\n",
             );
             content.push_str(
+                "│                                                                    │\n",
+            );
+            content.push_str(
+                "│  ⛔  NEVER use Claude Code's auto-memory system                   │\n",
+            );
+            content.push_str(
+                "│      Use ONLY 'loom memory' commands when working under loom       │\n",
+            );
+            content.push_str(
                 "└────────────────────────────────────────────────────────────────────┘\n",
             );
             content.push_str("```\n\n");

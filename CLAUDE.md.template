@@ -299,6 +299,7 @@ feat: everything ← monolithic, unreviable
 - Record non-obvious decisions: `loom memory decision "chose X over Y" --context "because Z"`
 - Record surprising discoveries: `loom memory note "found: unexpected pattern/behavior in file:line"`
 - Do NOT record procedural actions (e.g. "spawned agents", "read files", "ran tests")
+- ⛔ In loom workspaces, NEVER use Claude Code's auto-memory — ONLY use `loom memory` commands
 ```
 
 ### 6. EXECUTING PARALLEL SUBAGENTS (MANDATORY)
@@ -476,6 +477,11 @@ loom knowledge update mistakes "## [Short description]
 
 #### Stage Memory (MANDATORY)
 
+> ⛔ **When executing a loom plan, do NOT use Claude Code's auto-memory system** (`~/.claude/projects/*/memory/`).
+> In a loom workspace, ALL memory recording MUST go through `loom memory` commands (`note`, `decision`, `question`, `change`).
+> Loom memory is stage-scoped, embedded in agent signals, and curated into permanent knowledge during integration-verify.
+> Claude Code's auto-memory is disconnected from orchestration and invisible to other stages and future loom sessions.
+
 Record insights AS DISCOVERED — not at the end of the stage. Empty memory at stage end = lost learning.
 
 **WHEN to record (triggers):**
@@ -521,6 +527,8 @@ Before completing any stage: `loom memory list` and `loom memory show --all`
 1. Read the plan file from `doc/plans/` (check `.work/config.toml` for `source_path`)
 2. Run `loom memory show --all` to read all stage memories
 3. Read `doc/loom/knowledge/*.md` for architecture context and mistakes
+
+**MEMORY BEFORE KNOWLEDGE (CRITICAL ORDERING):** As you perform code review and verification, record your OWN discoveries to `loom memory` FIRST (bugs found, security issues, architectural insights, test gaps). Then, when distilling knowledge, include your integration-verify findings alongside all implementation stage memories. Memories not distilled into knowledge are LOST when the plan completes.
 
 **⚠️ ZERO TOLERANCE FOR ISSUES** — ALL compiler warnings, linter errors, test failures, and IDE warnings must be FIXED (not suppressed). Nothing is "pre-existing" or "too trivial". Do NOT mark stage complete with warnings or errors remaining.
 
@@ -710,6 +718,7 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 3. ⛔ **Worktree exit** → Commit + `loom stage complete` from worktree root, or hook BLOCKS exit.
 4. ⛔ **No placeholders** → Complete code or ASK.
 5. ⛔ **Parallel subagents** → Spawn ALL in ONE message. Each includes SUBAGENT PREAMBLE (Rule 5).
+6. ⛔ **Memory** → In loom workspaces, use `loom memory` ONLY. Do NOT use Claude Code's auto-memory (`~/.claude/projects/*/memory/`).
 
 **BEFORE EVERY PLAN:**
 □ Explore codebase □ Review knowledge □ Ask about sandbox □ Run `loom repair`

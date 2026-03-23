@@ -243,6 +243,17 @@ Maximize parallel execution at THREE levels:
 | Same handler file modified by auth + logging | File conflict: both write to same file |
 | Core library → multiple consumers | Verification checkpoint: consumers need stable base |
 
+### 4c. Memory System (CRITICAL)
+
+When agents work under loom orchestration, they MUST use loom's memory system exclusively:
+
+- **USE:** `loom memory note`, `loom memory decision`, `loom memory question`, `loom memory change`
+- **NEVER USE:** Claude Code's built-in auto-memory system (`~/.claude/projects/*/memory/`)
+
+Loom memory is stage-scoped, embedded in agent signals, and curated into permanent knowledge during integration-verify. Claude Code's auto-memory is disconnected from orchestration and invisible to other stages and future loom sessions.
+
+Ensure stage descriptions remind agents of this when memory recording is expected. The subagent preamble (CLAUDE.md Rule 5) includes this guidance automatically.
+
 ### 5. Stage Description Requirement
 
 **EVERY stage description MUST include this line:**

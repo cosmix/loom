@@ -233,6 +233,15 @@ pub fn generate_stable_prefix() -> String {
     content.push_str("```text\n");
     content.push_str("⚠️  IMPLEMENTATION STAGES USE `loom memory` ONLY - NEVER `loom knowledge`\n");
     content.push_str("    Only integration-verify stages can curate memories into knowledge.\n");
+    content.push('\n');
+    content.push_str(
+        "⛔  DO NOT use Claude Code's auto-memory system (~/.claude/projects/*/memory/)\n",
+    );
+    content
+        .push_str("    Use ONLY `loom memory` commands. Loom memory is embedded in signals and\n");
+    content
+        .push_str("    shared across sessions. Claude Code's auto-memory is disconnected from\n");
+    content.push_str("    orchestration and invisible to other stages.\n");
     content.push_str("```\n\n");
     content.push_str("**WHEN to record (triggers — do it IMMEDIATELY, not at stage end):**\n\n");
     content.push_str("- **Mistake/error** → `loom memory note \"mistake: tried X, failed because Y, fixed by Z\"`\n");
@@ -389,12 +398,24 @@ pub fn generate_integration_verify_stable_prefix() -> String {
 
     // Knowledge curation
     content.push_str("**Knowledge Distillation (MANDATORY):**\n\n");
-    content.push_str("Integration-verify is where stage memories become permanent knowledge.\n");
-    content.push_str("You have full context: code review findings, implementation memories, and the actual code.\n");
-    content.push_str("DISTILL this into `loom knowledge`:\n\n");
-    content.push_str("1. Read ALL stage memories: `loom memory show --all`\n");
-    content.push_str("2. Review the code changes to understand what was actually built\n");
-    content.push_str("3. Update knowledge files with synthesized insights:\n");
+    content
+        .push_str("Integration-verify is where ALL stage memories become permanent knowledge.\n");
+    content.push_str(
+        "Memories that are not distilled into knowledge are LOST when the plan completes.\n\n",
+    );
+    content.push_str("**CRITICAL ORDERING — Record your OWN memories FIRST, then distill:**\n\n");
+    content
+        .push_str("1. **RECORD your findings** — As you review code and verify, record your own\n");
+    content
+        .push_str("   discoveries to `loom memory` (bugs found, security issues, architectural\n");
+    content.push_str(
+        "   insights, test gaps). These are just as valuable as implementation memories.\n",
+    );
+    content.push_str("2. Read ALL stage memories (including yours): `loom memory show --all`\n");
+    content.push_str("3. Review the code changes to understand what was actually built\n");
+    content
+        .push_str("4. **DISTILL** all memories into `loom knowledge` — synthesize insights from\n");
+    content.push_str("   ALL stages (implementation AND your own verification findings):\n");
     content.push_str("   - `architecture` — new components, data flows, integration points\n");
     content.push_str("   - `entry-points` — new files, commands, endpoints added\n");
     content.push_str("   - `patterns` — patterns introduced or discovered during implementation\n");
@@ -404,14 +425,23 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("   - `mistakes` — errors made and how to avoid them\n");
     content.push_str("   - `stack` — new dependencies, tooling changes\n");
     content.push_str("   - `concerns` — tech debt introduced, known issues\n");
-    content.push_str("4. DO NOT blindly copy memory entries — synthesize and curate\n");
-    content.push_str("5. Generate review document: `loom review`\n\n");
+    content.push_str("5. DO NOT blindly copy memory entries — synthesize and curate\n");
+    content.push_str("6. Generate review document: `loom review`\n\n");
     content.push_str("**IMPORTANT — Do NOT modify the project's CLAUDE.md:**\n\n");
     content.push_str("- CLAUDE.md is the user's file — loom agents must not write to it\n");
     content.push_str("- ALL system knowledge belongs in `loom knowledge update` exclusively\n");
     content.push_str(
         "- This includes architecture, conventions, best practices, and lessons learned\n\n",
     );
+    content.push_str("```text\n");
+    content.push_str(
+        "⛔  DO NOT use Claude Code's auto-memory system (~/.claude/projects/*/memory/)\n",
+    );
+    content.push_str(
+        "    In loom workspaces, use ONLY `loom memory` commands for recording insights.\n",
+    );
+    content.push_str("    Claude Code's auto-memory is disconnected from orchestration.\n");
+    content.push_str("```\n\n");
 
     // Git staging (shorter version)
     content.push_str("**Git Staging (CRITICAL):**\n");
@@ -459,6 +489,10 @@ pub fn generate_knowledge_stable_prefix() -> String {
     content.push_str("4. **Contextualize the plan** — understand what the plan intends to change and document the current state of those areas\n");
     content.push_str("5. **Verify** acceptance criteria before completing\n\n");
     content.push_str("**Do NOT modify the project's CLAUDE.md** — it is the user's file. All knowledge goes to `loom knowledge update`.\n\n");
+    content.push_str("**Memory System:** In loom workspaces, use ONLY `loom memory` commands for recording insights.\n");
+    content.push_str(
+        "Do NOT use Claude Code's auto-memory system (`~/.claude/projects/*/memory/`).\n\n",
+    );
 
     // Agent teams for knowledge
     content.push_str("**Agent Teams for Knowledge Bootstrap:**\n\n");
