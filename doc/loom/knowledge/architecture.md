@@ -215,3 +215,21 @@ KnowledgeFile enum: Architecture, EntryPoints, Patterns, Conventions, Mistakes, 
 5. If goal-check: update has_any_goal_checks() in BOTH StageDefinition and Stage
 6. If verification: add verify function in verify/goal_backward/ and call from run_goal_backward_verification()
 7. Check ALL test files constructing Stage directly (src/ AND tests/ directories)
+
+## Goal-Backward Verification (verify/goal_backward/) [UPDATED]
+
+Four verification layers for standard stages (truths removed, merged into acceptance):
+
+- **artifacts** -- Files must exist with real implementation (stub detection: TODO, FIXME, unimplemented\!, todo\!)
+- **wiring** -- Regex patterns verifying code connections in source files
+- **wiring_tests** -- Runtime command-based integration verification
+- **dead_code_check** -- Command + pattern detection for unused code
+
+Acceptance criteria (verify/criteria/runner.rs) now handle both:
+
+- **Simple** -- Plain shell command, 5min timeout, exit 0 = pass
+- **Extended** -- TruthCheck struct with stdout_contains, stderr_empty, exit_code, 30s timeout
+
+Returns: GoalBackwardResult::Passed | GapsFound | HumanNeeded. Storage: `.work/verifications/<stage-id>.json`.
+
+Note: truths.rs module and verify_truth_checks() are retained for before_stage/after_stage verification (pre/post conditions), NOT for goal-backward.

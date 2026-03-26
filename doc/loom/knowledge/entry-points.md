@@ -180,3 +180,13 @@ Three files to add a new subcommand:
 - `.work/sessions/{session-id}.md` - Session tracking
 - `.work/signals/{session-id}.md` - Agent instruction signals
 - `doc/plans/PLAN-*.md` - Plan definition files
+
+## Verification System [UPDATED]
+
+- `verify/criteria/runner.rs` - Acceptance criteria execution: handles AcceptanceCriterion::Simple (5min) and Extended (30s + output checks) + detect_stderr_warnings()
+- `verify/criteria/executor.rs` - Single criterion with timeout, SIGKILL on timeout
+- `verify/goal_backward/mod.rs` - Goal-backward verification (artifacts, wiring, wiring_tests, dead_code) — truths removed from goal-backward
+- `verify/goal_backward/truths.rs` - verify_truth_checks() retained for before_after.rs only
+- `verify/transitions/state.rs` - Atomic stage status changes
+- `verify/baseline/` - Change impact detection (capture, compare)
+- `verify/before_after.rs` - Before/after stage checks using TruthCheck definitions

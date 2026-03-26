@@ -138,3 +138,17 @@
 
 **Mistake:** Used npx instead of bunx during implementation.
 **Fix:** Always use `bun`/`bunx` per project conventions. Check CLAUDE.md tool preferences before running package managers.
+
+## Truths → Acceptance Unification
+
+**What happened:** truths and truth_checks were separate fields on StageDefinition/Stage that overlapped with acceptance criteria. Unified into AcceptanceCriterion enum (Simple|Extended).
+
+**Gotcha:** Old plans with truths: field parse without error (serde ignores unknown fields) but the data is silently dropped. If old plan relied ONLY on truths for goal-backward verification (no artifacts/wiring), validation now fails.
+
+**How to avoid:** When removing fields from serde structs, consider adding deprecation warnings via custom deserializer for at least one release cycle. Not done here because project CLAUDE.md says no backwards compatibility needed.
+
+## Stale References After Field Removal
+
+**What happened:** After removing truths/truth_checks fields, stale references remained in comments (complete.rs:393), e2e test fixtures (plans.rs), README.md, skill files, and knowledge files.
+
+**How to avoid:** When removing a struct field, grep the ENTIRE project (not just src/) for references. Include: tests/, doc/, skills/, README, knowledge files, comments, YAML fixtures.

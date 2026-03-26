@@ -152,4 +152,17 @@ Signal files at .work/signals/{session-id}.md use markdown with structured secti
 
 ## Map Module Conventions
 
-Detectors skip: .git, .work, .worktrees, node_modules, target, .venv, __pycache__. Deep=3-level depth + concerns, Normal=2-level. Source extensions: .rs, .ts, .js, .py, .go, .java, .rb.
+Detectors skip: .git, .work, .worktrees, node_modules, target, .venv, **pycache**. Deep=3-level depth + concerns, Normal=2-level. Source extensions: .rs, .ts, .js, .py, .go, .java, .rb.
+
+## Plan YAML Schema: Acceptance Field
+
+The `acceptance` field in stage definitions uses `Vec<AcceptanceCriterion>` (not `Vec<String>`).
+Two forms in YAML:
+
+- Simple: `- "cargo test"` (plain string)
+- Extended: `- command: "loom --help"\n  stdout_contains: ["Usage:"]` (object with TruthCheck fields)
+
+`has_any_goal_checks()` checks ONLY: artifacts, wiring, wiring_tests, dead_code_check.
+Validation requires: acceptance OR goal-backward checks for standard/integration-verify stages.
+
+Old truths/truth_checks fields removed from StageDefinition. Serde silently ignores them in old plans (no deny_unknown_fields). before_stage/after_stage fields retained, still use TruthCheck.
