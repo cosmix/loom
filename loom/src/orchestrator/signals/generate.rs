@@ -113,7 +113,7 @@ fn build_skill_match_text(stage: &Stage) -> String {
     // Include acceptance criteria for better matching
     for criterion in &stage.acceptance {
         text.push(' ');
-        text.push_str(criterion);
+        text.push_str(criterion.command());
     }
     text
 }

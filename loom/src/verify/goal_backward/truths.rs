@@ -12,47 +12,6 @@ use crate::verify::criteria::run_single_criterion_with_timeout;
 /// Default timeout for truth commands (30 seconds)
 const TRUTH_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Verify all truth commands return exit code 0
-pub fn verify_truths(truths: &[String], working_dir: &Path) -> Result<Vec<VerificationGap>> {
-    let mut gaps = Vec::new();
-
-    for truth in truths {
-        let result = run_single_criterion_with_timeout(truth, Some(working_dir), TRUTH_TIMEOUT)?;
-
-        if !result.success {
-            let description = if result.timed_out {
-                format!("Truth timed out: {truth}")
-            } else {
-                format!(
-                    "Truth failed (exit {}): {}",
-                    result
-                        .exit_code
-                        .map(|c| c.to_string())
-                        .unwrap_or_else(|| "?".to_string()),
-                    truth
-                )
-            };
-
-            let suggestion = if !result.stderr.is_empty() {
-                format!(
-                    "Check error output: {}",
-                    result.stderr.lines().next().unwrap_or("")
-                )
-            } else {
-                "Verify the command works manually".to_string()
-            };
-
-            gaps.push(VerificationGap::new(
-                GapType::TruthFailed,
-                description,
-                suggestion,
-            ));
-        }
-    }
-
-    Ok(gaps)
-}
-
 /// Verify enhanced truth checks with extended success criteria
 pub fn verify_truth_checks(
     truth_checks: &[TruthCheck],
@@ -331,28 +290,6 @@ mod tests {
         let working_dir = env::temp_dir();
         let result = verify_truth_checks(&checks, &working_dir).unwrap();
         assert!(result.is_empty(), "Expected no gaps when all criteria pass");
-    }
-
-    #[test]
-    fn test_verify_truths_backward_compatibility() {
-        let truths = vec!["echo 'test' && exit 0".to_string(), "true".to_string()];
-
-        let working_dir = env::temp_dir();
-        let result = verify_truths(&truths, &working_dir).unwrap();
-        assert!(
-            result.is_empty(),
-            "Expected no gaps for successful simple truths"
-        );
-    }
-
-    #[test]
-    fn test_verify_truths_failure() {
-        let truths = vec!["exit 1".to_string()];
-
-        let working_dir = env::temp_dir();
-        let result = verify_truths(&truths, &working_dir).unwrap();
-        assert_eq!(result.len(), 1, "Expected one gap for failed truth");
-        assert!(result[0].description.contains("Truth failed"));
     }
 
     // Tests for truncate moved to verify/utils.rs

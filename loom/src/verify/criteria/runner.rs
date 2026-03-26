@@ -7,6 +7,7 @@ use super::config::CriteriaConfig;
 use super::executor::run_single_criterion_with_timeout;
 use super::result::AcceptanceResult;
 use crate::models::stage::Stage;
+use crate::plan::schema::AcceptanceCriterion;
 use crate::verify::context::CriteriaContext;
 
 /// Run all acceptance criteria for a stage with default configuration
@@ -60,9 +61,16 @@ pub fn run_acceptance_with_config(
         Some(expanded_setup.join(" && "))
     };
 
-    for command in &stage.acceptance {
-        // Expand context variables in the command
-        let expanded_command = context.expand(command);
+    for criterion in &stage.acceptance {
+        let command_str = criterion.command();
+        let expanded_command = context.expand(command_str);
+
+        // Extended criteria use shorter timeout (30s) vs simple (config default 5min)
+        let timeout = if criterion.is_extended() {
+            std::time::Duration::from_secs(30)
+        } else {
+            config.command_timeout
+        };
 
         // Combine setup commands with criterion if setup is defined
         let full_command = match &setup_prefix {
@@ -70,29 +78,84 @@ pub fn run_acceptance_with_config(
             None => expanded_command,
         };
 
-        let result =
-            run_single_criterion_with_timeout(&full_command, working_dir, config.command_timeout)
-                .with_context(|| format!("Failed to execute criterion: {command}"))?;
+        let result = run_single_criterion_with_timeout(&full_command, working_dir, timeout)
+            .with_context(|| format!("Failed to execute criterion: {command_str}"))?;
 
-        if !result.success {
-            let failure_reason = if result.timed_out {
-                format!(
-                    "Command '{}' timed out after {}s",
-                    command,
-                    config.command_timeout.as_secs()
-                )
-            } else {
-                format!(
-                    "Command '{}' failed with exit code {:?}",
-                    command, result.exit_code
-                )
-            };
-            failures.push(failure_reason);
+        // Check success based on criterion type
+        match criterion {
+            AcceptanceCriterion::Simple(_) => {
+                if !result.success {
+                    let failure_reason = if result.timed_out {
+                        format!(
+                            "Command '{}' timed out after {}s",
+                            command_str,
+                            timeout.as_secs()
+                        )
+                    } else {
+                        format!(
+                            "Command '{}' failed with exit code {:?}",
+                            command_str, result.exit_code
+                        )
+                    };
+                    failures.push(failure_reason);
+                }
+            }
+            AcceptanceCriterion::Extended(truth_check) => {
+                let mut criterion_failures = Vec::new();
+
+                if result.timed_out {
+                    criterion_failures.push(format!(
+                        "Command '{}' timed out after {}s",
+                        command_str,
+                        timeout.as_secs()
+                    ));
+                } else {
+                    // Check exit code
+                    let expected_exit = truth_check.exit_code.unwrap_or(0);
+                    let actual_exit = result.exit_code.unwrap_or(-1);
+                    if actual_exit != expected_exit {
+                        criterion_failures.push(format!(
+                            "Command '{}': expected exit code {}, got {}",
+                            command_str, expected_exit, actual_exit
+                        ));
+                    }
+
+                    // Check stdout_contains
+                    for pattern in &truth_check.stdout_contains {
+                        if !result.stdout.contains(pattern.as_str()) {
+                            criterion_failures.push(format!(
+                                "Command '{}': stdout missing expected pattern '{}'",
+                                command_str, pattern
+                            ));
+                        }
+                    }
+
+                    // Check stdout_not_contains
+                    for pattern in &truth_check.stdout_not_contains {
+                        if result.stdout.contains(pattern.as_str()) {
+                            criterion_failures.push(format!(
+                                "Command '{}': stdout contains forbidden pattern '{}'",
+                                command_str, pattern
+                            ));
+                        }
+                    }
+
+                    // Check stderr_empty
+                    if let Some(true) = truth_check.stderr_empty {
+                        if !result.stderr.is_empty() {
+                            criterion_failures
+                                .push(format!("Command '{}': stderr was not empty", command_str));
+                        }
+                    }
+                }
+
+                failures.extend(criterion_failures);
+            }
         }
 
         // Store result with original command for cleaner output
         let mut result_with_original = result;
-        result_with_original.command = command.clone();
+        result_with_original.command = command_str.to_string();
         results.push(result_with_original);
     }
 
