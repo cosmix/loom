@@ -145,3 +145,132 @@ fn test_validate_metadata_multiple_invalid_acceptance() {
         .collect();
     assert_eq!(acceptance_errors.len(), 2);
 }
+
+#[test]
+fn test_acceptance_criterion_yaml_simple_string() {
+    let yaml = r#""echo hello""#;
+    let result: Result<AcceptanceCriterion, _> = serde_yaml::from_str(yaml);
+    assert!(
+        result.is_ok(),
+        "Simple string should deserialize: {:?}",
+        result.err()
+    );
+    assert_eq!(
+        result.unwrap(),
+        AcceptanceCriterion::Simple("echo hello".to_string())
+    );
+}
+
+#[test]
+fn test_acceptance_criterion_yaml_extended_object() {
+    let yaml = r#"
+command: "echo test output"
+stdout_contains: ["test output"]
+exit_code: 0
+"#;
+    let result: Result<AcceptanceCriterion, _> = serde_yaml::from_str(yaml);
+    assert!(
+        result.is_ok(),
+        "Extended object should deserialize: {:?}",
+        result.err()
+    );
+    let criterion = result.unwrap();
+    assert!(criterion.is_extended());
+    assert_eq!(criterion.command(), "echo test output");
+}
+
+#[test]
+fn test_acceptance_criterion_yaml_mixed_list() {
+    let yaml = r#"
+- "echo hello"
+- command: "echo test output"
+  stdout_contains: ["test output"]
+  exit_code: 0
+"#;
+    let result: Result<Vec<AcceptanceCriterion>, _> = serde_yaml::from_str(yaml);
+    assert!(
+        result.is_ok(),
+        "Mixed list should deserialize: {:?}",
+        result.err()
+    );
+    let criteria = result.unwrap();
+    assert_eq!(criteria.len(), 2);
+    assert_eq!(
+        criteria[0],
+        AcceptanceCriterion::Simple("echo hello".to_string())
+    );
+    assert!(criteria[1].is_extended());
+}
+
+#[test]
+fn test_acceptance_criterion_yaml_full_plan() {
+    let yaml = r#"
+loom:
+  version: 1
+  stages:
+    - id: test-stage
+      name: "Test Stage"
+      working_dir: "."
+      stage_type: standard
+      acceptance:
+        - "echo hello"
+        - command: "echo test output"
+          stdout_contains: ["test output"]
+          exit_code: 0
+      artifacts:
+        - "README.md"
+"#;
+    let result: Result<crate::plan::schema::types::LoomMetadata, _> = serde_yaml::from_str(yaml);
+    assert!(
+        result.is_ok(),
+        "Full plan with mixed acceptance should parse: {:?}",
+        result.err()
+    );
+    let metadata = result.unwrap();
+    let stage = &metadata.loom.stages[0];
+    assert_eq!(stage.acceptance.len(), 2);
+    assert_eq!(
+        stage.acceptance[0],
+        AcceptanceCriterion::Simple("echo hello".to_string())
+    );
+    assert!(stage.acceptance[1].is_extended());
+}
+
+#[test]
+fn test_old_plan_with_truths_field_parses() {
+    // Old plans had a truths: Vec<String> field that no longer exists.
+    // Since StageDefinition does NOT use deny_unknown_fields, serde should
+    // silently ignore the unknown truths field.
+    let yaml = r#"
+loom:
+  version: 1
+  stages:
+    - id: old-stage
+      name: "Old Format"
+      working_dir: "."
+      stage_type: standard
+      acceptance:
+        - "echo ok"
+      truths:
+        - "echo hello"
+      truth_checks:
+        - command: "echo world"
+          stdout_contains: ["world"]
+      artifacts:
+        - "README.md"
+"#;
+    let result: Result<crate::plan::schema::types::LoomMetadata, _> = serde_yaml::from_str(yaml);
+    assert!(
+        result.is_ok(),
+        "Old plan with truths/truth_checks should parse: {:?}",
+        result.err()
+    );
+    let metadata = result.unwrap();
+    let stage = &metadata.loom.stages[0];
+    // truths field should be silently dropped since it no longer exists on StageDefinition
+    assert_eq!(stage.acceptance.len(), 1);
+    assert_eq!(
+        stage.acceptance[0],
+        AcceptanceCriterion::Simple("echo ok".to_string())
+    );
+}
