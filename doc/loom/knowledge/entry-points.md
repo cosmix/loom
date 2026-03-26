@@ -1,7 +1,6 @@
 # Entry Points
 
 > Key files agents should read first to understand the codebase.
-> This file is append-only - agents add discoveries, never delete.
 >
 > **Related files:** [architecture.md](architecture.md) for system overview, [patterns.md](patterns.md) for design patterns.
 
@@ -10,19 +9,35 @@
 - `loom/src/main.rs` - CLI entry (clap `#[derive(Parser)]`), `Commands` enum dispatch
 - `loom/src/lib.rs` - Module exports (14 public modules)
 
-## Command Dispatch
+## Command Dispatch (cli/types.rs)
 
-| Command    | Entry File                    | Purpose                            |
-| ---------- | ----------------------------- | ---------------------------------- |
-| `init`     | `commands/init/execute.rs`    | Initialize `.work/` from plan      |
-| `run`      | `commands/run/mod.rs`         | Start orchestrator daemon          |
-| `status`   | `commands/status.rs`          | Dashboard with stage/session info  |
-| `stop`     | `commands/stop.rs`            | Shutdown daemon                    |
-| `stage`    | `commands/stage/`             | Stage lifecycle (complete, verify) |
-| `memory`   | `commands/memory/handlers.rs` | Session memory journal             |
-| `check`    | `commands/check.rs`           | Goal-backward verification         |
-| `map`      | `commands/map.rs`             | Codebase structure analysis        |
-| `diagnose` | `commands/diagnose.rs`        | Stage failure diagnosis            |
+| Command       | Entry File                    | Purpose                            |
+| ------------- | ----------------------------- | ---------------------------------- |
+| `init`        | `commands/init/execute.rs`    | Initialize `.work/` from plan      |
+| `run`         | `commands/run/mod.rs`         | Start orchestrator daemon          |
+| `status`      | `commands/status.rs`          | Dashboard with stage/session info  |
+| `stop`        | `commands/stop.rs`            | Shutdown daemon                    |
+| `resume`      | `commands/resume.rs`          | Resume work on a stage             |
+| `sessions`    | `commands/sessions.rs`        | List/kill active sessions          |
+| `worktree`    | `commands/worktree_cmd.rs`    | List/clean/remove worktrees        |
+| `graph`       | `commands/graph/mod.rs`       | Show execution graph               |
+| `hooks`       | `commands/hooks.rs`           | Hook install/list                  |
+| `stage`       | `commands/stage/`             | Stage lifecycle (15+ subcommands)  |
+| `handoff`     | `commands/handoff/create.rs`  | Create handoff files               |
+| `knowledge`   | `commands/knowledge/mod.rs`   | Manage codebase knowledge          |
+| `memory`      | `commands/memory/handlers.rs` | Session memory journal             |
+| `review`      | `commands/review/mod.rs`      | Generate review docs from memories |
+| `sandbox`     | `commands/sandbox/`           | Suggest/apply sandbox config       |
+| `self-update` | `commands/self_update/mod.rs` | Update loom binary                 |
+| `clean`       | `commands/clean.rs`           | Clean up resources                 |
+| `repair`      | `commands/repair.rs`          | Fix workspace issues               |
+| `map`         | `commands/map.rs`             | Codebase structure analysis        |
+| `diagnose`    | `commands/diagnose.rs`        | Stage failure diagnosis            |
+| `verify`      | `commands/verify.rs`          | Goal-backward verification         |
+| `check`       | `commands/check.rs`           | Goal-backward verification (alias) |
+| `completions` | Static shell completion       | Generate shell completions         |
+
+Total: 22 visible commands + 1 hidden (complete for dynamic completions). Dispatch: `cli/dispatch.rs` match-based, two-level for nested commands.
 
 ## Orchestrator Core
 
@@ -36,7 +51,7 @@
 
 ## Data Models
 
-- `models/stage/types.rs` - Stage struct, StageStatus enum (11 states)
+- `models/stage/types.rs` - Stage struct, StageStatus enum (12 states)
 - `models/stage/transitions.rs` - State transition validation
 - `models/stage/methods.rs` - Stage operations (try_mark_executing, try_complete, timing)
 - `models/session/types.rs` - Session struct, SessionStatus enum (6 states)
@@ -83,20 +98,25 @@
 
 ## Signal System
 
-- `orchestrator/signals/generate.rs` - Signal file creation
-- `orchestrator/signals/cache.rs` - Stable prefix generation (4 stage-type variants, SHA-256 hash)
-- `orchestrator/signals/format.rs` - Full signal formatting (Manus 4-section KV-cache pattern)
+- `orchestrator/signals/generate.rs` - Signal file creation (generate_signal_with_skills)
+- `orchestrator/signals/cache.rs` - Stable prefix generation (3 stage-type variants, SHA-256 hash)
+- `orchestrator/signals/format/mod.rs` - Full signal formatting (Manus 4-section KV-cache pattern)
+- `orchestrator/signals/format/sections.rs` - Section formatters (stable, semi-stable, dynamic, recitation)
+- `orchestrator/signals/helpers.rs` - write_signal_file() (disk I/O)
+- `orchestrator/signals/types.rs` - EmbeddedContext, DependencyStatus, SandboxSummary
+- `orchestrator/signals/knowledge.rs` - generate_knowledge_signal() (knowledge stages)
 - `orchestrator/signals/crud.rs` - Signal file CRUD
 - `orchestrator/signals/merge.rs` - Merge conflict resolution signals
 - `orchestrator/signals/recovery.rs` - Recovery signal generation
 
 ## Verification System
 
-- `verify/criteria/runner.rs` - Acceptance criteria execution (run_acceptance)
+- `verify/criteria/runner.rs` - Acceptance criteria execution (run_acceptance) + detect_stderr_warnings()
 - `verify/criteria/executor.rs` - Single criterion with timeout
 - `verify/goal_backward/mod.rs` - Goal-backward verification (truths, artifacts, wiring)
 - `verify/transitions/state.rs` - Atomic stage status changes
 - `verify/baseline/` - Change impact detection (capture, compare)
+- `verify/before_after.rs` - Before/after stage checks using TruthCheck definitions
 
 ## Terminal Backend
 
@@ -108,7 +128,8 @@
 
 ## Handoff System
 
-- `handoff/detector.rs` - Context threshold detection (Yellow=prepare, Red=generate)
+- `commands/handoff/create.rs` - CLI `loom handoff create` implementation
+- `handoff/detector.rs` - Context threshold detection
 - `handoff/generator/mod.rs` - Handoff file generation
 - `handoff/schema.rs` - HandoffV2 structured format
 
@@ -119,11 +140,11 @@
 
 ## Hooks
 
-- `hooks/*.sh` - Shell scripts (commit-guard.sh, commit-filter.sh, learning-validator.sh)
+- `hooks/*.sh` - Shell scripts (commit-guard.sh, commit-filter.sh, etc.)
 - `fs/permissions/hooks.rs` - install_loom_hooks()
 - `fs/permissions/settings.rs` - ensure_loom_permissions(), create_worktree_settings()
-- `fs/permissions/constants.rs` - Embedded hook scripts, LOOM_PERMISSIONS constants
-- `orchestrator/hooks/config.rs` - HookEvent enum (SessionStart, PostToolUse, etc.)
+- `fs/permissions/constants.rs` - Embedded hook scripts via include_str!()
+- `orchestrator/hooks/config.rs` - HookEvent enum
 - `orchestrator/hooks/generator.rs` - setup_hooks_for_worktree()
 
 ## Schema-to-Runtime Conversion
@@ -132,16 +153,25 @@
 - `models/stage/types.rs` - Stage (runtime model)
 - `commands/init/plan_setup.rs` - create_stage_from_definition(), detect_stage_type()
 
+## CLI Subcommand Registration Pattern
+
+Three files to add a new subcommand:
+
+1. `cli/types_memory.rs` - Define variant in KnowledgeCommands/MemoryCommands enum
+2. `cli/dispatch.rs` - Add dispatch match arm
+3. `commands/<module>/` - Implement handler
+
 ## Other Modules
 
+- `src/claude.rs` - Shared find_claude_path() utility
 - `completions/generator.rs` - Static shell completion (clap_complete)
 - `completions/dynamic/mod.rs` - Context-aware dynamic completions
 - `commands/status/ui/tui.rs` - TUI dashboard entry (run_tui)
-- `commands/status/ui/graph_widget.rs` - DAG visualization
-- `CLAUDE.md.template` - Canonical agent rules template
 - `commands/self_update/mod.rs` - Installation, update, skill download
 - `process/mod.rs` - PID liveness check (libc::kill(pid, 0))
-- `utils.rs` - format_elapsed(), format_elapsed_verbose()
+- `skills/` - SkillIndex, SkillMatch, SkillMetadata (index.rs, matcher.rs, types.rs)
+- `diagnosis/signal.rs` - generate_diagnosis_signal(), DiagnosisContext
+- `map/analyzer.rs` - analyze_codebase(root, deep, focus)
 
 ## Key Config Files
 
@@ -150,157 +180,3 @@
 - `.work/sessions/{session-id}.md` - Session tracking
 - `.work/signals/{session-id}.md` - Agent instruction signals
 - `doc/plans/PLAN-*.md` - Plan definition files
-
-## Skills Module Entry Points
-
-- loom/src/skills/mod.rs — Module exports: SkillIndex, SkillMatch, SkillMetadata
-- loom/src/skills/index.rs — SkillIndex::load_from_directory(), match_skills(), parse_skill_file()
-- loom/src/skills/matcher.rs — match_skills() algorithm, normalize_text(), split_into_words()
-- loom/src/skills/types.rs — SkillMetadata, SkillMatch structs
-
-## Diagnosis Module Entry Points
-
-- loom/src/diagnosis/mod.rs — Module re-export
-- loom/src/diagnosis/signal.rs — generate_diagnosis_signal(), load_crash_report(), DiagnosisContext
-- loom/src/commands/diagnose.rs — CLI command implementation (loom diagnose <stage-id>)
-
-## Map Module Entry Points
-
-- loom/src/map/mod.rs — Module re-export
-- loom/src/map/analyzer.rs — analyze_codebase(root, deep, focus) orchestrator
-- loom/src/map/detectors.rs — All detection functions (project type, deps, entry points, structure, conventions, concerns)
-- loom/src/commands/map.rs — CLI command (loom map [--deep] [--focus] [--overwrite])
-
-## Signal Generation Entry Points
-
-- loom/src/orchestrator/signals/generate.rs:44 — generate_signal_with_skills() (standard stages)
-- loom/src/orchestrator/signals/knowledge.rs:23 — generate_knowledge_signal() (knowledge stages)
-- loom/src/orchestrator/signals/format/mod.rs:40 — format_signal_content() (KV-cache optimized formatting)
-- loom/src/orchestrator/signals/format/sections.rs — Section formatters (stable, semi-stable, dynamic, recitation)
-- loom/src/orchestrator/signals/helpers.rs:17 — write_signal_file() (disk I/O)
-- loom/src/orchestrator/signals/types.rs — EmbeddedContext, DependencyStatus, SandboxSummary
-- loom/src/orchestrator/core/stage_executor.rs:192 — Signal generation trigger point
-- loom/src/orchestrator/core/stage_executor.rs:358 — get_dependency_status() (computes from ExecutionGraph)
-
-## Repair Command Entry Points
-
-- loom/src/commands/repair.rs — Repair command implementation (replaces sandbox suggest)
-- loom/src/sandbox/config.rs — merge_config() (plan + stage config merging)
-- loom/src/sandbox/settings.rs — Claude Code settings.local.json generation
-- loom/src/plan/schema/types.rs — SandboxConfig, NetworkConfig, FilesystemConfig schemas
-
-## Handoff CLI Registration (for new commands)
-
-- `loom/src/cli/types.rs:29-238` — Commands enum (23 variants, dispatched in cli/dispatch.rs)
-- `loom/src/cli/types_stage.rs` — StageCommands subcommand enum (pattern for nested commands)
-- `loom/src/cli/types_memory.rs` — MemoryCommands subcommand enum
-- `loom/src/cli/dispatch.rs:16-171` — match-based command dispatch, two-level for nested commands
-- Pattern: define parent variant in types.rs with `#[command(subcommand)]`, child enum in types\_\*.rs, dispatch in dispatch.rs
-
-## Handoff System (Added by integration-verify)
-
-- `loom/src/commands/handoff/create.rs` - CLI command `loom handoff create` implementation
-- `loom/src/commands/handoff/mod.rs` - Handoff command module
-- `loom/src/cli/types.rs:313` - HandoffCommands enum definition
-- `loom/src/cli/dispatch.rs:57-63` - Handoff command dispatch
-- `hooks/pre-compact.sh` - Block-then-allow compaction pattern
-- `hooks/session-end.sh` - Session end with stage glob lookup
-- `hooks/post-tool-use.sh` - Compaction recovery detection
-- `loom/src/orchestrator/signals/cache.rs` - Signal stable prefixes with compaction recovery
-- `loom/src/orchestrator/signals/format/sections.rs` - Budget warnings with handoff create
-
-## Command Dispatch (Updated 2026-03-05)
-
-The previous command dispatch table is STALE. The following commands NO LONGER EXIST:
-
-- `merge` (was commands/merge/execute/mod.rs) — REMOVED
-- `attach` (was commands/attach.rs) — REMOVED
-
-Current CLI commands (from cli/types.rs):
-
-| Command       | Entry File                    | Purpose                            |
-| ------------- | ----------------------------- | ---------------------------------- |
-| `init`        | `commands/init/execute.rs`    | Initialize `.work/` from plan      |
-| `run`         | `commands/run/mod.rs`         | Start orchestrator daemon          |
-| `status`      | `commands/status.rs`          | Dashboard with stage/session info  |
-| `stop`        | `commands/stop.rs`            | Shutdown daemon                    |
-| `resume`      | `commands/resume.rs`          | Resume work on a stage             |
-| `sessions`    | `commands/sessions.rs`        | List/kill active sessions          |
-| `worktree`    | `commands/worktree_cmd.rs`    | List/clean/remove worktrees        |
-| `graph`       | `commands/graph/mod.rs`       | Show execution graph               |
-| `hooks`       | `commands/hooks.rs`           | Hook install/list                  |
-| `stage`       | `commands/stage/`             | Stage lifecycle (15+ subcommands)  |
-| `handoff`     | `commands/handoff/create.rs`  | Create handoff files               |
-| `knowledge`   | `commands/knowledge/mod.rs`   | Manage codebase knowledge          |
-| `memory`      | `commands/memory/handlers.rs` | Session memory journal             |
-| `review`      | `commands/review/mod.rs`      | Generate review docs from memories |
-| `sandbox`     | `commands/sandbox/`           | Suggest/apply sandbox config       |
-| `self-update` | `commands/self_update/mod.rs` | Update loom binary                 |
-| `clean`       | `commands/clean.rs`           | Clean up resources                 |
-| `repair`      | `commands/repair.rs`          | Fix workspace issues               |
-| `map`         | `commands/map.rs`             | Codebase structure analysis        |
-| `diagnose`    | `commands/diagnose.rs`        | Stage failure diagnosis            |
-| `verify`      | `commands/verify.rs`          | Goal-backward verification         |
-| `completions` | Static shell completion       | Generate shell completions         |
-
-Total: 22 visible commands + 1 hidden (complete for dynamic completions)
-
-## Knowledge Bootstrap Command (Planned)
-
-### CLI Registration Points
-
-- `loom/src/cli/types_memory.rs` — KnowledgeCommands enum: Add `Bootstrap` variant with `--model`, `--skip-map`, `--quick` flags
-- `loom/src/cli/dispatch.rs:114-128` — Knowledge dispatch match arm: Add `KnowledgeCommands::Bootstrap { ... } => knowledge::bootstrap::execute(...)`
-- `loom/src/commands/knowledge/mod.rs` — Add `pub mod bootstrap;` export
-
-### find_claude_path() Extraction Target
-
-- `loom/src/orchestrator/terminal/native/mod.rs` — Current location of find_claude_path() (4 callers: spawn_session, spawn_merge_session, spawn_base_conflict_session, spawn_knowledge_session)
-- `loom/src/claude.rs` — Planned extraction target (shared module)
-
-### Map Module Reuse Points
-
-- `loom/src/map/analyzer.rs` — `analyze_codebase(root, deep, focus) -> AnalysisResult`
-- `loom/src/commands/map.rs` — `write_analysis_results(knowledge, result, overwrite)` pattern
-- `loom/src/map/mod.rs` — Exports: `analyze_codebase`, `AnalysisResult`
-
-## Knowledge Bootstrap Command
-
-- `src/commands/knowledge/bootstrap.rs` - `loom knowledge bootstrap` implementation: spawns Claude Code as interactive subprocess to explore and populate knowledge files
-- `src/claude.rs` - Shared `find_claude_path()` utility: resolves claude binary via PATH then fallback locations (~/.claude/local/claude, ~/.local/bin, etc.)
-
-## Entry Points Corrections (2026-03-11)
-
-### StageStatus Count Fix
-
-entry-points.md:39 references "StageStatus enum (11 states)" — correct count is 12 states (NeedsHumanReview was added).
-
-### Signal Cache Variant Count Fix
-
-entry-points.md:87 references "Stable prefix generation (4 stage-type variants, SHA-256 hash)" — correct count is 3 stage-type variants (standard, knowledge, integration-verify). The code-review variant was removed.
-
-## Signal Prefix Self-Review (2026-03-11)
-
-- loom/src/orchestrator/signals/cache.rs:205 — Self-Review Before Completion section in standard prefix
-- loom/src/orchestrator/signals/cache.rs:264-315 — Strengthened IV code review + SILENT FAILURE DETECTION
-- loom/src/verify/criteria/runner.rs:116 — detect_stderr_warnings() advisory function
-- CLAUDE.md.template:106-111 — SELF-REVIEW checklist in Stage Completion
-- CLAUDE.md.template:692-718 — Rule 14: SILENT FAILURE DETECTION
-- skills/code-review/SKILL.md:62 — SILENT_FAILURE severity level
-- skills/code-review/SKILL.md:178-204 — Loom Orchestration Review section
-
-## Install & Repair Entry Points
-
-- install.sh — Main installer script (local + remote paths)
-  - install_agents() line 258 — Local agent installation (cp -r)
-  - install_skills() line 268 — Local skill installation (cp -r)
-  - install_claude_md() line 278 — Local CLAUDE.md installation
-  - install_agents_remote() line 128 — Remote agent download
-  - install_skills_remote() line 141 — Remote skill download
-  - install_claude_md_remote() line 154 — Remote CLAUDE.md download
-- loom/src/commands/repair.rs — Repair command (RepairIssue pattern)
-  - check_all_issues() line 164 — Issue detection
-  - apply_fixes() line 251 — Fix application
-  - fix_issue() line 288 — Individual fix handler
-- loom/src/commands/init/execute.rs — Init command
-  - ensure_loom_permissions() call at line 117

@@ -1,375 +1,142 @@
 # Architectural Patterns
 
 > Discovered patterns in the codebase that help agents understand how things work.
-> This file is append-only - agents add discoveries, never delete.
 >
 > **Related files:** [architecture.md](architecture.md) for system overview, [conventions.md](conventions.md) for coding standards.
 
 ## Table of Contents
 
-- [State Machine Pattern](#state-machine-pattern) - Stage/Session state machines
-- [File-Based State Pattern](#file-based-state-pattern) - .work/ directory persistence
-- [Signal Generation Pattern](#signal-generation-pattern) - Manus KV-cache optimization and signal types
-- [Progressive Merge Pattern](#progressive-merge-pattern) - Dependency-ordered merging
-- [Daemon IPC Pattern](#daemon-ipc-pattern) - Unix socket communication
-- [Polling Orchestration Pattern](#polling-orchestration-pattern) - Main loop design
-- [Monitoring Patterns](#monitoring-patterns) - Heartbeat, context health, retry
-- [Hook Patterns](#hook-patterns) - Claude Code hook integration
-- [TUI Patterns](#tui-patterns) - Terminal UI with ratatui
-- [Knowledge Systems Pattern](#knowledge-systems-pattern) - Memory, facts, knowledge
-- [Stage Completion Pattern](#stage-completion-pattern) - Completion and acceptance
-- [Goal-Backward Verification Pattern](#goal-backward-verification-pattern) - Truths, artifacts, wiring
-- [Error Handling Pattern](#error-handling-pattern) - anyhow and graceful degradation
-- [Security Patterns](#security-patterns) - Input validation, shell escaping, socket security
-- [Process Management Pattern](#process-management-pattern) - PID tracking, wrapper scripts, zombies
-- [Learning Protection Pattern](#learning-protection-pattern) - Snapshot-based protection
-- [Merge Lock Pattern](#merge-lock-pattern) - Concurrent merge prevention
-- [Directory Hierarchy Pattern](#directory-hierarchy-pattern) - Three-level path model
+- [State Machine Pattern](#state-machine-pattern)
+- [File-Based State Pattern](#file-based-state-pattern)
+- [Signal Generation Pattern](#signal-generation-pattern)
+- [Progressive Merge Pattern](#progressive-merge-pattern)
+- [Daemon IPC Pattern](#daemon-ipc-pattern)
+- [Polling Orchestration Pattern](#polling-orchestration-pattern)
+- [Monitoring Patterns](#monitoring-patterns)
+- [Hook Patterns](#hook-patterns)
+- [TUI Patterns](#tui-patterns)
+- [Knowledge Systems Pattern](#knowledge-systems-pattern)
+- [Stage Completion Pattern](#stage-completion-pattern)
+- [Goal-Backward Verification Pattern](#goal-backward-verification-pattern)
+- [Error Handling Pattern](#error-handling-pattern)
+- [Security Patterns](#security-patterns)
+- [Process Management Pattern](#process-management-pattern)
 
 ---
 
 ## State Machine Pattern
 
-Stage has 10 states: WaitingForDeps -> Queued -> Executing -> Completed (terminal). From Executing: Blocked, NeedsHandoff, WaitingForInput, MergeConflict, CompletedWithFailures, MergeBlocked. Skipped is terminal. **Critical invariant**: dependents become Queued only when deps have `status == Completed AND merged == true`. Session has 6 states: Spawning -> Running -> Completed/Crashed/ContextExhausted, plus Paused<->Running. All transitions validated via `try_transition()` before execution.
+Stage has 12 states: WaitingForDeps -> Queued -> Executing -> Completed (terminal). From Executing: Blocked, NeedsHandoff, WaitingForInput, MergeConflict, CompletedWithFailures, MergeBlocked, NeedsHumanReview. Skipped is terminal. **Critical invariant**: dependents become Queued only when deps have `status == Completed AND merged == true`. Session has 6 states: Spawning -> Running -> Completed/Crashed/ContextExhausted, plus Paused<->Running. All transitions validated via `try_transition()`.
 
 ## File-Based State Pattern
 
-All state persisted to `.work/` as markdown with YAML frontmatter. Benefits: git-friendly diffing, human-readable inspection, crash recovery via file re-read, no in-memory state loss. No explicit file locking for stages; relies on daemon single-writer model. Stage files named with topological depth prefix (e.g., `01-knowledge-bootstrap.md`).
+All state persisted to `.work/` as markdown with YAML frontmatter. Benefits: git-friendly diffing, human-readable, crash recovery via file re-read. No explicit file locking; relies on daemon single-writer model. Stage files named with topological depth prefix (e.g., `01-knowledge-bootstrap.md`).
 
 ## Signal Generation Pattern
 
-Uses Manus KV-cache optimization with four sections: **Stable prefix** (never changes, cacheable - isolation rules), **Semi-stable** (per-stage - knowledge, facts), **Dynamic** (per-session - assignment, handoff), **Recitation** (per-session - immediate tasks, memory for max attention). Implementation: `cache.rs` (stable prefix), `format.rs` (sections). Four stage-type-specific prefix generators exist (standard, knowledge, code-review, integration-verify). Six signal types: Regular, Knowledge, Recovery, Merge, MergeConflict, BaseConflict. Signals are self-contained via `EmbeddedContext` struct - agents never read from main repo; the signal file is the single source of truth.
+Uses Manus KV-cache optimization with four sections:
+
+1. **Stable prefix** (~1000 bytes): Worktree rules, execution rules, CLAUDE.md reminders. SHA-256 hashed. Rarely changes. Includes self-review checklist (standard) or detailed review dimensions (integration-verify).
+2. **Semi-stable** (~1500-2500 bytes): Knowledge refs, memory/knowledge management, agent teams, sandbox, skill recommendations. Changes per stage type.
+3. **Dynamic** (variable): Target metadata, plan overview, dependency status, handoff content, git history, files, tasks. Changes per session.
+4. **Recitation** (end): Memory entries (last 10), task state, critical context. Placed last for maximum attention weight.
+
+Three stage-type-specific prefix generators: standard, knowledge, integration-verify. Six signal types: Regular, Knowledge, Recovery, Merge, MergeConflict, BaseConflict. Signals are self-contained via `EmbeddedContext` struct.
+
+**Data flow:** Stage Ready -> start_stage() -> create worktree -> Session.new() -> build_signal_context() -> format_signal_content() -> write_signal_file() -> spawn Claude Code.
 
 ## Progressive Merge Pattern
 
-Dependencies merged to main before dependent stages execute: `Stage A completes -> Merge A to main -> Stage B starts`. Ensures clean base with integrated dependency work. Base branch resolution: no deps = init_base_branch or default; all deps merged = merge point (main); single dep not merged = dependency branch (legacy fallback). MergeLock (`progressive_merge/lock.rs`) prevents concurrent merges via exclusive file at `.work/merge.lock` with 30s timeout and 5min stale auto-cleanup.
+Dependencies merged to main before dependent stages execute: `Stage A completes -> Merge A to main -> Stage B starts`. Base branch resolution: no deps = init_base_branch or default; all deps merged = main; single dep not merged = dependency branch (legacy fallback). MergeLock prevents concurrent merges (30s timeout, 5min stale cleanup).
 
 ## Daemon IPC Pattern
 
-Unix socket-based IPC with 4-byte big-endian length-prefixed JSON (max 10MB). Supports SubscribeStatus (streaming updates every 1s), Stop, and Ping. Socket at `.work/orchestrator.sock` with mode 0o600 (owner-only), max 100 connections. Graceful shutdown: client sends Stop, server checks shutdown_flag in accept loop, waits for threads, cleanup removes socket/PID/completion marker. Drop impl ensures cleanup on panic.
+Unix socket with 4-byte big-endian length-prefixed JSON (max 10MB). Supports SubscribeStatus (streaming 1s), Stop, Ping. Socket at `.work/orchestrator.sock`, mode 0o600, max 100 connections. Graceful shutdown: Stop -> shutdown_flag -> wait threads -> cleanup socket/PID. Drop ensures cleanup on panic.
 
 ## Polling Orchestration Pattern
 
-Main loop polls every 5 seconds: sync graph from stage files, sync queued status, spawn merge resolution sessions, start ready stages, poll monitor for events, handle events (crashes/completions). Exit when all stages complete or (failed + no sessions + no ready). `is_complete()` checks all stages Completed or Skipped.
+Main loop polls every 5 seconds: sync graph from stage files, sync queued status, spawn merge resolution sessions, start ready stages, poll monitor for events, handle events. Exit when all stages complete or (failed + no sessions + no ready).
 
 ## Monitoring Patterns
 
-**Heartbeat**: Sessions write to `.work/heartbeat/{stage-id}.json` with timestamp, context_percent, last_tool. Timeout: 300s without heartbeat. PID alive + stale = Hung; PID dead = Crashed; PID dead + stage Completed = normal exit (skip crash event). **Context health**: Three tiers - Green (0-60%), Yellow (60-75% auto-summarize), Red (75%+ trigger handoff). Stages can set custom `context_budget` (1-100%, default 65%). **Retry**: Exponential backoff `min(30 * 2^retry_count, 300s)`. Retryable: SessionCrash, Timeout. Non-retryable: ContextExhausted, TestFailure, BuildFailure, CodeError. Max 3 retries default.
+**Heartbeat**: Sessions write to `.work/heartbeat/{stage-id}.json`. Timeout: 300s. PID alive + stale = Hung; PID dead = Crashed; PID dead + stage Completed = normal exit. **Context health**: Green (0-60%), Yellow (60-75% auto-summarize), Red (75%+ trigger handoff). Custom `context_budget` per stage (1-100%, default 65%). **Retry**: Exponential backoff `min(30 * 2^retry_count, 300s)`. Retryable: SessionCrash, Timeout. Non-retryable: ContextExhausted, TestFailure, BuildFailure, CodeError. Max 3 retries.
 
 ## Hook Patterns
 
-Hooks receive data via **stdin JSON** (not env vars). Read with `timeout 1 cat` to prevent blocking. Response: exit 0 = allow, exit 2 = block (stderr shown to Claude). Advanced JSON response supports `permissionDecision: allow/deny/ask` with `updatedInput` for auto-correction.
+Hooks receive data via **stdin JSON**. Read with `timeout 1 cat`. Response: exit 0 = allow, exit 2 = block (stderr shown). Advanced JSON response supports `permissionDecision: allow/deny/ask` with `updatedInput`.
 
-**Key hooks**: commit-guard.sh (Stop) blocks exit without commit; commit-filter.sh (PreToolUse:Bash) blocks subagent commits and Co-Authored-By attribution; prefer-modern-tools.sh blocks grep/find; post-tool-use.sh updates heartbeat; ask-user-pre/post.sh manages WaitingForInput state; pre-compact.sh triggers handoff; session-start/end.sh handle lifecycle.
+**Key hooks**: commit-guard.sh (Stop) blocks exit without commit; commit-filter.sh (PreToolUse:Bash) blocks subagent commits; prefer-modern-tools.sh blocks grep/find; post-tool-use.sh updates heartbeat; pre-compact.sh triggers handoff; session-start/end.sh handle lifecycle.
 
-**Subagent detection**: Wrapper script exports `LOOM_MAIN_AGENT_PID`. Hook compares `$PPID` to this value. Main agent matches; subagent differs. Subagents blocked from: git commit, git add -A/., loom stage complete.
+**Subagent detection**: Wrapper script exports `LOOM_MAIN_AGENT_PID`. Hook compares `$PPID`. Subagents blocked from: git commit, git add -A/., loom stage complete.
 
-Hook installation: scripts embedded via `include_str!()` in constants.rs, installed to `~/.claude/hooks/loom/`, config added to `.claude/settings.local.json`.
+Hook installation: scripts embedded via `include_str!()` in constants.rs, installed to `~/.claude/hooks/loom/`, config in `.claude/settings.local.json`.
 
 ## TUI Patterns
 
-Two display modes: **static** (one-time print) and **live** (real-time dashboard via daemon socket). Live mode uses ratatui with vertical layout: header(3), progress bar(3), main content(min 10, two 50/50 columns), footer(3). Left column: Executing(60%)+Pending(40%). Right: Completed(60%)+Blocked(40%). `unified_stages()` merges all categories, sorted by DAG depth then ID. Status colors: Executing=Blue, Completed=Green, Blocked=Red. Context colors: 0-60%=Green, 60-75%=Yellow, 75%+=Red.
+Two modes: **static** (one-time print) and **live** (real-time via daemon socket). Live uses ratatui with vertical layout: header(3), progress(3), main(min 10, two 50/50 columns), footer(3). Left: Executing(60%)+Pending(40%). Right: Completed(60%)+Blocked(40%). Three-layer cleanup: panic hook, Ctrl+C signal handler, Drop with `cleaned_up` flag.
 
 ## Knowledge Systems Pattern
 
-Three agent knowledge systems: **Facts** (.work/facts.toml, cross-stage KV pairs), **Memory** (.work/memory/{session}.md, session journal), **Knowledge** (doc/loom/knowledge/, permanent curation). Memory placed in signal recitation section for max LLM attention. Promotion: `loom memory promote <type> <target>` moves session insights to knowledge files. Knowledge is append-only (`append()`, never overwrite). Protected files marked with `<!-- .loom-protected -->`.
+Three systems: **Facts** (.work/facts.toml, cross-stage KV), **Memory** (.work/memory/{session}.md, session journal), **Knowledge** (doc/loom/knowledge/, permanent). Memory placed in signal recitation section for max LLM attention. Promotion: `loom memory promote`. Knowledge is append-only. Protected files marked with `<!-- .loom-protected -->`.
 
 ## Stage Completion Pattern
 
-**Regular stages**: Load stage, run acceptance criteria (unless --no-verify), sync worktree permissions to main, run task verifications, progressive merge into main, mark Completed, trigger dependents. **Knowledge stages**: No worktree (main repo), auto-sets merged=true, skips merge. Acceptance commands run with 5-min timeout, support `${WORKTREE}`, `${PROJECT_ROOT}`, `${STAGE_ID}` variables. Session factory methods: `Session::new()`, `Session::new_merge()`, `Session::new_base_conflict()`.
+**Regular stages**: Load stage, run acceptance criteria (unless --no-verify), sync worktree permissions, run task verifications, progressive merge, mark Completed, trigger dependents. **Knowledge stages**: No worktree, auto merged=true, skips merge. Acceptance commands: 5-min timeout, support `${WORKTREE}`, `${PROJECT_ROOT}`, `${STAGE_ID}` variables.
 
 ## Goal-Backward Verification Pattern
 
-Problem: tests passing does not equal feature working. Solution: three verification layers in stage definitions. **Truths**: shell commands returning exit 0 (extended: exit_code, stdout_contains, stderr_empty). **Artifacts**: files must exist with real implementation; stub detection blocks TODO/FIXME/unimplemented!/todo!/pass/raise NotImplementedError. **Wiring**: grep patterns verify code connections (source + pattern + description). Required only for `stage_type: standard`; Knowledge, IntegrationVerify, CodeReview are exempt. Limits: max 20 truths, 100 artifacts per stage.
+Three verification layers: **Truths** (shell commands, exit 0, extended: exit_code, stdout_contains, stderr_empty). **Artifacts** (files must exist, stub detection blocks TODO/FIXME/unimplemented!/todo!/pass/raise NotImplementedError). **Wiring** (grep patterns verify code connections). Required for `stage_type: standard` only. Limits: max 20 truths, 100 artifacts.
+
+Before/after stage checks: before_stage runs AFTER worktree creation, BEFORE Executing (advisory). after_stage runs in complete.rs (blocking). Both use TruthCheck definitions.
+
+Regression tests: `bug_fix: true` requires `regression_test` with file path and must_contain patterns. Bidirectional validation.
+
+Advisory stderr warning detection: detect_stderr_warnings() in runner.rs scans for 9 suspicious patterns (connection refused, blocked, EACCES, etc.) after acceptance. Warnings only, no pass/fail change.
 
 ## Error Handling Pattern
 
-Uses `anyhow::Result<T>` throughout. Context via `.context()` and `.with_context(|| format!())`. Validation via `bail!()`. **Graceful degradation** on non-critical paths: skill loading with warning fallback, `if let Ok()` for stage loading, `unwrap_or(false)` for liveness checks. Zero `unwrap()`/`expect()` in main code; assertions only for invariants.
+`anyhow::Result<T>` throughout. Context via `.context()` and `.with_context()`. **Graceful degradation**: skill loading with warning fallback, `if let Ok()` for stage loading, `unwrap_or(false)` for liveness checks. Zero `unwrap()`/`expect()` in main code.
 
 ## Security Patterns
 
-**Input validation**: IDs validated with `validate_id()` - alphanumeric + dash/underscore, max 128 chars, reserved names blocked. `safe_filename()` strips traversal. **Shell escaping**: `escape_shell_single_quote()` uses `'\''` pattern; `escape_applescript_string()` escapes backslashes and double quotes. Located in `emulator.rs`. **Self-update**: minisign signature verification (50MB binary limit, 4KB sig limit), atomic install via temp->backup->rename->rollback. Non-binary release assets (CLAUDE.md.template, agents.zip, skills.zip) lack verification. **Environment variable expansion**: use positional replacement, not global replace, to handle overlapping names ($FOO vs $FOOBAR).
+**Input validation**: `validate_id()` - alphanumeric + dash/underscore, max 128 chars, reserved names blocked. `safe_filename()` strips traversal. **Shell escaping**: `escape_shell_single_quote()` and `escape_applescript_string()` in emulator.rs. **Self-update**: minisign signature verification (50MB binary, 4KB sig), atomic install via temp->backup->rename->rollback. **Env var expansion**: positional replacement to handle overlapping names ($FOO vs $FOOBAR).
 
 ## Process Management Pattern
 
-**Wrapper script** (`pid_tracking.rs`): Creates `.work/wrappers/{stage_id}-wrapper.sh` that sets env vars (LOOM_SESSION_ID, LOOM_STAGE_ID, LOOM_WORK_DIR, LOOM_MAIN_AGENT_PID), writes PID to `.work/pids/{stage_id}.pid`, then `exec claude` (inherits shell PID for reliable tracking). **PID discovery**: file read first, then Linux `/proc` scan or macOS `ps aux`/`lsof` fallback. **Liveness check**: PID file -> kill -0 -> session.pid -> window existence by title. **Session kill**: close window by title, fallback SIGTERM to PID. **Zombie prevention**: `spawn_reaper_thread()` calls `wait()` in background thread.
+**Wrapper script** (pid_tracking.rs): Creates `.work/wrappers/{stage_id}-wrapper.sh`, sets env vars, writes PID, then `exec claude`. **PID discovery**: file read first, then `/proc` scan (Linux) or `ps aux`/`lsof` (macOS). **Liveness**: PID file -> kill -0 -> session.pid -> window by title. **Zombie prevention**: `spawn_reaper_thread()` calls `wait()`.
 
-## Learning Protection Pattern
+## Merge Anti-Respawn Pattern
 
-Learning files protected from agent deletion via snapshot/restore: `snapshot_before_session()` saves state, session executes, `verify_after_session()` compares, restore if damaged. Protected marker: `<!-- .loom-protected -->` at file start.
-
-## Merge Lock Pattern
-
-`MergeLock` prevents concurrent merges via exclusive file at `.work/merge.lock`. Uses `create_new(true)` for atomic creation. Writes PID + timestamp. 30s acquisition timeout, 5min stale auto-cleanup. Released via Drop trait. Acquired by `merge_stage()` before git operations.
-
-## Directory Hierarchy Pattern
-
-Three-level model: **Project Root** (main repo), **Worktree** (`.worktrees/<stage-id>/`), **working_dir** (YAML field, subdirectory within worktree). Path resolution: `EXECUTION_PATH = worktree_root + working_dir`. If working_dir="." use worktree root; if "loom" join `.worktrees/<stage>/loom/`; missing subdirectory falls back to worktree root with warning. All acceptance/artifact/wiring paths are relative to working_dir. Common mistake: `cargo test` failing because working_dir is not set to the directory containing Cargo.toml.
-
-## Permission Sync Pattern
-
-Three-component flow: path transformation (absolute->relative, parent traversal resolved), merge-not-overwrite (`merge_permission_vecs` with union+dedup), sync before acceptance (ensures permissions persist for retry). File locking via fs2 crate during merge; always write to the locked handle, never a new File handle.
-
-## Agent Anti-Patterns
-
-**Binary usage**: Agents use `target/debug/loom` instead of `loom` from PATH, causing version mismatch and state corruption. **Direct state editing**: Agents edit `.work/stages/*.md` directly instead of using loom CLI, corrupting state. Both are prohibited in CLAUDE.md and signal stable prefix.
-
-## Merge Session Anti-Respawn Pattern
-
-When a merge conflict resolution session dies without resolving the conflict:
-
-1. The session is removed from `active_sessions` (so monitor stops tracking PID)
-2. The signal file is KEPT on disk as an anti-respawn guard
-3. `spawn_merge_resolution_sessions()` checks `has_merge_signal_for_stage()` before spawning
-4. This prevents a new merge session from being spawned every poll cycle
-
-Signal file lifecycle:
-
-- Created when merge conflict detected and session spawned
-- Kept when session dies without resolving (Pending/Conflict/Unknown states)
-- Removed when merge succeeds (finalize_merge_resolution or early merged=true check)
-
-### Terminal Cleanup (Three-Layer System)
-
-Three redundant cleanup layers ensure terminal state restoration on any exit path:
-
-1. **Panic Hook** (`utils.rs:install_crossterm_panic_hook`): Installed via `Once::call_once()`, calls `cleanup_terminal_crossterm()` before default hook. Separate basic/crossterm variants - basic for non-TUI, crossterm for alternate screen contexts.
-
-2. **Signal Handler** (`tui/app.rs:100-114`, `live_mode.rs:57-71`): `ctrlc::set_handler` disables raw mode, mouse capture, and leaves alternate screen, then calls `process::exit(0)`. Must handle cleanup directly since Drop won't run on `process::exit`.
-
-3. **Drop + Explicit Cleanup** (`tui/app.rs` TuiApp): `cleanup_terminal()` method sets `cleaned_up` flag to prevent double cleanup in Drop. Called explicitly before normal exit (e.g., printing completion summary). Drop implementation checks the flag and skips if already cleaned.
-
-Key design: all cleanup is best-effort (`let _`), `cleaned_up` bool prevents double cleanup, panic hook uses `Once` for single installation.
-
-## Skill Matching Pattern
-
-Skills are loaded from ~/.claude/skills/\*/SKILL.md files with YAML frontmatter containing name, description, triggers list. An inverted index maps normalized trigger keywords to skill names. Matching uses: normalize text (lowercase, separator→space), split words, check against trigger index. Phrase matches score 2 points, word matches 1 point. Threshold of 2.0 filters low-quality matches. Up to 5 recommendations embedded in agent signals.
-
-## Signal Generation Manus Pattern (KV-cache Optimization)
-
-Signals use a 4-section layout optimized for LLM KV-cache efficiency:
-
-1. Stable prefix (~1000 bytes): Worktree rules, execution rules, CLAUDE.md reminders. SHA-256 hashed. Rarely changes.
-2. Semi-stable (~1500-2500 bytes): Knowledge refs, memory/knowledge management, agent teams framework, sandbox restrictions, skill recommendations. Changes per stage type.
-3. Dynamic (variable): Target metadata, plan overview, dependency status table, handoff content, git history, files, tasks. Changes per session.
-4. Recitation (end): Memory entries (last 10, Manus pattern), task state, critical context. Placed last for maximum attention weight.
-
-## Signal Data Flow
-
-Stage Ready (Queued) → Orchestrator.start_ready_stages() → start_stage() → create worktree → Session.new() → build_signal_context() [reads handoffs, plan overview, knowledge dir, memory entries, matches skills, computes sandbox summary] → format_signal_content() [4-section layout] → write_signal_file() → spawn Claude Code in terminal.
-
-## Sandbox Detection Pattern
-
-loom repair uses simple file-existence checks at project root to detect project type and suggest sandbox configuration:
-
-- Cargo.toml → Rust domains (crates.io, static.crates.io, static.rust-lang.org, doc.rust-lang.org)
-- package.json → Node.js domains (registry.npmjs.org, npmjs.com)
-- requirements.txt | pyproject.toml → Python domains (pypi.org, files.pythonhosted.org)
-- Always: Git domains (github.com, api.github.com, raw.githubusercontent.com)
-  Output is copy-paste-ready YAML for plan sandbox block.
-
-## Sandbox Config Merging
-
-Plan-level SandboxConfig merges with stage-level StageSandboxConfig. Stage values override plan values when present. excluded_commands vectors concatenate. Merged config generates Claude Code settings.local.json with sandbox.enabled, autoAllowBashIfSandboxed, network allowlist, and permissions (allow/deny for file tools).
-
-## Diagnosis Pattern
-
-Failed stage → loom diagnose <stage-id> → collect DiagnosisContext (crash_report, log_tail, git_status, git_diff) → generate diagnosis signal → spawn Claude Code session → agent produces .work/diagnoses/{stage-id}.md with structured analysis and recommended action (retry, fix, skip, escalate).
-
-## Signal Generation Update (2026-02-07)
-
-Three stage-type-specific stable prefix generators exist in cache.rs (standard, knowledge, integration-verify). The code-review prefix was removed and its content merged into the integration-verify prefix. Goal-backward verification is required for Standard and IntegrationVerify stages; only Knowledge stages are exempt.
-
-## Verification Lifecycle Integration Points
-
-The verification system has two integration points and one notable gap:
-
-1. **At plan init time** (validation.rs:368-392): `has_any_goal_checks()` enforces Standard/IntegrationVerify stages must define at least one verification check.
-
-2. **At stage completion** (commands/stage/complete.rs:280-302): `run_verification_phase()` calls `run_goal_backward_verification()` after acceptance criteria pass but before merge.
-
-3. **GAP — No before-stage checks**: `start_stage()` in orchestrator/core/stage_executor.rs does NOT run any verification before spawning the session. This is where before_stage checks should integrate.
-
-### run_goal_backward_verification() Call Chain (verify/goal_backward/mod.rs:27-64)
-
-```text
-run_goal_backward_verification(stage_def, working_dir)
-  → verify_truths(truths, working_dir)           # Simple commands, exit 0
-  → verify_truth_checks(truth_checks, working_dir)  # Extended: stdout_contains, exit_code, etc.
-  → verify_artifacts(artifacts, working_dir)       # File existence + stub detection
-  → verify_wiring(wiring, working_dir)             # Regex patterns in source files
-  → verify_wiring_tests(wiring_tests, working_dir) # Command-based integration tests
-  → run_dead_code_check(dead_code_check, working_dir) # Dead code detection
-  → GoalBackwardResult::from_gaps(gaps)
-```
-
-### verify_truth_checks() Signature (verify/goal_backward/truths.rs:57-175)
-
-```rust
-pub fn verify_truth_checks(truth_checks: &[TruthCheck], working_dir: &Path) -> Result<Vec<VerificationGap>>
-```
-
-30s timeout per check. Validates: exit_code (default 0), stdout_contains, stdout_not_contains, stderr_empty. Uses run_single_criterion_with_timeout() from verify/criteria/executor.rs.
-
-### Key Result Types (verify/goal_backward/result.rs)
-
-GoalBackwardResult: Passed | GapsFound { gaps } | HumanNeeded { checks }
-VerificationGap: gap_type (GapType enum), description (String), suggestion (String)
-GapType: TruthFailed, ArtifactMissing, ArtifactStub, ArtifactEmpty, WiringBroken, DeadCodeFound
-
-## Before/After Verification Pattern
-
-before_stage and after_stage fields use TruthCheck definitions:
-
-- before_stage: Runs in stage_executor.rs AFTER worktree creation, BEFORE marking Executing
-- after_stage: Runs in complete.rs run_verification_phase() when agent calls loom stage complete
-- Both delegate to verify_truth_checks() - same logic, different lifecycle timing
-- before_stage errors are advisory (logged but don't block) - design decision for resilience
-- Key functions: run_before_stage_checks(), run_after_stage_checks() in verify/before_after.rs
-
-## Regression Test Requirement Pattern
-
-bug_fix + regression_test fields enforce test-driven bug fixes:
-
-- bug_fix: true requires regression_test with file path and must_contain patterns
-- Validation is bidirectional: bug_fix without regression_test fails, regression_test without bug_fix fails
-- verify_regression_test() in goal_backward/artifacts.rs checks file exists, not empty, patterns present
-- regression_test.file validated against path traversal (..) and absolute paths
-
-## Field Propagation Checklist (Updated)
-
-When adding new fields to StageDefinition:
-
-1. plan/schema/types.rs - StageDefinition struct
-2. models/stage/types.rs - Stage struct + Default impl
-3. commands/init/plan_setup.rs - create_stage_from_definition mapping
-4. plan/schema/tests/mod.rs - make_stage() test helper
-5. ALL test files constructing Stage directly (check tests/ directory too!)
-6. plan/schema/validation.rs - validation rules
-7. fs/stage_loading.rs, plan/graph/tests.rs, models/stage/methods.rs - any file constructing Stage
+When merge conflict session dies unresolved: session removed from `active_sessions`, signal file KEPT as anti-respawn guard. `spawn_merge_resolution_sessions()` checks `has_merge_signal_for_stage()` before spawning. Signal removed only when merge succeeds.
 
 ## Merge Recovery Flow
 
-When auto-merge fails during orchestration:
+MergeConflict -> detection.rs recognizes as normal exit -> spawn_merge_resolution_sessions() picks up -> user directed to `loom stage merge <stage-id>`.
 
-1. **MergeConflict**: Stage transitions to MergeConflict status
-2. **Session exits**: detection.rs recognizes MergeConflict/MergeBlocked as normal exits (not crashes)
-3. **Recovery spawn**: `spawn_merge_resolution_sessions()` in merge_handler.rs picks up stages in MergeConflict/MergeBlocked status
-4. **User guidance**: Error messages direct to `loom stage merge <stage-id>`
+## Permission Sync Pattern
 
-Key files:
+Three-component: path transformation (absolute->relative, parent traversal resolved), merge-not-overwrite (union+dedup), sync before acceptance. File locking via fs2 crate; always write to the locked handle.
 
-- `src/orchestrator/monitor/detection.rs:147-148` - Session exit recognition
-- `src/orchestrator/core/merge_handler.rs` - Recovery session spawning
-- `src/commands/worktree_cmd.rs:239` - mark_stage_merged function
+## Sandbox Config Merging
 
-## CLI Subcommand Registration Pattern (for KnowledgeCommands)
+Plan-level SandboxConfig merges with stage-level. Stage overrides plan. excluded_commands concatenate. Output: settings.local.json with sandbox.enabled, autoAllowBashIfSandboxed, network allowlist, permissions.
 
-Three-step pattern to add a new knowledge subcommand:
+## Directory Hierarchy Pattern
 
-### Step 1: Define variant in cli/types_memory.rs
-
-- Add variant to KnowledgeCommands enum with `#[derive(Subcommand)]`
-- Use `///` doc comments for help text
-- Positional args: `#[arg(value_name = "NAME")]`
-- Named flags: `#[arg(long)]` or `#[arg(short = 'x', long)]`
-- Defaults: `#[arg(long, default_value = "...")]`
-- Booleans: `#[arg(short, long)]` with type `bool`
-
-### Step 2: Add dispatch arm in cli/dispatch.rs (lines 114-128)
-
-- Destructure variant fields in match arm
-- Call handler function: `knowledge::submodule::execute(args...)` for complex commands
-- Or `knowledge::verb(args...)` for simple commands
-
-### Step 3: Implement handler in commands/knowledge/
-
-- Add `pub mod submodule;` to commands/knowledge/mod.rs
-- Create submodule file with `pub fn execute(...) -> Result<()>`
-
-### Existing variants for reference
-
-- Check { min_coverage, src_path, quiet } → knowledge::check::check()
-- Gc { max_file_lines, max_total_lines, quiet } → knowledge::gc::gc()
-- Show { file } → knowledge::show()
-- Update { file, content } → knowledge::update()
-- Init (unit) → knowledge::init()
-- List (unit) → knowledge::list()
-
-## Process Spawning Pattern (for bootstrap)
-
-The bootstrap command will spawn claude as a direct child process (not via terminal emulator). Pattern:
-
-1. Resolve claude path via find_claude_path()
-2. Build Command::new(claude_path) with args, env, inherited stdio
-3. Wait for exit, check status
-
-This differs from orchestrator spawning which uses terminal emulators + wrapper scripts + PID tracking. Bootstrap uses simple inherited-stdio child process.
-
-## Subprocess Spawning Pattern (bootstrap.rs)
-
-- Use `std::process::Command` with inherited stdio for interactive subprocesses
-- `--permission-mode auto` + `--allowedTools` for restricted tool access
-- `--system-prompt` for behavior control, positional arg for initial prompt
-- Handle Ctrl+C (exit codes 130, 2) separately from other failures
-
-## Signal Generation Update (2026-03-11)
-
-Standard stage stable prefix now includes a "Self-Review Before Completion (MANDATORY)" section in cache.rs:generate_stable_prefix() with 4 checks: Wiring Check, Silent Failure Check, Code Correctness, Integration Points. This was added after the completion rules block via a new content section.
-
-Integration-verify stable prefix was strengthened with: (1) detailed per-dimension review instructions for each review agent type (security-engineer, senior-software-engineer, build/test/sandbox, functional), (2) a SILENT FAILURE DETECTION section, (3) agent teams changed from "Consider using" to "MUST use when available".
-
-Both changes maintain the Manus KV-cache 4-section pattern (stable prefix, semi-stable, dynamic, recitation).
-
-## Stderr Warning Detection Pattern (2026-03-11)
-
-Advisory stderr warning detection added to verify/criteria/runner.rs:detect_stderr_warnings(). After acceptance criteria loop completes, scans successful command results for 9 suspicious patterns in stderr (connection refused, permission denied, failed to download, blocked, EACCES, ECONNREFUSED, unable to connect, network error, sandbox). Case-insensitive matching via to_lowercase(). Warnings are advisory only — do NOT change pass/fail logic. Uses eprintln! for output.
-
-## Install System Pattern
-
-Two install paths in install.sh: **local** (from cloned repo) and **remote** (curl-pipe from GitHub).
-
-**Local path** (main function lines 498-507):
-
-- check_requirements → confirm_overwrites → ensure_claude_dir
-- install_loom_local → install_agents → install_skills → install_hooks → install_claude_md
-- cleanup_backups (offers to delete .bak files)
-
-**Remote path** (main function lines 488-497):
-
-- check_dependencies → ensure_claude_dir
-- install_loom_remote → install_agents_remote → install_skills_remote → install_hooks_remote → install_claude_md_remote
-
-**Current behavior (destructive):**
-
-- agents/skills: backup_if_exists (mv to .bak) then cp -r entire directory (local) or download+extract zip (remote)
-- CLAUDE.md: backup_if_exists then overwrite with template + timestamp header
-- hooks: already non-destructive (installed to loom/ subdirectory, per-file)
-
-**Naming:** Currently no prefix convention for skills/agents. 61 skill dirs, 3 agent files.
+Three-level: **Project Root**, **Worktree** (`.worktrees/<stage-id>/`), **working_dir** (YAML field). Path resolution: `EXECUTION_PATH = worktree_root + working_dir`. All acceptance/artifact/wiring paths relative to working_dir. Common mistake: `cargo test` failing because working_dir not set to Cargo.toml directory.
 
 ## Three-Layer Guidance Reinforcement
 
-When introducing new agent behavioral guidance, reinforce it at three layers:
+New agent guidance should be reinforced at: (1) Skill file (depth), (2) CLAUDE.md.template (authority), (3) cache.rs signals (runtime enforcement). Ensures guidance reaches agents regardless of entry point.
 
-1. **Skill file** (e.g., SKILL.md) — Detailed guidance with examples, flowcharts, tables
-2. **Binding rules** (CLAUDE.md.template) — Concise mandatory rules read by all agents
-3. **Runtime signals** (cache.rs) — Generated into actual signal files agents receive
+## Stage Necessity Test
 
-This ensures guidance reaches agents regardless of which context they read first. Each layer serves a different purpose: skills provide depth, binding rules provide authority, signals provide runtime enforcement.
+Before creating stages: Q1: Does it create code another imports? Q2: Does it write files another writes? Q3: Does it need a verification checkpoint? If ALL NO -> merge into one stage with parallel subagents.
 
-**Applied in:** File Exclusivity + Stage Necessity guidance across skills/loom-plan-writer/SKILL.md, CLAUDE.md.template, loom/src/orchestrator/signals/cache.rs.
+## Bootstrap Mode
 
-## Stage Necessity Test (Q1/Q2/Q3)
+`loom knowledge bootstrap` defaults to interactive mode (Stdio::inherit) for macOS compatibility. `--quick` opts into non-interactive (Stdio::null + -p flag). Exit codes 130/2 treated as user interrupt.
 
-Before creating any stage beyond knowledge-bootstrap and integration-verify:
+## Field Propagation Checklist
 
-- Q1: Does this stage create code that another stage imports? → Separate stages
-- Q2: Does this stage write files another stage also writes? → Separate stages
-- Q3: Does this stage need a verification checkpoint? → Separate stage
-
-If ALL answers NO → merge into one stage with parallel subagents.
-
-## Bootstrap Interactive/Non-Interactive Mode
-
-`loom knowledge bootstrap` defaults to interactive mode (Stdio::inherit, no -p flag) for macOS terminal UI compatibility. The `--quick` flag opts into non-interactive mode (Stdio::null + -p flag) for CI/scripted use. Exit codes 130 (SIGINT) and 2 are both treated as user interrupt in either mode.
+When adding new fields to StageDefinition: (1) plan/schema/types.rs, (2) models/stage/types.rs + Default, (3) commands/init/plan_setup.rs mapping, (4) plan/schema/tests/mod.rs make_stage(), (5) ALL test files constructing Stage, (6) validation.rs rules, (7) fs/stage_loading.rs, plan/graph/tests.rs, models/stage/methods.rs.

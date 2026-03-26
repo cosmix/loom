@@ -1,7 +1,6 @@
 # Coding Conventions
 
 > Discovered coding conventions in the codebase.
-> This file is append-only - agents add discoveries, never delete.
 >
 > **Related files:** [patterns.md](patterns.md) for design patterns, [architecture.md](architecture.md) for system overview.
 
@@ -34,20 +33,15 @@
 
 Standard module layout: `mod.rs` (exports), `types.rs`, `methods.rs`, `transitions.rs` (if state machine), `tests.rs`
 
-Re-export rules in `mod.rs`:
-
-- Declare submodules, then `pub use` explicit items (never wildcards)
-- Only export public API items; keep helpers private
-- `pub use` NOT `pub mod` for re-exports
+Re-export rules: `pub use` explicit items (never wildcards). Only export public API. `pub use` NOT `pub mod`.
 
 ## Testing
 
 - Filesystem tests: `tempfile::TempDir` for isolation
-- `#[serial]` from `serial_test` for tests needing exclusive access (git ops, etc.)
-- Naming: `test_<action>_<condition>` (e.g., `test_transition_from_executing_to_completed`)
+- `#[serial]` from `serial_test` for tests needing exclusive access
+- Naming: `test_<action>_<condition>`
 - Inline `#[cfg(test)] mod tests {}` for simple cases; separate `tests.rs` for complex suites
 - Integration tests in `loom/tests/integration/`, shared helpers in `helpers.rs`
-- Tests should not panic on missing tools; check graceful handling
 
 ## ID and Input Validation
 
@@ -98,7 +92,7 @@ git branch -D loom/{stage-id}   # Delete after merge
 
 Required fields per stage: `id`, `name`, `working_dir` ("." or subdir), `dependencies` (list), `acceptance` (list)
 
-Optional: `description`, `parallel_group`, `setup`, `files`, `auto_merge`, `stage_type` ("standard"|"knowledge"|"code-review"|"integration-verify")
+Optional: `description`, `parallel_group`, `setup`, `files`, `auto_merge`, `stage_type` ("standard"|"knowledge"|"integration-verify")
 
 Only `version: 1` supported.
 
@@ -106,7 +100,7 @@ Only `version: 1` supported.
 
 - Derive: `Debug, Clone, Serialize, Deserialize, PartialEq`
 - Serde: `#[serde(rename_all = "kebab-case")]` for status enums
-- Implement `Display` matching the serde representation (e.g., `WaitingForDeps` -> `"waiting-for-deps"`)
+- Implement `Display` matching serde representation (e.g., `WaitingForDeps` -> `"waiting-for-deps"`)
 
 ## Builder Pattern
 
@@ -116,7 +110,6 @@ Used for complex struct construction: `fn builder() -> Self { Self::default() }`
 
 - Location: `~/.claude/hooks/loom/`
 - Naming: `<event>-<action>.sh` (e.g., `session-start.sh`, `post-tool-use.sh`)
-- See [patterns.md](patterns.md) for hook event pipeline and input/response patterns
 
 ## Comment Style
 
@@ -128,9 +121,11 @@ Used for complex struct construction: `fn builder() -> Self { Self::default() }`
 
 Directory: `skills/<skill-name>/SKILL.md`
 
-Frontmatter fields: `name` (kebab-case, required), `description` (required), `allowed-tools` (optional CSV), `trigger-keywords` (optional CSV), `triggers` (optional YAML list)
+Frontmatter fields: `name` (kebab-case, required), `description` (required), `triggers` (YAML array, highest priority), `trigger-keywords` (CSV string, fallback), `allowed-tools` (optional CSV).
 
-Body sections: Overview, When to Use, Instructions
+Trigger priority: (1) triggers YAML array, (2) trigger-keywords CSV, (3) "TRIGGERS:"/"Trigger keywords:" in description text. Matching: phrase=2pts, word=1pt, threshold 2.0, max 5 per signal.
+
+Body sections: Overview, When to Use, Instructions.
 
 ## Code Size Limits
 
@@ -146,88 +141,15 @@ Seven files: architecture, entry-points, patterns, conventions, mistakes, stack 
 
 ## Import Deduplication
 
-When a pattern appears 3+ times, extract to a canonical location and import. Key canonical locations:
+When a pattern appears 3+ times, extract to a canonical location:
 
 - `parse_stage_from_markdown` -> `verify::transitions::serialization`
 - `branch_name_for_stage` -> `git::branch::naming` (never inline `format!("loom/{}", id)`)
 
-## Skills File Format
-
-Skills are stored as ~/.claude/skills/\*/SKILL.md with YAML frontmatter:
-name: skill-name
-description: "What it does"
-triggers: ["keyword1", "keyword2", "multi word phrase"]
-Triggers are case-insensitive. Underscores/hyphens treated as word separators.
-
 ## Signal File Format
 
-Signal files at .work/signals/{session-id}.md use markdown with structured sections. Knowledge stage signals differ from standard stage signals (no worktree context, no commit requirements). Merge and recovery signals have their own formats. All share the same .work/signals/ directory.
+Signal files at .work/signals/{session-id}.md use markdown with structured sections. Knowledge/merge/recovery signals have distinct formats. All share .work/signals/ directory.
 
 ## Map Module Conventions
 
-Detectors skip: .git, .work, .worktrees, node_modules, target, .venv, **pycache**. Directory tree limited to 15 entries. Deep mode = 3-level depth + concern scanning. Normal = 2-level. Focus parameter filters entry points by keyword. Source file extensions searched: .rs, .ts, .js, .py, .go, .java, .rb.
-
-## Stage Type Values (Updated 2026-02-07)
-
-Valid stage_type values: "standard" (default), "knowledge", "integration-verify"
-The "code-review" stage type has been removed. Code review responsibilities are now part of integration-verify.
-
-## SKILL.md Format (Detailed)
-
-### Directory Structure
-
-```text
-skills/<skill-name>/SKILL.md
-```
-
-Each skill has its own subdirectory containing exactly one SKILL.md file.
-
-### YAML Frontmatter Fields
-
-| Field            | Required | Type                          | Description                                   |
-| ---------------- | -------- | ----------------------------- | --------------------------------------------- |
-| name             | YES      | String (kebab-case)           | Skill identifier                              |
-| description      | YES      | String (multi-line with pipe) | Purpose and usage guidance                    |
-| triggers         | NO       | YAML array of strings         | Trigger keywords (HIGHEST PRIORITY)           |
-| trigger-keywords | NO       | CSV string                    | Trigger keywords (SECOND PRIORITY)            |
-| allowed-tools    | NO       | CSV string                    | Tools the skill can use (not used by matcher) |
-
-### Trigger Priority System (skills/index.rs:105-111)
-
-1. triggers array (YAML) — if present, takes priority
-2. trigger-keywords (CSV) — fallback if no triggers array
-3. Description-embedded — searches for "TRIGGERS:" or "Trigger keywords:" in description text
-
-### Matching Scoring (skills/matcher.rs:32-93)
-
-- Phrase match (multi-word trigger): 2 points
-- Word match (single-word trigger): 1 point
-- Threshold: 2.0 minimum
-- Max 5 recommendations per signal
-
-### Frontmatter Example (triggers array style — PREFERRED)
-
-```yaml
----
-name: skill-name
-description: |
-  What this skill does and when to use it.
-
-  USE WHEN: specific scenarios
-  DO NOT USE: alternative skills for other cases
-triggers:
-  - "keyword one"
-  - "keyword two"
-  - "multi word phrase"
-allowed-tools: Read, Grep, Glob, Edit, Write, Bash
----
-```
-
-### Markdown Body Sections
-
-Common sections after frontmatter: Overview, When to Use, Key Concepts, Instructions, Best Practices, Examples, Anti-Patterns. Structure varies by skill domain.
-
-### Rust Types (skills/types.rs)
-
-SkillMetadata: name (String), description (String), triggers (Vec<String>, serde default), trigger_keywords (Option<String>, serde alias "trigger-keywords").
-SkillMatch: name (String), description (String), score (f32), matched_triggers (Vec<String>).
+Detectors skip: .git, .work, .worktrees, node_modules, target, .venv, __pycache__. Deep=3-level depth + concerns, Normal=2-level. Source extensions: .rs, .ts, .js, .py, .go, .java, .rb.

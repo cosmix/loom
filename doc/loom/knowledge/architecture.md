@@ -1,7 +1,6 @@
 # Architecture
 
 > High-level component relationships, data flow, and module dependencies.
-> This file is append-only - agents add discoveries, never delete.
 >
 > **Related files:** [patterns.md](patterns.md) for design patterns, [entry-points.md](entry-points.md) for code navigation, [conventions.md](conventions.md) for coding standards.
 
@@ -62,17 +61,18 @@ DAG of stages with dependency tracking. `get_ready()` returns stages with all de
 WaitingForDeps --> Queued --> Executing --> Completed --> Verified
                      |            |
                      v            +--> Blocked, NeedsHandoff, WaitingForInput,
-                  Skipped              MergeConflict, CompletedWithFailures, MergeBlocked
+                  Skipped              MergeConflict, CompletedWithFailures, MergeBlocked, NeedsHumanReview
 ```
 
-11 variants total. Terminal states: Completed, Skipped. Transitions validated in transitions.rs. See [patterns.md -- State Machine Pattern](patterns.md#state-machine-pattern) for full diagram.
+12 variants total. Terminal states: Completed, Skipped. Transitions validated in transitions.rs. See [patterns.md -- State Machine Pattern](patterns.md#state-machine-pattern).
 
 ### StageType Enum (plan/schema/types.rs)
 
 - **Standard** (default) -- Regular implementation stages, require goal-backward verification
 - **Knowledge** -- No worktree, no commits, exploration only, auto merged=true
-- **IntegrationVerify** -- Final verification, exempt from goal-backward checks
-- **CodeReview** -- Security/quality review, exempt from goal-backward checks
+- **IntegrationVerify** -- Final quality gate combining code review AND functional verification
+
+Signal generation has 3 stable prefix generators in cache.rs (standard, knowledge, integration-verify).
 
 ### Session Lifecycle (models/session/)
 
@@ -121,12 +121,9 @@ Unix socket at `.work/orchestrator.sock`. Messages: Status, Stop, Subscribe. Len
 ## Worktree Isolation (4-Layer Defense)
 
 1. **Git layer** -- Separate worktrees at `.worktrees/<stage-id>/` with branch `loom/<stage-id>`. Symlinks: `.work` -> shared state, `.claude/CLAUDE.md` -> instructions, root `CLAUDE.md` -> project guidance.
-
 2. **Sandbox layer** -- MergedSandboxConfig (sandbox/config.rs) generates `settings.local.json` with filesystem deny/allow, network domains, excluded commands. Knowledge writes via `loom knowledge update` CLI only.
-
-3. **Signal layer** -- Four stage-type-specific stable prefix generators in cache.rs (standard, knowledge, code-review, integration-verify). Include isolation rules and subagent restrictions.
-
-4. **Hook layer** -- commit-guard.sh blocks exit without commit. commit-filter.sh blocks subagent git operations via LOOM_MAIN_AGENT_PID/PPID comparison. See [patterns.md -- Hook Patterns](patterns.md#hook-patterns).
+3. **Signal layer** -- Three stage-type-specific stable prefix generators in cache.rs (standard, knowledge, integration-verify). Include isolation rules and subagent restrictions.
+4. **Hook layer** -- commit-guard.sh blocks exit without commit. commit-filter.sh blocks subagent git operations via LOOM_MAIN_AGENT_PID/PPID comparison.
 
 ## Subagent Isolation
 
@@ -134,7 +131,7 @@ Three-layer defense: documentation (CLAUDE.md Rule 5), signal injection (cache.r
 
 ## Layering Violations (Known Issues)
 
-Correct dependency direction: commands/ -> orchestrator/ -> models/ (top), daemon/ / git/ / plan/ (middle), fs/ (bottom). Lower layers must not import higher.
+Correct dependency direction: commands/ -> orchestrator/ -> models/ (top), daemon/ / git/ / plan/ (middle), fs/ (bottom).
 
 Known violations:
 
@@ -155,7 +152,7 @@ Returns: GoalBackwardResult::Passed | GapsFound | HumanNeeded. Storage: `.work/v
 
 ## Context Budget Enforcement
 
-Stages define context_budget (1-100%, default 65%, max 75%). Monitor tracks Green (<50%), Yellow (50-64%), Red (65%+). BudgetExceeded event triggers auto-handoff. See [patterns.md -- Context Health Pattern](patterns.md#context-health-pattern).
+Stages define context_budget (1-100%, default 65%, max 75%). Monitor tracks Green (<50%), Yellow (50-64%), Red (65%+). BudgetExceeded event triggers auto-handoff.
 
 ## Security Model
 
@@ -171,128 +168,27 @@ MergeLock prevents concurrent merges via exclusive file at `.work/merge.lock`. A
 
 ## Skills Module (loom/src/skills/)
 
-Provides automated skill recommendation for agent signals. Loads skill metadata from SKILL.md files in ~/.claude/skills/, builds inverted index of trigger keywords, and matches stage descriptions against triggers.
-
-Components:
-
-- types.rs: SkillMetadata (name, description, triggers), SkillMatch (name, description, score, matched_triggers)
-- matcher.rs: Keyword matching algorithm. Normalizes text (lowercase, underscore/hyphen → space). Phrase matches = 2 points, word matches = 1 point. Returns top N results above configurable threshold.
-- index.rs: SkillIndex - main API. load_from_directory() reads ~/.claude/skills/\*/SKILL.md files, parses YAML frontmatter, builds trigger_map HashMap. match_skills() enforces score threshold of 2.0.
-
-Integration: Exported via lib.rs (pub mod skills). Used by signal generation (generate_signal_with_skills in orchestrator/signals/generate.rs) to embed up to 5 skill recommendations in agent signals.
+Loads skill metadata from SKILL.md files in ~/.claude/skills/, builds inverted index of trigger keywords, matches stage descriptions. Components: types.rs (SkillMetadata, SkillMatch), matcher.rs (keyword matching, phrase=2pts, word=1pt, threshold 2.0), index.rs (SkillIndex, load_from_directory, match_skills). Up to 5 skill recommendations embedded in agent signals.
 
 ## Diagnosis Module (loom/src/diagnosis/)
 
-Analyzes failed/blocked stages and generates diagnostic signals for investigation.
-
-Components:
-
-- signal.rs: DiagnosisContext struct (stage, crash_report, log_tail, git_status, git_diff). generate_diagnosis_signal() creates .work/signals/{session-id}.md with failure evidence. load_crash_report() reads crash reports for a stage.
-
-Philosophy: loom collects evidence (crash reports, git state, logs), Claude Code performs analysis. Non-destructive investigation before recovery/reset.
-
-CLI: loom diagnose <stage-id> → commands/diagnose.rs
+Analyzes failed/blocked stages. DiagnosisContext collects crash_report, log_tail, git_status, git_diff. Generates diagnostic signal for Claude Code investigation. CLI: `loom diagnose <stage-id>`.
 
 ## Map Module (loom/src/map/)
 
-Automated codebase analysis that populates knowledge files.
+Automated codebase analysis that populates knowledge files. Detectors: project type, dependencies, entry points, structure, conventions, concerns. Features: --deep (3-level depth + concerns), --focus (filter entry points), --overwrite. CLI: `loom map`.
 
-Components:
+## Handoff System
 
-- analyzer.rs: Orchestrates all detectors, returns AnalysisResult (architecture, stack, conventions, concerns)
-- detectors.rs: detect_project_type() (Rust/Node/Go/Python/Ruby), analyze_dependencies() (parses Cargo.toml/package.json), find_entry_points() (main.rs/index.ts/main.py), analyze_structure() (directory tree depth 2-3), detect_conventions() (formatters, linters, tsconfig), find_concerns() (TODO/FIXME counts, .env/.secrets)
+Fully functional handoff chain:
 
-Features: --deep (3-level depth + concern scanning), --focus <area> (filter entry points), --overwrite (replace vs append). Skips .git, .work, .worktrees, node_modules, target, .venv, **pycache**.
+1. **loom handoff create** -- CLI command accepting --stage, --session, --trigger, --message flags
+2. **pre-compact.sh** -- Two-phase block-then-allow pattern. Phase 1 blocks compaction (exit 2), creates handoff. Phase 2 allows compaction, creates recovery marker.
+3. **session-end.sh** -- Uses glob `*-${LOOM_STAGE_ID}.md` for stage file lookup (handles depth prefixes)
+4. **Signals** -- cache.rs append_common_footer() adds compaction recovery instructions to ALL signal types
+5. **post-tool-use.sh** -- Detects compaction recovery marker, prints instructions, removes marker
 
-CLI: loom map [--deep] [--focus <area>] [--overwrite] → commands/map.rs → writes to doc/loom/knowledge/ via KnowledgeDir
-
-## StageType Enum Update (2026-02-07)
-
-StageType now has 3 variants (CodeReview was removed and consolidated into IntegrationVerify):
-
-- **Standard** (default) -- Regular implementation stages, require goal-backward verification
-- **Knowledge** -- No worktree, no commits, exploration only, auto merged=true
-- **IntegrationVerify** -- Final quality gate combining code review AND functional verification
-
-Signal generation has 3 prefix generators in cache.rs (standard, knowledge, integration-verify). The integration-verify prefix includes code review guidance (security-engineer, senior-software-engineer review agents).
-
-## Handoff System Issues (2026-02-07)
-
-Three critical bugs in the handoff chain cause complete handoff failure:
-
-1. **Missing CLI command**: `loom handoff create` does not exist. Both hooks/pre-compact.sh:60 and hooks/session-end.sh:64 call it, fail silently, no handoff is ever created.
-
-2. **pre-compact.sh allows compaction on failure**: Even when handoff creation fails, exits 0. Agent's context is destroyed without any record.
-
-3. **session-end.sh stage lookup broken**: Line 54 uses exact path `stages/${LOOM_STAGE_ID}.md` but stage files have depth prefixes (e.g., `01-stage-id.md`). The status check always fails.
-
-### Handoff Generation API
-
-`generate_handoff(_session, stage, content, work_dir)` in handoff/generator/mod.rs:
-
-- `_session: &Session` — UNUSED (underscore prefix), accepts minimal Session
-- `stage: &Stage` — needs stage.id and stage.description
-- `content: HandoffContent` — builder pattern with with\_\*() methods
-- `work_dir: &Path` — path to `.work/` directory
-- Returns: `Result<PathBuf>` — path to written handoff file
-
-### Signal System - No Recovery Text
-
-3 stable prefix generators in cache.rs (standard, knowledge, integration-verify). None contain compaction recovery instructions. Budget warning in format_recitation_section() triggers at 80%+ but only shows promote/complete instructions.
-
-## StageDefinition → Stage Field Propagation (commands/init/plan_setup.rs:190-253)
-
-`create_stage_from_definition(stage_def, plan_id) -> Stage` copies ALL verification fields:
-
-Direct copies: id, name, description, dependencies, parallel_group, acceptance, setup, files, auto_merge, context_budget, truths, artifacts, wiring, truth_checks, wiring_tests, dead_code_check, sandbox, execution_mode.
-
-Special handling: working_dir wrapped in Some(), stage_type via detect_stage_type(), plan_id from parameter.
-
-Stage-only fields (not from StageDefinition): status, worktree, session, held, retry_count, merged, merge_conflict, verification_status, timestamps, etc.
-
-### Adding New Fields Checklist
-
-To add a new field from plan YAML to stage:
-
-1. Add to StageDefinition (plan/schema/types.rs) with serde defaults
-2. Add validation in validation.rs validate()
-3. Add to Stage model (models/stage/types.rs) with serde defaults
-4. Copy in create_stage_from_definition() (commands/init/plan_setup.rs)
-5. If goal-check: update has_any_goal_checks() in BOTH StageDefinition and Stage methods
-6. If verification: add verify function in verify/goal_backward/ and call from run_goal_backward_verification()
-
-### StageDefinition Verification Fields (plan/schema/types.rs:212-267)
-
-- truths: Vec<String> — simple shell commands
-- artifacts: Vec<String> — file glob patterns
-- wiring: Vec<WiringCheck> — source + regex pattern + description
-- truth_checks: Vec<TruthCheck> — enhanced with stdout_contains, exit_code, stderr_empty
-- wiring_tests: Vec<WiringTest> — named command tests with SuccessCriteria
-- dead_code_check: Option<DeadCodeCheck> — command + fail_patterns + ignore_patterns
-
-### TruthCheck Struct (plan/schema/types.rs:292-310)
-
-Fields: command (String), stdout_contains (Vec<String>), stdout_not_contains (Vec<String>), stderr_empty (Option<bool>), exit_code (Option<i32>), description (Option<String>). All optional fields use serde(default, skip_serializing_if).
-
-## Handoff System (Updated 2026-03-05)
-
-The handoff system is FULLY FUNCTIONAL. Previously documented bugs have been fixed:
-
-1. **loom handoff create EXISTS**: CLI at cli/types.rs:298-317, handler at commands/handoff/create.rs:14-120, dispatched at cli/dispatch.rs:62. Accepts --stage, --session, --trigger, --message flags.
-
-2. **pre-compact.sh uses two-phase block-then-allow**: Phase 1 blocks compaction (exit 2), creates handoff, agent dumps context. Phase 2 allows compaction (exit 0), creates recovery marker at .work/compaction-recovery/{SESSION_ID}.
-
-3. **session-end.sh handles depth prefixes**: Line 54 uses glob `*-${LOOM_STAGE_ID}.md` with fallback to exact match.
-
-4. **Signals include recovery text**: cache.rs:96-101 append_common_footer() adds compaction recovery instructions to ALL signal types.
-
-5. **Post-tool-use.sh detects compaction recovery**: Checks .work/compaction-recovery/{SESSION_ID} marker, prints recovery instructions, removes marker.
-
-### Stage State Count Correction
-
-StageStatus has 12 variants (not 11): WaitingForDeps, Queued, Executing, Completed, Blocked, NeedsHandoff, WaitingForInput, Skipped, MergeConflict, CompletedWithFailures, MergeBlocked, NeedsHumanReview. Terminal: Completed, Skipped.
-
-### macOS Terminal Detection Priority
+## macOS Terminal Detection Priority
 
 1. LOOM_TERMINAL env var (explicit override)
 2. TERMINAL env var (user preference)
@@ -300,54 +196,22 @@ StageStatus has 12 variants (not 11): WaitingForDeps, Queued, Executing, Complet
 4. Cross-platform binary check (ghostty, kitty, alacritty, wezterm via which)
 5. macOS native apps (/Applications/Ghostty.app, /Applications/iTerm.app, Terminal.app fallback)
 
-Note: $TERM_PROGRAM is NOT checked. Ghostty detection only checks /Applications path.
+Note: $TERM_PROGRAM is NOT checked.
 
-## find_claude_path() Function (orchestrator/terminal/native/mod.rs)
+## find_claude_path() (src/claude.rs)
 
-Binary resolution strategy:
-
-1. `which::which("claude")` — PATH lookup
-2. `~/.claude/local/claude` — Official Claude Code install (priority fallback)
-3. `~/.local/bin/claude` — Linux user-local
-4. `~/.cargo/bin/claude` — Cargo installations
-5. `/usr/local/bin/claude` — Standard UNIX
-6. `/opt/homebrew/bin/claude` — Homebrew macOS
-
-Dependencies: `which` crate, `dirs` crate (home dir), `anyhow` (error handling). Returns `Result<PathBuf>`.
-
-Planned extraction: Move to `crate::claude::find_claude_path()` as shared module to avoid duplication between terminal spawner and bootstrap command.
+Shared binary resolution: `which::which("claude")` -> `~/.claude/local/claude` -> `~/.local/bin/claude` -> `~/.cargo/bin/claude` -> `/usr/local/bin/claude` -> `/opt/homebrew/bin/claude`.
 
 ## KnowledgeDir API (fs/knowledge/dir.rs)
 
-Core API for knowledge file management:
+KnowledgeFile enum: Architecture, EntryPoints, Patterns, Conventions, Mistakes, Stack, Concerns. Core methods: new(root), exists(), initialize(), read(file), read_all(), append(file, content), generate_summary(), list_files().
 
-- `KnowledgeDir::new(project_root)` — Constructor from project root path
-- `exists() -> bool` — Check if knowledge directory exists
-- `has_content() -> bool` — Check if files have content
-- `initialize() -> Result<()>` — Create directory with template files (idempotent)
-- `file_path(KnowledgeFile) -> PathBuf` — Resolve file path
-- `read(KnowledgeFile) -> Result<String>` — Read single file
-- `read_all() -> Result<Vec<(KnowledgeFile, String)>>` — Read all files
-- `append(KnowledgeFile, content) -> Result<()>` — Append content (append-only design)
-- `generate_summary() -> Result<String>` — Summary of all knowledge
-- `list_files() -> Result<Vec<(KnowledgeFile, PathBuf)>>` — List file paths
+## Adding New Plan Fields Checklist
 
-KnowledgeFile enum: Architecture, EntryPoints, Patterns, Conventions, Mistakes, Stack, Concerns. Has `filename()`, `from_filename()`, `all()` methods.
-
-## Stale Reference Corrections (2026-03-11)
-
-### Signal Prefix Count Fix
-
-architecture.md:127 previously stated "Four stage-type-specific stable prefix generators in cache.rs (standard, knowledge, code-review, integration-verify)". Corrected: There are THREE prefix generators (standard, knowledge, integration-verify). The code-review variant was removed when CodeReview was consolidated into IntegrationVerify.
-
-### StageStatus Variant Count Fix
-
-architecture.md:68 previously stated "11 variants total". Corrected: StageStatus has 12 variants (WaitingForDeps, Queued, Executing, Completed, Blocked, NeedsHandoff, WaitingForInput, Skipped, MergeConflict, CompletedWithFailures, MergeBlocked, NeedsHumanReview). This was already corrected at line 293 but the earlier reference was stale.
-
-## Corrections (2026-03-11)
-
-- Signal generation has 3 stable prefix generators in cache.rs (standard, knowledge, integration-verify). The code-review prefix was removed and merged into integration-verify.
-- StageStatus has 12 variants (not 11): WaitingForDeps, Queued, Executing, Completed, Blocked, NeedsHandoff, WaitingForInput, Skipped, MergeConflict, CompletedWithFailures, MergeBlocked, NeedsHumanReview.
-- The standard prefix now includes a Self-Review Before Completion section.
-- The integration-verify prefix now includes detailed per-dimension review instructions and SILENT FAILURE DETECTION.
-- verify/criteria/runner.rs now includes detect_stderr_warnings() for advisory stderr pattern matching after acceptance criteria.
+1. Add to StageDefinition (plan/schema/types.rs) with serde defaults
+2. Add validation in validation.rs
+3. Add to Stage model (models/stage/types.rs) with serde defaults
+4. Copy in create_stage_from_definition() (commands/init/plan_setup.rs)
+5. If goal-check: update has_any_goal_checks() in BOTH StageDefinition and Stage
+6. If verification: add verify function in verify/goal_backward/ and call from run_goal_backward_verification()
+7. Check ALL test files constructing Stage directly (src/ AND tests/ directories)
