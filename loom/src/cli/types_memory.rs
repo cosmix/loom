@@ -59,7 +59,7 @@ pub enum KnowledgeCommands {
         quiet: bool,
     },
 
-    /// Run non-interactive Claude session to explore and populate knowledge files
+    /// Spawn Claude session to explore and populate knowledge files
     Bootstrap {
         /// Model to use for the Claude session (e.g., "sonnet", "opus")
         #[arg(long)]
@@ -68,6 +68,10 @@ pub enum KnowledgeCommands {
         /// Skip running codebase map before bootstrapping
         #[arg(long)]
         skip_map: bool,
+
+        /// Run in non-interactive mode (no terminal UI)
+        #[arg(long)]
+        quick: bool,
     },
 }
 

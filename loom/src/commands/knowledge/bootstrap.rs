@@ -1,4 +1,4 @@
-//! Knowledge bootstrap command - spawn non-interactive Claude session to explore and populate knowledge.
+//! Knowledge bootstrap command - spawn Claude session to explore and populate knowledge.
 
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -11,7 +11,7 @@ use crate::fs::work_dir::WorkDir;
 use crate::map::{analyze_codebase, AnalysisResult};
 
 /// Execute the knowledge bootstrap command
-pub fn execute(model: Option<String>, skip_map: bool) -> Result<()> {
+pub fn execute(model: Option<String>, skip_map: bool, quick: bool) -> Result<()> {
     let project_root = resolve_project_root()?;
     let claude_path = find_claude_path()?;
 
@@ -58,13 +58,19 @@ pub fn execute(model: Option<String>, skip_map: bool) -> Result<()> {
     cmd.arg("--system-prompt").arg(&system_prompt);
     cmd.arg("--model").arg(&effective_model);
 
-    cmd.arg("-p");
+    if quick {
+        cmd.arg("-p");
+    }
 
     cmd.arg(&initial_prompt);
 
     cmd.env("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "1");
     cmd.current_dir(&project_root);
-    cmd.stdin(std::process::Stdio::null());
+    if quick {
+        cmd.stdin(std::process::Stdio::null());
+    } else {
+        cmd.stdin(std::process::Stdio::inherit());
+    }
     cmd.stdout(std::process::Stdio::inherit());
     cmd.stderr(std::process::Stdio::inherit());
 
@@ -75,7 +81,7 @@ pub fn execute(model: Option<String>, skip_map: bool) -> Result<()> {
 
     if !status.success() {
         let code = status.code().unwrap_or(-1);
-        if code == 130 {
+        if code == 130 || code == 2 {
             // User interrupted (Ctrl+C / SIGINT)
             println!("\n{} Session interrupted by user.", "─".dimmed());
         } else {
