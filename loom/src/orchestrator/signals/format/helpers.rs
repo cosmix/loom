@@ -64,7 +64,7 @@ pub(super) fn extract_tasks_from_stage(stage: &Stage) -> Vec<String> {
 
     if tasks.is_empty() && !stage.acceptance.is_empty() {
         for criterion in &stage.acceptance {
-            tasks.push(criterion.clone());
+            tasks.push(criterion.command().to_string());
         }
     }
 

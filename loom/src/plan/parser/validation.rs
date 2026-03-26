@@ -34,7 +34,7 @@ loom:
       name: "Test Stage"
       dependencies: []
       working_dir: "."
-      truths:
+      acceptance:
         - "test -f README.md"
 "#;
         let metadata = parse_and_validate(yaml).unwrap();

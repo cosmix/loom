@@ -4,6 +4,7 @@ use std::fs;
 use tempfile::tempdir;
 
 use crate::models::stage::Stage;
+use crate::plan::schema::AcceptanceCriterion;
 use crate::verify::criteria::runner::run_acceptance;
 
 #[test]
@@ -15,9 +16,13 @@ fn test_run_acceptance_with_worktree_variable() {
 
     if cfg!(target_family = "unix") {
         // Use ${WORKTREE} variable in criterion - it should expand to working_dir
-        stage.add_acceptance_criterion("test -d \"${WORKTREE}\"".to_string());
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
+            "test -d \"${WORKTREE}\"".to_string(),
+        ));
     } else {
-        stage.add_acceptance_criterion("if exist \"${WORKTREE}\" (exit /b 0)".to_string());
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
+            "if exist \"${WORKTREE}\" (exit /b 0)".to_string(),
+        ));
     }
 
     let result = run_acceptance(&stage, Some(temp_dir.path())).unwrap();
@@ -37,11 +42,13 @@ fn test_run_acceptance_with_project_root_variable() {
 
     if cfg!(target_family = "unix") {
         // Use ${PROJECT_ROOT} variable - should be the dir with Cargo.toml
-        stage.add_acceptance_criterion("test -f \"${PROJECT_ROOT}/Cargo.toml\"".to_string());
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
+            "test -f \"${PROJECT_ROOT}/Cargo.toml\"".to_string(),
+        ));
     } else {
-        stage.add_acceptance_criterion(
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
             "if exist \"${PROJECT_ROOT}\\Cargo.toml\" (exit /b 0)".to_string(),
-        );
+        ));
     }
 
     let result = run_acceptance(&stage, Some(temp_dir.path())).unwrap();
@@ -55,9 +62,11 @@ fn test_run_acceptance_with_stage_id_variable() {
 
     if cfg!(target_family = "unix") {
         // Use ${STAGE_ID} variable - should expand to the stage's id
-        stage.add_acceptance_criterion("test -n \"${STAGE_ID}\"".to_string());
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
+            "test -n \"${STAGE_ID}\"".to_string(),
+        ));
     } else {
-        stage.add_acceptance_criterion("echo %STAGE_ID%".to_string());
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple("echo %STAGE_ID%".to_string()));
     }
 
     let result = run_acceptance(&stage, None).unwrap();
@@ -74,10 +83,10 @@ fn test_run_acceptance_variables_in_setup() {
     if cfg!(target_family = "unix") {
         // Setup uses ${WORKTREE} variable
         stage.setup.push("cd ${WORKTREE}".to_string());
-        stage.add_acceptance_criterion("pwd".to_string());
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple("pwd".to_string()));
     } else {
         stage.setup.push("cd ${WORKTREE}".to_string());
-        stage.add_acceptance_criterion("cd".to_string());
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple("cd".to_string()));
     }
 
     let result = run_acceptance(&stage, Some(temp_dir.path())).unwrap();
@@ -91,9 +100,13 @@ fn test_run_acceptance_unknown_variable_unchanged() {
 
     if cfg!(target_family = "unix") {
         // Unknown variable should remain unchanged, and the echo should succeed
-        stage.add_acceptance_criterion("echo \"${UNKNOWN_VAR}\"".to_string());
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
+            "echo \"${UNKNOWN_VAR}\"".to_string(),
+        ));
     } else {
-        stage.add_acceptance_criterion("echo ${UNKNOWN_VAR}".to_string());
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
+            "echo ${UNKNOWN_VAR}".to_string(),
+        ));
     }
 
     let result = run_acceptance(&stage, None).unwrap();

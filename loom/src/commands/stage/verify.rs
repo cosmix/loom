@@ -171,11 +171,12 @@ mod tests {
     use tempfile::TempDir;
 
     fn create_test_stage(id: &str, status: StageStatus) -> Stage {
+        use crate::plan::schema::AcceptanceCriterion;
         Stage {
             id: id.to_string(),
             name: "Test Stage".to_string(),
             status,
-            acceptance: vec!["echo test".to_string()],
+            acceptance: vec![AcceptanceCriterion::Simple("echo test".to_string())],
             worktree: Some(id.to_string()),
             ..Stage::default()
         }

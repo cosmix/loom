@@ -47,6 +47,7 @@ pub fn find_latest_handoff_for_stage(work_dir: &Path, stage_id: &str) -> Option<
 mod tests {
     use super::*;
     use crate::orchestrator::signals::recovery_types::{LastHeartbeatInfo, RecoveryReason};
+    use crate::plan::schema::AcceptanceCriterion;
     use chrono::Utc;
     use tempfile::TempDir;
 
@@ -56,7 +57,7 @@ mod tests {
             name: "Test Stage".to_string(),
             description: Some("Test description".to_string()),
             status: crate::models::stage::StageStatus::Executing,
-            acceptance: vec!["cargo test".to_string()],
+            acceptance: vec![AcceptanceCriterion::Simple("cargo test".to_string())],
             files: vec!["src/lib.rs".to_string()],
             plan_id: Some("test-plan".to_string()),
             worktree: Some(".worktrees/test-stage".to_string()),

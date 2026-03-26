@@ -530,7 +530,7 @@ pub(super) fn format_dynamic_section(
         content.push_str("- [ ] Code reviewed and tested\n");
     } else {
         for criterion in &stage.acceptance {
-            content.push_str(&format!("- [ ] {criterion}\n"));
+            content.push_str(&format!("- [ ] {}\n", criterion.command()));
         }
     }
     content.push('\n');
@@ -539,13 +539,6 @@ pub(super) fn format_dynamic_section(
     if stage.has_any_goal_checks() {
         content.push_str("\n## Goal-Backward Verification\n\n");
         content.push_str("Beyond acceptance criteria, verify these OUTCOMES work:\n\n");
-
-        if !stage.truths.is_empty() {
-            content.push_str("### Truths (observable behaviors - must return exit 0)\n\n");
-            for truth in &stage.truths {
-                content.push_str(&format!("```bash\n{truth}\n```\n\n"));
-            }
-        }
 
         if !stage.artifacts.is_empty() {
             content.push_str("### Artifacts (files must exist with real implementation)\n\n");
@@ -564,40 +557,6 @@ pub(super) fn format_dynamic_section(
                 ));
             }
             content.push('\n');
-        }
-
-        // Enhanced truth checks (truth_checks field)
-        if !stage.truth_checks.is_empty() {
-            content.push_str("### Truth Checks (enhanced verifications)\n\n");
-            for check in &stage.truth_checks {
-                content.push_str(&format!("**Command:** `{}`\n", check.command));
-                if let Some(desc) = &check.description {
-                    content.push_str(&format!("  *{}*\n", desc));
-                }
-                let mut criteria = Vec::new();
-                if !check.stdout_contains.is_empty() {
-                    criteria.push(format!(
-                        "stdout contains: {}",
-                        check.stdout_contains.join(", ")
-                    ));
-                }
-                if !check.stdout_not_contains.is_empty() {
-                    criteria.push(format!(
-                        "stdout must NOT contain: {}",
-                        check.stdout_not_contains.join(", ")
-                    ));
-                }
-                if let Some(true) = check.stderr_empty {
-                    criteria.push("stderr must be empty".to_string());
-                }
-                if let Some(code) = check.exit_code {
-                    criteria.push(format!("exit code: {}", code));
-                }
-                if !criteria.is_empty() {
-                    content.push_str(&format!("  Criteria: {}\n", criteria.join("; ")));
-                }
-                content.push('\n');
-            }
         }
 
         // Wiring tests (wiring_tests field)

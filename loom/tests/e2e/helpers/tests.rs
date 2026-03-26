@@ -3,6 +3,7 @@
 use super::*;
 use loom::models::session::{Session, SessionStatus};
 use loom::models::stage::{Stage, StageStatus};
+use loom::plan::schema::AcceptanceCriterion;
 use std::time::Duration;
 use tempfile::TempDir;
 
@@ -63,7 +64,7 @@ fn test_create_and_read_stage_file() {
     stage.id = "test-stage-1".to_string();
     stage.status = StageStatus::Queued;
     stage.add_dependency("dep-1".to_string());
-    stage.add_acceptance_criterion("Tests pass".to_string());
+    stage.add_acceptance_criterion(AcceptanceCriterion::Simple("Tests pass".to_string()));
 
     create_stage_file(work_dir, &stage).expect("Should create stage file");
 

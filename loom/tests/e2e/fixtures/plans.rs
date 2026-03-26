@@ -79,7 +79,7 @@ loom:
     - id: stage-1
       name: "Minimal Stage"
       working_dir: "."
-      truths:
+      acceptance:
         - "test -f README.md"
 ```
 

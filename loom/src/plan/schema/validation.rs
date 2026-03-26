@@ -10,26 +10,30 @@ use super::types::{
 /// Validate a single acceptance criterion
 ///
 /// Acceptance criteria must:
-/// - Not be empty or whitespace-only
+/// - Not have an empty or whitespace-only command
 /// - Not contain control characters (except whitespace)
-/// - Have a reasonable length (max 1024 chars)
-pub(crate) fn validate_acceptance_criterion(criterion: &str) -> Result<(), String> {
+/// - Have a reasonable command length (max 1024 chars)
+pub(crate) fn validate_acceptance_criterion(
+    criterion: &super::types::AcceptanceCriterion,
+) -> Result<(), String> {
+    let command = criterion.command();
+
     // Check for empty or whitespace-only
-    let trimmed = criterion.trim();
+    let trimmed = command.trim();
     if trimmed.is_empty() {
-        return Err("acceptance criterion cannot be empty".to_string());
+        return Err("acceptance criterion command cannot be empty".to_string());
     }
 
     // Check length limit
-    if criterion.len() > 1024 {
+    if command.len() > 1024 {
         return Err(format!(
-            "acceptance criterion too long ({} chars, max 1024)",
-            criterion.len()
+            "acceptance criterion command too long ({} chars, max 1024)",
+            command.len()
         ));
     }
 
     // Check for control characters (except tab, newline, carriage return)
-    for (idx, ch) in criterion.chars().enumerate() {
+    for (idx, ch) in command.chars().enumerate() {
         if ch.is_control() && ch != '\t' && ch != '\n' && ch != '\r' {
             return Err(format!(
                 "acceptance criterion contains control character at position {idx}"
@@ -279,32 +283,6 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
             }
         }
 
-        // Validate truths
-        if stage.truths.len() > 20 {
-            errors.push(ValidationError {
-                message: format!("Too many truths ({}, max 20)", stage.truths.len()),
-                stage_id: Some(stage.id.clone()),
-            });
-        }
-        for (idx, truth) in stage.truths.iter().enumerate() {
-            if truth.len() > 500 {
-                errors.push(ValidationError {
-                    message: format!(
-                        "Truth #{} too long ({} chars, max 500)",
-                        idx + 1,
-                        truth.len()
-                    ),
-                    stage_id: Some(stage.id.clone()),
-                });
-            }
-            if truth.trim().is_empty() {
-                errors.push(ValidationError {
-                    message: format!("Truth #{} cannot be empty", idx + 1),
-                    stage_id: Some(stage.id.clone()),
-                });
-            }
-        }
-
         // Validate artifacts
         if stage.artifacts.len() > 100 {
             errors.push(ValidationError {
@@ -431,16 +409,20 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
         );
 
         if requires_goal_backward {
-            // IntegrationVerify should have functional verification, not just tests
-            // Check for truths, wiring_tests, or wiring
-            if !stage.has_any_goal_checks() {
+            // Standard and IntegrationVerify stages must define either:
+            // 1. Non-empty acceptance criteria, OR
+            // 2. At least one goal-backward check (artifacts, wiring, wiring_tests, dead_code_check)
+            let has_acceptance = !stage.acceptance.is_empty();
+            let has_goal_checks = stage.has_any_goal_checks();
+
+            if !has_acceptance && !has_goal_checks {
                 let stage_type_desc = match stage.stage_type {
                     super::types::StageType::IntegrationVerify => "IntegrationVerify",
                     _ => "Standard",
                 };
                 errors.push(ValidationError {
                     message: format!(
-                        "{} stages must define at least one truth, artifact, wiring check, or wiring_test. \
+                        "{} stages must define acceptance criteria or at least one artifact, wiring check, or wiring_test. \
                          These define observable outcomes that verify the stage actually works.",
                         stage_type_desc
                     ),
@@ -584,11 +566,12 @@ pub fn validate_structural_preflight(
         // Check for working_dir prefix redundancy in acceptance criteria
         if !stage.working_dir.is_empty() && stage.working_dir != "." {
             for (idx, criterion) in stage.acceptance.iter().enumerate() {
+                let cmd = criterion.command();
                 // Check if criterion references working_dir as a path prefix
                 // Only match "{working_dir}/" to avoid false positives with CLI commands
                 // that happen to share the same name (e.g. "loom" CLI vs "loom" directory)
-                if criterion.starts_with(&format!("{}/", stage.working_dir))
-                    || criterion.contains(&format!(" {}/", stage.working_dir))
+                if cmd.starts_with(&format!("{}/", stage.working_dir))
+                    || cmd.contains(&format!(" {}/", stage.working_dir))
                 {
                     warnings.push(format!(
                         "Stage '{}': Acceptance criterion #{} may have redundant working_dir prefix '{}'. \
@@ -673,14 +656,15 @@ pub fn validate_structural_preflight(
 
             // Check if acceptance criteria reference build tools whose config files are missing
             for criterion in &stage.acceptance {
+                let cmd = criterion.command();
                 for &(tool_cmd, config_file) in BUILD_TOOL_CHECKS {
-                    if criterion_uses_build_tool(criterion, tool_cmd)
+                    if criterion_uses_build_tool(cmd, tool_cmd)
                         && !working_dir.join(config_file).exists()
                     {
                         warnings.push(format!(
                             "Stage '{}': Acceptance criterion '{}' uses '{}' but {} not found at {}",
                             stage.id,
-                            criterion,
+                            cmd,
                             tool_cmd.trim(),
                             config_file,
                             working_dir.display()

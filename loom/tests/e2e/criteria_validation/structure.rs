@@ -4,7 +4,9 @@
 //! and error accumulation.
 
 use super::{create_metadata, create_valid_stage};
-use loom::plan::schema::{validate, LoomConfig, LoomMetadata, ValidationError};
+use loom::plan::schema::{
+    validate, AcceptanceCriterion, LoomConfig, LoomMetadata, ValidationError,
+};
 
 /// Test that unsupported version is rejected
 #[test]
@@ -100,7 +102,8 @@ fn test_multiple_errors_accumulated() {
                 let mut s = create_valid_stage("stage-2", "Stage Two");
                 s.dependencies.push("nonexistent".to_string());
                 s.dependencies.push("stage-2".to_string());
-                s.acceptance.push("".to_string());
+                s.acceptance
+                    .push(AcceptanceCriterion::Simple("".to_string()));
                 s
             }],
         },

@@ -3,8 +3,8 @@
 use super::{create_valid_metadata, make_stage};
 use crate::models::stage::WiringCheck;
 use crate::plan::schema::types::{
-    LoomConfig, LoomMetadata, SandboxConfig, StageDefinition, StageType, ValidationError,
-    WiringTest,
+    AcceptanceCriterion, LoomConfig, LoomMetadata, SandboxConfig, StageDefinition, StageType,
+    ValidationError, WiringTest,
 };
 use crate::plan::schema::validation::{validate, validate_structural_preflight};
 
@@ -205,7 +205,6 @@ working_dir: "."
     assert_eq!(stage.auto_merge, None);
     assert_eq!(stage.working_dir, ".");
     // New fields should also have defaults
-    assert_eq!(stage.truth_checks.len(), 0);
     assert_eq!(stage.wiring_tests.len(), 0);
     assert!(stage.dead_code_check.is_none());
 }
@@ -213,15 +212,15 @@ working_dir: "."
 #[test]
 fn test_complex_dependency_chain() {
     let mut stage1 = make_stage("stage-1", "Stage 1");
-    stage1.truths = vec!["test -f README.md".to_string()];
+    stage1.acceptance = vec![AcceptanceCriterion::Simple("echo ok".to_string())];
 
     let mut stage2 = make_stage("stage-2", "Stage 2");
     stage2.dependencies = vec!["stage-1".to_string()];
-    stage2.truths = vec!["test -f README.md".to_string()];
+    stage2.acceptance = vec![AcceptanceCriterion::Simple("echo ok".to_string())];
 
     let mut stage3 = make_stage("stage-3", "Stage 3");
     stage3.dependencies = vec!["stage-1".to_string(), "stage-2".to_string()];
-    stage3.truths = vec!["test -f README.md".to_string()];
+    stage3.acceptance = vec![AcceptanceCriterion::Simple("echo ok".to_string())];
 
     let metadata = LoomMetadata {
         loom: LoomConfig {
@@ -307,7 +306,7 @@ fn test_validate_working_dir_absolute_path() {
 fn test_validate_working_dir_valid_subdirectory() {
     let mut stage = make_stage("stage-1", "Stage One");
     stage.working_dir = "loom".to_string(); // Valid subdirectory
-    stage.truths = vec!["cargo build".to_string()]; // Standard stages require goal-backward checks
+    stage.acceptance = vec![AcceptanceCriterion::Simple("echo ok".to_string())]; // Standard stages require goal-backward checks
 
     let metadata = LoomMetadata {
         loom: LoomConfig {
@@ -330,7 +329,7 @@ fn test_validate_working_dir_valid_subdirectory() {
 fn test_integration_verify_requires_goal_backward() {
     let mut stage = make_stage("integration-verify", "Integration Verify");
     stage.stage_type = StageType::IntegrationVerify;
-    // No truths, artifacts, wiring, or wiring_tests - should fail
+    // No acceptance, artifacts, wiring, or wiring_tests - should fail
 
     let metadata = LoomMetadata {
         loom: LoomConfig {
@@ -351,10 +350,10 @@ fn test_integration_verify_requires_goal_backward() {
 }
 
 #[test]
-fn test_integration_verify_with_truths_passes() {
+fn test_integration_verify_with_artifacts_passes() {
     let mut stage = make_stage("integration-verify", "Integration Verify");
     stage.stage_type = StageType::IntegrationVerify;
-    stage.truths = vec!["cargo test".to_string()];
+    stage.artifacts = vec!["src/main.rs".to_string()];
 
     let metadata = LoomMetadata {
         loom: LoomConfig {
@@ -420,7 +419,7 @@ fn test_integration_verify_with_wiring_passes() {
 fn test_knowledge_stage_exempt_from_goal_backward() {
     let mut stage = make_stage("knowledge-bootstrap", "Knowledge Bootstrap");
     stage.stage_type = StageType::Knowledge;
-    // No truths/artifacts/wiring - should pass because Knowledge is exempt
+    // No acceptance/artifacts/wiring - should pass because Knowledge is exempt
 
     let metadata = LoomMetadata {
         loom: LoomConfig {
@@ -444,10 +443,10 @@ fn test_preflight_warns_on_working_dir_redundancy() {
     let mut stage = make_stage("stage-1", "Stage One");
     stage.working_dir = "loom".to_string();
     stage.acceptance = vec![
-        "loom/src/main.rs".to_string(), // Redundant prefix
-        "cargo test".to_string(),       // No redundancy
+        AcceptanceCriterion::Simple("loom/src/main.rs".to_string()), // Redundant prefix
+        AcceptanceCriterion::Simple("cargo test".to_string()),       // No redundancy
     ];
-    stage.truths = vec!["test -f README.md".to_string()];
+    stage.artifacts = vec!["README.md".to_string()];
 
     let warnings = validate_structural_preflight(&[stage], None);
     assert!(!warnings.is_empty());
@@ -460,8 +459,8 @@ fn test_preflight_warns_on_working_dir_redundancy() {
 fn test_preflight_no_warning_when_working_dir_is_dot() {
     let mut stage = make_stage("stage-1", "Stage One");
     stage.working_dir = ".".to_string();
-    stage.acceptance = vec!["loom/src/main.rs".to_string()];
-    stage.truths = vec!["test -f README.md".to_string()];
+    stage.acceptance = vec![AcceptanceCriterion::Simple("loom/src/main.rs".to_string())];
+    stage.artifacts = vec!["README.md".to_string()];
 
     let warnings = validate_structural_preflight(&[stage], None);
     // No warnings when working_dir is "."
@@ -478,7 +477,7 @@ fn test_preflight_warns_on_short_wiring_pattern() {
         pattern: "fn".to_string(), // Too short
         description: "Test wiring".to_string(),
     }];
-    stage.truths = vec!["test -f README.md".to_string()];
+    stage.artifacts = vec!["README.md".to_string()];
 
     let warnings = validate_structural_preflight(&[stage], None);
     assert!(!warnings.is_empty());
@@ -495,7 +494,7 @@ fn test_preflight_warns_on_wildcard_pattern() {
         pattern: ".*".to_string(), // Matches everything
         description: "Test wiring".to_string(),
     }];
-    stage.truths = vec!["test -f README.md".to_string()];
+    stage.artifacts = vec!["README.md".to_string()];
 
     let warnings = validate_structural_preflight(&[stage], None);
     assert!(!warnings.is_empty());
@@ -510,7 +509,7 @@ fn test_preflight_warns_on_single_char_pattern() {
         pattern: "x".to_string(), // Single character
         description: "Test wiring".to_string(),
     }];
-    stage.truths = vec!["test -f README.md".to_string()];
+    stage.artifacts = vec!["README.md".to_string()];
 
     let warnings = validate_structural_preflight(&[stage], None);
     assert!(!warnings.is_empty());
@@ -527,7 +526,7 @@ fn test_preflight_warns_on_generic_keyword() {
         pattern: "import".to_string(), // Common keyword (6 chars to pass length check)
         description: "Test wiring".to_string(),
     }];
-    stage.truths = vec!["test -f README.md".to_string()];
+    stage.artifacts = vec!["README.md".to_string()];
 
     let warnings = validate_structural_preflight(&[stage], None);
     assert!(!warnings.is_empty());
@@ -542,7 +541,7 @@ fn test_preflight_no_warning_for_specific_pattern() {
         pattern: "validate_structural_preflight".to_string(), // Specific enough
         description: "Pre-flight validation exists".to_string(),
     }];
-    stage.truths = vec!["test -f README.md".to_string()];
+    stage.artifacts = vec!["README.md".to_string()];
 
     let warnings = validate_structural_preflight(&[stage], None);
     // Should have no warnings about pattern quality for this specific pattern

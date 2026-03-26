@@ -1,7 +1,6 @@
 //! Goal-backward verification command
 //!
 //! Validates OUTCOMES beyond acceptance criteria by checking:
-//! - TRUTHS: Observable behaviors (shell commands return 0)
 //! - ARTIFACTS: Files exist with real implementation
 //! - WIRING: Critical connections between components
 
@@ -101,7 +100,7 @@ pub fn execute(stage_id: &str, suggest: bool) -> Result<()> {
         }
     } else {
         println!("\n{}", "Goal-Backward Verification:".dimmed());
-        println!("  {} No truths, artifacts, or wiring defined", "−".dimmed());
+        println!("  {} No artifacts or wiring defined", "−".dimmed());
 
         if acceptance_passed {
             println!("\n{} Acceptance criteria passed!", "✓".green().bold());
@@ -115,7 +114,6 @@ pub fn execute(stage_id: &str, suggest: bool) -> Result<()> {
 fn print_goal_result(result: &GoalBackwardResult, suggest: bool) {
     match result {
         GoalBackwardResult::Passed => {
-            println!("  {} All truths verified", "✓".green());
             println!("  {} All artifacts exist", "✓".green());
             println!("  {} All wiring connected", "✓".green());
         }

@@ -7,10 +7,10 @@ mod validation;
 mod tests;
 
 pub use types::{
-    ChangeImpactConfig, ChangeImpactPolicy, DeadCodeCheck, FilesystemConfig, LinuxConfig,
-    LoomConfig, LoomMetadata, NetworkConfig, RegressionTest, SandboxConfig, StageDefinition,
-    StageSandboxConfig, StageType, SuccessCriteria, TruthCheck, ValidationError, WiringCheck,
-    WiringTest,
+    AcceptanceCriterion, ChangeImpactConfig, ChangeImpactPolicy, DeadCodeCheck, FilesystemConfig,
+    LinuxConfig, LoomConfig, LoomMetadata, NetworkConfig, RegressionTest, SandboxConfig,
+    StageDefinition, StageSandboxConfig, StageType, SuccessCriteria, TruthCheck, ValidationError,
+    WiringCheck, WiringTest,
 };
 pub use validation::{
     check_knowledge_recommendations, check_sandbox_recommendations, validate,

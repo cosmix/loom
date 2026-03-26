@@ -3,7 +3,7 @@
 //! Tests for acceptance criterion content, length, and control character handling.
 
 use super::{create_metadata, create_valid_stage};
-use loom::plan::schema::validate;
+use loom::plan::schema::{validate, AcceptanceCriterion};
 
 /// Test that valid acceptance criteria are accepted
 #[test]
@@ -20,7 +20,9 @@ fn test_valid_acceptance_criteria() {
 
     for criterion in valid_criteria {
         let mut stage = create_valid_stage("test-stage", "Test");
-        stage.acceptance.push(criterion.to_string());
+        stage
+            .acceptance
+            .push(AcceptanceCriterion::Simple(criterion.to_string()));
         let metadata = create_metadata(vec![stage]);
         let result = validate(&metadata);
         assert!(
@@ -36,7 +38,9 @@ fn test_valid_acceptance_criteria() {
 #[test]
 fn test_empty_acceptance_criterion_rejected() {
     let mut stage = create_valid_stage("test-stage", "Test Stage");
-    stage.acceptance.push("".to_string());
+    stage
+        .acceptance
+        .push(AcceptanceCriterion::Simple("".to_string()));
 
     let metadata = create_metadata(vec![stage]);
     let result = validate(&metadata);
@@ -56,7 +60,9 @@ fn test_whitespace_only_acceptance_criterion_rejected() {
 
     for criterion in whitespace_criteria {
         let mut stage = create_valid_stage("test-stage", "Test Stage");
-        stage.acceptance.push(criterion.to_string());
+        stage
+            .acceptance
+            .push(AcceptanceCriterion::Simple(criterion.to_string()));
 
         let metadata = create_metadata(vec![stage]);
         let result = validate(&metadata);
@@ -81,7 +87,9 @@ fn test_control_chars_in_acceptance_rejected() {
 
     for (name, criterion) in control_chars {
         let mut stage = create_valid_stage("test-stage", "Test Stage");
-        stage.acceptance.push(criterion.to_string());
+        stage
+            .acceptance
+            .push(AcceptanceCriterion::Simple(criterion.to_string()));
 
         let metadata = create_metadata(vec![stage]);
         let result = validate(&metadata);
@@ -109,7 +117,9 @@ fn test_allowed_whitespace_in_acceptance() {
 
     for criterion in allowed_whitespace {
         let mut stage = create_valid_stage("test-stage", "Test Stage");
-        stage.acceptance.push(criterion.to_string());
+        stage
+            .acceptance
+            .push(AcceptanceCriterion::Simple(criterion.to_string()));
 
         let metadata = create_metadata(vec![stage]);
         let result = validate(&metadata);
@@ -129,7 +139,9 @@ fn test_acceptance_criterion_too_long_rejected() {
     let long_criterion = "a".repeat(1025);
 
     let mut stage = create_valid_stage("test-stage", "Test Stage");
-    stage.acceptance.push(long_criterion);
+    stage
+        .acceptance
+        .push(AcceptanceCriterion::Simple(long_criterion));
 
     let metadata = create_metadata(vec![stage]);
     let result = validate(&metadata);
@@ -146,10 +158,18 @@ fn test_acceptance_criterion_too_long_rejected() {
 #[test]
 fn test_multiple_invalid_acceptance_criteria() {
     let mut stage = create_valid_stage("test-stage", "Test Stage");
-    stage.acceptance.push("".to_string());
-    stage.acceptance.push("   ".to_string());
-    stage.acceptance.push("valid command".to_string());
-    stage.acceptance.push("\t\n".to_string());
+    stage
+        .acceptance
+        .push(AcceptanceCriterion::Simple("".to_string()));
+    stage
+        .acceptance
+        .push(AcceptanceCriterion::Simple("   ".to_string()));
+    stage
+        .acceptance
+        .push(AcceptanceCriterion::Simple("valid command".to_string()));
+    stage
+        .acceptance
+        .push(AcceptanceCriterion::Simple("\t\n".to_string()));
 
     let metadata = create_metadata(vec![stage]);
     let result = validate(&metadata);

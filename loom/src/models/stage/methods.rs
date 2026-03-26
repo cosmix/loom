@@ -48,10 +48,8 @@ impl Stage {
             merge_conflict: false,
             verification_status: Default::default(),
             context_budget: None,
-            truths: Vec::new(),
             artifacts: Vec::new(),
             wiring: Vec::new(),
-            truth_checks: Vec::new(),
             wiring_tests: Vec::new(),
             dead_code_check: None,
             before_stage: Vec::new(),
@@ -100,7 +98,10 @@ impl Stage {
         }
     }
 
-    pub fn add_acceptance_criterion(&mut self, criterion: String) {
+    pub fn add_acceptance_criterion(
+        &mut self,
+        criterion: crate::plan::schema::AcceptanceCriterion,
+    ) {
         self.acceptance.push(criterion);
         self.updated_at = Utc::now();
     }
@@ -447,10 +448,8 @@ impl Stage {
 
     /// Check if this stage has any goal-backward verification checks defined.
     pub fn has_any_goal_checks(&self) -> bool {
-        !self.truths.is_empty()
-            || !self.artifacts.is_empty()
+        !self.artifacts.is_empty()
             || !self.wiring.is_empty()
-            || !self.truth_checks.is_empty()
             || !self.wiring_tests.is_empty()
             || self.dead_code_check.is_some()
     }
