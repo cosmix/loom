@@ -14,7 +14,7 @@ Loom is an agent orchestration system for Claude Code. It coordinates AI agent s
 - Persistent orchestration state in `.work/`
 - Git worktree isolation for parallel stage execution
 - Stage-aware signals and recovery flows
-- Goal-backward verification (`truths`, `artifacts`, `wiring`, `wiring_tests`)
+- Goal-backward verification (`artifacts`, `wiring`, `wiring_tests`, `dead_code_check`)
 - Plan-level and stage-level sandbox controls
 - Optional agent teams guidance in stage signals
 
@@ -185,10 +185,10 @@ loom:
       dependencies: []
       acceptance:
         - "cargo test"
+        - command: "cargo test api_integration::returns_200"
+          stdout_contains: ["test result: ok"]
       files:
         - "loom/src/**/*.rs"
-      truths:
-        - "cargo test api_integration::returns_200"
       artifacts:
         - "loom/src/api/*.rs"
       wiring:
@@ -204,8 +204,8 @@ loom:
       dependencies: ["implement-api"]
       acceptance:
         - "cargo test --all-targets"
-      truths:
-        - "cargo test api_integration::returns_200"
+        - command: "cargo test api_integration::returns_200"
+          stdout_contains: ["test result: ok"]
 ```
 <!-- END loom METADATA -->
 ````
@@ -219,12 +219,12 @@ loom:
 | `working_dir` | Yes | Relative execution directory (`.` allowed) |
 | `description` | No | Optional summary |
 | `dependencies` | No | Upstream stage IDs |
-| `acceptance` | No | Shell criteria for stage completion |
+| `acceptance` | Conditionally required | Shell criteria (strings or extended objects with stdout_contains etc.) |
 | `setup` | No | Setup commands |
 | `files` | No | File glob scope |
 | `stage_type` | No | `standard` (default), `knowledge`, `integration-verify` |
-| `truths` / `artifacts` / `wiring` | Conditionally required | Required for `standard` and `integration-verify` stages |
-| `truth_checks` / `wiring_tests` / `dead_code_check` | No | Extended verification |
+| `artifacts` / `wiring` | Conditionally required | Required for `standard` and `integration-verify` (acceptance OR goal-backward) |
+| `wiring_tests` / `dead_code_check` | No | Extended verification |
 | `context_budget` | No | Context threshold (%) for handoff |
 | `sandbox` | No | Per-stage sandbox override |
 | `execution_mode` | No | `single` (default) or `team` hint |
@@ -239,12 +239,13 @@ loom:
 
 `loom check <stage-id>` validates outcomes, not just compilation/tests:
 
-- `truths`: observable behaviors that must succeed
+- `acceptance`: shell criteria (simple strings or extended objects with `stdout_contains`, `exit_code`, etc.)
 - `artifacts`: real implementation files exist
 - `wiring`: critical integration links exist
 - `wiring_tests`: runtime integration checks
+- `dead_code_check`: detect unused code via command output patterns
 
-For `standard` and `integration-verify` stages, at least one goal-backward check must be defined.
+For `standard` and `integration-verify` stages, acceptance criteria or at least one goal-backward check must be defined.
 
 ## Sandbox Configuration
 

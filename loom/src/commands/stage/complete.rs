@@ -390,7 +390,7 @@ fn run_verification_phase(
         // Load stage definition once for verification checks
         let stage_def = load_stage_definition_from_plan(stage_id, work_dir)?;
 
-        // Run goal-backward verification (truths, artifacts, wiring)
+        // Run goal-backward verification (artifacts, wiring, wiring_tests, dead_code)
         if let Some(ref stage_def) = stage_def {
             if stage_def.has_any_goal_checks() {
                 println!("Running goal-backward verification...");

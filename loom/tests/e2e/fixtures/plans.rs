@@ -31,8 +31,6 @@ loom:
       files:
         - "src/main.rs"
       working_dir: "."
-      truths:
-        - "test -f src/main.rs"
     - id: stage-2
       name: "Second Stage"
       description: "Build on first stage"
@@ -43,8 +41,6 @@ loom:
       files:
         - "Cargo.toml"
       working_dir: "."
-      truths:
-        - "test -f Cargo.toml"
 ```
 
 <!-- END loom METADATA -->
