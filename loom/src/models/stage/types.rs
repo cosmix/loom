@@ -120,7 +120,7 @@ pub struct Stage {
     pub status: StageStatus,
     pub dependencies: Vec<String>,
     pub parallel_group: Option<String>,
-    pub acceptance: Vec<String>,
+    pub acceptance: Vec<crate::plan::schema::AcceptanceCriterion>,
     #[serde(default)]
     pub setup: Vec<String>,
     pub files: Vec<String>,
@@ -214,18 +214,12 @@ pub struct Stage {
     /// Stage-specific context budget (percentage)
     #[serde(default)]
     pub context_budget: Option<u32>,
-    /// Observable behaviors that must work (shell commands return 0)
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub truths: Vec<String>,
     /// Files that must exist with real implementation (not stubs)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub artifacts: Vec<String>,
     /// Critical connections between components
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub wiring: Vec<WiringCheck>,
-    /// Enhanced truth checks with extended success criteria
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub truth_checks: Vec<crate::plan::schema::TruthCheck>,
     /// Runtime wiring tests (command-based integration verification)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub wiring_tests: Vec<crate::plan::schema::WiringTest>,
@@ -536,10 +530,8 @@ impl Default for Stage {
             merge_conflict: false,
             verification_status: Default::default(),
             context_budget: None,
-            truths: Vec::new(),
             artifacts: Vec::new(),
             wiring: Vec::new(),
-            truth_checks: Vec::new(),
             wiring_tests: Vec::new(),
             dead_code_check: None,
             before_stage: Vec::new(),

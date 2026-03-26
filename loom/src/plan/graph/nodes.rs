@@ -16,7 +16,7 @@ pub struct StageNode {
     pub description: Option<String>,
     /// Acceptance criteria - commands to verify stage completion
     #[serde(default)]
-    pub acceptance: Vec<String>,
+    pub acceptance: Vec<crate::plan::schema::AcceptanceCriterion>,
     /// Setup commands to run before stage execution
     #[serde(default)]
     pub setup: Vec<String>,

@@ -262,7 +262,7 @@ pub struct StageDefinition {
     #[serde(default)]
     pub parallel_group: Option<String>,
     #[serde(default)]
-    pub acceptance: Vec<String>,
+    pub acceptance: Vec<AcceptanceCriterion>,
     #[serde(default)]
     pub setup: Vec<String>,
     #[serde(default)]
@@ -276,10 +276,6 @@ pub struct StageDefinition {
     /// Type of stage for specialized handling (e.g., knowledge vs standard)
     #[serde(default)]
     pub stage_type: StageType,
-    /// Observable behaviors that must be true from user perspective
-    /// Each truth is a shell command that returns exit code 0 if the behavior works
-    #[serde(default)]
-    pub truths: Vec<String>,
     /// Files that must exist with real implementation (not stubs)
     /// Supports glob patterns like "src/auth/*.rs"
     #[serde(default)]
@@ -287,9 +283,6 @@ pub struct StageDefinition {
     /// Critical connections between components
     #[serde(default)]
     pub wiring: Vec<WiringCheck>,
-    /// Enhanced truth checks with extended success criteria
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub truth_checks: Vec<TruthCheck>,
     /// Runtime wiring tests (command-based integration verification)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub wiring_tests: Vec<WiringTest>,
@@ -338,10 +331,8 @@ pub struct StageDefinition {
 impl StageDefinition {
     /// Check if this stage definition has any goal-backward verification checks defined.
     pub fn has_any_goal_checks(&self) -> bool {
-        !self.truths.is_empty()
-            || !self.artifacts.is_empty()
+        !self.artifacts.is_empty()
             || !self.wiring.is_empty()
-            || !self.truth_checks.is_empty()
             || !self.wiring_tests.is_empty()
             || self.dead_code_check.is_some()
     }
@@ -357,7 +348,7 @@ pub use crate::models::stage::WiringCheck;
 ///
 /// TruthCheck allows verifying observable behaviors with more than just exit code.
 /// All extended fields are optional for backward compatibility.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TruthCheck {
     /// Shell command to execute
     pub command: String,
@@ -376,6 +367,46 @@ pub struct TruthCheck {
     /// Human-readable description of what this truth verifies
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+}
+
+/// Unified acceptance criterion - either a simple shell command or an extended check.
+///
+/// In YAML, simple criteria are plain strings, extended criteria are objects:
+/// ```yaml
+/// acceptance:
+///   - "cargo test"                           # Simple
+///   - command: "loom --help"                  # Extended
+///     stdout_contains: ["Usage:"]
+///     exit_code: 0
+/// ```
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum AcceptanceCriterion {
+    /// Simple shell command - succeeds if exit code is 0
+    Simple(String),
+    /// Extended check with output validation (reuses TruthCheck structure)
+    Extended(TruthCheck),
+}
+
+impl AcceptanceCriterion {
+    /// Get the shell command string for this criterion
+    pub fn command(&self) -> &str {
+        match self {
+            AcceptanceCriterion::Simple(cmd) => cmd,
+            AcceptanceCriterion::Extended(check) => &check.command,
+        }
+    }
+
+    /// Whether this is an extended criterion with output validation
+    pub fn is_extended(&self) -> bool {
+        matches!(self, AcceptanceCriterion::Extended(_))
+    }
+}
+
+impl std::fmt::Display for AcceptanceCriterion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.command())
+    }
 }
 
 /// Success criteria for wiring tests.
