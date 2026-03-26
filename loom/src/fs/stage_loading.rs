@@ -19,7 +19,7 @@ pub struct StageFrontmatter {
     #[serde(default)]
     pub parallel_group: Option<String>,
     #[serde(default)]
-    pub acceptance: Vec<String>,
+    pub acceptance: Vec<crate::plan::schema::AcceptanceCriterion>,
     #[serde(default)]
     pub setup: Vec<String>,
     #[serde(default)]
@@ -27,13 +27,9 @@ pub struct StageFrontmatter {
     #[serde(default)]
     pub working_dir: Option<String>,
     #[serde(default)]
-    pub truths: Vec<String>,
-    #[serde(default)]
     pub artifacts: Vec<String>,
     #[serde(default)]
     pub wiring: Vec<crate::plan::schema::WiringCheck>,
-    #[serde(default)]
-    pub truth_checks: Vec<crate::plan::schema::TruthCheck>,
     #[serde(default)]
     pub wiring_tests: Vec<crate::plan::schema::WiringTest>,
     #[serde(default)]
@@ -61,10 +57,8 @@ impl StageFrontmatter {
             auto_merge: None,
             working_dir: self.working_dir.unwrap_or_else(|| ".".to_string()),
             stage_type: crate::plan::schema::StageType::default(),
-            truths: self.truths,
             artifacts: self.artifacts,
             wiring: self.wiring,
-            truth_checks: self.truth_checks,
             wiring_tests: self.wiring_tests,
             dead_code_check: self.dead_code_check,
             before_stage: vec![],

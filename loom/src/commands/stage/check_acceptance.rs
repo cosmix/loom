@@ -135,6 +135,7 @@ pub fn check_acceptance(stage_id: String) -> Result<()> {
 mod tests {
     use super::*;
     use crate::models::stage::Stage;
+    use crate::plan::schema::AcceptanceCriterion;
     use crate::verify::transitions::save_stage;
     use serial_test::serial;
     use tempfile::TempDir;
@@ -144,7 +145,7 @@ mod tests {
             id: id.to_string(),
             name: "Test Stage".to_string(),
             status,
-            acceptance: vec!["echo test".to_string()],
+            acceptance: vec![AcceptanceCriterion::Simple("echo test".to_string())],
             worktree: Some(id.to_string()),
             ..Stage::default()
         }
@@ -230,7 +231,7 @@ mod tests {
         std::fs::create_dir_all(&worktree_dir).unwrap();
 
         let mut stage = create_test_stage("test-stage", StageStatus::Executing);
-        stage.acceptance = vec!["false".to_string()]; // always fails
+        stage.acceptance = vec![AcceptanceCriterion::Simple("false".to_string())]; // always fails
         stage.working_dir = Some(".".to_string());
         stage.fix_attempts = 0;
         save_stage(&stage, &work_dir).unwrap();

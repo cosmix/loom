@@ -59,6 +59,7 @@ pub fn parse_plan_content(content: &str, source_path: &Path) -> Result<ParsedPla
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plan::schema::AcceptanceCriterion;
     use std::path::PathBuf;
 
     #[test]
@@ -80,13 +81,13 @@ loom:
       name: "Stage One"
       dependencies: []
       working_dir: "."
-      truths:
+      acceptance:
         - "test -f README.md"
     - id: stage-2
       name: "Stage Two"
       dependencies: [stage-1]
       working_dir: "."
-      truths:
+      acceptance:
         - "cargo build"
 ```
 
@@ -126,8 +127,6 @@ loom:
       files:
         - "src/*.rs"
       working_dir: "."
-      truths:
-        - "test -f README.md"
     - id: stage-2
       name: "Second Stage"
       description: "Build on first stage"
@@ -165,7 +164,10 @@ loom:
             Some("Initial setup".to_string())
         );
         assert_eq!(parsed.stages[0].dependencies.len(), 0);
-        assert_eq!(parsed.stages[0].acceptance, vec!["cargo test"]);
+        assert_eq!(
+            parsed.stages[0].acceptance,
+            vec![AcceptanceCriterion::Simple("cargo test".to_string())]
+        );
         assert_eq!(parsed.stages[0].files, vec!["src/*.rs"]);
         assert_eq!(parsed.stages[0].parallel_group, None);
 

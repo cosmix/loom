@@ -147,7 +147,7 @@ fn extract_tasks_from_stage(stage: &Stage) -> Vec<String> {
 
     if tasks.is_empty() && !stage.acceptance.is_empty() {
         for criterion in &stage.acceptance {
-            tasks.push(criterion.clone());
+            tasks.push(criterion.command().to_string());
         }
     }
 
@@ -158,6 +158,7 @@ fn extract_tasks_from_stage(stage: &Stage) -> Vec<String> {
 mod tests {
     use super::*;
     use crate::models::stage::StageStatus;
+    use crate::plan::schema::AcceptanceCriterion;
 
     fn create_test_stage() -> Stage {
         Stage {
@@ -166,8 +167,12 @@ mod tests {
             description: Some("Explore the codebase and document findings.".to_string()),
             status: StageStatus::Queued,
             acceptance: vec![
-                "grep -q '## ' doc/loom/knowledge/entry-points.md".to_string(),
-                "grep -q '## ' doc/loom/knowledge/patterns.md".to_string(),
+                AcceptanceCriterion::Simple(
+                    "grep -q '## ' doc/loom/knowledge/entry-points.md".to_string(),
+                ),
+                AcceptanceCriterion::Simple(
+                    "grep -q '## ' doc/loom/knowledge/patterns.md".to_string(),
+                ),
             ],
             files: vec!["src/**/*.rs".to_string()],
             stage_type: crate::models::stage::StageType::Knowledge,
