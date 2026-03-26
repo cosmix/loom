@@ -5,6 +5,7 @@ use tempfile::TempDir;
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::models::worktree::Worktree;
+use crate::plan::schema::AcceptanceCriterion;
 
 use super::crud::{list_signals, read_signal, remove_signal, update_signal};
 use super::format::{extract_tasks_from_description, format_signal_content};
@@ -34,8 +35,10 @@ pub fn create_test_stage() -> Stage {
     );
     stage.id = "stage-1".to_string();
     stage.status = StageStatus::Executing;
-    stage.add_acceptance_criterion("Signal files are generated correctly".to_string());
-    stage.add_acceptance_criterion("All tests pass".to_string());
+    stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
+        "Signal files are generated correctly".to_string(),
+    ));
+    stage.add_acceptance_criterion(AcceptanceCriterion::Simple("All tests pass".to_string()));
     stage.add_file_pattern("src/orchestrator/signals.rs".to_string());
     stage
 }

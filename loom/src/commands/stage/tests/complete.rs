@@ -3,6 +3,7 @@
 use super::super::complete::complete;
 use super::{create_test_stage, save_test_stage, setup_work_dir};
 use crate::models::stage::{StageStatus, StageType};
+use crate::plan::schema::AcceptanceCriterion;
 use crate::verify::transitions::load_stage;
 use serial_test::serial;
 
@@ -13,7 +14,7 @@ fn test_complete_with_passing_acceptance() {
     let work_dir_path = temp_dir.path().join(".work");
 
     let mut stage = create_test_stage("test-stage", StageStatus::Executing);
-    stage.acceptance = vec!["exit 0".to_string()];
+    stage.acceptance = vec![AcceptanceCriterion::Simple("exit 0".to_string())];
     save_test_stage(&work_dir_path, &stage);
 
     let original_dir = std::env::current_dir().unwrap();
@@ -37,7 +38,7 @@ fn test_complete_with_no_verify_flag() {
     let work_dir_path = temp_dir.path().join(".work");
 
     let mut stage = create_test_stage("test-stage", StageStatus::Executing);
-    stage.acceptance = vec!["exit 1".to_string()];
+    stage.acceptance = vec![AcceptanceCriterion::Simple("exit 1".to_string())];
     save_test_stage(&work_dir_path, &stage);
 
     let original_dir = std::env::current_dir().unwrap();
@@ -91,7 +92,7 @@ fn test_complete_knowledge_stage_with_passing_acceptance() {
     // Create a knowledge stage with passing acceptance criteria
     let mut stage = create_test_stage("knowledge-stage", StageStatus::Executing);
     stage.stage_type = StageType::Knowledge;
-    stage.acceptance = vec!["exit 0".to_string()];
+    stage.acceptance = vec![AcceptanceCriterion::Simple("exit 0".to_string())];
     save_test_stage(&work_dir_path, &stage);
 
     let original_dir = std::env::current_dir().unwrap();
@@ -117,7 +118,7 @@ fn test_complete_knowledge_stage_with_failing_acceptance() {
     // Create a knowledge stage with failing acceptance criteria
     let mut stage = create_test_stage("knowledge-stage", StageStatus::Executing);
     stage.stage_type = StageType::Knowledge;
-    stage.acceptance = vec!["exit 1".to_string()];
+    stage.acceptance = vec![AcceptanceCriterion::Simple("exit 1".to_string())];
     save_test_stage(&work_dir_path, &stage);
 
     let original_dir = std::env::current_dir().unwrap();
@@ -187,7 +188,7 @@ fn test_complete_standard_stage_not_routed_to_knowledge() {
 
     // Create a standard stage (default stage_type)
     let mut stage = create_test_stage("standard-stage", StageStatus::Executing);
-    stage.acceptance = vec!["exit 0".to_string()];
+    stage.acceptance = vec![AcceptanceCriterion::Simple("exit 0".to_string())];
     // Ensure it's explicitly standard (default)
     stage.stage_type = StageType::Standard;
     save_test_stage(&work_dir_path, &stage);

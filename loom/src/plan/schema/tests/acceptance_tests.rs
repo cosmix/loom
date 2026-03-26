@@ -1,28 +1,44 @@
 //! Acceptance criterion validation tests
 
 use super::make_stage;
-use crate::plan::schema::types::{LoomConfig, LoomMetadata, SandboxConfig};
+use crate::plan::schema::types::{AcceptanceCriterion, LoomConfig, LoomMetadata, SandboxConfig};
 use crate::plan::schema::validation::{validate, validate_acceptance_criterion};
 
 #[test]
 fn test_validate_acceptance_criterion_valid() {
-    assert!(validate_acceptance_criterion("cargo test").is_ok());
-    assert!(validate_acceptance_criterion("cargo build --release").is_ok());
-    assert!(validate_acceptance_criterion("npm run test && npm run lint").is_ok());
-    assert!(validate_acceptance_criterion("cd loom && cargo test --lib").is_ok());
+    assert!(
+        validate_acceptance_criterion(&AcceptanceCriterion::Simple("cargo test".to_string()))
+            .is_ok()
+    );
+    assert!(validate_acceptance_criterion(&AcceptanceCriterion::Simple(
+        "cargo build --release".to_string()
+    ))
+    .is_ok());
+    assert!(validate_acceptance_criterion(&AcceptanceCriterion::Simple(
+        "npm run test && npm run lint".to_string()
+    ))
+    .is_ok());
+    assert!(validate_acceptance_criterion(&AcceptanceCriterion::Simple(
+        "cd loom && cargo test --lib".to_string()
+    ))
+    .is_ok());
 }
 
 #[test]
 fn test_validate_acceptance_criterion_empty() {
-    assert!(validate_acceptance_criterion("").is_err());
-    assert!(validate_acceptance_criterion("   ").is_err());
-    assert!(validate_acceptance_criterion("\t\n").is_err());
+    assert!(validate_acceptance_criterion(&AcceptanceCriterion::Simple("".to_string())).is_err());
+    assert!(
+        validate_acceptance_criterion(&AcceptanceCriterion::Simple("   ".to_string())).is_err()
+    );
+    assert!(
+        validate_acceptance_criterion(&AcceptanceCriterion::Simple("\t\n".to_string())).is_err()
+    );
 }
 
 #[test]
 fn test_validate_acceptance_criterion_too_long() {
     let long_criterion = "a".repeat(1025);
-    let result = validate_acceptance_criterion(&long_criterion);
+    let result = validate_acceptance_criterion(&AcceptanceCriterion::Simple(long_criterion));
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("too long"));
 }
@@ -30,26 +46,34 @@ fn test_validate_acceptance_criterion_too_long() {
 #[test]
 fn test_validate_acceptance_criterion_control_chars() {
     // Null byte
-    let result = validate_acceptance_criterion("cargo\x00test");
+    let result =
+        validate_acceptance_criterion(&AcceptanceCriterion::Simple("cargo\x00test".to_string()));
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("control character"));
 
     // Bell character
-    let result = validate_acceptance_criterion("cargo\x07test");
+    let result =
+        validate_acceptance_criterion(&AcceptanceCriterion::Simple("cargo\x07test".to_string()));
     assert!(result.is_err());
 }
 
 #[test]
 fn test_validate_acceptance_criterion_allowed_whitespace() {
     // Tab, newline, carriage return should be allowed
-    assert!(validate_acceptance_criterion("cargo test\t--lib").is_ok());
-    assert!(validate_acceptance_criterion("cargo test\n").is_ok());
+    assert!(validate_acceptance_criterion(&AcceptanceCriterion::Simple(
+        "cargo test\t--lib".to_string()
+    ))
+    .is_ok());
+    assert!(validate_acceptance_criterion(&AcceptanceCriterion::Simple(
+        "cargo test\n".to_string()
+    ))
+    .is_ok());
 }
 
 #[test]
 fn test_validate_metadata_with_empty_acceptance() {
     let mut stage = make_stage("stage-1", "Stage One");
-    stage.acceptance = vec!["".to_string()];
+    stage.acceptance = vec![AcceptanceCriterion::Simple("".to_string())];
 
     let metadata = LoomMetadata {
         loom: LoomConfig {
@@ -74,10 +98,9 @@ fn test_validate_metadata_with_empty_acceptance() {
 fn test_validate_metadata_with_valid_acceptance() {
     let mut stage = make_stage("stage-1", "Stage One");
     stage.acceptance = vec![
-        "cargo test".to_string(),
-        "cargo clippy -- -D warnings".to_string(),
+        AcceptanceCriterion::Simple("cargo test".to_string()),
+        AcceptanceCriterion::Simple("cargo clippy -- -D warnings".to_string()),
     ];
-    stage.truths = vec!["cargo build".to_string()];
 
     let metadata = LoomMetadata {
         loom: LoomConfig {
@@ -96,7 +119,11 @@ fn test_validate_metadata_with_valid_acceptance() {
 #[test]
 fn test_validate_metadata_multiple_invalid_acceptance() {
     let mut stage = make_stage("stage-1", "Stage One");
-    stage.acceptance = vec!["".to_string(), "   ".to_string(), "cargo test".to_string()];
+    stage.acceptance = vec![
+        AcceptanceCriterion::Simple("".to_string()),
+        AcceptanceCriterion::Simple("   ".to_string()),
+        AcceptanceCriterion::Simple("cargo test".to_string()),
+    ];
 
     let metadata = LoomMetadata {
         loom: LoomConfig {

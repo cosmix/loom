@@ -15,7 +15,9 @@ mod dependencies;
 mod stage_id;
 mod structure;
 
-use loom::plan::schema::{LoomConfig, LoomMetadata, StageDefinition, StageType};
+use loom::plan::schema::{
+    AcceptanceCriterion, LoomConfig, LoomMetadata, StageDefinition, StageType,
+};
 
 /// Helper to create a minimal valid stage definition
 pub(crate) fn create_valid_stage(id: &str, name: &str) -> StageDefinition {
@@ -25,18 +27,15 @@ pub(crate) fn create_valid_stage(id: &str, name: &str) -> StageDefinition {
         description: None,
         dependencies: vec![],
         parallel_group: None,
-        acceptance: vec![],
+        acceptance: vec![AcceptanceCriterion::Simple("true".to_string())],
         setup: vec![],
         files: vec![],
         auto_merge: None,
         working_dir: ".".to_string(),
         sandbox: Default::default(),
         stage_type: StageType::default(),
-        // Standard stages require at least one goal-backward check
-        truths: vec!["test -f README.md".to_string()],
         artifacts: vec![],
         wiring: vec![],
-        truth_checks: vec![],
         wiring_tests: vec![],
         dead_code_check: None,
         before_stage: vec![],

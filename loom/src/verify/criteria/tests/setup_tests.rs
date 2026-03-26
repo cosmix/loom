@@ -1,6 +1,7 @@
 //! Tests for setup command functionality
 
 use crate::models::stage::Stage;
+use crate::plan::schema::AcceptanceCriterion;
 use crate::verify::criteria::runner::run_acceptance;
 
 #[test]
@@ -10,13 +11,15 @@ fn test_run_acceptance_with_setup_commands() {
     if cfg!(target_family = "unix") {
         // Setup creates an environment variable, criterion checks it exists
         stage.setup.push("export TEST_VAR=hello".to_string());
-        stage.add_acceptance_criterion("test -n \"$TEST_VAR\"".to_string());
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
+            "test -n \"$TEST_VAR\"".to_string(),
+        ));
     } else {
         // Windows: set var and check it
         stage.setup.push("set TEST_VAR=hello".to_string());
-        stage.add_acceptance_criterion(
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
             "if defined TEST_VAR (exit /b 0) else (exit /b 1)".to_string(),
-        );
+        ));
     }
 
     let result = run_acceptance(&stage, None).unwrap();
@@ -34,10 +37,10 @@ fn test_run_acceptance_setup_failure_fails_criterion() {
     if cfg!(target_family = "unix") {
         // Setup command that fails
         stage.setup.push("false".to_string());
-        stage.add_acceptance_criterion("true".to_string());
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple("true".to_string()));
     } else {
         stage.setup.push("exit /b 1".to_string());
-        stage.add_acceptance_criterion("exit /b 0".to_string());
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple("exit /b 0".to_string()));
     }
 
     let result = run_acceptance(&stage, None).unwrap();
@@ -55,13 +58,15 @@ fn test_run_acceptance_multiple_setup_commands() {
         // Multiple setup commands chained
         stage.setup.push("export A=1".to_string());
         stage.setup.push("export B=2".to_string());
-        stage.add_acceptance_criterion("test -n \"$A\" && test -n \"$B\"".to_string());
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
+            "test -n \"$A\" && test -n \"$B\"".to_string(),
+        ));
     } else {
         stage.setup.push("set A=1".to_string());
         stage.setup.push("set B=2".to_string());
-        stage.add_acceptance_criterion(
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
             "if defined A if defined B (exit /b 0) else (exit /b 1)".to_string(),
-        );
+        ));
     }
 
     let result = run_acceptance(&stage, None).unwrap();

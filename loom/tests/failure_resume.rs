@@ -9,6 +9,7 @@
 //! - Valid state machine transitions
 
 use loom::models::stage::{Stage, StageStatus};
+use loom::plan::schema::AcceptanceCriterion;
 use loom::verify::transitions::{load_stage, save_stage, transition_stage, trigger_dependents};
 use std::fs;
 use tempfile::TempDir;
@@ -141,7 +142,9 @@ fn test_resume_from_needs_handoff_to_executing() {
     let mut stage = Stage::new("Test Stage".to_string(), None);
     stage.id = "test-stage".to_string();
     stage.status = StageStatus::NeedsHandoff;
-    stage.add_acceptance_criterion("Must complete successfully".to_string());
+    stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
+        "Must complete successfully".to_string(),
+    ));
     save_stage(&stage, work_dir).unwrap();
 
     // NeedsHandoff must first go to Ready, then Executing (per state machine)
@@ -310,8 +313,8 @@ fn test_blocked_stage_preserves_metadata() {
     stage.status = StageStatus::Executing;
     stage.add_dependency("dep-1".to_string());
     stage.add_dependency("dep-2".to_string());
-    stage.add_acceptance_criterion("Criterion A".to_string());
-    stage.add_acceptance_criterion("Criterion B".to_string());
+    stage.add_acceptance_criterion(AcceptanceCriterion::Simple("Criterion A".to_string()));
+    stage.add_acceptance_criterion(AcceptanceCriterion::Simple("Criterion B".to_string()));
     stage.add_file_pattern("src/**/*.rs".to_string());
     stage.add_file_pattern("tests/**/*.rs".to_string());
     stage.parallel_group = Some("group-1".to_string());
@@ -345,7 +348,9 @@ fn test_needs_handoff_preserves_stage_context() {
     );
     stage.id = "handoff-stage".to_string();
     stage.status = StageStatus::Executing;
-    stage.add_acceptance_criterion("Must complete integration".to_string());
+    stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
+        "Must complete integration".to_string(),
+    ));
     stage.add_file_pattern("src/integration/**/*.rs".to_string());
     stage.set_worktree(Some("worktree-123".to_string()));
     stage.assign_session("session-abc".to_string());

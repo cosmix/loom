@@ -7,6 +7,7 @@ use loom::models::session::Session;
 use loom::models::stage::{Stage, StageStatus};
 use loom::models::worktree::Worktree;
 use loom::orchestrator::signals::{generate_signal, list_signals, read_signal};
+use loom::plan::schema::AcceptanceCriterion;
 use loom::verify::transitions::save_stage;
 use std::fs;
 use std::path::PathBuf;
@@ -49,7 +50,7 @@ fn test_manual_mode_creates_signals() {
 
     let session = create_test_session("session-abc123", "stage-1");
     let mut stage = create_test_stage("stage-1", "First Stage", StageStatus::Queued);
-    stage.add_acceptance_criterion("cargo test".to_string());
+    stage.add_acceptance_criterion(AcceptanceCriterion::Simple("cargo test".to_string()));
     stage.add_file_pattern("src/*.rs".to_string());
 
     save_stage(&stage, &work_dir).unwrap();
@@ -80,8 +81,10 @@ fn test_signal_file_format() {
     let session = create_test_session("session-test-456", "stage-2");
     let mut stage = create_test_stage("stage-2", "Second Stage", StageStatus::Queued);
     stage.description = Some("Implement the feature".to_string());
-    stage.add_acceptance_criterion("cargo test passes".to_string());
-    stage.add_acceptance_criterion("cargo clippy passes".to_string());
+    stage.add_acceptance_criterion(AcceptanceCriterion::Simple("cargo test passes".to_string()));
+    stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
+        "cargo clippy passes".to_string(),
+    ));
     stage.add_file_pattern("src/models/*.rs".to_string());
     stage.add_file_pattern("src/commands/*.rs".to_string());
     stage.plan_id = Some("plan-test".to_string());
@@ -133,7 +136,7 @@ fn test_signal_not_created_for_pending_stages() {
     save_stage(&stage1, &work_dir).unwrap();
 
     let mut stage2 = create_test_stage("stage-ready", "Ready Stage", StageStatus::Queued);
-    stage2.add_acceptance_criterion("Complete work".to_string());
+    stage2.add_acceptance_criterion(AcceptanceCriterion::Simple("Complete work".to_string()));
     save_stage(&stage2, &work_dir).unwrap();
 
     let session_ready = create_test_session("session-ready", "stage-ready");
@@ -240,9 +243,13 @@ fn test_signal_acceptance_criteria_format() {
 
     let session = create_test_session("session-acceptance", "stage-acceptance");
     let mut stage = create_test_stage("stage-acceptance", "Acceptance Test", StageStatus::Queued);
-    stage.add_acceptance_criterion("All unit tests pass".to_string());
-    stage.add_acceptance_criterion("Integration tests pass".to_string());
-    stage.add_acceptance_criterion("No linting errors".to_string());
+    stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
+        "All unit tests pass".to_string(),
+    ));
+    stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
+        "Integration tests pass".to_string(),
+    ));
+    stage.add_acceptance_criterion(AcceptanceCriterion::Simple("No linting errors".to_string()));
 
     let worktree = create_test_worktree("stage-acceptance");
 

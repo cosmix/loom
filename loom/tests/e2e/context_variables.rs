@@ -5,6 +5,7 @@
 
 use crate::helpers::create_temp_git_repo;
 use loom::models::stage::Stage;
+use loom::plan::schema::AcceptanceCriterion;
 use loom::verify::context::CriteriaContext;
 use loom::verify::criteria::run_acceptance;
 use std::fs;
@@ -170,9 +171,13 @@ fn test_acceptance_criteria_with_worktree_variable() {
 
     if cfg!(target_family = "unix") {
         // Test that ${WORKTREE} expands to the working directory
-        stage.add_acceptance_criterion("test -d \"${WORKTREE}\"".to_string());
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
+            "test -d \"${WORKTREE}\"".to_string(),
+        ));
     } else {
-        stage.add_acceptance_criterion("if exist \"${WORKTREE}\" (exit /b 0)".to_string());
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
+            "if exist \"${WORKTREE}\" (exit /b 0)".to_string(),
+        ));
     }
 
     let result = run_acceptance(&stage, Some(temp_dir.path())).expect("should execute criteria");
@@ -194,11 +199,13 @@ fn test_acceptance_criteria_with_project_root_variable() {
     stage.id = "test-stage-456".to_string();
 
     if cfg!(target_family = "unix") {
-        stage.add_acceptance_criterion("test -f \"${PROJECT_ROOT}/Cargo.toml\"".to_string());
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
+            "test -f \"${PROJECT_ROOT}/Cargo.toml\"".to_string(),
+        ));
     } else {
-        stage.add_acceptance_criterion(
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
             "if exist \"${PROJECT_ROOT}\\Cargo.toml\" (exit /b 0)".to_string(),
-        );
+        ));
     }
 
     let result = run_acceptance(&stage, Some(temp_dir.path())).expect("should execute criteria");
@@ -219,10 +226,10 @@ fn test_setup_commands_with_variables() {
     if cfg!(target_family = "unix") {
         // Setup uses ${WORKTREE} variable
         stage.setup.push("cd ${WORKTREE}".to_string());
-        stage.add_acceptance_criterion("pwd".to_string());
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple("pwd".to_string()));
     } else {
         stage.setup.push("cd ${WORKTREE}".to_string());
-        stage.add_acceptance_criterion("cd".to_string());
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple("cd".to_string()));
     }
 
     let result = run_acceptance(&stage, Some(temp_dir.path())).expect("should execute criteria");
@@ -334,13 +341,19 @@ fn test_acceptance_in_git_worktree_context() {
 
     if cfg!(target_family = "unix") {
         // Verify we're in a git repo and can access project root
-        stage.add_acceptance_criterion("test -d \"${WORKTREE}/.git\"".to_string());
-        stage.add_acceptance_criterion("test -f \"${PROJECT_ROOT}/Cargo.toml\"".to_string());
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
+            "test -d \"${WORKTREE}/.git\"".to_string(),
+        ));
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
+            "test -f \"${PROJECT_ROOT}/Cargo.toml\"".to_string(),
+        ));
     } else {
-        stage.add_acceptance_criterion("if exist \"${WORKTREE}\\.git\" (exit /b 0)".to_string());
-        stage.add_acceptance_criterion(
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
+            "if exist \"${WORKTREE}\\.git\" (exit /b 0)".to_string(),
+        ));
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
             "if exist \"${PROJECT_ROOT}\\Cargo.toml\" (exit /b 0)".to_string(),
-        );
+        ));
     }
 
     let result = run_acceptance(&stage, Some(repo.path())).expect("should execute criteria");
@@ -364,11 +377,13 @@ fn test_variables_in_complex_shell_commands() {
 
     if cfg!(target_family = "unix") {
         // Chain of commands using variables
-        stage.add_acceptance_criterion(
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
             "cd ${WORKTREE} && cat test.txt | grep -q 'hello'".to_string(),
-        );
+        ));
     } else {
-        stage.add_acceptance_criterion("type \"${WORKTREE}\\test.txt\"".to_string());
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
+            "type \"${WORKTREE}\\test.txt\"".to_string(),
+        ));
     }
 
     let result = run_acceptance(&stage, Some(temp_dir.path())).expect("should execute criteria");

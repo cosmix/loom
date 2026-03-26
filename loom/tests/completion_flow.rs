@@ -11,6 +11,7 @@
 //! 3. test_successful_completion_flow
 
 use loom::models::stage::{Stage, StageStatus};
+use loom::plan::schema::AcceptanceCriterion;
 use loom::verify::transitions::{
     are_all_dependencies_satisfied, load_stage, save_stage, trigger_dependents,
 };
@@ -112,7 +113,7 @@ fn test_acceptance_failure_creates_correct_status() {
 
     // Create a stage that's executing
     let mut stage = create_test_stage("test-stage", "Test Stage", StageStatus::Executing);
-    stage.add_acceptance_criterion("false".to_string()); // Criterion that will fail
+    stage.add_acceptance_criterion(AcceptanceCriterion::Simple("false".to_string())); // Criterion that will fail
     save_stage(&stage, work_dir).expect("Should save test stage");
 
     // Create dependent stage

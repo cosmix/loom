@@ -1,7 +1,7 @@
 //! Tests for regression test validation
 
 use super::{create_valid_metadata, make_stage};
-use crate::plan::schema::types::{RegressionTest, StageType};
+use crate::plan::schema::types::{AcceptanceCriterion, RegressionTest, StageType};
 use crate::plan::schema::validation::validate;
 
 #[test]
@@ -9,7 +9,7 @@ fn test_bug_fix_without_regression_test_fails() {
     let mut metadata = create_valid_metadata();
     let mut stage = make_stage("bug-fix-stage", "Bug Fix");
     stage.bug_fix = Some(true);
-    stage.truths = vec!["cargo test".to_string()]; // Standard stage needs verification
+    stage.artifacts = vec!["src/main.rs".to_string()]; // Standard stage needs verification
     metadata.loom.stages.push(stage);
 
     let result = validate(&metadata);
@@ -29,7 +29,7 @@ fn test_bug_fix_with_regression_test_passes() {
         file: "tests/regression_test.rs".to_string(),
         must_contain: vec!["test_bug_fixed".to_string()],
     });
-    stage.truths = vec!["cargo test".to_string()]; // Standard stage needs verification
+    stage.acceptance = vec![AcceptanceCriterion::Simple("cargo test".to_string())]; // Standard stage needs verification
     metadata.loom.stages.push(stage);
 
     let result = validate(&metadata);
@@ -44,7 +44,7 @@ fn test_regression_test_without_bug_fix_fails() {
         file: "tests/some_test.rs".to_string(),
         must_contain: vec!["test_something".to_string()],
     });
-    stage.truths = vec!["cargo test".to_string()]; // Standard stage needs verification
+    stage.artifacts = vec!["src/main.rs".to_string()]; // Standard stage needs verification
     metadata.loom.stages.push(stage);
 
     let result = validate(&metadata);
@@ -64,7 +64,7 @@ fn test_regression_test_empty_file_fails() {
         file: "".to_string(),
         must_contain: vec!["test_bug_fixed".to_string()],
     });
-    stage.truths = vec!["cargo test".to_string()];
+    stage.artifacts = vec!["src/main.rs".to_string()];
     metadata.loom.stages.push(stage);
 
     let result = validate(&metadata);
@@ -84,7 +84,7 @@ fn test_regression_test_path_traversal_fails() {
         file: "../tests/regression_test.rs".to_string(),
         must_contain: vec!["test_bug_fixed".to_string()],
     });
-    stage.truths = vec!["cargo test".to_string()];
+    stage.artifacts = vec!["src/main.rs".to_string()];
     metadata.loom.stages.push(stage);
 
     let result = validate(&metadata);
@@ -104,7 +104,7 @@ fn test_regression_test_absolute_path_fails() {
         file: "/tmp/tests/regression_test.rs".to_string(),
         must_contain: vec!["test_bug_fixed".to_string()],
     });
-    stage.truths = vec!["cargo test".to_string()];
+    stage.artifacts = vec!["src/main.rs".to_string()];
     metadata.loom.stages.push(stage);
 
     let result = validate(&metadata);
@@ -124,7 +124,7 @@ fn test_regression_test_empty_must_contain_fails() {
         file: "tests/regression_test.rs".to_string(),
         must_contain: vec![],
     });
-    stage.truths = vec!["cargo test".to_string()];
+    stage.artifacts = vec!["src/main.rs".to_string()];
     metadata.loom.stages.push(stage);
 
     let result = validate(&metadata);
@@ -169,7 +169,7 @@ loom:
         must_contain:
           - test_bug_fixed
           - assert_eq
-      truths:
+      acceptance:
         - cargo test
 "#;
 
@@ -207,7 +207,7 @@ fn test_regression_test_serialization_round_trip() {
             "test_edge_case".to_string(),
         ],
     });
-    stage.truths = vec!["cargo test bug_regression".to_string()];
+    stage.artifacts = vec!["src/main.rs".to_string()];
     metadata.loom.stages.push(stage);
 
     // Serialize to YAML

@@ -2,6 +2,7 @@
 
 use crate::models::stage::StageStatus;
 use crate::parser::frontmatter::extract_yaml_frontmatter;
+use crate::plan::schema::AcceptanceCriterion;
 use crate::verify::transitions::{parse_stage_from_markdown, serialize_stage_to_markdown};
 
 use super::create_test_stage;
@@ -10,8 +11,8 @@ use super::create_test_stage;
 fn test_serialize_and_parse_roundtrip() {
     let mut stage = create_test_stage("stage-1", "Test Stage", StageStatus::WaitingForDeps);
     stage.add_dependency("stage-0".to_string());
-    stage.add_acceptance_criterion("Criterion 1".to_string());
-    stage.add_acceptance_criterion("Criterion 2".to_string());
+    stage.add_acceptance_criterion(AcceptanceCriterion::Simple("Criterion 1".to_string()));
+    stage.add_acceptance_criterion(AcceptanceCriterion::Simple("Criterion 2".to_string()));
     stage.add_file_pattern("src/**/*.rs".to_string());
 
     let markdown = serialize_stage_to_markdown(&stage).expect("Should serialize");

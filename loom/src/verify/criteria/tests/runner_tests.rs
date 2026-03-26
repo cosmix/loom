@@ -1,6 +1,7 @@
 //! Tests for acceptance runner
 
 use crate::models::stage::Stage;
+use crate::plan::schema::AcceptanceCriterion;
 use crate::verify::criteria::runner::run_acceptance;
 
 #[test]
@@ -20,8 +21,8 @@ fn test_run_acceptance_all_pass() {
     } else {
         "exit /b 0"
     };
-    stage.add_acceptance_criterion(command.to_string());
-    stage.add_acceptance_criterion(command.to_string());
+    stage.add_acceptance_criterion(AcceptanceCriterion::Simple(command.to_string()));
+    stage.add_acceptance_criterion(AcceptanceCriterion::Simple(command.to_string()));
 
     let result = run_acceptance(&stage, None).unwrap();
 
@@ -36,11 +37,11 @@ fn test_run_acceptance_some_fail() {
     let mut stage = Stage::new("test".to_string(), None);
 
     if cfg!(target_family = "unix") {
-        stage.add_acceptance_criterion("true".to_string());
-        stage.add_acceptance_criterion("false".to_string());
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple("true".to_string()));
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple("false".to_string()));
     } else {
-        stage.add_acceptance_criterion("exit /b 0".to_string());
-        stage.add_acceptance_criterion("exit /b 1".to_string());
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple("exit /b 0".to_string()));
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple("exit /b 1".to_string()));
     }
 
     let result = run_acceptance(&stage, None).unwrap();
