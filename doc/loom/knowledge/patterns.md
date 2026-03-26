@@ -369,3 +369,7 @@ Before creating any stage beyond knowledge-bootstrap and integration-verify:
 - Q3: Does this stage need a verification checkpoint? → Separate stage
 
 If ALL answers NO → merge into one stage with parallel subagents.
+
+## Bootstrap Interactive/Non-Interactive Mode
+
+`loom knowledge bootstrap` defaults to interactive mode (Stdio::inherit, no -p flag) for macOS terminal UI compatibility. The `--quick` flag opts into non-interactive mode (Stdio::null + -p flag) for CI/scripted use. Exit codes 130 (SIGINT) and 2 are both treated as user interrupt in either mode.

@@ -52,3 +52,11 @@ Key duplications needing consolidation:
 User-provided regex patterns in plan files (failure_patterns, wiring patterns) are compiled and executed without complexity checks. While mitigated by trust model (plan authors = trusted), consider adding regex timeout or complexity limits for defense in depth.
 
 Files: src/verify/baseline/capture.rs:76-79, src/verify/baseline/compare.rs:155-158
+
+## Bootstrap Settings Backup Risk
+
+`bootstrap.rs:write_bootstrap_sandbox()` keeps the settings.local.json backup in memory only (`Option<String>`). If the process is killed between writing sandbox settings and restoring the original, user settings are permanently lost. Low probability since bootstrap is interactive, but a disk-based temp backup would be more robust.
+
+## Bootstrap Tool Restriction Scope
+
+`bootstrap.rs:57` uses `Bash(loom knowledge*)` which allows all knowledge subcommands (init, check, gc, show) not just `update`. Harmless since other subcommands are read-only, but could be tightened to `Bash(loom knowledge update*)` for principle of least privilege.
