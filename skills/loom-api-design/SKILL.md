@@ -1,89 +1,65 @@
 ---
 name: loom-api-design
-description: Designs RESTful APIs, GraphQL schemas, and RPC interfaces following best practices for consistency, usability, and scalability. Trigger keywords: api design, REST, RESTful, REST API, GraphQL, GraphQL schema, gRPC, OpenAPI, Swagger, endpoint, route, resource, CRUD, HTTP method, GET, POST, PUT, PATCH, DELETE, status code, pagination, filtering, sorting, versioning, HATEOAS, API versioning, schema design, RPC, service design.
+description: "Designs RESTful APIs, GraphQL schemas, and gRPC interfaces following best practices for consistency, usability, and scalability. Use when the developer needs to create or refactor API endpoints, define resource models, plan versioning strategies, or design request/response schemas across REST, GraphQL, or gRPC protocols."
 allowed-tools: Read, Grep, Glob, Edit, Write
+trigger-keywords: api design, REST, RESTful, REST API, GraphQL, GraphQL schema, gRPC, OpenAPI, Swagger, endpoint, route, resource, CRUD, HTTP method, GET, POST, PUT, PATCH, DELETE, status code, pagination, filtering, sorting, versioning, HATEOAS, API versioning, schema design, RPC, service design
 ---
 
 # API Design
 
 ## Overview
 
-This skill guides the design of well-structured APIs that are intuitive, consistent, and scalable. It covers REST, GraphQL, and gRPC patterns with focus on developer experience and long-term maintainability.
+This skill guides the agent through designing well-structured APIs that are intuitive, consistent, and scalable. It covers REST, GraphQL, and gRPC patterns with focus on developer experience and long-term maintainability.
 
-## Instructions
+## Workflow
 
-### 1. Understand Requirements
+The agent follows these steps when designing or reviewing an API:
 
-- Identify API consumers and use cases
-- Define resource models and relationships
-- Determine authentication/authorization needs
-- Plan for versioning strategy
-
-### 2. Design Resource Structure
-
-- Define clear resource hierarchies
-- Establish naming conventions
-- Plan URL patterns
-- Design request/response schemas
-
-### 3. Define Operations
-
-- Map CRUD operations to HTTP methods
-- Design query parameters for filtering/sorting
-- Plan pagination approach
-- Define error response formats
-
-### 4. Document the API
-
-- Create OpenAPI/Swagger specification
-- Include examples for all endpoints
-- Document authentication flows
-- Provide SDK usage examples
+1. **Understand requirements** — Identify API consumers, use cases, resource models, relationships, and authentication/authorization needs. Determine the versioning strategy early.
+2. **Design resource structure** — Define clear resource hierarchies, establish naming conventions, plan URL patterns, and design request/response schemas.
+3. **Define operations** — Map CRUD operations to HTTP methods (REST), define queries and mutations (GraphQL), or specify RPC methods (gRPC). Plan filtering, sorting, pagination, and error response formats.
+4. **Document the API** — Create an OpenAPI/Swagger specification (REST), schema documentation (GraphQL), or proto file comments (gRPC). Include examples for all endpoints and document authentication flows.
+5. **Review and validate** — Check adherence to the best practices below. Verify consistency in naming, status codes, error formats, and pagination across all endpoints.
 
 ## Best Practices
 
 ### RESTful API Design
 
-1. **Use Nouns for Resources**: `/users`, not `/getUsers`
-2. **Consistent Naming**: Use snake_case or camelCase consistently across all endpoints
-3. **Proper HTTP Methods**:
-   - GET (read/fetch), POST (create), PUT (full update), PATCH (partial update), DELETE (remove)
-4. **Meaningful Status Codes**:
-   - 200 (OK), 201 (Created), 204 (No Content)
-   - 400 (Bad Request), 401 (Unauthorized), 403 (Forbidden), 404 (Not Found)
-   - 409 (Conflict), 422 (Unprocessable Entity)
-   - 500 (Internal Server Error), 503 (Service Unavailable)
-5. **Idempotency**: PUT and DELETE should be idempotent; consider idempotency keys for POST
-6. **HATEOAS**: Include links to related resources in responses
-7. **Filtering & Sorting**: Use query parameters (`?status=active&sort=-created_at`)
-8. **Pagination**: Cursor-based for large datasets, offset for simpler cases
+1. **Use nouns for resources** — `/users`, not `/getUsers`.
+2. **Consistent naming** — Use snake_case or camelCase consistently across all endpoints.
+3. **Proper HTTP methods** — GET (read), POST (create), PUT (full update), PATCH (partial update), DELETE (remove).
+4. **Meaningful status codes** — 200 OK, 201 Created, 204 No Content, 400 Bad Request, 401 Unauthorized, 403 Forbidden, 404 Not Found, 409 Conflict, 422 Unprocessable Entity, 500 Internal Server Error, 503 Service Unavailable.
+5. **Idempotency** — PUT and DELETE must be idempotent. Consider idempotency keys for POST.
+6. **HATEOAS** — Include links to related resources in responses.
+7. **Filtering and sorting** — Use query parameters (e.g. `?status=active&sort=-created_at`).
+8. **Pagination** — Cursor-based for large datasets, offset-based for simpler cases.
 
 ### GraphQL Schema Design
 
-1. **Use Descriptive Types**: Clear, self-documenting type and field names
-2. **Connection Pattern**: Use relay-style connections for paginated lists
-3. **Input Objects**: Separate input types for mutations (CreateUserInput, UpdateUserInput)
-4. **Error Handling**: Return errors as part of payload, not just top-level exceptions
-5. **Nullability**: Be explicit about nullable vs non-nullable fields
-6. **Mutations Return Payloads**: Include both data and errors in mutation responses
-7. **Avoid Over-fetching**: Design fragments and fields for common query patterns
+1. **Use descriptive types** — Clear, self-documenting type and field names.
+2. **Connection pattern** — Use Relay-style connections for paginated lists.
+3. **Input objects** — Separate input types for mutations (CreateUserInput, UpdateUserInput).
+4. **Error handling** — Return errors as part of the payload, not just top-level exceptions.
+5. **Nullability** — Be explicit about nullable vs non-nullable fields.
+6. **Mutations return payloads** — Include both data and errors in mutation responses.
+7. **Avoid over-fetching** — Design fragments and fields for common query patterns.
 
 ### gRPC Service Design
 
-1. **Service Naming**: Use verbs for RPC methods (CreateUser, GetUser, ListUsers)
-2. **Message Reuse**: Define shared message types for common patterns
-3. **Pagination**: Use page_token pattern for cursor-based pagination
-4. **Errors**: Use google.rpc.Status for rich error details
-5. **Versioning**: Use package versioning (myapi.v1, myapi.v2)
-6. **Streaming**: Leverage server/client/bidirectional streaming where appropriate
+1. **Service naming** — Use verbs for RPC methods (CreateUser, GetUser, ListUsers).
+2. **Message reuse** — Define shared message types for common patterns.
+3. **Pagination** — Use the page_token pattern for cursor-based pagination.
+4. **Errors** — Use google.rpc.Status for rich error details.
+5. **Versioning** — Use package versioning (myapi.v1, myapi.v2).
+6. **Streaming** — Leverage server, client, or bidirectional streaming where appropriate.
 
 ### API Versioning Strategies
 
-1. **URL Path Versioning**: `/v1/users`, `/v2/users` (explicit, simple, cacheable)
-2. **Header Versioning**: `API-Version: 2` or `Accept: application/vnd.api.v2+json` (cleaner URLs)
-3. **Query Parameter**: `?version=2` (fallback option, less recommended)
-4. **Semantic Versioning**: Major versions for breaking changes, minor for features, patch for fixes
-5. **Deprecation Policy**: Announce sunset dates, support N-1 versions minimum
+1. **URL path versioning** — `/v1/users`, `/v2/users` (explicit, simple, cacheable).
+2. **Header versioning** — `API-Version: 2` or `Accept: application/vnd.api.v2+json` (cleaner URLs).
+3. **Query parameter** — `?version=2` (fallback option, less recommended).
+4. **Semantic versioning** — Major versions for breaking changes, minor for features, patch for fixes.
+5. **Deprecation policy** — Announce sunset dates and support N-1 versions minimum.
 
 ## Examples
 
@@ -169,26 +145,18 @@ paths:
 
 ```graphql
 type Query {
-  """
-  Fetch a user by ID
-  """
+  """Fetch a user by ID"""
   user(id: ID!): User
 
-  """
-  List users with optional filtering
-  """
+  """List users with optional filtering"""
   users(filter: UserFilter, first: Int = 20, after: String): UserConnection!
 }
 
 type Mutation {
-  """
-  Create a new user account
-  """
+  """Create a new user account"""
   createUser(input: CreateUserInput!): CreateUserPayload!
 
-  """
-  Update an existing user
-  """
+  """Update an existing user"""
   updateUser(id: ID!, input: UpdateUserInput!): UpdateUserPayload!
 }
 
@@ -222,25 +190,15 @@ type UserError {
 
 ```protobuf
 syntax = "proto3";
-
 package ecommerce.v1;
 
 import "google/protobuf/timestamp.proto";
 
 service ProductService {
-  // Fetch a single product by ID
   rpc GetProduct(GetProductRequest) returns (GetProductResponse);
-
-  // List products with filtering and pagination
   rpc ListProducts(ListProductsRequest) returns (ListProductsResponse);
-
-  // Create a new product
   rpc CreateProduct(CreateProductRequest) returns (CreateProductResponse);
-
-  // Update an existing product
   rpc UpdateProduct(UpdateProductRequest) returns (UpdateProductResponse);
-
-  // Delete a product
   rpc DeleteProduct(DeleteProductRequest) returns (DeleteProductResponse);
 }
 
@@ -255,16 +213,9 @@ message Product {
 }
 
 message ListProductsRequest {
-  // Optional category filter
   string category = 1;
-
-  // Minimum price filter (in cents)
   optional int64 min_price_cents = 2;
-
-  // Maximum number of items to return
   int32 page_size = 3;
-
-  // Page token from previous response
   string page_token = 4;
 }
 
