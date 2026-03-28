@@ -296,8 +296,8 @@ mod generator_tests {
         let claude_dir = worktree_path.join(".claude");
         assert!(claude_dir.exists());
 
-        // Check settings.json created
-        let settings_path = claude_dir.join("settings.json");
+        // Check settings.local.json created (hooks go in local settings, not shared settings)
+        let settings_path = claude_dir.join("settings.local.json");
         assert!(settings_path.exists());
 
         // Parse and validate settings

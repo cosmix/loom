@@ -1,7 +1,9 @@
 //! Hooks settings generator for Claude Code worktrees.
 //!
-//! This module generates the `.claude/settings.json` configuration
+//! This module generates the `.claude/settings.local.json` configuration
 //! that sets up hooks for loom-managed Claude Code sessions.
+//! Hooks are stored in settings.local.json (not settings.json) because
+//! they contain user-specific paths (e.g., ~/.claude/hooks/loom/).
 
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
@@ -92,16 +94,16 @@ pub fn generate_hooks_settings(
     Ok(settings)
 }
 
-/// Set up hooks for a worktree by creating/updating settings.json
+/// Set up hooks for a worktree by creating/updating settings.local.json
 ///
 /// This function:
-/// 1. Reads existing settings.json if present (containing global hooks)
+/// 1. Reads existing settings.local.json if present (containing global hooks + sandbox)
 /// 2. Generates session-specific hooks configuration
 /// 3. Merges session hooks with global hooks
-/// 4. Writes the merged settings to the worktree's .claude/settings.json
+/// 4. Writes the merged settings to the worktree's .claude/settings.local.json
 pub fn setup_hooks_for_worktree(worktree_path: &Path, config: &HooksConfig) -> Result<()> {
     let claude_dir = worktree_path.join(".claude");
-    let settings_path = claude_dir.join("settings.json");
+    let settings_path = claude_dir.join("settings.local.json");
 
     // Ensure .claude directory exists
     if !claude_dir.exists() {

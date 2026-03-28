@@ -275,7 +275,7 @@ fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
         });
     }
 
-    // Check 5: .claude/settings.json completeness (permissions, hooks, env vars)
+    // Check 5: .claude/settings.json has permissions (but NOT hooks/env - those belong in settings.local.json)
     {
         let settings_path = repo_root.join(".claude/settings.json");
         let parsed = if settings_path.exists() {
@@ -302,20 +302,6 @@ fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
             if !has_all_perms {
                 missing_reasons.push("permissions missing");
             }
-
-            // Check hooks key exists
-            if val.get("hooks").is_none() {
-                missing_reasons.push("hooks missing");
-            }
-
-            // Check env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS exists
-            let has_agent_teams_env = val
-                .get("env")
-                .and_then(|e| e.get("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"))
-                .is_some();
-            if !has_agent_teams_env {
-                missing_reasons.push("env vars missing");
-            }
         } else {
             // File missing or unparseable
             missing_reasons.push("file missing");
@@ -326,20 +312,41 @@ fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
             issues.push(RepairIssue {
                 severity: Severity::Info,
                 description: format!("Project .claude/settings.json incomplete ({})", reasons),
-                fix_description:
-                    "Restore permissions, hooks, and env vars to .claude/settings.json".to_string(),
+                fix_description: "Restore permissions to .claude/settings.json".to_string(),
             });
         }
     }
 
-    // Check 6: Sandbox settings.local.json exists
+    // Check 5b: .claude/settings.json should NOT contain hooks (they belong in settings.local.json)
     {
+        use crate::fs::permissions::settings_json_has_hooks;
+        if settings_json_has_hooks(repo_root) {
+            issues.push(RepairIssue {
+                severity: Severity::Warning,
+                description:
+                    "Hooks found in .claude/settings.json (should be in settings.local.json)"
+                        .to_string(),
+                fix_description: "Migrate hooks from settings.json to settings.local.json"
+                    .to_string(),
+            });
+        }
+    }
+
+    // Check 6: settings.local.json has hooks and env configured
+    {
+        use crate::fs::permissions::settings_local_has_hooks;
         let settings_local = repo_root.join(".claude/settings.local.json");
         if !settings_local.exists() {
             issues.push(RepairIssue {
                 severity: Severity::Info,
-                description: "Sandbox settings not found (.claude/settings.local.json)".to_string(),
-                fix_description: "Apply default sandbox settings".to_string(),
+                description: "Settings not found (.claude/settings.local.json)".to_string(),
+                fix_description: "Apply default sandbox settings and hooks".to_string(),
+            });
+        } else if !settings_local_has_hooks(repo_root) {
+            issues.push(RepairIssue {
+                severity: Severity::Info,
+                description: "Hooks/env missing from .claude/settings.local.json".to_string(),
+                fix_description: "Configure hooks and env in settings.local.json".to_string(),
             });
         }
     }
@@ -488,11 +495,24 @@ fn fix_issue(repo_root: &Path, issue: &RepairIssue) -> Result<bool> {
     } else if issue
         .description
         .contains("Project .claude/settings.json incomplete")
+        || issue
+            .description
+            .contains("Hooks found in .claude/settings.json")
     {
         fix_hooks(repo_root)?;
         Ok(true)
-    } else if issue.description.contains("Sandbox settings not found") {
+    } else if issue
+        .description
+        .contains("Settings not found (.claude/settings.local.json)")
+    {
         fix_sandbox_settings(repo_root)?;
+        fix_hooks_local(repo_root)?;
+        Ok(true)
+    } else if issue
+        .description
+        .contains("Hooks/env missing from .claude/settings.local.json")
+    {
+        fix_hooks_local(repo_root)?;
         Ok(true)
     } else if issue.description.contains("Old unprefixed skill") {
         fix_old_skill(&issue.description)?;
@@ -563,12 +583,19 @@ fn fix_gitignore_work(repo_root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Install Claude Code hooks and rebuild the skill keyword index
+/// Install Claude Code hooks, configure permissions, and rebuild the skill keyword index
 fn fix_hooks(repo_root: &Path) -> Result<()> {
     use crate::fs::permissions::{ensure_loom_permissions, install_loom_hooks};
     install_loom_hooks()?;
     ensure_loom_permissions(repo_root)?;
     rebuild_skill_index()?;
+    Ok(())
+}
+
+/// Configure hooks and env in settings.local.json
+fn fix_hooks_local(repo_root: &Path) -> Result<()> {
+    use crate::fs::permissions::ensure_loom_hooks_local;
+    ensure_loom_hooks_local(repo_root)?;
     Ok(())
 }
 

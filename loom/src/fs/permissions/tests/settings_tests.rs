@@ -95,23 +95,30 @@ fn test_ensure_loom_permissions_no_duplicates() {
 }
 
 #[test]
-fn test_ensure_loom_permissions_adds_hooks() {
+fn test_ensure_loom_permissions_adds_hooks_to_settings_local() {
     let temp_dir = TempDir::new().unwrap();
     let repo_root = temp_dir.path();
 
     ensure_loom_permissions(repo_root).unwrap();
 
-    let settings_path = repo_root.join(".claude/settings.json");
-    let content = fs::read_to_string(&settings_path).unwrap();
+    // Hooks should be in settings.local.json, NOT settings.json
+    let settings_local_path = repo_root.join(".claude/settings.local.json");
+    let content = fs::read_to_string(&settings_local_path).unwrap();
     let settings: Value = serde_json::from_str(&content).unwrap();
 
-    // Check hooks are configured
+    // Check hooks are configured in settings.local.json
     let hooks = settings.get("hooks").expect("hooks should be present");
     let hooks_obj = hooks.as_object().unwrap();
 
     assert!(hooks_obj.contains_key("PreToolUse"));
     assert!(hooks_obj.contains_key("PostToolUse"));
     assert!(hooks_obj.contains_key("Stop"));
+
+    // settings.json should NOT have hooks
+    let settings_path = repo_root.join(".claude/settings.json");
+    let content = fs::read_to_string(&settings_path).unwrap();
+    let settings: Value = serde_json::from_str(&content).unwrap();
+    assert!(settings.get("hooks").is_none());
 }
 
 #[test]
@@ -123,8 +130,9 @@ fn test_hooks_not_duplicated_on_rerun() {
     ensure_loom_permissions(repo_root).unwrap();
     ensure_loom_permissions(repo_root).unwrap();
 
-    let settings_path = repo_root.join(".claude/settings.json");
-    let content = fs::read_to_string(&settings_path).unwrap();
+    // Hooks are in settings.local.json
+    let settings_local_path = repo_root.join(".claude/settings.local.json");
+    let content = fs::read_to_string(&settings_local_path).unwrap();
     let settings: Value = serde_json::from_str(&content).unwrap();
 
     // Should still have exactly one Stop hook entry
