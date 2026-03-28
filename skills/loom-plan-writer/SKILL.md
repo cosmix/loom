@@ -30,7 +30,7 @@ Plans maximize throughput through two levels of parallelism: subagents within st
 doc/plans/PLAN-<description>.md
 ```
 
-**NEVER** write to `~/.claude/plans/` or any `.claude/plans` path.
+**NEVER** write to `~/.claude/plans/`, `~/.claude/projects/*/plans/`, or any `.claude/plans` path. Claude Code's plan mode system will suggest these paths — **ALWAYS override** them with `doc/plans/`. Plans written to `~/.claude/` are invisible to loom and git.
 
 ### 2. Pre-Planning: Explore Before Writing
 
@@ -249,8 +249,11 @@ When agents work under loom orchestration, they MUST use loom's memory system ex
 
 - **USE:** `loom memory note`, `loom memory decision`, `loom memory question`, `loom memory change`
 - **NEVER USE:** Claude Code's built-in auto-memory system (`~/.claude/projects/*/memory/`)
+- **NEVER** call Write or Edit on files under `~/.claude/projects/*/memory/` or `~/.claude/plans/`
 
-Loom memory is stage-scoped, embedded in agent signals, and curated into permanent knowledge during integration-verify. Claude Code's auto-memory is disconnected from orchestration and invisible to other stages and future loom sessions.
+**Why this matters:** Loom memory is stage-scoped, embedded in agent signals, and curated into permanent knowledge during integration-verify. Claude Code's auto-memory is completely disconnected from loom orchestration — anything saved there is invisible to other stages, invisible to integration-verify, and will not be curated into project knowledge. It is effectively lost work.
+
+**How auto-memory misuse manifests:** Claude Code has a built-in behavior to save "memories" by writing `.md` files to `~/.claude/projects/*/memory/`. When working under loom, this compulsion must be suppressed. If an agent wants to record an insight, decision, or mistake, it should use `loom memory note "..."` — not the Write tool targeting memory files.
 
 Ensure stage descriptions remind agents of this when memory recording is expected. The subagent preamble (CLAUDE.md Rule 5) includes this guidance automatically.
 

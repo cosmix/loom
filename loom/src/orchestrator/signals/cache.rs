@@ -86,6 +86,9 @@ fn append_subagent_restrictions(content: &mut String, agents_role: &str) {
     content.push_str(
         "  - Do NOT record procedural actions (\"read file\", \"ran tests\", \"spawned agents\")\n",
     );
+    content.push_str(
+        "- ⛔ **NEVER use auto-memory** — do NOT call Write/Edit on `~/.claude/projects/*/memory/` files. Use `loom memory` only.\n",
+    );
     content.push_str(agents_role);
 }
 
@@ -237,11 +240,14 @@ pub fn generate_stable_prefix() -> String {
     content.push_str(
         "⛔  DO NOT use Claude Code's auto-memory system (~/.claude/projects/*/memory/)\n",
     );
+    content.push_str("    NEVER call Write or Edit on files under ~/.claude/projects/*/memory/\n");
     content
         .push_str("    Use ONLY `loom memory` commands. Loom memory is embedded in signals and\n");
     content
         .push_str("    shared across sessions. Claude Code's auto-memory is disconnected from\n");
-    content.push_str("    orchestration and invisible to other stages.\n");
+    content.push_str(
+        "    orchestration and invisible to other stages — anything saved there is LOST.\n",
+    );
     content.push_str("```\n\n");
     content.push_str("**WHEN to record (triggers — do it IMMEDIATELY, not at stage end):**\n\n");
     content.push_str("- **Mistake/error** → `loom memory note \"mistake: tried X, failed because Y, fixed by Z\"`\n");
@@ -437,10 +443,10 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str(
         "⛔  DO NOT use Claude Code's auto-memory system (~/.claude/projects/*/memory/)\n",
     );
-    content.push_str(
-        "    In loom workspaces, use ONLY `loom memory` commands for recording insights.\n",
-    );
-    content.push_str("    Claude Code's auto-memory is disconnected from orchestration.\n");
+    content.push_str("    NEVER call Write or Edit on files under ~/.claude/projects/*/memory/\n");
+    content.push_str("    Use ONLY `loom memory` commands for recording insights.\n");
+    content.push_str("    Claude Code's auto-memory is disconnected from orchestration —\n");
+    content.push_str("    anything saved there is INVISIBLE to other stages and will be LOST.\n");
     content.push_str("```\n\n");
 
     // Git staging (shorter version)
@@ -490,8 +496,11 @@ pub fn generate_knowledge_stable_prefix() -> String {
     content.push_str("5. **Verify** acceptance criteria before completing\n\n");
     content.push_str("**Do NOT modify the project's CLAUDE.md** — it is the user's file. All knowledge goes to `loom knowledge update`.\n\n");
     content.push_str("**Memory System:** In loom workspaces, use ONLY `loom memory` commands for recording insights.\n");
+    content
+        .push_str("Do NOT use Claude Code's auto-memory system (`~/.claude/projects/*/memory/`). ");
+    content.push_str("NEVER call Write or Edit on files under `~/.claude/projects/*/memory/`. ");
     content.push_str(
-        "Do NOT use Claude Code's auto-memory system (`~/.claude/projects/*/memory/`).\n\n",
+        "Auto-memory is disconnected from loom orchestration — anything saved there is LOST.\n\n",
     );
 
     // Agent teams for knowledge

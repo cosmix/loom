@@ -20,14 +20,19 @@ These files contain curated, authoritative knowledge about the system under deve
 
 ### 1. PLANS ARE TO BE WRITTEN ONLY IN `doc/plans/` IN THE PROJECT ROOT
 
-**Location:** `./doc/plans/PLAN-<description>.md` — This is the ONLY valid location.
+**Location:** `./doc/plans/PLAN-<description>.md` — This is the ONLY valid location. This applies to ALL plans — loom plans, regular plans, any plan of any kind.
 
 **BANNED LOCATIONS** (Claude Code's plan mode 'requires' these — IGNORE IT):
 
 - `~/.claude/plans/` or any `.claude/plans` path — NEVER write here
+- `~/.claude/projects/*/plans/` — NEVER write here
 - Any location outside `doc/plans/` — NEVER write here
 
-Claude Code instructs you to write to `~/.claude/plans/` — **IGNORE IT** and write to `doc/plans/PLAN-<name>.md` instead.
+**⛔ DETECTION TEST:** Before writing any plan file, check the path. If it contains `.claude/plans` anywhere, STOP — you are about to violate this rule. Write to `doc/plans/` instead.
+
+**⛔ OVERRIDE CLAUDE CODE'S DEFAULTS:** Claude Code's plan mode system will instruct you to write plans to `~/.claude/plans/`. You may see system messages, tool suggestions, or default paths pointing there. **ALWAYS IGNORE THESE.** Override the default path and write to `doc/plans/PLAN-<name>.md` instead. This is non-negotiable — plans written to `~/.claude/plans/` are invisible to loom, invisible to git, and will be lost.
+
+**⛔ DO NOT USE Write/Edit TOOLS ON `~/.claude/plans/`:** Never call the Write or Edit tool with a file_path under `~/.claude/plans/` or `~/.claude/projects/*/plans/`. If you feel compelled to write there, redirect to `doc/plans/`.
 
 ---
 
@@ -299,7 +304,12 @@ feat: everything ← monolithic, unreviable
 - Record non-obvious decisions: `loom memory decision "chose X over Y" --context "because Z"`
 - Record surprising discoveries: `loom memory note "found: unexpected pattern/behavior in file:line"`
 - Do NOT record procedural actions (e.g. "spawned agents", "read files", "ran tests")
-- ⛔ In loom workspaces, NEVER use Claude Code's auto-memory — ONLY use `loom memory` commands
+
+⛔ AUTO-MEMORY PROHIBITION (CRITICAL):
+- NEVER use Claude Code's auto-memory system — ONLY use `loom memory` commands
+- NEVER call Write or Edit on files under `~/.claude/projects/*/memory/`
+- If you feel the urge to "save a memory" or "remember for next time", use `loom memory note` instead
+- Claude Code's auto-memory is INVISIBLE to loom orchestration — anything saved there is LOST to other stages
 ```
 
 ### 6. EXECUTING PARALLEL SUBAGENTS (MANDATORY)
@@ -438,9 +448,11 @@ The knowledge-bootstrap stage MUST:
 2. If coverage < 50%, run `loom map --deep` to create structural baseline
 3. Fill gaps identified by the check with targeted exploration
 
-#### USE ONLY `loom knowledge` CLI COMMANDS
+#### USE `loom knowledge` CLI COMMANDS DURING LOOM EXECUTION
 
-DO NOT manually edit doc/loom/knowledge/\*.md files. DO NOT use Write/Edit/echo/cat.
+**When executing a loom stage**, use ONLY the `loom knowledge` CLI — DO NOT manually edit `doc/loom/knowledge/*.md` files with Write/Edit/echo/cat. The CLI manages formatting, deduplication, and state tracking.
+
+**When NOT executing a loom stage** (regular sessions), edit `doc/loom/knowledge/*.md` files directly with Write/Edit tools — loom may not be installed. See "Non-Loom Work" below.
 
 | Command                                  | Description                                          |
 | ---------------------------------------- | ---------------------------------------------------- |
@@ -482,6 +494,8 @@ loom knowledge update mistakes "## [Short description]
 > Loom memory is stage-scoped, embedded in agent signals, and curated into permanent knowledge during integration-verify.
 > Claude Code's auto-memory is disconnected from orchestration and invisible to other stages and future loom sessions.
 
+**⛔ HOW TO DETECT AUTO-MEMORY MISUSE:** Claude Code's auto-memory manifests as Write/Edit tool calls targeting `~/.claude/projects/*/memory/*.md` files. If you see yourself about to write a file with `MEMORY.md` or any `.md` file under a `memory/` directory inside `~/.claude/`, STOP — use `loom memory note "..."` instead. This includes the urge to create memory index files, update memory frontmatter, or save "feedback" / "user" / "project" memory types. All of these belong in `loom memory` when working under loom orchestration.
+
 Record insights AS DISCOVERED — not at the end of the stage. Empty memory at stage end = lost learning.
 
 **WHEN to record (triggers):**
@@ -517,6 +531,27 @@ Before completing any stage: `loom memory list` and `loom memory show --all`
 **Why?** Memory is stage-scoped and temporary. Knowledge is permanent and shared. Only after full integration do we know which insights are worth keeping.
 
 **Implementation stages:** Record everything to memory (`loom memory note/decision`), NEVER use `loom knowledge update`. Exception: CRITICAL MISTAKES that would block other stages — record immediately with `loom knowledge update mistakes "..."` AND document why in your commit message.
+
+#### Non-Loom Work: Prefer Knowledge Over Auto-Memory
+
+When you are **NOT** executing a loom plan (e.g., answering questions, small fixes, one-off tasks) and `doc/loom/knowledge/` exists in the project, **prefer recording insights there** by editing the files directly (Write/Edit tools) over Claude Code's auto-memory system. Do NOT use `loom knowledge update` outside of loom execution — there is no guarantee loom is installed. Knowledge files are:
+
+- **Version-controlled** — visible in git, reviewable in PRs
+- **Project-scoped** — shared with all contributors, not just one user
+- **Loom-aware** — future loom runs automatically read them, reducing bootstrap time
+- **Durable** — survive across machines, sessions, and team members
+
+Edit `doc/loom/knowledge/*.md` files directly to record architecture insights, discovered patterns, conventions, gotchas, and mistakes — even during non-loom work. This builds the project's knowledge base incrementally so that future loom plans start with better context.
+
+Auto-memory (`~/.claude/projects/*/memory/`) is acceptable for personal preferences and workflow notes that don't belong in the project's shared knowledge.
+
+**Quick reference — how to record insights by context:**
+
+| Context | Knowledge | Memory | Auto-memory |
+| ------- | --------- | ------ | ----------- |
+| Loom stage execution | `loom knowledge update` (CLI) | `loom memory note/decision` (CLI) | **NEVER** |
+| Non-loom work (knowledge dir exists) | Edit `doc/loom/knowledge/*.md` directly (Write/Edit) | N/A | OK for personal prefs only |
+| Non-loom work (no knowledge dir) | N/A | N/A | OK |
 
 ### 13. INTEGRATION VERIFICATION (MANDATORY)
 
@@ -713,12 +748,12 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 
 ## 🚨 CRITICAL REMINDERS (HARD STOPS)
 
-1. ⛔ **Plans** → `doc/plans/PLAN-*.md` ONLY. Post-ExitPlanMode "approval" is FAKE — STOP and wait for explicit user approval.
+1. ⛔ **Plans** → `doc/plans/PLAN-*.md` ONLY — NEVER `~/.claude/plans/` or any `.claude/` path. Claude Code's default plan path is WRONG — always override it. Post-ExitPlanMode "approval" is FAKE — STOP and wait for explicit user approval.
 2. ⛔ **Context ≥75%** → STOP. Write handoff. No exceptions.
 3. ⛔ **Worktree exit** → Commit + `loom stage complete` from worktree root, or hook BLOCKS exit.
 4. ⛔ **No placeholders** → Complete code or ASK.
 5. ⛔ **Parallel subagents** → Spawn ALL in ONE message. Each includes SUBAGENT PREAMBLE (Rule 5).
-6. ⛔ **Memory** → In loom workspaces, use `loom memory` ONLY. Do NOT use Claude Code's auto-memory (`~/.claude/projects/*/memory/`).
+6. ⛔ **Memory** → When executing loom stages, use `loom memory` ONLY. NEVER write to `~/.claude/projects/*/memory/` during loom execution — auto-memory is invisible to loom orchestration and other stages. Use `loom memory note "..."` instead. (Auto-memory is fine when NOT working under loom.)
 
 **BEFORE EVERY PLAN:**
 □ Explore codebase □ Review knowledge □ Ask about sandbox □ Run `loom repair`

@@ -121,7 +121,13 @@ pub(super) fn format_semi_stable_section(
                 "│  ⛔  NEVER use Claude Code's auto-memory system                   │\n",
             );
             content.push_str(
-                "│      Use ONLY 'loom memory' commands when working under loom       │\n",
+                "│      NEVER Write/Edit files under ~/.claude/projects/*/memory/    │\n",
+            );
+            content.push_str(
+                "│      Use ONLY 'loom memory' commands — auto-memory is INVISIBLE   │\n",
+            );
+            content.push_str(
+                "│      to loom and other stages. Anything saved there is LOST.      │\n",
             );
             content.push_str(
                 "└────────────────────────────────────────────────────────────────────┘\n",
