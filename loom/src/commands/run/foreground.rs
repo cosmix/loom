@@ -11,7 +11,7 @@ use crate::orchestrator::terminal::BackendType;
 use crate::orchestrator::{Orchestrator, OrchestratorConfig, OrchestratorResult};
 use crate::plan::schema::SandboxConfig;
 
-use super::checks::check_for_uncommitted_changes;
+use super::checks::prepare_repo_for_run;
 use super::graph_loader::build_execution_graph;
 use crate::fs::plan_lifecycle;
 
@@ -23,9 +23,9 @@ pub fn execute(
     watch: bool,
     auto_merge: bool,
 ) -> Result<()> {
-    // Check for uncommitted changes before starting
+    // Ensure git worktree prerequisites are met before starting.
     let repo_root = std::env::current_dir()?;
-    check_for_uncommitted_changes(&repo_root)?;
+    prepare_repo_for_run(&repo_root)?;
 
     let work_dir = WorkDir::new(".")?;
     work_dir.load()?;

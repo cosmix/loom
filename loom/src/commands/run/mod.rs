@@ -18,7 +18,7 @@ use crate::daemon::{DaemonConfig, DaemonServer};
 use crate::fs::plan_lifecycle;
 use crate::fs::work_dir::WorkDir;
 
-use checks::check_for_uncommitted_changes;
+use checks::prepare_repo_for_run;
 
 // Re-export the main entry point for foreground mode
 pub use foreground::execute;
@@ -34,9 +34,9 @@ pub fn execute_background(
     _watch: bool, // Daemon always runs in watch mode; CLI flag is accepted but ignored
     auto_merge: bool,
 ) -> Result<()> {
-    // Check for uncommitted changes before starting
+    // Ensure git worktree prerequisites are met before starting.
     let repo_root = std::env::current_dir()?;
-    check_for_uncommitted_changes(&repo_root)?;
+    prepare_repo_for_run(&repo_root)?;
 
     let work_dir = WorkDir::new(".")?;
     work_dir.load()?;

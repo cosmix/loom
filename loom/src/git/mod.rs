@@ -11,6 +11,7 @@ pub mod branch;
 pub mod cleanup;
 pub mod hooks;
 pub mod merge;
+pub mod repository;
 pub mod runner;
 pub mod worktree;
 
@@ -26,6 +27,8 @@ pub use merge::{
     conflict_resolution_instructions, get_conflicting_files, merge_stage, verify_merge_succeeded,
     MergeResult, MergeState, MergeStatusReport,
 };
+
+pub use repository::{ensure_repo_ready_for_worktrees, RepoBootstrapResult};
 
 pub use branch::{
     branch_exists, branch_name_for_stage, cleanup_merged_branches, create_branch, current_branch,

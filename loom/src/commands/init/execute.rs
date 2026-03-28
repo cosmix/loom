@@ -60,11 +60,14 @@ impl Drop for InitGuard {
 /// * `clean` - If true, clean up stale resources before initialization
 pub fn execute(plan_path: Option<PathBuf>, clean: bool) -> Result<()> {
     let repo_root = std::env::current_dir()?;
+    let repo_bootstrap = crate::git::ensure_repo_ready_for_worktrees(&repo_root)?;
 
     // Validate .work directory state before proceeding
     validate_work_dir_state(&repo_root)?;
 
     print_header();
+
+    print_repo_bootstrap(repo_bootstrap);
 
     println!("\n{}", "Cleanup".bold());
     println!("{}", "─".repeat(40).dimmed());
@@ -145,6 +148,26 @@ pub fn execute(plan_path: Option<PathBuf>, clean: bool) -> Result<()> {
     guard.disarm();
 
     Ok(())
+}
+
+fn print_repo_bootstrap(repo_bootstrap: crate::git::RepoBootstrapResult) {
+    if !repo_bootstrap.changed() {
+        return;
+    }
+
+    println!("\n{}", "Git".bold());
+    println!("{}", "─".repeat(40).dimmed());
+
+    if repo_bootstrap.initialized_repo {
+        println!("  {} Initialized git repository", "✓".green().bold());
+    }
+
+    if repo_bootstrap.created_initial_commit {
+        println!(
+            "  {} Created bootstrap commit for worktree support",
+            "✓".green().bold()
+        );
+    }
 }
 
 /// Print the loom init header
