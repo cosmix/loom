@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use crate::git::branch::branch_name_for_stage;
 use crate::git::merge::{check_merge_state, MergeState};
 use crate::git::merge::{get_conflicting_files_from_status, verify_merge_succeeded};
-use crate::models::session::Session;
+use crate::models::session::{Session, SessionType};
 use crate::models::stage::StageStatus;
 use crate::orchestrator::auto_merge::{attempt_auto_merge, is_auto_merge_enabled, AutoMergeResult};
 use crate::orchestrator::signals::{
@@ -395,23 +395,35 @@ impl Orchestrator {
                 continue;
             }
 
-            // Skip if there's already an active session for this stage —
-            // but only if the session is actually still alive. When `loom stage complete`
-            // detects a merge conflict, the original execution session exits normally.
-            // The monitor silently marks it as completed (no event), leaving a stale
-            // entry in active_sessions that would otherwise block merge resolution spawning.
+            // Skip if there's already an active merge session for this stage.
+            //
+            // When `loom stage complete` detects a merge conflict, the stage transitions
+            // to MergeConflict and `spawn_merge_resolver()` returns DaemonManaged (no
+            // session spawned). However, the original execution session (SessionType::Stage)
+            // may still be alive in active_sessions — it hasn't exited yet. That stage
+            // session will never resolve the merge conflict, so we must not let it block
+            // merge resolver spawning.
+            //
+            // Logic:
+            // - If the active session is a Stage session (not Merge), it's stale in the
+            //   context of merge resolution. Remove it and its signal, then fall through.
+            // - If it IS a Merge session, only skip if the process is still alive.
             if self.active_sessions.contains_key(&stage_id) {
-                let is_alive = self
-                    .active_sessions
-                    .get(&stage_id)
-                    .and_then(|s| s.pid)
-                    .map(is_process_alive)
-                    .unwrap_or(false);
-                if is_alive {
-                    continue;
+                let session = self.active_sessions.get(&stage_id).unwrap();
+                if session.session_type != SessionType::Stage {
+                    // It's a merge (or base-conflict) session — only skip if still alive
+                    let is_alive = session.pid.map(is_process_alive).unwrap_or(false);
+                    if is_alive {
+                        continue;
+                    }
                 }
-                // Session is dead — remove stale entry and fall through to spawn
+                // Either a stale Stage session or a dead Merge session — clean up
+                let stale_session_id = session.id.clone();
                 self.active_sessions.remove(&stage_id);
+                // Remove the old signal file so it doesn't block respawning
+                if let Err(e) = remove_signal(&stale_session_id, &self.config.work_dir) {
+                    eprintln!("Warning: Failed to remove stale signal for session '{stale_session_id}': {e}");
+                }
             }
 
             // Check if there's already a merge signal for this stage
