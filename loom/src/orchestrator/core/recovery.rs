@@ -476,6 +476,12 @@ impl Recovery for Orchestrator {
     }
 
     fn all_stages_terminal(&self) -> bool {
+        // Don't exit while merge resolution sessions are running — the daemon
+        // needs to stay alive to monitor them and handle their completion.
+        if !self.active_sessions.is_empty() {
+            return false;
+        }
+
         let stages_dir = self.config.work_dir.join("stages");
         if !stages_dir.exists() {
             return true;
