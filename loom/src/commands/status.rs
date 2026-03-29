@@ -1,4 +1,3 @@
-pub mod common;
 pub mod data;
 mod diagnostics;
 mod display;

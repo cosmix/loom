@@ -5,7 +5,6 @@ pub mod completion;
 pub mod graph;
 pub mod merge;
 pub mod progress;
-pub mod spinner;
 pub mod summary;
 
 pub use activity::{render_activity_status, render_staleness_warning};
