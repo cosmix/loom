@@ -21,8 +21,7 @@ pub mod validation;
 pub mod verify;
 
 /// ASCII art logo for loom CLI
-pub const LOGO: &str = "\
-   ╷
+pub const LOGO: &str = "   ╷
    │  ┌─┐┌─┐┌┬┐
    │  │ ││ ││││
    ┴─┘└─┘└─┘┴ ┴";
