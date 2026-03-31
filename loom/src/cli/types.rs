@@ -217,8 +217,17 @@ pub enum Commands {
 
     /// Generate shell completion script
     Completions {
-        /// Shell to generate completions for (bash, zsh, fish)
-        shell: String,
+        /// Shell to generate completions for (bash, zsh, fish).
+        /// Auto-detected from $SHELL when using --install without specifying a shell.
+        shell: Option<String>,
+
+        /// Install completions to the appropriate system location
+        #[arg(long)]
+        install: bool,
+
+        /// Check for outdated completions and show migration instructions
+        #[arg(long)]
+        migrate: bool,
     },
 
     /// Internal: Dynamic completion helper (invoked by shell)

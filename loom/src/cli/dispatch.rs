@@ -8,8 +8,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use super::types::{
-    Cli, Commands, KnowledgeCommands, MemoryCommands, OutputCommands, SessionsCommands,
-    StageCommands, WorktreeCommands,
+    Commands, KnowledgeCommands, MemoryCommands, OutputCommands, SessionsCommands, StageCommands,
+    WorktreeCommands,
 };
 
 pub fn dispatch(command: Commands) -> Result<()> {
@@ -159,10 +159,28 @@ pub fn dispatch(command: Commands) -> Result<()> {
         Commands::Diagnose { stage_id } => diagnose::execute(&stage_id),
         Commands::Check { stage_id, suggest } => verify::execute(&stage_id, suggest),
         Commands::SkillIndex => skill_index::execute(),
-        Commands::Completions { shell } => {
+        Commands::Completions {
+            shell,
+            install,
+            migrate,
+        } => {
+            if migrate {
+                return loom::completions::install::check_migration();
+            }
+
+            if install {
+                let shell = match shell {
+                    Some(s) => Shell::from_str(&s)?,
+                    None => loom::completions::install::detect_shell()?,
+                };
+                return loom::completions::install::install(shell);
+            }
+
+            let shell = shell.ok_or_else(|| {
+                anyhow::anyhow!("Shell argument required. Usage: loom completions <bash|zsh|fish>")
+            })?;
             let shell = Shell::from_str(&shell)?;
-            let mut cmd = <Cli as clap::CommandFactory>::command();
-            generate_completions(&mut cmd, shell);
+            generate_completions(shell);
             Ok(())
         }
         Commands::Complete { shell, args } => {
