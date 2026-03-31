@@ -308,32 +308,50 @@ Loom provides context-aware tab completions for all commands, subcommands, flags
 loom completions --install
 ```
 
-Auto-detects your shell and writes completions to the standard location. Follow the printed instructions to activate.
+Auto-detects your shell from `$SHELL` and writes completions to the standard location:
+
+| Shell | Install Path |
+| --- | --- |
+| Bash | `~/.local/share/bash-completion/completions/loom` |
+| Zsh | `~/.zfunc/_loom` |
+| Fish | `~/.config/fish/completions/loom.fish` |
+
+Follow the printed post-install instructions to activate (e.g., for zsh, ensure `fpath=(~/.zfunc $fpath)` appears before `compinit` in `~/.zshrc`).
 
 ### Manual Setup
 
+You can also write the completion script to a file yourself:
+
 ```bash
 # bash
-eval "$(loom completions bash)"
-# or persist: loom completions bash > ~/.local/share/bash-completion/completions/loom
+loom completions bash > ~/.local/share/bash-completion/completions/loom
 
-# zsh (add to ~/.zshrc before compinit)
-eval "$(loom completions zsh)"
-# or persist: loom completions zsh > ~/.zfunc/_loom
+# zsh — ensure ~/.zfunc is in fpath (add before compinit in ~/.zshrc):
+#   fpath=(~/.zfunc $fpath)
+#   autoload -Uz compinit && compinit
+mkdir -p ~/.zfunc
+loom completions zsh > ~/.zfunc/_loom
 
 # fish
 loom completions fish > ~/.config/fish/completions/loom.fish
 ```
 
-### Migration
+### Migrating from Older Versions
 
-If upgrading from an older version:
+Older versions of loom used `clap_complete` and required an `eval` line in your shell RC file that ran a subprocess on every shell startup. The new system writes a static script to disk and only calls `loom` at actual tab-completion time, which means faster shell startup and completions that work even before `loom` is in your `PATH`.
+
+To check whether you need to migrate:
 
 ```bash
 loom completions --migrate
 ```
 
-This checks for outdated completion setups and provides migration instructions.
+This scans for two things:
+
+1. **`eval` lines** in RC files (`.bashrc`, `.zshrc`, etc.) like `eval "$(loom completions zsh)"` — these should be removed
+2. **Stale completion files** containing old `clap_complete` markers — these need to be regenerated
+
+If issues are found, follow the printed instructions. Typically: remove the `eval` line from your RC file, then run `loom completions --install` to write the new file-based completion script.
 
 ### What's Completed
 
