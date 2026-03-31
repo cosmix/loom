@@ -50,3 +50,7 @@
 
 - std::fs, std::path: File system traversal for project detection
 - crate::fs::knowledge::KnowledgeDir: Knowledge file management integration
+
+## Removed Dependencies
+
+- `clap_complete` — removed in favor of custom shell completion scripts that call `loom complete` for dynamic completions

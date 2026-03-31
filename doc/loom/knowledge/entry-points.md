@@ -35,7 +35,8 @@
 | `diagnose`    | `commands/diagnose.rs`        | Stage failure diagnosis            |
 | `verify`      | `commands/verify.rs`          | Goal-backward verification         |
 | `check`       | `commands/check.rs`           | Goal-backward verification (alias) |
-| `completions` | Static shell completion       | Generate shell completions         |
+| `completions` | `commands/completions/mod.rs`  | Shell completions (custom scripts + dynamic) |
+| `complete`    | Hidden (dynamic completions)  | Backend for shell tab completions  |
 
 Total: 22 visible commands + 1 hidden (complete for dynamic completions). Dispatch: `cli/dispatch.rs` match-based, two-level for nested commands.
 
@@ -164,8 +165,11 @@ Three files to add a new subcommand:
 ## Other Modules
 
 - `src/claude.rs` - Shared find_claude_path() utility
-- `completions/generator.rs` - Static shell completion (clap_complete)
-- `completions/dynamic/mod.rs` - Context-aware dynamic completions
+- `completions/generator.rs` - Custom shell script generation (bash/zsh/fish)
+- `completions/dynamic/mod.rs` - Context-aware dynamic completion engine
+- `completions/dynamic/commands.rs` - Per-command completion definitions
+- `completions/scripts/` - Shell-specific completion script templates
+- `completions/install.rs` - Auto-install and migration for shell completions
 - `commands/status/ui/tui.rs` - TUI dashboard entry (run_tui)
 - `commands/self_update/mod.rs` - Installation, update, skill download
 - `process/mod.rs` - PID liveness check (libc::kill(pid, 0))

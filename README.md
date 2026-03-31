@@ -160,7 +160,7 @@ loom map [--deep] [--focus <area>] [--overwrite]
 loom repair [--fix]
 loom clean [--all|--worktrees|--sessions|--state]
 loom self-update
-loom completions <bash|zsh|fish>
+loom completions [<shell>] [--install] [--migrate]
 ```
 
 ## Plan Format
@@ -300,16 +300,48 @@ project/
 
 ## Shell Completions
 
+Loom provides context-aware tab completions for all commands, subcommands, flags, and dynamic values (stage IDs, plan files, session IDs, knowledge files).
+
+### Quick Install
+
+```bash
+loom completions --install
+```
+
+Auto-detects your shell and writes completions to the standard location. Follow the printed instructions to activate.
+
+### Manual Setup
+
 ```bash
 # bash
 eval "$(loom completions bash)"
+# or persist: loom completions bash > ~/.local/share/bash-completion/completions/loom
 
-# zsh
+# zsh (add to ~/.zshrc before compinit)
 eval "$(loom completions zsh)"
+# or persist: loom completions zsh > ~/.zfunc/_loom
 
 # fish
 loom completions fish > ~/.config/fish/completions/loom.fish
 ```
+
+### Migration
+
+If upgrading from an older version:
+
+```bash
+loom completions --migrate
+```
+
+This checks for outdated completion setups and provides migration instructions.
+
+### What's Completed
+
+- Commands and subcommands (`loom stage <TAB>` shows all stage subcommands)
+- Flags (`loom run --<TAB>` shows available flags)
+- Stage IDs with smart filtering (`loom stage complete <TAB>` shows only executing stages)
+- Plan files, session IDs, knowledge files (including aliases like `deps`, `tech`)
+- Model names, trigger types, and more
 
 ## License
 

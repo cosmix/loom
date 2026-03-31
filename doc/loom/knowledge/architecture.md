@@ -41,7 +41,7 @@ loom/src/
   hooks/                    # Hook script definitions
   parser/frontmatter.rs     # Canonical YAML frontmatter extraction
   validation.rs             # Input validation (IDs, names)
-  completions/              # Shell completion (static + dynamic)
+  completions/              # Shell completion (custom scripts + dynamic engine + install)
   process/                  # PID liveness checking
 
 .work/                      # Runtime state (gitignored)
