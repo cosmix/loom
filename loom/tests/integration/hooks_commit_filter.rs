@@ -5,18 +5,26 @@
 //!
 //! These tests run the hook script directly with bash - no loom invocation.
 
-use loom::fs::permissions::constants::HOOK_COMMIT_FILTER;
+use loom::fs::permissions::constants::{HOOK_COMMIT_FILTER, HOOK_COMMON};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 use tempfile::TempDir;
 
-/// Install hook script to temp directory and return path
+/// Install hook script and its dependencies to temp directory and return path
 fn setup_hook() -> (TempDir, std::path::PathBuf) {
     let temp = TempDir::new().expect("create temp dir");
+
+    // Install _common.sh first (commit-filter.sh sources it via dirname)
+    let common_path = temp.path().join("_common.sh");
+    fs::write(&common_path, HOOK_COMMON).expect("write _common.sh");
+    let mut perms = fs::metadata(&common_path).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&common_path, perms).expect("chmod _common.sh");
+
+    // Install the hook script
     let hook_path = temp.path().join("commit-filter.sh");
     fs::write(&hook_path, HOOK_COMMIT_FILTER).expect("write hook");
-
     let mut perms = fs::metadata(&hook_path).unwrap().permissions();
     perms.set_mode(0o755);
     fs::set_permissions(&hook_path, perms).expect("chmod");
@@ -78,7 +86,10 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>""#;
 #[test]
 fn blocks_claude_with_anthropic_email() {
     let (_temp, hook) = setup_hook();
-    let input = r#"git commit -m "Feature co-authored-by claude noreply@anthropic.com""#;
+    // Use a proper Co-Authored-By trailer line with anthropic email
+    let input = r#"git commit -m "Feature
+
+Co-Authored-By: claude <noreply@anthropic.com>""#;
 
     assert_eq!(run_hook(&hook, "Bash", input), 2);
 }
@@ -169,7 +180,8 @@ fn allows_empty_input() {
 #[test]
 fn hook_contains_blocking_logic() {
     // Check for the regex patterns used in the hook
-    assert!(HOOK_COMMIT_FILTER.contains("co-authored-by.*(claude|anthropic|noreply@anthropic)"));
+    assert!(HOOK_COMMIT_FILTER.contains("Co-Authored-By:"));
+    assert!(HOOK_COMMIT_FILTER.contains("(claude|anthropic|noreply@anthropic)"));
     assert!(HOOK_COMMIT_FILTER.contains("exit 2"));
 }
 

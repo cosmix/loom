@@ -40,7 +40,14 @@ debug() {
 }
 
 # Read stdin JSON (Claude Code provides tool input)
-INPUT_JSON=$(timeout 1 cat 2>/dev/null || true)
+# Cross-platform timeout: gtimeout (macOS+coreutils), timeout (Linux), or plain cat
+if command -v gtimeout &>/dev/null; then
+    INPUT_JSON=$(gtimeout 1 cat 2>/dev/null || true)
+elif command -v timeout &>/dev/null; then
+    INPUT_JSON=$(timeout 1 cat 2>/dev/null || true)
+else
+    INPUT_JSON=$(cat 2>/dev/null || true)
+fi
 
 # Extract tool name and command
 TOOL_NAME=$(echo "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
