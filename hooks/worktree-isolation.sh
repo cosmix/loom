@@ -25,6 +25,7 @@
 #   LOOM_WORKTREE_PATH - Path to current worktree (if set)
 
 set -euo pipefail
+source "$(dirname "$0")/_common.sh"
 
 # Read JSON input from stdin
 if command -v gtimeout &>/dev/null; then
@@ -75,10 +76,12 @@ fi
 # === BASH VALIDATION ===
 validate_bash_command() {
     local cmd="$1"
+    local stripped
+    stripped=$(strip_embedded_content "$cmd")
 
     # Pattern 1: Block git -C or git --work-tree (accessing other directories)
-    if echo "$cmd" | grep -qE 'git[[:space:]]+-C[[:space:]]' || \
-       echo "$cmd" | grep -qE 'git[[:space:]]+--work-tree'; then
+    if echo "$stripped" | grep -qE 'git[[:space:]]+-C[[:space:]]' || \
+       echo "$stripped" | grep -qE 'git[[:space:]]+--work-tree'; then
         cat >&2 <<'EOF'
 
 ============================================================
@@ -104,7 +107,7 @@ EOF
     fi
 
     # Pattern 2: Block ../../ path traversal (escaping worktree)
-    if echo "$cmd" | grep -qE '\.\./\.\.' || echo "$cmd" | grep -qE '\.\.[\\/]\.\.'; then
+    if echo "$stripped" | grep -qE '\.\./\.\.' || echo "$stripped" | grep -qE '\.\.[\\/]\.\.'; then
         cat >&2 <<'EOF'
 
 ============================================================
@@ -132,8 +135,8 @@ EOF
 
     # Pattern 3: Block .worktrees/ access (except current worktree)
     # Allow references to current stage, block others
-    if echo "$cmd" | grep -qE '\.worktrees/' && \
-       ! echo "$cmd" | grep -qE "\.worktrees/${CURRENT_STAGE}[/[:space:]]|\.worktrees/${CURRENT_STAGE}\$"; then
+    if echo "$stripped" | grep -qE '\.worktrees/' && \
+       ! echo "$stripped" | grep -qE "\.worktrees/${CURRENT_STAGE}[/[:space:]]|\.worktrees/${CURRENT_STAGE}\$"; then
         cat >&2 <<EOF
 
 ============================================================

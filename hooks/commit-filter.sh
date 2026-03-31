@@ -21,6 +21,8 @@
 
 set -euo pipefail
 
+source "$(dirname "$0")/_common.sh"
+
 # Read JSON input from stdin (Claude Code passes tool info via stdin)
 # Use gtimeout (macOS with coreutils) or timeout (Linux), or just cat
 if command -v gtimeout &>/dev/null; then
@@ -53,10 +55,18 @@ else
 	COMMAND=""
 fi
 
+# Strip embedded content (heredoc bodies, -m messages) for pattern matching
+# This prevents false positives from words like "commit" appearing inside messages
+STRIPPED_COMMAND=""
+if [[ -n "$COMMAND" ]]; then
+	STRIPPED_COMMAND=$(strip_embedded_content "$COMMAND")
+fi
+
 # Debug parsed values
 {
 	echo "TOOL_NAME: $TOOL_NAME"
 	echo "COMMAND: $COMMAND"
+	echo "STRIPPED_COMMAND: $STRIPPED_COMMAND"
 	echo "---"
 } >>"$DEBUG_LOG" 2>&1
 
@@ -240,7 +250,7 @@ if [[ -n "${LOOM_MAIN_AGENT_PID:-}" ]]; then
 				} >>"$DEBUG_LOG" 2>&1
 
 				# Check if this is a git commit or loom stage complete command
-				if echo "$COMMAND" | grep -qiE 'git[[:space:]]+(commit|add[[:space:]]+-A|add[[:space:]]+\.)'; then
+				if echo "$STRIPPED_COMMAND" | grep -qiE 'git[[:space:]]+(commit|add[[:space:]]+-A|add[[:space:]]+\.)'; then
 					{
 						echo "DEBUG: BLOCKED - Subagent attempting git operation"
 					} >>"$DEBUG_LOG" 2>&1
@@ -291,14 +301,17 @@ fi
 # === CLAUDE ATTRIBUTION CHECK ===
 # Block git commits with Co-Authored-By lines mentioning Claude/Anthropic (per CLAUDE.md rule 8)
 
-# Check if this is a git commit command
-if echo "$COMMAND" | grep -qiE 'git[[:space:]].*commit'; then
+# Check if this is a git commit command (use stripped command to avoid matching
+# "commit" inside message text; require "commit" as a standalone word)
+if echo "$STRIPPED_COMMAND" | grep -qiE 'git[[:space:]]+commit([[:space:]]|$)'; then
 	{
 		echo "DEBUG: Detected git commit command"
 	} >>"$DEBUG_LOG" 2>&1
 
-	# Check for forbidden Co-Authored-By patterns
-	if echo "$COMMAND" | grep -qiE 'co-authored-by.*(claude|anthropic|noreply@anthropic)'; then
+	# Check for forbidden Co-Authored-By patterns (use ORIGINAL command to catch
+	# real attribution in heredoc/message bodies; anchor to line-start so only
+	# actual trailer lines match, not arbitrary text containing those words)
+	if echo "$COMMAND" | grep -qiE '^[[:space:]]*Co-Authored-By:.*\b(claude|anthropic|noreply@anthropic)\b'; then
 		{
 			echo "DEBUG: BLOCKED - Detected forbidden Co-Authored-By pattern"
 		} >>"$DEBUG_LOG" 2>&1

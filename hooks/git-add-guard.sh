@@ -29,6 +29,9 @@
 
 set -euo pipefail
 
+# Source shared utilities for strip_embedded_content()
+source "$(dirname "$0")/_common.sh"
+
 # Debug helper
 debug() {
     if [[ "${GIT_ADD_GUARD_DEBUG:-}" == "1" ]]; then
@@ -54,9 +57,13 @@ fi
 check_dangerous_patterns() {
     local cmd="$1"
 
-    # Normalize: remove extra whitespace, convert to lowercase for matching
+    # Strip heredoc bodies and -m/--message content to avoid false positives
+    local stripped
+    stripped=$(strip_embedded_content "$cmd")
+
+    # Normalize the stripped version: remove extra whitespace
     local normalized
-    normalized=$(echo "$cmd" | tr -s ' ')
+    normalized=$(echo "$stripped" | tr -s ' ')
     debug "Checking command: $normalized"
 
     # Pattern 1: git add -A or git add --all (anywhere in command)
