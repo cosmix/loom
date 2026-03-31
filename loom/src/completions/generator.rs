@@ -1,8 +1,7 @@
 use anyhow::{anyhow, Result};
-use clap::Command;
-use clap_complete::{generate, shells};
-use std::io;
 use std::str::FromStr;
+
+use super::scripts;
 
 /// Supported shell types for completion generation
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,49 +26,12 @@ impl FromStr for Shell {
     }
 }
 
-impl From<Shell> for shells::Bash {
-    fn from(_: Shell) -> Self {
-        shells::Bash
-    }
-}
-
-impl From<Shell> for shells::Zsh {
-    fn from(_: Shell) -> Self {
-        shells::Zsh
-    }
-}
-
-impl From<Shell> for shells::Fish {
-    fn from(_: Shell) -> Self {
-        shells::Fish
-    }
-}
-
 /// Generate shell completion script and write to stdout
-///
-/// # Arguments
-///
-/// * `cmd` - The clap Command to generate completions for
-/// * `shell` - Target shell type
-///
-/// # Example
-///
-/// ```no_run
-/// use clap::Command;
-/// use loom::completions::generator::{Shell, generate_completions};
-/// use std::str::FromStr;
-///
-/// let mut cmd = Command::new("loom");
-/// let shell = Shell::from_str("bash").unwrap();
-/// generate_completions(&mut cmd, shell);
-/// ```
-pub fn generate_completions(cmd: &mut Command, shell: Shell) {
-    let bin_name = cmd.get_name().to_string();
-
+pub fn generate_completions(shell: Shell) {
     match shell {
-        Shell::Bash => generate(shells::Bash, cmd, bin_name, &mut io::stdout()),
-        Shell::Zsh => generate(shells::Zsh, cmd, bin_name, &mut io::stdout()),
-        Shell::Fish => generate(shells::Fish, cmd, bin_name, &mut io::stdout()),
+        Shell::Bash => print!("{}", scripts::BASH_COMPLETION),
+        Shell::Zsh => print!("{}", scripts::ZSH_COMPLETION),
+        Shell::Fish => print!("{}", scripts::FISH_COMPLETION),
     }
 }
 
