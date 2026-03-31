@@ -299,7 +299,9 @@ EOF
 fi
 
 # === CLAUDE ATTRIBUTION CHECK ===
-# Block git commits with Co-Authored-By lines mentioning Claude/Anthropic (per CLAUDE.md rule 8)
+# Block git commits with AI attribution (per CLAUDE.md rule 8)
+# Checks multiple vectors: Co-Authored-By trailers, --trailer flag,
+# --author flag, GIT_AUTHOR env vars, and attribution text patterns
 
 # Check if this is a git commit command (use stripped command to avoid matching
 # "commit" inside message text; require "commit" as a standalone word)
@@ -308,28 +310,74 @@ if echo "$STRIPPED_COMMAND" | grep -qiE 'git[[:space:]]+commit([[:space:]]|$)'; 
 		echo "DEBUG: Detected git commit command"
 	} >>"$DEBUG_LOG" 2>&1
 
-	# Check for forbidden Co-Authored-By patterns (use ORIGINAL command to catch
-	# real attribution in heredoc/message bodies; anchor to line-start so only
-	# actual trailer lines match, not arbitrary text containing those words)
+	BLOCKED_REASON=""
+
+	# --- Check 1: Co-Authored-By trailer in message body ---
+	# Use ORIGINAL command to catch real attribution in heredoc/message bodies;
+	# anchor to line-start so only actual trailer lines match
 	if echo "$COMMAND" | grep -qiE '^[[:space:]]*Co-Authored-By:.*\b(claude|anthropic|noreply@anthropic)\b'; then
+		BLOCKED_REASON="Co-Authored-By trailer in commit message"
+	fi
+
+	# --- Check 2: --trailer flag with attribution ---
+	# Catches: --trailer "Co-Authored-By: Claude..." and --trailer="Co-Authored-By: Claude..."
+	if [[ -z "$BLOCKED_REASON" ]] && echo "$COMMAND" | grep -qiE -- '--trailer[[:space:]="'"'"']*Co-Authored-By:.*\b(claude|anthropic|noreply@anthropic)\b'; then
+		BLOCKED_REASON="--trailer flag with Co-Authored-By attribution"
+	fi
+
+	# --- Check 3: Signed-off-by trailer mentioning Claude/Anthropic ---
+	if [[ -z "$BLOCKED_REASON" ]] && echo "$COMMAND" | grep -qiE '^[[:space:]]*Signed-off-by:.*\b(claude|anthropic|noreply@anthropic)\b'; then
+		BLOCKED_REASON="Signed-off-by trailer with AI attribution"
+	fi
+
+	# --- Check 4: --trailer flag with Signed-off-by attribution ---
+	if [[ -z "$BLOCKED_REASON" ]] && echo "$COMMAND" | grep -qiE -- '--trailer[[:space:]="'"'"']*Signed-off-by:.*\b(claude|anthropic|noreply@anthropic)\b'; then
+		BLOCKED_REASON="--trailer flag with Signed-off-by attribution"
+	fi
+
+	# --- Check 5: --author flag with Anthropic email ---
+	# Catches: --author="Claude <noreply@anthropic.com>" but NOT --author="Claude Shannon <human@example.com>"
+	# Only block when an Anthropic email is present (humans named Claude exist)
+	if [[ -z "$BLOCKED_REASON" ]] && echo "$COMMAND" | grep -qiE -- '--author[[:space:]="'"'"']*[^"'"'"']*\b(anthropic|noreply@anthropic)\b'; then
+		BLOCKED_REASON="--author flag with Anthropic email"
+	fi
+
+	# --- Check 6: GIT_AUTHOR_EMAIL env var with Anthropic domain ---
+	# Catches: GIT_AUTHOR_EMAIL="noreply@anthropic.com" but NOT GIT_AUTHOR_NAME="Claude" alone
+	# Only check EMAIL (not NAME) to avoid false positives for humans named Claude
+	if [[ -z "$BLOCKED_REASON" ]] && echo "$COMMAND" | grep -qiE 'GIT_AUTHOR_EMAIL[[:space:]]*=[[:space:]]*["'"'"']?[^"'"'"']*\b(anthropic|noreply@anthropic)\b'; then
+		BLOCKED_REASON="GIT_AUTHOR_EMAIL with Anthropic domain"
+	fi
+
+	# --- Check 7: Attribution text patterns in commit message ---
+	# Catches "Generated with Claude Code", "claude.ai/code", "claude.com/claude-code"
+	# Uses ORIGINAL command to check inside message bodies
+	if [[ -z "$BLOCKED_REASON" ]] && echo "$COMMAND" | grep -qiE 'Generated with.*(Claude Code|claude\.ai|claude\.com)'; then
+		BLOCKED_REASON="'Generated with Claude Code' attribution text"
+	fi
+
+	if [[ -n "$BLOCKED_REASON" ]]; then
 		{
-			echo "DEBUG: BLOCKED - Detected forbidden Co-Authored-By pattern"
+			echo "DEBUG: BLOCKED - $BLOCKED_REASON"
 		} >>"$DEBUG_LOG" 2>&1
 
 		# Output guidance to stderr and block
-		cat >&2 <<'EOF'
+		cat >&2 <<EOF
 BLOCKED: Commit contains forbidden attribution (CLAUDE.md rule 8).
+Reason: $BLOCKED_REASON
 
-Your commit message includes a Co-Authored-By line mentioning Claude/Anthropic.
 Per project rules, AI attribution must NEVER appear in commits.
 
-Please rewrite your git commit command WITHOUT the Co-Authored-By line.
+Please rewrite your git commit command WITHOUT any AI attribution.
+Remove ALL of the following if present:
+  - Co-Authored-By lines mentioning Claude/Anthropic
+  - Signed-off-by lines mentioning Claude/Anthropic
+  - --trailer flags adding AI attribution
+  - --author flags referencing Claude/Anthropic
+  - GIT_AUTHOR_NAME/EMAIL environment variables
+  - "Generated with Claude Code" or similar text
+
 The commit message should only contain your actual changes description.
-
-Example - remove lines like:
-  Co-Authored-By: Claude <noreply@anthropic.com>
-  Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
-
 Rewrite and try again.
 EOF
 		exit 2

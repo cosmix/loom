@@ -118,6 +118,122 @@ EOF
 }
 
 // =============================================================================
+// Tests: Hook BLOCKS --trailer flag with attribution (bypass vector)
+// =============================================================================
+
+#[test]
+fn blocks_trailer_flag_coauthored_by() {
+    let (_temp, hook) = setup_hook();
+    let input =
+        r#"git commit --trailer "Co-Authored-By: Claude <noreply@anthropic.com>" -m "Fix bug""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+#[test]
+fn blocks_trailer_flag_equals_syntax() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"git commit --trailer="Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>" -m "Fix bug""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+#[test]
+fn blocks_trailer_flag_signed_off_by() {
+    let (_temp, hook) = setup_hook();
+    let input =
+        r#"git commit --trailer "Signed-off-by: Claude <noreply@anthropic.com>" -m "Fix bug""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+// =============================================================================
+// Tests: Hook BLOCKS --author flag with attribution (bypass vector)
+// =============================================================================
+
+#[test]
+fn blocks_author_flag_claude() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"git commit --author="Claude <noreply@anthropic.com>" -m "Fix bug""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+#[test]
+fn blocks_author_flag_anthropic_email() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"git commit --author "Bot <bot@anthropic.com>" -m "Fix bug""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+// =============================================================================
+// Tests: Hook BLOCKS GIT_AUTHOR env var attribution (bypass vector)
+// =============================================================================
+
+#[test]
+fn blocks_git_author_name_claude_with_anthropic_email() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"GIT_AUTHOR_NAME="Claude" GIT_AUTHOR_EMAIL="noreply@anthropic.com" git commit -m "Fix bug""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+#[test]
+fn allows_git_author_name_claude_without_anthropic_email() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"GIT_AUTHOR_NAME="Claude" git commit -m "Fix bug""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 0);
+}
+
+#[test]
+fn blocks_git_author_email_anthropic() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"GIT_AUTHOR_EMAIL="noreply@anthropic.com" git commit -m "Fix bug""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+// =============================================================================
+// Tests: Hook BLOCKS Signed-off-by attribution
+// =============================================================================
+
+#[test]
+fn blocks_signed_off_by_claude() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"git commit -m "Fix bug
+
+Signed-off-by: Claude <noreply@anthropic.com>""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+// =============================================================================
+// Tests: Hook BLOCKS attribution text patterns
+// =============================================================================
+
+#[test]
+fn blocks_generated_with_claude_code() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"git commit -m "Fix bug
+
+Generated with [Claude Code](https://claude.com/claude-code)""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+#[test]
+fn blocks_generated_with_claude_ai() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"git commit -m "Fix bug
+
+Generated with Claude Code (claude.ai/code)""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+// =============================================================================
 // Tests: Hook ALLOWS commits without Claude attribution
 // =============================================================================
 
@@ -174,6 +290,46 @@ fn allows_empty_input() {
 }
 
 // =============================================================================
+// Tests: Hook ALLOWS legitimate uses of similar patterns (false positive prevention)
+// =============================================================================
+
+#[test]
+fn allows_human_author_named_claude() {
+    let (_temp, hook) = setup_hook();
+    // A real person named Claude with a non-Anthropic email should be allowed
+    let input = r#"git commit --author="Claude Shannon <cshannon@example.com>" -m "Fix bug""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 0);
+}
+
+#[test]
+fn allows_trailer_with_human_coauthor() {
+    let (_temp, hook) = setup_hook();
+    let input =
+        r#"git commit --trailer "Co-Authored-By: Jane Doe <jane@example.com>" -m "Fix bug""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 0);
+}
+
+#[test]
+fn allows_git_log_author_claude() {
+    let (_temp, hook) = setup_hook();
+    // git log with author filter should never be blocked
+    let input = r#"git log --author="Claude""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 0);
+}
+
+#[test]
+fn allows_message_mentioning_generated() {
+    let (_temp, hook) = setup_hook();
+    // Mentioning "generated" in a commit message without Claude Code context is fine
+    let input = r#"git commit -m "Fix generated code output formatting""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 0);
+}
+
+// =============================================================================
 // Tests: Hook script structure validation
 // =============================================================================
 
@@ -183,6 +339,12 @@ fn hook_contains_blocking_logic() {
     assert!(HOOK_COMMIT_FILTER.contains("Co-Authored-By:"));
     assert!(HOOK_COMMIT_FILTER.contains("(claude|anthropic|noreply@anthropic)"));
     assert!(HOOK_COMMIT_FILTER.contains("exit 2"));
+    // Check for bypass vector coverage
+    assert!(HOOK_COMMIT_FILTER.contains("--trailer"));
+    assert!(HOOK_COMMIT_FILTER.contains("--author"));
+    assert!(HOOK_COMMIT_FILTER.contains("GIT_AUTHOR_"));
+    assert!(HOOK_COMMIT_FILTER.contains("Signed-off-by:"));
+    assert!(HOOK_COMMIT_FILTER.contains("Generated with"));
 }
 
 #[test]
