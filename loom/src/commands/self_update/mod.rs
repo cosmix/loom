@@ -60,6 +60,7 @@ struct Asset {
 
 /// Execute self-update command.
 pub fn execute() -> Result<()> {
+    crate::utils::print_logo_header("Self Update");
     println!("{}", "Checking for updates...".blue());
 
     let latest = get_latest_release()?;

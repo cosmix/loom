@@ -69,13 +69,7 @@ pub fn execute(all: bool, worktrees: bool, sessions: bool, state: bool) -> Resul
 
 /// Print the loom clean header
 fn print_header() {
-    println!();
-    println!("{}", "╭──────────────────────────────────────╮".cyan());
-    println!(
-        "{}",
-        "│         Cleaning Loom...             │".cyan().bold()
-    );
-    println!("{}", "╰──────────────────────────────────────╯".cyan());
+    crate::utils::print_logo_header("Cleaning...");
 }
 
 /// Print the final summary

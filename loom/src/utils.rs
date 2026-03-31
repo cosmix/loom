@@ -2,7 +2,21 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Once, OnceLock};
 
+use colored::Colorize;
+
 use crate::models::constants::display::{CONTEXT_HEALTHY_PCT, CONTEXT_WARNING_PCT};
+
+/// Print the loom logo with a subtitle for human-facing commands.
+pub fn print_logo_header(subtitle: &str) {
+    println!();
+    for line in crate::LOGO.lines() {
+        println!("{}", line.cyan());
+    }
+    if !subtitle.is_empty() {
+        println!("   {}", subtitle.dimmed());
+    }
+    println!();
+}
 
 /// Global path to the TUI marker file, set when TUI mode is entered.
 static TUI_MARKER_PATH: OnceLock<PathBuf> = OnceLock::new();

@@ -15,7 +15,8 @@ pub fn execute(model: Option<String>, skip_map: bool, quick: bool) -> Result<()>
     let project_root = resolve_project_root()?;
     let claude_path = find_claude_path()?;
 
-    println!("{} Knowledge bootstrap starting...", "→".cyan().bold());
+    crate::utils::print_logo_header("Knowledge Bootstrap");
+    println!("{} Starting...", "→".cyan().bold());
 
     // Initialize knowledge directory if needed
     let knowledge = KnowledgeDir::new(&project_root);

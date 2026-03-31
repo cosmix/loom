@@ -120,14 +120,7 @@ pub struct RepairResult {
 pub fn execute(fix: bool) -> Result<()> {
     let repo_root = std::env::current_dir()?;
 
-    println!();
-    println!("{}", "╭──────────────────────────────────────╮".cyan());
-    println!(
-        "{}",
-        "│       Loom Workspace Repair          │".cyan().bold()
-    );
-    println!("{}", "╰──────────────────────────────────────╯".cyan());
-    println!();
+    crate::utils::print_logo_header("Workspace Repair");
 
     if fix {
         println!(

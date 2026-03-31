@@ -172,13 +172,7 @@ fn print_repo_bootstrap(repo_bootstrap: crate::git::RepoBootstrapResult) {
 
 /// Print the loom init header
 fn print_header() {
-    println!();
-    println!("{}", "╭──────────────────────────────────────╮".cyan());
-    println!(
-        "{}",
-        "│       Initializing Loom...           │".cyan().bold()
-    );
-    println!("{}", "╰──────────────────────────────────────╯".cyan());
+    crate::utils::print_logo_header("Initializing...");
 }
 
 /// Print the final summary

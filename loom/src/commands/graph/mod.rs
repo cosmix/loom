@@ -33,10 +33,7 @@ pub use tree::build_tree_display;
 
 /// Show the execution graph
 pub fn show() -> Result<()> {
-    println!();
-    println!("Execution Graph:");
-    println!("================");
-    println!();
+    crate::utils::print_logo_header("Execution Graph");
 
     let work_dir = find_work_dir()?;
 

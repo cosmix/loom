@@ -16,6 +16,7 @@ pub fn execute(deep: bool, focus: Option<String>, overwrite: bool) -> Result<()>
         .main_project_root()
         .context("Could not determine project root")?;
 
+    crate::utils::print_logo_header("Codebase Map");
     println!(
         "{} Mapping codebase{}...",
         "→".cyan().bold(),

@@ -44,6 +44,8 @@ pub fn execute_background(
     // Mark plan as in-progress when starting execution
     plan_lifecycle::mark_plan_in_progress(&work_dir)?;
 
+    crate::utils::print_logo_header("Run");
+
     if DaemonServer::is_running(work_dir.root()) {
         println!("{} Daemon is already running", "─".dimmed());
         println!();

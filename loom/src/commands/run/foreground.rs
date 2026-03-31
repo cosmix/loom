@@ -33,6 +33,8 @@ pub fn execute(
     // Mark plan as in-progress when starting execution
     plan_lifecycle::mark_plan_in_progress(&work_dir)?;
 
+    crate::utils::print_logo_header("Run (foreground)");
+
     execute_foreground(manual, max_parallel, watch, auto_merge, &work_dir)
 }
 
@@ -108,13 +110,7 @@ fn execute_foreground(
 
 /// Print orchestrator result summary (fallback for when completion summary fails)
 fn print_result(result: &OrchestratorResult) {
-    println!();
-    println!("{}", "╭──────────────────────────────────────╮".cyan());
-    println!(
-        "{}",
-        "│       Orchestration Complete         │".cyan().bold()
-    );
-    println!("{}", "╰──────────────────────────────────────╯".cyan());
+    crate::utils::print_logo_header("Orchestration Complete");
 
     if !result.completed_stages.is_empty() {
         println!(

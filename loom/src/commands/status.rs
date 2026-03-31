@@ -64,9 +64,7 @@ fn execute_static(work_dir: &WorkDir, verbose: bool) -> Result<()> {
     let mut out = stdout();
     let stage_count = count_files(&work_dir.stages_dir())?;
 
-    println!();
-    println!("{}", "Loom Status".bold().blue());
-    println!("{}", "─".repeat(40));
+    crate::utils::print_logo_header("Status");
 
     // Show daemon status hint
     if DaemonServer::is_running(work_dir.root()) {
