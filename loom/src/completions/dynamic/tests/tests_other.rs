@@ -54,7 +54,8 @@ fn test_complete_dynamic_sessions_kill_stage_flag() {
 #[test]
 fn test_complete_knowledge_files_all() {
     let results = complete_knowledge_files("").unwrap();
-    assert_eq!(results.len(), 7);
+    // 7 canonical + 4 aliases (deps, tech, debt, issues)
+    assert_eq!(results.len(), 11);
     assert!(results.contains(&"architecture".to_string()));
     assert!(results.contains(&"entry-points".to_string()));
     assert!(results.contains(&"patterns".to_string()));
@@ -62,6 +63,10 @@ fn test_complete_knowledge_files_all() {
     assert!(results.contains(&"mistakes".to_string()));
     assert!(results.contains(&"stack".to_string()));
     assert!(results.contains(&"concerns".to_string()));
+    assert!(results.contains(&"deps".to_string()));
+    assert!(results.contains(&"tech".to_string()));
+    assert!(results.contains(&"debt".to_string()));
+    assert!(results.contains(&"issues".to_string()));
 }
 
 #[test]
@@ -172,4 +177,97 @@ fn test_complete_dynamic_memory_list_entry_type() {
     };
 
     assert!(complete_dynamic(&ctx).is_ok());
+}
+
+// Dynamic routing tests
+
+#[test]
+fn test_complete_dynamic_top_level_commands() {
+    let temp_dir = setup_test_workspace();
+    let root = temp_dir.path();
+    let ctx = CompletionContext {
+        cwd: root.to_string_lossy().to_string(),
+        shell: "bash".to_string(),
+        cmdline: "loom ".to_string(),
+        current_word: "".to_string(),
+        prev_word: "loom".to_string(),
+    };
+    assert!(complete_dynamic(&ctx).is_ok());
+}
+
+#[test]
+fn test_complete_dynamic_stage_subcommands() {
+    let temp_dir = setup_test_workspace();
+    let root = temp_dir.path();
+    let ctx = CompletionContext {
+        cwd: root.to_string_lossy().to_string(),
+        shell: "bash".to_string(),
+        cmdline: "loom stage ".to_string(),
+        current_word: "".to_string(),
+        prev_word: "stage".to_string(),
+    };
+    assert!(complete_dynamic(&ctx).is_ok());
+}
+
+#[test]
+fn test_complete_dynamic_completions_shell() {
+    let temp_dir = setup_test_workspace();
+    let root = temp_dir.path();
+    let ctx = CompletionContext {
+        cwd: root.to_string_lossy().to_string(),
+        shell: "bash".to_string(),
+        cmdline: "loom completions ".to_string(),
+        current_word: "".to_string(),
+        prev_word: "completions".to_string(),
+    };
+    assert!(complete_dynamic(&ctx).is_ok());
+}
+
+#[test]
+fn test_complete_dynamic_flag_completion() {
+    let temp_dir = setup_test_workspace();
+    let root = temp_dir.path();
+    let ctx = CompletionContext {
+        cwd: root.to_string_lossy().to_string(),
+        shell: "bash".to_string(),
+        cmdline: "loom run --".to_string(),
+        current_word: "--".to_string(),
+        prev_word: "run".to_string(),
+    };
+    assert!(complete_dynamic(&ctx).is_ok());
+}
+
+#[test]
+fn test_complete_dynamic_model_flag_value() {
+    let temp_dir = setup_test_workspace();
+    let root = temp_dir.path();
+    let ctx = CompletionContext {
+        cwd: root.to_string_lossy().to_string(),
+        shell: "bash".to_string(),
+        cmdline: "loom knowledge bootstrap --model ".to_string(),
+        current_word: "".to_string(),
+        prev_word: "--model".to_string(),
+    };
+    assert!(complete_dynamic(&ctx).is_ok());
+}
+
+#[test]
+fn test_complete_dynamic_trigger_flag_value() {
+    let temp_dir = setup_test_workspace();
+    let root = temp_dir.path();
+    let ctx = CompletionContext {
+        cwd: root.to_string_lossy().to_string(),
+        shell: "bash".to_string(),
+        cmdline: "loom handoff --trigger ".to_string(),
+        current_word: "".to_string(),
+        prev_word: "--trigger".to_string(),
+    };
+    assert!(complete_dynamic(&ctx).is_ok());
+}
+
+#[test]
+fn test_complete_knowledge_files_aliases() {
+    let results = complete_knowledge_files("d").unwrap();
+    assert!(results.contains(&"deps".to_string()));
+    assert!(results.contains(&"debt".to_string()));
 }

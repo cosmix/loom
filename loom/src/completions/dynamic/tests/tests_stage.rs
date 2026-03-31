@@ -1,7 +1,10 @@
 //! Tests for stage subcommand completions
 
+use super::super::stages::complete_stage_ids_filtered;
 use super::super::*;
 use super::setup_test_workspace;
+use std::fs;
+use tempfile::TempDir;
 
 #[test]
 fn test_complete_dynamic_stage_hold() {
@@ -177,4 +180,93 @@ fn test_complete_dynamic_stage_output_remove() {
     };
 
     assert!(complete_dynamic(&ctx).is_ok());
+}
+
+// Status-filtered stage completion tests
+
+#[test]
+fn test_complete_stage_ids_filtered_executing() {
+    let temp_dir = TempDir::new().unwrap();
+    let root = temp_dir.path();
+    let stages_dir = root.join(".work/stages");
+    fs::create_dir_all(&stages_dir).unwrap();
+
+    fs::write(
+        stages_dir.join("01-build.md"),
+        "---\nstatus: executing\n---\n",
+    )
+    .unwrap();
+    fs::write(
+        stages_dir.join("02-test.md"),
+        "---\nstatus: completed\n---\n",
+    )
+    .unwrap();
+    fs::write(
+        stages_dir.join("03-deploy.md"),
+        "---\nstatus: blocked\n---\n",
+    )
+    .unwrap();
+
+    let results = complete_stage_ids_filtered(root, "", &["executing"]).unwrap();
+    assert_eq!(results.len(), 1);
+    assert!(results.contains(&"build".to_string()));
+}
+
+#[test]
+fn test_complete_stage_ids_filtered_multiple_statuses() {
+    let temp_dir = TempDir::new().unwrap();
+    let root = temp_dir.path();
+    let stages_dir = root.join(".work/stages");
+    fs::create_dir_all(&stages_dir).unwrap();
+
+    fs::write(
+        stages_dir.join("01-build.md"),
+        "---\nstatus: executing\n---\n",
+    )
+    .unwrap();
+    fs::write(
+        stages_dir.join("02-test.md"),
+        "---\nstatus: completed\n---\n",
+    )
+    .unwrap();
+    fs::write(
+        stages_dir.join("03-deploy.md"),
+        "---\nstatus: blocked\n---\n",
+    )
+    .unwrap();
+
+    let results = complete_stage_ids_filtered(root, "", &["executing", "blocked"]).unwrap();
+    assert_eq!(results.len(), 2);
+    assert!(results.contains(&"build".to_string()));
+    assert!(results.contains(&"deploy".to_string()));
+}
+
+#[test]
+fn test_complete_stage_ids_filtered_empty_returns_all() {
+    let temp_dir = TempDir::new().unwrap();
+    let root = temp_dir.path();
+    let stages_dir = root.join(".work/stages");
+    fs::create_dir_all(&stages_dir).unwrap();
+
+    fs::write(
+        stages_dir.join("01-build.md"),
+        "---\nstatus: executing\n---\n",
+    )
+    .unwrap();
+    fs::write(
+        stages_dir.join("02-test.md"),
+        "---\nstatus: completed\n---\n",
+    )
+    .unwrap();
+    fs::write(
+        stages_dir.join("03-deploy.md"),
+        "---\nstatus: blocked\n---\n",
+    )
+    .unwrap();
+
+    let results = complete_stage_ids_filtered(root, "", &[]).unwrap();
+    assert_eq!(results.len(), 3);
+    assert!(results.contains(&"build".to_string()));
+    assert!(results.contains(&"test".to_string()));
+    assert!(results.contains(&"deploy".to_string()));
 }
