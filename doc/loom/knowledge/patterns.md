@@ -179,3 +179,30 @@ Full hook inventory (13 scripts in hooks/):
 - SessionEnd: session-end.sh
 - PreCompact: pre-compact.sh
 - UserPromptSubmit: skill-trigger.sh, ask-user-pre.sh
+
+## Hook Content-Stripping Pattern (Updated 2026-03-31)
+
+All PreToolUse hooks that match command patterns MUST use `strip_embedded_content()` before pattern matching to prevent false positives from keywords appearing inside commit messages or heredoc bodies.
+
+**Architecture:**
+
+- `_common.sh` provides `strip_embedded_content()` (shared across all shell hooks)
+- `loom/src/hooks/validators/bash.rs` provides Rust equivalent `strip_embedded_content()`
+- Phase 1: awk state machine strips heredoc bodies (`<<MARKER` to `^MARKER$`)
+- Phase 2: sed strips `-m`/`--message` quoted content
+
+**Usage pattern:**
+
+1. Source `_common.sh` at top of hook
+2. Call `stripped=$(strip_embedded_content "$cmd")`
+3. Use `$stripped` for pattern detection (git -C, .worktrees/, ../../, grep, find)
+4. Use original `$cmd` for patterns that MUST match message body (e.g., Co-Authored-By)
+
+**Commit-filter dual-check:**
+
+- STRIPPED_COMMAND for detecting `git commit` (prevents "commit" in messages from triggering)
+- ORIGINAL COMMAND for Co-Authored-By check (anchor `^` prevents mid-line false positives)
+
+**Security posture:** All stripping failures result in false positives (overly strict), never bypasses (permissive). This is the correct safety direction for development hooks.
+
+**Hooks using this pattern:** worktree-isolation.sh, commit-filter.sh, git-add-guard.sh, prefer-modern-tools.sh

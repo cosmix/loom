@@ -194,3 +194,7 @@ Three files to add a new subcommand:
 - `verify/transitions/state.rs` - Atomic stage status changes
 - `verify/baseline/` - Change impact detection (capture, compare)
 - `verify/before_after.rs` - Before/after stage checks using TruthCheck definitions
+
+## Shared Hook Utility
+
+- `hooks/_common.sh` - Source guard + `strip_embedded_content()` — sourced by all PreToolUse hooks. MUST be installed alongside hooks (in `~/.claude/hooks/loom/`). Registered in `constants.rs` as `HOOK_COMMON`.
