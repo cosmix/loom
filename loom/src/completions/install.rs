@@ -31,10 +31,7 @@ pub fn install_path(shell: super::generator::Shell) -> Result<PathBuf> {
                 .unwrap_or_else(|_| home_dir().unwrap_or_default().join(".local/share"));
             Ok(data_dir.join("bash-completion/completions/loom"))
         }
-        Shell::Zsh => {
-            let home = home_dir()?;
-            Ok(home.join(".zfunc/_loom"))
-        }
+        Shell::Zsh => zsh_install_path(),
         Shell::Fish => {
             let config_dir = std::env::var("XDG_CONFIG_HOME")
                 .map(PathBuf::from)
@@ -44,8 +41,39 @@ pub fn install_path(shell: super::generator::Shell) -> Result<PathBuf> {
     }
 }
 
+/// Find the best zsh install path: prefer an existing writable fpath dir,
+/// fall back to ~/.zfunc (and configure .zshrc to include it).
+fn zsh_install_path() -> Result<PathBuf> {
+    // Check existing fpath dirs for a writable one
+    if let Ok(fpath) = std::env::var("FPATH") {
+        for dir in fpath.split(':') {
+            let p = Path::new(dir);
+            if p.is_dir() && is_writable(p) {
+                return Ok(p.join("_loom"));
+            }
+        }
+    }
+
+    // No writable fpath dir found — use ~/.zfunc (will be configured in .zshrc)
+    let home = home_dir()?;
+    Ok(home.join(".zfunc/_loom"))
+}
+
+/// Check if a directory is writable by attempting to create a temp file.
+fn is_writable(dir: &Path) -> bool {
+    let probe = dir.join(".loom_write_probe");
+    if std::fs::write(&probe, b"").is_ok() {
+        let _ = std::fs::remove_file(&probe);
+        true
+    } else {
+        false
+    }
+}
+
 /// Install completions to the system location
 pub fn install(shell: super::generator::Shell) -> Result<()> {
+    use super::generator::Shell;
+
     let path = install_path(shell)?;
 
     if let Some(parent) = path.parent() {
@@ -68,7 +96,98 @@ pub fn install(shell: super::generator::Shell) -> Result<()> {
         path.display()
     );
 
+    let home = home_dir()?;
+    match shell {
+        Shell::Zsh => {
+            if path.starts_with(home.join(".zfunc")) {
+                ensure_zshrc_fpath(&home)?;
+            }
+        }
+        Shell::Bash => {
+            ensure_bashrc_completion(&home, &path)?;
+        }
+        Shell::Fish => {}
+    }
+
     print_post_install(shell, &path);
+
+    Ok(())
+}
+
+const RC_MARKER: &str = "# loom completions";
+
+/// Ensure ~/.bashrc sources the completion file if bash-completion isn't auto-loading it.
+fn ensure_bashrc_completion(home: &Path, completion_path: &Path) -> Result<()> {
+    let bashrc = home.join(".bashrc");
+
+    let existing = if bashrc.exists() {
+        std::fs::read_to_string(&bashrc)
+            .with_context(|| format!("Failed to read {}", bashrc.display()))?
+    } else {
+        String::new()
+    };
+
+    if existing.contains(RC_MARKER) {
+        return Ok(());
+    }
+
+    // If bash-completion is loaded, the XDG dir is auto-sourced — no edit needed
+    if existing.contains("bash_completion") || existing.contains("bash-completion") {
+        return Ok(());
+    }
+
+    let snippet = format!(
+        "\n{RC_MARKER}\n[ -f {} ] && source {}\n",
+        completion_path.display(),
+        completion_path.display()
+    );
+
+    let updated = format!("{existing}{snippet}");
+    std::fs::write(&bashrc, updated)
+        .with_context(|| format!("Failed to write {}", bashrc.display()))?;
+
+    eprintln!("Configured ~/.bashrc to source loom completions.");
+    Ok(())
+}
+
+/// Ensure ~/.zshrc has fpath and compinit configured for ~/.zfunc.
+fn ensure_zshrc_fpath(home: &Path) -> Result<()> {
+    let zshrc = home.join(".zshrc");
+
+    let existing = if zshrc.exists() {
+        std::fs::read_to_string(&zshrc)
+            .with_context(|| format!("Failed to read {}", zshrc.display()))?
+    } else {
+        String::new()
+    };
+
+    // Already configured (by us or manually)
+    if existing.contains(RC_MARKER) {
+        return Ok(());
+    }
+
+    // Check if fpath already includes ~/.zfunc
+    if existing.contains("~/.zfunc") || existing.contains("$HOME/.zfunc") {
+        eprintln!("~/.zfunc already referenced in .zshrc, skipping configuration.");
+        return Ok(());
+    }
+
+    let snippet =
+        format!("\n{RC_MARKER}\nfpath=(~/.zfunc $fpath)\nautoload -Uz compinit && compinit\n");
+
+    // Append before any existing compinit call if possible, otherwise just append
+    let updated = if let Some(pos) = existing.find("autoload -Uz compinit") {
+        // Insert fpath line before the existing compinit
+        let (before, after) = existing.split_at(pos);
+        format!("{before}{RC_MARKER}\nfpath=(~/.zfunc $fpath)\n{after}")
+    } else {
+        format!("{existing}{snippet}")
+    };
+
+    std::fs::write(&zshrc, updated)
+        .with_context(|| format!("Failed to write {}", zshrc.display()))?;
+
+    eprintln!("Configured ~/.zshrc to load completions from ~/.zfunc.");
 
     Ok(())
 }
@@ -93,24 +212,15 @@ fn shell_name(shell: super::generator::Shell) -> &'static str {
     }
 }
 
-fn print_post_install(shell: super::generator::Shell, path: &Path) {
+fn print_post_install(shell: super::generator::Shell, _path: &Path) {
     use super::generator::Shell;
 
     match shell {
-        Shell::Bash => {
-            eprintln!("\nTo activate, add to ~/.bashrc:");
-            eprintln!("  source {}", path.display());
-            eprintln!("\nOr restart your shell.");
-        }
-        Shell::Zsh => {
-            eprintln!("\nTo activate, ensure ~/.zfunc is in your fpath.");
-            eprintln!("Add to ~/.zshrc (before compinit):");
-            eprintln!("  fpath=(~/.zfunc $fpath)");
-            eprintln!("  autoload -Uz compinit && compinit");
-            eprintln!("\nOr restart your shell.");
-        }
         Shell::Fish => {
             eprintln!("\nCompletions are active immediately in new fish sessions.");
+        }
+        _ => {
+            eprintln!("\nRestart your shell to activate completions.");
         }
     }
 }
@@ -167,10 +277,20 @@ fn check_rc_files(home: &Path) -> bool {
 }
 
 fn check_stale_files(home: &Path) -> bool {
-    let stale_paths = completion_file_paths(home);
+    let mut candidates = completion_file_paths(home);
+
+    // Also scan all zsh fpath dirs for stale _loom files
+    if let Ok(fpath) = std::env::var("FPATH") {
+        for dir in fpath.split(':') {
+            let path = PathBuf::from(dir).join("_loom");
+            if !candidates.contains(&path) {
+                candidates.push(path);
+            }
+        }
+    }
 
     let mut found = false;
-    for path in &stale_paths {
+    for path in &candidates {
         if !path.exists() {
             continue;
         }
@@ -208,8 +328,8 @@ fn print_current_status(home: &Path) {
     }
 }
 
-fn completion_file_paths(home: &Path) -> [PathBuf; 3] {
-    [
+fn completion_file_paths(home: &Path) -> Vec<PathBuf> {
+    vec![
         home.join(".local/share/bash-completion/completions/loom"),
         home.join(".zfunc/_loom"),
         home.join(".config/fish/completions/loom.fish"),
