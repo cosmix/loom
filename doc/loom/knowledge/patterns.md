@@ -157,3 +157,25 @@ Uses `#[serde(untagged)]` enum with two variants:
 - `Extended(TruthCheck)` — output validation, deserializes from YAML object with `command` field
 
 Serde tries variants in order: strings match Simple first, objects fail Simple then match Extended. Error messages for malformed objects are poor (inherent untagged limitation). helper methods: `command()`, `is_extended()`, `Display` delegates to `command()`.
+
+## Hook Content-Stripping Pattern
+
+Hooks that validate bash commands must strip embedded text content before
+pattern matching. The strip_embedded_content() function (in hooks/\_common.sh
+for shell, validators/bash.rs for Rust) removes:
+
+1. Heredoc bodies (awk state machine tracking <<MARKER to MARKER)
+2. -m / --message quoted content (sed replacements)
+
+Each hook sources \_common.sh via: source "$(dirname "$0")/\_common.sh"
+
+Full hook inventory (13 scripts in hooks/):
+
+- PreToolUse: worktree-isolation.sh, commit-filter.sh, git-add-guard.sh,
+  prefer-modern-tools.sh, worktree-file-guard.sh
+- PostToolUse: post-tool-use.sh, ask-user-post.sh
+- Stop: commit-guard.sh, learning-validator.sh
+- SessionStart: session-start.sh
+- SessionEnd: session-end.sh
+- PreCompact: pre-compact.sh
+- UserPromptSubmit: skill-trigger.sh, ask-user-pre.sh

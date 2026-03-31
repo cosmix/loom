@@ -60,3 +60,21 @@ Files: src/verify/baseline/capture.rs:76-79, src/verify/baseline/compare.rs:155-
 ## Bootstrap Tool Restriction Scope
 
 `bootstrap.rs:57` uses `Bash(loom knowledge*)` which allows all knowledge subcommands (init, check, gc, show) not just `update`. Harmless since other subcommands are read-only, but could be tightened to `Bash(loom knowledge update*)` for principle of least privilege.
+
+## Hook Pattern Matching: False Positives on Embedded Content (2026-03-31)
+
+All PreToolUse hooks (worktree-isolation.sh, commit-filter.sh, git-add-guard.sh,
+prefer-modern-tools.sh) and Rust validators (bash.rs) matched patterns against
+full bash command strings including heredoc bodies and -m/--message content.
+Keywords in commit messages or string literals triggered false blocks.
+
+Issue #13: git commit -m "Add .worktrees/ to .gitignore" blocked by
+worktree-isolation.sh because .worktrees/ appeared in message text.
+
+Fix: Introduced _common.sh with strip_embedded_content() that removes heredoc
+bodies and message content before pattern matching. Rust parallel implementation
+in validators/bash.rs. Also tightened commit-filter.sh attribution pattern to
+require Co-Authored-By: header prefix instead of substring matching.
+
+Hooks affected: worktree-isolation.sh, commit-filter.sh, git-add-guard.sh,
+prefer-modern-tools.sh, validators/bash.rs.
