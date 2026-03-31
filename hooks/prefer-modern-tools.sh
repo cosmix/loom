@@ -26,6 +26,9 @@
 
 set -euo pipefail
 
+# Source shared utilities for strip_embedded_content()
+source "$(dirname "$0")/_common.sh"
+
 # Read JSON input from stdin (Claude Code passes tool info via stdin)
 # Cross-platform timeout: gtimeout (macOS+coreutils), timeout (Linux), or plain cat
 if command -v gtimeout &>/dev/null; then
@@ -70,6 +73,9 @@ if [[ -z "$COMMAND" ]]; then
 	exit 0
 fi
 
+# Strip heredoc bodies and -m/--message content to avoid false positives
+STRIPPED_COMMAND=$(strip_embedded_content "$COMMAND")
+
 # Skip loom knowledge/memory commands — their text payloads often contain
 # words like "find" or "grep" that are not actual command invocations
 if echo "$COMMAND" | grep -qE '(^|[;&|[:space:]])loom[[:space:]]+(knowledge|memory)[[:space:]]'; then
@@ -92,7 +98,7 @@ uses_find() {
 }
 
 # Check for grep usage - block and guide to native tools first, then rg
-if uses_grep "$COMMAND"; then
+if uses_grep "$STRIPPED_COMMAND"; then
 	echo "BLOCKED: grep detected" >>"$DEBUG_LOG" 2>&1
 	# Output to stderr (shown to Claude) and exit 2 to block
 	cat >&2 <<'EOF'
@@ -116,7 +122,7 @@ EOF
 fi
 
 # Check for find usage - block and guide to native tools first, then fd
-if uses_find "$COMMAND"; then
+if uses_find "$STRIPPED_COMMAND"; then
 	echo "BLOCKED: find detected" >>"$DEBUG_LOG" 2>&1
 	# Output to stderr (shown to Claude) and exit 2 to block
 	cat >&2 <<'EOF'

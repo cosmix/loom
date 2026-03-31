@@ -1,5 +1,8 @@
 //! Permission constants for loom
 
+/// Common utilities shared across loom hooks (source guard, strip_embedded_content)
+pub const HOOK_COMMON: &str = include_str!("../../../../hooks/_common.sh");
+
 /// Commit guard hook - enforces commit and stage completion in loom worktrees
 /// Runs as a global Stop hook, blocks exit if uncommitted changes or stage incomplete
 pub const HOOK_COMMIT_GUARD: &str = include_str!("../../../../hooks/commit-guard.sh");
@@ -50,6 +53,8 @@ pub const HOOK_WORKTREE_FILE_GUARD: &str = include_str!("../../../../hooks/workt
 /// All loom hook scripts with their filenames (installed to ~/.claude/hooks/loom/)
 /// All hooks are installed to the loom/ subdirectory to keep them separate from user hooks.
 pub const LOOM_HOOKS: &[(&str, &str)] = &[
+    // Common utilities (sourced by other hooks)
+    ("_common.sh", HOOK_COMMON),
     // Session lifecycle hooks
     ("post-tool-use.sh", HOOK_POST_TOOL_USE),
     ("session-start.sh", HOOK_SESSION_START),

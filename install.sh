@@ -209,6 +209,7 @@ install_hooks_remote() {
 
 	# All loom hooks
 	local all_hooks=(
+		"_common.sh"
 		"session-start.sh"
 		"post-tool-use.sh"
 		"pre-compact.sh"
@@ -220,6 +221,9 @@ install_hooks_remote() {
 		"ask-user-post.sh"
 		"prefer-modern-tools.sh"
 		"skill-trigger.sh"
+		"git-add-guard.sh"
+		"worktree-isolation.sh"
+		"worktree-file-guard.sh"
 	)
 
 	for hook in "${all_hooks[@]}"; do
@@ -343,6 +347,7 @@ install_hooks() {
 
 	# All loom hooks
 	local all_hooks=(
+		"_common.sh"
 		"session-start.sh"
 		"post-tool-use.sh"
 		"pre-compact.sh"
@@ -354,6 +359,9 @@ install_hooks() {
 		"ask-user-post.sh"
 		"prefer-modern-tools.sh"
 		"skill-trigger.sh"
+		"git-add-guard.sh"
+		"worktree-isolation.sh"
+		"worktree-file-guard.sh"
 	)
 
 	if [[ -d "$SCRIPT_DIR/hooks" ]]; then
