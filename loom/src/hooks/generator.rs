@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 use std::path::Path;
 
 use super::config::HooksConfig;
+use crate::fs::permissions::configure_loom_hooks;
 
 /// Generate settings.json content with hooks configuration
 ///
@@ -40,10 +41,15 @@ pub fn generate_hooks_settings(
 
     permissions.insert("defaultMode".to_string(), json!("acceptEdits"));
 
+    // Always ensure global hooks (commit-filter, git-add-guard, worktree-isolation,
+    // etc.) are present. Previously these were only written by `loom init` and assumed
+    // to persist, but any code path that recreates settings.local.json would lose them.
+    configure_loom_hooks(obj)?;
+
     // Generate session-specific hooks
     let session_hooks = config.to_settings_hooks();
 
-    // Merge with existing hooks instead of replacing
+    // Merge session hooks with existing (global hooks are already in place)
     let hooks = obj
         .entry("hooks")
         .or_insert_with(|| json!({}))
