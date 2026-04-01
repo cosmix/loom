@@ -54,15 +54,15 @@ impl std::fmt::Display for MergeState {
 /// # Returns
 /// The merge state of the stage.
 pub fn check_merge_state(stage: &Stage, merge_point: &str, repo_root: &Path) -> Result<MergeState> {
-    // Check explicit conflict flag first
-    if stage.merge_conflict {
-        return Ok(MergeState::Conflict);
-    }
-
-    // If we have a completed_commit, always verify via git ancestry
-    // This is the primary source of truth, not the merged flag
+    // PRIORITY 1: Git ancestry check via completed_commit (authoritative source of truth).
+    //
+    // This MUST run before checking the merge_conflict flag because the flag is
+    // metadata that can become stale. After a merge resolution agent resolves
+    // conflicts and commits, the git state is correct but the merge_conflict flag
+    // in the stage file may still be true (only cleared by `loom stage merge --resolved`).
+    // Without this ordering, the orchestrator cannot detect successful resolutions,
+    // causing infinite re-spawning of merge sessions.
     if let Some(ref completed_commit) = stage.completed_commit {
-        // Check if the completed commit is an ancestor of the merge point
         match is_ancestor_of(completed_commit, merge_point, repo_root) {
             Ok(true) => return Ok(MergeState::Merged),
             Ok(false) => {
@@ -73,20 +73,22 @@ pub fn check_merge_state(stage: &Stage, merge_point: &str, repo_root: &Path) -> 
                     return Ok(MergeState::BranchMissing);
                 }
                 // Branch exists, commit not merged yet
+                if stage.merge_conflict {
+                    return Ok(MergeState::Conflict);
+                }
                 return Ok(MergeState::Pending);
             }
             Err(_) => {
-                // Git command failed - fall back to metadata
-                if stage.merged {
-                    return Ok(MergeState::Merged);
-                }
-                return Ok(MergeState::Unknown);
+                // Git command failed - fall back to metadata below
             }
         }
     }
 
-    // No completed_commit - cannot verify via git ancestry
-    // Fall back to metadata flags only
+    // PRIORITY 2: Metadata flags (when git check unavailable or failed).
+    if stage.merge_conflict {
+        return Ok(MergeState::Conflict);
+    }
+
     if stage.merged {
         // Marked as merged but no commit to verify - trust the flag
         // (likely a knowledge stage or legacy stage)
@@ -94,7 +96,6 @@ pub fn check_merge_state(stage: &Stage, merge_point: &str, repo_root: &Path) -> 
     }
 
     // No completed_commit, not marked merged - we have no way to verify
-    // Return Unknown rather than checking branch (which we can't verify anyway)
     Ok(MergeState::Unknown)
 }
 

@@ -39,27 +39,27 @@ pub fn attempt_progressive_merge(
 ) -> Result<MergeOutcome> {
     let merge_point = get_merge_point(work_dir)?;
 
-    // Capture the completed commit SHA before merge (the HEAD of the stage branch)
+    // Capture the completed commit SHA before merge (the HEAD of the stage branch).
+    // This represents the stage's work output and is set for ALL outcomes (including
+    // conflict) so the orchestrator can later verify merge resolution via git ancestry.
     let branch_name = branch_name_for_stage(&stage.id);
     let completed_commit = get_branch_head(&branch_name, repo_root).ok();
+    stage.completed_commit = completed_commit;
 
     println!("Attempting progressive merge into '{merge_point}'...");
     match merge_completed_stage(stage, repo_root, &merge_point) {
         Ok(ProgressiveMergeResult::Success { files_changed }) => {
             println!("  ✓ Merged {files_changed} file(s) into '{merge_point}'");
-            stage.completed_commit = completed_commit;
             stage.merged = true;
             Ok(MergeOutcome::Success)
         }
         Ok(ProgressiveMergeResult::FastForward) => {
             println!("  ✓ Fast-forward merge into '{merge_point}'");
-            stage.completed_commit = completed_commit;
             stage.merged = true;
             Ok(MergeOutcome::Success)
         }
         Ok(ProgressiveMergeResult::AlreadyMerged) => {
             println!("  ✓ Already up to date with '{merge_point}'");
-            stage.completed_commit = completed_commit;
             stage.merged = true;
             Ok(MergeOutcome::Success)
         }

@@ -48,8 +48,44 @@ impl Orchestrator {
             &self.config.repo_root,
         );
 
-        // Check if the merge was actually successful by examining git state
-        match check_merge_state(&stage, &merge_point, &self.config.repo_root) {
+        // Check if the merge was actually successful by examining git state.
+        // check_merge_state uses completed_commit + git ancestry (primary) and
+        // falls back to metadata flags. With the reordered check, git ancestry
+        // takes priority over the merge_conflict flag.
+        let merge_state = check_merge_state(&stage, &merge_point, &self.config.repo_root);
+
+        // If check_merge_state couldn't determine success (Conflict/Unknown — e.g.,
+        // completed_commit was never set), fall back to checking the branch HEAD directly.
+        let merge_state = match merge_state {
+            Ok(MergeState::Conflict) | Ok(MergeState::Unknown) => {
+                let branch_name = branch_name_for_stage(stage_id);
+                match crate::git::get_branch_head(&branch_name, &self.config.repo_root) {
+                    Ok(head) => {
+                        match crate::git::branch::is_ancestor_of(
+                            &head,
+                            &merge_point,
+                            &self.config.repo_root,
+                        ) {
+                            Ok(true) => Ok(MergeState::Merged),
+                            _ => merge_state,
+                        }
+                    }
+                    Err(_) => {
+                        // Branch doesn't exist — may have been cleaned up after merge
+                        if !crate::git::branch_exists(&branch_name, &self.config.repo_root)
+                            .unwrap_or(true)
+                        {
+                            Ok(MergeState::BranchMissing)
+                        } else {
+                            merge_state
+                        }
+                    }
+                }
+            }
+            other => other,
+        };
+
+        match merge_state {
             Ok(MergeState::Merged) => {
                 self.finalize_merge_resolution(
                     &mut stage,
@@ -246,6 +282,18 @@ impl Orchestrator {
             &self.config.base_branch,
             &self.config.repo_root,
         );
+
+        // Capture completed_commit before merge attempt so the orchestrator can
+        // later verify merge resolution via git ancestry even if conflicts occur.
+        if stage.completed_commit.is_none() {
+            let branch_name = branch_name_for_stage(stage_id);
+            if let Ok(head) = crate::git::get_branch_head(&branch_name, &self.config.repo_root) {
+                stage.completed_commit = Some(head);
+                if let Err(e) = self.save_stage(&stage) {
+                    eprintln!("Warning: Failed to save completed_commit: {e}");
+                }
+            }
+        }
 
         clear_status_line();
         eprintln!("Auto-merging stage '{stage_id}'...");
