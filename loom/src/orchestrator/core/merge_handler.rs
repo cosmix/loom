@@ -253,6 +253,17 @@ impl Orchestrator {
             }
         };
 
+        // If stage is already merged (e.g., by `loom stage complete`), skip auto-merge.
+        // Without this guard, the daemon would redundantly attempt to merge an already-merged
+        // stage. If cleanup partially removed the branch but not the worktree directory,
+        // the redundant merge would fail and force-overwrite the Completed status to
+        // MergeConflict/MergeBlocked — even though Completed is a terminal state.
+        // This would spawn a spurious resolver session while the dependent stage was
+        // already started by sync_graph_with_stage_files.
+        if stage.merged {
+            return true;
+        }
+
         // Load plan-level auto_merge setting from config
         let plan_auto_merge = (|| -> Option<bool> {
             let config = crate::fs::load_config(&self.config.work_dir).ok()??;
