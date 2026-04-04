@@ -66,6 +66,11 @@ fn execute_static(work_dir: &WorkDir, verbose: bool) -> Result<()> {
 
     crate::utils::print_logo_header("Status");
 
+    // Show plan name if available
+    if let Some(ref name) = status_data.plan_name {
+        println!("   {}", format!("Plan: {name}").bold());
+    }
+
     // Show daemon status hint
     if DaemonServer::is_running(work_dir.root()) {
         println!(

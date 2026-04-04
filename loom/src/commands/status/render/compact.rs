@@ -11,6 +11,11 @@ use crate::utils::context_pct_terminal_color;
 pub fn render_compact<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<()> {
     let progress = &data.progress;
 
+    // Plan name prefix
+    if let Some(ref name) = data.plan_name {
+        write!(w, "{} ", name.bold())?;
+    }
+
     // Progress fraction
     write!(w, "[{}/{}]", progress.completed, progress.total)?;
 

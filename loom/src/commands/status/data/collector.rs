@@ -3,13 +3,14 @@ use chrono::Utc;
 use std::fs;
 
 use crate::commands::status::merge_status::build_merge_report;
-use crate::fs::work_dir::WorkDir;
+use crate::fs::work_dir::{load_config, WorkDir};
 use crate::models::constants::STALENESS_THRESHOLD_SECS;
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::get_merge_point;
 use crate::orchestrator::monitor::heartbeat::{read_heartbeat, Heartbeat};
 use crate::parser::frontmatter::parse_from_markdown;
+use crate::plan::parser::extract_plan_name;
 use crate::verify::transitions::list_all_stages;
 
 use super::{ActivityStatus, MergeSummary, ProgressSummary, StageSummary, StatusData};
@@ -214,6 +215,16 @@ fn build_merge_summary_from_report(
     }
 }
 
+/// Load the plan name from config.toml and the plan file (best-effort).
+fn load_plan_name(work_dir: &WorkDir) -> Option<String> {
+    let config = load_config(work_dir.root()).ok()??;
+    let source_path = config.source_path()?;
+    let project_root = work_dir.project_root()?;
+    let plan_path = project_root.join(&source_path);
+    let content = fs::read_to_string(plan_path).ok()?;
+    extract_plan_name(&content).ok()
+}
+
 /// Collect all status data from the work directory
 pub fn collect_status_data(work_dir: &WorkDir) -> Result<StatusData> {
     // Load all stages
@@ -247,10 +258,14 @@ pub fn collect_status_data(work_dir: &WorkDir) -> Result<StatusData> {
     // Calculate progress
     let progress = calculate_progress(&stages);
 
+    // Load plan name (best-effort, don't fail status if unavailable)
+    let plan_name = load_plan_name(work_dir);
+
     Ok(StatusData {
         stages: stage_summaries,
         merge: merge_summary,
         progress,
+        plan_name,
     })
 }
 

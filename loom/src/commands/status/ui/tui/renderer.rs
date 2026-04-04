@@ -23,6 +23,7 @@ pub fn render_compact_header(
     pct: f64,
     completed_count: usize,
     total: usize,
+    plan_name: Option<&str>,
 ) {
     let progress_str = format!("{completed_count}/{total} ({:.0}%)", pct * 100.0);
 
@@ -31,12 +32,20 @@ pub fn render_compact_header(
         .map(|l| Line::from(Span::styled(l, Theme::header())))
         .collect();
 
-    lines.push(Line::from(vec![
+    // Build progress line with optional plan name
+    let mut progress_spans = vec![
         Span::styled(format!("   {spinner} "), Theme::header()),
         Span::styled(progress_str, Style::default().fg(StatusColors::COMPLETED)),
         Span::raw(" "),
         Span::styled(progress_bar_compact(pct, 20), Theme::status_completed()),
-    ]));
+    ];
+
+    if let Some(name) = plan_name {
+        progress_spans.push(Span::raw("  "));
+        progress_spans.push(Span::styled(name, Theme::dimmed()));
+    }
+
+    lines.push(Line::from(progress_spans));
 
     let header = Paragraph::new(lines);
     frame.render_widget(header, area);

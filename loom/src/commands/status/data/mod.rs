@@ -50,6 +50,8 @@ pub struct StatusData {
     pub stages: Vec<StageSummary>,
     pub merge: MergeSummary,
     pub progress: ProgressSummary,
+    /// Extracted plan name (first H1 header from the plan file)
+    pub plan_name: Option<String>,
 }
 
 /// Stage display data

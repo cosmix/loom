@@ -43,6 +43,7 @@ fn make_status_data(stages: Vec<StageSummary>) -> StatusData {
             pending: 0,
             blocked: 0,
         },
+        plan_name: None,
     }
 }
 

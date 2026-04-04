@@ -30,6 +30,8 @@ use crate::commands::status::render::print_completion_summary;
 use crate::daemon::{
     read_auth_token, read_message, write_message, CompletionSummary, Request, Response,
 };
+use crate::fs::work_dir::load_config;
+use crate::plan::parser::extract_plan_name;
 
 /// Poll timeout for event loop (100ms for responsive UI).
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
@@ -59,6 +61,8 @@ pub struct TuiApp {
     completion_received_at: Option<Instant>,
     /// Flag to prevent double cleanup in Drop.
     cleaned_up: bool,
+    /// Extracted plan name from the plan file.
+    plan_name: Option<String>,
 }
 
 impl TuiApp {
@@ -76,6 +80,9 @@ impl TuiApp {
         let backend = CrosstermBackend::new(stdout);
         let terminal = Terminal::new(backend).context("Failed to create terminal")?;
 
+        // Load plan name from config.toml (best-effort)
+        let plan_name = Self::load_plan_name();
+
         Ok(Self {
             terminal,
             running: Arc::new(AtomicBool::new(true)),
@@ -89,7 +96,17 @@ impl TuiApp {
             completion_summary: None,
             completion_received_at: None,
             cleaned_up: false,
+            plan_name,
         })
+    }
+
+    /// Load plan name from config.toml and the plan file (best-effort).
+    fn load_plan_name() -> Option<String> {
+        let config = load_config(Path::new(".work")).ok()??;
+        let source_path = config.source_path()?;
+        let plan_path = Path::new(".").join(&source_path);
+        let content = std::fs::read_to_string(plan_path).ok()?;
+        extract_plan_name(&content).ok()
     }
 
     /// Run the TUI event loop.
@@ -284,6 +301,7 @@ impl TuiApp {
         };
 
         let activity_log = &self.activity_log;
+        let plan_name = self.plan_name.as_deref();
 
         self.terminal.draw(|frame| {
             let area = frame.area();
@@ -300,7 +318,15 @@ impl TuiApp {
                 ])
                 .split(area);
 
-            render_compact_header(frame, chunks[0], spinner, pct, completed_count, total);
+            render_compact_header(
+                frame,
+                chunks[0],
+                spinner,
+                pct,
+                completed_count,
+                total,
+                plan_name,
+            );
 
             render_tree_graph(frame, chunks[2], &stages_for_graph, scroll_y);
 
