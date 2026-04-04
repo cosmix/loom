@@ -567,7 +567,34 @@ main() {
 		cleanup_backups
 	fi
 
+	update_completions
 	print_summary
+}
+
+update_completions() {
+	local loom_bin="$HOME/.local/bin/loom"
+	[[ -x "$loom_bin" ]] || return 0
+
+	local updated=0
+	local shell path
+
+	# Check each shell's known completion file location
+	for shell in zsh bash fish; do
+		case "$shell" in
+			zsh)  path="$HOME/.zfunc/_loom" ;;
+			bash) path="$HOME/.local/share/bash-completion/completions/loom" ;;
+			fish) path="$HOME/.config/fish/completions/loom.fish" ;;
+		esac
+
+		if [[ -f "$path" ]]; then
+			"$loom_bin" completions "$shell" > "$path"
+			((++updated))
+		fi
+	done
+
+	if [[ $updated -gt 0 ]]; then
+		ok "updated $updated shell completion file(s)"
+	fi
 }
 
 main "$@"
