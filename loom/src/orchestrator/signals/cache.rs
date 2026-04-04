@@ -249,12 +249,19 @@ pub fn generate_stable_prefix() -> String {
         "    orchestration and invisible to other stages — anything saved there is LOST.\n",
     );
     content.push_str("```\n\n");
-    content.push_str("**WHEN to record (triggers — do it IMMEDIATELY, not at stage end):**\n\n");
-    content.push_str("- **Mistake/error** → `loom memory note \"mistake: tried X, failed because Y, fixed by Z\"`\n");
+    content.push_str("**LEARN FROM PAST SESSIONS (BEFORE starting work):**\n\n");
+    content.push_str("- Run `loom knowledge show mistakes` — check for known pitfalls in the area you are working on\n");
+    content.push_str(
+        "- If a past mistake matches your task, adjust your approach BEFORE writing code\n",
+    );
+    content.push_str("- This is the self-improvement loop: past agents recorded mistakes so YOU can avoid them\n\n");
+    content.push_str("**WHEN to record (write advice to your future self — IMMEDIATELY, not at stage end):**\n\n");
+    content.push_str("Each memory entry should help a FUTURE agent who faces similar work. Include the misleading signal (what made the wrong approach look right) and a prevention rule (how to detect this earlier).\n\n");
+    content.push_str("- **Mistake/error** → `loom memory note \"mistake: tried X because [misleading signal]. Failed because Y. Prevention: [how to detect earlier]. Fix: Z\"`\n");
     content.push_str("- **User correction** → `loom memory note \"mistake: user said do Y instead of X because Z\"`\n");
     content.push_str("- **Approach chosen** → `loom memory decision \"chose X over Y\" --context \"because Z\"`\n");
     content.push_str("- **Surprising discovery** → `loom memory note \"found: unexpected behavior in file:line\"`\n");
-    content.push_str("- **Gotcha/trap** → `loom memory note \"gotcha: X looks like it should work but actually Y\"`\n");
+    content.push_str("- **Gotcha/trap** → `loom memory note \"gotcha: X looks right because [why], but actually Y. Rule: [detection heuristic]\"`\n");
     content.push_str(
         "- **File changes** → `loom memory change \"src/file.rs - what changed and why\"`\n\n",
     );
@@ -262,7 +269,8 @@ pub fn generate_stable_prefix() -> String {
     content.push_str("- Procedural narration: \"spawned 3 subagents\", \"read the config\", \"ran cargo test\"\n");
     content
         .push_str("- Obvious outcomes: \"tests passed\", \"build succeeded\", \"file created\"\n");
-    content.push_str("- Task restating: repeating the assignment or acceptance criteria\n\n");
+    content.push_str("- Task restating: repeating the assignment or acceptance criteria\n");
+    content.push_str("- Bare facts without advice: \"config is at path/X\" — instead say WHY it matters and WHAT to do about it\n\n");
     content.push_str("- **FORBIDDEN**: `loom knowledge update` commands (ONLY for knowledge-bootstrap and integration-verify)\n");
     content.push_str("- Memory persists across sessions and is curated into knowledge during integration-verify\n\n");
     append_git_staging_full(&mut content);
@@ -428,11 +436,12 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str(
         "   - `conventions` — coding conventions learned from user feedback or code review\n",
     );
-    content.push_str("   - `mistakes` — errors made and how to avoid them\n");
+    content.push_str("   - `mistakes` — errors made, written as ACTIONABLE PREVENTION RULES: what was misleading, how to detect it, what to do instead. If 2+ stages hit the same mistake, it is a systemic issue — document the root cause\n");
     content.push_str("   - `stack` — new dependencies, tooling changes\n");
     content.push_str("   - `concerns` — tech debt introduced, known issues\n");
     content.push_str("5. DO NOT blindly copy memory entries — synthesize and curate\n");
-    content.push_str("6. Generate review document: `loom review`\n\n");
+    content.push_str("6. Remove or update stale knowledge entries — if a mistake has been fixed, a pattern replaced, or an entry-point renamed, update or delete the old entry. Stale entries mislead future agents\n");
+    content.push_str("7. Generate review document: `loom review`\n\n");
     content.push_str("**IMPORTANT — Do NOT modify the project's CLAUDE.md:**\n\n");
     content.push_str("- CLAUDE.md is the user's file — loom agents must not write to it\n");
     content.push_str("- ALL system knowledge belongs in `loom knowledge update` exclusively\n");
@@ -479,21 +488,20 @@ pub fn generate_knowledge_stable_prefix() -> String {
     // Mission
     content.push_str("**Your Mission:**\n\n");
     content.push_str(
-        "Capture a thorough snapshot of the system AS IT EXISTS NOW. Implementation stages\n",
+        "Build a **briefing document** for future implementation agents. Every entry you\n",
     );
     content.push_str(
-        "will build on this foundation, and integration-verify will later distill new learnings.\n",
+        "write should help an agent who has never seen this codebase avoid mistakes and\n",
     );
-    content.push_str(
-        "The more complete your picture, the fewer mistakes implementation stages will make.\n\n",
-    );
+    content.push_str("find their way quickly. Implementation stages build on this foundation.\n\n");
     content.push_str("1. **Explore** the codebase hierarchically (entry points → modules → patterns → conventions)\n");
     content.push_str(
         "2. **Document** findings using `loom knowledge update <file> <content>` commands\n",
     );
     content.push_str("3. **Backfill** any knowledge gaps — if existing knowledge files are sparse, enrich them\n");
     content.push_str("4. **Contextualize the plan** — understand what the plan intends to change and document the current state of those areas\n");
-    content.push_str("5. **Verify** acceptance criteria before completing\n\n");
+    content.push_str("5. **Review existing mistakes** — run `loom knowledge show mistakes` and check if any entries are now obsolete or fixed. Remove stale entries to keep the briefing accurate\n");
+    content.push_str("6. **Verify** acceptance criteria before completing\n\n");
     content.push_str("**Do NOT modify the project's CLAUDE.md** — it is the user's file. All knowledge goes to `loom knowledge update`.\n\n");
     content.push_str("**Memory System:** In loom workspaces, use ONLY `loom memory` commands for recording insights.\n");
     content

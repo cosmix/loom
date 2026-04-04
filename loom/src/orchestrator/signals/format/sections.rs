@@ -88,6 +88,9 @@ pub(super) fn format_semi_stable_section(
                 "│  Record IMMEDIATELY when these happen (not at stage end):          │\n",
             );
             content.push_str(
+                "│  Write each as ADVICE to your future self, not just a log entry.  │\n",
+            );
+            content.push_str(
                 "│  - MISTAKE: tried X, failed → loom memory note \"mistake: ...\"     │\n",
             );
             content.push_str(
@@ -715,9 +718,10 @@ pub(super) fn format_recitation_section(
         content.push_str("│  - Every surprise or gotcha in the code                     │\n");
         content.push_str("│                                                             │\n");
         content.push_str("│  BEFORE completing this stage, record what you learned:     │\n");
-        content.push_str("│  loom memory note \"mistake: ...\"                            │\n");
-        content.push_str("│  loom memory decision \"...\" --context \"...\"                 │\n");
-        content.push_str("│  loom memory note \"found: ...\"                              │\n");
+        content.push_str("│  BAD:  \"mistake: wrong path\"  (no context, useless)         │\n");
+        content.push_str("│  GOOD: \"mistake: used loom/src/foo.rs in acceptance but     │\n");
+        content.push_str("│    working_dir='loom' so path should be src/foo.rs.         │\n");
+        content.push_str("│    Prevention: check working_dir before writing paths\"      │\n");
         content.push_str("│                                                             │\n");
         content.push_str("│  Empty memory = lost learning = repeated mistakes           │\n");
         content.push_str("└─────────────────────────────────────────────────────────────┘\n");

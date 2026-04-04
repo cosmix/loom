@@ -299,10 +299,11 @@ feat: everything ← monolithic, unreviable
 - NEVER run git add -A or git add . - the main agent handles staging
 - DO write code, run tests, and report results back
 
-📝 MEMORY RECORDING - REQUIRED FOR SUBAGENTS:
-- Record mistakes IMMEDIATELY: `loom memory note "mistake: tried X, failed because Y, fixed by Z"`
+📝 MEMORY RECORDING - REQUIRED FOR SUBAGENTS (write advice to your future self):
+- Record mistakes IMMEDIATELY: `loom memory note "mistake: tried X because [misleading signal]. Failed because Y. Prevention: [detection rule]. Fix: Z"`
 - Record non-obvious decisions: `loom memory decision "chose X over Y" --context "because Z"`
 - Record surprising discoveries: `loom memory note "found: unexpected pattern/behavior in file:line"`
+- Record gotchas: `loom memory note "gotcha: X looks right because [why], but actually Y. Rule: [detection heuristic]"`
 - Do NOT record procedural actions (e.g. "spawned agents", "read files", "ran tests")
 
 ⛔ AUTO-MEMORY PROHIBITION (CRITICAL):
@@ -477,14 +478,16 @@ EOF
 
 #### Recording Mistakes (MANDATORY)
 
-When you make a mistake, IMMEDIATELY record it:
+When you make a mistake, IMMEDIATELY record it as an **actionable prevention rule** — write for a future agent who will face similar work:
 
 ```bash
 loom knowledge update mistakes "## [Short description]
 
-**What happened:** [Describe]
+**What happened:** [Describe what went wrong]
+**Misleading signal:** [What made the wrong approach look right]
 **Why:** [Root cause]
-**How to avoid:** [Prevention]"
+**Prevention:** [How a future agent can detect this earlier]
+**Fix:** [What to do instead]"
 ```
 
 #### Stage Memory (MANDATORY)
@@ -498,19 +501,28 @@ loom knowledge update mistakes "## [Short description]
 
 Record insights AS DISCOVERED — not at the end of the stage. Empty memory at stage end = lost learning.
 
-**WHEN to record (triggers):**
+**LEARN FROM PAST SESSIONS (BEFORE starting work):**
 
-- **Mistake made** → IMMEDIATELY record: `loom memory note "mistake: tried X, failed because Y, fixed by Z"`
+- Run `loom knowledge show mistakes` — check for known pitfalls in the area you are working on
+- If a past mistake matches your task, adjust your approach BEFORE writing code
+- This is the self-improvement loop: past agents recorded mistakes so YOU can avoid them
+
+**WHEN to record (write advice to your future self — IMMEDIATELY, not at stage end):**
+
+Each memory entry should help a FUTURE agent who faces similar work. Include the misleading signal (what made the wrong approach look right) and a prevention rule (how to detect this earlier).
+
+- **Mistake made** → IMMEDIATELY record: `loom memory note "mistake: tried X because [misleading signal]. Failed because Y. Prevention: [how to detect earlier]. Fix: Z"`
 - **User correction** → IMMEDIATELY record: `loom memory note "mistake: user corrected X, should have done Y instead"`
 - **Approach chosen** → Record the WHY: `loom memory decision "chose X over Y" --context "because Z"`
 - **Surprising discovery** → Record with location: `loom memory note "found: unexpected behavior in file:line — description"`
-- **Gotcha encountered** → Record for future agents: `loom memory note "gotcha: X looks like it should work but actually Y"`
+- **Gotcha encountered** → Record for future agents: `loom memory note "gotcha: X looks right because [why], but actually Y. Rule: [detection heuristic]"`
 
 **WHAT NOT to record:**
 
 - Procedural actions ("spawned 3 subagents", "read the config file", "ran cargo test")
 - Obvious outcomes ("tests passed", "build succeeded")
 - Restating the task description or acceptance criteria
+- Bare facts without advice: "config is at path/X" — instead say WHY it matters and WHAT to do about it
 
 | Type     | When                            | Command                                       |
 | -------- | ------------------------------- | --------------------------------------------- |
@@ -564,6 +576,10 @@ Auto-memory (`~/.claude/projects/*/memory/`) is acceptable for personal preferen
 3. Read `doc/loom/knowledge/*.md` for architecture context and mistakes
 
 **MEMORY BEFORE KNOWLEDGE (CRITICAL ORDERING):** As you perform code review and verification, record your OWN discoveries to `loom memory` FIRST (bugs found, security issues, architectural insights, test gaps). Then, when distilling knowledge, include your integration-verify findings alongside all implementation stage memories. Memories not distilled into knowledge are LOST when the plan completes.
+
+**KNOWLEDGE DISTILLATION — Write for future agents:**
+
+When distilling memories into knowledge, write each `mistakes` entry as an **ACTIONABLE PREVENTION RULE**: what was misleading, how to detect it, what to do instead. If 2+ stages hit the same mistake, it is a systemic issue — document the root cause, not just the symptoms. Remove or update stale knowledge entries — if a mistake has been fixed, a pattern replaced, or an entry-point renamed, delete the old entry. Stale entries mislead future agents.
 
 **⚠️ ZERO TOLERANCE FOR ISSUES** — ALL compiler warnings, linter errors, test failures, and IDE warnings must be FIXED (not suppressed). Nothing is "pre-existing" or "too trivial". Do NOT mark stage complete with warnings or errors remaining.
 
