@@ -87,3 +87,37 @@ pub fn get_source_path(work_dir: &Path) -> Result<Option<PathBuf>> {
         None => Ok(None),
     }
 }
+
+/// Resolve the plan source path to an absolute path.
+///
+/// In worktrees, `.work/` is a symlink to `../../.work`. A relative `source_path`
+/// (e.g., `doc/plans/PLAN-foo.md`) must be resolved from the **main** project root,
+/// not the worktree root. This function canonicalizes the `.work/` directory to
+/// follow the symlink and find the real project root.
+///
+/// Absolute paths are returned as-is for backward compatibility.
+pub fn resolve_source_path(work_dir: &Path) -> Result<Option<PathBuf>> {
+    let config = match load_config(work_dir)? {
+        Some(c) => c,
+        None => return Ok(None),
+    };
+
+    let source_path = match config.source_path() {
+        Some(p) => p,
+        None => return Ok(None),
+    };
+
+    if source_path.is_absolute() {
+        return Ok(Some(source_path));
+    }
+
+    // Resolve relative paths from the main project root.
+    // Canonicalize .work/ to follow the symlink in worktrees,
+    // then take its parent as the project root.
+    let real_work_dir = work_dir
+        .canonicalize()
+        .unwrap_or_else(|_| work_dir.to_path_buf());
+    let project_root = real_work_dir.parent().unwrap_or(&real_work_dir);
+
+    Ok(Some(project_root.join(&source_path)))
+}

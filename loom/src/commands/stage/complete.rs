@@ -25,13 +25,7 @@ use super::session::cleanup_session_resources;
 
 /// Load the full parsed plan from config
 fn load_parsed_plan(work_dir: &Path) -> Result<Option<ParsedPlan>> {
-    // Load config to get plan source path
-    let config = match load_config(work_dir)? {
-        Some(config) => config,
-        None => return Ok(None),
-    };
-
-    let source_path = match config.source_path() {
+    let source_path = match crate::fs::resolve_source_path(work_dir)? {
         Some(path) => path,
         None => return Ok(None),
     };

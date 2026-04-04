@@ -97,6 +97,41 @@ pub fn generate_hooks_settings(
     // agent as a subagent.
     env.remove("LOOM_MAIN_AGENT_PID");
 
+    // Add narrow Read permissions for resolved absolute paths of shared state.
+    // In worktrees, .work/ is a symlink to ../../.work. Claude Code resolves symlinks
+    // before permission matching, so relative patterns like Read(.work/**) fail because
+    // the resolved path is outside the worktree's project root. These absolute-path
+    // permissions cover only the specific files this session needs.
+    let permissions = obj
+        .entry("permissions")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("permissions must be a JSON object"))?;
+
+    let allow = permissions.entry("allow").or_insert_with(|| json!([]));
+    if let Some(allow_arr) = allow.as_array_mut() {
+        // This session's signal file
+        let signal_file = config
+            .work_dir
+            .join("signals")
+            .join(format!("{}.md", config.session_id));
+        allow_arr.push(json!(format!("Read({})", signal_file.display())));
+
+        // Shared config (plan reference, base branch)
+        let config_toml = config.work_dir.join("config.toml");
+        allow_arr.push(json!(format!("Read({})", config_toml.display())));
+
+        // Handoff files (context continuations)
+        let handoffs_dir = config.work_dir.join("handoffs");
+        allow_arr.push(json!(format!("Read({}/**)", handoffs_dir.display())));
+
+        // Plan files in the main project (doc/plans/ contains only plan markdown)
+        if let Some(project_root) = config.work_dir.parent() {
+            let plans_dir = project_root.join("doc").join("plans");
+            allow_arr.push(json!(format!("Read({}/**)", plans_dir.display())));
+        }
+    }
+
     Ok(settings)
 }
 

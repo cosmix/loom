@@ -11,7 +11,6 @@ use std::path::Path;
 use crate::commands::stage::acceptance_runner::{
     resolve_stage_execution_paths, run_acceptance_with_display, AcceptanceDisplayOptions,
 };
-use crate::fs::work_dir::load_config_required;
 use crate::plan::parser::parse_plan;
 use crate::plan::schema::StageDefinition;
 use crate::verify::goal_backward::{run_goal_backward_verification, GoalBackwardResult};
@@ -29,10 +28,9 @@ pub fn execute(stage_id: &str, suggest: bool) -> Result<()> {
     let stage = load_stage(stage_id, work_dir)
         .with_context(|| format!("Failed to load stage '{stage_id}'"))?;
 
-    // Get plan source path
-    let config = load_config_required(work_dir)?;
-    let plan_path = config
-        .source_path()
+    // Resolve plan source path (handles both absolute and relative paths,
+    // follows .work symlink in worktrees to find the main project root)
+    let plan_path = crate::fs::resolve_source_path(work_dir)?
         .context("No plan source path configured in .work/config.toml")?;
 
     // Parse plan to get stage definition
@@ -148,10 +146,7 @@ pub fn run_and_verify_stage_goal(
     verification_dir: &Path,
     work_dir: &Path,
 ) -> Result<GoalBackwardResult> {
-    // Load config to get plan source path
-    let config = load_config_required(work_dir)?;
-    let plan_path = config
-        .source_path()
+    let plan_path = crate::fs::resolve_source_path(work_dir)?
         .context("No plan source path configured in .work/config.toml")?;
 
     // Parse plan to get stage definition
@@ -176,12 +171,7 @@ pub fn load_stage_definition_from_plan(
     stage_id: &str,
     work_dir: &Path,
 ) -> Result<Option<StageDefinition>> {
-    let config = match crate::fs::work_dir::load_config(work_dir)? {
-        Some(config) => config,
-        None => return Ok(None),
-    };
-
-    let plan_path = match config.source_path() {
+    let plan_path = match crate::fs::resolve_source_path(work_dir)? {
         Some(path) => path,
         None => return Ok(None),
     };

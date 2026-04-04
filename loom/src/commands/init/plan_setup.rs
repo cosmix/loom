@@ -120,11 +120,19 @@ pub fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<usiz
     let base_branch =
         current_branch(&std::env::current_dir()?).context("Failed to get current git branch")?;
 
+    // Store source_path as relative to the project root so it works from
+    // both the main repo and worktrees (where .work/ is a symlink).
+    // Falls back to canonical (absolute) if the plan is outside the repo.
+    let project_root = std::env::current_dir()?;
+    let relative_source_path = canonical_path
+        .strip_prefix(&project_root)
+        .unwrap_or(&canonical_path);
+
     // Build config using serde serialization for proper TOML escaping
     // This prevents injection attacks via malicious plan names/paths
     let config = Config {
         plan: PlanConfig {
-            source_path: canonical_path.display().to_string(),
+            source_path: relative_source_path.display().to_string(),
             plan_id: parsed_plan.id.clone(),
             plan_name: parsed_plan.name.clone(),
             base_branch,

@@ -6,7 +6,6 @@
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 
-use crate::fs::load_config_required;
 use crate::models::stage::Stage;
 use crate::plan::parser::parse_plan;
 
@@ -16,10 +15,7 @@ use crate::plan::parser::parse_plan;
 /// finds the stage definition, and updates stage.acceptance, stage.working_dir,
 /// and stage.setup from the plan.
 pub fn reload_acceptance_from_plan(stage: &mut Stage, work_dir: &Path) -> Result<()> {
-    let config = load_config_required(work_dir)?;
-
-    let plan_path = config
-        .source_path()
+    let plan_path = crate::fs::resolve_source_path(work_dir)?
         .ok_or_else(|| anyhow::anyhow!("No 'plan.source_path' found in config.toml"))?;
 
     if !plan_path.exists() {
