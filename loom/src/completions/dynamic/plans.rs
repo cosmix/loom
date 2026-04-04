@@ -32,13 +32,17 @@ pub fn complete_plan_files(cwd: &Path, prefix: &str) -> Result<Vec<String>> {
             continue;
         }
 
-        if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-            // Match against prefix
-            if prefix.is_empty() || filename.starts_with(prefix) {
-                // Return full relative path from cwd
-                if let Ok(rel_path) = path.strip_prefix(cwd) {
-                    results.push(rel_path.to_string_lossy().to_string());
-                }
+        // Only include files we can form a relative path for
+        if let Ok(rel_path) = path.strip_prefix(cwd) {
+            let rel_str = rel_path.to_string_lossy().to_string();
+            let filename = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or_default();
+
+            // Match prefix against full relative path or just filename
+            if prefix.is_empty() || rel_str.starts_with(prefix) || filename.starts_with(prefix) {
+                results.push(rel_str);
             }
         }
     }

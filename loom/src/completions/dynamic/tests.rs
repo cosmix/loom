@@ -71,6 +71,28 @@ fn test_complete_plan_files_no_match() {
 }
 
 #[test]
+fn test_complete_plan_files_with_path_prefix() {
+    let temp_dir = setup_test_workspace();
+    let root = temp_dir.path();
+
+    // Simulate user typing: loom init doc/plans/PLAN-000<tab>
+    let results = complete_plan_files(root, "doc/plans/PLAN-000").unwrap();
+    assert_eq!(results.len(), 2);
+    assert!(results.contains(&"doc/plans/PLAN-0001-feature-a.md".to_string()));
+    assert!(results.contains(&"doc/plans/PLAN-0002-feature-b.md".to_string()));
+}
+
+#[test]
+fn test_complete_plan_files_with_partial_path_prefix() {
+    let temp_dir = setup_test_workspace();
+    let root = temp_dir.path();
+
+    // Simulate user typing: loom init doc/plans/<tab>
+    let results = complete_plan_files(root, "doc/plans/").unwrap();
+    assert_eq!(results.len(), 3);
+}
+
+#[test]
 fn test_complete_plan_files_missing_dir() {
     let temp_dir = TempDir::new().unwrap();
     let root = temp_dir.path();
