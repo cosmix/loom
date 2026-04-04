@@ -24,6 +24,8 @@ _loom() {
 
     if (( ${#completions} > 0 )); then
         compadd -U -- "${completions[@]}"
+    else
+        _files
     fi
 }
 

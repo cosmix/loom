@@ -5,6 +5,9 @@ pub const FISH_COMPLETION: &str = r##"# loom shell completions for fish
 # Disable file completions by default
 complete -c loom -f
 
+# Re-enable file completions for commands that accept paths
+complete -c loom -n '__fish_seen_subcommand_from init' -F
+
 # Use loom complete for all completions
 complete -c loom -a '(loom complete fish (pwd) (commandline) (commandline -ct) (commandline -opc | tail -n1) 2>/dev/null)'
 "##;
