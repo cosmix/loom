@@ -194,6 +194,22 @@ impl Orchestrator {
                     true
                 }
                 Ok(false) => {
+                    // If stage is already Completed (terminal state), don't revert to
+                    // MergeBlocked. The stage's work is done; the merge was reported
+                    // successful by git but verification couldn't confirm ancestry.
+                    // Treat as merged to avoid stuck-in-MergeBlocked loops.
+                    if stage.status == StageStatus::Completed {
+                        clear_status_line();
+                        eprintln!(
+                            "Warning: Merge verification failed for completed stage '{stage_id}' \
+                             (commit may not be in target branch), treating as merged"
+                        );
+                        stage.merged = true;
+                        if let Err(e) = self.save_stage(stage) {
+                            eprintln!("Warning: Failed to save stage: {e}");
+                        }
+                        return true;
+                    }
                     // Merge reported success but commit not in target - phantom merge!
                     clear_status_line();
                     eprintln!(
@@ -212,6 +228,20 @@ impl Orchestrator {
                     false
                 }
                 Err(e) => {
+                    // If stage is already Completed (terminal state), don't revert to
+                    // MergeBlocked. Log the verification error but treat as merged.
+                    if stage.status == StageStatus::Completed {
+                        clear_status_line();
+                        eprintln!(
+                            "Warning: Merge verification error for completed stage '{stage_id}': \
+                             {e}, treating as merged"
+                        );
+                        stage.merged = true;
+                        if let Err(e) = self.save_stage(stage) {
+                            eprintln!("Warning: Failed to save stage: {e}");
+                        }
+                        return true;
+                    }
                     // Verification failed - do NOT mark as merged to prevent phantom merges
                     clear_status_line();
                     eprintln!("Stage '{stage_id}' merge verification error: {e}");
@@ -395,6 +425,19 @@ impl Orchestrator {
             Err(e) => {
                 clear_status_line();
                 eprintln!("Auto-merge failed for '{stage_id}': {e}");
+                // If stage is already Completed (terminal state), don't revert to
+                // MergeBlocked. Mark as merged to prevent repeated failed merge attempts.
+                if stage.status == StageStatus::Completed {
+                    eprintln!(
+                        "Warning: Stage '{stage_id}' is already Completed, \
+                         marking as merged despite auto-merge error"
+                    );
+                    stage.merged = true;
+                    if let Err(e) = self.save_stage(&stage) {
+                        eprintln!("Warning: Failed to save stage: {e}");
+                    }
+                    return true;
+                }
                 // On error, transition to MergeBlocked status
                 if let Err(transition_err) = stage.try_mark_merge_blocked() {
                     eprintln!("Warning: Failed to transition stage to MergeBlocked status: {transition_err}");

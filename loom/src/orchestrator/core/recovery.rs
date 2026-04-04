@@ -107,6 +107,57 @@ impl Recovery for Orchestrator {
 
                 match stage.status {
                     StageStatus::Completed => {
+                        // If stage is Completed but not merged, try to auto-verify
+                        // the merge state to prevent repeated merge attempts on daemon
+                        // restart.
+                        if !stage.merged {
+                            if let Some(ref completed_commit) = stage.completed_commit {
+                                let target_branch = crate::git::branch::resolve_target_branch(
+                                    &self.config.base_branch,
+                                    &self.config.repo_root,
+                                );
+                                match crate::git::merge::verify_merge_succeeded(
+                                    completed_commit,
+                                    &target_branch,
+                                    &self.config.repo_root,
+                                ) {
+                                    Ok(true) => {
+                                        tracing::info!(
+                                            stage_id = %stage.id,
+                                            "Auto-verified merge for completed stage, \
+                                             marking as merged"
+                                        );
+                                        stage.merged = true;
+                                        if let Err(e) = self.save_stage(&stage) {
+                                            tracing::warn!(
+                                                error = %e,
+                                                "Failed to save auto-verified merge state"
+                                            );
+                                        }
+                                    }
+                                    _ => {
+                                        // Can't verify — leave as-is, the completion
+                                        // handler will deal with it (with the new
+                                        // Completed guard).
+                                    }
+                                }
+                            } else {
+                                // No completed_commit — assume already merged (legacy)
+                                tracing::info!(
+                                    stage_id = %stage.id,
+                                    "Completed stage has no completed_commit, \
+                                     assuming merged"
+                                );
+                                stage.merged = true;
+                                if let Err(e) = self.save_stage(&stage) {
+                                    tracing::warn!(
+                                        error = %e,
+                                        "Failed to save assumed merged state"
+                                    );
+                                }
+                            }
+                        }
+
                         // IMPORTANT: Set merged status FIRST, before mark_completed().
                         // mark_completed() triggers update_ready_status() which needs the
                         // correct merged value to determine if dependent stages are ready.

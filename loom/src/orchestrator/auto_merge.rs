@@ -88,8 +88,15 @@ pub fn attempt_auto_merge(
             insertions,
             deletions,
         } => {
-            // Clean up worktree and branch
-            let cleanup = cleanup_after_merge(&stage.id, repo_root, &CleanupConfig::quiet())?;
+            // Clean up worktree and branch — cleanup failure should not
+            // turn a successful merge into an error (Bug: cleanup errors
+            // were propagated via `?`, causing the caller to mark the stage
+            // as MergeBlocked even though the merge itself succeeded).
+            let cleanup = cleanup_after_merge(&stage.id, repo_root, &CleanupConfig::quiet())
+                .unwrap_or_else(|e| {
+                    eprintln!("Warning: Post-merge cleanup failed for '{}': {e}", stage.id);
+                    CleanupResult::default()
+                });
 
             Ok(AutoMergeResult::Success {
                 files_changed,
@@ -100,13 +107,21 @@ pub fn attempt_auto_merge(
         }
 
         MergeResult::FastForward => {
-            let cleanup = cleanup_after_merge(&stage.id, repo_root, &CleanupConfig::quiet())?;
+            let cleanup = cleanup_after_merge(&stage.id, repo_root, &CleanupConfig::quiet())
+                .unwrap_or_else(|e| {
+                    eprintln!("Warning: Post-merge cleanup failed for '{}': {e}", stage.id);
+                    CleanupResult::default()
+                });
 
             Ok(AutoMergeResult::FastForward { cleanup })
         }
 
         MergeResult::AlreadyUpToDate => {
-            let cleanup = cleanup_after_merge(&stage.id, repo_root, &CleanupConfig::quiet())?;
+            let cleanup = cleanup_after_merge(&stage.id, repo_root, &CleanupConfig::quiet())
+                .unwrap_or_else(|e| {
+                    eprintln!("Warning: Post-merge cleanup failed for '{}': {e}", stage.id);
+                    CleanupResult::default()
+                });
 
             Ok(AutoMergeResult::AlreadyUpToDate { cleanup })
         }

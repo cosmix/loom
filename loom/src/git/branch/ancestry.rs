@@ -3,7 +3,7 @@
 use anyhow::Result;
 use std::path::Path;
 
-use crate::git::runner::{run_git_bool, run_git_checked};
+use crate::git::runner::{run_git, run_git_checked};
 
 #[cfg(test)]
 use std::process::Command;
@@ -23,10 +23,11 @@ use std::process::Command;
 /// * `Ok(false)` if the commit is not an ancestor
 /// * `Err` if the git command fails (e.g., invalid commit/branch)
 pub fn is_ancestor_of(commit_sha: &str, branch: &str, repo_root: &Path) -> Result<bool> {
-    Ok(run_git_bool(
+    let output = run_git(
         &["merge-base", "--is-ancestor", commit_sha, branch],
         repo_root,
-    ))
+    )?;
+    Ok(output.status.success())
 }
 
 /// Get the HEAD commit SHA of a branch
