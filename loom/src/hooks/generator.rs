@@ -110,12 +110,9 @@ pub fn generate_hooks_settings(
 
     let allow = permissions.entry("allow").or_insert_with(|| json!([]));
     if let Some(allow_arr) = allow.as_array_mut() {
-        // This session's signal file
-        let signal_file = config
-            .work_dir
-            .join("signals")
-            .join(format!("{}.md", config.session_id));
-        allow_arr.push(json!(format!("Read({})", signal_file.display())));
+        // Signal files (this session's signal + any recovery signals)
+        let signals_dir = config.work_dir.join("signals");
+        allow_arr.push(json!(format!("Read({}/**)", signals_dir.display())));
 
         // Shared config (plan reference, base branch)
         let config_toml = config.work_dir.join("config.toml");
