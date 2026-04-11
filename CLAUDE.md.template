@@ -116,6 +116,7 @@ Before writing acceptance criteria: 1) What is working_dir? 2) Do paths exist re
 **REQUIRED fields on every stage:** `working_dir`, `stage_type` (`knowledge`, `standard`, or `integration-verify`).
 
 **Standard stages MUST define at least ONE of** (validated by `loom init`):
+
 - `truths` — Observable behaviors (shell commands returning exit 0)
 - `artifacts` — Files that must exist with real implementation
 - `wiring` — Code patterns proving integration (source + pattern + description)
@@ -301,6 +302,7 @@ Agent teams provide inter-agent messaging, shared task lists, and persistent sta
 **Token-Efficient Execution Strategy:**
 
 Sonnet (high thinking) is dramatically cheaper than Opus. Invest planning time to write detailed stage descriptions so more stages can run on Sonnet:
+
 - Specify exact file paths, function signatures, and patterns to follow
 - Include the existing code patterns the agent should match
 - List explicit steps, not high-level goals
