@@ -124,6 +124,101 @@ loom:
 
 - `knowledge` and `integration-verify` stages automatically get write access to `doc/loom/knowledge/**`
 
+### 3b. Model Selection Per Stage (REQUIRED)
+
+```text
+┌────────────────────────────────────────────────────────────────────┐
+│  ⚠️  EVERY STAGE MUST SET `model` EXPLICITLY                      │
+│                                                                    │
+│  The plan author decides opus vs sonnet for each stage based on   │
+│  whether the work is ARCHITECTURAL (needs judgment) or EXECUTION  │
+│  (follows detailed instructions). This is a planning-time         │
+│  decision, not a runtime default.                                 │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+**Two categories of stage work:**
+
+| Category | Model | Reasoning | When |
+| --- | --- | --- | --- |
+| **Architectural** | `model: "opus[1m]"` | `reasoning_effort: "high"` | Stage requires design decisions, novel patterns, cross-cutting judgment |
+| **Execution** | `model: "sonnet"` | `reasoning_effort: "high"` | Stage follows detailed instructions, applies existing patterns, well-scoped |
+
+**Architectural stages** (use opus) — the agent must make judgment calls:
+- Designing new abstractions, module boundaries, or data models
+- Complex debugging requiring multi-file root cause analysis
+- Security-sensitive code (auth flows, crypto, input validation)
+- Cross-cutting refactors that touch many modules
+- Ambiguous requirements where the agent must decide the approach
+
+**Execution stages** (use sonnet) — the agent follows the plan:
+- Implementing features with explicit file paths, signatures, and patterns
+- Writing tests for existing code
+- Boilerplate, scaffolding, config changes
+- Applying a pattern that already exists elsewhere in the codebase
+- Bug fixes with known root cause and clear fix
+
+**The key tradeoff:** Opus costs ~5x more tokens but makes better judgment calls. Sonnet is token-efficient but needs detailed instructions. **Invest planning time to write detailed descriptions for sonnet stages — this is where you save tokens.**
+
+```yaml
+# Architectural stage — opus for design decisions
+- id: design-auth-system
+  model: "opus[1m]"
+  reasoning_effort: "high"
+  description: |
+    Design and implement the authentication module. Must decide:
+    - Session storage strategy (JWT vs server-side)
+    - Token rotation approach
+    - Integration with existing middleware...
+
+# Execution stage — sonnet with detailed instructions
+- id: add-config-fields
+  model: "sonnet"
+  reasoning_effort: "high"
+  description: |
+    Add three fields to AppConfig in src/config.rs:
+    1. `auth_secret: String` — JWT signing key, read from AUTH_SECRET env var
+    2. `token_ttl: Duration` — token lifetime, default 3600s
+    3. `refresh_enabled: bool` — default true
+    Follow the existing pattern at src/config.rs:45-60 for env var parsing.
+    Wire into src/main.rs:120 where config is constructed...
+```
+
+**Sonnet stage descriptions MUST include:**
+1. **Exact file paths** to create or modify (not just globs)
+2. **Function/struct signatures** the agent should implement
+3. **Existing patterns to follow** — reference specific `file:line` ranges
+4. **Step-by-step subtasks** with clear done criteria
+5. **Integration wiring** — which file to add imports, which registry to register in
+
+Opus stage descriptions can be higher-level since the agent has the judgment to fill gaps.
+
+**integration-verify stages:** Always use opus (set automatically if not specified).
+
+**knowledge stages:** Typically sonnet (exploration is well-scoped), but use opus if the codebase is large/unfamiliar and the agent must make strategic decisions about what to explore.
+
+**Subagent Selection in Descriptions:**
+
+When stage descriptions define subagent work, specify the agent type to match the work category:
+
+```yaml
+description: |
+  SUBAGENT FILE ASSIGNMENTS:
+    Subagent 1 — Feature Implementation (loom-software-engineer):
+      Files Owned: src/feature/*.rs
+      Files Read-Only: src/config.rs
+    Subagent 2 — Tests (loom-software-engineer):
+      Files Owned: tests/feature_test.rs
+      Files Read-Only: src/feature/*.rs
+    Subagent 3 — Security Review (loom-senior-software-engineer):
+      Files Owned: (read-only review)
+      Note: Uses opus for security judgment
+```
+
+Match subagent type to the work:
+- Execution work (implementation, tests, boilerplate) → `loom-software-engineer`
+- Judgment work (security review, architecture, debugging) → `loom-senior-software-engineer`
+
 ### 4. Parallelization Strategy
 
 ```text
@@ -259,6 +354,8 @@ Ensure stage descriptions remind agents of this when memory recording is expecte
 
 ### 5. Stage Description Requirement
 
+**EVERY stage MUST set `model` explicitly** (see Section 3b). Sonnet stages need detailed descriptions; opus stages can be higher-level.
+
 **EVERY stage description MUST include this line:**
 
 ```text
@@ -267,11 +364,22 @@ Use parallel subagents and skills to maximize performance.
 
 This ensures Claude Code instances spawn concurrent subagents for independent tasks.
 
+**Sonnet stage descriptions MUST be implementation-ready (not vague goals):**
+
+- Exact file paths to create/modify
+- Function/struct signatures to implement
+- Existing patterns to follow (reference `file:line`)
+- Step-by-step subtasks with clear done criteria
+- Integration wiring instructions (where to import, register, mount)
+
+Opus stage descriptions can be higher-level since the agent has the judgment to fill gaps, but more detail is still better.
+
 **Stage descriptions using subagents MUST also include:**
 
-- A `SUBAGENT FILE ASSIGNMENTS` block listing each subagent
+- A `SUBAGENT FILE ASSIGNMENTS` block listing each subagent with agent type
 - Each subagent's owned files and read-only files
 - Explicit statement that NO file overlap exists between subagents
+- Match subagent type to work: execution → `loom-software-engineer`, judgment → `loom-senior-software-engineer`
 
 **Example in stage description:**
 
@@ -363,6 +471,8 @@ loom:
   stages:
     - id: stage-id # Required: unique kebab-case identifier
       name: "Stage Name" # Required: human-readable display name
+      model: "sonnet" # Required: "sonnet" for execution, "opus[1m]" for architectural work
+      reasoning_effort: "high" # Required: "high" for both sonnet and opus stages
       description: | # Required: full task description for agent
         What this stage must accomplish.
 
@@ -854,11 +964,12 @@ Verifies all work integrates correctly after merges AND that the feature actuall
 
     CODE REVIEW (MANDATORY):
     5. Spawn PARALLEL specialized review subagents:
-       - security-engineer: OWASP Top 10, auth flaws, input validation,
-         secrets, credential management, dependency vulnerabilities
-       - senior-software-engineer: code organization, design patterns,
-         performance, documentation, maintainability
-       - /loom-testing skill: unit test coverage, integration tests, edge cases
+       - security review (loom-senior-software-engineer): OWASP Top 10, auth flaws,
+         input validation, secrets, credential management, dependency vulnerabilities
+       - architecture review (loom-senior-software-engineer): code organization,
+         design patterns, performance, documentation, maintainability
+       - test coverage (loom-software-engineer + /loom-testing skill): unit test
+         coverage, integration tests, edge cases
     6. Fix ALL issues found by reviewers - do not just report them
     7. Verify no code duplication, proper separation of concerns
 

@@ -288,17 +288,25 @@ Agent teams provide inter-agent messaging, shared task lists, and persistent sta
 
 **⚠️ CHECK SKILLS & AGENTS BEFORE IMPLEMENTING**
 
-`loom-senior-software-engineer` uses Opus. `loom-software-engineer` uses Sonnet. Sonnet mistakes cause rework that costs more than Opus tokens.
+`loom-senior-software-engineer` uses Opus. `loom-software-engineer` uses Sonnet (high thinking effort). **The plan author decides which model each stage uses** based on whether the work is architectural (needs judgment → opus) or execution (follows detailed instructions → sonnet). Every stage in a plan MUST set `model` explicitly.
 
 | Agent                           | When to Use                                                                                  |
 | ------------------------------- | -------------------------------------------------------------------------------------------- |
-| `loom-senior-software-engineer` | **DEFAULT.** All work requiring judgment: implementation, architecture, bugs, debugging, verification, refactoring, test strategy |
-| `loom-software-engineer`        | ONLY: unit tests for existing code, boilerplate with detailed instructions, scaffolding from concrete plan |
+| `loom-software-engineer`        | **Execution work:** implementation with detailed instructions, unit tests, refactoring, boilerplate, scaffolding, applying existing patterns |
+| `loom-senior-software-engineer` | **Architectural work:** design decisions, complex debugging, security-sensitive code, cross-cutting refactors, ambiguous requirements, integration verification |
 | `loom-code-reviewer`            | Read-only code/security/architecture review                                                  |
 | `Explore` agent                 | Codebase exploration                                                                         |
 | Domain skills                   | See Skills by Domain table below                                                             |
 
-**Note:** `loom-software-engineer` can write unit tests but verification (proving end-to-end wiring) requires `loom-senior-software-engineer`.
+**Token-Efficient Execution Strategy:**
+
+Sonnet (high thinking) is dramatically cheaper than Opus. Invest planning time to write detailed stage descriptions so more stages can run on Sonnet:
+- Specify exact file paths, function signatures, and patterns to follow
+- Include the existing code patterns the agent should match
+- List explicit steps, not high-level goals
+- Provide acceptance criteria that verify each step, not just the final result
+
+**When to escalate to Opus:** If a Sonnet agent fails twice on the same task or produces incorrect architectural decisions, the stage should be retried with `model: "opus[1m]"` override.
 
 #### Skills by Domain
 
@@ -465,10 +473,10 @@ When NOT executing a loom plan and `doc/loom/knowledge/` exists, **prefer record
 
 | Dimension    | Agent                         | Focus                               |
 | ------------ | ----------------------------- | ----------------------------------- |
-| Security     | security-engineer             | OWASP, auth, secrets, injection     |
+| Security     | loom-senior-software-engineer | OWASP, auth, secrets, injection     |
 | Architecture | loom-senior-software-engineer | patterns, coupling, quality         |
-| Testing      | /loom-testing skill           | coverage gaps, edge cases           |
-| Sandbox      | Build/test verifier           | Were operations blocked by sandbox? |
+| Testing      | loom-software-engineer + /loom-testing skill | coverage gaps, edge cases |
+| Sandbox      | loom-software-engineer        | Were operations blocked by sandbox? |
 
 FIX issues found, don't just report. Sandbox blocks = BLOCKER.
 

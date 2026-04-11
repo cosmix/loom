@@ -194,8 +194,8 @@ pub fn generate_stable_prefix() -> String {
     content.push_str("**Delegation & Efficiency (CRITICAL):**\n\n");
     content.push_str("**USE THE TASK TOOL** to spawn parallel subagents for multi-part work:\n");
     content.push_str("- Independent file changes, multiple components, tests + implementation → spawn parallel subagents\n");
-    content.push_str("- Pattern: `Task(subagent_type=\"loom-senior-software-engineer\", prompt=\"...\")` - send MULTIPLE in ONE message\n");
-    content.push_str("- Agents: `loom-senior-software-engineer` (DEFAULT — use for all work requiring judgment), `loom-software-engineer` (ONLY for unit tests, boilerplate, scaffolding), `Explore`\n");
+    content.push_str("- Match subagent type to the work: execution → `loom-software-engineer` (sonnet), judgment → `loom-senior-software-engineer` (opus)\n");
+    content.push_str("- Pattern: `Task(subagent_type=\"loom-software-engineer\", prompt=\"...\")` - send MULTIPLE in ONE message\n");
     content.push_str(
         "- Skills: /loom-auth, /loom-testing, /loom-ci-cd, /loom-logging-observability\n\n",
     );
@@ -393,7 +393,7 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("**USE THE TASK TOOL** to spawn parallel subagents for verification:\n");
     content.push_str("- Run tests, linting, and build checks in parallel where possible\n");
     content.push_str("- Pattern: `Task(subagent_type=\"loom-senior-software-engineer\", prompt=\"...\")` - send MULTIPLE in ONE message\n");
-    content.push_str("- Agents: `loom-senior-software-engineer` (DEFAULT — use for all work requiring judgment), `loom-software-engineer` (ONLY for unit tests, boilerplate, scaffolding), `Explore`\n");
+    content.push_str("- Agents: `loom-senior-software-engineer` (DEFAULT for integration-verify — needs judgment for code review), `loom-software-engineer` (for test fixes, simple patches), `Explore`\n");
     content.push_str(
         "- Skills: /loom-testing, /loom-auth, /loom-ci-cd, /loom-logging-observability\n\n",
     );
@@ -543,7 +543,7 @@ pub fn generate_knowledge_stable_prefix() -> String {
     content.push_str("**USE THE TASK TOOL** to spawn parallel subagents for exploration:\n");
     content.push_str("- Different codebase areas, multiple knowledge files, independent research → spawn parallel Explore agents\n");
     content.push_str("- Pattern: `Task(subagent_type=\"Explore\", prompt=\"...\")` - send MULTIPLE in ONE message\n");
-    content.push_str("- Agents: `Explore`, `loom-senior-software-engineer` (DEFAULT for implementation), `loom-software-engineer` (ONLY for unit tests, boilerplate, scaffolding)\n");
+    content.push_str("- Agents: `Explore`, `loom-software-engineer` (execution work), `loom-senior-software-engineer` (judgment work — debugging, architecture, security)\n");
     content.push_str(
         "- Skills: /loom-auth, /loom-testing, /loom-ci-cd, /loom-logging-observability\n\n",
     );

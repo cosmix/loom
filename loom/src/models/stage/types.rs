@@ -23,20 +23,27 @@ pub enum StageType {
 }
 
 impl StageType {
-    /// Default model for this stage type.
-    /// All stage types default to opus with 1M context for maximum capability.
+    /// Fallback model when the plan does not specify one.
+    /// Plans SHOULD always set `model` explicitly per stage — the plan writer
+    /// chooses opus vs sonnet based on whether the stage is architectural
+    /// (needs judgment) or execution-focused (detailed instructions).
+    /// This fallback is a safety net, not the intended path.
     pub fn default_model(&self) -> &'static str {
-        "opus[1m]"
+        match self {
+            // Integration-verify always needs opus for code review judgment
+            StageType::IntegrationVerify => "opus[1m]",
+            // Knowledge exploration and standard implementation fall back to
+            // sonnet — but plan authors should set model explicitly
+            StageType::Knowledge | StageType::Standard => "sonnet",
+        }
     }
 
     /// Default reasoning effort for this stage type.
-    /// Knowledge stages use medium (exploration doesn't need deep reasoning).
-    /// Standard and integration-verify stages use high (implementation and verification need it).
+    /// All stage types use high reasoning effort.
+    /// Sonnet stages need high effort to compensate for the capability gap.
+    /// Opus stages use high for thoroughness.
     pub fn default_reasoning_effort(&self) -> &'static str {
-        match self {
-            StageType::Knowledge => "medium",
-            StageType::Standard | StageType::IntegrationVerify => "high",
-        }
+        "high"
     }
 }
 
