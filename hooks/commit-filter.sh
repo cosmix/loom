@@ -250,7 +250,7 @@ if [[ -n "${LOOM_MAIN_AGENT_PID:-}" ]]; then
 				} >>"$DEBUG_LOG" 2>&1
 
 				# Check if this is a git commit or loom stage complete command
-				if echo "$STRIPPED_COMMAND" | grep -qiE 'git[[:space:]]+(commit|add[[:space:]]+-A|add[[:space:]]+\.)'; then
+				if echo "$STRIPPED_COMMAND" | grep -qiE 'git[[:space:]]+.*\b(commit|add[[:space:]]+-A|add[[:space:]]+\.)\b'; then
 					{
 						echo "DEBUG: BLOCKED - Subagent attempting git operation"
 					} >>"$DEBUG_LOG" 2>&1
@@ -305,7 +305,8 @@ fi
 
 # Check if this is a git commit command (use stripped command to avoid matching
 # "commit" inside message text; require "commit" as a standalone word)
-if echo "$STRIPPED_COMMAND" | grep -qiE 'git[[:space:]]+commit([[:space:]]|$)'; then
+# Match "git ... commit" allowing options like -c between git and commit
+if echo "$STRIPPED_COMMAND" | grep -qiE 'git[[:space:]]+.*\bcommit\b'; then
 	{
 		echo "DEBUG: Detected git commit command"
 	} >>"$DEBUG_LOG" 2>&1
@@ -313,9 +314,10 @@ if echo "$STRIPPED_COMMAND" | grep -qiE 'git[[:space:]]+commit([[:space:]]|$)'; 
 	BLOCKED_REASON=""
 
 	# --- Check 1: Co-Authored-By trailer in message body ---
-	# Use ORIGINAL command to catch real attribution in heredoc/message bodies;
-	# anchor to line-start so only actual trailer lines match
-	if echo "$COMMAND" | grep -qiE '^[[:space:]]*Co-Authored-By:.*\b(claude|anthropic|noreply@anthropic)\b'; then
+	# Use ORIGINAL command to catch real attribution in heredoc/message bodies
+	# and multi-flag formats like: git commit -m "msg" -m "Co-Authored-By: ..."
+	# No ^ anchor — Co-Authored-By can appear mid-line in multi-flag commits
+	if echo "$COMMAND" | grep -qiE 'Co-Authored-By:.*\b(claude|anthropic|noreply@anthropic)\b'; then
 		BLOCKED_REASON="Co-Authored-By trailer in commit message"
 	fi
 
@@ -326,7 +328,8 @@ if echo "$STRIPPED_COMMAND" | grep -qiE 'git[[:space:]]+commit([[:space:]]|$)'; 
 	fi
 
 	# --- Check 3: Signed-off-by trailer mentioning Claude/Anthropic ---
-	if [[ -z "$BLOCKED_REASON" ]] && echo "$COMMAND" | grep -qiE '^[[:space:]]*Signed-off-by:.*\b(claude|anthropic|noreply@anthropic)\b'; then
+	# No ^ anchor — same multi-flag bypass as Check 1
+	if [[ -z "$BLOCKED_REASON" ]] && echo "$COMMAND" | grep -qiE 'Signed-off-by:.*\b(claude|anthropic|noreply@anthropic)\b'; then
 		BLOCKED_REASON="Signed-off-by trailer with AI attribution"
 	fi
 
@@ -349,7 +352,19 @@ if echo "$STRIPPED_COMMAND" | grep -qiE 'git[[:space:]]+commit([[:space:]]|$)'; 
 		BLOCKED_REASON="GIT_AUTHOR_EMAIL with Anthropic domain"
 	fi
 
-	# --- Check 7: Attribution text patterns in commit message ---
+	# --- Check 7: GIT_COMMITTER_EMAIL env var with Anthropic domain ---
+	# Mirrors Check 6 but for the committer identity
+	if [[ -z "$BLOCKED_REASON" ]] && echo "$COMMAND" | grep -qiE 'GIT_COMMITTER_EMAIL[[:space:]]*=[[:space:]]*["'"'"']?[^"'"'"']*\b(anthropic|noreply@anthropic)\b'; then
+		BLOCKED_REASON="GIT_COMMITTER_EMAIL with Anthropic domain"
+	fi
+
+	# --- Check 8: git -c trailer config injection ---
+	# Catches: git -c trailer.co-authored-by.value="Claude <noreply@anthropic.com>" commit ...
+	if [[ -z "$BLOCKED_REASON" ]] && echo "$COMMAND" | grep -qiE -- '-c[[:space:]]+trailer\.[^[:space:]]*\b(claude|anthropic|noreply@anthropic)\b'; then
+		BLOCKED_REASON="git -c trailer config with AI attribution"
+	fi
+
+	# --- Check 9: Attribution text patterns in commit message ---
 	# Catches "Generated with Claude Code", "claude.ai/code", "claude.com/claude-code"
 	# Uses ORIGINAL command to check inside message bodies
 	if [[ -z "$BLOCKED_REASON" ]] && echo "$COMMAND" | grep -qiE 'Generated with.*(Claude Code|claude\.ai|claude\.com)'; then
@@ -374,7 +389,8 @@ Remove ALL of the following if present:
   - Signed-off-by lines mentioning Claude/Anthropic
   - --trailer flags adding AI attribution
   - --author flags referencing Claude/Anthropic
-  - GIT_AUTHOR_NAME/EMAIL environment variables
+  - GIT_AUTHOR_NAME/EMAIL or GIT_COMMITTER_EMAIL environment variables
+  - git -c trailer.* config overrides
   - "Generated with Claude Code" or similar text
 
 The commit message should only contain your actual changes description.

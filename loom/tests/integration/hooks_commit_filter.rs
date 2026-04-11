@@ -330,6 +330,43 @@ fn allows_message_mentioning_generated() {
 }
 
 // =============================================================================
+// Tests: Hook BLOCKS previously-bypassed vectors (multi-flag, -c trailer, committer)
+// =============================================================================
+
+#[test]
+fn blocks_multi_m_flag_coauthored_by() {
+    let (_temp, hook) = setup_hook();
+    // Multiple -m flags put Co-Authored-By on the same command line (no newline)
+    let input = r#"git commit -m "feat: change" -m "Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+#[test]
+fn blocks_multi_m_flag_with_blank_separator() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"git commit -m "feat: change" -m "" -m "Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+#[test]
+fn blocks_git_c_trailer_config() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"git -c trailer.co-authored-by.value="Claude <noreply@anthropic.com>" commit -m "feat: change""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+#[test]
+fn blocks_git_committer_email_anthropic() {
+    let (_temp, hook) = setup_hook();
+    let input = r#"GIT_COMMITTER_EMAIL="noreply@anthropic.com" git commit -m "feat: change""#;
+
+    assert_eq!(run_hook(&hook, "Bash", input), 2);
+}
+
+// =============================================================================
 // Tests: Hook script structure validation
 // =============================================================================
 
@@ -343,8 +380,10 @@ fn hook_contains_blocking_logic() {
     assert!(HOOK_COMMIT_FILTER.contains("--trailer"));
     assert!(HOOK_COMMIT_FILTER.contains("--author"));
     assert!(HOOK_COMMIT_FILTER.contains("GIT_AUTHOR_"));
+    assert!(HOOK_COMMIT_FILTER.contains("GIT_COMMITTER_EMAIL"));
     assert!(HOOK_COMMIT_FILTER.contains("Signed-off-by:"));
     assert!(HOOK_COMMIT_FILTER.contains("Generated with"));
+    assert!(HOOK_COMMIT_FILTER.contains("trailer."));
 }
 
 #[test]
