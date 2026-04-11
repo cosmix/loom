@@ -730,7 +730,7 @@ mod tests {
 
         // Code review content (merged from code-review prefix)
         assert!(prefix.contains("REVIEW"));
-        assert!(prefix.contains("security-engineer"));
+        assert!(prefix.contains("loom-security-audit"));
         assert!(prefix.contains("loom-senior-software-engineer"));
         assert!(prefix.contains("CODE REVIEW + VERIFICATION EXECUTION STRATEGY"));
 
