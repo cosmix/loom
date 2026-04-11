@@ -145,6 +145,7 @@ loom:
 | **Execution** | `model: "sonnet"` | `reasoning_effort: "high"` | Stage follows detailed instructions, applies existing patterns, well-scoped |
 
 **Architectural stages** (use opus) — the agent must make judgment calls:
+
 - Designing new abstractions, module boundaries, or data models
 - Complex debugging requiring multi-file root cause analysis
 - Security-sensitive code (auth flows, crypto, input validation)
@@ -152,6 +153,7 @@ loom:
 - Ambiguous requirements where the agent must decide the approach
 
 **Execution stages** (use sonnet) — the agent follows the plan:
+
 - Implementing features with explicit file paths, signatures, and patterns
 - Writing tests for existing code
 - Boilerplate, scaffolding, config changes
@@ -185,6 +187,7 @@ loom:
 ```
 
 **Sonnet stage descriptions MUST include:**
+
 1. **Exact file paths** to create or modify (not just globs)
 2. **Function/struct signatures** the agent should implement
 3. **Existing patterns to follow** — reference specific `file:line` ranges
@@ -216,6 +219,7 @@ description: |
 ```
 
 Match subagent type to the work:
+
 - Execution work (implementation, tests, boilerplate) → `loom-software-engineer`
 - Judgment work (security review, architecture, debugging) → `loom-senior-software-engineer`
 
