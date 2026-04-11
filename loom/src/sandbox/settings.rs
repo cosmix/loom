@@ -40,6 +40,33 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
     // Generate new sandbox settings
     let mut settings_json = generate_settings_json(&config);
 
+    // Resolve the .work symlink to its absolute target path.
+    // In worktrees, .work is a symlink to ../../.work (the main repo's .work/).
+    // Claude Code resolves symlinks before checking permission patterns, so
+    // the relative Read(.work/**) pattern doesn't match the resolved absolute
+    // path (which is outside the worktree boundary). Adding the resolved
+    // absolute path ensures reads/writes are auto-allowed without prompting.
+    let work_link = worktree_path.join(".work");
+    if work_link.exists() || work_link.is_symlink() {
+        if let Ok(resolved) = work_link.canonicalize() {
+            let resolved_str = resolved.to_string_lossy();
+            if let Some(permissions) = settings_json.get_mut("permissions") {
+                if let Some(allow) = permissions.get_mut("allow") {
+                    if let Some(allow_arr) = allow.as_array_mut() {
+                        let read_perm = format!("Read({}/**)", resolved_str);
+                        let write_perm = format!("Write({}/**)", resolved_str);
+                        if !allow_arr.iter().any(|v| v.as_str() == Some(&read_perm)) {
+                            allow_arr.push(json!(read_perm));
+                        }
+                        if !allow_arr.iter().any(|v| v.as_str() == Some(&write_perm)) {
+                            allow_arr.push(json!(write_perm));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Merge existing permissions into the new settings
     merge_existing_permissions(&mut settings_json, &existing_settings);
 
@@ -943,6 +970,64 @@ mod tests {
             result["sandbox"]["filesystem"].is_null(),
             "filesystem block should not exist when no project-relative deny_write paths"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_write_settings_adds_resolved_work_symlink_permissions() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let base = temp_dir.path();
+
+        // Simulate the real layout: repo_root/.work and repo_root/.worktrees/stage/
+        let work_dir = base.join(".work");
+        fs::create_dir_all(&work_dir).unwrap();
+        fs::create_dir_all(work_dir.join("signals")).unwrap();
+
+        let worktree_path = base.join(".worktrees").join("my-stage");
+        fs::create_dir_all(&worktree_path).unwrap();
+
+        // Create the symlink: .worktrees/my-stage/.work -> ../../.work
+        std::os::unix::fs::symlink("../../.work", worktree_path.join(".work")).unwrap();
+
+        let config = MergedSandboxConfig {
+            enabled: true,
+            auto_allow: true,
+            allow_unsandboxed_escape: false,
+            excluded_commands: vec![],
+            filesystem: FilesystemConfig::default(),
+            network: NetworkConfig::default(),
+            linux: LinuxConfig::default(),
+        };
+
+        write_settings(&config, &worktree_path).unwrap();
+
+        let settings_path = worktree_path.join(".claude/settings.local.json");
+        let result_content = fs::read_to_string(&settings_path).unwrap();
+        let result: Value = serde_json::from_str(&result_content).unwrap();
+
+        let allow = result["permissions"]["allow"].as_array().unwrap();
+        let allow_strs: Vec<&str> = allow.iter().filter_map(|v| v.as_str()).collect();
+
+        // Should have the resolved absolute path of .work
+        let resolved_work = work_dir.canonicalize().unwrap();
+        let expected_read = format!("Read({}/**)", resolved_work.to_string_lossy());
+        let expected_write = format!("Write({}/**)", resolved_work.to_string_lossy());
+
+        assert!(
+            allow_strs.contains(&expected_read.as_str()),
+            "Should have resolved .work read permission, got: {:?}",
+            allow_strs
+        );
+        assert!(
+            allow_strs.contains(&expected_write.as_str()),
+            "Should have resolved .work write permission, got: {:?}",
+            allow_strs
+        );
+
+        // Should also still have the relative permissions
+        assert!(allow_strs.contains(&"Read(.work/signals/**)"));
     }
 
     #[test]
