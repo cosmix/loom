@@ -69,7 +69,7 @@ pub fn setup_claude_directory(worktree_path: &Path, repo_root: &Path) -> Result<
         // Create settings.json with trust and auto-accept settings merged with main repo settings
         let main_settings = main_claude_dir.join("settings.json");
         let worktree_settings = worktree_claude_dir.join("settings.json");
-        create_worktree_settings(&main_settings, &worktree_settings)?;
+        create_worktree_settings(&main_settings, &worktree_settings, worktree_path)?;
 
         // Copy settings.local.json if it exists (contains user-granted runtime permissions)
         // Use file locking to prevent reading a partially written file during concurrent syncs
@@ -306,7 +306,11 @@ fn set_permissions(settings: &mut Value, allow: Vec<String>, deny: Vec<String>) 
 /// This solves two issues:
 /// - Issue 9: Eliminates the "Yes, proceed / No, exit" prompt on session start
 /// - Issue 10: Enables auto-accept edits for seamless operation
-fn create_worktree_settings(main_settings: &Path, worktree_settings: &Path) -> Result<()> {
+fn create_worktree_settings(
+    main_settings: &Path,
+    worktree_settings: &Path,
+    worktree_path: &Path,
+) -> Result<()> {
     // Start with main repo settings or empty object
     let mut settings: Value = if main_settings.exists() {
         let content = std::fs::read_to_string(main_settings)
@@ -337,6 +341,59 @@ fn create_worktree_settings(main_settings: &Path, worktree_settings: &Path) -> R
     // This variable must be set dynamically by the wrapper script at runtime
     if let Some(env) = obj.get_mut("env").and_then(|v| v.as_object_mut()) {
         env.remove("LOOM_MAIN_AGENT_PID");
+    }
+
+    // Resolve the .work symlink to its absolute target path and add permissions.
+    // In worktrees, .work is a symlink to ../../.work (the main repo's .work/).
+    // Claude Code resolves symlinks before checking permission patterns, so the
+    // relative Read(.work/**) pattern from the main repo's settings doesn't match
+    // the resolved absolute path. Adding the resolved path here ensures agents
+    // can read/write .work state files without permission prompts.
+    //
+    // IMPORTANT: Claude Code requires the // prefix for absolute filesystem paths.
+    // A single / means "relative to project root", NOT absolute. See:
+    // https://code.claude.com/docs/en/permissions.md
+    let work_link = worktree_path.join(".work");
+    if work_link.exists() || work_link.is_symlink() {
+        if let Ok(resolved) = work_link.canonicalize() {
+            let resolved_str = resolved.to_string_lossy();
+
+            // Collect the permissions to add
+            // Use / prefix on absolute paths for Claude Code's // convention
+            let work_perms = vec![
+                format!("Read(/{}/**)", resolved_str),
+                format!("Write(/{}/**)", resolved_str),
+                format!("Read(/{}/signals/**)", resolved_str),
+                format!("Read(/{}/config.toml)", resolved_str),
+                format!("Read(/{}/handoffs/**)", resolved_str),
+            ];
+
+            // Get or create the allow array within permissions
+            let permissions = settings
+                .as_object_mut()
+                .and_then(|o| o.get_mut("permissions"))
+                .and_then(|p| p.as_object_mut());
+
+            if let Some(perms_obj) = permissions {
+                let allow = perms_obj
+                    .entry("allow")
+                    .or_insert_with(|| json!([]))
+                    .as_array_mut();
+
+                if let Some(allow_arr) = allow {
+                    let existing: HashSet<String> = allow_arr
+                        .iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect();
+
+                    for perm in work_perms {
+                        if !existing.contains(&perm) {
+                            allow_arr.push(json!(perm));
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Write the merged settings
@@ -566,5 +623,114 @@ mod tests {
         // Should return false when no main settings exist
         let result = refresh_worktree_settings_local(&worktree, &repo_root).unwrap();
         assert!(!result);
+    }
+
+    #[test]
+    fn test_create_worktree_settings_adds_resolved_work_permissions() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        let worktree = temp_dir.path().join("worktree");
+
+        // Create the main .work directory (simulates the real .work state dir)
+        let main_work = repo_root.join(".work");
+        std::fs::create_dir_all(&main_work).unwrap();
+
+        // Create worktree directory and .work symlink pointing to main .work
+        std::fs::create_dir_all(&worktree).unwrap();
+        let worktree_work_link = worktree.join(".work");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&main_work, &worktree_work_link).unwrap();
+
+        // Create main repo settings.json with an existing permission
+        let main_claude = repo_root.join(".claude");
+        std::fs::create_dir_all(&main_claude).unwrap();
+        let main_settings_json = json!({
+            "permissions": {
+                "allow": ["Read(.work/**)"]
+            }
+        });
+        let main_settings_path = main_claude.join("settings.json");
+        std::fs::write(
+            &main_settings_path,
+            serde_json::to_string_pretty(&main_settings_json).unwrap(),
+        )
+        .unwrap();
+
+        // Run create_worktree_settings
+        let worktree_settings_path = worktree.join("settings.json");
+        create_worktree_settings(&main_settings_path, &worktree_settings_path, &worktree).unwrap();
+
+        // Read and parse the generated settings
+        let content = std::fs::read_to_string(&worktree_settings_path).unwrap();
+        let settings: Value = serde_json::from_str(&content).unwrap();
+
+        // Extract the allow list
+        let (allow, _deny) = extract_permissions(&settings);
+
+        // The original relative permission should still be there
+        assert!(
+            allow.contains(&"Read(.work/**)".to_string()),
+            "Original relative permission should be preserved"
+        );
+
+        // Resolve the symlink to get the expected absolute path
+        let resolved_work = worktree_work_link.canonicalize().unwrap();
+        let resolved_str = resolved_work.to_string_lossy();
+
+        // All resolved absolute-path permissions should be present
+        // Note: // prefix is required for absolute paths in Claude Code
+        assert!(
+            allow.contains(&format!("Read(/{}/**)", resolved_str)),
+            "Should contain Read(//resolved/**)"
+        );
+        assert!(
+            allow.contains(&format!("Write(/{}/**)", resolved_str)),
+            "Should contain Write(//resolved/**)"
+        );
+        assert!(
+            allow.contains(&format!("Read(/{}/signals/**)", resolved_str)),
+            "Should contain Read(//resolved/signals/**)"
+        );
+        assert!(
+            allow.contains(&format!("Read(/{}/config.toml)", resolved_str)),
+            "Should contain Read(//resolved/config.toml)"
+        );
+        assert!(
+            allow.contains(&format!("Read(/{}/handoffs/**)", resolved_str)),
+            "Should contain Read(//resolved/handoffs/**)"
+        );
+
+        // Trust and defaultMode should also be set
+        assert_eq!(settings["hasTrustDialogAccepted"], json!(true));
+        assert_eq!(settings["permissions"]["defaultMode"], json!("acceptEdits"));
+    }
+
+    #[test]
+    fn test_create_worktree_settings_no_work_symlink() {
+        let temp_dir = TempDir::new().unwrap();
+        let worktree = temp_dir.path().join("worktree");
+        std::fs::create_dir_all(&worktree).unwrap();
+
+        // No .work symlink exists -- function should still succeed
+        let main_settings_path = temp_dir.path().join("nonexistent_settings.json");
+        let worktree_settings_path = worktree.join("settings.json");
+        create_worktree_settings(&main_settings_path, &worktree_settings_path, &worktree).unwrap();
+
+        let content = std::fs::read_to_string(&worktree_settings_path).unwrap();
+        let settings: Value = serde_json::from_str(&content).unwrap();
+
+        // Should still have trust and defaultMode but no resolved work permissions
+        assert_eq!(settings["hasTrustDialogAccepted"], json!(true));
+        assert_eq!(settings["permissions"]["defaultMode"], json!("acceptEdits"));
+
+        // Allow array should not exist (no permissions were added)
+        let allow = settings
+            .get("permissions")
+            .and_then(|p| p.get("allow"))
+            .and_then(|a| a.as_array());
+        assert!(
+            allow.is_none(),
+            "No allow array should exist when there is no .work symlink"
+        );
     }
 }

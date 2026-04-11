@@ -102,6 +102,10 @@ pub fn generate_hooks_settings(
     // before permission matching, so relative patterns like Read(.work/**) fail because
     // the resolved path is outside the worktree's project root. These absolute-path
     // permissions cover only the specific files this session needs.
+    //
+    // IMPORTANT: Claude Code requires the // prefix for absolute filesystem paths.
+    // A single / means "relative to project root", NOT absolute. See:
+    // https://code.claude.com/docs/en/permissions.md
     let permissions = obj
         .entry("permissions")
         .or_insert_with(|| json!({}))
@@ -111,21 +115,22 @@ pub fn generate_hooks_settings(
     let allow = permissions.entry("allow").or_insert_with(|| json!([]));
     if let Some(allow_arr) = allow.as_array_mut() {
         // Signal files (this session's signal + any recovery signals)
+        // Use / prefix on absolute paths for Claude Code's // convention
         let signals_dir = config.work_dir.join("signals");
-        allow_arr.push(json!(format!("Read({}/**)", signals_dir.display())));
+        allow_arr.push(json!(format!("Read(/{}/**)", signals_dir.display())));
 
         // Shared config (plan reference, base branch)
         let config_toml = config.work_dir.join("config.toml");
-        allow_arr.push(json!(format!("Read({})", config_toml.display())));
+        allow_arr.push(json!(format!("Read(/{})", config_toml.display())));
 
         // Handoff files (context continuations)
         let handoffs_dir = config.work_dir.join("handoffs");
-        allow_arr.push(json!(format!("Read({}/**)", handoffs_dir.display())));
+        allow_arr.push(json!(format!("Read(/{}/**)", handoffs_dir.display())));
 
         // Plan files in the main project (doc/plans/ contains only plan markdown)
         if let Some(project_root) = config.work_dir.parent() {
             let plans_dir = project_root.join("doc").join("plans");
-            allow_arr.push(json!(format!("Read({}/**)", plans_dir.display())));
+            allow_arr.push(json!(format!("Read(/{}/**)", plans_dir.display())));
         }
     }
 

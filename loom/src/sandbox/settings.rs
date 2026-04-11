@@ -46,6 +46,10 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
     // the relative Read(.work/**) pattern doesn't match the resolved absolute
     // path (which is outside the worktree boundary). Adding the resolved
     // absolute path ensures reads/writes are auto-allowed without prompting.
+    //
+    // IMPORTANT: Claude Code requires the // prefix for absolute filesystem paths.
+    // A single / means "relative to project root", NOT absolute. See:
+    // https://code.claude.com/docs/en/permissions.md
     let work_link = worktree_path.join(".work");
     if work_link.exists() || work_link.is_symlink() {
         if let Ok(resolved) = work_link.canonicalize() {
@@ -53,8 +57,9 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
             if let Some(permissions) = settings_json.get_mut("permissions") {
                 if let Some(allow) = permissions.get_mut("allow") {
                     if let Some(allow_arr) = allow.as_array_mut() {
-                        let read_perm = format!("Read({}/**)", resolved_str);
-                        let write_perm = format!("Write({}/**)", resolved_str);
+                        // Use // prefix for absolute paths (Claude Code convention)
+                        let read_perm = format!("Read(/{}/**)", resolved_str);
+                        let write_perm = format!("Write(/{}/**)", resolved_str);
                         if !allow_arr.iter().any(|v| v.as_str() == Some(&read_perm)) {
                             allow_arr.push(json!(read_perm));
                         }
@@ -1010,10 +1015,10 @@ mod tests {
         let allow = result["permissions"]["allow"].as_array().unwrap();
         let allow_strs: Vec<&str> = allow.iter().filter_map(|v| v.as_str()).collect();
 
-        // Should have the resolved absolute path of .work
+        // Should have the resolved absolute path of .work with // prefix
         let resolved_work = work_dir.canonicalize().unwrap();
-        let expected_read = format!("Read({}/**)", resolved_work.to_string_lossy());
-        let expected_write = format!("Write({}/**)", resolved_work.to_string_lossy());
+        let expected_read = format!("Read(/{}/**)", resolved_work.to_string_lossy());
+        let expected_write = format!("Write(/{}/**)", resolved_work.to_string_lossy());
 
         assert!(
             allow_strs.contains(&expected_read.as_str()),
