@@ -160,7 +160,7 @@ loom:
 - Applying a pattern that already exists elsewhere in the codebase
 - Bug fixes with known root cause and clear fix
 
-**The key tradeoff:** Opus costs ~5x more tokens but makes better judgment calls. Sonnet is token-efficient but needs detailed instructions. **Invest planning time to write detailed descriptions for sonnet stages — this is where you save tokens.**
+**The key tradeoff:** Sonnet is cheaper but **will produce incorrect implementations when given vague instructions.** It does not infer intent, resolve ambiguity, or discover integration points on its own — it follows what you write literally. If a sonnet stage description is missing file paths, signatures, or wiring steps, the agent will guess wrong, pick the wrong pattern, or leave stubs. **Every hour you spend writing detailed sonnet descriptions saves hours of debugging bad output.**
 
 ```yaml
 # Architectural stage — opus for design decisions
@@ -186,15 +186,46 @@ loom:
     Wire into src/main.rs:120 where config is constructed...
 ```
 
-**Sonnet stage descriptions MUST include:**
+**Sonnet stage descriptions MUST include ALL of the following** (skip any and the agent will guess wrong):
 
 1. **Exact file paths** to create or modify (not just globs)
 2. **Function/struct signatures** the agent should implement
-3. **Existing patterns to follow** — reference specific `file:line` ranges
-4. **Step-by-step subtasks** with clear done criteria
-5. **Integration wiring** — which file to add imports, which registry to register in
+3. **Existing patterns to follow** — reference specific `file:line` ranges the agent should read and replicate
+4. **Step-by-step subtasks** with clear done criteria — not goals, but instructions
+5. **Integration wiring** — which file to add imports, which registry to register in, which test to update
+6. **Error handling approach** — which error types to use, how to propagate, what to log
 
 Opus stage descriptions can be higher-level since the agent has the judgment to fill gaps.
+
+**What "too vague for sonnet" looks like:**
+
+```yaml
+# BAD — sonnet will guess the wrong file, wrong pattern, and skip wiring
+- id: add-retry-logic
+  model: "sonnet"
+  description: |
+    Add retry logic to the HTTP client with exponential backoff.
+
+# GOOD — sonnet has everything it needs to implement correctly
+- id: add-retry-logic
+  model: "sonnet"
+  description: |
+    Add retry logic to HttpClient in src/http/client.rs.
+
+    1. Create src/http/retry.rs with a `RetryPolicy` struct:
+       - `max_retries: u32` (default 3)
+       - `base_delay: Duration` (default 500ms)
+       - `max_delay: Duration` (default 30s)
+       - Method `delay_for(attempt: u32) -> Duration` using exponential
+         backoff with jitter — follow the pattern in src/backoff.rs:12-35
+    2. In src/http/client.rs, add `retry_policy: RetryPolicy` field to
+       `HttpClient` (line 45). Wrap the `send()` method (line 78-95)
+       in a retry loop that catches 429 and 5xx status codes.
+    3. Wire retry module into src/http/mod.rs — add `pub mod retry;`
+    4. Use `thiserror` for error types, matching src/http/error.rs style.
+```
+
+**When in doubt, use opus.** A sonnet stage that fails and needs rework costs more than an opus stage that succeeds the first time.
 
 **integration-verify stages:** Always use opus (set automatically if not specified).
 
@@ -368,15 +399,16 @@ Use parallel subagents and skills to maximize performance.
 
 This ensures Claude Code instances spawn concurrent subagents for independent tasks.
 
-**Sonnet stage descriptions MUST be implementation-ready (not vague goals):**
+**Sonnet stages WILL FAIL without implementation-ready descriptions.** Sonnet does not infer missing context — it guesses, and it guesses wrong. Every sonnet stage description MUST include:
 
-- Exact file paths to create/modify
-- Function/struct signatures to implement
-- Existing patterns to follow (reference `file:line`)
-- Step-by-step subtasks with clear done criteria
-- Integration wiring instructions (where to import, register, mount)
+- Exact file paths to create/modify (not globs, not "the config file")
+- Function/struct signatures to implement (name, params, return type)
+- Existing patterns to follow (reference `file:line` — sonnet needs to see the pattern, not imagine it)
+- Step-by-step subtasks as instructions, not goals ("add field X to struct at line Y", not "update the struct")
+- Integration wiring (which `mod.rs` to update, which registry to register in, which test file to extend)
+- Error handling specifics (which error type, how to propagate)
 
-Opus stage descriptions can be higher-level since the agent has the judgment to fill gaps, but more detail is still better.
+**If you cannot write this level of detail for a stage, use opus instead.** A vague sonnet stage is worse than an opus stage — it costs more in rework than the token savings justify.
 
 **Stage descriptions using subagents MUST also include:**
 
