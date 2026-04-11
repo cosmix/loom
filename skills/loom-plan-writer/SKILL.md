@@ -998,15 +998,17 @@ Verifies all work integrates correctly after merges AND that the feature actuall
     3. Verify build succeeds
     4. Check for unintended regressions
 
-    CODE REVIEW (MANDATORY):
-    5. Spawn PARALLEL specialized review subagents:
-       - security review (loom-senior-software-engineer): OWASP Top 10, auth flaws,
-         input validation, secrets, credential management, dependency vulnerabilities
-       - architecture review (loom-senior-software-engineer): code organization,
+    CODE REVIEW (MANDATORY — use loom-code-reviewer agents):
+    5. Spawn PARALLEL loom-code-reviewer subagents:
+       - security review (loom-code-reviewer + /loom-security-audit): OWASP Top 10,
+         auth flaws, input validation, secrets, credential management, dependency
+         vulnerabilities
+       - architecture review (loom-code-reviewer): code organization,
          design patterns, performance, documentation, maintainability
-       - test coverage (loom-software-engineer + /loom-testing skill): unit test
-         coverage, integration tests, edge cases
-    6. Fix ALL issues found by reviewers - do not just report them
+       - test coverage (loom-code-reviewer): unit test coverage gaps,
+         integration tests, edge cases, missing assertions
+    6. Fix ALL issues found by reviewers using loom-senior-software-engineer
+       or loom-software-engineer (loom-code-reviewer is read-only)
     7. Verify no code duplication, proper separation of concerns
 
     FUNCTIONAL VERIFICATION (MANDATORY):

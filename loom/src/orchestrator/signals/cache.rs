@@ -315,12 +315,12 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("│                                                                    │\n");
     content.push_str("│  MUST use PARALLEL SPECIALIZED AGENTS for comprehensive review:   │\n");
     content.push_str("│                                                                    │\n");
-    content.push_str("│  1. security-engineer    - OWASP Top 10, secrets, dependencies    │\n");
-    content
-        .push_str("│  2. loom-senior-software-engineer - Coupling, error handling, dead code│\n");
+    content.push_str("│  1. loom-code-reviewer + /loom-security-audit - Security review   │\n");
+    content.push_str("│  2. loom-code-reviewer   - Architecture: coupling, dead code      │\n");
     content.push_str("│  3. Build/test/sandbox   - Full suite + stderr + sandbox verify    │\n");
     content.push_str("│  4. Functional verifier  - End-to-end test, wiring, reachability   │\n");
     content.push_str("│                                                                    │\n");
+    content.push_str("│  loom-code-reviewer is READ-ONLY — use engineers to FIX issues.   │\n");
     content.push_str("│  Spawn these as PARALLEL subagents to maximize efficiency.        │\n");
     content.push_str("└────────────────────────────────────────────────────────────────────┘\n");
     content.push_str("```\n\n");
@@ -328,14 +328,15 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     // Detailed review dimension instructions
     content.push_str("**Review Dimension Details:**\n\n");
     content.push_str(
-        "1. **security-engineer** — Check for OWASP Top 10 (injection, XSS, auth bypass). ",
+        "1. **loom-code-reviewer + /loom-security-audit (security)** — Invoke /loom-security-audit skill. ",
     );
+    content.push_str("Check for OWASP Top 10 (injection, XSS, auth bypass). ");
     content.push_str("Verify no hardcoded secrets or credentials. ");
     content.push_str("Check dependency security (known vulnerabilities). ");
     content.push_str("Validate input sanitization at boundaries. ");
     content.push_str("Review error messages for information leakage.\n\n");
     content.push_str(
-        "2. **loom-senior-software-engineer** — Check code organization and module coupling. ",
+        "2. **loom-code-reviewer (architecture)** — Check code organization and module coupling. ",
     );
     content.push_str("Verify error handling is complete (no swallowed errors). ");
     content.push_str("Check for proper abstraction (not over/under-engineered). ");
@@ -392,10 +393,10 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("**Delegation & Efficiency (CRITICAL):**\n\n");
     content.push_str("**USE THE TASK TOOL** to spawn parallel subagents for verification:\n");
     content.push_str("- Run tests, linting, and build checks in parallel where possible\n");
-    content.push_str("- Pattern: `Task(subagent_type=\"loom-senior-software-engineer\", prompt=\"...\")` - send MULTIPLE in ONE message\n");
-    content.push_str("- Agents: `loom-senior-software-engineer` (DEFAULT for integration-verify — needs judgment for code review), `loom-software-engineer` (for test fixes, simple patches), `Explore`\n");
+    content.push_str("- Pattern: `Task(subagent_type=\"loom-code-reviewer\", prompt=\"...\")` - send MULTIPLE in ONE message\n");
+    content.push_str("- Agents: `loom-code-reviewer` (REQUIRED for code review — read-only, focused on quality/security/architecture), `loom-senior-software-engineer` (for fixing review findings, complex judgment), `loom-software-engineer` (for test fixes, simple patches), `Explore`\n");
     content.push_str(
-        "- Skills: /loom-testing, /loom-auth, /loom-ci-cd, /loom-logging-observability\n\n",
+        "- Skills: /loom-security-audit (REQUIRED for security review), /loom-testing, /loom-auth, /loom-ci-cd, /loom-logging-observability\n\n",
     );
     content.push_str("- **FILE EXCLUSIVITY**: Each subagent must own exclusive write files. Overlap = lost work. List file assignments in each Task prompt.\n");
 
