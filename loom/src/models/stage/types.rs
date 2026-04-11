@@ -30,11 +30,10 @@ impl StageType {
     /// This fallback is a safety net, not the intended path.
     pub fn default_model(&self) -> &'static str {
         match self {
-            // Integration-verify always needs opus for code review judgment
-            StageType::IntegrationVerify => "opus[1m]",
-            // Knowledge exploration and standard implementation fall back to
-            // sonnet — but plan authors should set model explicitly
-            StageType::Knowledge | StageType::Standard => "sonnet",
+            // Knowledge stages are lightweight exploration — sonnet suffices
+            StageType::Knowledge => "sonnet",
+            // Standard and integration-verify stages default to opus
+            StageType::Standard | StageType::IntegrationVerify => "opus[1m]",
         }
     }
 
