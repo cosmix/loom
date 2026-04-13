@@ -5,8 +5,10 @@ use std::io::Write;
 
 use crate::commands::status::data::ProgressSummary;
 
-/// Render progress bar with stage counts
-/// Shows: [████████░░░░░░░░] 5/12 stages | 2 executing | 3 blocked (!)
+/// Render progress bar with stage counts.
+///
+/// Indented to align with the rest of the status dashboard sections.
+/// Shows: `   [████████░░░░░░░░]   5 / 12 stages          2 executing   3 blocked`
 pub fn render_progress<W: Write>(w: &mut W, progress: &ProgressSummary) -> std::io::Result<()> {
     let pct = if progress.total > 0 {
         progress.completed as f32 / progress.total as f32
@@ -29,19 +31,20 @@ pub fn render_progress<W: Write>(w: &mut W, progress: &ProgressSummary) -> std::
         bar.blue()
     };
 
-    // Build status line
+    // Indented to match the rest of the dashboard. Wide gap between bar and
+    // counts so they don't visually run together.
     write!(
         w,
-        "[{}] {}/{}",
+        "   [{}]   {} / {} stages",
         colored_bar, progress.completed, progress.total
     )?;
 
     if progress.executing > 0 {
-        write!(w, "  {} {}", progress.executing, "executing".blue())?;
+        write!(w, "          {} {}", progress.executing, "executing".blue())?;
     }
 
     if progress.blocked > 0 {
-        write!(w, "  {} {}", progress.blocked, "blocked".red().bold())?;
+        write!(w, "   {} {}", progress.blocked, "blocked".red().bold())?;
     }
 
     writeln!(w)?;

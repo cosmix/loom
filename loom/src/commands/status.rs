@@ -63,42 +63,51 @@ fn execute_static(work_dir: &WorkDir, verbose: bool) -> Result<()> {
     let status_data = collect_status_data(work_dir)?;
     let mut out = stdout();
     let stage_count = count_files(&work_dir.stages_dir())?;
+    let daemon_running = DaemonServer::is_running(work_dir.root());
 
-    crate::utils::print_logo_header("Status");
+    // Logo: prints a blank line above and below the ASCII art.
+    crate::utils::print_logo_header("");
 
-    // Show plan name if available
+    // Plan title on its own line, bold.
     if let Some(ref name) = status_data.plan_name {
-        println!("   {}", format!("Plan: {name}").bold());
+        println!("   {}", name.bold());
+        println!();
     }
 
-    // Show daemon status hint
-    if DaemonServer::is_running(work_dir.root()) {
+    // Daemon status: indicator + hint, separated by a wide gap so they don't
+    // run together visually.
+    if daemon_running {
         println!(
-            "{}",
-            "Use 'loom status --live' for real-time updates".dimmed()
+            "   {} {}        {}",
+            "●".green(),
+            "daemon running".dimmed(),
+            "loom status --live for real-time updates".dimmed()
         );
     } else {
         println!(
-            "{}",
-            "Daemon not running (use 'loom run' to start)".dimmed()
+            "   {} {}        {}",
+            "○".dimmed(),
+            "daemon stopped".dimmed(),
+            "run `loom run` to start".dimmed()
         );
     }
+    println!();
 
-    // Progress bar with stage counts
+    // Progress bar with stage counts.
     render::render_progress(&mut out, &status_data.progress)?;
 
-    // Unified stage graph (replaces separate Active Stages, Worktrees, Merge sections)
+    // Unified stage graph (replaces separate Active Stages, Worktrees, Merge sections).
     if stage_count > 0 {
         println!();
         render::render_graph(&mut out, &status_data)?;
     }
 
-    // Merge status: only show if there are pending merges or conflicts
+    // Merge status: only show if there are pending merges or conflicts.
     if !status_data.merge.pending.is_empty() || !status_data.merge.conflicts.is_empty() {
         render::render_merge_status(&mut out, &status_data.merge)?;
     }
 
-    // Verbose mode: show detailed failure information
+    // Verbose mode: show detailed failure information.
     if verbose {
         render::render_attention(&mut out, &status_data.stages)?;
     }

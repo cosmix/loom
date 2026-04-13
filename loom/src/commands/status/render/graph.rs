@@ -21,41 +21,32 @@ fn compute_stage_levels(stages: &[StageSummary]) -> HashMap<String, usize> {
     levels::compute_all_levels(stages, |s| s.id.as_str(), |s| &s.dependencies)
 }
 
-/// Compute the tree connector prefix based on level and position within level
-fn compute_connector(
-    level: usize,
-    index_in_level: usize,
-    level_size: usize,
-    is_last_level: bool,
-) -> String {
-    // Base indentation: 4 spaces per level
-    let indent = "    ".repeat(level);
+/// Compute the tree connector prefix.
+///
+/// Indents 3 columns per level and uses `└─ ` for the last stage at any level,
+/// `├─ ` otherwise. Root-level stages get no connector. The original
+/// implementation only used `└─` for the very last row in the very last level,
+/// which made single-child chains render as `├──` everywhere — visually wrong.
+fn compute_connector(level: usize, index_in_level: usize, level_size: usize) -> String {
+    let indent = "   ".repeat(level);
 
     if level == 0 {
-        // Root level: no connectors, just indentation
         indent
-    } else if is_last_level && index_in_level == level_size - 1 {
-        // Last stage in the last level: use └──
-        format!("{indent}└── ")
+    } else if index_in_level == level_size - 1 {
+        format!("{indent}└─ ")
     } else {
-        // Other stages at non-root levels: use ├──
-        format!("{indent}├── ")
+        format!("{indent}├─ ")
     }
 }
 
-/// Format dependency annotation right-aligned with colored dependency IDs
-fn format_dep_annotation(
-    deps: &[String],
-    max_width: usize,
-    current_width: usize,
-    color_map: &HashMap<&str, Color>,
-) -> String {
+/// Format inline dependency annotation: `  ← dep1, dep2` placed right after the
+/// stage id. Colors each dep id using the shared color map. Returns an empty
+/// string when the stage has no deps.
+fn format_dep_annotation(deps: &[String], color_map: &HashMap<&str, Color>) -> String {
     if deps.is_empty() {
         return String::new();
     }
-    let padding = max_width.saturating_sub(current_width) + 2;
 
-    // Color each dependency ID with its assigned color from the map
     let colored_deps: Vec<String> = deps
         .iter()
         .map(|dep| {
@@ -67,12 +58,7 @@ fn format_dep_annotation(
         })
         .collect();
 
-    format!(
-        "{:width$}← {}",
-        "",
-        colored_deps.join(", "),
-        width = padding
-    )
+    format!("  {} {}", "←".dimmed(), colored_deps.join(", "))
 }
 
 /// Format inline annotations for a stage (session, failure, merge, held)
@@ -158,14 +144,19 @@ fn format_stage_annotations(stage: &StageSummary) -> String {
     if parts.is_empty() {
         String::new()
     } else {
-        format!("  {}", parts.join("  "))
+        let sep = format!(" {} ", "·".dimmed());
+        format!("  {}", parts.join(&sep))
     }
 }
+
+/// 3-space indent applied to every dashboard row so the tree visually aligns
+/// with the surrounding header / progress / legend sections.
+const ROW_INDENT: &str = "   ";
 
 /// Render execution graph with tree display
 pub fn render_graph<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<()> {
     if data.stages.is_empty() {
-        writeln!(w, "  {}", "(no stages found)".dimmed())?;
+        writeln!(w, "{ROW_INDENT}{}", "(no stages found)".dimmed())?;
         return Ok(());
     }
 
@@ -186,8 +177,8 @@ pub fn render_graph<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<(
         .map(|(i, stage)| (stage.id.as_str(), color_by_index(i)))
         .collect();
 
-    // Calculate max level and count stages per level
-    let max_level = levels.values().copied().max().unwrap_or(0);
+    // Count stages per level for connector logic (last stage at each level
+    // gets `└─`; others get `├─`).
     let mut level_counts: HashMap<usize, usize> = HashMap::new();
     let mut level_indices: HashMap<usize, usize> = HashMap::new();
     for stage in &sorted_stages {
@@ -195,30 +186,25 @@ pub fn render_graph<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<(
         *level_counts.entry(level).or_insert(0) += 1;
     }
 
-    let max_id_width = sorted_stages.iter().map(|s| s.id.len()).max().unwrap_or(0);
-
     for (global_index, stage) in sorted_stages.iter().enumerate() {
         let level = levels.get(&stage.id).copied().unwrap_or(0);
         let index_in_level = *level_indices.entry(level).or_insert(0);
         let level_size = level_counts.get(&level).copied().unwrap_or(1);
-        let is_last_level = level == max_level;
 
-        let connector = compute_connector(level, index_in_level, level_size, is_last_level);
+        let connector = compute_connector(level, index_in_level, level_size);
         let indicator = status_indicator(&stage.status);
-        let deps = format_dep_annotation(
-            &stage.dependencies,
-            max_id_width,
-            stage.id.len(),
-            &color_map,
-        );
+        let deps = format_dep_annotation(&stage.dependencies, &color_map);
         let color = color_by_index(global_index);
         let colored_id = stage.id.color(color);
-
-        // Build inline annotations
         let annotations = format_stage_annotations(stage);
 
-        // Build the main line: connector + indicator + stage_id + annotations + deps
-        writeln!(w, "{connector}{indicator} {colored_id}{annotations}{deps}")?;
+        // Layout: <indent> <connector> <indicator>  <id> <deps> <annotations>
+        // Two spaces between indicator and id give room to breathe; deps and
+        // annotations sit inline (no fragile column padding).
+        writeln!(
+            w,
+            "{ROW_INDENT}{connector}{indicator}  {colored_id}{deps}{annotations}"
+        )?;
 
         // Increment index for this level
         *level_indices.get_mut(&level).unwrap() += 1;
@@ -230,20 +216,19 @@ pub fn render_graph<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<(
     Ok(())
 }
 
-/// Render the legend explaining status indicators
+/// Render the legend explaining status indicators. Items separated by a dimmed
+/// middle dot and indented to match the rest of the dashboard.
 fn render_legend<W: Write>(w: &mut W) -> std::io::Result<()> {
-    write!(w, "{} ", "✓".green())?;
-    write!(w, "done  ")?;
-    write!(w, "{} ", "●".blue())?;
-    write!(w, "exec  ")?;
-    write!(w, "{} ", "▶".cyan())?;
-    write!(w, "ready  ")?;
-    write!(w, "{} ", "○".dimmed())?;
-    write!(w, "wait  ")?;
-    write!(w, "{} ", "✗".red())?;
-    write!(w, "blocked  ")?;
-    write!(w, "{} ", "⟳".yellow())?;
-    writeln!(w, "handoff")?;
+    let dot = format!(" {} ", "·".dimmed());
+    let parts = [
+        format!("{} {}", "✓".green(), "done"),
+        format!("{} {}", "●".blue(), "exec"),
+        format!("{} {}", "▶".cyan(), "ready"),
+        format!("{} {}", "○".dimmed(), "wait"),
+        format!("{} {}", "✗".red(), "blocked"),
+        format!("{} {}", "⟳".yellow(), "handoff"),
+    ];
+    writeln!(w, "{ROW_INDENT}{}", parts.join(&dot))?;
     Ok(())
 }
 

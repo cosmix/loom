@@ -352,7 +352,7 @@ fn test_tree_display_single_stage() {
     let output = build_tree_display(&stages);
     assert!(output.contains("init"), "Should contain stage id");
     assert!(
-        !output.contains("├──") && !output.contains("└──"),
+        !output.contains("├─") && !output.contains("└─"),
         "Root stage should have no tree connector"
     );
 }
@@ -367,10 +367,10 @@ fn test_tree_display_linear_chain() {
 
     let output = strip_ansi(&build_tree_display(&stages));
 
-    // Should contain stage IDs (not names)
-    assert!(output.contains("✓ a"), "Should contain stage a");
-    assert!(output.contains("✓ b"), "Should contain stage b");
-    assert!(output.contains("▶ c"), "Should contain stage c");
+    // Two-space gap between status indicator and stage id (Option E layout).
+    assert!(output.contains("✓  a"), "Should contain stage a");
+    assert!(output.contains("✓  b"), "Should contain stage b");
+    assert!(output.contains("▶  c"), "Should contain stage c");
     assert!(
         output.contains("← a"),
         "Stage b should show dependency on a"
@@ -415,11 +415,11 @@ fn test_tree_connector_last_item() {
     let output = build_tree_display(&stages);
 
     assert!(
-        output.contains("└──"),
-        "Last item in tree should use └── connector"
+        output.contains("└─"),
+        "Last item in tree should use └─ connector"
     );
     assert!(
-        !output.ends_with("├──"),
-        "Tree should not end with ├── connector"
+        !output.ends_with("├─"),
+        "Tree should not end with ├─ connector"
     );
 }

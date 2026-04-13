@@ -104,8 +104,8 @@ fn test_render_graph_linear() {
     assert!(output_str.contains("bootstrap"));
     assert!(output_str.contains("implement"));
     assert!(output_str.contains("verify"));
-    // Tree connectors should be present
-    assert!(output_str.contains("├──") || output_str.contains("└──"));
+    // Tree connectors should be present (Option E uses 2-char └─/├─ glyphs).
+    assert!(output_str.contains("├─") || output_str.contains("└─"));
 }
 
 #[test]
