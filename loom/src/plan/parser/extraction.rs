@@ -8,8 +8,15 @@ pub fn extract_plan_name(content: &str) -> Result<String> {
         let trimmed = line.trim();
         if trimmed.starts_with("# ") {
             let name = trimmed.trim_start_matches("# ").trim();
-            // Remove "PLAN:" prefix if present
-            let name = name.strip_prefix("PLAN:").unwrap_or(name).trim();
+            // Strip a leading "PLAN:" / "Plan:" / "plan:" prefix so we don't
+            // end up rendering "Plan: Plan: Foo" downstream.
+            let lower = name.to_ascii_lowercase();
+            let name = if let Some(rest) = lower.strip_prefix("plan:") {
+                let stripped_len = name.len() - rest.len();
+                name[stripped_len..].trim()
+            } else {
+                name
+            };
             return Ok(name.to_string());
         }
     }
@@ -95,6 +102,14 @@ mod tests {
 
         let content2 = "# My Plan\n\nContent";
         assert_eq!(extract_plan_name(content2).unwrap(), "My Plan");
+
+        // Mixed-case "Plan:" / "plan:" should also be stripped so we don't
+        // render "Plan: Plan: Foo" in the status header.
+        let content3 = "# Plan: GitHub Integration\n";
+        assert_eq!(extract_plan_name(content3).unwrap(), "GitHub Integration");
+
+        let content4 = "# plan: lower case\n";
+        assert_eq!(extract_plan_name(content4).unwrap(), "lower case");
     }
 
     #[test]
