@@ -67,6 +67,12 @@ impl Recovery for Orchestrator {
             return Ok(());
         }
 
+        // Collect stage IDs that may need a one-shot auto-merge retry (Fix 11).
+        // We iterate twice: first to sync state, then to retry stuck stages.
+        // The two-phase approach avoids borrow-checker issues with calling
+        // `self.try_auto_merge` while holding a loaded stage.
+        let mut stuck_completed_stage_ids: Vec<String> = Vec::new();
+
         // Read all stage files and sync their status to the graph
         for entry in std::fs::read_dir(&stages_dir)? {
             let entry = entry?;
@@ -107,10 +113,55 @@ impl Recovery for Orchestrator {
 
                 match stage.status {
                     StageStatus::Completed => {
-                        // If stage is Completed but not merged, try to auto-verify
-                        // the merge state to prevent repeated merge attempts on daemon
-                        // restart.
+                        // If stage is Completed but not merged, try to verify the
+                        // merge via git ancestry. NEVER assume merged without proof —
+                        // doing so produces phantom merges and lost work (see
+                        // doc/plans/PLAN-fix-phantom-merge.md).
                         if !stage.merged {
+                            // If completed_commit is missing, try to derive it from
+                            // the stage's branch head before attempting verification.
+                            if stage.completed_commit.is_none() {
+                                let branch_name =
+                                    crate::git::branch::branch_name_for_stage(&stage.id);
+                                match crate::git::get_branch_head(
+                                    &branch_name,
+                                    &self.config.repo_root,
+                                ) {
+                                    Ok(head) => {
+                                        tracing::info!(
+                                            stage_id = %stage.id,
+                                            commit = %head,
+                                            "Derived completed_commit from branch head for recovery"
+                                        );
+                                        stage.completed_commit = Some(head);
+                                        if let Err(e) = self.save_stage(&stage) {
+                                            tracing::warn!(
+                                                stage_id = %stage.id,
+                                                error = %e,
+                                                "Failed to save derived completed_commit"
+                                            );
+                                        }
+                                    }
+                                    Err(_) => {
+                                        // Branch is missing; cannot verify. Leave as
+                                        // Completed + !merged. Do NOT save. This stage
+                                        // is a candidate for the one-shot retry below
+                                        // (Fix 11), in case the user ran `loom stage
+                                        // complete --no-verify` before restart.
+                                        tracing::error!(
+                                            stage_id = %stage.id,
+                                            branch = %branch_name,
+                                            "Completed stage has no completed_commit and branch \
+                                             is missing; cannot verify merge. Leaving as \
+                                             Completed + !merged."
+                                        );
+                                        stuck_completed_stage_ids.push(stage.id.clone());
+                                    }
+                                }
+                            }
+
+                            // If we have a completed_commit (either pre-existing or
+                            // just derived), run the ancestry check.
                             if let Some(ref completed_commit) = stage.completed_commit {
                                 let target_branch = crate::git::branch::resolve_target_branch(
                                     &self.config.base_branch,
@@ -135,25 +186,33 @@ impl Recovery for Orchestrator {
                                             );
                                         }
                                     }
-                                    _ => {
-                                        // Can't verify — leave as-is, the completion
-                                        // handler will deal with it (with the new
-                                        // Completed guard).
+                                    Ok(false) => {
+                                        // Commit is not in target branch. Do NOT
+                                        // write merged=true. Mark as a retry candidate
+                                        // so the daemon makes a one-shot attempt.
+                                        tracing::error!(
+                                            stage_id = %stage.id,
+                                            commit = %completed_commit,
+                                            target = %target_branch,
+                                            "Completed stage commit is not an ancestor of target \
+                                             branch; leaving as Completed + !merged. \
+                                             Run `loom stage merge {}` to retry.",
+                                            stage.id
+                                        );
+                                        stuck_completed_stage_ids.push(stage.id.clone());
                                     }
-                                }
-                            } else {
-                                // No completed_commit — assume already merged (legacy)
-                                tracing::info!(
-                                    stage_id = %stage.id,
-                                    "Completed stage has no completed_commit, \
-                                     assuming merged"
-                                );
-                                stage.merged = true;
-                                if let Err(e) = self.save_stage(&stage) {
-                                    tracing::warn!(
-                                        error = %e,
-                                        "Failed to save assumed merged state"
-                                    );
+                                    Err(e) => {
+                                        // Verification failed (e.g., transient git
+                                        // error). Do NOT write merged=true. Also a
+                                        // retry candidate.
+                                        tracing::error!(
+                                            stage_id = %stage.id,
+                                            error = %e,
+                                            "Merge verification errored for completed stage; \
+                                             leaving as Completed + !merged"
+                                        );
+                                        stuck_completed_stage_ids.push(stage.id.clone());
+                                    }
                                 }
                             }
                         }
@@ -340,6 +399,36 @@ impl Recovery for Orchestrator {
                     }
                 }
             }
+        }
+
+        // Fix 11: one-shot auto-merge retry for stuck Completed + !merged stages.
+        //
+        // The `loom stage complete --no-verify` flow legitimately produces a
+        // Completed + !merged + !completed_commit state. Normally the
+        // StageCompleted event triggers `try_auto_merge`, but after a daemon
+        // restart no event fires for already-Completed stages — leaving them
+        // permanently stuck. Retry once per daemon session to unstick them.
+        //
+        // This also retries the case where a commit was derived from the branch
+        // HEAD but ancestry reports Ok(false): the commit is on the stage branch
+        // but not yet in the target branch. That scenario is exactly what
+        // `try_auto_merge` is designed to resolve — it runs the merge command.
+        //
+        // `merge_retry_attempted` is in-memory only. If the retry fails, the
+        // entry stays in the set so we don't re-attempt every 5-second poll.
+        // User-driven `loom stage merge` is independent of this set.
+        for stuck_id in stuck_completed_stage_ids {
+            if self.merge_retry_attempted.contains(&stuck_id) {
+                continue;
+            }
+            self.merge_retry_attempted.insert(stuck_id.clone());
+            tracing::info!(
+                stage_id = %stuck_id,
+                "one-shot merge retry for stuck Completed + !merged stage"
+            );
+            // Ignore return value — even if the retry fails, we've logged it
+            // and won't retry again this session.
+            let _ = self.try_auto_merge(&stuck_id);
         }
 
         // After syncing all stage statuses, refresh ready status to ensure
@@ -612,5 +701,188 @@ impl Recovery for Orchestrator {
         );
         // Flush stdout to ensure the status line appears immediately
         let _ = io::stdout().flush();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Focused unit tests for the building blocks of the recovery-path
+    //! phantom-merge fix (PLAN-fix-phantom-merge.md Fix 1).
+    //!
+    //! Full integration coverage of `sync_graph_with_stage_files` requires a
+    //! live `Orchestrator` with a real `Backend` and `Monitor`, which is too
+    //! heavy for a unit test. Instead, we exercise the exact helper calls the
+    //! recovery path makes in sequence:
+    //!
+    //! 1. `get_branch_head(&loom/<id>, repo_root)` to derive HEAD when
+    //!    `completed_commit` is missing.
+    //! 2. `is_ancestor_of(commit, target, repo_root)` to verify the derived
+    //!    commit actually landed in the target branch.
+    //!
+    //! End-to-end recovery behavior (including the one-shot retry and stuck
+    //! stage handling) is exercised by `loom/tests/phantom_merge.rs`.
+    use std::process::Command;
+    use tempfile::TempDir;
+
+    use crate::git::branch::{branch_name_for_stage, get_branch_head, is_ancestor_of};
+
+    fn init_repo() -> TempDir {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+
+        Command::new("git")
+            .args(["init", "-b", "main"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        std::fs::write(root.join("seed.txt"), "seed").unwrap();
+        Command::new("git")
+            .args(["add", "seed.txt"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "seed"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["branch", "-M", "main"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        tmp
+    }
+
+    /// Fix 1: when `completed_commit` is missing but the loom branch exists,
+    /// recovery derives HEAD and checks ancestry. If the commit is NOT in the
+    /// target branch, `merged` must stay false.
+    ///
+    /// This test stands in for the recovery-path decision: it verifies the
+    /// helpers produce the exact (branch_head, is_ancestor=false) pair that
+    /// the production code relies on to REFUSE to set merged=true.
+    #[test]
+    fn derive_head_and_ancestry_reports_not_ancestor_when_unmerged() {
+        let repo = init_repo();
+        let root = repo.path();
+
+        // Create loom/oauth-hardening branch with a commit that stays off main.
+        Command::new("git")
+            .args(["checkout", "-b", "loom/oauth-hardening"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        std::fs::write(root.join("oauth.rs"), "hardened").unwrap();
+        Command::new("git")
+            .args(["add", "oauth.rs"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "hardening"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["checkout", "main"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        let branch = branch_name_for_stage("oauth-hardening");
+        let head = get_branch_head(&branch, root).expect("HEAD derivable");
+        assert!(
+            !head.is_empty(),
+            "branch HEAD should be derivable when branch exists"
+        );
+
+        let is_anc = is_ancestor_of(&head, "main", root).expect("ancestry check");
+        assert!(
+            !is_anc,
+            "derived HEAD must NOT be an ancestor of main when branch is unmerged — \
+             this is the exact signal that recovery uses to refuse merged=true (Fix 1)"
+        );
+    }
+
+    /// Fix 1: when `completed_commit` is missing AND the loom branch is
+    /// missing, recovery has no way to derive HEAD. The helper must surface
+    /// the failure so the caller leaves the stage at Completed + !merged.
+    #[test]
+    fn derive_head_fails_when_branch_missing() {
+        let repo = init_repo();
+        let root = repo.path();
+
+        let branch = branch_name_for_stage("nonexistent-stage");
+        let result = get_branch_head(&branch, root);
+        assert!(
+            result.is_err(),
+            "branch HEAD derivation must fail when branch does not exist — \
+             recovery relies on this to log an error and leave stage as Completed + !merged"
+        );
+    }
+
+    /// Fix 1 happy path: if the loom branch exists AND has been merged into
+    /// main, the ancestry check returns true. The recovery path is allowed
+    /// to set `merged = true` only in this case.
+    #[test]
+    fn ancestry_true_after_branch_merged_into_main() {
+        let repo = init_repo();
+        let root = repo.path();
+
+        // Create a branch with a commit.
+        Command::new("git")
+            .args(["checkout", "-b", "loom/landed-stage"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        std::fs::write(root.join("landed.rs"), "done").unwrap();
+        Command::new("git")
+            .args(["add", "landed.rs"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "landed"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        // Merge it into main with --no-ff.
+        Command::new("git")
+            .args(["checkout", "main"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args([
+                "merge",
+                "--no-ff",
+                "-m",
+                "merge landed",
+                "loom/landed-stage",
+            ])
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        let branch = branch_name_for_stage("landed-stage");
+        let head = get_branch_head(&branch, root).expect("HEAD derivable");
+        let is_anc = is_ancestor_of(&head, "main", root).expect("ancestry check");
+        assert!(
+            is_anc,
+            "after branch is merged into main, ancestry must be true — \
+             recovery is then allowed to set merged=true"
+        );
     }
 }

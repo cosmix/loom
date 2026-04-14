@@ -174,97 +174,162 @@ impl Orchestrator {
     /// This helper encapsulates the common pattern of verifying a merge via git ancestry
     /// check and updating stage/graph state based on the result.
     ///
-    /// Returns `true` if the merge was verified successful (or no verification needed for legacy stages).
-    /// Returns `false` if verification failed (stage marked as MergeBlocked).
+    /// Behavior depends on the stage's current status:
+    /// - Non-Completed stage with failed verification: transitions to `MergeBlocked`.
+    /// - Completed stage with failed verification: leaves the stage at
+    ///   `Completed + !merged` without writing `merged=true`. This breaks the original
+    ///   respawn loop (see `spawn_merge_resolution_sessions` which only acts on
+    ///   `MergeConflict | MergeBlocked`) without lying about merge status.
+    ///
+    /// Returns `true` if the merge was verified successful via git ancestry.
+    /// Returns `false` otherwise. Caller must NOT assume `merged=true` on false.
     fn verify_and_finalize_merge(
         &mut self,
         stage: &mut crate::models::stage::Stage,
         stage_id: &str,
         target_branch: &str,
     ) -> bool {
-        // If stage has a completed_commit, verify it's in the target branch
-        if let Some(ref completed_commit) = stage.completed_commit {
-            match verify_merge_succeeded(completed_commit, target_branch, &self.config.repo_root) {
-                Ok(true) => {
-                    // Verification passed - mark as merged
-                    stage.merged = true;
+        // If stage has no completed_commit, try to derive it from the branch HEAD.
+        // If we can derive one, save the stage and fall through to the ancestry check.
+        // If we can't, leave the stage as Completed + !merged (phantom-merge prevention).
+        if stage.completed_commit.is_none() {
+            let branch_name = branch_name_for_stage(stage_id);
+            match crate::git::get_branch_head(&branch_name, &self.config.repo_root) {
+                Ok(head) => {
+                    stage.completed_commit = Some(head);
                     if let Err(e) = self.save_stage(stage) {
-                        eprintln!("Warning: Failed to save stage after merge: {e}");
-                    }
-                    true
-                }
-                Ok(false) => {
-                    // If stage is already Completed (terminal state), don't revert to
-                    // MergeBlocked. The stage's work is done; the merge was reported
-                    // successful by git but verification couldn't confirm ancestry.
-                    // Treat as merged to avoid stuck-in-MergeBlocked loops.
-                    if stage.status == StageStatus::Completed {
-                        clear_status_line();
-                        eprintln!(
-                            "Warning: Merge verification failed for completed stage '{stage_id}' \
-                             (commit may not be in target branch), treating as merged"
+                        tracing::warn!(
+                            stage_id = %stage_id,
+                            error = %e,
+                            "Failed to save derived completed_commit"
                         );
-                        stage.merged = true;
-                        if let Err(e) = self.save_stage(stage) {
-                            eprintln!("Warning: Failed to save stage: {e}");
-                        }
-                        return true;
                     }
-                    // Merge reported success but commit not in target - phantom merge!
+                }
+                Err(_) => {
+                    // Branch is missing and no commit recorded - we cannot verify the
+                    // merge. Do NOT write merged=true. Leave the stage as Completed +
+                    // !merged; spawn_merge_resolution_sessions will not pick it up
+                    // (it acts only on MergeConflict | MergeBlocked), so no respawn.
                     clear_status_line();
-                    eprintln!(
-                        "Stage '{stage_id}' merge verification failed: commit not in target branch"
+                    tracing::error!(
+                        stage_id = %stage_id,
+                        branch = %branch_name,
+                        "Cannot verify merge: stage has no completed_commit and branch is missing; \
+                         leaving stage as Completed + !merged"
                     );
-                    if let Err(e) = stage.try_mark_merge_blocked() {
-                        eprintln!("Warning: Failed to transition to MergeBlocked: {e}");
-                        stage.status = StageStatus::MergeBlocked;
-                    }
-                    if let Err(e) = self.save_stage(stage) {
-                        eprintln!("Warning: Failed to save stage: {e}");
-                    }
-                    if let Err(e) = self.graph.mark_status(stage_id, StageStatus::MergeBlocked) {
-                        eprintln!("Warning: Failed to mark stage as merge blocked in graph: {e}");
-                    }
-                    false
+                    return false;
                 }
-                Err(e) => {
-                    // If stage is already Completed (terminal state), don't revert to
-                    // MergeBlocked. Log the verification error but treat as merged.
-                    if stage.status == StageStatus::Completed {
-                        clear_status_line();
-                        eprintln!(
-                            "Warning: Merge verification error for completed stage '{stage_id}': \
-                             {e}, treating as merged"
-                        );
-                        stage.merged = true;
-                        if let Err(e) = self.save_stage(stage) {
-                            eprintln!("Warning: Failed to save stage: {e}");
-                        }
-                        return true;
-                    }
-                    // Verification failed - do NOT mark as merged to prevent phantom merges
+            }
+        }
+
+        // Safe to unwrap: just ensured Some above.
+        let completed_commit = stage.completed_commit.clone().unwrap();
+        match verify_merge_succeeded(&completed_commit, target_branch, &self.config.repo_root) {
+            Ok(true) => {
+                // Verification passed - mark as merged
+                stage.merged = true;
+                if let Err(e) = self.save_stage(stage) {
+                    tracing::warn!(
+                        stage_id = %stage_id,
+                        error = %e,
+                        "Failed to save stage after merge"
+                    );
+                }
+                true
+            }
+            Ok(false) => {
+                // If stage is already Completed (terminal state), we cannot safely
+                // transition to MergeBlocked. The old code force-wrote merged=true
+                // here, which is exactly the phantom-merge bug. Leave as
+                // Completed + !merged instead.
+                if stage.status == StageStatus::Completed {
                     clear_status_line();
-                    eprintln!("Stage '{stage_id}' merge verification error: {e}");
-                    if let Err(e) = stage.try_mark_merge_blocked() {
-                        eprintln!("Warning: Failed to transition to MergeBlocked: {e}");
-                        stage.status = StageStatus::MergeBlocked;
-                    }
-                    if let Err(e) = self.save_stage(stage) {
-                        eprintln!("Warning: Failed to save stage: {e}");
-                    }
-                    if let Err(e) = self.graph.mark_status(stage_id, StageStatus::MergeBlocked) {
-                        eprintln!("Warning: Failed to mark stage as merge blocked in graph: {e}");
-                    }
-                    false
+                    tracing::error!(
+                        stage_id = %stage_id,
+                        commit = %completed_commit,
+                        target = %target_branch,
+                        "Merge verification failed for completed stage: commit not in target branch. \
+                         Leaving stage as Completed + !merged (will NOT auto-respawn); \
+                         run `loom stage merge {}` manually.",
+                        stage_id
+                    );
+                    return false;
                 }
+                // Non-Completed path: transition to MergeBlocked as before.
+                clear_status_line();
+                tracing::error!(
+                    stage_id = %stage_id,
+                    "merge verification failed: commit not in target branch"
+                );
+                if let Err(e) = stage.try_mark_merge_blocked() {
+                    tracing::warn!(
+                        stage_id = %stage_id,
+                        error = %e,
+                        "Failed to transition to MergeBlocked"
+                    );
+                    stage.status = StageStatus::MergeBlocked;
+                }
+                if let Err(e) = self.save_stage(stage) {
+                    tracing::warn!(
+                        stage_id = %stage_id,
+                        error = %e,
+                        "Failed to save stage"
+                    );
+                }
+                if let Err(e) = self.graph.mark_status(stage_id, StageStatus::MergeBlocked) {
+                    tracing::warn!(
+                        stage_id = %stage_id,
+                        error = %e,
+                        "Failed to mark stage as merge blocked in graph"
+                    );
+                }
+                false
             }
-        } else {
-            // No completed_commit - legacy stage, mark as merged without verification
-            stage.merged = true;
-            if let Err(e) = self.save_stage(stage) {
-                eprintln!("Warning: Failed to save stage: {e}");
+            Err(e) => {
+                // Same logic as Ok(false): if Completed, leave alone; otherwise
+                // transition to MergeBlocked.
+                if stage.status == StageStatus::Completed {
+                    clear_status_line();
+                    tracing::error!(
+                        stage_id = %stage_id,
+                        error = %e,
+                        "Merge verification error for completed stage. \
+                         Leaving stage as Completed + !merged (will NOT auto-respawn); \
+                         run `loom stage merge {}` manually.",
+                        stage_id
+                    );
+                    return false;
+                }
+                clear_status_line();
+                tracing::error!(
+                    stage_id = %stage_id,
+                    error = %e,
+                    "merge verification error"
+                );
+                if let Err(e) = stage.try_mark_merge_blocked() {
+                    tracing::warn!(
+                        stage_id = %stage_id,
+                        error = %e,
+                        "Failed to transition to MergeBlocked"
+                    );
+                    stage.status = StageStatus::MergeBlocked;
+                }
+                if let Err(e) = self.save_stage(stage) {
+                    tracing::warn!(
+                        stage_id = %stage_id,
+                        error = %e,
+                        "Failed to save stage"
+                    );
+                }
+                if let Err(e) = self.graph.mark_status(stage_id, StageStatus::MergeBlocked) {
+                    tracing::warn!(
+                        stage_id = %stage_id,
+                        error = %e,
+                        "Failed to mark stage as merge blocked in graph"
+                    );
+                }
+                false
             }
-            true
         }
     }
 
@@ -310,11 +375,17 @@ impl Orchestrator {
         })();
 
         if !is_auto_merge_enabled(&stage, self.config.auto_merge, plan_auto_merge) {
-            // Auto-merge disabled - mark as merged without attempting merge
-            stage.merged = true;
-            if let Err(e) = self.save_stage(&stage) {
-                eprintln!("Warning: Failed to save stage after skipping auto-merge: {e}");
-            }
+            // Auto-merge disabled - skip the merge attempt and leave the stage as
+            // Completed + !merged. The user will run `loom stage merge <id>`
+            // manually when ready. DO NOT write merged=true here — that would
+            // silently satisfy downstream dependency checks without the work
+            // actually being merged.
+            tracing::info!(
+                stage_id = %stage_id,
+                "auto-merge disabled; leaving stage as Completed + !merged \
+                 (run `loom stage merge {}` to merge manually)",
+                stage_id
+            );
             return true;
         }
 
@@ -424,30 +495,48 @@ impl Orchestrator {
             }
             Err(e) => {
                 clear_status_line();
-                eprintln!("Auto-merge failed for '{stage_id}': {e}");
-                // If stage is already Completed (terminal state), don't revert to
-                // MergeBlocked. Mark as merged to prevent repeated failed merge attempts.
+                tracing::error!(
+                    stage_id = %stage_id,
+                    error = %e,
+                    "Auto-merge failed"
+                );
+                // If stage is already Completed (terminal state), leave as
+                // Completed + !merged. The old code force-wrote merged=true here,
+                // which is the phantom-merge bug. The respawn loop is already
+                // broken structurally (spawn_merge_resolution_sessions only
+                // acts on MergeConflict | MergeBlocked), so lying about merge
+                // status is unnecessary and dangerous.
                 if stage.status == StageStatus::Completed {
-                    eprintln!(
-                        "Warning: Stage '{stage_id}' is already Completed, \
-                         marking as merged despite auto-merge error"
+                    tracing::error!(
+                        stage_id = %stage_id,
+                        "Stage is already Completed; leaving as Completed + !merged \
+                         despite auto-merge error. Run `loom stage merge {}` manually.",
+                        stage_id
                     );
-                    stage.merged = true;
-                    if let Err(e) = self.save_stage(&stage) {
-                        eprintln!("Warning: Failed to save stage: {e}");
-                    }
-                    return true;
+                    return false;
                 }
                 // On error, transition to MergeBlocked status
                 if let Err(transition_err) = stage.try_mark_merge_blocked() {
-                    eprintln!("Warning: Failed to transition stage to MergeBlocked status: {transition_err}");
+                    tracing::warn!(
+                        stage_id = %stage_id,
+                        error = %transition_err,
+                        "Failed to transition stage to MergeBlocked status"
+                    );
                     stage.status = StageStatus::MergeBlocked;
                 }
                 if let Err(e) = self.save_stage(&stage) {
-                    eprintln!("Warning: Failed to save stage after merge error: {e}");
+                    tracing::warn!(
+                        stage_id = %stage_id,
+                        error = %e,
+                        "Failed to save stage after merge error"
+                    );
                 }
                 if let Err(e) = self.graph.mark_status(stage_id, StageStatus::MergeBlocked) {
-                    eprintln!("Warning: Failed to mark stage as merge blocked in graph: {e}");
+                    tracing::warn!(
+                        stage_id = %stage_id,
+                        error = %e,
+                        "Failed to mark stage as merge blocked in graph"
+                    );
                 }
                 // Return false - merge failed, stage should not be marked Completed
                 false

@@ -92,6 +92,17 @@ pub struct Orchestrator {
     pub(super) skill_index: Option<SkillIndex>,
     /// Detected project languages for signal skill injection
     pub(super) detected_languages: Vec<DetectedLanguage>,
+    /// Stage IDs that have had a one-shot auto-merge retry attempted during
+    /// this daemon session. Prevents the retry from firing on every 5-second
+    /// poll for stages that remain stuck as `Completed + !merged`.
+    ///
+    /// Lifecycle: in-memory only; reset on next `loom run`.
+    pub(super) merge_retry_attempted: HashSet<String>,
+    /// Stage IDs for which spawn-time dependency verification has already
+    /// logged a skip reason. Prevents the 5-second poll loop from flooding
+    /// the logs when a dependent stage cannot start because of a phantom
+    /// merge. Used by `stage_executor.rs::start_stage`.
+    pub(super) spawn_skip_logged: HashSet<String>,
 }
 
 impl Orchestrator {
@@ -129,6 +140,8 @@ impl Orchestrator {
             backend,
             skill_index,
             detected_languages,
+            merge_retry_attempted: HashSet::new(),
+            spawn_skip_logged: HashSet::new(),
         })
     }
 
