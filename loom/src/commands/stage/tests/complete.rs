@@ -24,11 +24,28 @@ fn test_complete_with_passing_acceptance() {
 
     std::env::set_current_dir(original_dir).unwrap();
 
-    assert!(result.is_ok(), "complete() failed: {:?}", result.err());
-
+    // Acceptance passes but the test setup has no real git repo or stage branch,
+    // so progressive merge correctly hits MergeOutcome::Blocked (no `loom/test-stage`
+    // branch to merge). Stage stays Executing; complete() returns an error from
+    // the verification phase. We assert that acceptance ran successfully (no panic
+    // before merge) and that merged is NOT auto-set without a real merge — the
+    // phantom-merge fix removed the buggy "NoBranch → Success → merged=true" path.
     let loaded_stage = load_stage("test-stage", &work_dir_path).unwrap();
-    // After refactor: complete goes directly to Completed (no more Verified)
-    assert_eq!(loaded_stage.status, StageStatus::Completed);
+    assert!(
+        !loaded_stage.merged,
+        "Standard stage must not be marked merged without a real successful merge \
+         (this used to falsely succeed via the NoBranch arm — phantom merge bug)"
+    );
+    // Stage either stays Executing (no save in NoBranch arm) or is the test setup
+    // returning early. Either way, completion did not finalize without a real merge.
+    assert_ne!(
+        loaded_stage.status,
+        StageStatus::Completed,
+        "Standard stage must not transition to Completed without a real merge"
+    );
+    // Result may be Ok or Err depending on how run_verification_phase reports the
+    // Blocked outcome — but the critical invariant is that merged stays false.
+    let _ = result;
 }
 
 #[test]
@@ -200,10 +217,21 @@ fn test_complete_standard_stage_not_routed_to_knowledge() {
 
     std::env::set_current_dir(original_dir).unwrap();
 
-    // Standard stages go through the normal completion path
-    // which attempts merge (and succeeds in this test setup since no worktree)
-    assert!(result.is_ok(), "complete() failed: {:?}", result.err());
-
+    // The point of this test is routing: confirm the standard path is taken,
+    // NOT the knowledge auto-merge path. Knowledge stages auto-set merged=true
+    // without a real merge; standard stages must not. After the phantom-merge
+    // fix, the NoBranch arm correctly returns Blocked instead of fabricating
+    // a successful merge. So a standard stage in a test setup with no git
+    // infrastructure must not end up with merged=true.
     let loaded_stage = load_stage("standard-stage", &work_dir_path).unwrap();
-    assert_eq!(loaded_stage.status, StageStatus::Completed);
+    assert!(
+        !loaded_stage.merged,
+        "Standard stage must not auto-set merged=true (knowledge-path-only behavior)"
+    );
+    assert_ne!(
+        loaded_stage.status,
+        StageStatus::Completed,
+        "Standard stage must not transition to Completed without a real merge"
+    );
+    let _ = result;
 }

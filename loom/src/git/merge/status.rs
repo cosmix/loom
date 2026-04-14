@@ -8,7 +8,7 @@ use anyhow::Result;
 use std::path::Path;
 
 use crate::git::branch::{branch_exists, branch_name_for_stage, is_ancestor_of};
-use crate::models::stage::Stage;
+use crate::models::stage::{Stage, StageType};
 
 /// The merge state of a completed stage.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,6 +45,12 @@ impl std::fmt::Display for MergeState {
 /// IMPORTANT: This function always verifies via git ancestry when possible,
 /// rather than trusting the `merged` flag. This prevents "phantom merges"
 /// where the flag was set but code never landed.
+///
+/// When git ancestry is unavailable (no `completed_commit` or git command failure),
+/// knowledge stages with `merged: true` return [`MergeState::Merged`] because they
+/// legitimately have no branch by design. Non-knowledge stages in the same situation
+/// return [`MergeState::Unknown`] to force callers to escalate rather than trusting
+/// potentially stale or incorrect metadata.
 ///
 /// # Arguments
 /// * `stage` - The stage to check
@@ -90,9 +96,13 @@ pub fn check_merge_state(stage: &Stage, merge_point: &str, repo_root: &Path) -> 
     }
 
     if stage.merged {
-        // Marked as merged but no commit to verify - trust the flag
-        // (likely a knowledge stage or legacy stage)
-        return Ok(MergeState::Merged);
+        // Knowledge stages legitimately have no completed_commit (no branch by design).
+        if stage.stage_type == StageType::Knowledge {
+            return Ok(MergeState::Merged);
+        }
+        // Non-knowledge stage marked merged but no verifiable commit — phantom risk.
+        // Return Unknown so callers escalate rather than trusting bad metadata.
+        return Ok(MergeState::Unknown);
     }
 
     // No completed_commit, not marked merged - we have no way to verify
@@ -268,12 +278,31 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_state_merged_flag() {
+    fn test_merge_state_merged_flag_standard_stage_returns_unknown() {
+        // A non-knowledge stage with merged=true but no completed_commit cannot be
+        // verified via git ancestry. Return Unknown to force callers to escalate
+        // rather than trusting potentially stale metadata (phantom-merge guard).
         use tempfile::TempDir;
         let temp_dir = TempDir::new().unwrap();
 
         let mut stage = make_test_stage("test-stage");
         stage.merged = true;
+        // stage_type defaults to Standard
+
+        let result = check_merge_state(&stage, "main", temp_dir.path()).unwrap();
+        assert_eq!(result, MergeState::Unknown);
+    }
+
+    #[test]
+    fn test_merge_state_merged_flag_knowledge_stage_returns_merged() {
+        // Knowledge stages have no branch by design, so merged=true with no
+        // completed_commit is their legitimate terminal state.
+        use tempfile::TempDir;
+        let temp_dir = TempDir::new().unwrap();
+
+        let mut stage = make_test_stage("test-stage");
+        stage.merged = true;
+        stage.stage_type = StageType::Knowledge;
 
         let result = check_merge_state(&stage, "main", temp_dir.path()).unwrap();
         assert_eq!(result, MergeState::Merged);
