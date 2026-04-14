@@ -202,6 +202,30 @@ def main():
     for i in range(len(words) - 2):
         tokens.add(f"{words[i]} {words[i + 1]} {words[i + 2]}")
 
+    # Fold common English plurals to their singular form when the original
+    # token isn't indexed but the stemmed form is. Safe because we only
+    # produce a stem if it hits the index. Stems must be >= 3 chars to
+    # avoid short false positives like "goes" -> "go" (loom-golang) or
+    # "does" -> "do". Applies to the last word of bigrams/trigrams too so
+    # "feature flags" matches the singular "feature flag" entry.
+    stemmed = set()
+    for t in tokens:
+        if t in index:
+            continue
+        parts = t.split(" ")
+        last = parts[-1]
+        stems = []
+        if last.endswith("s") and len(last) > 3:
+            stems.append(last[:-1])
+        if last.endswith("es") and len(last) > 4:
+            stems.append(last[:-2])
+        for stem in stems:
+            cand = " ".join(parts[:-1] + [stem]) if len(parts) > 1 else stem
+            if cand in index:
+                stemmed.add(cand)
+                break
+    tokens.update(stemmed)
+
     # Score skills by keyword matches
     # Multi-word matches (containing space) count double since they're more specific
     # Direct skill-name matches get boosted weight (high-confidence signal)
