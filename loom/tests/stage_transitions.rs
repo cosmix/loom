@@ -1,6 +1,6 @@
 //! Integration tests for stage transitions and dependency triggering
 
-use loom::models::stage::{Stage, StageStatus};
+use loom::models::stage::{Stage, StageStatus, StageType};
 use loom::verify::transitions::{
     list_all_stages, load_stage, save_stage, transition_stage, trigger_dependents,
 };
@@ -44,12 +44,16 @@ fn test_stage_transition_workflow() {
         .expect("Should complete stage 1");
     assert_eq!(stage1.status, StageStatus::Completed);
 
-    // Set merged = true (required for dependents to be triggered)
+    // Set merged = true (required for dependents to be triggered).
+    // Use Knowledge stage type to bypass the git ancestry check added in Fix 9
+    // (knowledge stages have no branch by design).
     stage1.merged = true;
+    stage1.stage_type = StageType::Knowledge;
     save_stage(&stage1, work_dir).expect("Should save stage 1 with merged=true");
 
     // Trigger dependents - should mark stage 2 as Ready
-    let triggered = trigger_dependents("stage-1", work_dir).expect("Should trigger dependents");
+    let triggered = trigger_dependents("stage-1", work_dir, work_dir, "main")
+        .expect("Should trigger dependents");
     assert_eq!(triggered.len(), 1);
     assert_eq!(triggered[0], "stage-2");
 
@@ -65,12 +69,15 @@ fn test_stage_transition_workflow() {
         .expect("Should start executing stage 2");
     let mut stage2 = transition_stage("stage-2", StageStatus::Completed, work_dir)
         .expect("Should complete stage 2");
-    // Set merged = true (required for dependents to be triggered)
+    // Set merged = true (required for dependents to be triggered).
+    // Use Knowledge stage type to bypass the git ancestry check added in Fix 9.
     stage2.merged = true;
+    stage2.stage_type = StageType::Knowledge;
     save_stage(&stage2, work_dir).expect("Should save stage 2 with merged=true");
 
     // Trigger dependents - should mark stage 3 as Ready
-    let triggered = trigger_dependents("stage-2", work_dir).expect("Should trigger dependents");
+    let triggered = trigger_dependents("stage-2", work_dir, work_dir, "main")
+        .expect("Should trigger dependents");
     assert_eq!(triggered.len(), 1);
     assert_eq!(triggered[0], "stage-3");
 
@@ -83,11 +90,13 @@ fn test_multiple_dependencies_all_satisfied() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = temp_dir.path();
 
-    // Create stage 1 (Completed AND merged)
+    // Create stage 1 (Completed AND merged).
+    // Use Knowledge stage type to bypass the git ancestry check added in Fix 9.
     let mut stage1 = Stage::new("Stage 1".to_string(), None);
     stage1.id = "stage-1".to_string();
     stage1.status = StageStatus::Completed;
     stage1.merged = true;
+    stage1.stage_type = StageType::Knowledge;
     save_stage(&stage1, work_dir).expect("Should save stage 1");
 
     // Create stage 2
@@ -105,7 +114,8 @@ fn test_multiple_dependencies_all_satisfied() {
     save_stage(&stage3, work_dir).expect("Should save stage 3");
 
     // Verify stage 1 - should not trigger stage 3 yet (stage 2 not complete)
-    let triggered = trigger_dependents("stage-1", work_dir).expect("Should trigger dependents");
+    let triggered = trigger_dependents("stage-1", work_dir, work_dir, "main")
+        .expect("Should trigger dependents");
     assert_eq!(triggered.len(), 0);
 
     let stage3 = load_stage("stage-3", work_dir).expect("Should load stage 3");
@@ -117,11 +127,14 @@ fn test_multiple_dependencies_all_satisfied() {
         .expect("Should start executing stage 2");
     let mut stage2 = transition_stage("stage-2", StageStatus::Completed, work_dir)
         .expect("Should complete stage 2");
-    // Set merged = true (required for dependents to be triggered)
+    // Set merged = true (required for dependents to be triggered).
+    // Use Knowledge stage type to bypass the git ancestry check added in Fix 9.
     stage2.merged = true;
+    stage2.stage_type = StageType::Knowledge;
     save_stage(&stage2, work_dir).expect("Should save stage 2 with merged=true");
 
-    let triggered = trigger_dependents("stage-2", work_dir).expect("Should trigger dependents");
+    let triggered = trigger_dependents("stage-2", work_dir, work_dir, "main")
+        .expect("Should trigger dependents");
     assert_eq!(triggered.len(), 1);
     assert_eq!(triggered[0], "stage-3");
 
@@ -134,11 +147,13 @@ fn test_parallel_stages() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = temp_dir.path();
 
-    // Create stage 1 (foundation - Completed AND merged)
+    // Create stage 1 (foundation - Completed AND merged).
+    // Use Knowledge stage type to bypass the git ancestry check added in Fix 9.
     let mut stage1 = Stage::new("Stage 1".to_string(), None);
     stage1.id = "stage-1".to_string();
     stage1.status = StageStatus::Completed;
     stage1.merged = true;
+    stage1.stage_type = StageType::Knowledge;
     save_stage(&stage1, work_dir).expect("Should save stage 1");
 
     // Create stages 2 and 3 (both depend on stage 1, can run in parallel)
@@ -155,7 +170,8 @@ fn test_parallel_stages() {
     save_stage(&stage3, work_dir).expect("Should save stage 3");
 
     // Trigger dependents - both stage 2 and stage 3 should become Ready
-    let mut triggered = trigger_dependents("stage-1", work_dir).expect("Should trigger dependents");
+    let mut triggered = trigger_dependents("stage-1", work_dir, work_dir, "main")
+        .expect("Should trigger dependents");
     triggered.sort(); // Sort for deterministic comparison
     assert_eq!(triggered.len(), 2);
     assert!(triggered.contains(&"stage-2".to_string()));

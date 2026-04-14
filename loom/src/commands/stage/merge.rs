@@ -86,8 +86,9 @@ fn merge_resolved(stage_id: Option<String>) -> Result<()> {
     println!("  Status: Completed (merged: true)");
 
     // Trigger dependent stages
-    let triggered =
-        trigger_dependents(&stage_id, work_dir).context("Failed to trigger dependent stages")?;
+    let target_branch = default_branch(&repo_root).unwrap_or_else(|_| "main".to_string());
+    let triggered = trigger_dependents(&stage_id, work_dir, &repo_root, &target_branch)
+        .context("Failed to trigger dependent stages")?;
 
     if !triggered.is_empty() {
         println!("Triggered {} dependent stage(s):", triggered.len());
@@ -222,7 +223,7 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
             println!("Stage '{stage_id}' merge complete! (Completed, merged: true)");
 
             // Trigger dependent stages
-            let triggered = trigger_dependents(&stage_id, work_dir)
+            let triggered = trigger_dependents(&stage_id, work_dir, &repo_root, &target_branch)
                 .context("Failed to trigger dependent stages")?;
             if !triggered.is_empty() {
                 println!("Triggered {} dependent stage(s):", triggered.len());
@@ -245,7 +246,7 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
 
             println!("Stage '{stage_id}' merge complete! (Completed, merged: true)");
 
-            let triggered = trigger_dependents(&stage_id, work_dir)
+            let triggered = trigger_dependents(&stage_id, work_dir, &repo_root, &target_branch)
                 .context("Failed to trigger dependent stages")?;
             if !triggered.is_empty() {
                 println!("Triggered {} dependent stage(s):", triggered.len());
@@ -267,7 +268,7 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
 
             println!("Stage '{stage_id}' marked as merged.");
 
-            let triggered = trigger_dependents(&stage_id, work_dir)
+            let triggered = trigger_dependents(&stage_id, work_dir, &repo_root, &target_branch)
                 .context("Failed to trigger dependent stages")?;
             if !triggered.is_empty() {
                 println!("Triggered {} dependent stage(s):", triggered.len());

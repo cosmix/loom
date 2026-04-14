@@ -118,7 +118,14 @@ pub fn verify(stage_id: String, no_reload: bool) -> Result<()> {
         println!("Knowledge stage '{stage_id}' verified and completed!");
         println!("  (merged=true auto-set, no git merge required for knowledge stages)");
 
-        let triggered = trigger_dependents(&stage_id, work_dir)
+        let cwd = std::env::current_dir().context("Failed to get current directory")?;
+        let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or_else(|| cwd.clone());
+        let target_branch = crate::fs::work_dir::load_config(work_dir)
+            .ok()
+            .flatten()
+            .and_then(|c| c.base_branch());
+        let target_branch = crate::git::branch::resolve_target_branch(&target_branch, &repo_root);
+        let triggered = trigger_dependents(&stage_id, work_dir, &repo_root, &target_branch)
             .context("Failed to trigger dependent stages")?;
         if !triggered.is_empty() {
             println!("Triggered {} dependent stage(s):", triggered.len());
@@ -144,7 +151,13 @@ pub fn verify(stage_id: String, no_reload: bool) -> Result<()> {
             println!("Stage '{stage_id}' verified and completed!");
 
             // Trigger dependent stages
-            let triggered = trigger_dependents(&stage_id, work_dir)
+            let target_branch = crate::fs::work_dir::load_config(work_dir)
+                .ok()
+                .flatten()
+                .and_then(|c| c.base_branch());
+            let target_branch =
+                crate::git::branch::resolve_target_branch(&target_branch, &repo_root);
+            let triggered = trigger_dependents(&stage_id, work_dir, &repo_root, &target_branch)
                 .context("Failed to trigger dependent stages")?;
 
             if !triggered.is_empty() {

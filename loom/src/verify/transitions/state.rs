@@ -7,7 +7,8 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 
-use crate::models::stage::{Stage, StageStatus};
+use crate::git::branch::is_ancestor_of;
+use crate::models::stage::{Stage, StageStatus, StageType};
 
 use super::persistence::{list_all_stages, load_stage, save_stage};
 
@@ -58,6 +59,8 @@ pub fn transition_stage(stage_id: &str, new_status: StageStatus, work_dir: &Path
 /// # Arguments
 /// * `completed_stage_id` - The ID of the stage that was just completed
 /// * `work_dir` - Path to the `.work` directory
+/// * `repo_root` - Path to the git repository root (used for ancestry verification)
+/// * `target_branch` - The merge target branch (e.g., `main`) used for git ancestry checks
 ///
 /// # Returns
 /// List of stage IDs that were transitioned to Ready
@@ -65,7 +68,12 @@ pub fn transition_stage(stage_id: &str, new_status: StageStatus, work_dir: &Path
 /// # Note
 /// Only stages in `Pending` status are eligible for triggering, which is
 /// a valid transition to `Ready` per the state machine.
-pub fn trigger_dependents(completed_stage_id: &str, work_dir: &Path) -> Result<Vec<String>> {
+pub fn trigger_dependents(
+    completed_stage_id: &str,
+    work_dir: &Path,
+    repo_root: &Path,
+    target_branch: &str,
+) -> Result<Vec<String>> {
     let all_stages = list_all_stages(work_dir)?;
     let mut triggered = Vec::new();
 
@@ -79,7 +87,7 @@ pub fn trigger_dependents(completed_stage_id: &str, work_dir: &Path) -> Result<V
             continue;
         }
 
-        if are_all_dependencies_satisfied(&stage, work_dir)? {
+        if are_all_dependencies_satisfied(&stage, work_dir, repo_root, target_branch)? {
             // Use validated transition - Pending -> Ready is always valid
             stage.try_mark_queued().with_context(|| {
                 format!(
@@ -99,17 +107,32 @@ pub fn trigger_dependents(completed_stage_id: &str, work_dir: &Path) -> Result<V
 
 /// Check if all dependencies of a stage are satisfied
 ///
-/// A dependency is satisfied if its status is Completed AND merged is true.
-/// This ensures dependent stages can use main as their base, containing all
-/// dependency work.
+/// A dependency is satisfied if:
+///   - Its status is `Completed`, AND
+///   - `merged` is true, AND
+///   - (non-knowledge deps) its `completed_commit` is an ancestor of the target branch.
+///
+/// Knowledge stages are exempt from the git ancestry check because they
+/// have no branch by design — their "merge" is a pure metadata operation.
+///
+/// The git ancestry check is defense-in-depth against phantom merges: the
+/// `merged` flag can lie (see `PLAN-fix-phantom-merge.md`), so we
+/// cross-check that the dep's commit actually lives in the target branch.
 ///
 /// # Arguments
-/// * `stage` - The stage to check dependencies for
+/// * `stage` - The stage whose dependencies we are checking
 /// * `work_dir` - Path to the `.work` directory
+/// * `repo_root` - Path to the git repository root (used for ancestry verification)
+/// * `target_branch` - The merge target branch (e.g., `main`)
 ///
 /// # Returns
-/// `true` if all dependencies are Completed with merged=true, `false` otherwise
-pub fn are_all_dependencies_satisfied(stage: &Stage, work_dir: &Path) -> Result<bool> {
+/// `true` if all dependencies are satisfied per the rules above, `false` otherwise.
+pub fn are_all_dependencies_satisfied(
+    stage: &Stage,
+    work_dir: &Path,
+    repo_root: &Path,
+    target_branch: &str,
+) -> Result<bool> {
     if stage.dependencies.is_empty() {
         return Ok(true);
     }
@@ -122,11 +145,50 @@ pub fn are_all_dependencies_satisfied(stage: &Stage, work_dir: &Path) -> Result<
             )
         })?;
 
-        if dep_stage.status != StageStatus::Completed {
+        // Knowledge stages are exempt from the git ancestry check
+        // (they have no branch by design). Status + merged flag are sufficient.
+        if dep_stage.stage_type == StageType::Knowledge {
+            if dep_stage.status != StageStatus::Completed || !dep_stage.merged {
+                return Ok(false);
+            }
+            continue;
+        }
+
+        // Non-knowledge stages: require status, merged flag, AND git ancestry.
+        if dep_stage.status != StageStatus::Completed || !dep_stage.merged {
             return Ok(false);
         }
-        if !dep_stage.merged {
+
+        let Some(ref completed_commit) = dep_stage.completed_commit else {
+            tracing::error!(
+                stage_id = %stage.id,
+                dep_id = %dep_id,
+                "Dependency marked merged but has no completed_commit — cannot verify ancestry"
+            );
             return Ok(false);
+        };
+
+        match is_ancestor_of(completed_commit, target_branch, repo_root) {
+            Ok(true) => continue,
+            Ok(false) => {
+                tracing::error!(
+                    stage_id = %stage.id,
+                    dep_id = %dep_id,
+                    commit = %completed_commit,
+                    target = %target_branch,
+                    "Phantom merge detected: dependency commit not in target branch — refusing to satisfy dependency"
+                );
+                return Ok(false);
+            }
+            Err(e) => {
+                tracing::error!(
+                    stage_id = %stage.id,
+                    dep_id = %dep_id,
+                    error = %e,
+                    "Git ancestry check failed — refusing to satisfy dependency"
+                );
+                return Ok(false);
+            }
         }
     }
 

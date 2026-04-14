@@ -12,6 +12,8 @@ fn create_test_stage(id: &str, name: &str, status: StageStatus) -> Stage {
 #[cfg(test)]
 mod dependency_satisfaction;
 #[cfg(test)]
+mod dependency_satisfaction_real_git;
+#[cfg(test)]
 mod dependency_triggers;
 #[cfg(test)]
 mod persistence;

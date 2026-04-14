@@ -176,8 +176,13 @@ fn handle_force_unsafe_completion(
 
     // Only trigger dependent stages if merged=true (i.e., --assume-merged was used)
     if stage.merged {
-        let triggered =
-            trigger_dependents(stage_id, work_dir).context("Failed to trigger dependent stages")?;
+        let cwd = std::env::current_dir().context("Failed to get current directory")?;
+        let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or_else(|| cwd.clone());
+        let target_branch = resolve_base_branch(work_dir);
+        let target_branch =
+            crate::git::branch::resolve_target_branch(&Some(target_branch), &repo_root);
+        let triggered = trigger_dependents(stage_id, work_dir, &repo_root, &target_branch)
+            .context("Failed to trigger dependent stages")?;
 
         if !triggered.is_empty() {
             println!("Triggered {} dependent stage(s):", triggered.len());

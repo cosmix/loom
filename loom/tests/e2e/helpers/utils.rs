@@ -1,17 +1,21 @@
 //! Utility functions for E2E tests
 
 use anyhow::{Context, Result};
-use loom::models::stage::{Stage, StageStatus};
+use loom::models::stage::{Stage, StageStatus, StageType};
 use loom::verify::transitions::transition_stage;
 use std::path::Path;
 use std::thread;
 use std::time::{Duration, Instant};
 
-/// Complete a stage following the proper state machine transitions
+/// Complete a stage following the proper state machine transitions.
 ///
-/// Transitions: Ready -> Executing -> Completed
+/// Transitions: Ready -> Executing -> Completed.
 /// Also sets merged = true which is required for dependents to be triggered.
-/// Returns the completed stage
+/// Flips `stage_type` to `Knowledge` so that the git ancestry check added in
+/// Fix 9 (PLAN-fix-phantom-merge.md) is bypassed (knowledge stages have no
+/// branch by design; these E2E tests do not initialize a real git repo).
+/// Real-git regression tests for ancestry verification live separately.
+/// Returns the completed stage.
 pub fn complete_stage(stage_id: &str, work_dir: &Path) -> Result<Stage> {
     use loom::verify::transitions::save_stage;
 
@@ -23,8 +27,10 @@ pub fn complete_stage(stage_id: &str, work_dir: &Path) -> Result<Stage> {
     let mut stage = transition_stage(stage_id, StageStatus::Completed, work_dir)
         .with_context(|| format!("Failed to transition {stage_id} to Completed"))?;
 
-    // Set merged = true (required for dependents to be satisfied)
+    // Set merged = true (required for dependents to be satisfied).
+    // Set stage_type = Knowledge so the git ancestry check is bypassed.
     stage.merged = true;
+    stage.stage_type = StageType::Knowledge;
     save_stage(&stage, work_dir)
         .with_context(|| format!("Failed to save stage {stage_id} with merged=true"))?;
 

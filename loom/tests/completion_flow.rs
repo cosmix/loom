@@ -10,18 +10,23 @@
 //! 2. test_acceptance_failure_creates_correct_status
 //! 3. test_successful_completion_flow
 
-use loom::models::stage::{Stage, StageStatus};
+use loom::models::stage::{Stage, StageStatus, StageType};
 use loom::plan::schema::AcceptanceCriterion;
 use loom::verify::transitions::{
     are_all_dependencies_satisfied, load_stage, save_stage, trigger_dependents,
 };
 use tempfile::TempDir;
 
-/// Helper to create a test stage with a specific ID and status
+/// Helper to create a test stage with a specific ID and status.
+///
+/// By default, stages are set to `StageType::Knowledge` so that the git
+/// ancestry check added in Fix 9 (PLAN-fix-phantom-merge.md) is bypassed in
+/// these metadata-focused tests. Real-git tests live separately.
 fn create_test_stage(id: &str, name: &str, status: StageStatus) -> Stage {
     let mut stage = Stage::new(name.to_string(), Some(format!("Test stage {name}")));
     stage.id = id.to_string();
     stage.status = status;
+    stage.stage_type = StageType::Knowledge;
     stage
 }
 
@@ -47,16 +52,16 @@ fn test_completion_requires_merged_dependencies() {
     save_stage(&child, work_dir).expect("Should save child stage");
 
     // Assert: Child dependencies NOT satisfied because parent.merged = false
-    let satisfied =
-        are_all_dependencies_satisfied(&child, work_dir).expect("Should check dependencies");
+    let satisfied = are_all_dependencies_satisfied(&child, work_dir, work_dir, "main")
+        .expect("Should check dependencies");
     assert!(
         !satisfied,
         "Child dependencies should NOT be satisfied when parent is Completed but merged=false"
     );
 
     // Attempt to trigger dependents - child should NOT transition to Queued
-    let triggered =
-        trigger_dependents("parent-stage", work_dir).expect("Should trigger dependents");
+    let triggered = trigger_dependents("parent-stage", work_dir, work_dir, "main")
+        .expect("Should trigger dependents");
     assert!(
         triggered.is_empty(),
         "No stages should be triggered when parent.merged = false"
@@ -77,16 +82,16 @@ fn test_completion_requires_merged_dependencies() {
 
     // Assert: Child dependencies NOW satisfied
     let child = load_stage("child-stage", work_dir).expect("Should reload child");
-    let satisfied =
-        are_all_dependencies_satisfied(&child, work_dir).expect("Should check dependencies");
+    let satisfied = are_all_dependencies_satisfied(&child, work_dir, work_dir, "main")
+        .expect("Should check dependencies");
     assert!(
         satisfied,
         "Child dependencies should be satisfied when parent is Completed AND merged=true"
     );
 
     // Trigger dependents again - child SHOULD transition to Queued
-    let triggered =
-        trigger_dependents("parent-stage", work_dir).expect("Should trigger dependents");
+    let triggered = trigger_dependents("parent-stage", work_dir, work_dir, "main")
+        .expect("Should trigger dependents");
     assert_eq!(triggered.len(), 1, "One stage should be triggered");
     assert_eq!(
         triggered[0], "child-stage",
@@ -141,7 +146,8 @@ fn test_acceptance_failure_creates_correct_status() {
     );
 
     // Assert: Dependents NOT triggered (CompletedWithFailures doesn't satisfy deps)
-    let triggered = trigger_dependents("test-stage", work_dir).expect("Should trigger dependents");
+    let triggered = trigger_dependents("test-stage", work_dir, work_dir, "main")
+        .expect("Should trigger dependents");
     assert!(
         triggered.is_empty(),
         "No stages should be triggered when parent is CompletedWithFailures"
@@ -220,8 +226,8 @@ fn test_successful_completion_flow() {
     );
 
     // Trigger dependents - child should transition
-    let triggered =
-        trigger_dependents("parent-stage", work_dir).expect("Should trigger dependents");
+    let triggered = trigger_dependents("parent-stage", work_dir, work_dir, "main")
+        .expect("Should trigger dependents");
     assert_eq!(triggered.len(), 1, "Child stage should be triggered");
     assert_eq!(triggered[0], "child-stage");
 

@@ -70,6 +70,47 @@ impl StageExecutor for Orchestrator {
             return Ok(());
         }
 
+        // Defense-in-depth: refuse to spawn if dependencies aren't truly satisfied,
+        // even if the graph thinks they are. This prevents phantom-merge propagation
+        // where a dep's `merged` flag is set but its commit is not actually in the
+        // target branch. See PLAN-fix-phantom-merge.md Fix 10.
+        //
+        // Per the plan, we do NOT transition the stage to Blocked here — the
+        // dependent hasn't been attempted, and Queued -> Blocked is technically
+        // valid but semantically wrong. Skip silently; the next poll cycle
+        // re-evaluates once the upstream dependency stage is fixed.
+        let target_branch = crate::git::branch::resolve_target_branch(
+            &self.config.base_branch,
+            &self.config.repo_root,
+        );
+        match crate::verify::transitions::are_all_dependencies_satisfied(
+            &stage,
+            &self.config.work_dir,
+            &self.config.repo_root,
+            &target_branch,
+        ) {
+            Ok(true) => {}
+            Ok(false) => {
+                if self.spawn_skip_logged.insert(stage_id.to_string()) {
+                    tracing::error!(
+                        stage_id = %stage_id,
+                        "Refusing to spawn: dependencies not truly satisfied (likely phantom merge in deps). Run `loom repair` to investigate."
+                    );
+                }
+                return Ok(());
+            }
+            Err(e) => {
+                if self.spawn_skip_logged.insert(stage_id.to_string()) {
+                    tracing::error!(
+                        stage_id = %stage_id,
+                        error = %e,
+                        "Refusing to spawn: dependency satisfaction check errored"
+                    );
+                }
+                return Ok(());
+            }
+        }
+
         // Transition through Queued if currently WaitingForDeps to reduce race window
         if stage.status == StageStatus::WaitingForDeps {
             stage.try_mark_queued()?;

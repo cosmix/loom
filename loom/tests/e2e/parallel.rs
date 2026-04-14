@@ -4,7 +4,7 @@
 //! dependency patterns like diamond and fan-out/fan-in.
 
 use super::helpers::complete_stage;
-use loom::models::stage::{Stage, StageStatus};
+use loom::models::stage::{Stage, StageStatus, StageType};
 use loom::verify::transitions::{load_stage, save_stage, transition_stage, trigger_dependents};
 use tempfile::TempDir;
 
@@ -14,11 +14,13 @@ fn test_parallel_stages_triggered_together() {
     let work_dir = temp_dir.path();
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
 
-    // Create foundation stage (Completed AND merged for dependents to trigger)
+    // Create foundation stage (Completed AND merged for dependents to trigger).
+    // Use Knowledge stage type to bypass the git ancestry check added in Fix 9.
     let mut foundation = Stage::new("Foundation".to_string(), None);
     foundation.id = "foundation".to_string();
     foundation.status = StageStatus::Completed;
     foundation.merged = true;
+    foundation.stage_type = StageType::Knowledge;
     save_stage(&foundation, work_dir).unwrap();
 
     // Create parallel stages depending on foundation
@@ -45,7 +47,7 @@ fn test_parallel_stages_triggered_together() {
     }
 
     // Trigger dependents
-    let mut triggered = trigger_dependents("foundation", work_dir).unwrap();
+    let mut triggered = trigger_dependents("foundation", work_dir, work_dir, "main").unwrap();
     triggered.sort();
     assert_eq!(triggered.len(), 3);
     assert_eq!(
@@ -71,11 +73,13 @@ fn test_parallel_group_isolation() {
     let work_dir = temp_dir.path();
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
 
-    // Create foundation stage (Completed AND merged for dependents to trigger)
+    // Create foundation stage (Completed AND merged for dependents to trigger).
+    // Use Knowledge stage type to bypass the git ancestry check added in Fix 9.
     let mut foundation = Stage::new("Foundation".to_string(), None);
     foundation.id = "foundation".to_string();
     foundation.status = StageStatus::Completed;
     foundation.merged = true;
+    foundation.stage_type = StageType::Knowledge;
     save_stage(&foundation, work_dir).unwrap();
 
     // Create frontend parallel group (A, B)
@@ -99,7 +103,7 @@ fn test_parallel_group_isolation() {
     }
 
     // Complete foundation
-    let mut triggered = trigger_dependents("foundation", work_dir).unwrap();
+    let mut triggered = trigger_dependents("foundation", work_dir, work_dir, "main").unwrap();
     triggered.sort();
     assert_eq!(triggered.len(), 4);
 
@@ -130,11 +134,12 @@ fn test_diamond_dependency_pattern() {
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
 
     // Create diamond: A -> B, A -> C, B -> D, C -> D
-    // A (top, Completed AND merged)
+    // A (top, Completed AND merged; Knowledge type to bypass git ancestry check)
     let mut stage_a = Stage::new("Stage A".to_string(), None);
     stage_a.id = "stage-a".to_string();
     stage_a.status = StageStatus::Completed;
     stage_a.merged = true;
+    stage_a.stage_type = StageType::Knowledge;
     save_stage(&stage_a, work_dir).unwrap();
 
     // B (depends on A)
@@ -160,7 +165,7 @@ fn test_diamond_dependency_pattern() {
     save_stage(&stage_d, work_dir).unwrap();
 
     // Complete A
-    let mut triggered = trigger_dependents("stage-a", work_dir).unwrap();
+    let mut triggered = trigger_dependents("stage-a", work_dir, work_dir, "main").unwrap();
     triggered.sort();
     assert_eq!(triggered.len(), 2);
     assert!(triggered.contains(&"stage-b".to_string()));
@@ -180,7 +185,7 @@ fn test_diamond_dependency_pattern() {
     // Complete B only
     complete_stage("stage-b", work_dir).unwrap();
     transition_stage("stage-b", StageStatus::Completed, work_dir).unwrap();
-    let triggered = trigger_dependents("stage-b", work_dir).unwrap();
+    let triggered = trigger_dependents("stage-b", work_dir, work_dir, "main").unwrap();
     assert_eq!(triggered.len(), 0);
 
     // Verify D is still Pending (C not done)
@@ -190,7 +195,7 @@ fn test_diamond_dependency_pattern() {
     // Complete C
     complete_stage("stage-c", work_dir).unwrap();
     transition_stage("stage-c", StageStatus::Completed, work_dir).unwrap();
-    let triggered = trigger_dependents("stage-c", work_dir).unwrap();
+    let triggered = trigger_dependents("stage-c", work_dir, work_dir, "main").unwrap();
     assert_eq!(triggered.len(), 1);
     assert_eq!(triggered[0], "stage-d");
 
@@ -206,11 +211,12 @@ fn test_fan_out_fan_in() {
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
 
     // Create: A -> {B, C, D} -> E
-    // A (Completed AND merged)
+    // A (Completed AND merged; Knowledge type to bypass git ancestry check)
     let mut stage_a = Stage::new("Stage A".to_string(), None);
     stage_a.id = "stage-a".to_string();
     stage_a.status = StageStatus::Completed;
     stage_a.merged = true;
+    stage_a.stage_type = StageType::Knowledge;
     save_stage(&stage_a, work_dir).unwrap();
 
     // B, C, D all depend on A
@@ -236,7 +242,7 @@ fn test_fan_out_fan_in() {
     save_stage(&stage_e, work_dir).unwrap();
 
     // Complete A, verify B/C/D Ready
-    let mut triggered = trigger_dependents("stage-a", work_dir).unwrap();
+    let mut triggered = trigger_dependents("stage-a", work_dir, work_dir, "main").unwrap();
     triggered.sort();
     assert_eq!(triggered.len(), 3);
     assert_eq!(
@@ -261,7 +267,7 @@ fn test_fan_out_fan_in() {
     for id in ["stage-b", "stage-c"] {
         complete_stage(id, work_dir).unwrap();
         transition_stage(id, StageStatus::Completed, work_dir).unwrap();
-        trigger_dependents(id, work_dir).unwrap();
+        trigger_dependents(id, work_dir, work_dir, "main").unwrap();
     }
 
     // Verify E still Pending (D not done)
@@ -271,7 +277,7 @@ fn test_fan_out_fan_in() {
     // Complete D
     complete_stage("stage-d", work_dir).unwrap();
     transition_stage("stage-d", StageStatus::Completed, work_dir).unwrap();
-    let triggered = trigger_dependents("stage-d", work_dir).unwrap();
+    let triggered = trigger_dependents("stage-d", work_dir, work_dir, "main").unwrap();
     assert_eq!(triggered.len(), 1);
     assert_eq!(triggered[0], "stage-e");
 

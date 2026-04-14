@@ -8,17 +8,22 @@
 //! - Resume from handoff
 //! - Valid state machine transitions
 
-use loom::models::stage::{Stage, StageStatus};
+use loom::models::stage::{Stage, StageStatus, StageType};
 use loom::plan::schema::AcceptanceCriterion;
 use loom::verify::transitions::{load_stage, save_stage, transition_stage, trigger_dependents};
 use std::fs;
 use tempfile::TempDir;
 
-/// Helper function to create a test stage with specific parameters
+/// Helper function to create a test stage with specific parameters.
+///
+/// Stages created here are `StageType::Knowledge` so they bypass the git
+/// ancestry check added in Fix 9 (PLAN-fix-phantom-merge.md). Real-git
+/// regression tests for ancestry verification live separately.
 fn create_test_stage(id: &str, name: &str, status: StageStatus) -> Stage {
     let mut stage = Stage::new(name.to_string(), Some(format!("Test stage {name}")));
     stage.id = id.to_string();
     stage.status = status;
+    stage.stage_type = StageType::Knowledge;
     stage
 }
 
@@ -60,7 +65,7 @@ fn test_blocked_stage_does_not_trigger_dependents() {
     stage_b.add_dependency("stage-a".to_string());
     save_stage(&stage_b, work_dir).unwrap();
 
-    let triggered = trigger_dependents("stage-a", work_dir).unwrap();
+    let triggered = trigger_dependents("stage-a", work_dir, work_dir, "main").unwrap();
     assert!(triggered.is_empty());
 
     let stage_b = load_stage("stage-b", work_dir).unwrap();
@@ -280,10 +285,10 @@ fn test_multiple_blocked_stages_with_dependencies() {
     stage_c.add_dependency("stage-b".to_string());
     save_stage(&stage_c, work_dir).unwrap();
 
-    let triggered = trigger_dependents("stage-a", work_dir).unwrap();
+    let triggered = trigger_dependents("stage-a", work_dir, work_dir, "main").unwrap();
     assert!(triggered.is_empty());
 
-    let triggered = trigger_dependents("stage-b", work_dir).unwrap();
+    let triggered = trigger_dependents("stage-b", work_dir, work_dir, "main").unwrap();
     assert!(triggered.is_empty());
 
     // Blocked -> Ready (per state machine)
@@ -292,7 +297,7 @@ fn test_multiple_blocked_stages_with_dependencies() {
     transition_stage("stage-a", StageStatus::Completed, work_dir).unwrap();
     transition_stage("stage-a", StageStatus::Completed, work_dir).unwrap();
 
-    let triggered = trigger_dependents("stage-a", work_dir).unwrap();
+    let triggered = trigger_dependents("stage-a", work_dir, work_dir, "main").unwrap();
     assert!(triggered.is_empty());
 
     let stage_b = load_stage("stage-b", work_dir).unwrap();
@@ -386,7 +391,7 @@ fn test_cascading_failure_does_not_propagate() {
     let blocked_stage_2 = transition_stage("stage-2", StageStatus::Blocked, work_dir).unwrap();
     assert_eq!(blocked_stage_2.status, StageStatus::Blocked);
 
-    let triggered = trigger_dependents("stage-2", work_dir).unwrap();
+    let triggered = trigger_dependents("stage-2", work_dir, work_dir, "main").unwrap();
     assert!(triggered.is_empty());
 
     let stage_3 = load_stage("stage-3", work_dir).unwrap();
@@ -444,7 +449,7 @@ fn test_parallel_stages_one_blocked_one_succeeds() {
     stage_3.add_dependency("stage-2b".to_string());
     save_stage(&stage_3, work_dir).unwrap();
 
-    let triggered = trigger_dependents("stage-1", work_dir).unwrap();
+    let triggered = trigger_dependents("stage-1", work_dir, work_dir, "main").unwrap();
     assert_eq!(triggered.len(), 2);
 
     transition_stage("stage-2a", StageStatus::Executing, work_dir).unwrap();
@@ -455,7 +460,7 @@ fn test_parallel_stages_one_blocked_one_succeeds() {
     transition_stage("stage-2b", StageStatus::Completed, work_dir).unwrap();
     transition_stage("stage-2b", StageStatus::Completed, work_dir).unwrap();
 
-    let triggered = trigger_dependents("stage-2b", work_dir).unwrap();
+    let triggered = trigger_dependents("stage-2b", work_dir, work_dir, "main").unwrap();
     assert!(triggered.is_empty());
 
     let stage_3 = load_stage("stage-3", work_dir).unwrap();
