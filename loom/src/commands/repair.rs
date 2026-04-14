@@ -11,11 +11,17 @@ use std::fs;
 use std::path::Path;
 
 use crate::fs::permissions::LOOM_PERMISSIONS;
+use crate::fs::work_dir::load_config;
 use crate::fs::work_integrity::{
     check_work_dir_state, is_work_dir_git_ignored, is_worktrees_git_ignored, WorkDirState,
 };
-use crate::git::{install_pre_commit_hook, is_pre_commit_hook_installed};
+use crate::git::branch::{is_ancestor_of, resolve_target_branch};
+use crate::git::{
+    branch_exists, branch_name_for_stage, install_pre_commit_hook, is_pre_commit_hook_installed,
+};
+use crate::models::stage::StageType;
 use crate::sandbox;
+use crate::verify::transitions::{list_all_stages, load_stage, save_stage};
 
 /// Loom-specific skill names referenced in settings.json that may need prefix migration.
 const LOOM_SKILL_NAMES: &[&str] = &[
@@ -424,6 +430,121 @@ fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
         }
     }
 
+    // Check 11: Phantom merge audit — stages marked merged without their commit in the target branch.
+    //
+    // WHY THIS EXISTS: A bug in the orchestrator's "defensive fallback" paths can write
+    // `merged = true` on a stage whose branch was never actually git-merged into the target
+    // branch. This silently gates dependent stages on work that never landed, causing lost work.
+    // This check provides a post-hoc safety net that users can run (or that CI can run) to
+    // detect these phantom merges before they cause further damage.
+    //
+    // Only runs when .work/stages/ exists. Skips Knowledge stages (they legitimately have
+    // `merged = true` with no branch/commit — that's by design). For all other stages:
+    //   - merged=true + commit present -> verify commit is an ancestor of target branch
+    //   - merged=true + no commit      -> warn (cannot verify, needs manual check)
+    //   - Completed + !merged + branch gone -> warn (branch deleted without merge confirmation)
+    {
+        let work_dir = repo_root.join(".work");
+        if work_dir.is_dir() {
+            // Determine the target branch for ancestry checks.
+            // Load from config.toml if available, otherwise fall back to repo default.
+            let base_branch_opt = load_config(&work_dir)
+                .ok()
+                .flatten()
+                .and_then(|c| c.base_branch());
+            let target_branch = resolve_target_branch(&base_branch_opt, repo_root);
+
+            match list_all_stages(&work_dir) {
+                Err(_) => {
+                    // Cannot enumerate stages (e.g., stages dir missing or unparseable).
+                    // Push an INFO rather than failing the whole repair run.
+                    issues.push(RepairIssue {
+                        severity: Severity::Info,
+                        description:
+                            "Could not audit stage merge status (stages directory unreadable)"
+                                .to_string(),
+                        fix_description: "Investigate .work/stages/ directory manually".to_string(),
+                    });
+                }
+                Ok(stages) => {
+                    for stage in &stages {
+                        // Knowledge stages legitimately have merged=true with no commit —
+                        // they have no branch and no git work to verify. Skip them.
+                        if stage.stage_type == StageType::Knowledge {
+                            continue;
+                        }
+
+                        if stage.merged {
+                            if let Some(ref commit) = stage.completed_commit {
+                                // CRITICAL: merged=true and we have a commit SHA.
+                                // Verify the commit is actually an ancestor of the target branch.
+                                // If it isn't, the stage was marked merged without a real merge.
+                                match is_ancestor_of(commit, &target_branch, repo_root) {
+                                    Ok(true) => {
+                                        // All good — commit is in target branch.
+                                    }
+                                    Ok(false) => {
+                                        // Phantom merge: commit exists but is not in target branch.
+                                        issues.push(RepairIssue {
+                                            severity: Severity::Critical,
+                                            description: format!(
+                                                "Phantom merge: {} marked merged but commit not in {}",
+                                                stage.id, target_branch
+                                            ),
+                                            fix_description:
+                                                "Revert merged flag to false (manual investigation needed for lost work)"
+                                                    .to_string(),
+                                        });
+                                    }
+                                    Err(_) => {
+                                        // Git is unavailable or the commit/branch reference is
+                                        // broken. Skip silently rather than producing noise.
+                                    }
+                                }
+                            } else {
+                                // WARNING: merged=true but no commit SHA to verify against.
+                                // Cannot confirm whether the work actually landed.
+                                issues.push(RepairIssue {
+                                    severity: Severity::Warning,
+                                    description: format!(
+                                        "Stage {} marked merged but has no completed_commit (cannot verify)",
+                                        stage.id
+                                    ),
+                                    fix_description:
+                                        "No automatic fix available — manual investigation required"
+                                            .to_string(),
+                                });
+                            }
+                        } else if stage.status == crate::models::stage::StageStatus::Completed {
+                            // WARNING: stage is Completed but not merged, and the branch is gone.
+                            // This suggests the branch was deleted without a merge being recorded.
+                            // The work might have been merged manually without updating loom state.
+                            let branch = branch_name_for_stage(&stage.id);
+                            match branch_exists(&branch, repo_root) {
+                                Ok(false) => {
+                                    issues.push(RepairIssue {
+                                        severity: Severity::Warning,
+                                        description: format!(
+                                            "Stale: {} completed but branch deleted without merge confirmation",
+                                            stage.id
+                                        ),
+                                        fix_description:
+                                            "No automatic fix available — verify the work was merged manually"
+                                                .to_string(),
+                                    });
+                                }
+                                Ok(true) | Err(_) => {
+                                    // Branch still exists (normal unmerged state) or git is
+                                    // unavailable. Nothing to flag here.
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     issues
 }
 
@@ -519,6 +640,25 @@ fn fix_issue(repo_root: &Path, issue: &RepairIssue) -> Result<bool> {
     {
         fix_settings_skill_refs()?;
         Ok(true)
+    } else if issue.description.starts_with("Phantom merge:") {
+        // Revert the spurious merged=true flag so the orchestrator knows the stage's work
+        // has NOT landed in the target branch. We do NOT attempt a re-merge here because
+        // the user likely has lost work that needs manual investigation first (e.g.,
+        // cherry-pick from the stranded branch, resolve conflicts with later stages).
+        fix_phantom_merge(repo_root, &issue.description)?;
+        Ok(true)
+    } else if issue
+        .description
+        .contains("marked merged but has no completed_commit")
+    {
+        // No commit SHA means we cannot verify or re-merge programmatically.
+        // Return false so the dispatcher prints "Skipped" and the user knows to investigate.
+        Ok(false)
+    } else if issue.description.starts_with("Stale:") {
+        // Branch is gone without a merge record. We cannot recover the branch,
+        // and we cannot confirm a manual merge happened. Return false so the user
+        // is prompted to verify manually.
+        Ok(false)
     } else {
         Ok(false)
     }
@@ -668,6 +808,37 @@ fn fix_old_agent(description: &str) -> Result<()> {
     let old_path = home.join(".claude/agents").join(format!("{}.md", name));
     fs::remove_file(&old_path)
         .with_context(|| format!("Failed to remove {}", old_path.display()))?;
+    Ok(())
+}
+
+/// Revert the `merged` flag on a phantom-merged stage.
+///
+/// A phantom merge is a stage that has `merged = true` in its state file but whose
+/// `completed_commit` is not an ancestor of the target branch — meaning the branch
+/// was never actually git-merged. This function sets `merged = false` so the
+/// orchestrator treats the stage as unmerged and does not let dependents proceed on
+/// the assumption that the work landed.
+///
+/// We deliberately do NOT attempt a re-merge here. The user's repository may be in
+/// an inconsistent state (conflicting later stages, stranded commits) that requires
+/// manual investigation before another merge is safe.
+fn fix_phantom_merge(repo_root: &Path, description: &str) -> Result<()> {
+    // Parse stage ID from description: "Phantom merge: <stage-id> marked merged but ..."
+    let stage_id = description
+        .strip_prefix("Phantom merge: ")
+        .and_then(|s| s.split(' ').next())
+        .with_context(|| format!("Cannot parse stage ID from: {description}"))?;
+
+    let work_dir = repo_root.join(".work");
+    let mut stage = load_stage(stage_id, &work_dir)
+        .with_context(|| format!("Failed to load stage '{stage_id}' for phantom merge fix"))?;
+
+    stage.merged = false;
+
+    save_stage(&stage, &work_dir).with_context(|| {
+        format!("Failed to save stage '{stage_id}' after reverting merged flag")
+    })?;
+
     Ok(())
 }
 
