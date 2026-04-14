@@ -12,7 +12,7 @@ use crate::commands::graph::colors::color_by_index;
 use crate::commands::graph::indicators::status_indicator;
 use crate::commands::status::data::{StageSummary, StatusData};
 use crate::models::failure::FailureType;
-use crate::models::stage::StageStatus;
+use crate::models::stage::{StageStatus, StageType};
 use crate::plan::graph::levels;
 use crate::utils::{context_pct_terminal_color, format_elapsed};
 
@@ -137,8 +137,13 @@ fn format_stage_annotations(stage: &StageSummary) -> String {
     }
 
     // Merge status for completed stages
-    if stage.status == StageStatus::Completed && stage.merged {
-        parts.push(format!("{}", "merged".green().dimmed()));
+    if stage.status == StageStatus::Completed {
+        if stage.merged {
+            parts.push(format!("{}", "merged".green().dimmed()));
+        } else if !matches!(stage.stage_type, StageType::Knowledge) {
+            // Completed but not merged and not a knowledge stage — needs manual merge
+            parts.push(format!("{}", "unmerged".yellow()));
+        }
     }
 
     if parts.is_empty() {
@@ -205,6 +210,17 @@ pub fn render_graph<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<(
             w,
             "{ROW_INDENT}{connector}{indicator}  {colored_id}{deps}{annotations}"
         )?;
+
+        // For completed-but-not-merged non-knowledge stages, show a merge hint.
+        if stage.status == StageStatus::Completed
+            && !stage.merged
+            && !matches!(stage.stage_type, StageType::Knowledge)
+        {
+            // Indent to align under the stage id (connector width + icon + 2 spaces)
+            let hint_indent = " ".repeat(connector.chars().count() + 4);
+            let hint = format!("→ run: loom stage merge {}", stage.id);
+            writeln!(w, "{ROW_INDENT}{hint_indent}{}", hint.yellow().dimmed())?;
+        }
 
         // Increment index for this level
         *level_indices.get_mut(&level).unwrap() += 1;

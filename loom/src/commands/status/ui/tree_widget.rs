@@ -14,7 +14,7 @@ use ratatui::{
 };
 
 use super::theme::{StatusColors, Theme};
-use crate::models::stage::{Stage, StageStatus};
+use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::plan::graph::levels;
 use crate::utils::format_elapsed;
 
@@ -204,6 +204,19 @@ impl<'a> TreeWidget<'a> {
             // Elapsed time (for executing and completed stages)
             if let Some(ref el) = elapsed {
                 spans.push(Span::styled(format!("  {el}"), Theme::dimmed()));
+            }
+
+            // For completed stages: show merge status inline
+            if stage.status == StageStatus::Completed {
+                if stage.merged {
+                    spans.push(Span::styled("  merged", Theme::dimmed()));
+                } else if !matches!(stage.stage_type, StageType::Knowledge) {
+                    // Needs manual merge — highlight in yellow
+                    spans.push(Span::styled(
+                        "  unmerged",
+                        Style::default().fg(Color::Yellow),
+                    ));
+                }
             }
 
             // Dependencies

@@ -1,11 +1,12 @@
 use super::*;
-use crate::commands::status::data::{ActivityStatus, MergeSummary, ProgressSummary};
+use crate::commands::status::data::{ActivityStatus, MergeSummary, ProgressSummary, StageType};
 
 fn make_stage_summary(id: &str, deps: Vec<&str>, status: StageStatus) -> StageSummary {
     StageSummary {
         id: id.to_string(),
         name: id.to_string(),
         status,
+        stage_type: StageType::Standard,
         dependencies: deps.into_iter().map(String::from).collect(),
         context_pct: None,
         elapsed_secs: None,
@@ -129,4 +130,76 @@ fn test_status_indicators() {
     let _ = status_indicator(&StageStatus::Executing);
     let _ = status_indicator(&StageStatus::Blocked);
     let _ = status_indicator(&StageStatus::NeedsHandoff);
+}
+
+#[test]
+fn test_completed_unmerged_standard_shows_hint() {
+    // A standard stage that is Completed but not yet merged should show "unmerged"
+    // and a merge hint line.
+    let mut stage = make_stage_summary("my-stage", vec![], StageStatus::Completed);
+    stage.merged = false;
+    stage.stage_type = StageType::Standard;
+
+    let data = make_status_data(vec![stage]);
+    let mut output = Vec::new();
+    render_graph(&mut output, &data).unwrap();
+    let output_str = String::from_utf8(output).unwrap();
+
+    assert!(
+        output_str.contains("unmerged"),
+        "Expected 'unmerged' label in output"
+    );
+    assert!(
+        output_str.contains("loom stage merge my-stage"),
+        "Expected merge hint in output"
+    );
+}
+
+#[test]
+fn test_completed_merged_standard_shows_merged() {
+    // A standard stage that is Completed and merged should show "merged", no hint.
+    let mut stage = make_stage_summary("my-stage", vec![], StageStatus::Completed);
+    stage.merged = true;
+    stage.stage_type = StageType::Standard;
+
+    let data = make_status_data(vec![stage]);
+    let mut output = Vec::new();
+    render_graph(&mut output, &data).unwrap();
+    let output_str = String::from_utf8(output).unwrap();
+
+    assert!(
+        output_str.contains("merged"),
+        "Expected 'merged' label in output"
+    );
+    assert!(
+        !output_str.contains("loom stage merge"),
+        "Should not show merge hint when already merged"
+    );
+    assert!(
+        !output_str.contains("unmerged"),
+        "Should not show 'unmerged' when stage is merged"
+    );
+}
+
+#[test]
+fn test_completed_unmerged_knowledge_no_hint() {
+    // A knowledge stage that is Completed but not merged should NOT show "unmerged"
+    // or a merge hint (knowledge stages have different merge semantics).
+    let mut stage = make_stage_summary("knowledge-bootstrap", vec![], StageStatus::Completed);
+    stage.merged = false;
+    stage.stage_type = StageType::Knowledge;
+
+    let data = make_status_data(vec![stage]);
+    let mut output = Vec::new();
+    render_graph(&mut output, &data).unwrap();
+    let output_str = String::from_utf8(output).unwrap();
+
+    assert!(
+        !output_str.contains("unmerged"),
+        "Knowledge stages should not show 'unmerged'"
+    );
+    assert!(
+        !output_str.contains("loom stage merge"),
+        "Knowledge stages should not show merge hint"
+    );
 }

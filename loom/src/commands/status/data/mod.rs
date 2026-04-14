@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 // Re-export types that consumers will need
 pub use crate::models::failure::FailureInfo;
-pub use crate::models::stage::StageStatus;
+pub use crate::models::stage::{StageStatus, StageType};
 
 /// Activity status derived from heartbeat and session state
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -60,6 +60,9 @@ pub struct StageSummary {
     pub id: String,
     pub name: String,
     pub status: StageStatus,
+    /// Type of stage (standard, knowledge, integration-verify)
+    #[serde(default)]
+    pub stage_type: StageType,
     pub dependencies: Vec<String>,
     pub context_pct: Option<f32>,
     pub elapsed_secs: Option<i64>,
