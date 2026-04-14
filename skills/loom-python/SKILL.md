@@ -677,3 +677,37 @@ class Cache:
     def get(self, key: str) -> Any | None:
         return self._store.get(key)
 ```
+
+### Quick Pattern Swaps
+
+```python
+# BAD: Equality checks against None
+if result == None:
+    handle_missing_result()
+
+# GOOD: Use identity checks for singletons
+if result is None:
+    handle_missing_result()
+
+# BAD: A broad try block that hides the failing line
+try:
+    value = payload["count"]
+    return normalize(value)
+except KeyError:
+    return 0
+
+# GOOD: Keep the try block as small as possible
+try:
+    value = payload["count"]
+except KeyError:
+    return 0
+return normalize(value)
+
+# BAD: Treating "empty" and "missing" as the same thing
+if items:
+    process(items)
+
+# GOOD: Check for None explicitly when empties are valid input
+if items is not None:
+    process(items)
+```

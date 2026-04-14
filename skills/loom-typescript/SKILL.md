@@ -1417,3 +1417,33 @@ function getLength(str: string | null): number {
   return str?.length ?? 0;
 }
 ```
+
+### Quick Pattern Swaps
+
+```typescript
+// BAD: async callbacks inside forEach
+async function saveAll(items: Item[]) {
+  items.forEach(async (item) => {
+    await save(item);
+  });
+}
+
+// GOOD: Use Promise.all or a for...of loop
+async function saveAll(items: Item[]) {
+  await Promise.all(items.map((item) => save(item)));
+}
+
+// BAD: Boolean flags that allow impossible states
+type RequestState = {
+  isLoading: boolean;
+  data?: User[];
+  error?: Error;
+};
+
+// GOOD: Use a discriminated union for each valid state
+type RequestState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "success"; data: User[] }
+  | { status: "error"; error: Error };
+```

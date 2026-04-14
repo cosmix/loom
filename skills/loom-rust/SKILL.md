@@ -1496,3 +1496,38 @@ fs::remove_file("temp.txt").ok();  // Explicitly ignore
 // or
 fs::remove_file("temp.txt")?;  // Propagate error
 ```
+
+### Quick Pattern Swaps
+
+```rust
+// BAD: Locking callers into Vec and String
+fn print_names(names: &Vec<String>, title: &String) {
+    println!("{title}");
+    for name in names {
+        println!("{name}");
+    }
+}
+
+// GOOD: Accept slices and str
+fn print_names(names: &[String], title: &str) {
+    println!("{title}");
+    for name in names {
+        println!("{name}");
+    }
+}
+
+// BAD: Matching only to re-return the same error
+fn read_config(path: &str) -> Result<String, std::io::Error> {
+    let config = match std::fs::read_to_string(path) {
+        Ok(config) => config,
+        Err(err) => return Err(err),
+    };
+    Ok(config)
+}
+
+// GOOD: Use ? to propagate unchanged errors
+fn read_config(path: &str) -> Result<String, std::io::Error> {
+    let config = std::fs::read_to_string(path)?;
+    Ok(config)
+}
+```

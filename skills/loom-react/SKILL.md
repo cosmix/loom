@@ -1608,7 +1608,11 @@ function FilteredList({ items, filter }: { items: Item[]; filter: string }) {
   return <ExpensiveList items={filteredItems} />
 }
 
-// Memoize callbacks to prevent child re-renders
+// Memoize callbacks when a memoized child depends on function identity
+const Child = memo(function Child({ onClick }: { onClick: () => void }) {
+  return <button onClick={onClick}>Increment</button>
+})
+
 function Parent() {
   const [count, setCount] = useState(0)
 
@@ -2195,10 +2199,7 @@ useEffect(() => {
 }, [items, filter])
 
 // GOOD: Compute during render
-const filteredItems = useMemo(
-  () => items.filter(filter),
-  [items, filter]
-)
+const filteredItems = items.filter(filter)
 
 // BAD: Prop drilling through many levels
 function App() {
@@ -2218,24 +2219,18 @@ function DeepChild() {
   // Direct access without prop drilling
 }
 
-// BAD: Creating functions in render
-function Parent() {
-  return (
-    <Child
-      onClick={() => {
-        doSomething()
-      }}
-    />
-  )
-}
-
-// GOOD: Use useCallback for stable references
+// BAD: Adding useCallback when identity does not matter
 function Parent() {
   const handleClick = useCallback(() => {
     doSomething()
   }, [])
 
-  return <Child onClick={handleClick} />
+  return <button onClick={handleClick}>Save</button>
+}
+
+// GOOD: Inline handlers are fine unless a memoized child or Effect needs stability
+function Parent() {
+  return <button onClick={() => doSomething()}>Save</button>
 }
 
 // BAD: Fetching in components without Suspense
@@ -2271,6 +2266,268 @@ function UserContainer({ userId }: { userId: string }) {
     </Suspense>
   )
 }
+```
+
+### Quick Pattern Swaps
+
+```typescript
+// BAD: Calling Hooks conditionally
+function SearchPanel({ enabled }: { enabled: boolean }) {
+  if (enabled) {
+    useEffect(() => {
+      subscribe()
+    }, [])
+  }
+  return null
+}
+
+// GOOD: Call Hooks at the top level and branch inside
+function SearchPanel({ enabled }: { enabled: boolean }) {
+  useEffect(() => {
+    if (!enabled) return
+    const unsubscribe = subscribe()
+    return unsubscribe
+  }, [enabled])
+
+  return null
+}
+
+// BAD: Using unstable keys
+items.map((item, index) => <Row key={index} item={item} />)
+items.map((item) => <Row key={Math.random()} item={item} />)
+
+// GOOD: Use stable IDs from the data
+items.map((item) => <Row key={item.id} item={item} />)
+
+// BAD: Resetting state in an effect when identity changes
+function Messenger({ thread }: { thread: Thread }) {
+  const [draft, setDraft] = useState("")
+
+  useEffect(() => {
+    setDraft("")
+  }, [thread.id])
+
+  return <Composer draft={draft} onDraftChange={setDraft} />
+}
+
+// GOOD: Reset the stateful subtree with a key
+function Messenger({ thread }: { thread: Thread }) {
+  return <Composer key={thread.id} thread={thread} />
+}
+```
+
+### Core Hook Pattern Swaps
+
+These pairs are the defaults Loom harnesses should follow when choosing between refs, state, effects, memoization, and shared state.
+
+```typescript
+// BAD: Using a ref for UI state just to avoid re-renders
+function Tabs() {
+  const selectedTabRef = useRef("settings")
+
+  return <Panel tab={selectedTabRef.current} />
+}
+
+// GOOD: Use state for values that affect rendering
+function Tabs() {
+  const [selectedTab, setSelectedTab] = useState("settings")
+
+  return <Panel tab={selectedTab} onSelect={setSelectedTab} />
+}
+
+// BAD: Deriving render state inside an Effect
+function Profile({ firstName, lastName }: { firstName: string; lastName: string }) {
+  const [fullName, setFullName] = useState("")
+
+  useEffect(() => {
+    setFullName(`${firstName} ${lastName}`)
+  }, [firstName, lastName])
+
+  return <h1>{fullName}</h1>
+}
+
+// GOOD: Derive during render; reserve Effects for external synchronization
+function Profile({ firstName, lastName }: { firstName: string; lastName: string }) {
+  const fullName = `${firstName} ${lastName}`
+  return <h1>{fullName}</h1>
+}
+
+// BAD: Syncing a ref to keep "latest" values inside an Effect callback
+function ChatRoom({ roomId, theme }: { roomId: string; theme: Theme }) {
+  const latestTheme = useRef(theme)
+
+  useEffect(() => {
+    latestTheme.current = theme
+  })
+
+  useEffect(() => {
+    const connection = createConnection(roomId)
+    connection.on("connected", () => {
+      showToast("Connected", latestTheme.current)
+    })
+    connection.connect()
+
+    return () => connection.disconnect()
+  }, [roomId])
+}
+
+// GOOD: Use useEffectEvent when Effect-driven callbacks need the latest values
+function ChatRoom({ roomId, theme }: { roomId: string; theme: Theme }) {
+  const onConnected = useEffectEvent(() => {
+    showToast("Connected", theme)
+  })
+
+  useEffect(() => {
+    const connection = createConnection(roomId)
+    connection.on("connected", onConnected)
+    connection.connect()
+
+    return () => connection.disconnect()
+  }, [roomId])
+}
+
+// BAD: Wrapping every handler in useCallback by default
+function SaveButton() {
+  const handleClick = useCallback(() => {
+    saveDraft()
+  }, [])
+
+  return <button onClick={handleClick}>Save</button>
+}
+
+// GOOD: Use useCallback when a memoized child or Effect depends on identity
+const ToolbarButton = memo(function ToolbarButton({
+  onClick,
+}: {
+  onClick: () => void
+}) {
+  return <button onClick={onClick}>Save</button>
+})
+
+function SaveButton() {
+  const handleClick = useCallback(() => {
+    saveDraft()
+  }, [])
+
+  return <ToolbarButton onClick={handleClick} />
+}
+
+// BAD: Memoizing cheap values "just in case"
+function Summary({ items }: { items: Item[] }) {
+  const count = useMemo(() => items.length, [items])
+  return <span>{count}</span>
+}
+
+// GOOD: Use useMemo for expensive derived values or stable props for memoized children
+function SearchResults({ items, query }: { items: Item[]; query: string }) {
+  const visibleItems = useMemo(() => {
+    return filterLargeList(items, query)
+  }, [items, query])
+
+  return <ExpensiveList items={visibleItems} />
+}
+
+// BAD: A giant Context for fast-changing application state
+const AppContext = createContext<AppState | null>(null)
+
+function AppProviders({ children }: { children: ReactNode }) {
+  return (
+    <AppContext value={{ theme, session, filters, draft, modals }}>
+      {children}
+    </AppContext>
+  )
+}
+
+// GOOD: Keep Context for ambient subtree values; use Jotai for hot app state
+const ThemeContext = createContext<Theme>("light")
+
+function AppProviders({ children }: { children: ReactNode }) {
+  return <ThemeContext value={theme}>{children}</ThemeContext>
+}
+
+const draftAtom = atom("")
+
+// BAD: Many related useState calls plus sync logic between them
+function Form() {
+  const [status, setStatus] = useState<"idle" | "saving" | "error">("idle")
+  const [data, setData] = useState<FormData>({ name: "" })
+  const [error, setError] = useState<string | null>(null)
+  // More setters and cross-field updates...
+}
+
+// GOOD: Use useReducer when transitions are related and explicit
+type FormState = {
+  status: "idle" | "saving" | "error"
+  data: FormData
+  error: string | null
+}
+
+type FormAction =
+  | { type: "changed_name"; value: string }
+  | { type: "save_started" }
+  | { type: "save_failed"; message: string }
+  | { type: "save_succeeded" }
+
+function formReducer(state: FormState, action: FormAction): FormState {
+  switch (action.type) {
+    case "changed_name":
+      return {
+        ...state,
+        data: { ...state.data, name: action.value },
+      }
+    case "save_started":
+      return { ...state, status: "saving", error: null }
+    case "save_failed":
+      return { ...state, status: "error", error: action.message }
+    case "save_succeeded":
+      return { ...state, status: "idle", error: null }
+    default:
+      throw new Error(`Unknown action: ${JSON.stringify(action)}`)
+  }
+}
+
+function Form() {
+  const [state, dispatch] = useReducer(formReducer, {
+    status: "idle",
+    data: { name: "" },
+    error: null,
+  })
+
+  return (
+    <input
+      value={state.data.name}
+      onChange={(e) =>
+        dispatch({ type: "changed_name", value: e.target.value })
+      }
+    />
+  )
+}
+
+// BAD: setInterval-driven animation that ignores reduced-motion preferences
+useEffect(() => {
+  const id = window.setInterval(() => {
+    advanceSpinnerFrame()
+  }, 16)
+
+  return () => window.clearInterval(id)
+}, [])
+
+// GOOD: Use requestAnimationFrame for visual work and respect prefers-reduced-motion
+useEffect(() => {
+  const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)")
+  if (mediaQuery.matches) return
+
+  let frame = 0
+
+  const tick = (time: number) => {
+    drawFrame(time)
+    frame = window.requestAnimationFrame(tick)
+  }
+
+  frame = window.requestAnimationFrame(tick)
+
+  return () => window.cancelAnimationFrame(frame)
+}, [])
 ```
 
 ### DO NOT Use

@@ -791,3 +791,54 @@ func main() {
     // ...
 }
 ```
+
+### Quick Pattern Swaps
+
+```go
+// BAD: Dropping request context inside helpers
+func loadUser(id string) (*User, error) {
+    ctx := context.Background()
+    return repo.GetUser(ctx, id)
+}
+
+// GOOD: Thread context through every boundary
+func loadUser(ctx context.Context, id string) (*User, error) {
+    return repo.GetUser(ctx, id)
+}
+
+// BAD: Panic for ordinary runtime failures
+func parseConfig(path string) Config {
+    b, _ := os.ReadFile(path)
+    return mustParseConfig(b)
+}
+
+// GOOD: Return errors and let the caller decide
+func parseConfig(path string) (Config, error) {
+    b, err := os.ReadFile(path)
+    if err != nil {
+        return Config{}, err
+    }
+    return parseConfigBytes(b)
+}
+
+// BAD: Deferring cleanup inside a long loop
+for _, path := range files {
+    f, _ := os.Open(path)
+    defer f.Close()
+    process(f)
+}
+
+// GOOD: Scope the defer to one iteration
+for _, path := range files {
+    if err := func() error {
+        f, err := os.Open(path)
+        if err != nil {
+            return err
+        }
+        defer f.Close()
+        return process(f)
+    }(); err != nil {
+        return err
+    }
+}
+```
