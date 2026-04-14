@@ -46,12 +46,15 @@ STOPWORDS = frozenset({
 def _is_name_match(keyword, skill_name):
     """True when keyword strongly identifies the skill by name.
 
-    Exact match ("rust" == "rust") or prefix match with min length 4
-    ("refactor" -> "refactoring") to avoid short false matches.
+    Every shipped skill is named `loom-<topic>`, so we strip the `loom-`
+    prefix before comparing. Exact match ("rust" == "rust") or prefix
+    match with min length 4 ("refactor" -> "refactoring") to avoid
+    short false matches.
     """
-    if keyword == skill_name:
+    effective = skill_name[5:] if skill_name.startswith("loom-") else skill_name
+    if keyword == effective:
         return True
-    if len(keyword) >= 4 and skill_name.startswith(keyword):
+    if len(keyword) >= 4 and effective.startswith(keyword):
         return True
     return False
 
@@ -95,8 +98,13 @@ def main():
 
     # Tokenize: lowercase, keep special chars like / - . within words
     words = re.findall(r"[a-z0-9]+(?:[/._-][a-z0-9]+)*", prompt.lower())
-    # Filter stopwords from single-word tokens
-    tokens = set(w for w in words if len(w) > 1 and w not in STOPWORDS)
+    # Filter stopwords from single-word tokens, but allow a stopword through
+    # if the indexer chose to keep it (e.g. "test" is a stopword but names
+    # the loom-testing skill, so the indexer exempts it). This lets primary
+    # skill verbs like "test" and "debug" actually trigger their skills.
+    tokens = set(
+        w for w in words if len(w) > 1 and (w not in STOPWORDS or w in index)
+    )
 
     # Generate bigrams and trigrams for multi-word keyword matching
     # e.g. "event sourcing", "api key", "access control"
