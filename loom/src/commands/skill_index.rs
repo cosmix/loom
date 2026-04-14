@@ -20,6 +20,11 @@ struct SkillFrontmatter {
     triggers: Option<Vec<String>>,
     #[serde(default, rename = "trigger-keywords")]
     trigger_keywords: Option<String>,
+    /// Shipped skills use mixed field names; also accept a top-level
+    /// `keywords:` CSV so skills like loom-feature-flags aren't silently
+    /// excluded from the index.
+    #[serde(default)]
+    keywords: Option<String>,
 }
 
 /// Single-word keywords too generic to be useful as skill triggers.
@@ -76,7 +81,13 @@ pub fn execute() -> Result<()> {
                     if normalized.is_empty() {
                         continue;
                     }
-                    if is_stopword(&normalized, &stopwords) {
+                    // A stopword is dropped unless it *names* this skill —
+                    // e.g. "test" is normally too generic, but it is also
+                    // how a user refers to loom-testing, so we keep it when
+                    // it would boost to a name-match hit at lookup time.
+                    if is_stopword(&normalized, &stopwords)
+                        && !is_skill_name_match(&normalized, &skill_name)
+                    {
                         continue;
                     }
                     let skills = index.entry(normalized).or_default();
@@ -158,6 +169,21 @@ fn parse_skill_triggers(path: &Path) -> Result<Vec<String>> {
                 if !cleaned.is_empty() {
                     triggers.push(cleaned);
                 }
+            }
+        }
+    }
+
+    // Source 2b: plain `keywords:` CSV field (used by e.g. loom-feature-flags).
+    // Falls back to raw-text extraction independently of earlier sources so a
+    // skill that declares both `triggers:` and `keywords:` indexes both.
+    let keywords_csv = fm
+        .keywords
+        .or_else(|| extract_field_raw(&frontmatter_text, "keywords"));
+    if let Some(csv) = keywords_csv {
+        for part in csv.split(',') {
+            let cleaned = strip_quotes(part.trim());
+            if !cleaned.is_empty() {
+                triggers.push(cleaned);
             }
         }
     }
@@ -270,6 +296,19 @@ fn is_stopword(normalized: &str, stopwords: &HashSet<&str>) -> bool {
     stopwords.contains(normalized)
 }
 
+/// True when `keyword` strongly identifies `skill_name`.
+///
+/// Mirrors the logic in hooks/skill-trigger.sh so a stopword-exempt
+/// indexed keyword will also pick up the name-match weight boost at
+/// lookup time. Strips the `loom-` prefix every shipped skill uses.
+fn is_skill_name_match(keyword: &str, skill_name: &str) -> bool {
+    let effective = skill_name.strip_prefix("loom-").unwrap_or(skill_name);
+    if keyword == effective {
+        return true;
+    }
+    keyword.len() >= 4 && effective.starts_with(keyword)
+}
+
 /// Extract keywords embedded in the description field.
 ///
 /// Looks for markers like "Triggers:", "Trigger keywords:", "Keywords:"
@@ -280,8 +319,19 @@ fn extract_description_keywords(description: &str) -> Vec<String> {
     let text = description.lines().collect::<Vec<_>>().join(" ");
     let lower = text.to_lowercase();
 
-    // Try markers in order of specificity
-    let markers = ["trigger keywords:", "triggers:", "keywords:"];
+    // Try markers in order of specificity. Several shipped skills use
+    // phrasings like "Triggers for this skill -" instead of a bare
+    // "Triggers:", so match both colon and dash-separated variants.
+    let markers = [
+        "trigger keywords:",
+        "trigger keywords -",
+        "triggers for this skill:",
+        "triggers for this skill -",
+        "triggers:",
+        "triggers -",
+        "keywords:",
+        "keywords -",
+    ];
 
     for marker in &markers {
         if let Some(pos) = lower.find(marker) {
@@ -321,4 +371,103 @@ fn find_sentence_boundary(text: &str) -> usize {
         }
     }
     text.len()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn write_skill(content: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(content.as_bytes()).unwrap();
+        f
+    }
+
+    #[test]
+    fn name_match_strips_loom_prefix() {
+        assert!(is_skill_name_match("rust", "loom-rust"));
+        assert!(is_skill_name_match("refactor", "loom-refactoring"));
+        assert!(is_skill_name_match("testing", "loom-testing"));
+        assert!(is_skill_name_match("test", "loom-testing"));
+        assert!(is_skill_name_match("debug", "loom-debugging"));
+        assert!(is_skill_name_match("plan", "loom-plan-writer"));
+        assert!(is_skill_name_match("security", "loom-security-audit"));
+        // Unrelated skill — no match
+        assert!(!is_skill_name_match("rust", "loom-auth"));
+        // Keyword shorter than 4 chars and not an exact match — no match
+        assert!(!is_skill_name_match("cd", "loom-argocd"));
+        assert!(!is_skill_name_match("re", "loom-react"));
+    }
+
+    #[test]
+    fn parses_plain_keywords_field() {
+        let skill = write_skill(concat!(
+            "---\n",
+            "name: loom-feature-flags\n",
+            "description: Feature flag patterns.\n",
+            "keywords: feature flag, feature toggle, LaunchDarkly, A/B test\n",
+            "---\n",
+            "\nBody.\n",
+        ));
+        let triggers = parse_skill_triggers(skill.path()).unwrap();
+        assert!(triggers.iter().any(|t| t == "feature flag"));
+        assert!(triggers.iter().any(|t| t == "feature toggle"));
+        assert!(triggers.iter().any(|t| t == "LaunchDarkly"));
+    }
+
+    #[test]
+    fn keywords_augment_existing_triggers_list() {
+        let skill = write_skill(concat!(
+            "---\n",
+            "name: loom-example\n",
+            "triggers:\n",
+            "  - foo\n",
+            "  - bar\n",
+            "keywords: baz, qux\n",
+            "---\n",
+        ));
+        let triggers = parse_skill_triggers(skill.path()).unwrap();
+        for expected in ["foo", "bar", "baz", "qux"] {
+            assert!(
+                triggers.iter().any(|t| t == expected),
+                "missing {expected}: {triggers:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn description_marker_variants_are_recognized() {
+        // "Triggers for this skill -" is used by loom-logging-observability.
+        let skill = write_skill(concat!(
+            "---\n",
+            "name: loom-logging-observability\n",
+            "description: |\n",
+            "  Comprehensive logging. Triggers for this skill - log, logging, OpenTelemetry, OTEL.\n",
+            "---\n",
+        ));
+        let triggers = parse_skill_triggers(skill.path()).unwrap();
+        for expected in ["log", "logging", "OpenTelemetry", "OTEL"] {
+            assert!(
+                triggers.iter().any(|t| t == expected),
+                "missing {expected}: {triggers:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn is_stopword_respects_name_match_exemption() {
+        let stopwords: HashSet<&str> = STOPWORDS.iter().copied().collect();
+        // "test" is a stopword generally ...
+        assert!(is_stopword("test", &stopwords));
+        // ... but it name-matches loom-testing, so callers should keep it.
+        assert!(is_skill_name_match("test", "loom-testing"));
+        // "debug" name-matches loom-debugging.
+        assert!(is_stopword("debug", &stopwords));
+        assert!(is_skill_name_match("debug", "loom-debugging"));
+        // "build" is a stopword and doesn't identify any specific skill.
+        assert!(is_stopword("build", &stopwords));
+        assert!(!is_skill_name_match("build", "loom-auth"));
+    }
 }
