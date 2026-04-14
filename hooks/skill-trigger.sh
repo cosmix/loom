@@ -43,6 +43,94 @@ STOPWORDS = frozenset({
 })
 
 
+def _detect_languages(cwd):
+    """Return a set of language/framework tokens derived from manifest files
+    in `cwd`. Tokens are fed into scoring at weight 1 (no name-match boost)
+    so they reinforce user-typed signals without triggering skills on their
+    own — a Cargo.toml alone won't suggest loom-rust on an unrelated prompt,
+    but "help me with lifetimes" in a Rust repo will.
+    """
+    detected = set()
+
+    def has(*names):
+        return any(os.path.isfile(os.path.join(cwd, n)) for n in names)
+
+    def has_dir(*names):
+        return any(os.path.isdir(os.path.join(cwd, n)) for n in names)
+
+    # Languages (backend)
+    if has("Cargo.toml"):
+        detected.add("rust")
+    if has("go.mod", "go.sum"):
+        detected.add("golang")
+    if has("pyproject.toml", "setup.py", "requirements.txt", "Pipfile",
+           "poetry.lock"):
+        detected.add("python")
+
+    # JS/TS ecosystem
+    if has("tsconfig.json", "deno.json", "bun.lockb", "bun.lock"):
+        detected.add("typescript")
+    # Next.js / Remix config files imply React even without reading deps
+    if has("next.config.js", "next.config.ts", "next.config.mjs",
+           "next.config.cjs", "remix.config.js"):
+        detected.add("react")
+
+    # package.json: cheapest reliable framework signal is dep inspection
+    pkg_path = os.path.join(cwd, "package.json")
+    if os.path.isfile(pkg_path):
+        try:
+            with open(pkg_path) as f:
+                pkg = json.load(f)
+            deps = {}
+            for section in ("dependencies", "devDependencies",
+                            "peerDependencies"):
+                deps.update(pkg.get(section) or {})
+            if any(d in deps for d in
+                   ("react", "react-dom", "next", "remix",
+                    "@remix-run/react", "@remix-run/node")):
+                detected.add("react")
+            if "typescript" in deps:
+                detected.add("typescript")
+        except (IOError, json.JSONDecodeError):
+            pass
+
+    # Containers & build
+    if has("Dockerfile", "docker-compose.yml", "docker-compose.yaml",
+           "compose.yaml", "compose.yml"):
+        detected.add("docker")
+
+    # Kubernetes (Helm / Kustomize / Skaffold)
+    if has("kustomization.yaml", "kustomization.yml"):
+        detected.update(("kustomize", "kubernetes"))
+    if has("Chart.yaml", "helmfile.yaml", "helmfile.yml", "skaffold.yaml"):
+        detected.add("kubernetes")
+
+    # Terraform / IaC
+    if has("main.tf", "terraform.tf", ".terraform.lock.hcl", "versions.tf"):
+        detected.add("terraform")
+
+    # CI/CD pipelines — multi-word token matches loom-ci-cd index entry
+    if has_dir(".github/workflows") or has(
+        ".gitlab-ci.yml", ".circleci/config.yml", "azure-pipelines.yml",
+        "Jenkinsfile",
+    ):
+        detected.add("ci/cd")
+
+    # GitOps tooling
+    if has_dir("argocd", ".argocd"):
+        detected.add("argocd")
+    if has_dir("flux", ".flux") or has("flux-system.yaml"):
+        detected.add("fluxcd")
+
+    # Observability
+    if has("prometheus.yml", "prometheus.yaml"):
+        detected.add("prometheus")
+    if has_dir("grafana") or has("grafana.ini"):
+        detected.add("grafana")
+
+    return detected
+
+
 def _is_name_match(keyword, skill_name):
     """True when keyword strongly identifies the skill by name.
 
@@ -130,6 +218,17 @@ def main():
                     w = 2
                 scores[skill] = scores.get(skill, 0) + w
                 matched.setdefault(skill, []).append(token)
+
+    # Ambient repo context: inject detected languages/frameworks at weight 1
+    # (no name-match boost) so they reinforce rather than solo-trigger. Skip
+    # anything the user already typed to avoid double-counting the same signal.
+    cwd = data.get("cwd") or os.getcwd()
+    for lang in _detect_languages(cwd):
+        if lang in tokens or lang not in index:
+            continue
+        for skill in index[lang]:
+            scores[skill] = scores.get(skill, 0) + 1
+            matched.setdefault(skill, []).append(f"repo:{lang}")
 
     if not scores:
         return
