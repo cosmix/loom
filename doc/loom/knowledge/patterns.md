@@ -109,10 +109,6 @@ Advisory stderr warning detection: detect_stderr_warnings() in runner.rs scans f
 
 When merge conflict session dies unresolved: session removed from `active_sessions`, signal file KEPT as anti-respawn guard. `spawn_merge_resolution_sessions()` checks `has_merge_signal_for_stage()` before spawning. Signal removed only when merge succeeds.
 
-## Merge Recovery Flow
-
-MergeConflict -> detection.rs recognizes as normal exit -> spawn_merge_resolution_sessions() picks up -> user directed to `loom stage merge <stage-id>`.
-
 ## Permission Sync Pattern
 
 Three-component: path transformation (absolute->relative, parent traversal resolved), merge-not-overwrite (union+dedup), sync before acceptance. File locking via fs2 crate; always write to the locked handle.
@@ -206,3 +202,12 @@ All PreToolUse hooks that match command patterns MUST use `strip_embedded_conten
 **Security posture:** All stripping failures result in false positives (overly strict), never bypasses (permissive). This is the correct safety direction for development hooks.
 
 **Hooks using this pattern:** worktree-isolation.sh, commit-filter.sh, git-add-guard.sh, prefer-modern-tools.sh
+
+## Merge Recovery Flow [UPDATED 2026-04-16]
+
+MergeConflict -> bail\!() forces original session to exit -> commit-guard.sh allows exit for MergeConflict status -> detection.rs recognizes as normal exit -> spawn_merge_resolution_sessions() kills any stale original session, then spawns resolver -> merge signal includes "Inherited Responsibilities" section explaining resolver owns the stage -> user directed to `loom stage merge <stage-id> --resolved`.
+
+Key invariant: the original execution session MUST exit when merge conflict is detected. Three mechanisms enforce this:
+1. `bail\!()` in `complete_with_merge()` propagates error and terminates the session
+2. `commit-guard.sh` does NOT block exit for MergeConflict status
+3. `spawn_merge_resolution_sessions()` actively kills stale sessions before spawning resolver
