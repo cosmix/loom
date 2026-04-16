@@ -20,6 +20,11 @@ pub enum StageType {
     /// Integration verification stage (e.g., integration-verify)
     /// Can use `loom memory` and `loom knowledge` (for curating memories)
     IntegrationVerify,
+    /// Knowledge distillation stage (runs after integration-verify)
+    /// Reads all stage memories and curates into permanent knowledge.
+    /// This is a WORKTREE stage — NOT a Knowledge stage. It gets a branch
+    /// and merge like Standard/IntegrationVerify.
+    KnowledgeDistill,
 }
 
 impl StageType {
@@ -32,6 +37,8 @@ impl StageType {
         match self {
             // Knowledge stages are lightweight exploration — sonnet suffices
             StageType::Knowledge => "sonnet",
+            // KnowledgeDistill is mechanical curation work — sonnet suffices
+            StageType::KnowledgeDistill => "sonnet",
             // Standard and integration-verify stages default to opus
             StageType::Standard | StageType::IntegrationVerify => "opus[1m]",
         }

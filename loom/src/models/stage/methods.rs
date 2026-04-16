@@ -442,8 +442,11 @@ impl Stage {
     /// detection based on naming conventions.
     pub fn is_knowledge_stage(&self) -> bool {
         self.stage_type == StageType::Knowledge
-            || self.id.to_lowercase().contains("knowledge")
-            || self.name.to_lowercase().contains("knowledge")
+            || (self.id.to_lowercase().contains("knowledge")
+                && !self.id.to_lowercase().contains("knowledge-distill"))
+            || (self.name.to_lowercase().contains("knowledge")
+                && !self.name.to_lowercase().contains("knowledge-distill")
+                && !self.name.to_lowercase().contains("knowledge distill"))
     }
 
     /// Check if this stage has any goal-backward verification checks defined.
