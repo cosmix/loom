@@ -8,8 +8,8 @@ use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 use crate::commands::common::detect_stage_id;
-use crate::git::branch::branch_name_for_stage;
-use crate::git::{default_branch, get_conflicting_files, merge_stage, MergeResult};
+use crate::git::branch::{branch_name_for_stage, resolve_target_branch};
+use crate::git::{get_conflicting_files, merge_stage, MergeResult};
 use crate::models::stage::StageStatus;
 use crate::verify::transitions::{load_stage, save_stage, trigger_dependents};
 
@@ -86,7 +86,8 @@ fn merge_resolved(stage_id: Option<String>) -> Result<()> {
     println!("  Status: Completed (merged: true)");
 
     // Trigger dependent stages
-    let target_branch = default_branch(&repo_root).unwrap_or_else(|_| "main".to_string());
+    let base_branch = crate::fs::parse_base_branch_from_config(work_dir).unwrap_or(None);
+    let target_branch = resolve_target_branch(&base_branch, &repo_root);
     let triggered = trigger_dependents(&stage_id, work_dir, &repo_root, &target_branch)
         .context("Failed to trigger dependent stages")?;
 
@@ -196,8 +197,9 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
         return Ok(());
     }
 
-    // Determine target branch
-    let target_branch = default_branch(&repo_root).unwrap_or_else(|_| "main".to_string());
+    // Determine target branch, respecting configured base_branch over repo default
+    let base_branch = crate::fs::parse_base_branch_from_config(work_dir).unwrap_or(None);
+    let target_branch = resolve_target_branch(&base_branch, &repo_root);
 
     let branch_name = branch_name_for_stage(&stage_id);
     println!("Merging {branch_name} into {target_branch}...");
