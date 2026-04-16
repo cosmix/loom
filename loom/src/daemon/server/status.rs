@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::git::branch::branch_name_for_stage;
+use crate::git::branch::{branch_name_for_stage, resolve_target_branch};
 use crate::models::stage::{Stage, StageStatus};
 use crate::models::worktree::WorktreeStatus;
 use crate::parser::frontmatter::{extract_yaml_frontmatter, parse_from_markdown};
@@ -40,7 +40,8 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
                                 get_session_pid(&sessions_dir, stage.session.as_deref());
                             let started_at = stage.started_at.unwrap_or_else(chrono::Utc::now);
                             let completed_at = stage.completed_at;
-                            let worktree_status = detect_worktree_status(&stage.id, &repo_root);
+                            let worktree_status =
+                                detect_worktree_status(&stage.id, &repo_root, work_dir);
 
                             let stage_info = StageInfo {
                                 id: stage.id,
@@ -99,7 +100,11 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
 /// - Whether there are merge conflicts
 /// - Whether a merge is in progress
 /// - Whether the branch was manually merged outside of loom
-pub fn detect_worktree_status(stage_id: &str, repo_root: &Path) -> Option<WorktreeStatus> {
+pub fn detect_worktree_status(
+    stage_id: &str,
+    repo_root: &Path,
+    work_dir: &Path,
+) -> Option<WorktreeStatus> {
     let worktree_path = repo_root.join(".worktrees").join(stage_id);
 
     if !worktree_path.exists() {
@@ -137,25 +142,24 @@ pub fn detect_worktree_status(stage_id: &str, repo_root: &Path) -> Option<Worktr
 
     // Check if the branch was manually merged outside loom
     // This detects when users run `git merge loom/stage-id` manually
-    if is_manually_merged(stage_id, repo_root) {
+    if is_manually_merged(stage_id, repo_root, work_dir) {
         return Some(WorktreeStatus::Merged);
     }
 
     Some(WorktreeStatus::Active)
 }
 
-/// Check if a loom branch has been manually merged into the default branch.
+/// Check if a loom branch has been manually merged into the target branch.
 ///
 /// This is used to detect merges performed outside of loom (e.g., via CLI).
 /// When detected, the orchestrator can trigger cleanup of the worktree.
-pub fn is_manually_merged(stage_id: &str, repo_root: &Path) -> bool {
-    use crate::git::{default_branch, is_branch_merged};
+/// Uses `resolve_target_branch` to respect configured `base_branch` from config.toml.
+pub fn is_manually_merged(stage_id: &str, repo_root: &Path, work_dir: &Path) -> bool {
+    use crate::git::is_branch_merged;
 
-    // Get the default branch (main/master)
-    let target_branch = match default_branch(repo_root) {
-        Ok(branch) => branch,
-        Err(_) => return false,
-    };
+    // Resolve target branch from config (respects base_branch setting)
+    let base_branch = crate::fs::parse_base_branch_from_config(work_dir).unwrap_or(None);
+    let target_branch = resolve_target_branch(&base_branch, repo_root);
 
     // Check if the loom branch has been merged into the target branch
     let branch_name = branch_name_for_stage(stage_id);
