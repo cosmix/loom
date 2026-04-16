@@ -976,7 +976,7 @@ Captures codebase understanding before implementation:
 
 **Skip ONLY if:** `doc/loom/knowledge/` already populated AND `loom knowledge check` shows coverage ≥ 50%.
 
-### 11. Integration Verify Stage (Last)
+### 11. Integration Verify Stage (Second-to-Last)
 
 Verifies all work integrates correctly after merges AND that the feature actually works:
 

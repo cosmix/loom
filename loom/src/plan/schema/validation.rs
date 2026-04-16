@@ -402,7 +402,7 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
         }
 
         // Require goal-backward checks for Standard and IntegrationVerify stages
-        // Knowledge stages are exempt (they have different purposes)
+        // Knowledge and KnowledgeDistill stages are exempt (different purposes)
         let requires_goal_backward = matches!(
             stage.stage_type,
             super::types::StageType::Standard | super::types::StageType::IntegrationVerify

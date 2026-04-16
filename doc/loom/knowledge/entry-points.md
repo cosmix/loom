@@ -100,7 +100,7 @@ Total: 22 visible commands + 1 hidden (complete for dynamic completions). Dispat
 ## Signal System
 
 - `orchestrator/signals/generate.rs` - Signal file creation (generate_signal_with_skills)
-- `orchestrator/signals/cache.rs` - Stable prefix generation (3 stage-type variants, SHA-256 hash)
+- `orchestrator/signals/cache.rs` - Stable prefix generation (4 stage-type variants, SHA-256 hash)
 - `orchestrator/signals/format/mod.rs` - Full signal formatting (Manus 4-section KV-cache pattern)
 - `orchestrator/signals/format/sections.rs` - Section formatters (stable, semi-stable, dynamic, recitation)
 - `orchestrator/signals/helpers.rs` - write_signal_file() (disk I/O)
