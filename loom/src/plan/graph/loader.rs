@@ -6,14 +6,17 @@ use std::path::Path;
 use crate::fs::work_dir::WorkDir;
 use crate::plan::graph::ExecutionGraph;
 use crate::plan::parser::parse_plan;
-use crate::plan::schema::StageDefinition;
+use crate::plan::schema::{SandboxConfig, StageDefinition};
 
 /// Build execution graph from .work/stages/ files or fall back to plan file.
 ///
 /// This function accepts either a `WorkDir` reference or a raw `Path` to the .work directory.
 /// It first attempts to load stages from .work/stages/ files, and if none are found,
 /// falls back to loading from the plan file referenced in config.toml.
-pub fn build_execution_graph(work_dir: impl AsWorkDir) -> Result<ExecutionGraph> {
+///
+/// Returns the execution graph and the plan-level sandbox configuration. When loading
+/// from stage files (which don't carry plan-level config), `SandboxConfig::default()` is returned.
+pub fn build_execution_graph(work_dir: impl AsWorkDir) -> Result<(ExecutionGraph, SandboxConfig)> {
     work_dir.build_graph()
 }
 
@@ -22,43 +25,48 @@ pub fn build_execution_graph(work_dir: impl AsWorkDir) -> Result<ExecutionGraph>
 /// This enables the function to be used from both the `loom run` command (which has WorkDir)
 /// and the daemon orchestrator (which works with raw paths).
 pub trait AsWorkDir {
-    fn build_graph(&self) -> Result<ExecutionGraph>;
+    fn build_graph(&self) -> Result<(ExecutionGraph, SandboxConfig)>;
 }
 
 impl AsWorkDir for WorkDir {
-    fn build_graph(&self) -> Result<ExecutionGraph> {
+    fn build_graph(&self) -> Result<(ExecutionGraph, SandboxConfig)> {
         build_graph_impl(self.root(), Some(self))
     }
 }
 
 impl AsWorkDir for &WorkDir {
-    fn build_graph(&self) -> Result<ExecutionGraph> {
+    fn build_graph(&self) -> Result<(ExecutionGraph, SandboxConfig)> {
         build_graph_impl(self.root(), Some(*self))
     }
 }
 
 impl AsWorkDir for Path {
-    fn build_graph(&self) -> Result<ExecutionGraph> {
+    fn build_graph(&self) -> Result<(ExecutionGraph, SandboxConfig)> {
         build_graph_impl(self, None)
     }
 }
 
 impl AsWorkDir for &Path {
-    fn build_graph(&self) -> Result<ExecutionGraph> {
+    fn build_graph(&self) -> Result<(ExecutionGraph, SandboxConfig)> {
         build_graph_impl(self, None)
     }
 }
 
 /// Internal implementation that handles both WorkDir and Path cases.
-fn build_graph_impl(work_dir_path: &Path, work_dir: Option<&WorkDir>) -> Result<ExecutionGraph> {
+fn build_graph_impl(
+    work_dir_path: &Path,
+    work_dir: Option<&WorkDir>,
+) -> Result<(ExecutionGraph, SandboxConfig)> {
     let stages_dir = work_dir_path.join("stages");
 
     // First try to load from .work/stages/ files
+    // Stage files don't carry plan-level sandbox config, so use default.
     if stages_dir.exists() {
         let stages = load_stages_from_stages_dir(&stages_dir)?;
         if !stages.is_empty() {
-            return ExecutionGraph::build(stages)
-                .context("Failed to build execution graph from stage files");
+            let graph = ExecutionGraph::build(stages)
+                .context("Failed to build execution graph from stage files")?;
+            return Ok((graph, SandboxConfig::default()));
         }
     }
 
@@ -70,7 +78,7 @@ fn build_graph_impl(work_dir_path: &Path, work_dir: Option<&WorkDir>) -> Result<
 fn load_graph_from_plan_file(
     work_dir_path: &Path,
     work_dir: Option<&WorkDir>,
-) -> Result<ExecutionGraph> {
+) -> Result<(ExecutionGraph, SandboxConfig)> {
     // Load config - use WorkDir method if available, otherwise use fs module directly
     let config = if let Some(wd) = work_dir {
         wd.load_config_required()?
@@ -92,7 +100,10 @@ fn load_graph_from_plan_file(
     let parsed_plan = parse_plan(&source_path)
         .with_context(|| format!("Failed to parse plan: {}", source_path.display()))?;
 
-    ExecutionGraph::build(parsed_plan.stages).context("Failed to build execution graph")
+    let sandbox = parsed_plan.metadata.loom.sandbox.clone();
+    let graph =
+        ExecutionGraph::build(parsed_plan.stages).context("Failed to build execution graph")?;
+    Ok((graph, sandbox))
 }
 
 /// Load stage definitions from .work/stages/ directory.

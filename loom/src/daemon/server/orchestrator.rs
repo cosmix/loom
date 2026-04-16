@@ -40,7 +40,7 @@ fn run_orchestrator(
     shutdown_flag: Arc<AtomicBool>,
 ) -> Result<()> {
     // Build execution graph from stage files
-    let graph = build_execution_graph(work_dir)?;
+    let (graph, plan_sandbox) = build_execution_graph(work_dir)?;
 
     // Get repo root (parent of .work/)
     // Clone for later use in mark_plan_done_if_all_merged
@@ -81,7 +81,7 @@ fn run_orchestrator(
         skills_dir: None, // Use default ~/.claude/skills/
         enable_skill_routing: true,
         max_skill_recommendations: 5,
-        sandbox_config: SandboxConfig::default(),
+        sandbox_config: plan_sandbox,
         shutdown_flag: Some(shutdown_flag.clone()),
     };
 
@@ -151,6 +151,6 @@ fn write_completion_marker(work_dir: &Path) {
 /// Build execution graph from .work/stages/ files.
 ///
 /// This function now delegates to the shared implementation in plan::graph::loader.
-pub(super) fn build_execution_graph(work_dir: &Path) -> Result<ExecutionGraph> {
+pub(super) fn build_execution_graph(work_dir: &Path) -> Result<(ExecutionGraph, SandboxConfig)> {
     crate::plan::graph::build_execution_graph(work_dir)
 }
