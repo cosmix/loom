@@ -90,3 +90,19 @@ Several hooks (worktree-isolation.sh, commit-filter.sh, prefer-modern-tools.sh) 
 ## Rust/Shell Heredoc Terminator Divergence
 
 The Rust `strip_embedded_content` in `bash.rs:79` uses `line.trim() == marker` (tolerates indented terminators), while the shell version in `_common.sh:44` uses `$0 == marker` (exact line match). Both fail-safe but should be aligned for consistency.
+
+## Codex Findings Fixed (2026-04-16)
+
+The following Codex review findings from PLAN-fix-codex-findings are now resolved:
+
+- **H-01**: worktree-file-guard.sh registered for Read, Glob, Grep (hooks.rs:87-112)
+- **H-02**: Plan sandbox config threaded to OrchestratorConfig in both foreground and daemon paths
+- **H-03**: Fail-closed error handling in load_stage — only reconstructs on file-not-found, not parse errors
+- **H-04**: finalize_merge_resolution handles both MergeConflict and MergeBlocked
+- **M-03**: Budget check decoupled from health bucket guard — runs every poll tick
+- **M-04**: merge_resolved() and merge_retry() use resolve_target_branch() instead of default_branch()
+- **M-07**: Daemon status categorizes NeedsHandoff/WaitingForInput as "executing" matching CLI
+
+Additionally fixed during integration-verify:
+
+- **is_manually_merged**: Updated to use resolve_target_branch() instead of default_branch(), added work_dir parameter to detect_worktree_status() and is_manually_merged() for config access
