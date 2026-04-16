@@ -392,7 +392,7 @@ Write each mistake as an actionable prevention rule:
 
 **Response discipline:**
 
-- Never repeat the user's request back. Never narrate between tool calls ("Let me check...", "Now I'll...", "Looking at..."). Call tools silently.
+- Never repeat the user's request back. Never narrate between tool calls ("Let me check...", "Now I'll...", "Looking at...", "Now let me ..."). Call tools silently.
 - Don't explain standard operations (file reads, searches, running tests). DO explain non-obvious decisions, tradeoffs, or assumptions.
 - One-line summaries after changes unless the change was complex or explanation is explicitly requested.
 - When chaining multiple tool calls, state reasoning once before the sequence — not between each call.
