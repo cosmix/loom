@@ -217,3 +217,11 @@
 - `commit-guard.sh`: Changed MergeConflict case to allow session exit (no longer sets stage_incomplete)
 - `merge_handler.rs`: Added `kill_session()` call for stale Stage sessions before spawning merge resolver
 - `merge.rs`: Added "Inherited Responsibilities" section to merge signal explaining resolver owns the stage
+
+## Stale Documentation After Adding Enum Variants (2026-04-16)
+
+**What happened:** After adding KnowledgeDistill as the 4th StageType variant, three stale references remained: entry-points.md said 3 variants (should be 4), SKILL.md said Integration Verify Stage (Last) (now second-to-last), and sections.rs comment said integration-verify only (code had moved to KnowledgeDistill block).
+
+**Why:** The implementation stage focused on Rust code changes and missed docs/comments that reference counts or ordering.
+
+**Prevention:** When adding a new enum variant that changes ordering or counts, search all knowledge files for old counts, search skills for ordering claims, and search source comments for stale stage-type references.
