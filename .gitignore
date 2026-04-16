@@ -35,6 +35,10 @@ logs/
 # Rust build artifacts
 target/
 
+# loom plan artifacts (completed and review copies)
+doc/plans/DONE-*
+doc/plans/REVIEW-*
+
 # loom worktrees (isolated stage execution)
 # CRITICAL: Both patterns needed - directory form and symlink form
 .worktrees/
