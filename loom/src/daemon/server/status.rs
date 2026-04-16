@@ -54,9 +54,13 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
                                 dependencies: stage.dependencies,
                             };
 
-                            // Categorize into lists based on status
+                            // Categorize into lists based on status.
+                            // NeedsHandoff and WaitingForInput are active states where
+                            // work is ongoing, so they belong in executing (matching CLI semantics).
                             match stage.status {
-                                StageStatus::Executing => {
+                                StageStatus::Executing
+                                | StageStatus::NeedsHandoff
+                                | StageStatus::WaitingForInput => {
                                     stages_executing.push(stage_info);
                                 }
                                 StageStatus::WaitingForDeps | StageStatus::Queued => {
@@ -66,8 +70,6 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
                                     stages_completed.push(stage_info);
                                 }
                                 StageStatus::Blocked
-                                | StageStatus::NeedsHandoff
-                                | StageStatus::WaitingForInput
                                 | StageStatus::MergeConflict
                                 | StageStatus::CompletedWithFailures
                                 | StageStatus::MergeBlocked
@@ -317,4 +319,81 @@ pub fn collect_completion_summary(work_dir: &Path) -> Result<CompletionSummary> 
         failure_count,
         plan_path,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::daemon::protocol::Response;
+    use crate::models::stage::Stage;
+    use crate::verify::transitions::serialize_stage_to_markdown;
+
+    fn write_stage_file(stages_dir: &Path, stage: &Stage) {
+        let content = serialize_stage_to_markdown(stage).unwrap();
+        std::fs::write(stages_dir.join(format!("{}.md", stage.id)), content).unwrap();
+    }
+
+    #[test]
+    fn test_needs_handoff_categorized_as_executing() {
+        let temp = tempfile::tempdir().unwrap();
+        let work_dir = temp.path();
+        let stages_dir = work_dir.join("stages");
+        std::fs::create_dir_all(&stages_dir).unwrap();
+
+        let mut stage = Stage::new("Test Handoff".to_string(), None);
+        stage.id = "test-handoff".to_string();
+        stage.status = StageStatus::NeedsHandoff;
+        write_stage_file(&stages_dir, &stage);
+
+        let response = collect_status(work_dir).unwrap();
+        if let Response::StatusUpdate {
+            stages_executing,
+            stages_blocked,
+            ..
+        } = response
+        {
+            assert!(
+                stages_executing.iter().any(|s| s.id == "test-handoff"),
+                "NeedsHandoff should be in executing, not blocked"
+            );
+            assert!(
+                !stages_blocked.iter().any(|s| s.id == "test-handoff"),
+                "NeedsHandoff should NOT be in blocked"
+            );
+        } else {
+            panic!("Expected StatusUpdate response");
+        }
+    }
+
+    #[test]
+    fn test_waiting_for_input_categorized_as_executing() {
+        let temp = tempfile::tempdir().unwrap();
+        let work_dir = temp.path();
+        let stages_dir = work_dir.join("stages");
+        std::fs::create_dir_all(&stages_dir).unwrap();
+
+        let mut stage = Stage::new("Test Waiting".to_string(), None);
+        stage.id = "test-waiting".to_string();
+        stage.status = StageStatus::WaitingForInput;
+        write_stage_file(&stages_dir, &stage);
+
+        let response = collect_status(work_dir).unwrap();
+        if let Response::StatusUpdate {
+            stages_executing,
+            stages_blocked,
+            ..
+        } = response
+        {
+            assert!(
+                stages_executing.iter().any(|s| s.id == "test-waiting"),
+                "WaitingForInput should be in executing"
+            );
+            assert!(
+                !stages_blocked.iter().any(|s| s.id == "test-waiting"),
+                "WaitingForInput should NOT be in blocked"
+            );
+        } else {
+            panic!("Expected StatusUpdate response");
+        }
+    }
 }
