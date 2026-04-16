@@ -19,6 +19,9 @@ pub struct Detection {
     pub last_context_levels: HashMap<String, ContextHealth>,
     /// Track sessions that have been reported as hung to avoid duplicate events
     pub reported_hung_sessions: HashSet<String>,
+    /// Track whether each session's budget was exceeded on the previous tick,
+    /// so BudgetExceeded is emitted only on the first crossing (not every tick).
+    pub last_budget_exceeded: HashMap<String, bool>,
 }
 
 impl Detection {
@@ -28,6 +31,7 @@ impl Detection {
             last_session_states: HashMap::new(),
             last_context_levels: HashMap::new(),
             reported_hung_sessions: HashSet::new(),
+            last_budget_exceeded: HashMap::new(),
         }
     }
 
@@ -260,29 +264,43 @@ impl Detection {
                     _ => {}
                 }
 
-                // Check if context usage exceeds stage-specific budget
-                if let Some(stage_id) = &session.stage_id {
-                    if let Some(stage) = stages.iter().find(|s| &s.id == stage_id) {
-                        let budget_percent = stage
-                            .context_budget
-                            .unwrap_or(DEFAULT_CONTEXT_BUDGET as u32)
-                            as f32;
-                        let usage_percent =
-                            context_usage_percent(session.context_tokens, session.context_limit);
-
-                        if usage_percent > budget_percent {
-                            events.push(MonitorEvent::BudgetExceeded {
-                                session_id: session.id.clone(),
-                                stage_id: stage_id.clone(),
-                                usage_percent,
-                                budget_percent,
-                            });
-                        }
-                    }
-                }
-
                 self.last_context_levels
                     .insert(session.id.clone(), current_context_health);
+            }
+
+            // Budget check runs every tick (independent of coarse health-bucket changes).
+            // A stage with a per-stage budget (e.g. 70%) can be exceeded while the
+            // session stays in the same coarse bucket (e.g. Red = 65%+), so we must
+            // not gate this check on a bucket transition.  We emit BudgetExceeded only
+            // on the first tick where usage crosses the threshold to avoid flooding.
+            if let Some(stage_id) = &session.stage_id {
+                if let Some(stage) = stages.iter().find(|s| &s.id == stage_id) {
+                    let budget_percent = stage
+                        .context_budget
+                        .unwrap_or(DEFAULT_CONTEXT_BUDGET as u32)
+                        as f32;
+                    let usage_percent =
+                        context_usage_percent(session.context_tokens, session.context_limit);
+
+                    let was_exceeded = self
+                        .last_budget_exceeded
+                        .get(&session.id)
+                        .copied()
+                        .unwrap_or(false);
+                    let is_exceeded = usage_percent > budget_percent;
+
+                    if is_exceeded && !was_exceeded {
+                        events.push(MonitorEvent::BudgetExceeded {
+                            session_id: session.id.clone(),
+                            stage_id: stage_id.clone(),
+                            usage_percent,
+                            budget_percent,
+                        });
+                    }
+
+                    self.last_budget_exceeded
+                        .insert(session.id.clone(), is_exceeded);
+                }
             }
         }
 
