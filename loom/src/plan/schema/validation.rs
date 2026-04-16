@@ -900,10 +900,15 @@ pub fn check_cross_stage_wiring_coverage(stages: &[super::types::StageDefinition
 pub fn check_knowledge_recommendations(stages: &[super::types::StageDefinition]) -> Vec<String> {
     let mut warnings = Vec::new();
 
-    // Check if any stage has "knowledge" in its ID or name (case-insensitive)
+    // Check if any stage has "knowledge" in its ID or name (case-insensitive),
+    // but exclude knowledge-distill stages which are not knowledge-bootstrap stages.
     let has_knowledge_stage = stages.iter().any(|stage| {
-        stage.id.to_lowercase().contains("knowledge")
-            || stage.name.to_lowercase().contains("knowledge")
+        let id_lower = stage.id.to_lowercase();
+        let name_lower = stage.name.to_lowercase();
+        (id_lower.contains("knowledge") && !id_lower.contains("knowledge-distill"))
+            || (name_lower.contains("knowledge")
+                && !name_lower.contains("knowledge-distill")
+                && !name_lower.contains("knowledge distill"))
     });
 
     // Find root stages (stages with no dependencies)

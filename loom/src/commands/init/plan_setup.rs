@@ -214,6 +214,14 @@ fn detect_stage_type(stage_def: &StageDefinition) -> StageType {
     let id_lower = stage_def.id.to_lowercase();
     let name_lower = stage_def.name.to_lowercase();
 
+    // Detect KnowledgeDistill stage (must come BEFORE Knowledge check)
+    if id_lower.contains("knowledge-distill")
+        || name_lower.contains("knowledge-distill")
+        || name_lower.contains("knowledge distill")
+    {
+        return StageType::KnowledgeDistill;
+    }
+
     // Detect Knowledge stage
     if id_lower.contains("knowledge") || name_lower.contains("knowledge") {
         return StageType::Knowledge;
