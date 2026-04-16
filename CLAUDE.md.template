@@ -291,13 +291,13 @@ Agent teams provide inter-agent messaging, shared task lists, and persistent sta
 
 `loom-senior-software-engineer` uses Opus. `loom-software-engineer` uses Sonnet (high thinking effort). **The plan author decides which model each stage uses** based on whether the work is architectural (needs judgment → opus) or execution (follows detailed instructions → sonnet). Every stage in a plan MUST set `model` explicitly.
 
-| Agent                           | When to Use                                                                                  |
-| ------------------------------- | -------------------------------------------------------------------------------------------- |
-| `loom-software-engineer`        | **Execution work:** implementation with detailed instructions, unit tests, refactoring, boilerplate, scaffolding, applying existing patterns |
+| Agent                           | When to Use                                                                                                                                                     |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `loom-software-engineer`        | **Execution work:** implementation with detailed instructions, unit tests, refactoring, boilerplate, scaffolding, applying existing patterns                    |
 | `loom-senior-software-engineer` | **Architectural work:** design decisions, complex debugging, security-sensitive code, cross-cutting refactors, ambiguous requirements, integration verification |
-| `loom-code-reviewer`            | Read-only code/security/architecture review                                                  |
-| `Explore` agent                 | Codebase exploration                                                                         |
-| Domain skills                   | See Skills by Domain table below                                                             |
+| `loom-code-reviewer`            | Read-only code/security/architecture review                                                                                                                     |
+| `Explore` agent                 | Codebase exploration                                                                                                                                            |
+| Domain skills                   | See Skills by Domain table below                                                                                                                                |
 
 **Token-Efficient Execution Strategy:**
 
@@ -315,7 +315,7 @@ Sonnet (high thinking) is dramatically cheaper than Opus. Invest planning time t
 | Domain                  | Skills                                                                                        |
 | ----------------------- | --------------------------------------------------------------------------------------------- |
 | Security & Auth         | `/loom-auth` — OAuth2, JWT, RBAC/ABAC, session management, MFA                                |
-| Testing                 | `/loom-testing` — Unit, integration, e2e, security tests, TDD/BDD, coverage                    |
+| Testing                 | `/loom-testing` — Unit, integration, e2e, security tests, TDD/BDD, coverage                   |
 | Infrastructure & DevOps | `/loom-ci-cd`, `/loom-karpenter`, `/loom-prometheus`                                          |
 | Observability           | `/loom-logging-observability` — Structured logging, distributed tracing, OpenTelemetry        |
 | Architecture Patterns   | `/loom-event-driven`, `/loom-background-jobs`, `/loom-feature-flags`, `/loom-data-validation` |
@@ -354,159 +354,68 @@ Location: `.worktrees/<stage-id>/` | Branch: `loom/<stage-id>`
 
 **NEVER edit `.work/` files directly** — use loom CLI. Direct edits corrupt state.
 
-### 12. KNOWLEDGE MANAGEMENT (MANDATORY)
+### 12. PROJECT KNOWLEDGE
 
-**⚠️ KNOWLEDGE-BOOTSTRAP IS THE MANDATORY FIRST STAGE.** It MUST:
+**If `doc/loom/knowledge/` exists, read ALL files BEFORE doing any work** — `architecture.md` first, then `entry-points.md`, then remaining files.
 
-1. Run `loom knowledge check` to assess coverage
-2. If coverage < 50%, run `loom map --deep` to create structural baseline
-3. Fill gaps with targeted exploration
+**Knowledge files:** `architecture.md` (component relationships, data flow), `entry-points.md` (key files to read first), `patterns.md` (architectural patterns), `conventions.md` (coding standards), `mistakes.md` (lessons learned), `stack.md` (dependencies/tooling), `concerns.md` (tech debt/issues)
 
-#### `loom knowledge` CLI
+**Updating knowledge:** Update knowledge files directly with Write/Edit when you discover something worth preserving:
 
-**During loom execution:** use ONLY `loom knowledge` CLI — DO NOT manually edit `doc/loom/knowledge/*.md`.
-**Outside loom execution:** edit knowledge files directly with Write/Edit tools — loom may not be installed.
+- **Mistakes** — what went wrong, the misleading signal, root cause, prevention rule, and fix
+- **Architectural decisions** — choices made and their rationale
+- **Patterns** — reusable approaches found in the codebase
+- **Conventions** — naming, structure, and testing standards
 
-| Command                                  | Description                                          |
-| ---------------------------------------- | ---------------------------------------------------- |
-| `loom knowledge init`                    | Initialize knowledge directory                       |
-| `loom knowledge check`                   | Check coverage (use in knowledge-bootstrap)          |
-| `loom knowledge show`                    | Show all knowledge                                   |
-| `loom knowledge update <file> <content>` | Append to file. Use `-` as content for stdin/heredoc |
+Write each mistake as an actionable prevention rule:
 
-**Knowledge Files:** `architecture.md` (component relationships, data flow), `entry-points.md` (key files to read first), `patterns.md` (architectural patterns), `conventions.md` (coding standards), `mistakes.md` (lessons learned), `stack.md` (dependencies/tooling; aliases: deps, tech), `concerns.md` (tech debt/issues; aliases: debt, issues)
-
-**Heredoc for long content:**
-
-```bash
-loom knowledge update patterns - <<'EOF'
-## Authentication
-Uses JWT with refresh token rotation.
-- src/auth/jwt.ts:15-80 - Token generation
-EOF
-```
-
-#### Recording Mistakes (MANDATORY)
-
-Record immediately as **actionable prevention rules** for future agents:
-
-```bash
-loom knowledge update mistakes "## [Short description]
+```markdown
+## [Short description]
 
 **What happened:** [What went wrong]
-**Misleading signal:** [What made the wrong approach look right]
 **Why:** [Root cause]
 **Prevention:** [How to detect earlier]
-**Fix:** [What to do instead]"
+**Fix:** [What to do instead]
 ```
 
-#### Stage Memory (MANDATORY)
+**Do NOT record:** ephemeral task details, procedural steps, obvious outcomes, information derivable from git history or the code itself.
 
-> ⛔ **During loom execution, NEVER use Claude Code's auto-memory** (`~/.claude/projects/*/memory/`). ALL memory MUST go through `loom memory` commands (`note`, `decision`, `question`, `change`). Auto-memory is disconnected from orchestration and invisible to other stages. **Detection:** If you're about to Write/Edit any file under `~/.claude/projects/*/memory/`, STOP — use `loom memory note "..."` instead. This includes memory index files, frontmatter updates, and "feedback"/"user"/"project" memory types.
+**During loom execution:** memory and knowledge management is governed by your stage signal and plan description. Use `loom memory` and `loom knowledge` CLI commands as instructed — do not edit knowledge files directly.
 
-Record insights AS DISCOVERED — not at end of stage. Empty memory at stage end = lost learning.
-
-**Before starting:** Run `loom knowledge show mistakes` and adjust approach based on known pitfalls.
-
-**When to record (immediately, not at stage end):**
-
-- **Mistake** → `loom memory note "mistake: tried X because [misleading signal]. Failed because Y. Prevention: [how to detect]. Fix: Z"`
-- **User correction** → `loom memory note "mistake: user corrected X, should have done Y"`
-- **Decision** → `loom memory decision "chose X over Y" --context "because Z"`
-- **Surprising discovery** → `loom memory note "found: unexpected behavior in file:line — description"`
-- **Gotcha** → `loom memory note "gotcha: X looks right because [why], but actually Y. Rule: [heuristic]"`
-
-**Do NOT record:** procedural actions, obvious outcomes, task description restatements, bare facts without advice.
-
-| Type     | When                            | Command                                       |
-| -------- | ------------------------------- | --------------------------------------------- |
-| Note     | Observations, mistakes, gotchas | `loom memory note "text"`                     |
-| Decision | Choices with rationale          | `loom memory decision "text" --context "why"` |
-| Question | Open questions                  | `loom memory question "text"`                 |
-
-Before completing any stage: `loom memory list` and `loom memory show --all`
-
-#### Memory vs Knowledge
-
-| Stage Type                | `loom memory` | `loom knowledge`         |
-| ------------------------- | ------------- | ------------------------ |
-| knowledge-bootstrap       | YES           | YES                      |
-| Standard (implementation) | YES (ONLY)    | **NEVER** (exception: critical mistakes blocking other stages) |
-| integration-verify        | YES           | YES (curate from memory) |
-
-Memory is stage-scoped and temporary. Knowledge is permanent and shared. Only after full integration do we know which insights are worth keeping.
-
-#### Non-Loom Work: Prefer Knowledge Over Auto-Memory
-
-When NOT executing a loom plan and `doc/loom/knowledge/` exists, **prefer recording insights there** (edit directly with Write/Edit — do NOT use `loom knowledge update` outside loom execution). Knowledge files are version-controlled, project-scoped, loom-aware, and durable. Auto-memory is acceptable for personal preferences only.
-
-| Context                                | Knowledge                     | Memory                            | Auto-memory            |
-| -------------------------------------- | ----------------------------- | --------------------------------- | ---------------------- |
-| Loom stage execution                   | `loom knowledge update` (CLI) | `loom memory note/decision` (CLI) | **NEVER**              |
-| Non-loom work (knowledge dir exists)   | Edit files directly           | N/A                               | Personal prefs only    |
-| Non-loom work (no knowledge dir)       | N/A                           | N/A                               | OK                     |
-
-### 13. INTEGRATION VERIFICATION (MANDATORY)
-
-**Every plan MUST end with `integration-verify`.**
-
-**CONTEXT GATHERING (FIRST STEP):** integration-verify starts WITHOUT prior stage context. Before ANY verification:
-
-1. Read the plan file from `doc/plans/` (check `.work/config.toml` for `source_path`)
-2. Run `loom memory show --all` to read all stage memories
-3. Read `doc/loom/knowledge/*.md` for architecture context and mistakes
-
-**MEMORY BEFORE KNOWLEDGE:** Record your OWN discoveries to `loom memory` FIRST (bugs, security issues, architectural insights). Then distill knowledge including your findings alongside implementation stage memories. Memories not distilled into knowledge are LOST when the plan completes.
-
-**KNOWLEDGE DISTILLATION:** Write each `mistakes` entry as an actionable prevention rule. If 2+ stages hit the same mistake, document the root cause. Remove or update stale knowledge entries.
-
-**⚠️ ZERO TOLERANCE** — ALL compiler warnings, linter errors, test failures must be FIXED (not suppressed). Nothing is "pre-existing" or "too trivial." If fixing is genuinely blocked, report as a blocker with a clear reason.
-
-**⚠️ TESTS PASSING ≠ FEATURE WORKING** — integration-verify MUST include FUNCTIONAL VERIFICATION:
-
-| Check           | Question                                                |
-| --------------- | ------------------------------------------------------- |
-| Wiring          | Is the feature registered/mounted in the application?   |
-| Reachability    | Can you invoke it (CLI command, API endpoint, UI)?      |
-| End-to-end      | Does the primary use case produce expected behavior?    |
-| Silent Failures | Did any command stderr contain warnings despite exit 0? |
-
-**CODE REVIEW — Spawn as PARALLEL subagents:**
-
-| Dimension    | Agent                         | Focus                               |
-| ------------ | ----------------------------- | ----------------------------------- |
-| Security     | loom-senior-software-engineer | OWASP, auth, secrets, injection     |
-| Architecture | loom-senior-software-engineer | patterns, coupling, quality         |
-| Testing      | loom-software-engineer + /loom-testing skill | coverage gaps, edge cases |
-| Sandbox      | loom-software-engineer        | Were operations blocked by sandbox? |
-
-FIX issues found, don't just report. Sandbox blocks = BLOCKER.
-
-**DOCUMENTATION UPDATE:** Update user-facing docs to reflect changes:
-
-| Doc File               | Update When                                                       |
-| ---------------------- | ----------------------------------------------------------------- |
-| `README.md`            | New commands, features, config options, workflows, or API changes |
-| `CONTRIBUTING.md`      | New development patterns, build steps, or contribution guidelines |
-| Other user-facing docs | Any doc that references changed functionality                     |
-
-Only update relevant sections; add for new features, update for changed behavior, remove references to removed functionality. If no user-facing behavior changed, skip but document WHY in memory.
-
-**Example acceptance criteria:**
-
-```yaml
-acceptance:
-  - "cargo test"
-  - "cargo clippy -- -D warnings"
-  - "cargo build"
-  - "loom new-command --help" # CLI wired (always use `loom` not target/debug/loom)
-```
-
-### 14. SILENT FAILURE DETECTION
+### 13. SILENT FAILURE DETECTION
 
 **⚠️ EXIT CODE 0 ≠ SUCCESS** — Sandbox blocks, dependency fetch failures, and file write denials can all exit 0.
 
 **MANDATORY:** Read stderr of ALL command output. If stderr contains "blocked", "denied", "connection refused", "failed to download" — STOP and investigate. Verify external dependencies are present. If sandbox blocked something needed, report as blocker.
+
+### 14. TOKEN EFFICIENCY
+
+**Response discipline:**
+
+- Never repeat the user's request back. Never narrate between tool calls ("Let me check...", "Now I'll...", "Looking at..."). Call tools silently.
+- Don't explain standard operations (file reads, searches, running tests). DO explain non-obvious decisions, tradeoffs, or assumptions.
+- One-line summaries after changes unless the change was complex or explanation is explicitly requested.
+- When chaining multiple tool calls, state reasoning once before the sequence — not between each call.
+
+**File operations:**
+
+- Prefer Edit over Write for existing files. Make surgical, targeted edits — don't replace large blocks for small changes.
+- Read specific line ranges when you know what you need. Read the full file only when surrounding context is required for correct edits.
+- Don't re-read files already in context.
+
+**Command output:**
+
+- Pipe verbose test output through `tail -50` or `rg -A 5 'FAIL'` for single-failure runs. For multi-failure runs: `rg -B 2 -A 5 'FAIL|ERROR'`.
+- For builds: redirect to file, show output only on failure.
+- When running linters/formatters, pipe through `head -30`.
+
+**Agent usage:**
+
+- Don't spawn sub-agents for simple, direct tasks. Do it yourself.
+
+**Exclusions:**
+
+- Use `.claudeignore` to exclude generated files, build artifacts, and lock files from context.
 
 ---
 
@@ -526,7 +435,7 @@ File: 400 lines | Function: 50 lines | Class: 300 lines — Exceed = refactor im
 
 ### 18. SESSION STATE & KNOWLEDGE PLACEMENT
 
-System knowledge belongs in `doc/loom/knowledge/` via `loom knowledge update`. Do NOT modify the project's CLAUDE.md.
+System knowledge belongs in `doc/loom/knowledge/`. Do NOT modify the project's CLAUDE.md.
 
 ---
 

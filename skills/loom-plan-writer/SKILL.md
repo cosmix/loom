@@ -939,10 +939,19 @@ Captures codebase understanding before implementation:
 
     IMPORTANT: Before completing, review existing mistakes.md to avoid repeating errors.
 
-    MEMORY RECORDING:
-    - As you explore, record insights: loom memory note "observation"
+    MEMORY & KNOWLEDGE RECORDING:
+    - Record insights as you go: loom memory note "observation"
     - Record decisions: loom memory decision "choice" --context "why"
+    - Record mistakes as actionable prevention rules:
+        loom knowledge update mistakes "## [Short description]
+        **What happened:** [What went wrong]
+        **Why:** [Root cause]
+        **Prevention:** [How to detect earlier]
+        **Fix:** [What to do instead]"
     - Before completing: loom memory list (verify insights captured)
+
+    ⛔ NEVER use Claude Code's auto-memory (~/.claude/projects/*/memory/).
+    ALL memory/knowledge goes through loom memory and loom knowledge commands.
   dependencies: []
   acceptance:
     - "loom knowledge check --min-coverage 50"
@@ -992,7 +1001,19 @@ Verifies all work integrates correctly after merges AND that the feature actuall
     CRITICAL: This stage must verify FUNCTIONAL INTEGRATION, not just tests passing.
     Code that compiles and passes tests but is never wired up is USELESS.
 
-    Tasks:
+    ⛔ NEVER use Claude Code's auto-memory (~/.claude/projects/*/memory/).
+    ALL memory/knowledge goes through loom memory and loom knowledge commands.
+
+    CONTEXT GATHERING (FIRST — before any verification):
+    0a. Read the plan file from doc/plans/ (check .work/config.toml for source_path)
+    0b. Read ALL stage memories: loom memory show --all
+    0c. Read doc/loom/knowledge/*.md for architecture context and known mistakes
+
+    ⛔ ZERO TOLERANCE: ALL compiler warnings, linter errors, test failures must be
+    FIXED (not suppressed). Nothing is "pre-existing" or "too trivial." If fixing
+    is genuinely blocked, report as a blocker with a clear reason.
+
+    BUILD & TEST:
     1. Run full test suite (all tests, not just affected)
     2. Run linting with warnings as errors
     3. Verify build succeeds
@@ -1025,23 +1046,32 @@ Verifies all work integrates correctly after merges AND that the feature actuall
         - Are events being published/subscribed?
         - Are dependencies injected correctly?
 
-    KNOWLEDGE CURATION (MANDATORY):
-    11. Read all stage memory: loom memory show --all
-    12. Curate valuable insights to knowledge:
-        - Mistakes worth avoiding → loom knowledge update mistakes "..."
+    KNOWLEDGE DISTILLATION (MANDATORY — memory before knowledge):
+    11. Record your OWN discoveries to loom memory FIRST (bugs, security
+        issues, architectural insights found during verification)
+    12. Read all stage memories: loom memory show --all
+    13. Curate valuable insights into permanent knowledge. Write each
+        mistake as an actionable prevention rule:
+        loom knowledge update mistakes "## [Short description]
+        **What happened:** [What went wrong]
+        **Why:** [Root cause]
+        **Prevention:** [How to detect earlier]
+        **Fix:** [What to do instead]"
+    14. Curate other insights:
         - Patterns worth reusing → loom knowledge update patterns "..."
         - Architectural decisions → loom knowledge update architecture "..."
-    13. Update architecture.md if structure changed
-    14. Record any lessons learned
+    15. If 2+ stages hit the same mistake, document the root cause
+    16. Remove or update stale knowledge entries
+    17. Update architecture.md if structure changed
 
     DOCUMENTATION UPDATE (MANDATORY):
-    15. Review user-facing documentation files (README.md, CONTRIBUTING.md, etc.)
-    16. Update documentation to reflect changes made by this plan:
+    18. Review user-facing documentation files (README.md, CONTRIBUTING.md, etc.)
+    19. Update documentation to reflect changes made by this plan:
         - New CLI commands, features, config options, workflows
         - Changed behavior or API surfaces
         - Removed functionality (remove stale references)
-    17. Only update sections relevant to the changes — do NOT rewrite entire files
-    18. If no user-facing behavior changed, skip but record WHY in memory
+    20. Only update sections relevant to the changes — do NOT rewrite entire files
+    21. If no user-facing behavior changed, skip but record WHY in memory
   dependencies: ["stage-a", "stage-b", "stage-c"] # ALL feature stages
   acceptance:
     - "cargo test"
@@ -1098,7 +1128,9 @@ Include a MEMORY RECORDING block in stage descriptions:
 description: |
   [Task description here]
 
-  MEMORY RECORDING (use memory ONLY — never knowledge):
+  MEMORY RECORDING (use loom memory ONLY — never loom knowledge, never auto-memory):
+  ⛔ NEVER use Claude Code's auto-memory (~/.claude/projects/*/memory/)
+  ⛔ NEVER use loom knowledge update (reserved for knowledge-bootstrap/integration-verify)
   Record IMMEDIATELY when these happen — not at stage end:
   - MISTAKE: tried X, failed → loom memory note "mistake: tried X, failed because Y, fixed by Z"
   - DECISION: chose X over Y → loom memory decision "chose X" --context "Y was worse because Z"
@@ -1488,25 +1520,37 @@ loom:
 
         CRITICAL: Verify FUNCTIONAL INTEGRATION, not just tests passing.
 
-        Build/Test Tasks:
+        ⛔ NEVER use Claude Code's auto-memory (~/.claude/projects/*/memory/).
+        ALL memory/knowledge goes through loom memory and loom knowledge commands.
+
+        CONTEXT GATHERING (FIRST):
+        - Read the plan file from doc/plans/
+        - Read ALL stage memories: loom memory show --all
+        - Read doc/loom/knowledge/*.md for architecture context
+
+        BUILD & TEST (zero tolerance — fix ALL warnings/errors):
         - Full test suite
-        - Linting
+        - Linting with warnings as errors
         - Build verification
 
         CODE REVIEW (MANDATORY):
-        - Spawn parallel review subagents (security-engineer, senior-software-engineer, /loom-testing skill)
+        - Spawn parallel review subagents (security, architecture, testing)
         - Fix ALL issues found - do not just report them
-        - Verify no code duplication, proper separation of concerns
 
         FUNCTIONAL VERIFICATION (MANDATORY):
         - Verify features are WIRED into the application
         - Execute smoke test of primary use case
         - Confirm user-visible behavior works end-to-end
 
+        KNOWLEDGE DISTILLATION (MANDATORY):
+        - Record own discoveries to loom memory FIRST
+        - Read all stage memories: loom memory show --all
+        - Curate mistakes as actionable prevention rules to loom knowledge
+        - Curate patterns and decisions to loom knowledge
+        - Remove or update stale knowledge entries
+
         DOCUMENTATION UPDATE (MANDATORY):
-        - Review and update README.md, CONTRIBUTING.md, and other user-facing docs
-        - Add new sections for new features; update existing for changed behavior
-        - Remove references to removed functionality
+        - Update README.md, CONTRIBUTING.md, and other user-facing docs
         - If no user-facing behavior changed, skip but record WHY in memory
       dependencies: ["stage-a", "stage-b"]
       acceptance:
