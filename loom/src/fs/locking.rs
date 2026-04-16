@@ -28,6 +28,57 @@ pub fn locked_read(path: &Path) -> Result<String> {
     Ok(content)
 }
 
+/// Read-modify-write with an exclusive lock held throughout.
+///
+/// Opens the file (creating if needed), acquires exclusive lock, reads content,
+/// calls the modifier function, writes the result, and releases the lock.
+pub fn locked_read_modify_write<F>(path: &Path, modify: F) -> Result<()>
+where
+    F: FnOnce(String) -> String,
+{
+    #[allow(clippy::suspicious_open_options)]
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(path)
+        .with_context(|| {
+            format!(
+                "Failed to open file for read-modify-write: {}",
+                path.display()
+            )
+        })?;
+    file.lock_exclusive()
+        .with_context(|| format!("Failed to acquire exclusive lock: {}", path.display()))?;
+
+    let mut content = String::new();
+    BufReader::new(&file)
+        .read_to_string(&mut content)
+        .with_context(|| format!("Failed to read file: {}", path.display()))?;
+
+    let new_content = modify(content);
+
+    // Truncate AFTER reading and BEFORE writing
+    file.set_len(0)
+        .with_context(|| format!("Failed to truncate file: {}", path.display()))?;
+    use std::io::Seek;
+    (&file)
+        .seek(std::io::SeekFrom::Start(0))
+        .with_context(|| format!("Failed to seek file: {}", path.display()))?;
+
+    let mut writer = BufWriter::new(&file);
+    writer
+        .write_all(new_content.as_bytes())
+        .with_context(|| format!("Failed to write file: {}", path.display()))?;
+    writer
+        .flush()
+        .with_context(|| format!("Failed to flush file: {}", path.display()))?;
+    drop(writer);
+    file.sync_all()
+        .with_context(|| format!("Failed to sync file: {}", path.display()))?;
+    Ok(())
+}
+
 /// Write file contents with an exclusive (write) lock.
 ///
 /// Acquires an exclusive lock BEFORE truncating the file, preventing the TOCTOU
@@ -141,5 +192,67 @@ mod tests {
 
         let final_content = locked_read(&path).unwrap();
         assert!(final_content.starts_with("write "));
+    }
+
+    #[test]
+    fn test_locked_read_modify_write_basic() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("test-rmw.md");
+
+        locked_write(&path, "hello").unwrap();
+        locked_read_modify_write(&path, |s| format!("{s} world")).unwrap();
+        let content = locked_read(&path).unwrap();
+        assert_eq!(content, "hello world");
+    }
+
+    #[test]
+    fn test_locked_read_modify_write_creates_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("test-rmw-new.md");
+
+        // File does not exist yet — should create it
+        locked_read_modify_write(&path, |s| {
+            assert!(s.is_empty());
+            "created content".to_string()
+        })
+        .unwrap();
+        let content = locked_read(&path).unwrap();
+        assert_eq!(content, "created content");
+    }
+
+    #[test]
+    fn test_locked_read_modify_write_concurrent_append() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("test-rmw-concurrent.md");
+
+        locked_write(&path, "").unwrap();
+
+        let handles: Vec<_> = (0..10)
+            .map(|i| {
+                let path = path.clone();
+                thread::spawn(move || {
+                    locked_read_modify_write(&path, |existing| {
+                        if existing.is_empty() {
+                            format!("line-{i}")
+                        } else {
+                            format!("{existing}\nline-{i}")
+                        }
+                    })
+                    .unwrap();
+                })
+            })
+            .collect();
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        let final_content = locked_read(&path).unwrap();
+        // All 10 lines should be present — no lost writes
+        let line_count = final_content.lines().count();
+        assert_eq!(
+            line_count, 10,
+            "Expected 10 lines but got {line_count}. Content:\n{final_content}"
+        );
     }
 }
