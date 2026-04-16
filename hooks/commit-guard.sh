@@ -68,8 +68,7 @@ detect_loom_worktree() {
 	return 1
 }
 
-# Check if current stage is a knowledge stage
-# Knowledge stages don't require commits - they only update doc/loom/knowledge/
+# Check if current stage is a knowledge stage (used for debug logging)
 # Returns: 0 if knowledge stage, 1 otherwise
 # Args: $1 = project root, $2 = stage ID
 is_knowledge_stage() {
@@ -448,18 +447,6 @@ main() {
 		debug_log "  .work: does not exist"
 	fi
 	debug_log "===================="
-
-	# Check if this is a knowledge stage - bypass commit requirement
-	# Knowledge stages only update doc/loom/knowledge/ which is shared state
-	if is_knowledge_stage "$project_root" "$STAGE_ID"; then
-		debug_log "Knowledge stage detected - bypassing commit requirement"
-		# Show reminder but don't block
-		remind_knowledge_capture "$project_root"
-		printf '\n' >&2
-		printf '%s\n' "[loom-stop] Knowledge stage '$STAGE_ID' - commit not required" >&2
-		printf '%s\n' "Tip: Consider capturing discoveries with 'loom knowledge update'" >&2
-		exit 0
-	fi
 
 	# Show knowledge reminder (non-blocking, informational)
 	remind_knowledge_capture "$project_root"

@@ -107,7 +107,7 @@ pub fn execute(model: Option<String>, skip_map: bool, quick: bool) -> Result<()>
 fn resolve_project_root() -> Result<PathBuf> {
     // Try WorkDir first (works when .work/ exists)
     if let Ok(work_dir) = WorkDir::new(".") {
-        if let Some(root) = work_dir.main_project_root() {
+        if let Some(root) = work_dir.project_root().map(|p| p.to_path_buf()) {
             return Ok(root);
         }
     }

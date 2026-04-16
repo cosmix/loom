@@ -219,7 +219,7 @@ mod tests {
         assert!(!content.contains("git add <specific-files>"));
 
         // Should contain knowledge-specific instructions
-        assert!(content.contains("NO COMMITS REQUIRED"));
+        assert!(content.contains("COMMITS REQUIRED"));
         assert!(content.contains("main repository"));
     }
 }

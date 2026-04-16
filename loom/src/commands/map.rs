@@ -13,8 +13,9 @@ pub fn execute(deep: bool, focus: Option<String>, overwrite: bool) -> Result<()>
     work_dir.load()?;
 
     let project_root = work_dir
-        .main_project_root()
-        .context("Could not determine project root")?;
+        .project_root()
+        .context("Could not determine project root")?
+        .to_path_buf();
 
     crate::utils::print_logo_header("Codebase Map");
     println!(

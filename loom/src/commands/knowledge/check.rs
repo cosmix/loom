@@ -32,10 +32,10 @@ pub struct KnowledgeCheckResult {
 
 pub fn check(min_coverage: u8, src_path: Option<String>, quiet: bool) -> Result<()> {
     let work_dir = WorkDir::new(".")?;
-    let main_project_root = work_dir
-        .main_project_root()
-        .context("Could not determine main project root")?;
-    let knowledge = KnowledgeDir::new(&main_project_root);
+    let project_root = work_dir
+        .project_root()
+        .context("Could not determine project root")?;
+    let knowledge = KnowledgeDir::new(project_root);
 
     if !knowledge.exists() {
         if !quiet {
@@ -48,7 +48,7 @@ pub fn check(min_coverage: u8, src_path: Option<String>, quiet: bool) -> Result<
         bail!("Knowledge directory does not exist. Run 'loom knowledge init' first.");
     }
 
-    let result = analyze_knowledge_completeness(&knowledge, &main_project_root, src_path)?;
+    let result = analyze_knowledge_completeness(&knowledge, project_root, src_path)?;
 
     let arch_result = result
         .file_results

@@ -480,8 +480,8 @@ pub fn generate_knowledge_stable_prefix() -> String {
     content.push_str("**Key Differences from Regular Stages:**\n\n");
     content
         .push_str("- **NO WORKTREE** - You are in the main repository, not an isolated worktree\n");
-    content.push_str("- **NO COMMITS REQUIRED** - Knowledge stages do NOT require git commits\n");
-    content.push_str("- **NO MERGING** - Your work stays in doc/loom/knowledge/ directly\n");
+    content.push_str("- **COMMITS REQUIRED** - You MUST `git add doc/loom/knowledge/` and `git commit` before completing\n");
+    content.push_str("- **NO MERGING** - Your commits go directly to main (no branch to merge)\n");
     content.push_str(
         "- **EXPLORATION FOCUS** - Your goal is to understand and document the codebase\n\n",
     );
@@ -550,6 +550,7 @@ pub fn generate_knowledge_stable_prefix() -> String {
     );
     content.push_str("**Completion:**\n");
     content.push_str("- **Verify acceptance criteria** before marking stage complete\n");
+    content.push_str("- **Commit knowledge changes**: `git add doc/loom/knowledge/ && git commit -m 'docs(knowledge): populate codebase knowledge'`\n");
     content.push_str("- **Create handoff** if context exceeds 75%\n");
     content.push_str("- **Run `loom stage complete <stage-id>`** when done (from the repo root)\n");
     content.push_str("- **If acceptance criteria fail**: Fix the issues and run `loom stage complete <stage-id>` again\n");
@@ -682,7 +683,9 @@ mod tests {
         assert!(prefix.contains("## Knowledge Stage Context"));
         assert!(prefix.contains("main repository"));
         assert!(prefix.contains("NO WORKTREE"));
-        assert!(prefix.contains("NO COMMITS REQUIRED"));
+        assert!(prefix.contains("COMMITS REQUIRED"));
+        assert!(prefix.contains("git add"));
+        assert!(prefix.contains("git commit"));
         assert!(prefix.contains("NO MERGING"));
         assert!(prefix.contains("## Execution Rules"));
         assert!(prefix.contains("loom knowledge update"));

@@ -8,10 +8,10 @@ use colored::Colorize;
 pub fn gc(max_file_lines: usize, max_total_lines: usize, quiet: bool) -> Result<()> {
     let work_dir = WorkDir::new(".")?;
 
-    let main_project_root = work_dir
-        .main_project_root()
-        .context("Could not determine main project root")?;
-    let knowledge = KnowledgeDir::new(main_project_root);
+    let project_root = work_dir
+        .project_root()
+        .context("Could not determine project root")?;
+    let knowledge = KnowledgeDir::new(project_root);
 
     if !knowledge.exists() {
         println!(

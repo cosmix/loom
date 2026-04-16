@@ -10,10 +10,10 @@ use colored::Colorize;
 
 pub fn show(file: Option<String>) -> Result<()> {
     let work_dir = WorkDir::new(".")?;
-    let main_project_root = work_dir
-        .main_project_root()
-        .context("Could not determine main project root")?;
-    let knowledge = KnowledgeDir::new(main_project_root);
+    let project_root = work_dir
+        .project_root()
+        .context("Could not determine project root")?;
+    let knowledge = KnowledgeDir::new(project_root);
 
     if !knowledge.exists() {
         println!(
@@ -68,10 +68,10 @@ pub fn update(file: String, content: Option<String>) -> Result<()> {
     crate::validation::validate_knowledge_content(&content)?;
 
     let work_dir = WorkDir::new(".")?;
-    let main_project_root = work_dir
-        .main_project_root()
-        .context("Could not determine main project root")?;
-    let knowledge = KnowledgeDir::new(main_project_root);
+    let project_root = work_dir
+        .project_root()
+        .context("Could not determine project root")?;
+    let knowledge = KnowledgeDir::new(project_root);
 
     if !knowledge.exists() {
         knowledge
@@ -93,10 +93,10 @@ pub fn update(file: String, content: Option<String>) -> Result<()> {
 
 pub fn init() -> Result<()> {
     let work_dir = WorkDir::new(".")?;
-    let main_project_root = work_dir
-        .main_project_root()
-        .context("Could not determine main project root")?;
-    let knowledge = KnowledgeDir::new(main_project_root);
+    let project_root = work_dir
+        .project_root()
+        .context("Could not determine project root")?;
+    let knowledge = KnowledgeDir::new(project_root);
 
     if knowledge.exists() {
         println!(
@@ -121,10 +121,10 @@ pub fn init() -> Result<()> {
 
 pub fn list() -> Result<()> {
     let work_dir = WorkDir::new(".")?;
-    let main_project_root = work_dir
-        .main_project_root()
-        .context("Could not determine main project root")?;
-    let knowledge = KnowledgeDir::new(main_project_root);
+    let project_root = work_dir
+        .project_root()
+        .context("Could not determine project root")?;
+    let knowledge = KnowledgeDir::new(project_root);
 
     if !knowledge.exists() {
         println!(
@@ -303,7 +303,7 @@ mod tests {
     #[test]
     #[serial]
     #[cfg(unix)]
-    fn test_knowledge_update_in_worktree_writes_to_main_repo() {
+    fn test_knowledge_update_in_worktree_writes_to_worktree() {
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
         let base = temp_dir.path();
 
@@ -347,14 +347,10 @@ mod tests {
         let worktree_knowledge_dir = worktree.join("doc/loom/knowledge");
 
         assert!(
-            main_knowledge_dir.exists(),
-            "Knowledge dir should exist in main repo at {main_knowledge_dir:?}"
+            worktree_knowledge_dir.exists(),
+            "Knowledge dir should exist in worktree at {worktree_knowledge_dir:?}"
         );
-        assert!(
-            !worktree_knowledge_dir.exists(),
-            "Knowledge dir should NOT exist in worktree at {worktree_knowledge_dir:?}"
-        );
-        assert!(main_knowledge_dir.join("entry-points.md").exists());
+        assert!(worktree_knowledge_dir.join("entry-points.md").exists());
 
         let result = update(
             "entry-points".to_string(),
@@ -362,15 +358,15 @@ mod tests {
         );
         assert!(result.is_ok(), "update() failed: {result:?}");
 
-        let content = fs::read_to_string(main_knowledge_dir.join("entry-points.md")).unwrap();
+        let content = fs::read_to_string(worktree_knowledge_dir.join("entry-points.md")).unwrap();
         assert!(
             content.contains("## Test Entry"),
-            "Content should be in main repo"
+            "Content should be in worktree"
         );
 
         assert!(
-            !worktree_knowledge_dir.exists(),
-            "Worktree should still not have knowledge dir"
+            !main_knowledge_dir.exists(),
+            "Main repo should not have knowledge dir written by worktree"
         );
 
         std::env::set_current_dir(original_dir).expect("Failed to restore dir");
