@@ -238,8 +238,8 @@ pub(super) fn format_semi_stable_section(
                 "**For long content, use stdin:** `loom knowledge update <file> - <<'EOF'`\n\n",
             );
 
-            // Review document generation (integration-verify only)
-            if stage_type == StageType::IntegrationVerify {
+            // Review document generation (knowledge-distill only)
+            if stage_type == StageType::KnowledgeDistill {
                 content.push_str("**Review Document:**\n\n");
                 content.push_str("Generate a change summary for human reviewers:\n");
                 content.push_str("```bash\nloom review\n```\n\n");

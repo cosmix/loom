@@ -306,7 +306,10 @@ pub fn generate_signal_with_metrics(
 /// For each completed dependency, aggregates file assignments and stage metadata
 /// to give integration-verify agents a bird's eye view of all changes.
 fn build_cross_stage_summary(work_dir: &Path, stage: &Stage) -> Option<String> {
-    if stage.stage_type != StageType::IntegrationVerify {
+    if !matches!(
+        stage.stage_type,
+        StageType::IntegrationVerify | StageType::KnowledgeDistill
+    ) {
         return None;
     }
 
@@ -405,7 +408,10 @@ fn format_stage_status(status: &crate::models::stage::StageStatus) -> &'static s
 /// Reads memory entries from all completed stages and extracts
 /// wiring-related notes into an actionable checklist.
 fn build_wiring_checklist(work_dir: &Path, stage: &Stage) -> Option<String> {
-    if stage.stage_type != StageType::IntegrationVerify {
+    if !matches!(
+        stage.stage_type,
+        StageType::IntegrationVerify | StageType::KnowledgeDistill
+    ) {
         return None;
     }
 
@@ -498,8 +504,11 @@ fn build_signal_context(
     // Populate sandbox summary from stage config
     embedded_context.sandbox_summary = Some(build_sandbox_summary(stage));
 
-    // Build integration-verify enrichments
-    if stage.stage_type == StageType::IntegrationVerify {
+    // Build integration-verify and knowledge-distill enrichments
+    if matches!(
+        stage.stage_type,
+        StageType::IntegrationVerify | StageType::KnowledgeDistill
+    ) {
         embedded_context.cross_stage_summary = build_cross_stage_summary(work_dir, stage);
         embedded_context.wiring_checklist = build_wiring_checklist(work_dir, stage);
     }

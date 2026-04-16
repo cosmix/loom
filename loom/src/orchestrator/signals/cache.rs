@@ -304,9 +304,7 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("1. **REVIEW** code for quality, security, and correctness issues\n");
     content.push_str("2. **FIX** every warning, error, and issue you encounter\n");
     content.push_str("3. **VERIFY** all acceptance criteria pass\n");
-    content.push_str("4. **TEST** that the feature actually works end-to-end\n");
-    content.push_str("5. **PROMOTE** valuable learnings to knowledge\n");
-    content.push_str("6. **GENERATE** review document: `loom review`\n\n");
+    content.push_str("4. **TEST** that the feature actually works end-to-end\n\n");
 
     // Code review execution strategy - detailed instructions
     content.push_str("```text\n");
@@ -411,13 +409,33 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     );
     append_completion_rules(&mut content);
 
-    // Knowledge curation
-    content.push_str("**Knowledge Distillation (MANDATORY):**\n\n");
+    content.push_str("Knowledge distillation is handled by a separate knowledge-distill stage that runs after this stage.\n\n");
+
+    // Git staging (shorter version)
+    content.push_str("**Git Staging (CRITICAL):**\n");
+    append_git_staging_rules(&mut content);
+
+    append_common_footer(&mut content);
+
     content
-        .push_str("Integration-verify is where ALL stage memories become permanent knowledge.\n");
+}
+
+/// Stable prefix for knowledge-distill stages (runs in worktree, after integration-verify)
+pub fn generate_knowledge_distill_stable_prefix() -> String {
+    let mut content = String::new();
+
+    // Knowledge Distillation header
+    content.push_str("## Knowledge Distillation Context\n\n");
+    content.push_str(
+        "You are running a **knowledge-distill stage** that runs AFTER integration-verify, in its own worktree.\n\n",
+    );
+    content.push_str("Your purpose is to **distill stage memories into permanent knowledge** and **generate the review document**.\n");
     content.push_str(
         "Memories that are not distilled into knowledge are LOST when the plan completes.\n\n",
     );
+
+    // Knowledge distillation workflow
+    content.push_str("**Knowledge Distillation Workflow:**\n\n");
     content.push_str("**CRITICAL ORDERING — Record your OWN memories FIRST, then distill:**\n\n");
     content
         .push_str("1. **RECORD your findings** — As you review code and verify, record your own\n");
@@ -443,12 +461,16 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("5. DO NOT blindly copy memory entries — synthesize and curate\n");
     content.push_str("6. Remove or update stale knowledge entries — if a mistake has been fixed, a pattern replaced, or an entry-point renamed, update or delete the old entry. Stale entries mislead future agents\n");
     content.push_str("7. Generate review document: `loom review`\n\n");
+
+    // Do NOT modify CLAUDE.md
     content.push_str("**IMPORTANT — Do NOT modify the project's CLAUDE.md:**\n\n");
     content.push_str("- CLAUDE.md is the user's file — loom agents must not write to it\n");
     content.push_str("- ALL system knowledge belongs in `loom knowledge update` exclusively\n");
     content.push_str(
         "- This includes architecture, conventions, best practices, and lessons learned\n\n",
     );
+
+    // Auto-memory prohibition
     content.push_str("```text\n");
     content.push_str(
         "⛔  DO NOT use Claude Code's auto-memory system (~/.claude/projects/*/memory/)\n",
@@ -459,7 +481,24 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("    anything saved there is INVISIBLE to other stages and will be LOST.\n");
     content.push_str("```\n\n");
 
-    // Git staging (shorter version)
+    // Isolation + path boundaries (shared)
+    content.push_str("**Isolation Boundaries (STRICT):**\n\n");
+    content.push_str("- You are **CONFINED** to this worktree - do not access files outside it\n");
+    content
+        .push_str("- Git commands must target THIS worktree only - no `git -C`, no `cd ../..`\n\n");
+
+    append_path_boundaries(&mut content);
+
+    // Execution rules
+    content.push_str("## Execution Rules\n\n");
+    content.push_str(
+        "Follow your `~/.claude/CLAUDE.md` and project `CLAUDE.md` rules. Key reminders:\n\n",
+    );
+
+    content.push_str("**Completion:**\n");
+    append_completion_rules(&mut content);
+
+    // Git staging
     content.push_str("**Git Staging (CRITICAL):**\n");
     append_git_staging_rules(&mut content);
 
@@ -750,12 +789,9 @@ mod tests {
         assert!(prefix.contains("USE THE TASK TOOL"));
         assert!(prefix.contains("Task(subagent_type="));
 
-        // Knowledge distillation
-        assert!(prefix.contains("Knowledge Distillation (MANDATORY)"));
-        assert!(prefix.contains("loom memory show --all"));
-        assert!(prefix.contains("loom knowledge update"));
-        // Must not modify CLAUDE.md
-        assert!(prefix.contains("Do NOT modify the project's CLAUDE.md"));
+        // Knowledge distillation moved to separate stage
+        assert!(!prefix.contains("Knowledge Distillation (MANDATORY)"));
+        assert!(prefix.contains("knowledge-distill stage"));
 
         // Worktree root directory reminder
         assert!(prefix.contains(
@@ -775,8 +811,6 @@ mod tests {
         assert!(prefix.contains("OWASP Top 10"));
         // Context recovery instructions
         assert!(prefix.contains("Context Recovery"));
-        // Review document generation
-        assert!(prefix.contains("loom review"));
         // File exclusivity guidance (must match standard prefix)
         assert!(prefix.contains("FILE EXCLUSIVITY"));
         assert!(prefix.contains("exclusive"));
@@ -789,6 +823,41 @@ mod tests {
         assert_eq!(
             prefix1, prefix2,
             "Integration-verify stable prefix should be deterministic"
+        );
+    }
+
+    #[test]
+    fn test_knowledge_distill_stable_prefix_contains_required_sections() {
+        let prefix = generate_knowledge_distill_stable_prefix();
+
+        // Knowledge distillation context
+        assert!(prefix.contains("Knowledge Distillation"));
+        assert!(prefix.contains("loom memory show --all"));
+        assert!(prefix.contains("loom knowledge update") || prefix.contains("loom knowledge"),);
+        assert!(prefix.contains("loom review"));
+
+        // Context recovery (from common footer)
+        assert!(prefix.contains("Context Recovery"));
+
+        // Isolation and path boundaries
+        assert!(prefix.contains("Isolation Boundaries") || prefix.contains("Path Boundaries"),);
+
+        // Git staging rules
+        assert!(prefix.contains("git add <specific-files>"));
+
+        // Must NOT contain IV-specific content
+        assert!(!prefix.contains("ZERO TOLERANCE"));
+        assert!(!prefix.contains("CODE REVIEW + VERIFICATION"));
+        assert!(!prefix.contains("FINAL QUALITY GATE"));
+    }
+
+    #[test]
+    fn test_knowledge_distill_stable_prefix_is_stable() {
+        let prefix1 = generate_knowledge_distill_stable_prefix();
+        let prefix2 = generate_knowledge_distill_stable_prefix();
+        assert_eq!(
+            prefix1, prefix2,
+            "Knowledge-distill stable prefix should be deterministic"
         );
     }
 }
