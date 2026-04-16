@@ -1,7 +1,7 @@
 ---
 name: loom-plan-writer
 description: REQUIRED skill for creating Loom execution plans. Designs DAG-based plans with mandatory knowledge-bootstrap and integration-verify bookends, parallel subagent execution within stages, and concurrent worktree stages for maximum throughput. Trigger keywords: loom, plan, stage, worktree, orchestration, parallel execution, parallel stages, concurrent execution, knowledge-bootstrap, integration-verify, acceptance criteria, signal, handoff, execution graph, dag, dependencies, loom plan, create plan, write plan, execution plan, orchestration plan, stage dependencies, parallel subagents, functional verification, wiring verification, smoke test.
-allowed-tools: Read, Grep, Glob, Write, Edit
+allowed-tools: Read, Grep, Glob, Write, Edit, Bash
 ---
 
 # Loom Plan Writer
@@ -1301,11 +1301,15 @@ During implementation stages, you MUST:
 ### 15. After Writing Plan
 
 1. Write plan to `doc/plans/PLAN-<name>.md`
-2. **STOP** - Do NOT implement
-3. Tell user:
-   > Plan written to `doc/plans/PLAN-<name>.md`. Please review and run:
-   > `loom init doc/plans/PLAN-<name>.md && loom run`
-4. Wait for user feedback
+2. **VALIDATE the plan** by running `loom init --clean doc/plans/PLAN-<name>.md`
+   - This parses the YAML, validates stage structure (bookends, dependencies, required fields), checks sandbox config, and builds the execution DAG
+   - If validation **fails**: read the error output, fix the plan file, and re-run `loom init --clean` until it passes
+   - If validation **succeeds**: the plan is confirmed valid and `.work/` is ready for execution
+3. **STOP** - Do NOT implement
+4. Tell user:
+   > Plan written to `doc/plans/PLAN-<name>.md` and validated with `loom init`. Please review and run:
+   > `loom run`
+5. Wait for user feedback
 
 **The plan file IS your deliverable.** Never proceed to implementation.
 
