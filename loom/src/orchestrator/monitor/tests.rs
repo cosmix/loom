@@ -545,3 +545,71 @@ fn test_merge_blocked_stage_session_not_reported_as_crash() {
         "Session should be marked Completed, not Crashed"
     );
 }
+
+/// Verify that BudgetExceeded fires even when the coarse health bucket does not change.
+///
+/// Scenario: a stage has a 70% budget.  The session starts at 66% (already in the
+/// Red bucket, ≥65%).  Context then rises to 79% — still Red, so the bucket does
+/// NOT change — but the per-stage budget (70%) is crossed for the first time.
+/// BudgetExceeded must fire on that tick despite no bucket transition.
+#[test]
+fn test_budget_exceeded_fires_without_health_bucket_change() {
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let work_dir = temp_dir.path().to_path_buf();
+
+    let config = MonitorConfig {
+        work_dir,
+        ..Default::default()
+    };
+    let handlers = Handlers::new(config);
+    let mut detection = Detection::new();
+
+    // Session at 66% (Red bucket).  Pre-seed the health-bucket so that the
+    // first detect call below does NOT see a bucket change.
+    detection
+        .last_context_levels
+        .insert("session-1".to_string(), ContextHealth::Red);
+
+    let mut session = Session::new();
+    session.id = "session-1".to_string();
+    session.status = SessionStatus::Running;
+    // 66 000 tokens out of 100 000 = 66% → Red, below 70% budget
+    session.context_tokens = 66_000;
+    session.context_limit = 100_000;
+    session.stage_id = Some("stage-1".to_string());
+
+    let mut stage = Stage::new("test".to_string(), Some("Budget test stage".to_string()));
+    stage.id = "stage-1".to_string();
+    stage.context_budget = Some(70); // 70% per-stage budget
+
+    // First tick: 66% < 70% budget — no BudgetExceeded, bucket unchanged.
+    let events = detection.detect_session_changes(&[session.clone()], &[stage.clone()], &handlers);
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, MonitorEvent::BudgetExceeded { .. })),
+        "BudgetExceeded should not fire at 66% (below 70% budget)"
+    );
+
+    // Second tick: 79% > 70% budget, still Red (no bucket change).
+    // BudgetExceeded MUST fire because the budget threshold is crossed.
+    session.context_tokens = 79_000; // 79%
+    let events = detection.detect_session_changes(&[session.clone()], &[stage.clone()], &handlers);
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, MonitorEvent::BudgetExceeded { .. })),
+        "BudgetExceeded should fire at 79% (above 70% budget) even though health bucket is still Red"
+    );
+
+    // Third tick: still at 79% — must NOT fire again (edge-crossing semantics).
+    let events = detection.detect_session_changes(&[session.clone()], &[stage], &handlers);
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, MonitorEvent::BudgetExceeded { .. })),
+        "BudgetExceeded must not fire on subsequent ticks while still above budget"
+    );
+}

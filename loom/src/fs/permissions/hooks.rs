@@ -82,6 +82,33 @@ pub fn loom_hooks_config() -> Value {
                         "command": format!("{}/worktree-isolation.sh", hooks_dir)
                     }
                 ]
+            },
+            {
+                "matcher": "Read",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": format!("{}/worktree-file-guard.sh", hooks_dir)
+                    }
+                ]
+            },
+            {
+                "matcher": "Glob",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": format!("{}/worktree-file-guard.sh", hooks_dir)
+                    }
+                ]
+            },
+            {
+                "matcher": "Grep",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": format!("{}/worktree-file-guard.sh", hooks_dir)
+                    }
+                ]
             }
         ],
         "PostToolUse": [
@@ -433,4 +460,46 @@ pub fn configure_loom_hooks(settings_obj: &mut serde_json::Map<String, Value>) -
     // Always return true since we want to ensure hooks are written
     // (the actual comparison is done by the caller when writing the file)
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_worktree_file_guard_registered_for_read_glob_grep() {
+        let config = loom_hooks_config();
+        let pre_tool_use = config
+            .get("PreToolUse")
+            .expect("PreToolUse must exist")
+            .as_array()
+            .expect("PreToolUse must be an array");
+
+        // Collect all (matcher, command) pairs from PreToolUse
+        let entries: Vec<(String, String)> = pre_tool_use
+            .iter()
+            .filter_map(|entry| {
+                let matcher = entry.get("matcher")?.as_str()?.to_string();
+                let command = entry
+                    .get("hooks")?
+                    .as_array()?
+                    .first()?
+                    .get("command")?
+                    .as_str()?
+                    .to_string();
+                Some((matcher, command))
+            })
+            .collect();
+
+        // Verify worktree-file-guard.sh is registered for Read, Glob, and Grep
+        for tool in ["Read", "Glob", "Grep"] {
+            let found = entries.iter().any(|(matcher, command)| {
+                matcher == tool && command.contains("worktree-file-guard.sh")
+            });
+            assert!(
+                found,
+                "worktree-file-guard.sh not registered as PreToolUse hook for matcher '{tool}'"
+            );
+        }
+    }
 }

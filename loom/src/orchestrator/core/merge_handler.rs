@@ -143,7 +143,7 @@ impl Orchestrator {
         stage.merged = true;
         stage.merge_conflict = false;
 
-        if stage.status == StageStatus::MergeConflict {
+        if stage.status == StageStatus::MergeConflict || stage.status == StageStatus::MergeBlocked {
             if let Err(e) = stage.status.try_transition(StageStatus::Completed) {
                 eprintln!("Warning: Failed to transition stage to Completed: {e}");
             } else {
@@ -795,6 +795,34 @@ impl Orchestrator {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn test_merge_blocked_to_completed_transition_is_valid() {
+        use crate::models::stage::StageStatus;
+
+        let status = StageStatus::MergeBlocked;
+        assert!(
+            status.can_transition_to(&StageStatus::Completed),
+            "MergeBlocked -> Completed should be a valid transition"
+        );
+
+        let result = status.try_transition(StageStatus::Completed);
+        assert!(
+            result.is_ok(),
+            "MergeBlocked -> Completed transition should succeed"
+        );
+    }
+
+    #[test]
+    fn test_merge_conflict_to_completed_transition_is_valid() {
+        use crate::models::stage::StageStatus;
+
+        let status = StageStatus::MergeConflict;
+        assert!(
+            status.can_transition_to(&StageStatus::Completed),
+            "MergeConflict -> Completed should be a valid transition"
+        );
+    }
+
     #[test]
     fn test_plan_auto_merge_extraction_true() {
         let plan_content = r#"# Test Plan

@@ -187,7 +187,7 @@ fn test_build_execution_graph_from_config() {
     let result = build_execution_graph(&work_dir);
 
     assert!(result.is_ok());
-    let _graph = result.unwrap();
+    let (_graph, _sandbox) = result.unwrap();
 }
 
 #[test]

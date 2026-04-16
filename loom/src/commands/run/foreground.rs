@@ -4,16 +4,14 @@ use anyhow::{bail, Context, Result};
 use colored::Colorize;
 use std::time::Duration;
 
+use super::checks::prepare_repo_for_run;
+use super::graph_loader::build_execution_graph;
 use crate::commands::status::render::print_completion_summary;
 use crate::daemon::collect_completion_summary;
+use crate::fs::plan_lifecycle;
 use crate::fs::work_dir::WorkDir;
 use crate::orchestrator::terminal::BackendType;
 use crate::orchestrator::{Orchestrator, OrchestratorConfig, OrchestratorResult};
-use crate::plan::schema::SandboxConfig;
-
-use super::checks::prepare_repo_for_run;
-use super::graph_loader::build_execution_graph;
-use crate::fs::plan_lifecycle;
 
 /// Execute plan stages in foreground (for --foreground flag)
 /// Usage: loom run --foreground [--manual] [--max-parallel <n>] [--watch] [--no-merge]
@@ -46,7 +44,7 @@ fn execute_foreground(
     auto_merge: bool,
     work_dir: &WorkDir,
 ) -> Result<()> {
-    let graph = build_execution_graph(work_dir)?;
+    let (graph, plan_sandbox) = build_execution_graph(work_dir)?;
 
     // Parse config.toml to extract base_branch
     let base_branch = crate::fs::parse_base_branch_from_config(work_dir.root())?;
@@ -65,7 +63,7 @@ fn execute_foreground(
         skills_dir: None, // Use default ~/.claude/skills/
         enable_skill_routing: true,
         max_skill_recommendations: 5,
-        sandbox_config: SandboxConfig::default(),
+        sandbox_config: plan_sandbox,
         shutdown_flag: None,
     };
 
