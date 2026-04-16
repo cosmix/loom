@@ -48,6 +48,7 @@ Single implementation stage — all 4 file changes are independent (no file over
 4. **merge.rs** — Add "Inherited Responsibilities" section to merge signal explaining the resolver now owns the stage and should not re-run acceptance criteria.
 
 **Files:**
+
 - `loom/src/commands/stage/progressive_complete.rs`
 - `hooks/commit-guard.sh`
 - `loom/src/orchestrator/core/merge_handler.rs`
@@ -64,6 +65,7 @@ Single implementation stage — all 4 file changes are independent (no file over
 **Dependencies:** fix-merge-session-lifecycle
 
 **Tasks:**
+
 - Full test suite and lint
 - Code review (security, architecture)
 - Verify `bail!` is reachable in progressive_complete.rs
