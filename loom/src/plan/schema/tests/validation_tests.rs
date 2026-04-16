@@ -549,3 +549,54 @@ fn test_preflight_no_warning_for_specific_pattern() {
         .iter()
         .all(|w| !w.contains("significant characters") && !w.contains("common keyword")));
 }
+
+#[test]
+fn test_knowledge_distill_exempt_from_goal_backward() {
+    // A knowledge-distill stage with no artifacts/wiring should pass validation
+    // (it is exempt from the goal-backward checks that Standard/IV stages require)
+    let mut stage = make_stage("knowledge-distill", "Knowledge Distillation");
+    stage.stage_type = StageType::KnowledgeDistill;
+    // No acceptance criteria, no artifacts, no wiring — should still pass
+
+    let metadata = LoomMetadata {
+        loom: LoomConfig {
+            version: 1,
+            auto_merge: None,
+            sandbox: SandboxConfig::default(),
+            change_impact: None,
+            stages: vec![stage],
+        },
+    };
+
+    let result = validate(&metadata);
+    assert!(
+        result.is_ok(),
+        "knowledge-distill stage without goal-backward checks should pass: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn test_knowledge_distill_with_acceptance_passes() {
+    // A knowledge-distill stage with acceptance criteria should also pass
+    let mut stage = make_stage("knowledge-distill", "Knowledge Distillation");
+    stage.stage_type = StageType::KnowledgeDistill;
+    stage.acceptance = vec![AcceptanceCriterion::Simple("cargo test".to_string())];
+
+    let metadata = LoomMetadata {
+        loom: LoomConfig {
+            version: 1,
+            auto_merge: None,
+            sandbox: SandboxConfig::default(),
+            change_impact: None,
+            stages: vec![stage],
+        },
+    };
+
+    let result = validate(&metadata);
+    assert!(
+        result.is_ok(),
+        "knowledge-distill stage with acceptance criteria should pass: {:?}",
+        result.err()
+    );
+}

@@ -763,6 +763,7 @@ mod tests {
             StageType::Standard,
             StageType::Knowledge,
             StageType::IntegrationVerify,
+            StageType::KnowledgeDistill,
         ] {
             let plan = SandboxConfig::default();
             let stage = StageSandboxConfig::default();
