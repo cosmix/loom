@@ -3,7 +3,8 @@
 use super::gc::{analyze_gc_metrics, GcMetrics};
 use super::types::KnowledgeFile;
 use anyhow::{Context, Result};
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// Manager for the doc/loom/knowledge/ directory
@@ -64,13 +65,22 @@ impl KnowledgeDir {
             fs::create_dir_all(&self.root).context("Failed to create knowledge directory")?;
         }
 
-        // Create default files if they don't exist
+        // create_new atomically fails if file exists, preventing TOCTOU race
         for file_type in KnowledgeFile::all() {
             let path = self.file_path(*file_type);
-            if !path.exists() {
-                let content = self.default_content(*file_type);
-                fs::write(&path, content)
-                    .with_context(|| format!("Failed to create {}", file_type.filename()))?;
+            let content = self.default_content(*file_type);
+            match OpenOptions::new().write(true).create_new(true).open(&path) {
+                Ok(mut file) => {
+                    file.write_all(content.as_bytes())
+                        .with_context(|| format!("Failed to write {}", file_type.filename()))?;
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    // File already exists, skip (idempotent)
+                }
+                Err(e) => {
+                    return Err(anyhow::anyhow!(e))
+                        .with_context(|| format!("Failed to create {}", file_type.filename()));
+                }
             }
         }
 
@@ -106,26 +116,106 @@ impl KnowledgeDir {
     /// Append content to a knowledge file (knowledge files are append-only)
     pub fn append(&self, file_type: KnowledgeFile, content: &str) -> Result<()> {
         let path = self.file_path(file_type);
+        let default = self.default_content(file_type);
+        let content_owned = content.to_string();
 
-        // Read existing content
-        let existing = if path.exists() {
-            fs::read_to_string(&path)
-                .with_context(|| format!("Failed to read {}", file_type.filename()))?
-        } else {
-            self.default_content(file_type)
-        };
+        crate::fs::locking::locked_read_modify_write(&path, |existing| {
+            let base = if existing.is_empty() {
+                default
+            } else {
+                existing
+            };
+            if base.ends_with('\n') {
+                format!("{base}\n{content_owned}\n")
+            } else {
+                format!("{base}\n\n{content_owned}\n")
+            }
+        })
+        .with_context(|| format!("Failed to append to {}", file_type.filename()))
+    }
 
-        // Append new content with proper spacing
-        let new_content = if existing.ends_with('\n') {
-            format!("{existing}\n{content}\n")
-        } else {
-            format!("{existing}\n\n{content}\n")
-        };
+    /// Replace a section in a knowledge file identified by its ## heading.
+    ///
+    /// Finds the first `## <heading>` line and replaces everything between it and
+    /// the next `## ` heading (or EOF) with the new content. If the heading is not
+    /// found, appends a new section.
+    pub fn replace_section(
+        &self,
+        file_type: KnowledgeFile,
+        heading: &str,
+        content: &str,
+    ) -> Result<()> {
+        let path = self.file_path(file_type);
+        let default = self.default_content(file_type);
+        let heading_owned = heading.to_string();
+        let content_owned = content.to_string();
 
-        fs::write(&path, new_content)
-            .with_context(|| format!("Failed to write {}", file_type.filename()))?;
+        crate::fs::locking::locked_read_modify_write(&path, |existing| {
+            let base = if existing.is_empty() {
+                default
+            } else {
+                existing
+            };
 
-        Ok(())
+            let target_line = format!("## {heading_owned}");
+            let lines: Vec<&str> = base.lines().collect();
+
+            // Find the heading
+            let heading_idx = lines.iter().position(|line| line.trim_end() == target_line);
+
+            match heading_idx {
+                Some(start) => {
+                    // Find the next ## heading after this one (or EOF)
+                    let end = lines
+                        .iter()
+                        .enumerate()
+                        .skip(start + 1)
+                        .find(|(_, line)| line.starts_with("## "))
+                        .map(|(i, _)| i)
+                        .unwrap_or(lines.len());
+
+                    let mut result = String::new();
+                    // Lines before the heading
+                    for line in &lines[..start] {
+                        result.push_str(line);
+                        result.push('\n');
+                    }
+                    // Replacement section
+                    result.push_str(&format!("## {heading_owned}\n\n{content_owned}\n"));
+                    // Lines after the replaced section
+                    if end < lines.len() {
+                        result.push('\n');
+                        for (i, line) in lines[end..].iter().enumerate() {
+                            result.push_str(line);
+                            if i < lines.len() - end - 1 {
+                                result.push('\n');
+                            }
+                        }
+                        // Preserve trailing newline
+                        if base.ends_with('\n') {
+                            result.push('\n');
+                        }
+                    }
+                    result
+                }
+                None => {
+                    // Heading not found, append
+                    let mut result = base;
+                    if !result.ends_with('\n') {
+                        result.push('\n');
+                    }
+                    result.push_str(&format!("\n## {heading_owned}\n\n{content_owned}\n"));
+                    result
+                }
+            }
+        })
+        .with_context(|| {
+            format!(
+                "Failed to replace section '{}' in {}",
+                heading,
+                file_type.filename()
+            )
+        })
     }
 
     /// Generate a compact summary of all knowledge for embedding in signals
@@ -349,5 +439,146 @@ mod tests {
         let summary = knowledge.generate_summary().unwrap();
         assert!(summary.contains("Knowledge Summary"));
         assert!(summary.contains("CLI Entry Point"));
+    }
+
+    #[test]
+    fn test_initialize_idempotent() {
+        let temp = TempDir::new().unwrap();
+        let project_root = temp.path();
+
+        let knowledge = KnowledgeDir::new(project_root);
+        knowledge.initialize().unwrap();
+
+        // Append extra content to a file
+        knowledge
+            .append(KnowledgeFile::Mistakes, "## A Mistake\n\nDon't do this")
+            .unwrap();
+        let content_before = knowledge.read(KnowledgeFile::Mistakes).unwrap();
+
+        // Re-initialize should NOT overwrite existing files
+        knowledge.initialize().unwrap();
+        let content_after = knowledge.read(KnowledgeFile::Mistakes).unwrap();
+        assert_eq!(
+            content_before, content_after,
+            "initialize() must not overwrite existing files"
+        );
+    }
+
+    #[test]
+    fn test_replace_section_existing() {
+        let temp = TempDir::new().unwrap();
+        let project_root = temp.path();
+
+        let knowledge = KnowledgeDir::new(project_root);
+        knowledge.initialize().unwrap();
+
+        // Add two sections
+        knowledge
+            .append(
+                KnowledgeFile::Patterns,
+                "## Section A\n\nOriginal A content",
+            )
+            .unwrap();
+        knowledge
+            .append(
+                KnowledgeFile::Patterns,
+                "## Section B\n\nOriginal B content",
+            )
+            .unwrap();
+
+        // Replace Section A
+        knowledge
+            .replace_section(KnowledgeFile::Patterns, "Section A", "Updated A content")
+            .unwrap();
+
+        let content = knowledge.read(KnowledgeFile::Patterns).unwrap();
+        assert!(
+            content.contains("Updated A content"),
+            "Should contain updated content"
+        );
+        assert!(
+            !content.contains("Original A content"),
+            "Should not contain old content"
+        );
+        // Section B should be untouched
+        assert!(
+            content.contains("Original B content"),
+            "Section B should be preserved"
+        );
+    }
+
+    #[test]
+    fn test_replace_section_not_found_appends() {
+        let temp = TempDir::new().unwrap();
+        let project_root = temp.path();
+
+        let knowledge = KnowledgeDir::new(project_root);
+        knowledge.initialize().unwrap();
+
+        knowledge
+            .replace_section(KnowledgeFile::Patterns, "New Heading", "Brand new content")
+            .unwrap();
+
+        let content = knowledge.read(KnowledgeFile::Patterns).unwrap();
+        assert!(content.contains("## New Heading"));
+        assert!(content.contains("Brand new content"));
+    }
+
+    #[test]
+    fn test_replace_section_at_eof() {
+        let temp = TempDir::new().unwrap();
+        let project_root = temp.path();
+
+        let knowledge = KnowledgeDir::new(project_root);
+        knowledge.initialize().unwrap();
+
+        // Add a section that is at the end of the file (no following ## heading)
+        knowledge
+            .append(
+                KnowledgeFile::Patterns,
+                "## Last Section\n\nOld last content",
+            )
+            .unwrap();
+
+        knowledge
+            .replace_section(KnowledgeFile::Patterns, "Last Section", "New last content")
+            .unwrap();
+
+        let content = knowledge.read(KnowledgeFile::Patterns).unwrap();
+        assert!(content.contains("New last content"));
+        assert!(!content.contains("Old last content"));
+    }
+
+    #[test]
+    fn test_replace_section_exact_heading_match() {
+        let temp = TempDir::new().unwrap();
+        let project_root = temp.path();
+
+        let knowledge = KnowledgeDir::new(project_root);
+        knowledge.initialize().unwrap();
+
+        // Add sections with similar names
+        knowledge
+            .append(KnowledgeFile::Patterns, "## Merge Flow\n\nMerge content")
+            .unwrap();
+        knowledge
+            .append(
+                KnowledgeFile::Patterns,
+                "## Merge Flow Extended\n\nExtended content",
+            )
+            .unwrap();
+
+        // Replace only the exact match
+        knowledge
+            .replace_section(KnowledgeFile::Patterns, "Merge Flow", "Updated merge")
+            .unwrap();
+
+        let content = knowledge.read(KnowledgeFile::Patterns).unwrap();
+        assert!(content.contains("Updated merge"));
+        // The "Extended" section should be preserved
+        assert!(
+            content.contains("Extended content"),
+            "Exact match should not affect similar-named sections"
+        );
     }
 }
