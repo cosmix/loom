@@ -609,8 +609,18 @@ impl Orchestrator {
                     }
                 }
                 // Either a stale Stage session or a dead Merge session — clean up
-                let stale_session_id = session.id.clone();
-                self.active_sessions.remove(&stage_id);
+                let stale_session = self.active_sessions.remove(&stage_id).unwrap();
+                let stale_session_id = stale_session.id.clone();
+                // Kill the original session to prevent zombie processes.
+                // When loom stage complete detected a merge conflict, the Stage session
+                // may still be running -- actively terminate it.
+                if let Err(e) = self.backend.kill_session(&stale_session) {
+                    tracing::debug!(
+                        session_id = %stale_session_id,
+                        error = %e,
+                        "Failed to kill stale session (may already be dead)"
+                    );
+                }
                 // Remove the old signal file so it doesn't block respawning
                 if let Err(e) = remove_signal(&stale_session_id, &self.config.work_dir) {
                     eprintln!("Warning: Failed to remove stale signal for session '{stale_session_id}': {e}");
