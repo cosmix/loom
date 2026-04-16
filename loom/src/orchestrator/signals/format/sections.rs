@@ -244,7 +244,7 @@ pub(super) fn format_semi_stable_section(
                 content.push_str("Generate a change summary for human reviewers:\n");
                 content.push_str("```bash\nloom review\n```\n\n");
 
-                // Documentation update reminder (integration-verify only)
+                // Documentation update reminder (knowledge-distill only)
                 content.push_str("```text\n");
                 content.push_str(
                     "┌────────────────────────────────────────────────────────────────────┐\n",
