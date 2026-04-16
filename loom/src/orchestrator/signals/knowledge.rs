@@ -1,7 +1,7 @@
 //! Knowledge stage signal generation
 //!
 //! Knowledge stages run in the main repository (not worktrees) and focus on
-//! exploring and documenting the codebase. They don't require commits or merges.
+//! exploring and documenting the codebase. They require commits but not merges.
 
 use anyhow::Result;
 use std::path::{Path, PathBuf};
@@ -18,7 +18,7 @@ use super::types::DependencyStatus;
 ///
 /// Knowledge stages differ from regular stages:
 /// - Run in the main repository (no worktree)
-/// - No commits or merges required
+/// - Commits required, but no merging (auto merged=true)
 /// - Focus on populating doc/loom/knowledge/
 pub fn generate_knowledge_signal(
     session: &Session,

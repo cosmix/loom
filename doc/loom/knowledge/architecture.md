@@ -69,7 +69,7 @@ WaitingForDeps --> Queued --> Executing --> Completed --> Verified
 ### StageType Enum (plan/schema/types.rs)
 
 - **Standard** (default) -- Regular implementation stages, require goal-backward verification
-- **Knowledge** -- No worktree, no commits, exploration only, auto merged=true
+- **Knowledge** -- No worktree, commits required (directly to main), auto merged=true, exploration focus
 - **IntegrationVerify** -- Final quality gate combining code review AND functional verification
 
 Signal generation has 3 stable prefix generators in cache.rs (standard, knowledge, integration-verify).

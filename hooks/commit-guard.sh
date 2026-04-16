@@ -27,8 +27,6 @@ readonly WORKTREE_MARKER=".worktrees/"
 readonly LOOM_BRANCH_PREFIX="loom/"
 readonly WORK_DIR=".work"
 readonly STAGES_DIR="$WORK_DIR/stages"
-readonly KNOWLEDGE_STAGE_PATTERN="knowledge"
-
 # Debug logging - enabled when LOOM_HOOK_DEBUG=1
 debug_log() {
 	if [[ "${LOOM_HOOK_DEBUG:-0}" == "1" ]]; then
@@ -65,66 +63,6 @@ detect_loom_worktree() {
 	fi
 
 	debug_log "Not in a loom worktree"
-	return 1
-}
-
-# Check if current stage is a knowledge stage (used for debug logging)
-# Returns: 0 if knowledge stage, 1 otherwise
-# Args: $1 = project root, $2 = stage ID
-is_knowledge_stage() {
-	local project_root="$1"
-	local stage_id="$2"
-
-	debug_log "Checking if stage '$stage_id' is a knowledge stage"
-
-	# Method 1: Check if stage ID contains "knowledge" (case-insensitive)
-	local stage_id_lower
-	stage_id_lower=$(echo "$stage_id" | tr '[:upper:]' '[:lower:]')
-	if [[ "$stage_id_lower" == *"$KNOWLEDGE_STAGE_PATTERN"* ]]; then
-		debug_log "Stage ID contains '$KNOWLEDGE_STAGE_PATTERN' - is knowledge stage"
-		return 0
-	fi
-
-	# Method 2: Check stage file for stage_type: knowledge field
-	local stage_file
-	stage_file=$(find_stage_file "$project_root" "$stage_id")
-
-	if [[ -n "$stage_file" && -f "$stage_file" ]]; then
-		# Parse YAML frontmatter for stage_type field
-		local in_frontmatter=0
-		local stage_type=""
-
-		while IFS= read -r line; do
-			if [[ "$line" == "---" ]]; then
-				if [[ $in_frontmatter -eq 0 ]]; then
-					in_frontmatter=1
-				else
-					break # End of frontmatter
-				fi
-				continue
-			fi
-
-			if [[ $in_frontmatter -eq 1 ]]; then
-				# Match stage_type: <value>
-				if [[ "$line" =~ ^stage_type:\ *(.+)$ ]]; then
-					stage_type="${BASH_REMATCH[1]}"
-					# Trim whitespace
-					stage_type="${stage_type#"${stage_type%%[![:space:]]*}"}"
-					stage_type="${stage_type%"${stage_type##*[![:space:]]}"}"
-					break
-				fi
-			fi
-		done <"$stage_file"
-
-		local stage_type_lower
-		stage_type_lower=$(echo "$stage_type" | tr '[:upper:]' '[:lower:]')
-		if [[ "$stage_type_lower" == "$KNOWLEDGE_STAGE_PATTERN" ]]; then
-			debug_log "Stage file has stage_type: $KNOWLEDGE_STAGE_PATTERN - is knowledge stage"
-			return 0
-		fi
-	fi
-
-	debug_log "Stage '$stage_id' is not a knowledge stage"
 	return 1
 }
 

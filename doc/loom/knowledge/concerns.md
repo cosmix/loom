@@ -83,9 +83,9 @@ prefer-modern-tools.sh, validators/bash.rs.
 
 Several hooks (worktree-isolation.sh, commit-filter.sh, prefer-modern-tools.sh) hardcode debug log paths to `/tmp/<name>-debug.log`. Under `set -euo pipefail`, if `/tmp/` is not writable (e.g., sandboxed environments), the hook script exits immediately with error. `git-add-guard.sh` already uses a gated `debug()` pattern that only writes when `GIT_ADD_GUARD_DEBUG=1` is set. Other hooks should adopt the same pattern.
 
-## Sandbox Test Failures in fs::permissions (2026-03-31)
+## ~~Sandbox Test Failures in fs::permissions~~ (RESOLVED 2026-04-16)
 
-10 tests in `fs::permissions::tests` fail in sandboxed environments because `install_loom_hooks()` writes to `~/.claude/hooks/loom/` (the real home directory), which is outside the sandbox write allowlist. These tests need to mock the hook installation path or skip when `~/.claude/` is not writable.
+Fixed by `install_loom_hooks_to(path)` in commit 8d2bf2e. Tests now use temp directories via `ensure_loom_permissions_to(repo_root, Some(&hooks_dir))` instead of writing to the real `~/.claude/` directory.
 
 ## Rust/Shell Heredoc Terminator Divergence
 
