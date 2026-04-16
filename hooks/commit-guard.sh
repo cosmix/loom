@@ -453,6 +453,9 @@ main() {
 		merge-blocked | MergeBlocked)
 			debug_log "Stage merge is blocked - allowing stop"
 			;;
+		needs-human-review | NeedsHumanReview)
+			debug_log "Stage needs human review - allowing stop"
+			;;
 
 		# Completion states - work is done
 		completed | Completed)
