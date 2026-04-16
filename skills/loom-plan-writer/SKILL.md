@@ -12,7 +12,7 @@ allowed-tools: Read, Grep, Glob, Write, Edit
 
 When any agent needs to create a plan for Loom orchestration, this skill MUST be invoked. This skill ensures:
 
-- Correct plan structure with mandatory `knowledge-bootstrap` (first) and `integration-verify` (last) stages
+- Correct plan structure with mandatory `knowledge-bootstrap` (first), `integration-verify` (second-to-last), and `knowledge-distill` (last) stages
 - Proper YAML metadata formatting (3 backticks, no nested code fences)
 - Parallelization strategy (subagents within stages FIRST, separate stages SECOND)
 - Functional verification requirements (tests passing ≠ feature working)
@@ -122,7 +122,7 @@ loom:
 
 **Special Stage Behavior:**
 
-- `knowledge` and `integration-verify` stages automatically get write access to `doc/loom/knowledge/**`
+- `knowledge`, `integration-verify`, and `knowledge-distill` stages automatically get write access to `doc/loom/knowledge/**`
 
 ### 3b. Model Selection Per Stage (REQUIRED)
 
@@ -231,6 +231,8 @@ Opus stage descriptions can be higher-level since the agent has the judgment to 
 
 **knowledge stages:** Typically sonnet (exploration is well-scoped), but use opus if the codebase is large/unfamiliar and the agent must make strategic decisions about what to explore.
 
+**knowledge-distill stages:** Always sonnet (mechanical curation work — reading memories and writing knowledge updates is well-scoped with no architectural judgment needed).
+
 **Subagent Selection in Descriptions:**
 
 When stage descriptions define subagent work, specify the agent type to match the work category:
@@ -319,7 +321,8 @@ Maximize parallel execution at THREE levels:
 
 - knowledge-bootstrap: Default to TEAM (coordinated exploration, researchers share discoveries that inform each other)
 - standard (implementation): Default to SUBAGENTS (concrete file assignments, fire-and-forget). Use team only for wide/exploratory scope
-- integration-verify: Default to TEAM (build + functional + code review + knowledge promotion tasks that may require iterative fixes)
+- integration-verify: Default to TEAM (build + functional + code review tasks that may require iterative fixes)
+- knowledge-distill: Default to SINGLE or SUBAGENTS (memory reading + knowledge writing is sequential, not parallel)
 
 ### 4b. Stage Necessity Test (MANDATORY)
 
@@ -451,7 +454,8 @@ Every plan MUST follow this structure:
 │                                                                     │
 │  FIRST:  knowledge-bootstrap    (unless knowledge already exists)   │
 │  MIDDLE: implementation stages  (parallelized where possible)       │
-│  LAST:   integration-verify     (ALWAYS - reviews AND verifies)     │
+│  THEN:   integration-verify     (ALWAYS — reviews AND verifies)     │
+│  LAST:   knowledge-distill      (ALWAYS — curates memories into knowledge) │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -462,6 +466,7 @@ graph LR
     knowledge-bootstrap --> stage-a & stage-b
     stage-a & stage-b --> stage-c
     stage-c --> integration-verify
+    integration-verify --> knowledge-distill
 ```
 
 Parallel stages are expressed using Mermaid's `&` operator (e.g., `A --> B & C` means A feeds both B and C concurrently).
@@ -692,9 +697,10 @@ Loom runs on both Linux and macOS. Shell commands in acceptance criteria MUST wo
 
 | Value                | Use For                   | Special Behavior                         |
 | -------------------- | ------------------------- | ---------------------------------------- |
-| `knowledge`          | knowledge-bootstrap stage | Can write to doc/loom/knowledge/\*\*     |
-| `standard`           | All implementation stages | Cannot write to knowledge files          |
-| `integration-verify` | Final verification stage  | Can write to doc/loom/knowledge/\*\*, reviews |
+| `knowledge`          | knowledge-bootstrap stage  | Can write to doc/loom/knowledge/\*\*     |
+| `standard`           | All implementation stages  | Cannot write to knowledge files          |
+| `integration-verify` | Second-to-last stage       | Can write to doc/loom/knowledge/\*\*, reviews |
+| `knowledge-distill`  | Final knowledge curation   | Can write to knowledge, sonnet default   |
 
 **NEVER use PascalCase** (Knowledge, Standard, IntegrationVerify) - the parser rejects these.
 
@@ -1046,32 +1052,10 @@ Verifies all work integrates correctly after merges AND that the feature actuall
         - Are events being published/subscribed?
         - Are dependencies injected correctly?
 
-    KNOWLEDGE DISTILLATION (MANDATORY — memory before knowledge):
-    11. Record your OWN discoveries to loom memory FIRST (bugs, security
-        issues, architectural insights found during verification)
-    12. Read all stage memories: loom memory show --all
-    13. Curate valuable insights into permanent knowledge. Write each
-        mistake as an actionable prevention rule:
-        loom knowledge update mistakes "## [Short description]
-        **What happened:** [What went wrong]
-        **Why:** [Root cause]
-        **Prevention:** [How to detect earlier]
-        **Fix:** [What to do instead]"
-    14. Curate other insights:
-        - Patterns worth reusing → loom knowledge update patterns "..."
-        - Architectural decisions → loom knowledge update architecture "..."
-    15. If 2+ stages hit the same mistake, document the root cause
-    16. Remove or update stale knowledge entries
-    17. Update architecture.md if structure changed
-
-    DOCUMENTATION UPDATE (MANDATORY):
-    18. Review user-facing documentation files (README.md, CONTRIBUTING.md, etc.)
-    19. Update documentation to reflect changes made by this plan:
-        - New CLI commands, features, config options, workflows
-        - Changed behavior or API surfaces
-        - Removed functionality (remove stale references)
-    20. Only update sections relevant to the changes — do NOT rewrite entire files
-    21. If no user-facing behavior changed, skip but record WHY in memory
+    NOTE: Knowledge distillation and documentation updates are handled
+    by the knowledge-distill stage that runs after this stage.
+    Focus this stage on BUILD, CODE REVIEW, and FUNCTIONAL VERIFICATION only.
+    Record your own discoveries to loom memory so knowledge-distill can curate them.
   dependencies: ["stage-a", "stage-b", "stage-c"] # ALL feature stages
   acceptance:
     - "cargo test"
@@ -1106,6 +1090,80 @@ Verifies all work integrates correctly after merges AND that the feature actuall
 | **Wiring verification** | **Features must be connected to actually work**    |
 | **Functional proof**    | **Smoke test proves the feature is usable**        |
 
+### 11b. Knowledge Distill Stage (After Integration-Verify)
+
+Curates all stage memories into permanent knowledge. Runs AFTER integration-verify — both are mandatory bookend stages.
+
+````yaml
+- id: knowledge-distill
+  name: "Knowledge Distillation"
+  stage_type: knowledge-distill
+  model: "sonnet"
+  reasoning_effort: "high"
+  description: |
+    Knowledge distillation — runs after integration-verify to curate all stage
+    memories into permanent knowledge files.
+
+    ⛔ NEVER use Claude Code's auto-memory (~/.claude/projects/*/memory/).
+    ALL memory/knowledge goes through loom memory and loom knowledge commands.
+
+    CONTEXT GATHERING (FIRST):
+    1. Read the plan file from doc/plans/ (check .work/config.toml for source_path)
+    2. Read ALL stage memories: loom memory show --all
+    3. Read doc/loom/knowledge/*.md to understand current knowledge state
+
+    MEMORY CURATION:
+    4. Synthesize all stage memories — find patterns, mistakes, and decisions worth preserving
+    5. Curate mistakes as actionable prevention rules:
+       loom knowledge update mistakes "## [Short description]
+       **What happened:** [What went wrong]
+       **Why:** [Root cause]
+       **Prevention:** [How to detect earlier]
+       **Fix:** [What to do instead]"
+    6. Curate reusable patterns: loom knowledge update patterns "..."
+    7. Curate architectural decisions: loom knowledge update architecture "..."
+    8. Curate discovered conventions: loom knowledge update conventions "..."
+    9. If 2+ stages hit the same mistake, document the root cause
+
+    KNOWLEDGE REVIEW:
+    10. Run: loom review
+    11. Check for stale or outdated entries
+    12. Remove entries that no longer apply
+    13. Update architecture.md if structure changed during this plan
+
+    DOCUMENTATION UPDATE (MANDATORY):
+    14. Review user-facing documentation files (README.md, CONTRIBUTING.md, etc.)
+    15. Update documentation to reflect changes made by this plan:
+        - New CLI commands, features, config options, workflows
+        - Changed behavior or API surfaces
+        - Removed functionality (remove stale references)
+    16. Only update sections relevant to the changes — do NOT rewrite entire files
+    17. If no user-facing behavior changed, skip but record WHY in memory
+  dependencies: ["integration-verify"]
+  acceptance:
+    - 'rg -q "## " doc/loom/knowledge/architecture.md'
+    - 'rg -q "## " doc/loom/knowledge/patterns.md'
+  files:
+    - "doc/loom/knowledge/**"
+    - "README.md"
+    - "CONTRIBUTING.md"
+  working_dir: "."
+````
+
+**Why knowledge-distill is mandatory (not optional):**
+
+| Reason | Explanation |
+| ------ | ----------- |
+| Context isolation | integration-verify runs build, tests, code review — distillation needs a fresh context |
+| Focus | integration-verify focuses on build/test/review; distillation focuses on learning curation |
+| Sequential | Must run after integration-verify to capture its discoveries in memory |
+| Sonnet-friendly | Mechanical curation work is well-scoped, no architectural judgment needed |
+| Permanent learning | Without this stage, all session memories are lost when the plan completes |
+
+**Skip ONLY if:** The plan genuinely produces no new knowledge worth preserving (rare). When in doubt, include it.
+
+---
+
 ### 12. Memory Recording in Stage Descriptions
 
 **Every stage description should remind agents to record memory.** Memory persists insights across sessions and prevents repeated mistakes.
@@ -1115,10 +1173,10 @@ Verifies all work integrates correctly after merges AND that the feature actuall
 │  ⚠️  IMPLEMENTATION STAGES: Use `loom memory` ONLY                   │
 │                                                                     │
 │  Implementation stages must NEVER use `loom knowledge update`.      │
-│  Only knowledge-bootstrap and integration-verify stages can write   │
-│  to knowledge files directly.                                       │
+│  Only knowledge-bootstrap, integration-verify, AND                  │
+│  knowledge-distill stages can write to knowledge files directly.    │
 │                                                                     │
-│  Memory gets curated into knowledge during integration-verify.      │
+│  Memory gets curated into knowledge during knowledge-distill.       │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1184,7 +1242,8 @@ description: |
 | --------------------- | ------------- | ------------------ |
 | knowledge-bootstrap   | YES           | YES                |
 | Implementation stages | YES (ONLY)    | **FORBIDDEN**      |
-| integration-verify    | YES           | YES (curate from memory) |
+| integration-verify    | YES           | NO (focused on build/test/review — record to memory for knowledge-distill) |
+| knowledge-distill     | YES           | YES (curate from memory) |
 
 **Why this separation?**
 
@@ -1196,7 +1255,8 @@ description: |
 
 1. **knowledge-bootstrap**: Directly writes to knowledge files (architecture, patterns, conventions)
 2. **Implementation stages**: Record EVERYTHING to memory, NEVER touch knowledge
-3. **integration-verify**: Reads memory, curates valuable insights using `loom knowledge update`
+3. **integration-verify**: Focused on build, test, code review, functional verification — record own discoveries to memory, NO knowledge writes
+4. **knowledge-distill**: Reads all stage memories, curates valuable insights using `loom knowledge update`
 
 **Implementation Stage Rule:**
 
@@ -1256,7 +1316,7 @@ During implementation stages, you MUST:
 3. **Clear File Scopes**: Define `files:` arrays to make overlap analysis explicit
 4. **Actionable Descriptions**: Each description should be a complete task specification
 5. **Testable Acceptance**: Every acceptance criterion must be a runnable command that works on BOTH Linux and macOS
-6. **Bookend Compliance**: Always include knowledge-bootstrap first and integration-verify last
+6. **Bookend Compliance**: Always include knowledge-bootstrap first, integration-verify second-to-last, and knowledge-distill last — all three are mandatory bookend stages
 7. **Working Directory**: Every stage must declare its `working_dir` explicitly — run the pre-flight checklist before writing criteria
 8. **Goal-Backward Verification**: Every `standard` stage MUST have at least one of `truths`, `artifacts`, or `wiring` (VALIDATED - plans will be REJECTED without this)
 9. **YAML Single Quotes for Commands**: Default to YAML single quotes (`'...'`) for acceptance/truths commands containing double quotes, backslashes, or regex — prevents YAML escaping from mangling the command
@@ -1333,6 +1393,7 @@ stages:
 graph LR
     knowledge-bootstrap --> stage-a & stage-b
     stage-a & stage-b --> integration-verify
+    integration-verify --> knowledge-distill
 ```
 
 Parallel stages are expressed using Mermaid's `&` operator. Each node is a worktree stage.
@@ -1400,7 +1461,7 @@ Parallel stages are expressed using Mermaid's `&` operator. Each node is a workt
 
 ### 4. Integration Verification
 
-**Purpose:** Final verification that all features are wired up and functional, including code review.
+**Purpose:** Verify all features are wired up and functional, including code review. Does NOT handle knowledge distillation or documentation — those are in the next stage.
 
 **Dependencies:** stage-a, stage-b (all implementation stages)
 
@@ -1424,22 +1485,40 @@ _Functional Verification (CRITICAL):_
 - Execute smoke test of primary use case end-to-end
 - Confirm user-visible behavior works as expected
 
-_Knowledge:_
-
-- Read all stage memory and curate valuable insights to knowledge
-- Update architecture.md if structure changed
-
-_Documentation:_
-
-- Update README.md, CONTRIBUTING.md, and other user-facing docs to reflect changes
-- Add new sections for new features; update existing sections for changed behavior
-- Remove references to removed functionality
-
-**Files:** `README.md`, `CONTRIBUTING.md`, `doc/**/*.md` (documentation updates)
+**Files:** (no documentation changes — handled by knowledge-distill)
 
 **Acceptance:** Build passes, tests pass, features callable via CLI/API.
 
 **Verification:** `myapp --help` shows new features; `src/main.rs` imports feature modules.
+
+---
+
+### 5. Knowledge Distillation
+
+**Purpose:** Curate all stage memories into permanent knowledge files and update user-facing documentation.
+
+**Dependencies:** integration-verify
+
+**Tasks:**
+
+_Memory Curation:_
+
+- Read all stage memories and synthesize patterns, mistakes, and decisions
+- Write actionable prevention rules to knowledge/mistakes.md
+- Curate reusable patterns, architectural decisions, conventions
+
+_Knowledge Review:_
+
+- Run `loom review`, remove stale entries, update architecture.md if changed
+
+_Documentation Update:_
+
+- Update README.md, CONTRIBUTING.md, and other user-facing docs to reflect plan changes
+- Only update relevant sections — do NOT rewrite entire files
+
+**Files:** `doc/loom/knowledge/**`, `README.md`, `CONTRIBUTING.md`
+
+**Acceptance:** Knowledge files contain sections with `## ` headers.
 
 ---
 
@@ -1542,26 +1621,15 @@ loom:
         - Execute smoke test of primary use case
         - Confirm user-visible behavior works end-to-end
 
-        KNOWLEDGE DISTILLATION (MANDATORY):
-        - Record own discoveries to loom memory FIRST
-        - Read all stage memories: loom memory show --all
-        - Curate mistakes as actionable prevention rules to loom knowledge
-        - Curate patterns and decisions to loom knowledge
-        - Remove or update stale knowledge entries
-
-        DOCUMENTATION UPDATE (MANDATORY):
-        - Update README.md, CONTRIBUTING.md, and other user-facing docs
-        - If no user-facing behavior changed, skip but record WHY in memory
+        NOTE: Knowledge distillation and documentation updates are handled
+        by knowledge-distill. Record your own discoveries to loom memory
+        so knowledge-distill can curate them.
       dependencies: ["stage-a", "stage-b"]
       acceptance:
         - "cargo test"
         - "cargo clippy -- -D warnings"
         - "cargo build"
         # ADD: Functional acceptance criteria for YOUR feature
-      files:
-        - "README.md"
-        - "CONTRIBUTING.md"
-        - "doc/**/*.md"
       working_dir: "."
       truths:
         - "myapp --help" # Adapt to YOUR feature
@@ -1569,6 +1637,41 @@ loom:
         - source: "src/main.rs"
           pattern: "feature_a"
           description: "Feature A is wired into main"
+
+    - id: knowledge-distill
+      name: "Knowledge Distillation"
+      stage_type: knowledge-distill
+      model: "sonnet"
+      reasoning_effort: "high"
+      description: |
+        Knowledge distillation — curate all stage memories into permanent knowledge.
+
+        ⛔ NEVER use Claude Code's auto-memory (~/.claude/projects/*/memory/).
+        ALL memory/knowledge goes through loom memory and loom knowledge commands.
+
+        CONTEXT GATHERING (FIRST):
+        - Read the plan file from doc/plans/
+        - Read ALL stage memories: loom memory show --all
+        - Read doc/loom/knowledge/*.md for current state
+
+        MEMORY CURATION:
+        - Synthesize mistakes as actionable prevention rules to loom knowledge
+        - Curate patterns, architectural decisions, conventions
+        - Run loom review, remove stale entries
+
+        DOCUMENTATION UPDATE:
+        - Update README.md, CONTRIBUTING.md, and other user-facing docs
+        - Only update relevant sections for changes in this plan
+        - If no user-facing behavior changed, skip but record WHY in memory
+      dependencies: ["integration-verify"]
+      acceptance:
+        - 'rg -q "## " doc/loom/knowledge/architecture.md'
+        - 'rg -q "## " doc/loom/knowledge/patterns.md'
+      files:
+        - "doc/loom/knowledge/**"
+        - "README.md"
+        - "CONTRIBUTING.md"
+      working_dir: "."
 ```
 
 <!-- END loom METADATA -->

@@ -70,9 +70,10 @@ WaitingForDeps --> Queued --> Executing --> Completed --> Verified
 
 - **Standard** (default) -- Regular implementation stages, require goal-backward verification
 - **Knowledge** -- No worktree, commits required (directly to main), auto merged=true, exploration focus
-- **IntegrationVerify** -- Final quality gate combining code review AND functional verification
+- **IntegrationVerify** -- Second-to-last quality gate combining code review AND functional verification
+- **KnowledgeDistill** -- Final stage, runs after integration-verify, curates session memories into permanent knowledge (worktree stage, sonnet default)
 
-Signal generation has 3 stable prefix generators in cache.rs (standard, knowledge, integration-verify).
+Signal generation has 4 stable prefix generators in cache.rs (standard, knowledge, integration-verify, knowledge-distill).
 
 ### Session Lifecycle (models/session/)
 
@@ -122,7 +123,7 @@ Unix socket at `.work/orchestrator.sock`. Messages: Status, Stop, Subscribe. Len
 
 1. **Git layer** -- Separate worktrees at `.worktrees/<stage-id>/` with branch `loom/<stage-id>`. Symlinks: `.work` -> shared state, `.claude/CLAUDE.md` -> instructions, root `CLAUDE.md` -> project guidance.
 2. **Sandbox layer** -- MergedSandboxConfig (sandbox/config.rs) generates `settings.local.json` with filesystem deny/allow, network domains, excluded commands. Knowledge writes via `loom knowledge update` CLI only.
-3. **Signal layer** -- Three stage-type-specific stable prefix generators in cache.rs (standard, knowledge, integration-verify). Include isolation rules and subagent restrictions.
+3. **Signal layer** -- Four stage-type-specific stable prefix generators in cache.rs (standard, knowledge, integration-verify, knowledge-distill). Include isolation rules and subagent restrictions.
 4. **Hook layer** -- commit-guard.sh blocks exit without commit. commit-filter.sh blocks subagent git operations via LOOM_MAIN_AGENT_PID/PPID comparison.
 
 ## Subagent Isolation
