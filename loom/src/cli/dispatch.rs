@@ -127,6 +127,11 @@ pub fn dispatch(command: Commands) -> Result<()> {
                 skip_map,
                 quick,
             } => knowledge::bootstrap::execute(model, skip_map, quick),
+            KnowledgeCommands::ReplaceSection {
+                file,
+                heading,
+                content,
+            } => knowledge::replace_section(file, heading, content),
         },
         Commands::Memory { command } => match command {
             MemoryCommands::Note { text, stage } => memory::note(text, stage),

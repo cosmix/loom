@@ -23,6 +23,19 @@ pub enum KnowledgeCommands {
         content: Option<String>,
     },
 
+    /// Replace a section in a knowledge file by heading
+    ReplaceSection {
+        /// File to update (entry-points, patterns, conventions, mistakes, etc.)
+        file: String,
+
+        /// Section heading to find and replace (e.g., "Merge Recovery Flow")
+        heading: String,
+
+        /// New content for the section. Omit or use "-" to read from stdin.
+        #[arg(value_parser = clap_knowledge_content_validator)]
+        content: Option<String>,
+    },
+
     /// Initialize the knowledge directory
     Init,
 

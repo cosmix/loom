@@ -91,6 +91,38 @@ pub fn update(file: String, content: Option<String>) -> Result<()> {
     Ok(())
 }
 
+pub fn replace_section(file: String, heading: String, content: Option<String>) -> Result<()> {
+    let content = match content {
+        Some(c) if c == "-" => read_content_from_stdin()?,
+        Some(c) => c,
+        None => read_content_from_stdin()?,
+    };
+
+    crate::validation::validate_knowledge_content(&content)?;
+
+    let work_dir = WorkDir::new(".")?;
+    let project_root = work_dir
+        .project_root()
+        .context("Could not determine project root")?;
+    let knowledge = KnowledgeDir::new(project_root);
+
+    if !knowledge.exists() {
+        bail!("Knowledge directory not found. Run 'loom knowledge init' first.");
+    }
+
+    let file_type = parse_file_type(&file)?;
+    knowledge.replace_section(file_type, &heading, &content)?;
+
+    println!(
+        "{} Replaced section '{}' in {}",
+        "✓".green().bold(),
+        heading,
+        file_type.filename()
+    );
+
+    Ok(())
+}
+
 pub fn init() -> Result<()> {
     let work_dir = WorkDir::new(".")?;
     let project_root = work_dir
