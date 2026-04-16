@@ -182,7 +182,7 @@ fn test_detect_worktree_status_no_worktree() {
     let repo_root = temp_dir.path();
 
     // When worktree doesn't exist, should return None
-    let status = detect_worktree_status("nonexistent-stage", repo_root);
+    let status = detect_worktree_status("nonexistent-stage", repo_root, repo_root);
     assert!(status.is_none());
 }
 
@@ -201,7 +201,7 @@ fn test_detect_worktree_status_active() {
 
     // Since this is not a real git repo, is_manually_merged will return false
     // and there's no MERGE_HEAD, so status should be Active
-    let status = detect_worktree_status("test-stage", repo_root);
+    let status = detect_worktree_status("test-stage", repo_root, repo_root);
     assert_eq!(status, Some(WorktreeStatus::Active));
 }
 
@@ -211,7 +211,7 @@ fn test_is_manually_merged_no_git_repo() {
     let repo_root = temp_dir.path();
 
     // When not in a git repo, is_manually_merged should gracefully return false
-    let result = is_manually_merged("test-stage", repo_root);
+    let result = is_manually_merged("test-stage", repo_root, repo_root);
     assert!(!result);
 }
 
