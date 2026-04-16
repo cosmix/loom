@@ -82,8 +82,30 @@ pub struct WorkDir {
 
 impl WorkDir {
     pub fn new<P: AsRef<Path>>(base_path: P) -> Result<Self> {
-        let root = base_path.as_ref().join(".work");
-        Ok(Self { root })
+        let candidate = base_path.as_ref().join(".work");
+        if candidate.exists() {
+            return Ok(Self { root: candidate });
+        }
+
+        // Search upward for .work (like git searches for .git)
+        if let Ok(abs) = base_path.as_ref().canonicalize() {
+            let mut current = abs.as_path();
+            loop {
+                let work_candidate = current.join(".work");
+                if work_candidate.exists() {
+                    return Ok(Self {
+                        root: work_candidate,
+                    });
+                }
+                match current.parent() {
+                    Some(parent) if parent != current => current = parent,
+                    _ => break,
+                }
+            }
+        }
+
+        // Fallback: use original path (needed for initialize() which creates .work)
+        Ok(Self { root: candidate })
     }
 
     pub fn initialize(&self) -> Result<()> {
@@ -346,6 +368,46 @@ mod tests {
         assert_eq!(
             main_root.unwrap().canonicalize().unwrap(),
             project_root.canonicalize().unwrap()
+        );
+    }
+
+    #[test]
+    fn test_workdir_new_searches_upward() {
+        let temp = TempDir::new().unwrap();
+        let project_root = temp.path();
+
+        // Create .work at project root
+        let work_dir_path = project_root.join(".work");
+        fs::create_dir(&work_dir_path).unwrap();
+
+        // Create a subdirectory (simulates agent cd'ing into loom/)
+        let subdir = project_root.join("loom");
+        fs::create_dir(&subdir).unwrap();
+
+        // WorkDir::new from subdirectory should find parent's .work
+        let work_dir = WorkDir::new(&subdir).unwrap();
+        assert_eq!(
+            work_dir.root().canonicalize().unwrap(),
+            work_dir_path.canonicalize().unwrap(),
+            "WorkDir should find .work in parent directory"
+        );
+    }
+
+    #[test]
+    fn test_workdir_new_falls_back_when_no_work_dir() {
+        let temp = TempDir::new().unwrap();
+        let project_root = temp.path();
+
+        // No .work anywhere
+        let subdir = project_root.join("some/nested/dir");
+        fs::create_dir_all(&subdir).unwrap();
+
+        // WorkDir::new should fall back to subdir/.work
+        let work_dir = WorkDir::new(&subdir).unwrap();
+        assert_eq!(
+            work_dir.root(),
+            subdir.join(".work"),
+            "Without .work anywhere, should fall back to base_path/.work"
         );
     }
 }
