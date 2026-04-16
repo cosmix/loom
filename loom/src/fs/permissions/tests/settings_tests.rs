@@ -1,6 +1,6 @@
 //! Tests for settings functions
 
-use crate::fs::permissions::settings::ensure_loom_permissions;
+use crate::fs::permissions::settings::ensure_loom_permissions_to;
 use serde_json::{json, Value};
 use std::fs;
 use tempfile::TempDir;
@@ -9,8 +9,9 @@ use tempfile::TempDir;
 fn test_ensure_loom_permissions_creates_new_file() {
     let temp_dir = TempDir::new().unwrap();
     let repo_root = temp_dir.path();
+    let hooks_dir = temp_dir.path().join("hooks");
 
-    ensure_loom_permissions(repo_root).unwrap();
+    ensure_loom_permissions_to(repo_root, Some(&hooks_dir)).unwrap();
 
     let settings_path = repo_root.join(".claude/settings.json");
     assert!(settings_path.exists());
@@ -26,6 +27,7 @@ fn test_ensure_loom_permissions_creates_new_file() {
 fn test_ensure_loom_permissions_merges_existing() {
     let temp_dir = TempDir::new().unwrap();
     let repo_root = temp_dir.path();
+    let hooks_dir = temp_dir.path().join("hooks");
     let claude_dir = repo_root.join(".claude");
     fs::create_dir_all(&claude_dir).unwrap();
 
@@ -43,7 +45,7 @@ fn test_ensure_loom_permissions_merges_existing() {
     )
     .unwrap();
 
-    ensure_loom_permissions(repo_root).unwrap();
+    ensure_loom_permissions_to(repo_root, Some(&hooks_dir)).unwrap();
 
     let content = fs::read_to_string(claude_dir.join("settings.json")).unwrap();
     let settings: Value = serde_json::from_str(&content).unwrap();
@@ -67,6 +69,7 @@ fn test_ensure_loom_permissions_merges_existing() {
 fn test_ensure_loom_permissions_no_duplicates() {
     let temp_dir = TempDir::new().unwrap();
     let repo_root = temp_dir.path();
+    let hooks_dir = temp_dir.path().join("hooks");
     let claude_dir = repo_root.join(".claude");
     fs::create_dir_all(&claude_dir).unwrap();
 
@@ -82,7 +85,7 @@ fn test_ensure_loom_permissions_no_duplicates() {
     )
     .unwrap();
 
-    ensure_loom_permissions(repo_root).unwrap();
+    ensure_loom_permissions_to(repo_root, Some(&hooks_dir)).unwrap();
 
     let content = fs::read_to_string(claude_dir.join("settings.json")).unwrap();
     let settings: Value = serde_json::from_str(&content).unwrap();
@@ -98,8 +101,9 @@ fn test_ensure_loom_permissions_no_duplicates() {
 fn test_ensure_loom_permissions_adds_hooks_to_settings_local() {
     let temp_dir = TempDir::new().unwrap();
     let repo_root = temp_dir.path();
+    let hooks_dir = temp_dir.path().join("hooks");
 
-    ensure_loom_permissions(repo_root).unwrap();
+    ensure_loom_permissions_to(repo_root, Some(&hooks_dir)).unwrap();
 
     // Hooks should be in settings.local.json, NOT settings.json
     let settings_local_path = repo_root.join(".claude/settings.local.json");
@@ -125,10 +129,11 @@ fn test_ensure_loom_permissions_adds_hooks_to_settings_local() {
 fn test_hooks_not_duplicated_on_rerun() {
     let temp_dir = TempDir::new().unwrap();
     let repo_root = temp_dir.path();
+    let hooks_dir = temp_dir.path().join("hooks");
 
     // Run twice
-    ensure_loom_permissions(repo_root).unwrap();
-    ensure_loom_permissions(repo_root).unwrap();
+    ensure_loom_permissions_to(repo_root, Some(&hooks_dir)).unwrap();
+    ensure_loom_permissions_to(repo_root, Some(&hooks_dir)).unwrap();
 
     // Hooks are in settings.local.json
     let settings_local_path = repo_root.join(".claude/settings.local.json");

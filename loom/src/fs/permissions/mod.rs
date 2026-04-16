@@ -16,11 +16,12 @@ mod tests;
 // Re-export public API
 pub use constants::{LOOM_PERMISSIONS, LOOM_PERMISSIONS_WORKTREE};
 pub use hooks::{
-    configure_loom_hooks, get_installed_hooks_dir, install_loom_hooks, loom_hooks_config,
+    configure_loom_hooks, get_installed_hooks_dir, install_loom_hooks, install_loom_hooks_to,
+    loom_hooks_config,
 };
 pub use settings::{
-    ensure_loom_hooks_local, ensure_loom_permissions, settings_json_has_hooks,
-    settings_local_has_hooks,
+    ensure_loom_hooks_local, ensure_loom_permissions, ensure_loom_permissions_to,
+    settings_json_has_hooks, settings_local_has_hooks,
 };
 pub use sync::{sync_worktree_permissions, sync_worktree_permissions_with_working_dir, SyncResult};
 pub use trust::{migrate_legacy_trust, trust_worktree, untrust_worktree};

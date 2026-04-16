@@ -1,8 +1,9 @@
 //! Tests for hook installation
 
 use crate::fs::permissions::constants::HOOK_COMMIT_GUARD;
-use crate::fs::permissions::hooks::install_loom_hooks;
+use crate::fs::permissions::hooks::install_loom_hooks_to;
 use std::fs;
+use tempfile::TempDir;
 
 #[test]
 fn test_embedded_commit_guard_hook_is_valid() {
@@ -17,25 +18,20 @@ fn test_embedded_commit_guard_hook_is_valid() {
 
 #[test]
 fn test_install_loom_hooks_creates_hook_files() {
-    // This test modifies ~/.claude/hooks/ which is a real directory
-    // We'll verify the hooks are installed correctly
-    let result = install_loom_hooks();
+    let temp_dir = TempDir::new().unwrap();
+    let hooks_dir = temp_dir.path().join("hooks/loom");
+
+    let result = install_loom_hooks_to(&hooks_dir);
     assert!(result.is_ok());
 
-    let home_dir = dirs::home_dir().expect("should have home dir");
+    // Check hooks are installed to the temp directory
+    let commit_guard_path = hooks_dir.join("commit-guard.sh");
+    assert!(commit_guard_path.exists());
+    let content = fs::read_to_string(&commit_guard_path).unwrap();
+    assert!(content.contains("detect_loom_worktree"));
+    assert!(content.contains("LOOM WORKTREE EXIT BLOCKED"));
 
-    // Check global hooks are installed
-    let commit_guard_path = home_dir.join(".claude/hooks/commit-guard.sh");
-    if commit_guard_path.exists() {
-        let content = fs::read_to_string(&commit_guard_path).unwrap();
-        assert!(content.contains("detect_loom_worktree"));
-        assert!(content.contains("LOOM WORKTREE EXIT BLOCKED"));
-    }
-
-    // Check worktree hooks are installed to loom/ subdirectory
-    let worktree_hooks_dir = home_dir.join(".claude/hooks/loom");
-    if worktree_hooks_dir.exists() {
-        assert!(worktree_hooks_dir.join("post-tool-use.sh").exists());
-        assert!(worktree_hooks_dir.join("session-start.sh").exists());
-    }
+    // Check worktree hooks exist
+    assert!(hooks_dir.join("post-tool-use.sh").exists());
+    assert!(hooks_dir.join("session-start.sh").exists());
 }

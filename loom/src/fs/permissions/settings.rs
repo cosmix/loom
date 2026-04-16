@@ -27,7 +27,7 @@ use std::fs;
 use std::path::Path;
 
 use super::constants::LOOM_PERMISSIONS;
-use super::hooks::{configure_loom_hooks, install_loom_hooks};
+use super::hooks::{configure_loom_hooks, install_loom_hooks, install_loom_hooks_to};
 
 /// Ensure `.claude/settings.json` has loom permissions configured
 ///
@@ -41,10 +41,19 @@ use super::hooks::{configure_loom_hooks, install_loom_hooks};
 ///
 /// Worktrees will merge this config with session-specific hooks at creation time.
 pub fn ensure_loom_permissions(repo_root: &Path) -> Result<()> {
-    // Install loom hooks to ~/.claude/hooks/ and ~/.claude/hooks/loom/
-    let hooks_installed = install_loom_hooks()?;
+    ensure_loom_permissions_to(repo_root, None)
+}
+
+/// Testable variant: pass `Some(dir)` to redirect hook installation to a temp directory.
+/// Production callers use `ensure_loom_permissions` which passes `None` (installs to ~/.claude/hooks/loom/).
+pub fn ensure_loom_permissions_to(repo_root: &Path, hooks_dir: Option<&Path>) -> Result<()> {
+    // Install loom hooks
+    let hooks_installed = match hooks_dir {
+        Some(dir) => install_loom_hooks_to(dir)?,
+        None => install_loom_hooks()?,
+    };
     if hooks_installed > 0 {
-        println!("  Installed {hooks_installed} loom hook(s) to ~/.claude/hooks/");
+        println!("  Installed {hooks_installed} loom hook(s)");
     }
 
     let claude_dir = repo_root.join(".claude");
@@ -296,8 +305,9 @@ mod tests {
     fn test_ensure_loom_permissions_creates_settings_json_with_permissions_only() {
         let temp_dir = TempDir::new().unwrap();
         let repo_root = temp_dir.path();
+        let hooks_dir = temp_dir.path().join("hooks");
 
-        ensure_loom_permissions(repo_root).unwrap();
+        ensure_loom_permissions_to(repo_root, Some(&hooks_dir)).unwrap();
 
         // settings.json should have permissions but NOT hooks or env
         let settings_path = repo_root.join(".claude/settings.json");
@@ -321,8 +331,9 @@ mod tests {
     fn test_ensure_loom_permissions_creates_hooks_in_settings_local() {
         let temp_dir = TempDir::new().unwrap();
         let repo_root = temp_dir.path();
+        let hooks_dir = temp_dir.path().join("hooks");
 
-        ensure_loom_permissions(repo_root).unwrap();
+        ensure_loom_permissions_to(repo_root, Some(&hooks_dir)).unwrap();
 
         // settings.local.json should have hooks and env
         let settings_local_path = repo_root.join(".claude/settings.local.json");
@@ -342,6 +353,7 @@ mod tests {
     fn test_ensure_loom_permissions_preserves_existing_settings_local() {
         let temp_dir = TempDir::new().unwrap();
         let repo_root = temp_dir.path();
+        let hooks_dir = temp_dir.path().join("hooks");
 
         // Create .claude directory and pre-existing settings.local.json with sandbox config
         let claude_dir = repo_root.join(".claude");
@@ -361,7 +373,7 @@ mod tests {
         )
         .unwrap();
 
-        ensure_loom_permissions(repo_root).unwrap();
+        ensure_loom_permissions_to(repo_root, Some(&hooks_dir)).unwrap();
 
         // Read back settings.local.json
         let content = fs::read_to_string(claude_dir.join("settings.local.json")).unwrap();
@@ -407,7 +419,7 @@ mod tests {
         )
         .unwrap();
 
-        ensure_loom_permissions(repo_root).unwrap();
+        ensure_loom_permissions_to(repo_root, Some(&temp_dir.path().join("hooks"))).unwrap();
 
         // settings.json should no longer have hooks or env
         let content = fs::read_to_string(claude_dir.join("settings.json")).unwrap();

@@ -149,19 +149,26 @@ pub fn loom_hooks_config() -> Value {
 
 /// Install all loom hooks to ~/.claude/hooks/loom/
 ///
-/// All hooks are installed to the loom/ subdirectory to keep them
-/// separate from any user-defined hooks.
+/// Convenience wrapper that installs to the default location.
+/// Use `install_loom_hooks_to` for testability with custom directories.
+pub fn install_loom_hooks() -> Result<usize> {
+    let home_dir = dirs::home_dir().context("Failed to determine home directory")?;
+    let hooks_dir = home_dir.join(".claude/hooks/loom");
+    install_loom_hooks_to(&hooks_dir)
+}
+
+/// Install all loom hooks to a specific directory
+///
+/// All hooks are installed to the given directory. In production this is
+/// `~/.claude/hooks/loom/`; tests pass a temp directory instead.
 ///
 /// # Returns
 /// - `Ok(count)` - number of hooks installed or updated
 /// - `Err` if installation failed
-pub fn install_loom_hooks() -> Result<usize> {
-    let home_dir = dirs::home_dir().context("Failed to determine home directory")?;
-    let hooks_dir = home_dir.join(".claude/hooks/loom");
-
+pub fn install_loom_hooks_to(hooks_dir: &std::path::Path) -> Result<usize> {
     // Create hooks directory if needed
     if !hooks_dir.exists() {
-        fs::create_dir_all(&hooks_dir).with_context(|| {
+        fs::create_dir_all(hooks_dir).with_context(|| {
             format!(
                 "Failed to create hooks directory at {}",
                 hooks_dir.display()
@@ -171,9 +178,8 @@ pub fn install_loom_hooks() -> Result<usize> {
 
     let mut installed_count = 0;
 
-    // Install all hooks to ~/.claude/hooks/loom/
     for (filename, content) in LOOM_HOOKS {
-        if install_hook_script(&hooks_dir, filename, content)? {
+        if install_hook_script(hooks_dir, filename, content)? {
             installed_count += 1;
         }
     }
