@@ -417,7 +417,7 @@ main() {
 
 		# Status values and their blocking behavior
 		# BLOCK: executing (work in progress, must complete)
-		# BLOCK: merge-conflict (needs manual resolution)
+		# ALLOW: merge-conflict (handled by resolution session)
 		# ALLOW: all other valid statuses
 		case "$status" in
 		# BLOCKING STATUSES - work is not done or needs attention
@@ -427,9 +427,7 @@ main() {
 			debug_log "Stage is still executing - will block"
 			;;
 		merge-conflict | MergeConflict)
-			stage_incomplete=1
-			issues+=("Stage '$STAGE_ID' has MERGE CONFLICT that needs resolution")
-			debug_log "Stage has merge conflict - will block"
+			debug_log "Stage has merge conflict - resolution session handles this, allowing stop"
 			;;
 
 		# ALLOWING STATUSES - stage is in a valid terminal or waiting state
@@ -529,11 +527,7 @@ main() {
 			blocking_status=$(get_stage_status "$stage_file")
 		fi
 
-		if [[ "$blocking_status" == "merge-conflict" ]] || [[ "$blocking_status" == "MergeConflict" ]]; then
-			message+="\n\n${step_num}. Stage has a MERGE CONFLICT. Resolve it manually:\n   - Check the conflicting files\n   - Resolve conflicts and commit\n   - Run: loom stage complete $STAGE_ID"
-		else
-			message+="\n\n${step_num}. Stage is still in '$blocking_status' status. After committing, run:\n   loom stage complete $STAGE_ID"
-		fi
+		message+="\n\n${step_num}. Stage is still in '$blocking_status' status. After committing, run:\n   loom stage complete $STAGE_ID"
 
 		if [[ -n "$stage_file" ]]; then
 			message+="\n   (Stage file: $stage_file)"

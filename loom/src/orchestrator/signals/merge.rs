@@ -115,6 +115,25 @@ pub(super) fn format_merge_signal_content(
         stage.id
     ));
 
+    content.push_str("## Inherited Responsibilities\n\n");
+    content.push_str(
+        "This resolution session now **owns** this stage. \
+         The original execution session has exited.\n\n",
+    );
+    content.push_str(
+        "- The original stage's acceptance criteria already passed before the merge conflict\n",
+    );
+    content.push_str("- Do NOT re-run the original stage's tasks or acceptance criteria\n");
+    content.push_str(&format!(
+        "- After resolving: `loom stage merge {} --resolved` marks the stage Completed \
+         and triggers dependents\n",
+        stage.id
+    ));
+    content.push_str("- The orchestrator handles plan completion when all stages finish\n");
+    content.push_str(
+        "- If this session exits without resolving, the orchestrator will spawn a new resolver\n\n",
+    );
+
     content
 }
 

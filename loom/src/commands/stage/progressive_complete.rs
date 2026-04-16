@@ -3,7 +3,7 @@
 //! This module handles the git merge operations that occur when a stage
 //! completes successfully with passing acceptance criteria.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 use crate::git::branch::branch_name_for_stage;
@@ -189,9 +189,23 @@ pub fn complete_with_merge(stage: &mut Stage, repo_root: &Path, work_dir: &Path)
 
             Ok(true)
         }
-        MergeOutcome::Conflict | MergeOutcome::Blocked => {
-            // Stage already saved in conflict/blocked state
-            Ok(false)
+        MergeOutcome::Conflict => {
+            bail!(
+                "Merge conflict detected for stage '{}'.\n\
+                 A resolution session has been spawned to handle the merge.\n\
+                 Your work is committed on the stage branch -- this session should exit now.\n\
+                 Do NOT attempt to resolve the merge conflict yourself.",
+                stage.id
+            );
+        }
+        MergeOutcome::Blocked => {
+            bail!(
+                "Merge blocked for stage '{}'.\n\
+                 The stage has been marked MergeBlocked.\n\
+                 This session should exit now. Fix the issue and run: loom stage retry {}",
+                stage.id,
+                stage.id
+            );
         }
     }
 }
