@@ -210,6 +210,7 @@ All PreToolUse hooks that match command patterns MUST use `strip_embedded_conten
 MergeConflict -> bail\!() forces original session to exit -> commit-guard.sh allows exit for MergeConflict status -> detection.rs recognizes as normal exit -> spawn_merge_resolution_sessions() kills any stale original session, then spawns resolver -> merge signal includes "Inherited Responsibilities" section explaining resolver owns the stage -> user directed to `loom stage merge <stage-id> --resolved`.
 
 Key invariant: the original execution session MUST exit when merge conflict is detected. Three mechanisms enforce this:
+
 1. `bail\!()` in `complete_with_merge()` propagates error and terminates the session
 2. `commit-guard.sh` does NOT block exit for MergeConflict status
 3. `spawn_merge_resolution_sessions()` actively kills stale sessions before spawning resolver

@@ -208,11 +208,13 @@
 **Why:** The `Ok(false)` return was designed for "merge didn't succeed but keep running" — wrong mental model. Merge conflict means "your work is done, hand off to resolver." The commit-guard didn't distinguish between "stage still executing" and "stage waiting for merge resolution." And session cleanup assumed sessions would exit on their own.
 
 **Prevention:**
+
 - When adding new terminal/handoff stage statuses, always update: (1) `complete_with_merge` return behavior, (2) `commit-guard.sh` case statement, (3) `detection.rs` normal-exit matches, (4) `spawn_merge_resolution_sessions` cleanup logic
 - Use `bail\!()` not `Ok(false)` when the session MUST exit — `Ok(false)` leaves the caller alive
 - Test the full lifecycle: stage completes → merge conflicts → original session exits → resolver spawns → resolver resolves
 
 **Fix:** Four-part coordinated change:
+
 - `progressive_complete.rs`: Changed `Ok(false)` to `bail\!()` for Conflict and Blocked arms, forcing session exit with clear message
 - `commit-guard.sh`: Changed MergeConflict case to allow session exit (no longer sets stage_incomplete)
 - `merge_handler.rs`: Added `kill_session()` call for stale Stage sessions before spawning merge resolver
