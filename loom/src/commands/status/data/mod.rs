@@ -95,6 +95,8 @@ pub struct StageSummary {
     pub pid: Option<u32>,
     /// Whether the session process is alive
     pub session_alive: bool,
+    /// Effective model name for this stage (explicit override or stage-type default)
+    pub model: String,
 }
 
 /// Session display data (test-only)

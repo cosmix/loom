@@ -121,7 +121,11 @@ pub fn stage_info_to_stage(info: &StageInfo) -> Stage {
         review_reason: None,
         bug_fix: None,
         regression_test: None,
-        model: None,
+        model: if info.model.is_empty() {
+            None
+        } else {
+            Some(info.model.clone())
+        },
         reasoning_effort: None,
     }
 }
@@ -371,6 +375,7 @@ mod tests {
             status: StageStatus::Executing,
             merged: true,
             dependencies: vec!["dep1".to_string(), "dep2".to_string()],
+            model: "opus[1m]".to_string(),
         };
 
         let stage = stage_info_to_stage(&info);

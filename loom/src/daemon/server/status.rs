@@ -43,6 +43,7 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
                             let worktree_status =
                                 detect_worktree_status(&stage.id, &repo_root, work_dir);
 
+                            let model = stage.effective_model().to_string();
                             let stage_info = StageInfo {
                                 id: stage.id,
                                 name: stage.name,
@@ -53,6 +54,7 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
                                 status: stage.status.clone(),
                                 merged: stage.merged,
                                 dependencies: stage.dependencies,
+                                model,
                             };
 
                             // Categorize into lists based on status.

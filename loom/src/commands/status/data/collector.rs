@@ -153,6 +153,7 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         max_retries: stage.max_retries,
         pid,
         session_alive,
+        model: stage.effective_model().to_string(),
     }
 }
 

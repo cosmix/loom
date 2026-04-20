@@ -177,19 +177,22 @@ impl<'a> TreeWidget<'a> {
                 "  ← "
             };
 
+            let model_text = format!(" [{}]", stage.effective_model());
+
             // Width accounting
             let connector_w = connector.chars().count();
             let icon_w = 2; // icon char + space
             let elapsed_w = elapsed_text.chars().count();
             let deps_w = deps_prefix.len() + deps_joined.len();
+            let model_w = model_text.chars().count();
 
             // Budget for stage ID (runtime always visible, deps can shrink)
-            let fixed_w = connector_w + icon_w + elapsed_w + deps_w;
+            let fixed_w = connector_w + icon_w + elapsed_w + deps_w + model_w;
             let id_budget = max_w.saturating_sub(fixed_w).max(8);
             let id_display = truncate_id(&stage.id, id_budget);
 
             // Recalculate available space for deps after ID truncation
-            let used_w = connector_w + icon_w + id_display.len() + elapsed_w;
+            let used_w = connector_w + icon_w + id_display.len() + elapsed_w + model_w;
             let deps_budget = max_w.saturating_sub(used_w);
 
             // Build spans
@@ -199,6 +202,7 @@ impl<'a> TreeWidget<'a> {
                 Span::styled(stage.status.icon().to_string(), stage.status.tui_style()),
                 Span::raw(" "),
                 Span::styled(id_display, Style::default().fg(stage_color)),
+                Span::styled(model_text, Theme::dimmed()),
             ];
 
             // Elapsed time (for executing and completed stages)

@@ -201,14 +201,15 @@ pub fn render_graph<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<(
         let deps = format_dep_annotation(&stage.dependencies, &color_map);
         let color = color_by_index(global_index);
         let colored_id = stage.id.color(color);
+        let model_tag = format!(" {}", format!("[{}]", stage.model).dimmed());
         let annotations = format_stage_annotations(stage);
 
-        // Layout: <indent> <connector> <indicator>  <id> <deps> <annotations>
+        // Layout: <indent> <connector> <indicator>  <id> <model> <deps> <annotations>
         // Two spaces between indicator and id give room to breathe; deps and
         // annotations sit inline (no fragile column padding).
         writeln!(
             w,
-            "{ROW_INDENT}{connector}{indicator}  {colored_id}{deps}{annotations}"
+            "{ROW_INDENT}{connector}{indicator}  {colored_id}{model_tag}{deps}{annotations}"
         )?;
 
         // For completed-but-not-merged non-knowledge stages, show a merge hint.

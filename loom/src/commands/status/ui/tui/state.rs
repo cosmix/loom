@@ -291,6 +291,7 @@ mod tests {
             status: StageStatus::WaitingForDeps,
             merged: false,
             dependencies: vec![],
+            model: String::new(),
         }];
         status.completed = vec![StageInfo {
             id: "b".to_string(),
@@ -302,6 +303,7 @@ mod tests {
             status: StageStatus::Completed,
             merged: true,
             dependencies: vec![],
+            model: String::new(),
         }];
 
         assert_eq!(status.total(), 2);
@@ -323,6 +325,7 @@ mod tests {
                     status: StageStatus::WaitingForDeps,
                     merged: false,
                     dependencies: vec![],
+                    model: String::new(),
                 },
                 StageInfo {
                     id: "b".to_string(),
@@ -334,6 +337,7 @@ mod tests {
                     status: StageStatus::WaitingForDeps,
                     merged: false,
                     dependencies: vec!["a".to_string()],
+                    model: String::new(),
                 },
                 StageInfo {
                     id: "c".to_string(),
@@ -345,6 +349,7 @@ mod tests {
                     status: StageStatus::WaitingForDeps,
                     merged: false,
                     dependencies: vec!["a".to_string(), "b".to_string()],
+                    model: String::new(),
                 },
             ],
             completed: vec![],

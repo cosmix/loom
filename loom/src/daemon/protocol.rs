@@ -135,6 +135,9 @@ pub struct StageInfo {
     /// IDs of stages this stage depends on
     #[serde(default)]
     pub dependencies: Vec<String>,
+    /// Effective model name for this stage (explicit override or stage-type default)
+    #[serde(default)]
+    pub model: String,
 }
 
 /// Write a length-prefixed JSON message to a stream.
@@ -250,6 +253,7 @@ mod tests {
                 status: StageStatus::Executing,
                 merged: false,
                 dependencies: vec!["stage-0".to_string()],
+                model: "opus[1m]".to_string(),
             }],
             stages_pending: vec![StageInfo {
                 id: "stage-2".to_string(),
@@ -261,6 +265,7 @@ mod tests {
                 status: StageStatus::WaitingForDeps,
                 merged: false,
                 dependencies: vec!["stage-1".to_string()],
+                model: "sonnet".to_string(),
             }],
             stages_completed: vec![StageInfo {
                 id: "stage-0".to_string(),
@@ -272,6 +277,7 @@ mod tests {
                 status: StageStatus::Completed,
                 merged: true,
                 dependencies: vec![],
+                model: "opus[1m]".to_string(),
             }],
             stages_blocked: vec![],
         };
