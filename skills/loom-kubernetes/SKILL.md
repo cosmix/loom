@@ -1,7 +1,40 @@
 ---
 name: loom-kubernetes
-description: Kubernetes deployment, cluster architecture, security, and operations. Includes manifests, Helm charts, RBAC, network policies, troubleshooting, and production best practices. Trigger keywords: kubernetes, k8s, pod, deployment, statefulset, daemonset, service, ingress, configmap, secret, pvc, namespace, helm, chart, kubectl, cluster, rbac, networkpolicy, podsecurity, operator, crd, job, cronjob, hpa, pdb, kustomize.
-allowed-tools: Read, Grep, Glob, Edit, Write, Bash
+description: Kubernetes deployment, cluster architecture, security, and operations. Use for manifests, Helm charts, RBAC, network policies, operators/CRDs, PodSecurityStandards, troubleshooting, and production best practices.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Edit
+  - Write
+  - Bash
+triggers:
+  - kubernetes
+  - k8s
+  - pod
+  - deployment
+  - statefulset
+  - daemonset
+  - service
+  - ingress
+  - configmap
+  - secret
+  - pvc
+  - namespace
+  - helm
+  - chart
+  - kubectl
+  - cluster
+  - rbac
+  - networkpolicy
+  - podsecurity
+  - operator
+  - crd
+  - job
+  - cronjob
+  - hpa
+  - pdb
+  - kustomize
 ---
 
 # Kubernetes

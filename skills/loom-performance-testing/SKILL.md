@@ -1,6 +1,44 @@
 ---
 name: loom-performance-testing
-description: Performance testing and load testing expertise including k6, locust, JMeter, Gatling, artillery, API load testing, database query optimization, benchmarking strategies, profiling techniques, metrics analysis (p95/p99 latency, throughput, RPS), performance budgets, and bottleneck identification. Use when implementing load tests, stress tests, spike tests, soak tests, analyzing system behavior under concurrent users, measuring saturation points, or optimizing application performance under load. Trigger keywords: performance testing, load testing, stress testing, stress test, load test, performance test, k6, locust, JMeter, Gatling, artillery, benchmark, benchmarking, profiling, latency, throughput, RPS, requests per second, concurrent users, virtual users, percentile, p95, p99, p50, median latency, saturation, bottleneck, performance budget, API load testing, database performance, query optimization, slow queries, scalability testing, capacity planning, response time, error rate, apdex.
+description: Performance and load testing with k6, locust, JMeter, Gatling, and artillery. Use for load/stress/spike/soak tests, API and database benchmarking, profiling, p95/p99 latency analysis, throughput measurement, and bottleneck identification.
+triggers:
+  - performance testing
+  - load testing
+  - stress testing
+  - stress test
+  - load test
+  - performance test
+  - k6
+  - locust
+  - JMeter
+  - Gatling
+  - artillery
+  - benchmark
+  - benchmarking
+  - profiling
+  - latency
+  - throughput
+  - RPS
+  - requests per second
+  - concurrent users
+  - virtual users
+  - percentile
+  - p95
+  - p99
+  - p50
+  - median latency
+  - saturation
+  - bottleneck
+  - performance budget
+  - API load testing
+  - database performance
+  - query optimization
+  - slow queries
+  - scalability testing
+  - capacity planning
+  - response time
+  - error rate
+  - apdex
 ---
 
 # Performance Testing

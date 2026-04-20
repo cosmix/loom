@@ -1,12 +1,13 @@
 ---
 name: loom-refactoring
-description: |
-  Restructures existing code to improve readability, maintainability, and performance without changing external behavior.
-
-  USE WHEN: Restructuring code without changing behavior, extracting methods/classes, removing duplication, applying design patterns, improving code organization, reducing technical debt.
-  DO NOT USE: For bug fixes (use /loom-debugging), for adding tests (use /loom-testing), for new features (implement directly).
-
-  TRIGGERS: refactor, restructure, rewrite, clean up, simplify, extract, inline, rename, move, split, merge, decompose, modularize, decouple, technical debt, code smell, DRY, SOLID, improve code, modernize, reorganize.
+description: Restructures existing code to improve readability, maintainability, and performance without changing behavior. Use for extracting methods/classes, removing duplication, applying design patterns, improving organization, and reducing technical debt. Not for bug fixes (use loom-debugging) or new features.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Edit
+  - Write
+  - Bash
 triggers:
   - refactor
   - restructure
@@ -29,7 +30,6 @@ triggers:
   - improve code
   - modernize
   - reorganize
-allowed-tools: Read, Grep, Glob, Edit, Write, Bash
 ---
 
 # Refactoring

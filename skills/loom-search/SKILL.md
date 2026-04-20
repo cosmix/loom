@@ -1,6 +1,33 @@
 ---
 name: loom-search
-description: Full-text search and search engine implementation. Use when implementing search functionality, autocomplete, faceted search, relevance tuning, or working with search indexes. Keywords: search, full-text search, Elasticsearch, OpenSearch, Meilisearch, Typesense, fuzzy search, autocomplete, faceted search, facets, inverted index, relevance, ranking, scoring, tokenizer, analyzer, search-as-you-type, aggregations, synonyms, indexing, query, filtering, highlighting, search UI, typeahead, suggestions.
+description: Full-text search and search engine implementation. Use when implementing search functionality, autocomplete, faceted search, relevance tuning, or working with search indexes like Elasticsearch, OpenSearch, Meilisearch, or Typesense.
+triggers:
+  - search
+  - full-text search
+  - Elasticsearch
+  - OpenSearch
+  - Meilisearch
+  - Typesense
+  - fuzzy search
+  - autocomplete
+  - faceted search
+  - facets
+  - inverted index
+  - relevance
+  - ranking
+  - scoring
+  - tokenizer
+  - analyzer
+  - search-as-you-type
+  - aggregations
+  - synonyms
+  - indexing
+  - query
+  - filtering
+  - highlighting
+  - search UI
+  - typeahead
+  - suggestions
 ---
 
 # Search

@@ -1,6 +1,32 @@
 ---
 name: loom-serialization
-description: Data serialization and deserialization patterns across formats. Use when implementing data exchange, API payloads, storage formats, encoding/decoding, or cross-language communication. Keywords: serialize, deserialize, serialization, deserialization, JSON, YAML, TOML, XML, Protocol Buffers, protobuf, MessagePack, CBOR, serde, encoding, decoding, schema, schema evolution, versioning, backward compatibility, forward compatibility, binary format, text format, data interchange, gRPC, API contracts.
+description: Data serialization and deserialization patterns across formats. Use when implementing data exchange, API payloads, storage formats, encoding/decoding, schema evolution, or cross-language communication with JSON, YAML, TOML, Protocol Buffers, MessagePack, CBOR, or serde.
+triggers:
+  - serialize
+  - deserialize
+  - serialization
+  - deserialization
+  - JSON
+  - YAML
+  - TOML
+  - XML
+  - Protocol Buffers
+  - protobuf
+  - MessagePack
+  - CBOR
+  - serde
+  - encoding
+  - decoding
+  - schema
+  - schema evolution
+  - versioning
+  - backward compatibility
+  - forward compatibility
+  - binary format
+  - text format
+  - data interchange
+  - gRPC
+  - API contracts
 ---
 
 # Serialization

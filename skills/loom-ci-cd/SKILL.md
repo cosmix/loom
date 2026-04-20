@@ -1,8 +1,58 @@
 ---
 name: loom-ci-cd
-description: Designs and implements CI/CD pipelines for automated testing, building, deployment, and security scanning across multiple platforms. Covers pipeline optimization, test integration, artifact management, and release automation.
-trigger-keywords: CI/CD, pipeline, workflow, GitHub Actions, GitLab CI, Jenkins, CircleCI, Travis CI, Azure Pipelines, build, deploy, deployment, release, artifact, stage, job, runner, action, automation, continuous integration, continuous deployment, continuous delivery, container registry, docker build, image push, canary deployment, blue-green deployment, rolling update, rollback, integration tests, smoke tests, security scanning, SAST, DAST, dependency scanning, secrets management, cache optimization, parallelization, monorepo CI, matrix build, self-hosted runner, ML pipeline, model training pipeline, model deployment
-allowed-tools: Read, Grep, Glob, Edit, Write, Bash
+description: Designs and implements CI/CD pipelines for automated testing, building, deployment, and security scanning across GitHub Actions, GitLab CI, Jenkins, CircleCI, and cloud-native platforms. Covers pipeline optimization, test integration, artifact management, and release automation.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Edit
+  - Write
+  - Bash
+triggers:
+  - CI/CD
+  - pipeline
+  - workflow
+  - GitHub Actions
+  - GitLab CI
+  - Jenkins
+  - CircleCI
+  - Travis CI
+  - Azure Pipelines
+  - build
+  - deploy
+  - deployment
+  - release
+  - artifact
+  - stage
+  - job
+  - runner
+  - action
+  - automation
+  - continuous integration
+  - continuous deployment
+  - continuous delivery
+  - container registry
+  - docker build
+  - image push
+  - canary deployment
+  - blue-green deployment
+  - rolling update
+  - rollback
+  - integration tests
+  - smoke tests
+  - security scanning
+  - SAST
+  - DAST
+  - dependency scanning
+  - secrets management
+  - cache optimization
+  - parallelization
+  - monorepo CI
+  - matrix build
+  - self-hosted runner
+  - ML pipeline
+  - model training pipeline
+  - model deployment
 ---
 
 # CI/CD

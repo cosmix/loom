@@ -1,7 +1,43 @@
 ---
 name: loom-security-audit
-description: Performs comprehensive security audits identifying vulnerabilities, misconfigurations, and security best practice violations across applications, APIs, infrastructure, and data pipelines. Covers OWASP Top 10, compliance requirements (SOC2, PCI-DSS, HIPAA, GDPR), penetration testing, vulnerability assessment, risk assessment, security reviews, and hardening. Trigger keywords: security audit, vulnerability assessment, penetration test, pentest, OWASP, CVE, security review, risk assessment, compliance, SOC2, PCI-DSS, HIPAA, GDPR, security checklist, threat modeling, attack surface, security posture, vulnerability scan, security hardening, security baseline, security controls, security gap analysis, infrastructure security, API security, cloud security, container security, Kubernetes security, network security, application security, data security, ML model security.
-allowed-tools: Read, Grep, Glob, Bash
+description: Comprehensive security audits identifying vulnerabilities, misconfigurations, and best-practice violations across applications, APIs, infrastructure, and data pipelines. Use for OWASP Top 10 reviews, compliance assessments (SOC2, PCI-DSS, HIPAA, GDPR), threat modeling, risk assessment, and hardening.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash
+triggers:
+  - security audit
+  - vulnerability assessment
+  - penetration test
+  - pentest
+  - OWASP
+  - CVE
+  - security review
+  - risk assessment
+  - compliance
+  - SOC2
+  - PCI-DSS
+  - HIPAA
+  - GDPR
+  - security checklist
+  - threat modeling
+  - attack surface
+  - security posture
+  - vulnerability scan
+  - security hardening
+  - security baseline
+  - security controls
+  - security gap analysis
+  - infrastructure security
+  - API security
+  - cloud security
+  - container security
+  - Kubernetes security
+  - network security
+  - application security
+  - data security
+  - ML model security
 ---
 
 # Security Audit

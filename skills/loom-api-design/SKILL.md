@@ -1,7 +1,42 @@
 ---
 name: loom-api-design
-description: Designs RESTful APIs, GraphQL schemas, and RPC interfaces following best practices for consistency, usability, and scalability. Trigger keywords: api design, REST, RESTful, REST API, GraphQL, GraphQL schema, gRPC, OpenAPI, Swagger, endpoint, route, resource, CRUD, HTTP method, GET, POST, PUT, PATCH, DELETE, status code, pagination, filtering, sorting, versioning, HATEOAS, API versioning, schema design, RPC, service design.
-allowed-tools: Read, Grep, Glob, Edit, Write
+description: Designs RESTful APIs, GraphQL schemas, and RPC interfaces for consistency, usability, and scalability. Use when defining endpoints, resource models, HTTP semantics, pagination, versioning, or RPC service contracts.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Edit
+  - Write
+triggers:
+  - api design
+  - REST
+  - RESTful
+  - REST API
+  - GraphQL
+  - GraphQL schema
+  - gRPC
+  - OpenAPI
+  - Swagger
+  - endpoint
+  - route
+  - resource
+  - CRUD
+  - HTTP method
+  - GET
+  - POST
+  - PUT
+  - PATCH
+  - DELETE
+  - status code
+  - pagination
+  - filtering
+  - sorting
+  - versioning
+  - HATEOAS
+  - API versioning
+  - schema design
+  - RPC
+  - service design
 ---
 
 # API Design

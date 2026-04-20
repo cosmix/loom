@@ -1,7 +1,35 @@
 ---
 name: loom-kustomize
-description: Kubernetes native configuration management with Kustomize. Use for environment-specific configs, resource patching, manifest organization, multi-environment deployments, and GitOps workflows. Triggers: kustomize, kustomization, overlay, base, patch, strategic merge, json patch, json6902, configmap generator, secret generator, namespace, namePrefix, nameSuffix, commonLabels, commonAnnotations, component, transformer, replacement, multi-environment, dev/staging/prod configs, k8s manifest management.
-allowed-tools: Read, Grep, Glob, Edit, Write, Bash
+description: Kubernetes-native configuration management with Kustomize. Use for environment-specific configs, resource patching (strategic merge, JSON6902), ConfigMap/Secret generation, overlays/bases, multi-environment deployments, and GitOps workflows.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Edit
+  - Write
+  - Bash
+triggers:
+  - kustomize
+  - kustomization
+  - overlay
+  - base
+  - patch
+  - strategic merge
+  - json patch
+  - json6902
+  - configmap generator
+  - secret generator
+  - namespace
+  - namePrefix
+  - nameSuffix
+  - commonLabels
+  - commonAnnotations
+  - component
+  - transformer
+  - replacement
+  - multi-environment
+  - dev/staging/prod configs
+  - k8s manifest management
 ---
 
 # Kustomize Skill

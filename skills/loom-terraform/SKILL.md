@@ -1,7 +1,43 @@
 ---
 name: loom-terraform
-description: Creates and manages Infrastructure as Code using Terraform/OpenTofu for cloud resource provisioning, module development, state management, and multi-environment deployments. Trigger keywords: terraform, tf, opentofu, tofu, infrastructure, IaC, infrastructure as code, provision, cloud, aws, azure, gcp, kubernetes, k8s, module, provider, state, backend, plan, apply, workspace, resource, data source, output, variable, locals, import, taint, destroy.
-allowed-tools: Read, Grep, Glob, Edit, Write, Bash
+description: Infrastructure as Code with Terraform/OpenTofu. Use for cloud resource provisioning, module development, state and backend management, multi-environment deployments (workspaces, tfvars), provider configuration, and refactoring/import workflows.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Edit
+  - Write
+  - Bash
+triggers:
+  - terraform
+  - tf
+  - opentofu
+  - tofu
+  - infrastructure
+  - IaC
+  - infrastructure as code
+  - provision
+  - cloud
+  - aws
+  - azure
+  - gcp
+  - kubernetes
+  - k8s
+  - module
+  - provider
+  - state
+  - backend
+  - plan
+  - apply
+  - workspace
+  - resource
+  - data source
+  - output
+  - variable
+  - locals
+  - import
+  - taint
+  - destroy
 ---
 
 # Terraform / OpenTofu

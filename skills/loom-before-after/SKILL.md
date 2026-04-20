@@ -1,8 +1,23 @@
 ---
 name: loom-before-after
-description: Generates before/after verification pairs for loom plans. Proves a stage actually changed system behavior by capturing state before and after implementation. Use for delta-proof verification — proving new commands, endpoints, modules, or bug fixes work by comparing system state.
-allowed-tools: Read, Grep, Glob, Edit, Write, Bash
-trigger-keywords: before after, before-after, delta proof, prove change, prove new, verify delta, state transition, before implementation, after implementation
+description: Generates before/after verification pairs for loom plans. Proves a stage actually changed system behavior by capturing state before and after implementation. Use for delta-proof verification of new commands, endpoints, modules, or bug fixes.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Edit
+  - Write
+  - Bash
+triggers:
+  - before after
+  - before-after
+  - delta proof
+  - prove change
+  - prove new
+  - verify delta
+  - state transition
+  - before implementation
+  - after implementation
 ---
 
 # Before/After Verification Skill

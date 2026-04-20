@@ -1,6 +1,29 @@
 ---
 name: loom-rate-limiting
-description: API rate limiting and quota management implementation. Use when implementing request throttling, API quotas, backpressure handling, or protection against abuse. Keywords: rate limiting, rate limit, throttle, throttling, token bucket, leaky bucket, sliding window, fixed window, quota, 429, too many requests, DDoS, abuse prevention, API quota, burst, Redis rate limiting, distributed rate limiting, API gateway, per-user limits, per-IP limits, concurrent requests, request limiting.
+description: API rate limiting and quota management. Use when implementing request throttling, API quotas, backpressure handling, or abuse protection. Covers token bucket, leaky bucket, sliding/fixed window algorithms, and distributed rate limiting with Redis.
+triggers:
+  - rate limiting
+  - rate limit
+  - throttle
+  - throttling
+  - token bucket
+  - leaky bucket
+  - sliding window
+  - fixed window
+  - quota
+  - 429
+  - too many requests
+  - DDoS
+  - abuse prevention
+  - API quota
+  - burst
+  - Redis rate limiting
+  - distributed rate limiting
+  - API gateway
+  - per-user limits
+  - per-IP limits
+  - concurrent requests
+  - request limiting
 ---
 
 # Rate Limiting

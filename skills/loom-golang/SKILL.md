@@ -1,6 +1,33 @@
 ---
 name: loom-golang
-description: Go language expertise for writing idiomatic, production-quality Go code. Use for Go development, concurrency patterns, error handling, testing, and module management. Triggers: go, golang, goroutine, channel, interface, struct, pointer, slice, map, defer, context, error, gin, echo, fiber, cobra, viper, gorm, sqlx, go mod, go test, effective go, errgroup, sync, mutex, waitgroup.
+description: Go language expertise for idiomatic, production-quality code. Use for Go development, concurrency patterns with goroutines and channels, error handling, testing, and module management following Effective Go principles.
+triggers:
+  - go
+  - golang
+  - goroutine
+  - channel
+  - interface
+  - struct
+  - pointer
+  - slice
+  - map
+  - defer
+  - context
+  - error
+  - gin
+  - echo
+  - fiber
+  - cobra
+  - viper
+  - gorm
+  - sqlx
+  - go mod
+  - go test
+  - effective go
+  - errgroup
+  - sync
+  - mutex
+  - waitgroup
 ---
 
 # Go Language Expertise

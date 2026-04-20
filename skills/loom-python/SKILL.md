@@ -1,6 +1,32 @@
 ---
 name: loom-python
-description: Python language expertise for writing idiomatic, production-quality Python code. Covers web frameworks (FastAPI, Django, Flask), data processing (pandas, numpy, dask), ML patterns (sklearn, pytorch), async programming, type hints, testing with pytest, packaging (pip, uv, poetry), linting (ruff, mypy, black), and PEP 8 standards. Use for any Python development including data engineering and machine learning workflows. Triggers: python, py, pip, uv, poetry, virtualenv, pytest, pydantic, fastapi, django, flask, pandas, numpy, dataclass, type hints, asyncio, mypy, ruff, black, sklearn, pytorch, tensorflow, jupyter, pipenv, conda.
+description: Python language expertise for idiomatic, production-quality code. Use for web frameworks (FastAPI, Django, Flask), data processing (pandas, numpy), ML patterns (sklearn, pytorch), async programming, type hints, pytest, packaging with uv/poetry, and linting with ruff/mypy/black.
+triggers:
+  - python
+  - py
+  - pip
+  - uv
+  - poetry
+  - virtualenv
+  - pytest
+  - pydantic
+  - fastapi
+  - django
+  - flask
+  - pandas
+  - numpy
+  - dataclass
+  - type hints
+  - asyncio
+  - mypy
+  - ruff
+  - black
+  - sklearn
+  - pytorch
+  - tensorflow
+  - jupyter
+  - pipenv
+  - conda
 ---
 
 # Python Language Expertise

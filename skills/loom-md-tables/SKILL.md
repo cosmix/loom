@@ -1,6 +1,24 @@
 ---
 name: loom-md-tables
-description: Fix markdown table alignment and spacing issues. Use when formatting tables in markdown files, aligning columns, normalizing cell padding, or ensuring proper table structure. Triggers: markdown table, md table, table formatting, column alignment, pipe table, GFM table, table generator, align columns, table spacing, table layout, fix table, format table, table structure.
+description: Fix markdown table alignment and spacing issues. Use when formatting tables in markdown files, aligning columns, normalizing cell padding, or ensuring proper GFM table structure. Runs a Python script to normalize column widths while preserving alignment markers.
+allowed-tools:
+  - Read
+  - Edit
+  - Bash(python *)
+triggers:
+  - markdown table
+  - md table
+  - table formatting
+  - column alignment
+  - pipe table
+  - GFM table
+  - table generator
+  - align columns
+  - table spacing
+  - table layout
+  - fix table
+  - format table
+  - table structure
 ---
 
 # Markdown Table Formatting

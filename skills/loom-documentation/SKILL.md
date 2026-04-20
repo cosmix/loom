@@ -1,7 +1,34 @@
 ---
 name: loom-documentation
-description: Creates and maintains technical documentation including API docs, README files, architecture docs, changelogs, ADRs, and inline code comments. Handles all documentation needs from code-level docstrings to project-level guides. Trigger keywords: documentation, docs, document, README, tutorial, guide, reference, changelog, ADR, architecture decision record, docstring, JSDoc, rustdoc, pydoc, markdown, mdx, api docs, user guide, developer guide, inline comments, code comments.
-allowed-tools: Read, Grep, Glob, Edit, Write
+description: Creates and maintains technical documentation including API docs, READMEs, architecture docs, changelogs, ADRs, and inline code comments. Use for any documentation task from code-level docstrings to project-level guides.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Edit
+  - Write
+triggers:
+  - documentation
+  - docs
+  - document
+  - README
+  - tutorial
+  - guide
+  - reference
+  - changelog
+  - ADR
+  - architecture decision record
+  - docstring
+  - JSDoc
+  - rustdoc
+  - pydoc
+  - markdown
+  - mdx
+  - api docs
+  - user guide
+  - developer guide
+  - inline comments
+  - code comments
 ---
 
 # Documentation

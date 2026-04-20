@@ -1,6 +1,38 @@
 ---
 name: loom-concurrency
-description: Comprehensive concurrency and parallelism patterns for multi-threaded and async programming. Use when implementing async/await, parallel processing, thread safety, worker pools, or debugging race conditions and deadlocks. Triggers: async, await, thread, mutex, lock, semaphore, channel, actor, parallel, concurrent, race condition, deadlock, livelock, atomic, futures, promises, tokio, asyncio, goroutine, spawn, Arc, Mutex, RwLock, mpsc, select, join, worker pool, queue, synchronization, critical section, context switch.
+description: Concurrency and parallelism patterns for multi-threaded and async code. Use when implementing async/await, parallel processing, thread safety, worker pools, channels, or debugging race conditions and deadlocks across Rust (tokio), Python (asyncio), TypeScript, and Go.
+triggers:
+  - async
+  - await
+  - thread
+  - mutex
+  - lock
+  - semaphore
+  - channel
+  - actor
+  - parallel
+  - concurrent
+  - race condition
+  - deadlock
+  - livelock
+  - atomic
+  - futures
+  - promises
+  - tokio
+  - asyncio
+  - goroutine
+  - spawn
+  - Arc
+  - Mutex
+  - RwLock
+  - mpsc
+  - select
+  - join
+  - worker pool
+  - queue
+  - synchronization
+  - critical section
+  - context switch
 ---
 
 # Concurrency

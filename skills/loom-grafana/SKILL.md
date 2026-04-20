@@ -1,12 +1,14 @@
 ---
 name: loom-grafana
-description: |
-  Observability visualization with Grafana and LGTM stack. Dashboard design, panel configuration, alerting, variables/templating, and data sources.
-
-  USE WHEN: Creating Grafana dashboards, configuring panels and visualizations, writing LogQL/TraceQL queries, setting up Grafana data sources, configuring dashboard variables and templates, building Grafana alerts.
-  DO NOT USE: For writing PromQL queries (use /loom-prometheus), for alerting rule strategy (use /loom-prometheus), for general observability architecture (use senior-software-engineer with infrastructure focus).
-
-  TRIGGERS: grafana, dashboard, panel, visualization, logql, traceql, loki, tempo, mimir, data source, annotation, variable, template, row, stat, graph, table, heatmap, gauge, bar chart, pie chart, time series, logs panel, traces panel, LGTM stack.
+description: Observability visualization with Grafana and the LGTM stack. Use for creating dashboards, configuring panels, writing LogQL/TraceQL queries, setting up data sources, dashboard variables/templates, and Grafana alerts. Do not use for PromQL (see loom-prometheus).
+when_to_use: Grafana dashboards, panel configuration, LogQL or TraceQL queries, Loki/Tempo/Mimir data sources, dashboard templating.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Edit
+  - Write
+  - Bash
 triggers:
   - grafana
   - dashboard
@@ -33,7 +35,6 @@ triggers:
   - logs panel
   - traces panel
   - LGTM stack
-allowed-tools: Read, Grep, Glob, Edit, Write, Bash
 ---
 
 # Grafana and LGTM Stack Skill

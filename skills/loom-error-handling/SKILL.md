@@ -1,6 +1,31 @@
 ---
 name: loom-error-handling
-description: Comprehensive error handling patterns and strategies including Rust Result/Option, API error responses, data pipeline error handling, and security-aware error handling. Use when implementing exception handling, error recovery, retry logic, circuit breakers, fallback mechanisms, graceful degradation, or designing error hierarchies. Triggers: error, exception, try, catch, throw, raise, Result, Option, panic, recover, retry, fallback, graceful degradation, circuit breaker, error boundary, 500, 4xx, 5xx, thiserror, anyhow, RFC 7807, error propagation, error messages, stack trace.
+description: Error handling patterns and strategies including Rust Result/Option, API error responses, data pipeline errors, and security-aware handling. Use for exception handling, error recovery, retry logic, circuit breakers, fallbacks, graceful degradation, and designing error hierarchies.
+triggers:
+  - error
+  - exception
+  - try
+  - catch
+  - throw
+  - raise
+  - Result
+  - Option
+  - panic
+  - recover
+  - retry
+  - fallback
+  - graceful degradation
+  - circuit breaker
+  - error boundary
+  - 500
+  - 4xx
+  - 5xx
+  - thiserror
+  - anyhow
+  - RFC 7807
+  - error propagation
+  - error messages
+  - stack trace
 ---
 
 # Error Handling

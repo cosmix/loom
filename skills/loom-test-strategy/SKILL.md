@@ -1,6 +1,26 @@
 ---
 name: loom-test-strategy
-description: Comprehensive test strategy guidance including test pyramid design, coverage goals, test categorization, flaky test diagnosis, test infrastructure architecture, and risk-based prioritization. Absorbed expertise from eliminated senior-qa-engineer. Use when planning testing approaches, setting up test infrastructure, optimizing test suites, diagnosing flaky tests, or designing test architecture across domains (API, data pipelines, ML models, infrastructure). Trigger keywords: test strategy, test pyramid, test plan, what to test, how to test, test architecture, test infrastructure, coverage goals, test organization, CI/CD testing, test prioritization, testing approach, flaky test, test optimization, test parallelization, API testing strategy, data pipeline testing, ML model testing, infrastructure testing.
+description: Test strategy guidance — test pyramid design, coverage goals, categorization, flaky test diagnosis, infrastructure architecture, and risk-based prioritization. Use when planning testing approaches, optimizing test suites, or designing test architecture across APIs, data pipelines, ML models, and infrastructure.
+triggers:
+  - test strategy
+  - test pyramid
+  - test plan
+  - what to test
+  - how to test
+  - test architecture
+  - test infrastructure
+  - coverage goals
+  - test organization
+  - CI/CD testing
+  - test prioritization
+  - testing approach
+  - flaky test
+  - test optimization
+  - test parallelization
+  - API testing strategy
+  - data pipeline testing
+  - ML model testing
+  - infrastructure testing
 ---
 
 # Test Strategy

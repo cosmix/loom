@@ -1,6 +1,31 @@
 ---
 name: loom-caching
-description: Comprehensive caching strategies and patterns for performance optimization. Use when implementing cache layers, cache invalidation, TTL policies, or distributed caching. Covers Redis/Memcached patterns, CDN caching, database query caching, ML model caching, and eviction policies. Triggers: cache, caching, Redis, Memcached, CDN, TTL, invalidation, eviction, LRU, LFU, FIFO, write-through, write-behind, cache-aside, read-through, cache stampede, distributed cache, local cache, memoization, query cache, result cache, edge cache, browser cache, HTTP cache.
+description: Caching strategies for performance optimization — cache-aside, write-through, write-behind, TTL policies, eviction, and stampede prevention. Use for Redis/Memcached, CDN caching, database query caching, ML model caching, and distributed cache design.
+triggers:
+  - cache
+  - caching
+  - Redis
+  - Memcached
+  - CDN
+  - TTL
+  - invalidation
+  - eviction
+  - LRU
+  - LFU
+  - FIFO
+  - write-through
+  - write-behind
+  - cache-aside
+  - read-through
+  - cache stampede
+  - distributed cache
+  - local cache
+  - memoization
+  - query cache
+  - result cache
+  - edge cache
+  - browser cache
+  - HTTP cache
 ---
 
 # Caching

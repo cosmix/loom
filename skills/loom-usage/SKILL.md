@@ -1,19 +1,13 @@
 ---
 name: loom-usage
-description: |
-  Meta-orchestration skill for Claude driving loom. Covers the full loom lifecycle
-  from plan initialization through execution, monitoring, debugging, and recovery.
-  Use this when Claude itself needs to operate loom — running plans, interpreting
-  status, recovering from failures, managing state, and coordinating multi-stage
-  execution.
-
-  USE WHEN: Claude needs to run loom commands, debug failed stages, interpret
-  loom status output, recover from crashes, manage worktrees, or orchestrate
-  multi-stage execution.
-
-  DO NOT USE: For writing loom plans (use /loom-plan-writer), for designing
-  wiring checks (use /loom-wiring-test), for before/after verification pairs
-  (use /loom-before-after), or for dead code detection config (use /loom-dead-code-check).
+description: Meta-orchestration skill for Claude driving loom itself. Use when running plans, interpreting loom status, debugging failed or blocked stages, managing worktrees, recovering from crashes, and coordinating multi-stage execution. Do NOT use for writing plans (use loom-plan-writer) or wiring checks (use loom-wiring-test).
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash
+  - Edit
+  - Write
 triggers:
   - "loom run"
   - "loom init"
@@ -41,7 +35,6 @@ triggers:
   - "orchestrate"
   - "multi-stage"
   - "parallel stages"
-allowed-tools: Read, Grep, Glob, Bash, Edit, Write
 ---
 
 # Loom Usage — Meta-Orchestration for Claude

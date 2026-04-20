@@ -1,8 +1,24 @@
 ---
 name: loom-wiring-test
-description: Generates wiring verification YAML for loom plans. Helps agents prove that features are properly integrated — commands registered, endpoints mounted, modules exported, components rendered. Use when writing truths/artifacts/wiring fields for loom plan stages.
-allowed-tools: Read, Grep, Glob, Edit, Write, Bash
-trigger-keywords: wiring, wiring-test, wiring test, integration test, integration verification, verify wiring, prove integration, command registered, endpoint mounted, module exported
+description: Generates wiring verification YAML for loom plans. Use when writing truths, artifacts, and wiring fields for plan stages to prove features are actually integrated — commands registered, endpoints mounted, modules exported, components rendered.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Edit
+  - Write
+  - Bash
+triggers:
+  - wiring
+  - wiring-test
+  - wiring test
+  - integration test
+  - integration verification
+  - verify wiring
+  - prove integration
+  - command registered
+  - endpoint mounted
+  - module exported
 ---
 
 # Wiring Test Skill

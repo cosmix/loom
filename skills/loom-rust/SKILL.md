@@ -1,6 +1,38 @@
 ---
 name: loom-rust
-description: Rust language expertise for writing safe, performant, production-quality Rust code. Primary language for the Loom project. Use for Rust development, ownership patterns, error handling, async/await, cargo management, CLI tools, and serialization. Triggers: rust, cargo, rustc, ownership, borrowing, lifetime, trait, impl, struct, enum, Result, Option, async, await, tokio, serde, clap, thiserror, anyhow, Arc, Mutex, RwLock, RefCell, Box, Rc, Vec, HashMap, HashSet, String, derive, macro.
+description: Rust language expertise for idiomatic, production-quality code. Use for ownership and lifetimes, error handling with anyhow/thiserror, async/await with tokio, cargo workspace management, CLI tools with clap, and serialization with serde. Primary language of the Loom project.
+triggers:
+  - rust
+  - cargo
+  - rustc
+  - ownership
+  - borrowing
+  - lifetime
+  - trait
+  - impl
+  - struct
+  - enum
+  - Result
+  - Option
+  - async
+  - await
+  - tokio
+  - serde
+  - clap
+  - thiserror
+  - anyhow
+  - Arc
+  - Mutex
+  - RwLock
+  - RefCell
+  - Box
+  - Rc
+  - Vec
+  - HashMap
+  - HashSet
+  - String
+  - derive
+  - macro
 ---
 
 # Rust Language Expertise

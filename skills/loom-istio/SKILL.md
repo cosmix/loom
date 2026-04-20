@@ -1,7 +1,38 @@
 ---
 name: loom-istio
-description: Service mesh implementation with Istio for microservices traffic management, security, and observability. Use when implementing service mesh, mTLS, traffic routing, load balancing, circuit breakers, retries, timeouts, canary deployments, A/B testing, or service-to-service communication. Triggers: istio, service mesh, envoy, sidecar, virtualservice, destinationrule, gateway, mtls, peerauthentication, authorizationpolicy, serviceentry, traffic management, traffic splitting, canary, blue-green, circuit breaker, retry, timeout, load balancing, ingress, egress, observability, tracing, telemetry.
-allowed-tools: Read, Grep, Glob, Edit, Write, Bash
+description: Service mesh implementation with Istio for microservices traffic management, security, and observability. Use for mTLS, traffic routing, load balancing, circuit breakers, retries, timeouts, canary/blue-green deployments, A/B testing, and Envoy sidecar configuration.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Edit
+  - Write
+  - Bash
+triggers:
+  - istio
+  - service mesh
+  - envoy
+  - sidecar
+  - virtualservice
+  - destinationrule
+  - gateway
+  - mtls
+  - peerauthentication
+  - authorizationpolicy
+  - serviceentry
+  - traffic management
+  - traffic splitting
+  - canary
+  - blue-green
+  - circuit breaker
+  - retry
+  - timeout
+  - load balancing
+  - ingress
+  - egress
+  - observability
+  - tracing
+  - telemetry
 ---
 
 # Istio Service Mesh

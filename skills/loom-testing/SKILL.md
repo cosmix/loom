@@ -1,8 +1,42 @@
 ---
 name: loom-testing
-description: Comprehensive test implementation across all domains including unit, integration, e2e, security, infrastructure, data pipelines, and ML models. Covers TDD/BDD workflows, test architecture, flaky test debugging, and coverage analysis.
-allowed-tools: Read, Grep, Glob, Edit, Write, Bash
-trigger-keywords: test, testing, spec, assert, expect, mock, stub, spy, fixture, snapshot, coverage, TDD, BDD, red-green, regression, unit test, integration test, e2e, end-to-end, test suite, test case, pytest, jest, vitest, mocha, junit, testify, test framework
+description: Test implementation across unit, integration, e2e, security, infrastructure, data pipeline, and ML domains. Use for writing tests, debugging flaky tests, improving coverage, and following TDD/BDD workflows with pytest, jest, vitest, mocha, junit, or testify.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Edit
+  - Write
+  - Bash
+triggers:
+  - test
+  - testing
+  - spec
+  - assert
+  - expect
+  - mock
+  - stub
+  - spy
+  - fixture
+  - snapshot
+  - coverage
+  - TDD
+  - BDD
+  - red-green
+  - regression
+  - unit test
+  - integration test
+  - e2e
+  - end-to-end
+  - test suite
+  - test case
+  - pytest
+  - jest
+  - vitest
+  - mocha
+  - junit
+  - testify
+  - test framework
 ---
 
 # Testing

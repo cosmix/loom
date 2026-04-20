@@ -1,12 +1,13 @@
 ---
 name: loom-prometheus
-description: |
-  Prometheus monitoring and alerting for cloud-native observability.
-
-  USE WHEN: Writing PromQL queries, configuring Prometheus scrape targets, creating alerting rules, setting up recording rules, instrumenting applications with Prometheus metrics, configuring service discovery.
-  DO NOT USE: For building dashboards (use /loom-grafana), for log analysis (use /loom-logging-observability), for general observability architecture (use senior-software-engineer with infrastructure focus).
-
-  TRIGGERS: metrics, prometheus, promql, counter, gauge, histogram, summary, alert, alertmanager, alerting rule, recording rule, scrape, target, label, service discovery, relabeling, exporter, instrumentation, slo, error budget.
+description: Prometheus monitoring and alerting for cloud-native observability. Use for writing PromQL queries, configuring scrape targets, creating alerting and recording rules, instrumenting applications, and setting up service discovery. Not for dashboards (use loom-grafana) or log analysis (use loom-logging-observability).
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Edit
+  - Write
+  - Bash
 triggers:
   - metrics
   - prometheus
@@ -28,7 +29,6 @@ triggers:
   - instrumentation
   - slo
   - error budget
-allowed-tools: Read, Grep, Glob, Edit, Write, Bash
 ---
 
 # Prometheus Monitoring and Alerting

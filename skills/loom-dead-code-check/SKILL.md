@@ -1,8 +1,26 @@
 ---
 name: loom-dead-code-check
-description: Generates dead code detection configurations for loom plan verification. Provides language-specific commands, fail patterns, and ignore patterns for Rust, TypeScript, Python, Go, and JavaScript. Use when adding code quality checks to acceptance criteria or truths fields in loom plans. Dead code detection catches incomplete wiring by identifying code that exists but is never called.
-allowed-tools: Read, Grep, Glob, Edit, Write, Bash
-trigger-keywords: dead code, dead-code, unused code, unused imports, unused functions, orphaned code, dead code detection, dead code check, code cleanup, unused variables, unreachable code, wiring verification
+description: Generate dead code detection configuration for loom plan verification across Rust, TypeScript, Python, Go, and JavaScript. Use when adding code quality checks to acceptance criteria or truths fields, or catching incomplete wiring where code exists but is never called.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Edit
+  - Write
+  - Bash
+triggers:
+  - dead code
+  - dead-code
+  - unused code
+  - unused imports
+  - unused functions
+  - orphaned code
+  - dead code detection
+  - dead code check
+  - code cleanup
+  - unused variables
+  - unreachable code
+  - wiring verification
 ---
 
 # Dead Code Detection

@@ -1,7 +1,36 @@
 ---
 name: loom-docker
-description: Creates and optimizes Docker configurations including Dockerfiles, docker-compose files, and container orchestration. Covers multi-stage builds, layer optimization, security hardening, networking, volumes, and debugging. Trigger keywords: docker, container, dockerfile, image, compose, registry, build, layer, cache, multi-stage, volume, network, port, environment, containerize, orchestration, registry, push, pull, tag, alpine, slim, distroless.
-allowed-tools: Read, Grep, Glob, Edit, Write, Bash
+description: Docker and container expertise. Use for writing Dockerfiles, docker-compose files, multi-stage builds, layer optimization, image security hardening, networking, volumes, registries, and container debugging.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Edit
+  - Write
+  - Bash
+triggers:
+  - docker
+  - container
+  - dockerfile
+  - image
+  - compose
+  - registry
+  - build
+  - layer
+  - cache
+  - multi-stage
+  - volume
+  - network
+  - port
+  - environment
+  - containerize
+  - orchestration
+  - push
+  - pull
+  - tag
+  - alpine
+  - slim
+  - distroless
 ---
 
 # Docker

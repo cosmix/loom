@@ -1,7 +1,36 @@
 ---
 name: loom-data-visualization
-description: Creates effective data visualizations, charts, dashboards, and reports across analytics, infrastructure monitoring, and ML domains. Covers library selection, UX design, and accessibility. Trigger keywords: chart, graph, plot, dashboard, report, visualization, matplotlib, plotly, d3, seaborn, grafana, tableau, superset, metabase, KPI, metric, analytics, histogram, heatmap, time-series, scatter, bar-chart.
-allowed-tools: Read, Grep, Glob, Edit, Write, Bash
+description: Build effective charts, dashboards, and reports across analytics, infrastructure monitoring, and ML domains. Use for library selection, visualization UX, accessibility, and domain-specific dashboard design.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Edit
+  - Write
+  - Bash
+triggers:
+  - chart
+  - graph
+  - plot
+  - dashboard
+  - report
+  - visualization
+  - matplotlib
+  - plotly
+  - d3
+  - seaborn
+  - grafana
+  - tableau
+  - superset
+  - metabase
+  - KPI
+  - metric
+  - analytics
+  - histogram
+  - heatmap
+  - time-series
+  - scatter
+  - bar-chart
 ---
 
 # Data Visualization

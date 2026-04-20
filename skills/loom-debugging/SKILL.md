@@ -1,7 +1,35 @@
 ---
 name: loom-debugging
-description: Systematically diagnoses and resolves software bugs, test failures, data quality issues, and performance problems using various debugging techniques and tools. Trigger keywords: debug, bug, error, exception, crash, issue, troubleshoot, fix, stack trace, diagnosis, diagnose, investigate, root cause, why, failing, broken, not working, unexpected, flaky, intermittent, regression, performance degradation.
-allowed-tools: Read, Grep, Glob, Bash, Edit
+description: Systematic diagnosis and resolution of software bugs, test failures, data quality issues, and performance problems. Use for root-cause analysis, stack trace investigation, flaky/intermittent tests, regressions, and crash triage.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash
+  - Edit
+triggers:
+  - debug
+  - bug
+  - error
+  - exception
+  - crash
+  - issue
+  - troubleshoot
+  - fix
+  - stack trace
+  - diagnosis
+  - diagnose
+  - investigate
+  - root cause
+  - why
+  - failing
+  - broken
+  - not working
+  - unexpected
+  - flaky
+  - intermittent
+  - regression
+  - performance degradation
 ---
 
 # Debugging

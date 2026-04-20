@@ -1,6 +1,32 @@
 ---
 name: loom-accessibility
-description: Web accessibility patterns, WCAG compliance, and inclusive design. Use when implementing accessible UI, keyboard navigation, screen reader support, focus management, semantic HTML, or auditing for compliance. Triggers: accessibility, a11y, WCAG, ARIA, screen reader, keyboard navigation, focus, tab order, tabindex, alt text, color contrast, semantic HTML, landmark, role, aria-label, aria-labelledby, aria-describedby, aria-live, aria-expanded, aria-selected, aria-hidden, focus trap, roving tabindex, skip link, assistive technology.
+description: Web accessibility patterns, WCAG compliance, and inclusive design. Use when implementing accessible UI, keyboard navigation, screen reader support, focus management, semantic HTML, ARIA patterns, or auditing for compliance.
+triggers:
+  - accessibility
+  - a11y
+  - WCAG
+  - ARIA
+  - screen reader
+  - keyboard navigation
+  - focus
+  - tab order
+  - tabindex
+  - alt text
+  - color contrast
+  - semantic HTML
+  - landmark
+  - role
+  - aria-label
+  - aria-labelledby
+  - aria-describedby
+  - aria-live
+  - aria-expanded
+  - aria-selected
+  - aria-hidden
+  - focus trap
+  - roving tabindex
+  - skip link
+  - assistive technology
 ---
 
 # Accessibility

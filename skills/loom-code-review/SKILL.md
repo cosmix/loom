@@ -1,7 +1,32 @@
 ---
 name: loom-code-review
-description: Performs comprehensive code reviews focusing on correctness, maintainability, performance, security, and best practices. Trigger keywords: review, code review, PR review, pull request, check code, audit code, feedback, approve, request changes, comment, suggestion, LGTM, nit, blocker, code quality, best practice, architecture review, design review, security review, infra review.
-allowed-tools: Read, Grep, Glob, Bash
+description: Comprehensive code review covering correctness, maintainability, performance, security, and best practices. Use for PR reviews, pre-merge audits, architecture and design critique, and actionable reviewer feedback.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash
+triggers:
+  - review
+  - code review
+  - PR review
+  - pull request
+  - check code
+  - audit code
+  - feedback
+  - approve
+  - request changes
+  - comment
+  - suggestion
+  - LGTM
+  - nit
+  - blocker
+  - code quality
+  - best practice
+  - architecture review
+  - design review
+  - security review
+  - infra review
 ---
 
 # Code Review

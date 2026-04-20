@@ -1,6 +1,31 @@
 ---
 name: loom-webhooks
-description: Webhook implementation and consumption patterns. Use when implementing webhook endpoints, webhook receivers, webhook senders, HTTP callbacks, event notifications, push notifications, or real-time integrations. Covers signature verification (HMAC, crypto), retry strategies (exponential backoff), idempotency keys, delivery guarantees, webhook security, payload design, and monitoring. Keywords: webhook, webhooks, callback, callbacks, HTTP callback, event notification, push notification, signature verification, HMAC, hmac, crypto signature, retry, exponential backoff, idempotency, idempotent, delivery guarantee, at-least-once delivery, webhook receiver, webhook sender, webhook security, webhook authentication, replay attack, dead letter queue, webhook monitoring.
+description: Webhook implementation and consumption patterns. Use when building webhook endpoints, receivers, or senders — covering HMAC signature verification, retry with exponential backoff, idempotency keys, delivery guarantees, replay protection, dead letter queues, payload design, and monitoring.
+triggers:
+  - webhook
+  - webhooks
+  - callback
+  - callbacks
+  - HTTP callback
+  - event notification
+  - push notification
+  - signature verification
+  - HMAC
+  - hmac
+  - crypto signature
+  - retry
+  - exponential backoff
+  - idempotency
+  - idempotent
+  - delivery guarantee
+  - at-least-once delivery
+  - webhook receiver
+  - webhook sender
+  - webhook security
+  - webhook authentication
+  - replay attack
+  - dead letter queue
+  - webhook monitoring
 ---
 
 # Webhooks

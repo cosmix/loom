@@ -1,7 +1,41 @@
 ---
 name: loom-git-workflow
-description: Manages Git operations including branching strategies, commit conventions, merge workflows, conflict resolution, and worktree management. Trigger keywords: git, branch, commit, merge, rebase, pull request, PR, cherry-pick, stash, reset, revert, checkout, switch, worktree, conflict, GitFlow, trunk-based, feature branch, release branch, version control, squash, amend, history, tag, remote, push, pull, fetch, clone.
-allowed-tools: Read, Grep, Glob, Bash
+description: Git operations guidance including branching strategies, commit conventions, merge workflows, conflict resolution, and worktree management. Use for any Git-related task from branch design to history rewriting.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash
+triggers:
+  - git
+  - branch
+  - commit
+  - merge
+  - rebase
+  - pull request
+  - PR
+  - cherry-pick
+  - stash
+  - reset
+  - revert
+  - checkout
+  - switch
+  - worktree
+  - conflict
+  - GitFlow
+  - trunk-based
+  - feature branch
+  - release branch
+  - version control
+  - squash
+  - amend
+  - history
+  - tag
+  - remote
+  - push
+  - pull
+  - fetch
+  - clone
 ---
 
 # Git Workflow

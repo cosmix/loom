@@ -1,6 +1,46 @@
 ---
 name: loom-react
-description: Modern React development patterns including components, hooks, state management, routing, forms, and UI architecture. Covers React 19+, React Router v7, Jotai atoms, server components, accessibility, performance optimization, and testing. Use for building React applications with client-side routing, global state, component composition, and async data loading. Triggers: react, jsx, tsx, component, hook, useState, useEffect, useContext, useReducer, useMemo, useCallback, useRef, props, state, render, virtual DOM, reconciliation, single page application, spa, react-router, jotai, vite, bun, Next.js, Remix, client-side routing, server components, accessibility, a11y, ARIA, performance, code splitting, lazy loading, Suspense, error boundaries, form validation, UI components, design system, composition patterns.
+description: Modern React development patterns. Use for building React 19+ applications with components, hooks, Jotai state, React Router v7, server components, accessibility, performance optimization, and testing. Covers client-side routing, composition, and async data loading.
+triggers:
+  - react
+  - jsx
+  - tsx
+  - component
+  - hook
+  - useState
+  - useEffect
+  - useContext
+  - useReducer
+  - useMemo
+  - useCallback
+  - useRef
+  - props
+  - state
+  - render
+  - virtual DOM
+  - reconciliation
+  - single page application
+  - spa
+  - react-router
+  - jotai
+  - vite
+  - bun
+  - Next.js
+  - Remix
+  - client-side routing
+  - server components
+  - accessibility
+  - a11y
+  - ARIA
+  - performance
+  - code splitting
+  - lazy loading
+  - Suspense
+  - error boundaries
+  - form validation
+  - UI components
+  - design system
+  - composition patterns
 ---
 
 # React SPA Development

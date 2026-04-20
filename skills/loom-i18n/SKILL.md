@@ -1,6 +1,64 @@
 ---
 name: loom-i18n
-description: Internationalization and localization patterns for multi-language applications. Use when implementing translation systems, locale-specific formatting, RTL layouts, or managing language switching. Keywords: i18n, internationalization, l10n, localization, translation, translate, locale, language, multilingual, multi-language, RTL, right-to-left, LTR, bidirectional, pluralization, plural forms, date format, time format, number format, currency format, timezone, i18next, react-intl, FormatJS, gettext, ICU MessageFormat, message format, language detection, language switching, Accept-Language, locale fallback, translation keys, translation files, JSON translations, PO files, YAML translations, react i18n, React localization, format date, format number, format currency, format relative time, Intl API, NumberFormat, DateTimeFormat, RTL CSS, logical properties, direction-aware, language code, region code, locale identifier, BCP47, ISO 639, translation extraction, pseudo-localization, namespace, translation namespace.
+description: Internationalization and localization patterns for multi-language applications. Use when implementing translation systems, locale-specific formatting (dates, numbers, currency), RTL layouts, pluralization, or language switching with libraries like i18next, react-intl, FormatJS, or gettext.
+triggers:
+  - i18n
+  - internationalization
+  - l10n
+  - localization
+  - translation
+  - translate
+  - locale
+  - language
+  - multilingual
+  - multi-language
+  - RTL
+  - right-to-left
+  - LTR
+  - bidirectional
+  - pluralization
+  - plural forms
+  - date format
+  - time format
+  - number format
+  - currency format
+  - timezone
+  - i18next
+  - react-intl
+  - FormatJS
+  - gettext
+  - ICU MessageFormat
+  - message format
+  - language detection
+  - language switching
+  - Accept-Language
+  - locale fallback
+  - translation keys
+  - translation files
+  - JSON translations
+  - PO files
+  - YAML translations
+  - react i18n
+  - React localization
+  - format date
+  - format number
+  - format currency
+  - format relative time
+  - Intl API
+  - NumberFormat
+  - DateTimeFormat
+  - RTL CSS
+  - logical properties
+  - direction-aware
+  - language code
+  - region code
+  - locale identifier
+  - BCP47
+  - ISO 639
+  - translation extraction
+  - pseudo-localization
+  - namespace
+  - translation namespace
 ---
 
 # Internationalization (i18n)

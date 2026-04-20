@@ -1,7 +1,30 @@
 ---
 name: loom-prompt-engineering
-description: Designs and optimizes prompts for large language models including system prompts, agent signals, and few-shot examples. Covers instruction design, prompt security, chain-of-thought reasoning, and in-context learning for orchestrated AI agents. Trigger keywords: prompt, LLM, GPT, Claude, AI, system prompt, user prompt, few-shot, chain of thought, CoT, in-context learning, prompt template, prompt injection, jailbreak prevention, agent signal, agent instruction, agent orchestration, reasoning, instruction tuning.
-allowed-tools: Read, Grep, Glob, Edit, Write
+description: Designs and optimizes prompts for large language models including system prompts, agent signals, and few-shot examples. Use for instruction design, prompt security, chain-of-thought reasoning, and in-context learning for orchestrated agents.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Edit
+  - Write
+triggers:
+  - prompt
+  - LLM
+  - GPT
+  - system prompt
+  - user prompt
+  - few-shot
+  - chain of thought
+  - CoT
+  - in-context learning
+  - prompt template
+  - prompt injection
+  - jailbreak prevention
+  - agent signal
+  - agent instruction
+  - agent orchestration
+  - reasoning
+  - instruction tuning
 ---
 
 # Prompt Engineering

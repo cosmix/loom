@@ -1,7 +1,30 @@
 ---
 name: loom-dependency-scan
-description: Scans project dependencies for known vulnerabilities, outdated packages, and license compliance issues. Supports vulnerability scanning (CVE detection), SBOM generation, license compliance checking, and supply chain security analysis across multiple ecosystems (npm, pip, cargo, go, maven, etc.). Trigger keywords: dependency scan, vulnerability, CVE, Snyk, Dependabot, Renovate, npm audit, cargo audit, pip-audit, safety, outdated packages, SBOM, software bill of materials, license compliance, supply chain, security advisory, transitive dependency, lock file.
-allowed-tools: Read, Grep, Glob, Bash
+description: Scan project dependencies for CVEs, outdated packages, and license compliance across npm, pip, cargo, go, maven, and other ecosystems. Use for vulnerability scanning, SBOM generation, supply chain analysis, and automated dependency updates.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash
+triggers:
+  - dependency scan
+  - vulnerability
+  - CVE
+  - Snyk
+  - Dependabot
+  - Renovate
+  - npm audit
+  - cargo audit
+  - pip-audit
+  - safety
+  - outdated packages
+  - SBOM
+  - software bill of materials
+  - license compliance
+  - supply chain
+  - security advisory
+  - transitive dependency
+  - lock file
 ---
 
 # Dependency Scan

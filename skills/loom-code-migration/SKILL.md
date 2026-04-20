@@ -1,6 +1,31 @@
 ---
 name: loom-code-migration
-description: Strategies and patterns for safe code migrations and upgrades. Use when upgrading frameworks, migrating between technologies, handling deprecations, or planning incremental migrations. Triggers: migration, migrate, upgrade, version upgrade, breaking change, deprecation, codemod, codemods, AST transformation, jscodeshift, ts-morph, framework migration, database migration, schema migration, legacy code, modernize, modernization, refactoring, rollback, strangler fig, blue-green deployment, canary release, shadow mode, parallel run.
+description: Strategies and patterns for safe code migrations and upgrades. Use when upgrading frameworks, migrating between technologies, handling deprecations, planning incremental rollouts, or applying automated codemods.
+triggers:
+  - migration
+  - migrate
+  - upgrade
+  - version upgrade
+  - breaking change
+  - deprecation
+  - codemod
+  - codemods
+  - AST transformation
+  - jscodeshift
+  - ts-morph
+  - framework migration
+  - database migration
+  - schema migration
+  - legacy code
+  - modernize
+  - modernization
+  - refactoring
+  - rollback
+  - strangler fig
+  - blue-green deployment
+  - canary release
+  - shadow mode
+  - parallel run
 ---
 
 # Code Migration

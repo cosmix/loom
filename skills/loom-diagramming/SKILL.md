@@ -1,6 +1,36 @@
 ---
 name: loom-diagramming
-description: Create technical diagrams using Mermaid syntax for architecture, sequences, ERDs, flowcharts, and state machines. Use for visualizing system design, data flows, and processes. Triggers: diagram, diagrams, mermaid, plantuml, draw.io, excalidraw, flowchart, sequence diagram, class diagram, architecture diagram, ERD, entity relationship, entity-relationship, C4, C4 model, system context, container diagram, component diagram, state diagram, state machine, visualize, draw, chart, flow, data flow, API flow, system design, architecture visualization, UML.
+description: Create technical diagrams using Mermaid syntax for architecture, sequences, ERDs, flowcharts, and state machines. Use for visualizing system design, data flows, C4 models, and process diagrams in documentation.
+triggers:
+  - diagram
+  - diagrams
+  - mermaid
+  - plantuml
+  - draw.io
+  - excalidraw
+  - flowchart
+  - sequence diagram
+  - class diagram
+  - architecture diagram
+  - ERD
+  - entity relationship
+  - entity-relationship
+  - C4
+  - C4 model
+  - system context
+  - container diagram
+  - component diagram
+  - state diagram
+  - state machine
+  - visualize
+  - draw
+  - chart
+  - flow
+  - data flow
+  - API flow
+  - system design
+  - architecture visualization
+  - UML
 ---
 
 # Diagramming

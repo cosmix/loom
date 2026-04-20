@@ -1,7 +1,38 @@
 ---
 name: loom-security-scan
-description: Quick routine security checks for secrets, dependencies, container images, and common vulnerabilities. Run frequently during development. Triggers: security scan, SAST, DAST, vulnerability scan, dependency scan, container scan, secret scan, credential scan, quick scan, secrets check, vulnerability check, security check, pre-commit security, routine security, Snyk, Trivy, Semgrep, CodeQL, Bandit, safety, npm audit, cargo audit, gitleaks, trufflehog, govulncheck, pip-audit.
-allowed-tools: Read, Grep, Glob, Bash
+description: Quick routine security checks for secrets, dependencies, container images, and common vulnerabilities. Use for lightweight pre-commit and CI scans with tools like Semgrep, Trivy, gitleaks, cargo audit, npm audit, and pip-audit. Not a substitute for deep audits (use loom-security-audit).
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash
+triggers:
+  - security scan
+  - SAST
+  - DAST
+  - vulnerability scan
+  - dependency scan
+  - container scan
+  - secret scan
+  - credential scan
+  - quick scan
+  - secrets check
+  - vulnerability check
+  - security check
+  - pre-commit security
+  - routine security
+  - Snyk
+  - Trivy
+  - Semgrep
+  - CodeQL
+  - Bandit
+  - safety
+  - npm audit
+  - cargo audit
+  - gitleaks
+  - trufflehog
+  - govulncheck
+  - pip-audit
 ---
 
 # Security Scan

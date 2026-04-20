@@ -1,12 +1,6 @@
 ---
 name: loom-auth
-description: |
-  Authentication and authorization patterns including OAuth2, JWT, RBAC/ABAC, session management, API keys, password hashing, and MFA.
-
-  USE WHEN: Implementing login flows, access control, identity management, tokens, permissions, session handling, API key authentication, or MFA.
-  DO NOT USE: For security vulnerability scanning (use /loom-security-scan), for security audits (use /loom-security-audit), for threat modeling (use /loom-threat-model).
-
-  TRIGGERS: login, logout, signin, signup, authentication, authorization, password, credential, token, JWT, OAuth, OAuth2, OIDC, SSO, SAML, session, cookie, RBAC, ABAC, permissions, roles, MFA, 2FA, TOTP, API key, PKCE.
+description: Authentication and authorization patterns including OAuth2, JWT, RBAC/ABAC, session management, API keys, password hashing, and MFA. Use for login flows, access control, identity management, tokens, permissions, and API key authentication. Do not use for vulnerability scanning (use loom-security-scan), audits (loom-security-audit), or threat modeling (loom-threat-model).
 triggers:
   - login
   - logout

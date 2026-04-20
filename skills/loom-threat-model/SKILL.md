@@ -1,7 +1,34 @@
 ---
 name: loom-threat-model
-description: Threat modeling methodologies (STRIDE, DREAD, PASTA, attack trees) for secure architecture design. Use when planning new systems, reviewing architecture security, identifying threats, or assessing risk. Triggers: threat modeling, threat model, STRIDE, DREAD, attack tree, attack surface, trust boundary, data flow diagram, DFD, threat analysis, risk assessment, adversary, threat actor, threat vector, mitigation, security architecture, attack scenario, vulnerability assessment, security posture, defense in depth.
-allowed-tools: Read, Grep, Glob, Bash, WebFetch
+description: Threat modeling methodologies (STRIDE, DREAD, PASTA, attack trees) for secure architecture design. Use when planning new systems, reviewing architecture security, mapping trust boundaries and data flows, identifying threats, or assessing risk.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash
+  - WebFetch
+triggers:
+  - threat modeling
+  - threat model
+  - STRIDE
+  - DREAD
+  - PASTA
+  - attack tree
+  - attack surface
+  - trust boundary
+  - data flow diagram
+  - DFD
+  - threat analysis
+  - risk assessment
+  - adversary
+  - threat actor
+  - threat vector
+  - mitigation
+  - security architecture
+  - attack scenario
+  - vulnerability assessment
+  - security posture
+  - defense in depth
 ---
 
 # Threat Modeling

@@ -1,6 +1,43 @@
 ---
 name: loom-e2e-testing
-description: End-to-end testing patterns and best practices for web applications using Playwright, Cypress, Selenium, and Puppeteer. Covers Page Object Model, test fixtures, selector strategies, async handling, visual regression testing, and flaky test prevention. Includes QA expertise for acceptance testing, smoke testing, cross-browser testing, and test reliability. Use when setting up E2E tests, debugging test failures, improving test reliability, or implementing browser automation. Trigger keywords: e2e, e2e testing, end-to-end, end-to-end tests, Playwright, Cypress, Selenium, Puppeteer, Page Object Model, page object, test fixtures, selectors, locator, locators, data-testid, async tests, visual regression, visual testing, screenshot, flaky tests, flakiness, browser testing, browser automation, UI test, UI testing, acceptance test, acceptance testing, smoke test, smoke testing, integration test, wait, waits, assertion, assertions, test data, test isolation.
+description: End-to-end testing for web applications with Playwright, Cypress, Selenium, and Puppeteer. Use for setting up E2E tests, debugging failures, improving reliability, and implementing browser automation with Page Object Model, selector strategies, visual regression, and flaky test prevention.
+triggers:
+  - e2e
+  - e2e testing
+  - end-to-end
+  - end-to-end tests
+  - Playwright
+  - Cypress
+  - Selenium
+  - Puppeteer
+  - Page Object Model
+  - page object
+  - test fixtures
+  - selectors
+  - locator
+  - locators
+  - data-testid
+  - async tests
+  - visual regression
+  - visual testing
+  - screenshot
+  - flaky tests
+  - flakiness
+  - browser testing
+  - browser automation
+  - UI test
+  - UI testing
+  - acceptance test
+  - acceptance testing
+  - smoke test
+  - smoke testing
+  - integration test
+  - wait
+  - waits
+  - assertion
+  - assertions
+  - test data
+  - test isolation
 ---
 
 # E2E Testing

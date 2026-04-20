@@ -1,6 +1,37 @@
 ---
 name: loom-typescript
-description: TypeScript language expertise for writing type-safe, production-quality TypeScript code. Use for TypeScript development, advanced type system features, strict mode, type-safe APIs, and modern frameworks. Triggers: typescript, ts, tsx, type, interface, generic, union, intersection, discriminated union, type guard, type assertion, utility types, conditional types, mapped types, zod, trpc, prisma, react, node, nodejs, deno, bun, npm, pnpm, yarn, type-safe, type safety, tsconfig, strict mode, branded types
+description: TypeScript language expertise for type-safe, production-quality code. Use for advanced type system features (generics, discriminated unions, conditional and mapped types), strict mode configuration, type-safe APIs with zod/trpc/prisma, and modern tooling across Node, Deno, and Bun.
+triggers:
+  - typescript
+  - ts
+  - tsx
+  - type
+  - interface
+  - generic
+  - union
+  - intersection
+  - discriminated union
+  - type guard
+  - type assertion
+  - utility types
+  - conditional types
+  - mapped types
+  - zod
+  - trpc
+  - prisma
+  - react
+  - node
+  - nodejs
+  - deno
+  - bun
+  - npm
+  - pnpm
+  - yarn
+  - type-safe
+  - type safety
+  - tsconfig
+  - strict mode
+  - branded types
 ---
 
 # TypeScript Language Expertise

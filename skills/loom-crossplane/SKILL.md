@@ -1,7 +1,28 @@
 ---
 name: loom-crossplane
-description: Cloud-native infrastructure management with Crossplane using Kubernetes APIs. Build internal platform APIs for self-service infrastructure provisioning. Use when implementing infrastructure as code, platform engineering, composite resources, XRDs, compositions, claims, provider configuration, or multi-cloud provisioning. Triggers: crossplane, XRD, composition, claim, provider, managed resource, composite resource, infrastructure API, platform engineering, platform API, infrastructure abstraction, self-service infrastructure, kubernetes infrastructure, cloud control plane.
-allowed-tools: Read, Grep, Glob, Edit, Write, Bash
+description: Cloud-native infrastructure management with Crossplane via Kubernetes APIs. Use for building internal platform APIs, composite resources, XRDs, compositions, claims, provider configuration, and multi-cloud self-service provisioning.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Edit
+  - Write
+  - Bash
+triggers:
+  - crossplane
+  - XRD
+  - composition
+  - claim
+  - provider
+  - managed resource
+  - composite resource
+  - infrastructure API
+  - platform engineering
+  - platform API
+  - infrastructure abstraction
+  - self-service infrastructure
+  - kubernetes infrastructure
+  - cloud control plane
 ---
 
 # Crossplane Infrastructure Management

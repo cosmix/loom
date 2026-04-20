@@ -1,6 +1,41 @@
 ---
 name: loom-logging-observability
-description: Comprehensive logging and observability patterns for production systems including structured logging, distributed tracing, metrics collection, log aggregation, and alerting. Triggers for this skill - log, logging, logs, trace, tracing, traces, metrics, observability, OpenTelemetry, OTEL, Jaeger, Zipkin, structured logging, log level, debug, info, warn, error, fatal, correlation ID, span, spans, ELK, Elasticsearch, Loki, Datadog, Prometheus, Grafana, distributed tracing, log aggregation, alerting, monitoring, JSON logs, telemetry.
+description: Logging and observability patterns for production systems. Use for structured JSON logging with correlation IDs, distributed tracing (OpenTelemetry, Jaeger, Zipkin), metrics collection (Prometheus), log aggregation (ELK, Loki, Datadog), and alerting strategies.
+triggers:
+  - log
+  - logging
+  - logs
+  - trace
+  - tracing
+  - traces
+  - metrics
+  - observability
+  - OpenTelemetry
+  - OTEL
+  - Jaeger
+  - Zipkin
+  - structured logging
+  - log level
+  - debug
+  - info
+  - warn
+  - error
+  - fatal
+  - correlation ID
+  - span
+  - spans
+  - ELK
+  - Elasticsearch
+  - Loki
+  - Datadog
+  - Prometheus
+  - Grafana
+  - distributed tracing
+  - log aggregation
+  - alerting
+  - monitoring
+  - JSON logs
+  - telemetry
 ---
 
 # Logging and Observability

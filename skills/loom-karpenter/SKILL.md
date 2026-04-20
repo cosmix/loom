@@ -1,6 +1,6 @@
 ---
 name: loom-karpenter
-description: Kubernetes node autoscaling and cost optimization with Karpenter. Use when implementing node provisioning, spot instance management, cluster right-sizing, node consolidation, or reducing compute costs. Covers NodePool configuration, EC2NodeClass setup, disruption budgets, spot/on-demand mix strategies, multi-architecture support, and capacity-type selection.
+description: Kubernetes node autoscaling and cost optimization with Karpenter. Use for node provisioning, spot instance management, cluster right-sizing, node consolidation, NodePool/EC2NodeClass configuration, disruption budgets, and multi-architecture support.
 triggers:
   - karpenter
   - node autoscaling

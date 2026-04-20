@@ -1,7 +1,41 @@
 ---
 name: loom-database-design
-description: Designs database schemas, data models, relationships, indexes, and migrations for relational, NoSQL, time-series, and warehouse databases. Covers normalization, denormalization, ETL optimization, event sourcing, star schema, and performance tuning. Trigger keywords: schema, table, column, migration, ERD, normalize, denormalize, index, foreign key, primary key, constraint, relationship, SQL, DDL, data model, database design, data warehouse, star schema, snowflake schema, time-series, event sourcing, dimension table, fact table, ETL, data pipeline, OLAP, OLTP.
-allowed-tools: Read, Grep, Glob, Edit, Write, Bash
+description: Database schema and data model design for relational, NoSQL, time-series, and warehouse systems. Use for ERDs, normalization/denormalization, indexing, migrations, star/snowflake schemas, event sourcing, and OLTP/OLAP performance tuning.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Edit
+  - Write
+  - Bash
+triggers:
+  - schema
+  - table
+  - column
+  - migration
+  - ERD
+  - normalize
+  - denormalize
+  - index
+  - foreign key
+  - primary key
+  - constraint
+  - relationship
+  - SQL
+  - DDL
+  - data model
+  - database design
+  - data warehouse
+  - star schema
+  - snowflake schema
+  - time-series
+  - event sourcing
+  - dimension table
+  - fact table
+  - ETL
+  - data pipeline
+  - OLAP
+  - OLTP
 ---
 
 # Database Design
