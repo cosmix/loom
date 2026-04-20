@@ -270,20 +270,14 @@ impl Orchestrator {
                 for stage_id in &stage_ids {
                     if let Ok(stage) = self.load_stage(stage_id) {
                         match stage.status {
-                            StageStatus::Completed => {
-                                if !completed_stages.contains(&stage_id.clone()) {
-                                    completed_stages.push(stage_id.clone());
-                                }
+                            StageStatus::Completed if !completed_stages.contains(stage_id) => {
+                                completed_stages.push(stage_id.clone());
                             }
-                            StageStatus::Blocked => {
-                                if !failed_stages.contains(&stage_id.clone()) {
-                                    failed_stages.push(stage_id.clone());
-                                }
+                            StageStatus::Blocked if !failed_stages.contains(stage_id) => {
+                                failed_stages.push(stage_id.clone());
                             }
-                            StageStatus::NeedsHandoff => {
-                                if !needs_handoff.contains(&stage_id.clone()) {
-                                    needs_handoff.push(stage_id.clone());
-                                }
+                            StageStatus::NeedsHandoff if !needs_handoff.contains(stage_id) => {
+                                needs_handoff.push(stage_id.clone());
                             }
                             _ => {}
                         }

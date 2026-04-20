@@ -261,7 +261,7 @@ fn merge_permission_vecs(a: Vec<String>, b: Vec<String>) -> Vec<String> {
     let mut seen: HashSet<String> = HashSet::new();
     let mut result = Vec::new();
 
-    for perm in a.into_iter().chain(b.into_iter()) {
+    for perm in a.into_iter().chain(b) {
         if seen.insert(perm.clone()) {
             result.push(perm);
         }
