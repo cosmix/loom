@@ -192,8 +192,80 @@ impl DaemonServer {
         self.run_server()
     }
 
+    /// Acquire an exclusive flock on orchestrator.lock to prevent multiple daemons.
+    ///
+    /// Returns the held File handle. The lock is released when the handle is dropped
+    /// (including on process exit or SIGKILL).
+    pub(super) fn acquire_exclusive_lock(&self) -> Result<File> {
+        use std::io::{Seek, Write};
+
+        let lock_path = self.work_dir.join("orchestrator.lock");
+        let lock_file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .context("Failed to open orchestrator lock file")?;
+
+        let ret = unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+        if ret != 0 {
+            // Lock held by another daemon — read its PID (file was NOT truncated)
+            let existing_pid = fs::read_to_string(&lock_path)
+                .ok()
+                .and_then(|s| s.trim().parse::<u32>().ok());
+            if let Some(pid) = existing_pid {
+                bail!(
+                    "Another daemon instance is already running (PID {pid}). \
+                     Use 'loom stop' or 'kill {pid}' to stop it."
+                );
+            } else {
+                bail!("Another daemon instance is already running (lock held)");
+            }
+        }
+
+        // Lock acquired — truncate and write our PID
+        let mut lf = &lock_file;
+        lf.set_len(0).ok();
+        lf.seek(std::io::SeekFrom::Start(0)).ok();
+        let _ = lf.write_all(format!("{}", std::process::id()).as_bytes());
+        let _ = lf.flush();
+
+        Ok(lock_file)
+    }
+
+    /// Check if the orchestrator lock is currently held by a live process.
+    ///
+    /// Returns `Some(pid)` if a daemon holds the lock, `None` otherwise.
+    pub fn check_lock(work_dir: &Path) -> Option<u32> {
+        let lock_path = work_dir.join("orchestrator.lock");
+        let lock_file = match File::open(&lock_path) {
+            Ok(f) => f,
+            Err(_) => return None,
+        };
+
+        let ret = unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+        if ret == 0 {
+            // We acquired the lock — no daemon running. Release immediately.
+            unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_UN) };
+            None
+        } else {
+            // Lock held by another process — read the PID
+            fs::read_to_string(&lock_path)
+                .ok()
+                .and_then(|s| s.trim().parse::<u32>().ok())
+        }
+    }
+
     /// Main server loop (listens on socket and accepts connections).
     pub(super) fn run_server(&self) -> Result<()> {
+        // Acquire exclusive lock BEFORE anything else — prevents multiple daemons.
+        // The _lock_guard is kept alive for the entire server lifetime; the OS
+        // releases the flock when this process exits (even via SIGKILL).
+        let _lock_guard = self
+            .acquire_exclusive_lock()
+            .context("Failed to acquire daemon lock")?;
+
         // Set restrictive umask before socket bind to close TOCTOU window
         // between bind() and chmod(). The socket is created with permissions
         // determined by umask, so setting 0o077 ensures it's created as 0o600.

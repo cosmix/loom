@@ -27,47 +27,55 @@ pub fn execute() -> Result<()> {
             Ok(())
         }
         Err(e) => {
-            // Check if daemon process still exists
-            if let Some(pid) = DaemonServer::read_pid(work_dir.root()) {
-                // Socket communication failed but process is alive - try SIGTERM
-                println!(
-                    "{} Daemon not responding, sending SIGTERM...",
-                    "!".yellow().bold()
-                );
+            // Find the daemon PID from PID file or lock file
+            let pid = DaemonServer::read_pid(work_dir.root())
+                .or_else(|| DaemonServer::check_lock(work_dir.root()));
 
-                if let Err(kill_err) = kill(Pid::from_raw(pid as i32), Signal::SIGTERM) {
-                    eprintln!("{} Failed to send SIGTERM: {}", "✗".red().bold(), kill_err);
-                    return Err(e).context("Failed to stop daemon");
-                }
-
-                // Wait briefly for process to terminate
-                let mut attempts = 0;
-                let max_attempts = 10; // 1 second total
-                while attempts < max_attempts {
-                    thread::sleep(Duration::from_millis(100));
-
-                    // Check if process is gone
-                    let still_alive = crate::process::is_process_alive(pid);
-                    if !still_alive {
-                        break;
-                    }
-                    attempts += 1;
-                }
-
-                // Clean up stale files
-                let socket_path = work_dir.root().join("orchestrator.sock");
-                let pid_path = work_dir.root().join("orchestrator.pid");
-                let _ = std::fs::remove_file(&socket_path);
-                let _ = std::fs::remove_file(&pid_path);
-
-                println!("{} Daemon terminated via SIGTERM", "✓".green().bold());
-                Ok(())
+            if let Some(pid) = pid {
+                kill_daemon_pid(pid, work_dir.root())
             } else {
-                // Process is already gone, socket communication failed for another reason
                 Err(e).context("Daemon not responding (process not found)")
             }
         }
     }
+}
+
+fn kill_daemon_pid(pid: u32, work_root: &std::path::Path) -> Result<()> {
+    println!(
+        "{} Daemon not responding, sending SIGTERM to PID {pid}...",
+        "!".yellow().bold()
+    );
+
+    if let Err(kill_err) = kill(Pid::from_raw(pid as i32), Signal::SIGTERM) {
+        eprintln!("{} Failed to send SIGTERM: {}", "✗".red().bold(), kill_err);
+        anyhow::bail!("Failed to stop daemon (PID {pid}): {kill_err}");
+    }
+
+    let mut attempts = 0;
+    let max_attempts = 30; // 3 seconds total
+    while attempts < max_attempts {
+        thread::sleep(Duration::from_millis(100));
+        if !crate::process::is_process_alive(pid) {
+            break;
+        }
+        attempts += 1;
+    }
+
+    if crate::process::is_process_alive(pid) {
+        println!(
+            "{} Process {pid} did not exit after SIGTERM, sending SIGKILL...",
+            "!".yellow().bold()
+        );
+        let _ = kill(Pid::from_raw(pid as i32), Signal::SIGKILL);
+        thread::sleep(Duration::from_millis(200));
+    }
+
+    // Clean up stale files
+    let _ = std::fs::remove_file(work_root.join("orchestrator.sock"));
+    let _ = std::fs::remove_file(work_root.join("orchestrator.pid"));
+
+    println!("{} Daemon terminated", "✓".green().bold());
+    Ok(())
 }
 
 #[cfg(test)]

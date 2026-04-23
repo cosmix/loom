@@ -68,7 +68,11 @@ impl DaemonServer {
         }
     }
 
-    /// Check daemon status with socket connectivity test.
+    /// Check daemon status using flock as ground truth, with socket connectivity test.
+    ///
+    /// The flock on `orchestrator.lock` is the authoritative indicator of whether
+    /// a daemon process is alive. The socket/PID files are secondary — they can
+    /// become stale if a second daemon overwrites them or if cleanup races occur.
     ///
     /// # Arguments
     /// * `work_dir` - The .work/ directory path
@@ -79,47 +83,52 @@ impl DaemonServer {
         let pid_path = work_dir.join("orchestrator.pid");
         let socket_path = work_dir.join("orchestrator.sock");
 
-        // Check if socket file exists
+        // Primary check: flock on orchestrator.lock
+        // This is immune to PID-file races and socket-file deletion
+        if let Some(lock_pid) = Self::check_lock(work_dir) {
+            if crate::process::is_process_alive(lock_pid) {
+                // A daemon holds the lock. Check socket connectivity.
+                if socket_path.exists() {
+                    match UnixStream::connect(&socket_path) {
+                        Ok(stream) => {
+                            let _ = stream.set_read_timeout(Some(Duration::from_millis(100)));
+                            return DaemonStatus::Running;
+                        }
+                        Err(_) => return DaemonStatus::ProcessOnly,
+                    }
+                }
+                return DaemonStatus::ProcessOnly;
+            }
+        }
+
+        // Fallback: check PID file + socket (for daemons started before the flock fix)
         if !socket_path.exists() {
-            // No socket means daemon is not ready to accept connections
-            // Clean up stale PID file if it exists
             if pid_path.exists() {
                 if let Some(pid) = Self::read_pid(work_dir) {
-                    let pid_exists = crate::process::is_process_alive(pid);
-                    if !pid_exists {
-                        let _ = std::fs::remove_file(&pid_path);
+                    if crate::process::is_process_alive(pid) {
+                        return DaemonStatus::ProcessOnly;
                     }
+                    let _ = std::fs::remove_file(&pid_path);
                 }
             }
             return DaemonStatus::NotRunning;
         }
 
-        // Check if PID file exists and process is alive
         if let Some(pid) = Self::read_pid(work_dir) {
-            let pid_exists = crate::process::is_process_alive(pid);
-
-            if !pid_exists {
-                // PID file exists but process is dead, clean up stale files
+            if !crate::process::is_process_alive(pid) {
                 let _ = std::fs::remove_file(&pid_path);
                 let _ = std::fs::remove_file(&socket_path);
                 return DaemonStatus::NotRunning;
             }
 
-            // Process is alive, now test socket connectivity
             match UnixStream::connect(&socket_path) {
                 Ok(stream) => {
-                    // Set a short timeout for the connectivity test
                     let _ = stream.set_read_timeout(Some(Duration::from_millis(100)));
-                    // Connection succeeded - daemon is responsive
                     DaemonStatus::Running
                 }
-                Err(_) => {
-                    // Process alive but socket unreachable/unresponsive
-                    DaemonStatus::ProcessOnly
-                }
+                Err(_) => DaemonStatus::ProcessOnly,
             }
         } else {
-            // Socket exists but no PID file - clean up stale socket
             let _ = std::fs::remove_file(&socket_path);
             DaemonStatus::NotRunning
         }
