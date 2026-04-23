@@ -182,11 +182,11 @@ impl TerminalBackend for NativeBackend {
 
         // Find claude's absolute path (needed for macOS where terminals don't inherit PATH)
         let claude_path = find_claude_path()?;
-        let model_flag = format!(
-            " --model {}",
-            escape(Cow::Borrowed(stage.effective_model()))
-        );
-        let effort_flag = format!(" --effort {}", stage.effective_reasoning_effort());
+        // Merge conflict resolution always runs on opus[1m] with xhigh reasoning,
+        // regardless of the originating stage's model/effort — conflicts benefit
+        // from the strongest model and maximum deliberation.
+        let model_flag = " --model opus[1m]".to_string();
+        let effort_flag = " --effort xhigh".to_string();
         let claude_cmd = format!(
             "{}{model_flag}{effort_flag} {escaped_prompt}",
             claude_path.display()
@@ -258,11 +258,10 @@ impl TerminalBackend for NativeBackend {
 
         // Find claude's absolute path (needed for macOS where terminals don't inherit PATH)
         let claude_path = find_claude_path()?;
-        let model_flag = format!(
-            " --model {}",
-            escape(Cow::Borrowed(stage.effective_model()))
-        );
-        let effort_flag = format!(" --effort {}", stage.effective_reasoning_effort());
+        // Base-branch conflict resolution always runs on opus[1m] with xhigh
+        // reasoning — same rationale as merge conflict sessions.
+        let model_flag = " --model opus[1m]".to_string();
+        let effort_flag = " --effort xhigh".to_string();
         let claude_cmd = format!(
             "{}{model_flag}{effort_flag} {escaped_prompt}",
             claude_path.display()
