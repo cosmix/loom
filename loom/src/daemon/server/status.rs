@@ -118,27 +118,9 @@ pub fn detect_worktree_status(
         return Some(WorktreeStatus::Conflict);
     }
 
-    // Check if a merge is in progress by looking for MERGE_HEAD
-    let merge_head = worktree_path.join(".git").join("MERGE_HEAD");
-    // For worktrees, .git is a file pointing to the main repo, so check gitdir
-    let git_path = worktree_path.join(".git");
-    let is_merging = if git_path.is_file() {
-        // Read gitdir path and check for MERGE_HEAD there
-        if let Ok(content) = fs::read_to_string(&git_path) {
-            if let Some(gitdir) = content.strip_prefix("gitdir: ") {
-                let gitdir_path = PathBuf::from(gitdir.trim());
-                gitdir_path.join("MERGE_HEAD").exists()
-            } else {
-                false
-            }
-        } else {
-            false
-        }
-    } else {
-        merge_head.exists()
-    };
-
-    if is_merging {
+    // Check if a merge is in progress (handles .git as directory or as file
+    // with absolute/relative gitdir indirection).
+    if crate::git::merge::merge_head_exists(&worktree_path).unwrap_or(false) {
         return Some(WorktreeStatus::Merging);
     }
 

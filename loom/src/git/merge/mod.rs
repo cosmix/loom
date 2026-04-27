@@ -1,5 +1,6 @@
 //! Git merge operations for integrating worktree branches
 
+pub mod in_progress;
 pub mod lock;
 mod status;
 
@@ -12,6 +13,10 @@ use crate::git::runner::{run_git, run_git_checked};
 use lock::MergeLock;
 
 // Re-export status types for use by other modules
+pub use in_progress::{
+    detect_in_progress_merge_at, detect_in_progress_merge_at_worktree, detect_in_progress_merges,
+    git_dir_for_repo_path, merge_head_exists, ActiveMergeState, InProgressMerge, MergeLocation,
+};
 pub use status::{build_merge_report, check_merge_state, MergeState, MergeStatusReport};
 
 /// Result of a merge operation
@@ -37,6 +42,25 @@ pub enum MergeResult {
     AlreadyUpToDate,
 }
 
+/// Refuse to run a merge operation if `MERGE_HEAD` is already set on the
+/// given repo path. Returns a distinct error so callers can surface it
+/// instead of clobbering the existing merge.
+///
+/// Defense in depth alongside attribution-aware recovery: even if a caller
+/// forgets to check, the helper-level guard prevents `git merge --abort`
+/// from running over the user's in-progress resolution.
+fn require_no_active_merge(repo_root: &Path) -> Result<()> {
+    if merge_head_exists(repo_root)? {
+        bail!(
+            "Refusing to run merge operation: a merge is already in progress at {}. \
+             Resolve or abort it first (cd {}; git merge --abort).",
+            repo_root.display(),
+            repo_root.display(),
+        );
+    }
+    Ok(())
+}
+
 /// Merge a stage branch to target branch (typically main)
 ///
 /// Steps:
@@ -60,6 +84,10 @@ pub fn merge_stage(
             e
         )
     })?;
+
+    // Refuse if MERGE_HEAD already exists — running here would `git merge
+    // --abort` an active resolution and lose work.
+    require_no_active_merge(repo_root)?;
 
     let branch_name = branch_name_for_stage(stage_id);
 
@@ -200,6 +228,10 @@ pub fn get_conflicting_files_from_status(
             e
         )
     })?;
+
+    // Refuse if MERGE_HEAD already exists — running a probe merge here would
+    // `git merge --abort` the active resolution and corrupt state.
+    require_no_active_merge(repo_root)?;
 
     // Save current branch
     let original_branch = current_branch(repo_root)?;
@@ -374,6 +406,108 @@ mod tests {
         assert_eq!(files, 1);
         assert_eq!(ins, 2);
         assert_eq!(del, 0);
+    }
+
+    #[test]
+    fn merge_stage_refuses_when_merge_head_set() {
+        use std::process::Command;
+        use tempfile::TempDir;
+
+        // Build a repo with two diverging branches and an in-progress merge.
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+
+        let run = |args: &[&str]| {
+            Command::new("git")
+                .args(args)
+                .current_dir(root)
+                .output()
+                .unwrap();
+        };
+        run(&["init", "-b", "main"]);
+        run(&["config", "user.email", "t@t.com"]);
+        run(&["config", "user.name", "t"]);
+        std::fs::write(root.join("a.txt"), "seed").unwrap();
+        run(&["add", "a.txt"]);
+        run(&["commit", "-m", "seed"]);
+
+        run(&["checkout", "-b", "loom/blockee"]);
+        std::fs::write(root.join("a.txt"), "branch").unwrap();
+        run(&["add", "a.txt"]);
+        run(&["commit", "-m", "branch"]);
+
+        run(&["checkout", "main"]);
+        std::fs::write(root.join("a.txt"), "main").unwrap();
+        run(&["add", "a.txt"]);
+        run(&["commit", "-m", "main"]);
+
+        // Manually start a merge to populate MERGE_HEAD.
+        let _ = Command::new("git")
+            .args(["merge", "--no-ff", "loom/blockee"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        assert!(merge_head_exists(root).unwrap(), "MERGE_HEAD must be set");
+
+        // Now merge_stage MUST refuse — and crucially must NOT abort the
+        // existing merge.
+        let work_dir = root.join(".work");
+        std::fs::create_dir_all(&work_dir).unwrap();
+        let result = merge_stage("blockee", "main", root, &work_dir);
+        assert!(result.is_err());
+        // The MERGE_HEAD file must still be there — guard must not abort.
+        assert!(
+            merge_head_exists(root).unwrap(),
+            "merge_stage must NOT abort the existing merge when refusing"
+        );
+    }
+
+    #[test]
+    fn get_conflicting_files_from_status_refuses_when_merge_head_set() {
+        use std::process::Command;
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        let run = |args: &[&str]| {
+            Command::new("git")
+                .args(args)
+                .current_dir(root)
+                .output()
+                .unwrap();
+        };
+        run(&["init", "-b", "main"]);
+        run(&["config", "user.email", "t@t.com"]);
+        run(&["config", "user.name", "t"]);
+        std::fs::write(root.join("a.txt"), "seed").unwrap();
+        run(&["add", "a.txt"]);
+        run(&["commit", "-m", "seed"]);
+
+        run(&["checkout", "-b", "loom/x"]);
+        std::fs::write(root.join("a.txt"), "x").unwrap();
+        run(&["add", "a.txt"]);
+        run(&["commit", "-m", "x"]);
+
+        run(&["checkout", "main"]);
+        std::fs::write(root.join("a.txt"), "y").unwrap();
+        run(&["add", "a.txt"]);
+        run(&["commit", "-m", "y"]);
+
+        let _ = Command::new("git")
+            .args(["merge", "--no-ff", "loom/x"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        assert!(merge_head_exists(root).unwrap());
+
+        let work_dir = root.join(".work");
+        std::fs::create_dir_all(&work_dir).unwrap();
+        let result = get_conflicting_files_from_status("loom/x", "main", root, &work_dir);
+        assert!(result.is_err());
+        assert!(
+            merge_head_exists(root).unwrap(),
+            "get_conflicting_files_from_status must NOT abort the existing merge"
+        );
     }
 
     #[test]
