@@ -9,3 +9,4 @@ pub mod dependency_multi;
 pub mod dependency_simple;
 pub mod helpers;
 pub mod hooks_commit_filter;
+pub mod merge_conflict_recovery;
