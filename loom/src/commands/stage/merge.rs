@@ -9,6 +9,7 @@ use std::path::Path;
 
 use crate::commands::common::detect_stage_id;
 use crate::git::branch::{branch_name_for_stage, resolve_target_branch};
+use crate::git::merge::merge_head_exists;
 use crate::git::{get_conflicting_files, merge_stage, MergeResult};
 use crate::models::stage::StageStatus;
 use crate::verify::transitions::{load_stage, save_stage, trigger_dependents};
@@ -71,11 +72,30 @@ fn merge_resolved(stage_id: Option<String>) -> Result<()> {
     }
 
     // Check if we're in the middle of a merge
-    if is_merge_in_progress(&repo_root)? {
+    if merge_head_exists(&repo_root)? {
         bail!(
             "A merge is still in progress. \
              Please complete the merge with `git commit` before running this command."
         );
+    }
+
+    // Verify ancestry: derive completed_commit if missing, then check that the
+    // commit is in the target branch's history. Without this guard,
+    // `--resolved` could be invoked after a partial resolution and silently
+    // satisfy downstream dependency checks even though the commit never landed.
+    let target_branch = resolve_target_branch(
+        &crate::fs::parse_base_branch_from_config(work_dir).unwrap_or(None),
+        &repo_root,
+    );
+    let verified = crate::commands::stage::merge_verify::verify_or_derive_completed_commit(
+        &stage,
+        &target_branch,
+        &repo_root,
+    )?;
+    if let Some(commit) = verified.persist_commit {
+        // Persist the derived commit before continuing.
+        stage.completed_commit = Some(commit);
+        save_stage(&stage, work_dir)?;
     }
 
     // Transition to Completed with merged=true
@@ -170,6 +190,25 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
 
     // Find repo root (parent of .worktrees)
     let repo_root = find_repo_root(&cwd)?;
+
+    // Resolve worktree root from cwd. `git rev-parse --show-toplevel` returns
+    // the top of the working tree, which for a worktree is its root.
+    let worktree_root = crate::git::run_git_checked(&["rev-parse", "--show-toplevel"], &cwd)
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| cwd.clone());
+
+    // Refuse if either main repo or the worktree has an active merge — running
+    // a programmatic merge over an in-progress resolution would clobber the
+    // user's work. Run BEFORE incrementing fix_attempts so a refused retry
+    // does not burn an attempt.
+    let main_active = merge_head_exists(&repo_root)?;
+    let worktree_active = merge_head_exists(&worktree_root)?;
+    if main_active || worktree_active {
+        bail!(
+            "Cannot retry merge: a merge is already in progress (main: {main_active}, \
+             worktree: {worktree_active}). Resolve or abort it first.",
+        );
+    }
 
     // Increment fix_attempts
     let attempts = stage.increment_fix_attempts();
@@ -338,12 +377,6 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
     Ok(())
 }
 
-/// Check if a merge is in progress
-fn is_merge_in_progress(repo_root: &Path) -> Result<bool> {
-    let merge_head = repo_root.join(".git").join("MERGE_HEAD");
-    Ok(merge_head.exists())
-}
-
 /// Walk up from the current directory to find the repo root (parent of .worktrees).
 fn find_repo_root(cwd: &Path) -> Result<std::path::PathBuf> {
     let mut current = cwd.to_path_buf();
@@ -412,7 +445,7 @@ mod tests {
     }
 
     #[test]
-    fn test_is_merge_in_progress_clean() {
+    fn test_merge_head_absent_in_clean_repo() {
         let temp_dir = TempDir::new().unwrap();
         let repo_root = temp_dir.path();
 
@@ -423,7 +456,7 @@ mod tests {
             .output()
             .unwrap();
 
-        assert!(!is_merge_in_progress(repo_root).unwrap());
+        assert!(!merge_head_exists(repo_root).unwrap());
     }
 
     // Tests from retry_merge

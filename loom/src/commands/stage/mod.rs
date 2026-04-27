@@ -3,13 +3,14 @@
 
 pub(crate) mod acceptance_runner;
 mod check_acceptance;
-mod complete;
+pub mod complete;
 mod criteria_runner;
 mod dispute_criteria;
 mod human_review;
 mod knowledge_complete;
 mod merge;
 mod merge_resolver;
+pub mod merge_verify;
 mod output;
 mod progressive_complete;
 pub(crate) mod recover;
