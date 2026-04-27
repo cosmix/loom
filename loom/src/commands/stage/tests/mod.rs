@@ -9,6 +9,9 @@ mod state;
 #[cfg(test)]
 mod complete;
 
+#[cfg(test)]
+mod complete_router;
+
 // Shared test utilities
 use crate::models::stage::{Stage, StageStatus};
 use std::fs;
