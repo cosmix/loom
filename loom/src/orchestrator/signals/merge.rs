@@ -2,6 +2,7 @@ use anyhow::{bail, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::git::merge::{ActiveMergeState, InProgressMerge};
 use crate::models::session::Session;
 use crate::models::stage::Stage;
 
@@ -12,12 +13,16 @@ use super::types::MergeSignalContent;
 ///
 /// Unlike regular stage signals that run in worktrees, merge signals direct
 /// the session to work in the main repository to resolve merge conflicts.
+///
+/// `in_progress` describes any active merge state on disk so the signal text
+/// can branch between "start a fresh merge" and "continue the existing one".
 pub fn generate_merge_signal(
     session: &Session,
     stage: &Stage,
     source_branch: &str,
     target_branch: &str,
     conflicting_files: &[String],
+    in_progress: Option<&InProgressMerge>,
     work_dir: &Path,
 ) -> Result<PathBuf> {
     let content = format_merge_signal_content(
@@ -26,8 +31,68 @@ pub fn generate_merge_signal(
         source_branch,
         target_branch,
         conflicting_files,
+        in_progress,
     );
     helpers::write_signal_file(&session.id, &content, work_dir)
+}
+
+/// Find a live merge resolver session for the given stage by scanning
+/// `.work/signals/` for merge signals.
+///
+/// For each match on `stage_id`, loads the corresponding session file and
+/// checks PID liveness. If alive -> returns `Some(session_id)`. If dead ->
+/// removes the stale signal file (same cleanup behavior as the daemon's
+/// `has_merge_signal_for_stage` + `cleanup_stale_merge_signal_for_stage`)
+/// and continues scanning.
+///
+/// Returns `Ok(None)` if no live merge session exists for the stage.
+pub fn find_live_merge_session_for_stage(
+    stage_id: &str,
+    work_dir: &Path,
+) -> Result<Option<String>> {
+    use crate::models::session::Session;
+    use crate::parser::frontmatter::parse_from_markdown;
+    use crate::process::is_process_alive;
+
+    let signal_ids = super::crud::list_signals(work_dir)?;
+    for signal_id in &signal_ids {
+        let merge_signal = match read_merge_signal(signal_id, work_dir)? {
+            Some(m) => m,
+            None => continue,
+        };
+        if merge_signal.stage_id != stage_id {
+            continue;
+        }
+
+        // Found a merge signal for this stage — check if its session is alive.
+        let session_path = work_dir
+            .join("sessions")
+            .join(format!("{}.md", merge_signal.session_id));
+        let alive = if session_path.exists() {
+            match fs::read_to_string(&session_path) {
+                Ok(content) => match parse_from_markdown::<Session>(&content, "Session") {
+                    Ok(session) => session.pid.map(is_process_alive).unwrap_or(false),
+                    Err(_) => false,
+                },
+                Err(_) => false,
+            }
+        } else {
+            false
+        };
+
+        if alive {
+            return Ok(Some(merge_signal.session_id));
+        }
+        // Dead session: clean up the stale signal and keep scanning.
+        if let Err(e) = super::crud::remove_signal(signal_id, work_dir) {
+            tracing::warn!(
+                signal_id = %signal_id,
+                error = %e,
+                "Failed to remove stale merge signal"
+            );
+        }
+    }
+    Ok(None)
 }
 
 /// Read and parse a merge signal file.
@@ -57,6 +122,7 @@ pub(super) fn format_merge_signal_content(
     source_branch: &str,
     target_branch: &str,
     conflicting_files: &[String],
+    in_progress: Option<&InProgressMerge>,
 ) -> String {
     let mut content = String::new();
 
@@ -88,22 +154,58 @@ pub(super) fn format_merge_signal_content(
         conflicting_files,
     ));
 
-    // Task instructions
+    // Task instructions — branch by in-progress merge state.
     content.push_str("## Your Task\n\n");
-    content.push_str(&format!(
-        "1. Run: `git merge {source_branch}` (if not already in merge state)\n"
-    ));
-    content.push_str("2. Resolve conflicts in the files listed above\n");
-    content.push_str("3. Stage resolved files: `git add <resolved-files>`\n");
-    content.push_str("4. Review changes and complete the merge: `git commit`\n");
-    content.push_str(&format!(
-        "5. Run: `loom stage merge {} --resolved`\n",
-        stage.id
-    ));
-    content.push_str(&format!(
-        "6. Clean up worktree and branch: `loom worktree remove {}`\n\n",
-        stage.id
-    ));
+    match in_progress.map(|m| (&m.state, m.location_path().display().to_string())) {
+        None => {
+            content.push_str(&format!(
+                "1. Run: `git merge {source_branch}` (if not already in merge state)\n"
+            ));
+            content.push_str("2. Resolve conflicts in the files listed above\n");
+            content.push_str("3. Stage resolved files: `git add <resolved-files>`\n");
+            content.push_str("4. Review changes and complete the merge: `git commit`\n");
+            content.push_str(&format!(
+                "5. Run: `loom stage merge {} --resolved`\n",
+                stage.id
+            ));
+            content.push_str(&format!(
+                "6. Clean up worktree and branch: `loom worktree remove {}`\n\n",
+                stage.id
+            ));
+        }
+        Some((ActiveMergeState::HasUnmergedPaths(_), location)) => {
+            content.push_str(&format!(
+                "A merge is already in progress at `{location}`. \
+                 **Do NOT run `git merge` again.**\n\n"
+            ));
+            content.push_str("1. Resolve conflicts in the files listed above\n");
+            content.push_str("2. Stage resolved files: `git add <resolved-files>`\n");
+            content.push_str("3. Review changes and complete the merge: `git commit`\n");
+            content.push_str(&format!(
+                "4. Run: `loom stage merge {} --resolved`\n",
+                stage.id
+            ));
+            content.push_str(&format!(
+                "5. Clean up worktree and branch: `loom worktree remove {}`\n\n",
+                stage.id
+            ));
+        }
+        Some((ActiveMergeState::ResolvedButUncommitted, location)) => {
+            content.push_str(&format!(
+                "A merge is already in progress at `{location}` with all conflicts resolved.\n\n"
+            ));
+            content.push_str("1. **Review the staged changes** (`git diff --staged`)\n");
+            content.push_str("2. Complete the merge: `git commit`\n");
+            content.push_str(&format!(
+                "3. Run: `loom stage merge {} --resolved`\n",
+                stage.id
+            ));
+            content.push_str(&format!(
+                "4. Clean up worktree and branch: `loom worktree remove {}`\n\n",
+                stage.id
+            ));
+        }
+    }
 
     // Important notes
     content.push_str("## Important\n\n");

@@ -40,5 +40,5 @@ pub use generate::{
     generate_signal_with_skills, DEFAULT_MAX_SKILL_RECOMMENDATIONS,
 };
 pub use knowledge::generate_knowledge_signal;
-pub use merge::{generate_merge_signal, read_merge_signal};
+pub use merge::{find_live_merge_session_for_stage, generate_merge_signal, read_merge_signal};
 pub use merge_conflict::{generate_merge_conflict_signal, read_merge_conflict_signal};

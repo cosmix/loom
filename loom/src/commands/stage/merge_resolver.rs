@@ -8,10 +8,11 @@ use std::path::Path;
 
 use crate::daemon::DaemonServer;
 use crate::git::branch::branch_name_for_stage;
+use crate::git::merge::InProgressMerge;
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::continuation::save_session;
-use crate::orchestrator::signals::generate_merge_signal;
+use crate::orchestrator::signals::{find_live_merge_session_for_stage, generate_merge_signal};
 use crate::orchestrator::terminal::native::NativeBackend;
 use crate::orchestrator::terminal::TerminalBackend;
 
@@ -21,6 +22,8 @@ pub enum MergeResolverResult {
     DaemonManaged,
     /// A merge resolver session was spawned with the given session ID.
     Spawned(String),
+    /// A live merge resolver session is already running for this stage.
+    AlreadyRunning { session_id: String },
 }
 
 /// Spawn a merge conflict resolver session from the CLI.
@@ -39,6 +42,7 @@ pub fn spawn_merge_resolver(
     stage: &Stage,
     conflicting_files: &[String],
     merge_point: &str,
+    in_progress: Option<InProgressMerge>,
     repo_root: &Path,
     work_dir: &Path,
 ) -> Result<MergeResolverResult> {
@@ -59,6 +63,12 @@ pub fn spawn_merge_resolver(
         return Ok(MergeResolverResult::DaemonManaged);
     }
 
+    // Refuse to spawn a duplicate resolver if a live one already exists.
+    // (Stale signals are cleaned up by the helper.)
+    if let Some(session_id) = find_live_merge_session_for_stage(&stage.id, work_dir)? {
+        return Ok(MergeResolverResult::AlreadyRunning { session_id });
+    }
+
     // Create terminal backend for spawning
     let backend =
         NativeBackend::new(work_dir.to_path_buf()).context("Failed to create terminal backend")?;
@@ -77,6 +87,7 @@ pub fn spawn_merge_resolver(
         &source_branch,
         merge_point,
         conflicting_files,
+        in_progress.as_ref(),
         work_dir,
     )
     .context("Failed to generate merge signal")?;

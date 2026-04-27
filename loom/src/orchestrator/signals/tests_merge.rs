@@ -26,6 +26,7 @@ fn test_generate_merge_signal_basic() {
         "loom/stage-1",
         "main",
         &conflicting_files,
+        None,
         &work_dir,
     );
 
@@ -53,7 +54,15 @@ fn test_generate_merge_signal_empty_conflicts() {
     let session = create_test_session();
     let stage = create_test_stage();
 
-    let result = generate_merge_signal(&session, &stage, "loom/stage-1", "main", &[], &work_dir);
+    let result = generate_merge_signal(
+        &session,
+        &stage,
+        "loom/stage-1",
+        "main",
+        &[],
+        None,
+        &work_dir,
+    );
 
     assert!(result.is_ok());
     let signal_path = result.unwrap();
@@ -69,8 +78,14 @@ fn test_format_merge_signal_content_sections() {
     let stage = create_test_stage();
     let conflicting_files = vec!["src/test.rs".to_string()];
 
-    let content =
-        format_merge_signal_content(&session, &stage, "loom/stage-1", "main", &conflicting_files);
+    let content = format_merge_signal_content(
+        &session,
+        &stage,
+        "loom/stage-1",
+        "main",
+        &conflicting_files,
+        None,
+    );
 
     // Check all required sections are present
     assert!(content.contains("# Merge Signal:"));
@@ -107,6 +122,7 @@ fn test_read_merge_signal() {
         "loom/stage-1",
         "main",
         &conflicting_files,
+        None,
         &work_dir,
     )
     .unwrap();
@@ -159,6 +175,80 @@ fn test_read_merge_signal_nonexistent() {
     let result = read_merge_signal("nonexistent-session", &work_dir);
     assert!(result.is_ok());
     assert!(result.unwrap().is_none());
+}
+
+#[test]
+fn signal_text_for_none_includes_run_git_merge() {
+    let session = create_test_session();
+    let stage = create_test_stage();
+
+    let content = format_merge_signal_content(&session, &stage, "loom/stage-1", "main", &[], None);
+    assert!(
+        content.contains("git merge loom/stage-1"),
+        "fresh-merge signal must direct agent to run `git merge`"
+    );
+}
+
+#[test]
+fn signal_text_for_has_unmerged_paths_says_do_not_run_git_merge_again() {
+    use crate::git::merge::{ActiveMergeState, InProgressMerge, MergeLocation};
+    use std::path::PathBuf;
+
+    let session = create_test_session();
+    let stage = create_test_stage();
+    let merge = InProgressMerge {
+        location: MergeLocation::MainRepo {
+            repo_path: PathBuf::from("/tmp/repo"),
+            git_dir: PathBuf::from("/tmp/repo/.git"),
+        },
+        merge_heads: vec!["abc1234".to_string()],
+        state: ActiveMergeState::HasUnmergedPaths(vec!["file.rs".to_string()]),
+    };
+
+    let content = format_merge_signal_content(
+        &session,
+        &stage,
+        "loom/stage-1",
+        "main",
+        &["file.rs".to_string()],
+        Some(&merge),
+    );
+    assert!(
+        content.contains("merge is already in progress at"),
+        "signal must announce existing merge: {content}"
+    );
+    assert!(
+        content.contains("Do NOT run `git merge` again"),
+        "signal must instruct against re-running git merge: {content}"
+    );
+}
+
+#[test]
+fn signal_text_for_resolved_but_uncommitted_says_review_staged_changes() {
+    use crate::git::merge::{ActiveMergeState, InProgressMerge, MergeLocation};
+    use std::path::PathBuf;
+
+    let session = create_test_session();
+    let stage = create_test_stage();
+    let merge = InProgressMerge {
+        location: MergeLocation::MainRepo {
+            repo_path: PathBuf::from("/tmp/repo"),
+            git_dir: PathBuf::from("/tmp/repo/.git"),
+        },
+        merge_heads: vec!["abc1234".to_string()],
+        state: ActiveMergeState::ResolvedButUncommitted,
+    };
+
+    let content =
+        format_merge_signal_content(&session, &stage, "loom/stage-1", "main", &[], Some(&merge));
+    assert!(
+        content.contains("Review the staged changes"),
+        "resolved-but-uncommitted signal must direct user to review: {content}"
+    );
+    assert!(
+        content.contains("git commit"),
+        "resolved-but-uncommitted signal must instruct to commit: {content}"
+    );
 }
 
 #[test]

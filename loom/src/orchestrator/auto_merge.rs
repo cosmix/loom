@@ -131,13 +131,16 @@ pub fn attempt_auto_merge(
             let source_branch = branch_name_for_stage(&stage.id);
             let session = Session::new_merge(source_branch.clone(), target_branch.to_string());
 
-            // Generate the merge signal file
+            // Generate the merge signal file. Fresh conflict path: no
+            // in-progress merge to inherit (the test merge in merge_stage was
+            // aborted before returning Conflict).
             let signal_path = generate_merge_signal(
                 &session,
                 stage,
                 &source_branch,
                 target_branch,
                 &conflicting_files,
+                None,
                 work_dir,
             )
             .context("Failed to generate merge signal")?;
