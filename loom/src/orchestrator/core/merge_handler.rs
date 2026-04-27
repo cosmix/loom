@@ -9,9 +9,8 @@ use crate::models::session::{Session, SessionType};
 use crate::models::stage::StageStatus;
 use crate::orchestrator::auto_merge::{attempt_auto_merge, is_auto_merge_enabled, AutoMergeResult};
 use crate::orchestrator::signals::{
-    generate_merge_signal, list_signals, read_merge_signal, remove_signal,
+    find_live_merge_session_for_stage, generate_merge_signal, remove_signal,
 };
-use crate::parser::frontmatter::parse_from_markdown;
 use crate::process::is_process_alive;
 use crate::verify::transitions::load_stage;
 
@@ -30,23 +29,63 @@ impl Orchestrator {
         // Check if the merge was successful and update stage accordingly
         let mut stage = self.load_stage(stage_id)?;
 
-        // If stage is already marked as merged (e.g., agent ran `loom worktree remove`), we're done
-        if stage.merged {
-            // Merge resolved - clean up signal and active session
-            if let Err(e) = remove_signal(session_id, &self.config.work_dir) {
-                eprintln!("Warning: Failed to remove merge signal: {e}");
-            }
-            self.active_sessions.remove(stage_id);
-            clear_status_line();
-            eprintln!("Stage '{stage_id}' merge completed successfully");
-            return Ok(());
-        }
-
         // Determine the merge point to check against
         let merge_point = crate::git::branch::resolve_target_branch(
             &self.config.base_branch,
             &self.config.repo_root,
         );
+
+        // If stage is already marked as merged, do NOT trust the flag blindly
+        // for non-knowledge stages. Derive commit if missing, then verify
+        // ancestry; only treat as merged if the verification passes. Trust
+        // merged=true only for knowledge stages (no branch by design).
+        if stage.merged {
+            let actually_merged = if stage.stage_type == crate::models::stage::StageType::Knowledge
+            {
+                true
+            } else {
+                let commit = match stage.completed_commit.clone() {
+                    Some(c) => Some(c),
+                    None => crate::git::get_branch_head(
+                        &branch_name_for_stage(stage_id),
+                        &self.config.repo_root,
+                    )
+                    .ok(),
+                };
+                commit
+                    .map(|c| {
+                        verify_merge_succeeded(&c, &merge_point, &self.config.repo_root)
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(false)
+            };
+
+            if actually_merged {
+                // Merge resolved - clean up signal and active session
+                if let Err(e) = remove_signal(session_id, &self.config.work_dir) {
+                    eprintln!("Warning: Failed to remove merge signal: {e}");
+                }
+                self.active_sessions.remove(stage_id);
+                clear_status_line();
+                eprintln!("Stage '{stage_id}' merge completed successfully");
+                return Ok(());
+            }
+
+            tracing::error!(
+                stage_id = %stage_id,
+                "Merge session ended with merged=true but ancestry verification failed; \
+                 falling through to verify_and_finalize_merge to revert."
+            );
+            stage.merged = false;
+            if let Err(e) = self.save_stage(&stage) {
+                tracing::warn!(
+                    stage_id = %stage_id,
+                    error = %e,
+                    "Failed to revert merged=true after failed verification"
+                );
+            }
+            // Fall through to the verify_and_finalize logic below.
+        }
 
         // Check if the merge was actually successful by examining git state.
         // check_merge_state uses completed_commit + git ancestry (primary) and
@@ -627,14 +666,18 @@ impl Orchestrator {
                 }
             }
 
-            // Check if there's already a merge signal for this stage
-            if self.has_merge_signal_for_stage(&stage_id) {
-                // Check if the session behind the signal is still alive
-                // If dead, clean up the stale signal and fall through to respawn
-                if !self.cleanup_stale_merge_signal_for_stage(&stage_id) {
-                    continue; // Signal is valid, session still running
+            // Use the shared helper that checks signal + PID liveness and
+            // cleans up stale signals atomically.
+            match find_live_merge_session_for_stage(&stage_id, &self.config.work_dir) {
+                Ok(Some(_)) => continue, // Live resolver already running — skip
+                Ok(None) => { /* fall through to spawn */ }
+                Err(e) => {
+                    tracing::warn!(
+                        stage_id = %stage_id,
+                        error = %e,
+                        "Failed to check for existing merge signal; falling through to spawn"
+                    );
                 }
-                // Stale signal cleaned up - fall through to spawn new session
             }
 
             // Spawn a merge resolution session
@@ -651,92 +694,6 @@ impl Orchestrator {
         Ok(spawned)
     }
 
-    /// Check if there's already a merge signal for a stage.
-    ///
-    /// Uses the structured `read_merge_signal` parser rather than raw string
-    /// matching, so this stays correct if the signal file format changes.
-    fn has_merge_signal_for_stage(&self, stage_id: &str) -> bool {
-        let signal_ids = match list_signals(&self.config.work_dir) {
-            Ok(ids) => ids,
-            Err(e) => {
-                eprintln!("Warning: Failed to list signals while checking for merge signal: {e}");
-                return false;
-            }
-        };
-
-        for signal_id in &signal_ids {
-            if let Ok(Some(merge_signal)) = read_merge_signal(signal_id, &self.config.work_dir) {
-                if merge_signal.stage_id == stage_id {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
-    /// Check if a merge signal for the given stage is stale (session is dead).
-    /// If stale, removes the signal file and returns true.
-    /// If the signal is valid (session alive), returns false.
-    fn cleanup_stale_merge_signal_for_stage(&self, stage_id: &str) -> bool {
-        let signal_ids = match list_signals(&self.config.work_dir) {
-            Ok(ids) => ids,
-            Err(e) => {
-                eprintln!(
-                    "Warning: Failed to list signals while checking for stale merge signal: {e}"
-                );
-                return false;
-            }
-        };
-
-        for signal_id in &signal_ids {
-            if let Ok(Some(merge_signal)) = read_merge_signal(signal_id, &self.config.work_dir) {
-                if merge_signal.stage_id == stage_id {
-                    // Found a merge signal for this stage - check if the session is alive
-                    let session_path = self
-                        .config
-                        .work_dir
-                        .join("sessions")
-                        .join(format!("{}.md", merge_signal.session_id));
-
-                    let session_alive = if session_path.exists() {
-                        match std::fs::read_to_string(&session_path) {
-                            Ok(content) => {
-                                match parse_from_markdown::<Session>(&content, "Session") {
-                                    Ok(session) => {
-                                        if let Some(pid) = session.pid {
-                                            is_process_alive(pid)
-                                        } else {
-                                            false // No PID means session is dead
-                                        }
-                                    }
-                                    Err(_) => false, // Failed to parse session, treat as dead
-                                }
-                            }
-                            Err(_) => false, // Failed to read session file, treat as dead
-                        }
-                    } else {
-                        false // Session file doesn't exist, signal is stale
-                    };
-
-                    if !session_alive {
-                        // Session is dead - remove the stale signal
-                        clear_status_line();
-                        eprintln!("Detected stale merge signal for stage '{stage_id}' (session '{}' is dead), cleaning up", merge_signal.session_id);
-                        if let Err(e) = remove_signal(signal_id, &self.config.work_dir) {
-                            eprintln!("Warning: Failed to remove stale merge signal: {e}");
-                            return false;
-                        }
-                        return true; // Stale signal cleaned up
-                    } else {
-                        return false; // Session is alive, signal is valid
-                    }
-                }
-            }
-        }
-
-        false // No merge signal found for this stage
-    }
-
     /// Spawn a merge resolution session for a stage with merge issues.
     fn spawn_merge_resolution_session(
         &mut self,
@@ -750,17 +707,42 @@ impl Orchestrator {
             &self.config.repo_root,
         );
 
-        // Get conflicting files (test merge to see what conflicts)
-        let conflicting_files = get_conflicting_files_from_status(
-            &source_branch,
-            &target_branch,
-            &self.config.repo_root,
-            &self.config.work_dir,
-        )
-        .unwrap_or_default();
+        // Get conflicting files. If MERGE_HEAD is already set,
+        // get_conflicting_files_from_status refuses (helper-level guard) — in
+        // that case we fall back to reading the active merge's unmerged paths
+        // directly. Only run the probe merge when there is NO active merge.
+        let conflicting_files =
+            if crate::git::merge::merge_head_exists(&self.config.repo_root).unwrap_or(false) {
+                Vec::new()
+            } else {
+                get_conflicting_files_from_status(
+                    &source_branch,
+                    &target_branch,
+                    &self.config.repo_root,
+                    &self.config.work_dir,
+                )
+                .unwrap_or_default()
+            };
 
         // Create a merge session
         let session = Session::new_merge(source_branch.clone(), target_branch.clone());
+
+        // Detect any active merge in the main repo so the signal can branch
+        // between "start a fresh merge" and "continue the existing one".
+        // If MERGE_HEAD is set, get_conflicting_files_from_status will refuse
+        // (helper-level guard); fall back to reading the active merge's
+        // unmerged paths directly.
+        let in_progress = crate::git::merge::detect_in_progress_merge_at(&self.config.repo_root)
+            .ok()
+            .flatten();
+        let conflicting_files = if conflicting_files.is_empty() {
+            match in_progress.as_ref().map(|m| &m.state) {
+                Some(crate::git::merge::ActiveMergeState::HasUnmergedPaths(paths)) => paths.clone(),
+                _ => conflicting_files,
+            }
+        } else {
+            conflicting_files
+        };
 
         // Generate merge signal
         let signal_path = generate_merge_signal(
@@ -769,6 +751,7 @@ impl Orchestrator {
             &source_branch,
             &target_branch,
             &conflicting_files,
+            in_progress.as_ref(),
             &self.config.work_dir,
         )
         .context("Failed to generate merge signal")?;

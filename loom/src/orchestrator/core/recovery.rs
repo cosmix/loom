@@ -14,6 +14,19 @@ use super::Orchestrator;
 
 /// Trait for recovery operations
 pub(super) trait Recovery: Persistence {
+    /// Reconcile any active main-repo merge with stage state on disk and
+    /// update the in-memory graph if a stage was mutated.
+    ///
+    /// MUST run BEFORE `sync_graph_with_stage_files` AND BEFORE
+    /// `recover_orphaned_sessions`:
+    /// - Recovery deletes orphaned merge sessions; attribution depends on
+    ///   their metadata.
+    /// - Sync reads stage files into the graph; if reconcile flips
+    ///   `Completed + merged=true` -> `MergeConflict + merged=false` AFTER
+    ///   sync, the graph still has the stale view and would queue dependents
+    ///   based on a phantom merge.
+    fn reconcile_and_update_graph(&mut self) -> Result<()>;
+
     /// Sync the execution graph with existing stage file statuses.
     /// This syncs FROM files TO graph.
     fn sync_graph_with_stage_files(&mut self) -> Result<()>;
@@ -60,7 +73,109 @@ fn check_retry_eligibility(stage: &Stage) -> bool {
     is_backoff_elapsed(stage.last_failure_at, backoff)
 }
 
+impl Orchestrator {
+    /// Re-verify a `Completed + merged=true` non-knowledge stage at sync time.
+    ///
+    /// Derives `completed_commit` from `loom/<id>` HEAD when missing, then
+    /// checks ancestry against the target branch. If the ancestry check fails
+    /// OR the branch is also missing, reverts `merged=false` so dependents
+    /// don't treat the stage as satisfied.
+    pub(super) fn verify_merged_true_or_revert(&mut self, stage: &mut Stage) {
+        // Derive completed_commit when missing.
+        if stage.completed_commit.is_none() {
+            let branch_name = crate::git::branch::branch_name_for_stage(&stage.id);
+            match crate::git::get_branch_head(&branch_name, &self.config.repo_root) {
+                Ok(head) => {
+                    stage.completed_commit = Some(head);
+                    if let Err(e) = self.save_stage(stage) {
+                        tracing::warn!(
+                            stage_id = %stage.id,
+                            error = %e,
+                            "Failed to persist derived completed_commit during merged=true verify"
+                        );
+                    }
+                }
+                Err(_) => {
+                    // Branch missing AND no commit recorded — unverifiable
+                    // phantom-merge candidate. Revert merged=false.
+                    tracing::error!(
+                        stage_id = %stage.id,
+                        branch = %branch_name,
+                        "Phantom-merge candidate at sync: merged=true with no commit \
+                         and no branch. Reverting to merged=false."
+                    );
+                    stage.merged = false;
+                    if let Err(e) = self.save_stage(stage) {
+                        tracing::warn!(
+                            stage_id = %stage.id,
+                            error = %e,
+                            "Failed to save merged=false revert"
+                        );
+                    }
+                    return; // Nothing more to verify.
+                }
+            }
+        }
+
+        if let Some(commit) = stage.completed_commit.clone() {
+            let target = crate::git::branch::resolve_target_branch(
+                &self.config.base_branch,
+                &self.config.repo_root,
+            );
+            if !crate::git::merge::verify_merge_succeeded(&commit, &target, &self.config.repo_root)
+                .unwrap_or(false)
+            {
+                tracing::error!(
+                    stage_id = %stage.id,
+                    commit = %commit,
+                    target = %target,
+                    "Phantom merge detected at sync: merged=true but commit not in target. \
+                     Reverting to merged=false; stage will need re-merge."
+                );
+                stage.merged = false;
+                if let Err(e) = self.save_stage(stage) {
+                    tracing::warn!(
+                        stage_id = %stage.id,
+                        error = %e,
+                        "Failed to save merged=false revert"
+                    );
+                }
+            }
+        }
+    }
+}
+
 impl Recovery for Orchestrator {
+    fn reconcile_and_update_graph(&mut self) -> Result<()> {
+        use crate::orchestrator::merge_attribution::{
+            reconcile_main_repo_active_merge, ReconciliationOutcome,
+        };
+        match reconcile_main_repo_active_merge(&self.config.repo_root, &self.config.work_dir)? {
+            ReconciliationOutcome::NoActiveMerge
+            | ReconciliationOutcome::UnattributedLogged
+            | ReconciliationOutcome::AttributedNoOp { .. } => {}
+            ReconciliationOutcome::StageMutated { stage_id, .. } => {
+                // Disk was corrected; update the graph immediately so any
+                // caller in this iteration sees the corrected state. The
+                // next sync_graph_with_stage_files call will pick this up
+                // again, which is harmless (idempotent).
+                self.graph.set_node_merged(&stage_id, false);
+                if let Err(e) = self
+                    .graph
+                    .mark_status(&stage_id, StageStatus::MergeConflict)
+                {
+                    tracing::warn!(
+                        stage_id = %stage_id,
+                        error = %e,
+                        "Failed to update graph after phantom-merge revert; \
+                         next sync will reconcile."
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn sync_graph_with_stage_files(&mut self) -> Result<()> {
         let stages_dir = self.config.work_dir.join("stages");
         if !stages_dir.exists() {
@@ -113,6 +228,18 @@ impl Recovery for Orchestrator {
 
                 match stage.status {
                     StageStatus::Completed => {
+                        // Verify merged=true non-knowledge stages: derive
+                        // commit from branch HEAD if missing, then check
+                        // ancestry. Old force-unsafe routes set merged=true
+                        // without ever populating completed_commit, so a
+                        // sync guard that only runs "when a commit exists"
+                        // misses exactly that bug class.
+                        if stage.merged
+                            && stage.stage_type != crate::models::stage::StageType::Knowledge
+                        {
+                            self.verify_merged_true_or_revert(&mut stage);
+                        }
+
                         // If stage is Completed but not merged, try to verify the
                         // merge via git ancestry. NEVER assume merged without proof —
                         // doing so produces phantom merges and lost work (see

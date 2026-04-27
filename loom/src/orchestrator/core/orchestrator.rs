@@ -185,6 +185,15 @@ impl Orchestrator {
         validate_work_dir_state(&self.config.repo_root)
             .context("Work directory integrity check failed")?;
 
+        // Reconcile any active main-repo merge BEFORE syncing graph and
+        // BEFORE recovering orphaned sessions. Recovery deletes orphaned
+        // session files; attribution depends on their metadata. Sync reads
+        // stage files into the graph; if reconcile flips the disk state
+        // AFTER sync, the graph keeps the stale view and would queue
+        // dependents based on a phantom merge.
+        self.reconcile_and_update_graph()
+            .context("Failed to reconcile active main-repo merge")?;
+
         // Sync graph with existing stage states and recover orphaned sessions
         self.sync_graph_with_stage_files()
             .context("Failed to sync graph with existing stage files")?;
@@ -224,6 +233,13 @@ impl Orchestrator {
                     break;
                 }
             }
+
+            // Reconcile main-repo active merge BEFORE sync each iteration.
+            // This catches `--no-verify --force-unsafe` produced phantom
+            // merges and any state-divergence that a manual git operation
+            // introduced between polls.
+            self.reconcile_and_update_graph()
+                .context("Failed to reconcile active main-repo merge")?;
 
             // Re-sync with stage files to pick up external changes
             // (e.g., stages verified via `loom verify` command)
