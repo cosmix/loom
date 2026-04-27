@@ -248,6 +248,7 @@
 - Routing must be a pure read-only function (`route_complete_for_conflicts`) — persistence happens only on the success path so refusal preserves stage state.
 
 **Fix (this change):**
+
 - New module `git/merge/in_progress.rs` is the single source of truth for `MERGE_HEAD` detection.
 - New module `orchestrator/merge_attribution.rs` ties active merges to specific stages via session metadata, branch HEAD, or `completed_commit`.
 - `route_complete_for_conflicts` (in `commands/stage/complete.rs`) is the new pure routing seam — read-only, never mutates.

@@ -388,7 +388,7 @@ Write each mistake as an actionable prevention rule:
 
 **MANDATORY:** Read stderr of ALL command output. If stderr contains "blocked", "denied", "connection refused", "failed to download" — STOP and investigate. Verify external dependencies are present. If sandbox blocked something needed, report as blocker.
 
-### 14. TOKEN EFFICIENCY - DON'T TALK TOO MUCH UNLESS NECESSARY!
+### 14. TOKEN EFFICIENCY - DON'T TALK TOO MUCH UNLESS NECESSARY
 
 **Response discipline:**
 
