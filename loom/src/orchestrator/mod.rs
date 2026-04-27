@@ -1,6 +1,7 @@
 pub mod auto_merge;
 pub mod continuation;
 pub mod core;
+pub mod merge_attribution;
 pub mod monitor;
 pub mod notify;
 pub mod progressive_merge;
@@ -16,6 +17,10 @@ pub use continuation::{
     ContinuationContext,
 };
 pub use core::{Orchestrator, OrchestratorConfig, OrchestratorResult};
+pub use merge_attribution::{
+    attribute_main_repo_merge, reconcile_main_repo_active_merge, AttributionSource,
+    MergeAttribution, ReconciliationOutcome,
+};
 pub use monitor::{
     build_failure_info, context_health, context_usage_percent, failure_state_path, heartbeat_path,
     read_heartbeat, remove_heartbeat, write_heartbeat, ContextHealth, FailureRecord,
