@@ -205,7 +205,7 @@ All PreToolUse hooks that match command patterns MUST use `strip_embedded_conten
 
 **Hooks using this pattern:** worktree-isolation.sh, commit-filter.sh, git-add-guard.sh, prefer-modern-tools.sh
 
-## Merge Recovery Flow [UPDATED 2026-04-16]
+## Merge Recovery Flow [UPDATED 2026-04-27]
 
 MergeConflict -> bail\!() forces original session to exit -> commit-guard.sh allows exit for MergeConflict status -> detection.rs recognizes as normal exit -> spawn_merge_resolution_sessions() kills any stale original session, then spawns resolver -> merge signal includes "Inherited Responsibilities" section explaining resolver owns the stage -> user directed to `loom stage merge <stage-id> --resolved`.
 
@@ -214,6 +214,30 @@ Key invariant: the original execution session MUST exit when merge conflict is d
 1. `bail\!()` in `complete_with_merge()` propagates error and terminates the session
 2. `commit-guard.sh` does NOT block exit for MergeConflict status
 3. `spawn_merge_resolution_sessions()` actively kills stale sessions before spawning resolver
+
+**Daemon ordering invariant (2026-04-27):** Reconciliation runs BEFORE `sync_graph_with_stage_files` AND BEFORE `recover_orphaned_sessions`. Recovery deletes orphaned merge session files; attribution depends on their metadata. Sync reads stage files into the graph; if reconcile flips disk state AFTER sync, the graph keeps the stale view and would queue dependents based on a phantom merge.
+
+**Daemon-off CLI parity (2026-04-27):** `loom stage complete` on a `Completed + merged=true` stage with an active main-repo merge attributed to it triggers the same revert the daemon performs (`Completed → MergeConflict + merged=false + merge_conflict=true`) before spawning the resolver. The router's `RevertAndSpawnResolver` arm encodes this; persistence is the caller's responsibility, BEFORE spawn so `spawn_merge_resolver`'s status contract is satisfied.
+
+## Attribution-Aware Recovery (2026-04-27)
+
+`MERGE_HEAD` in the main repo is global state — only one merge in progress at a time across all stages. Stage-state mutation triggered by detecting it must come with proof of attribution; without proof, refuse rather than mutate.
+
+Three attribution sources (first match wins):
+
+1. **MergeSession metadata** — orphaned or live `SessionType::Merge` with matching `merge_source_branch`.
+2. **Branch HEAD match** — a `MERGE_HEAD` SHA equals `loom/<stage-id>` HEAD.
+3. **Completed-commit match** — a `MERGE_HEAD` SHA equals `stage.completed_commit`.
+
+**BaseConflict carve-out:** When current HEAD is `loom/_base/*` (or any session has `SessionType::BaseConflict` matching it), return `GlobalUnattributed` even if the merge heads contain a stage branch's commit. Multi-dependency base merges check out their own branch and run a merge there; their MERGE_HEAD must NOT mutate stage state.
+
+Single decision point: `attribute_main_repo_merge` in `orchestrator/merge_attribution.rs`. Both daemon recovery (`reconcile_main_repo_active_merge`) and the CLI router consume it.
+
+## Pure Routing Helper (2026-04-27)
+
+`route_complete_for_conflicts` is the canonical example: read-only function that returns `CompleteConflictRoute` without writing to disk. Persistence is the caller's responsibility on the success path only. This preserves the "refusal preserves stage file state" invariant — refusal always leaves the stage file untouched, which is critical for tests and for users investigating why a completion attempt was rejected.
+
+Apply this pattern when adding routing/verification helpers: keep the function pure, return an enum of decisions, let the caller persist on the success branch.
 
 ## macOS GUI App Launch Pattern (2026-04-27)
 

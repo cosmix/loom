@@ -70,7 +70,10 @@ Total: 22 visible commands + 1 hidden (complete for dynamic completions). Dispat
 - `git/worktree/operations.rs` - Create/remove worktrees at `.worktrees/{stage-id}/`
 - `git/worktree/base.rs` - Base branch resolution for dependencies
 - `git/worktree/settings.rs` - Worktree symlinks (.work, .claude/CLAUDE.md, CLAUDE.md)
-- `git/merge.rs` - Merge automation and conflict handling
+- `git/merge/mod.rs` - Merge automation, conflict handling; `require_no_active_merge` guard
+- `git/merge/in_progress.rs` - Single source of truth for `MERGE_HEAD` detection (handles `.git`-as-file, relative gitdirs, octopus merges)
+- `git/merge/lock.rs` - File-based merge lock to serialize concurrent merges
+- `git/merge/status.rs` - `check_merge_state` (Merged | Pending | Conflict | BranchMissing | Unknown)
 - `git/branch.rs` - Branch creation, deletion, ancestry checks
 
 ## File System State
@@ -109,6 +112,14 @@ Total: 22 visible commands + 1 hidden (complete for dynamic completions). Dispat
 - `orchestrator/signals/crud.rs` - Signal file CRUD
 - `orchestrator/signals/merge.rs` - Merge conflict resolution signals
 - `orchestrator/signals/recovery.rs` - Recovery signal generation
+
+## Stage Completion (CLI)
+
+- `commands/stage/complete.rs` - Top-level CLI completion entry; **`route_complete_for_conflicts` is the pure routing test seam** that decides Proceed vs ForceUnsafeAssumeMergedVerified vs SpawnResolver vs RevertAndSpawnResolver vs Refuse before any persistence.
+- `commands/stage/merge.rs` - `loom stage merge [--resolved]`; wires `merge_verify` for ancestry check.
+- `commands/stage/merge_resolver.rs` - CLI-side resolver spawn; uses `find_live_merge_session_for_stage` for single-resolver-per-stage guard.
+- `commands/stage/merge_verify.rs` - `verify_or_derive_completed_commit` (read-only ancestry check shared by `--assume-merged` and `--resolved`).
+- `orchestrator/merge_attribution.rs` - `attribute_main_repo_merge` and `reconcile_main_repo_active_merge` (free functions; the daemon-recovery test seam — no `Orchestrator` instance required).
 
 ## Verification System
 

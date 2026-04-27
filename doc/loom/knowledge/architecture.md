@@ -14,7 +14,8 @@ Loom is a Rust CLI (~15K lines) for orchestrating parallel Claude Code sessions 
 loom/src/
   main.rs, lib.rs          # CLI entry (clap), module exports
   commands/                 # CLI implementations (~4K lines)
-    init/, run/, stage/, status/, merge/, memory/, knowledge/, track/, runner/
+    init/, run/, stage/ (complete, merge, merge_resolver, merge_verify, ...),
+    status/, merge/, memory/, knowledge/, track/, runner/
   daemon/server/            # Background daemon (~1.5K lines)
     core.rs, lifecycle.rs, protocol.rs, status.rs, client.rs, orchestrator.rs
   orchestrator/             # Core engine (~4K lines)
@@ -25,6 +26,7 @@ loom/src/
     continuation/           # Context handoff management
     progressive_merge/      # Merge orchestration + lock
     auto_merge.rs
+    merge_attribution.rs    # Attribute global MERGE_HEAD to a stage; reconcile
   models/                   # Domain models (~1K lines)
     stage/ (types, transitions, methods)
     session/ (types, methods)
@@ -33,7 +35,7 @@ loom/src/
   fs/                       # File operations (~500 lines)
     work_dir.rs, knowledge.rs, memory.rs
   git/                      # Git operations (~800 lines)
-    worktree/ (base, operations), merge/, branch/
+    worktree/ (base, operations), merge/ (mod, in_progress, lock, status), branch/
   verify/                   # Acceptance + goal-backward verification (~600 lines)
     criteria/, transitions/, goal_backward/
   sandbox/                  # Claude Code sandbox config generation
@@ -65,6 +67,11 @@ WaitingForDeps --> Queued --> Executing --> Completed --> Verified
 ```
 
 12 variants total. Terminal states: Completed, Skipped. Transitions validated in transitions.rs. See [patterns.md -- State Machine Pattern](patterns.md#state-machine-pattern).
+
+**Documented state-machine bypasses:** Two paths intentionally bypass `try_transition`:
+
+1. **`--force-unsafe`** (`handle_force_unsafe_completion`) — sets `Status::Completed` from any state. Manual recovery only.
+2. **Phantom-merge revert** (`reconcile_main_repo_active_merge` and `complete()`'s `RevertAndSpawnResolver` arm) — flips a `Completed + merged=true` stage back to `MergeConflict + merged=false + merge_conflict=true` when an active main-repo merge is attributed to that stage. The bypass is necessary because `Completed` is terminal; `try_transition` would refuse, but this is exactly the case the bypass is designed for. All such mutations are logged at `error` level.
 
 ### StageType Enum (plan/schema/types.rs)
 
