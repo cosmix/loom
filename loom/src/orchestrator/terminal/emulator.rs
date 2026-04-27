@@ -272,15 +272,37 @@ end tell"#
                 command.arg("-e").arg(script);
             }
             Self::Ghostty => {
-                command
-                    .arg("--title")
-                    .arg(title)
-                    .arg("--working-directory")
-                    .arg(workdir)
-                    .arg("-e")
-                    .arg("bash")
-                    .arg("-c")
-                    .arg(cmd);
+                #[cfg(target_os = "macos")]
+                {
+                    // Ghostty's CLI binary lives inside /Applications/Ghostty.app/Contents/MacOS/
+                    // and is not on PATH by default (ghostty-org/ghostty#2483). Use `open -na`
+                    // which works without PATH setup and lets `--args` propagate to the new
+                    // process. -na (force new instance) ensures --working-directory and -e
+                    // take effect rather than being ignored by a running singleton.
+                    command = Command::new("open");
+                    command
+                        .arg("-na")
+                        .arg("Ghostty")
+                        .arg("--args")
+                        .arg(format!("--working-directory={}", workdir.display()))
+                        .arg(format!("--title={}", title))
+                        .arg("-e")
+                        .arg("bash")
+                        .arg("-c")
+                        .arg(cmd);
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    command
+                        .arg("--title")
+                        .arg(title)
+                        .arg("--working-directory")
+                        .arg(workdir)
+                        .arg("-e")
+                        .arg("bash")
+                        .arg("-c")
+                        .arg(cmd);
+                }
             }
         }
 
@@ -588,5 +610,52 @@ mod tests {
         assert!(last_arg.contains("'\\''"));
         // Should contain bash -c wrapper
         assert!(last_arg.contains("bash -c '"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_ghostty_build_command_macos() {
+        let emulator = TerminalEmulator::Ghostty;
+        let workdir = Path::new("/tmp/test");
+        let cmd = emulator.build_command("Test Title", workdir, "echo hello");
+
+        // On macOS, Ghostty is launched via `open -na` to avoid PATH issues
+        assert_eq!(cmd.get_program(), "open");
+
+        let args: Vec<_> = cmd.get_args().collect();
+        assert!(args.iter().any(|a| a.to_str().unwrap() == "-na"));
+        assert!(args.iter().any(|a| a.to_str().unwrap() == "Ghostty"));
+        assert!(args.iter().any(|a| a.to_str().unwrap() == "--args"));
+        assert!(args
+            .iter()
+            .any(|a| a.to_str().unwrap().starts_with("--working-directory=")));
+        assert!(args
+            .iter()
+            .any(|a| a.to_str().unwrap().starts_with("--title=")));
+        assert!(args.iter().any(|a| a.to_str().unwrap() == "-e"));
+        assert!(args.iter().any(|a| a.to_str().unwrap() == "bash"));
+        assert!(args.iter().any(|a| a.to_str().unwrap() == "-c"));
+        assert!(args.iter().any(|a| a.to_str().unwrap() == "echo hello"));
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn test_ghostty_build_command_linux() {
+        let emulator = TerminalEmulator::Ghostty;
+        let workdir = Path::new("/tmp/test");
+        let cmd = emulator.build_command("Test Title", workdir, "echo hello");
+
+        // On Linux, Ghostty is invoked directly
+        assert_eq!(cmd.get_program(), "ghostty");
+
+        let args: Vec<_> = cmd.get_args().collect();
+        assert_eq!(args[0].to_str().unwrap(), "--title");
+        assert_eq!(args[1].to_str().unwrap(), "Test Title");
+        assert_eq!(args[2].to_str().unwrap(), "--working-directory");
+        assert_eq!(args[3].to_str().unwrap(), "/tmp/test");
+        assert_eq!(args[4].to_str().unwrap(), "-e");
+        assert_eq!(args[5].to_str().unwrap(), "bash");
+        assert_eq!(args[6].to_str().unwrap(), "-c");
+        assert_eq!(args[7].to_str().unwrap(), "echo hello");
     }
 }
