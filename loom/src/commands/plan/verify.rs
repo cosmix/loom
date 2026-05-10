@@ -327,8 +327,30 @@ pub fn execute(path: &Path, strict: bool, json: bool, no_color: bool) -> Result<
     }
 
     // Read content
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Failed to read {}", path.display()))?;
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(e) => {
+            let msg = format!("Failed to read {}: {e}", path.display());
+            if json {
+                emit_json(&JsonOutput {
+                    plan: JsonPlan {
+                        id: None,
+                        name: None,
+                        source: source_str,
+                    },
+                    valid: false,
+                    errors: vec![JsonError {
+                        stage_id: None,
+                        message: msg,
+                    }],
+                    warnings: JsonWarnings::empty(),
+                    levels: vec![],
+                });
+                std::process::exit(1);
+            }
+            bail!("Failed to read {}: {}", path.display(), e);
+        }
+    };
 
     // Derive plan name from H1 header (best-effort)
     let plan_name = extract_plan_name(&content).ok();
@@ -528,5 +550,24 @@ mod tests {
         let nonexistent_plan =
             std::path::Path::new("/tmp-loom-verify-nonexistent-12345/a/b/plan.md");
         assert!(find_repo_root(nonexistent_plan).is_none());
+    }
+
+    #[test]
+    fn test_repo_root_walk_with_dotgit_as_file() {
+        // Worktrees use a `.git` *file* (containing `gitdir: <path>`) instead
+        // of a directory. `find_repo_root` claims to support this via
+        // `Path::exists`, which returns true for both files and dirs.
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        fs::write(root.join(".git"), "gitdir: /some/where/else\n").unwrap();
+
+        let deep_dir = root.join("a/b");
+        fs::create_dir_all(&deep_dir).unwrap();
+        let plan_path = deep_dir.join("plan.md");
+        fs::write(&plan_path, "# Test").unwrap();
+
+        let found = find_repo_root(&plan_path);
+        assert_eq!(found.as_deref(), Some(root));
     }
 }
