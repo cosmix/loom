@@ -516,7 +516,8 @@ Parallel stages are expressed using Mermaid's `&` operator (e.g., `A --> B & C` 
 │  • artifacts  - Files that must exist with real implementation      │
 │  • wiring     - Code patterns proving integration                   │
 │                                                                     │
-│  ⛔ `loom init` REJECTS plans that violate this requirement         │
+│  ⛔ `loom plan verify` and `loom init` REJECT plans that            │
+│     violate this requirement                                        │
 │                                                                     │
 │  Knowledge stages are EXEMPT.                                       │
 └─────────────────────────────────────────────────────────────────────┘
@@ -880,7 +881,7 @@ This is a very common mistake. ALL path fields resolve relative to `working_dir`
 
 **Every `standard` stage MUST have at least ONE of: truths, artifacts, or wiring.**
 
-⛔ **This is VALIDATED by `loom init` — plans will be REJECTED if standard stages lack these fields.**
+⛔ **This is VALIDATED by `loom plan verify` (read-only) and `loom init` — plans will be REJECTED if standard stages lack these fields.**
 
 Knowledge stages are exempt (they have different purposes).
 
@@ -1334,14 +1335,19 @@ During implementation stages, you MUST:
 ### 15. After Writing Plan
 
 1. Write plan to `doc/plans/PLAN-<name>.md`
-2. **VALIDATE the plan** by running `loom init --clean doc/plans/PLAN-<name>.md`
+2. **VALIDATE the plan** by running `loom plan verify doc/plans/PLAN-<name>.md`
    - This parses the YAML, validates stage structure (bookends, dependencies, required fields), checks sandbox config, and builds the execution DAG
-   - If validation **fails**: read the error output, fix the plan file, and re-run `loom init --clean` until it passes
-   - If validation **succeeds**: the plan is confirmed valid and `.work/` is ready for execution
+   - `loom plan verify` is read-only — it does NOT create `.work/` or initialize anything. The user must run `loom init` separately before `loom run`.
+   - If validation **fails**: read the error output, fix the plan file, and re-run `loom plan verify` until it passes
+   - If validation **succeeds**: the plan is structurally valid and ready for the user to initialize
 3. **STOP** - Do NOT implement
 4. Tell user:
-   > Plan written to `doc/plans/PLAN-<name>.md` and validated with `loom init`. Please review and run:
-   > `loom run`
+   > Plan written to `doc/plans/PLAN-<name>.md` and validated with `loom plan verify` (no side effects — `.work/` has not been created). Please review, then initialize and run the plan:
+   >
+   > ```bash
+   > loom init doc/plans/PLAN-<name>.md
+   > loom run
+   > ```
 5. Wait for user feedback
 
 **The plan file IS your deliverable.** Never proceed to implementation.
