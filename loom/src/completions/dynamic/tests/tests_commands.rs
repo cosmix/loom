@@ -182,7 +182,44 @@ fn test_has_subcommands() {
     assert!(has_subcommands("worktree"));
     assert!(has_subcommands("knowledge"));
     assert!(has_subcommands("memory"));
+    assert!(has_subcommands("plan"));
     assert!(!has_subcommands("init"));
     assert!(!has_subcommands("run"));
     assert!(!has_subcommands("status"));
+}
+
+#[test]
+fn test_complete_commands_includes_plan() {
+    let results = complete_commands("").unwrap();
+    assert!(results.contains(&"plan".to_string()));
+}
+
+#[test]
+fn test_complete_subcommands_plan() {
+    let results = complete_subcommands("plan", "").unwrap();
+    assert_eq!(results, vec!["verify".to_string()]);
+}
+
+#[test]
+fn test_complete_flags_plan_verify() {
+    let results = complete_flags(&["plan", "verify"], "--").unwrap();
+    assert!(results.contains(&"--json".to_string()));
+    assert!(results.contains(&"--no-color".to_string()));
+    assert!(results.contains(&"--strict".to_string()));
+}
+
+#[test]
+fn test_plan_verify_positional_completes_plan_files() {
+    use crate::completions::dynamic::complete_plan_files;
+    use std::fs;
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+    let plans_dir = root.join("doc/plans");
+    fs::create_dir_all(&plans_dir).unwrap();
+    fs::write(plans_dir.join("PLAN-foo.md"), "# Test").unwrap();
+
+    let results = complete_plan_files(root, "").unwrap();
+    assert!(results.iter().any(|r| r.contains("PLAN-foo.md")));
 }

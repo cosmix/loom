@@ -230,6 +230,9 @@ fn complete_after_subcommand(
         // Knowledge subcommands
         ("knowledge", "show" | "update") => complete_knowledge_files(prefix),
 
+        // Plan subcommands
+        ("plan", "verify") => complete_plan_files(cwd, prefix),
+
         _ => Ok(Vec::new()),
     }
 }
