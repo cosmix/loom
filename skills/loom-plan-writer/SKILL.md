@@ -1348,7 +1348,8 @@ During implementation stages, you MUST:
    > loom init doc/plans/PLAN-<name>.md
    > loom run
    > ```
-5. Wait for user feedback
+>
+1. Wait for user feedback
 
 **The plan file IS your deliverable.** Never proceed to implementation.
 
