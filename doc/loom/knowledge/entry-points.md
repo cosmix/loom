@@ -11,32 +11,32 @@
 
 ## Command Dispatch (cli/types.rs)
 
-| Command       | Entry File                    | Purpose                            |
-| ------------- | ----------------------------- | ---------------------------------- |
-| `init`        | `commands/init/execute.rs`    | Initialize `.work/` from plan      |
-| `run`         | `commands/run/mod.rs`         | Start orchestrator daemon          |
-| `status`      | `commands/status.rs`          | Dashboard with stage/session info  |
-| `stop`        | `commands/stop.rs`            | Shutdown daemon                    |
-| `resume`      | `commands/resume.rs`          | Resume work on a stage             |
-| `sessions`    | `commands/sessions.rs`        | List/kill active sessions          |
-| `worktree`    | `commands/worktree_cmd.rs`    | List/clean/remove worktrees        |
-| `graph`       | `commands/graph/mod.rs`       | Show execution graph               |
-| `hooks`       | `commands/hooks.rs`           | Hook install/list                  |
-| `stage`       | `commands/stage/`             | Stage lifecycle (15+ subcommands)  |
-| `handoff`     | `commands/handoff/create.rs`  | Create handoff files               |
-| `knowledge`   | `commands/knowledge/mod.rs`   | Manage codebase knowledge          |
-| `memory`      | `commands/memory/handlers.rs` | Session memory journal             |
-| `review`      | `commands/review/mod.rs`      | Generate review docs from memories |
-| `sandbox`     | `commands/sandbox/`           | Suggest/apply sandbox config       |
-| `self-update` | `commands/self_update/mod.rs` | Update loom binary                 |
-| `clean`       | `commands/clean.rs`           | Clean up resources                 |
-| `repair`      | `commands/repair.rs`          | Fix workspace issues               |
-| `map`         | `commands/map.rs`             | Codebase structure analysis        |
-| `diagnose`    | `commands/diagnose.rs`        | Stage failure diagnosis            |
-| `verify`      | `commands/verify.rs`          | Goal-backward verification         |
-| `check`       | `commands/check.rs`           | Goal-backward verification (alias) |
-| `completions` | `commands/completions/mod.rs`  | Shell completions (custom scripts + dynamic) |
-| `complete`    | Hidden (dynamic completions)  | Backend for shell tab completions  |
+| Command       | Entry File                    | Purpose                                      |
+| ------------- | ----------------------------- | -------------------------------------------- |
+| `init`        | `commands/init/execute.rs`    | Initialize `.work/` from plan                |
+| `run`         | `commands/run/mod.rs`         | Start orchestrator daemon                    |
+| `status`      | `commands/status.rs`          | Dashboard with stage/session info            |
+| `stop`        | `commands/stop.rs`            | Shutdown daemon                              |
+| `resume`      | `commands/resume.rs`          | Resume work on a stage                       |
+| `sessions`    | `commands/sessions.rs`        | List/kill active sessions                    |
+| `worktree`    | `commands/worktree_cmd.rs`    | List/clean/remove worktrees                  |
+| `graph`       | `commands/graph/mod.rs`       | Show execution graph                         |
+| `hooks`       | `commands/hooks.rs`           | Hook install/list                            |
+| `stage`       | `commands/stage/`             | Stage lifecycle (15+ subcommands)            |
+| `handoff`     | `commands/handoff/create.rs`  | Create handoff files                         |
+| `knowledge`   | `commands/knowledge/mod.rs`   | Manage codebase knowledge                    |
+| `memory`      | `commands/memory/handlers.rs` | Session memory journal                       |
+| `review`      | `commands/review/mod.rs`      | Generate review docs from memories           |
+| `sandbox`     | `commands/sandbox/`           | Suggest/apply sandbox config                 |
+| `self-update` | `commands/self_update/mod.rs` | Update loom binary                           |
+| `clean`       | `commands/clean.rs`           | Clean up resources                           |
+| `repair`      | `commands/repair.rs`          | Fix workspace issues                         |
+| `map`         | `commands/map.rs`             | Codebase structure analysis                  |
+| `diagnose`    | `commands/diagnose.rs`        | Stage failure diagnosis                      |
+| `verify`      | `commands/verify.rs`          | Goal-backward verification                   |
+| `check`       | `commands/check.rs`           | Goal-backward verification (alias)           |
+| `completions` | `commands/completions/mod.rs` | Shell completions (custom scripts + dynamic) |
+| `complete`    | Hidden (dynamic completions)  | Backend for shell tab completions            |
 
 Total: 22 visible commands + 1 hidden (complete for dynamic completions). Dispatch: `cli/dispatch.rs` match-based, two-level for nested commands.
 
@@ -209,3 +209,34 @@ Three files to add a new subcommand:
 ## Shared Hook Utility
 
 - `hooks/_common.sh` - Source guard + `strip_embedded_content()` — sourced by all PreToolUse hooks. MUST be installed alongside hooks (in `~/.claude/hooks/loom/`). Registered in `constants.rs` as `HOOK_COMMON`.
+
+## Plan Validation Functions (plan/schema/validation.rs)
+
+Key public functions for `loom plan verify` to call:
+
+| Function                                            | Return                             | Severity                                       |
+| --------------------------------------------------- | ---------------------------------- | ---------------------------------------------- |
+| `validate(&metadata)`                               | `Result<(), Vec<ValidationError>>` | Fatal — called by `parse_plan()` automatically |
+| `validate_structural_preflight(&stages, repo_root)` | `Vec<String>`                      | Advisory warnings                              |
+| `check_knowledge_recommendations(&stages)`          | `Vec<String>`                      | Advisory suggestions                           |
+| `check_sandbox_recommendations(&metadata)`          | `Vec<String>`                      | Advisory suggestions                           |
+
+`validate()` runs inside `parse_and_validate()` → called by `parse_plan_content()` → called by `parse_plan()`. Any new command that calls `parse_plan()` automatically gets fatal validation for free.
+
+## Plan Parser Module (plan/parser/mod.rs)
+
+**Note:** `plan/parser` is a **subdirectory**, not a single file. Entry point is `plan/parser/mod.rs`.
+
+- `parse_plan(path: &Path) -> Result<ParsedPlan>` — reads file + validates
+- `parse_plan_content(content: &str, source_path: &Path) -> Result<ParsedPlan>` — for tests without I/O
+
+`ParsedPlan` fields: `id` (from filename stem), `name` (first H1), `source_path`, `stages: Vec<StageDefinition>`, `metadata: LoomMetadata`.
+
+Internal modules: `extraction.rs` (YAML block extraction, plan name), `validation.rs` (YAML parse + `validate()`).
+
+## Execution Graph Build (plan/graph/mod.rs)
+
+- `ExecutionGraph::build(stages: Vec<StageDefinition>) -> Result<Self>` — two-pass: first creates nodes, second builds reverse-dependency edges, then calls `cycle::detect_cycles()` via DFS
+- `ExecutionGraph::update_ready_status()` → returns stage IDs that became `Queued`
+- Cycle detection: `cycle/mod.rs` uses recursive DFS with `visiting` / `visited` sets; returns `Err` with cycle path on detection
+- `plan/graph/loader.rs` has `build_execution_graph()` that loads stage files from `.work/stages/` and calls `ExecutionGraph::build()`

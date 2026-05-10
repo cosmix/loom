@@ -6,21 +6,42 @@
 
 ## Table of Contents
 
-- [State Machine Pattern](#state-machine-pattern)
-- [File-Based State Pattern](#file-based-state-pattern)
-- [Signal Generation Pattern](#signal-generation-pattern)
-- [Progressive Merge Pattern](#progressive-merge-pattern)
-- [Daemon IPC Pattern](#daemon-ipc-pattern)
-- [Polling Orchestration Pattern](#polling-orchestration-pattern)
-- [Monitoring Patterns](#monitoring-patterns)
-- [Hook Patterns](#hook-patterns)
-- [TUI Patterns](#tui-patterns)
-- [Knowledge Systems Pattern](#knowledge-systems-pattern)
-- [Stage Completion Pattern](#stage-completion-pattern)
-- [Goal-Backward Verification Pattern](#goal-backward-verification-pattern)
-- [Error Handling Pattern](#error-handling-pattern)
-- [Security Patterns](#security-patterns)
-- [Process Management Pattern](#process-management-pattern)
+- [Architectural Patterns](#architectural-patterns)
+  - [Table of Contents](#table-of-contents)
+  - [State Machine Pattern](#state-machine-pattern)
+  - [File-Based State Pattern](#file-based-state-pattern)
+  - [Signal Generation Pattern](#signal-generation-pattern)
+  - [Progressive Merge Pattern](#progressive-merge-pattern)
+  - [Daemon IPC Pattern](#daemon-ipc-pattern)
+  - [Polling Orchestration Pattern](#polling-orchestration-pattern)
+  - [Monitoring Patterns](#monitoring-patterns)
+  - [Hook Patterns](#hook-patterns)
+  - [TUI Patterns](#tui-patterns)
+  - [Knowledge Systems Pattern](#knowledge-systems-pattern)
+  - [Stage Completion Pattern](#stage-completion-pattern)
+  - [Goal-Backward Verification Pattern](#goal-backward-verification-pattern)
+  - [Error Handling Pattern](#error-handling-pattern)
+  - [Security Patterns](#security-patterns)
+  - [Process Management Pattern](#process-management-pattern)
+  - [Merge Anti-Respawn Pattern](#merge-anti-respawn-pattern)
+  - [Permission Sync Pattern](#permission-sync-pattern)
+  - [Sandbox Config Merging](#sandbox-config-merging)
+  - [Directory Hierarchy Pattern](#directory-hierarchy-pattern)
+  - [Three-Layer Guidance Reinforcement](#three-layer-guidance-reinforcement)
+  - [Stage Necessity Test](#stage-necessity-test)
+  - [Bootstrap Mode](#bootstrap-mode)
+  - [Field Propagation Checklist](#field-propagation-checklist)
+  - [Goal-Backward Verification Pattern \[UPDATED\]](#goal-backward-verification-pattern-updated)
+  - [AcceptanceCriterion Design Pattern](#acceptancecriterion-design-pattern)
+  - [Hook Content-Stripping Pattern](#hook-content-stripping-pattern)
+  - [Hook Content-Stripping Pattern (Updated 2026-03-31)](#hook-content-stripping-pattern-updated-2026-03-31)
+  - [Merge Recovery Flow \[UPDATED 2026-04-27\]](#merge-recovery-flow-updated-2026-04-27)
+  - [Attribution-Aware Recovery (2026-04-27)](#attribution-aware-recovery-2026-04-27)
+  - [Pure Routing Helper (2026-04-27)](#pure-routing-helper-2026-04-27)
+  - [macOS GUI App Launch Pattern (2026-04-27)](#macos-gui-app-launch-pattern-2026-04-27)
+  - [CLI Subcommand Registration Pattern](#cli-subcommand-registration-pattern)
+  - [AcceptanceCriterion Untagged Enum](#acceptancecriterion-untagged-enum)
+  - [Plan Validation Tier Separation (loom init contract)](#plan-validation-tier-separation-loom-init-contract)
 
 ---
 
@@ -248,3 +269,75 @@ macOS apps installed in `/Applications/X.app` may ship a CLI binary inside `Cont
 **Where applied:** `emulator.rs` `Self::Ghostty` arm uses this on macOS while keeping the direct `ghostty <args>` invocation on Linux via `#[cfg(not(target_os = "macos"))]`. The arm-level cfg-gating pattern (rather than per-emulator-variant duplication) keeps cross-platform terminals together. Same approach applies to any future `.app`-distributed terminal emulator added to loom.
 
 **When NOT to use:** Mac-only emulators (`TerminalApp`, `ITerm2`) already use AppleScript via `osascript`, which is itself PATH-independent — no `open` needed. Use `open -na ... --args` only when the underlying tool accepts CLI flags directly.
+
+## CLI Subcommand Registration Pattern
+
+Adding any new top-level command (e.g. `loom plan`) requires touching exactly **three files**:
+
+1. **`loom/src/cli/types.rs`** — Add variant to `Commands` enum (with `#[command(subcommand)]` if nested):
+
+   ```rust
+   /// Validate a plan without side effects
+   Plan {
+       #[command(subcommand)]
+       command: PlanCommands,
+   },
+   ```
+
+2. **`loom/src/cli/dispatch.rs`** — Add match arm in `dispatch()`:
+
+   ```rust
+   Commands::Plan { command } => match command {
+       PlanCommands::Verify { path, strict } => plan::verify(path, strict),
+   },
+   ```
+
+   Also add the module import at the top: `use loom::commands::plan;`
+
+3. **`loom/src/commands/newcmd.rs`** (or `commands/newcmd/mod.rs`) — Implement the execute function.
+   Then expose it from `loom/src/commands/mod.rs`: `pub mod newcmd;`
+
+**Verification**: `cargo build` must pass. `loom <newcmd> --help` must show the command.
+
+**Nested subcommands**: define a second `#[derive(Subcommand)]` enum in `cli/types.rs` (e.g. `PlanCommands`), mirror the outer pattern. See `types_stage.rs` / `types_memory.rs` for examples of extracted sub-enum files.
+
+## AcceptanceCriterion Untagged Enum
+
+`AcceptanceCriterion` in `plan/schema/types.rs` is a `#[serde(untagged)]` enum:
+
+```rust
+#[serde(untagged)]
+pub enum AcceptanceCriterion {
+    Simple(String),        // YAML: - "cargo test"
+    Extended(TruthCheck),  // YAML: - command: "cargo test"\n  exit_code: 0
+}
+```
+
+**Serialization**: serde tries each variant in declaration order. A plain YAML string deserializes to `Simple`; a mapping with a `command` key deserializes to `Extended(TruthCheck)`.
+
+**Accessing the command**: use `.command()` method — works for both variants.
+
+**`TruthCheck`** fields: `command`, optional `exit_code` (default 0), optional `stdout_contains`, optional `stderr_empty`.
+
+**Why untagged**: avoids requiring a `type: simple` / `type: extended` discriminator in user-authored YAML. The trade-off is that serde error messages on malformed input are less precise.
+
+## Plan Validation Tier Separation (loom init contract)
+
+`loom init` runs validation in two distinct tiers that `loom plan verify` must mirror:
+
+**Tier 1 — Fatal (blocks init):**
+
+- `plan/schema/validation.rs::validate(&metadata)` — called inside `parse_and_validate()` inside `parse_plan_content()`
+- Returns `Err(Vec<ValidationError>)` on failure; parse aborts, init fails immediately
+- Checks: unsupported version, duplicate stage IDs, unknown deps, path traversal, empty acceptance, artifact path safety, wiring regex validity, bug_fix/regression_test consistency
+
+**Tier 2 — Advisory (printed, never block):**
+
+- `validate_structural_preflight(&stages, repo_root)` — warnings for double-path prefixes, weak wiring patterns, missing build config files, before/after check imbalance
+- `check_knowledge_recommendations(&stages)` — warns if plan has no knowledge-bootstrap stage
+- `check_sandbox_recommendations(&metadata)` — warns if `loom` not in `excluded_commands`, or `allow_unsandboxed_escape` is true
+- All return `Vec<String>`; init prints them and continues
+
+**`loom plan verify` contract:** run `parse_plan()` first (auto-runs Tier 1); if it returns `Err`, report fatal errors and exit non-zero. If it succeeds, run the three Tier 2 functions, print their warnings, exit 0 (advisory only).
+
+**Call site:** `loom/src/commands/init/plan_setup.rs` — shows the canonical order and how warnings are surfaced to the user.
