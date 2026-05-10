@@ -7,6 +7,7 @@ pub mod init;
 pub mod knowledge;
 pub mod map;
 pub mod memory;
+pub mod plan;
 pub mod repair;
 pub mod resume;
 pub mod review;

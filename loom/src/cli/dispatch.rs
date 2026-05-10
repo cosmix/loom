@@ -1,15 +1,15 @@
 use anyhow::Result;
 use loom::commands::{
-    clean, diagnose, graph, handoff, init, knowledge, map, memory, repair, resume, review, run,
-    self_update, sessions, skill_index, stage, status, stop, verify, worktree_cmd,
+    clean, diagnose, graph, handoff, init, knowledge, map, memory, plan, repair, resume, review,
+    run, self_update, sessions, skill_index, stage, status, stop, verify, worktree_cmd,
 };
 use loom::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use std::path::PathBuf;
 use std::str::FromStr;
 
 use super::types::{
-    Commands, KnowledgeCommands, MemoryCommands, OutputCommands, SessionsCommands, StageCommands,
-    WorktreeCommands,
+    Commands, KnowledgeCommands, MemoryCommands, OutputCommands, PlanCommands, SessionsCommands,
+    StageCommands, WorktreeCommands,
 };
 
 pub fn dispatch(command: Commands) -> Result<()> {
@@ -162,6 +162,14 @@ pub fn dispatch(command: Commands) -> Result<()> {
         } => map::execute(deep, focus, overwrite),
         Commands::Stop => stop::execute(),
         Commands::Diagnose { stage_id } => diagnose::execute(&stage_id),
+        Commands::Plan { command } => match command {
+            PlanCommands::Verify {
+                path,
+                strict,
+                json,
+                no_color,
+            } => plan::verify::execute(&path, strict, json, no_color),
+        },
         Commands::Check { stage_id, suggest } => verify::execute(&stage_id, suggest),
         Commands::SkillIndex => skill_index::execute(),
         Commands::Completions {
