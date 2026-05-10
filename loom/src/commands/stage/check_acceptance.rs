@@ -226,6 +226,11 @@ mod tests {
         let work_dir = temp_dir.path().join(".work");
         std::fs::create_dir_all(work_dir.join("stages")).unwrap();
 
+        // Mark temp_dir as the repo root so find_repo_root_from_cwd resolves
+        // here instead of walking up to system /tmp (where a stray .git may
+        // exist from other tools).
+        std::fs::create_dir_all(temp_dir.path().join(".git")).unwrap();
+
         // Create a worktree directory so path resolution works
         let worktree_dir = temp_dir.path().join(".worktrees/test-stage");
         std::fs::create_dir_all(&worktree_dir).unwrap();

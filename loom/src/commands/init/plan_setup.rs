@@ -3,12 +3,12 @@
 use crate::fs::stage_files::stage_file_path;
 use crate::fs::work_dir::WorkDir;
 use crate::git::branch::current_branch;
-use crate::models::stage::{Stage, StageStatus, StageType};
+use crate::models::stage::{Stage, StageStatus};
 use crate::plan::graph::levels::compute_all_levels;
 use crate::plan::parser::parse_plan;
 use crate::plan::schema::{
-    check_knowledge_recommendations, check_sandbox_recommendations, validate_structural_preflight,
-    StageDefinition,
+    check_knowledge_recommendations, check_sandbox_recommendations, detect_stage_type,
+    validate_structural_preflight, StageDefinition,
 };
 use crate::verify::serialize_stage_to_markdown;
 use anyhow::{Context, Result};
@@ -197,45 +197,6 @@ pub fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<usiz
     }
 
     Ok(stage_count)
-}
-
-/// Detect the stage type from the definition.
-///
-/// Uses explicit `stage_type` field if set, otherwise falls back to
-/// detecting stage type based on ID or name patterns (case-insensitive):
-/// - "knowledge" -> Knowledge
-/// - "integration-verify" or "integration verify" -> IntegrationVerify
-fn detect_stage_type(stage_def: &StageDefinition) -> StageType {
-    // Check explicit stage_type field first (if not default Standard)
-    if stage_def.stage_type != StageType::Standard {
-        return stage_def.stage_type;
-    }
-
-    let id_lower = stage_def.id.to_lowercase();
-    let name_lower = stage_def.name.to_lowercase();
-
-    // Detect KnowledgeDistill stage (must come BEFORE Knowledge check)
-    if id_lower.contains("knowledge-distill")
-        || name_lower.contains("knowledge-distill")
-        || name_lower.contains("knowledge distill")
-    {
-        return StageType::KnowledgeDistill;
-    }
-
-    // Detect Knowledge stage
-    if id_lower.contains("knowledge") || name_lower.contains("knowledge") {
-        return StageType::Knowledge;
-    }
-
-    // Detect IntegrationVerify stage
-    if id_lower.contains("integration-verify")
-        || name_lower.contains("integration-verify")
-        || name_lower.contains("integration verify")
-    {
-        return StageType::IntegrationVerify;
-    }
-
-    StageType::Standard
 }
 
 /// Create a Stage from a StageDefinition

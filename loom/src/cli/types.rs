@@ -196,6 +196,12 @@ pub enum Commands {
         stage_id: String,
     },
 
+    /// Manage plan files (validate, inspect)
+    Plan {
+        #[command(subcommand)]
+        command: PlanCommands,
+    },
+
     /// Run goal-backward verification for a stage
     ///
     /// Validates OUTCOMES beyond acceptance criteria:
@@ -238,6 +244,27 @@ pub enum Commands {
         /// Command line arguments being completed
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum PlanCommands {
+    /// Verify a plan file without side effects (no .work/, no git repo required)
+    Verify {
+        /// Path to the plan file to validate
+        path: std::path::PathBuf,
+
+        /// Promote warnings to errors
+        #[arg(long)]
+        strict: bool,
+
+        /// Machine-readable JSON output (suppresses human text)
+        #[arg(long)]
+        json: bool,
+
+        /// Disable ANSI color codes
+        #[arg(long)]
+        no_color: bool,
     },
 }
 

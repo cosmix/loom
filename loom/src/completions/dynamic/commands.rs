@@ -14,6 +14,7 @@ const TOP_LEVEL_COMMANDS: &[&str] = &[
     "knowledge",
     "map",
     "memory",
+    "plan",
     "repair",
     "resume",
     "review",
@@ -58,6 +59,7 @@ pub fn complete_subcommands(parent: &str, prefix: &str) -> Result<Vec<String>> {
             "change", "decision", "list", "note", "query", "question", "show",
         ],
         "output" => &["get", "list", "remove", "set"],
+        "plan" => &["verify"],
         _ => return Ok(Vec::new()),
     };
     Ok(filter_prefix(subs, prefix))
@@ -105,6 +107,7 @@ pub fn complete_flags(command_path: &[&str], prefix: &str) -> Result<Vec<String>
         | ["memory", "query"] => &["--stage"],
         ["memory", "list"] => &["--entry-type", "--stage"],
         ["memory", "show"] => &["--all", "--stage"],
+        ["plan", "verify"] => &["--json", "--no-color", "--strict"],
         _ => return Ok(Vec::new()),
     };
     Ok(filter_prefix(flags, prefix))
@@ -132,7 +135,7 @@ pub fn complete_trigger_types(prefix: &str) -> Result<Vec<String>> {
 pub fn has_subcommands(command: &str) -> bool {
     matches!(
         command,
-        "stage" | "sessions" | "worktree" | "knowledge" | "memory"
+        "stage" | "sessions" | "worktree" | "knowledge" | "memory" | "plan"
     )
 }
 
