@@ -54,6 +54,12 @@ Inside the Claude Code session:
 3. Describe what you want to build and discuss with Claude
 4. Claude will write the plan to `doc/plans/PLAN-<name>.md`
 
+To validate the draft before running it:
+
+```bash
+loom plan verify doc/plans/PLAN-<name>.md
+```
+
 ### 3. Run Loom
 
 Once your plan is written:
@@ -98,6 +104,14 @@ loom resume <stage-id>
 loom check <stage-id> [--suggest]
 loom diagnose <stage-id>
 ```
+
+### Plan Commands
+
+```bash
+loom plan verify <plan-path> [--strict] [--json] [--no-color]
+```
+
+`loom plan verify` validates a plan file without touching `.work/` or requiring a git repo. It runs the same fatal validation as `loom init` (schema errors, duplicate IDs, unknown dependencies, path safety) plus advisory warnings (structural issues, missing knowledge-bootstrap stage, sandbox gaps). Exits 0 on success, non-zero on fatal errors; `--strict` promotes warnings to errors.
 
 ### Stage Commands
 

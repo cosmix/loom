@@ -33,6 +33,7 @@
 | `repair`      | `commands/repair.rs`          | Fix workspace issues                         |
 | `map`         | `commands/map.rs`             | Codebase structure analysis                  |
 | `diagnose`    | `commands/diagnose.rs`        | Stage failure diagnosis                      |
+| `plan verify` | `commands/plan/verify.rs`     | Validate plan file without side effects      |
 | `verify`      | `commands/verify.rs`          | Goal-backward verification                   |
 | `check`       | `commands/check.rs`           | Goal-backward verification (alias)           |
 | `completions` | `commands/completions/mod.rs` | Shell completions (custom scripts + dynamic) |
