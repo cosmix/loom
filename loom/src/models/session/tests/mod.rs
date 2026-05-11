@@ -1,4 +1,5 @@
 mod helpers;
+mod identity;
 mod merge_sessions;
 mod session_status_transitions;
 mod session_transitions;
