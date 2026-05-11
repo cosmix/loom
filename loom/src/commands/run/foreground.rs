@@ -10,7 +10,7 @@ use crate::commands::status::render::print_completion_summary;
 use crate::daemon::collect_completion_summary;
 use crate::fs::plan_lifecycle;
 use crate::fs::work_dir::WorkDir;
-use crate::orchestrator::terminal::BackendType;
+use crate::orchestrator::preflight::resolve_project_backend;
 use crate::orchestrator::{Orchestrator, OrchestratorConfig, OrchestratorResult};
 
 /// Execute plan stages in foreground (for --foreground flag)
@@ -49,6 +49,10 @@ fn execute_foreground(
     // Parse config.toml to extract base_branch
     let base_branch = crate::fs::parse_base_branch_from_config(work_dir.root())?;
 
+    // Run preflight: resolve project backend and validate every stage's
+    // backend override before constructing the orchestrator.
+    let backend_type = resolve_project_backend(work_dir.root())?;
+
     let config = OrchestratorConfig {
         max_parallel_sessions: max_parallel.unwrap_or(4),
         poll_interval: Duration::from_secs(5),
@@ -57,7 +61,7 @@ fn execute_foreground(
         work_dir: work_dir.root().to_path_buf(),
         repo_root: std::env::current_dir()?,
         status_update_interval: Duration::from_secs(30),
-        backend_type: BackendType::Native,
+        backend_type,
         auto_merge,
         base_branch,
         skills_dir: None, // Use default ~/.claude/skills/

@@ -13,7 +13,7 @@ use std::time::Duration;
 use crate::fs::mark_plan_done_if_all_merged;
 use crate::fs::parse_base_branch_from_config;
 use crate::fs::work_dir::WorkDir;
-use crate::orchestrator::terminal::BackendType;
+use crate::orchestrator::preflight::resolve_project_backend;
 use crate::orchestrator::{Orchestrator, OrchestratorConfig};
 use crate::plan::graph::ExecutionGraph;
 use crate::plan::schema::SandboxConfig;
@@ -66,6 +66,10 @@ fn run_orchestrator(
         }
     };
 
+    // Resolve project backend via shared preflight (rejects unpinned
+    // container images and invalid per-stage overrides up front).
+    let backend_type = resolve_project_backend(work_dir).context("Backend preflight failed")?;
+
     // Configure orchestrator using daemon config
     let config = OrchestratorConfig {
         max_parallel_sessions: daemon_config.max_parallel.unwrap_or(4),
@@ -75,7 +79,7 @@ fn run_orchestrator(
         work_dir: work_dir.to_path_buf(),
         repo_root,
         status_update_interval: Duration::from_secs(30),
-        backend_type: BackendType::Native,
+        backend_type,
         auto_merge: daemon_config.auto_merge,
         base_branch,
         skills_dir: None, // Use default ~/.claude/skills/

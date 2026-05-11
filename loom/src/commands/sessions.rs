@@ -7,7 +7,7 @@ use crate::commands::common::find_work_dir;
 use crate::fs::session_files::find_session_file;
 use crate::fs::worktree_files::find_sessions_for_stage;
 use crate::models::session::Session;
-use crate::orchestrator::terminal::{create_backend, BackendType};
+use crate::orchestrator::terminal::dispatcher::{BackendDispatcher, BackendNeeds};
 use crate::parser::frontmatter::parse_from_markdown;
 
 /// List all sessions
@@ -126,25 +126,29 @@ fn kill_single_session(work_dir: &std::path::Path, session_id: &str) -> Result<(
     let session: Session = parse_from_markdown(&content, "Session")
         .context("Failed to parse session from markdown")?;
 
-    // Detect backend type from session metadata
-    let backend_type = detect_backend_type(&session);
+    // Route via the session's persisted backend metadata. This is
+    // correct even after restart: every session writes its `backend`
+    // field at spawn time and on disk we never lose it.
+    let backend_type = session.backend;
+    println!("  Backend: {backend_type}");
 
-    // Kill the session using the appropriate backend
-    if let Some(backend_type) = backend_type {
-        println!("  Detected backend: {backend_type}");
-        let backend = create_backend(backend_type, work_dir)
-            .with_context(|| format!("Failed to create {backend_type} backend"))?;
+    // Build a single-backend dispatcher and let `for_session` pick.
+    // We use a single-backend dispatcher rather than reading the
+    // project default because the session's own metadata is the ground
+    // truth — even if the project has since been re-provisioned with a
+    // different backend, the still-running session belongs to whatever
+    // backend it was spawned under.
+    let needs = BackendNeeds::from_project_and_overrides(backend_type, &[]);
+    let dispatcher = BackendDispatcher::for_plan(backend_type, needs, work_dir)
+        .with_context(|| format!("Failed to construct {backend_type} backend dispatcher"))?;
+    let backend = dispatcher.for_session(&session);
 
-        // Check if session is alive
-        if backend.is_session_alive(&session)? {
-            println!("  Killing session using {backend_type} backend...");
-            backend.kill_session(&session)?;
-            println!("  Session killed successfully");
-        } else {
-            println!("  Session already terminated");
-        }
+    if backend.is_session_alive(&session)? {
+        println!("  Killing session using {backend_type} backend...");
+        backend.kill_session(&session)?;
+        println!("  Session killed successfully");
     } else {
-        println!("  No backend information found (session may not have been spawned)");
+        println!("  Session already terminated");
     }
 
     // Remove the session file
@@ -165,34 +169,15 @@ fn kill_single_session(work_dir: &std::path::Path, session_id: &str) -> Result<(
     Ok(())
 }
 
-/// Detect backend type from session metadata
-///
-/// Returns Native if pid is set, otherwise None.
-fn detect_backend_type(session: &Session) -> Option<BackendType> {
-    if session.pid.is_some() {
-        Some(BackendType::Native)
-    } else {
-        None
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plan::schema::BackendType;
 
     #[test]
-    fn test_detect_backend_type_native() {
-        let mut session = Session::new();
-        session.pid = Some(12345);
-
-        assert_eq!(detect_backend_type(&session), Some(BackendType::Native));
-    }
-
-    #[test]
-    fn test_detect_backend_type_none() {
+    fn test_session_backend_defaults_to_native() {
         let session = Session::new();
-
-        assert_eq!(detect_backend_type(&session), None);
+        assert_eq!(session.backend, BackendType::Native);
     }
 
     #[test]

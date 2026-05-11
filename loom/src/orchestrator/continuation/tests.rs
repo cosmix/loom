@@ -88,7 +88,8 @@ Test the continuation feature.
 #[test]
 fn test_continuation_config_default() {
     let config = ContinuationConfig::default();
-    assert_eq!(config.backend_type, BackendType::Native);
+    assert_eq!(config.backend_type, None);
+    let _ = BackendType::Native; // keep import used
     assert!(config.auto_spawn);
 }
 
@@ -181,7 +182,7 @@ fn test_continue_session_with_handoff() {
     let handoff_path = create_test_handoff(stage_id, &work_dir);
 
     let config = ContinuationConfig {
-        backend_type: BackendType::Native,
+        backend_type: Some(BackendType::Native),
         auto_spawn: false,
     };
 
@@ -210,7 +211,7 @@ fn test_continue_session_without_handoff() {
     let worktree = create_test_worktree(stage_id, project_root);
 
     let config = ContinuationConfig {
-        backend_type: BackendType::Native,
+        backend_type: Some(BackendType::Native),
         auto_spawn: false,
     };
 
@@ -233,7 +234,7 @@ fn test_continue_session_invalid_status() {
     let worktree = create_test_worktree(stage_id, project_root);
 
     let config = ContinuationConfig {
-        backend_type: BackendType::Native,
+        backend_type: Some(BackendType::Native),
         auto_spawn: false,
     };
 

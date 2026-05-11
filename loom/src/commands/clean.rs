@@ -240,19 +240,112 @@ fn clean_worktrees(repo_root: &Path) -> Result<(usize, usize)> {
     Ok((worktrees_removed, branches_removed))
 }
 
-/// Kill all loom sessions
+/// Kill all loom sessions and remove orphan container resources.
 ///
-/// Returns the number of sessions killed
+/// For each container runtime present on PATH, scan for orphan
+/// `loom-*` containers and `loom-net-*` networks left behind by a
+/// crashed daemon and remove them. Returns the count of container
+/// resources removed (best-effort; missing runtimes silently no-op).
 fn clean_sessions() -> Result<usize> {
-    println!(
-        "  {} Session cleanup not yet implemented for native backend",
-        "─".dimmed()
-    );
-    println!(
-        "  {} Use 'loom sessions kill' to kill specific sessions",
-        "→".dimmed()
-    );
-    Ok(0)
+    use std::process::Command;
+
+    let runtimes: [&str; 3] = ["docker", "podman", "container"];
+    let mut total = 0usize;
+
+    for runtime in runtimes {
+        if !runtime_in_path(runtime) {
+            continue;
+        }
+
+        // List + remove loom-* containers.
+        if let Ok(out) = Command::new(runtime)
+            .args([
+                "ps",
+                "-a",
+                "--filter",
+                "name=loom-",
+                "--format",
+                "{{.Names}}",
+            ])
+            .output()
+        {
+            if out.status.success() {
+                let names: Vec<String> = String::from_utf8_lossy(&out.stdout)
+                    .lines()
+                    .filter(|n| n.starts_with("loom-"))
+                    .map(|n| n.to_string())
+                    .collect();
+                for name in &names {
+                    let res = Command::new(runtime).args(["rm", "-f", name]).output();
+                    if res.map(|o| o.status.success()).unwrap_or(false) {
+                        println!(
+                            "  {} Removed orphan container: {}",
+                            "✓".green().bold(),
+                            name.dimmed()
+                        );
+                        total += 1;
+                    }
+                }
+            }
+        }
+
+        // List + remove loom-net-* networks. Apple Container has a
+        // different network CLI, so guard the listing on Docker/Podman.
+        if runtime == "docker" || runtime == "podman" {
+            if let Ok(out) = Command::new(runtime)
+                .args([
+                    "network",
+                    "ls",
+                    "--filter",
+                    "name=loom-net-",
+                    "--format",
+                    "{{.Name}}",
+                ])
+                .output()
+            {
+                if out.status.success() {
+                    let nets: Vec<String> = String::from_utf8_lossy(&out.stdout)
+                        .lines()
+                        .filter(|n| n.starts_with("loom-net-"))
+                        .map(|n| n.to_string())
+                        .collect();
+                    for net in &nets {
+                        let res = Command::new(runtime).args(["network", "rm", net]).output();
+                        if res.map(|o| o.status.success()).unwrap_or(false) {
+                            println!(
+                                "  {} Removed orphan network: {}",
+                                "✓".green().bold(),
+                                net.dimmed()
+                            );
+                            total += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if total == 0 {
+        println!("  {} No orphan container resources found", "─".dimmed());
+        println!(
+            "  {} Use 'loom sessions kill' to kill specific sessions",
+            "→".dimmed()
+        );
+    }
+
+    Ok(total)
+}
+
+fn runtime_in_path(name: &str) -> bool {
+    let Some(path_env) = std::env::var_os("PATH") else {
+        return false;
+    };
+    for dir in std::env::split_paths(&path_env) {
+        if dir.join(name).is_file() {
+            return true;
+        }
+    }
+    false
 }
 
 /// Remove the .work/ state directory
