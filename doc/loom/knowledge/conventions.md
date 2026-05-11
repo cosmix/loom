@@ -158,6 +158,24 @@ Signal files at .work/signals/{session-id}.md use markdown with structured secti
 
 Detectors skip: .git, .work, .worktrees, node_modules, target, .venv, **pycache**. Deep=3-level depth + concerns, Normal=2-level. Source extensions: .rs, .ts, .js, .py, .go, .java, .rb.
 
+## Container Backend Conventions
+
+- Embedded resources (Dockerfile.tmpl, firewall.sh, entrypoint.sh) live in `loom/resources/` and are accessed via `include_str!()` through `container/resources.rs`
+- Backend type serializes as kebab-case: `"native"` / `"container"` (matches `BackendType` serde attribute)
+- Container mount constants are named `<ROLE>_MOUNT` (all-caps), defined at the top of `container/mod.rs`
+- `forward_credentials` default is `Vec::new()` (empty — explicit opt-in). Only add `"claude"` to mount `~/.claude/.credentials.json`. Other credential types (github, gitlab, ssh-agent) also supported.
+- `permission_mode` YAML values are kebab-case: `"auto"`, `"accept-edits"`, `"bypass-permissions"`, `"plan"`, `"default"`
+- `bypass-permissions` is only valid with `BackendType::Container` — `validate_config()` rejects it on native
+
+## Resources Directory Convention
+
+`loom/resources/` holds files that are embedded at compile time via `include_str!()`. These files:
+
+- Are NOT installed to disk during `loom init` — they exist only inside the binary
+- Are accessed through `container/resources.rs` helper functions
+- Changes to these files automatically invalidate the image fingerprint (fingerprint hashes their content)
+- `cargo build` must succeed with new resources before `loom container build` is tested
+
 ## Plan YAML Schema: Acceptance Field
 
 The `acceptance` field in stage definitions uses `Vec<AcceptanceCriterion>` (not `Vec<String>`).

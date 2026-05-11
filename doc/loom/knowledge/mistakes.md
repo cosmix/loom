@@ -276,6 +276,112 @@
 
 **Fix:** Use test fixtures that are fully controlled by the test suite. Reference `tests/integration/plan_verify.rs` as the canonical example of building plan fixtures without touching `doc/plans/`.
 
+## Container Topology: Host Repo Must Be Mounted Whole (not just worktree)
+
+**Mistake:** Mounting only the stage worktree directory into the container (e.g., `-v .worktrees/<id>:/workspace`). Git worktrees store relative symlinks (`.work -> ../../.work`) that point into the parent repo tree. A partial mount breaks both the symlinks and git metadata.
+
+**Why:** Git worktree metadata (`<worktree>/.git`) is a file pointing at `<repo>/.git/worktrees/<id>/`. Mounting only the worktree severs this link — git commands fail with "not a git repository".
+
+**Prevention:** Always bind-mount the full host repo root at a fixed container path (`/repo`). Stage cwd = `/repo/.worktrees/<stage-id>`. Set `LOOM_WORK_DIR=/repo/.work` explicitly.
+
+**Fix:** ContainerBackend uses `REPO_MOUNT = "/repo"` as the invariant; worktree path inside container is always derived from this constant.
+
+## Config Must Be Persisted to .work/ Before loom run Reload
+
+**Mistake:** Storing plan-level backend config only in memory (transient struct). On `loom run` restart (e.g., after daemon crash), the config is re-read from `.work/config.toml` — if it was never written there, the backend selection silently reverts to native.
+
+**Why:** The orchestrator reconstructs its state entirely from disk on startup. Any config not written to `.work/config.toml` during `loom init` is gone on restart.
+
+**Prevention:** `loom init --backend container` MUST write `[project_execution]` to `.work/config.toml`. `ContainerBackend::new()` reads this section and refuses with a clear error if it's absent.
+
+**Fix:** `fs/work_dir::write_project_execution()` uses `toml_edit` for round-trip-safe writes. `ContainerBackend::new()` calls `work_dir_api::read_project_execution()` and bails if missing.
+
+## Schema Root: LoomConfig vs Plan
+
+**Mistake:** Passing the top-level YAML document (which wraps `loom:` key) where a `LoomConfig` (the inner object) is expected, or vice versa. This commonly manifests as "missing field" serde errors.
+
+**Why:** Plan YAML has the structure `{ loom: LoomConfig }`. `parse_plan()` extracts the `loom:` block and deserializes that into `LoomMetadata` / `LoomConfig`, not the outer wrapper.
+
+**Prevention:** The canonical deserialization root is `LoomConfig` (at `plan/schema/types.rs`), not the outer document. Nested fields (execution, stages, sandbox) live on `LoomConfig`.
+
+## Session Identity: Backend Metadata Must Be Persisted
+
+**Mistake:** Relying on transient session state to route kill/liveness calls after a daemon restart. If `session.backend` is not written to disk, the restarted daemon defaults to the wrong backend (e.g., attempts `kill -0` on a container PID).
+
+**Why:** Sessions are reconstructed from `.work/sessions/<id>.md` on daemon restart. Any field not in the session file is lost.
+
+**Prevention:** Add `#[serde(default)]` to backend-related session fields (backend, tracking_key, runtime, container_name) and ensure they are set before the session is written to disk. `Session::derive_tracking_key()` computes the container name from stage-id + session-id.
+
+**Fix:** Session struct fields `backend`, `tracking_key`, `runtime`, `container_name` all use `#[serde(default)]` and are populated in `spawn_session` implementations before persistence.
+
+## Liveness: Monitor Must Route Through TerminalBackend
+
+**Mistake:** Monitoring thread reads the PID from the session file and calls `kill -0 <pid>` directly. This gives false "dead" signals for container sessions, which have a host-side wrapper PID that may be dead even though the container is healthy, or vice versa.
+
+**Why:** Container session liveness is determined by `<runtime> inspect -f '{{.State.Running}}'`, not by host PID existence. The host wrapper PID can die after the container starts; container sessions look dead to `kill -0`.
+
+**Prevention:** Always route session liveness through `LivenessService::is_alive(session)`. Never `kill -0` directly in the monitor.
+
+**Fix:** `LivenessService` added in `orchestrator/liveness.rs`. Monitor thread holds `LivenessService`, not a raw `BackendDispatcher`.
+
+## Run-Path Coverage: All Spawn Sites Must Use the Dispatcher
+
+**Mistake:** Adding the BackendDispatcher for the main orchestrator loop but forgetting to update other spawn paths: foreground mode, daemon startup, merge resolver spawner, continuation (handoff) spawner, auto-merge spawner.
+
+**Why:** Sessions are spawned from multiple entry points beyond the main orchestrator. Each missing path falls back to a hard-coded NativeBackend.
+
+**Prevention:** When wiring a new backend dispatcher, `rg` for all `spawn_session\|spawn_merge_session\|spawn_knowledge_session` call sites before considering the work done. Typically 5+ sites: orchestrator main loop, foreground spawner, merge_handler, continuation, auto_merge.
+
+## Init Re-run: WorkDir Initialization Must Support Reconfigure
+
+**Mistake:** `WorkDir::initialize()` bails when `.work/` already exists (to prevent accidental re-init). Using it to reconfigure backend (e.g., `loom init --backend container` on an existing workspace) fails silently or corrupts state.
+
+**Prevention:** Add `open_or_initialize()` for the reconfigure path. It reads existing config if `.work/` exists, applies only the backend-related fields, and writes them back. Do NOT replace `initialize()` — existing callers rely on its "bail if exists" guard.
+
+**Fix:** `fs/work_dir.rs::open_or_initialize()` added; `loom init --backend container` uses this path; `initialize()` behavior unchanged.
+
+## Firewall: Agent-Writable Allowlist Defeats the Firewall
+
+**Mistake:** Mounting the allowlist file inside the agent-writable directory (e.g., inside the repo bind-mount) allows a compromised agent to append entries and bypass the egress filter.
+
+**Why:** If the allowlist path is within `/repo` (which is mounted rw for the agent), the agent can overwrite it.
+
+**Prevention:** Allowlist file must be mounted ro at a path outside the rw bind mount. In loom: `.work/network/allowed_domains.txt` on host, mounted ro at `/etc/loom/network/allowed_domains.txt` inside the container.
+
+## Cache Key Completeness: Hash All Embedded Resources
+
+**Mistake:** Fingerprinting only detected languages. If the Dockerfile template or firewall script changes, the cached image is stale but the fingerprint matches — agents get the old image with updated resources.
+
+**Why:** `include_str!()` embeds resource content at compile time. A rebuilt loom binary has new content but the old fingerprint unless the hash includes the resource content.
+
+**Prevention:** Include SHA-256 of ALL `include_str!()` resources in the fingerprint. In loom: fingerprint = `SHA-256(sorted_langs + DOCKERFILE_TMPL + FIREWALL_SH)`.
+
+**Fix:** `compute_fingerprint_inner(langs, dockerfile_tmpl_content, firewall_sh_content)` — takes content as args for testability. `compute_fingerprint` calls it with the `include_str!` constants.
+
+## include_str! Path Depth from Container Submodule
+
+**Mistake:** When writing `include_str!()` inside `loom/src/orchestrator/terminal/container/fingerprint.rs`, using 5 `../` segments to reach `loom/resources/`. The correct count is 4.
+
+**Why:** The file lives 4 levels below `loom/` (orchestrator → terminal → container → fingerprint.rs). Starting from the file's directory: `../../../../resources/Dockerfile.tmpl`.
+
+**Prevention:** Count the directory components from the file to `loom/`, then use that many `../`. The compiler error message will suggest the correction if you get it wrong.
+
+## toml_edit vs toml: Different Use Cases
+
+**Mistake:** Using `toml_edit Item -> serde` for reading nested config sections. `toml_edit` is designed for round-trip writes; its typed access silently drops nested sub-tables.
+
+**Why:** `toml_edit::Item` doesn't implement full `serde::Deserialize` for complex nested structures the same way `toml::Value` does.
+
+**Prevention:** Use `toml_edit` for writes (round-trip safe). Use `toml` (re-parse the full file with `toml::Value`, then `try_into::<T>()` on the section) for typed reads of nested structures.
+
+## Adding Session Fields: ~15-20 Struct Literal Breakages
+
+**Mistake:** Adding a field to `Session` struct and expecting `cargo build` to guide you to all the breakages. Test files in `tests/` are not compiled by default and may not show breakages until `cargo test`.
+
+**Why:** Rust requires all struct fields to be initialized in struct literals (unless `..Default::default()` spread is used). `Session` is constructed explicitly in ~15-20 locations across `src/` and `tests/`.
+
+**Prevention:** Use `..Session::default()` spread in all struct literals. When adding fields to Session/Stage/LoomConfig, run `cargo test --all` (not just `cargo build`) to catch `tests/` breakages. Alternatively, write a context-aware patch script.
+
 ## macOS GUI App CLI Not on PATH — Detection-Spawn Mismatch (2026-04-27)
 
 **What happened:** `TerminalEmulator::Ghostty` detection succeeded on macOS via a `/Applications/Ghostty.app` path-existence fallback (detection.rs:190-191), but spawn called `Command::new("ghostty")` and failed with "Failed to spawn terminal 'ghostty'. Is it installed?" The Ghostty CLI binary lives inside the bundle at `/Applications/Ghostty.app/Contents/MacOS/ghostty` and is not added to PATH (ghostty-org/ghostty#2483). Detection picked the terminal; spawn couldn't launch it.
