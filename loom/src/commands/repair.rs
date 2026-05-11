@@ -753,7 +753,7 @@ fn fix_sandbox_settings(repo_root: &Path) -> Result<()> {
         BackendType::Native,
     );
     sandbox::expand_paths(&mut merged);
-    sandbox::write_settings(&merged, repo_root)?;
+    sandbox::write_settings(&merged, BackendType::Native, repo_root)?;
     Ok(())
 }
 
