@@ -169,6 +169,19 @@ impl WorkDir {
         Ok(Self { root: candidate })
     }
 
+    /// Open an existing `.work/` directory or initialise it if missing.
+    ///
+    /// Used by `loom init` reconfigure paths so a second invocation (with
+    /// different flags) does not destroy existing state (per finding #11).
+    pub fn open_or_initialize(&self) -> Result<()> {
+        if self.root.exists() {
+            // Already initialised — validate structure and return.
+            self.load()
+        } else {
+            self.initialize()
+        }
+    }
+
     pub fn initialize(&self) -> Result<()> {
         if self.root.exists() {
             bail!(".work directory already exists");
@@ -598,6 +611,25 @@ mod tests {
             work_dir_path.canonicalize().unwrap(),
             "WorkDir should find .work in parent directory"
         );
+    }
+
+    #[test]
+    fn test_open_or_initialize_idempotent() {
+        let temp = TempDir::new().unwrap();
+        let project_root = temp.path();
+
+        let work_dir = WorkDir::new(project_root).unwrap();
+        // First call initializes
+        work_dir.open_or_initialize().unwrap();
+        assert!(project_root.join(".work").is_dir());
+
+        // Second call must succeed without error
+        let work_dir2 = WorkDir::new(project_root).unwrap();
+        work_dir2
+            .open_or_initialize()
+            .expect("open_or_initialize must be idempotent on existing .work");
+        // Structure still intact
+        assert!(project_root.join(".work").join("stages").is_dir());
     }
 
     #[test]

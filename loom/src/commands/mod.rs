@@ -1,5 +1,6 @@
 pub mod clean;
 pub mod common;
+pub mod container;
 pub mod diagnose;
 pub mod graph;
 pub mod handoff;
