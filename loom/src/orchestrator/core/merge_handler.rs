@@ -509,6 +509,7 @@ impl Orchestrator {
                 }
 
                 // Track the merge session so the monitor can detect its lifecycle
+                let session = *session;
                 let session_id = session.id.clone();
                 self.active_sessions
                     .insert(stage_id.to_string(), session.clone());
