@@ -1,8 +1,22 @@
 //! Tests for hooks infrastructure
 
 use super::*;
+use crate::plan::schema::{BackendType, PermissionMode};
 use std::path::PathBuf;
 use tempfile::TempDir;
+
+/// Test helper: build a HooksConfig with sensible defaults matching the
+/// pre-Stage-2 behaviour (AcceptEdits + Native) so existing assertions hold.
+fn test_config(hooks: PathBuf, stage: &str, session: &str, work: PathBuf) -> HooksConfig {
+    HooksConfig::new(
+        hooks,
+        stage.to_string(),
+        session.to_string(),
+        work,
+        PermissionMode::AcceptEdits,
+        BackendType::Native,
+    )
+}
 
 mod config_tests {
     use super::*;
@@ -47,10 +61,10 @@ mod config_tests {
 
     #[test]
     fn test_hooks_config_new() {
-        let config = HooksConfig::new(
+        let config = super::test_config(
             PathBuf::from("/path/to/hooks"),
-            "my-stage".to_string(),
-            "session-123".to_string(),
+            "my-stage",
+            "session-123",
             PathBuf::from("/path/to/.work"),
         );
 
@@ -58,14 +72,16 @@ mod config_tests {
         assert_eq!(config.stage_id, "my-stage");
         assert_eq!(config.session_id, "session-123");
         assert_eq!(config.work_dir, PathBuf::from("/path/to/.work"));
+        assert_eq!(config.permission_mode, PermissionMode::AcceptEdits);
+        assert_eq!(config.backend, BackendType::Native);
     }
 
     #[test]
     fn test_hooks_config_script_path() {
-        let config = HooksConfig::new(
+        let config = super::test_config(
             PathBuf::from("/hooks"),
-            "stage".to_string(),
-            "session".to_string(),
+            "stage",
+            "session",
             PathBuf::from("/work"),
         );
 
@@ -81,10 +97,10 @@ mod config_tests {
 
     #[test]
     fn test_hooks_config_build_command() {
-        let config = HooksConfig::new(
+        let config = super::test_config(
             PathBuf::from("/hooks"),
-            "test-stage".to_string(),
-            "test-session".to_string(),
+            "test-stage",
+            "test-session",
             PathBuf::from("/work"),
         );
 
@@ -99,10 +115,10 @@ mod config_tests {
 
     #[test]
     fn test_hooks_config_to_settings_hooks() {
-        let config = HooksConfig::new(
+        let config = super::test_config(
             PathBuf::from("/hooks"),
-            "stage".to_string(),
-            "session".to_string(),
+            "stage",
+            "session",
             PathBuf::from("/work"),
         );
 
@@ -221,10 +237,10 @@ mod generator_tests {
 
     #[test]
     fn test_generate_hooks_settings_new() {
-        let config = HooksConfig::new(
+        let config = super::test_config(
             PathBuf::from("/hooks"),
-            "stage".to_string(),
-            "session".to_string(),
+            "stage",
+            "session",
             PathBuf::from("/work"),
         );
 
@@ -233,7 +249,8 @@ mod generator_tests {
         // Check trust dialog
         assert_eq!(settings["hasTrustDialogAccepted"], json!(true));
 
-        // Check permissions
+        // The default test config uses AcceptEdits, which maps to "acceptEdits"
+        // in Claude's wire format via PermissionMode::as_settings_value.
         assert_eq!(settings["permissions"]["defaultMode"], json!("acceptEdits"));
 
         // Check hooks is a record (object) not an array
@@ -251,10 +268,10 @@ mod generator_tests {
 
     #[test]
     fn test_generate_hooks_settings_merge_existing() {
-        let config = HooksConfig::new(
+        let config = super::test_config(
             PathBuf::from("/hooks"),
-            "stage".to_string(),
-            "session".to_string(),
+            "stage",
+            "session",
             PathBuf::from("/work"),
         );
 
@@ -283,10 +300,10 @@ mod generator_tests {
         let temp_dir = TempDir::new().unwrap();
         let worktree_path = temp_dir.path();
 
-        let config = HooksConfig::new(
+        let config = super::test_config(
             PathBuf::from("/hooks"),
-            "test-stage".to_string(),
-            "test-session".to_string(),
+            "test-stage",
+            "test-session",
             PathBuf::from("/work"),
         );
 
@@ -325,10 +342,10 @@ mod generator_tests {
 
     #[test]
     fn test_generate_hooks_merges_with_global_hooks() {
-        let config = HooksConfig::new(
+        let config = super::test_config(
             PathBuf::from("/hooks"),
-            "stage".to_string(),
-            "session".to_string(),
+            "stage",
+            "session",
             PathBuf::from("/work"),
         );
 
@@ -406,11 +423,89 @@ mod generator_tests {
     }
 
     #[test]
-    fn test_generate_hooks_no_duplication() {
+    fn test_generate_hooks_settings_uses_resolved_permission_mode() {
+        // Every PermissionMode flows through to permissions.defaultMode using
+        // the camelCase mapping Claude Code expects.
+        for (mode, expected) in [
+            (PermissionMode::Default, "default"),
+            (PermissionMode::AcceptEdits, "acceptEdits"),
+            (PermissionMode::Auto, "auto"),
+            (PermissionMode::Plan, "plan"),
+            (PermissionMode::BypassPermissions, "bypassPermissions"),
+        ] {
+            let config = HooksConfig::new(
+                PathBuf::from("/hooks"),
+                "stage".to_string(),
+                "session".to_string(),
+                PathBuf::from("/work"),
+                mode,
+                BackendType::Native,
+            );
+
+            let settings = generate_hooks_settings(&config, None).unwrap();
+            assert_eq!(
+                settings["permissions"]["defaultMode"],
+                json!(expected),
+                "mode {mode:?} should map to {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_generate_hooks_settings_scrubs_env_for_container() {
         let config = HooksConfig::new(
             PathBuf::from("/hooks"),
             "stage".to_string(),
             "session".to_string(),
+            PathBuf::from("/work"),
+            PermissionMode::Auto,
+            BackendType::Container,
+        );
+
+        let existing = json!({
+            "env": {
+                "FOO": "keep",
+                "AWS_ACCESS_KEY_ID": "leak",
+                "GH_TOKEN": "leak",
+                "MCP_SERVER_PATH": "leak"
+            }
+        });
+
+        let settings = generate_hooks_settings(&config, Some(&existing)).unwrap();
+        let env = settings["env"].as_object().unwrap();
+        assert!(env.contains_key("FOO"));
+        assert!(!env.contains_key("AWS_ACCESS_KEY_ID"));
+        assert!(!env.contains_key("GH_TOKEN"));
+        assert!(!env.contains_key("MCP_SERVER_PATH"));
+    }
+
+    #[test]
+    fn test_generate_hooks_settings_preserves_env_for_native() {
+        let config = HooksConfig::new(
+            PathBuf::from("/hooks"),
+            "stage".to_string(),
+            "session".to_string(),
+            PathBuf::from("/work"),
+            PermissionMode::Auto,
+            BackendType::Native,
+        );
+
+        let existing = json!({
+            "env": { "AWS_ACCESS_KEY_ID": "stay", "GH_TOKEN": "stay" }
+        });
+
+        let settings = generate_hooks_settings(&config, Some(&existing)).unwrap();
+        let env = settings["env"].as_object().unwrap();
+        assert!(env.contains_key("AWS_ACCESS_KEY_ID"));
+        assert!(env.contains_key("GH_TOKEN"));
+    }
+
+    #[test]
+    fn test_generate_hooks_no_duplication() {
+        let config = super::test_config(
+            PathBuf::from("/hooks"),
+            "stage",
+            "session",
             PathBuf::from("/work"),
         );
 

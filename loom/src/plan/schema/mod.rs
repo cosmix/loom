@@ -15,9 +15,9 @@ pub use execution::{
 };
 pub use types::{
     AcceptanceCriterion, ChangeImpactConfig, ChangeImpactPolicy, DeadCodeCheck, FilesystemConfig,
-    LinuxConfig, LoomConfig, LoomMetadata, NetworkConfig, RegressionTest, SandboxConfig,
-    StageDefinition, StageSandboxConfig, StageType, SuccessCriteria, TruthCheck, ValidationError,
-    WiringCheck, WiringTest,
+    LinuxConfig, LoomConfig, LoomMetadata, NetworkConfig, PermissionMode, RegressionTest,
+    SandboxConfig, StageDefinition, StageSandboxConfig, StageType, SuccessCriteria, TruthCheck,
+    ValidationError, WiringCheck, WiringTest,
 };
 pub use validation::{
     check_knowledge_recommendations, check_sandbox_recommendations, validate,

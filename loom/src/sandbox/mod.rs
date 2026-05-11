@@ -7,7 +7,11 @@ mod config;
 mod settings;
 
 pub use config::{
-    detect_path_escape, expand_env_vars, expand_paths, expand_tilde, is_legitimate_work_access,
-    merge_config, validate_paths, MergedSandboxConfig, PathEscapeAttempt,
+    default_mode_for, detect_path_escape, expand_env_vars, expand_paths, expand_tilde,
+    is_legitimate_work_access, merge_config, validate_config, validate_paths, MergedSandboxConfig,
+    PathEscapeAttempt,
 };
-pub use settings::{generate_settings_json, write_settings};
+pub use settings::{
+    apply_default_mode, generate_settings_json, is_sensitive_env_key,
+    scrub_settings_env_for_backend, write_settings, SENSITIVE_ENV_KEYS, SENSITIVE_ENV_PREFIXES,
+};

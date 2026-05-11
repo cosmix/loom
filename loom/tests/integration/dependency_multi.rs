@@ -11,6 +11,7 @@ use std::process::Command;
 
 use loom::git::worktree::{resolve_base_branch, ResolvedBase};
 use loom::git::{branch_exists, create_worktree};
+use loom::plan::schema::BackendType;
 
 use super::helpers::*;
 
@@ -65,8 +66,13 @@ fn test_multiple_deps_all_merged_uses_main() {
     );
 
     // Create worktree from main and verify it has both files
-    let worktree = create_worktree("stage-c", repo_root, Some(result.branch_name()))
-        .expect("Failed to create worktree");
+    let worktree = create_worktree(
+        "stage-c",
+        repo_root,
+        Some(result.branch_name()),
+        BackendType::Native,
+    )
+    .expect("Failed to create worktree");
 
     assert!(
         verify_worktree_has_file(&worktree.path, "a_file.txt"),
@@ -201,8 +207,13 @@ fn test_diamond_pattern_all_merged() {
         "Expected Main for diamond, got {result:?}"
     );
 
-    let worktree = create_worktree("stage-d", repo_root, Some(result.branch_name()))
-        .expect("Failed to create worktree");
+    let worktree = create_worktree(
+        "stage-d",
+        repo_root,
+        Some(result.branch_name()),
+        BackendType::Native,
+    )
+    .expect("Failed to create worktree");
 
     assert!(
         verify_worktree_has_file(&worktree.path, "a_file.txt"),

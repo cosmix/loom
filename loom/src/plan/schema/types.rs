@@ -4,6 +4,40 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::plan::schema::execution::{PlanExecutionConfig, StageExecutionConfig};
 
+/// Claude Code permission mode controlling default tool-approval behavior.
+///
+/// Serialized as kebab-case in YAML (`accept-edits`, `bypass-permissions`) but
+/// emitted to Claude Code's `settings.json` as camelCase via
+/// [`PermissionMode::as_settings_value`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PermissionMode {
+    /// Prompt for every action requiring approval.
+    Default,
+    /// Auto-accept Edit/Write operations on session-owned files.
+    AcceptEdits,
+    /// Auto-accept any action Claude's heuristics deem safe.
+    Auto,
+    /// Plan-only mode — propose changes without executing them.
+    Plan,
+    /// Bypass all permission prompts. Requires `container` backend (sandboxed).
+    BypassPermissions,
+}
+
+impl PermissionMode {
+    /// Return the camelCase string Claude Code expects in `settings.json`
+    /// under `permissions.defaultMode`.
+    pub fn as_settings_value(self) -> &'static str {
+        match self {
+            PermissionMode::Default => "default",
+            PermissionMode::AcceptEdits => "acceptEdits",
+            PermissionMode::Auto => "auto",
+            PermissionMode::Plan => "plan",
+            PermissionMode::BypassPermissions => "bypassPermissions",
+        }
+    }
+}
+
 /// Plan-level sandbox configuration (defaults for all stages)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SandboxConfig {
@@ -34,6 +68,11 @@ pub struct SandboxConfig {
     /// Linux-specific configuration
     #[serde(default)]
     pub linux: LinuxConfig,
+
+    /// Plan-level Claude Code permission-mode override.
+    /// When unset, the stage type's default applies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<PermissionMode>,
 }
 
 impl Default for SandboxConfig {
@@ -46,6 +85,7 @@ impl Default for SandboxConfig {
             filesystem: FilesystemConfig::default(),
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
+            permission_mode: None,
         }
     }
 }
@@ -80,6 +120,11 @@ pub struct StageSandboxConfig {
     /// Linux-specific overrides for this stage
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linux: Option<LinuxConfig>,
+
+    /// Per-stage Claude Code permission-mode override.
+    /// When unset, the plan-level override (or stage type default) applies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<PermissionMode>,
 }
 
 /// Filesystem access configuration
