@@ -8,13 +8,30 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use super::types::{
-    Commands, KnowledgeCommands, MemoryCommands, OutputCommands, PlanCommands, SessionsCommands,
-    StageCommands, WorktreeCommands,
+    Commands, ContainerCommands, KnowledgeCommands, MemoryCommands, OutputCommands, PlanCommands,
+    SessionsCommands, StageCommands, WorktreeCommands,
 };
 
 pub fn dispatch(command: Commands) -> Result<()> {
     match command {
-        Commands::Init { plan_path, clean } => init::execute(Some(PathBuf::from(plan_path)), clean),
+        Commands::Init {
+            plan_path,
+            clean,
+            backend,
+            no_build,
+        } => init::execute(Some(PathBuf::from(plan_path)), clean, backend, no_build),
+        Commands::Container { command } => match command {
+            ContainerCommands::Build { fingerprint } => {
+                loom::commands::container::build::execute(fingerprint)
+            }
+            ContainerCommands::Rebuild { fingerprint, all } => {
+                loom::commands::container::rebuild::execute(fingerprint, all)
+            }
+            ContainerCommands::Doctor => loom::commands::container::doctor::execute(),
+            ContainerCommands::Shell { stage_id } => {
+                loom::commands::container::shell::execute(stage_id)
+            }
+        },
         Commands::Run {
             manual,
             max_parallel,

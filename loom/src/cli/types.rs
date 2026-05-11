@@ -37,6 +37,23 @@ pub enum Commands {
         /// (removes old .work/, prunes worktrees, kills orphaned sessions)
         #[arg(long)]
         clean: bool,
+
+        /// Project backend: `native` or `container`. Defaults to current
+        /// project setting (native if unset).
+        #[arg(long)]
+        backend: Option<String>,
+
+        /// When provisioning the container backend, skip the image build
+        /// and write `image_digest = "pending"`. `loom run` will refuse to
+        /// start until the image is built. Has no effect with native backend.
+        #[arg(long)]
+        no_build: bool,
+    },
+
+    /// Manage the container backend (build/rebuild image, doctor, exec shell)
+    Container {
+        #[command(subcommand)]
+        command: ContainerCommands,
     },
 
     /// Run stages from a plan (starts orchestrator in background)
@@ -282,6 +299,33 @@ pub enum SessionsCommands {
         /// Kill all sessions for a stage
         #[arg(long, conflicts_with = "session_ids", value_parser = clap_id_validator)]
         stage: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ContainerCommands {
+    /// Build the container image for the current project (cached by fingerprint)
+    Build {
+        /// Override fingerprint (default: compute from project)
+        #[arg(long)]
+        fingerprint: Option<String>,
+    },
+    /// Rebuild the container image, ignoring cache
+    Rebuild {
+        /// Override fingerprint (default: compute from project)
+        #[arg(long)]
+        fingerprint: Option<String>,
+        /// Rebuild every cached fingerprint, not just the current project's
+        #[arg(long)]
+        all: bool,
+    },
+    /// Diagnose the container backend (runtime, fingerprint, cache, capabilities)
+    Doctor,
+    /// Open an interactive shell in a running stage's container
+    Shell {
+        /// Stage ID whose session container to attach to
+        #[arg(value_parser = clap_id_validator)]
+        stage_id: String,
     },
 }
 
