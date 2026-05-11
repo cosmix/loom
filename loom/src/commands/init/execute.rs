@@ -12,7 +12,7 @@ use super::cleanup::{
     cleanup_orphaned_sessions, cleanup_work_directory, cleanup_worktrees_directory,
     prune_stale_worktrees, remove_work_directory_on_failure,
 };
-use super::plan_setup::initialize_with_plan;
+use super::plan_setup::{initialize_with_plan, probe_firewall_or_bail};
 
 /// RAII guard that cleans up .work directory on drop unless disarmed.
 /// This ensures cleanup happens on ANY failure path, not just plan parsing.
@@ -61,11 +61,15 @@ impl Drop for InitGuard {
 /// * `backend` - Optional project backend override (`native` | `container`).
 /// * `no_build` - When provisioning the container backend, skip the actual
 ///   image build and pin `image_digest = "pending"`.
+/// * `allow_insecure_runtime` - Skip the firewall enforcement smoke test
+///   that runs after image build. Use only on runtimes known to lack
+///   reliable iptables egress filtering.
 pub fn execute(
     plan_path: Option<PathBuf>,
     clean: bool,
     backend: Option<String>,
     no_build: bool,
+    allow_insecure_runtime: bool,
 ) -> Result<()> {
     let repo_root = std::env::current_dir()?;
     let repo_bootstrap = crate::git::ensure_repo_ready_for_worktrees(&repo_root)?;
@@ -168,7 +172,13 @@ pub fn execute(
     // touching stage definitions. When `backend` is None we PRESERVE the
     // existing `[project_execution]` section.
     if let Some(backend_str) = backend {
-        apply_project_backend(&work_dir, &repo_root, &backend_str, no_build)?;
+        apply_project_backend(
+            &work_dir,
+            &repo_root,
+            &backend_str,
+            no_build,
+            allow_insecure_runtime,
+        )?;
     }
 
     // Success - disarm the guard to prevent cleanup
@@ -187,6 +197,7 @@ fn apply_project_backend(
     repo_root: &Path,
     backend_str: &str,
     no_build: bool,
+    allow_insecure_runtime: bool,
 ) -> Result<()> {
     use crate::plan::schema::execution::{
         BackendType, ProjectContainerConfig, ProjectExecutionConfig,
@@ -245,6 +256,21 @@ fn apply_project_backend(
             println!("    Fingerprint: {}", fingerprint);
             println!("    Image:       {} ({})", digest, action);
             println!("    Elapsed:     {:?}", elapsed);
+
+            // Run the firewall enforcement smoke test after the image is
+            // available. The probe is skipped when `--no-build` is set
+            // (no real image to probe) and when the operator explicitly
+            // opts out via `--allow-insecure-runtime`.
+            if !no_build && !allow_insecure_runtime {
+                let image_ref = format!("loom/base:{fingerprint}");
+                probe_firewall_or_bail(runtime, &image_ref)?;
+                println!("  {} Firewall enforcement verified", "✓".green().bold());
+            } else if allow_insecure_runtime {
+                println!(
+                    "  {} Firewall smoke test skipped (--allow-insecure-runtime)",
+                    "!".yellow().bold()
+                );
+            }
         }
     }
 

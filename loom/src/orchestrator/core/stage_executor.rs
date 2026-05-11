@@ -272,7 +272,9 @@ impl StageExecutor for Orchestrator {
             return Ok(());
         }
         crate::sandbox::expand_paths(&mut merged_sandbox);
-        if let Err(e) = crate::sandbox::write_settings(&merged_sandbox, &worktree.path) {
+        if let Err(e) =
+            crate::sandbox::write_settings(&merged_sandbox, stage_backend, &worktree.path)
+        {
             eprintln!("Warning: Failed to write sandbox settings for stage '{stage_id}': {e}");
             // Continue anyway - sandbox is optional enhancement
         }
@@ -401,7 +403,9 @@ impl StageExecutor for Orchestrator {
             return Ok(());
         }
         crate::sandbox::expand_paths(&mut merged_sandbox);
-        if let Err(e) = crate::sandbox::write_settings(&merged_sandbox, &self.config.repo_root) {
+        if let Err(e) =
+            crate::sandbox::write_settings(&merged_sandbox, stage_backend, &self.config.repo_root)
+        {
             eprintln!(
                 "Warning: Failed to write sandbox settings for knowledge stage '{stage_id}': {e}"
             );

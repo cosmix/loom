@@ -19,7 +19,14 @@ pub fn dispatch(command: Commands) -> Result<()> {
             clean,
             backend,
             no_build,
-        } => init::execute(Some(PathBuf::from(plan_path)), clean, backend, no_build),
+            allow_insecure_runtime,
+        } => init::execute(
+            Some(PathBuf::from(plan_path)),
+            clean,
+            backend,
+            no_build,
+            allow_insecure_runtime,
+        ),
         Commands::Container { command } => match command {
             ContainerCommands::Build { fingerprint } => {
                 loom::commands::container::build::execute(fingerprint)
@@ -31,6 +38,11 @@ pub fn dispatch(command: Commands) -> Result<()> {
             ContainerCommands::Shell { stage_id } => {
                 loom::commands::container::shell::execute(stage_id)
             }
+            ContainerCommands::Logs {
+                stage_id,
+                follow,
+                tail,
+            } => loom::commands::container::logs::execute(stage_id, follow, tail),
         },
         Commands::Run {
             manual,

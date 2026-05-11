@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use crate::fs::work_dir::{self as wdapi, WorkDir};
-use crate::orchestrator::terminal::container::{fingerprint as fp, image, runtime as rt};
+use crate::orchestrator::terminal::container::{fingerprint as fp, image, probe, runtime as rt};
 
 pub fn execute() -> Result<()> {
     println!("{}", "Container backend doctor".bold());
@@ -28,36 +28,6 @@ pub fn execute() -> Result<()> {
     if let Ok(out) = Command::new(runtime.binary()).arg("--version").output() {
         let ver = String::from_utf8_lossy(&out.stdout);
         println!("  {} Version: {}", "ℹ".cyan(), ver.trim());
-    }
-
-    // Per finding #15: warn on rootless Podman capability constraints.
-    if runtime == rt::Runtime::Podman {
-        let rootless = Command::new("podman")
-            .args(["info", "--format", "{{.Host.Security.Rootless}}"])
-            .output()
-            .ok()
-            .and_then(|o| {
-                if o.status.success() {
-                    Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-                } else {
-                    None
-                }
-            });
-        if rootless.as_deref() == Some("true") {
-            println!(
-                "  {} Rootless Podman detected — NET_ADMIN/NET_RAW are emulated. \
-                 The firewall script may need slirp4netns >= 1.2.3 for iptables \
-                 inside rootless containers; if it fails, switch to root Podman or Docker.",
-                "⚠".yellow().bold()
-            );
-        }
-    }
-    if runtime == rt::Runtime::AppleContainer {
-        println!(
-            "  {} Apple Container has limited Linux capability emulation. \
-             If the firewall script fails, fall back to Docker or rootful Podman.",
-            "⚠".yellow().bold()
-        );
     }
 
     // Current project fingerprint
@@ -84,24 +54,61 @@ pub fn execute() -> Result<()> {
     }
 
     // Image presence
+    let image_ref = format!("loom/base:{current_fp}");
     let inspect = Command::new(runtime.binary())
-        .args(["image", "inspect", &format!("loom/base:{current_fp}")])
+        .args(["image", "inspect", &image_ref])
         .output();
-    match inspect {
-        Ok(o) if o.status.success() => {
-            println!(
-                "  {} Image loom/base:{} present",
-                "✓".green().bold(),
-                current_fp
-            );
+    let image_present = matches!(&inspect, Ok(o) if o.status.success());
+    if image_present {
+        println!(
+            "  {} Image loom/base:{} present",
+            "✓".green().bold(),
+            current_fp
+        );
+    } else {
+        println!(
+            "  {} Image loom/base:{} not present (run `loom container build`)",
+            "✗".red().bold(),
+            current_fp
+        );
+    }
+
+    // Firewall enforcement probe. Replaces the earlier
+    // rootless-Podman / Apple-Container blanket warnings with an
+    // authoritative smoke test against the actual runtime + image.
+    // `doctor` itself stays exit 0 — the report differentiates
+    // "warn" (probe ran but firewall did not block) from "fail"
+    // (probe could not run at all).
+    if image_present {
+        match probe::run_firewall_smoke_test(runtime, &image_ref) {
+            Ok(result) if result.enforced => {
+                println!(
+                    "  {} Firewall enforcement: blocked outbound",
+                    "✓".green().bold()
+                );
+            }
+            Ok(result) => {
+                println!(
+                    "  {} Firewall enforcement: NOT enforcing on this runtime. \
+                     Container egress is not filtered — pass \
+                     --allow-insecure-runtime to `loom init` to acknowledge.\n      {}",
+                    "✗".red().bold(),
+                    result.diagnostic.lines().next().unwrap_or("").dimmed()
+                );
+            }
+            Err(e) => {
+                println!(
+                    "  {} Firewall enforcement: probe failed to run: {}",
+                    "⚠".yellow().bold(),
+                    e
+                );
+            }
         }
-        _ => {
-            println!(
-                "  {} Image loom/base:{} not present (run `loom container build`)",
-                "✗".red().bold(),
-                current_fp
-            );
-        }
+    } else {
+        println!(
+            "  {} Firewall enforcement: skipped (image not present)",
+            "ℹ".dimmed()
+        );
     }
 
     // Cache size + entries

@@ -65,7 +65,15 @@ pub fn apply_default_mode(settings: &mut Value, mode: PermissionMode) -> Result<
 }
 
 /// Write Claude Code settings.local.json to worktree .claude/ directory
-pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Result<()> {
+///
+/// `backend` is the resolved per-stage backend. The container backend's
+/// firewall enforces network policy authoritatively, so Claude-level network
+/// restrictions are redundant there and omitted to reduce two-layer drift.
+pub fn write_settings(
+    config: &MergedSandboxConfig,
+    backend: BackendType,
+    worktree_path: &Path,
+) -> Result<()> {
     let claude_dir = worktree_path.join(".claude");
 
     // Create .claude/ directory if it doesn't exist
@@ -96,7 +104,7 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
     }
 
     // Generate new sandbox settings
-    let mut settings_json = generate_settings_json(&config);
+    let mut settings_json = generate_settings_json(&config, backend);
 
     // Resolve the .work symlink to its absolute target path.
     // In worktrees, .work is a symlink to ../../.work (the main repo's .work/).
@@ -170,7 +178,15 @@ fn build_tool_commands(detected_languages: &[DetectedLanguage]) -> Vec<String> {
 }
 
 /// Generate Claude Code settings JSON from sandbox config
-pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
+///
+/// `backend` is the resolved per-stage backend. Container-backed stages
+/// rely on the in-container firewall script to enforce network policy
+/// authoritatively, so Claude-level network restrictions (the `Network(...)`
+/// patterns embedded in `sandbox.network`) are redundant there and omitted
+/// to reduce two-layer drift. Filesystem deny entries and `excludedCommands`
+/// are still emitted because they constrain Claude's tool surface, not the
+/// kernel-level network namespace.
+pub fn generate_settings_json(config: &MergedSandboxConfig, backend: BackendType) -> Value {
     let mut settings = json!({});
 
     // Build sandbox block with native sandbox configuration
@@ -193,26 +209,31 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
         sandbox["allowUnsandboxedCommands"] = json!(true);
     }
 
-    // Add network configuration
-    let mut network = json!({});
-    let mut domains = config.network.allowed_domains.clone();
-    domains.extend(config.network.additional_domains.clone());
-    if !domains.is_empty() {
-        network["allowedDomains"] = json!(domains);
-    }
-    if config.network.allow_local_binding {
-        network["allowLocalBinding"] = json!(true);
-    }
-    // Add unix socket configuration
-    if !config.network.allow_unix_sockets.is_empty() {
-        network["allowUnixSockets"] = json!(config.network.allow_unix_sockets);
-    }
-    if config.network.allow_all_unix_sockets {
-        network["allowAllUnixSockets"] = json!(true);
-    }
-    // Only add network block if it has content
-    if network.as_object().is_some_and(|o| !o.is_empty()) {
-        sandbox["network"] = network;
+    // Network configuration. The container firewall enforces network policy
+    // authoritatively (image-resident firewall.sh + ro-mounted allowlist), so
+    // we skip emitting Claude-level Network(...) deny entries for container
+    // stages. Maintaining both layers led to silent drift when the allowlist
+    // and Claude's allowed_domains diverged.
+    if backend != BackendType::Container {
+        let mut network = json!({});
+        let mut domains = config.network.allowed_domains.clone();
+        domains.extend(config.network.additional_domains.clone());
+        if !domains.is_empty() {
+            network["allowedDomains"] = json!(domains);
+        }
+        if config.network.allow_local_binding {
+            network["allowLocalBinding"] = json!(true);
+        }
+        if !config.network.allow_unix_sockets.is_empty() {
+            network["allowUnixSockets"] = json!(config.network.allow_unix_sockets);
+        }
+        if config.network.allow_all_unix_sockets {
+            network["allowAllUnixSockets"] = json!(true);
+        }
+        // Only add network block if it has content
+        if network.as_object().is_some_and(|o| !o.is_empty()) {
+            sandbox["network"] = network;
+        }
     }
 
     // Add filesystem configuration for OS-level sandbox enforcement
@@ -573,7 +594,7 @@ mod tests {
                 linux: LinuxConfig::default(),
                 permission_mode: mode,
             };
-            let json = generate_settings_json(&config);
+            let json = generate_settings_json(&config, BackendType::Native);
             assert_eq!(
                 json["permissions"]["defaultMode"],
                 json!(expected),
@@ -595,7 +616,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config);
+        let json = generate_settings_json(&config, BackendType::Native);
         // Sandbox block should have enabled: false
         assert_eq!(json["sandbox"]["enabled"], false);
     }
@@ -617,7 +638,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config);
+        let json = generate_settings_json(&config, BackendType::Native);
         // Sandbox enabled in sandbox block
         assert_eq!(json["sandbox"]["enabled"], true);
         assert_eq!(json["sandbox"]["autoAllowBashIfSandboxed"], true);
@@ -671,7 +692,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config);
+        let json = generate_settings_json(&config, BackendType::Native);
 
         // Network config is now in sandbox.network block
         let network = &json["sandbox"]["network"];
@@ -700,7 +721,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config);
+        let json = generate_settings_json(&config, BackendType::Native);
         assert_eq!(json["sandbox"]["enableWeakerNestedSandbox"], true);
     }
 
@@ -717,7 +738,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config);
+        let json = generate_settings_json(&config, BackendType::Native);
         // Excluded commands are now in sandbox block
         let excluded = json["sandbox"]["excludedCommands"].as_array().unwrap();
         assert_eq!(excluded.len(), 2);
@@ -738,7 +759,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config);
+        let json = generate_settings_json(&config, BackendType::Native);
         // allowUnsandboxedCommands is now in sandbox block
         assert_eq!(json["sandbox"]["allowUnsandboxedCommands"], true);
     }
@@ -756,7 +777,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config);
+        let json = generate_settings_json(&config, BackendType::Native);
         let allow = json["permissions"]["allow"].as_array().unwrap();
 
         // Should have Bash(loom *) and Bash(git *) in allow
@@ -786,7 +807,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config);
+        let json = generate_settings_json(&config, BackendType::Native);
         let allow = json["permissions"]["allow"].as_array().unwrap();
 
         let allow_strs: Vec<&str> = allow.iter().map(|v| v.as_str().unwrap()).collect();
@@ -824,7 +845,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config);
+        let json = generate_settings_json(&config, BackendType::Native);
         // No filesystem block when there are no deny_write paths to emit
         // (allowWrite is never emitted to avoid OS sandbox read-blocking)
         assert!(
@@ -852,7 +873,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config);
+        let json = generate_settings_json(&config, BackendType::Native);
         assert_eq!(json["sandbox"]["network"]["allowAllUnixSockets"], true);
     }
 
@@ -885,7 +906,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config);
+        let json = generate_settings_json(&config, BackendType::Native);
 
         // No filesystem block at all (no deny_write, no allowWrite)
         assert!(
@@ -932,7 +953,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config);
+        let json = generate_settings_json(&config, BackendType::Native);
 
         // OS sandbox denyWrite must NOT contain parent-traversal paths or knowledge paths
         // Both are filtered: parent-traversal resolves too broadly in sandbox-exec,
@@ -963,6 +984,65 @@ mod tests {
     }
 
     #[test]
+    fn test_container_skips_network_deny() {
+        // The container backend's firewall enforces network policy
+        // authoritatively, so Claude-level Network(...) restrictions
+        // (the `sandbox.network` block) must be omitted for container
+        // stages — but filesystem deny entries must still be emitted.
+        let config = MergedSandboxConfig {
+            enabled: true,
+            auto_allow: true,
+            allow_unsandboxed_escape: false,
+            excluded_commands: vec![],
+            filesystem: FilesystemConfig {
+                deny_read: vec![],
+                deny_write: vec!["doc/loom/knowledge/**".to_string()],
+                allow_write: vec![],
+            },
+            network: NetworkConfig {
+                allowed_domains: vec!["github.com".to_string(), "api.github.com".to_string()],
+                additional_domains: vec![],
+                allow_local_binding: true,
+                allow_unix_sockets: vec![],
+                allow_all_unix_sockets: false,
+            },
+            linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::BypassPermissions,
+        };
+
+        // Container: no Network(...) deny / allowedDomains emitted.
+        let json_container = generate_settings_json(&config, BackendType::Container);
+        assert!(
+            json_container["sandbox"]["network"].is_null(),
+            "Container backend must NOT emit sandbox.network (firewall enforces network policy authoritatively)"
+        );
+        // Filesystem deny entries are still expected on container — they
+        // bound the Claude tool surface, not the kernel namespace.
+        let deny = json_container["permissions"]["deny"]
+            .as_array()
+            .expect("filesystem deny entries should still be present on container");
+        let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
+        assert!(
+            deny_strs.contains(&"Write(doc/loom/knowledge/**)"),
+            "Filesystem deny entries must still be emitted for container backend"
+        );
+
+        // Native: Network(...) deny / allowedDomains DO appear.
+        let json_native = generate_settings_json(&config, BackendType::Native);
+        let network = &json_native["sandbox"]["network"];
+        assert!(
+            !network.is_null(),
+            "Native backend must emit sandbox.network when allowed_domains is set"
+        );
+        let domains = network["allowedDomains"]
+            .as_array()
+            .expect("allowedDomains must be present for native");
+        assert_eq!(domains.len(), 2);
+        assert!(domains.iter().any(|d| d == "github.com"));
+        assert_eq!(network["allowLocalBinding"], true);
+    }
+
+    #[test]
     fn test_no_path_in_both_allow_and_deny() {
         use crate::plan::schema::{BackendType, SandboxConfig, StageSandboxConfig, StageType};
         use crate::sandbox::merge_config;
@@ -977,7 +1057,7 @@ mod tests {
             let plan = SandboxConfig::default();
             let stage = StageSandboxConfig::default();
             let merged = merge_config(&plan, &stage, stage_type, BackendType::Native);
-            let json = generate_settings_json(&merged);
+            let json = generate_settings_json(&merged, BackendType::Native);
 
             let permissions = &json["permissions"];
             if permissions.is_null() {
@@ -1055,7 +1135,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        write_settings(&config, worktree_path).unwrap();
+        write_settings(&config, BackendType::Native, worktree_path).unwrap();
 
         // Read the result
         let result_content = fs::read_to_string(&settings_path).unwrap();
@@ -1114,7 +1194,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        write_settings(&config, worktree_path).unwrap();
+        write_settings(&config, BackendType::Native, worktree_path).unwrap();
 
         // Read the result
         let result_content = fs::read_to_string(&settings_path).unwrap();
@@ -1163,7 +1243,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        write_settings(&config, worktree_path).unwrap();
+        write_settings(&config, BackendType::Native, worktree_path).unwrap();
 
         // Read the result
         let settings_path = worktree_path.join(".claude/settings.local.json");
@@ -1220,7 +1300,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        write_settings(&config, &worktree_path).unwrap();
+        write_settings(&config, BackendType::Native, &worktree_path).unwrap();
 
         let settings_path = worktree_path.join(".claude/settings.local.json");
         let result_content = fs::read_to_string(&settings_path).unwrap();
@@ -1273,7 +1353,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let mut new_settings = generate_settings_json(&config);
+        let mut new_settings = generate_settings_json(&config, BackendType::Native);
         let original_allow_count = new_settings["permissions"]["allow"]
             .as_array()
             .unwrap()
