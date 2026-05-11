@@ -75,13 +75,13 @@ loom stop
 
 ### What Gets Installed
 
-| Location | Contents |
-| --- | --- |
-| `~/.claude/agents/loom-*.md` | Specialized subagents (per-item, non-destructive) |
-| `~/.claude/skills/loom-*/` | Domain knowledge modules (per-item, non-destructive) |
-| `~/.claude/hooks/loom/` | Session lifecycle hooks |
-| `~/.claude/CLAUDE.md` | Orchestration rules |
-| `~/.local/bin/loom` | Loom CLI |
+| Location                     | Contents                                             |
+| ---------------------------- | ---------------------------------------------------- |
+| `~/.claude/agents/loom-*.md` | Specialized subagents (per-item, non-destructive)    |
+| `~/.claude/skills/loom-*/`   | Domain knowledge modules (per-item, non-destructive) |
+| `~/.claude/hooks/loom/`      | Session lifecycle hooks                              |
+| `~/.claude/CLAUDE.md`        | Orchestration rules                                  |
+| `~/.local/bin/loom`          | Loom CLI                                             |
 
 ## Core Workflow
 
@@ -211,6 +211,7 @@ Plans live in `doc/plans/` with metadata in fenced YAML between loom markers.
 # PLAN-0001: Feature Name
 
 <!-- loom METADATA -->
+
 ```yaml
 loom:
   version: 1
@@ -247,29 +248,30 @@ loom:
         - command: "cargo test api_integration::returns_200"
           stdout_contains: ["test result: ok"]
 ```
+
 <!-- END loom METADATA -->
 ````
 
 ### Stage Fields
 
-| Field | Required | Notes |
-| --- | --- | --- |
-| `id` | Yes | Stage identifier |
-| `name` | Yes | Human-readable title |
-| `working_dir` | Yes | Relative execution directory (`.` allowed) |
-| `description` | No | Optional summary |
-| `dependencies` | No | Upstream stage IDs |
-| `acceptance` | Conditionally required | Shell criteria (strings or extended objects with stdout_contains etc.) |
-| `setup` | No | Setup commands |
-| `files` | No | File glob scope |
-| `stage_type` | No | `standard` (default), `knowledge`, `integration-verify` |
-| `artifacts` / `wiring` | Conditionally required | Required for `standard` and `integration-verify` (acceptance OR goal-backward) |
-| `wiring_tests` / `dead_code_check` | No | Extended verification |
-| `context_budget` | No | Context threshold (%) for handoff |
-| `sandbox` | No | Per-stage sandbox override |
-| `sandbox.permission_mode` | No | `auto`, `accept-edits`, `bypass-permissions`, `plan`, `default` (resolves: stage > plan > stage-type default) |
-| `backend` | No | Per-stage backend override: `native` or `container` (overrides project default) |
-| `execution_mode` | No | `single` (default) or `team` hint |
+| Field                              | Required               | Notes                                                                                                         |
+| ---------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `id`                               | Yes                    | Stage identifier                                                                                              |
+| `name`                             | Yes                    | Human-readable title                                                                                          |
+| `working_dir`                      | Yes                    | Relative execution directory (`.` allowed)                                                                    |
+| `description`                      | No                     | Optional summary                                                                                              |
+| `dependencies`                     | No                     | Upstream stage IDs                                                                                            |
+| `acceptance`                       | Conditionally required | Shell criteria (strings or extended objects with stdout_contains etc.)                                        |
+| `setup`                            | No                     | Setup commands                                                                                                |
+| `files`                            | No                     | File glob scope                                                                                               |
+| `stage_type`                       | No                     | `standard` (default), `knowledge`, `integration-verify`                                                       |
+| `artifacts` / `wiring`             | Conditionally required | Required for `standard` and `integration-verify` (acceptance OR goal-backward)                                |
+| `wiring_tests` / `dead_code_check` | No                     | Extended verification                                                                                         |
+| `context_budget`                   | No                     | Context threshold (%) for handoff                                                                             |
+| `sandbox`                          | No                     | Per-stage sandbox override                                                                                    |
+| `sandbox.permission_mode`          | No                     | `auto`, `accept-edits`, `bypass-permissions`, `plan`, `default` (resolves: stage > plan > stage-type default) |
+| `backend`                          | No                     | Per-stage backend override: `native` or `container` (overrides project default)                               |
+| `execution_mode`                   | No                     | `single` (default) or `team` hint                                                                             |
 
 ### Stage Type Behavior
 
@@ -321,24 +323,24 @@ Supported values: `"claude"` (mounts `~/.claude/.credentials.json`).
 
 The `permission_mode` field controls Claude Code's permission prompting:
 
-| Value | Behavior |
-| --- | --- |
-| `auto` | Claude's heuristics (default for standard/integration-verify) |
-| `accept-edits` | Auto-accept file edits (default for knowledge/knowledge-distill) |
-| `bypass-permissions` | No permission prompts — **container backend only** |
-| `plan` | Use Claude Code plan mode |
-| `default` | Claude Code's built-in default |
+| Value                | Behavior                                                         |
+| -------------------- | ---------------------------------------------------------------- |
+| `auto`               | Claude's heuristics (default for standard/integration-verify)    |
+| `accept-edits`       | Auto-accept file edits (default for knowledge/knowledge-distill) |
+| `bypass-permissions` | No permission prompts — **container backend only**               |
+| `plan`               | Use Claude Code plan mode                                        |
+| `default`            | Claude Code's built-in default                                   |
 
 `bypass-permissions` is only accepted when the backend is `container`. Using it with the native backend is rejected at `loom init` and spawn time.
 
 ```yaml
 loom:
   sandbox:
-    permission_mode: accept-edits  # plan-level default
+    permission_mode: accept-edits # plan-level default
   stages:
     - id: my-stage
       sandbox:
-        permission_mode: bypass-permissions  # stage override (container only)
+        permission_mode: bypass-permissions # stage override (container only)
       backend: container
 ```
 
@@ -429,11 +431,11 @@ loom completions --install
 
 Auto-detects your shell from `$SHELL` and writes completions to the standard location:
 
-| Shell | Install Path |
-| --- | --- |
-| Bash | `~/.local/share/bash-completion/completions/loom` |
-| Zsh | `~/.zfunc/_loom` |
-| Fish | `~/.config/fish/completions/loom.fish` |
+| Shell | Install Path                                      |
+| ----- | ------------------------------------------------- |
+| Bash  | `~/.local/share/bash-completion/completions/loom` |
+| Zsh   | `~/.zfunc/_loom`                                  |
+| Fish  | `~/.config/fish/completions/loom.fish`            |
 
 Follow the printed post-install instructions to activate (e.g., for zsh, ensure `fpath=(~/.zfunc $fpath)` appears before `compinit` in `~/.zshrc`).
 

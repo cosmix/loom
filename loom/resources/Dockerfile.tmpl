@@ -16,7 +16,20 @@ RUN apt-get update && \
 
 # Loom user/group at UID 1000 (matches host UID in most dev setups;
 # Podman --userns=keep-id + Docker --user=uid:gid still apply at runtime).
-RUN if ! getent group ${USER_GID} >/dev/null; then groupadd --gid ${USER_GID} ${USERNAME}; fi && \
+#
+# Ubuntu 24.04's devcontainers base ships a pre-existing `ubuntu` user at
+# UID 1000 / GID 1000. We must evict that occupant before creating `loom`,
+# otherwise `useradd --uid 1000` fails with "UID 1000 is not unique".
+RUN set -eux; \
+    if getent passwd ${USER_UID} >/dev/null && [ "$(getent passwd ${USER_UID} | cut -d: -f1)" != "${USERNAME}" ]; then \
+        EXISTING_USER="$(getent passwd ${USER_UID} | cut -d: -f1)"; \
+        userdel -r "${EXISTING_USER}" 2>/dev/null || userdel "${EXISTING_USER}"; \
+    fi; \
+    if getent group ${USER_GID} >/dev/null && [ "$(getent group ${USER_GID} | cut -d: -f1)" != "${USERNAME}" ]; then \
+        EXISTING_GROUP="$(getent group ${USER_GID} | cut -d: -f1)"; \
+        groupdel "${EXISTING_GROUP}" 2>/dev/null || true; \
+    fi; \
+    if ! getent group ${USER_GID} >/dev/null; then groupadd --gid ${USER_GID} ${USERNAME}; fi; \
     if ! id -u ${USERNAME} >/dev/null 2>&1; then useradd --uid ${USER_UID} --gid ${USER_GID} -m -s /bin/bash ${USERNAME}; fi
 
 # Node.js 22 + Claude Code CLI (every loom image ships claude).
