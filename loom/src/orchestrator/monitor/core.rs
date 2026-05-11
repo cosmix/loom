@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 
 use crate::models::session::Session;
 use crate::models::stage::Stage;
+use crate::orchestrator::liveness::LivenessService;
 use crate::parser::frontmatter::parse_from_markdown;
 
 use super::config::MonitorConfig;
@@ -24,11 +25,18 @@ impl Monitor {
     pub fn new(config: MonitorConfig) -> Self {
         let heartbeat_watcher = HeartbeatWatcher::with_timeout(config.hung_timeout);
         Self {
-            handlers: Handlers::new(config.clone()),
+            handlers: Handlers::new(config.clone(), None),
             detection: Detection::new(),
             heartbeat_watcher,
             config,
         }
+    }
+
+    /// Attach a backend-aware liveness service. The orchestrator calls
+    /// this once the dispatcher is constructed; until then,
+    /// `check_session_alive` falls back to the legacy host-PID probe.
+    pub fn set_liveness(&mut self, liveness: LivenessService) {
+        self.handlers.set_liveness(liveness);
     }
 
     /// Poll once and return any events detected

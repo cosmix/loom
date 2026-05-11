@@ -11,9 +11,9 @@ use crate::handoff::{generate_handoff, HandoffContent};
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::Stage;
 use crate::orchestrator::continuation::save_session;
+use crate::orchestrator::liveness::LivenessService;
 use crate::orchestrator::signals::read_merge_signal;
 use crate::orchestrator::spawner::{generate_crash_report, CrashReport};
-use crate::process::is_process_alive;
 
 use super::config::MonitorConfig;
 use super::context::context_usage_percent;
@@ -21,53 +21,37 @@ use super::context::context_usage_percent;
 /// Handler functions for monitor events
 pub struct Handlers {
     config: MonitorConfig,
+    /// Backend-aware liveness probe. Optional because some test paths
+    /// construct `Handlers` without a dispatcher; production paths
+    /// always attach one via `Monitor::set_liveness`.
+    liveness: Option<LivenessService>,
 }
 
 impl Handlers {
-    pub fn new(config: MonitorConfig) -> Self {
-        Self { config }
+    pub fn new(config: MonitorConfig, liveness: Option<LivenessService>) -> Self {
+        Self { config, liveness }
     }
 
-    /// Check if a session is still alive by checking its process
+    /// Attach (or replace) the backend-aware liveness service.
+    pub fn set_liveness(&mut self, liveness: LivenessService) {
+        self.liveness = Some(liveness);
+    }
+
+    /// Check if a session is still alive.
     ///
-    /// Uses a layered approach:
-    /// 1. Try reading from PID file (most current PID from wrapper script)
-    /// 2. Check if that PID is alive
-    /// 3. Fallback to stored session.pid
-    ///
-    /// Returns Ok(Some(true/false)) if we can determine liveness, Ok(None) if no PID available.
+    /// Delegates to the backend-aware [`LivenessService`] when available
+    /// (the production path) so container sessions don't fall through to
+    /// host-PID checks that would never match. When no liveness service
+    /// is attached (test-only construction), returns `Ok(None)` so the
+    /// detection loop skips crash reporting for that tick.
     pub fn check_session_alive(&self, session: &Session) -> Result<Option<bool>> {
-        // First, try to get the most current PID from the PID file (if stage_id is available)
-        // The PID file is written by the wrapper script and may be more current than session.pid
-        if let Some(stage_id) = &session.stage_id {
-            let pid_file_path = self
-                .config
-                .work_dir
-                .join("pids")
-                .join(format!("{stage_id}.pid"));
-
-            if let Ok(pid_content) = std::fs::read_to_string(&pid_file_path) {
-                if let Ok(current_pid) = pid_content.trim().parse::<u32>() {
-                    // We have a PID from the tracking file, check if it's alive
-                    let alive = is_process_alive(current_pid);
-
-                    if !alive {
-                        // PID file exists but process is dead - clean up the file
-                        let _ = std::fs::remove_file(&pid_file_path);
-                    }
-
-                    return Ok(Some(alive));
-                }
-            }
+        let Some(liveness) = self.liveness.as_ref() else {
+            return Ok(None);
+        };
+        match liveness.is_alive(session) {
+            Ok(alive) => Ok(Some(alive)),
+            Err(_) => Ok(None),
         }
-
-        // Fallback to the stored PID from the session
-        if let Some(pid) = session.pid {
-            return Ok(Some(is_process_alive(pid)));
-        }
-
-        // No PID - cannot track liveness
-        Ok(None)
     }
 
     /// Check if a session is a merge session (has a merge signal file)
