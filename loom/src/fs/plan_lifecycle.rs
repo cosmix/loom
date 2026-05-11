@@ -10,8 +10,9 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use std::fs;
 use std::path::{Path, PathBuf};
+use toml_edit::value;
 
-use crate::fs::work_dir::WorkDir;
+use crate::fs::work_dir::{self, WorkDir};
 use crate::parser::frontmatter::extract_frontmatter_field;
 
 // Filename prefix constants
@@ -63,23 +64,19 @@ pub fn get_plan_source_path(work_dir: &WorkDir) -> Result<Option<PathBuf>> {
     crate::fs::get_source_path(work_dir.root())
 }
 
-/// Update the plan source path in config.toml
+/// Update the plan source path in config.toml.
+///
+/// Goes through the centralized `fs::work_dir` API so comments and unknown
+/// keys (other tables, sandbox snapshots, etc.) are preserved.
 pub fn update_plan_source_path(work_dir: &WorkDir, new_path: &Path) -> Result<()> {
-    let mut config = work_dir.load_config_required()?;
+    let mut doc = work_dir::read_config(work_dir.root())?;
 
-    if let Some(plan) = config.as_toml_mut().get_mut("plan") {
-        if let Some(table) = plan.as_table_mut() {
-            table.insert(
-                "source_path".to_string(),
-                toml::Value::String(new_path.display().to_string()),
-            );
-        }
+    let plan = doc.entry("plan").or_insert(toml_edit::table());
+    if let Some(table) = plan.as_table_mut() {
+        table["source_path"] = value(new_path.display().to_string());
     }
 
-    // Serialize back to TOML with proper formatting
-    let new_content = config.to_toml_string()?;
-    fs::write(work_dir.config_path(), new_content).context("Failed to write config.toml")?;
-
+    work_dir::write_config(work_dir.root(), &doc).context("Failed to write .work/config.toml")?;
     Ok(())
 }
 
