@@ -1,10 +1,68 @@
 use super::config::MergedSandboxConfig;
 use crate::language::{detect_project_languages, DetectedLanguage};
+use crate::plan::schema::{BackendType, PermissionMode};
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
+
+/// Environment-variable keys that are always stripped when forwarding settings
+/// into a container backend. These hold host-level credentials that the
+/// containerised agent should not see.
+///
+/// Used by both [`scrub_settings_env_for_backend`] and the worktree settings
+/// copy to maintain a single source of truth for the deny list.
+pub const SENSITIVE_ENV_KEYS: &[&str] = &[
+    "SSH_AUTH_SOCK",
+    "GH_TOKEN",
+    "GITHUB_TOKEN",
+    "ANTHROPIC_API_KEY",
+];
+
+/// Prefixes whose env keys are always stripped for the container backend
+/// (cloud provider creds, MCP server inheritance, Google/GCP creds).
+pub const SENSITIVE_ENV_PREFIXES: &[&str] = &["AWS_", "GOOGLE_", "GCP_", "MCP_"];
+
+/// Return `true` if the env-var name should be stripped when copying settings
+/// into a container backend.
+pub fn is_sensitive_env_key(key: &str) -> bool {
+    if SENSITIVE_ENV_KEYS.contains(&key) {
+        return true;
+    }
+    SENSITIVE_ENV_PREFIXES.iter().any(|p| key.starts_with(p))
+}
+
+/// Remove sensitive env keys from a Claude `settings.json` `env` block when
+/// the backend is `Container`. A no-op for `Native` (host env is already the
+/// agent's env, no copy step to scrub).
+pub fn scrub_settings_env_for_backend(settings: &mut Value, backend: BackendType) {
+    if backend != BackendType::Container {
+        return;
+    }
+    let Some(env) = settings.get_mut("env").and_then(|v| v.as_object_mut()) else {
+        return;
+    };
+    env.retain(|key, _| !is_sensitive_env_key(key));
+}
+
+/// Write Claude Code's `permissions.defaultMode` into a settings JSON value.
+///
+/// Uses the camelCase string Claude Code expects (e.g. `"acceptEdits"`,
+/// `"bypassPermissions"`). This is the single place that maps loom's
+/// kebab-case `PermissionMode` onto Claude's wire format.
+pub fn apply_default_mode(settings: &mut Value, mode: PermissionMode) -> Result<()> {
+    let obj = settings
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("settings must be a JSON object"))?;
+    let permissions = obj
+        .entry("permissions")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("permissions must be a JSON object"))?;
+    permissions.insert("defaultMode".to_string(), json!(mode.as_settings_value()));
+    Ok(())
+}
 
 /// Write Claude Code settings.local.json to worktree .claude/ directory
 pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Result<()> {
@@ -274,6 +332,11 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
         settings["permissions"] = permissions;
     }
 
+    // Always emit defaultMode so Claude Code uses the resolved permission mode
+    // for this stage rather than its built-in default.
+    apply_default_mode(&mut settings, config.permission_mode)
+        .expect("settings is a JSON object built above");
+
     settings
 }
 
@@ -386,6 +449,140 @@ mod tests {
     use crate::plan::schema::{FilesystemConfig, LinuxConfig, NetworkConfig};
 
     #[test]
+    fn test_apply_default_mode_matrix() {
+        // Each PermissionMode → camelCase string emitted into settings JSON.
+        let cases = [
+            (PermissionMode::Default, "default"),
+            (PermissionMode::AcceptEdits, "acceptEdits"),
+            (PermissionMode::Auto, "auto"),
+            (PermissionMode::Plan, "plan"),
+            (PermissionMode::BypassPermissions, "bypassPermissions"),
+        ];
+        for (mode, expected) in cases {
+            let mut settings = json!({});
+            apply_default_mode(&mut settings, mode).unwrap();
+            assert_eq!(
+                settings["permissions"]["defaultMode"],
+                json!(expected),
+                "mode {mode:?} should serialize to {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_apply_default_mode_preserves_existing_permissions() {
+        let mut settings = json!({
+            "permissions": {
+                "allow": ["Read(.work/**)"]
+            }
+        });
+        apply_default_mode(&mut settings, PermissionMode::Plan).unwrap();
+        assert_eq!(settings["permissions"]["defaultMode"], json!("plan"));
+        assert_eq!(
+            settings["permissions"]["allow"],
+            json!(["Read(.work/**)"]),
+            "Existing allow list must be preserved"
+        );
+    }
+
+    #[test]
+    fn test_permission_mode_kebab_case_round_trip() {
+        // Round-trip through serde_yaml using kebab-case spelling.
+        for (mode, kebab) in [
+            (PermissionMode::Default, "default"),
+            (PermissionMode::AcceptEdits, "accept-edits"),
+            (PermissionMode::Auto, "auto"),
+            (PermissionMode::Plan, "plan"),
+            (PermissionMode::BypassPermissions, "bypass-permissions"),
+        ] {
+            let yaml = serde_yaml::to_string(&mode).unwrap();
+            assert!(yaml.contains(kebab), "{mode:?} should serialize to {kebab}");
+            let back: PermissionMode = serde_yaml::from_str(&yaml).unwrap();
+            assert_eq!(back, mode);
+        }
+    }
+
+    #[test]
+    fn test_is_sensitive_env_key() {
+        for key in [
+            "SSH_AUTH_SOCK",
+            "GH_TOKEN",
+            "GITHUB_TOKEN",
+            "ANTHROPIC_API_KEY",
+            "AWS_ACCESS_KEY_ID",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "GCP_PROJECT",
+            "MCP_SERVER_PATH",
+        ] {
+            assert!(is_sensitive_env_key(key), "{key} should be sensitive");
+        }
+        for key in ["PATH", "HOME", "LOOM_STAGE_ID", "USER"] {
+            assert!(!is_sensitive_env_key(key), "{key} should not be sensitive");
+        }
+    }
+
+    #[test]
+    fn test_scrub_settings_env_for_container() {
+        let mut settings = json!({
+            "env": {
+                "KEEP_ME": "yes",
+                "AWS_REGION": "leak",
+                "GH_TOKEN": "leak",
+                "ANTHROPIC_API_KEY": "leak",
+                "MCP_SERVER_FOO": "leak"
+            }
+        });
+        scrub_settings_env_for_backend(&mut settings, BackendType::Container);
+
+        let env = settings["env"].as_object().unwrap();
+        assert!(env.contains_key("KEEP_ME"));
+        assert!(!env.contains_key("AWS_REGION"));
+        assert!(!env.contains_key("GH_TOKEN"));
+        assert!(!env.contains_key("ANTHROPIC_API_KEY"));
+        assert!(!env.contains_key("MCP_SERVER_FOO"));
+    }
+
+    #[test]
+    fn test_scrub_settings_env_for_native_is_noop() {
+        let original = json!({
+            "env": { "AWS_REGION": "stay", "GH_TOKEN": "stay" }
+        });
+        let mut settings = original.clone();
+        scrub_settings_env_for_backend(&mut settings, BackendType::Native);
+        assert_eq!(settings, original);
+    }
+
+    #[test]
+    fn test_generate_settings_json_includes_resolved_default_mode() {
+        // Each PermissionMode in MergedSandboxConfig becomes the camelCase
+        // permissions.defaultMode in the generated settings JSON.
+        for (mode, expected) in [
+            (PermissionMode::Default, "default"),
+            (PermissionMode::AcceptEdits, "acceptEdits"),
+            (PermissionMode::Auto, "auto"),
+            (PermissionMode::Plan, "plan"),
+            (PermissionMode::BypassPermissions, "bypassPermissions"),
+        ] {
+            let config = MergedSandboxConfig {
+                enabled: true,
+                auto_allow: true,
+                allow_unsandboxed_escape: false,
+                excluded_commands: vec![],
+                filesystem: FilesystemConfig::default(),
+                network: NetworkConfig::default(),
+                linux: LinuxConfig::default(),
+                permission_mode: mode,
+            };
+            let json = generate_settings_json(&config);
+            assert_eq!(
+                json["permissions"]["defaultMode"],
+                json!(expected),
+                "generate_settings_json must emit camelCase for {mode:?}"
+            );
+        }
+    }
+
+    #[test]
     fn test_generate_settings_disabled() {
         let config = MergedSandboxConfig {
             enabled: false,
@@ -395,6 +592,7 @@ mod tests {
             filesystem: FilesystemConfig::default(),
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::Auto,
         };
 
         let json = generate_settings_json(&config);
@@ -416,6 +614,7 @@ mod tests {
             },
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::Auto,
         };
 
         let json = generate_settings_json(&config);
@@ -469,6 +668,7 @@ mod tests {
                 allow_all_unix_sockets: false,
             },
             linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::Auto,
         };
 
         let json = generate_settings_json(&config);
@@ -497,6 +697,7 @@ mod tests {
             linux: LinuxConfig {
                 enable_weaker_nested: true,
             },
+            permission_mode: PermissionMode::Auto,
         };
 
         let json = generate_settings_json(&config);
@@ -513,6 +714,7 @@ mod tests {
             filesystem: FilesystemConfig::default(),
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::Auto,
         };
 
         let json = generate_settings_json(&config);
@@ -533,6 +735,7 @@ mod tests {
             filesystem: FilesystemConfig::default(),
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::Auto,
         };
 
         let json = generate_settings_json(&config);
@@ -550,6 +753,7 @@ mod tests {
             filesystem: FilesystemConfig::default(),
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::Auto,
         };
 
         let json = generate_settings_json(&config);
@@ -579,6 +783,7 @@ mod tests {
             filesystem: FilesystemConfig::default(),
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::Auto,
         };
 
         let json = generate_settings_json(&config);
@@ -616,6 +821,7 @@ mod tests {
             },
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::Auto,
         };
 
         let json = generate_settings_json(&config);
@@ -643,6 +849,7 @@ mod tests {
                 allow_all_unix_sockets: true,
             },
             linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::Auto,
         };
 
         let json = generate_settings_json(&config);
@@ -675,6 +882,7 @@ mod tests {
             },
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::Auto,
         };
 
         let json = generate_settings_json(&config);
@@ -721,6 +929,7 @@ mod tests {
             },
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::Auto,
         };
 
         let json = generate_settings_json(&config);
@@ -843,6 +1052,7 @@ mod tests {
             },
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::Auto,
         };
 
         write_settings(&config, worktree_path).unwrap();
@@ -901,6 +1111,7 @@ mod tests {
             filesystem: FilesystemConfig::default(),
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::Auto,
         };
 
         write_settings(&config, worktree_path).unwrap();
@@ -949,6 +1160,7 @@ mod tests {
             },
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::Auto,
         };
 
         write_settings(&config, worktree_path).unwrap();
@@ -1005,6 +1217,7 @@ mod tests {
             filesystem: FilesystemConfig::default(),
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::Auto,
         };
 
         write_settings(&config, &worktree_path).unwrap();
@@ -1057,6 +1270,7 @@ mod tests {
             },
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::Auto,
         };
 
         let mut new_settings = generate_settings_json(&config);

@@ -1,6 +1,8 @@
 use crate::plan::schema::{
-    FilesystemConfig, LinuxConfig, NetworkConfig, SandboxConfig, StageSandboxConfig, StageType,
+    BackendType, FilesystemConfig, LinuxConfig, NetworkConfig, PermissionMode, SandboxConfig,
+    StageSandboxConfig, StageType,
 };
+use anyhow::{bail, Result};
 use std::env;
 use std::path::Path;
 
@@ -31,20 +33,38 @@ pub struct MergedSandboxConfig {
     pub filesystem: FilesystemConfig,
     pub network: NetworkConfig,
     pub linux: LinuxConfig,
+    /// Resolved Claude Code permission mode (stage > plan > stage-type default).
+    pub permission_mode: PermissionMode,
 }
 
-/// Merge plan-level sandbox config with stage-level overrides
-/// Stage values override plan values when present
+/// Resolve the default `PermissionMode` for a stage type when no explicit
+/// override is set at the plan or stage level.
 ///
-/// Note: `_stage_type` is currently unused after removing the stage-type-specific
-/// knowledge path auto-add logic (knowledge writes now go through `loom` CLI).
-/// Parameter is retained to preserve the API surface for callers.
+/// - Knowledge / KnowledgeDistill default to `AcceptEdits` — writes are scoped
+///   to `doc/loom/knowledge/` and friction during knowledge curation hurts more
+///   than it helps.
+/// - Standard / IntegrationVerify default to `Auto` — Claude's heuristics
+///   approve safe edits while still prompting for destructive ones.
+pub fn default_mode_for(stage_type: StageType) -> PermissionMode {
+    match stage_type {
+        StageType::Knowledge | StageType::KnowledgeDistill => PermissionMode::AcceptEdits,
+        StageType::Standard | StageType::IntegrationVerify => PermissionMode::Auto,
+    }
+}
+
+/// Merge plan-level sandbox config with stage-level overrides.
+///
+/// Precedence for `permission_mode`: stage > plan > [`default_mode_for`].
 pub fn merge_config(
     plan_config: &SandboxConfig,
     stage_config: &StageSandboxConfig,
-    _stage_type: StageType,
+    stage_type: StageType,
 ) -> MergedSandboxConfig {
-    // Start with plan-level config
+    let permission_mode = stage_config
+        .permission_mode
+        .or(plan_config.permission_mode)
+        .unwrap_or_else(|| default_mode_for(stage_type));
+
     MergedSandboxConfig {
         enabled: stage_config.enabled.unwrap_or(plan_config.enabled),
         auto_allow: stage_config.auto_allow.unwrap_or(plan_config.auto_allow),
@@ -68,7 +88,25 @@ pub fn merge_config(
             .linux
             .clone()
             .unwrap_or_else(|| plan_config.linux.clone()),
+        permission_mode,
     }
+}
+
+/// Validate that a merged sandbox config is compatible with the project backend.
+///
+/// `bypass-permissions` is only safe inside the container backend where the
+/// agent is fully sandboxed. Refusing it on the native backend prevents an
+/// agent from running with no permission prompts on the host filesystem.
+pub fn validate_config(merged: &MergedSandboxConfig, backend: BackendType) -> Result<()> {
+    if merged.permission_mode == PermissionMode::BypassPermissions && backend == BackendType::Native
+    {
+        bail!(
+            "permission_mode=bypass-permissions requires the container backend \
+             (current backend: native). \
+             Re-run `loom init <plan> --backend container` to enable bypass mode."
+        );
+    }
+    Ok(())
 }
 
 /// Expand ~ to home directory in paths
@@ -337,6 +375,7 @@ mod tests {
             filesystem: FilesystemConfig::default(),
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
+            permission_mode: None,
         };
 
         let stage = StageSandboxConfig {
@@ -347,6 +386,7 @@ mod tests {
             filesystem: None,
             network: None,
             linux: None,
+            permission_mode: None,
         };
 
         let merged = merge_config(&plan, &stage, StageType::Standard);
@@ -371,6 +411,7 @@ mod tests {
             },
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
+            permission_mode: Some(PermissionMode::Auto),
         };
 
         let stage = StageSandboxConfig::default();
@@ -395,6 +436,7 @@ mod tests {
             filesystem: FilesystemConfig::default(),
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
+            permission_mode: Some(PermissionMode::Auto),
         };
 
         let stage = StageSandboxConfig::default();
@@ -407,6 +449,95 @@ mod tests {
             .filesystem
             .allow_write
             .contains(&"doc/loom/knowledge/**".to_string()));
+    }
+
+    // =========================================================================
+    // Permission Mode resolution tests
+    // =========================================================================
+
+    #[test]
+    fn test_default_mode_for_stage_type() {
+        assert_eq!(default_mode_for(StageType::Standard), PermissionMode::Auto);
+        assert_eq!(
+            default_mode_for(StageType::IntegrationVerify),
+            PermissionMode::Auto
+        );
+        assert_eq!(
+            default_mode_for(StageType::Knowledge),
+            PermissionMode::AcceptEdits
+        );
+        assert_eq!(
+            default_mode_for(StageType::KnowledgeDistill),
+            PermissionMode::AcceptEdits
+        );
+    }
+
+    #[test]
+    fn test_merge_config_permission_mode_precedence() {
+        let plan = SandboxConfig {
+            permission_mode: Some(PermissionMode::Plan),
+            ..SandboxConfig::default()
+        };
+
+        // Stage override beats plan override
+        let stage_override = StageSandboxConfig {
+            permission_mode: Some(PermissionMode::BypassPermissions),
+            ..StageSandboxConfig::default()
+        };
+        let merged = merge_config(&plan, &stage_override, StageType::Standard);
+        assert_eq!(merged.permission_mode, PermissionMode::BypassPermissions);
+
+        // No stage override: plan wins over default
+        let merged = merge_config(&plan, &StageSandboxConfig::default(), StageType::Standard);
+        assert_eq!(merged.permission_mode, PermissionMode::Plan);
+
+        // No plan / no stage override: stage type default
+        let plan_default = SandboxConfig::default();
+        let merged = merge_config(
+            &plan_default,
+            &StageSandboxConfig::default(),
+            StageType::Standard,
+        );
+        assert_eq!(merged.permission_mode, PermissionMode::Auto);
+
+        let merged = merge_config(
+            &plan_default,
+            &StageSandboxConfig::default(),
+            StageType::Knowledge,
+        );
+        assert_eq!(merged.permission_mode, PermissionMode::AcceptEdits);
+    }
+
+    #[test]
+    fn test_validate_config_matrix() {
+        // Build a MergedSandboxConfig with a specific permission mode.
+        let make = |mode: PermissionMode| MergedSandboxConfig {
+            enabled: true,
+            auto_allow: true,
+            allow_unsandboxed_escape: false,
+            excluded_commands: vec![],
+            filesystem: FilesystemConfig::default(),
+            network: NetworkConfig::default(),
+            linux: LinuxConfig::default(),
+            permission_mode: mode,
+        };
+
+        for mode in [
+            PermissionMode::Default,
+            PermissionMode::AcceptEdits,
+            PermissionMode::Auto,
+            PermissionMode::Plan,
+        ] {
+            assert!(validate_config(&make(mode), BackendType::Native).is_ok());
+            assert!(validate_config(&make(mode), BackendType::Container).is_ok());
+        }
+
+        // BypassPermissions rejected on Native, accepted on Container.
+        let bypass = make(PermissionMode::BypassPermissions);
+        let err = validate_config(&bypass, BackendType::Native).unwrap_err();
+        assert!(err.to_string().contains("bypass-permissions"));
+        assert!(err.to_string().contains("container"));
+        assert!(validate_config(&bypass, BackendType::Container).is_ok());
     }
 
     // =========================================================================
@@ -533,6 +664,7 @@ mod tests {
             },
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::Auto,
         };
 
         let escapes = validate_paths(&config);
