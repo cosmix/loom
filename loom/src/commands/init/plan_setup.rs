@@ -8,8 +8,9 @@ use crate::plan::graph::levels::compute_all_levels;
 use crate::plan::parser::parse_plan;
 use crate::plan::schema::{
     check_knowledge_recommendations, check_sandbox_recommendations, detect_stage_type,
-    validate_structural_preflight, StageDefinition,
+    validate_structural_preflight, BackendType, StageDefinition,
 };
+use crate::sandbox::{merge_config as merge_sandbox_config, validate_config as validate_sandbox};
 use crate::verify::serialize_stage_to_markdown;
 use anyhow::{Context, Result};
 use chrono::Utc;
@@ -103,6 +104,26 @@ pub fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<usiz
     let preflight_warnings = validate_structural_preflight(&stages, repo_root.as_deref());
     for warning in &preflight_warnings {
         println!("  {} {}", "⚠".yellow().bold(), warning.yellow());
+    }
+
+    // Validate every stage's resolved sandbox against the project backend.
+    // This catches incompatible combinations (e.g. bypass-permissions on
+    // native) at init time — far cheaper than discovering the mismatch
+    // mid-run when the daemon refuses to spawn the session.
+    let project_backend = work_dir::read_project_execution(work_dir.root())
+        .context("Failed to read project execution config from .work/config.toml")?
+        .map(|cfg| cfg.backend)
+        .unwrap_or(BackendType::Native);
+    let plan_sandbox = &parsed_plan.metadata.loom.sandbox;
+    for stage_def in &stages {
+        let stage_type = detect_stage_type(stage_def);
+        let merged = merge_sandbox_config(plan_sandbox, &stage_def.sandbox, stage_type);
+        validate_sandbox(&merged, project_backend).with_context(|| {
+            format!(
+                "Stage '{}' has an incompatible sandbox configuration for backend '{}'",
+                stage_def.id, project_backend
+            )
+        })?;
     }
 
     let base_branch =

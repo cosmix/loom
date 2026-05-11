@@ -172,6 +172,7 @@ impl StageExecutor for Orchestrator {
             stage_id,
             &self.config.repo_root,
             Some(resolved.branch_name()),
+            self.config.backend_type,
         ) {
             Ok(wt) => wt,
             Err(e) => {
@@ -246,6 +247,23 @@ impl StageExecutor for Orchestrator {
             &stage.sandbox,
             stage.stage_type,
         );
+        // Defense-in-depth: re-validate at spawn time. `loom init` already
+        // rejects incompatible configs, but the user might have hand-edited
+        // .work/config.toml to drop the container backend marker between
+        // init and run. Refuse to spawn rather than silently downgrade.
+        if let Err(e) = crate::sandbox::validate_config(&merged_sandbox, self.config.backend_type) {
+            let err_msg = format!("{e:#}");
+            eprintln!("Stage '{stage_id}' blocked: invalid sandbox config at spawn: {err_msg}");
+            if stage.try_mark_blocked().is_ok() {
+                stage.failure_info = Some(FailureInfo {
+                    failure_type: FailureType::InfrastructureError,
+                    detected_at: Utc::now(),
+                    evidence: vec![err_msg],
+                });
+                self.save_stage(&stage)?;
+            }
+            return Ok(());
+        }
         crate::sandbox::expand_paths(&mut merged_sandbox);
         if let Err(e) = crate::sandbox::write_settings(&merged_sandbox, &worktree.path) {
             eprintln!("Warning: Failed to write sandbox settings for stage '{stage_id}': {e}");
@@ -262,6 +280,8 @@ impl StageExecutor for Orchestrator {
                 &session.id,
                 &self.config.work_dir,
                 &hooks_dir,
+                merged_sandbox.permission_mode,
+                self.config.backend_type,
             ) {
                 eprintln!("Warning: Failed to set up hooks for stage '{stage_id}': {e}");
                 // Continue anyway - hooks are optional enhancement
@@ -340,7 +360,7 @@ impl StageExecutor for Orchestrator {
         Ok(())
     }
 
-    fn start_knowledge_stage(&mut self, stage: Stage) -> Result<()> {
+    fn start_knowledge_stage(&mut self, mut stage: Stage) -> Result<()> {
         let stage_id = stage.id.clone();
 
         // Generate and write sandbox settings to main repo
@@ -349,6 +369,22 @@ impl StageExecutor for Orchestrator {
             &stage.sandbox,
             stage.stage_type,
         );
+        // Defense-in-depth: re-validate at spawn time even for knowledge stages.
+        if let Err(e) = crate::sandbox::validate_config(&merged_sandbox, self.config.backend_type) {
+            let err_msg = format!("{e:#}");
+            eprintln!(
+                "Knowledge stage '{stage_id}' blocked: invalid sandbox config at spawn: {err_msg}"
+            );
+            if stage.try_mark_blocked().is_ok() {
+                stage.failure_info = Some(FailureInfo {
+                    failure_type: FailureType::InfrastructureError,
+                    detected_at: Utc::now(),
+                    evidence: vec![err_msg],
+                });
+                self.save_stage(&stage)?;
+            }
+            return Ok(());
+        }
         crate::sandbox::expand_paths(&mut merged_sandbox);
         if let Err(e) = crate::sandbox::write_settings(&merged_sandbox, &self.config.repo_root) {
             eprintln!(
@@ -373,6 +409,8 @@ impl StageExecutor for Orchestrator {
                 stage_id.to_string(),
                 session.id.clone(),
                 absolute_work_dir,
+                merged_sandbox.permission_mode,
+                self.config.backend_type,
             );
 
             // Set up hooks in the main repo (not a worktree)
