@@ -399,7 +399,7 @@
 
 ## Mount order inversion silently defeats the ro base
 
-**What happened:** When hardening the container backend's `/repo` mount from rw to ro, a subagent could construct the mount list with the rw worktree overlay listed _before_ the ro base mount (e.g., `--mount=type=bind,...,/repo/.worktrees/X` then `--mount=type=bind,...,/repo`). Docker/Podman apply mounts in argument order — later entries shadow earlier ones at overlapping paths. If the rw overlay on `.worktrees/X` is applied first and the ro base is applied second, the ro base silently overwrites (or shadows) the rw layer, making `/repo/.worktrees/X` also read-only. Worse, the reverse: if the ro base is applied first and then a rw overlay of `/repo` (for Merge stages) is applied second, the entire `/repo` becomes rw again.
+**What happened:** When hardening the container backend's `/repo` mount from rw to ro, a subagent could construct the mount list with the rw worktree overlay listed *before* the ro base mount (e.g., `--mount=type=bind,...,/repo/.worktrees/X` then `--mount=type=bind,...,/repo`). Docker/Podman apply mounts in argument order — later entries shadow earlier ones at overlapping paths. If the rw overlay on `.worktrees/X` is applied first and the ro base is applied second, the ro base silently overwrites (or shadows) the rw layer, making `/repo/.worktrees/X` also read-only. Worse, the reverse: if the ro base is applied first and then a rw overlay of `/repo` (for Merge stages) is applied second, the entire `/repo` becomes rw again.
 
 **Why:** Container runtimes apply bind mounts in the order they appear in the run command. There is no error — the later mount simply takes precedence at overlapping prefixes.
 
