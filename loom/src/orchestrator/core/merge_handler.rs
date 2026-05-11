@@ -655,16 +655,28 @@ impl Orchestrator {
                 // Kill the original session to prevent zombie processes.
                 // When loom stage complete detected a merge conflict, the Stage session
                 // may still be running -- actively terminate it.
-                if let Err(e) = self
+                let kill_result = self
                     .dispatcher
                     .for_session(&stale_session)
-                    .kill_session(&stale_session)
-                {
+                    .kill_session(&stale_session);
+                if let Err(e) = &kill_result {
                     tracing::debug!(
                         session_id = %stale_session_id,
                         error = %e,
                         "Failed to kill stale session (may already be dead)"
                     );
+                }
+                if kill_result.is_ok()
+                    && stale_session.backend
+                        == crate::plan::schema::execution::BackendType::Container
+                {
+                    let mut updated_session = stale_session.clone();
+                    updated_session.clear_container_identity();
+                    if let Err(e) = self.save_session(&updated_session) {
+                        eprintln!(
+                            "Warning: failed to clear container identity for stale session '{stale_session_id}': {e}"
+                        );
+                    }
                 }
                 // Remove the old signal file so it doesn't block respawning
                 if let Err(e) = remove_signal(&stale_session_id, &self.config.work_dir) {

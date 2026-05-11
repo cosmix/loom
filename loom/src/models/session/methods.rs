@@ -126,6 +126,18 @@ impl Session {
         self.last_active = Utc::now();
     }
 
+    /// Clear container metadata after the container has been removed.
+    ///
+    /// Called after a successful `kill_session` on a container-backed session
+    /// so that persisted session files no longer reference a removed container.
+    /// This prevents stale `container_name` / `runtime` values from misleading
+    /// `loom container logs` and `loom container list`.
+    pub fn clear_container_identity(&mut self) {
+        self.runtime = None;
+        self.container_name = None;
+        self.last_active = Utc::now();
+    }
+
     pub fn set_worktree_path(&mut self, path: PathBuf) {
         self.worktree_path = Some(path);
     }

@@ -43,6 +43,9 @@ pub fn dispatch(command: Commands) -> Result<()> {
                 follow,
                 tail,
             } => loom::commands::container::logs::execute(stage_id, follow, tail),
+            ContainerCommands::List { all, json } => {
+                loom::commands::container::list::execute(all, json)
+            }
         },
         Commands::Run {
             manual,

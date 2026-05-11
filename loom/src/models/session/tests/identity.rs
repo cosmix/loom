@@ -93,3 +93,21 @@ fn knowledge_session_serializes_with_session_type_knowledge() {
     assert!(json.contains("\"session_type\":\"knowledge\""));
     assert!(json.contains("\"tracking_key\":\"loom-knowledge-kb\""));
 }
+
+#[test]
+fn clear_container_identity_resets_runtime_and_name() {
+    let mut session = Session::new();
+    session.set_container_identity("podman".to_string(), "loom-clear-test".to_string());
+    assert!(session.runtime.is_some());
+    assert!(session.container_name.is_some());
+
+    session.clear_container_identity();
+    assert!(
+        session.runtime.is_none(),
+        "runtime should be None after clear"
+    );
+    assert!(
+        session.container_name.is_none(),
+        "container_name should be None after clear"
+    );
+}
