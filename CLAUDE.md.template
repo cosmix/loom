@@ -289,7 +289,7 @@ Agent teams provide inter-agent messaging, shared task lists, and persistent sta
 
 **⚠️ CHECK SKILLS & AGENTS BEFORE IMPLEMENTING**
 
-`loom-senior-software-engineer` uses Opus. `loom-software-engineer` uses Sonnet (high thinking effort). **The plan author decides which model each stage uses** based on whether the work is architectural (needs judgment → opus) or execution (follows detailed instructions → sonnet). Every stage in a plan MUST set `model` explicitly.
+`loom-senior-software-engineer` uses Opus (xhigh thinking effort on `opus[1m]`). `loom-software-engineer` uses Sonnet (high thinking effort). **The plan author decides which model each stage uses** based on whether the work is architectural (needs judgment → opus) or execution (follows detailed instructions → sonnet). Every stage in a plan MUST set `model` explicitly; default `reasoning_effort` is `xhigh` for `opus[1m]` and `high` otherwise.
 
 | Agent                           | When to Use                                                                                                                                                     |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |

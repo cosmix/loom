@@ -44,12 +44,16 @@ impl StageType {
         }
     }
 
-    /// Default reasoning effort for this stage type.
-    /// All stage types use high reasoning effort.
+    /// Default reasoning effort for this stage type, given the effective model.
     /// Sonnet stages need high effort to compensate for the capability gap.
-    /// Opus stages use high for thoroughness.
-    pub fn default_reasoning_effort(&self) -> &'static str {
-        "high"
+    /// Opus 4.7 1M-context stages use xhigh for thoroughness on architectural work.
+    /// Any other model defaults to high.
+    pub fn default_reasoning_effort(&self, effective_model: &str) -> &'static str {
+        if effective_model == "opus[1m]" {
+            "xhigh"
+        } else {
+            "high"
+        }
     }
 }
 

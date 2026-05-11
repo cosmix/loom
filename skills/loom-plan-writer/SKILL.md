@@ -174,7 +174,7 @@ loom:
 
 | Category | Model | Reasoning | When |
 | --- | --- | --- | --- |
-| **Architectural** | `model: "opus[1m]"` | `reasoning_effort: "high"` | Stage requires design decisions, novel patterns, cross-cutting judgment |
+| **Architectural** | `model: "opus[1m]"` | `reasoning_effort: "xhigh"` | Stage requires design decisions, novel patterns, cross-cutting judgment |
 | **Execution** | `model: "sonnet"` | `reasoning_effort: "high"` | Stage follows detailed instructions, applies existing patterns, well-scoped |
 
 **Architectural stages** (use opus) — the agent must make judgment calls:
@@ -199,7 +199,7 @@ loom:
 # Architectural stage — opus for design decisions
 - id: design-auth-system
   model: "opus[1m]"
-  reasoning_effort: "high"
+  reasoning_effort: "xhigh"
   description: |
     Design and implement the authentication module. Must decide:
     - Session storage strategy (JWT vs server-side)
@@ -547,7 +547,7 @@ loom:
     - id: stage-id # Required: unique kebab-case identifier
       name: "Stage Name" # Required: human-readable display name
       model: "sonnet" # Required: "sonnet" for execution, "opus[1m]" for architectural work
-      reasoning_effort: "high" # Required: "high" for both sonnet and opus stages
+      reasoning_effort: "high" # Required: "high" for sonnet stages, "xhigh" for opus[1m] stages
       description: | # Required: full task description for agent
         What this stage must accomplish.
 

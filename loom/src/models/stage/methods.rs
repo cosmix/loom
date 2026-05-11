@@ -85,11 +85,14 @@ impl Stage {
     }
 
     /// Returns the effective reasoning effort for this stage.
-    /// Uses the explicit override if set, otherwise falls back to the stage-type default.
+    /// Uses the explicit override if set, otherwise falls back to the stage-type
+    /// default (which is model-aware: opus[1m] gets xhigh, everything else high).
     pub fn effective_reasoning_effort(&self) -> &str {
-        self.reasoning_effort
-            .as_deref()
-            .unwrap_or_else(|| self.stage_type.default_reasoning_effort())
+        if let Some(effort) = self.reasoning_effort.as_deref() {
+            return effort;
+        }
+        let model = self.effective_model();
+        self.stage_type.default_reasoning_effort(model)
     }
 
     pub fn generate_id(name: &str) -> String {
