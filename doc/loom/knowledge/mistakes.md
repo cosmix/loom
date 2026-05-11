@@ -396,3 +396,13 @@
 - When adding a new terminal emulator: check that detection and spawn agree about *how* the binary is reachable. If detection falls back to `.app` existence, spawn must NOT call `Command::new(binary())` directly on macOS.
 
 **Fix:** `Self::Ghostty` arm in `emulator.rs:build_command()` is now cfg-gated; macOS reassigns `command = Command::new("open")` and uses `open -na Ghostty --args --working-directory=... --title=... -e bash -c CMD`. Linux behavior unchanged. `binary()` still returns `"ghostty"` (correct for Linux PATH lookup and for any macOS user with a manual shim). Tests `test_ghostty_build_command_macos` and `test_ghostty_build_command_linux` are cfg-gated so each runs on its target platform.
+
+## Mount order inversion silently defeats the ro base
+
+**What happened:** When hardening the container backend's `/repo` mount from rw to ro, a subagent could construct the mount list with the rw worktree overlay listed _before_ the ro base mount (e.g., `--mount=type=bind,...,/repo/.worktrees/X` then `--mount=type=bind,...,/repo`). Docker/Podman apply mounts in argument order — later entries shadow earlier ones at overlapping paths. If the rw overlay on `.worktrees/X` is applied first and the ro base is applied second, the ro base silently overwrites (or shadows) the rw layer, making `/repo/.worktrees/X` also read-only. Worse, the reverse: if the ro base is applied first and then a rw overlay of `/repo` (for Merge stages) is applied second, the entire `/repo` becomes rw again.
+
+**Why:** Container runtimes apply bind mounts in the order they appear in the run command. There is no error — the later mount simply takes precedence at overlapping prefixes.
+
+**Prevention:** Always verify mount construction in `build_mounts` unit tests by asserting `mounts[0] == Mount::ro(_, "/repo")` (ro base is first), and that rw overlay paths are tighter subtrees that come after. For Merge/BaseConflict stages that need a full rw `/repo`, there should be no ro base at all — document this as the intentional exception.
+
+**Fix:** The ro base mount must always be `args[0]` in the list, with all rw overlays appended after it. Add an assertion in `build_mounts_standard_stage_has_ro_repo_and_rw_worktree` that checks mount ordering by index, not just presence.

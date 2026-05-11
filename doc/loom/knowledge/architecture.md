@@ -286,3 +286,51 @@ Acceptance criteria (verify/criteria/runner.rs) now handle both:
 Returns: GoalBackwardResult::Passed | GapsFound | HumanNeeded. Storage: `.work/verifications/<stage-id>.json`.
 
 Note: truths.rs module and verify_truth_checks() are retained for before_stage/after_stage verification (pre/post conditions), NOT for goal-backward.
+
+## Container Backend — Mount-Topology Hardening Decision
+
+**Context:** The initial container backend mounts `/repo` as `rw bind` (full read-write), which gives container sessions write access to `.git/`, sibling worktrees, `doc/plans/`, knowledge files, and `.work/config.toml` (where `forward_credentials` can be escalated for the next stage). The hardening plan narrows this surface area.
+
+**Chosen approach: ro base + per-stage rw overlays**
+
+Mount `/repo` read-only as the base layer, then stack explicit rw mounts back on top for only the paths a given stage legitimately needs:
+
+| Mount | Type | Rationale |
+| --- | --- | --- |
+| `/repo` (host repo root) | ro (base) | Default deny — container cannot mutate .git/, sibling worktrees, doc/plans/, .work/config.toml |
+| `/repo/.worktrees/<stage-id>` | rw | Stage's working tree — all code writes land here |
+| `/repo/.work/sessions` | rw | Session log writes |
+| `/repo/.work/memory` | rw | `loom memory` writes |
+| `/repo/.work/handoffs` | rw | Handoff file writes |
+| `/repo/.work/crashes` | rw | Crash report writes |
+| `/repo/.work/wrappers` | rw | Wrapper scripts (execute-bit semantics on some runtimes require rw) |
+| `/repo/.work/pids` | rw | Wrapper writes PID here |
+| `/repo/doc/loom/knowledge` | rw | Knowledge stages only |
+| `/repo` (replaces ro base) | rw | Merge / BaseConflict stages only — they need broad write access to resolve conflicts |
+| `settings.local.json` (worktree or root) | ro overlay | Prevents agent from disabling hooks from inside the container |
+
+**Why NOT mount only `.worktrees/<stage-id>`:**
+
+Git worktrees use relative symlinks that require the parent tree to exist in the container:
+
+- `.work` symlink inside the worktree points to `../../.work` (relative path — resolves to `/repo/.work` only if `/repo` is mounted)
+- `.git` inside the worktree is a file (not a directory) containing `gitdir: ../../.git/worktrees/<stage-id>` — the relative gitdir requires `/repo/.git` to be accessible at the same fixed path
+
+Mounting only `.worktrees/<stage-id>` would break both the shared-state symlink and all git operations inside the container.
+
+**Mount ordering matters:** Later mounts shadow earlier ones on overlapping paths. The ro base must be listed first in the `docker|podman run` args, followed by rw overlays. Reversing this order (rw before ro at the same path) leaves the rw mount effective — a silent security regression.
+
+## Container Backend — Lifetime and Log Capture Decision
+
+**Problem with `run -d --rm`:**
+
+The `--rm` flag causes the container runtime to automatically remove the container as soon as the entrypoint process exits. The `<runtime> logs` command (which reads stdout/stderr) is only usable while the container exists — once removed, the log history is gone forever. When `firewall.sh` or the entrypoint dies early (common on rootless Podman without slirp4netns ≥ 1.2.3, and on Apple Container's limited Linux capability emulation), the crash report gets `log_tail: None` and `log_path: None` — no actionable diagnostic.
+
+**Chosen approach: explicit post-capture removal**
+
+Remove `--rm` from `build_run_args`. Containers now persist after process exit, in the "exited" state. Explicit cleanup occurs:
+
+1. **On `wait_until_running` failure** in `spawn_common`: capture logs → persist to `.work/crashes/<stage>-<ts>-<session>.container.log` → `<runtime> rm -f <name>` (best-effort, errors ignored).
+2. **In `kill_session`** (called by crash handler AND by `loom sessions kill`): capture logs → persist → then proceed with existing `rm -f` cleanup.
+
+**Invariant:** Log capture is best-effort — failure to capture must never block container removal. The `persist_log` call is wrapped in `.ok()` / error-logged-to-stderr, and the `rm -f` always runs.
