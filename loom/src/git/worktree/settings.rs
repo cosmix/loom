@@ -13,6 +13,8 @@ use std::io::{Read, Write};
 use std::path::Path;
 
 use crate::hooks::{setup_hooks_for_worktree, HooksConfig};
+use crate::plan::schema::{BackendType, PermissionMode};
+use crate::sandbox::is_sensitive_env_key;
 
 /// Creates or restores the .work symlink in a worktree.
 ///
@@ -42,7 +44,11 @@ pub fn ensure_work_symlink(worktree_path: &Path, repo_root: &Path) -> Result<()>
 /// This ensures:
 /// 1. Instructions (CLAUDE.md) are shared
 /// 2. Permissions (settings.json) include both global hooks and session-specific hooks
-pub fn setup_claude_directory(worktree_path: &Path, repo_root: &Path) -> Result<()> {
+pub fn setup_claude_directory(
+    worktree_path: &Path,
+    repo_root: &Path,
+    backend: BackendType,
+) -> Result<()> {
     let main_claude_dir = repo_root.join(".claude");
     let worktree_claude_dir = worktree_path.join(".claude");
 
@@ -69,7 +75,7 @@ pub fn setup_claude_directory(worktree_path: &Path, repo_root: &Path) -> Result<
         // Create settings.json with trust and auto-accept settings merged with main repo settings
         let main_settings = main_claude_dir.join("settings.json");
         let worktree_settings = worktree_claude_dir.join("settings.json");
-        create_worktree_settings(&main_settings, &worktree_settings, worktree_path)?;
+        create_worktree_settings(&main_settings, &worktree_settings, worktree_path, backend)?;
 
         // Copy settings.local.json if it exists (contains user-granted runtime permissions)
         // Use file locking to prevent reading a partially written file during concurrent syncs
@@ -292,24 +298,28 @@ fn set_permissions(settings: &mut Value, allow: Vec<String>, deny: Vec<String>) 
     Ok(())
 }
 
-/// Create settings.json for a worktree with trust and auto-accept settings.
+/// Create settings.json for a worktree with trust setting and inherited config.
 ///
 /// This function:
 /// 1. Reads the main repo's settings.json (if it exists)
 /// 2. Sets `hasTrustDialogAccepted: true` to skip the trust prompt
-/// 3. Sets `permissions.defaultMode: "acceptEdits"` to auto-accept file edits
+/// 3. Scrubs sensitive env keys from the inherited `env` block when targeting
+///    the container backend (per finding #14)
 /// 4. Writes the merged result to the worktree
 ///
-/// Note: This creates the base settings.json. The hooks system will later merge in
-/// session-specific hooks via setup_worktree_hooks().
+/// Note: We deliberately do NOT write `permissions.defaultMode` here. The
+/// resolved permission mode (stage-type default + plan override + stage
+/// override) lives in `settings.local.json` written by `sandbox::write_settings`
+/// using `apply_default_mode`. Writing it here would race the sandbox-merge
+/// step and undercut the resolved value. See finding #5 (option 2).
 ///
-/// This solves two issues:
-/// - Issue 9: Eliminates the "Yes, proceed / No, exit" prompt on session start
-/// - Issue 10: Enables auto-accept edits for seamless operation
+/// This creates the base settings.json. The hooks system later merges in
+/// session-specific hooks via setup_worktree_hooks().
 fn create_worktree_settings(
     main_settings: &Path,
     worktree_settings: &Path,
     worktree_path: &Path,
+    backend: BackendType,
 ) -> Result<()> {
     // Start with main repo settings or empty object
     let mut settings: Value = if main_settings.exists() {
@@ -328,19 +338,22 @@ fn create_worktree_settings(
     // Set hasTrustDialogAccepted to skip the trust prompt
     obj.insert("hasTrustDialogAccepted".to_string(), json!(true));
 
-    // Ensure permissions object exists and set defaultMode to acceptEdits
-    let permissions = obj
-        .entry("permissions")
-        .or_insert_with(|| json!({}))
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("permissions must be a JSON object"))?;
+    // Ensure a permissions object exists so the `.work` allow-list block
+    // below can attach to it. We intentionally do NOT seed `defaultMode`
+    // here — that's the sandbox-resolved value's job (see fn-level docs).
+    obj.entry("permissions").or_insert_with(|| json!({}));
 
-    permissions.insert("defaultMode".to_string(), json!("acceptEdits"));
-
-    // Remove any stale LOOM_MAIN_AGENT_PID from copied settings
-    // This variable must be set dynamically by the wrapper script at runtime
+    // Scrub the copied env block:
+    //   * LOOM_MAIN_AGENT_PID is set dynamically per-session by the wrapper.
+    //   * Sensitive host credentials are stripped when targeting the
+    //     container backend (see `sandbox::SENSITIVE_ENV_KEYS`). Native
+    //     backends inherit the host env directly, so there's nothing extra
+    //     to strip there beyond LOOM_MAIN_AGENT_PID.
     if let Some(env) = obj.get_mut("env").and_then(|v| v.as_object_mut()) {
         env.remove("LOOM_MAIN_AGENT_PID");
+        if backend == BackendType::Container {
+            env.retain(|key, _| !is_sensitive_env_key(key));
+        }
     }
 
     // Resolve the .work symlink to its absolute target path and add permissions.
@@ -420,6 +433,8 @@ pub fn setup_worktree_hooks(
     session_id: &str,
     work_dir: &Path,
     hooks_dir: &Path,
+    permission_mode: PermissionMode,
+    backend: BackendType,
 ) -> Result<()> {
     // Canonicalize work_dir to absolute path so hooks work regardless of
     // Claude Code's current working directory. This fixes "spawn /bin/sh ENOENT"
@@ -433,6 +448,8 @@ pub fn setup_worktree_hooks(
         stage_id.to_string(),
         session_id.to_string(),
         absolute_work_dir,
+        permission_mode,
+        backend,
     );
 
     setup_hooks_for_worktree(worktree_path, &config).with_context(|| {
@@ -658,7 +675,13 @@ mod tests {
 
         // Run create_worktree_settings
         let worktree_settings_path = worktree.join("settings.json");
-        create_worktree_settings(&main_settings_path, &worktree_settings_path, &worktree).unwrap();
+        create_worktree_settings(
+            &main_settings_path,
+            &worktree_settings_path,
+            &worktree,
+            BackendType::Native,
+        )
+        .unwrap();
 
         // Read and parse the generated settings
         let content = std::fs::read_to_string(&worktree_settings_path).unwrap();
@@ -700,9 +723,13 @@ mod tests {
             "Should contain Read(//resolved/handoffs/**)"
         );
 
-        // Trust and defaultMode should also be set
+        // Trust is set; defaultMode is intentionally NOT written here —
+        // it lives in settings.local.json via sandbox::apply_default_mode.
         assert_eq!(settings["hasTrustDialogAccepted"], json!(true));
-        assert_eq!(settings["permissions"]["defaultMode"], json!("acceptEdits"));
+        assert!(
+            settings["permissions"].get("defaultMode").is_none(),
+            "Base settings.json must not write defaultMode (finding #5)"
+        );
     }
 
     #[test]
@@ -714,14 +741,22 @@ mod tests {
         // No .work symlink exists -- function should still succeed
         let main_settings_path = temp_dir.path().join("nonexistent_settings.json");
         let worktree_settings_path = worktree.join("settings.json");
-        create_worktree_settings(&main_settings_path, &worktree_settings_path, &worktree).unwrap();
+        create_worktree_settings(
+            &main_settings_path,
+            &worktree_settings_path,
+            &worktree,
+            BackendType::Native,
+        )
+        .unwrap();
 
         let content = std::fs::read_to_string(&worktree_settings_path).unwrap();
         let settings: Value = serde_json::from_str(&content).unwrap();
 
-        // Should still have trust and defaultMode but no resolved work permissions
         assert_eq!(settings["hasTrustDialogAccepted"], json!(true));
-        assert_eq!(settings["permissions"]["defaultMode"], json!("acceptEdits"));
+        assert!(
+            settings["permissions"].get("defaultMode").is_none(),
+            "Base settings.json must not write defaultMode"
+        );
 
         // Allow array should not exist (no permissions were added)
         let allow = settings
@@ -731,6 +766,98 @@ mod tests {
         assert!(
             allow.is_none(),
             "No allow array should exist when there is no .work symlink"
+        );
+    }
+
+    #[test]
+    fn test_create_worktree_settings_scrubs_sensitive_env_for_container() {
+        let temp_dir = TempDir::new().unwrap();
+        let worktree = temp_dir.path().join("worktree");
+        std::fs::create_dir_all(&worktree).unwrap();
+
+        let main_claude = temp_dir.path().join("repo").join(".claude");
+        std::fs::create_dir_all(&main_claude).unwrap();
+        let main_settings_json = json!({
+            "env": {
+                "FOO": "keep",
+                "AWS_ACCESS_KEY_ID": "leak",
+                "GH_TOKEN": "leak",
+                "ANTHROPIC_API_KEY": "leak",
+                "MCP_SERVER_PATH": "leak",
+                "LOOM_MAIN_AGENT_PID": "stale"
+            }
+        });
+        let main_settings_path = main_claude.join("settings.json");
+        std::fs::write(
+            &main_settings_path,
+            serde_json::to_string_pretty(&main_settings_json).unwrap(),
+        )
+        .unwrap();
+
+        let worktree_settings_path = worktree.join("settings.json");
+        create_worktree_settings(
+            &main_settings_path,
+            &worktree_settings_path,
+            &worktree,
+            BackendType::Container,
+        )
+        .unwrap();
+
+        let content = std::fs::read_to_string(&worktree_settings_path).unwrap();
+        let settings: Value = serde_json::from_str(&content).unwrap();
+
+        let env = settings["env"].as_object().unwrap();
+        assert!(env.contains_key("FOO"));
+        assert!(!env.contains_key("AWS_ACCESS_KEY_ID"));
+        assert!(!env.contains_key("GH_TOKEN"));
+        assert!(!env.contains_key("ANTHROPIC_API_KEY"));
+        assert!(!env.contains_key("MCP_SERVER_PATH"));
+        assert!(
+            !env.contains_key("LOOM_MAIN_AGENT_PID"),
+            "LOOM_MAIN_AGENT_PID is always stripped"
+        );
+    }
+
+    #[test]
+    fn test_create_worktree_settings_preserves_env_for_native() {
+        let temp_dir = TempDir::new().unwrap();
+        let worktree = temp_dir.path().join("worktree");
+        std::fs::create_dir_all(&worktree).unwrap();
+
+        let main_claude = temp_dir.path().join("repo").join(".claude");
+        std::fs::create_dir_all(&main_claude).unwrap();
+        let main_settings_json = json!({
+            "env": {
+                "AWS_ACCESS_KEY_ID": "keep-on-native",
+                "GH_TOKEN": "keep-on-native",
+                "LOOM_MAIN_AGENT_PID": "stale"
+            }
+        });
+        let main_settings_path = main_claude.join("settings.json");
+        std::fs::write(
+            &main_settings_path,
+            serde_json::to_string_pretty(&main_settings_json).unwrap(),
+        )
+        .unwrap();
+
+        let worktree_settings_path = worktree.join("settings.json");
+        create_worktree_settings(
+            &main_settings_path,
+            &worktree_settings_path,
+            &worktree,
+            BackendType::Native,
+        )
+        .unwrap();
+
+        let content = std::fs::read_to_string(&worktree_settings_path).unwrap();
+        let settings: Value = serde_json::from_str(&content).unwrap();
+
+        let env = settings["env"].as_object().unwrap();
+        assert!(env.contains_key("AWS_ACCESS_KEY_ID"));
+        assert!(env.contains_key("GH_TOKEN"));
+        assert!(
+            !env.contains_key("LOOM_MAIN_AGENT_PID"),
+            "LOOM_MAIN_AGENT_PID is always stripped, even on native"
         );
     }
 }
