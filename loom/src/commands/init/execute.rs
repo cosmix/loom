@@ -4,7 +4,7 @@ use crate::fs::permissions::{ensure_loom_permissions, migrate_legacy_trust};
 use crate::fs::work_dir::WorkDir;
 use crate::fs::work_integrity::validate_work_dir_state;
 use crate::git::install_pre_commit_hook;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use colored::Colorize;
 use std::path::{Path, PathBuf};
 
@@ -58,7 +58,15 @@ impl Drop for InitGuard {
 /// # Arguments
 /// * `plan_path` - Optional path to a plan file to initialize with
 /// * `clean` - If true, clean up stale resources before initialization
-pub fn execute(plan_path: Option<PathBuf>, clean: bool) -> Result<()> {
+/// * `backend` - Optional project backend override (`native` | `container`).
+/// * `no_build` - When provisioning the container backend, skip the actual
+///   image build and pin `image_digest = "pending"`.
+pub fn execute(
+    plan_path: Option<PathBuf>,
+    clean: bool,
+    backend: Option<String>,
+    no_build: bool,
+) -> Result<()> {
     let repo_root = std::env::current_dir()?;
     let repo_bootstrap = crate::git::ensure_repo_ready_for_worktrees(&repo_root)?;
 
@@ -83,17 +91,28 @@ pub fn execute(plan_path: Option<PathBuf>, clean: bool) -> Result<()> {
     println!("\n{}", "Initialize".bold());
     println!("{}", "─".repeat(40).dimmed());
 
-    // Create guard to ensure cleanup on any failure after .work is created
+    // Per finding #11: pre-existing .work must NEVER be deleted on failure.
+    // Only arm the cleanup guard when this invocation actually created the
+    // directory.
+    let work_dir_existed = repo_root.join(".work").exists();
     let mut guard = InitGuard::new(repo_root.clone());
-
     let work_dir = WorkDir::new(".")?;
-    work_dir.initialize()?;
-    guard.mark_work_created();
-    println!(
-        "  {} Directory structure created {}",
-        "✓".green().bold(),
-        ".work/".dimmed()
-    );
+    if !work_dir_existed {
+        work_dir.initialize()?;
+        guard.mark_work_created();
+        println!(
+            "  {} Directory structure created {}",
+            "✓".green().bold(),
+            ".work/".dimmed()
+        );
+    } else {
+        work_dir.load()?;
+        println!(
+            "  {} Reusing existing {} (reconfigure mode)",
+            "→".cyan().bold(),
+            ".work/".dimmed()
+        );
+    }
 
     // Install git pre-commit hook to prevent .work commits
     match install_pre_commit_hook(&repo_root) {
@@ -144,8 +163,90 @@ pub fn execute(plan_path: Option<PathBuf>, clean: bool) -> Result<()> {
         print_summary(None, 0);
     }
 
+    // Per finding #11: project-level backend (`--backend`) is applied AFTER
+    // plan setup so a reconfigure invocation can flip the backend without
+    // touching stage definitions. When `backend` is None we PRESERVE the
+    // existing `[project_execution]` section.
+    if let Some(backend_str) = backend {
+        apply_project_backend(&work_dir, &repo_root, &backend_str, no_build)?;
+    }
+
     // Success - disarm the guard to prevent cleanup
     guard.disarm();
+
+    Ok(())
+}
+
+/// Apply a project-level backend selection to `.work/config.toml`.
+///
+/// For container backend: detects runtime, computes fingerprint, builds the
+/// image (unless `no_build`), and pins the resulting digest. For native
+/// backend: clears any container metadata.
+fn apply_project_backend(
+    work_dir: &WorkDir,
+    repo_root: &Path,
+    backend_str: &str,
+    no_build: bool,
+) -> Result<()> {
+    use crate::plan::schema::execution::{
+        BackendType, ProjectContainerConfig, ProjectExecutionConfig,
+    };
+
+    let backend_type: BackendType = backend_str
+        .parse()
+        .with_context(|| format!("Invalid --backend value: {backend_str}"))?;
+
+    println!("\n{}", "Backend".bold());
+    println!("{}", "─".repeat(40).dimmed());
+
+    match backend_type {
+        BackendType::Native => {
+            crate::fs::work_dir::write_project_execution(
+                work_dir.root(),
+                &ProjectExecutionConfig {
+                    backend: BackendType::Native,
+                    container: None,
+                },
+            )?;
+            println!("  {} Backend: native", "✓".green().bold());
+        }
+        BackendType::Container => {
+            use crate::orchestrator::terminal::container::{
+                fingerprint as fp, image, runtime as rt,
+            };
+            let project_root_for_fp = work_dir
+                .project_root()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| repo_root.to_path_buf());
+            let runtime = rt::detect_runtime("auto")?;
+            let fingerprint = fp::compute_fingerprint(&project_root_for_fp, &[]);
+            let started = std::time::Instant::now();
+            let (digest, action) = if no_build {
+                ("pending".to_string(), "skipped (--no-build)")
+            } else {
+                let d = image::ensure_image(&fingerprint, runtime, false)?;
+                (d, "built")
+            };
+            crate::fs::work_dir::write_project_execution(
+                work_dir.root(),
+                &ProjectExecutionConfig {
+                    backend: BackendType::Container,
+                    container: Some(ProjectContainerConfig {
+                        runtime: runtime.binary().to_string(),
+                        fingerprint: fingerprint.clone(),
+                        image_digest: digest.clone(),
+                        forward_credentials: Vec::new(),
+                    }),
+                },
+            )?;
+            let elapsed = started.elapsed();
+            println!("  {} Backend: container", "✓".green().bold());
+            println!("    Runtime:     {}", runtime);
+            println!("    Fingerprint: {}", fingerprint);
+            println!("    Image:       {} ({})", digest, action);
+            println!("    Elapsed:     {:?}", elapsed);
+        }
+    }
 
     Ok(())
 }
