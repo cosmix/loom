@@ -174,8 +174,9 @@ loom memory show [--stage <id>] [--all]
 loom container build
 loom container rebuild
 loom container doctor
-loom container shell [--stage <stage-id>]
+loom container shell <stage-id>
 loom container logs <stage-id> [--follow] [--tail <N>]
+loom container list [--all] [--json]
 ```
 
 `loom container build` builds the project container image (if not already cached). Equivalent to the build step in `loom init --backend container`.
@@ -184,9 +185,11 @@ loom container logs <stage-id> [--follow] [--tail <N>]
 
 `loom container doctor` checks container runtime availability, image freshness, and network configuration.
 
-`loom container shell` opens an interactive shell inside the container using the same topology as a stage session (`/repo` bind mount, hooks, firewall). Useful for debugging the container environment. With `--stage`, runs in the context of that stage's network.
+`loom container shell <stage-id>` opens an interactive shell inside the container for a running stage session (`/repo` bind mount, hooks, firewall). Useful for debugging the container environment.
 
 `loom container logs <stage-id>` tails or follows the stdout/stderr of a running stage's container. Scans `.work/sessions/` for an active container-backed session matching the stage ID, then execs into `<runtime> logs`. Use `--follow` to stream live output; `--tail N` to limit lines shown.
+
+`loom container list` shows all session-backed containers for this workspace. By default only running containers are shown; `--all` includes exited/removed containers. `--json` emits JSON Lines for scripting. For orphan containers left behind by a crashed daemon, run `loom clean --sessions`.
 
 ### Other Commands
 

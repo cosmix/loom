@@ -397,3 +397,32 @@ Containers run **without `--rm`** (explicit post-capture removal to preserve log
 - If a stage ran, its session file persists with `container_name` set, even after the container was removed.
 - A subsequent call to `loom container logs <stage>` will find the stale session file, resolve the container name, then fail at the `<runtime> logs` call because the container no longer exists.
 - The fix: `logs` should check container existence (via `<runtime> inspect`) before exec-ing, and fall back to `.work/crashes/` log files for Exited/removed containers.
+
+### Container Session Identity Symmetry (`set_container_identity` / `clear_container_identity`)
+
+`Session` tracks container identity via two paired methods in `models/session/methods.rs`:
+
+| Method | Called when | Effect |
+|---|---|---|
+| `set_container_identity(runtime, container_name)` | Container is spawned and running | Writes `runtime` + `container_name` fields, persisted to session file |
+| `clear_container_identity()` | Container is removed (`kill_session`, spawn error path) | Nils `runtime` + `container_name`, persisted to session file |
+
+**Invariant:** Any call site that removes a container (via `rm -f`) must call `clear_container_identity()` and persist the session file before returning. Without the clear, session files permanently reference removed containers and mislead `loom container logs` / `loom container list`.
+
+**Where enforced:** `ContainerBackend::kill_session` and the `spawn_common` error path.
+
+### `loom container list`
+
+New subcommand (`commands/container/list.rs`) that enumerates `.work/sessions/` and queries each runtime for live container status. Implemented as of the fix-container-backend-ux plan.
+
+| Flag | Behavior |
+|---|---|
+| *(none)* | Show only running containers |
+| `--all` | Show all containers including exited/removed |
+| `--json` | Emit JSON Lines; keys: `stage`, `container`, `runtime`, `status`, `session_id` |
+
+Runtime status is queried via `<runtime> inspect -f '{{.State.Status}}' <name>` — not from the session file. Returns `"running"`, `"exited"`, `"missing"`, or `"error: ..."`. This makes the command authoritative even for stale session files.
+
+**Note on session schema keys:** The JSON output uses `stage` (not `stage_id`), `container` (not `container_name`), `status` (not `state`). Tests in `list.rs` assert these exact keys.
+
+**Known tech debt:** `build_rows()` in `list.rs` reimplements session-loading + runtime-detection logic that partially overlaps with `load_sessions()` and `pick_container_session()` helpers in `logs.rs`. These should be consolidated into shared helpers in a future refactor. Detection: `rg 'session.runtime.as_deref'` surfaces 3 sites across `logs.rs` / `list.rs`.

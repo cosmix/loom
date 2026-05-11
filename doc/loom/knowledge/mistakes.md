@@ -422,3 +422,37 @@
 - When upgrading a base image's distro version, re-check whether common UIDs (1000, 1001) are now pre-occupied — Ubuntu 24.04 introduced this; future LTS releases may shift again.
 
 **Fix:** `Dockerfile.tmpl` now runs an explicit eviction block before `useradd`: if `getent passwd ${USER_UID}` resolves to a non-`loom` user, `userdel -r` removes it (falling back to non-`-r` if the home dir is shared); same for GID. The fingerprint changes automatically because the template content is embedded in the image fingerprint (`fingerprint.rs:22`), so cached images rebuild without manual cache clearing.
+
+## Session Files Outlive Their Containers
+
+**What happened:** `loom container logs` and `loom container list` trust `container_name` in `.work/sessions/*.md` without checking if the container still exists. A stage that ran and completed leaves a session file with `container_name` set and `status: Completed`. The next call resolves the container name but fails at `<runtime> logs` because the container was already removed.
+
+**Why:** Session files are NOT deleted when containers are removed. Deletion only happens on explicit `loom clean`. A session file with a populated `container_name` is not proof the container is live.
+
+**Prevention:** Before executing any `<runtime> logs|exec|inspect` command against a resolved container name, call `<runtime> inspect -f '{{.State.Status}}' <name>` first. A non-zero exit or "No such container" means the container is gone — fall back to `.work/crashes/` log files. Detection: `rg 'container_name'` in session files does not imply container existence.
+
+**Fix:** Filter by runtime `inspect` status before trusting the session-file `container_name`. `loom container logs` should use `query_container_status()` (already in list.rs) as a pre-flight before exec-ing into `<runtime> logs`.
+
+---
+
+## First-Match Session Iteration Is Unsafe for Retried Stages
+
+**What happened:** `resolve_session_for_stage()` in `logs.rs` iterates `.work/sessions/*.md` and returns the first match for a given `stage_id`. A stage that was retried has multiple session files — an older file with status `Crashed` and a newer file with status `Running`. Iteration order in `fs::read_dir` is unspecified; the stale session may be picked first, pointing to the wrong (or removed) container.
+
+**Why:** `fs::read_dir` returns entries in filesystem order, not creation order. Multiple session files can exist for one stage when retries produce new session IDs.
+
+**Prevention:** When scanning for a session matching a `stage_id`, sort candidates by `last_active` descending (or by session ID timestamp suffix) before picking the first match. Prefer status `Running` over `Completed`/`Crashed` when multiple are present.
+
+**Fix:** In `resolve_session_for_stage`, collect all matching sessions, sort by `last_active` DESC, and prefer `status == Running`. Fall back to the most-recently-active one.
+
+---
+
+## Missing Clearer Breaks Stale-Session Lookups
+
+**What happened:** A `Session` method `set_container_identity` was added to write `runtime` and `container_name`. Without a matching `clear_container_identity` called after container removal, the session file permanently retains the container reference even after `rm -f`. Subsequent `loom container logs` or `loom container list` pick up the stale data and attempt to inspect a non-existent container.
+
+**Why:** Every long-lived resource handle stored on a model struct requires symmetric setter AND clearer. Calling the setter on spawn but not calling the clearer on removal leaves the model in an inconsistent state.
+
+**Prevention:** When adding any resource-identity field to `Session` (or similar models), always implement both setter and clearer in the same commit. Callers that remove the resource (e.g., `kill_session`, `spawn_common` cleanup) must call the clearer before persisting.
+
+**Fix:** Call `session.clear_container_identity()` in `kill_session` and in the `spawn_common` error path, then persist the updated session file. `clear_container_identity` is already implemented in `models/session/methods.rs:135`.

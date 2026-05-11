@@ -420,3 +420,44 @@ Runtime-specific behavior (e.g., Apple Container vs Docker on macOS) can be gate
 **`loom plan verify` contract:** run `parse_plan()` first (auto-runs Tier 1); if it returns `Err`, report fatal errors and exit non-zero. If it succeeds, run the three Tier 2 functions, print their warnings, exit 0 (advisory only).
 
 **Call site:** `loom/src/commands/init/plan_setup.rs` — shows the canonical order and how warnings are surfaced to the user.
+
+## Container CLI Defense-in-Depth: Query Runtime Before Trusting Session File
+
+Container CLI commands (`loom container logs`, `loom container shell`, `loom container list`) resolve the container name from `.work/sessions/*.md`. Session files are NOT deleted on container removal, so a populated `container_name` field is not proof of container liveness.
+
+**Pattern:** Before exec-ing into `<runtime> logs|exec|inspect`, call:
+
+```bash
+<runtime> inspect -f '{{.State.Status}}' <container_name>
+```
+
+Non-zero exit or "no such container" → container is gone. Fall back to `.work/crashes/<stage>-*.container.log` for post-mortem log access. This makes the CLI command robust to stale session files from completed, crashed, or cleaned stages.
+
+**Implementation:** `list.rs::query_container_status()` is the canonical helper — it returns `"running"`, `"exited"`, `"missing"`, or `"error: ..."`. Reuse it in `logs.rs` / `shell.rs` rather than reimplementing.
+
+**Why:** Defense-in-depth. The session file is a cache; the runtime is the authoritative source. Cross-checking prevents confusing errors ("no such container") from reaching the user.
+
+---
+
+## Lifecycle Documentation Belongs in the Module That Owns the Lifecycle
+
+Lifecycle rules for per-stage containers (when created, when removed, what happens on crash) belong in the `//\!` module doc of `orchestrator/terminal/container/mod.rs`, not scattered across callers. This is the single module that owns container lifetime — all other modules call into it.
+
+**Pattern:** When a module owns the full lifecycle of a resource (create → run → cleanup), document that lifecycle contract in the module's top-level `//\!` comment block. Callers reference this doc rather than re-explaining the rules.
+
+**Applied to:** `orchestrator/terminal/container/mod.rs` — documents when containers are removed (spawn failure, kill_session, loom stop, loom clean) and the log-capture invariant (best-effort, never blocks removal).
+
+---
+
+## Session Identity Symmetry: Setter + Clearer Must Travel Together
+
+Every field group on `Session` that represents a runtime resource identity (`container_name` + `runtime` for containers, `pid` for processes) requires a matching setter AND clearer method.
+
+| Field group | Setter | Clearer | Called after |
+|---|---|---|---|
+| `runtime` + `container_name` | `set_container_identity()` | `clear_container_identity()` | Container removed |
+| `pid` | `set_pid()` | *(no clearer — PID is fixed for session lifetime)* | N/A |
+
+**Rule:** Any caller that removes the runtime resource (container rm, process kill) must call the clearer before persisting the session file. `clear_container_identity()` is in `models/session/methods.rs:135`.
+
+**Why:** Without the clearer, session files become permanent references to removed containers. Lookups in `loom container logs` / `loom container list` will find stale entries and produce confusing errors.
