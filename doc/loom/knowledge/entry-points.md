@@ -37,7 +37,7 @@
 | `verify`      | `commands/verify.rs`          | Goal-backward verification                   |
 | `check`       | `commands/check.rs`           | Goal-backward verification (alias)           |
 | `completions` | `commands/completions/mod.rs` | Shell completions (custom scripts + dynamic) |
-| `container`   | `commands/container/mod.rs`   | Container image management (build/rebuild/doctor/shell/logs) |
+| `container`   | `commands/container/mod.rs`   | Container image management (build/rebuild/doctor/shell/logs/list) |
 | `complete`    | Hidden (dynamic completions)  | Backend for shell tab completions            |
 
 Total: 23 visible commands + 1 hidden (complete for dynamic completions). Dispatch: `cli/dispatch.rs` match-based, two-level for nested commands.
@@ -181,8 +181,10 @@ Total: 23 visible commands + 1 hidden (complete for dynamic completions). Dispat
 
 ## Container Subcommand Implementations
 
-- `commands/container/mod.rs` - ContainerCommands enum + dispatch (build, rebuild, doctor, shell, logs)
+- `commands/container/mod.rs` - ContainerCommands enum + dispatch (build, rebuild, doctor, shell, logs, list)
 - `commands/container/logs.rs` - `loom container logs <stage-id>` — scans `.work/sessions/` for a container-backed session matching the stage, then execs into `<runtime> logs [-f] [--tail N] <name>`. Key helper: `resolve_session_for_stage(sessions_dir, stage_id) -> ResolvedTarget` (also unit-tested).
+- `commands/container/list.rs` - `loom container list [--all] [--json]` — enumerates `.work/sessions/` for container-backed sessions and queries each runtime for live status via `inspect`. Default: running containers only; `--all` includes exited/removed. JSON output uses keys: `stage`, `container`, `runtime`, `status`, `session_id`. Key helper: `query_container_status(runtime, name)` returns `"running"`, `"exited"`, `"missing"`, or `"error: ..."` (reusable in logs.rs/shell.rs for liveness pre-flight).
+- `commands/container/shell.rs` - `loom container shell <stage-id>` — resolves the running container for a stage then `exec`s `<runtime> exec -it <name> /bin/bash`. Takes a positional `<stage-id>` argument (NOT `--stage`).
 
 ## CLI Subcommand Registration Pattern
 
