@@ -2,5 +2,6 @@
 
 pub mod build;
 pub mod doctor;
+pub mod logs;
 pub mod rebuild;
 pub mod shell;

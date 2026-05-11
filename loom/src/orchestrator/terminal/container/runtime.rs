@@ -38,6 +38,18 @@ impl Runtime {
         }
     }
 
+    /// Map a persisted runtime binary name (e.g. `"docker"`, `"podman"`,
+    /// `"container"`) back to a [`Runtime`] variant. Returns `None` for
+    /// unrecognised values so callers can fall back to a default.
+    pub fn from_binary(name: &str) -> Option<Self> {
+        match name.trim().to_ascii_lowercase().as_str() {
+            "docker" => Some(Runtime::Docker),
+            "podman" => Some(Runtime::Podman),
+            "container" => Some(Runtime::AppleContainer),
+            _ => None,
+        }
+    }
+
     /// User-mapping arguments to apply to `<runtime> run`.
     ///
     /// * Podman uses `--userns=keep-id` so files written by the rootless

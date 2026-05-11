@@ -14,6 +14,9 @@ use crate::orchestrator::continuation::save_session;
 use crate::orchestrator::liveness::LivenessService;
 use crate::orchestrator::signals::read_merge_signal;
 use crate::orchestrator::spawner::{generate_crash_report, CrashReport};
+use crate::orchestrator::terminal::container::logs_capture;
+use crate::orchestrator::terminal::container::runtime::Runtime;
+use crate::plan::schema::BackendType;
 
 use super::config::MonitorConfig;
 use super::context::context_usage_percent;
@@ -123,11 +126,44 @@ impl Handlers {
     /// Called when a session crash is detected.
     /// Creates a CrashReport, generates the crash report file, and preserves stage memory.
     pub fn handle_session_crash(&self, session: &Session, reason: &str) -> Option<PathBuf> {
-        let report = CrashReport::new(
+        let mut report = CrashReport::new(
             session.id.clone(),
             session.stage_id.clone(),
             reason.to_string(),
         );
+
+        // For container sessions, capture the trailing log before the
+        // container is removed by `kill_session` cleanup. The runtime
+        // binary is persisted on the session at spawn time; fall back to
+        // Docker if the field is missing (legacy sessions only).
+        if session.backend == BackendType::Container {
+            let runtime = session
+                .runtime
+                .as_deref()
+                .and_then(Runtime::from_binary)
+                .unwrap_or(Runtime::Docker);
+            let container_name = session.container_name.as_deref().unwrap_or("");
+            let tail = logs_capture::capture_logs(
+                runtime,
+                container_name,
+                Some(logs_capture::DEFAULT_TAIL),
+            )
+            .unwrap_or_default();
+            if !tail.is_empty() {
+                let stage_id_for_log = session.stage_id.as_deref().unwrap_or(&session.id);
+                let log_path = logs_capture::persist_log(
+                    &self.config.work_dir,
+                    stage_id_for_log,
+                    &session.id,
+                    &tail,
+                )
+                .ok();
+                report = report.with_log_tail(tail);
+                if let Some(p) = log_path {
+                    report = report.with_log_path(p);
+                }
+            }
+        }
 
         // Preserve stage memory for recovery
         let stage_id = session.stage_id.as_deref().unwrap_or(&session.id);

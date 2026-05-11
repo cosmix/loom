@@ -48,6 +48,13 @@ pub enum Commands {
         /// start until the image is built. Has no effect with native backend.
         #[arg(long)]
         no_build: bool,
+
+        /// Skip the firewall-enforcement smoke test that normally runs after
+        /// container image build. Only use when knowingly running on a
+        /// runtime where iptables-based egress filtering is best-effort
+        /// (rootless Podman without slirp4netns ≥ 1.2.3, Apple Container).
+        #[arg(long)]
+        allow_insecure_runtime: bool,
     },
 
     /// Manage the container backend (build/rebuild image, doctor, exec shell)
@@ -326,6 +333,18 @@ pub enum ContainerCommands {
         /// Stage ID whose session container to attach to
         #[arg(value_parser = clap_id_validator)]
         stage_id: String,
+    },
+    /// Tail or follow the container logs for a running stage's session
+    Logs {
+        /// Stage ID whose session container logs to read
+        #[arg(value_parser = clap_id_validator)]
+        stage_id: String,
+        /// Follow the log stream (like `docker logs -f`)
+        #[arg(long)]
+        follow: bool,
+        /// Number of trailing lines to print (when not following)
+        #[arg(long, default_value_t = 500)]
+        tail: usize,
     },
 }
 

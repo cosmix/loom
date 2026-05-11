@@ -24,7 +24,9 @@
 pub mod fingerprint;
 pub mod image;
 pub mod lifecycle;
+pub mod logs_capture;
 pub mod network;
+pub mod probe;
 pub mod resources;
 pub mod runtime;
 
