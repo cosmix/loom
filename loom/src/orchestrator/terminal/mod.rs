@@ -18,32 +18,10 @@ use crate::models::session::Session;
 use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
 
-/// Backend type selection
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum BackendType {
-    /// Native terminal windows - each session in its own terminal
-    #[default]
-    Native,
-}
-
-impl std::fmt::Display for BackendType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            BackendType::Native => write!(f, "native"),
-        }
-    }
-}
-
-impl std::str::FromStr for BackendType {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self> {
-        match s.to_lowercase().as_str() {
-            "native" => Ok(BackendType::Native),
-            _ => anyhow::bail!("Unknown backend type: {s}. Expected 'native'"),
-        }
-    }
-}
+/// Backend type — re-exported from the canonical definition in
+/// `crate::plan::schema::execution::BackendType`. Defined once to avoid drift
+/// between plan schema and runtime.
+pub use crate::plan::schema::execution::BackendType;
 
 /// Trait for terminal backends
 ///
@@ -142,36 +120,19 @@ pub fn create_backend(
             let backend = native::NativeBackend::new(work_dir.to_path_buf())?;
             Ok(Box::new(backend))
         }
+        BackendType::Container => {
+            // Container backend implementation is provided by a later stage.
+            // For now, return a clear error so misconfigured plans surface early.
+            anyhow::bail!(
+                "Container backend is not yet wired into the orchestrator. \
+                 Set project backend to 'native' in .work/config.toml."
+            )
+        }
     }
 }
 
 // Re-export terminal emulator
 pub use emulator::TerminalEmulator;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_backend_type_display() {
-        assert_eq!(BackendType::Native.to_string(), "native");
-    }
-
-    #[test]
-    fn test_backend_type_from_str() {
-        assert_eq!(
-            "native".parse::<BackendType>().unwrap(),
-            BackendType::Native
-        );
-        assert_eq!(
-            "NATIVE".parse::<BackendType>().unwrap(),
-            BackendType::Native
-        );
-        assert!("invalid".parse::<BackendType>().is_err());
-    }
-
-    #[test]
-    fn test_backend_type_default() {
-        assert_eq!(BackendType::default(), BackendType::Native);
-    }
-}
+// BackendType tests live alongside the canonical definition in
+// `crate::plan::schema::execution`.
