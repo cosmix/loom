@@ -11,6 +11,7 @@ use std::path::Path;
 
 use super::config::HooksConfig;
 use crate::fs::permissions::configure_loom_hooks;
+use crate::sandbox::scrub_settings_env_for_backend;
 
 /// Generate settings.json content with hooks configuration
 ///
@@ -32,14 +33,26 @@ pub fn generate_hooks_settings(
     // Set trust dialog accepted
     obj.insert("hasTrustDialogAccepted".to_string(), json!(true));
 
-    // Ensure permissions object exists and set acceptEdits
+    // Scrub sensitive env keys from any inherited env block if we're targeting
+    // a container backend. Native hosts already see the host env directly, so
+    // there's no copy step to scrub there.
+    scrub_settings_env_for_backend(&mut settings, config.backend);
+
+    let obj = settings
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("settings must be a JSON object"))?;
+
+    // Write the resolved permission mode into permissions.defaultMode using
+    // the camelCase mapping owned by `PermissionMode::as_settings_value`.
     let permissions = obj
         .entry("permissions")
         .or_insert_with(|| json!({}))
         .as_object_mut()
         .ok_or_else(|| anyhow::anyhow!("permissions must be a JSON object"))?;
-
-    permissions.insert("defaultMode".to_string(), json!("acceptEdits"));
+    permissions.insert(
+        "defaultMode".to_string(),
+        json!(config.permission_mode.as_settings_value()),
+    );
 
     // Always ensure global hooks (commit-filter, git-add-guard, worktree-isolation,
     // etc.) are present. Previously these were only written by `loom init` and assumed

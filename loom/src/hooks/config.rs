@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::PathBuf;
 
+use crate::plan::schema::{BackendType, PermissionMode};
+
 /// Claude Code hook event types supported by loom.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -104,21 +106,29 @@ pub struct HooksConfig {
     pub session_id: String,
     /// Path to the .work directory
     pub work_dir: PathBuf,
+    /// Resolved Claude Code permission mode for this session.
+    pub permission_mode: PermissionMode,
+    /// Project execution backend (drives env scrubbing on container).
+    pub backend: BackendType,
 }
 
 impl HooksConfig {
-    /// Create a new hooks configuration
+    /// Create a new hooks configuration.
     pub fn new(
         hooks_dir: PathBuf,
         stage_id: String,
         session_id: String,
         work_dir: PathBuf,
+        permission_mode: PermissionMode,
+        backend: BackendType,
     ) -> Self {
         Self {
             hooks_dir,
             stage_id,
             session_id,
             work_dir,
+            permission_mode,
+            backend,
         }
     }
 
