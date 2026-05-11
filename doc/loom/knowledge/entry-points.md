@@ -37,9 +37,10 @@
 | `verify`      | `commands/verify.rs`          | Goal-backward verification                   |
 | `check`       | `commands/check.rs`           | Goal-backward verification (alias)           |
 | `completions` | `commands/completions/mod.rs` | Shell completions (custom scripts + dynamic) |
+| `container`   | `commands/container/mod.rs`   | Container image management (build/rebuild/doctor/shell) |
 | `complete`    | Hidden (dynamic completions)  | Backend for shell tab completions            |
 
-Total: 22 visible commands + 1 hidden (complete for dynamic completions). Dispatch: `cli/dispatch.rs` match-based, two-level for nested commands.
+Total: 23 visible commands + 1 hidden (complete for dynamic completions). Dispatch: `cli/dispatch.rs` match-based, two-level for nested commands.
 
 ## Orchestrator Core
 
@@ -133,11 +134,20 @@ Total: 22 visible commands + 1 hidden (complete for dynamic completions). Dispat
 
 ## Terminal Backend
 
-- `orchestrator/terminal/mod.rs` - TerminalBackend trait (spawn/kill/alive)
-- `orchestrator/terminal/native/spawner.rs` - Claude Code session spawning
+- `orchestrator/terminal/mod.rs` - TerminalBackend trait (spawn/kill/alive) + BackendType re-export
+- `orchestrator/terminal/dispatcher.rs` - BackendDispatcher; routes spawn/kill/liveness by backend; BackendNeeds declares which backends to construct
+- `orchestrator/terminal/native/spawner.rs` - Claude Code session spawning (native)
 - `orchestrator/terminal/emulator.rs` - 11 terminal emulator configs
 - `orchestrator/terminal/native/detection.rs` - Auto-detect terminal
 - `orchestrator/terminal/native/pid_tracking.rs` - Wrapper script, PID tracking, env vars
+- `orchestrator/terminal/container/mod.rs` - ContainerBackend (661 lines — refactor candidate); spawn/kill/liveness for containerised sessions
+- `orchestrator/terminal/container/fingerprint.rs` - compute_fingerprint(); encodes langs + Dockerfile.tmpl + firewall.sh SHA-256
+- `orchestrator/terminal/container/image.rs` - Global image cache + per-project digest pin
+- `orchestrator/terminal/container/lifecycle.rs` - Container run args, mount construction
+- `orchestrator/terminal/container/network.rs` - Per-stage network create + allowlist materialisation
+- `orchestrator/terminal/container/resources.rs` - Embedded Dockerfile.tmpl + firewall.sh access
+- `orchestrator/terminal/container/runtime.rs` - Docker/Podman/Apple Container detection (is_apple_container checks binary + version output)
+- `orchestrator/liveness.rs` - LivenessService: wraps BackendDispatcher for monitor thread; fixed_for_tests() stub for unit tests
 
 ## Handoff System
 
@@ -162,9 +172,10 @@ Total: 22 visible commands + 1 hidden (complete for dynamic completions). Dispat
 
 ## Schema-to-Runtime Conversion
 
-- `plan/schema/types.rs` - StageDefinition (YAML input)
+- `plan/schema/types.rs` - StageDefinition (YAML input); SandboxConfig + StageSandboxConfig with `permission_mode: Option<PermissionMode>`
+- `plan/schema/execution.rs` - BackendType enum (canonical definition); PlanExecutionConfig, ProjectExecutionConfig, PlanContainerConfig, ProjectContainerConfig, NetworkConfig
 - `models/stage/types.rs` - Stage (runtime model)
-- `commands/init/plan_setup.rs` - create_stage_from_definition(), detect_stage_type()
+- `commands/init/plan_setup.rs` - create_stage_from_definition(), detect_stage_type(); validate_config() called here for backend compatibility check
 
 ## CLI Subcommand Registration Pattern
 
@@ -191,11 +202,16 @@ Three files to add a new subcommand:
 
 ## Key Config Files
 
-- `.work/config.toml` - Active plan reference and settings
+- `.work/config.toml` - Active plan reference and settings; `[project_execution]` section holds container image digest + forward_credentials + backend default
 - `.work/stages/{depth}-{stage-id}.md` - Stage state (YAML frontmatter)
-- `.work/sessions/{session-id}.md` - Session tracking
+- `.work/sessions/{session-id}.md` - Session tracking; `backend` field persists resolved BackendType
 - `.work/signals/{session-id}.md` - Agent instruction signals
+- `.work/network/allowed_domains.txt` - Host-side container network allowlist (mounted ro into container)
 - `doc/plans/PLAN-*.md` - Plan definition files
+- `loom/resources/Dockerfile.tmpl` - Embedded container image template (handlebars)
+- `loom/resources/firewall.sh` - Embedded container firewall script (image-resident, applied at startup)
+- `loom/resources/entrypoint.sh` - Container entrypoint
+- `~/.local/share/loom/images/<fingerprint>.json` - Global image cache (host-wide)
 
 ## Verification System [UPDATED]
 

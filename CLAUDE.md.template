@@ -117,7 +117,7 @@ Before writing acceptance criteria: 1) What is working_dir? 2) Do paths exist re
 
 **Standard stages MUST define at least ONE of** (validated by `loom init`):
 
-- `truths` — Observable behaviors (shell commands returning exit 0)
+- `acceptance` — Shell commands that must exit 0 (simple string or extended object with stdout_contains)
 - `artifacts` — Files that must exist with real implementation
 - `wiring` — Code patterns proving integration (source + pattern + description)
 
@@ -550,7 +550,7 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 □ Memory recorded □ Feature wired in □ No stubs/security issues □ git add <files> && commit
 
 **PLAN STRUCTURE:**
-□ knowledge-bootstrap FIRST □ integration-verify LAST □ Every stage has stage_type □ Standard/integration-verify stages have truths/artifacts/wiring □ No path traversal □ Sandbox configured □ Validate with `loom init`
+□ knowledge-bootstrap FIRST □ integration-verify LAST □ Every stage has stage_type □ Standard/integration-verify stages have acceptance/artifacts/wiring □ No path traversal □ Sandbox configured □ Validate with `loom init`
 
 ---
 

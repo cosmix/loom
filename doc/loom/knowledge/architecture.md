@@ -20,8 +20,19 @@ loom/src/
     core.rs, lifecycle.rs, protocol.rs, status.rs, client.rs, orchestrator.rs
   orchestrator/             # Core engine (~4K lines)
     core/                   # Main loop, stage executor, persistence, recovery
-    terminal/               # TerminalBackend trait + native OS spawning
+    terminal/               # TerminalBackend trait + dispatching
+      native/               # Host OS terminal spawning (11+ emulators)
+      container/            # Docker/Podman/Apple Container backend
+        mod.rs              # ContainerBackend (661 lines — refactor candidate)
+        fingerprint.rs      # Image fingerprint (langs + embedded resource hashes)
+        image.rs            # Global image cache, per-project pin, build
+        lifecycle.rs        # Container run args, mount construction
+        network.rs          # Per-stage network creation + allowlist materialisation
+        resources.rs        # Embedded Dockerfile.tmpl + firewall.sh access
+        runtime.rs          # Docker/Podman/Apple Container runtime detection
+      dispatcher.rs         # BackendDispatcher — route spawn/kill/liveness by backend
     monitor/                # Session health, heartbeat, failure tracking
+    liveness.rs             # LivenessService — backend-aware session liveness probe
     signals/                # Signal generation (Manus format, cache, CRUD)
     continuation/           # Context handoff management
     progressive_merge/      # Merge orchestration + lock
@@ -88,22 +99,35 @@ States: Spawning -> Running -> Completed | Crashed | ContextExhausted | Paused. 
 
 ### TerminalBackend (orchestrator/terminal/)
 
-Trait for spawning Claude Code in terminal windows. NativeBackend supports 11+ emulators (kitty, alacritty, gnome-terminal, etc.) via `TerminalEmulator` enum. PID tracking via wrapper scripts that write to `.work/pids/`.
+Trait for spawning Claude Code in terminal windows. Two concrete implementations:
+
+- **NativeBackend** (`orchestrator/terminal/native/`) — spawns Claude Code in a host terminal. Supports 11+ emulators via `TerminalEmulator` enum. PID tracking via wrapper scripts writing to `.work/pids/`.
+- **ContainerBackend** (`orchestrator/terminal/container/`) — spawns Claude Code inside a Docker/Podman/Apple Container per stage. Host repo is bind-mounted at `/repo` (rw); hooks at `/home/loom/.claude/hooks/loom` (ro); allowlist at `/etc/loom/network/allowed_domains.txt` (ro). Liveness via `<runtime> inspect`, not `kill -0`.
+
+**BackendDispatcher** (`orchestrator/terminal/dispatcher.rs`) — owns one or both backends and routes spawn/kill/liveness calls based on the stage's resolved `BackendType` or a session's persisted `backend` metadata.
+
+**BackendType** (`plan/schema/execution.rs`) — `Native` (default) or `Container`. Canonical definition in plan schema, re-exported by `orchestrator/terminal/mod.rs`. Serializes as kebab-case YAML (`"native"` / `"container"`).
+
+**LivenessService** (`orchestrator/liveness.rs`) — replaces scattered `kill -0` checks. Delegates to `BackendDispatcher::is_session_alive()` so each runtime (native host PID, container inspect) answers for its own sessions.
 
 ## Data Flow
 
 ### Plan Execution Flow
 
 ```text
-1. loom init doc/plans/PLAN-foo.md
+1. loom init doc/plans/PLAN-foo.md [--backend native|container] [--no-build]
    --> Parse plan, create .work/, write stage files
+   --> If --backend container: build/pin image, write [project_execution] to .work/config.toml
 
 2. loom run
    --> Spawn daemon (or foreground) --> orchestrator loop
+   --> BackendDispatcher constructed from plan's BackendNeeds
+   --> LivenessService wraps dispatcher for monitor thread
 
 3. Orchestrator loop (5s poll):
    Load stage files --> Build ExecutionGraph --> Find ready stages
-   --> Create worktree + signal --> Spawn terminal --> Monitor sessions
+   --> Resolve per-stage backend (stage override or project default)
+   --> Create worktree + signal --> Spawn via dispatcher --> Monitor via LivenessService
 
 4. Agent reads signal, executes, runs: loom stage complete <id>
 
@@ -125,6 +149,26 @@ Unix socket at `.work/orchestrator.sock`. Messages: Status, Stop, Subscribe. Len
 | `.work/config.toml`   | commands/init/, commands/run/    | Plan reference       |
 | `.worktrees/`         | git/worktree/                    | Isolated workspaces  |
 | `doc/loom/knowledge/` | fs/knowledge.rs                  | Persistent learnings |
+
+## Container Backend Topology
+
+When `BackendType::Container` is resolved for a stage, `ContainerBackend` spawns the session inside a per-stage container with this fixed mount topology:
+
+| Container path | Host source | Permissions |
+| --- | --- | --- |
+| `/repo` | host repo root | rw bind |
+| `/repo/.work` | derived from `/repo` | rw (via symlink) |
+| `/home/loom/.claude/hooks/loom` | `~/.claude/hooks/loom` | ro |
+| `/home/loom/.claude/.credentials.json` | `~/.claude/.credentials.json` | ro (only when `forward_credentials` includes `"claude"`) |
+| `/etc/loom/network/allowed_domains.txt` | `.work/network/allowed_domains.txt` | ro |
+
+**Why `/repo`?** Git worktrees store relative symlinks (`.work -> ../../.work`). Mounting the host repo root at a fixed path preserves these symlinks and all git metadata. Stage cwd inside the container: `/repo/.worktrees/<stage-id>`. Merge/knowledge cwd: `/repo`.
+
+**forward_credentials:** Default is `Vec::new()` (empty — no credentials forwarded). Agents must explicitly edit `.work/config.toml` to mount credentials. This is stricter than the plan spec's suggested default of `["claude"]`.
+
+**Firewall (defense-in-depth):** Image-resident `firewall.sh` script configured with: deny IPv6 (AF_INET6), block `169.254.169.254` (cloud metadata), block `127.0.0.0/8` except `127.0.0.1`, deny `*.internal`. Allowlist is host-owned and mounted ro — the agent process inside the container cannot edit it.
+
+**Image cache model:** Global image cache at `~/.local/share/loom/images/<fingerprint>.json`. Per-project digest pin at `.work/config.toml::[project_execution.container].image_digest`. Fingerprint encodes: detected languages + SHA-256 of `Dockerfile.tmpl` + SHA-256 of `firewall.sh`. Any change to languages or embedded resources invalidates the cache.
 
 ## Worktree Isolation (4-Layer Defense)
 
@@ -169,6 +213,7 @@ Stages define context_budget (1-100%, default 65%, max 75%). Monitor tracks Gree
 - **Socket**: Mode 0o600 (owner only), max 100 connections, 10MB message limit, Unix only
 - **Self-update**: minisign signature verification. Gap: non-binary release assets lack verification
 - **Shell escaping**: escape_shell_single_quote(), escape_applescript_string() in emulator.rs
+- **permission_mode field** (`SandboxConfig` / `StageSandboxConfig`): Resolves as stage > plan > stage-type default. `bypass-permissions` ONLY permitted with `BackendType::Container` — rejected on native to prevent host-filesystem full access. Default by stage type: Knowledge/KnowledgeDistill → `acceptEdits`; Standard/IntegrationVerify → `auto`.
 
 ## Merge Lock (progressive_merge/lock.rs)
 

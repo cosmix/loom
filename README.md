@@ -96,7 +96,7 @@ loom stop
 ### Primary Commands
 
 ```bash
-loom init <plan-path> [--clean]
+loom init <plan-path> [--clean] [--backend native|container] [--no-build]
 loom run [--manual] [--max-parallel N] [--foreground] [--watch] [--no-merge]
 loom status [--live] [--compact] [--verbose]
 loom stop
@@ -104,6 +104,10 @@ loom resume <stage-id>
 loom check <stage-id> [--suggest]
 loom diagnose <stage-id>
 ```
+
+`--backend container` builds a project-specific container image and pins its digest to `.work/config.toml`. Subsequent `loom run` invocations use the pinned image without rebuilding.
+
+`--no-build` skips the actual container image build during `loom init --backend container`, pinning `image_digest = "pending"`. Useful for CI setups where the image is built separately via `loom container build`.
 
 ### Plan Commands
 
@@ -161,6 +165,23 @@ loom memory show [--stage <id>] [--all]
 ```
 
 `loom knowledge bootstrap` launches a Claude-driven exploration session that populates `doc/loom/knowledge/`. By default it runs a deep `loom map` pass first, then starts Claude with permission to update knowledge files via `loom knowledge update`.
+
+### Container Commands
+
+```bash
+loom container build
+loom container rebuild
+loom container doctor
+loom container shell [--stage <stage-id>]
+```
+
+`loom container build` builds the project container image (if not already cached). Equivalent to the build step in `loom init --backend container`.
+
+`loom container rebuild` forces a rebuild of the container image, ignoring the cached fingerprint. Use when the Dockerfile template or firewall script has changed and the fingerprint doesn't yet reflect it (e.g., after a `loom` binary upgrade).
+
+`loom container doctor` checks container runtime availability, image freshness, and network configuration.
+
+`loom container shell` opens an interactive shell inside the container using the same topology as a stage session (`/repo` bind mount, hooks, firewall). Useful for debugging the container environment. With `--stage`, runs in the context of that stage's network.
 
 ### Other Commands
 
@@ -241,6 +262,8 @@ loom:
 | `wiring_tests` / `dead_code_check` | No | Extended verification |
 | `context_budget` | No | Context threshold (%) for handoff |
 | `sandbox` | No | Per-stage sandbox override |
+| `sandbox.permission_mode` | No | `auto`, `accept-edits`, `bypass-permissions`, `plan`, `default` (resolves: stage > plan > stage-type default) |
+| `backend` | No | Per-stage backend override: `native` or `container` (overrides project default) |
 | `execution_mode` | No | `single` (default) or `team` hint |
 
 ### Stage Type Behavior
@@ -248,6 +271,81 @@ loom:
 - `knowledge`: knowledge/bootstrap work, different verification expectations
 - `standard`: implementation stage; must define goal-backward checks
 - `integration-verify`: final quality gate combining code review and functional verification; must define goal-backward checks
+- `knowledge-distill`: final stage; curates stage memories into permanent knowledge files
+
+## Container Backend
+
+Loom supports running stage sessions inside isolated containers (Docker, Podman, or Apple Container on macOS).
+
+### Setup
+
+```bash
+loom init doc/plans/PLAN-<name>.md --backend container
+```
+
+This builds a project-specific container image, pins its digest to `.work/config.toml`, and configures all future sessions to run inside the container.
+
+To skip the image build (e.g., in CI where the image is pre-built):
+
+```bash
+loom init doc/plans/PLAN-<name>.md --backend container --no-build
+loom container build  # build separately when ready
+```
+
+### What Runs Inside the Container
+
+- Host repo root is bind-mounted at `/repo` (read-write) — git worktree metadata is preserved
+- Stage cwd: `/repo/.worktrees/<stage-id>` | Merge/knowledge cwd: `/repo`
+- Hooks from `~/.claude/hooks/loom` are mounted read-only at `/home/loom/.claude/hooks/loom`
+- Network egress is filtered by the plan's `loom.sandbox.network.allowed_domains` setting
+
+### Credential Forwarding
+
+By default no host credentials are forwarded into the container (explicit opt-in). To forward Claude Code credentials, add to `.work/config.toml`:
+
+```toml
+[project_execution.container]
+forward_credentials = ["claude"]
+```
+
+Supported values: `"claude"` (mounts `~/.claude/.credentials.json`).
+
+### permission_mode
+
+The `permission_mode` field controls Claude Code's permission prompting:
+
+| Value | Behavior |
+| --- | --- |
+| `auto` | Claude's heuristics (default for standard/integration-verify) |
+| `accept-edits` | Auto-accept file edits (default for knowledge/knowledge-distill) |
+| `bypass-permissions` | No permission prompts — **container backend only** |
+| `plan` | Use Claude Code plan mode |
+| `default` | Claude Code's built-in default |
+
+`bypass-permissions` is only accepted when the backend is `container`. Using it with the native backend is rejected at `loom init` and spawn time.
+
+```yaml
+loom:
+  sandbox:
+    permission_mode: accept-edits  # plan-level default
+  stages:
+    - id: my-stage
+      sandbox:
+        permission_mode: bypass-permissions  # stage override (container only)
+      backend: container
+```
+
+### Threat Model
+
+The container backend provides defense-in-depth against agent misbehavior:
+
+- IPv6 denied (AF_INET6)
+- Cloud metadata service blocked (169.254.169.254)
+- Localhost restricted (127.0.0.0/8 except 127.0.0.1)
+- `*.internal` domains blocked
+- Network allowlist is host-owned and mounted read-only — the agent cannot modify it
+- Firewall script lives inside the image — the agent cannot replace it
+- Host credentials are NOT forwarded by default
 
 ## Verification Model
 

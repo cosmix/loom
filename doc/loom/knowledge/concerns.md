@@ -119,6 +119,18 @@ Pre-existing issue, not introduced by the merge conflict session lifecycle fix. 
 
 models/stage/methods.rs:443 defines is_knowledge_stage() but it is never called. All call sites use direct stage_type comparison. Contains fragile heuristic name matching that duplicates detect_stage_type() logic. Consider removing or consolidating with detect_stage_type and check_knowledge_recommendations.
 
+## container/mod.rs Exceeds 400-line Limit (2026-05-11)
+
+`loom/src/orchestrator/terminal/container/mod.rs` is 661 lines — 65% over the 400-line CLAUDE.md code size limit. Functional and all tests pass; refactor deferred.
+
+**Recommended split:** Extract spawn logic into `spawn.rs`, mount construction into `mounts.rs`, env building into `env.rs`. The submodule files `fingerprint.rs`, `image.rs`, `lifecycle.rs`, `network.rs`, `resources.rs`, `runtime.rs` are already appropriately sized.
+
+## forward_credentials Default Is Empty (2026-05-11)
+
+`loom init --backend container` writes `forward_credentials = []` to `.work/config.toml` (empty — no credentials forwarded by default). The plan spec suggested defaulting to `["claude"]` (mount `~/.claude/.credentials.json`). The current implementation is stricter (explicit opt-in) but requires agents to manually edit `.work/config.toml` to authenticate with Claude Code inside the container.
+
+**Impact:** Container sessions without `"claude"` in `forward_credentials` cannot authenticate. Until there's a `loom container credentials add` command or the default changes, this must be manually configured.
+
 ## BaseConflict Carve-out is Heuristic (2026-04-27)
 
 `attribute_main_repo_merge` carves out `loom/_base/*` merges with a heuristic on the current branch name and on `SessionType::BaseConflict` session metadata. If a base-merge ever runs from a non-`loom/_base/*` branch (manual flow, future refactor) and no `BaseConflict` session is alive, attribution would tie the active merge to the stage whose branch HEAD shows up in `MERGE_HEAD` — leading to a spurious revert.
