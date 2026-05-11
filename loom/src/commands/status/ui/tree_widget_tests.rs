@@ -59,6 +59,7 @@ fn make_stage(id: &str, deps: Vec<&str>, status: StageStatus) -> Stage {
         regression_test: None,
         model: None,
         reasoning_effort: None,
+        execution_backend: None,
     }
 }
 

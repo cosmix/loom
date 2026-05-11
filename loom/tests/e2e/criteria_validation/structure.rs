@@ -17,6 +17,7 @@ fn test_unsupported_version_rejected() {
             sandbox: Default::default(),
             auto_merge: None,
             change_impact: None,
+            execution: None,
             stages: vec![create_valid_stage("stage-1", "Test")],
         },
     };
@@ -39,6 +40,7 @@ fn test_empty_stages_rejected() {
             sandbox: Default::default(),
             auto_merge: None,
             change_impact: None,
+            execution: None,
             stages: vec![],
         },
     };
@@ -98,6 +100,7 @@ fn test_multiple_errors_accumulated() {
             sandbox: Default::default(),
             auto_merge: None,
             change_impact: None,
+            execution: None,
             stages: vec![create_valid_stage("", ""), {
                 let mut s = create_valid_stage("stage-2", "Stage Two");
                 s.dependencies.push("nonexistent".to_string());

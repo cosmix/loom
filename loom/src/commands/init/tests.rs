@@ -23,6 +23,7 @@ fn create_test_plan(dir: &Path, stages: Vec<StageDefinition>) -> PathBuf {
             auto_merge: None,
             sandbox: SandboxConfig::default(),
             change_impact: None,
+            execution: None,
             stages,
         },
     };
@@ -65,6 +66,7 @@ fn test_create_stage_from_definition_no_dependencies() {
         model: None,
         reasoning_effort: None,
         code_review: None,
+        execution: None,
     };
 
     let stage = create_stage_from_definition(&stage_def, "plan-001");
@@ -105,6 +107,7 @@ fn test_create_stage_from_definition_with_dependencies() {
         model: None,
         reasoning_effort: None,
         code_review: None,
+        execution: None,
     };
 
     let stage = create_stage_from_definition(&stage_def, "plan-002");
@@ -172,6 +175,7 @@ fn test_serialize_stage_to_markdown_minimal() {
         regression_test: None,
         model: None,
         reasoning_effort: None,
+        execution_backend: None,
     };
 
     let content = serialize_stage_to_markdown(&stage).unwrap();
@@ -241,6 +245,7 @@ fn test_serialize_stage_to_markdown_with_all_fields() {
         regression_test: None,
         model: None,
         reasoning_effort: None,
+        execution_backend: None,
     };
 
     let content = serialize_stage_to_markdown(&stage).unwrap();
@@ -303,6 +308,7 @@ fn test_initialize_with_plan_creates_config() {
         model: None,
         reasoning_effort: None,
         code_review: None,
+        execution: None,
     };
 
     let plan_path = create_test_plan(temp_dir.path(), vec![stage_def]);
@@ -353,6 +359,7 @@ fn test_initialize_with_plan_creates_stage_files() {
             model: None,
             reasoning_effort: None,
             code_review: None,
+            execution: None,
         },
         StageDefinition {
             id: "stage-2".to_string(),
@@ -380,6 +387,7 @@ fn test_initialize_with_plan_creates_stage_files() {
             model: None,
             reasoning_effort: None,
             code_review: None,
+            execution: None,
         },
     ];
 

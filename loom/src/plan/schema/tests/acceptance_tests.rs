@@ -81,6 +81,7 @@ fn test_validate_metadata_with_empty_acceptance() {
             auto_merge: None,
             sandbox: SandboxConfig::default(),
             change_impact: None,
+            execution: None,
             stages: vec![stage],
         },
     };
@@ -108,6 +109,7 @@ fn test_validate_metadata_with_valid_acceptance() {
             auto_merge: None,
             sandbox: SandboxConfig::default(),
             change_impact: None,
+            execution: None,
             stages: vec![stage],
         },
     };
@@ -131,6 +133,7 @@ fn test_validate_metadata_multiple_invalid_acceptance() {
             auto_merge: None,
             sandbox: SandboxConfig::default(),
             change_impact: None,
+            execution: None,
             stages: vec![stage],
         },
     };

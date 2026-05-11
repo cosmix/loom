@@ -41,6 +41,7 @@ pub(crate) fn make_stage(id: &str, name: &str) -> StageDefinition {
         model: None,
         reasoning_effort: None,
         code_review: None,
+        execution: None,
     }
 }
 
@@ -63,6 +64,7 @@ pub(crate) fn create_valid_metadata() -> LoomMetadata {
             auto_merge: None,
             sandbox: SandboxConfig::default(),
             change_impact: None,
+            execution: None,
             stages: vec![stage1, stage2],
         },
     }

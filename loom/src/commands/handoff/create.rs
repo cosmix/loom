@@ -108,6 +108,10 @@ pub fn execute(
         session_type: Default::default(),
         merge_source_branch: None,
         merge_target_branch: None,
+        backend: Default::default(),
+        runtime: None,
+        container_name: None,
+        tracking_key: String::new(),
     };
 
     // Generate the handoff file
