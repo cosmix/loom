@@ -45,6 +45,28 @@
 //!
 //! Liveness uses `<runtime> inspect -f '{{.State.Running}}'`; we never
 //! `kill -0` against the host PID for container sessions.
+//!
+//! ## Container lifecycle
+//!
+//! Every container removal trigger is listed below. After removal, the session file
+//! is updated to clear `container_name` / `runtime` so stale references do not
+//! mislead future `loom container logs` / `loom container list` calls.
+//!
+//! - **Stage completes successfully** — `handle_stage_completed` (orchestrator/core/completion_handler.rs)
+//!   calls `kill_session`, then clears container identity on the session file.
+//! - **Stale merge / base-conflict session reap** — `merge_handler.rs` kills stale sessions
+//!   and clears container identity.
+//! - **`loom sessions kill <id>` or `loom sessions kill --stage <stage>`** — `commands/sessions.rs`
+//!   calls `kill_session` then deletes the session file entirely (no clear needed).
+//! - **Daemon shutdown (`loom stop`)** — reaps active container sessions via `kill_session`,
+//!   then clears container identity on persisted session files.
+//! - **`loom clean --sessions` / `--all`** — reaps orphan `loom-*` containers and
+//!   `loom-net-*` networks left behind by a crashed daemon (best-effort bulk removal).
+//! - **Spawn-time `wait_until_running` timeout** — logs captured to `.work/crashes/` before
+//!   removal. The in-memory session was never persisted with container_name, so no file update.
+//!
+//! Parallel stages get independent containers, named by `Session::derive_tracking_key`.
+//! They share only the per-stage `loom-net-<stage>` network and the immutable image.
 
 pub mod fingerprint;
 pub mod image;

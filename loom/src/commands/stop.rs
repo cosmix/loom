@@ -103,12 +103,26 @@ fn terminate_active_container_sessions(work_dir: &Path) -> Result<()> {
             "→".cyan().bold(),
             session.id.dimmed()
         );
-        if let Err(e) = dispatcher.for_session(session).kill_session(session) {
+        let kill_result = dispatcher.for_session(session).kill_session(session);
+        if let Err(e) = &kill_result {
             eprintln!(
                 "{} Failed to kill session {}: {e}",
                 "!".yellow().bold(),
                 session.id
             );
+        }
+        if kill_result.is_ok() {
+            let mut updated_session = session.clone();
+            updated_session.clear_container_identity();
+            if let Err(e) =
+                crate::orchestrator::continuation::save_session(&updated_session, work_dir)
+            {
+                eprintln!(
+                    "{} Failed to clear container identity for session {}: {e}",
+                    "!".yellow().bold(),
+                    session.id
+                );
+            }
         }
     }
     Ok(())

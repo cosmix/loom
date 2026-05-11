@@ -21,7 +21,16 @@ impl Orchestrator {
         // Clean up session first
         if let Some(session) = self.active_sessions.remove(stage_id) {
             remove_signal(&session.id, &self.config.work_dir)?;
-            let _ = self.dispatcher.for_session(&session).kill_session(&session);
+            let kill_result = self.dispatcher.for_session(&session).kill_session(&session);
+            if kill_result.is_ok()
+                && session.backend == crate::plan::schema::execution::BackendType::Container
+            {
+                let mut updated_session = session.clone();
+                updated_session.clear_container_identity();
+                if let Err(e) = self.save_session(&updated_session) {
+                    eprintln!("Warning: failed to clear container identity after removal: {e}");
+                }
+            }
         }
 
         self.active_worktrees.remove(stage_id);
