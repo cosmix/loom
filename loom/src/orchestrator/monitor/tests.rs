@@ -109,7 +109,7 @@ fn test_detect_session_crash() {
         work_dir,
         ..Default::default()
     };
-    let handlers = Handlers::new(config);
+    let handlers = Handlers::new(config, None);
     let mut detection = Detection::new();
 
     let mut session = Session::new();
@@ -147,7 +147,7 @@ fn test_detect_context_warning() {
         work_dir,
         ..Default::default()
     };
-    let handlers = Handlers::new(config);
+    let handlers = Handlers::new(config, None);
     let mut detection = Detection::new();
 
     let mut session = Session::new();
@@ -184,7 +184,7 @@ fn test_detect_context_critical() {
         work_dir,
         ..Default::default()
     };
-    let handlers = Handlers::new(config);
+    let handlers = Handlers::new(config, None);
     let mut detection = Detection::new();
 
     let mut session = Session::new();
@@ -358,7 +358,7 @@ You are resolving a **merge conflict** in the main repository.
         work_dir,
         ..Default::default()
     };
-    let handlers = Handlers::new(config);
+    let handlers = Handlers::new(config, None);
 
     assert!(handlers.is_merge_session("session-merge-123"));
     assert!(!handlers.is_merge_session("nonexistent-session"));
@@ -395,7 +395,7 @@ You are in an **isolated git worktree**.
         work_dir,
         ..Default::default()
     };
-    let handlers = Handlers::new(config);
+    let handlers = Handlers::new(config, None);
 
     // Regular signal should not be detected as a merge session
     assert!(!handlers.is_merge_session("session-regular-123"));
@@ -422,44 +422,26 @@ fn test_merge_session_completed_event() {
 }
 
 #[test]
-fn test_check_session_alive_with_pid_file() {
+fn test_check_session_alive_without_liveness_returns_none() {
     use tempfile::TempDir;
 
+    // Liveness is now backend-aware (LivenessService) rather than
+    // peeking at the host PID file directly. A Handlers built without
+    // a LivenessService deliberately returns None so the detection
+    // loop skips crash reporting for that tick instead of guessing.
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().to_path_buf();
-
     let config = MonitorConfig {
-        work_dir: work_dir.clone(),
+        work_dir: temp_dir.path().to_path_buf(),
         ..Default::default()
     };
-    let handlers = Handlers::new(config);
+    let handlers = Handlers::new(config, None);
 
     let mut session = Session::new();
     session.assign_to_stage("test-stage".to_string());
-    session.set_pid(99999); // Non-existent PID
+    session.set_pid(99999);
 
-    // Without PID file, should use session.pid and return false (process doesn't exist)
     let result = handlers.check_session_alive(&session).unwrap();
-    assert_eq!(result, Some(false));
-
-    // Create PID file with current process PID (should be alive)
-    let pids_dir = work_dir.join("pids");
-    std::fs::create_dir_all(&pids_dir).unwrap();
-    let pid_file = pids_dir.join("test-stage.pid");
-    std::fs::write(&pid_file, std::process::id().to_string()).unwrap();
-
-    // With PID file pointing to alive process, should return true
-    let result = handlers.check_session_alive(&session).unwrap();
-    assert_eq!(result, Some(true));
-
-    // Write a non-existent PID to the file
-    std::fs::write(&pid_file, "99998").unwrap();
-
-    // With PID file pointing to dead process, should return false and clean up the file
-    let result = handlers.check_session_alive(&session).unwrap();
-    assert_eq!(result, Some(false));
-    // PID file should be cleaned up after detecting dead process
-    assert!(!pid_file.exists());
+    assert_eq!(result, None);
 }
 
 #[test]
@@ -473,7 +455,10 @@ fn test_merge_conflict_stage_session_not_reported_as_crash() {
         work_dir,
         ..Default::default()
     };
-    let handlers = Handlers::new(config);
+    let handlers = Handlers::new(
+        config,
+        Some(crate::orchestrator::liveness::LivenessService::fixed_for_tests(false)),
+    );
     let mut detection = Detection::new();
 
     let mut session = Session::new();
@@ -515,7 +500,10 @@ fn test_merge_blocked_stage_session_not_reported_as_crash() {
         work_dir,
         ..Default::default()
     };
-    let handlers = Handlers::new(config);
+    let handlers = Handlers::new(
+        config,
+        Some(crate::orchestrator::liveness::LivenessService::fixed_for_tests(false)),
+    );
     let mut detection = Detection::new();
 
     let mut session = Session::new();
@@ -563,7 +551,7 @@ fn test_budget_exceeded_fires_without_health_bucket_change() {
         work_dir,
         ..Default::default()
     };
-    let handlers = Handlers::new(config);
+    let handlers = Handlers::new(config, None);
     let mut detection = Detection::new();
 
     // Session at 66% (Red bucket).  Pre-seed the health-bucket so that the

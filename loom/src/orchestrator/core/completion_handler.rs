@@ -21,7 +21,7 @@ impl Orchestrator {
         // Clean up session first
         if let Some(session) = self.active_sessions.remove(stage_id) {
             remove_signal(&session.id, &self.config.work_dir)?;
-            let _ = self.backend.kill_session(&session);
+            let _ = self.dispatcher.for_session(&session).kill_session(&session);
         }
 
         self.active_worktrees.remove(stage_id);

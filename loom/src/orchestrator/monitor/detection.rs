@@ -5,6 +5,11 @@ use std::collections::{HashMap, HashSet};
 use crate::models::constants::DEFAULT_CONTEXT_BUDGET;
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
+// `check_session_alive` below routes through the backend-aware
+// `LivenessService` attached to the monitor's handlers. Imported for
+// documentation and to make the wiring discoverable via grep.
+#[allow(unused_imports)]
+use crate::orchestrator::liveness::LivenessService;
 
 use super::config::MonitorConfig;
 use super::context::{context_health, context_usage_percent, ContextHealth};

@@ -188,7 +188,11 @@ impl EventHandler for Orchestrator {
         // Kill old session if still tracked
         if let Some(session) = self.active_sessions.get(stage_id) {
             let session_clone = session.clone();
-            if let Err(e) = self.backend.kill_session(&session_clone) {
+            if let Err(e) = self
+                .dispatcher
+                .for_session(&session_clone)
+                .kill_session(&session_clone)
+            {
                 eprintln!("Warning: Failed to kill session '{session_id}': {e}");
             }
             // Remove old signal file

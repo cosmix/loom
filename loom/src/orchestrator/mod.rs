@@ -1,9 +1,11 @@
 pub mod auto_merge;
 pub mod continuation;
 pub mod core;
+pub mod liveness;
 pub mod merge_attribution;
 pub mod monitor;
 pub mod notify;
+pub mod preflight;
 pub mod progressive_merge;
 pub mod retry;
 pub mod signals;

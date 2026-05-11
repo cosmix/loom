@@ -13,6 +13,7 @@ use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::orchestrator::signals::{
     generate_knowledge_signal, generate_signal_with_skills, DependencyStatus,
 };
+use crate::orchestrator::terminal::dispatcher::resolve_stage_backend;
 
 use super::persistence::Persistence;
 use super::Orchestrator;
@@ -270,7 +271,10 @@ impl StageExecutor for Orchestrator {
             // Continue anyway - sandbox is optional enhancement
         }
 
-        let session = Session::new();
+        let mut session = Session::new();
+        let stage_backend =
+            resolve_stage_backend(self.config.backend_type, stage.execution_backend())?;
+        session.set_backend(stage_backend);
 
         // Set up Claude Code hooks for this session
         if let Some(hooks_dir) = find_hooks_dir() {
@@ -281,7 +285,7 @@ impl StageExecutor for Orchestrator {
                 &self.config.work_dir,
                 &hooks_dir,
                 merged_sandbox.permission_mode,
-                self.config.backend_type,
+                stage_backend,
             ) {
                 eprintln!("Warning: Failed to set up hooks for stage '{stage_id}': {e}");
                 // Continue anyway - hooks are optional enhancement
@@ -317,7 +321,8 @@ impl StageExecutor for Orchestrator {
 
         let spawned_session = if !self.config.manual_mode {
             let spawned = self
-                .backend
+                .dispatcher
+                .for_stage(stage_backend)
                 .spawn_session(&stage, &worktree, session, &signal_path)
                 .with_context(|| format!("Failed to spawn session for stage: {stage_id}"))?;
 
@@ -393,7 +398,10 @@ impl StageExecutor for Orchestrator {
             // Continue anyway - sandbox is optional enhancement
         }
 
-        let session = Session::new();
+        let mut session = Session::new();
+        let stage_backend =
+            resolve_stage_backend(self.config.backend_type, stage.execution_backend())?;
+        session.set_backend(stage_backend);
 
         // Set up Claude Code hooks for this session in the main repo
         if let Some(hooks_dir) = find_hooks_dir() {
@@ -410,7 +418,7 @@ impl StageExecutor for Orchestrator {
                 session.id.clone(),
                 absolute_work_dir,
                 merged_sandbox.permission_mode,
-                self.config.backend_type,
+                stage_backend,
             );
 
             // Set up hooks in the main repo (not a worktree)
@@ -448,7 +456,8 @@ impl StageExecutor for Orchestrator {
         let spawned_session = if !self.config.manual_mode {
             // Spawn session in the main repo directory (not a worktree)
             let spawned = self
-                .backend
+                .dispatcher
+                .for_stage(stage_backend)
                 .spawn_knowledge_session(&stage, session, &signal_path, &self.config.repo_root)
                 .with_context(|| {
                     format!("Failed to spawn knowledge session for stage: {stage_id}")

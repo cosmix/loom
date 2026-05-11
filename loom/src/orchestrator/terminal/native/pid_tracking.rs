@@ -228,6 +228,24 @@ fn get_process_cwd_macos(pid: u32) -> Option<PathBuf> {
     None
 }
 
+/// Container-relative path overrides for wrapper-script generation.
+///
+/// The native backend writes the host `.work` directory into the wrapper
+/// script verbatim; the container backend needs to substitute the
+/// container-stable mountpoints (e.g., `/repo/.work`,
+/// `/repo/.worktrees/{stage}` or `/repo` for merge variants) so the script
+/// remains valid once executed inside the container.
+///
+/// `work_dir_in_container` overrides `LOOM_WORK_DIR` and the PID-file path.
+/// `workspace_in_container` overrides the `cd` destination and
+/// `LOOM_WORKTREE_PATH`. When `None`, the wrapper performs no `cd` and
+/// exports no `LOOM_WORKTREE_PATH`.
+#[derive(Debug, Clone)]
+pub struct WrapperPaths {
+    pub work_dir_in_container: PathBuf,
+    pub workspace_in_container: Option<PathBuf>,
+}
+
 /// Create a wrapper script that writes its PID before exec'ing claude
 ///
 /// The wrapper script:
@@ -254,54 +272,110 @@ pub fn create_wrapper_script(
     claude_cmd: &str,
     working_dir: Option<&Path>,
 ) -> Result<PathBuf> {
+    create_wrapper_script_with_paths(
+        work_dir,
+        stage_id,
+        session_id,
+        claude_cmd,
+        working_dir,
+        None,
+    )
+}
+
+/// Generalised wrapper-script writer that lets the caller substitute
+/// container-stable paths for `LOOM_WORK_DIR`, the PID file, the `cd`
+/// destination, and `LOOM_WORKTREE_PATH`. When `paths` is `None`, the
+/// resulting script is identical to the host-path defaults used by
+/// [`create_wrapper_script`].
+pub fn create_wrapper_script_with_paths(
+    work_dir: &Path,
+    stage_id: &str,
+    session_id: &str,
+    claude_cmd: &str,
+    working_dir: Option<&Path>,
+    paths: Option<&WrapperPaths>,
+) -> Result<PathBuf> {
     create_wrappers_dir(work_dir)?;
     create_pid_dir(work_dir)?;
 
     let wrapper_path = wrapper_script_path(work_dir, stage_id);
-    let pid_file = pid_file_path(work_dir, stage_id);
+    let host_pid_file = pid_file_path(work_dir, stage_id);
 
-    // Convert paths to absolute - important because the script may cd elsewhere
-    let pid_file_abs = pid_file
-        .canonicalize()
-        .or_else(|_| {
-            // If file doesn't exist yet, canonicalize the parent and append filename
-            if let (Some(parent), Some(filename)) = (pid_file.parent(), pid_file.file_name()) {
-                parent.canonicalize().map(|p| p.join(filename))
-            } else {
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "Cannot canonicalize",
-                ))
-            }
-        })
-        .unwrap_or_else(|_| pid_file.clone());
+    // The script path uses host disk; LOOM_WORK_DIR and the in-script PID
+    // path use container-relative paths when `paths` is provided.
+    let (work_dir_for_script, pid_file_for_script): (PathBuf, PathBuf) = match paths {
+        Some(p) => {
+            let container_work = p.work_dir_in_container.clone();
+            let container_pid = container_work.join("pids").join(format!("{stage_id}.pid"));
+            (container_work, container_pid)
+        }
+        None => {
+            // Convert paths to absolute - important because the script may cd elsewhere
+            let pid_file_abs = host_pid_file
+                .canonicalize()
+                .or_else(|_| {
+                    if let (Some(parent), Some(filename)) =
+                        (host_pid_file.parent(), host_pid_file.file_name())
+                    {
+                        parent.canonicalize().map(|p| p.join(filename))
+                    } else {
+                        Err(std::io::Error::new(
+                            std::io::ErrorKind::NotFound,
+                            "Cannot canonicalize",
+                        ))
+                    }
+                })
+                .unwrap_or_else(|_| host_pid_file.clone());
 
-    // Get absolute path to .work directory for LOOM_WORK_DIR
-    let work_dir_abs = work_dir
-        .canonicalize()
-        .unwrap_or_else(|_| work_dir.to_path_buf());
+            let work_dir_abs = work_dir
+                .canonicalize()
+                .unwrap_or_else(|_| work_dir.to_path_buf());
 
-    // Build the cd command if a working directory is specified
-    // Use absolute path for working directory
-    // Also export LOOM_WORKTREE_PATH for hook-based isolation enforcement
-    let (cd_section, worktree_path_export) = if let Some(dir) = working_dir {
-        let dir_abs = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
-        let dir_escaped = escape(dir_abs.display().to_string().into());
-        (
-            format!(
-                r#"# Change to working directory
+            (work_dir_abs, pid_file_abs)
+        }
+    };
+
+    // Build the cd command. Container variant gets the override; native
+    // variant canonicalizes the host directory (important for macOS where
+    // terminals can't reliably set cwd before spawning).
+    let (cd_section, worktree_path_export) = match (paths, working_dir) {
+        (Some(p), _) => match p.workspace_in_container.as_ref() {
+            Some(dir) => {
+                let dir_escaped = escape(dir.display().to_string().into());
+                (
+                    format!(
+                        r#"# Change to working directory
 cd {dir_escaped} || {{ echo "Failed to cd to working directory"; exit 1; }}
 
 "#,
-            ),
-            format!(
-                r#"# Worktree boundary for file isolation hooks
+                    ),
+                    format!(
+                        r#"# Worktree boundary for file isolation hooks
 export LOOM_WORKTREE_PATH={dir_escaped}
 "#,
-            ),
-        )
-    } else {
-        (String::new(), String::new())
+                    ),
+                )
+            }
+            None => (String::new(), String::new()),
+        },
+        (None, Some(dir)) => {
+            let dir_abs = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+            let dir_escaped = escape(dir_abs.display().to_string().into());
+            (
+                format!(
+                    r#"# Change to working directory
+cd {dir_escaped} || {{ echo "Failed to cd to working directory"; exit 1; }}
+
+"#,
+                ),
+                format!(
+                    r#"# Worktree boundary for file isolation hooks
+export LOOM_WORKTREE_PATH={dir_escaped}
+"#,
+                ),
+            )
+        }
+        (None, None) => (String::new(), String::new()),
     };
 
     // Export LOOM_MERGE_SESSION for merge resolution sessions so hooks can detect them
@@ -315,8 +389,8 @@ export LOOM_WORKTREE_PATH={dir_escaped}
     // Shell-escape all interpolated values to prevent command injection
     let stage_id_escaped = escape(stage_id.into());
     let session_id_escaped = escape(session_id.into());
-    let work_dir_escaped = escape(work_dir_abs.display().to_string().into());
-    let pid_file_escaped = escape(pid_file_abs.display().to_string().into());
+    let work_dir_escaped = escape(work_dir_for_script.display().to_string().into());
+    let pid_file_escaped = escape(pid_file_for_script.display().to_string().into());
 
     let script = format!(
         r#"#!/bin/bash

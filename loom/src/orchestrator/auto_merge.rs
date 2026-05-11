@@ -13,7 +13,8 @@ use crate::git::merge::{merge_stage, MergeResult};
 use crate::models::session::Session;
 use crate::models::stage::Stage;
 use crate::orchestrator::signals::generate_merge_signal;
-use crate::orchestrator::terminal::TerminalBackend;
+use crate::orchestrator::terminal::dispatcher::BackendDispatcher;
+use crate::orchestrator::terminal::BackendType;
 
 /// Result of an auto-merge attempt
 #[derive(Debug)]
@@ -72,7 +73,8 @@ pub fn attempt_auto_merge(
     repo_root: &Path,
     work_dir: &Path,
     target_branch: &str,
-    backend: &dyn TerminalBackend,
+    dispatcher: &BackendDispatcher,
+    merge_backend: BackendType,
 ) -> Result<AutoMergeResult> {
     // Check if stage has a worktree
     let worktree_path = repo_root.join(".worktrees").join(&stage.id);
@@ -147,8 +149,12 @@ pub fn attempt_auto_merge(
             )
             .context("Failed to generate merge signal")?;
 
-            // Spawn the merge resolution session
-            let spawned_session = backend
+            // Spawn the merge resolution session via the backend the
+            // project elected (dispatcher returns the matching instance).
+            let mut session = session;
+            session.set_backend(merge_backend);
+            let spawned_session = dispatcher
+                .for_stage(merge_backend)
                 .spawn_merge_session(stage, session, &signal_path, repo_root)
                 .context("Failed to spawn merge resolution session")?;
 
