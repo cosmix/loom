@@ -328,13 +328,17 @@ pub enum ContainerCommands {
     },
     /// Diagnose the container backend (runtime, fingerprint, cache, capabilities)
     Doctor,
-    /// Open an interactive shell in a running stage's container
+    /// Open an interactive shell in a running stage's container.
+    ///
+    /// Each stage runs in its own container, removed on completion / kill / stop / clean.
     Shell {
         /// Stage ID whose session container to attach to
         #[arg(value_parser = clap_id_validator)]
         stage_id: String,
     },
-    /// Tail or follow the container logs for a running stage's session
+    /// Tail or follow the container logs for a running stage's session.
+    ///
+    /// Each stage runs in its own container, removed on completion / kill / stop / clean.
     Logs {
         /// Stage ID whose session container logs to read
         #[arg(value_parser = clap_id_validator)]
@@ -345,6 +349,21 @@ pub enum ContainerCommands {
         /// Number of trailing lines to print (when not following)
         #[arg(long, default_value_t = 500)]
         tail: usize,
+    },
+    /// List session-backed loom containers for this workspace.
+    ///
+    /// Shows containers tracked in .work/sessions/. For orphan
+    /// containers left behind by a crashed daemon, run
+    /// `loom clean --sessions`.
+    ///
+    /// Each stage runs in its own container, removed on completion / kill / stop / clean.
+    List {
+        /// Include exited/removed containers
+        #[arg(long)]
+        all: bool,
+        /// Emit JSON Lines instead of a table
+        #[arg(long)]
+        json: bool,
     },
 }
 
