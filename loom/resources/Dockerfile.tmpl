@@ -1,0 +1,73 @@
+FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
+
+ARG USERNAME=loom
+ARG USER_UID=1000
+ARG USER_GID=$USER_UID
+
+# Tooling: sudo (for firewall sudoers), iptables/ipset (firewall),
+# dnsutils (dig for allowlist DNS resolution), ripgrep/fd-find (agent tools),
+# git/curl/ca-certificates (basic dev), e2fsprogs (chattr for lock),
+# gosu (capability-drop in entrypoint per finding #15).
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        sudo iptables ipset dnsutils ripgrep fd-find git curl \
+        ca-certificates e2fsprogs gosu \
+    && rm -rf /var/lib/apt/lists/*
+
+# Loom user/group at UID 1000 (matches host UID in most dev setups;
+# Podman --userns=keep-id + Docker --user=uid:gid still apply at runtime).
+RUN if ! getent group ${USER_GID} >/dev/null; then groupadd --gid ${USER_GID} ${USERNAME}; fi && \
+    if ! id -u ${USERNAME} >/dev/null 2>&1; then useradd --uid ${USER_UID} --gid ${USER_GID} -m -s /bin/bash ${USERNAME}; fi
+
+# Node.js 22 + Claude Code CLI (every loom image ships claude).
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    npm install -g @anthropic-ai/claude-code && \
+    rm -rf /var/lib/apt/lists/*
+
+{{#if has_rust}}
+# Rust toolchain
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable && \
+    ln -sf /root/.cargo/bin/* /usr/local/bin/ || true
+{{/if}}
+
+{{#if has_typescript}}
+# TypeScript toolchain (bun is project preference per CLAUDE.md)
+RUN npm install -g typescript bun
+{{/if}}
+
+{{#if has_python}}
+# Python toolchain (uv is project preference)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    ln -sf /root/.local/bin/uv /usr/local/bin/uv
+{{/if}}
+
+{{#if has_go}}
+# Go toolchain
+RUN curl -fsSL https://go.dev/dl/go1.23.4.linux-amd64.tar.gz | tar -C /usr/local -xzf - && \
+    ln -sf /usr/local/go/bin/go /usr/local/bin/go && \
+    ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+{{/if}}
+
+# Firewall script (root-owned, immutable; agent cannot tamper per finding #16).
+COPY firewall.sh /usr/local/bin/loom-firewall.sh
+RUN chmod 0755 /usr/local/bin/loom-firewall.sh && \
+    chown root:root /usr/local/bin/loom-firewall.sh && \
+    chattr +i /usr/local/bin/loom-firewall.sh || true
+
+# Allow the loom user to run the firewall script via sudo with NO password.
+# This is the only privileged operation the unprivileged session can perform.
+RUN echo "loom ALL=(ALL) NOPASSWD: /usr/local/bin/loom-firewall.sh" > /etc/sudoers.d/loom-firewall && \
+    chmod 0440 /etc/sudoers.d/loom-firewall
+
+# Entrypoint runs as root, configures the firewall, then drops to loom via gosu.
+COPY entrypoint.sh /usr/local/bin/loom-entrypoint.sh
+RUN chmod 0755 /usr/local/bin/loom-entrypoint.sh
+
+WORKDIR /repo
+
+# IMPORTANT: do NOT `USER loom` here. The container starts as root so the
+# entrypoint can install iptables rules; entrypoint.sh execs gosu loom for
+# the actual workload (per finding #15).
+
+ENTRYPOINT ["/usr/local/bin/loom-entrypoint.sh"]
