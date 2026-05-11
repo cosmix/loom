@@ -37,6 +37,20 @@ impl DetectedLanguage {
             DetectedLanguage::Go => "golang",
         }
     }
+
+    /// Return the canonical identifier for this language used in image tags
+    /// and fingerprint prefixes.
+    ///
+    /// Distinct from `skill_name()`: Go returns `"go"` here (not `"golang"`)
+    /// so image tags stay compact and match Docker convention.
+    pub fn canonical_name(&self) -> &'static str {
+        match self {
+            DetectedLanguage::Rust => "rust",
+            DetectedLanguage::TypeScript => "typescript",
+            DetectedLanguage::Python => "python",
+            DetectedLanguage::Go => "go",
+        }
+    }
 }
 
 /// Detect programming languages used in a project
@@ -183,5 +197,14 @@ mod tests {
         assert_eq!(DetectedLanguage::TypeScript.skill_name(), "typescript");
         assert_eq!(DetectedLanguage::Python.skill_name(), "python");
         assert_eq!(DetectedLanguage::Go.skill_name(), "golang");
+    }
+
+    #[test]
+    fn test_canonical_name() {
+        assert_eq!(DetectedLanguage::Rust.canonical_name(), "rust");
+        assert_eq!(DetectedLanguage::TypeScript.canonical_name(), "typescript");
+        assert_eq!(DetectedLanguage::Python.canonical_name(), "python");
+        // Critical: Go must return "go", NOT "golang" (finding #18).
+        assert_eq!(DetectedLanguage::Go.canonical_name(), "go");
     }
 }

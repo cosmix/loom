@@ -21,8 +21,11 @@
 //! Liveness uses `<runtime> inspect -f '{{.State.Running}}'`; we never
 //! `kill -0` against the host PID for container sessions.
 
+pub mod fingerprint;
+pub mod image;
 pub mod lifecycle;
 pub mod network;
+pub mod resources;
 pub mod runtime;
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -44,6 +47,7 @@ use crate::models::session::Session;
 use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
 use crate::plan::schema::execution::ProjectExecutionConfig;
+use crate::plan::schema::NetworkConfig;
 use shell_escape::escape;
 use std::borrow::Cow;
 
@@ -68,6 +72,10 @@ pub struct ContainerBackend {
     work_dir: PathBuf,
     image_ref: String,
     forward_credentials: Vec<String>,
+    /// Plan-level network policy. Cached at construction so each spawn
+    /// can materialise the allowlist file without re-reading
+    /// `.work/config.toml` on every call.
+    network: NetworkConfig,
 }
 
 impl ContainerBackend {
@@ -101,11 +109,20 @@ impl ContainerBackend {
 
         let runtime = detect_runtime("auto").context("Container runtime detection failed")?;
 
+        // Read plan-level network policy once at construction. Missing
+        // section falls back to defaults (empty allowlist — firewall
+        // rejects everything beyond the hardcoded ALWAYS list).
+        let network = work_dir_api::read_plan_sandbox(&work_dir)
+            .context("Failed to read [plan_sandbox] from .work/config.toml")?
+            .map(|s| s.network)
+            .unwrap_or_default();
+
         Ok(Self {
             runtime,
             work_dir,
             image_ref: digest.to_string(),
             forward_credentials: container.forward_credentials.clone(),
+            network,
         })
     }
 
@@ -126,11 +143,16 @@ impl ContainerBackend {
         if digest.is_empty() || digest == "pending" {
             bail!("expected execution.container.image_digest; run loom init --backend container");
         }
+        let network = work_dir_api::read_plan_sandbox(&work_dir)
+            .context("Failed to read [plan_sandbox] from .work/config.toml")?
+            .map(|s| s.network)
+            .unwrap_or_default();
         Ok(Self {
             runtime,
             work_dir,
             image_ref: digest.to_string(),
             forward_credentials: container.forward_credentials.clone(),
+            network,
         })
     }
 
@@ -238,6 +260,12 @@ impl ContainerBackend {
         };
         let container_name = tracking_key.clone();
         session.tracking_key = tracking_key.clone();
+
+        // Materialise the per-stage allowlist file before launch so the
+        // in-container firewall script has a populated policy to read
+        // (mounted RO at /etc/loom/network/allowed_domains.txt).
+        network::write_allowlist(&self.work_dir, &self.network)
+            .with_context(|| format!("Failed to write network allowlist for stage {}", stage.id))?;
 
         let network = self.network_name(&stage.id);
         network::ensure_network(&self.runtime, &stage.id).with_context(|| {
