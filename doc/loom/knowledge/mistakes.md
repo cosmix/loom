@@ -406,3 +406,18 @@
 **Prevention:** Always verify mount construction in `build_mounts` unit tests by asserting `mounts[0] == Mount::ro(_, "/repo")` (ro base is first), and that rw overlay paths are tighter subtrees that come after. For Merge/BaseConflict stages that need a full rw `/repo`, there should be no ro base at all — document this as the intentional exception.
 
 **Fix:** The ro base mount must always be `args[0]` in the list, with all rw overlays appended after it. Add an assertion in `build_mounts_standard_stage_has_ro_repo_and_rw_worktree` that checks mount ordering by index, not just presence.
+
+## Container backend: UID 1000 collision on Ubuntu 24.04 base (2026-05-11)
+
+**What happened:** `loom init --backend container ...` failed at STEP 6/15 of the image build with `useradd: UID 1000 is not unique`. The Dockerfile (`loom/resources/Dockerfile.tmpl`) creates a `loom` user at UID 1000, but `mcr.microsoft.com/devcontainers/base:ubuntu-24.04` ships a pre-existing `ubuntu` user at UID 1000 / GID 1000 (new in 24.04 — 22.04 had no such pre-baked user).
+
+**Misleading signal:** The Dockerfile guarded `useradd` with `if ! id -u ${USERNAME} >/dev/null 2>&1` — checking whether the *username* `loom` exists. It didn't, so `useradd` ran and collided with the existing user occupying that UID. The guard was correct in intent (skip creation if already present) but wrong in mechanism (check by name, not by UID).
+
+**Why it broke:** `useradd --uid N` fails if UID `N` is taken, regardless of the username. The base image's `ubuntu` user holds UID 1000 from the moment the FROM line lands, so any `useradd --uid 1000 loom` is guaranteed to fail. Loom's image build also passes no `--build-arg USER_UID=...`, so the default is the only path exercised.
+
+**Prevention:**
+- When creating a fixed-UID user on a base image, always check by UID *and* by name. Evict whatever occupant currently holds the UID before calling `useradd --uid`.
+- The canonical devcontainers pattern: `getent passwd ${USER_UID}` → if the matching name isn't ours, `userdel -r`, then create. Same for GID via `getent group`.
+- When upgrading a base image's distro version, re-check whether common UIDs (1000, 1001) are now pre-occupied — Ubuntu 24.04 introduced this; future LTS releases may shift again.
+
+**Fix:** `Dockerfile.tmpl` now runs an explicit eviction block before `useradd`: if `getent passwd ${USER_UID}` resolves to a non-`loom` user, `userdel -r` removes it (falling back to non-`-r` if the home dir is shared); same for GID. The fingerprint changes automatically because the template content is embedded in the image fingerprint (`fingerprint.rs:22`), so cached images rebuild without manual cache clearing.
