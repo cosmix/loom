@@ -61,11 +61,15 @@ impl Drop for InitGuard {
 /// * `backend` - Optional project backend override (`native` | `container`).
 /// * `no_build` - When provisioning the container backend, skip the actual
 ///   image build and pin `image_digest = "pending"`.
+/// * `allow_insecure_runtime` - Skip the firewall enforcement smoke test
+///   that runs after image build. Use only on runtimes known to lack
+///   reliable iptables egress filtering.
 pub fn execute(
     plan_path: Option<PathBuf>,
     clean: bool,
     backend: Option<String>,
     no_build: bool,
+    allow_insecure_runtime: bool,
 ) -> Result<()> {
     let repo_root = std::env::current_dir()?;
     let repo_bootstrap = crate::git::ensure_repo_ready_for_worktrees(&repo_root)?;
@@ -168,7 +172,13 @@ pub fn execute(
     // touching stage definitions. When `backend` is None we PRESERVE the
     // existing `[project_execution]` section.
     if let Some(backend_str) = backend {
-        apply_project_backend(&work_dir, &repo_root, &backend_str, no_build)?;
+        apply_project_backend(
+            &work_dir,
+            &repo_root,
+            &backend_str,
+            no_build,
+            allow_insecure_runtime,
+        )?;
     }
 
     // Success - disarm the guard to prevent cleanup
@@ -187,6 +197,7 @@ fn apply_project_backend(
     repo_root: &Path,
     backend_str: &str,
     no_build: bool,
+    allow_insecure_runtime: bool,
 ) -> Result<()> {
     use crate::plan::schema::execution::{
         BackendType, ProjectContainerConfig, ProjectExecutionConfig,
@@ -212,7 +223,7 @@ fn apply_project_backend(
         }
         BackendType::Container => {
             use crate::orchestrator::terminal::container::{
-                fingerprint as fp, image, runtime as rt,
+                fingerprint as fp, image, probe, runtime as rt,
             };
             let project_root_for_fp = work_dir
                 .project_root()
@@ -245,6 +256,41 @@ fn apply_project_backend(
             println!("    Fingerprint: {}", fingerprint);
             println!("    Image:       {} ({})", digest, action);
             println!("    Elapsed:     {:?}", elapsed);
+
+            // Run the firewall enforcement smoke test after the image is
+            // available. The probe is skipped when `--no-build` is set
+            // (no real image to probe) and when the operator explicitly
+            // opts out via `--allow-insecure-runtime`.
+            if !no_build && !allow_insecure_runtime {
+                let image_ref = format!("loom/base:{fingerprint}");
+                match probe::run_firewall_smoke_test(runtime, &image_ref) {
+                    Ok(result) if result.enforced => {
+                        println!("  {} Firewall enforcement verified", "✓".green().bold());
+                    }
+                    Ok(result) => {
+                        anyhow::bail!(
+                            "Firewall enforcement failed on this runtime. The container \
+                             firewall is the authoritative network policy for stages — \
+                             refusing to proceed because traffic was not blocked despite an \
+                             empty allowlist. Re-run with --allow-insecure-runtime to \
+                             override (use with caution; container egress will not be \
+                             filtered). Diagnostic:\n{}",
+                            result.diagnostic
+                        );
+                    }
+                    Err(e) => {
+                        anyhow::bail!(
+                            "Failed to run firewall enforcement smoke test: {e:#}. \
+                             Re-run with --allow-insecure-runtime to skip the probe."
+                        );
+                    }
+                }
+            } else if allow_insecure_runtime {
+                println!(
+                    "  {} Firewall smoke test skipped (--allow-insecure-runtime)",
+                    "!".yellow().bold()
+                );
+            }
         }
     }
 
