@@ -616,7 +616,7 @@ impl Recovery for Orchestrator {
             };
 
             // Check if session is still running
-            let is_running = self.backend.is_session_alive(&session).unwrap_or(false);
+            let is_running = self.liveness.is_alive(&session).unwrap_or(false);
 
             if !is_running {
                 // Orphaned session - get stage ID and reset it

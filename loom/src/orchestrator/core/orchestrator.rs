@@ -23,7 +23,11 @@ use super::event_handler::EventHandler;
 use super::persistence::Persistence;
 use super::recovery::Recovery;
 use super::stage_executor::StageExecutor;
-use crate::orchestrator::terminal::{create_backend, BackendType, TerminalBackend};
+use crate::orchestrator::liveness::LivenessService;
+use crate::orchestrator::terminal::dispatcher::{
+    resolve_stage_backend, BackendDispatcher, BackendNeeds,
+};
+use crate::orchestrator::terminal::BackendType;
 
 /// Configuration for the orchestrator
 #[derive(Debug, Clone)]
@@ -86,8 +90,12 @@ pub struct Orchestrator {
     pub(super) monitor: Monitor,
     /// Track reported crashes to avoid duplicate messages
     pub(super) reported_crashes: HashSet<String>,
-    /// Terminal backend for spawning sessions
-    pub(super) backend: Box<dyn TerminalBackend>,
+    /// Multi-backend dispatcher — owns the native and/or container
+    /// backends actually required by this run, and routes spawn/kill
+    /// calls per-stage or per-session.
+    pub(super) dispatcher: Arc<BackendDispatcher>,
+    /// Backend-aware liveness probe (shared with the monitor thread).
+    pub(super) liveness: LivenessService,
     /// Skill index for generating skill recommendations in signals
     pub(super) skill_index: Option<SkillIndex>,
     /// Detected project languages for signal skill injection
@@ -114,11 +122,32 @@ impl Orchestrator {
             ..Default::default()
         };
 
-        let monitor = Monitor::new(monitor_config);
+        let mut monitor = Monitor::new(monitor_config);
 
-        // Create the terminal backend based on config
-        let backend = create_backend(config.backend_type, &config.work_dir)
-            .context("Failed to create terminal backend")?;
+        // Compute the per-stage backend overrides declared in the plan
+        // so the dispatcher only constructs the backends actually needed.
+        let stage_overrides = graph
+            .all_nodes()
+            .iter()
+            .filter_map(|node| {
+                crate::verify::transitions::load_stage(&node.id, &config.work_dir).ok()
+            })
+            .filter_map(|stage| {
+                stage.execution_backend().and_then(|backend| {
+                    // Validate at construction time so misconfigured
+                    // plans fail before the first poll.
+                    resolve_stage_backend(config.backend_type, Some(backend)).ok()
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let needs = BackendNeeds::from_project_and_overrides(config.backend_type, &stage_overrides);
+        let dispatcher = Arc::new(
+            BackendDispatcher::for_plan(config.backend_type, needs, &config.work_dir)
+                .context("Failed to construct backend dispatcher")?,
+        );
+        let liveness = LivenessService::new(Arc::clone(&dispatcher));
+        monitor.set_liveness(liveness.clone());
 
         // Load skill index if skill routing is enabled
         let skill_index = if config.enable_skill_routing {
@@ -137,7 +166,8 @@ impl Orchestrator {
             active_worktrees: HashMap::new(),
             monitor,
             reported_crashes: HashSet::new(),
-            backend,
+            dispatcher,
+            liveness,
             skill_index,
             detected_languages,
             merge_retry_attempted: HashSet::new(),
