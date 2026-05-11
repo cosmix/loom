@@ -8,6 +8,8 @@
 //! - Merge sessions: run in main repository for conflict resolution
 //! - Knowledge sessions: run in main repository for knowledge gathering (no worktree)
 
+pub mod container;
+pub mod dispatcher;
 pub mod emulator;
 pub mod native;
 
@@ -121,12 +123,8 @@ pub fn create_backend(
             Ok(Box::new(backend))
         }
         BackendType::Container => {
-            // Container backend implementation is provided by a later stage.
-            // For now, return a clear error so misconfigured plans surface early.
-            anyhow::bail!(
-                "Container backend is not yet wired into the orchestrator. \
-                 Set project backend to 'native' in .work/config.toml."
-            )
+            let backend = container::ContainerBackend::new(work_dir.to_path_buf())?;
+            Ok(Box::new(backend))
         }
     }
 }
