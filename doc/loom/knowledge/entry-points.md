@@ -37,7 +37,7 @@
 | `verify`      | `commands/verify.rs`          | Goal-backward verification                   |
 | `check`       | `commands/check.rs`           | Goal-backward verification (alias)           |
 | `completions` | `commands/completions/mod.rs` | Shell completions (custom scripts + dynamic) |
-| `container`   | `commands/container/mod.rs`   | Container image management (build/rebuild/doctor/shell) |
+| `container`   | `commands/container/mod.rs`   | Container image management (build/rebuild/doctor/shell/logs) |
 | `complete`    | Hidden (dynamic completions)  | Backend for shell tab completions            |
 
 Total: 23 visible commands + 1 hidden (complete for dynamic completions). Dispatch: `cli/dispatch.rs` match-based, two-level for nested commands.
@@ -140,11 +140,13 @@ Total: 23 visible commands + 1 hidden (complete for dynamic completions). Dispat
 - `orchestrator/terminal/emulator.rs` - 11 terminal emulator configs
 - `orchestrator/terminal/native/detection.rs` - Auto-detect terminal
 - `orchestrator/terminal/native/pid_tracking.rs` - Wrapper script, PID tracking, env vars
-- `orchestrator/terminal/container/mod.rs` - ContainerBackend (661 lines — refactor candidate); spawn/kill/liveness for containerised sessions
+- `orchestrator/terminal/container/mod.rs` - ContainerBackend (~975 lines — refactor candidate; split candidates: spawn_common, mount construction, env building); spawn/kill/liveness for containerised sessions
 - `orchestrator/terminal/container/fingerprint.rs` - compute_fingerprint(); encodes langs + Dockerfile.tmpl + firewall.sh SHA-256
 - `orchestrator/terminal/container/image.rs` - Global image cache + per-project digest pin
-- `orchestrator/terminal/container/lifecycle.rs` - Container run args, mount construction
+- `orchestrator/terminal/container/lifecycle.rs` - Container run args and mount construction (ro-base + per-stage rw overlays via build_mounts())
+- `orchestrator/terminal/container/logs_capture.rs` - capture_logs() + persist_log(); wraps `<runtime> logs --tail=N`, used on crash/kill before container removal
 - `orchestrator/terminal/container/network.rs` - Per-stage network create + allowlist materialisation
+- `orchestrator/terminal/container/probe.rs` - Firewall enforcement smoke test; runs transient container post-build with empty allowlist, verifies egress is blocked
 - `orchestrator/terminal/container/resources.rs` - Embedded Dockerfile.tmpl + firewall.sh access
 - `orchestrator/terminal/container/runtime.rs` - Docker/Podman/Apple Container detection (is_apple_container checks binary + version output)
 - `orchestrator/liveness.rs` - LivenessService: wraps BackendDispatcher for monitor thread; fixed_for_tests() stub for unit tests
@@ -176,6 +178,11 @@ Total: 23 visible commands + 1 hidden (complete for dynamic completions). Dispat
 - `plan/schema/execution.rs` - BackendType enum (canonical definition); PlanExecutionConfig, ProjectExecutionConfig, PlanContainerConfig, ProjectContainerConfig, NetworkConfig
 - `models/stage/types.rs` - Stage (runtime model)
 - `commands/init/plan_setup.rs` - create_stage_from_definition(), detect_stage_type(); validate_config() called here for backend compatibility check
+
+## Container Subcommand Implementations
+
+- `commands/container/mod.rs` - ContainerCommands enum + dispatch (build, rebuild, doctor, shell, logs)
+- `commands/container/logs.rs` - `loom container logs <stage-id>` — scans `.work/sessions/` for a container-backed session matching the stage, then execs into `<runtime> logs [-f] [--tail N] <name>`. Key helper: `resolve_session_for_stage(sessions_dir, stage_id) -> ResolvedTarget` (also unit-tested).
 
 ## CLI Subcommand Registration Pattern
 

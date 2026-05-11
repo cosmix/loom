@@ -105,9 +105,11 @@ loom check <stage-id> [--suggest]
 loom diagnose <stage-id>
 ```
 
-`--backend container` builds a project-specific container image and pins its digest to `.work/config.toml`. Subsequent `loom run` invocations use the pinned image without rebuilding.
+`--backend container` builds a project-specific container image, runs a firewall enforcement smoke test, and pins the image digest to `.work/config.toml`. Subsequent `loom run` invocations use the pinned image without rebuilding.
 
 `--no-build` skips the actual container image build during `loom init --backend container`, pinning `image_digest = "pending"`. Useful for CI setups where the image is built separately via `loom container build`.
+
+`--allow-insecure-runtime` skips the firewall enforcement smoke test. Use on rootless Podman environments without slirp4netns ≥ 1.2.3, or on Apple Container, where iptables-based egress filtering is best-effort and the probe may produce a false negative.
 
 ### Plan Commands
 
@@ -173,6 +175,7 @@ loom container build
 loom container rebuild
 loom container doctor
 loom container shell [--stage <stage-id>]
+loom container logs <stage-id> [--follow] [--tail <N>]
 ```
 
 `loom container build` builds the project container image (if not already cached). Equivalent to the build step in `loom init --backend container`.
@@ -182,6 +185,8 @@ loom container shell [--stage <stage-id>]
 `loom container doctor` checks container runtime availability, image freshness, and network configuration.
 
 `loom container shell` opens an interactive shell inside the container using the same topology as a stage session (`/repo` bind mount, hooks, firewall). Useful for debugging the container environment. With `--stage`, runs in the context of that stage's network.
+
+`loom container logs <stage-id>` tails or follows the stdout/stderr of a running stage's container. Scans `.work/sessions/` for an active container-backed session matching the stage ID, then execs into `<runtime> logs`. Use `--follow` to stream live output; `--tail N` to limit lines shown.
 
 ### Other Commands
 
@@ -294,9 +299,11 @@ loom container build  # build separately when ready
 
 ### What Runs Inside the Container
 
-- Host repo root is bind-mounted at `/repo` (read-write) — git worktree metadata is preserved
+- Host repo root is bind-mounted at `/repo` read-only as a base layer; only the stage-specific subtrees (worktree directory, `.work/memory`, `.work/sessions`, etc.) are overlaid read-write — git metadata is preserved while sensitive paths (`.git/`, sibling worktrees, `doc/plans/`, `.work/config.toml`) remain read-only
+- Merge and BaseConflict sessions are exempt: they receive full read-write access to `/repo` for conflict resolution
 - Stage cwd: `/repo/.worktrees/<stage-id>` | Merge/knowledge cwd: `/repo`
 - Hooks from `~/.claude/hooks/loom` are mounted read-only at `/home/loom/.claude/hooks/loom`
+- `settings.local.json` in the worktree is mounted read-only — agents cannot disable Claude Code hooks from inside the container
 - Network egress is filtered by the plan's `loom.sandbox.network.allowed_domains` setting
 
 ### Credential Forwarding
