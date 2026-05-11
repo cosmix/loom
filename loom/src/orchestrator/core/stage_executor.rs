@@ -242,17 +242,23 @@ impl StageExecutor for Orchestrator {
             .mark_executing(stage_id)
             .context("Failed to mark stage as executing in graph")?;
 
+        // Resolve the per-stage backend FIRST so the sandbox-default
+        // computation can branch on it (container → bypass-permissions).
+        let stage_backend =
+            resolve_stage_backend(self.config.backend_type, stage.execution_backend())?;
+
         // Generate and write sandbox settings to worktree
         let mut merged_sandbox = crate::sandbox::merge_config(
             &self.config.sandbox_config,
             &stage.sandbox,
             stage.stage_type,
+            stage_backend,
         );
         // Defense-in-depth: re-validate at spawn time. `loom init` already
         // rejects incompatible configs, but the user might have hand-edited
         // .work/config.toml to drop the container backend marker between
         // init and run. Refuse to spawn rather than silently downgrade.
-        if let Err(e) = crate::sandbox::validate_config(&merged_sandbox, self.config.backend_type) {
+        if let Err(e) = crate::sandbox::validate_config(&merged_sandbox, stage_backend) {
             let err_msg = format!("{e:#}");
             eprintln!("Stage '{stage_id}' blocked: invalid sandbox config at spawn: {err_msg}");
             if stage.try_mark_blocked().is_ok() {
@@ -272,8 +278,6 @@ impl StageExecutor for Orchestrator {
         }
 
         let mut session = Session::new();
-        let stage_backend =
-            resolve_stage_backend(self.config.backend_type, stage.execution_backend())?;
         session.set_backend(stage_backend);
 
         // Set up Claude Code hooks for this session
@@ -368,14 +372,20 @@ impl StageExecutor for Orchestrator {
     fn start_knowledge_stage(&mut self, mut stage: Stage) -> Result<()> {
         let stage_id = stage.id.clone();
 
+        // Resolve the per-stage backend FIRST so the sandbox-default
+        // computation can branch on it (container → bypass-permissions).
+        let stage_backend =
+            resolve_stage_backend(self.config.backend_type, stage.execution_backend())?;
+
         // Generate and write sandbox settings to main repo
         let mut merged_sandbox = crate::sandbox::merge_config(
             &self.config.sandbox_config,
             &stage.sandbox,
             stage.stage_type,
+            stage_backend,
         );
         // Defense-in-depth: re-validate at spawn time even for knowledge stages.
-        if let Err(e) = crate::sandbox::validate_config(&merged_sandbox, self.config.backend_type) {
+        if let Err(e) = crate::sandbox::validate_config(&merged_sandbox, stage_backend) {
             let err_msg = format!("{e:#}");
             eprintln!(
                 "Knowledge stage '{stage_id}' blocked: invalid sandbox config at spawn: {err_msg}"
@@ -399,8 +409,6 @@ impl StageExecutor for Orchestrator {
         }
 
         let mut session = Session::new();
-        let stage_backend =
-            resolve_stage_backend(self.config.backend_type, stage.execution_backend())?;
         session.set_backend(stage_backend);
 
         // Set up Claude Code hooks for this session in the main repo

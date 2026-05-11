@@ -964,7 +964,7 @@ mod tests {
 
     #[test]
     fn test_no_path_in_both_allow_and_deny() {
-        use crate::plan::schema::{SandboxConfig, StageSandboxConfig, StageType};
+        use crate::plan::schema::{BackendType, SandboxConfig, StageSandboxConfig, StageType};
         use crate::sandbox::merge_config;
 
         // Test all stage types
@@ -976,7 +976,7 @@ mod tests {
         ] {
             let plan = SandboxConfig::default();
             let stage = StageSandboxConfig::default();
-            let merged = merge_config(&plan, &stage, stage_type);
+            let merged = merge_config(&plan, &stage, stage_type, BackendType::Native);
             let json = generate_settings_json(&merged);
 
             let permissions = &json["permissions"];

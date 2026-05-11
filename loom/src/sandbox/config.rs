@@ -40,12 +40,23 @@ pub struct MergedSandboxConfig {
 /// Resolve the default `PermissionMode` for a stage type when no explicit
 /// override is set at the plan or stage level.
 ///
-/// - Knowledge / KnowledgeDistill default to `AcceptEdits` — writes are scoped
-///   to `doc/loom/knowledge/` and friction during knowledge curation hurts more
+/// Container-backed stages default to `BypassPermissions`: the container is
+/// the safety boundary (firewalled network, no host filesystem access, no
+/// credentials by default), so Claude's permission prompts add no security —
+/// only the risk that an unattended stage hangs forever waiting for input
+/// nobody will give. Native-backed stages fall back to stage-type defaults
+/// since the OS sandbox alone cannot catch every host-damaging operation.
+///
+/// Native defaults:
+/// - Knowledge / KnowledgeDistill → `AcceptEdits` — writes are scoped to
+///   `doc/loom/knowledge/` and friction during knowledge curation hurts more
 ///   than it helps.
-/// - Standard / IntegrationVerify default to `Auto` — Claude's heuristics
-///   approve safe edits while still prompting for destructive ones.
-pub fn default_mode_for(stage_type: StageType) -> PermissionMode {
+/// - Standard / IntegrationVerify → `Auto` — Claude's heuristics approve
+///   safe edits while still prompting for destructive ones.
+pub fn default_mode_for(stage_type: StageType, backend: BackendType) -> PermissionMode {
+    if backend == BackendType::Container {
+        return PermissionMode::BypassPermissions;
+    }
     match stage_type {
         StageType::Knowledge | StageType::KnowledgeDistill => PermissionMode::AcceptEdits,
         StageType::Standard | StageType::IntegrationVerify => PermissionMode::Auto,
@@ -55,15 +66,19 @@ pub fn default_mode_for(stage_type: StageType) -> PermissionMode {
 /// Merge plan-level sandbox config with stage-level overrides.
 ///
 /// Precedence for `permission_mode`: stage > plan > [`default_mode_for`].
+/// `backend` is the resolved per-stage backend (after `resolve_stage_backend`)
+/// — used only to compute the stage-type default. Explicit plan/stage values
+/// take precedence and are passed through unchanged.
 pub fn merge_config(
     plan_config: &SandboxConfig,
     stage_config: &StageSandboxConfig,
     stage_type: StageType,
+    backend: BackendType,
 ) -> MergedSandboxConfig {
     let permission_mode = stage_config
         .permission_mode
         .or(plan_config.permission_mode)
-        .unwrap_or_else(|| default_mode_for(stage_type));
+        .unwrap_or_else(|| default_mode_for(stage_type, backend));
 
     MergedSandboxConfig {
         enabled: stage_config.enabled.unwrap_or(plan_config.enabled),
@@ -389,7 +404,7 @@ mod tests {
             permission_mode: None,
         };
 
-        let merged = merge_config(&plan, &stage, StageType::Standard);
+        let merged = merge_config(&plan, &stage, StageType::Standard, BackendType::Native);
 
         assert!(!merged.enabled); // Overridden
         assert!(merged.auto_allow); // From plan
@@ -416,7 +431,7 @@ mod tests {
 
         let stage = StageSandboxConfig::default();
 
-        let merged = merge_config(&plan, &stage, StageType::Knowledge);
+        let merged = merge_config(&plan, &stage, StageType::Knowledge, BackendType::Native);
 
         // Knowledge stage should NOT have doc/loom/knowledge/** in allow_write
         // (knowledge stages use `loom knowledge update` CLI which runs outside sandbox)
@@ -441,7 +456,12 @@ mod tests {
 
         let stage = StageSandboxConfig::default();
 
-        let merged = merge_config(&plan, &stage, StageType::IntegrationVerify);
+        let merged = merge_config(
+            &plan,
+            &stage,
+            StageType::IntegrationVerify,
+            BackendType::Native,
+        );
 
         // IntegrationVerify stage should NOT have doc/loom/knowledge/** in allow_write
         // (uses `loom knowledge update` CLI which runs outside sandbox)
@@ -456,20 +476,42 @@ mod tests {
     // =========================================================================
 
     #[test]
-    fn test_default_mode_for_stage_type() {
-        assert_eq!(default_mode_for(StageType::Standard), PermissionMode::Auto);
+    fn test_default_mode_for_stage_type_native() {
         assert_eq!(
-            default_mode_for(StageType::IntegrationVerify),
+            default_mode_for(StageType::Standard, BackendType::Native),
             PermissionMode::Auto
         );
         assert_eq!(
-            default_mode_for(StageType::Knowledge),
+            default_mode_for(StageType::IntegrationVerify, BackendType::Native),
+            PermissionMode::Auto
+        );
+        assert_eq!(
+            default_mode_for(StageType::Knowledge, BackendType::Native),
             PermissionMode::AcceptEdits
         );
         assert_eq!(
-            default_mode_for(StageType::KnowledgeDistill),
+            default_mode_for(StageType::KnowledgeDistill, BackendType::Native),
             PermissionMode::AcceptEdits
         );
+    }
+
+    #[test]
+    fn test_default_mode_for_container_is_bypass() {
+        // Container is the safety boundary; default to BypassPermissions for
+        // every stage type so unattended sessions never hang on prompts.
+        for stage_type in [
+            StageType::Standard,
+            StageType::IntegrationVerify,
+            StageType::Knowledge,
+            StageType::KnowledgeDistill,
+        ] {
+            assert_eq!(
+                default_mode_for(stage_type, BackendType::Container),
+                PermissionMode::BypassPermissions,
+                "container default for {:?}",
+                stage_type
+            );
+        }
     }
 
     #[test]
@@ -484,19 +526,30 @@ mod tests {
             permission_mode: Some(PermissionMode::BypassPermissions),
             ..StageSandboxConfig::default()
         };
-        let merged = merge_config(&plan, &stage_override, StageType::Standard);
+        let merged = merge_config(
+            &plan,
+            &stage_override,
+            StageType::Standard,
+            BackendType::Container,
+        );
         assert_eq!(merged.permission_mode, PermissionMode::BypassPermissions);
 
         // No stage override: plan wins over default
-        let merged = merge_config(&plan, &StageSandboxConfig::default(), StageType::Standard);
+        let merged = merge_config(
+            &plan,
+            &StageSandboxConfig::default(),
+            StageType::Standard,
+            BackendType::Native,
+        );
         assert_eq!(merged.permission_mode, PermissionMode::Plan);
 
-        // No plan / no stage override: stage type default
+        // No plan / no stage override on native: stage type default
         let plan_default = SandboxConfig::default();
         let merged = merge_config(
             &plan_default,
             &StageSandboxConfig::default(),
             StageType::Standard,
+            BackendType::Native,
         );
         assert_eq!(merged.permission_mode, PermissionMode::Auto);
 
@@ -504,8 +557,26 @@ mod tests {
             &plan_default,
             &StageSandboxConfig::default(),
             StageType::Knowledge,
+            BackendType::Native,
         );
         assert_eq!(merged.permission_mode, PermissionMode::AcceptEdits);
+
+        // No plan / no stage override on container: bypass for every stage type.
+        let merged = merge_config(
+            &plan_default,
+            &StageSandboxConfig::default(),
+            StageType::Standard,
+            BackendType::Container,
+        );
+        assert_eq!(merged.permission_mode, PermissionMode::BypassPermissions);
+
+        let merged = merge_config(
+            &plan_default,
+            &StageSandboxConfig::default(),
+            StageType::Knowledge,
+            BackendType::Container,
+        );
+        assert_eq!(merged.permission_mode, PermissionMode::BypassPermissions);
     }
 
     #[test]
@@ -686,6 +757,7 @@ mod tests {
             &SandboxConfig::default(),
             &StageSandboxConfig::default(),
             StageType::Standard,
+            BackendType::Native,
         );
         assert!(merged.enabled, "Merged config should have sandbox enabled");
     }

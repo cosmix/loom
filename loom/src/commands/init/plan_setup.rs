@@ -117,7 +117,12 @@ pub fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<usiz
     let plan_sandbox = &parsed_plan.metadata.loom.sandbox;
     for stage_def in &stages {
         let stage_type = detect_stage_type(stage_def);
-        let merged = merge_sandbox_config(plan_sandbox, &stage_def.sandbox, stage_type);
+        let merged = merge_sandbox_config(
+            plan_sandbox,
+            &stage_def.sandbox,
+            stage_type,
+            project_backend,
+        );
         validate_sandbox(&merged, project_backend).with_context(|| {
             format!(
                 "Stage '{}' has an incompatible sandbox configuration for backend '{}'",
