@@ -12,7 +12,7 @@ use super::cleanup::{
     cleanup_orphaned_sessions, cleanup_work_directory, cleanup_worktrees_directory,
     prune_stale_worktrees, remove_work_directory_on_failure,
 };
-use super::plan_setup::initialize_with_plan;
+use super::plan_setup::{initialize_with_plan, probe_firewall_or_bail};
 
 /// RAII guard that cleans up .work directory on drop unless disarmed.
 /// This ensures cleanup happens on ANY failure path, not just plan parsing.
@@ -223,7 +223,7 @@ fn apply_project_backend(
         }
         BackendType::Container => {
             use crate::orchestrator::terminal::container::{
-                fingerprint as fp, image, probe, runtime as rt,
+                fingerprint as fp, image, runtime as rt,
             };
             let project_root_for_fp = work_dir
                 .project_root()
@@ -263,28 +263,8 @@ fn apply_project_backend(
             // opts out via `--allow-insecure-runtime`.
             if !no_build && !allow_insecure_runtime {
                 let image_ref = format!("loom/base:{fingerprint}");
-                match probe::run_firewall_smoke_test(runtime, &image_ref) {
-                    Ok(result) if result.enforced => {
-                        println!("  {} Firewall enforcement verified", "✓".green().bold());
-                    }
-                    Ok(result) => {
-                        anyhow::bail!(
-                            "Firewall enforcement failed on this runtime. The container \
-                             firewall is the authoritative network policy for stages — \
-                             refusing to proceed because traffic was not blocked despite an \
-                             empty allowlist. Re-run with --allow-insecure-runtime to \
-                             override (use with caution; container egress will not be \
-                             filtered). Diagnostic:\n{}",
-                            result.diagnostic
-                        );
-                    }
-                    Err(e) => {
-                        anyhow::bail!(
-                            "Failed to run firewall enforcement smoke test: {e:#}. \
-                             Re-run with --allow-insecure-runtime to skip the probe."
-                        );
-                    }
-                }
+                probe_firewall_or_bail(runtime, &image_ref)?;
+                println!("  {} Firewall enforcement verified", "✓".green().bold());
             } else if allow_insecure_runtime {
                 println!(
                     "  {} Firewall smoke test skipped (--allow-insecure-runtime)",
