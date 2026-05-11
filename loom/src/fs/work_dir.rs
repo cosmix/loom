@@ -1,8 +1,13 @@
 use anyhow::{bail, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
+use toml_edit::DocumentMut;
 
 use crate::fs::knowledge::KnowledgeDir;
+use crate::plan::schema::{
+    execution::{PlanExecutionConfig, ProjectExecutionConfig},
+    SandboxConfig,
+};
 
 /// Parsed config.toml structure
 #[derive(Debug, Clone)]
@@ -293,6 +298,152 @@ Do not manually edit these files unless you know what you're doing.
     }
 }
 
+// ==========================================================================
+// Centralized .work/config.toml API
+//
+// All read/write to `.work/config.toml` MUST go through this module so that:
+//   * comments and unknown keys are preserved (toml_edit, not toml::Value),
+//   * structured sub-tables (`[plan_sandbox]`, `[plan_execution]`,
+//     `[project_execution]`) have one canonical location,
+//   * concurrent access serializes through the file lock used by other
+//     `fs/` writers when needed by callers.
+//
+// Section layout in `.work/config.toml`:
+//
+//   [plan]
+//   source_path / plan_id / plan_name / base_branch
+//
+//   [project_execution]
+//   backend = "native" | "container"
+//   [project_execution.container]
+//   runtime / fingerprint / image_digest / forward_credentials
+//
+//   [plan_sandbox]   # persisted snapshot of plan-level sandbox at init time
+//   [plan_execution] # persisted snapshot of plan-level execution config
+//
+// Section keys for the persisted plan-level config (see
+// `read_plan_sandbox` / `read_plan_execution`).
+// ==========================================================================
+
+const PLAN_SANDBOX_SECTION: &str = "plan_sandbox";
+const PLAN_EXECUTION_SECTION: &str = "plan_execution";
+const PROJECT_EXECUTION_SECTION: &str = "project_execution";
+
+fn config_path(work_dir: &Path) -> PathBuf {
+    work_dir.join("config.toml")
+}
+
+/// Read `.work/config.toml` as a `toml_edit::DocumentMut`, preserving
+/// comments, formatting, and unknown keys. Returns an empty document if the
+/// file does not exist.
+pub fn read_config(work_dir: &Path) -> Result<DocumentMut> {
+    let path = config_path(work_dir);
+    if !path.exists() {
+        return Ok(DocumentMut::new());
+    }
+    let content =
+        fs::read_to_string(&path).with_context(|| format!("Failed to read {}", path.display()))?;
+    content
+        .parse::<DocumentMut>()
+        .with_context(|| format!("Failed to parse {}", path.display()))
+}
+
+/// Write the document back to `.work/config.toml`. Caller is responsible for
+/// holding any required lock.
+pub fn write_config(work_dir: &Path, doc: &DocumentMut) -> Result<()> {
+    let path = config_path(work_dir);
+    if let Some(parent) = path.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create {}", parent.display()))?;
+        }
+    }
+    fs::write(&path, doc.to_string())
+        .with_context(|| format!("Failed to write {}", path.display()))?;
+    Ok(())
+}
+
+fn read_section<T: serde::de::DeserializeOwned>(
+    work_dir: &Path,
+    section: &str,
+) -> Result<Option<T>> {
+    let path = config_path(work_dir);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let content =
+        fs::read_to_string(&path).with_context(|| format!("Failed to read {}", path.display()))?;
+    let value: toml::Value = toml::from_str(&content)
+        .with_context(|| format!("Failed to parse {} as TOML", path.display()))?;
+    let Some(section_value) = value.get(section).cloned() else {
+        return Ok(None);
+    };
+    let typed: T = section_value
+        .try_into()
+        .with_context(|| format!("Failed to deserialize [{section}] section"))?;
+    Ok(Some(typed))
+}
+
+fn write_section<T: serde::Serialize>(work_dir: &Path, section: &str, value: &T) -> Result<()> {
+    let mut doc = read_config(work_dir)?;
+
+    // Serialize the typed value to a toml::Value, then convert to a
+    // toml_edit Item by parsing its string representation.
+    let toml_value = toml::Value::try_from(value)
+        .with_context(|| format!("Failed to serialize [{section}] section"))?;
+    let rendered = toml::to_string_pretty(&toml::Value::Table({
+        let mut t = toml::map::Map::new();
+        t.insert(section.to_string(), toml_value);
+        t
+    }))
+    .with_context(|| format!("Failed to render [{section}] section"))?;
+
+    let new_doc: DocumentMut = rendered
+        .parse()
+        .with_context(|| format!("Failed to re-parse rendered [{section}] section"))?;
+
+    if let Some(item) = new_doc.get(section) {
+        doc.insert(section, item.clone());
+    } else {
+        // Section serialized to nothing (empty table) — remove from doc.
+        doc.remove(section);
+    }
+    write_config(work_dir, &doc)
+}
+
+/// Read the persisted project-level execution config (`[project_execution]`).
+pub fn read_project_execution(work_dir: &Path) -> Result<Option<ProjectExecutionConfig>> {
+    read_section(work_dir, PROJECT_EXECUTION_SECTION)
+}
+
+/// Persist the project-level execution config (`[project_execution]`).
+pub fn write_project_execution(work_dir: &Path, cfg: &ProjectExecutionConfig) -> Result<()> {
+    write_section(work_dir, PROJECT_EXECUTION_SECTION, cfg)
+}
+
+/// Read the persisted plan-level sandbox config (`[plan_sandbox]`).
+///
+/// Returns `Ok(None)` if the section is missing — callers should fall back
+/// to plan-file parsing or defaults.
+pub fn read_plan_sandbox(work_dir: &Path) -> Result<Option<SandboxConfig>> {
+    read_section(work_dir, PLAN_SANDBOX_SECTION)
+}
+
+/// Persist the plan-level sandbox config (`[plan_sandbox]`).
+pub fn write_plan_sandbox(work_dir: &Path, sandbox: &SandboxConfig) -> Result<()> {
+    write_section(work_dir, PLAN_SANDBOX_SECTION, sandbox)
+}
+
+/// Read the persisted plan-level execution config (`[plan_execution]`).
+pub fn read_plan_execution(work_dir: &Path) -> Result<Option<PlanExecutionConfig>> {
+    read_section(work_dir, PLAN_EXECUTION_SECTION)
+}
+
+/// Persist the plan-level execution config (`[plan_execution]`).
+pub fn write_plan_execution(work_dir: &Path, exec: &PlanExecutionConfig) -> Result<()> {
+    write_section(work_dir, PLAN_EXECUTION_SECTION, exec)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -409,5 +560,122 @@ mod tests {
             subdir.join(".work"),
             "Without .work anywhere, should fall back to base_path/.work"
         );
+    }
+
+    // ----- Centralized config.toml API tests -----
+
+    use crate::plan::schema::execution::{
+        BackendType, PlanContainerConfig, PlanExecutionConfig, ProjectContainerConfig,
+        ProjectExecutionConfig,
+    };
+    use crate::plan::schema::SandboxConfig;
+
+    fn init_work(temp: &TempDir) -> PathBuf {
+        let work = temp.path().join(".work");
+        fs::create_dir_all(&work).unwrap();
+        work
+    }
+
+    #[test]
+    fn read_config_returns_empty_when_missing() {
+        let temp = TempDir::new().unwrap();
+        let work = init_work(&temp);
+        let doc = read_config(&work).unwrap();
+        assert!(doc.iter().next().is_none());
+    }
+
+    #[test]
+    fn read_config_preserves_comments_and_unknown_keys() {
+        let temp = TempDir::new().unwrap();
+        let work = init_work(&temp);
+        let original = "# Top comment\n\n[plan]\n# inner comment\nsource_path = \"docs/plans/PLAN-x.md\"\nplan_id = \"x\"\nplan_name = \"X\"\nbase_branch = \"main\"\nunknown_key = \"keep me\"\n";
+        fs::write(work.join("config.toml"), original).unwrap();
+
+        let doc = read_config(&work).unwrap();
+        write_config(&work, &doc).unwrap();
+        let after = fs::read_to_string(work.join("config.toml")).unwrap();
+        assert!(after.contains("# Top comment"));
+        assert!(after.contains("# inner comment"));
+        assert!(after.contains("unknown_key = \"keep me\""));
+    }
+
+    #[test]
+    fn write_then_read_project_execution_round_trip() {
+        let temp = TempDir::new().unwrap();
+        let work = init_work(&temp);
+        let cfg = ProjectExecutionConfig {
+            backend: BackendType::Container,
+            container: Some(ProjectContainerConfig {
+                runtime: "docker".to_string(),
+                fingerprint: "abc".to_string(),
+                image_digest: "sha256:dead".to_string(),
+                forward_credentials: vec!["GH_TOKEN".to_string()],
+            }),
+        };
+        write_project_execution(&work, &cfg).unwrap();
+        let back = read_project_execution(&work).unwrap().unwrap();
+        assert_eq!(back, cfg);
+    }
+
+    #[test]
+    fn write_then_read_plan_sandbox_round_trip() {
+        let temp = TempDir::new().unwrap();
+        let work = init_work(&temp);
+        let mut sandbox = SandboxConfig::default();
+        sandbox.network.allowed_domains = vec!["github.com".to_string()];
+        write_plan_sandbox(&work, &sandbox).unwrap();
+        let back = read_plan_sandbox(&work).unwrap().unwrap();
+        assert_eq!(back.network.allowed_domains, vec!["github.com".to_string()]);
+        assert_eq!(back.enabled, sandbox.enabled);
+    }
+
+    #[test]
+    fn write_then_read_plan_execution_round_trip() {
+        let temp = TempDir::new().unwrap();
+        let work = init_work(&temp);
+        let cfg = PlanExecutionConfig {
+            container: Some(PlanContainerConfig {
+                forward_credentials: vec!["AWS_PROFILE".to_string()],
+                additional_mounts: vec!["/tmp/x:/x".to_string()],
+            }),
+        };
+        write_plan_execution(&work, &cfg).unwrap();
+        let back = read_plan_execution(&work).unwrap().unwrap();
+        assert_eq!(back, cfg);
+    }
+
+    #[test]
+    fn writes_preserve_unrelated_sections_and_comments() {
+        let temp = TempDir::new().unwrap();
+        let work = init_work(&temp);
+        let original = "# Header\n[plan]\nsource_path = \"a\"\nplan_id = \"id\"\nplan_name = \"n\"\nbase_branch = \"main\"\n# trailing comment\n";
+        fs::write(work.join("config.toml"), original).unwrap();
+
+        let exec = ProjectExecutionConfig {
+            backend: BackendType::Native,
+            container: None,
+        };
+        write_project_execution(&work, &exec).unwrap();
+
+        let after = fs::read_to_string(work.join("config.toml")).unwrap();
+        assert!(after.contains("[plan]"));
+        assert!(after.contains("source_path = \"a\""));
+        assert!(after.contains("# Header"));
+        assert!(after.contains("[project_execution]"));
+        assert!(after.contains("backend = \"native\""));
+    }
+
+    #[test]
+    fn read_returns_none_when_section_absent() {
+        let temp = TempDir::new().unwrap();
+        let work = init_work(&temp);
+        fs::write(
+            work.join("config.toml"),
+            "[plan]\nsource_path = \"x\"\nplan_id = \"id\"\nplan_name = \"n\"\nbase_branch = \"main\"\n",
+        )
+        .unwrap();
+        assert!(read_plan_sandbox(&work).unwrap().is_none());
+        assert!(read_plan_execution(&work).unwrap().is_none());
+        assert!(read_project_execution(&work).unwrap().is_none());
     }
 }

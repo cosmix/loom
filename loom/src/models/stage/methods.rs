@@ -63,7 +63,17 @@ impl Stage {
             regression_test: None,
             model: None,
             reasoning_effort: None,
+            execution_backend: None,
         }
+    }
+
+    /// Returns the per-stage backend override, if any.
+    ///
+    /// `None` means "fall back to the project-level backend in
+    /// `.work/config.toml`". Use this accessor instead of touching the field
+    /// directly so the call sites stay readable.
+    pub fn execution_backend(&self) -> Option<crate::plan::schema::execution::BackendType> {
+        self.execution_backend
     }
 
     /// Returns the effective model for this stage.

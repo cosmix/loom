@@ -1,7 +1,7 @@
 //! Plan initialization and stage creation for loom init.
 
 use crate::fs::stage_files::stage_file_path;
-use crate::fs::work_dir::WorkDir;
+use crate::fs::work_dir::{self, WorkDir};
 use crate::git::branch::current_branch;
 use crate::models::stage::{Stage, StageStatus};
 use crate::plan::graph::levels::compute_all_levels;
@@ -14,24 +14,12 @@ use crate::verify::serialize_stage_to_markdown;
 use anyhow::{Context, Result};
 use chrono::Utc;
 use colored::Colorize;
-use serde::Serialize;
 use std::fs;
 use std::path::Path;
+use toml_edit::{value, Item, Table};
 
-/// Configuration file structure for type-safe TOML serialization.
-/// Using serde ensures proper escaping of all string fields.
-#[derive(Serialize)]
-struct Config {
-    plan: PlanConfig,
-}
-
-#[derive(Serialize)]
-struct PlanConfig {
-    source_path: String,
-    plan_id: String,
-    plan_name: String,
-    base_branch: String,
-}
+// Plan / config writes go through the centralized `fs::work_dir` API using
+// `toml_edit`, which preserves comments and unknown keys across edits.
 
 /// Initialize with a plan file
 /// Returns the number of stages created
@@ -128,25 +116,40 @@ pub fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<usiz
         .strip_prefix(&project_root)
         .unwrap_or(&canonical_path);
 
-    // Build config using serde serialization for proper TOML escaping
-    // This prevents injection attacks via malicious plan names/paths
-    let config = Config {
-        plan: PlanConfig {
-            source_path: relative_source_path.display().to_string(),
-            plan_id: parsed_plan.id.clone(),
-            plan_name: parsed_plan.name.clone(),
-            base_branch,
-        },
-    };
+    // Build config using the centralized fs::work_dir API. We start from an
+    // existing document (preserving comments / unknown keys) and write the
+    // [plan] table via toml_edit so structured serde wrappers don't flatten
+    // ad-hoc additions made by other tools.
+    let mut doc = work_dir::read_config(work_dir.root())?;
 
-    let config_content = format!(
-        "# loom Configuration\n# Generated from plan: {}\n\n{}",
-        canonical_path.display(),
-        toml::to_string_pretty(&config).context("Failed to serialize config to TOML")?
-    );
+    if doc.iter().next().is_none() {
+        // First-time write: prepend a header comment so the file is human-friendly.
+        let header = format!(
+            "# loom Configuration\n# Generated from plan: {}\n",
+            canonical_path.display()
+        );
+        doc.decor_mut().set_prefix(header);
+    }
 
-    let config_path = work_dir.root().join("config.toml");
-    fs::write(&config_path, config_content).context("Failed to write config.toml")?;
+    let mut plan_table = Table::new();
+    plan_table["source_path"] = value(relative_source_path.display().to_string());
+    plan_table["plan_id"] = value(parsed_plan.id.clone());
+    plan_table["plan_name"] = value(parsed_plan.name.clone());
+    plan_table["base_branch"] = value(base_branch.clone());
+    doc.insert("plan", Item::Table(plan_table));
+
+    work_dir::write_config(work_dir.root(), &doc).context("Failed to write .work/config.toml")?;
+
+    // Persist plan-level sandbox + execution snapshots so loader fallbacks
+    // don't silently substitute defaults after .work/stages exists.
+    work_dir::write_plan_sandbox(work_dir.root(), &parsed_plan.metadata.loom.sandbox)
+        .context("Failed to persist plan-level sandbox config")?;
+
+    if let Some(plan_exec) = &parsed_plan.metadata.loom.execution {
+        work_dir::write_plan_execution(work_dir.root(), plan_exec)
+            .context("Failed to persist plan-level execution config")?;
+    }
+
     println!(
         "  {} Config saved {}",
         "✓".green().bold(),
@@ -266,5 +269,6 @@ pub(crate) fn create_stage_from_definition(stage_def: &StageDefinition, plan_id:
         regression_test: stage_def.regression_test.clone(),
         model: stage_def.model.clone(),
         reasoning_effort: stage_def.reasoning_effort.clone(),
+        execution_backend: stage_def.execution.as_ref().and_then(|e| e.backend),
     }
 }

@@ -3,7 +3,7 @@
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 
-use crate::fs::work_dir::WorkDir;
+use crate::fs::work_dir::{self, WorkDir};
 use crate::plan::graph::ExecutionGraph;
 use crate::plan::parser::parse_plan;
 use crate::plan::schema::{SandboxConfig, StageDefinition};
@@ -59,14 +59,26 @@ fn build_graph_impl(
 ) -> Result<(ExecutionGraph, SandboxConfig)> {
     let stages_dir = work_dir_path.join("stages");
 
-    // First try to load from .work/stages/ files
-    // Stage files don't carry plan-level sandbox config, so use default.
+    // First try to load from .work/stages/ files. Stage files don't carry
+    // plan-level sandbox config, but `loom init` persists the plan-level
+    // sandbox snapshot to .work/config.toml under [plan_sandbox] so we can
+    // recover it on subsequent `loom run` invocations. Without this, the
+    // loader silently substitutes `SandboxConfig::default()` and any
+    // plan-declared sandbox rules are lost on restart.
     if stages_dir.exists() {
         let stages = load_stages_from_stages_dir(&stages_dir)?;
         if !stages.is_empty() {
             let graph = ExecutionGraph::build(stages)
                 .context("Failed to build execution graph from stage files")?;
-            return Ok((graph, SandboxConfig::default()));
+            let sandbox = work_dir::read_plan_sandbox(work_dir_path)
+                .context("Failed to read persisted plan sandbox config")?
+                .unwrap_or_default();
+            // plan-level execution config is read for completeness so the
+            // call surface is symmetric — orchestrator consumers fetch it
+            // via `work_dir::read_plan_execution` directly when needed.
+            let _ = work_dir::read_plan_execution(work_dir_path)
+                .context("Failed to read persisted plan execution config")?;
+            return Ok((graph, sandbox));
         }
     }
 

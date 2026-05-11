@@ -29,9 +29,11 @@ pub enum AutoMergeResult {
     FastForward { cleanup: CleanupResult },
     /// Already up to date (no changes needed)
     AlreadyUpToDate { cleanup: CleanupResult },
-    /// Conflicts detected, spawned resolution session
+    /// Conflicts detected, spawned resolution session.
+    /// Boxed to keep the enum compact — `Session` carries runtime-identity
+    /// fields (`tracking_key`, container metadata) and dwarfs other variants.
     ConflictResolutionSpawned {
-        session: Session,
+        session: Box<Session>,
         conflicting_files: Vec<String>,
     },
     /// Stage has no worktree (nothing to merge)
@@ -151,7 +153,7 @@ pub fn attempt_auto_merge(
                 .context("Failed to spawn merge resolution session")?;
 
             Ok(AutoMergeResult::ConflictResolutionSpawned {
-                session: spawned_session,
+                session: Box::new(spawned_session),
                 conflicting_files,
             })
         }

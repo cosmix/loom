@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use super::types::{Session, SessionStatus, SessionType};
 use crate::models::constants::{CONTEXT_CRITICAL_THRESHOLD, DEFAULT_CONTEXT_LIMIT};
+use crate::plan::schema::execution::BackendType;
 
 impl Session {
     pub fn new() -> Self {
@@ -23,6 +24,10 @@ impl Session {
             session_type: SessionType::default(),
             merge_source_branch: None,
             merge_target_branch: None,
+            backend: BackendType::default(),
+            runtime: None,
+            container_name: None,
+            tracking_key: String::new(),
         }
     }
 
@@ -44,6 +49,37 @@ impl Session {
         session.session_type = SessionType::BaseConflict;
         session.merge_target_branch = Some(target_branch);
         session
+    }
+
+    /// Create a new knowledge-gathering session.
+    ///
+    /// Knowledge sessions run in the main repository (no worktree) and
+    /// populate `doc/loom/knowledge/`. The `stage_id` is required so the
+    /// `tracking_key` can be derived up-front (see
+    /// [`Session::derive_tracking_key`]).
+    pub fn new_knowledge(stage_id: &str) -> Self {
+        let mut session = Self::new();
+        session.session_type = SessionType::Knowledge;
+        session.stage_id = Some(stage_id.to_string());
+        session.tracking_key = Self::derive_tracking_key(stage_id, SessionType::Knowledge);
+        session
+    }
+
+    /// Derive the canonical tracking key for a session.
+    ///
+    /// The tracking key is used to find OS-level resources owned by this
+    /// session (terminal window titles, container names, etc.) without
+    /// having to thread the session ID through every spawn/kill code path.
+    ///
+    /// Format: `loom-[<kind>-]<stage_id>` where `<kind>` is omitted for
+    /// regular stage sessions.
+    pub fn derive_tracking_key(stage_id: &str, kind: SessionType) -> String {
+        match kind {
+            SessionType::Stage => format!("loom-{stage_id}"),
+            SessionType::Merge => format!("loom-merge-{stage_id}"),
+            SessionType::BaseConflict => format!("loom-base-conflict-{stage_id}"),
+            SessionType::Knowledge => format!("loom-knowledge-{stage_id}"),
+        }
     }
 
     /// Check if this is a merge resolution session
@@ -68,7 +104,25 @@ impl Session {
     }
 
     pub fn assign_to_stage(&mut self, stage_id: String) {
+        // Derive the tracking key from the (stage_id, session_type) pair so
+        // OS-level resource lookups (terminal titles, container names) have a
+        // stable handle even before the session has a PID.
+        self.tracking_key = Self::derive_tracking_key(&stage_id, self.session_type);
         self.stage_id = Some(stage_id);
+        self.last_active = Utc::now();
+    }
+
+    /// Set the backend this session runs on. Refreshes `last_active`.
+    pub fn set_backend(&mut self, backend: BackendType) {
+        self.backend = backend;
+        self.last_active = Utc::now();
+    }
+
+    /// Set container metadata (runtime binary + container name) for sessions
+    /// running on a container backend.
+    pub fn set_container_identity(&mut self, runtime: String, container_name: String) {
+        self.runtime = Some(runtime);
+        self.container_name = Some(container_name);
         self.last_active = Utc::now();
     }
 

@@ -2,8 +2,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use crate::plan::schema::execution::BackendType;
+
 /// The type of session being executed
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum SessionType {
     /// Regular stage execution session (default)
@@ -13,6 +15,9 @@ pub enum SessionType {
     Merge,
     /// Base branch conflict resolution session (pre-stage multi-dep merge)
     BaseConflict,
+    /// Knowledge-gathering session (runs in main repo, no worktree).
+    /// Tracking key: `loom-knowledge-{stage_id}`.
+    Knowledge,
 }
 
 impl std::fmt::Display for SessionType {
@@ -21,6 +26,7 @@ impl std::fmt::Display for SessionType {
             SessionType::Stage => write!(f, "stage"),
             SessionType::Merge => write!(f, "merge"),
             SessionType::BaseConflict => write!(f, "base_conflict"),
+            SessionType::Knowledge => write!(f, "knowledge"),
         }
     }
 }
@@ -71,4 +77,23 @@ pub struct Session {
     /// For merge sessions: the target branch to merge into
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub merge_target_branch: Option<String>,
+
+    // ----- Runtime identity (Stage 1) -----
+    /// Backend the session is running on (native terminal, container, etc.).
+    /// Defaults to `Native` for sessions written before this field existed.
+    #[serde(default)]
+    pub backend: BackendType,
+    /// Container runtime binary (e.g., `"docker"`, `"podman"`) when the
+    /// session is running on a container backend. `None` for native sessions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<String>,
+    /// Container name assigned to this session, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container_name: Option<String>,
+    /// Stable identifier used to find OS-level resources (terminal title,
+    /// container name, etc.) belonging to this session. Derived from
+    /// `(stage_id, session_type)` via [`Session::derive_tracking_key`].
+    /// May be empty for legacy sessions or sessions created before assignment.
+    #[serde(default)]
+    pub tracking_key: String,
 }

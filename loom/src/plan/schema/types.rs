@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Deserializer, Serialize};
 
+use crate::plan::schema::execution::{PlanExecutionConfig, StageExecutionConfig};
+
 /// Plan-level sandbox configuration (defaults for all stages)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SandboxConfig {
@@ -244,6 +246,10 @@ pub struct LoomConfig {
     /// Plan-level sandbox configuration (defaults for all stages)
     #[serde(default)]
     pub sandbox: SandboxConfig,
+    /// Plan-level execution configuration (container preferences, etc.)
+    /// Project-level backend selection lives in `.work/config.toml`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution: Option<PlanExecutionConfig>,
     /// Plan-level change impact configuration
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub change_impact: Option<ChangeImpactConfig>,
@@ -326,6 +332,9 @@ pub struct StageDefinition {
     /// Structured code review configuration (recommended for integration-verify)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code_review: Option<CodeReviewConfig>,
+    /// Per-stage execution configuration (e.g., backend override).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution: Option<StageExecutionConfig>,
 }
 
 impl StageDefinition {
