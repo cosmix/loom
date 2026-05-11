@@ -152,23 +152,44 @@ Unix socket at `.work/orchestrator.sock`. Messages: Status, Stop, Subscribe. Len
 
 ## Container Backend Topology
 
-When `BackendType::Container` is resolved for a stage, `ContainerBackend` spawns the session inside a per-stage container with this fixed mount topology:
+When `BackendType::Container` is resolved for a stage, `ContainerBackend` spawns the session inside a per-stage container using a **ro-base + per-stage rw overlay** mount topology. `/repo` is mounted read-only as the base layer; explicit rw mounts shadow only the paths a given stage legitimately needs:
 
-| Container path | Host source | Permissions |
-| --- | --- | --- |
-| `/repo` | host repo root | rw bind |
-| `/repo/.work` | derived from `/repo` | rw (via symlink) |
-| `/home/loom/.claude/hooks/loom` | `~/.claude/hooks/loom` | ro |
-| `/home/loom/.claude/.credentials.json` | `~/.claude/.credentials.json` | ro (only when `forward_credentials` includes `"claude"`) |
-| `/etc/loom/network/allowed_domains.txt` | `.work/network/allowed_domains.txt` | ro |
+| Container path | Host source | Permissions | Who gets this |
+| --- | --- | --- | --- |
+| `/repo` | host repo root | ro (base) | All sessions |
+| `/repo/.worktrees/<stage-id>` | derived from `/repo` | rw overlay | Standard / IntegrationVerify sessions |
+| `/repo/doc/loom/knowledge` | derived from `/repo` | rw overlay | Knowledge / KnowledgeDistill sessions |
+| `/repo` (full, replaces ro base) | host repo root | rw | Merge / BaseConflict sessions only |
+| `/repo/.work/sessions` | derived from `/repo` | rw overlay | All sessions |
+| `/repo/.work/memory` | derived from `/repo` | rw overlay | All sessions |
+| `/repo/.work/handoffs` | derived from `/repo` | rw overlay | All sessions |
+| `/repo/.work/crashes` | derived from `/repo` | rw overlay | All sessions |
+| `/repo/.work/wrappers` | derived from `/repo` | rw overlay | All sessions |
+| `/repo/.work/pids` | derived from `/repo` | rw overlay | All sessions |
+| `/repo/.worktrees/<id>/settings.local.json` | derived from worktree | ro overlay | All sessions |
+| `/home/loom/.claude/hooks/loom` | `~/.claude/hooks/loom` | ro | All sessions |
+| `/home/loom/.claude/.credentials.json` | `~/.claude/.credentials.json` | ro | Only when `forward_credentials` includes `"claude"` |
+| `/etc/loom/network/allowed_domains.txt` | `.work/network/allowed_domains.txt` | ro | All sessions |
+
+**Mount ordering invariant:** The ro base must be the first bind-mount in the `docker|podman run` args. rw overlays on tighter subtree paths must follow. Reversing order silently defeats the ro restriction (later mounts shadow earlier ones). See [mistakes.md — Mount order inversion](mistakes.md#mount-order-inversion-silently-defeats-the-ro-base).
+
+**Merge/BaseConflict exception:** These sessions need full write access to resolve conflicts; no ro base is used. This is intentional and documented in `build_mounts` unit tests.
+
+**settings.local.json ro overlay:** Prevents an agent running inside the container from disabling Claude Code hooks (e.g., removing sandbox restrictions) by overwriting this file.
 
 **Why `/repo`?** Git worktrees store relative symlinks (`.work -> ../../.work`). Mounting the host repo root at a fixed path preserves these symlinks and all git metadata. Stage cwd inside the container: `/repo/.worktrees/<stage-id>`. Merge/knowledge cwd: `/repo`.
 
-**forward_credentials:** Default is `Vec::new()` (empty — no credentials forwarded). Agents must explicitly edit `.work/config.toml` to mount credentials. This is stricter than the plan spec's suggested default of `["claude"]`.
+**forward_credentials:** Default is `Vec::new()` (empty — no credentials forwarded). Agents inside the container cannot escalate this because `.work/config.toml` is covered by the ro base and is NOT in the rw overlay set. Host-side editing by the operator remains possible. Agents must request credentials via operator action. This is stricter than the plan spec's suggested default of `["claude"]`.
 
 **Firewall (defense-in-depth):** Image-resident `firewall.sh` script configured with: deny IPv6 (AF_INET6), block `169.254.169.254` (cloud metadata), block `127.0.0.0/8` except `127.0.0.1`, deny `*.internal`. Allowlist is host-owned and mounted ro — the agent process inside the container cannot edit it.
 
+**Firewall enforcement smoke test:** `loom init --backend container` runs a transient probe container after image build (using `--cap-drop=ALL --cap-add=NET_ADMIN --cap-add=NET_RAW` + empty allowlist) to verify the firewall actually blocks egress. Pass = request blocked. Fail = firewall is a no-op. Skip with `--allow-insecure-runtime` on rootless Podman or Apple Container runtimes where iptables enforcement is best-effort.
+
 **Image cache model:** Global image cache at `~/.local/share/loom/images/<fingerprint>.json`. Per-project digest pin at `.work/config.toml::[project_execution.container].image_digest`. Fingerprint encodes: detected languages + SHA-256 of `Dockerfile.tmpl` + SHA-256 of `firewall.sh`. Any change to languages or embedded resources invalidates the cache.
+
+**Log capture:** Containers run without `--rm`. On abnormal exit (`wait_until_running` failure or `kill_session`), `logs_capture::capture_logs()` captures trailing stdout+stderr from `<runtime> logs` and persists to `.work/crashes/<stage>-<ts>-<session>.container.log` before `<runtime> rm -f`. Best-effort: log capture never blocks cleanup.
+
+> See [Container Backend — Mount-Topology Hardening Decision](#container-backend--mount-topology-hardening-decision) for full rationale.
 
 ## Worktree Isolation (4-Layer Defense)
 

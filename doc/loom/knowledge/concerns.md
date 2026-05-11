@@ -119,17 +119,31 @@ Pre-existing issue, not introduced by the merge conflict session lifecycle fix. 
 
 models/stage/methods.rs:443 defines is_knowledge_stage() but it is never called. All call sites use direct stage_type comparison. Contains fragile heuristic name matching that duplicates detect_stage_type() logic. Consider removing or consolidating with detect_stage_type and check_knowledge_recommendations.
 
-## container/mod.rs Exceeds 400-line Limit (2026-05-11)
+## container/mod.rs Exceeds 400-line Limit (2026-05-11, updated 2026-05-11)
 
-`loom/src/orchestrator/terminal/container/mod.rs` is 661 lines — 65% over the 400-line CLAUDE.md code size limit. Functional and all tests pass; refactor deferred.
+`loom/src/orchestrator/terminal/container/mod.rs` is ~975 lines — 144% over the 400-line CLAUDE.md code size limit (grew from 661 during mounts-hardening). Functional and all tests pass; refactor deferred.
 
-**Recommended split:** Extract spawn logic into `spawn.rs`, mount construction into `mounts.rs`, env building into `env.rs`. The submodule files `fingerprint.rs`, `image.rs`, `lifecycle.rs`, `network.rs`, `resources.rs`, `runtime.rs` are already appropriately sized.
+**Recommended split:** Extract spawn logic into `spawn.rs`, mount construction into `mounts.rs` (build_mounts and helpers), env building into `env.rs`. The submodule files `fingerprint.rs`, `image.rs`, `lifecycle.rs`, `logs_capture.rs`, `network.rs`, `probe.rs`, `resources.rs`, `runtime.rs` are already appropriately sized.
 
 ## forward_credentials Default Is Empty (2026-05-11)
 
-`loom init --backend container` writes `forward_credentials = []` to `.work/config.toml` (empty — no credentials forwarded by default). The plan spec suggested defaulting to `["claude"]` (mount `~/.claude/.credentials.json`). The current implementation is stricter (explicit opt-in) but requires agents to manually edit `.work/config.toml` to authenticate with Claude Code inside the container.
+`loom init --backend container` writes `forward_credentials = []` to `.work/config.toml` (empty — no credentials forwarded by default). The plan spec suggested defaulting to `["claude"]` (mount `~/.claude/.credentials.json`). The current implementation is stricter (explicit opt-in) but requires manual operator action to authenticate Claude Code inside the container.
 
-**Impact:** Container sessions without `"claude"` in `forward_credentials` cannot authenticate. Until there's a `loom container credentials add` command or the default changes, this must be manually configured.
+**Agent escalation gap (partially closed):** `.work/config.toml` is covered by the ro base mount — an agent running inside the container cannot modify `forward_credentials` for the next stage. Host-side editing by the operator is still possible (not a security concern — operator trust is assumed).
+
+**Impact:** Container sessions without `"claude"` in `forward_credentials` cannot authenticate. Until there's a `loom container credentials add` command or the default changes, edit `.work/config.toml` manually on the host.
+
+## Probe Network Mismatch: bridge vs loom-net-\<stage\> (2026-05-11)
+
+The firewall enforcement probe (`container/probe.rs`) runs on the default bridge network. Production stage containers attach to `--network=loom-net-<stage-id>` (CNI/netavark). iptables rule injection behavior can differ between bridge networking and CNI-managed networks (especially on rootless Podman with slirp4netns). A probe that passes on bridge does not guarantee enforcement on the production network.
+
+**Hardening path:** Pass the production network name to the probe container (`--network=loom-net-<fingerprint>` or a freshly-created ephemeral network matching the production config) and clean it up after the probe. Until then, `--allow-insecure-runtime` should be considered for rootless Podman environments.
+
+## host_repo_root() Trusts Parent of .work Symlink (2026-05-11)
+
+`host_repo_root()` in `commands/init/execute.rs` derives the host repo root by canonicalizing the parent of the `.work` symlink. There is no sanity check that the rw mount targets (e.g., `.worktrees/<stage-id>`) actually exist on the host before `docker|podman run` is invoked. A missing directory would cause the runtime to create it as a root-owned directory, silently defeating the rw overlay intent.
+
+**Hardening path:** Verify that each rw overlay target exists (or create it with the correct mode) before constructing the run args in `build_mounts`.
 
 ## BaseConflict Carve-out is Heuristic (2026-04-27)
 
