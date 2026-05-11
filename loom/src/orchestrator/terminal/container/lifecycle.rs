@@ -52,11 +52,16 @@ impl Mount {
 }
 
 /// Build the full argv (excluding the runtime binary itself) for
-/// `<runtime> run -d --rm ...`.
+/// `<runtime> run -d ...`.
 ///
 /// `wrapper_in_container` is the in-container path to the wrapper script
 /// that the entrypoint executes — typically
 /// `/repo/.work/wrappers/<stage>-wrapper.sh`.
+///
+/// Containers are intentionally NOT started with `--rm`: they persist after
+/// the wrapper exits so the orchestrator can capture `<runtime> logs` for
+/// crash diagnostics. Removal is explicit in `kill_session` (after the
+/// log tail has been persisted to `<work_dir>/crashes/`).
 #[allow(clippy::too_many_arguments)]
 pub fn build_run_args(
     name: &str,
@@ -71,7 +76,6 @@ pub fn build_run_args(
     let mut args: Vec<String> = vec![
         "run".to_string(),
         "-d".to_string(),
-        "--rm".to_string(),
         format!("--name={name}"),
         "--cap-drop=ALL".to_string(),
         "--cap-add=NET_ADMIN".to_string(),
@@ -154,16 +158,18 @@ mod tests {
         );
 
         // Spot-check structure — the first few args are deterministic.
+        // Note: no `--rm` — containers persist after exit so logs can be
+        // captured before explicit removal in `kill_session`.
         assert_eq!(args[0], "run");
         assert_eq!(args[1], "-d");
-        assert_eq!(args[2], "--rm");
-        assert_eq!(args[3], "--name=loom-stage-x");
-        assert_eq!(args[4], "--cap-drop=ALL");
-        assert_eq!(args[5], "--cap-add=NET_ADMIN");
-        assert_eq!(args[6], "--cap-add=NET_RAW");
-        assert_eq!(args[7], "--network=loom-net-stage-x");
+        assert!(!args.contains(&"--rm".to_string()));
+        assert_eq!(args[2], "--name=loom-stage-x");
+        assert_eq!(args[3], "--cap-drop=ALL");
+        assert_eq!(args[4], "--cap-add=NET_ADMIN");
+        assert_eq!(args[5], "--cap-add=NET_RAW");
+        assert_eq!(args[6], "--network=loom-net-stage-x");
         // Docker injects --user=uid:gid as its single user arg
-        assert!(args[8].starts_with("--user="));
+        assert!(args[7].starts_with("--user="));
         // Mounts use the long form
         assert!(args
             .iter()

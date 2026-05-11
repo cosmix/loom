@@ -5,9 +5,10 @@
 //! namespace.
 //!
 //! **Topology (project-level invariant — see plan):**
-//!   * `<host repo root>` -> `/repo` (rw bind mount). Preserves git
+//!   * `<host repo root>` -> `/repo` (read-only base). Preserves git
 //!     worktree metadata + the relative `.work` symlink + host-absolute
-//!     hook references.
+//!     hook references, but prevents the session from mutating files
+//!     outside its assigned scope.
 //!   * Stage cwd: `/repo/.worktrees/<stage_id>`.
 //!   * Merge / base-conflict / knowledge cwd: `/repo`.
 //!   * `LOOM_WORK_DIR=/repo/.work`.
@@ -17,6 +18,30 @@
 //!   * `<host>/.work/network/allowed_domains.txt` ->
 //!     `/etc/loom/network/allowed_domains.txt` (ro). The full firewall +
 //!     allowlist sidecar lands in stage 4.
+//!
+//! **Mount layering pattern (`build_mounts`):**
+//!
+//! The mount list is constructed as a stack of overlays. Later entries
+//! shadow earlier ones — order is load-bearing, do not reorder.
+//!
+//! 1. **Base `/repo`** — read-only for ordinary stages (Standard,
+//!    IntegrationVerify, Knowledge, KnowledgeDistill). Merge and
+//!    BaseConflict sessions instead get a **broad rw `/repo` mount** as
+//!    the documented exception: conflict resolution needs to touch
+//!    arbitrary files, and there is no useful subtree to scope it to.
+//! 2. **Per-stage rw scope** — Standard/IntegrationVerify get rw on
+//!    `/repo/.worktrees/<id>`; Knowledge/KnowledgeDistill get rw on
+//!    `/repo/doc/loom/knowledge`. Merge/BaseConflict skip this layer
+//!    (their /repo is already rw).
+//! 3. **`.work/` rw subtrees** — `sessions`, `memory`, `handoffs`,
+//!    `crashes`, `wrappers`, `pids` are always rw for all sessions.
+//!    Notably absent: `.work/config.toml`, `stages/`, `signals/`,
+//!    `daemon.token`, `orchestrator.lock` — these stay ro under the
+//!    `/repo` base so the agent cannot corrupt orchestration state.
+//! 4. **`.claude/settings.local.json` ro overlay** — pinned read-only
+//!    AFTER the worktree rw mount so the agent cannot rewrite its own
+//!    permission grants mid-session.
+//! 5. **Hooks dir + credentials** — existing ro mounts, unchanged.
 //!
 //! Liveness uses `<runtime> inspect -f '{{.State.Running}}'`; we never
 //! `kill -0` against the host PID for container sessions.
@@ -45,8 +70,8 @@ use super::native::{
 use super::{BackendType, TerminalBackend};
 use crate::claude::find_claude_path;
 use crate::fs::work_dir as work_dir_api;
-use crate::models::session::Session;
-use crate::models::stage::Stage;
+use crate::models::session::{Session, SessionType};
+use crate::models::stage::{Stage, StageType};
 use crate::models::worktree::Worktree;
 use crate::plan::schema::execution::ProjectExecutionConfig;
 use crate::plan::schema::NetworkConfig;
@@ -174,9 +199,84 @@ impl ContainerBackend {
         })
     }
 
-    fn build_mounts(&self) -> Result<Vec<Mount>> {
-        let mut mounts = Vec::with_capacity(4);
-        mounts.push(Mount::rw(self.host_repo_root()?, REPO_MOUNT));
+    /// Construct the bind-mount stack for a single session.
+    ///
+    /// See the module-level "Mount layering pattern" doc for ordering
+    /// invariants. The stack is layered ro-base → per-stage rw → .work/
+    /// rw subtrees → settings.local ro overlay → hooks/creds/allowlist.
+    fn build_mounts(&self, stage: &Stage, session_type: SessionType) -> Result<Vec<Mount>> {
+        let mut mounts: Vec<Mount> = Vec::with_capacity(16);
+        let host_repo_root = self.host_repo_root()?;
+
+        // Layer 1+2: base /repo + per-stage rw scope.
+        //
+        // Merge/BaseConflict are the documented exception: conflict
+        // resolution must touch arbitrary files in arbitrary subtrees, so
+        // we drop the ro base and grant rw on /repo. All other session
+        // types pin /repo ro and add a narrow rw overlay on the subtree
+        // the stage is allowed to mutate.
+        match session_type {
+            SessionType::Merge | SessionType::BaseConflict => {
+                mounts.push(Mount::rw(&host_repo_root, REPO_MOUNT));
+            }
+            _ => {
+                mounts.push(Mount::ro(&host_repo_root, REPO_MOUNT));
+                match stage.stage_type {
+                    StageType::Standard | StageType::IntegrationVerify => {
+                        let host_wt = host_repo_root.join(".worktrees").join(&stage.id);
+                        let cont_wt = format!("{REPO_MOUNT}/.worktrees/{}", stage.id);
+                        mounts.push(Mount::rw(host_wt, cont_wt));
+                    }
+                    StageType::Knowledge | StageType::KnowledgeDistill => {
+                        let host_kn = host_repo_root.join("doc/loom/knowledge");
+                        let cont_kn = format!("{REPO_MOUNT}/doc/loom/knowledge");
+                        mounts.push(Mount::rw(host_kn, cont_kn));
+                    }
+                }
+            }
+        }
+
+        // Layer 3: .work/ rw subtrees. Everything the session may need to
+        // write under `.work` is enumerated explicitly so the ro base
+        // continues to protect config.toml, stages/, signals/, the daemon
+        // token, and the orchestrator lock.
+        for sub in [
+            "sessions", "memory", "handoffs", "crashes", "wrappers", "pids",
+        ] {
+            let host = self.work_dir.join(sub);
+            let cont = format!("{WORK_DIR_IN_CONTAINER}/{sub}");
+            mounts.push(Mount::rw(host, cont));
+        }
+
+        // Layer 4: settings.local.json ro overlay. Pinned read-only AFTER
+        // the worktree rw mount (order matters — the later mount shadows
+        // anything underneath) so the agent cannot edit its own permission
+        // grants mid-session.
+        let uses_worktree = matches!(session_type, SessionType::Stage)
+            && matches!(
+                stage.stage_type,
+                StageType::Standard | StageType::IntegrationVerify | StageType::KnowledgeDistill
+            );
+        let (settings_local_host, settings_local_cont) = if uses_worktree {
+            (
+                host_repo_root
+                    .join(".worktrees")
+                    .join(&stage.id)
+                    .join(".claude/settings.local.json"),
+                format!(
+                    "{REPO_MOUNT}/.worktrees/{}/.claude/settings.local.json",
+                    stage.id
+                ),
+            )
+        } else {
+            (
+                host_repo_root.join(".claude/settings.local.json"),
+                format!("{REPO_MOUNT}/.claude/settings.local.json"),
+            )
+        };
+        if settings_local_host.exists() {
+            mounts.push(Mount::ro(settings_local_host, settings_local_cont));
+        }
 
         // Hooks (read-only) — only if installed.
         if let Some(home) = dirs::home_dir() {
@@ -310,7 +410,7 @@ impl ContainerBackend {
 
         // Compose the env block and run-args.
         let env_set = self.build_env_for_session(&stage.id, &session.id, &workspace_in_container);
-        let mounts = self.build_mounts()?;
+        let mounts = self.build_mounts(stage, session.session_type)?;
         let args = build_run_args(
             &container_name,
             &self.image_ref,
@@ -344,7 +444,33 @@ impl ContainerBackend {
             );
         }
 
-        wait_until_running(self.runtime, &container_name, Duration::from_secs(10))?;
+        let wait_timeout = Duration::from_secs(10);
+        if let Err(wait_err) = wait_until_running(self.runtime, &container_name, wait_timeout) {
+            // Container failed to reach Running. Capture logs before the
+            // forced removal so investigators can read the entrypoint /
+            // firewall stderr that explains the failure.
+            let tail = logs_capture::capture_logs(
+                self.runtime,
+                &container_name,
+                Some(logs_capture::DEFAULT_TAIL),
+            )
+            .unwrap_or_default();
+            let path =
+                logs_capture::persist_log(&self.work_dir, &stage.id, &session.id, &tail).ok();
+            let first_lines: String = tail.lines().take(20).collect::<Vec<_>>().join("\n");
+            let _ = Command::new(self.runtime.binary())
+                .args(["rm", "-f", &container_name])
+                .status();
+            bail!(
+                "Container `{}` did not reach Running state within {} seconds \
+                 (underlying error: {}). Captured logs saved to {:?}. Tail: {}",
+                container_name,
+                wait_timeout.as_secs(),
+                wait_err,
+                path,
+                first_lines
+            );
+        }
 
         // Capture container PID (Docker/Podman) and persist the host-side
         // pid file at <work_dir>/pids/<stage>.pid so the monitor's legacy
@@ -366,18 +492,18 @@ impl ContainerBackend {
         session.set_backend(BackendType::Container);
         session.try_mark_running()?;
 
-        // Optional: attach a host terminal that tails the session log.
+        // Optional: attach a host terminal that streams container logs.
         if !no_attach {
             // Best-effort: failure to attach must not roll back the
             // container spawn.
             if let Ok(terminal) = detect_terminal() {
-                let log_in_container = format!("/repo/.work/sessions/{}.log", session.id);
-                let escaped_log = escape(Cow::Owned(log_in_container));
+                // `logs -f` follows the container's stdout/stderr, which
+                // covers entrypoint + firewall + wrapper + claude output
+                // (not just the post-exec session log file).
                 let exec_cmd = format!(
-                    "{rt} exec -it {name} /bin/bash -lc 'tail -f {escaped_log}'",
+                    "{rt} logs -f {name}",
                     rt = self.runtime.binary(),
                     name = escape(Cow::Borrowed(&container_name)),
-                    escaped_log = escaped_log,
                 );
                 // Tail terminals start in the host's repo root for parity
                 // with native sessions; the actual container cwd is set
@@ -515,6 +641,22 @@ impl TerminalBackend for ContainerBackend {
             }
         };
 
+        // Capture and persist the container's log tail BEFORE removal so
+        // crash investigators (and `loom status`) can read it after the
+        // container is gone. Best-effort: a capture failure must never
+        // block container removal.
+        {
+            let tail =
+                logs_capture::capture_logs(self.runtime, name, Some(logs_capture::DEFAULT_TAIL))
+                    .unwrap_or_default();
+            let _ = logs_capture::persist_log(
+                &self.work_dir,
+                session.stage_id.as_deref().unwrap_or(&session.id),
+                &session.id,
+                &tail,
+            );
+        }
+
         let output = Command::new(self.runtime.binary())
             .args(["rm", "-f", name])
             .output()
@@ -639,6 +781,7 @@ fn inspect_pid(runtime: Runtime, name: &str) -> Result<Option<u32>> {
 mod tests {
     use super::*;
     use std::path::Path;
+    use tempfile::TempDir;
 
     #[test]
     fn remap_signal_handles_worktree_path() {
@@ -659,5 +802,174 @@ mod tests {
         let host = Path::new("/tmp/random.md");
         let mapped = remap_signal_path(host);
         assert_eq!(mapped, host);
+    }
+
+    /// Helper: spin up a fake repo root with a `.work/` subdirectory and
+    /// return both paths plus a `ContainerBackend` ready for `build_mounts`.
+    fn fixture_backend(
+        stage_type: StageType,
+        stage_id: &str,
+    ) -> (TempDir, PathBuf, ContainerBackend, Stage) {
+        let tmp = TempDir::new().unwrap();
+        let repo_root = tmp.path().to_path_buf();
+        let work_dir = repo_root.join(".work");
+        std::fs::create_dir_all(&work_dir).unwrap();
+        // host_repo_root() canonicalizes work_dir then takes parent.
+        let backend = ContainerBackend {
+            runtime: Runtime::Docker,
+            work_dir,
+            image_ref: "sha256:test".to_string(),
+            forward_credentials: vec![],
+            network: NetworkConfig::default(),
+        };
+        let stage = Stage {
+            id: stage_id.to_string(),
+            stage_type,
+            ..Stage::default()
+        };
+        (tmp, repo_root, backend, stage)
+    }
+
+    #[test]
+    fn build_mounts_standard_stage_has_ro_repo_and_rw_worktree() {
+        let (_tmp, repo_root, backend, stage) = fixture_backend(StageType::Standard, "stage-alpha");
+        let mounts = backend.build_mounts(&stage, SessionType::Stage).unwrap();
+
+        // Layer 1: /repo is ro and points at host repo root.
+        assert!(mounts[0].read_only, "base /repo must be read-only");
+        assert_eq!(mounts[0].target, PathBuf::from("/repo"));
+        assert_eq!(
+            mounts[0].source.canonicalize().unwrap(),
+            repo_root.canonicalize().unwrap()
+        );
+
+        // Layer 2: rw worktree overlay.
+        let wt_target = PathBuf::from("/repo/.worktrees/stage-alpha");
+        assert!(
+            mounts.iter().any(|m| m.target == wt_target && !m.read_only),
+            "expected rw mount on {}",
+            wt_target.display()
+        );
+
+        // Layer 3: all four required .work/ rw layers are present.
+        let work_subs = ["sessions", "memory", "handoffs", "crashes"];
+        for sub in work_subs {
+            let target = PathBuf::from(format!("/repo/.work/{sub}"));
+            assert!(
+                mounts.iter().any(|m| m.target == target && !m.read_only),
+                "expected rw mount on /repo/.work/{sub}"
+            );
+        }
+    }
+
+    #[test]
+    fn build_mounts_knowledge_stage_includes_knowledge_rw() {
+        let (_tmp, _repo_root, backend, stage) =
+            fixture_backend(StageType::Knowledge, "kn-bootstrap");
+        let mounts = backend
+            .build_mounts(&stage, SessionType::Knowledge)
+            .unwrap();
+
+        let target = PathBuf::from("/repo/doc/loom/knowledge");
+        assert!(
+            mounts.iter().any(|m| m.target == target && !m.read_only),
+            "expected rw mount on /repo/doc/loom/knowledge for Knowledge stage"
+        );
+        // The worktree rw mount must NOT appear for a Knowledge stage.
+        assert!(
+            !mounts
+                .iter()
+                .any(|m| m.target.starts_with("/repo/.worktrees/")),
+            "Knowledge stage should not get a worktree rw overlay"
+        );
+    }
+
+    #[test]
+    fn build_mounts_includes_settings_local_ro_overlay() {
+        let (_tmp, repo_root, backend, stage) = fixture_backend(StageType::Standard, "stage-beta");
+        // Pre-create the settings.local.json fixture on the worktree path.
+        let settings_path = repo_root
+            .join(".worktrees")
+            .join(&stage.id)
+            .join(".claude/settings.local.json");
+        std::fs::create_dir_all(settings_path.parent().unwrap()).unwrap();
+        std::fs::write(&settings_path, b"{}").unwrap();
+
+        let mounts = backend.build_mounts(&stage, SessionType::Stage).unwrap();
+        let target = PathBuf::from("/repo/.worktrees/stage-beta/.claude/settings.local.json");
+
+        let settings_idx = mounts
+            .iter()
+            .position(|m| m.target == target)
+            .expect("settings.local.json mount missing");
+        assert!(
+            mounts[settings_idx].read_only,
+            "settings.local.json must be mounted ro"
+        );
+
+        // Order check: ro settings overlay must come AFTER the worktree
+        // rw mount so it shadows the file inside.
+        let wt_target = PathBuf::from("/repo/.worktrees/stage-beta");
+        let wt_idx = mounts
+            .iter()
+            .position(|m| m.target == wt_target)
+            .expect("worktree rw mount missing");
+        assert!(
+            settings_idx > wt_idx,
+            "settings.local.json ro overlay (idx {settings_idx}) must come after \
+             worktree rw mount (idx {wt_idx})"
+        );
+    }
+
+    #[test]
+    fn build_mounts_no_rw_overlap_with_work_config_toml() {
+        let (_tmp, _repo_root, backend, stage) =
+            fixture_backend(StageType::Standard, "stage-gamma");
+        let mounts = backend.build_mounts(&stage, SessionType::Stage).unwrap();
+
+        // No rw mount may have a source path that *is* config.toml or that
+        // contains it inside the mounted subtree. Iterate mounts; assert
+        // no rw source equals `.work/config.toml` or its parent (`.work/`).
+        let config_toml = backend.work_dir.join("config.toml");
+        for m in &mounts {
+            if m.read_only {
+                continue;
+            }
+            assert!(
+                m.source != config_toml,
+                "rw mount must not target .work/config.toml directly: {}",
+                m.source.display()
+            );
+            // .work/ itself must not be mounted rw — only its enumerated
+            // subdirectories. (`.work/config.toml` lives directly under
+            // `.work/`, so an rw mount on `.work/` would expose it.)
+            assert!(
+                m.source != backend.work_dir,
+                "rw mount must not cover the entire .work/ directory: {}",
+                m.source.display()
+            );
+        }
+    }
+
+    #[test]
+    fn build_mounts_merge_session_has_rw_repo() {
+        let (_tmp, _repo_root, backend, stage) =
+            fixture_backend(StageType::Standard, "stage-delta");
+
+        for st in [SessionType::Merge, SessionType::BaseConflict] {
+            let mounts = backend.build_mounts(&stage, st).unwrap();
+            assert!(
+                mounts[0].target.as_path() == Path::new("/repo") && !mounts[0].read_only,
+                "{st:?} session should mount /repo rw (documented exception)"
+            );
+            // No narrow rw overlay should appear because /repo is already
+            // rw — but the .work/ subtrees still get explicit rw mounts.
+            assert!(
+                mounts.iter().any(
+                    |m| m.target.as_path() == Path::new("/repo/.work/sessions") && !m.read_only
+                ),
+                "{st:?} session should still mount .work/sessions rw"
+            );
+        }
     }
 }
