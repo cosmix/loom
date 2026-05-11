@@ -85,15 +85,71 @@ pub struct WorkDir {
     root: PathBuf,
 }
 
+/// True when `base` refers to the current directory ("." / "" / the
+/// process cwd). Used to gate the `LOOM_WORK_DIR` env override so it
+/// only fires when the caller hasn't supplied an explicit base path.
+fn is_cwd_relative_base(base: &Path) -> bool {
+    if base.as_os_str().is_empty() || base == Path::new(".") {
+        return true;
+    }
+    match (base.canonicalize(), std::env::current_dir()) {
+        (Ok(b), Ok(cwd)) => b == cwd,
+        _ => false,
+    }
+}
+
+/// Honour `LOOM_WORK_DIR` when it points at a real `.work`-shaped
+/// directory **inside the container topology** (path begins with
+/// `/repo/`). The container backend sets this to `/repo/.work` so
+/// commands invoked from outside `/repo` still find loom state. Host
+/// processes (including the test suite that inherits a parent loom
+/// session's env) intentionally do not honour the override — their
+/// upward walk is authoritative and was hijacking test setup.
+fn loom_work_dir_from_env() -> Option<PathBuf> {
+    let raw = std::env::var_os("LOOM_WORK_DIR")?;
+    let raw_str = raw.to_str()?.trim();
+    if raw_str.is_empty() {
+        return None;
+    }
+    // Container-topology marker: the path must live under /repo/.
+    // Hosts that legitimately want the env-var override should run via
+    // the container backend (which sets this path) or rely on the
+    // upward walk.
+    if !raw_str.starts_with("/repo/") && raw_str != "/repo/.work" {
+        return None;
+    }
+    let candidate = PathBuf::from(raw_str);
+    if !candidate.is_dir() {
+        return None;
+    }
+    if candidate.join("config.toml").exists() || candidate.join("stages").is_dir() {
+        Some(candidate)
+    } else {
+        None
+    }
+}
+
 impl WorkDir {
     pub fn new<P: AsRef<Path>>(base_path: P) -> Result<Self> {
-        let candidate = base_path.as_ref().join(".work");
+        let base = base_path.as_ref();
+        let candidate = base.join(".work");
         if candidate.exists() {
             return Ok(Self { root: candidate });
         }
 
+        // Honour LOOM_WORK_DIR over the upward walk **only** when the
+        // caller's intent is "find any loom workspace" (`base_path` is
+        // `.` or the current directory). Tests that pass an explicit
+        // temp path are constructive and must not be hijacked by an
+        // ambient env var inherited from a parent loom session.
+        if is_cwd_relative_base(base) {
+            if let Some(env_root) = loom_work_dir_from_env() {
+                return Ok(Self { root: env_root });
+            }
+        }
+
         // Search upward for .work (like git searches for .git)
-        if let Ok(abs) = base_path.as_ref().canonicalize() {
+        if let Ok(abs) = base.canonicalize() {
             let mut current = abs.as_path();
             loop {
                 let work_candidate = current.join(".work");

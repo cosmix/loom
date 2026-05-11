@@ -98,10 +98,14 @@ pub fn generate_hooks_settings(
 
     env.insert("LOOM_STAGE_ID".to_string(), json!(config.stage_id));
     env.insert("LOOM_SESSION_ID".to_string(), json!(config.session_id));
-    env.insert(
-        "LOOM_WORK_DIR".to_string(),
-        json!(config.work_dir.display().to_string()),
-    );
+    // For container sessions, write the in-container path. The host
+    // .work directory is bind-mounted at /repo/.work, so hooks running
+    // inside the container need that path; the host path is unreachable.
+    let work_dir_value = match config.backend {
+        crate::plan::schema::BackendType::Container => "/repo/.work".to_string(),
+        crate::plan::schema::BackendType::Native => config.work_dir.display().to_string(),
+    };
+    env.insert("LOOM_WORK_DIR".to_string(), json!(work_dir_value));
 
     // IMPORTANT: Remove any stale LOOM_MAIN_AGENT_PID from settings.json
     // This variable must be set dynamically by the wrapper script (export LOOM_MAIN_AGENT_PID=$$)
