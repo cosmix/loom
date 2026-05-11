@@ -156,6 +156,8 @@ fn complete_flag_value(
             let results = complete_session_ids(cwd, prefix)?;
             Ok(Some(results))
         }
+        // --tail expects a number; suppress stage-ID suggestions
+        "--tail" => Ok(Some(Vec::new())),
         _ => Ok(None),
     }
 }
@@ -223,6 +225,10 @@ fn complete_after_subcommand(
 
         // Session subcommands
         ("sessions", "kill") => complete_session_ids(cwd, prefix),
+
+        // Container subcommands
+        ("container", "shell" | "logs") => complete_stage_ids(cwd, prefix),
+        ("container", "list") => Ok(Vec::new()),
 
         // Worktree subcommands
         ("worktree", "remove") => complete_stage_ids(cwd, prefix),
