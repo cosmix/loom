@@ -416,6 +416,7 @@
 **Why it broke:** `useradd --uid N` fails if UID `N` is taken, regardless of the username. The base image's `ubuntu` user holds UID 1000 from the moment the FROM line lands, so any `useradd --uid 1000 loom` is guaranteed to fail. Loom's image build also passes no `--build-arg USER_UID=...`, so the default is the only path exercised.
 
 **Prevention:**
+
 - When creating a fixed-UID user on a base image, always check by UID *and* by name. Evict whatever occupant currently holds the UID before calling `useradd --uid`.
 - The canonical devcontainers pattern: `getent passwd ${USER_UID}` → if the matching name isn't ours, `userdel -r`, then create. Same for GID via `getent group`.
 - When upgrading a base image's distro version, re-check whether common UIDs (1000, 1001) are now pre-occupied — Ubuntu 24.04 introduced this; future LTS releases may shift again.
