@@ -355,3 +355,45 @@ Remove `--rm` from `build_run_args`. Containers now persist after process exit, 
 2. **In `kill_session`** (called by crash handler AND by `loom sessions kill`): capture logs → persist → then proceed with existing `rm -f` cleanup.
 
 **Invariant:** Log capture is best-effort — failure to capture must never block container removal. The `persist_log` call is wrapped in `.ok()` / error-logged-to-stderr, and the `rm -f` always runs.
+
+## Container Backend — Naming, Topology, and Deletion Lifecycle
+
+### Container Name Format (per SessionType)
+
+Container names are derived in `models/session/methods.rs::derive_tracking_key()`:
+
+| SessionType    | Container name format            |
+| -------------- | -------------------------------- |
+| `Stage`        | `loom-<stage-id>`                |
+| `Merge`        | `loom-merge-<stage-id>`          |
+| `BaseConflict` | `loom-base-conflict-<stage-id>`  |
+| `Knowledge`    | `loom-knowledge-<stage-id>`      |
+
+The name is stored in `session.tracking_key` and `session.container_name` (both fields persist to `.work/sessions/<id>.md` so a restarted daemon can still kill/inspect the container).
+
+### Per-Stage Topology (Parallel Containers)
+
+Each stage that resolves to `BackendType::Container` gets **its own dedicated container** for the duration of the session. Parallel stages in the DAG run as parallel containers simultaneously. There is no container sharing between stages. The number of live containers at any point equals the number of concurrently executing container-backed stages.
+
+### Container Deletion Triggers
+
+Containers run **without `--rm`** (explicit post-capture removal to preserve logs). Removal happens at these call sites:
+
+| Trigger                                   | Code path                                                          | Log capture? |
+| ----------------------------------------- | ------------------------------------------------------------------ | ------------ |
+| Spawn failure (`wait_until_running` fails) | `ContainerBackend::spawn_common` → `capture_logs` → `rm -f`       | Yes          |
+| Session killed by orchestrator/user       | `ContainerBackend::kill_session` → `capture_logs` → `rm -f`       | Yes          |
+| `loom sessions kill <session>`            | `commands/sessions.rs` → `backend.kill_session` → same path above | Yes          |
+| `loom stop` (daemon shutdown)             | orchestrator shutdown path → `kill_session` on all active sessions | Yes          |
+| `loom clean [--sessions]`                 | `commands/clean.rs::clean_sessions` → `<runtime> ps -a --filter name=loom-` → `rm -f` each | No (bulk removal) |
+
+**Log capture is always best-effort** — failure to capture never blocks removal.
+
+### Session Files Persist After Container Removal
+
+`.work/sessions/<id>.md` files are **not deleted when the container is removed**. The session file outlives its container. This is the root cause of the "stale session file" bug in `loom container logs`:
+
+- `resolve_session_for_stage()` (`commands/container/logs.rs`) scans `.work/sessions/*.md` for a session with matching `stage_id` and a populated `container_name`.
+- If a stage ran, its session file persists with `container_name` set, even after the container was removed.
+- A subsequent call to `loom container logs <stage>` will find the stale session file, resolve the container name, then fail at the `<runtime> logs` call because the container no longer exists.
+- The fix: `logs` should check container existence (via `<runtime> inspect`) before exec-ing, and fall back to `.work/crashes/` log files for Exited/removed containers.
