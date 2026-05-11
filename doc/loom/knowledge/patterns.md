@@ -321,6 +321,85 @@ pub enum AcceptanceCriterion {
 
 **Why untagged**: avoids requiring a `type: simple` / `type: extended` discriminator in user-authored YAML. The trade-off is that serde error messages on malformed input are less precise.
 
+## TerminalBackend Extension Pattern
+
+Adding a new backend requires:
+
+1. Implement `TerminalBackend` trait (spawn_session, spawn_merge_session, spawn_base_conflict_session, spawn_knowledge_session, kill_session, is_session_alive)
+2. Add a variant to `BackendType` enum in `plan/schema/execution.rs`
+3. Add construction logic to `orchestrator/terminal/mod.rs::create_backend()`
+4. Update `BackendNeeds` + `BackendDispatcher::for_plan()` in `dispatcher.rs`
+5. Update `sandbox/config.rs::validate_config()` for any permission restrictions
+6. Wire liveness through `LivenessService` (not direct `kill -0`)
+
+Two proven implementations: `NativeBackend` (host terminal, 11+ emulators) and `ContainerBackend` (Docker/Podman/Apple Container).
+
+## BackendDispatcher Pattern
+
+`BackendDispatcher` is the single source-of-truth for which backends are constructed. Callers declare `BackendNeeds` (which backends a plan uses) up-front; the dispatcher only constructs what's needed. Routing uses the session's persisted `backend` field (written at spawn time) — survives daemon restarts.
+
+```rust
+// Read from stage files to determine needs, then:
+let dispatcher = BackendDispatcher::for_plan(project_backend, needs, work_dir)?;
+let liveness = LivenessService::new(Arc::new(dispatcher));
+// All spawn/kill/alive calls go through dispatcher
+```
+
+## Backend-Aware Liveness Pattern
+
+Never `kill -0` directly for container sessions — the PID is inside the container namespace. Use `LivenessService::is_alive(session)` which routes via the session's `backend` metadata to the appropriate implementation (host `kill -0` for native, `<runtime> inspect` for containers).
+
+For tests: `LivenessService::fixed_for_tests(bool)` — returns a fixed value without constructing a backend. Avoids spinning up Docker/process table for monitor unit tests.
+
+## Image Cache + Fingerprint Pattern
+
+Global image cache: `~/.local/share/loom/images/<fingerprint>.json`. Per-project digest pin in `.work/config.toml`. Cache key (fingerprint) encodes:
+
+1. Sorted list of detected language canonical names
+2. SHA-256 of embedded `Dockerfile.tmpl` content
+3. SHA-256 of embedded `firewall.sh` content
+
+Any change to languages detected or either embedded resource produces a distinct fingerprint → automatic rebuild. Fingerprint format: `"<langs>-<hex[:8]>"` (e.g. `"rust-typescript-a3b9ef12"`). `compute_fingerprint_inner` is testable (takes content as args; `compute_fingerprint` calls it with `include_str!` constants).
+
+## Firewall as Defense-in-Depth (Container)
+
+Firewall script lives inside the image (not on the host filesystem) — agents cannot edit it. Mounted allowlist is host-owned and mounted ro at `/etc/loom/network/allowed_domains.txt`. This separation means:
+
+- Agent writes to `/etc/loom/...` are refused by the container
+- Only `loom` (host process) can update the allowlist
+- Firewall denies: IPv6 (`AF_INET6`), `169.254.169.254` (cloud metadata), `127.0.0.0/8` except `127.0.0.1`, `*.internal`
+
+Write allowlist before container start: `network::write_allowlist(work_dir, &network_config)`.
+
+## Container Topology Invariant
+
+Host repo root MUST be bind-mounted at a fixed container path (`/repo`) with git worktrees preserved. The relative symlink `.work -> ../../.work` inside each worktree only resolves correctly when the full repo tree (including `.worktrees/`) is present at the mount point. Do NOT mount just the stage worktree — git and loom metadata break.
+
+Stage cwd in container: `/repo/.worktrees/<stage-id>`. Merge/knowledge cwd: `/repo`. `LOOM_WORK_DIR=/repo/.work` set explicitly.
+
+## Sandbox permission_mode Resolution
+
+`permission_mode` resolves: stage-level > plan-level > stage-type default.
+
+| Stage type | Default permission_mode |
+| --- | --- |
+| Standard / IntegrationVerify | `auto` |
+| Knowledge / KnowledgeDistill | `accept-edits` |
+
+`bypass-permissions` ONLY allowed when `BackendType::Container`. `validate_config(merged, backend)` in `sandbox/config.rs` enforces this — called at both init and spawn time.
+
+YAML key is `permission_mode` (snake_case), values are kebab-case: `"auto"`, `"accept-edits"`, `"bypass-permissions"`, `"plan"`, `"default"`.
+
+## Centralized Config File Ownership (toml_edit)
+
+All writes to `.work/config.toml` go through `fs/work_dir.rs` using `toml_edit` for round-trip-safe writes. `toml` is for typed reads. Never mix: `toml_edit Item -> serde` silently drops nested sub-tables.
+
+`read_section::<T>` re-parses the whole file with `toml::Value` then `try_into` on the section — preserves nested config sub-tables.
+
+## Cross-Platform Runtime Detection (cfg pattern)
+
+Runtime-specific behavior (e.g., Apple Container vs Docker on macOS) can be gated at source level with `#[cfg(target_os = "macos")]` per code path. The `runtime.rs::is_apple_container` check requires both `/usr/local/bin/container` to exist AND `container --version` to return Apple-signature output — `which::which("container")` alone would collide with unrelated tools.
+
 ## Plan Validation Tier Separation (loom init contract)
 
 `loom init` runs validation in two distinct tiers that `loom plan verify` must mirror:
