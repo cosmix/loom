@@ -24,9 +24,9 @@ use chrono::Utc;
 // container-mode stage's commits have been imported into the host
 // repo, and the wiring check `pattern git_bridge in
 // completion_handler.rs` relies on this reference being present.
+use crate::orchestrator::signals::remove_signal;
 #[allow(unused_imports)]
 use crate::orchestrator::terminal::container::git_bridge;
-use crate::orchestrator::signals::remove_signal;
 
 use super::persistence::Persistence;
 use super::Orchestrator;
