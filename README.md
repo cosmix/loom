@@ -154,7 +154,8 @@ loom knowledge update <file> <content>
 loom knowledge init
 loom knowledge list
 loom knowledge check [--min-coverage N] [--src-path <path>] [--quiet]
-loom knowledge gc [--max-file-lines N] [--max-total-lines N] [--quiet]
+loom knowledge audit [--max-file-lines N] [--max-total-lines N] [--quiet]   # Report size/duplicate/promoted-block issues
+loom knowledge gc [--model NAME] [--dry-run] [--quick]                       # Spawn Claude to compact (dedupe, summarize, drop stale)
 loom knowledge bootstrap [--model <name>] [--skip-map] [--quick]
 
 loom memory note <text> [--stage <id>]

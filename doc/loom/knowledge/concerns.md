@@ -59,7 +59,7 @@ Files: src/verify/baseline/capture.rs:76-79, src/verify/baseline/compare.rs:155-
 
 ## Bootstrap Tool Restriction Scope
 
-`bootstrap.rs:57` uses `Bash(loom knowledge*)` which allows all knowledge subcommands (init, check, gc, show) not just `update`. Harmless since other subcommands are read-only, but could be tightened to `Bash(loom knowledge update*)` for principle of least privilege.
+`bootstrap.rs:57` uses `Bash(loom knowledge*)` which allows all knowledge subcommands (init, check, audit, show, list, gc) not just `update`. Most are read-only, but `gc` spawns Claude — so allowing it from inside another Claude session could cause recursion. The new `knowledge/gc.rs` and `knowledge/spawn.rs` already exclude `loom knowledge gc` from their own bash allowlist; `bootstrap`'s allowlist should be tightened to `Bash(loom knowledge update*)`, `Bash(loom knowledge replace-section*)`, `Bash(loom knowledge audit*)` for principle of least privilege.
 
 ## Hook Pattern Matching: False Positives on Embedded Content (2026-03-31)
 
