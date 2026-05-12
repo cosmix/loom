@@ -98,6 +98,13 @@ pub fn create_worktree(
         eprintln!("Warning: Failed to register worktree trust: {e}");
     }
 
+    // Exclude .claude/settings.local.json from the worktree's per-worktree gitignore.
+    // This prevents agents from accidentally committing container-baked hook paths into
+    // the main repository. Uses the per-worktree gitdir at .git/worktrees/<stage-id>/.
+    if let Err(e) = super::settings::add_settings_local_to_worktree_gitignore(stage_id, repo_root) {
+        eprintln!("Warning: Failed to add settings.local.json to worktree gitignore: {e}");
+    }
+
     let mut worktree = Worktree::new(stage_id.to_string(), worktree_path, branch_name);
     worktree.mark_active();
 

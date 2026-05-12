@@ -526,6 +526,14 @@ impl StageExecutor for Orchestrator {
             }
         }
 
+        // Exclude .claude/settings.local.json from the main repo's gitignore so knowledge-stage
+        // hook configs (which may contain container-baked paths) cannot be accidentally committed.
+        if let Err(e) =
+            crate::git::worktree::add_settings_local_to_main_gitignore(&self.config.repo_root)
+        {
+            eprintln!("Warning: Failed to add settings.local.json to main repo gitignore: {e}");
+        }
+
         let deps = get_dependency_status(&stage, &self.graph);
 
         // Check for existing handoff file to include in signal for continuation
