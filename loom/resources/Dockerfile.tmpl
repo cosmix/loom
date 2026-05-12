@@ -7,11 +7,14 @@ ARG USER_GID=$USER_UID
 # Tooling: sudo (for firewall sudoers), iptables/ipset (firewall),
 # dnsutils (dig for allowlist DNS resolution), ripgrep/fd-find (agent tools),
 # git/curl/ca-certificates (basic dev), e2fsprogs (chattr for lock),
-# gosu (capability-drop in entrypoint per finding #15).
+# gosu (capability-drop in entrypoint per finding #15),
+# bubblewrap/socat (Claude Code's nested per-tool sandboxing — without
+# these claude emits a "Sandbox disabled" warning on every startup and
+# runs Bash/Read/Edit tools without filesystem/network restrictions).
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         sudo iptables ipset dnsutils ripgrep fd-find git curl \
-        ca-certificates e2fsprogs gosu \
+        ca-certificates e2fsprogs gosu bubblewrap socat \
     && rm -rf /var/lib/apt/lists/*
 
 # Loom user/group at UID 1000 (matches host UID in most dev setups;
@@ -31,6 +34,15 @@ RUN set -eux; \
     fi; \
     if ! getent group ${USER_GID} >/dev/null; then groupadd --gid ${USER_GID} ${USERNAME}; fi; \
     if ! id -u ${USERNAME} >/dev/null 2>&1; then useradd --uid ${USER_UID} --gid ${USER_GID} -m -s /bin/bash ${USERNAME}; fi
+
+# Pre-create /home/loom/.claude/ owned by loom BEFORE any runtime mount
+# touches it. Bind mounts at /home/loom/.claude/hooks/loom and
+# /home/loom/.claude/.credentials.json otherwise cause the runtime to
+# create the intermediate /home/loom/.claude directory as root-owned,
+# which blocks claude from writing its session-env/, projects/, todos/,
+# and other per-session scratch directories with EACCES.
+RUN mkdir -p /home/${USERNAME}/.claude && \
+    chown -R ${USER_UID}:${USER_GID} /home/${USERNAME}/.claude
 
 # Node.js 22 + Claude Code CLI (every loom image ships claude).
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
