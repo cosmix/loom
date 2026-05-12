@@ -128,6 +128,36 @@ pub struct ProjectContainerConfig {
     pub git_user_email: Option<String>,
 }
 
+/// Maximum length permitted for a git identity value (`user.name` /
+/// `user.email`). Git's own object model has no formal limit, but values
+/// beyond this are not legitimate operator input and the cap makes
+/// downstream env-injection and TOML round-trip predictable.
+pub const GIT_IDENTITY_MAX_LEN: usize = 256;
+
+/// Validate a git identity value used for `GIT_AUTHOR_*` / `GIT_COMMITTER_*`
+/// env injection. Rejects empty strings, control characters (including the
+/// embedded newlines that produce malformed commit objects), and values
+/// longer than [`GIT_IDENTITY_MAX_LEN`]. The caller treats a rejection as
+/// "fall back to git defaults" (drops the value to `None`).
+pub fn validate_git_identity(value: &str) -> Result<()> {
+    if value.is_empty() {
+        return Err(anyhow!("git identity value is empty"));
+    }
+    if value.len() > GIT_IDENTITY_MAX_LEN {
+        return Err(anyhow!(
+            "git identity value exceeds {GIT_IDENTITY_MAX_LEN} bytes ({} bytes given)",
+            value.len()
+        ));
+    }
+    if let Some(c) = value.chars().find(|c| c.is_control()) {
+        return Err(anyhow!(
+            "git identity value contains control character U+{:04X}",
+            c as u32
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,5 +279,36 @@ mod tests {
         let cfg = ProjectExecutionConfig::default();
         assert_eq!(cfg.backend, BackendType::Native);
         assert!(cfg.container.is_none());
+    }
+
+    #[test]
+    fn validate_git_identity_accepts_normal_values() {
+        validate_git_identity("Alice Dev").unwrap();
+        validate_git_identity("alice@example.com").unwrap();
+        validate_git_identity("Renée O'Brien").unwrap();
+    }
+
+    #[test]
+    fn validate_git_identity_rejects_empty() {
+        assert!(validate_git_identity("").is_err());
+    }
+
+    #[test]
+    fn validate_git_identity_rejects_newline() {
+        assert!(validate_git_identity("Alice\nGIT_PASSWORD=hunter2").is_err());
+        assert!(validate_git_identity("Alice\rDev").is_err());
+    }
+
+    #[test]
+    fn validate_git_identity_rejects_nul() {
+        assert!(validate_git_identity("Alice\0Dev").is_err());
+    }
+
+    #[test]
+    fn validate_git_identity_rejects_oversize() {
+        let huge = "a".repeat(GIT_IDENTITY_MAX_LEN + 1);
+        assert!(validate_git_identity(&huge).is_err());
+        let max = "a".repeat(GIT_IDENTITY_MAX_LEN);
+        validate_git_identity(&max).unwrap();
     }
 }

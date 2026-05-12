@@ -488,8 +488,29 @@ fn write_section<T: serde::Serialize>(work_dir: &Path, section: &str, value: &T)
 }
 
 /// Read the persisted project-level execution config (`[project_execution]`).
+///
+/// Drops `git_user_name` / `git_user_email` values that fail
+/// [`validate_git_identity`] — a hand-edited config.toml with control chars
+/// or oversize values must not silently propagate to env injection. The
+/// container path treats `None` as "fall back to git defaults".
 pub fn read_project_execution(work_dir: &Path) -> Result<Option<ProjectExecutionConfig>> {
-    read_section(work_dir, PROJECT_EXECUTION_SECTION)
+    let mut cfg: Option<ProjectExecutionConfig> =
+        read_section(work_dir, PROJECT_EXECUTION_SECTION)?;
+    if let Some(exec) = cfg.as_mut() {
+        if let Some(container) = exec.container.as_mut() {
+            scrub_invalid_identity(&mut container.git_user_name);
+            scrub_invalid_identity(&mut container.git_user_email);
+        }
+    }
+    Ok(cfg)
+}
+
+fn scrub_invalid_identity(value: &mut Option<String>) {
+    if let Some(v) = value {
+        if crate::plan::schema::execution::validate_git_identity(v).is_err() {
+            *value = None;
+        }
+    }
 }
 
 /// Persist the project-level execution config (`[project_execution]`).
@@ -743,6 +764,32 @@ mod tests {
         let container = parsed.container.unwrap();
         assert!(container.git_user_name.is_none());
         assert!(container.git_user_email.is_none());
+    }
+
+    #[test]
+    fn read_project_execution_scrubs_invalid_git_identity() {
+        let temp = TempDir::new().unwrap();
+        let work = init_work(&temp);
+        // Embedded newline in user.name and an oversize email — both invalid.
+        let oversize = "a".repeat(300);
+        let bad_toml = format!(
+            "[project_execution]\nbackend = \"container\"\n\
+             [project_execution.container]\nruntime = \"docker\"\n\
+             fingerprint = \"fp\"\nimage_digest = \"sha256:abc\"\n\
+             git_user_name = \"Alice\\nGIT_PASSWORD=hunter2\"\n\
+             git_user_email = \"{oversize}@example.com\"\n",
+        );
+        fs::write(work.join("config.toml"), bad_toml).unwrap();
+        let parsed = read_project_execution(&work).unwrap().unwrap();
+        let container = parsed.container.unwrap();
+        assert!(
+            container.git_user_name.is_none(),
+            "invalid git_user_name must be scrubbed",
+        );
+        assert!(
+            container.git_user_email.is_none(),
+            "invalid git_user_email must be scrubbed",
+        );
     }
 
     #[test]

@@ -201,6 +201,33 @@ pub fn setup_hooks_for_worktree(worktree_path: &Path, config: &HooksConfig) -> R
     Ok(())
 }
 
+/// Find the loom hooks directory
+///
+/// Looks for hooks in:
+/// 1. `$LOOM_HOOKS_DIR` environment variable (for testing/override)
+/// 2. `~/.claude/hooks/loom/` (standard installation location)
+///
+/// Returns None if hooks are not installed. Run `loom init` to install hooks.
+pub fn find_hooks_dir() -> Option<std::path::PathBuf> {
+    // Check environment variable first (for testing/override)
+    if let Ok(dir) = std::env::var("LOOM_HOOKS_DIR") {
+        let path = std::path::PathBuf::from(dir);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+
+    // Check standard installation location: ~/.claude/hooks/loom/
+    if let Some(home_dir) = dirs::home_dir() {
+        let installed_hooks = home_dir.join(".claude/hooks/loom");
+        if installed_hooks.exists() {
+            return Some(installed_hooks);
+        }
+    }
+
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,31 +299,4 @@ mod tests {
             "commit-guard.sh should be in Stop with /home/loom/ path, got: {stop_commands:?}"
         );
     }
-}
-
-/// Find the loom hooks directory
-///
-/// Looks for hooks in:
-/// 1. `$LOOM_HOOKS_DIR` environment variable (for testing/override)
-/// 2. `~/.claude/hooks/loom/` (standard installation location)
-///
-/// Returns None if hooks are not installed. Run `loom init` to install hooks.
-pub fn find_hooks_dir() -> Option<std::path::PathBuf> {
-    // Check environment variable first (for testing/override)
-    if let Ok(dir) = std::env::var("LOOM_HOOKS_DIR") {
-        let path = std::path::PathBuf::from(dir);
-        if path.exists() {
-            return Some(path);
-        }
-    }
-
-    // Check standard installation location: ~/.claude/hooks/loom/
-    if let Some(home_dir) = dirs::home_dir() {
-        let installed_hooks = home_dir.join(".claude/hooks/loom");
-        if installed_hooks.exists() {
-            return Some(installed_hooks);
-        }
-    }
-
-    None
 }

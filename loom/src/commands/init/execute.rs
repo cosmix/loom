@@ -249,11 +249,13 @@ fn apply_project_backend(
             let git_user_name = existing_container
                 .as_ref()
                 .and_then(|c| c.git_user_name.clone())
-                .or_else(|| host_git_config("user.name"));
+                .or_else(|| host_git_config("user.name"))
+                .and_then(|v| sanitize_git_identity("user.name", v));
             let git_user_email = existing_container
                 .as_ref()
                 .and_then(|c| c.git_user_email.clone())
-                .or_else(|| host_git_config("user.email"));
+                .or_else(|| host_git_config("user.email"))
+                .and_then(|v| sanitize_git_identity("user.email", v));
 
             if git_user_name.is_none() || git_user_email.is_none() {
                 println!(
@@ -312,6 +314,26 @@ fn apply_project_backend(
     }
 
     Ok(())
+}
+
+/// Drop a git identity value that fails [`validate_git_identity`] (control
+/// chars, embedded newlines, oversize). Falling back to `None` makes the
+/// container path skip env-injection, which is safer than passing the bad
+/// value through and getting a malformed commit object or a corrupted env
+/// block downstream.
+fn sanitize_git_identity(key: &str, value: String) -> Option<String> {
+    match crate::plan::schema::execution::validate_git_identity(&value) {
+        Ok(()) => Some(value),
+        Err(err) => {
+            println!(
+                "  {} Ignoring invalid git {}: {}",
+                "!".yellow().bold(),
+                key,
+                err,
+            );
+            None
+        }
+    }
 }
 
 /// Query the host's global git config for a single key.
