@@ -41,7 +41,7 @@ pub fn format_line(line: &str, opts: &FormatOptions, out: &mut dyn Write) -> std
     let event: Value = match serde_json::from_str(trimmed) {
         Ok(v) => v,
         Err(_) => {
-            let preview: String = trimmed.chars().take(40).collect();
+            let preview = sanitize_preview(trimmed, 40);
             return writeln!(out, "[malformed line: {preview}]");
         }
     };
@@ -49,7 +49,7 @@ pub fn format_line(line: &str, opts: &FormatOptions, out: &mut dyn Write) -> std
     let event_type = match event.get("type").and_then(|v| v.as_str()) {
         Some(t) => t,
         None => {
-            let preview: String = trimmed.chars().take(40).collect();
+            let preview = sanitize_preview(trimmed, 40);
             return writeln!(out, "[malformed line: {preview}]");
         }
     };
@@ -58,8 +58,18 @@ pub fn format_line(line: &str, opts: &FormatOptions, out: &mut dyn Write) -> std
         "assistant" => render_assistant(&event, opts, out),
         "user" => render_user(&event, opts, out),
         "system" | "rate_limit_event" => Ok(()), // suppressed; caller counts for footer
-        other => writeln!(out, "[unknown event: {other}]"),
+        other => writeln!(out, "[unknown event: {}]", sanitize_preview(other, 40)),
     }
+}
+
+/// Replace control characters and ANSI escape bytes with `.` so an adversarial
+/// log producer (e.g. a tool result that wrote raw bytes into the JSONL stream)
+/// cannot inject terminal-control sequences via the malformed/unknown preview.
+fn sanitize_preview(raw: &str, max_chars: usize) -> String {
+    raw.chars()
+        .take(max_chars)
+        .map(|c| if c.is_control() { '.' } else { c })
+        .collect()
 }
 
 /// Render an `"assistant"` event.
@@ -465,5 +475,33 @@ mod tests {
         format_line("", &opts(false, false), &mut buf).unwrap();
         format_line("   ", &opts(false, false), &mut buf).unwrap();
         assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn malformed_preview_strips_control_chars() {
+        // ANSI clear-screen + ESC + raw bytes embedded in a malformed line.
+        // The rendered preview must not contain any control bytes — otherwise
+        // an adversarial log producer could move the user's cursor or clear
+        // their terminal via `loom container logs`.
+        let line = "\x1b[2J\x1b[Hnot json\x07\n";
+        let out = run(line, false);
+        assert!(out.starts_with("[malformed line:"), "got: {out}");
+        assert!(
+            !out.contains('\x1b'),
+            "ESC byte must be sanitized; got: {out:?}"
+        );
+        assert!(
+            !out.contains('\x07'),
+            "BEL byte must be sanitized; got: {out:?}"
+        );
+    }
+
+    #[test]
+    fn missing_type_preview_strips_control_chars() {
+        // Valid JSON but no "type" field — uses the same sanitized preview path.
+        let line = "{\"x\":\"\\u001b[2J\"}";
+        let out = run(line, false);
+        assert!(out.starts_with("[malformed line:"), "got: {out}");
+        assert!(!out.contains('\x1b'), "got: {out:?}");
     }
 }

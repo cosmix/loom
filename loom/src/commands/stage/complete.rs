@@ -688,12 +688,20 @@ fn run_aggregated_wiring_reverification(
 
         // Find the stage definition in the plan
         if let Some(stage_def) = plan.metadata.loom.stages.iter().find(|s| s.id == stage.id) {
-            // Re-run wiring checks from this stage on the merged codebase
+            // Re-run wiring checks from this stage on the merged codebase.
+            // Wiring source paths are authored relative to the originating
+            // stage's working_dir, NOT the integration-verify stage's
+            // working_dir — resolve against `verification_dir + working_dir`.
             if !stage_def.wiring.is_empty() {
                 println!("  Re-verifying wiring from stage '{}'...", stage.id);
+                let stage_working_dir = if stage_def.working_dir == "." {
+                    verification_dir.to_path_buf()
+                } else {
+                    verification_dir.join(&stage_def.working_dir)
+                };
                 let gaps = crate::verify::goal_backward::verify_wiring(
                     &stage_def.wiring,
-                    verification_dir,
+                    &stage_working_dir,
                 )?;
                 if !gaps.is_empty() {
                     for gap in &gaps {
