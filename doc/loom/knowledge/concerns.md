@@ -119,9 +119,9 @@ Pre-existing issue, not introduced by the merge conflict session lifecycle fix. 
 
 models/stage/methods.rs:443 defines is_knowledge_stage() but it is never called. All call sites use direct stage_type comparison. Contains fragile heuristic name matching that duplicates detect_stage_type() logic. Consider removing or consolidating with detect_stage_type and check_knowledge_recommendations.
 
-## container/mod.rs Exceeds 400-line Limit (2026-05-11, updated 2026-05-11)
+## container/mod.rs Exceeds 400-line Limit (2026-05-11, updated 2026-05-12)
 
-`loom/src/orchestrator/terminal/container/mod.rs` is ~975 lines — 144% over the 400-line CLAUDE.md code size limit (grew from 661 during mounts-hardening). Functional and all tests pass; refactor deferred.
+`loom/src/orchestrator/terminal/container/mod.rs` is 1141 lines — 185% over the 400-line CLAUDE.md code size limit (grew from 661 → 975 → 1141 during mounts-hardening + this plan). Functional and all tests pass; refactor deferred.
 
 **Recommended split:** Extract spawn logic into `spawn.rs`, mount construction into `mounts.rs` (build_mounts and helpers), env building into `env.rs`. The submodule files `fingerprint.rs`, `image.rs`, `lifecycle.rs`, `logs_capture.rs`, `network.rs`, `probe.rs`, `resources.rs`, `runtime.rs` are already appropriately sized.
 
@@ -150,3 +150,27 @@ The firewall enforcement probe (`container/probe.rs`) runs on the default bridge
 `attribute_main_repo_merge` carves out `loom/_base/*` merges with a heuristic on the current branch name and on `SessionType::BaseConflict` session metadata. If a base-merge ever runs from a non-`loom/_base/*` branch (manual flow, future refactor) and no `BaseConflict` session is alive, attribution would tie the active merge to the stage whose branch HEAD shows up in `MERGE_HEAD` — leading to a spurious revert.
 
 **Hardening path:** Tag base merges explicitly via session metadata (e.g., a marker file or distinct `SessionType::BaseConflict` always present during the base-merge window) and key the carve-out off that signal alone, not the current branch name. Until then, the heuristic is documented here so future work knows where to look.
+
+## Container Orphan Retry Collision (2026-05-12)
+
+When `spawn_session` fails in `stage_executor.rs` (knowledge or standard stage), the stage is marked `Blocked` but leftover resources persist: container (via `<runtime> run` naming), git worktree (`.worktrees/<stage-id>`), and branch (`loom/<stage-id>`). On retry, `podman run` fails with "container name loom-<stage-id> is already in use". Worktrees and branches also accumulate.
+
+**Fix needed:** Two-part:
+1. Preemptive `rm -f <container_name>` at the top of `spawn_common` (cheap defense against retry collision)
+2. Failure rollback in `stage_executor.rs` calls `cleanup_worktree` + `cleanup_branch` + runtime `rm -f` before returning (standard stages). Knowledge stages: container removal only.
+
+## Container settings.local.json Path Leakage (2026-05-12)
+
+`settings.local.json` inside a container-backed worktree has hooks configured with `/home/loom/.claude/hooks/loom/` paths. Without exclusion, an agent can `git add .claude/settings.local.json` and commit these paths back to the host repo, poisoning the hook configuration for native-backend users who run the same branch.
+
+**Fix needed:** Append `.claude/settings.local.json` to `<worktree>/.git/info/exclude` immediately after worktree creation. Use per-worktree exclude (not top-level `.gitignore`) so it doesn't pollute the user's repo `.gitignore`.
+
+## Container Git Identity Gap (2026-05-12)
+
+Container sessions have no `.gitconfig`. Commits either use git's fallback identity or fail. There is no way for operators to specify the git identity in the plan or `.work/config.toml`, and no automatic inheritance from the host's git identity.
+
+**Fix needed:** Add `git_user_name: Option<String>` and `git_user_email: Option<String>` to `ProjectContainerConfig`. Default from host `git config --global user.name/email` at `loom init --backend container` time. Inject as `GIT_AUTHOR_*` / `GIT_COMMITTER_*` env vars in `ContainerBackend::build_env_for_session`. Only inject ALL FOUR env vars when both fields are Some.
+
+## container/mod.rs Size Update (2026-05-12)
+
+`container/mod.rs` grew from ~975 lines to **1141 lines** during the current hardening work. Still 185% over the 400-line limit. Refactor deferred.

@@ -426,3 +426,70 @@ Runtime status is queried via `<runtime> inspect -f '{{.State.Status}}' <name>` 
 **Note on session schema keys:** The JSON output uses `stage` (not `stage_id`), `container` (not `container_name`), `status` (not `state`). Tests in `list.rs` assert these exact keys.
 
 **Known tech debt:** `build_rows()` in `list.rs` reimplements session-loading + runtime-detection logic that partially overlaps with `load_sessions()` and `pick_container_session()` helpers in `logs.rs`. These should be consolidated into shared helpers in a future refactor. Detection: `rg 'session.runtime.as_deref'` surfaces 3 sites across `logs.rs` / `list.rs`.
+
+## Container Backend — Failure Rollback and git/cleanup/ Helpers
+
+When `spawn_session` fails in `stage_executor.rs` (both the knowledge path ~line 134 and the standard-stage path ~line 364), the current rollback marks the stage `Blocked` with `FailureInfo::InfrastructureError` but does NOT clean up leftover resources. This causes retry-collision failures on the next `loom run`.
+
+**Cleanup helpers (use these in failure rollback):**
+
+- `git::cleanup::cleanup_worktree(stage_id, repo_root, force=true)` — `git/cleanup/worktree.rs:17`
+- `git::cleanup::cleanup_branch(stage_id, repo_root, force=true)` — `git/cleanup/branch.rs:18`
+- `git::branch::branch_name_for_stage(stage_id)` — `git/branch/naming.rs:4`
+- `git::branch::delete_branch(name, force, repo_root)` — `git/branch/operations.rs:21`
+
+**Container preemptive removal pattern (for `spawn_common` in `container/mod.rs`):**
+
+```rust
+// At the top of spawn_common, before network/mount setup:
+let _ = Command::new(self.runtime.binary())
+    .args(["rm", "-f", &container_name])
+    .output();
+```
+
+This is best-effort (rm -f exits 0 when no container exists). Canonical cleanup (with log capture) is `kill_session`.
+
+**Knowledge stages**: skip worktree+branch cleanup (no worktree). Container removal only.
+
+**Standard/IntegrationVerify stages**: clean container + worktree + branch. All wrapped in `let _ = ...`.
+
+## Container Backend — Hook Path Asymmetry and Per-Worktree Gitignore
+
+### Hook Path Asymmetry
+
+`generate_hooks_settings` in `hooks/generator.rs` calls `configure_loom_hooks(obj)` from `fs/permissions/hooks.rs`. That function calls `loom_hooks_config()` which ALWAYS uses host-side `~/.claude/hooks/loom` paths. For container backend, these paths don't exist inside the container — the hooks dir is mounted at `/home/loom/.claude/hooks/loom`.
+
+**Fix location:** `generate_hooks_settings` must branch on `config.backend`:
+- `BackendType::Native`: call `configure_loom_hooks(obj)` (existing behavior — host paths)
+- `BackendType::Container`: emit the global hook set using `config.script_path(event)` which already returns `/home/loom/.claude/hooks/loom/<script>` for container backend (see `hooks/config.rs:144-147`).
+
+`HooksConfig::to_settings_hooks()` already uses `script_path()` so session-specific hooks already have the correct paths. The bug is only in the global-hook emission path.
+
+**Canonical global hook list** lives in `fs/permissions/hooks.rs::loom_hooks_config()` (PreToolUse: ask-user-pre.sh, prefer-modern-tools.sh, commit-filter.sh, git-add-guard.sh, worktree-isolation.sh, worktree-file-guard.sh, skill-trigger.sh).
+
+### Per-Worktree Gitignore for settings.local.json
+
+`settings.local.json` inside a container-backed worktree contains `/home/loom/.claude/hooks/loom/` paths. These paths are wrong on the host. Without exclusion, an agent can `git add .claude/settings.local.json` and land these container-baked paths in the repo.
+
+**Fix:** After creating a worktree, append `.claude/settings.local.json` to `<worktree>/.git/info/exclude`. Use per-worktree exclude (not top-level `.gitignore`) to avoid polluting the user's repo.
+
+- File path: `<worktree>/.git/info/exclude`
+- Append pattern: idempotent check (don't re-add if already present)
+- Knowledge stages: write to main repo's `.git/info/exclude` instead
+- Setup location: `git/worktree/settings.rs` or `stage_executor.rs` after worktree creation
+
+### Git Identity Inheritance
+
+Inside a container there is no `.gitconfig`, so commits use git defaults or fail. 
+
+**Approach:** Add `git_user_name: Option<String>` and `git_user_email: Option<String>` to `ProjectContainerConfig` (plan/schema/execution.rs). Populate at `loom init --backend container` time by reading host git config (`git config --global user.name`). Inject into container sessions via env vars:
+
+```rust
+// In ContainerBackend::build_env_for_session, when both fields are Some:
+("GIT_AUTHOR_NAME", git_user_name)
+("GIT_AUTHOR_EMAIL", git_user_email)
+("GIT_COMMITTER_NAME", git_user_name)
+("GIT_COMMITTER_EMAIL", git_user_email)
+```
+
+Git respects `GIT_AUTHOR_*` / `GIT_COMMITTER_*` over `user.*` config. Only inject ALL FOUR when both values are present — partial identity is worse than no identity.
