@@ -1246,14 +1246,20 @@ mod tests {
             let workspace = Path::new("/repo/.worktrees/stage-x");
             let env = backend.build_env_for_session("stage-x", "session-1", workspace);
             let keys: Vec<_> = env.iter().map(|(k, _)| k.as_str()).collect();
-            assert!(
-                !keys.contains(&"GIT_AUTHOR_NAME"),
-                "should not set GIT_AUTHOR_NAME when identity incomplete"
-            );
-            assert!(
-                !keys.contains(&"GIT_COMMITTER_NAME"),
-                "should not set GIT_COMMITTER_NAME when identity incomplete"
-            );
+            // Partial identity must suppress ALL four GIT_* vars, not just
+            // the *_NAME pair. A leaked *_EMAIL would produce a half-set
+            // identity that git either rejects or accepts inconsistently.
+            for key in [
+                "GIT_AUTHOR_NAME",
+                "GIT_AUTHOR_EMAIL",
+                "GIT_COMMITTER_NAME",
+                "GIT_COMMITTER_EMAIL",
+            ] {
+                assert!(
+                    !keys.contains(&key),
+                    "should not set {key} when identity incomplete",
+                );
+            }
         }
     }
 }
