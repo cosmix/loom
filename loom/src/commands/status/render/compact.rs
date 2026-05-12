@@ -56,6 +56,12 @@ pub fn render_compact<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result
         )?;
     }
 
+    // Stuck sessions count
+    let stuck_count = data.stages.iter().filter(|s| s.is_possibly_stuck).count();
+    if stuck_count > 0 {
+        write!(w, " {}", format!("stuck:{stuck_count}").yellow())?;
+    }
+
     // Max context usage
     let max_ctx = data
         .stages

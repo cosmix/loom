@@ -138,6 +138,9 @@ pub struct StageInfo {
     /// Effective model name for this stage (explicit override or stage-type default)
     #[serde(default)]
     pub model: String,
+    /// Whether the monitor has flagged this session as possibly stuck
+    #[serde(default)]
+    pub is_possibly_stuck: bool,
 }
 
 /// Write a length-prefixed JSON message to a stream.
@@ -254,6 +257,7 @@ mod tests {
                 merged: false,
                 dependencies: vec!["stage-0".to_string()],
                 model: "opus[1m]".to_string(),
+                is_possibly_stuck: false,
             }],
             stages_pending: vec![StageInfo {
                 id: "stage-2".to_string(),
@@ -266,6 +270,7 @@ mod tests {
                 merged: false,
                 dependencies: vec!["stage-1".to_string()],
                 model: "sonnet".to_string(),
+                is_possibly_stuck: false,
             }],
             stages_completed: vec![StageInfo {
                 id: "stage-0".to_string(),
@@ -278,6 +283,7 @@ mod tests {
                 merged: true,
                 dependencies: vec![],
                 model: "opus[1m]".to_string(),
+                is_possibly_stuck: false,
             }],
             stages_blocked: vec![],
         };

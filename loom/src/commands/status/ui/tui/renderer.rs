@@ -128,6 +128,7 @@ pub fn stage_info_to_stage(info: &StageInfo) -> Stage {
         },
         reasoning_effort: None,
         execution_backend: None,
+        is_possibly_stuck: info.is_possibly_stuck,
     }
 }
 
@@ -377,6 +378,7 @@ mod tests {
             merged: true,
             dependencies: vec!["dep1".to_string(), "dep2".to_string()],
             model: "opus[1m]".to_string(),
+            is_possibly_stuck: false,
         };
 
         let stage = stage_info_to_stage(&info);
