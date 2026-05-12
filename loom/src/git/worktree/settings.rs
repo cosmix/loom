@@ -460,6 +460,58 @@ pub fn setup_worktree_hooks(
     })
 }
 
+/// Append a pattern to a git `info/exclude` file, creating it if absent.
+///
+/// Idempotent: skips the write when the pattern is already present.
+fn add_to_gitignore_exclude(git_dir: &Path, pattern: &str) -> Result<()> {
+    let info_dir = git_dir.join("info");
+    std::fs::create_dir_all(&info_dir)
+        .with_context(|| format!("Failed to create {}", info_dir.display()))?;
+    let exclude_path = info_dir.join("exclude");
+
+    if exclude_path.exists() {
+        let content = std::fs::read_to_string(&exclude_path)
+            .with_context(|| format!("Failed to read {}", exclude_path.display()))?;
+        if content.lines().any(|line| line.trim() == pattern) {
+            return Ok(());
+        }
+        let newline = if content.ends_with('\n') { "" } else { "\n" };
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&exclude_path)
+            .with_context(|| format!("Failed to open {} for append", exclude_path.display()))?;
+        file.write_all(format!("{newline}{pattern}\n").as_bytes())
+            .with_context(|| "Failed to append to gitignore exclude")?;
+    } else {
+        std::fs::write(
+            &exclude_path,
+            format!("# loom: container-backend-generated paths\n{pattern}\n"),
+        )
+        .with_context(|| format!("Failed to create {}", exclude_path.display()))?;
+    }
+
+    Ok(())
+}
+
+/// Exclude `.claude/settings.local.json` from the worktree's per-worktree git exclude.
+///
+/// Git stores per-worktree state at `<repo>/.git/worktrees/<stage-id>/`. The
+/// `info/exclude` inside that directory acts as an uncommitted `.gitignore` scoped
+/// to this worktree. Adding `settings.local.json` here prevents agents from
+/// accidentally staging container-baked hook paths into the main repository.
+pub fn add_settings_local_to_worktree_gitignore(stage_id: &str, repo_root: &Path) -> Result<()> {
+    let gitdir = repo_root.join(".git/worktrees").join(stage_id);
+    add_to_gitignore_exclude(&gitdir, ".claude/settings.local.json")
+}
+
+/// Exclude `.claude/settings.local.json` from the main repo's git exclude.
+///
+/// Used for knowledge stages that run in the main repo without a dedicated worktree.
+pub fn add_settings_local_to_main_gitignore(repo_root: &Path) -> Result<()> {
+    let gitdir = repo_root.join(".git");
+    add_to_gitignore_exclude(&gitdir, ".claude/settings.local.json")
+}
+
 /// Remove worktree-specific settings and symlinks
 ///
 /// Called during worktree removal to clean up:
@@ -815,6 +867,92 @@ mod tests {
         assert!(
             !env.contains_key("LOOM_MAIN_AGENT_PID"),
             "LOOM_MAIN_AGENT_PID is always stripped"
+        );
+    }
+
+    #[test]
+    fn test_add_settings_local_to_worktree_gitignore_creates_exclude() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        let stage_id = "test-stage";
+
+        let gitdir = repo_root.join(".git/worktrees").join(stage_id);
+        std::fs::create_dir_all(&gitdir).unwrap();
+
+        add_settings_local_to_worktree_gitignore(stage_id, &repo_root).unwrap();
+
+        let exclude_path = gitdir.join("info/exclude");
+        assert!(exclude_path.exists(), "exclude file should be created");
+
+        let content = std::fs::read_to_string(&exclude_path).unwrap();
+        assert!(
+            content.contains(".claude/settings.local.json"),
+            "exclude should contain the pattern"
+        );
+    }
+
+    #[test]
+    fn test_add_settings_local_to_worktree_gitignore_idempotent() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        let stage_id = "test-stage";
+
+        let gitdir = repo_root.join(".git/worktrees").join(stage_id);
+        std::fs::create_dir_all(&gitdir).unwrap();
+
+        add_settings_local_to_worktree_gitignore(stage_id, &repo_root).unwrap();
+        add_settings_local_to_worktree_gitignore(stage_id, &repo_root).unwrap();
+
+        let exclude_path = gitdir.join("info/exclude");
+        let content = std::fs::read_to_string(&exclude_path).unwrap();
+
+        let count = content
+            .lines()
+            .filter(|l| l.trim() == ".claude/settings.local.json")
+            .count();
+        assert_eq!(
+            count, 1,
+            "pattern should appear exactly once after two calls"
+        );
+    }
+
+    #[test]
+    fn test_add_settings_local_to_main_gitignore_creates_exclude() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+
+        let gitdir = repo_root.join(".git");
+        std::fs::create_dir_all(&gitdir).unwrap();
+
+        add_settings_local_to_main_gitignore(&repo_root).unwrap();
+
+        let exclude_path = gitdir.join("info/exclude");
+        assert!(exclude_path.exists(), "exclude file should be created");
+
+        let content = std::fs::read_to_string(&exclude_path).unwrap();
+        assert!(
+            content.contains(".claude/settings.local.json"),
+            "exclude should contain the pattern"
+        );
+    }
+
+    #[test]
+    fn test_add_settings_local_appends_to_existing_exclude() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+
+        let gitdir = repo_root.join(".git");
+        let info_dir = gitdir.join("info");
+        std::fs::create_dir_all(&info_dir).unwrap();
+        std::fs::write(info_dir.join("exclude"), "# existing patterns\n*.log\n").unwrap();
+
+        add_settings_local_to_main_gitignore(&repo_root).unwrap();
+
+        let content = std::fs::read_to_string(info_dir.join("exclude")).unwrap();
+        assert!(content.contains("*.log"), "existing patterns preserved");
+        assert!(
+            content.contains(".claude/settings.local.json"),
+            "new pattern appended"
         );
     }
 

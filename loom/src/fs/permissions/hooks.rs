@@ -7,6 +7,75 @@ use std::os::unix::fs::PermissionsExt;
 
 use super::constants::LOOM_HOOKS;
 
+/// Generate global hooks configuration for a specific hooks directory.
+///
+/// Internal helper shared by [`loom_hooks_config`] (host paths) and
+/// [`configure_loom_hooks_for_container`] (container paths).
+fn loom_hooks_config_for_dir(hooks_dir: &str) -> Value {
+    json!({
+        "PreToolUse": [
+            {
+                "matcher": "AskUserQuestion",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/ask-user-pre.sh")}]
+            },
+            {
+                "matcher": "Bash",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/prefer-modern-tools.sh")}]
+            },
+            {
+                "matcher": "Bash",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/commit-filter.sh")}]
+            },
+            {
+                "matcher": "Bash",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/git-add-guard.sh")}]
+            },
+            {
+                "matcher": "Bash",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/worktree-isolation.sh")}]
+            },
+            {
+                "matcher": "Edit",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/worktree-isolation.sh")}]
+            },
+            {
+                "matcher": "Write",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/worktree-isolation.sh")}]
+            },
+            {
+                "matcher": "Read",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/worktree-file-guard.sh")}]
+            },
+            {
+                "matcher": "Glob",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/worktree-file-guard.sh")}]
+            },
+            {
+                "matcher": "Grep",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/worktree-file-guard.sh")}]
+            }
+        ],
+        "PostToolUse": [
+            {
+                "matcher": "AskUserQuestion",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/ask-user-post.sh")}]
+            }
+        ],
+        "Stop": [
+            {
+                "matcher": "*",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/commit-guard.sh")}]
+            }
+        ],
+        "UserPromptSubmit": [
+            {
+                "matcher": "*",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/skill-trigger.sh")}]
+            }
+        ]
+    })
+}
+
 /// Generate global hooks configuration for loom
 /// Only includes hooks that should be in the main repo's settings.json
 /// Session-specific hooks (SessionStart, PostToolUse, PreCompact, etc.) are merged at worktree creation
@@ -17,134 +86,7 @@ pub fn loom_hooks_config() -> Value {
     let hooks_dir = dirs::home_dir()
         .map(|h| h.join(".claude/hooks/loom").display().to_string())
         .unwrap_or_else(|| "~/.claude/hooks/loom".to_string());
-
-    json!({
-        "PreToolUse": [
-            {
-                "matcher": "AskUserQuestion",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": format!("{}/ask-user-pre.sh", hooks_dir)
-                    }
-                ]
-            },
-            {
-                "matcher": "Bash",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": format!("{}/prefer-modern-tools.sh", hooks_dir)
-                    }
-                ]
-            },
-            {
-                "matcher": "Bash",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": format!("{}/commit-filter.sh", hooks_dir)
-                    }
-                ]
-            },
-            {
-                "matcher": "Bash",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": format!("{}/git-add-guard.sh", hooks_dir)
-                    }
-                ]
-            },
-            {
-                "matcher": "Bash",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": format!("{}/worktree-isolation.sh", hooks_dir)
-                    }
-                ]
-            },
-            {
-                "matcher": "Edit",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": format!("{}/worktree-isolation.sh", hooks_dir)
-                    }
-                ]
-            },
-            {
-                "matcher": "Write",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": format!("{}/worktree-isolation.sh", hooks_dir)
-                    }
-                ]
-            },
-            {
-                "matcher": "Read",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": format!("{}/worktree-file-guard.sh", hooks_dir)
-                    }
-                ]
-            },
-            {
-                "matcher": "Glob",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": format!("{}/worktree-file-guard.sh", hooks_dir)
-                    }
-                ]
-            },
-            {
-                "matcher": "Grep",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": format!("{}/worktree-file-guard.sh", hooks_dir)
-                    }
-                ]
-            }
-        ],
-        "PostToolUse": [
-            {
-                "matcher": "AskUserQuestion",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": format!("{}/ask-user-post.sh", hooks_dir)
-                    }
-                ]
-            }
-        ],
-        "Stop": [
-            {
-                "matcher": "*",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": format!("{}/commit-guard.sh", hooks_dir)
-                    }
-                ]
-            }
-        ],
-        "UserPromptSubmit": [
-            {
-                "matcher": "*",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": format!("{}/skill-trigger.sh", hooks_dir)
-                    }
-                ]
-            }
-        ]
-    })
+    loom_hooks_config_for_dir(&hooks_dir)
 }
 
 /// Install all loom hooks to ~/.claude/hooks/loom/
@@ -404,29 +346,28 @@ fn remove_loom_hooks(hooks_arr: &mut Vec<Value>) {
     });
 }
 
-/// Configure loom hooks in settings object
-/// Returns true if hooks were added/updated, false if already configured
+/// Apply a loom hooks config (built from `hooks_dir`) to a settings object.
 ///
-/// This function:
-/// 1. Migrates old hook paths to the new loom/ subdirectory
+/// Shared logic for [`configure_loom_hooks`] (host paths) and
+/// [`configure_loom_hooks_for_container`] (container paths):
+/// 1. Migrates old hook paths to the new loom/ subdirectory (no-op for container paths)
 /// 2. Removes ALL existing loom hooks from settings
-/// 3. Adds fresh loom hooks from current configuration
+/// 3. Adds fresh loom hooks from the given directory
 ///
-/// This overwrites existing loom hooks to ensure users get updates when
-/// hook configurations change. User's non-loom hooks are preserved.
-pub fn configure_loom_hooks(settings_obj: &mut serde_json::Map<String, Value>) -> Result<bool> {
-    // First, migrate any old hook paths to the new loom/ subdirectory
+/// User's non-loom hooks are preserved.
+fn configure_loom_hooks_with_dir(
+    settings_obj: &mut serde_json::Map<String, Value>,
+    hooks_dir: &str,
+) -> Result<bool> {
     let _ = migrate_old_hook_paths(settings_obj)?;
 
-    let loom_hooks = loom_hooks_config();
+    let loom_hooks = loom_hooks_config_for_dir(hooks_dir);
 
-    // Ensure hooks object exists
     let hooks = settings_obj.entry("hooks").or_insert_with(|| json!({}));
     let hooks_obj = hooks
         .as_object_mut()
         .ok_or_else(|| anyhow::anyhow!("hooks must be a JSON object"))?;
 
-    // Collect all event names we need to process (from both existing config and loom config)
     let mut all_event_names: std::collections::HashSet<String> = std::collections::HashSet::new();
     for key in hooks_obj.keys() {
         all_event_names.insert(key.clone());
@@ -437,7 +378,6 @@ pub fn configure_loom_hooks(settings_obj: &mut serde_json::Map<String, Value>) -
         }
     }
 
-    // Process each event type
     let loom_hooks_obj = loom_hooks.as_object();
     for event_name in all_event_names {
         let event_arr = hooks_obj
@@ -446,13 +386,9 @@ pub fn configure_loom_hooks(settings_obj: &mut serde_json::Map<String, Value>) -
             .as_array_mut()
             .ok_or_else(|| anyhow::anyhow!("hooks.{event_name} must be an array"))?;
 
-        // Remove ALL existing loom hooks for this event type
         remove_loom_hooks(event_arr);
-
-        // Remove any duplicates among remaining (non-loom) hooks
         remove_duplicate_hooks(event_arr);
 
-        // Add fresh loom hooks for this event type
         if let Some(new_hooks) = loom_hooks_obj
             .and_then(|obj| obj.get(&event_name))
             .and_then(|h| h.as_array())
@@ -463,9 +399,33 @@ pub fn configure_loom_hooks(settings_obj: &mut serde_json::Map<String, Value>) -
         }
     }
 
-    // Always return true since we want to ensure hooks are written
-    // (the actual comparison is done by the caller when writing the file)
     Ok(true)
+}
+
+/// Configure loom hooks in settings object using host paths.
+///
+/// Intended for native backend sessions where hook scripts are accessed
+/// at `~/.claude/hooks/loom/` on the host filesystem.
+///
+/// Returns true if hooks were added/updated.
+pub fn configure_loom_hooks(settings_obj: &mut serde_json::Map<String, Value>) -> Result<bool> {
+    let hooks_dir = dirs::home_dir()
+        .map(|h| h.join(".claude/hooks/loom").display().to_string())
+        .unwrap_or_else(|| "~/.claude/hooks/loom".to_string());
+    configure_loom_hooks_with_dir(settings_obj, &hooks_dir)
+}
+
+/// Configure loom hooks in settings object using container-stable paths.
+///
+/// Intended for container backend sessions where hook scripts are bind-mounted
+/// at `/home/loom/.claude/hooks/loom/` inside the container regardless of the
+/// host path.
+///
+/// Returns true if hooks were added/updated.
+pub fn configure_loom_hooks_for_container(
+    settings_obj: &mut serde_json::Map<String, Value>,
+) -> Result<bool> {
+    configure_loom_hooks_with_dir(settings_obj, "/home/loom/.claude/hooks/loom")
 }
 
 #[cfg(test)]

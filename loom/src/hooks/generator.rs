@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use std::path::Path;
 
 use super::config::HooksConfig;
-use crate::fs::permissions::configure_loom_hooks;
+use crate::fs::permissions::{configure_loom_hooks, configure_loom_hooks_for_container};
 use crate::sandbox::scrub_settings_env_for_backend;
 
 /// Generate settings.json content with hooks configuration
@@ -54,10 +54,15 @@ pub fn generate_hooks_settings(
         json!(config.permission_mode.as_settings_value()),
     );
 
-    // Always ensure global hooks (commit-filter, git-add-guard, worktree-isolation,
-    // etc.) are present. Previously these were only written by `loom init` and assumed
-    // to persist, but any code path that recreates settings.local.json would lose them.
-    configure_loom_hooks(obj)?;
+    // Ensure global hooks (commit-filter, git-add-guard, worktree-isolation, etc.) are
+    // present. For native sessions these use host paths; for container sessions the hook
+    // scripts are bind-mounted at /home/loom/.claude/hooks/loom/ so we emit that stable
+    // path instead.  Without this branch a container agent would reference host paths
+    // that are unreachable inside the container.
+    match config.backend {
+        crate::plan::schema::BackendType::Native => configure_loom_hooks(obj)?,
+        crate::plan::schema::BackendType::Container => configure_loom_hooks_for_container(obj)?,
+    };
 
     // Generate session-specific hooks
     let session_hooks = config.to_settings_hooks();
@@ -194,6 +199,79 @@ pub fn setup_hooks_for_worktree(worktree_path: &Path, config: &HooksConfig) -> R
         .with_context(|| format!("Failed to write settings: {}", settings_path.display()))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hooks::config::HooksConfig;
+    use crate::plan::schema::{BackendType, PermissionMode};
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_generate_hooks_settings_container_includes_global_hooks() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = HooksConfig::new(
+            temp_dir.path().to_path_buf(),
+            "test-stage".to_string(),
+            "test-session".to_string(),
+            temp_dir.path().to_path_buf(),
+            PermissionMode::Default,
+            BackendType::Container,
+        );
+
+        let settings = generate_hooks_settings(&config, None).unwrap();
+
+        let pre_tool_use = settings["hooks"]["PreToolUse"]
+            .as_array()
+            .expect("PreToolUse must be an array");
+
+        let commands: Vec<String> = pre_tool_use
+            .iter()
+            .flat_map(|entry| {
+                entry["hooks"]
+                    .as_array()
+                    .unwrap_or(&vec![])
+                    .iter()
+                    .filter_map(|hook| hook["command"].as_str().map(String::from))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+
+        assert!(
+            commands
+                .iter()
+                .any(|c| c.contains("commit-filter.sh") && c.starts_with("/home/loom/")),
+            "commit-filter.sh should use /home/loom/ path, got: {commands:?}"
+        );
+        assert!(
+            commands
+                .iter()
+                .any(|c| c.contains("prefer-modern-tools.sh") && c.starts_with("/home/loom/")),
+            "prefer-modern-tools.sh should use /home/loom/ path, got: {commands:?}"
+        );
+
+        let stop_hooks = settings["hooks"]["Stop"]
+            .as_array()
+            .expect("Stop must be an array");
+        let stop_commands: Vec<String> = stop_hooks
+            .iter()
+            .flat_map(|entry| {
+                entry["hooks"]
+                    .as_array()
+                    .unwrap_or(&vec![])
+                    .iter()
+                    .filter_map(|hook| hook["command"].as_str().map(String::from))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        assert!(
+            stop_commands
+                .iter()
+                .any(|c| c.contains("commit-guard.sh") && c.starts_with("/home/loom/")),
+            "commit-guard.sh should be in Stop with /home/loom/ path, got: {stop_commands:?}"
+        );
+    }
 }
 
 /// Find the loom hooks directory
