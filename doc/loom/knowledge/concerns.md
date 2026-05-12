@@ -178,6 +178,7 @@ After worktree creation, `.claude/settings.local.json` is now appended to `<work
 The failure rollback chain in `orchestrator/core/stage_executor.rs` — `preemptive_remove_existing` → `remove_container_on_failure` + `git::remove_worktree` + `git::delete_branch` + `try_mark_blocked` — has no direct integration test coverage. The retry-after-failure scenario (container spawn fails, stage retries cleanly) is unverified end-to-end.
 
 **Mitigations in place:**
+
 - `preemptive_remove_existing_is_infallible` unit test verifies the rm -f preamble contract
 - `smoke_rm_f_missing_container_exits_zero` (in `tests/container_smoke.rs`) validates podman's exit-0 contract on missing containers
 - Wiring check confirms `remove_worktree|delete_branch` patterns exist in `stage_executor.rs`

@@ -464,6 +464,7 @@
 **Why:** The failure path in `stage_executor.rs` only marked the stage `Blocked` — it did not clean up the half-spawned container, git worktree, or branch left behind.
 
 **Prevention:**
+
 1. `spawn_common` must call `preemptive_remove_existing(runtime, container_name)` — a best-effort `rm -f` — at the very top, before network/mount setup. This is cheap and idempotent (`rm -f` exits 0 for non-existent containers).
 2. After the `spawn_session` call fails in `stage_executor.rs`, the rollback must clean: container (`preemptive_remove_existing`), worktree (`git::remove_worktree`), branch (`git::delete_branch`). Knowledge stages: container removal only (no worktree/branch to clean).
 3. All cleanup calls must be wrapped in `let _ = ...` — cleanup failures must not hide the original error.
@@ -477,6 +478,7 @@
 **Why:** `generate_hooks_settings` in `hooks/generator.rs` called `configure_loom_hooks(obj)` unconditionally. `loom_hooks_config()` ALWAYS returns host-side paths. Session-specific hooks via `HooksConfig::to_settings_hooks()` already used `script_path()` (correct); the global-hook emission path was the bug.
 
 **Prevention:** `generate_hooks_settings` must branch on `config.backend`:
+
 - Native: `configure_loom_hooks(obj)` (host paths)
 - Container: `configure_loom_hooks_for_container(obj)` (uses `loom_hooks_config_for_dir("/home/loom/.claude/hooks/loom")`)
 
@@ -507,6 +509,7 @@ GIT_AUTHOR_NAME, GIT_AUTHOR_EMAIL, GIT_COMMITTER_NAME, GIT_COMMITTER_EMAIL
 ```
 
 Key rules:
+
 - Inject ALL FOUR or NONE. Partial identity (name only, no email) produces inconsistent commits — harder to debug than no identity at all.
 - Validate both fields: reject empty, >256 bytes, or any `char.is_control()`. Control chars are valid in podman `-e` values but produce malformed git objects.
 - Validation at two boundaries: `loom init` (warn + scrub) and `.work/config.toml` read time (silent scrub to `None`).
@@ -520,9 +523,11 @@ Key rules:
 **Why:** `cargo clippy` without `--all-targets` compiles only the default target (lib + bin). Test code (`#[cfg(test)] mod tests { ... }`) is in a different target and requires `--all-targets` to be included.
 
 **Prevention:** Stage acceptance criteria that include a clippy check should always use:
+
 ```
 cargo clippy --all-targets -- -D warnings
 ```
+
 Not `cargo clippy -- -D warnings`. The `--workspace` flag is also useful in monorepos.
 
 ## Reviewer False Alarm: Verify Behavior Changes Against the Diff (2026-05-12)
@@ -532,8 +537,10 @@ Not `cargo clippy -- -D warnings`. The `--workspace` flag is also useful in mono
 **Why:** The reviewer analyzed the stage description's framing rather than the actual diff. The description said "branching on config.backend" which sounds like it changes native behavior; the diff showed the native arm was structurally identical to the pre-existing unconditional call.
 
 **Prevention:** When a reviewer asserts a behavior change, verify against the actual diff:
+
 ```
 git show <commit>~1 -- <file>  # before
 git show <commit> -- <file>    # after
 ```
+
 Do not trust verbal descriptions of what a commit does — always compare before/after diffs directly.
