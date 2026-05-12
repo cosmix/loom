@@ -124,12 +124,20 @@ pub fn init_bare_mirror(
     args.push(host_repo.display().to_string());
     args.push(dest.display().to_string());
 
-    let out = Command::new("git").args(&args).output().with_context(|| {
-        format!(
-            "Failed to invoke `git clone --bare` for {}",
-            host_repo.display()
-        )
-    })?;
+    // Anchor the child process cwd to a known-existing directory.
+    // Without this, git inherits the parent process cwd; if some other
+    // code path has deleted that cwd, git's sh-invoked hooks fail with
+    // "getcwd() failed: No such file or directory" before clone runs.
+    let out = Command::new("git")
+        .current_dir(host_repo)
+        .args(&args)
+        .output()
+        .with_context(|| {
+            format!(
+                "Failed to invoke `git clone --bare` for {}",
+                host_repo.display()
+            )
+        })?;
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
         bail!(
