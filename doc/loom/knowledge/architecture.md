@@ -455,41 +455,36 @@ This is best-effort (rm -f exits 0 when no container exists). Canonical cleanup 
 
 ## Container Backend — Hook Path Asymmetry and Per-Worktree Gitignore
 
-### Hook Path Asymmetry
+### Hook Path Asymmetry (Fixed 2026-05-12)
 
-`generate_hooks_settings` in `hooks/generator.rs` calls `configure_loom_hooks(obj)` from `fs/permissions/hooks.rs`. That function calls `loom_hooks_config()` which ALWAYS uses host-side `~/.claude/hooks/loom` paths. For container backend, these paths don't exist inside the container — the hooks dir is mounted at `/home/loom/.claude/hooks/loom`.
+`generate_hooks_settings` in `hooks/generator.rs` now branches on `config.backend`:
 
-**Fix location:** `generate_hooks_settings` must branch on `config.backend`:
-- `BackendType::Native`: call `configure_loom_hooks(obj)` (existing behavior — host paths)
-- `BackendType::Container`: emit the global hook set using `config.script_path(event)` which already returns `/home/loom/.claude/hooks/loom/<script>` for container backend (see `hooks/config.rs:144-147`).
+- `BackendType::Native`: calls `configure_loom_hooks(obj)` (host `~/.claude/hooks/loom` paths)
+- `BackendType::Container`: calls `configure_loom_hooks_for_container(obj)` which uses `loom_hooks_config_for_dir("/home/loom/.claude/hooks/loom")` — all global hooks at container-side paths
 
-`HooksConfig::to_settings_hooks()` already uses `script_path()` so session-specific hooks already have the correct paths. The bug is only in the global-hook emission path.
+Session-specific hooks via `HooksConfig::to_settings_hooks()` already used `script_path()` (correct). The fix addresses only the global-hook emission path in `generate_hooks_settings`.
 
-**Canonical global hook list** lives in `fs/permissions/hooks.rs::loom_hooks_config()` (PreToolUse: ask-user-pre.sh, prefer-modern-tools.sh, commit-filter.sh, git-add-guard.sh, worktree-isolation.sh, worktree-file-guard.sh, skill-trigger.sh).
+**Canonical global hook list** lives in `fs/permissions/hooks.rs::loom_hooks_config()` (PreToolUse: ask-user-pre.sh, prefer-modern-tools.sh, commit-filter.sh, git-add-guard.sh, worktree-isolation.sh, worktree-file-guard.sh, skill-trigger.sh). `configure_loom_hooks_with_dir(obj, dir)` is the private helper parameterized on the hooks directory path; both `configure_loom_hooks` (native) and `configure_loom_hooks_for_container` (container) call it.
 
-### Per-Worktree Gitignore for settings.local.json
+### Per-Worktree Gitignore for settings.local.json (Fixed 2026-05-12)
 
-`settings.local.json` inside a container-backed worktree contains `/home/loom/.claude/hooks/loom/` paths. These paths are wrong on the host. Without exclusion, an agent can `git add .claude/settings.local.json` and land these container-baked paths in the repo.
+After worktree creation, `.claude/settings.local.json` is appended (idempotently) to `<worktree>/.git/info/exclude`. Uses per-worktree exclude to avoid polluting the repo's `.gitignore`.
 
-**Fix:** After creating a worktree, append `.claude/settings.local.json` to `<worktree>/.git/info/exclude`. Use per-worktree exclude (not top-level `.gitignore`) to avoid polluting the user's repo.
+- Standard/IntegrationVerify/KnowledgeDistill: append to `<worktree>/.git/info/exclude`
+- Knowledge stages: append to main repo's `.git/info/exclude` (no worktree created)
+- The per-worktree exclude file lives at `<worktree>/.git/info/exclude` — NOT at `<worktree-dir>/.git/info/exclude` (the latter is a FILE pointing at the real gitdir, not a directory; the real exclude is at `<repo>/.git/worktrees/<stage-id>/info/exclude`)
 
-- File path: `<worktree>/.git/info/exclude`
-- Append pattern: idempotent check (don't re-add if already present)
-- Knowledge stages: write to main repo's `.git/info/exclude` instead
-- Setup location: `git/worktree/settings.rs` or `stage_executor.rs` after worktree creation
+### Git Identity Inheritance (Fixed 2026-05-12)
 
-### Git Identity Inheritance
+`ProjectContainerConfig` in `plan/schema/execution.rs` now has `git_user_name: Option<String>` and `git_user_email: Option<String>`. Both are populated at `loom init --backend container` time by reading the host's `git config --global user.name/email`. They are validated by `validate_git_identity()` (rejects empty, >256 bytes, or any `char.is_control()`) at init time (warns) and at `.work/config.toml` read time (silent scrub to `None`).
 
-Inside a container there is no `.gitconfig`, so commits use git defaults or fail. 
-
-**Approach:** Add `git_user_name: Option<String>` and `git_user_email: Option<String>` to `ProjectContainerConfig` (plan/schema/execution.rs). Populate at `loom init --backend container` time by reading host git config (`git config --global user.name`). Inject into container sessions via env vars:
+Injection in `ContainerBackend::build_env_for_session` when both fields are `Some`:
 
 ```rust
-// In ContainerBackend::build_env_for_session, when both fields are Some:
 ("GIT_AUTHOR_NAME", git_user_name)
 ("GIT_AUTHOR_EMAIL", git_user_email)
 ("GIT_COMMITTER_NAME", git_user_name)
 ("GIT_COMMITTER_EMAIL", git_user_email)
 ```
 
-Git respects `GIT_AUTHOR_*` / `GIT_COMMITTER_*` over `user.*` config. Only inject ALL FOUR when both values are present — partial identity is worse than no identity.
+All four are injected together or not at all — partial identity (name without email) is omitted entirely to avoid malformed commits. Git respects `GIT_AUTHOR_*` / `GIT_COMMITTER_*` over `user.*` config, so no `.gitconfig` is needed inside the container.
