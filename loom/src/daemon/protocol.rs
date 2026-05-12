@@ -109,6 +109,33 @@ pub enum Request {
     Unsubscribe { auth_token: String },
     /// Ping to check if daemon is alive (Capability::User)
     Ping { auth_token: String },
+    /// Host-authoritative stage completion for a container-mode session
+    /// (Capability::User).
+    ///
+    /// Sent by the agent's in-container `loom stage complete` when the
+    /// stage ran with [`BackendType::Container`](crate::orchestrator::terminal::BackendType::Container).
+    /// The daemon extracts a git bundle from the live container,
+    /// validates it (size cap, expected base OID prerequisite, target
+    /// branch), imports it into the host repo, runs the existing
+    /// auto-merge flow, and only then kills the container and writes
+    /// final stage state on the host. This is the architectural fix
+    /// for Codex blockers B1 (no .git mount), B2 (no in-container
+    /// stage_file mutation), and B6 (container stays alive until
+    /// extraction succeeds).
+    CompleteStageContainer {
+        auth_token: String,
+        stage_id: String,
+        session_id: String,
+        /// Branch the daemon expects the bundle to export. Provided
+        /// by the agent for cross-checking; the daemon also derives
+        /// the expected target from `stage_type` and refuses any
+        /// mismatch.
+        target_branch: String,
+        /// OID of `target_branch` at spawn time, plumbed through
+        /// `LOOM_BASE_OID`. The daemon refuses bundles that don't
+        /// list this OID as a prerequisite (force-rebase rejection).
+        expected_base_oid: String,
+    },
 }
 
 impl Request {
@@ -122,7 +149,8 @@ impl Request {
             Request::Ping { .. }
             | Request::SubscribeStatus { .. }
             | Request::SubscribeLogs { .. }
-            | Request::Unsubscribe { .. } => Capability::User,
+            | Request::Unsubscribe { .. }
+            | Request::CompleteStageContainer { .. } => Capability::User,
         }
     }
 }

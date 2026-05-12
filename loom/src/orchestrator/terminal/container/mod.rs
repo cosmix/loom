@@ -72,6 +72,7 @@
 //! They share only the per-stage `loom-net-<stage>` network and the immutable image.
 
 pub mod fingerprint;
+pub mod git_bridge;
 pub mod image;
 pub mod lifecycle;
 pub mod logs_capture;
@@ -113,6 +114,19 @@ const HOOKS_MOUNT: &str = "/home/loom/.claude/hooks/loom";
 const CLAUDE_CREDS_MOUNT: &str = "/home/loom/.claude/.credentials.json";
 /// Container-stable network allowlist mountpoint (read in stage 4).
 const ALLOWLIST_MOUNT: &str = "/etc/loom/network/allowed_domains.txt";
+/// Container-stable mountpoint for the per-stage bare git mirror.
+///
+/// The host-side path under `<work_dir>/git-mirrors/<stage-id>/` (see
+/// [`git_bridge::bare_mirror_path`]) is bind-mounted **read-only**
+/// here. The container's entrypoint clones from this mirror into
+/// `/repo` before exec-ing the agent. The agent CANNOT push to this
+/// mirror — it is an RO bind mount, so any write attempt fails with
+/// EROFS.
+///
+/// This is the architectural primitive that closes Codex blocker B1:
+/// without a `.git` bind mount, an agent cannot tamper with host git
+/// history, refs, or hooks.
+pub const MIRROR_MOUNT: &str = "/var/loom/mirror";
 
 /// Env keys stripped at container launch. These leak host credentials or
 /// agent metadata that the containerised process must not inherit.
@@ -494,6 +508,26 @@ impl ContainerBackend {
             mounts.push(Mount::ro(allowlist_src, ALLOWLIST_MOUNT));
         }
 
+        // Per-stage bare mirror (read-only). Stage 4 (isolated git
+        // architecture) replaces the `.git` rw bind-mount with a
+        // container-private clone made from this RO mirror at container
+        // entrypoint time. The agent commits to /repo (in the
+        // container's writable image layer) and the daemon extracts a
+        // bundle at completion time. The mirror itself can never be
+        // mutated from inside the container — RO + per-stage scope
+        // closes Codex blocker B1 (container-escape via git hooks).
+        //
+        // The mirror is created by `init_bare_mirror` BEFORE spawn
+        // (see git_bridge::init_bare_mirror); if it is not present
+        // here we skip the mount silently — the spawn flow that
+        // populates it has not run yet, which is the case in
+        // existing unit tests and during back-compat operation while
+        // legacy in-container completion is still supported.
+        let mirror_src = git_bridge::bare_mirror_path(&self.work_dir, &stage.id);
+        if mirror_src.exists() {
+            mounts.push(Mount::ro(mirror_src, MIRROR_MOUNT));
+        }
+
         // Loom binary (read-only) — the agent inside the container needs
         // `loom` on PATH to call back into the orchestrator
         // (`loom knowledge update`, `loom memory note`, `loom stage
@@ -537,6 +571,13 @@ impl ContainerBackend {
                 "LOOM_WORKTREE_PATH".to_string(),
                 workspace_in_container.display().to_string(),
             ),
+            // Container-mode flag — `loom stage complete` inside the
+            // container reads this to detect that completion should
+            // be delegated to the host daemon over the Unix socket
+            // (Request::CompleteStageContainer) rather than mutating
+            // host stage state directly. This is the architectural
+            // signal for host-authoritative completion (Codex B2).
+            ("LOOM_BACKEND".to_string(), "container".to_string()),
             (
                 "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS".to_string(),
                 "1".to_string(),
