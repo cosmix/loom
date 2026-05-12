@@ -156,6 +156,24 @@ impl EventHandler for Orchestrator {
                         review_reason.as_deref(),
                     );
                 }
+                MonitorEvent::PossiblyStuck {
+                    session_id,
+                    stage_id,
+                    recent_events,
+                    failure_count,
+                    failure_ratio,
+                } => {
+                    clear_status_line();
+                    eprintln!(
+                        "{} Session '{}' (stage '{}') may be stuck: {}/{} tool calls failed ({:.0}%)",
+                        "STUCK DETECTED:".yellow().bold(),
+                        session_id,
+                        stage_id,
+                        failure_count,
+                        recent_events,
+                        failure_ratio * 100.0,
+                    );
+                }
             }
         }
         Ok(())

@@ -16,6 +16,8 @@ use super::context::{context_health, context_usage_percent, ContextHealth};
 use super::events::MonitorEvent;
 use super::handlers::Handlers;
 use super::heartbeat::{HeartbeatStatus, HeartbeatWatcher};
+use super::soft_signals;
+use super::tool_analysis;
 
 /// Detection state for tracking changes
 pub struct Detection {
@@ -27,6 +29,9 @@ pub struct Detection {
     /// Track whether each session's budget was exceeded on the previous tick,
     /// so BudgetExceeded is emitted only on the first crossing (not every tick).
     pub last_budget_exceeded: HashMap<String, bool>,
+    /// Track whether each session was already flagged as possibly stuck this
+    /// daemon session (in-memory dedup; persistent dedup uses soft-signals.jsonl).
+    pub last_stuck_detected: HashMap<String, bool>,
 }
 
 impl Detection {
@@ -37,6 +42,7 @@ impl Detection {
             last_context_levels: HashMap::new(),
             reported_hung_sessions: HashSet::new(),
             last_budget_exceeded: HashMap::new(),
+            last_stuck_detected: HashMap::new(),
         }
     }
 
@@ -305,6 +311,74 @@ impl Detection {
 
                     self.last_budget_exceeded
                         .insert(session.id.clone(), is_exceeded);
+                }
+            }
+
+            // Stuck detection: only for running sessions that have a stage.
+            // Runs every tick (like the budget check), but emits at most once
+            // per DECAY_WINDOW_SECS window per session through two dedup layers:
+            //   1. In-memory: last_stuck_detected HashMap
+            //   2. Persistent: soft-signals.jsonl (survives daemon restarts)
+            if session.status == SessionStatus::Running {
+                if let Some(stage_id) = &session.stage_id {
+                    let work_dir = handlers.work_dir();
+                    let now = std::time::SystemTime::now();
+
+                    let was_stuck = self
+                        .last_stuck_detected
+                        .get(&session.id)
+                        .copied()
+                        .unwrap_or(false);
+
+                    let has_active_signal =
+                        soft_signals::read_active_for_session(work_dir, now, &session.id)
+                            .unwrap_or_default()
+                            .iter()
+                            .any(|s| matches!(s, soft_signals::SoftSignal::PossiblyStuck { .. }));
+
+                    if !was_stuck && !has_active_signal {
+                        match tool_analysis::analyze_session(work_dir, &session.id) {
+                            Ok(analysis) if analysis.is_possibly_stuck() => {
+                                let emitted_at = chrono::Utc::now().to_rfc3339();
+                                let expires_at = (chrono::Utc::now()
+                                    + chrono::Duration::seconds(
+                                        soft_signals::DECAY_WINDOW_SECS as i64,
+                                    ))
+                                .to_rfc3339();
+                                let sig = soft_signals::SoftSignal::PossiblyStuck {
+                                    session_id: session.id.clone(),
+                                    stage_id: stage_id.clone(),
+                                    recent_events: analysis.recent_events,
+                                    failure_count: analysis.recent_failure_count,
+                                    failure_ratio: analysis.recent_failure_ratio,
+                                    emitted_at,
+                                    expires_at,
+                                };
+                                if let Err(e) = soft_signals::append(work_dir, &sig) {
+                                    tracing::warn!("Failed to append soft signal: {}", e);
+                                }
+                                events.push(MonitorEvent::PossiblyStuck {
+                                    session_id: session.id.clone(),
+                                    stage_id: stage_id.clone(),
+                                    recent_events: analysis.recent_events,
+                                    failure_count: analysis.recent_failure_count,
+                                    failure_ratio: analysis.recent_failure_ratio,
+                                });
+                                self.last_stuck_detected.insert(session.id.clone(), true);
+                            }
+                            Ok(_) => {
+                                // Not stuck (or not enough data); reset in-memory flag.
+                                self.last_stuck_detected.insert(session.id.clone(), false);
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Tool analysis failed for session {}: {}",
+                                    session.id,
+                                    e
+                                );
+                            }
+                        }
+                    }
                 }
             }
         }

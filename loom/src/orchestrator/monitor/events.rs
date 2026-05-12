@@ -71,4 +71,12 @@ pub enum MonitorEvent {
         stage_id: String,
         review_reason: Option<String>,
     },
+    /// Session tool-use pattern suggests it may be stuck in a failure loop
+    PossiblyStuck {
+        session_id: String,
+        stage_id: String,
+        recent_events: usize,
+        failure_count: u32,
+        failure_ratio: f32,
+    },
 }
