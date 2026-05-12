@@ -499,6 +499,13 @@ impl ContainerBackend {
         let container_name = tracking_key.clone();
         session.tracking_key = tracking_key.clone();
 
+        // Cheap retry-collision defense: remove any leftover container with
+        // this name so a subsequent `run` doesn't hit "container name already
+        // in use". Errors are silently swallowed — `rm -f` exits 0 even when
+        // no container exists. The canonical cleanup path (with log capture)
+        // is `kill_session`.
+        preemptive_remove_existing(self.runtime, &container_name);
+
         // Materialise the per-stage allowlist file before launch so the
         // in-container firewall script has a populated policy to read
         // (mounted RO at /etc/loom/network/allowed_domains.txt).
@@ -888,6 +895,19 @@ fn remap_signal_path(signal_path: &Path) -> PathBuf {
     }
 }
 
+/// Remove any container with the given name before spawning.
+///
+/// This is the cheap retry-collision defence: if a prior attempt left an
+/// orphan container behind the subsequent `run` would fail with
+/// "container name already in use". `rm -f` is idempotent — it exits 0
+/// even when no matching container exists, so errors are always ignored.
+/// The canonical cleanup path (with log capture) is `kill_session`.
+pub(crate) fn preemptive_remove_existing(runtime: Runtime, name: &str) {
+    let _ = Command::new(runtime.binary())
+        .args(["rm", "-f", name])
+        .output();
+}
+
 fn wait_until_running(runtime: Runtime, name: &str, timeout: Duration) -> Result<()> {
     let deadline = Instant::now() + timeout;
     loop {
@@ -941,6 +961,18 @@ mod tests {
     use super::*;
     use std::path::Path;
     use tempfile::TempDir;
+
+    /// Verify that `preemptive_remove_existing` does not panic and silently
+    /// swallows errors when the container does not exist. This exercises the
+    /// function against the real runtime binary (if present) or a missing
+    /// binary — either way the function must return without panicking.
+    #[test]
+    fn preemptive_remove_existing_is_infallible() {
+        // Use Docker as a representative runtime. The container name is
+        // deliberately invalid/nonexistent so `rm -f` is a fast no-op.
+        preemptive_remove_existing(Runtime::Docker, "loom-nonexistent-test-container-xyz");
+        // If we reach here the function swallowed the error correctly.
+    }
 
     #[test]
     fn remap_signal_handles_worktree_path() {
