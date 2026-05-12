@@ -73,6 +73,14 @@ pub fn build_run_args(
     runtime: Runtime,
     wrapper_in_container: &Path,
 ) -> Vec<String> {
+    // Capability set:
+    // - NET_ADMIN + NET_RAW: required by firewall.sh (iptables / ipset).
+    // - SETUID + SETGID: required by gosu in entrypoint.sh to drop from
+    //   root (firewall install) down to the unprivileged `loom` user
+    //   (agent execution). Without these, `gosu loom "$@"` fails with
+    //   "operation not permitted" and the container exits before the
+    //   wrapper ever runs — `podman logs` then surfaces only that gosu
+    //   error and the stage stalls with no claude output.
     let mut args: Vec<String> = vec![
         "run".to_string(),
         "-d".to_string(),
@@ -80,6 +88,8 @@ pub fn build_run_args(
         "--cap-drop=ALL".to_string(),
         "--cap-add=NET_ADMIN".to_string(),
         "--cap-add=NET_RAW".to_string(),
+        "--cap-add=SETUID".to_string(),
+        "--cap-add=SETGID".to_string(),
         format!("--network={network}"),
     ];
 
@@ -167,9 +177,12 @@ mod tests {
         assert_eq!(args[3], "--cap-drop=ALL");
         assert_eq!(args[4], "--cap-add=NET_ADMIN");
         assert_eq!(args[5], "--cap-add=NET_RAW");
-        assert_eq!(args[6], "--network=loom-net-stage-x");
+        // SETUID + SETGID are required for gosu privilege drop in entrypoint.sh.
+        assert_eq!(args[6], "--cap-add=SETUID");
+        assert_eq!(args[7], "--cap-add=SETGID");
+        assert_eq!(args[8], "--network=loom-net-stage-x");
         // Docker injects --user=uid:gid as its single user arg
-        assert!(args[7].starts_with("--user="));
+        assert!(args[9].starts_with("--user="));
         // Mounts use the long form
         assert!(args
             .iter()

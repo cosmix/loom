@@ -40,6 +40,16 @@ pub struct ProbeResult {
 /// runtime is permissive.
 const PROBE_SHELL: &str = r#"set -u
 /usr/local/bin/loom-firewall.sh >/tmp/loom-fw.log 2>&1 || true
+# Verify gosu works BEFORE attempting curl. Without this guard, a missing
+# SETUID/SETGID capability makes `gosu loom curl ...` exit non-zero for
+# the wrong reason — the shell `else` branch would then falsely report
+# the firewall as "blocking" when in fact curl was never invoked.
+if ! gosu loom true 2>/tmp/loom-gosu.log; then
+  echo "PROBE_RESULT=infra-failure"
+  echo "gosu drop-privileges failed (likely missing SETUID/SETGID caps):"
+  cat /tmp/loom-gosu.log
+  exit 0
+fi
 # Run curl as the unprivileged loom user, matching production privilege drop.
 # Exit code 0 from curl means the firewall DID NOT block the request.
 if gosu loom curl --max-time 3 -sf https://1.1.1.1 >/dev/null 2>&1; then
@@ -59,11 +69,19 @@ fi
 /// actionable details.
 pub fn run_firewall_smoke_test(runtime: Runtime, image_ref: &str) -> Result<ProbeResult> {
     let mut cmd = Command::new(runtime.binary());
+    // Capability set MUST match production (build_run_args): NET_ADMIN +
+    // NET_RAW for firewall, SETUID + SETGID for gosu privilege drop.
+    // Mismatch hides bugs — previously the probe lacked SETUID/SETGID,
+    // gosu failed inside the probe, curl never ran, and the shell's
+    // `else` branch reported the firewall as "blocking" when it was
+    // actually never tested.
     cmd.arg("run")
         .arg("--rm")
         .arg("--cap-drop=ALL")
         .arg("--cap-add=NET_ADMIN")
         .arg("--cap-add=NET_RAW")
+        .arg("--cap-add=SETUID")
+        .arg("--cap-add=SETGID")
         // Probe runs as root; firewall.sh installs as root, then we gosu
         // down to loom for the curl attempt.
         .arg("--user=0:0")

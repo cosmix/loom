@@ -189,8 +189,14 @@ impl WorkDir {
 
         fs::create_dir_all(&self.root).context("Failed to create .work directory")?;
 
+        // Includes `memory`, `wrappers`, `pids` because the container
+        // backend bind-mounts all of these (see ContainerBackend::build_mounts).
+        // Podman refuses to spawn the container when any rw mount source
+        // is missing; Docker silently creates them as root-owned dirs
+        // which defeats the rw overlay. Always pre-create on the host.
         let subdirs = [
-            "signals", "handoffs", "archive", "stages", "sessions", "crashes",
+            "signals", "handoffs", "archive", "stages", "sessions", "crashes", "memory",
+            "wrappers", "pids",
         ];
 
         for subdir in &subdirs {
@@ -223,7 +229,8 @@ impl WorkDir {
 
     fn validate_structure(&self) -> Result<()> {
         let required_dirs = [
-            "signals", "handoffs", "archive", "stages", "sessions", "crashes",
+            "signals", "handoffs", "archive", "stages", "sessions", "crashes", "memory",
+            "wrappers", "pids",
         ];
 
         for dir in &required_dirs {

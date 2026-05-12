@@ -90,7 +90,6 @@ use super::native::{
     create_wrapper_script_with_paths, detect_terminal, spawn_in_terminal, WrapperPaths,
 };
 use super::{BackendType, TerminalBackend};
-use crate::claude::find_claude_path;
 use crate::fs::work_dir as work_dir_api;
 use crate::models::session::{Session, SessionType};
 use crate::models::stage::{Stage, StageType};
@@ -237,37 +236,129 @@ impl ContainerBackend {
         // we drop the ro base and grant rw on /repo. All other session
         // types pin /repo ro and add a narrow rw overlay on the subtree
         // the stage is allowed to mutate.
-        match session_type {
-            SessionType::Merge | SessionType::BaseConflict => {
-                mounts.push(Mount::rw(&host_repo_root, REPO_MOUNT));
-            }
-            _ => {
-                mounts.push(Mount::ro(&host_repo_root, REPO_MOUNT));
-                match stage.stage_type {
-                    StageType::Standard | StageType::IntegrationVerify => {
-                        let host_wt = host_repo_root.join(".worktrees").join(&stage.id);
-                        let cont_wt = format!("{REPO_MOUNT}/.worktrees/{}", stage.id);
-                        mounts.push(Mount::rw(host_wt, cont_wt));
-                    }
-                    StageType::Knowledge | StageType::KnowledgeDistill => {
-                        let host_kn = host_repo_root.join("doc/loom/knowledge");
-                        let cont_kn = format!("{REPO_MOUNT}/doc/loom/knowledge");
-                        mounts.push(Mount::rw(host_kn, cont_kn));
-                    }
-                }
+        // Knowledge/KnowledgeDistill stages need the same broad rw access
+        // as Merge/BaseConflict because they:
+        //   - commit directly to main (requires .git/ writable)
+        //   - call `loom stage complete` (requires .work/stages/ writable)
+        //   - run in the main repo, NOT an isolated worktree
+        // The narrow `doc/loom/knowledge` rw overlay (from the original
+        // hardening plan) was incompatible with these requirements:
+        // `git commit` failed with "Read-only file system" on .git/index.lock
+        // and `loom stage complete` failed writing the stage file. Container
+        // isolation (cap-drop, firewall, network namespace, ro `~/.claude`)
+        // remains the security boundary; file-level restrictions inside the
+        // container can't enforce what the stage type fundamentally needs to do.
+        let needs_full_rw_repo =
+            matches!(session_type, SessionType::Merge | SessionType::BaseConflict)
+                || matches!(
+                    stage.stage_type,
+                    StageType::Knowledge | StageType::KnowledgeDistill
+                );
+        if needs_full_rw_repo {
+            mounts.push(Mount::rw(&host_repo_root, REPO_MOUNT));
+        } else {
+            mounts.push(Mount::ro(&host_repo_root, REPO_MOUNT));
+            // Standard / IntegrationVerify use the narrow worktree overlay
+            // PLUS targeted rw overlays for paths the agent needs to write
+            // outside its worktree:
+            //
+            //   - /repo/.git — `git commit` from inside a worktree writes to
+            //     the main repo's .git/ (the worktree's `.git` is just a
+            //     file pointing at `../../.git/worktrees/<id>/`). Without
+            //     this, the agent hits "Unable to create '.git/index.lock':
+            //     Read-only file system" on every commit attempt.
+            let host_wt = host_repo_root.join(".worktrees").join(&stage.id);
+            let cont_wt = format!("{REPO_MOUNT}/.worktrees/{}", stage.id);
+            mounts.push(Mount::rw(host_wt, cont_wt));
+
+            let host_git = host_repo_root.join(".git");
+            if host_git.exists() {
+                mounts.push(Mount::rw(host_git, format!("{REPO_MOUNT}/.git")));
             }
         }
 
         // Layer 3: .work/ rw subtrees. Everything the session may need to
         // write under `.work` is enumerated explicitly so the ro base
-        // continues to protect config.toml, stages/, signals/, the daemon
-        // token, and the orchestrator lock.
+        // continues to protect config.toml, signals/, sibling stage
+        // files, the daemon token, and the orchestrator lock.
+        //
+        // Podman refuses to auto-create missing bind-mount sources
+        // (Docker silently creates them as root-owned dirs, which would
+        // defeat the rw overlay anyway). Ensure each source exists with
+        // mode 0o755 before constructing the mount.
+        //
+        // NOTE: `stages` is intentionally NOT in this list. The whole
+        // directory rw would let any stage's agent edit any other
+        // stage's file (phantom-merge by writing `merged: true` directly).
+        // The agent's only legitimate need is to update its OWN stage
+        // file via `loom stage complete`, so we mount JUST that single
+        // file rw below.
         for sub in [
             "sessions", "memory", "handoffs", "crashes", "wrappers", "pids",
         ] {
             let host = self.work_dir.join(sub);
+            std::fs::create_dir_all(&host).with_context(|| {
+                format!(
+                    "Failed to create rw mount source directory {} for container backend",
+                    host.display()
+                )
+            })?;
             let cont = format!("{WORK_DIR_IN_CONTAINER}/{sub}");
             mounts.push(Mount::rw(host, cont));
+        }
+
+        // Mount the CURRENT stage's file rw, and only that file. Sibling
+        // stage files remain ro under the base mount, blocking
+        // cross-stage phantom-merge edits like
+        //   sed -i 's/merged: false/merged: true/' .work/stages/02-other-stage.md
+        // `loom stage complete` continues to work because it only writes
+        // the agent's own stage file.
+        //
+        // Stage files are named with a depth prefix: `<NN>-<id>.md`. The
+        // orchestrator writes the file during init, so it always exists
+        // by spawn time.
+        let stages_dir = self.work_dir.join("stages");
+        if stages_dir.exists() {
+            let entries = std::fs::read_dir(&stages_dir).ok();
+            if let Some(entries) = entries {
+                let suffix = format!("-{}.md", stage.id);
+                for entry in entries.flatten() {
+                    let name = entry.file_name();
+                    let name_str = name.to_string_lossy();
+                    if name_str.ends_with(&suffix) {
+                        let host_path = entry.path();
+                        let cont_path = format!("{WORK_DIR_IN_CONTAINER}/stages/{}", name_str);
+                        mounts.push(Mount::rw(host_path, cont_path));
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Layer 3b: ro overlays over sensitive `.work/` files for stages
+        // that have the FULL rw `/repo` (knowledge/merge/baseconflict).
+        // Without these, an agent could:
+        //   - rewrite `[project_execution.container].forward_credentials`
+        //     in `.work/config.toml` to escalate the next spawn's mounted
+        //     credentials beyond the operator's intent
+        //   - overwrite `.work/daemon.token` to deny daemon connections
+        //   - clobber `.work/orchestrator.lock` / `.pid` to confuse status
+        // Standard / IntegrationVerify don't need these because they get
+        // the ro `/repo` base which already protects these paths.
+        if needs_full_rw_repo {
+            for sensitive in [
+                "config.toml",
+                "daemon.token",
+                "orchestrator.lock",
+                "orchestrator.pid",
+                "orchestrator.log",
+            ] {
+                let host_path = self.work_dir.join(sensitive);
+                if host_path.exists() {
+                    let cont_path = format!("{WORK_DIR_IN_CONTAINER}/{sensitive}");
+                    mounts.push(Mount::ro(host_path, cont_path));
+                }
+            }
         }
 
         // Layer 4: settings.local.json ro overlay. Pinned read-only AFTER
@@ -325,6 +416,29 @@ impl ContainerBackend {
         let allowlist_src = self.work_dir.join("network").join("allowed_domains.txt");
         if allowlist_src.exists() {
             mounts.push(Mount::ro(allowlist_src, ALLOWLIST_MOUNT));
+        }
+
+        // Loom binary (read-only) — the agent inside the container needs
+        // `loom` on PATH to call back into the orchestrator
+        // (`loom knowledge update`, `loom memory note`, `loom stage
+        // complete`, etc.). The container image does NOT ship loom (it
+        // would bloat every image and tightly couple image build to loom
+        // releases). Instead we bind-mount the host's running loom
+        // binary at `/usr/local/bin/loom` so it is found by the default
+        // PATH lookup inside the container.
+        //
+        // Resolved via `std::env::current_exe()` — guaranteed to be the
+        // exact binary that spawned this orchestrator, so the agent
+        // always sees a version-consistent CLI. Falls back silently
+        // (without mounting) only when `current_exe()` returns an error,
+        // which on Linux indicates a kernel that doesn't expose
+        // `/proc/self/exe`; the agent will see the existing
+        // `loom: command not found` message and the operator can
+        // diagnose from there.
+        if let Ok(loom_bin) = std::env::current_exe() {
+            if loom_bin.exists() {
+                mounts.push(Mount::ro(loom_bin, "/usr/local/bin/loom"));
+            }
         }
 
         Ok(mounts)
@@ -396,13 +510,36 @@ impl ContainerBackend {
             format!("Failed to create container network for stage {}", stage.id)
         })?;
 
-        // Build the claude command (escaped) — same shape as the native
-        // backend so signal-file UX matches.
-        let claude_path = find_claude_path()?;
+        // Build the claude command (escaped). Two differences from the
+        // native backend's invocation:
+        //
+        // 1. PATH-resolved `claude` (no `find_claude_path()`). The
+        //    Dockerfile installs Claude Code via `npm install -g`; the
+        //    binary lives on the container's PATH at `/usr/local/bin/claude`.
+        //    Baking the host's path into the wrapper produces an
+        //    `exec: not found` failure inside the container.
+        //
+        // 2. `--print --output-format stream-json --verbose`.
+        //    Claude Code's default mode is an Ink/React TUI that writes
+        //    ANSI escape sequences to a real terminal — but the container
+        //    has no host terminal attached. Without `--print`, claude
+        //    either hangs detecting no-TTY or emits redraw sequences
+        //    that `podman logs` cannot render usefully.
+        //
+        //    `--print` alone (text format) only emits the FINAL response
+        //    after claude finishes the entire stage — for a long-running
+        //    stage like knowledge-bootstrap this means silent
+        //    `podman logs` for minutes at a time and no way to tell
+        //    whether the agent is making progress or hung.
+        //
+        //    `--output-format stream-json` emits one JSON event per
+        //    tool call, message chunk, and lifecycle event in realtime.
+        //    `loom container logs -f` can stream these events; future
+        //    `loom container logs --pretty` can format for humans.
+        //    `--verbose` keeps the per-event payloads detailed.
         let escaped_prompt = escape(Cow::Borrowed(signal_prompt.as_str()));
         let claude_cmd = format!(
-            "{} --model {} --effort {} {escaped_prompt}",
-            claude_path.display(),
+            "claude --print --output-format stream-json --verbose --model {} --effort {} {escaped_prompt}",
             escape(Cow::Borrowed(model)),
             effort
         );
@@ -569,7 +706,7 @@ impl TerminalBackend for ContainerBackend {
         let model = stage.effective_model().to_string();
         let effort = stage.effective_reasoning_effort().to_string();
         let session = self.spawn_common(
-            stage, session, workspace, prompt, &title, false, &model, &effort,
+            stage, session, workspace, prompt, &title, true, &model, &effort,
         )?;
 
         // Mirror native backend: track host-side worktree path for the
@@ -596,7 +733,7 @@ impl TerminalBackend for ContainerBackend {
         );
         let title = format!("loom-merge-{}", stage.id);
         let session = self.spawn_common(
-            stage, session, workspace, prompt, &title, false, "opus[1m]", "xhigh",
+            stage, session, workspace, prompt, &title, true, "opus[1m]", "xhigh",
         )?;
         let mut session = session;
         session.assign_to_stage(stage.id.clone());
@@ -621,7 +758,7 @@ impl TerminalBackend for ContainerBackend {
         );
         let title = format!("loom-base-conflict-{}", stage.id);
         let session = self.spawn_common(
-            stage, session, workspace, prompt, &title, false, "opus[1m]", "xhigh",
+            stage, session, workspace, prompt, &title, true, "opus[1m]", "xhigh",
         )?;
         let mut session = session;
         session.assign_to_stage(stage.id.clone());
@@ -647,7 +784,7 @@ impl TerminalBackend for ContainerBackend {
         let model = stage.effective_model().to_string();
         let effort = stage.effective_reasoning_effort().to_string();
         let session = self.spawn_common(
-            stage, session, workspace, prompt, &title, false, &model, &effort,
+            stage, session, workspace, prompt, &title, true, &model, &effort,
         )?;
         let mut session = session;
         session.assign_to_stage(stage.id.clone());
@@ -885,19 +1022,26 @@ mod tests {
     }
 
     #[test]
-    fn build_mounts_knowledge_stage_includes_knowledge_rw() {
+    fn build_mounts_knowledge_stage_has_full_rw_repo() {
+        // Knowledge stages need full rw /repo (not the narrow
+        // doc/loom/knowledge overlay) because they:
+        //   - commit directly to main (.git/ must be writable)
+        //   - call `loom stage complete` (.work/stages/ must be writable)
+        //   - run in the main repo, not a worktree
         let (_tmp, _repo_root, backend, stage) =
             fixture_backend(StageType::Knowledge, "kn-bootstrap");
         let mounts = backend
             .build_mounts(&stage, SessionType::Knowledge)
             .unwrap();
 
-        let target = PathBuf::from("/repo/doc/loom/knowledge");
+        // /repo itself must be rw (no ro base for knowledge stages).
         assert!(
-            mounts.iter().any(|m| m.target == target && !m.read_only),
-            "expected rw mount on /repo/doc/loom/knowledge for Knowledge stage"
+            !mounts[0].read_only,
+            "Knowledge stage: /repo must be rw (full repo write access required for git commit and loom stage complete)"
         );
-        // The worktree rw mount must NOT appear for a Knowledge stage.
+        assert_eq!(mounts[0].target, PathBuf::from("/repo"));
+
+        // No worktree rw overlay — knowledge stages run in main repo.
         assert!(
             !mounts
                 .iter()
