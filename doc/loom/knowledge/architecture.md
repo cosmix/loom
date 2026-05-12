@@ -488,3 +488,58 @@ Injection in `ContainerBackend::build_env_for_session` when both fields are `Som
 ```
 
 All four are injected together or not at all — partial identity (name without email) is omitted entirely to avoid malformed commits. Git respects `GIT_AUTHOR_*` / `GIT_COMMITTER_*` over `user.*` config, so no `.gitconfig` is needed inside the container.
+
+## Hook System Architecture (hooks/)
+
+The `hooks/` module provides Claude Code hooks integration for session lifecycle management. It is a **top-level module** — currently imported by `orchestrator/` and `git/worktree/`, which is a known layering violation (both should import a stable hooks interface instead).
+
+**Layering:** `hooks/` is used by `orchestrator/core/stage_executor.rs` (worktree hook setup) and `git/worktree/settings.rs` (settings injection). The intended fix is to extract hooks as a fully independent top-level module with no reverse imports.
+
+**Global vs session hooks distinction:**
+- **Global hooks** (commit-filter.sh, git-add-guard.sh, worktree-isolation.sh, prefer-modern-tools.sh): written once by `loom init` into the main repo's `.claude/settings.local.json` via `fs/permissions.rs`. Persist across all sessions.
+- **Session hooks** (session-start.sh, post-tool-use.sh, pre-compact.sh, session-end.sh, learning-validator.sh): generated fresh per-session by `hooks/generator.rs:generate_hooks_settings()`. Merged into worktree's `settings.local.json` with duplicate detection.
+
+**Container session isolation for main-repo stages:** Knowledge and merge stages that run with `BackendType::Container` but operate in the main repo (no worktree) write their settings to `.work/container-settings/<session_id>.local.json`. This file is ro-mounted into the container at `/repo/.claude/settings.local.json`, leaving the host's settings.local.json untouched. This prevents container hook paths (`/home/loom/...`) from leaking into the host operator's Claude settings.
+
+## Monitor Subsystem (orchestrator/monitor/)
+
+Full file list:
+- `core.rs` — `Monitor` struct, `poll()` API, stage/session loading
+- `config.rs` — `MonitorConfig` (work_dir, hung_timeout, etc.)
+- `detection.rs` — `Detection` struct: `detect_stage_changes()`, `detect_session_changes()`, `detect_heartbeat_events()`
+- `events.rs` — `MonitorEvent` enum (stage/session/heartbeat event variants)
+- `failure_tracking.rs` — Consecutive failure escalation logic
+- `handlers.rs` — `Handlers` struct: handoff/crash-report generation; holds optional `LivenessService`
+- `heartbeat.rs` — `HeartbeatWatcher` with 300s hung timeout
+- `context.rs` — Context health thresholds: Green (<50%), Yellow (50-64%), Red (65%+)
+- `tests.rs` — Unit tests
+
+**`Monitor::poll()` flow:**
+1. Load all stages from `.work/stages/*.md`
+2. Load all sessions from `.work/sessions/*.md`
+3. `detection.detect_stage_changes()` — file-level changes
+4. `detection.detect_session_changes()` — PID liveness, status transitions
+5. `detection.detect_heartbeat_events()` — hung detection via `HeartbeatWatcher`
+6. Return `Vec<MonitorEvent>`
+
+**LivenessService injection:** `Monitor::set_liveness(liveness: LivenessService)` is called by the orchestrator after `BackendDispatcher` construction. Until set, session-alive checks fall back to legacy host-PID probe (`kill -0`).
+
+## Status Command Architecture (commands/status/)
+
+The status command is organized as a sub-module tree:
+
+```text
+commands/status.rs          # Entry: dispatches to 3 modes + validate/doctor
+commands/status/
+  data.rs                   # collect_status_data() → StatusData struct
+  render/                   # Pure render functions (progress, graph, merge, compact)
+  ui/                       # TUI backed by daemon IPC subscription
+  diagnostics.rs            # Workspace integrity checks
+  display.rs                # count_files() helper
+  merge_status.rs           # Merge section data
+  validation.rs             # Markdown + cross-reference validation
+```
+
+**Data flow (static mode):** `collect_status_data()` loads plan name, stage list (with status/context), session list, merge state, and progress counts into a single `StatusData`. Renderers receive `StatusData` and write to `impl Write`.
+
+**TUI mode:** `ui::run_tui(work_path)` subscribes to the daemon's Unix socket (`orchestrator.sock`) and re-renders on each update. Requires daemon running; errors with hint if not.

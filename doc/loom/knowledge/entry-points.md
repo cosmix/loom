@@ -266,3 +266,75 @@ Internal modules: `extraction.rs` (YAML block extraction, plan name), `validatio
 - `ExecutionGraph::update_ready_status()` → returns stage IDs that became `Queued`
 - Cycle detection: `cycle/mod.rs` uses recursive DFS with `visiting` / `visited` sets; returns `Err` with cycle path on detection
 - `plan/graph/loader.rs` has `build_execution_graph()` that loads stage files from `.work/stages/` and calls `ExecutionGraph::build()`
+
+## Hook System (loom/src/hooks/)
+
+- `hooks/mod.rs` - Module root; re-exports `HookEvent`, `HooksConfig`, `generate_hooks_settings`, `setup_hooks_for_worktree`, `setup_container_main_session_settings`, `find_hooks_dir`
+- `hooks/config.rs` - `HookEvent` enum (6 variants) + `HooksConfig` struct + `to_settings_hooks()`
+- `hooks/generator.rs` - `generate_hooks_settings()` (merge session hooks into settings.json), `setup_hooks_for_worktree()`, `setup_container_main_session_settings()`, `find_hooks_dir()`
+- `hooks/events.rs` - `log_hook_event()`, `read_recent_events()`, event log CRUD
+- `hooks/validators/` - Validator scripts for PreToolUse hooks (commit-filter, git-add-guard, worktree-isolation, prefer-modern-tools)
+
+**6 hook events:**
+| Event | Script | Purpose |
+| --- | --- | --- |
+| `SessionStart` | `session-start.sh` | Initial heartbeat |
+| `PostToolUse` | `post-tool-use.sh` | Heartbeat update after every tool call |
+| `PreCompact` | `pre-compact.sh` | Trigger handoff before context compaction |
+| `SessionEnd` | `session-end.sh` | Cleanup on normal exit |
+| `Stop` | `learning-validator.sh` | Memory usage check on stop |
+| `PreferModernTools` | `prefer-modern-tools.sh` | Suggest fd/rg over find/grep in Bash |
+
+**Settings placement:** Session hooks → `<worktree>/.claude/settings.local.json`. Global hooks (commit-filter, git-add-guard, worktree-isolation) configured via `fs/permissions.rs:configure_loom_hooks()` / `configure_loom_hooks_for_container()`.
+
+**Container path difference:** Native hooks use host-absolute paths (`~/.claude/hooks/loom/<script>`); container hooks use fixed container mount path `/home/loom/.claude/hooks/loom/<script>`.
+
+**Non-worktree container sessions** (knowledge, merge, base-conflict): settings written to `.work/container-settings/<session_id>.local.json` (NOT `.claude/settings.local.json`) to avoid corrupting the host operator's settings. The file is ro-mounted into the container at the expected location.
+
+**Env vars injected via settings.json env block:**
+- `LOOM_STAGE_ID` — current stage ID
+- `LOOM_SESSION_ID` — current session ID
+- `LOOM_WORK_DIR` — host path for native, `/repo/.work` for container
+
+**LOOM_MAIN_AGENT_PID:** Explicitly REMOVED from settings.json env in `generator.rs`. Must be set dynamically by the wrapper script (`export LOOM_MAIN_AGENT_PID=$$`) so it reflects the actual Claude process PID. A stale value from a previous session would cause commit-filter.sh to misidentify the main agent as a subagent.
+
+**Hooks discovery:** `find_hooks_dir()` checks `$LOOM_HOOKS_DIR` env first, then `~/.claude/hooks/loom/`. Returns `None` if not installed.
+
+**Permissions:** Absolute paths use `//` prefix in allow entries (e.g., `Read(//home/user/.work/signals/**)`). Single `/` means project-relative — wrong for `.work/` which resolves outside the worktree due to symlink.
+
+## Container Logs / Shell Commands (commands/container/logs.rs)
+
+Both `loom container logs <stage-id>` and `loom container shell <stage-id>` share session-lookup logic:
+
+1. Scan `.work/sessions/*.md` for sessions with matching `stage_id`, `backend: container`, and a populated `container_name`
+2. Pick newest by `last_active` timestamp (multiple sessions: newest wins)
+3. Verify container state via `<runtime> inspect -f '{{.State.Status}}' <name>`
+4. `exec()` into `<runtime> logs` / `<runtime> exec -it` — replaces the loom process so Ctrl-C, stdout buffering, and signal handling work natively
+
+**Key difference between logs and shell:**
+- `logs`: accepts running OR exited containers (`require_running=false`) — useful post-crash
+- `shell`: requires `Running` state (`require_running=true`); exited containers suggest `loom container logs <stage-id>` instead
+
+**Container missing error:** Directs user to `.work/crashes/` for captured logs, or `loom container list` to see what's running.
+
+**Runtime detection:** If session file has no `runtime` field, falls back to `rt::detect_runtime("auto")`.
+
+## Status Command (commands/status/)
+
+- `commands/status.rs` - Entry point; dispatches to 3 modes
+- `commands/status/data.rs` - `collect_status_data()` — loads stages, sessions, plan into `StatusData`
+- `commands/status/render/` - Renderers: `render_progress()`, `render_graph()`, `render_merge_status()`, `render_compact()`, `render_attention()`
+- `commands/status/ui/` - TUI for `--live` mode (subscribes to daemon via IPC)
+- `commands/status/diagnostics.rs` - `check_directory_structure()`, `check_parsing_errors()` for `loom status validate` / `doctor`
+- `commands/status/display.rs` - `count_files()` helper
+- `commands/status/merge_status.rs` - Merge section data
+- `commands/status/validation.rs` - `validate_markdown_files()`, `validate_references()`
+
+**3 display modes:**
+| Mode | Flag | Behavior |
+| --- | --- | --- |
+| Static (default) | none | Snapshot: logo → plan name → daemon indicator → progress bar → stage graph → merge status |
+| Compact | `--compact` | Single-line scripting output via `render_compact()` |
+| Live | `--live` | TUI subscribed to daemon IPC; requires daemon running (`DaemonServer::is_running()`) |
+
+**Verbose mode (`--verbose`):** Shows `render_attention()` — detailed failure information for blocked/failed stages.
