@@ -343,6 +343,15 @@ pub enum ContainerCommands {
         /// Stage ID whose session container logs to read
         #[arg(value_parser = clap_id_validator)]
         stage_id: String,
+        /// Output format: human-readable (default) or raw JSON stream
+        #[arg(long, default_value = "human")]
+        format: loom::commands::container::log_format::LogFormat,
+        /// Show assistant thinking blocks (suppressed by default)
+        #[arg(long)]
+        show_thinking: bool,
+        /// Show suppressed event summary (system, rate-limit) in footer
+        #[arg(long)]
+        verbose: bool,
         /// Follow the log stream (like `docker logs -f`)
         #[arg(short = 'f', long)]
         follow: bool,
