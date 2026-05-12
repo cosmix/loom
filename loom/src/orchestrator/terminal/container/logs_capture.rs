@@ -156,9 +156,15 @@ mod tests {
 
     #[test]
     fn truncate_to_tail_keeps_recent_bytes() {
+        // The marker `"[... truncated ...]\n"` is 20 bytes; the limit must
+        // leave room for both the marker AND some tail content, otherwise
+        // `keep` collapses to zero and the function returns marker-only.
+        // Real callers pass MAX_LOG_BYTES (4 MiB), so this is purely a
+        // test-shape concern: pick a limit comfortably larger than the
+        // marker.
         let s = format!("{}TAIL", "A".repeat(100));
-        let out = truncate_to_tail(s, 20);
-        assert!(out.ends_with("TAIL"));
+        let out = truncate_to_tail(s, 32);
+        assert!(out.ends_with("TAIL"), "got: {out:?}");
         assert!(out.starts_with("[... truncated ...]"));
     }
 

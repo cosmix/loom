@@ -278,13 +278,26 @@ mod tests {
     }
 
     // --- render_dockerfile ---
+    //
+    // These tests use unique INSTALL-COMMAND markers (RUSTUP_INIT_SHA256,
+    // npm install -g typescript, UV uv-installer, GO_ARCHIVE_SHA256) rather
+    // than language NAMES — the header pin-rotation comment legitimately
+    // mentions "rustup", "go", etc. as documentation, so a contains("rustup")
+    // check would pass even when has_rust is false and the install block is
+    // not emitted. Markers below appear ONLY inside their respective
+    // `{{#if has_LANG}}` blocks.
+
+    const RUST_MARKER: &str = "RUSTUP_INIT_SHA256";
+    const TS_MARKER: &str = "npm install -g typescript";
+    const PYTHON_MARKER: &str = "# Python toolchain";
+    const GO_MARKER: &str = "GO_ARCHIVE_SHA256";
 
     #[test]
     fn render_dockerfile_emits_rust_when_fingerprint_has_rust() {
         let out = render_dockerfile("rust-12345678").unwrap();
-        assert!(out.contains("rustup"), "expected rustup in: {out}");
+        assert!(out.contains(RUST_MARKER), "expected rust install in: {out}");
         assert!(
-            !out.contains("npm install -g typescript"),
+            !out.contains(TS_MARKER),
             "should not contain typescript install: {out}"
         );
     }
@@ -292,17 +305,17 @@ mod tests {
     #[test]
     fn render_dockerfile_emits_multiple_languages() {
         let out = render_dockerfile("rust-typescript-12345678").unwrap();
-        assert!(out.contains("rustup"));
-        assert!(out.contains("typescript"));
+        assert!(out.contains(RUST_MARKER));
+        assert!(out.contains(TS_MARKER));
     }
 
     #[test]
     fn render_dockerfile_base_only() {
         let out = render_dockerfile("base-12345678").unwrap();
-        assert!(!out.contains("rustup"));
-        assert!(!out.contains("Go toolchain"));
-        assert!(!out.contains("Python toolchain"));
-        assert!(!out.contains("TypeScript toolchain"));
+        assert!(!out.contains(RUST_MARKER));
+        assert!(!out.contains(GO_MARKER));
+        assert!(!out.contains(PYTHON_MARKER));
+        assert!(!out.contains(TS_MARKER));
     }
 
     #[test]
@@ -317,10 +330,10 @@ mod tests {
     #[test]
     fn render_dockerfile_python_and_go() {
         let out = render_dockerfile("go-python-deadbeef").unwrap();
-        assert!(out.contains("uv"));
-        assert!(out.contains("go1.23"));
-        assert!(!out.contains("rustup"));
-        assert!(!out.contains("typescript"));
+        assert!(out.contains(PYTHON_MARKER));
+        assert!(out.contains(GO_MARKER));
+        assert!(!out.contains(RUST_MARKER));
+        assert!(!out.contains(TS_MARKER));
     }
 
     // --- cache_dir ---

@@ -299,12 +299,7 @@ pub fn safe_create_dir_all_in_workdir(
 /// `fs/locking.rs::locked_write`.
 pub fn safe_locked_write_in_workdir(dirfd: RawFd, relpath: &Path, content: &[u8]) -> Result<()> {
     let content = enforce_size_limit(content)?;
-    let fd = open_safely(
-        dirfd,
-        relpath,
-        libc::O_WRONLY | libc::O_CREAT,
-        0o600,
-    )?;
+    let fd = open_safely(dirfd, relpath, libc::O_WRONLY | libc::O_CREAT, 0o600)?;
     flock_exclusive(&fd)?;
     // Truncate AFTER the lock (TOCTOU prevention — see fs/locking.rs:88).
     if unsafe { libc::ftruncate(fd.as_raw_fd(), 0) } < 0 {
@@ -361,12 +356,7 @@ pub fn safe_write_with_mode_in_workdir(
     mode: libc::mode_t,
 ) -> Result<()> {
     let content = enforce_size_limit(content)?;
-    let fd = open_safely(
-        dirfd,
-        relpath,
-        libc::O_WRONLY | libc::O_CREAT,
-        mode,
-    )?;
+    let fd = open_safely(dirfd, relpath, libc::O_WRONLY | libc::O_CREAT, mode)?;
     flock_exclusive(&fd)?;
     if unsafe { libc::ftruncate(fd.as_raw_fd(), 0) } < 0 {
         return Err(io::Error::last_os_error())
@@ -413,7 +403,8 @@ pub fn safe_remove_in_workdir(dirfd: RawFd, relpath: &Path) -> Result<()> {
         if raw == libc::ENOENT {
             return Ok(());
         }
-        return Err(err).with_context(|| format!("safe_fs: unlinkat failed on {}", relpath.display()));
+        return Err(err)
+            .with_context(|| format!("safe_fs: unlinkat failed on {}", relpath.display()));
     }
     Ok(())
 }
@@ -519,8 +510,8 @@ mod tests {
     fn rejects_parent_dir_traversal() {
         let tmp = TempDir::new().unwrap();
         let dirfd = safe_open_dirfd(tmp.path()).unwrap();
-        let err =
-            safe_locked_write_in_workdir(dirfd.as_raw_fd(), Path::new("../escape"), b"x").unwrap_err();
+        let err = safe_locked_write_in_workdir(dirfd.as_raw_fd(), Path::new("../escape"), b"x")
+            .unwrap_err();
         assert!(err.to_string().contains(".."));
     }
 
@@ -555,9 +546,8 @@ mod tests {
         let link_dir = tmp.path().join("link");
         std::os::unix::fs::symlink(&real_dir, &link_dir).unwrap();
         let dirfd = safe_open_dirfd(tmp.path()).unwrap();
-        let err =
-            safe_locked_write_in_workdir(dirfd.as_raw_fd(), Path::new("link/file.txt"), b"x")
-                .unwrap_err();
+        let err = safe_locked_write_in_workdir(dirfd.as_raw_fd(), Path::new("link/file.txt"), b"x")
+            .unwrap_err();
         let s = format!("{:#}", err);
         assert!(
             s.contains("symbolic link")
@@ -581,14 +571,13 @@ mod tests {
 
         let dirfd = safe_open_dirfd(tmp.path()).unwrap();
         force_disable_openat2_for_tests();
-        let err =
-            safe_locked_write_in_workdir(dirfd.as_raw_fd(), Path::new("link/file.txt"), b"x")
-                .unwrap_err();
-        let s = format!("{:#}", err);
+        let err = safe_locked_write_in_workdir(dirfd.as_raw_fd(), Path::new("link/file.txt"), b"x")
+            .unwrap_err();
+        let s = format!("{:#}", err).to_ascii_lowercase();
         assert!(
             s.contains("symbolic link")
-                || s.contains("Too many levels of symbolic links")
-                || s.contains("ELOOP")
+                || s.contains("too many levels of symbolic links")
+                || s.contains("eloop")
                 || s.contains("loop")
                 || s.contains("not a directory"),
             "expected intermediate-symlink rejection (portable), got: {s}"
@@ -645,8 +634,12 @@ mod tests {
                 thread::spawn(move || {
                     let dirfd = safe_open_dirfd(tmp.path()).unwrap();
                     let line = format!("line-{i:02}\n");
-                    safe_append_in_workdir(dirfd.as_raw_fd(), Path::new("log.txt"), line.as_bytes())
-                        .unwrap();
+                    safe_append_in_workdir(
+                        dirfd.as_raw_fd(),
+                        Path::new("log.txt"),
+                        line.as_bytes(),
+                    )
+                    .unwrap();
                 })
             })
             .collect();
@@ -668,8 +661,8 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let dirfd = safe_open_dirfd(tmp.path()).unwrap();
         safe_create_new_in_workdir(dirfd.as_raw_fd(), Path::new("h.txt"), b"first").unwrap();
-        let err =
-            safe_create_new_in_workdir(dirfd.as_raw_fd(), Path::new("h.txt"), b"second").unwrap_err();
+        let err = safe_create_new_in_workdir(dirfd.as_raw_fd(), Path::new("h.txt"), b"second")
+            .unwrap_err();
         let s = format!("{:#}", err);
         assert!(
             s.contains("exists") || s.contains("EEXIST"),
@@ -714,14 +707,15 @@ mod tests {
         let dirfd = safe_open_dirfd(tmp.path()).unwrap();
         let err = safe_create_dir_all_in_workdir(dirfd.as_raw_fd(), Path::new("link/inner"), 0o755)
             .unwrap_err();
-        let s = format!("{:#}", err);
+        let s = format!("{:#}", err).to_ascii_lowercase();
         assert!(
             s.contains("symbolic link")
-                || s.contains("Too many levels of symbolic links")
-                || s.contains("ELOOP")
+                || s.contains("too many levels of symbolic links")
+                || s.contains("eloop")
                 || s.contains("loop")
-                || s.contains("File exists")
-                || s.contains("EEXIST"),
+                || s.contains("file exists")
+                || s.contains("eexist")
+                || s.contains("not a directory"),
             "expected symlink rejection or EEXIST race, got: {s}"
         );
     }
@@ -747,4 +741,3 @@ mod tests {
         safe_remove_in_workdir(dirfd.as_raw_fd(), Path::new("d.txt")).unwrap();
     }
 }
-

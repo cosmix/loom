@@ -1,5 +1,5 @@
 # Loom container image — Handlebars template, language toolchains are
-# injected via {{#if has_<lang>}} blocks rendered by image.rs.
+# injected via `\{{#if has_LANG}}` blocks (e.g. has_rust) rendered by image.rs.
 #
 # === PIN ROTATION (M1, MN5) =================================================
 # Three classes of pins live in this file:
@@ -7,7 +7,7 @@
 #   1. Base image (FROM ... @sha256:<digest>)
 #      - sha256 digest pins the OS root filesystem byte-for-byte.
 #      - Rotate by running scripts/update-pins.sh and pasting the new digest.
-#      - `docker pull <ref>; docker inspect --format='{{index .RepoDigests 0}}' <ref>`
+#      - `docker pull <ref>; docker inspect --format='\{{index .RepoDigests 0}}' <ref>`
 #
 #   2. npm / curl-installed binaries (claude-code, bun, uv, rustup, go)
 #      - claude-code: pinned to an explicit @version.
