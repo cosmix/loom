@@ -1,0 +1,2 @@
+-> Bash(command=ls -la)
+<- ok (50 bytes)

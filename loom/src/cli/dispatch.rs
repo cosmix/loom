@@ -40,9 +40,19 @@ pub fn dispatch(command: Commands) -> Result<()> {
             }
             ContainerCommands::Logs {
                 stage_id,
+                format,
+                show_thinking,
+                verbose,
                 follow,
                 tail,
-            } => loom::commands::container::logs::execute(stage_id, follow, tail),
+            } => loom::commands::container::logs::execute(
+                stage_id,
+                follow,
+                tail,
+                format,
+                show_thinking,
+                verbose,
+            ),
             ContainerCommands::List { all, json } => {
                 loom::commands::container::list::execute(all, json)
             }

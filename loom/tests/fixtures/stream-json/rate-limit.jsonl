@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init","session_id":"sess-123"}
+{"type":"rate_limit_event","delta":{"type":"token_reset","resetsAt":"2026-01-01T00:00:00Z"}}

@@ -8,10 +8,11 @@
 
 use anyhow::{anyhow, Context, Result};
 use std::fs;
-use std::os::unix::process::CommandExt;
+use std::io::BufReader;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
+use crate::commands::container::log_format::{FormatOptions, LogFormat};
 use crate::fs::work_dir::WorkDir;
 use crate::models::session::{BackendType, Session, SessionStatus};
 use crate::orchestrator::terminal::container::runtime as rt;
@@ -227,7 +228,14 @@ pub(crate) fn resolve_session_for_shell(
     })
 }
 
-pub fn execute(stage_id: String, follow: bool, tail: usize) -> Result<()> {
+pub fn execute(
+    stage_id: String,
+    follow: bool,
+    tail: usize,
+    format: LogFormat,
+    show_thinking: bool,
+    verbose: bool,
+) -> Result<()> {
     let work_dir = WorkDir::new(".")?;
     let target = resolve_session_for_logs(&work_dir.sessions_dir(), &stage_id)?;
 
@@ -239,13 +247,45 @@ pub fn execute(stage_id: String, follow: bool, tail: usize) -> Result<()> {
     args.push(&tail_arg);
     args.push(&target.container_name);
 
-    // exec replaces this process so Ctrl-C, stdout buffering, and signal
-    // handling behave like running `docker logs` directly.
-    let err = Command::new(target.runtime.binary()).args(&args).exec();
-    Err(anyhow!(
-        "Failed to exec {} logs: {err}",
-        target.runtime.binary()
-    ))
+    match format {
+        LogFormat::Json => {
+            // Pass through raw bytes verbatim.
+            let status = Command::new(target.runtime.binary())
+                .args(&args)
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
+                .status()
+                .with_context(|| format!("Failed to spawn {} logs", target.runtime.binary()))?;
+            std::process::exit(status.code().unwrap_or(1));
+        }
+        LogFormat::Human => {
+            let mut child = Command::new(target.runtime.binary())
+                .args(&args)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::inherit())
+                .spawn()
+                .with_context(|| format!("Failed to spawn {} logs", target.runtime.binary()))?;
+
+            let stdout = child.stdout.take().ok_or_else(|| {
+                anyhow!(
+                    "Failed to capture stdout from {} logs",
+                    target.runtime.binary()
+                )
+            })?;
+            let reader = BufReader::new(stdout);
+            let opts = FormatOptions {
+                show_thinking,
+                verbose,
+            };
+            let mut out = std::io::stdout();
+            crate::commands::container::log_format::format_stream(reader, &opts, &mut out)?;
+
+            let status = child
+                .wait()
+                .with_context(|| format!("Failed to wait for {} logs", target.runtime.binary()))?;
+            std::process::exit(status.code().unwrap_or(1));
+        }
+    }
 }
 
 #[cfg(test)]
