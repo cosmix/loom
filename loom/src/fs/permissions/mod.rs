@@ -16,8 +16,8 @@ mod tests;
 // Re-export public API
 pub use constants::{LOOM_PERMISSIONS, LOOM_PERMISSIONS_WORKTREE};
 pub use hooks::{
-    configure_loom_hooks, get_installed_hooks_dir, install_loom_hooks, install_loom_hooks_to,
-    loom_hooks_config,
+    configure_loom_hooks, configure_loom_hooks_for_container, get_installed_hooks_dir,
+    install_loom_hooks, install_loom_hooks_to, loom_hooks_config,
 };
 pub use settings::{
     ensure_loom_hooks_local, ensure_loom_permissions, ensure_loom_permissions_to,
