@@ -104,6 +104,11 @@ fn format_stage_annotations(stage: &StageSummary) -> String {
         parts.push(format!("{}", "HELD".yellow()));
     }
 
+    // Stuck warning
+    if stage.is_possibly_stuck {
+        parts.push(format!("{}", "[stuck?]".yellow()));
+    }
+
     // Failure info for blocked stages
     if stage.status == StageStatus::Blocked {
         let max = stage.max_retries.unwrap_or(3);

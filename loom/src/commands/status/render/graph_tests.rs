@@ -27,6 +27,7 @@ fn make_stage_summary(id: &str, deps: Vec<&str>, status: StageStatus) -> StageSu
         pid: None,
         session_alive: false,
         model: "opus[1m]".to_string(),
+        is_possibly_stuck: false,
     }
 }
 
@@ -202,5 +203,21 @@ fn test_completed_unmerged_knowledge_no_hint() {
     assert!(
         !output_str.contains("loom stage merge"),
         "Knowledge stages should not show merge hint"
+    );
+}
+
+#[test]
+fn test_executing_stuck_shows_annotation() {
+    let mut stage = make_stage_summary("stuck-stage", vec![], StageStatus::Executing);
+    stage.is_possibly_stuck = true;
+
+    let data = make_status_data(vec![stage]);
+    let mut output = Vec::new();
+    render_graph(&mut output, &data).unwrap();
+    let output_str = String::from_utf8(output).unwrap();
+
+    assert!(
+        output_str.contains("stuck?"),
+        "Expected 'stuck?' annotation in output for possibly stuck stage"
     );
 }

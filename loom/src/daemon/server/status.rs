@@ -44,6 +44,7 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
                                 detect_worktree_status(&stage.id, &repo_root, work_dir);
 
                             let model = stage.effective_model().to_string();
+                            let is_possibly_stuck = stage.is_possibly_stuck;
                             let stage_info = StageInfo {
                                 id: stage.id,
                                 name: stage.name,
@@ -55,6 +56,7 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
                                 merged: stage.merged,
                                 dependencies: stage.dependencies,
                                 model,
+                                is_possibly_stuck,
                             };
 
                             // Categorize into lists based on status.

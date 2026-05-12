@@ -60,6 +60,7 @@ fn make_stage(id: &str, deps: Vec<&str>, status: StageStatus) -> Stage {
         model: None,
         reasoning_effort: None,
         execution_backend: None,
+        is_possibly_stuck: false,
     }
 }
 

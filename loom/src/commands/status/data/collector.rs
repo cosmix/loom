@@ -129,6 +129,26 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
     let last_tool = heartbeat.as_ref().and_then(|hb| hb.last_tool.clone());
     let last_activity = heartbeat.as_ref().and_then(|hb| hb.activity.clone());
 
+    // Detect if the session is possibly stuck
+    let is_possibly_stuck = if let Some(session) = session {
+        let now = std::time::SystemTime::now();
+        crate::orchestrator::monitor::soft_signals::read_active_for_session(
+            work_dir.root(),
+            now,
+            &session.id,
+        )
+        .unwrap_or_default()
+        .into_iter()
+        .any(|s| {
+            matches!(
+                s,
+                crate::orchestrator::monitor::soft_signals::SoftSignal::PossiblyStuck { .. }
+            )
+        })
+    } else {
+        false
+    };
+
     StageSummary {
         id: stage.id.clone(),
         name: stage.name.clone(),
@@ -154,6 +174,7 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         pid,
         session_alive,
         model: stage.effective_model().to_string(),
+        is_possibly_stuck,
     }
 }
 
@@ -334,6 +355,7 @@ mod tests {
             model: None,
             reasoning_effort: None,
             execution_backend: None,
+            is_possibly_stuck: false,
         }
     }
 
@@ -489,5 +511,45 @@ status: executing"#;
             .unwrap_err()
             .to_string()
             .contains("No frontmatter delimiter"));
+    }
+
+    #[test]
+    fn test_status_soft_signals() {
+        use crate::models::session::Session;
+        use crate::orchestrator::monitor::soft_signals::{append, SoftSignal, DECAY_WINDOW_SECS};
+        use chrono::Utc;
+
+        let tmp = tempfile::TempDir::new().unwrap();
+        let work_dir = WorkDir::new(tmp.path()).unwrap();
+        work_dir.initialize().unwrap();
+
+        // Create a stage
+        let stage = make_test_stage("sticky-stage", StageStatus::Executing);
+
+        // Create a matching session
+        let mut session = Session::new();
+        session.assign_to_stage("sticky-stage".to_string());
+        let session_id = session.id.clone();
+
+        // Write a PossiblyStuck soft signal for the session
+        let now_dt = Utc::now();
+        let expires_dt = now_dt + chrono::Duration::seconds(DECAY_WINDOW_SECS as i64);
+        let sig = SoftSignal::PossiblyStuck {
+            session_id: session_id.clone(),
+            stage_id: "sticky-stage".to_string(),
+            recent_events: 6,
+            failure_count: 6,
+            failure_ratio: 1.0,
+            emitted_at: now_dt.to_rfc3339(),
+            expires_at: expires_dt.to_rfc3339(),
+        };
+        append(work_dir.root(), &sig).unwrap();
+
+        // Build a stage summary and verify the flag
+        let summary = build_stage_summary(&stage, &[session], &work_dir);
+        assert!(
+            summary.is_possibly_stuck,
+            "StageSummary should report is_possibly_stuck"
+        );
     }
 }

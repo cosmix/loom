@@ -223,6 +223,14 @@ impl<'a> TreeWidget<'a> {
                 }
             }
 
+            // Stuck indicator
+            if stage.is_possibly_stuck {
+                spans.push(Span::styled(
+                    "  [stuck?]",
+                    Style::default().fg(Color::Yellow),
+                ));
+            }
+
             // Dependencies
             if !stage.dependencies.is_empty() && deps_budget >= 7 {
                 spans.push(Span::styled("  ← ", Theme::dimmed()));

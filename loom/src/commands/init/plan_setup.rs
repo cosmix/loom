@@ -322,5 +322,6 @@ pub(crate) fn create_stage_from_definition(stage_def: &StageDefinition, plan_id:
         model: stage_def.model.clone(),
         reasoning_effort: stage_def.reasoning_effort.clone(),
         execution_backend: stage_def.execution.as_ref().and_then(|e| e.backend),
+        is_possibly_stuck: false,
     }
 }

@@ -1,6 +1,6 @@
 //! Event handlers for monitor events
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
@@ -38,6 +38,11 @@ impl Handlers {
     /// Attach (or replace) the backend-aware liveness service.
     pub fn set_liveness(&mut self, liveness: LivenessService) {
         self.liveness = Some(liveness);
+    }
+
+    /// Expose work dir for detection logic that needs filesystem access.
+    pub fn work_dir(&self) -> &Path {
+        &self.config.work_dir
     }
 
     /// Check if a session is still alive.

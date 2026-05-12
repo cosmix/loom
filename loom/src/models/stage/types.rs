@@ -283,6 +283,10 @@ pub struct Stage {
     /// `.work/config.toml` (`[project_execution]`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_backend: Option<crate::plan::schema::execution::BackendType>,
+    /// Whether the monitor has flagged this stage's session as possibly stuck.
+    /// Set by the status collector reading soft signals; not persisted to stage files.
+    #[serde(default)]
+    pub is_possibly_stuck: bool,
 }
 
 /// Status of a stage in the execution lifecycle.
@@ -568,6 +572,7 @@ impl Default for Stage {
             model: None,
             reasoning_effort: None,
             execution_backend: None,
+            is_possibly_stuck: false,
         }
     }
 }

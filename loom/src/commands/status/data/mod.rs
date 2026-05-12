@@ -97,6 +97,8 @@ pub struct StageSummary {
     pub session_alive: bool,
     /// Effective model name for this stage (explicit override or stage-type default)
     pub model: String,
+    /// Whether the monitor has flagged this stage's session as possibly stuck
+    pub is_possibly_stuck: bool,
 }
 
 /// Session display data (test-only)
