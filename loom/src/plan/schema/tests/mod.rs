@@ -3,6 +3,7 @@
 mod acceptance_tests;
 mod auto_merge_tests;
 mod knowledge_recommendations_tests;
+mod reasoning_effort_tests;
 mod regression_test_tests;
 mod stage_id_tests;
 mod validation_tests;

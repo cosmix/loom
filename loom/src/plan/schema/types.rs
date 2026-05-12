@@ -370,9 +370,16 @@ pub struct StageDefinition {
     /// When set, Claude Code sessions for this stage use this model
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    /// Reasoning effort override for this stage (e.g., "low", "medium", "high", "max")
-    /// When set, Claude Code sessions for this stage use this effort level
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Reasoning effort override for this stage. Must be one of
+    /// `"low" | "medium" | "high" | "xhigh" | "max"`. Custom deserializer
+    /// rejects anything else so that a malicious plan cannot smuggle a
+    /// shell-injectable string (e.g. `"low; rm -rf / #"`) into the runtime
+    /// where it would be appended to the Claude Code command line.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_reasoning_effort"
+    )]
     pub reasoning_effort: Option<String>,
     /// Structured code review configuration (recommended for integration-verify)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -560,6 +567,39 @@ pub struct ChangeImpactConfig {
     /// Policy for handling failures
     #[serde(default)]
     pub policy: ChangeImpactPolicy,
+}
+
+/// Allowed values for `reasoning_effort` on a stage.
+///
+/// Anchored to the set Claude Code itself accepts on its CLI. Adding a new
+/// value here requires a coordinated change in `native/mod.rs` where the
+/// effort is concatenated into the command line as `--effort <value>`.
+pub const ALLOWED_REASONING_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
+
+/// Serde deserializer for [`StageDefinition::reasoning_effort`].
+///
+/// Accepts the allowed set verbatim; rejects anything else (including values
+/// containing whitespace, semicolons, shell metacharacters). Returns
+/// `Ok(None)` when the field is omitted.
+fn deserialize_reasoning_effort<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::Error as _;
+    let opt = <Option<String>>::deserialize(deserializer)?;
+    match opt {
+        None => Ok(None),
+        Some(s) => {
+            if ALLOWED_REASONING_EFFORTS.contains(&s.as_str()) {
+                Ok(Some(s))
+            } else {
+                Err(D::Error::custom(format!(
+                    "invalid reasoning_effort '{s}'. Allowed values: {}",
+                    ALLOWED_REASONING_EFFORTS.join(", ")
+                )))
+            }
+        }
+    }
 }
 
 /// Validation error with context

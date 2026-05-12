@@ -1,5 +1,6 @@
 //! `loom container` subcommands: build/rebuild image, doctor, exec shell.
 
+pub mod ansi_filter;
 pub mod build;
 pub mod doctor;
 pub mod list;

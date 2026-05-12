@@ -4,14 +4,23 @@
 //!
 //! Mirrors the session-lookup pattern from `commands::container::shell`:
 //! scan `.work/sessions/*.md` for a session with a matching `stage_id` and
-//! a populated `container_name`, then exec into `<runtime> logs ...`.
+//! a populated `container_name`, then spawn `<runtime> logs ...` with
+//! both stdout and stderr piped through an ANSI sanitizer.
+//!
+//! Replaces the previous `Command::exec` model (which would have replaced
+//! the loom process image) so we can stream-filter terminal-injection
+//! escape sequences before forwarding bytes to the user's terminal (MN6).
 
 use anyhow::{anyhow, Context, Result};
 use std::fs;
-use std::io::BufReader;
+use std::io::{BufReader, Read, Write};
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread;
 
+use crate::commands::container::ansi_filter::AnsiFilter;
 use crate::commands::container::log_format::{FormatOptions, LogFormat};
 use crate::fs::work_dir::WorkDir;
 use crate::models::session::{BackendType, Session, SessionStatus};
@@ -240,52 +249,173 @@ pub fn execute(
     let target = resolve_session_for_logs(&work_dir.sessions_dir(), &stage_id)?;
 
     let tail_arg = format!("--tail={tail}");
-    let mut args: Vec<&str> = vec!["logs"];
+    let mut args: Vec<String> = vec!["logs".to_string()];
     if follow {
-        args.push("-f");
+        args.push("-f".to_string());
     }
-    args.push(&tail_arg);
-    args.push(&target.container_name);
+    args.push(tail_arg);
+    args.push(target.container_name.clone());
 
-    match format {
-        LogFormat::Json => {
-            // Pass through raw bytes verbatim.
-            let status = Command::new(target.runtime.binary())
-                .args(&args)
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit())
-                .status()
-                .with_context(|| format!("Failed to spawn {} logs", target.runtime.binary()))?;
-            std::process::exit(status.code().unwrap_or(1));
-        }
-        LogFormat::Human => {
-            let mut child = Command::new(target.runtime.binary())
-                .args(&args)
-                .stdout(Stdio::piped())
-                .stderr(Stdio::inherit())
-                .spawn()
-                .with_context(|| format!("Failed to spawn {} logs", target.runtime.binary()))?;
+    let mut child = Command::new(target.runtime.binary())
+        .args(&args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("Failed to spawn {} logs", target.runtime.binary()))?;
 
-            let stdout = child.stdout.take().ok_or_else(|| {
-                anyhow!(
-                    "Failed to capture stdout from {} logs",
-                    target.runtime.binary()
-                )
-            })?;
-            let reader = BufReader::new(stdout);
-            let opts = FormatOptions {
-                show_thinking,
-                verbose,
-            };
-            let mut out = std::io::stdout();
-            crate::commands::container::log_format::format_stream(reader, &opts, &mut out)?;
-
-            let status = child
-                .wait()
-                .with_context(|| format!("Failed to wait for {} logs", target.runtime.binary()))?;
-            std::process::exit(status.code().unwrap_or(1));
-        }
+    // CTRL-C handler: forward SIGTERM to the child so it cleans up. Using
+    // ctrlc::set_handler is process-global; we install it lazily here. If
+    // it was already installed by another part of loom, fall back to
+    // relying on the child sharing our process group (parent will receive
+    // SIGINT, child will too).
+    let shutdown = Arc::new(AtomicBool::new(false));
+    {
+        let shutdown = Arc::clone(&shutdown);
+        let _ = ctrlc::set_handler(move || {
+            shutdown.store(true, Ordering::SeqCst);
+        });
     }
+
+    // Run the streaming filter for both stdout and stderr. Each stream
+    // gets its own thread + AnsiFilter so a slow stderr writer cannot
+    // starve stdout (or vice versa).
+    let opts = FormatOptions {
+        show_thinking,
+        verbose,
+    };
+    let status = match format {
+        LogFormat::Json => stream_filtered(&mut child, target.runtime.binary())?,
+        LogFormat::Human => stream_with_human_formatting(&mut child, target.runtime.binary(), opts)?,
+    };
+
+    // If CTRL-C fired, ensure child is reaped and exit with 130 (POSIX SIGINT).
+    if shutdown.load(Ordering::SeqCst) {
+        let _ = child.kill();
+        let _ = child.wait();
+        std::process::exit(130);
+    }
+
+    std::process::exit(status.code().unwrap_or(1));
+}
+
+/// Run the JSON / raw streaming path: stdout and stderr both pass through
+/// the ANSI sanitizer, then go to the parent's stdout/stderr respectively.
+fn stream_filtered(child: &mut Child, runtime_binary: &str) -> Result<ExitStatus> {
+    let child_stdout = child.stdout.take().ok_or_else(|| {
+        anyhow!("Failed to capture stdout from {runtime_binary} logs")
+    })?;
+    let child_stderr = child.stderr.take().ok_or_else(|| {
+        anyhow!("Failed to capture stderr from {runtime_binary} logs")
+    })?;
+
+    let stdout_thread = thread::spawn(move || {
+        let mut filter = AnsiFilter::new();
+        let mut reader = child_stdout;
+        let mut out = std::io::stdout().lock();
+        let mut buf = [0u8; 8192];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    let filtered = filter.feed(&buf[..n]);
+                    if !filtered.is_empty() {
+                        let _ = out.write_all(&filtered);
+                        let _ = out.flush();
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => break,
+            }
+        }
+        let tail = filter.finish();
+        if !tail.is_empty() {
+            let _ = out.write_all(&tail);
+        }
+    });
+
+    let stderr_thread = thread::spawn(move || {
+        let mut filter = AnsiFilter::new();
+        let mut reader = child_stderr;
+        let mut out = std::io::stderr().lock();
+        let mut buf = [0u8; 8192];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    let filtered = filter.feed(&buf[..n]);
+                    if !filtered.is_empty() {
+                        let _ = out.write_all(&filtered);
+                        let _ = out.flush();
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => break,
+            }
+        }
+        let tail = filter.finish();
+        if !tail.is_empty() {
+            let _ = out.write_all(&tail);
+        }
+    });
+
+    let status = child
+        .wait()
+        .with_context(|| format!("Failed to wait for {runtime_binary} logs"))?;
+    let _ = stdout_thread.join();
+    let _ = stderr_thread.join();
+    Ok(status)
+}
+
+/// Run the human-formatted streaming path: stdout goes through the
+/// existing log_format::format_stream (which already understands the
+/// agent's JSON-line structure); stderr is ANSI-filtered and forwarded.
+fn stream_with_human_formatting(
+    child: &mut Child,
+    runtime_binary: &str,
+    opts: FormatOptions,
+) -> Result<ExitStatus> {
+    let stdout = child.stdout.take().ok_or_else(|| {
+        anyhow!("Failed to capture stdout from {runtime_binary} logs")
+    })?;
+    let stderr_pipe = child.stderr.take().ok_or_else(|| {
+        anyhow!("Failed to capture stderr from {runtime_binary} logs")
+    })?;
+
+    // Stderr thread: ANSI-filter through to the parent's stderr.
+    let stderr_thread = thread::spawn(move || {
+        let mut filter = AnsiFilter::new();
+        let mut reader = stderr_pipe;
+        let mut out = std::io::stderr().lock();
+        let mut buf = [0u8; 8192];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    let filtered = filter.feed(&buf[..n]);
+                    if !filtered.is_empty() {
+                        let _ = out.write_all(&filtered);
+                        let _ = out.flush();
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => break,
+            }
+        }
+        let tail = filter.finish();
+        if !tail.is_empty() {
+            let _ = out.write_all(&tail);
+        }
+    });
+
+    let reader = BufReader::new(stdout);
+    let mut out = std::io::stdout();
+    crate::commands::container::log_format::format_stream(reader, &opts, &mut out)?;
+
+    let status = child
+        .wait()
+        .with_context(|| format!("Failed to wait for {runtime_binary} logs"))?;
+    let _ = stderr_thread.join();
+    Ok(status)
 }
 
 #[cfg(test)]

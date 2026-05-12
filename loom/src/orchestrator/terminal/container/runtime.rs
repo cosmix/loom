@@ -161,29 +161,67 @@ fn auto_detect() -> Result<Runtime> {
 }
 
 /// Apple Container detection — verifies that `/usr/local/bin/container`
-/// exists AND that `container --version` returns Apple-signature output.
-/// We never trust a bare `which container`: many systems ship unrelated
-/// utilities named `container`, and a false positive would route the
-/// container backend to an unrelated binary.
+/// exists AND that Apple's code signature is present.
+///
+/// Why codesign rather than `--version` string matching: many systems ship
+/// unrelated utilities at `/usr/local/bin/container`, and an attacker who
+/// can drop a file at that path could trivially print "Apple" / "container"
+/// strings to satisfy a string heuristic. `codesign -dvvv` consults the
+/// kernel's notarisation database and the binary's embedded signature,
+/// both of which require the Apple signing key the operator doesn't have.
+///
+/// We require BOTH:
+///   1. The binary at the canonical path is signed.
+///   2. The signing authority chain contains `Apple` (Apple Code Signing,
+///      Apple Worldwide Developer Relations, etc.).
+///
+/// If `codesign` is itself unavailable (Apple ships it in macOS, but a
+/// stripped-down host may not have it), we fail closed — better to reject
+/// the runtime than to trust a bare path.
 #[cfg(target_os = "macos")]
 fn is_apple_container() -> bool {
     let canonical = Path::new("/usr/local/bin/container");
     if !canonical.exists() {
         return false;
     }
-    match Command::new(canonical).arg("--version").output() {
-        Ok(out) => {
-            let combined = String::from_utf8_lossy(&out.stdout).into_owned()
-                + &String::from_utf8_lossy(&out.stderr);
-            // The Apple `container` binary identifies itself; require either
-            // the canonical name "container" appears alongside Apple-specific
-            // markers, OR a build-tag hint.
-            combined.contains("Apple")
-                || combined.to_ascii_lowercase().contains("container ")
-                    && !combined.to_ascii_lowercase().contains("usage:")
-        }
-        Err(_) => false,
+
+    // `codesign -dvvv` writes everything to stderr; stdout is empty.
+    let output = match Command::new("/usr/bin/codesign")
+        .args(["-dvvv", "--strict"])
+        .arg(canonical)
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => return false,
+    };
+    if !output.status.success() {
+        return false;
     }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    // Apple-signed binaries list one or more `Authority=` lines naming
+    // Apple-issued certificates. Reject if none mention Apple.
+    let has_apple_authority = stderr
+        .lines()
+        .any(|l| l.starts_with("Authority=") && l.contains("Apple"));
+    if !has_apple_authority {
+        return false;
+    }
+
+    // Sanity check: the binary should also identify itself as `container`
+    // (or a TeamIdentifier / Identifier line consistent with the Apple
+    // Container product). We accept either Apple's product identifier or
+    // the literal `container` token.
+    let claims_container = stderr.lines().any(|l| {
+        (l.starts_with("Identifier=") || l.starts_with("TeamIdentifier="))
+            && (l.to_ascii_lowercase().contains("container")
+                || l.contains("Apple"))
+    });
+    if !claims_container {
+        return false;
+    }
+
+    true
 }
 
 #[cfg(not(target_os = "macos"))]

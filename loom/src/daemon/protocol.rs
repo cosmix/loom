@@ -80,19 +80,51 @@ impl Default for DaemonConfig {
     }
 }
 
+/// Authorization capability required by a request.
+///
+/// `User` requests are RPCs the agent-in-container performs (Ping,
+/// SubscribeStatus, SubscribeLogs, Unsubscribe). They use the user token
+/// readable from inside the container.
+///
+/// `Admin` requests are privileged host-only operations (Stop). They require
+/// the admin token, which is mode-0600 and only readable by the host user
+/// who started the daemon. Splitting these prevents a compromised container
+/// from killing the daemon.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Capability {
+    User,
+    Admin,
+}
+
 /// Client request to daemon
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Request {
-    /// Subscribe to live status updates
+    /// Subscribe to live status updates (Capability::User)
     SubscribeStatus { auth_token: String },
-    /// Subscribe to raw log stream
+    /// Subscribe to raw log stream (Capability::User)
     SubscribeLogs { auth_token: String },
-    /// Request daemon shutdown
+    /// Request daemon shutdown (Capability::Admin)
     Stop { auth_token: String },
-    /// Disconnect cleanly
+    /// Disconnect cleanly (Capability::User)
     Unsubscribe { auth_token: String },
-    /// Ping to check if daemon is alive
+    /// Ping to check if daemon is alive (Capability::User)
     Ping { auth_token: String },
+}
+
+impl Request {
+    /// Required capability for this request variant.
+    ///
+    /// Anything mutating the daemon's lifecycle (`Stop`) requires
+    /// [`Capability::Admin`]. Everything else is [`Capability::User`].
+    pub fn required_capability(&self) -> Capability {
+        match self {
+            Request::Stop { .. } => Capability::Admin,
+            Request::Ping { .. }
+            | Request::SubscribeStatus { .. }
+            | Request::SubscribeLogs { .. }
+            | Request::Unsubscribe { .. } => Capability::User,
+        }
+    }
 }
 
 /// Daemon response to client
