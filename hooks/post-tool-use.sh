@@ -78,14 +78,14 @@ if command -v jq &>/dev/null; then
 	IS_ERROR=$(echo "$INPUT_JSON" | jq -r '(.tool_result.is_error // .tool_response.is_error) // false' 2>/dev/null || echo "false")
 	OUTPUT_TEXT=$(echo "$INPUT_JSON" | jq -r '(.tool_result.output // .tool_result.content // .tool_response.output // .tool_response.content) // ""' 2>/dev/null || echo "")
 	EXIT_CODE=$(echo "$INPUT_JSON" | jq -c '(.tool_result.exit_code // .tool_response.exit_code // null)' 2>/dev/null || echo "null")
-	OUTPUT_BYTES=$(echo "$OUTPUT_TEXT" | wc -c | tr -d ' ')
+	OUTPUT_BYTES=$(printf '%s' "$OUTPUT_TEXT" | wc -c | tr -d ' ')
 
 	if command -v iconv &>/dev/null; then
-		OUTPUT_HEAD=$(echo "$OUTPUT_TEXT" | head -c 200 | iconv -c -t UTF-8 2>/dev/null || echo "$OUTPUT_TEXT" | head -c 200)
-		OUTPUT_TAIL=$(echo "$OUTPUT_TEXT" | tail -c 200 | iconv -c -t UTF-8 2>/dev/null || echo "$OUTPUT_TEXT" | tail -c 200)
+		OUTPUT_HEAD=$(printf '%s' "$OUTPUT_TEXT" | head -c 200 | iconv -c -t UTF-8 2>/dev/null || printf '%s' "$OUTPUT_TEXT" | head -c 200)
+		OUTPUT_TAIL=$(printf '%s' "$OUTPUT_TEXT" | tail -c 200 | iconv -c -t UTF-8 2>/dev/null || printf '%s' "$OUTPUT_TEXT" | tail -c 200)
 	else
-		OUTPUT_HEAD=$(echo "$OUTPUT_TEXT" | head -c 200)
-		OUTPUT_TAIL=$(echo "$OUTPUT_TEXT" | tail -c 200)
+		OUTPUT_HEAD=$(printf '%s' "$OUTPUT_TEXT" | head -c 200)
+		OUTPUT_TAIL=$(printf '%s' "$OUTPUT_TEXT" | tail -c 200)
 	fi
 
 	JSONL_ROW=$(jq -nc \
