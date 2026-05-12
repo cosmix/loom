@@ -238,6 +238,31 @@ fn apply_project_backend(
                 let d = image::ensure_image(&fingerprint, runtime, false)?;
                 (d, "built")
             };
+
+            // Read existing container config so a reconfigure invocation
+            // preserves manually-set or previously-resolved git identity.
+            let existing_container = crate::fs::work_dir::read_project_execution(work_dir.root())
+                .ok()
+                .flatten()
+                .and_then(|c| c.container);
+
+            let git_user_name = existing_container
+                .as_ref()
+                .and_then(|c| c.git_user_name.clone())
+                .or_else(|| host_git_config("user.name"));
+            let git_user_email = existing_container
+                .as_ref()
+                .and_then(|c| c.git_user_email.clone())
+                .or_else(|| host_git_config("user.email"));
+
+            if git_user_name.is_none() || git_user_email.is_none() {
+                println!(
+                    "  {} No git user.name/email on host; commits inside container will use defaults. \
+                     Set via: git config --global user.name '...'",
+                    "!".yellow().bold()
+                );
+            }
+
             crate::fs::work_dir::write_project_execution(
                 work_dir.root(),
                 &ProjectExecutionConfig {
@@ -257,6 +282,8 @@ fn apply_project_backend(
                         // agent can use it but cannot mutate it, so
                         // there is no privilege-escalation path.
                         forward_credentials: vec!["claude".to_string()],
+                        git_user_name,
+                        git_user_email,
                     }),
                 },
             )?;
@@ -285,6 +312,28 @@ fn apply_project_backend(
     }
 
     Ok(())
+}
+
+/// Query the host's global git config for a single key.
+///
+/// Returns `None` when git is unavailable, the key is unset, or the value
+/// is empty — all of which mean the container should fall back to git's own
+/// defaults rather than injecting a partial identity.
+fn host_git_config(key: &str) -> Option<String> {
+    let out = std::process::Command::new("git")
+        .args(["config", "--global", key])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let v = String::from_utf8(out.stdout).ok()?;
+    let v = v.trim();
+    if v.is_empty() {
+        None
+    } else {
+        Some(v.to_string())
+    }
 }
 
 fn print_repo_bootstrap(repo_bootstrap: crate::git::RepoBootstrapResult) {

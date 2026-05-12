@@ -116,6 +116,16 @@ pub struct ProjectContainerConfig {
     /// Credentials forwarded at provisioning time (frozen for audit).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub forward_credentials: Vec<String>,
+    /// Git committer/author name injected via GIT_AUTHOR_NAME /
+    /// GIT_COMMITTER_NAME. Defaults from host `git config --global user.name`
+    /// at `loom init` time; preserved on reconfigure.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_user_name: Option<String>,
+    /// Git committer/author email injected via GIT_AUTHOR_EMAIL /
+    /// GIT_COMMITTER_EMAIL. Defaults from host `git config --global user.email`
+    /// at `loom init` time; preserved on reconfigure.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_user_email: Option<String>,
 }
 
 #[cfg(test)]
@@ -204,9 +214,32 @@ mod tests {
                 fingerprint: "abc123".to_string(),
                 image_digest: "sha256:deadbeef".to_string(),
                 forward_credentials: vec!["GH_TOKEN".to_string()],
+                git_user_name: Some("Alice Dev".to_string()),
+                git_user_email: Some("alice@example.com".to_string()),
             }),
         };
         let toml_str = toml::to_string(&cfg).unwrap();
+        let back: ProjectExecutionConfig = toml::from_str(&toml_str).unwrap();
+        assert_eq!(back, cfg);
+    }
+
+    #[test]
+    fn project_execution_config_git_identity_none_omitted() {
+        let cfg = ProjectExecutionConfig {
+            backend: BackendType::Container,
+            container: Some(ProjectContainerConfig {
+                runtime: "docker".to_string(),
+                fingerprint: "fp".to_string(),
+                image_digest: "sha256:abc".to_string(),
+                forward_credentials: vec![],
+                git_user_name: None,
+                git_user_email: None,
+            }),
+        };
+        let toml_str = toml::to_string(&cfg).unwrap();
+        assert!(!toml_str.contains("git_user_name"));
+        assert!(!toml_str.contains("git_user_email"));
+        // Old configs without git identity fields must still parse.
         let back: ProjectExecutionConfig = toml::from_str(&toml_str).unwrap();
         assert_eq!(back, cfg);
     }
