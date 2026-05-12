@@ -124,6 +124,14 @@ pub struct ContainerBackend {
     /// can materialise the allowlist file without re-reading
     /// `.work/config.toml` on every call.
     network: NetworkConfig,
+    /// Git author/committer name injected via GIT_AUTHOR_NAME /
+    /// GIT_COMMITTER_NAME into every container session. None means git
+    /// falls back to its own defaults inside the container.
+    git_user_name: Option<String>,
+    /// Git author/committer email injected via GIT_AUTHOR_EMAIL /
+    /// GIT_COMMITTER_EMAIL into every container session. None means git
+    /// falls back to its own defaults inside the container.
+    git_user_email: Option<String>,
 }
 
 impl ContainerBackend {
@@ -170,6 +178,8 @@ impl ContainerBackend {
             work_dir,
             image_ref: digest.to_string(),
             forward_credentials: container.forward_credentials.clone(),
+            git_user_name: container.git_user_name.clone(),
+            git_user_email: container.git_user_email.clone(),
             network,
         })
     }
@@ -200,6 +210,8 @@ impl ContainerBackend {
             work_dir,
             image_ref: digest.to_string(),
             forward_credentials: container.forward_credentials.clone(),
+            git_user_name: container.git_user_name.clone(),
+            git_user_email: container.git_user_email.clone(),
             network,
         })
     }
@@ -450,7 +462,7 @@ impl ContainerBackend {
         session_id: &str,
         workspace_in_container: &Path,
     ) -> Vec<(String, String)> {
-        vec![
+        let mut env = vec![
             ("LOOM_SESSION_ID".to_string(), session_id.to_string()),
             ("LOOM_STAGE_ID".to_string(), stage_id.to_string()),
             (
@@ -468,7 +480,20 @@ impl ContainerBackend {
             // git refuses to ask interactively for credentials inside the
             // container by routing askpass at /bin/false.
             ("GIT_ASKPASS".to_string(), "/bin/false".to_string()),
-        ]
+        ];
+
+        // Inject operator git identity when both name and email are present.
+        // Partial identity (only one set) is intentionally skipped — git would
+        // use inconsistent author vs committer values, which is harder to debug
+        // than "git fell back to its own defaults".
+        if let (Some(name), Some(email)) = (&self.git_user_name, &self.git_user_email) {
+            env.push(("GIT_AUTHOR_NAME".to_string(), name.clone()));
+            env.push(("GIT_AUTHOR_EMAIL".to_string(), email.clone()));
+            env.push(("GIT_COMMITTER_NAME".to_string(), name.clone()));
+            env.push(("GIT_COMMITTER_EMAIL".to_string(), email.clone()));
+        }
+
+        env
     }
 
     fn network_name(&self, stage_id: &str) -> String {
@@ -1011,6 +1036,8 @@ mod tests {
             work_dir,
             image_ref: "sha256:test".to_string(),
             forward_credentials: vec![],
+            git_user_name: None,
+            git_user_email: None,
             network: NetworkConfig::default(),
         };
         let stage = Stage {
@@ -1167,6 +1194,65 @@ mod tests {
                     |m| m.target.as_path() == Path::new("/repo/.work/sessions") && !m.read_only
                 ),
                 "{st:?} session should still mount .work/sessions rw"
+            );
+        }
+    }
+
+    #[test]
+    fn build_env_injects_git_identity_when_both_set() {
+        let tmp = TempDir::new().unwrap();
+        let work_dir = tmp.path().join(".work");
+        std::fs::create_dir_all(&work_dir).unwrap();
+        let backend = ContainerBackend {
+            runtime: Runtime::Docker,
+            work_dir,
+            image_ref: "sha256:test".to_string(),
+            forward_credentials: vec![],
+            git_user_name: Some("Bob Builder".to_string()),
+            git_user_email: Some("bob@example.com".to_string()),
+            network: NetworkConfig::default(),
+        };
+        let workspace = Path::new("/repo/.worktrees/stage-x");
+        let env = backend.build_env_for_session("stage-x", "session-1", workspace);
+        let env_map: std::collections::HashMap<_, _> =
+            env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+
+        assert_eq!(env_map.get("GIT_AUTHOR_NAME"), Some(&"Bob Builder"));
+        assert_eq!(env_map.get("GIT_AUTHOR_EMAIL"), Some(&"bob@example.com"));
+        assert_eq!(env_map.get("GIT_COMMITTER_NAME"), Some(&"Bob Builder"));
+        assert_eq!(env_map.get("GIT_COMMITTER_EMAIL"), Some(&"bob@example.com"));
+    }
+
+    #[test]
+    fn build_env_omits_git_identity_when_either_missing() {
+        let tmp = TempDir::new().unwrap();
+        let work_dir = tmp.path().join(".work");
+        std::fs::create_dir_all(&work_dir).unwrap();
+
+        for (name, email) in [
+            (None, None),
+            (Some("Alice".to_string()), None),
+            (None, Some("alice@example.com".to_string())),
+        ] {
+            let backend = ContainerBackend {
+                runtime: Runtime::Docker,
+                work_dir: work_dir.clone(),
+                image_ref: "sha256:test".to_string(),
+                forward_credentials: vec![],
+                git_user_name: name,
+                git_user_email: email,
+                network: NetworkConfig::default(),
+            };
+            let workspace = Path::new("/repo/.worktrees/stage-x");
+            let env = backend.build_env_for_session("stage-x", "session-1", workspace);
+            let keys: Vec<_> = env.iter().map(|(k, _)| k.as_str()).collect();
+            assert!(
+                !keys.contains(&"GIT_AUTHOR_NAME"),
+                "should not set GIT_AUTHOR_NAME when identity incomplete"
+            );
+            assert!(
+                !keys.contains(&"GIT_COMMITTER_NAME"),
+                "should not set GIT_COMMITTER_NAME when identity incomplete"
             );
         }
     }

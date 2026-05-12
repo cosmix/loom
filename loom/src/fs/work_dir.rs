@@ -705,11 +705,44 @@ mod tests {
                 fingerprint: "abc".to_string(),
                 image_digest: "sha256:dead".to_string(),
                 forward_credentials: vec!["GH_TOKEN".to_string()],
+                git_user_name: None,
+                git_user_email: None,
             }),
         };
         write_project_execution(&work, &cfg).unwrap();
         let back = read_project_execution(&work).unwrap().unwrap();
         assert_eq!(back, cfg);
+    }
+
+    #[test]
+    fn write_then_read_project_execution_git_identity_round_trip() {
+        let temp = TempDir::new().unwrap();
+        let work = init_work(&temp);
+        let cfg = ProjectExecutionConfig {
+            backend: BackendType::Container,
+            container: Some(ProjectContainerConfig {
+                runtime: "docker".to_string(),
+                fingerprint: "abc".to_string(),
+                image_digest: "sha256:dead".to_string(),
+                forward_credentials: vec![],
+                git_user_name: Some("Alice Dev".to_string()),
+                git_user_email: Some("alice@example.com".to_string()),
+            }),
+        };
+        write_project_execution(&work, &cfg).unwrap();
+        let back = read_project_execution(&work).unwrap().unwrap();
+        assert_eq!(back, cfg);
+
+        // A config.toml without git_user_name/email (old format) must still
+        // parse without error and produce None for the new fields.
+        let old_toml = "[project_execution]\nbackend = \"container\"\n\
+            [project_execution.container]\nruntime = \"docker\"\n\
+            fingerprint = \"fp\"\nimage_digest = \"sha256:abc\"\n";
+        fs::write(work.join("config.toml"), old_toml).unwrap();
+        let parsed = read_project_execution(&work).unwrap().unwrap();
+        let container = parsed.container.unwrap();
+        assert!(container.git_user_name.is_none());
+        assert!(container.git_user_email.is_none());
     }
 
     #[test]
