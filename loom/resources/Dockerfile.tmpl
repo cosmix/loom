@@ -22,9 +22,14 @@
 # ============================================================================
 
 # Base image — pinned by sha256 digest so the OS filesystem is reproducible.
-# The :ubuntu-24.04 tag floats; the digest does not. Rotate via the procedure
-# documented above. The placeholder below MUST be replaced before any
-# production build with a digest verified to match the expected base.
+# The :ubuntu-24.04 tag floats; the digest does not.
+#
+# The digest is resolved at build time by image.rs (`<runtime> pull` +
+# `inspect --format='{{index .RepoDigests 0}}'`) and passed via
+# `--build-arg BASE_IMAGE_DIGEST=sha256:...`. The all-zero default below
+# is intentional: it is overwritten on every build, and a build that
+# somehow proceeds without the override will fail at FROM with a clear
+# "manifest unknown" error rather than silently floating to :latest.
 ARG BASE_IMAGE_DIGEST=sha256:0000000000000000000000000000000000000000000000000000000000000000
 FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04@${BASE_IMAGE_DIGEST}
 

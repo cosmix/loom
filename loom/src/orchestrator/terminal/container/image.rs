@@ -34,6 +34,11 @@ use std::process::Command;
 use super::resources::{DOCKERFILE_TEMPLATE, ENTRYPOINT_SCRIPT, FIREWALL_SCRIPT};
 use super::runtime::Runtime;
 
+/// Upstream base image. The Dockerfile pins by digest via the
+/// `BASE_IMAGE_DIGEST` build-arg; we resolve that digest at build time
+/// by pulling this ref and reading its RepoDigest.
+const BASE_IMAGE_REF: &str = "mcr.microsoft.com/devcontainers/base:ubuntu-24.04";
+
 /// Resolve the image cache root directory.
 ///
 /// `$LOOM_CACHE_DIR` (when set & non-empty) wins outright — operators
@@ -163,11 +168,15 @@ pub fn ensure_image(fingerprint: &str, runtime: Runtime, force: bool) -> Result<
     std::fs::write(dir.join("entrypoint.sh"), ENTRYPOINT_SCRIPT)
         .with_context(|| format!("Failed to write entrypoint.sh under {}", dir.display()))?;
 
+    let base_digest = resolve_base_image_digest(runtime)?;
+
     let tag = format!("loom/base:{fingerprint}");
     let status = Command::new(runtime.binary())
         .arg("build")
         .arg("-t")
         .arg(&tag)
+        .arg("--build-arg")
+        .arg(format!("BASE_IMAGE_DIGEST={base_digest}"))
         .arg("--progress=plain")
         .arg(".")
         .current_dir(&dir)
@@ -191,7 +200,75 @@ pub fn ensure_image(fingerprint: &str, runtime: Runtime, force: bool) -> Result<
         .with_context(|| format!("Failed to write {}", digest_file.display()))?;
     std::fs::write(dir.join("built_at"), chrono::Utc::now().to_rfc3339())
         .with_context(|| format!("Failed to write built_at under {}", dir.display()))?;
+    std::fs::write(dir.join("base_digest"), &base_digest)
+        .with_context(|| format!("Failed to write base_digest under {}", dir.display()))?;
 
+    Ok(digest)
+}
+
+/// Pull the upstream base image and resolve its repo digest.
+///
+/// Returns a `sha256:...` string suitable for substitution into the
+/// Dockerfile's `BASE_IMAGE_DIGEST` build-arg. Pulling first ensures
+/// the local image store has a RepoDigest populated; `inspect` then
+/// returns the platform-specific digest the runtime resolved during
+/// pull. Multi-arch manifests are handled by the runtime — we read
+/// whatever it picked for the current platform.
+fn resolve_base_image_digest(runtime: Runtime) -> Result<String> {
+    let pull = Command::new(runtime.binary())
+        .args(["pull", BASE_IMAGE_REF])
+        .status()
+        .with_context(|| {
+            format!(
+                "Failed to invoke `{} pull {BASE_IMAGE_REF}`",
+                runtime.binary()
+            )
+        })?;
+    if !pull.success() {
+        bail!(
+            "`{} pull {BASE_IMAGE_REF}` failed (exit {:?})",
+            runtime.binary(),
+            pull.code()
+        );
+    }
+
+    let out = Command::new(runtime.binary())
+        .args([
+            "inspect",
+            "--format",
+            "{{index .RepoDigests 0}}",
+            BASE_IMAGE_REF,
+        ])
+        .output()
+        .with_context(|| {
+            format!(
+                "Failed to invoke `{} inspect {BASE_IMAGE_REF}`",
+                runtime.binary()
+            )
+        })?;
+    if !out.status.success() {
+        bail!(
+            "`{} inspect {BASE_IMAGE_REF}` failed: {}",
+            runtime.binary(),
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    let repo_digest = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if repo_digest.is_empty() || repo_digest == "<no value>" || repo_digest == "[]" {
+        bail!(
+            "`{} inspect {BASE_IMAGE_REF}` returned no RepoDigest — the runtime may not have pulled the image from a registry",
+            runtime.binary()
+        );
+    }
+    // RepoDigests format: "mcr.microsoft.com/devcontainers/base@sha256:...".
+    // Strip the repo prefix to leave just "sha256:...".
+    let digest = repo_digest
+        .rsplit_once('@')
+        .map(|(_, d)| d.to_string())
+        .unwrap_or(repo_digest.clone());
+    if !digest.starts_with("sha256:") {
+        bail!("Resolved digest '{digest}' for {BASE_IMAGE_REF} is not a sha256 reference");
+    }
     Ok(digest)
 }
 
