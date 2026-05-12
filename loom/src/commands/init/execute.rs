@@ -246,7 +246,17 @@ fn apply_project_backend(
                         runtime: runtime.binary().to_string(),
                         fingerprint: fingerprint.clone(),
                         image_digest: digest.clone(),
-                        forward_credentials: Vec::new(),
+                        // Default to forwarding Claude Code's OAuth
+                        // credentials. Container backend's primary use
+                        // case is running claude inside an isolated
+                        // environment; without these the agent has no
+                        // way to authenticate and immediately fails
+                        // with "Not logged in · Please run /login".
+                        // The credential file is mounted ro at
+                        // /home/loom/.claude/.credentials.json — the
+                        // agent can use it but cannot mutate it, so
+                        // there is no privilege-escalation path.
+                        forward_credentials: vec!["claude".to_string()],
                     }),
                 },
             )?;
