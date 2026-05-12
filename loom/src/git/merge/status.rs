@@ -263,6 +263,7 @@ mod tests {
             model: None,
             reasoning_effort: None,
             execution_backend: None,
+            is_possibly_stuck: false,
         }
     }
 

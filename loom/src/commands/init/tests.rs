@@ -176,6 +176,7 @@ fn test_serialize_stage_to_markdown_minimal() {
         model: None,
         reasoning_effort: None,
         execution_backend: None,
+        is_possibly_stuck: false,
     };
 
     let content = serialize_stage_to_markdown(&stage).unwrap();
@@ -246,6 +247,7 @@ fn test_serialize_stage_to_markdown_with_all_fields() {
         model: None,
         reasoning_effort: None,
         execution_backend: None,
+        is_possibly_stuck: false,
     };
 
     let content = serialize_stage_to_markdown(&stage).unwrap();
