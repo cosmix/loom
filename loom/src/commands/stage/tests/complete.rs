@@ -50,6 +50,72 @@ fn test_complete_with_passing_acceptance() {
 
 #[test]
 #[serial]
+fn test_complete_no_verify_refuses_zero_commits_ahead() {
+    use std::process::Command;
+    // When the stage branch EXISTS but has no commits beyond the merge
+    // target, --no-verify must refuse — otherwise the daemon's auto-merge
+    // trivially "succeeds" against an unchanged base, producing the
+    // phantom-merge that was observed for harden-container-mod.
+
+    let temp_dir = setup_work_dir();
+    let work_dir_path = temp_dir.path().join(".work");
+
+    // Bootstrap a real git repo with an initial commit so the branch
+    // existence + commits_ahead probes have something to work with.
+    let repo = temp_dir.path();
+    let run_git = |args: &[&str]| {
+        Command::new("git")
+            .args(args)
+            .current_dir(repo)
+            .output()
+            .unwrap()
+    };
+    run_git(&["init", "--initial-branch=main"]);
+    run_git(&["config", "user.email", "test@test.com"]);
+    run_git(&["config", "user.name", "Test"]);
+    std::fs::write(repo.join("README.md"), "x").unwrap();
+    run_git(&["add", "README.md"]);
+    run_git(&["commit", "-m", "initial"]);
+    // Create the stage branch at the same HEAD as main — zero commits ahead.
+    run_git(&["branch", "loom/test-stage"]);
+
+    let mut stage = create_test_stage("test-stage", StageStatus::Executing);
+    stage.acceptance = vec![AcceptanceCriterion::Simple("exit 1".to_string())];
+    save_test_stage(&work_dir_path, &stage);
+
+    let original_dir = std::env::current_dir().unwrap();
+    std::env::set_current_dir(repo).unwrap();
+
+    let result = complete("test-stage".to_string(), None, true, false, false);
+
+    std::env::set_current_dir(original_dir).unwrap();
+
+    assert!(
+        result.is_err(),
+        "complete --no-verify must refuse when stage branch has zero commits \
+         ahead of target (phantom-merge guard)"
+    );
+    let err = format!("{:#}", result.unwrap_err());
+    assert!(
+        err.contains("zero commits"),
+        "expected error to explain zero-commits cause, got: {err}"
+    );
+
+    // Stage status must NOT have been mutated by the refused completion.
+    let loaded_stage = load_stage("test-stage", &work_dir_path).unwrap();
+    assert_eq!(
+        loaded_stage.status,
+        StageStatus::Executing,
+        "refusal must preserve prior stage state"
+    );
+    assert!(
+        !loaded_stage.merged,
+        "refused stage must not be marked merged"
+    );
+}
+
+#[test]
+#[serial]
 fn test_complete_with_no_verify_flag() {
     let temp_dir = setup_work_dir();
     let work_dir_path = temp_dir.path().join(".work");

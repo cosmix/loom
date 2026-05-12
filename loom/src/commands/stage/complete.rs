@@ -543,8 +543,7 @@ fn delegate_completion_to_daemon(
         .context("Failed to set socket read timeout")?;
 
     write_message(&mut stream, &req).context("Failed to send CompleteStageContainer request")?;
-    let response: Response =
-        read_message(&mut stream).context("Failed to read daemon response")?;
+    let response: Response = read_message(&mut stream).context("Failed to read daemon response")?;
 
     match response {
         Response::Ok => {
@@ -1103,7 +1102,52 @@ fn run_verification_phase(
 
         complete_with_merge(stage, &repo_root, work_dir)?;
     } else {
-        // --no-verify: Skip verifications, just mark as completed
+        // --no-verify: Skip verifications, just mark as completed.
+        //
+        // Phantom-merge guard: refuse if the stage's branch has zero commits
+        // beyond the merge target. Otherwise the daemon's auto-merge will
+        // "succeed" trivially (branch HEAD == target HEAD) and write
+        // merged=true for work that was never committed. Knowledge stages
+        // commit directly to base (no branch) so this check does not apply
+        // — but knowledge stages are routed earlier in complete().
+        let cwd = std::env::current_dir().context("Failed to get current directory")?;
+        let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or_else(|| cwd.clone());
+        let target_branch = crate::git::branch::resolve_target_branch(
+            &Some(resolve_base_branch(work_dir)),
+            &repo_root,
+        );
+        // Skip the guard if the branch doesn't exist on the host — that's the
+        // shape unit tests (no real git repo) and isolated-git stages
+        // (commits live in the container's mirror, not on host) take. The
+        // phantom-merge class of bug requires an EXISTING empty branch:
+        // attempt_auto_merge happily fast-forwards to itself.
+        let stage_branch = crate::git::branch::branch_name_for_stage(stage_id);
+        let branch_exists =
+            crate::git::branch::branch_exists(&stage_branch, &repo_root).unwrap_or(false);
+        if branch_exists {
+            match crate::git::branch::commits_ahead_of(&stage_branch, &target_branch, &repo_root) {
+                Ok(0) => {
+                    anyhow::bail!(
+                        "Refusing to --no-verify-complete stage '{stage_id}': branch \
+                         '{stage_branch}' has zero commits beyond '{target_branch}'. \
+                         The agent never committed any work for this stage, so \
+                         completing now would create a phantom merge (merged=true \
+                         against the unchanged base). Either redo the stage so the \
+                         agent commits real work, run `loom stage retry --kill-session \
+                         {stage_id}`, or use `loom stage complete --force-unsafe` if \
+                         you genuinely intend to mark an empty stage complete."
+                    );
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!(
+                        "Warning: failed to count commits ahead of '{target_branch}' on \
+                         '{stage_branch}': {e}. Proceeding with --no-verify completion."
+                    );
+                }
+            }
+        }
+
         // The orchestrator daemon will auto-merge and trigger dependents
         stage.try_complete(None)?;
         save_stage(stage, work_dir)?;

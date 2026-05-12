@@ -434,6 +434,51 @@ impl Orchestrator {
             &self.config.repo_root,
         );
 
+        // Phantom-merge guard: refuse to auto-merge a stage whose branch
+        // EXISTS but has zero commits beyond the merge target. Without this
+        // check, an empty branch (HEAD == target HEAD) silently "merges" as a
+        // no-op: `completed_commit` is filled from branch HEAD (which equals
+        // target HEAD), `attempt_auto_merge` returns AlreadyUpToDate /
+        // FastForward, and `is_ancestor_of(target_HEAD, target)` trivially
+        // passes — resulting in `merged: true` for work that was never
+        // committed. Leave the stage at Completed + !merged so dependents do
+        // not unblock. Skip the guard when the branch is missing — that path
+        // already lands in the `NoBranch` / `Err` arms below with their own
+        // recovery handling.
+        let stage_branch = branch_name_for_stage(stage_id);
+        let stage_branch_exists =
+            crate::git::branch::branch_exists(&stage_branch, &self.config.repo_root)
+                .unwrap_or(false);
+        if stage_branch_exists {
+            match crate::git::branch::commits_ahead_of(
+                &stage_branch,
+                &target_branch,
+                &self.config.repo_root,
+            ) {
+                Ok(0) => {
+                    tracing::error!(
+                        stage_id = %stage_id,
+                        branch = %stage_branch,
+                        target = %target_branch,
+                        "Stage branch has zero commits beyond target; refusing auto-merge \
+                         to prevent phantom merge. Leaving stage as Completed + !merged. \
+                         The agent never committed work for this stage — re-queue or \
+                         redo the stage manually."
+                    );
+                    return false;
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::warn!(
+                        stage_id = %stage_id,
+                        branch = %stage_branch,
+                        error = %e,
+                        "commits_ahead_of probe failed; proceeding with merge attempt"
+                    );
+                }
+            }
+        }
+
         // Capture completed_commit before merge attempt so the orchestrator can
         // later verify merge resolution via git ancestry even if conflicts occur.
         if stage.completed_commit.is_none() {
