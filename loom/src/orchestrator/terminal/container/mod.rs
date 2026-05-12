@@ -34,10 +34,13 @@
 //!    `/repo/doc/loom/knowledge`. Merge/BaseConflict skip this layer
 //!    (their /repo is already rw).
 //! 3. **`.work/` rw subtrees** — `sessions`, `memory`, `handoffs`,
-//!    `crashes`, `wrappers`, `pids` are always rw for all sessions.
-//!    Notably absent: `.work/config.toml`, `stages/`, `signals/`,
-//!    `daemon.token`, `orchestrator.lock` — these stay ro under the
-//!    `/repo` base so the agent cannot corrupt orchestration state.
+//!    `crashes`, `wrappers`, `pids`, plus the hook observability paths
+//!    `hooks`, `heartbeat`, `compaction-pending`, `compaction-recovery`,
+//!    and the top-level append-only file `tool-events.jsonl`, are always
+//!    rw for all sessions. Notably absent: `.work/config.toml`, `stages/`,
+//!    `signals/`, `daemon.token`, `orchestrator.lock` — these stay ro
+//!    under the `/repo` base so the agent cannot corrupt orchestration
+//!    state.
 //! 4. **`.claude/settings.local.json` ro overlay** — pinned read-only
 //!    AFTER the worktree rw mount so the agent cannot rewrite its own
 //!    permission grants mid-session.
@@ -78,6 +81,7 @@ pub mod resources;
 pub mod runtime;
 
 use anyhow::{anyhow, bail, Context, Result};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread;
@@ -310,8 +314,24 @@ impl ContainerBackend {
         // The agent's only legitimate need is to update its OWN stage
         // file via `loom stage complete`, so we mount JUST that single
         // file rw below.
+        //
+        // The four `hooks`-related dirs (`hooks/`, `heartbeat/`,
+        // `compaction-pending/`, `compaction-recovery/`) MUST be in this
+        // list — Claude Code's session-start / session-end / pre-compact /
+        // post-tool-use hooks all write into them, and without rw the
+        // hook scripts fail with EROFS, dropping observability events
+        // (events.jsonl, heartbeat markers, compaction recovery markers).
         for sub in [
-            "sessions", "memory", "handoffs", "crashes", "wrappers", "pids",
+            "sessions",
+            "memory",
+            "handoffs",
+            "crashes",
+            "wrappers",
+            "pids",
+            "hooks",
+            "heartbeat",
+            "compaction-pending",
+            "compaction-recovery",
         ] {
             let host = self.work_dir.join(sub);
             std::fs::create_dir_all(&host).with_context(|| {
@@ -323,6 +343,34 @@ impl ContainerBackend {
             let cont = format!("{WORK_DIR_IN_CONTAINER}/{sub}");
             mounts.push(Mount::rw(host, cont));
         }
+
+        // Top-level append-only file rw mount: `.work/tool-events.jsonl`.
+        // Written by the `post-tool-use.sh` hook on every tool call and
+        // read by the orchestrator's stuck-detection monitor
+        // (`orchestrator/monitor/tool_analysis.rs`). Can't go under a dir
+        // rw overlay because it sits directly under `.work/`, alongside
+        // ro-protected files (config.toml, daemon.token, ...). Pre-create
+        // the host file as empty 0o644 so the bind mount has a real source
+        // — Podman won't auto-create file sources, and a missing source
+        // would either fail the spawn (Podman) or silently materialize a
+        // root-owned directory (Docker), neither of which is acceptable.
+        let tool_events_host = self.work_dir.join("tool-events.jsonl");
+        if !tool_events_host.exists() {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .truncate(false)
+                .write(true)
+                .mode(0o644)
+                .open(&tool_events_host)
+                .with_context(|| {
+                    format!(
+                        "Failed to pre-create rw mount source file {} for container backend",
+                        tool_events_host.display()
+                    )
+                })?;
+        }
+        let tool_events_cont = format!("{WORK_DIR_IN_CONTAINER}/tool-events.jsonl");
+        mounts.push(Mount::rw(tool_events_host, tool_events_cont));
 
         // Mount the CURRENT stage's file rw, and only that file. Sibling
         // stage files remain ro under the base mount, blocking
@@ -1196,6 +1244,69 @@ mod tests {
                 m.source.display()
             );
         }
+    }
+
+    #[test]
+    fn build_mounts_includes_hook_observability_rw_paths() {
+        // Claude Code hooks (session-start, session-end, pre-compact,
+        // post-tool-use) write into four .work/ subdirectories and one
+        // top-level append-only file. Without rw bind mounts for these
+        // paths, every container session silently loses observability
+        // events (events.jsonl, heartbeat markers, compaction recovery
+        // markers, tool-events.jsonl) — and the session-end hook in
+        // particular fails noisily with EROFS, getting misread by the
+        // orchestrator as a session crash that triggers retry.
+        let (_tmp, _repo_root, backend, stage) =
+            fixture_backend(StageType::Standard, "stage-hooks");
+        let mounts = backend
+            .build_mounts(&stage, SessionType::Stage, "sess-hooks")
+            .unwrap();
+
+        for sub in [
+            "hooks",
+            "heartbeat",
+            "compaction-pending",
+            "compaction-recovery",
+        ] {
+            let target = PathBuf::from(format!("/repo/.work/{sub}"));
+            let m = mounts
+                .iter()
+                .find(|m| m.target == target)
+                .unwrap_or_else(|| panic!("expected rw mount on /repo/.work/{sub}"));
+            assert!(!m.read_only, "/repo/.work/{sub} must be mounted rw");
+            assert!(
+                m.source.is_dir(),
+                "rw mount source for /repo/.work/{sub} must be a real directory: {}",
+                m.source.display()
+            );
+        }
+
+        let tool_events_target = PathBuf::from("/repo/.work/tool-events.jsonl");
+        let tool_events = mounts
+            .iter()
+            .find(|m| m.target == tool_events_target)
+            .expect("expected rw mount on /repo/.work/tool-events.jsonl");
+        assert!(
+            !tool_events.read_only,
+            "/repo/.work/tool-events.jsonl must be mounted rw"
+        );
+        assert!(
+            tool_events.source.is_file(),
+            "rw mount source for tool-events.jsonl must be a real file (pre-created): {}",
+            tool_events.source.display()
+        );
+        // Pre-creating must not clobber existing content: a second
+        // build_mounts call against the same backend leaves the host
+        // file alone.
+        std::fs::write(&tool_events.source, b"{\"old\":\"event\"}\n").unwrap();
+        let _ = backend
+            .build_mounts(&stage, SessionType::Stage, "sess-hooks-2")
+            .unwrap();
+        assert_eq!(
+            std::fs::read(&tool_events.source).unwrap(),
+            b"{\"old\":\"event\"}\n",
+            "tool-events.jsonl pre-create must not truncate an existing file"
+        );
     }
 
     #[test]
