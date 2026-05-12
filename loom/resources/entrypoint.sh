@@ -50,5 +50,40 @@ if [ -e /etc/sudoers.d/loom-firewall ]; then
     rm /etc/sudoers.d/loom-firewall
 fi
 
+# === STAGE 4: Container-private git clone =====================================
+# Stage 4 (isolated-git-architecture) eliminates the `.git` bind mount —
+# the deepest container-escape path (Codex blocker B1). Instead of giving
+# the container direct access to the host's git history, the orchestrator
+# provisions a per-stage bare mirror at /var/loom/mirror (ro) and we
+# clone it into /repo here, BEFORE exec-ing the unprivileged agent. The
+# clone lives in the container's writable image layer (overlay2), so the
+# agent has full freedom inside /repo without ever touching the host.
+#
+# Triggered by LOOM_BRANCH (and optionally LOOM_BASE_OID / LOOM_GIT_CLONE_DEPTH).
+# When LOOM_BRANCH is unset we leave /repo untouched — that branch is the
+# legacy/back-compat path used while in-container completion is still
+# being migrated to host-authoritative RPC completion.
+if [ -n "${LOOM_BRANCH:-}" ] && [ -d /var/loom/mirror ]; then
+    LOOM_DEPTH="${LOOM_GIT_CLONE_DEPTH:-50}"
+    # /repo is the container's clone destination. If anything already
+    # lives there (e.g., from a stale prior run on this image), wipe
+    # before cloning. `git clone` refuses a non-empty destination.
+    if [ -d /repo ] && [ -n "$(ls -A /repo 2>/dev/null || true)" ]; then
+        rm -rf /repo/* /repo/.[!.]* /repo/..?* 2>/dev/null || true
+    fi
+    mkdir -p /repo
+    # git clone produces an `objects/info/alternates` only when the
+    # source repo points at one — init_bare_mirror has already
+    # verified the source has no alternates, so the clone here is
+    # always self-contained.
+    if ! git clone --depth="$LOOM_DEPTH" --branch="$LOOM_BRANCH" \
+        /var/loom/mirror /repo 2>&1; then
+        echo "ERROR: container-private clone from /var/loom/mirror failed." >&2
+        echo "       Branch: $LOOM_BRANCH" >&2
+        exit 1
+    fi
+    chown -R loom:loom /repo
+fi
+
 # Drop privileges and exec the agent workload.
 exec gosu loom "$@"
