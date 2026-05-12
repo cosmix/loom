@@ -504,7 +504,7 @@ The private helper `configure_loom_hooks_with_dir(obj, hooks_dir)` parameterizes
 
 **Prevention:** Add `git_user_name: Option<String>` and `git_user_email: Option<String>` to `ProjectContainerConfig` (`plan/schema/execution.rs`). Populate at `loom init --backend container` time by reading `git config --global user.name/email` on the host. Inject as env vars in `ContainerBackend::build_env_for_session`:
 
-```
+```text
 GIT_AUTHOR_NAME, GIT_AUTHOR_EMAIL, GIT_COMMITTER_NAME, GIT_COMMITTER_EMAIL
 ```
 
@@ -524,7 +524,7 @@ Key rules:
 
 **Prevention:** Stage acceptance criteria that include a clippy check should always use:
 
-```
+```bash
 cargo clippy --all-targets -- -D warnings
 ```
 
@@ -538,7 +538,7 @@ Not `cargo clippy -- -D warnings`. The `--workspace` flag is also useful in mono
 
 **Prevention:** When a reviewer asserts a behavior change, verify against the actual diff:
 
-```
+```bash
 git show <commit>~1 -- <file>  # before
 git show <commit> -- <file>    # after
 ```
