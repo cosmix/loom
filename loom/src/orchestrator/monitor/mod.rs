@@ -18,6 +18,8 @@ pub mod events;
 pub mod failure_tracking;
 pub(crate) mod handlers;
 pub mod heartbeat;
+pub mod soft_signals;
+pub mod tool_analysis;
 
 #[cfg(test)]
 mod tests;
