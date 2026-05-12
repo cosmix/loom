@@ -45,6 +45,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
                 verbose,
                 follow,
                 tail,
+                no_color,
             } => loom::commands::container::logs::execute(
                 stage_id,
                 follow,
@@ -52,6 +53,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
                 format,
                 show_thinking,
                 verbose,
+                no_color,
             ),
             ContainerCommands::List { all, json } => {
                 loom::commands::container::list::execute(all, json)

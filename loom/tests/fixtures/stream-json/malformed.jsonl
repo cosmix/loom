@@ -1,3 +1,3 @@
 {"type":"assistant","message":{"content":[{"type":"text","text":"Before malformed line."}]}}
 not valid json at all {{{{ broken
-{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tu5","name":"Write","input":{"path":"/tmp/x"}}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tu5","name":"Write","input":{"file_path":"/tmp/x","content":"hello\n"}}]}}

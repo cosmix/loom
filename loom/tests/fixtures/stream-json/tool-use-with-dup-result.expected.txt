@@ -1,2 +1,3 @@
--> Read(file_path=/etc/hosts)
-<- ok (19 bytes)
+  Read  /etc/hosts
+        1 line
+

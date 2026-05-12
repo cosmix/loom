@@ -30,6 +30,7 @@ fn default_opts() -> FormatOptions {
     FormatOptions {
         show_thinking: false,
         verbose: false,
+        color: false,
     }
 }
 
@@ -80,6 +81,7 @@ fn test_thinking_visible_with_flag() {
         FormatOptions {
             show_thinking: true,
             verbose: false,
+            color: false,
         },
     );
     // With show_thinking=true: expect "[thinking] ..." before the text
@@ -108,6 +110,7 @@ fn test_rate_limit_verbose_footer() {
         FormatOptions {
             show_thinking: false,
             verbose: true,
+            color: false,
         },
     );
     assert_eq!(

@@ -244,7 +244,11 @@ pub fn execute(
     format: LogFormat,
     show_thinking: bool,
     verbose: bool,
+    no_color: bool,
 ) -> Result<()> {
+    use std::io::IsTerminal;
+    let color =
+        !no_color && std::env::var_os("NO_COLOR").is_none() && std::io::stdout().is_terminal();
     let work_dir = WorkDir::new(".")?;
     let target = resolve_session_for_logs(&work_dir.sessions_dir(), &stage_id)?;
 
@@ -282,10 +286,13 @@ pub fn execute(
     let opts = FormatOptions {
         show_thinking,
         verbose,
+        color,
     };
     let status = match format {
         LogFormat::Json => stream_filtered(&mut child, target.runtime.binary())?,
-        LogFormat::Human => stream_with_human_formatting(&mut child, target.runtime.binary(), opts)?,
+        LogFormat::Human => {
+            stream_with_human_formatting(&mut child, target.runtime.binary(), opts)?
+        }
     };
 
     // If CTRL-C fired, ensure child is reaped and exit with 130 (POSIX SIGINT).
@@ -301,12 +308,14 @@ pub fn execute(
 /// Run the JSON / raw streaming path: stdout and stderr both pass through
 /// the ANSI sanitizer, then go to the parent's stdout/stderr respectively.
 fn stream_filtered(child: &mut Child, runtime_binary: &str) -> Result<ExitStatus> {
-    let child_stdout = child.stdout.take().ok_or_else(|| {
-        anyhow!("Failed to capture stdout from {runtime_binary} logs")
-    })?;
-    let child_stderr = child.stderr.take().ok_or_else(|| {
-        anyhow!("Failed to capture stderr from {runtime_binary} logs")
-    })?;
+    let child_stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow!("Failed to capture stdout from {runtime_binary} logs"))?;
+    let child_stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| anyhow!("Failed to capture stderr from {runtime_binary} logs"))?;
 
     let stdout_thread = thread::spawn(move || {
         let mut filter = AnsiFilter::new();
@@ -374,12 +383,14 @@ fn stream_with_human_formatting(
     runtime_binary: &str,
     opts: FormatOptions,
 ) -> Result<ExitStatus> {
-    let stdout = child.stdout.take().ok_or_else(|| {
-        anyhow!("Failed to capture stdout from {runtime_binary} logs")
-    })?;
-    let stderr_pipe = child.stderr.take().ok_or_else(|| {
-        anyhow!("Failed to capture stderr from {runtime_binary} logs")
-    })?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow!("Failed to capture stdout from {runtime_binary} logs"))?;
+    let stderr_pipe = child
+        .stderr
+        .take()
+        .ok_or_else(|| anyhow!("Failed to capture stderr from {runtime_binary} logs"))?;
 
     // Stderr thread: ANSI-filter through to the parent's stderr.
     let stderr_thread = thread::spawn(move || {

@@ -1,4 +1,4 @@
 Before malformed line.
----
+
 [malformed line: not valid json at all {{{{ broken]
--> Write(path=/tmp/x)
+  Write  /tmp/x

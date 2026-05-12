@@ -1,2 +1,4 @@
--> Bash(command=ls -la)
-<- ok (50 bytes)
+  Bash  ls -la
+        total 4
+        -rw-r--r-- 1 user group 100 Jan 1 file.txt
+

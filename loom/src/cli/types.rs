@@ -358,6 +358,9 @@ pub enum ContainerCommands {
         /// Number of trailing lines to print (when not following)
         #[arg(long, default_value_t = 500)]
         tail: usize,
+        /// Disable ANSI color in human output (auto-disabled when stdout is not a TTY or NO_COLOR is set)
+        #[arg(long)]
+        no_color: bool,
     },
     /// List session-backed loom containers for this workspace.
     ///
