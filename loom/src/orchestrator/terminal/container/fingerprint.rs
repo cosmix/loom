@@ -26,6 +26,7 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 
 use crate::language::detect_project_languages;
+use crate::verify::transitions::list_all_stages;
 
 /// Embedded Dockerfile template (content only; not written to disk here).
 const DOCKERFILE_TMPL: &str = include_str!("../../../../resources/Dockerfile.tmpl");
@@ -37,6 +38,32 @@ const FIREWALL_SH: &str = include_str!("../../../../resources/firewall.sh");
 /// hardening changes to the entrypoint (root-check, sudoers cleanup,
 /// firewall verification) invalidate cached images.
 pub(crate) const ENTRYPOINT_SCRIPT: &str = include_str!("../../../../resources/entrypoint.sh");
+
+/// Collect unique stage `working_dir` values from `.work/stages/*.md` so
+/// callers can pass them to [`compute_fingerprint`]. This is what makes
+/// language detection actually scan where a project's manifests live (e.g.
+/// `loom/Cargo.toml` for a monorepo where the rust crate is in a subdir).
+///
+/// Empty / `"."` entries are filtered out — they refer to the project root,
+/// which `compute_fingerprint` already scans on its own.
+///
+/// Returns an empty Vec when `.work/stages/` is missing or no stage files
+/// parsed; callers fall back to project-root-only detection in that case.
+pub fn plan_working_dirs(work_dir: &Path) -> Vec<PathBuf> {
+    let stages = match list_all_stages(work_dir) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    let mut dirs: Vec<PathBuf> = stages
+        .into_iter()
+        .filter_map(|s| s.working_dir)
+        .filter(|wd| !wd.is_empty() && wd != ".")
+        .map(PathBuf::from)
+        .collect();
+    dirs.sort();
+    dirs.dedup();
+    dirs
+}
 
 /// Compute a stable fingerprint for the container image that would be built
 /// for this project configuration.
@@ -151,6 +178,84 @@ mod tests {
         assert!(
             fp.starts_with("rust-"),
             "expected fingerprint to start with 'rust-', got: {fp}"
+        );
+    }
+
+    // --- tests for plan_working_dirs ---
+
+    fn write_stage_with_working_dir(stages_dir: &Path, stage_id: &str, working_dir: Option<&str>) {
+        let stage = crate::models::stage::Stage {
+            id: stage_id.to_string(),
+            name: stage_id.to_string(),
+            working_dir: working_dir.map(|s| s.to_string()),
+            ..crate::models::stage::Stage::default()
+        };
+        let content = crate::verify::transitions::serialize_stage_to_markdown(&stage).unwrap();
+        fs::write(stages_dir.join(format!("01-{stage_id}.md")), content).unwrap();
+    }
+
+    #[test]
+    fn plan_working_dirs_returns_empty_when_no_work_dir() {
+        let temp = TempDir::new().unwrap();
+        // No .work/stages/ exists.
+        assert_eq!(plan_working_dirs(temp.path()), Vec::<PathBuf>::new());
+    }
+
+    #[test]
+    fn plan_working_dirs_returns_empty_when_stages_dir_missing() {
+        let temp = TempDir::new().unwrap();
+        fs::create_dir(temp.path().join("other")).unwrap();
+        assert_eq!(plan_working_dirs(temp.path()), Vec::<PathBuf>::new());
+    }
+
+    #[test]
+    fn plan_working_dirs_collects_unique_non_root_dirs() {
+        let temp = TempDir::new().unwrap();
+        let stages_dir = temp.path().join("stages");
+        fs::create_dir_all(&stages_dir).unwrap();
+
+        // Two stages share working_dir=loom, one uses frontend, one uses "."
+        // (root, should be filtered), one is None (also filtered).
+        write_stage_with_working_dir(&stages_dir, "alpha", Some("loom"));
+        write_stage_with_working_dir(&stages_dir, "beta", Some("loom"));
+        write_stage_with_working_dir(&stages_dir, "gamma", Some("frontend"));
+        write_stage_with_working_dir(&stages_dir, "delta", Some("."));
+        write_stage_with_working_dir(&stages_dir, "epsilon", None);
+
+        let dirs = plan_working_dirs(temp.path());
+        assert_eq!(
+            dirs,
+            vec![PathBuf::from("frontend"), PathBuf::from("loom")],
+            "got: {dirs:?}"
+        );
+    }
+
+    #[test]
+    fn plan_working_dirs_unblocks_nested_rust_detection() {
+        // End-to-end: a project with no root Cargo.toml but a stage whose
+        // working_dir points at a subdir containing Cargo.toml MUST yield a
+        // rust-prefixed fingerprint when callers feed plan_working_dirs into
+        // compute_fingerprint. This regression-locks the bug where the four
+        // production callers were passing &[] and missing nested manifests.
+        let project = TempDir::new().unwrap();
+        let work_dir = project.path().join(".work");
+        let stages_dir = work_dir.join("stages");
+        fs::create_dir_all(&stages_dir).unwrap();
+
+        // Cargo.toml lives in `loom/`, NOT at project root.
+        let crate_dir = project.path().join("loom");
+        fs::create_dir_all(&crate_dir).unwrap();
+        fs::write(crate_dir.join("Cargo.toml"), "[package]\nname = \"test\"").unwrap();
+
+        write_stage_with_working_dir(&stages_dir, "build", Some("loom"));
+
+        let working_dirs = plan_working_dirs(&work_dir);
+        assert_eq!(working_dirs, vec![PathBuf::from("loom")]);
+
+        let fp = compute_fingerprint(project.path(), &working_dirs);
+        assert!(
+            fp.starts_with("rust-"),
+            "fingerprint must include rust when stage working_dir points at the crate, got: {fp}"
         );
     }
 

@@ -18,7 +18,10 @@ pub fn execute(fingerprint_override: Option<String>) -> Result<()> {
 
     let fingerprint = match fingerprint_override {
         Some(f) => f,
-        None => fp::compute_fingerprint(&project_root, &[]),
+        None => {
+            let working_dirs = fp::plan_working_dirs(work_dir.root());
+            fp::compute_fingerprint(&project_root, &working_dirs)
+        }
     };
 
     println!("{} Building image", "→".cyan().bold());

@@ -225,7 +225,8 @@ fn apply_project_backend(
                 .map(|p| p.to_path_buf())
                 .unwrap_or_else(|| repo_root.to_path_buf());
             let runtime = rt::detect_runtime("auto")?;
-            let fingerprint = fp::compute_fingerprint(&project_root_for_fp, &[]);
+            let working_dirs = fp::plan_working_dirs(work_dir.root());
+            let fingerprint = fp::compute_fingerprint(&project_root_for_fp, &working_dirs);
             let started = std::time::Instant::now();
             let (digest, action) = if no_build {
                 ("pending".to_string(), "skipped (--no-build)")

@@ -36,7 +36,8 @@ pub fn execute() -> Result<()> {
         .project_root()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
-    let current_fp = fp::compute_fingerprint(&project_root, &[]);
+    let working_dirs = fp::plan_working_dirs(work_dir.root());
+    let current_fp = fp::compute_fingerprint(&project_root, &working_dirs);
     println!("  {} Current fingerprint: {}", "ℹ".cyan(), current_fp);
 
     // Pinned digest (if any)

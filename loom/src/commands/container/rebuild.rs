@@ -45,8 +45,10 @@ pub fn execute(fingerprint_override: Option<String>, all: bool) -> Result<()> {
         .project_root()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
-    let fingerprint =
-        fingerprint_override.unwrap_or_else(|| fp::compute_fingerprint(&project_root, &[]));
+    let fingerprint = fingerprint_override.unwrap_or_else(|| {
+        let working_dirs = fp::plan_working_dirs(work_dir.root());
+        fp::compute_fingerprint(&project_root, &working_dirs)
+    });
 
     println!("{} Rebuilding image", "→".cyan().bold());
     println!("  Fingerprint: {}", fingerprint);
