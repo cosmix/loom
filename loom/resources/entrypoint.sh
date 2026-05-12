@@ -46,7 +46,9 @@ fi
 # Remove the unprivileged loom user's path back to running the firewall
 # script. After this rm, even if the agent escapes the workload sandbox it
 # cannot re-run loom-firewall.sh (no sudoers entry, no setuid bit). M8.
-rm -f /etc/sudoers.d/loom-firewall
+if [ -e /etc/sudoers.d/loom-firewall ]; then
+    rm /etc/sudoers.d/loom-firewall
+fi
 
 # Drop privileges and exec the agent workload.
 exec gosu loom "$@"
