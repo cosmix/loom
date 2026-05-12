@@ -601,3 +601,132 @@ fn test_budget_exceeded_fires_without_health_bucket_change() {
         "BudgetExceeded must not fire on subsequent ticks while still above budget"
     );
 }
+
+/// PossiblyStuck must be emitted exactly once per session while the
+/// soft-signals dedup window is active. Six failure-shaped tool events
+/// satisfy the heuristic; a second poll tick must not re-emit because both
+/// the in-memory `last_stuck_detected` flag and the persistent soft signal
+/// gate further emissions.
+#[test]
+fn test_possibly_stuck_emits_once_and_persists_signal() {
+    use std::io::Write;
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let work_dir = temp_dir.path().to_path_buf();
+
+    // Write a tool-events.jsonl satisfying the stuck heuristic for "sess-stuck".
+    let events_path = work_dir.join("tool-events.jsonl");
+    let mut f = std::fs::File::create(&events_path).unwrap();
+    let ts = chrono::Utc::now().to_rfc3339();
+    for _ in 0..6 {
+        writeln!(
+            f,
+            r#"{{"ts":"{ts}","tool":"Bash","is_error":true,"output_bytes":0,"session_id":"sess-stuck","stage_id":"stage-stuck"}}"#
+        )
+        .unwrap();
+    }
+    drop(f);
+
+    let config = MonitorConfig {
+        work_dir: work_dir.clone(),
+        ..Default::default()
+    };
+    let handlers = Handlers::new(config, None);
+    let mut detection = Detection::new();
+
+    let mut session = Session::new();
+    session.id = "sess-stuck".to_string();
+    session.status = SessionStatus::Running;
+    session.stage_id = Some("stage-stuck".to_string());
+
+    // First tick: should emit PossiblyStuck and persist a soft signal.
+    let events = detection.detect_session_changes(&[session.clone()], &[], &handlers);
+    let stuck_count = events
+        .iter()
+        .filter(|e| matches!(e, MonitorEvent::PossiblyStuck { .. }))
+        .count();
+    assert_eq!(
+        stuck_count, 1,
+        "First tick must emit exactly one PossiblyStuck event"
+    );
+
+    let signals_path = work_dir.join("monitor").join("soft-signals.jsonl");
+    assert!(
+        signals_path.exists(),
+        "soft-signals.jsonl must be created on emission"
+    );
+    let body = std::fs::read_to_string(&signals_path).unwrap();
+    let signal_lines: Vec<_> = body.lines().filter(|l| !l.is_empty()).collect();
+    assert_eq!(
+        signal_lines.len(),
+        1,
+        "exactly one signal row must be persisted"
+    );
+    assert!(
+        signal_lines[0].contains("\"session_id\":\"sess-stuck\""),
+        "signal must reference the stuck session"
+    );
+
+    // Second tick (no new events): both in-memory and persistent dedup
+    // must suppress re-emission.
+    let events = detection.detect_session_changes(&[session], &[], &handlers);
+    let stuck_count = events
+        .iter()
+        .filter(|e| matches!(e, MonitorEvent::PossiblyStuck { .. }))
+        .count();
+    assert_eq!(
+        stuck_count, 0,
+        "Second tick must NOT re-emit while the signal is active"
+    );
+    let body_after = std::fs::read_to_string(&signals_path).unwrap();
+    let signal_lines_after: Vec<_> = body_after.lines().filter(|l| !l.is_empty()).collect();
+    assert_eq!(
+        signal_lines_after.len(),
+        1,
+        "no additional signal row must be appended on dedup"
+    );
+}
+
+/// A session whose tool-events are all OUTSIDE the rolling window must NOT
+/// be flagged as stuck. Guards against the heuristic firing on old events
+/// after the session has gone idle.
+#[test]
+fn test_possibly_stuck_not_emitted_for_only_old_events() {
+    use std::io::Write;
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let work_dir = temp_dir.path().to_path_buf();
+    let events_path = work_dir.join("tool-events.jsonl");
+    let mut f = std::fs::File::create(&events_path).unwrap();
+    // Single ancient event, no recent activity.
+    writeln!(
+        f,
+        r#"{{"ts":"2000-01-01T00:00:00Z","tool":"Bash","is_error":true,"output_bytes":0,"session_id":"idle","stage_id":"s"}}"#
+    )
+    .unwrap();
+    drop(f);
+
+    let config = MonitorConfig {
+        work_dir,
+        ..Default::default()
+    };
+    let handlers = Handlers::new(config, None);
+    let mut detection = Detection::new();
+
+    let mut session = Session::new();
+    session.id = "idle".to_string();
+    session.status = SessionStatus::Running;
+    session.stage_id = Some("s".to_string());
+
+    let events = detection.detect_session_changes(&[session], &[], &handlers);
+    let stuck_count = events
+        .iter()
+        .filter(|e| matches!(e, MonitorEvent::PossiblyStuck { .. }))
+        .count();
+    assert_eq!(
+        stuck_count, 0,
+        "Old isolated events must not satisfy the heuristic"
+    );
+}
