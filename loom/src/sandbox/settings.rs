@@ -189,9 +189,19 @@ fn build_tool_commands(detected_languages: &[DetectedLanguage]) -> Vec<String> {
 pub fn generate_settings_json(config: &MergedSandboxConfig, backend: BackendType) -> Value {
     let mut settings = json!({});
 
-    // Build sandbox block with native sandbox configuration
+    // Build sandbox block with native sandbox configuration.
+    //
+    // For container backend: Claude Code's per-tool bwrap sandbox is
+    // redundant and actively harmful. The container itself provides
+    // OS-level isolation (capability drop, ro `/repo` base, network
+    // namespace + firewall). Claude's bwrap layer tries to create
+    // scratch state inside `/repo/.claude/skills` — which fails because
+    // `/repo` is a ro mount. The kernel-level isolation is already
+    // enforced one layer up; nested sandboxing has no win and breaks
+    // every tool call with "Can't create file ... Read-only file system".
+    let sandbox_enabled = config.enabled && backend != BackendType::Container;
     let mut sandbox = json!({
-        "enabled": config.enabled
+        "enabled": sandbox_enabled
     });
 
     // Add autoAllowBashIfSandboxed if enabled
