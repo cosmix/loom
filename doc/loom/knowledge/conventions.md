@@ -188,3 +188,37 @@ Two forms in YAML:
 Validation requires: acceptance OR goal-backward checks for standard/integration-verify stages.
 
 Old truths/truth_checks fields removed from StageDefinition. Serde silently ignores them in old plans (no deny_unknown_fields). before_stage/after_stage fields retained, still use TruthCheck.
+
+## Hook Output Contract
+
+Claude Code hooks communicate with the host process via stdin/stdout and exit codes.
+
+**Exit codes:**
+- `exit 0` — allow the operation to proceed (default, no output needed)
+- `exit 2` — block the operation; stderr is shown to Claude as a `PreToolUse:` prefixed message
+- Any other exit code — treated as an error (non-blocking, but logged)
+
+**hookSpecificOutput (JSON response for warnings):**
+To issue a warning without blocking (exit 0 with advisory), write a JSON object to stdout with a `hookSpecificOutput` field. Claude Code appends this to the tool result as additional context. Example:
+
+```json
+{"hookSpecificOutput": "LOOM_HOOK_WARN: consider using rg instead of grep"}
+```
+
+The `LOOM_HOOK_WARN:` prefix is recognized by the loom formatter (`render_tool_result` in `log_format.rs`) and rendered as `[hook warn]` in `loom container logs --format=human`.
+
+**PostToolUse stdin schema:**
+```json
+{
+  "tool_name": "Bash",
+  "tool_input": {"command": "...", ...},
+  "tool_result": {"output": "...", "is_error": false, "exit_code": 0},
+  "session_id": "...",
+  "session_info": {...}
+}
+```
+Some fields may use `tool_response` instead of `tool_result` depending on Claude Code version — always use `(.tool_result.x // .tool_response.x)` patterns in shell hooks.
+
+**PreToolUse stdin schema:** `tool_name` and `tool_input` fields only (no result yet).
+
+**Stop hook (session end):** receives `{"reason": "...", "exit_code": N}`. Used by `commit-guard.sh` and `learning-validator.sh`.

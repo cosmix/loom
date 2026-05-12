@@ -543,3 +543,46 @@ commands/status/
 **Data flow (static mode):** `collect_status_data()` loads plan name, stage list (with status/context), session list, merge state, and progress counts into a single `StatusData`. Renderers receive `StatusData` and write to `impl Write`.
 
 **TUI mode:** `ui::run_tui(work_path)` subscribes to the daemon's Unix socket (`orchestrator.sock`) and re-renders on each update. Requires daemon running; errors with hint if not.
+
+## Container Logs / Transcript Format
+
+Claude Code container sessions emit a stream-json (JSONL) transcript when running with `--output-format=stream-json`. Each line is a JSON object with a top-level `"type"` field. `loom container logs --format=human` parses this stream.
+
+**Known event types:**
+
+| Type | Description | Rendered by |
+|------|-------------|-------------|
+| `"assistant"` | Model output turn; `message.content[]` contains `text`, `tool_use`, `thinking` blocks | Yes — text + `-> Tool(args)` |
+| `"user"` | Tool result turn; `message.content[]` contains `tool_result` blocks | Yes — `<- ok (N bytes)` or `<- error: first line` |
+| `"system"` | Session init / metadata | Suppressed (counted in `--verbose` footer) |
+| `"rate_limit_event"` | API rate-limit notice; `delta.input_tokens` etc. | Suppressed (counted in `--verbose` footer) |
+
+**Content vs tool_use_result duplication:** User events often carry BOTH `message.content[].tool_result.content` AND a top-level `tool_use_result.content` field with identical content. The formatter deduplicates: if `tool_use_result.content == message.content[].tool_result.content` (last rendered), the top-level field is skipped. If they differ (or if no tool_result block was rendered), `tool_use_result` is rendered separately.
+
+**rate_limit_event shape** (reference only; suppressed in human format):
+```json
+{"type":"rate_limit_event","delta":{"input_tokens":5,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}
+```
+
+**Formatter implementation:** `commands/container/log_format.rs` — `format_line()`, `format_stream()`. `LogFormat` enum: `Human` (default) / `Json` (raw passthrough). `FormatOptions`: `show_thinking` (renders first line of `thinking` blocks prefixed `[thinking]`), `verbose` (appends suppressed-event footer). Control-character injection is sanitized in all preview strings via `sanitize_preview()`.
+
+## Soft Signals
+
+Soft signals are advisory per-session notices persisted to disk so that dedup survives daemon restarts. File: `.work/monitor/soft-signals.jsonl` (JSONL, append-only, no compaction).
+
+**Schema (single variant today):**
+```json
+{"kind":"possibly_stuck","session_id":"s1","stage_id":"my-stage","recent_events":10,"failure_count":9,"failure_ratio":0.9,"emitted_at":"<RFC3339>","expires_at":"<RFC3339>"}
+```
+
+**Decay window:** `DECAY_WINDOW_SECS = 120` — signals expire 120 seconds after they are written. `read_active(work_dir, now)` filters out expired signals. `read_active_for_session(work_dir, now, session_id)` further filters by session.
+
+**Detection pipeline:**
+1. `post-tool-use.sh` appends rows to `.work/tool-events.jsonl` on every tool call.
+2. `orchestrator/monitor/tool_analysis::analyze_session()` reads the last 50 events for a session and computes `ToolAnalysis`.
+3. Stuck criteria: `recent_failure_count >= 5 (STUCK_MIN_EVENTS)` AND `failure_ratio >= 0.80 (STUCK_FAILURE_RATIO)` within a 60-second rolling window (`STUCK_WINDOW_SECS`). Failure-shaped events: `is_error == true` OR `output_bytes == Some(0)`.
+4. On detection, monitor emits `MonitorEvent::PossiblyStuck`; the event handler calls `soft_signals::append(work_dir, &signal)`.
+5. `daemon/server/status.rs::collect_status()` calls `soft_signals::read_active_for_session()` to derive `Stage.is_possibly_stuck` at read time (never persisted to stage files — `#[serde(skip)]`).
+6. Static `loom status` reads via `commands/status/data.rs::collect_status_data()` using the same helper.
+
+**Key files:** `orchestrator/monitor/soft_signals.rs` (schema + I/O), `orchestrator/monitor/tool_analysis.rs` (analysis), `orchestrator/monitor/detection.rs` (event emission), `daemon/server/status.rs` (status derivation).

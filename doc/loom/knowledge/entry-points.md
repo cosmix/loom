@@ -338,3 +338,32 @@ Both `loom container logs <stage-id>` and `loom container shell <stage-id>` shar
 | Live | `--live` | TUI subscribed to daemon IPC; requires daemon running (`DaemonServer::is_running()`) |
 
 **Verbose mode (`--verbose`):** Shows `render_attention()` — detailed failure information for blocked/failed stages.
+
+## Tool Event Log
+
+`.work/tool-events.jsonl` — written by `hooks/post-tool-use.sh` on every tool call. Used by the monitor subsystem for stuck-session detection.
+
+**Writer:** `hooks/post-tool-use.sh` lines 74-107 (TOOL EVENT LOGGING section). Requires `jq` to be available — the block is guarded by `command -v jq` so heartbeat writes are never blocked.
+
+**Reader / Rust struct:** `loom/src/hooks/events.rs::ToolEvent` (line 190) — `read_tool_events(work_dir)` and `tail_tool_events(work_dir, n)`.
+
+**ToolEvent fields:**
+```rust
+pub struct ToolEvent {
+    pub ts: String,            // ISO 8601 timestamp
+    pub tool: String,          // Tool name (e.g. "Bash", "Read")
+    pub is_error: bool,
+    pub session_id: String,
+    pub stage_id: String,
+    pub exit: Option<i32>,         // Bash tool exit code, null for others
+    pub output_bytes: Option<u64>, // printf '%s' | wc -c (no trailing newline)
+    pub output_head: Option<String>, // First ~200 bytes
+    pub output_tail: Option<String>, // Last ~200 bytes
+}
+```
+
+**Note:** `output_bytes` uses `printf '%s' | wc -c` (not `echo | wc -c`) so empty output is 0, not 1. This was a bug fixed in integration-verify — the old `echo` appended a newline making empty output record `output_bytes=1`, breaking the failure heuristic in `tool_analysis.rs:101`.
+
+**Distinct from** `.work/hooks/events.jsonl` (HookEventLog struct in the same file) — that file logs session lifecycle hook events (SessionStart, PreCompact, SessionEnd, Stop). Both types live in `loom/src/hooks/events.rs`.
+
+**Consumer:** `orchestrator/monitor/tool_analysis::analyze_session(work_dir, session_id)` reads the last 50 events for a session and computes `ToolAnalysis` (stuck detection). See `architecture.md § Soft Signals` for the full pipeline.

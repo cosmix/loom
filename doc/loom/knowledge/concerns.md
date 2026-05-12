@@ -184,3 +184,17 @@ The failure rollback chain in `orchestrator/core/stage_executor.rs` — `preempt
 - Wiring check confirms `remove_worktree|delete_branch` patterns exist in `stage_executor.rs`
 
 **Gap:** No test injects a failing `TerminalBackend::spawn_session` and asserts that each rollback helper was called in sequence. To add: a unit-test seam that wraps `TerminalBackend` with a failing stub and verifies the rollback sequence.
+
+## Deferred: Context Velocity
+
+The heartbeat JSON written by `post-tool-use.sh` always records `"context_percent": null`. Context velocity tracking (how fast the agent is consuming context budget) was listed as a planned metric but deferred because extracting context percentage requires parsing the stream-json JSONL output of the Claude process, which the `post-tool-use` hook does not currently do.
+
+**Current state:** `context_percent` field exists in the heartbeat JSON schema but is always `null`. The monitor reads it but never observes a non-null value through the hook path.
+
+**What's needed:** Stream-json events (specifically `"type":"system"` with a `usage` subkey, or similar) need to be parsed from the container's stdout to extract token counts. A separate sidecar process (or stdout tap in the container entrypoint) would be the cleanest approach without modifying the hook flow.
+
+**Where to look when implementing:**
+- `hooks/post-tool-use.sh` — heartbeat writer (add context_percent extraction here)
+- `orchestrator/monitor/context.rs` — context health thresholds (Green/Yellow/Red)
+- `orchestrator/monitor/detection.rs` — where heartbeat data is consumed
+- Stream-json `"system"` event shape: `{"type":"system","subtype":"init","session_id":"...","usage":{"input_tokens":N,...}}`

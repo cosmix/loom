@@ -175,7 +175,7 @@ loom container build
 loom container rebuild
 loom container doctor
 loom container shell <stage-id>
-loom container logs <stage-id> [--follow] [--tail <N>]
+loom container logs <stage-id> [--follow] [--tail <N>] [--format human|json] [--show-thinking] [--verbose]
 loom container list [--all] [--json]
 ```
 
@@ -187,7 +187,17 @@ loom container list [--all] [--json]
 
 `loom container shell <stage-id>` opens an interactive shell inside the container for a running stage session (`/repo` bind mount, hooks, firewall). Useful for debugging the container environment.
 
-`loom container logs <stage-id>` tails or follows the stdout/stderr of a running stage's container. Scans `.work/sessions/` for an active container-backed session matching the stage ID, then execs into `<runtime> logs`. Use `--follow` to stream live output; `--tail N` to limit lines shown.
+`loom container logs <stage-id>` tails or follows the stdout/stderr of a running or exited stage's container. Scans `.work/sessions/` for an active container-backed session matching the stage ID.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--follow` / `-f` | off | Stream live output (like `docker logs -f`) |
+| `--tail N` | 100 | Lines to show from the end |
+| `--format human\|json` | `human` | `human` renders stream-json as readable text; `json` passes raw bytes through |
+| `--show-thinking` | off | Show `[thinking]` prefixed lines from assistant thinking blocks |
+| `--verbose` | off | Append a footer with suppressed event counts (`system`, `rate_limit_event`) |
+
+The default `--format=human` parses the stream-json (JSONL) transcript emitted by Claude Code and renders: text blocks (with `---` separator), tool calls (`-> Tool(args)`), tool results (`<- ok (N bytes)` / `<- error: first line`), and hook blocks. Use `--format=json` to get the raw JSONL for scripting or log archiving.
 
 `loom container list` shows all session-backed containers for this workspace. By default only running containers are shown; `--all` includes exited/removed containers. `--json` emits JSON Lines for scripting. For orphan containers left behind by a crashed daemon, run `loom clean --sessions`.
 
