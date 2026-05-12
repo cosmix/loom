@@ -356,7 +356,9 @@ pub fn safe_write_with_mode_in_workdir(
     mode: libc::mode_t,
 ) -> Result<()> {
     let content = enforce_size_limit(content)?;
-    let fd = open_safely(dirfd, relpath, libc::O_WRONLY | libc::O_CREAT, mode.into())?;
+    #[allow(clippy::useless_conversion)] // mode_t is u32 on Linux but u16 on macOS
+    let mode_u32: u32 = mode.into();
+    let fd = open_safely(dirfd, relpath, libc::O_WRONLY | libc::O_CREAT, mode_u32)?;
     flock_exclusive(&fd)?;
     if unsafe { libc::ftruncate(fd.as_raw_fd(), 0) } < 0 {
         return Err(io::Error::last_os_error())
