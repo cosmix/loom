@@ -7,7 +7,7 @@
 
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::config::HooksConfig;
 use crate::fs::permissions::{configure_loom_hooks, configure_loom_hooks_for_container};
@@ -159,6 +159,63 @@ pub fn generate_hooks_settings(
     Ok(settings)
 }
 
+/// Compute the host path of the per-session container settings overlay.
+///
+/// Container-backed sessions that run in the main repo (knowledge, merge,
+/// base-conflict) must NOT have their settings written into the host's
+/// `<repo>/.claude/settings.local.json` — that file is also read by the
+/// operator's host Claude sessions, and rewriting it with container-side
+/// hook paths (`/home/loom/...`) or `defaultMode: bypassPermissions` breaks
+/// parallel host work. We instead write to a loom-owned file under `.work/`
+/// and ro-mount it into the container at the expected location.
+pub fn container_main_settings_path(work_dir: &Path, session_id: &str) -> PathBuf {
+    work_dir
+        .join("container-settings")
+        .join(format!("{session_id}.local.json"))
+}
+
+/// Set up the per-session container-side settings file for a non-worktree
+/// container session (knowledge / merge / base-conflict).
+///
+/// Writes a fresh settings document (no host-file merge) to
+/// `<work_dir>/container-settings/<session_id>.local.json`. The container
+/// backend mounts this file ro at `/repo/.claude/settings.local.json`,
+/// shadowing the host's settings.local.json without modifying it.
+///
+/// Returns the host path of the written file.
+pub fn setup_container_main_session_settings(
+    work_dir: &Path,
+    config: &HooksConfig,
+) -> Result<PathBuf> {
+    let settings_path = container_main_settings_path(work_dir, &config.session_id);
+
+    let parent = settings_path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("settings path has no parent"))?;
+    std::fs::create_dir_all(parent).with_context(|| {
+        format!(
+            "Failed to create container-settings directory: {}",
+            parent.display()
+        )
+    })?;
+
+    // Generate from scratch — we don't want to inherit anything from the
+    // host's settings.local.json. The container session is fully described
+    // by `config` (backend, permission mode, paths).
+    let settings = generate_hooks_settings(config, None)?;
+
+    let content = serde_json::to_string_pretty(&settings)
+        .with_context(|| "Failed to serialize container-side settings")?;
+    std::fs::write(&settings_path, content).with_context(|| {
+        format!(
+            "Failed to write container-side settings: {}",
+            settings_path.display()
+        )
+    })?;
+
+    Ok(settings_path)
+}
+
 /// Set up hooks for a worktree by creating/updating settings.local.json
 ///
 /// This function:
@@ -297,6 +354,94 @@ mod tests {
                 .iter()
                 .any(|c| c.contains("commit-guard.sh") && c.starts_with("/home/loom/")),
             "commit-guard.sh should be in Stop with /home/loom/ path, got: {stop_commands:?}"
+        );
+    }
+
+    #[test]
+    fn container_main_session_settings_isolates_from_host_repo() {
+        // Regression: a container-backed knowledge stage MUST NOT rewrite the
+        // host repo's `.claude/settings.local.json`. The per-session overlay
+        // belongs under `<work_dir>/container-settings/<session>.local.json`
+        // and must contain the container hook paths (`/home/loom/...`) and
+        // `bypassPermissions` mode — without ever touching the host file.
+        let tmp = TempDir::new().unwrap();
+        let repo_root = tmp.path();
+        let work_dir = repo_root.join(".work");
+        std::fs::create_dir_all(&work_dir).unwrap();
+
+        // Pre-create a host settings.local.json with native (host) hook
+        // paths and a non-bypass default mode so we can prove it is left
+        // untouched by the container-side write.
+        let host_settings = repo_root.join(".claude/settings.local.json");
+        std::fs::create_dir_all(host_settings.parent().unwrap()).unwrap();
+        let host_marker = serde_json::json!({
+            "permissions": {
+                "defaultMode": "acceptEdits",
+                "allow": ["Read(.work/**)"]
+            },
+            "hooks": {
+                "PreToolUse": [{
+                    "matcher": "Bash",
+                    "hooks": [{
+                        "type": "command",
+                        "command": "/Users/operator/.claude/hooks/loom/commit-filter.sh"
+                    }]
+                }]
+            }
+        });
+        std::fs::write(
+            &host_settings,
+            serde_json::to_string_pretty(&host_marker).unwrap(),
+        )
+        .unwrap();
+
+        let config = HooksConfig::new(
+            tmp.path().join("hooks"),
+            "kn-bootstrap".to_string(),
+            "session-xyz".to_string(),
+            work_dir.clone(),
+            PermissionMode::BypassPermissions,
+            BackendType::Container,
+        );
+
+        let written = setup_container_main_session_settings(&work_dir, &config).unwrap();
+
+        // 1. The per-session overlay is in the expected location.
+        let expected = work_dir
+            .join("container-settings")
+            .join("session-xyz.local.json");
+        assert_eq!(written, expected);
+        assert!(written.exists(), "overlay file must be created");
+
+        // 2. Overlay contains container hook paths + bypassPermissions.
+        let overlay_content = std::fs::read_to_string(&written).unwrap();
+        let overlay: serde_json::Value = serde_json::from_str(&overlay_content).unwrap();
+        assert_eq!(overlay["permissions"]["defaultMode"], "bypassPermissions");
+        let pre_tool_use = overlay["hooks"]["PreToolUse"].as_array().unwrap();
+        let has_container_path = pre_tool_use.iter().any(|entry| {
+            entry["hooks"]
+                .as_array()
+                .map(|hs| {
+                    hs.iter().any(|h| {
+                        h["command"]
+                            .as_str()
+                            .map(|c| c.starts_with("/home/loom/"))
+                            .unwrap_or(false)
+                    })
+                })
+                .unwrap_or(false)
+        });
+        assert!(
+            has_container_path,
+            "overlay PreToolUse must use container hook paths"
+        );
+
+        // 3. Host settings.local.json is UNCHANGED.
+        let host_after = std::fs::read_to_string(&host_settings).unwrap();
+        let host_after_json: serde_json::Value = serde_json::from_str(&host_after).unwrap();
+        assert_eq!(
+            host_after_json, host_marker,
+            "host repo .claude/settings.local.json must not be modified by container session setup"
         );
     }
 }

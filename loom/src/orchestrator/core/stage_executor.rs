@@ -489,19 +489,40 @@ impl StageExecutor for Orchestrator {
             return Ok(());
         }
         crate::sandbox::expand_paths(&mut merged_sandbox);
-        if let Err(e) =
-            crate::sandbox::write_settings(&merged_sandbox, stage_backend, &self.config.repo_root)
-        {
-            eprintln!(
-                "Warning: Failed to write sandbox settings for knowledge stage '{stage_id}': {e}"
-            );
-            // Continue anyway - sandbox is optional enhancement
+        // Native knowledge stages share the host's main-repo `.claude/settings.local.json`
+        // (the agent runs on the host directly), so the sandbox/permissions settings must
+        // be written there. Container knowledge stages get their own per-session overlay
+        // under `.work/container-settings/` (written below alongside the hooks file) so the
+        // host file is never rewritten with `/home/loom` paths or `bypassPermissions`.
+        if stage_backend != BackendType::Container {
+            if let Err(e) = crate::sandbox::write_settings(
+                &merged_sandbox,
+                stage_backend,
+                &self.config.repo_root,
+            ) {
+                eprintln!(
+                    "Warning: Failed to write sandbox settings for knowledge stage '{stage_id}': {e}"
+                );
+                // Continue anyway - sandbox is optional enhancement
+            }
         }
 
         let mut session = Session::new();
         session.set_backend(stage_backend);
 
-        // Set up Claude Code hooks for this session in the main repo
+        // Set up Claude Code hooks for this session.
+        //
+        // Native: write into the main repo's `.claude/settings.local.json` (the
+        // host's agent reads this file directly).
+        //
+        // Container: write to a loom-owned, per-session overlay at
+        // `<work_dir>/container-settings/<session-id>.local.json`. The
+        // container backend ro-mounts that file at
+        // `/repo/.claude/settings.local.json`, so the agent inside the
+        // container sees container hook paths and bypassPermissions while
+        // the host's `<repo>/.claude/settings.local.json` keeps its native
+        // hook paths and permission mode (no host corruption, parallel host
+        // Claude work stays functional).
         if let Some(hooks_dir) = find_hooks_dir() {
             // Canonicalize work_dir to absolute path
             let absolute_work_dir = self
@@ -519,8 +540,13 @@ impl StageExecutor for Orchestrator {
                 stage_backend,
             );
 
-            // Set up hooks in the main repo (not a worktree)
-            if let Err(e) = setup_hooks_for_worktree(&self.config.repo_root, &config) {
+            let setup_result = if stage_backend == BackendType::Container {
+                crate::hooks::setup_container_main_session_settings(&self.config.work_dir, &config)
+                    .map(|_| ())
+            } else {
+                setup_hooks_for_worktree(&self.config.repo_root, &config)
+            };
+            if let Err(e) = setup_result {
                 eprintln!("Warning: Failed to set up hooks for knowledge stage '{stage_id}': {e}");
                 // Continue anyway - hooks are optional enhancement
             }

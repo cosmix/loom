@@ -237,7 +237,12 @@ impl ContainerBackend {
     /// See the module-level "Mount layering pattern" doc for ordering
     /// invariants. The stack is layered ro-base → per-stage rw → .work/
     /// rw subtrees → settings.local ro overlay → hooks/creds/allowlist.
-    fn build_mounts(&self, stage: &Stage, session_type: SessionType) -> Result<Vec<Mount>> {
+    fn build_mounts(
+        &self,
+        stage: &Stage,
+        session_type: SessionType,
+        session_id: &str,
+    ) -> Result<Vec<Mount>> {
         let mut mounts: Vec<Mount> = Vec::with_capacity(16);
         let host_repo_root = self.host_repo_root()?;
 
@@ -377,6 +382,17 @@ impl ContainerBackend {
         // the worktree rw mount (order matters — the later mount shadows
         // anything underneath) so the agent cannot edit its own permission
         // grants mid-session.
+        //
+        // Source-of-truth selection:
+        //   - Worktree-backed stages (Standard, IntegrationVerify,
+        //     KnowledgeDistill): mount from the worktree's own
+        //     `<repo>/.worktrees/<id>/.claude/settings.local.json`, written
+        //     by `setup_hooks_for_worktree` at worktree creation time.
+        //   - Non-worktree container sessions (Knowledge, Merge, BaseConflict):
+        //     mount from the loom-owned per-session overlay at
+        //     `<work_dir>/container-settings/<session-id>.local.json`. This
+        //     keeps the host's `<repo>/.claude/settings.local.json` untouched
+        //     so the operator's host Claude sessions remain functional.
         let uses_worktree = matches!(session_type, SessionType::Stage)
             && matches!(
                 stage.stage_type,
@@ -395,7 +411,7 @@ impl ContainerBackend {
             )
         } else {
             (
-                host_repo_root.join(".claude/settings.local.json"),
+                crate::hooks::container_main_settings_path(&self.work_dir, session_id),
                 format!("{REPO_MOUNT}/.claude/settings.local.json"),
             )
         };
@@ -601,7 +617,7 @@ impl ContainerBackend {
 
         // Compose the env block and run-args.
         let env_set = self.build_env_for_session(&stage.id, &session.id, &workspace_in_container);
-        let mounts = self.build_mounts(stage, session.session_type)?;
+        let mounts = self.build_mounts(stage, session.session_type, &session.id)?;
         let args = build_run_args(
             &container_name,
             &self.image_ref,
@@ -1051,7 +1067,9 @@ mod tests {
     #[test]
     fn build_mounts_standard_stage_has_ro_repo_and_rw_worktree() {
         let (_tmp, repo_root, backend, stage) = fixture_backend(StageType::Standard, "stage-alpha");
-        let mounts = backend.build_mounts(&stage, SessionType::Stage).unwrap();
+        let mounts = backend
+            .build_mounts(&stage, SessionType::Stage, "sess-1")
+            .unwrap();
 
         // Layer 1: /repo is ro and points at host repo root.
         assert!(mounts[0].read_only, "base /repo must be read-only");
@@ -1090,7 +1108,7 @@ mod tests {
         let (_tmp, _repo_root, backend, stage) =
             fixture_backend(StageType::Knowledge, "kn-bootstrap");
         let mounts = backend
-            .build_mounts(&stage, SessionType::Knowledge)
+            .build_mounts(&stage, SessionType::Knowledge, "sess-2")
             .unwrap();
 
         // /repo itself must be rw (no ro base for knowledge stages).
@@ -1120,7 +1138,9 @@ mod tests {
         std::fs::create_dir_all(settings_path.parent().unwrap()).unwrap();
         std::fs::write(&settings_path, b"{}").unwrap();
 
-        let mounts = backend.build_mounts(&stage, SessionType::Stage).unwrap();
+        let mounts = backend
+            .build_mounts(&stage, SessionType::Stage, "sess-3")
+            .unwrap();
         let target = PathBuf::from("/repo/.worktrees/stage-beta/.claude/settings.local.json");
 
         let settings_idx = mounts
@@ -1150,7 +1170,9 @@ mod tests {
     fn build_mounts_no_rw_overlap_with_work_config_toml() {
         let (_tmp, _repo_root, backend, stage) =
             fixture_backend(StageType::Standard, "stage-gamma");
-        let mounts = backend.build_mounts(&stage, SessionType::Stage).unwrap();
+        let mounts = backend
+            .build_mounts(&stage, SessionType::Stage, "sess-4")
+            .unwrap();
 
         // No rw mount may have a source path that *is* config.toml or that
         // contains it inside the mounted subtree. Iterate mounts; assert
@@ -1177,12 +1199,57 @@ mod tests {
     }
 
     #[test]
+    fn build_mounts_knowledge_session_uses_per_session_settings_overlay() {
+        // Container-backed knowledge stages must mount the loom-owned
+        // per-session overlay at `<work_dir>/container-settings/<session>.local.json`
+        // rather than the host's `<repo>/.claude/settings.local.json`. This
+        // keeps the operator's host Claude settings untouched.
+        let (_tmp, repo_root, backend, stage) =
+            fixture_backend(StageType::Knowledge, "kn-bootstrap");
+
+        // Pre-create the per-session overlay AND a host settings.local.json
+        // so we can verify the mount sources the per-session file.
+        let session_id = "session-abc";
+        let overlay = backend
+            .work_dir
+            .join("container-settings")
+            .join(format!("{session_id}.local.json"));
+        std::fs::create_dir_all(overlay.parent().unwrap()).unwrap();
+        std::fs::write(&overlay, b"{}").unwrap();
+
+        let host_settings = repo_root.join(".claude/settings.local.json");
+        std::fs::create_dir_all(host_settings.parent().unwrap()).unwrap();
+        std::fs::write(&host_settings, b"{\"host\": true}").unwrap();
+
+        let mounts = backend
+            .build_mounts(&stage, SessionType::Knowledge, session_id)
+            .unwrap();
+
+        let target = PathBuf::from("/repo/.claude/settings.local.json");
+        let m = mounts
+            .iter()
+            .find(|m| m.target == target)
+            .expect("settings.local.json mount missing for knowledge session");
+        assert!(m.read_only, "settings.local.json mount must be ro");
+        assert_eq!(
+            m.source.canonicalize().unwrap(),
+            overlay.canonicalize().unwrap(),
+            "knowledge session must mount the per-session overlay, not the host file"
+        );
+        assert_ne!(
+            m.source.canonicalize().unwrap(),
+            host_settings.canonicalize().unwrap(),
+            "knowledge session must NOT mount the host's <repo>/.claude/settings.local.json"
+        );
+    }
+
+    #[test]
     fn build_mounts_merge_session_has_rw_repo() {
         let (_tmp, _repo_root, backend, stage) =
             fixture_backend(StageType::Standard, "stage-delta");
 
         for st in [SessionType::Merge, SessionType::BaseConflict] {
-            let mounts = backend.build_mounts(&stage, st).unwrap();
+            let mounts = backend.build_mounts(&stage, st, "sess-merge").unwrap();
             assert!(
                 mounts[0].target.as_path() == Path::new("/repo") && !mounts[0].read_only,
                 "{st:?} session should mount /repo rw (documented exception)"
