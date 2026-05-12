@@ -95,7 +95,7 @@ RUN mkdir -p /home/${USERNAME}/.claude && \
 # Node.js 22 + Claude Code CLI (every loom image ships claude).
 # claude-code version is pinned. Bump the ARG to upgrade; the npm install
 # will refuse to silently float to a newer release.
-ARG CLAUDE_CODE_VERSION=1.0.45
+ARG CLAUDE_CODE_VERSION=2.1.140
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} && \
