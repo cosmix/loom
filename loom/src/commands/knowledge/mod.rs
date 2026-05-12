@@ -1,7 +1,9 @@
 //! Knowledge command - manage curated codebase knowledge.
+pub mod audit;
 pub mod bootstrap;
 pub mod check;
 pub mod gc;
+pub mod spawn;
 
 use crate::fs::knowledge::{KnowledgeDir, KnowledgeFile};
 use crate::fs::work_dir::WorkDir;
