@@ -2,17 +2,15 @@
 
 use anyhow::{Context, Result};
 use colored::Colorize;
-use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::claude::find_claude_path;
 use crate::fs::knowledge::{KnowledgeDir, KnowledgeFile};
-use crate::fs::work_dir::WorkDir;
 use crate::map::{analyze_codebase, AnalysisResult};
 
 /// Execute the knowledge bootstrap command
 pub fn execute(model: Option<String>, skip_map: bool, quick: bool) -> Result<()> {
-    let project_root = resolve_project_root()?;
+    let project_root = super::spawn::resolve_project_root()?;
     let claude_path = find_claude_path()?;
 
     crate::utils::print_logo_header("Knowledge Bootstrap");
@@ -34,7 +32,7 @@ pub fn execute(model: Option<String>, skip_map: bool, quick: bool) -> Result<()>
     }
 
     // Read existing knowledge for context embedding
-    let existing_knowledge = read_existing_knowledge(&knowledge);
+    let existing_knowledge = super::spawn::read_existing_knowledge(&knowledge);
 
     // Spawn Claude session
     let effective_model = model.unwrap_or_else(|| "sonnet".to_string());
@@ -44,7 +42,7 @@ pub fn execute(model: Option<String>, skip_map: bool, quick: bool) -> Result<()>
     let initial_prompt = build_initial_prompt(&effective_model);
 
     // Write sandbox settings to restrict Claude's access
-    let settings_backup = write_bootstrap_sandbox(&project_root)?;
+    let settings_backup = super::spawn::write_knowledge_sandbox(&project_root, true)?;
 
     println!(
         "\n{} Spawning Claude session for knowledge exploration...\n",
@@ -78,7 +76,7 @@ pub fn execute(model: Option<String>, skip_map: bool, quick: bool) -> Result<()>
     let status = cmd.status().context("Failed to spawn Claude session")?;
 
     // Restore original settings
-    restore_sandbox_settings(&project_root, settings_backup)?;
+    super::spawn::restore_sandbox_settings(&project_root, settings_backup)?;
 
     if !status.success() {
         let code = status.code().unwrap_or(-1);
@@ -98,73 +96,6 @@ pub fn execute(model: Option<String>, skip_map: bool, quick: bool) -> Result<()>
     print_summary(&knowledge)?;
 
     Ok(())
-}
-
-/// Resolve the project root directory.
-///
-/// Tries WorkDir first (works when .work/ exists), then falls back to
-/// `git rev-parse --show-toplevel`, then current directory.
-fn resolve_project_root() -> Result<PathBuf> {
-    // Try WorkDir first (works when .work/ exists)
-    if let Ok(work_dir) = WorkDir::new(".") {
-        if let Some(root) = work_dir.project_root().map(|p| p.to_path_buf()) {
-            return Ok(root);
-        }
-    }
-
-    // Fall back to git rev-parse
-    let output = Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .output()
-        .context("Failed to run git rev-parse")?;
-
-    if output.status.success() {
-        let root = String::from_utf8(output.stdout)
-            .context("Invalid UTF-8 in git output")?
-            .trim()
-            .to_string();
-        return Ok(PathBuf::from(root));
-    }
-
-    // Last resort: current directory
-    std::env::current_dir().context("Failed to get current directory")
-}
-
-/// Read existing knowledge files and format them for context embedding.
-///
-/// Files that only contain the default template (5 lines or fewer) are skipped
-/// to avoid embedding uninformative placeholder content.
-fn read_existing_knowledge(knowledge: &KnowledgeDir) -> String {
-    if !knowledge.exists() {
-        return String::new();
-    }
-
-    let mut sections = Vec::new();
-
-    if let Ok(files) = knowledge.read_all() {
-        for (file_type, content) in files {
-            let trimmed = content.trim().to_string();
-            // Skip files that only have the template header
-            if trimmed.lines().count() > 5 {
-                sections.push(format!(
-                    "### Existing {}\n\n{}",
-                    file_type.filename(),
-                    trimmed
-                ));
-            }
-        }
-    }
-
-    if sections.is_empty() {
-        return String::new();
-    }
-
-    format!(
-        "## Existing Knowledge (DO NOT DUPLICATE)\n\n\
-         The following knowledge has already been documented. \
-         Do NOT repeat this information. Only add NEW discoveries.\n\n{}",
-        sections.join("\n\n---\n\n")
-    )
 }
 
 /// Build the system prompt for the Claude session.
@@ -234,71 +165,6 @@ fn write_map_results(knowledge: &KnowledgeDir, result: &AnalysisResult) -> Resul
     Ok(())
 }
 
-/// Write sandbox settings for bootstrap session.
-///
-/// Returns the original settings content (if any) for restoration after the session.
-fn write_bootstrap_sandbox(project_root: &Path) -> Result<Option<String>> {
-    let claude_dir = project_root.join(".claude");
-    std::fs::create_dir_all(&claude_dir).context("Failed to create .claude directory")?;
-
-    let settings_path = claude_dir.join("settings.local.json");
-
-    // Back up existing settings if present
-    let backup = if settings_path.exists() {
-        Some(
-            std::fs::read_to_string(&settings_path)
-                .context("Failed to read existing settings.local.json")?,
-        )
-    } else {
-        None
-    };
-
-    let settings = serde_json::json!({
-        "sandbox": {
-            "enabled": true,
-            "autoAllowBashIfSandboxed": true,
-            "excludedCommands": ["loom"]
-        },
-        "permissions": {
-            "allow": [
-                "Write(doc/loom/knowledge/**)",
-                "Bash(loom *)"
-            ],
-            "deny": [
-                "Read(~/.ssh/**)",
-                "Read(~/.aws/**)",
-                "Read(~/.config/gcloud/**)",
-                "Read(~/.gnupg/**)",
-                "Write(**)"
-            ]
-        }
-    });
-
-    let content =
-        serde_json::to_string_pretty(&settings).context("Failed to serialize sandbox settings")?;
-    std::fs::write(&settings_path, content).context("Failed to write sandbox settings")?;
-
-    Ok(backup)
-}
-
-/// Restore original settings after bootstrap session completes.
-fn restore_sandbox_settings(project_root: &Path, backup: Option<String>) -> Result<()> {
-    let settings_path = project_root.join(".claude").join("settings.local.json");
-
-    match backup {
-        Some(original) => {
-            std::fs::write(&settings_path, original)
-                .context("Failed to restore original settings.local.json")?;
-        }
-        None => {
-            // No original file existed — remove the one we created
-            let _ = std::fs::remove_file(&settings_path);
-        }
-    }
-
-    Ok(())
-}
-
 /// Print a summary of knowledge file line counts after the session completes.
 fn print_summary(knowledge: &KnowledgeDir) -> Result<()> {
     println!("\n{} Knowledge bootstrap complete!", "✓".green().bold());
@@ -364,7 +230,7 @@ mod tests {
     #[test]
     fn test_read_existing_knowledge_empty_dir() {
         let knowledge = KnowledgeDir::new("/nonexistent/path");
-        let result = read_existing_knowledge(&knowledge);
+        let result = super::super::spawn::read_existing_knowledge(&knowledge);
         assert!(result.is_empty());
     }
 
@@ -379,7 +245,7 @@ mod tests {
             "# Architecture\n\n> Short.\n",
         )
         .unwrap();
-        let result = read_existing_knowledge(&knowledge);
+        let result = super::super::spawn::read_existing_knowledge(&knowledge);
         assert!(result.is_empty());
     }
 
@@ -395,7 +261,7 @@ mod tests {
                 "## Overview\n\nLine 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6",
             )
             .unwrap();
-        let result = read_existing_knowledge(&knowledge);
+        let result = super::super::spawn::read_existing_knowledge(&knowledge);
         assert!(result.contains("Existing Knowledge"));
         assert!(result.contains("## Overview"));
     }
