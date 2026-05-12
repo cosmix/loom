@@ -195,9 +195,13 @@ pub fn init_bare_mirror(
 ///
 /// Two-step:
 ///   a. `<runtime> exec <container> git -C /repo bundle create
-///      /repo/.loom-export.bundle --branches=<branch> ^<base_oid>` —
-///      builds a bundle inside the container scoped to the agent's
-///      branch, anchored on the spawn-time base OID.
+///      /repo/.loom-export.bundle <branch> ^<base_oid>` — builds a
+///      bundle inside the container scoped to the agent's branch,
+///      anchored on the spawn-time base OID. The branch refname is
+///      passed directly rather than via `--branches=<branch>` because
+///      the latter is a shell-glob pattern in `refs/heads/` that does
+///      NOT match a literal `loom/<stage-id>` ref (the slash does not
+///      span path components in `--branches` patterns).
 ///   b. `<runtime> cp <container>:/repo/.loom-export.bundle
 ///      <host_dest>` — pulled out from a still-running container.
 ///
@@ -223,8 +227,11 @@ pub fn extract_bundle_from_container(
 
     // Step (a): create bundle inside the container.
     //
-    // `--branches=<branch>` exports only that branch — untracked,
-    // unstaged, and staged-but-uncommitted changes are NOT included.
+    // The branch refname is passed directly (not `--branches=<branch>`).
+    // `--branches=<value>` treats `<value>` as a shell-glob applied to
+    // `refs/heads/`, and a literal exact ref like `loom/<stage-id>` does
+    // NOT match the glob — git silently exports zero refs and bails with
+    // "Refusing to create empty bundle". A direct refname is unambiguous.
     // `^<base_oid>` anchors the bundle so subsequent validation can
     // require it as a prerequisite (no force-rebase escape).
     let create_out = Command::new(runtime.binary())
@@ -237,7 +244,7 @@ pub fn extract_bundle_from_container(
             "bundle",
             "create",
             CONTAINER_BUNDLE_PATH,
-            &format!("--branches={branch}"),
+            branch,
             &format!("^{base_oid}"),
         ])
         .output()
@@ -333,7 +340,12 @@ pub fn validate_bundle(
         .args(["bundle", "list-heads"])
         .arg(bundle_path)
         .output()
-        .with_context(|| format!("Failed to run git bundle list-heads on {}", bundle_path.display()))?;
+        .with_context(|| {
+            format!(
+                "Failed to run git bundle list-heads on {}",
+                bundle_path.display()
+            )
+        })?;
     if !heads_out.status.success() {
         let stderr = String::from_utf8_lossy(&heads_out.stderr);
         bail!(
@@ -358,10 +370,7 @@ pub fn validate_bundle(
         let mut parts = line.split_whitespace();
         let oid = parts.next().unwrap_or("");
         let r = parts.next().unwrap_or("");
-        if r == expected_ref
-            || r == target_branch
-            || r.ends_with(&format!("/{target_branch}"))
-        {
+        if r == expected_ref || r == target_branch || r.ends_with(&format!("/{target_branch}")) {
             found_oid = Some(oid.to_string());
             break;
         }
@@ -421,7 +430,11 @@ pub fn validate_bundle(
 /// `host_bare_mirror` may be the per-stage mirror at
 /// `<work_dir>/git-mirrors/<stage-id>/` OR the host's main `.git`
 /// directory (for Knowledge stages that target host main directly).
-pub fn import_bundle(host_bare_mirror: &Path, bundle_path: &Path, target_branch: &str) -> Result<()> {
+pub fn import_bundle(
+    host_bare_mirror: &Path,
+    bundle_path: &Path,
+    target_branch: &str,
+) -> Result<()> {
     let refspec = if target_branch.starts_with("refs/") {
         format!("{0}:{0}", target_branch)
     } else {
@@ -628,8 +641,8 @@ mod tests {
             .arg(repo)
             .args(["bundle", "create"])
             .arg(bundle_path)
-            .arg(&format!("--branches={target_branch}"))
-            .arg(&format!("^{base_oid}"))
+            .arg(target_branch)
+            .arg(format!("^{base_oid}"))
             .output()
             .unwrap();
         assert!(
@@ -726,7 +739,7 @@ mod tests {
             .arg(&repo)
             .args(["bundle", "create"])
             .arg(&bundle)
-            .arg("--branches=loom/anchored")
+            .arg("loom/anchored")
             .output()
             .unwrap();
         assert!(out.status.success());

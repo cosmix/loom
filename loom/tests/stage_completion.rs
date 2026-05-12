@@ -87,8 +87,8 @@ mod container_rpc {
             .arg(repo)
             .args(["bundle", "create"])
             .arg(bundle_path)
-            .arg(&format!("--branches={target_branch}"))
-            .arg(&format!("^{base_oid}"))
+            .arg(target_branch)
+            .arg(format!("^{base_oid}"))
             .output()
             .unwrap();
         assert!(
@@ -202,7 +202,7 @@ mod container_rpc {
             .arg(&host_repo)
             .args(["bundle", "create"])
             .arg(&bundle)
-            .arg("--branches=loom/anchored")
+            .arg("loom/anchored")
             .output()
             .unwrap();
         assert!(out.status.success());
