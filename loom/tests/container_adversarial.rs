@@ -524,9 +524,7 @@ fn knowledge_main_moved_retries() {
         .expect_err("validating against moved-main tip must fail — orchestrator must retry");
     let msg = format!("{err:#}");
     assert!(
-        msg.contains("base OID")
-            || msg.contains("prerequisite")
-            || msg.contains("base_oid"),
+        msg.contains("base OID") || msg.contains("prerequisite") || msg.contains("base_oid"),
         "post-move validation must surface a prereq error: {msg}"
     );
 }
