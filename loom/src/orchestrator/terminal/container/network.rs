@@ -155,13 +155,16 @@ mod tests {
         assert_eq!(network_name("stage-x"), "loom-net-stage-x");
     }
 
-    // Shell-syntax checks for the embedded scripts. cargo runs tests with
-    // CWD at the crate root (`loom/`), so `resources/firewall.sh`
-    // resolves to `loom/resources/firewall.sh`.
+    // Shell-syntax checks for the embedded scripts. Resolve paths via
+    // CARGO_MANIFEST_DIR so the test is independent of the process CWD —
+    // concurrent #[serial] tests in other modules mutate cwd into a
+    // TempDir, which would otherwise make this assertion flaky.
     #[test]
     fn firewall_script_has_valid_bash_syntax() {
+        let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/firewall.sh");
         let status = std::process::Command::new("bash")
-            .args(["-n", "resources/firewall.sh"])
+            .arg("-n")
+            .arg(&script)
             .status();
         // Skip if bash not present (CI without bash).
         if let Ok(status) = status {
@@ -171,8 +174,11 @@ mod tests {
 
     #[test]
     fn entrypoint_script_has_valid_bash_syntax() {
+        let script =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/entrypoint.sh");
         let status = std::process::Command::new("bash")
-            .args(["-n", "resources/entrypoint.sh"])
+            .arg("-n")
+            .arg(&script)
             .status();
         if let Ok(status) = status {
             assert!(status.success(), "entrypoint.sh failed bash -n");
