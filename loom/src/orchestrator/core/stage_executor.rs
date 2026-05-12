@@ -2,6 +2,7 @@
 
 use anyhow::{Context, Result};
 use chrono::Utc;
+use std::process::Command;
 
 use crate::git;
 use crate::git::worktree::setup_worktree_hooks;
@@ -13,10 +14,39 @@ use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::orchestrator::signals::{
     generate_knowledge_signal, generate_signal_with_skills, DependencyStatus,
 };
+use crate::orchestrator::terminal::container::runtime::detect_runtime;
 use crate::orchestrator::terminal::dispatcher::resolve_stage_backend;
+use crate::plan::schema::execution::BackendType;
 
 use super::persistence::Persistence;
 use super::Orchestrator;
+
+/// Remove the container for a stage as part of spawn-failure rollback.
+///
+/// Best-effort: errors are swallowed. Only acts when `backend` is
+/// `Container` and a runtime is detectable.
+fn remove_container_on_failure(backend: BackendType, container_name: &str) {
+    if backend != BackendType::Container {
+        return;
+    }
+    let runtime = match detect_runtime("auto") {
+        Ok(r) => r,
+        Err(_) => {
+            // Fall back to trying Docker and Podman in sequence rather than
+            // giving up — the container may still be removable.
+            if let Ok(r) = detect_runtime("docker") {
+                r
+            } else if let Ok(r) = detect_runtime("podman") {
+                r
+            } else {
+                return;
+            }
+        }
+    };
+    let _ = Command::new(runtime.binary())
+        .args(["rm", "-f", container_name])
+        .output();
+}
 
 /// Trait for stage execution operations
 pub(super) trait StageExecutor: Persistence {
@@ -134,6 +164,9 @@ impl StageExecutor for Orchestrator {
             if let Err(spawn_err) = self.start_knowledge_stage(stage) {
                 let err_msg = format!("{spawn_err:#}");
                 eprintln!("Knowledge stage '{stage_id}' spawn failed: {err_msg}");
+                // Remove orphan container — knowledge stages have no worktree/branch.
+                let container_name = format!("loom-knowledge-{stage_id}");
+                remove_container_on_failure(self.config.backend_type, &container_name);
                 if let Ok(mut reloaded) = self.load_stage(stage_id) {
                     if reloaded.try_mark_blocked().is_ok() {
                         reloaded.failure_info = Some(FailureInfo {
@@ -365,6 +398,16 @@ impl StageExecutor for Orchestrator {
                     let err_msg =
                         format!("Failed to spawn session for stage {stage_id}: {spawn_err:#}");
                     eprintln!("{err_msg}");
+                    // Remove orphan resources so a retry can start clean.
+                    // Container — best-effort, errors swallowed.
+                    let container_name = format!("loom-{stage_id}");
+                    remove_container_on_failure(stage_backend, &container_name);
+                    // Worktree — best-effort force-removal; ignore "not found" etc.
+                    let _ = git::remove_worktree(stage_id, &self.config.repo_root, true);
+                    // Branch — force-delete so the next retry can recreate
+                    // it from the correct base.
+                    let branch = git::branch_name_for_stage(stage_id);
+                    let _ = git::delete_branch(&branch, true, &self.config.repo_root);
                     if let Ok(mut reloaded) = self.load_stage(stage_id) {
                         if reloaded.try_mark_blocked().is_ok() {
                             reloaded.failure_info = Some(FailureInfo {
