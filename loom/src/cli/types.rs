@@ -344,7 +344,7 @@ pub enum ContainerCommands {
         #[arg(value_parser = clap_id_validator)]
         stage_id: String,
         /// Follow the log stream (like `docker logs -f`)
-        #[arg(long)]
+        #[arg(short = 'f', long)]
         follow: bool,
         /// Number of trailing lines to print (when not following)
         #[arg(long, default_value_t = 500)]
