@@ -624,6 +624,7 @@ Soft signals are advisory per-session notices persisted to disk so that dedup su
 ### Mount Ordering Invariant
 
 Layer ordering is SECURITY-CRITICAL. Docker/Podman apply mounts in argument order — later entries shadow earlier ones at overlapping paths. The correct order:
+
 1. ro base (Layer 1 when ro)
 2. rw overlays (Layers 2-3, .work subtrees)
 3. ro overlays (Layers 3b, 4 — MUST come after rw to shadow)
