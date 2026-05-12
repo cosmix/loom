@@ -214,8 +214,7 @@ fn is_apple_container() -> bool {
     // the literal `container` token.
     let claims_container = stderr.lines().any(|l| {
         (l.starts_with("Identifier=") || l.starts_with("TeamIdentifier="))
-            && (l.to_ascii_lowercase().contains("container")
-                || l.contains("Apple"))
+            && (l.to_ascii_lowercase().contains("container") || l.contains("Apple"))
     });
     if !claims_container {
         return false;

@@ -427,8 +427,7 @@ impl DaemonServer {
             let token_path = self.work_dir.join(token_name);
             if let Err(e) = fs::remove_file(&token_path) {
                 if e.kind() != std::io::ErrorKind::NotFound {
-                    return Err(e)
-                        .with_context(|| format!("Failed to remove {token_name} file"));
+                    return Err(e).with_context(|| format!("Failed to remove {token_name} file"));
                 }
             }
         }

@@ -70,7 +70,12 @@ pub fn compute_fingerprint(project_root: &Path, plan_working_dirs: &[PathBuf]) -
     canonical_names.sort_unstable();
     canonical_names.dedup();
 
-    compute_fingerprint_inner(&canonical_names, DOCKERFILE_TMPL, FIREWALL_SH, ENTRYPOINT_SCRIPT)
+    compute_fingerprint_inner(
+        &canonical_names,
+        DOCKERFILE_TMPL,
+        FIREWALL_SH,
+        ENTRYPOINT_SCRIPT,
+    )
 }
 
 /// Inner implementation, exposed for unit testing.

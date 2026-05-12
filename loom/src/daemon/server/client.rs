@@ -64,7 +64,11 @@ fn ct_eq(a: &str, b: &str) -> bool {
 ///
 /// A `Stop` request must match `admin.token` exactly; matching `user.token`
 /// when admin is required returns `false`. Missing token file → `false`.
-pub fn verify_for_capability(work_dir: &Path, provided_token: &str, capability: Capability) -> bool {
+pub fn verify_for_capability(
+    work_dir: &Path,
+    provided_token: &str,
+    capability: Capability,
+) -> bool {
     let path = token_path_for(work_dir, capability);
     let Some(expected) = read_token_file(&path) else {
         return false;
@@ -228,8 +232,16 @@ mod tests {
     fn missing_token_file_fails_closed() {
         let tmp = TempDir::new().unwrap();
         // No token files written.
-        assert!(!verify_for_capability(tmp.path(), "anything", Capability::User));
-        assert!(!verify_for_capability(tmp.path(), "anything", Capability::Admin));
+        assert!(!verify_for_capability(
+            tmp.path(),
+            "anything",
+            Capability::User
+        ));
+        assert!(!verify_for_capability(
+            tmp.path(),
+            "anything",
+            Capability::Admin
+        ));
     }
 
     #[test]
