@@ -1,12 +1,27 @@
 //! Stop command - gracefully shuts down the daemon
+//!
+//! Stop is a **privileged** operation that requires the admin token. The
+//! ordering of side effects has been hardened (Codex foundation review):
+//!
+//!   1. Read `admin.token` FIRST. If unreadable, abort with a clear error.
+//!   2. Send `Request::Stop` to the daemon and wait for ack.
+//!   3. Only AFTER the daemon ack do we terminate active container sessions.
+//!
+//! Why the order matters: the previous implementation terminated container
+//! sessions BEFORE checking auth, so a container-resident attacker could
+//! trigger session teardown by invoking `loom stop` even though their token
+//! was rejected by the daemon. The reordered flow makes auth a true gate.
+//!
+//! PID fallback (SIGTERM/SIGKILL to the daemon process) is reserved for the
+//! socket-hang case and requires `--force` to opt in.
 
-use crate::daemon::DaemonServer;
+use crate::daemon::{read_admin_token, DaemonServer};
 use crate::fs::work_dir::WorkDir;
 use crate::models::session::Session;
 use crate::orchestrator::terminal::dispatcher::{BackendDispatcher, BackendNeeds};
 use crate::orchestrator::terminal::BackendType;
 use crate::parser::frontmatter::parse_from_markdown;
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use colored::Colorize;
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
@@ -16,12 +31,21 @@ use std::time::Duration;
 
 /// Execute the stop command to gracefully shut down the daemon.
 ///
-/// Before signalling the daemon, terminate every active container
-/// session: those processes live in their own namespace and outlive a
-/// SIGTERM to the daemon, so without explicit teardown we'd leak
-/// containers and networks. Native sessions are tracked by the daemon
-/// itself and exit when their parent terminal closes.
+/// Order of operations:
+///   1. Verify daemon is running.
+///   2. Read `admin.token`. If unreadable → abort.
+///   3. Send `Stop` (via [`DaemonServer::stop`]). If auth fails → abort.
+///   4. After daemon ack: terminate active container sessions.
+///
+/// PID fallback only triggers when `force` is true AND the socket is
+/// unreachable; never on `AuthenticationFailed`.
 pub fn execute() -> Result<()> {
+    execute_with_force(false)
+}
+
+/// Variant that exposes the `--force` flag. Without `--force`, a hung daemon
+/// causes us to refuse PID kill rather than risk killing the wrong process.
+pub fn execute_with_force(force: bool) -> Result<()> {
     let work_dir = WorkDir::new(".")?;
 
     if !DaemonServer::is_running(work_dir.root()) {
@@ -29,27 +53,63 @@ pub fn execute() -> Result<()> {
         return Ok(());
     }
 
-    // Kill any active container sessions first.
-    if let Err(e) = terminate_active_container_sessions(work_dir.root()) {
-        eprintln!(
-            "{} Failed to terminate container sessions: {e}",
-            "!".yellow().bold()
+    // Step 1: Read admin token FIRST. Stop requires Capability::Admin and we
+    // refuse to perform any side effects without it. The user token (which
+    // is what container-resident agents have) is intentionally rejected.
+    if read_admin_token(work_dir.root()).is_none() {
+        bail!(
+            "{} Cannot stop daemon: admin.token unreadable or missing.\n  \
+             admin.token is created by the daemon at startup with mode 0o600 \
+             and only the host user that started the daemon can read it.",
+            "✗".red().bold()
         );
     }
 
     println!("{} Stopping daemon...", "→".cyan().bold());
 
-    // Try graceful shutdown via socket first
+    // Step 2: Send the Stop request. DaemonServer::stop reads admin.token
+    // again internally and sends it on the wire. Any auth/comms failure
+    // aborts before we touch container sessions.
     match DaemonServer::stop(work_dir.root()) {
         Ok(()) => {
+            // Step 3: ONLY after daemon ack do we tear down container sessions.
+            // This way an unauthenticated request cannot trigger teardown.
+            if let Err(e) = terminate_active_container_sessions(work_dir.root()) {
+                eprintln!(
+                    "{} Failed to terminate container sessions: {e}",
+                    "!".yellow().bold()
+                );
+            }
             println!("{} Daemon stopped", "✓".green().bold());
             Ok(())
         }
         Err(e) => {
-            // Find the daemon PID from PID file or lock file
+            // Distinguish auth failure from socket-hang.
+            let msg = format!("{e:#}");
+            if msg.contains("Authentication failed") {
+                bail!(
+                    "{} {} — refusing to fall back to PID kill (auth was rejected, not stuck)",
+                    "✗".red().bold(),
+                    msg
+                );
+            }
+
+            if !force {
+                bail!(
+                    "{} Daemon did not respond cleanly: {e}\n  \
+                     Re-run with --force to send SIGTERM/SIGKILL to the daemon PID.\n  \
+                     (PID-kill bypasses container session teardown; do this only if you \
+                     have already verified the daemon is hung.)",
+                    "✗".red().bold()
+                );
+            }
+
+            // --force path: only used when the socket is unreachable AND the
+            // operator has explicitly opted in. We still do NOT touch
+            // container sessions — the daemon was never confirmed dead in a
+            // way that lets us safely reason about the runtime state.
             let pid = DaemonServer::read_pid(work_dir.root())
                 .or_else(|| DaemonServer::check_lock(work_dir.root()));
-
             if let Some(pid) = pid {
                 kill_daemon_pid(pid, work_dir.root())
             } else {

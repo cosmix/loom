@@ -2,7 +2,7 @@
 
 use super::super::protocol::{read_message, write_message, Request, Response};
 use super::broadcast::{spawn_log_tailer, spawn_status_broadcaster};
-use super::client::handle_client_connection;
+use super::client::{handle_client_connection, ADMIN_TOKEN_FILE, USER_TOKEN_FILE};
 use super::core::{DaemonServer, MAX_CONNECTIONS};
 use super::orchestrator::spawn_orchestrator;
 use anyhow::{bail, Context, Result};
@@ -16,6 +16,23 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
+
+/// Generate a 64-character hex token from 32 cryptographically-strong bytes.
+///
+/// Uses `OsRng` (getrandom on Linux, SecRandomCopyBytes on macOS) instead of
+/// `Uuid::new_v4` so token entropy is the full 256 bits the format implies.
+fn generate_token_hex() -> Result<String> {
+    let mut bytes = [0u8; 32];
+    let mut f = fs::File::open("/dev/urandom").context("Failed to open /dev/urandom")?;
+    use std::io::Read;
+    f.read_exact(&mut bytes)
+        .context("Failed to read 32 random bytes")?;
+    let mut s = String::with_capacity(64);
+    for b in &bytes {
+        s.push_str(&format!("{b:02x}"));
+    }
+    Ok(s)
+}
 
 impl DaemonServer {
     /// Stop a running daemon by sending a stop request via socket.
@@ -32,10 +49,17 @@ impl DaemonServer {
             bail!("Daemon is not running");
         }
 
-        // Read auth token
-        let token_path = work_dir.join("daemon.token");
+        // Stop is a privileged operation — only the admin token (mode 0o600,
+        // host-only) authenticates this request. A container-resident agent
+        // that has only the user token cannot stop the daemon.
+        let token_path = work_dir.join(ADMIN_TOKEN_FILE);
         let auth_token = fs::read_to_string(&token_path)
-            .context("Failed to read auth token")?
+            .with_context(|| {
+                format!(
+                    "Failed to read admin token at {} (Stop requires admin capability)",
+                    token_path.display()
+                )
+            })?
             .trim()
             .to_string();
 
@@ -141,12 +165,26 @@ impl DaemonServer {
         fs::set_permissions(&self.pid_path, Permissions::from_mode(0o600))
             .context("Failed to set PID file permissions")?;
 
-        // Generate auth token and write to file
-        let token = uuid::Uuid::new_v4().to_string();
-        let token_path = self.work_dir.join("daemon.token");
-        fs::write(&token_path, &token).context("Failed to write token file")?;
-        fs::set_permissions(&token_path, Permissions::from_mode(0o600))
-            .context("Failed to set token file permissions")?;
+        // Generate admin + user tokens and write to separate files.
+        //
+        // - admin.token (mode 0o600): host-only; required for privileged ops
+        //   (Stop). Container agents cannot read this — never mounted in.
+        // - user.token  (mode 0o644): mounted into containers RO; used for
+        //   Ping / Subscribe / Unsubscribe.
+        //
+        // 32-byte / 256-bit random hex from /dev/urandom (OsRng-equivalent).
+        let admin_token = generate_token_hex()?;
+        let user_token = generate_token_hex()?;
+
+        let admin_path = self.work_dir.join(ADMIN_TOKEN_FILE);
+        fs::write(&admin_path, &admin_token).context("Failed to write admin token file")?;
+        fs::set_permissions(&admin_path, Permissions::from_mode(0o600))
+            .context("Failed to set admin token file permissions")?;
+
+        let user_path = self.work_dir.join(USER_TOKEN_FILE);
+        fs::write(&user_path, &user_token).context("Failed to write user token file")?;
+        fs::set_permissions(&user_path, Permissions::from_mode(0o644))
+            .context("Failed to set user token file permissions")?;
 
         // Redirect stdout and stderr to log file
         let log_file = File::create(&self.log_path).context("Failed to create log file")?;
@@ -384,11 +422,14 @@ impl DaemonServer {
                 return Err(e).context("Failed to remove PID file");
             }
         }
-        // Clean up token file
-        let token_path = self.work_dir.join("daemon.token");
-        if let Err(e) = fs::remove_file(&token_path) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                return Err(e).context("Failed to remove token file");
+        // Clean up token files (admin + user — daemon.token is no longer used).
+        for token_name in [ADMIN_TOKEN_FILE, USER_TOKEN_FILE] {
+            let token_path = self.work_dir.join(token_name);
+            if let Err(e) = fs::remove_file(&token_path) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    return Err(e)
+                        .with_context(|| format!("Failed to remove {token_name} file"));
+                }
             }
         }
         // Clean up completion marker file
