@@ -225,3 +225,54 @@ Some fields may use `tool_response` instead of `tool_result` depending on Claude
 **PreToolUse stdin schema:** `tool_name` and `tool_input` fields only (no result yet).
 
 **Stop hook (session end):** receives `{"reason": "...", "exit_code": N}`. Used by `commit-guard.sh` and `learning-validator.sh`.
+
+## Dispute File Ownership Convention
+
+`.work/disputes/<stage>/<n>/` — always split by authority:
+- `request.md` — agent-attestable; written by daemon on behalf of agent RPC
+- `verdict.md` — daemon-only; worker thread writes after API call
+- `applied.marker` — daemon-only; zero-byte idempotency sentinel
+
+Never collapse into one file — if agent can write the verdict section, it can self-approve.
+
+## Admin Token Path Convention (After Stage 2)
+
+Admin token moves OUT of `.work/` to a daemon-runtime-only path:
+- Linux: `$XDG_RUNTIME_DIR/loom/admin.token` (via `dirs::runtime_dir()`)
+- Fallback: `dirs::data_dir().join("loom/admin.token")`
+- Mode: 0o600; created at daemon start, deleted at daemon stop
+
+Container mounts are scoped to project root and `.work/` — the runtime dir is never mountable. This makes path-unreachable the actual security boundary, not file permissions.
+
+## Adjudicator Scope Convention
+
+The adjudicator amends ONLY:
+- `acceptance: Vec<AcceptanceCriterion>` (plan/schema/types.rs:316)
+- `wiring: Vec<WiringCheck>` (plan/schema/types.rs:336)
+
+Never amends: `before_stage`, `after_stage`, `artifacts`, `dependencies`, `id`, `working_dir`, `model`, `sandbox`, `execution`. Use `AmendmentField` enum to enforce this at the type level.
+
+## Dispute Budget Limits Convention
+
+Per-stage caps to bound the autonomy loop:
+- `dispute_count`: max 3 per stage (default)
+- `evidence_rounds` (NeedsMoreEvidence iterations): max 2 before escalation to NeedsHumanReview
+- `amendments_applied`: max 3 per stage (absolute, not percentage)
+- `adjudicator_attempt_count` (worker crash retries): max 3
+
+## .inflight Marker Convention
+
+Worker threads write `.inflight` before starting HTTP call; delete on completion or handoff. Orchestrator main loop checks timestamp on each tick — if >10min old → re-fire worker (bounded by `adjudicator_attempt_count`). Pattern mirrors `.applying` markers from hooks.
+
+## Daemon-as-Filesystem-Writer Convention
+
+For any operation where agent data must be persisted to `.work/` with authority separation: the CLI (running inside container) sends RPC to daemon; the daemon (host-only) writes the file. The container has no rw mount to the target subdirectory. Examples:
+- `loom memory note` → daemon writes `.work/memory/<id>.md`
+- `loom stage dispute-criteria` (after Stage 2) → daemon writes `.work/disputes/<stage>/<n>/request.md`
+
+## ANTHROPIC_API_KEY Access Convention
+
+- Daemon process: reads from `std::env::var("ANTHROPIC_API_KEY")` directly (host env, no scrubbing)
+- Container agents: key is scrubbed by `scrub_settings_env_for_backend()` in `sandbox/settings.rs:39-47`
+- Absent key at daemon startup: adjudication disabled for that daemon run; disputed stages go directly to `NeedsHumanReview`
+- Never pass the key to spawned sessions — it flows only to the daemon's adjudicator worker thread

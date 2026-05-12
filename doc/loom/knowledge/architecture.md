@@ -643,3 +643,74 @@ An rw overlay applied AFTER an ro overlay at the same path silently wins. A unit
 ### Stale Comment Warning
 
 The module doc comment at `container/mod.rs:22-44` describes the mount layering in detail but will become stale after Stage 3 (WORK_DIR_IN_CONTAINER changes to `/var/loom/work`) and Stage 4 (no more /repo bind mount for Standard stages — replaced by container-private clone from bare mirror). Update that comment as part of Stages 3 and 4.
+
+## Orchestrator Main-Loop Tick Sequence (Exact Call Order)
+
+Main loop at `orchestrator/core/orchestrator.rs:258-376` — 5s poll cycle (100ms chunks for shutdown responsiveness):
+
+```
+1. reconcile_and_update_graph()        [recovery.rs:149-177]  — catch phantom merges pre-sync
+2. sync_graph_with_stage_files()       [recovery.rs:179-567]  — disk → in-memory graph
+3. sync_queued_status_to_files()       [recovery.rs:569-593]  — graph Queued → disk
+4. spawn_merge_resolution_sessions()   [merge_handler.rs:637-758] — detect/spawn merge resolvers
+5. *** INSERT: check_pending_disputes() + apply_pending_verdicts() HERE ***
+6. start_ready_stages()                [stage_executor.rs:64-86]  — worktrees + sessions for Queued
+7. monitor.poll() → handle_events()   [event_handler.rs:308-311]  — completion/crash events
+```
+
+Insertion point for adjudicator hooks: after step 4 (merge resolution) and BEFORE step 6 (start_ready_stages) so re-queued stages from verdicts are picked up in the same cycle.
+
+No mpsc channels currently — entirely polling-based. The dispute adjudicator adds the first worker-thread + mpsc pattern. See patterns.md § Worker Thread + mpsc Pattern.
+
+## Stage State Machine — NeedsAdjudication (New Variant)
+
+Current 12-variant enum (`models/stage/types.rs`):
+```
+WaitingForDeps → Queued → Executing → Completed/Skipped (terminal)
+                  |           |
+                  v           +→ Blocked, NeedsHandoff, WaitingForInput,
+               Skipped           MergeConflict, CompletedWithFailures,
+                                  MergeBlocked, NeedsHumanReview
+```
+
+Autonomous adjudication adds `NeedsAdjudication` as a new NON-TERMINAL variant:
+```
+Executing → NeedsAdjudication → Queued   (accept verdict re-queues)
+                              → NeedsHumanReview  (exhaust budget or disabled API key)
+```
+
+Transitions FROM `NeedsAdjudication` (to be added to `transitions.rs`):
+- `Queued` — accept/reject verdict processed, stage re-queued
+- `NeedsHumanReview` — dispute budget exhausted OR ANTHROPIC_API_KEY not set
+
+## Dispute Directory Structure (New, Stage 2+)
+
+`.work/disputes/<stage_id>/<n>/` — per-dispute directory (numbered from 1):
+
+| File | Authority | Contents |
+|------|-----------|----------|
+| `request.md` | Agent-writable (via daemon RPC) | id, stage_id, criterion_index, reason, evidence_commit, failure_output, fix_attempts_at_dispute, created_at |
+| `verdict.md` | Daemon-only (worker thread writes) | verdict, citations, reasoning, plan_patch, adjudicator_attempt_count, model |
+| `applied.marker` | Daemon-only (zero-byte, idempotency) | — |
+| `.inflight` | Daemon-only (staleness guard) | timestamp + worker ID; >10min → re-fire |
+
+Container agents have NO rw mount to `.work/disputes/` — request.md is written by the daemon handler on behalf of the agent's RPC call. Trust boundary: same pattern as `loom memory note`.
+
+## Plan Versioning (New, Stage 3+)
+
+`.work/plan_versions/` directory for amendment audit trail:
+- `.work/plan_versions/.lock` — file lock (serializes amendments)
+- `.work/plan_versions/<n>.md` — snapshot of full plan content after amendment n
+- `.work/plan_versions/audit.md` — O_APPEND atomic rows (amendment log)
+
+Plan amendment 6-step atomic flow: acquire lock → compute new content → write snapshot → append audit → atomic rename plan file → release lock. Recovery: on daemon startup scan audit.md, verify plan file matches latest snapshot.
+
+## Plan Immutability Invariant (CURRENTLY ENFORCED; Plan-Amendment Stage Relaxes It)
+
+Plans are loaded ONCE at daemon startup via `build_execution_graph()` → `ExecutionGraph::build()`. No reload mechanism exists. The in-memory `graph: ExecutionGraph` field in `Orchestrator` (orchestrator.rs:87) holds all state. Plan file mutations are ONLY via `try_auto_merge()` (stage file changes, not plan structure). The `plan-amendment` stage deliberately relaxes this invariant — ONLY `acceptance`/`wiring` arrays on a single stage are amendable; DAG topology, dependencies, IDs are never changed.
+
+## Admin Token Relocation (Stage 2 Security Change)
+
+Current: `admin.token` lives at `.work/admin.token` (lifecycle.rs:179). Container mounts `/repo/.work` ro — BUT UID 1000 match means mode 0600 is insufficient isolation.
+
+After Stage 2: `admin.token` moves to `$XDG_RUNTIME_DIR/loom/admin.token` (Linux) / `~/Library/Application Support/loom/admin.token` (macOS) — outside project root, never mountable. Path resolution: `dirs::runtime_dir().unwrap_or_else(|| dirs::data_dir().unwrap()).join("loom").join("admin.token")`. Note: only `dirs::home_dir()` is currently used in the codebase; `dirs::runtime_dir()` and `dirs::data_dir()` are new usages.

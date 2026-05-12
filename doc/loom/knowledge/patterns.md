@@ -461,3 +461,94 @@ Every field group on `Session` that represents a runtime resource identity (`con
 **Rule:** Any caller that removes the runtime resource (container rm, process kill) must call the clearer before persisting the session file. `clear_container_identity()` is in `models/session/methods.rs:135`.
 
 **Why:** Without the clearer, session files become permanent references to removed containers. Lookups in `loom container logs` / `loom container list` will find stale entries and produce confusing errors.
+
+## reqwest::blocking HTTP Client Pattern
+
+Template from `commands/self_update/client.rs` — mirror this for the adjudicator:
+
+```rust
+use reqwest::blocking::Client;
+
+fn create_http_client() -> Result<Client> {
+    Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(120))  // includes all transfer time
+        .user_agent("loom-adjudicator")     // change per consumer
+        .build()
+        .context("Failed to create HTTP client")
+}
+
+fn validate_response_status(response: &reqwest::blocking::Response, context: &str) -> Result<()> {
+    if !response.status().is_success() {
+        bail!("HTTP {} {}: {}", response.status().as_u16(),
+              response.status().canonical_reason().unwrap_or("Unknown"), context);
+    }
+    Ok(())
+}
+```
+
+`reqwest::blocking::Client` is already a dependency (used by self_update); no new Cargo.toml entry needed for the adjudicator.
+
+## Worker Thread + mpsc Pattern (New — Adjudicator)
+
+The adjudicator introduces loom's first worker-thread + mpsc pattern. Template:
+
+```rust
+// In Orchestrator struct:
+worker_completion_tx: mpsc::Sender<WorkerCompletion>,
+worker_completion_rx: mpsc::Receiver<WorkerCompletion>,
+
+// On NeedsAdjudication transition:
+let tx = self.worker_completion_tx.clone();
+std::thread::spawn(move || {
+    let verdict = call_anthropic_api(&dispute_request);
+    let _ = tx.send(WorkerCompletion { stage_id, verdict });
+});
+
+// In main loop tick (drain channel):
+while let Ok(completion) = self.worker_completion_rx.try_recv() {
+    self.apply_adjudicator_verdict(completion)?;
+}
+```
+
+Worker crashes leave no verdict file; staleness detection: `.inflight` marker with timestamp, >10min → re-fire (bounded by `adjudicator_attempt_count` cap of 3).
+
+## Dispute File Authority Split Pattern
+
+Three-file trust boundary to prevent self-approval attacks:
+
+| File | Writer | Content | Rationale |
+|------|--------|---------|-----------|
+| `request.md` | Daemon (on agent's behalf via RPC) | Agent's evidence payload | Agent can read but never write directly |
+| `verdict.md` | Daemon worker thread only | Verdict + citations | Container has no rw mount here |
+| `applied.marker` | Daemon only (zero-byte) | Idempotency guard | Prevents re-application on restart |
+
+If the agent could write both request and verdict, it could pre-fill `verdict: Accept` and self-approve. The split enforces the trust boundary at the filesystem level.
+
+## Plan Amendment Atomic Write Pattern
+
+For amending the IN_PROGRESS plan file safely (Stage 3):
+
+```
+1. Acquire .work/plan_versions/.lock  (file lock — serializes concurrent amendments)
+2. Compute new plan content in memory
+3. Atomic-write .work/plan_versions/<n>.md  (full snapshot)
+4. Append to .work/plan_versions/audit.md  (O_APPEND — atomic for small rows)
+5. Atomic temp+rename of IN_PROGRESS plan file to new content
+6. Release lock
+```
+
+Recovery on crash: scan audit.md for latest amendment; verify plan file matches snapshot. If mismatch → restore from `<n>.md`. If `<n>.md` missing → discard audit row, use `<n-1>.md`.
+
+Note: `plan/graph/loader.rs:60-86` PREFERS `.work/stages/` files over the plan file. Plan-file amendment MUST also update the corresponding `.work/stages/<stage_id>.md` for the change to be reflected in the running orchestrator graph.
+
+## NeedsHumanReview Orchestrator Handling Pattern
+
+For new `NeedsAdjudication` state, mirror the existing `NeedsHumanReview` pattern:
+
+1. `orchestrator/monitor/detection.rs:87-92` — emit `MonitorEvent::StageNeedsHumanReview` on transition detection
+2. `orchestrator/core/event_handler.rs:142-158` — print banner + notify
+3. `orchestrator/core/recovery.rs:814` — `StageStatus::NeedsHumanReview => continue` (skip auto-retry)
+4. `orchestrator/core/recovery.rs:515-526` — sync status to in-memory graph
+
+Add parallel handling for `NeedsAdjudication` that fires the worker thread instead of continuing.

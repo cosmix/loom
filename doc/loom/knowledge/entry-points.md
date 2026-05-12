@@ -441,3 +441,110 @@ Per the Stage 2 plan, adopt these helpers at each call site:
 ### Note on Wrapper Path Scoping
 
 Currently `pid_tracking.rs:426` writes `wrappers/{stage_id}-wrapper.sh` (stage-scoped). Stage 3 (harden-container-mod) changes this to `wrappers/{session_id}-wrapper.sh` (session-scoped). The safe-fs adoption in Stage 2 should use the path returned by the existing helper without hardcoding the format.
+
+## Orchestrator Core Recovery Functions (Exact Locations)
+
+| Function | File | Lines | Called From |
+|----------|------|-------|-------------|
+| `sync_graph_with_stage_files()` | `orchestrator/core/recovery.rs` | 179-567 | orchestrator.rs main loop (tick 2) |
+| `sync_queued_status_to_files()` | `orchestrator/core/recovery.rs` | 569-593 | orchestrator.rs main loop (tick 3) |
+| `recover_orphaned_sessions()` | `orchestrator/core/recovery.rs` | 595-791 | startup init only |
+| `reconcile_and_update_graph()` | `orchestrator/core/recovery.rs` | 149-177 | orchestrator.rs (tick 1 + startup) |
+| `spawn_merge_resolution_sessions()` | `orchestrator/core/merge_handler.rs` | 637-758 | orchestrator.rs (tick 4) |
+| `start_ready_stages()` | `orchestrator/core/stage_executor.rs` | 64-86 | orchestrator.rs (tick 6) |
+
+## Plan Graph Loader — Stage File Preference (Critical)
+
+`plan/graph/loader.rs:56` — `build_graph_impl()`:
+- **Lines 60-86**: Prefers `.work/stages/` over plan file. If stages_dir exists with .md files → load from `fs::load_stages_from_work_dir()` + recover sandbox from `.work/config.toml [plan_sandbox]`. Falls back to parsing plan file only if stages_dir is empty/missing.
+- This means plan-file amendments are NOT automatically reflected until stages_dir is absent (i.e., fresh init). Plan-amendment stage MUST update `.work/stages/<id>.md` files in addition to the plan file.
+
+## Plan Schema — StageDefinition Amendable Fields
+
+`plan/schema/types.rs:306` — `StageDefinition` struct:
+- Line 316: `acceptance: Vec<AcceptanceCriterion>` — amendable in v1
+- Line 336: `wiring: Vec<WiringCheck>` — amendable in v1
+- Line 347/352: `before_stage`/`after_stage: Vec<TruthCheck>` — deferred to v2
+- Line 333: `artifacts: Vec<String>` — deferred to v2
+- NOT amendable: `id`, `name`, `dependencies`, `working_dir`, `model`, `sandbox`, `execution`
+
+## WorkDir Directory Helpers (Existing vs. Missing)
+
+`fs/work_dir.rs:270-294` — existing helpers:
+- `signals_dir()` → `.work/signals/`
+- `handoffs_dir()` → `.work/handoffs/`
+- `archive_dir()` → `.work/archive/`
+- `stages_dir()` → `.work/stages/`
+- `sessions_dir()` → `.work/sessions/`
+- `crashes_dir()` → `.work/crashes/`
+- `knowledge_dir()` → `.work/knowledge/`
+- `ensure_dir(&self, name: &str) -> Result<PathBuf>` — create any subdir on demand
+
+**MISSING (stage 2/3 must add):** `disputes_dir()` → `.work/disputes/` and `plan_versions_dir()` → `.work/plan_versions/`
+
+## Sandbox Settings — ANTHROPIC_API_KEY Filter
+
+`sandbox/settings.rs:16-34` — `SENSITIVE_ENV_KEYS` array:
+```rust
+"ANTHROPIC_API_KEY"  // line 20 — explicitly filtered from container agents
+```
+`scrub_settings_env_for_backend()` (lines 39-47) strips these for `BackendType::Container` only.
+- Daemon (host process): full access to host env, reads key directly via `std::env::var`
+- Container agents: key is stripped; agents cannot access it
+- When `ANTHROPIC_API_KEY` is absent at daemon startup: adjudication disabled; disputed stages go directly to `NeedsHumanReview`
+
+## HTTP Client Pattern — self_update/client.rs
+
+`commands/self_update/client.rs` — `create_http_client() -> Result<Client>`:
+- `Client::builder().connect_timeout(10s).timeout(120s).user_agent("loom-self-update").build()`
+- `validate_response_status(&response, context)` — checks `is_success()`, returns descriptive HTTP errors
+- Streaming download with size limit enforcement (buffer size 8192)
+- Error propagation: `.context("Failed to ...")` pattern throughout
+
+Adjudicator HTTP client should mirror this pattern with `user_agent("loom-adjudicator")` and longer timeout (~120s for Claude API latency).
+
+## Admin Token Write Location
+
+`daemon/server/lifecycle.rs:176-182`:
+- Generates 32-byte (256-bit) hex token
+- Currently writes to `<work_dir>/admin.token` (`.work/admin.token`)
+- Mode 0o600 (owner-only rw)
+- **Stage 2 relocates to `$XDG_RUNTIME_DIR/loom/admin.token`** — see architecture.md § Admin Token Relocation
+
+## Daemon Capability Surface (client.rs)
+
+`daemon/server/client.rs` — `verify_for_capability(work_dir, token, Capability) -> bool`:
+- Routes to USER_TOKEN_FILE or ADMIN_TOKEN_FILE via `token_path_for()`
+- Missing file → returns false (fails closed)
+- Constant-time comparison via `ct_eq()`
+
+`daemon/protocol.rs:83-97` — `Capability` enum:
+- `User` — Ping, Subscribe, Unsubscribe, CompleteStageContainer
+- `Admin` — Stop (only operation currently gated)
+- Stage 2 adds: all `--no-verify`, `--force-unsafe`, `--assume-merged` paths gate on `Admin`
+
+## Dispute Criteria — Current Implementation
+
+`commands/stage/dispute_criteria.rs:16` — `dispute_criteria(stage_id, reason) -> Result<()>`:
+- Only accepts stages in `Executing` or `CompletedWithFailures` state
+- `CompletedWithFailures` → two-step: → `Executing` → `NeedsHumanReview`
+- `Executing` → direct `NeedsHumanReview`
+- Stores reason in `stage.review_reason: Option<String>`
+- Stage 2 replaces this with structured `DisputeRequest` RPC payload + `NeedsAdjudication` state
+
+## Network Allowlist — api.anthropic.com
+
+`resources/firewall.sh:29` — `ALWAYS=(api.anthropic.com registry.npmjs.org)`:
+- Hardcoded always-allowed domains, prepended before user-specified allowlist
+- Container agents already can reach api.anthropic.com
+- Daemon (host process): unrestricted network; no additional allowlist needed for adjudicator
+
+## Fix Attempts Counter — Current Usage
+
+`models/stage/types.rs:254` — `fix_attempts: u32` field:
+- Incremented: `commands/stage/check_acceptance.rs:110` when criteria fail
+- Reset to 0: `commands/stage/human_review.rs:87` on human approve
+- Default max: 3 (via `get_effective_max_fix_attempts()` in methods.rs)
+- Warning printed when limit reached with hint to `loom stage dispute-criteria`
+
+Stage 2/3 adds alongside: `dispute_count`, `evidence_rounds`, `amendments_applied` fields.
