@@ -4,7 +4,7 @@ use crate::fs::permissions::{ensure_loom_permissions, migrate_legacy_trust};
 use crate::fs::work_dir::WorkDir;
 use crate::fs::work_integrity::validate_work_dir_state;
 use crate::git::install_pre_commit_hook;
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use colored::Colorize;
 use std::path::{Path, PathBuf};
 
@@ -95,28 +95,27 @@ pub fn execute(
     println!("\n{}", "Initialize".bold());
     println!("{}", "─".repeat(40).dimmed());
 
-    // Per finding #11: pre-existing .work must NEVER be deleted on failure.
-    // Only arm the cleanup guard when this invocation actually created the
-    // directory.
-    let work_dir_existed = repo_root.join(".work").exists();
-    let mut guard = InitGuard::new(repo_root.clone());
-    let work_dir = WorkDir::new(".")?;
-    if !work_dir_existed {
-        work_dir.initialize()?;
-        guard.mark_work_created();
-        println!(
-            "  {} Directory structure created {}",
-            "✓".green().bold(),
-            ".work/".dimmed()
-        );
-    } else {
-        work_dir.load()?;
-        println!(
-            "  {} Reusing existing {} (reconfigure mode)",
-            "→".cyan().bold(),
-            ".work/".dimmed()
+    // `loom init` is one-shot: if .work/ already exists, refuse. Pass --clean
+    // to wipe and start over. Reusing an existing .work/ would silently
+    // overlay the new plan's stages on top of the previous plan's files,
+    // producing duplicate ids and an unrecoverable graph.
+    if repo_root.join(".work").exists() {
+        bail!(
+            ".work/ already initialized.\n\
+             Run `loom init <plan> --clean` to wipe existing state and start over,\n\
+             or `loom clean` followed by `loom init <plan>`."
         );
     }
+
+    let mut guard = InitGuard::new(repo_root.clone());
+    let work_dir = WorkDir::new(".")?;
+    work_dir.initialize()?;
+    guard.mark_work_created();
+    println!(
+        "  {} Directory structure created {}",
+        "✓".green().bold(),
+        ".work/".dimmed()
+    );
 
     // Install git pre-commit hook to prevent .work commits
     match install_pre_commit_hook(&repo_root) {
@@ -167,10 +166,6 @@ pub fn execute(
         print_summary(None, 0);
     }
 
-    // Per finding #11: project-level backend (`--backend`) is applied AFTER
-    // plan setup so a reconfigure invocation can flip the backend without
-    // touching stage definitions. When `backend` is None we PRESERVE the
-    // existing `[project_execution]` section.
     if let Some(backend_str) = backend {
         apply_project_backend(
             &work_dir,
@@ -239,23 +234,10 @@ fn apply_project_backend(
                 (d, "built")
             };
 
-            // Read existing container config so a reconfigure invocation
-            // preserves manually-set or previously-resolved git identity.
-            let existing_container = crate::fs::work_dir::read_project_execution(work_dir.root())
-                .ok()
-                .flatten()
-                .and_then(|c| c.container);
-
-            let git_user_name = existing_container
-                .as_ref()
-                .and_then(|c| c.git_user_name.clone())
-                .or_else(|| host_git_config("user.name"))
-                .and_then(|v| sanitize_git_identity("user.name", v));
-            let git_user_email = existing_container
-                .as_ref()
-                .and_then(|c| c.git_user_email.clone())
-                .or_else(|| host_git_config("user.email"))
-                .and_then(|v| sanitize_git_identity("user.email", v));
+            let git_user_name =
+                host_git_config("user.name").and_then(|v| sanitize_git_identity("user.name", v));
+            let git_user_email =
+                host_git_config("user.email").and_then(|v| sanitize_git_identity("user.email", v));
 
             if git_user_name.is_none() || git_user_email.is_none() {
                 println!(
