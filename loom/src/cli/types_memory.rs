@@ -58,18 +58,33 @@ pub enum KnowledgeCommands {
     },
 
     /// Analyze knowledge files for size, duplicates, and curated blocks
-    Gc {
-        /// Max lines per file before GC is recommended
+    Audit {
+        /// Max lines per file before compaction is recommended
         #[arg(long, default_value_t = DEFAULT_MAX_FILE_LINES)]
         max_file_lines: usize,
 
-        /// Max total lines before GC is recommended
+        /// Max total lines before compaction is recommended
         #[arg(long, default_value_t = DEFAULT_MAX_TOTAL_LINES)]
         max_total_lines: usize,
 
         /// Only show metrics, skip compaction instructions
         #[arg(short, long)]
         quiet: bool,
+    },
+
+    /// Spawn Claude session to compact knowledge files (dedupe, summarize, drop stale)
+    Gc {
+        /// Model to use for the Claude session (e.g., "sonnet", "opus")
+        #[arg(long)]
+        model: Option<String>,
+
+        /// Preview proposed changes without writing
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Run in non-interactive mode (no terminal UI)
+        #[arg(long)]
+        quick: bool,
     },
 
     /// Spawn Claude session to explore and populate knowledge files

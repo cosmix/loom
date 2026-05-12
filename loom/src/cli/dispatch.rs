@@ -159,11 +159,16 @@ pub fn dispatch(command: Commands) -> Result<()> {
                 src_path,
                 quiet,
             } => knowledge::check::check(min_coverage, src_path, quiet),
-            KnowledgeCommands::Gc {
+            KnowledgeCommands::Audit {
                 max_file_lines,
                 max_total_lines,
                 quiet,
-            } => knowledge::gc::gc(max_file_lines, max_total_lines, quiet),
+            } => knowledge::audit::audit(max_file_lines, max_total_lines, quiet),
+            KnowledgeCommands::Gc {
+                model,
+                dry_run,
+                quick,
+            } => knowledge::gc::gc(model, dry_run, quick),
             KnowledgeCommands::Bootstrap {
                 model,
                 skip_map,

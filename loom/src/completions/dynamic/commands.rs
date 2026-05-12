@@ -56,7 +56,16 @@ pub fn complete_subcommands(parent: &str, prefix: &str) -> Result<Vec<String>> {
         "sessions" => &["kill", "list"],
         "worktree" => &["list", "remove"],
         "container" => &["build", "doctor", "list", "logs", "rebuild", "shell"],
-        "knowledge" => &["bootstrap", "check", "gc", "init", "list", "show", "update"],
+        "knowledge" => &[
+            "audit",
+            "bootstrap",
+            "check",
+            "gc",
+            "init",
+            "list",
+            "show",
+            "update",
+        ],
         "memory" => &[
             "change", "decision", "list", "note", "query", "question", "show",
         ],
@@ -110,7 +119,8 @@ pub fn complete_flags(command_path: &[&str], prefix: &str) -> Result<Vec<String>
         ["stage", "human-review"] => &["--approve", "--force-complete", "--reject"],
         ["sessions", "kill"] => &["--stage"],
         ["knowledge", "check"] => &["--min-coverage", "--quiet", "--src-path"],
-        ["knowledge", "gc"] => &["--max-file-lines", "--max-total-lines", "--quiet"],
+        ["knowledge", "audit"] => &["--max-file-lines", "--max-total-lines", "--quiet"],
+        ["knowledge", "gc"] => &["--dry-run", "--model", "--quick"],
         ["knowledge", "bootstrap"] => &["--model", "--quick", "--skip-map"],
         ["memory", "note"]
         | ["memory", "decision"]
