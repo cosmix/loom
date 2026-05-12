@@ -45,6 +45,30 @@ pub fn get_branch_head(branch: &str, repo_root: &Path) -> Result<String> {
     run_git_checked(&["rev-parse", branch], repo_root)
 }
 
+/// Count commits on `branch` that are not on `base`.
+///
+/// Uses `git rev-list --count <base>..<branch>`. Returns 0 if the branch
+/// is fully merged into base, or if either ref is missing (treated as "no
+/// new commits" — callers that need to distinguish "no commits" from
+/// "branch missing" should check `branch_exists` first).
+///
+/// # Arguments
+/// * `branch` - The branch with potentially new commits (e.g., `loom/<stage>`)
+/// * `base` - The branch to compare against (e.g., `main`)
+/// * `repo_root` - Path to the git repository root
+pub fn commits_ahead_of(branch: &str, base: &str, repo_root: &Path) -> Result<usize> {
+    let range = format!("{base}..{branch}");
+    let output = run_git(&["rev-list", "--count", &range], repo_root)?;
+    if !output.status.success() {
+        // Missing branch / unknown ref → treat as zero so callers can
+        // proceed defensively. Real git errors (e.g., not a repo) still
+        // surface as Err via run_git.
+        return Ok(0);
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(stdout.trim().parse::<usize>().unwrap_or(0))
+}
+
 /// Check if a branch has been fully merged into a target branch
 ///
 /// This is used to detect manual merges performed outside loom.
@@ -189,5 +213,54 @@ mod tests {
         // Test get_branch_head fails for non-existent branch
         let result = get_branch_head("nonexistent-branch", repo_path);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_commits_ahead_of() {
+        let temp_dir = init_test_repo();
+        let repo_path = temp_dir.path();
+
+        let base = String::from_utf8_lossy(
+            &Command::new("git")
+                .args(["rev-parse", "--abbrev-ref", "HEAD"])
+                .current_dir(repo_path)
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .trim()
+        .to_string();
+
+        // No divergence yet: branch == base, expect 0.
+        assert_eq!(commits_ahead_of(&base, &base, repo_path).unwrap(), 0);
+
+        // Create a sibling branch with one new commit.
+        Command::new("git")
+            .args(["checkout", "-b", "feature"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+        std::fs::write(repo_path.join("new.txt"), "x").unwrap();
+        Command::new("git")
+            .args(["add", "new.txt"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "feature commit"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        // feature has 1 commit ahead of base.
+        assert_eq!(commits_ahead_of("feature", &base, repo_path).unwrap(), 1);
+        // base has 0 commits ahead of feature (base is the parent).
+        assert_eq!(commits_ahead_of(&base, "feature", repo_path).unwrap(), 0);
+
+        // Missing branch → defensive 0, not an error.
+        assert_eq!(
+            commits_ahead_of("nonexistent", &base, repo_path).unwrap(),
+            0
+        );
     }
 }

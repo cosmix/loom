@@ -631,33 +631,74 @@ impl Recovery for Orchestrator {
                                 | StageStatus::Blocked
                         ) {
                             clear_status_line();
+
+                            // Decide whether to re-queue or hand off based on
+                            // whether the agent already committed work on the
+                            // stage branch. Re-queuing a stage whose worktree
+                            // branch is ahead of base discards no commits (git
+                            // keeps them), but it spawns a new session that
+                            // races against the prior, possibly-good work and
+                            // burns tokens redoing what was already done.
+                            // Instead, route those to `NeedsHandoff` so a
+                            // human (or `loom stage retry`) decides whether
+                            // to verify-and-complete, merge as-is, or restart.
+                            let branch_name = crate::git::branch::branch_name_for_stage(stage_id);
+                            let target_branch = crate::git::branch::resolve_target_branch(
+                                &self.config.base_branch,
+                                &self.config.repo_root,
+                            );
+                            let commits_ahead = crate::git::branch::commits_ahead_of(
+                                &branch_name,
+                                &target_branch,
+                                &self.config.repo_root,
+                            )
+                            .unwrap_or(0);
+                            let route_to_handoff = commits_ahead > 0;
+
                             tracing::warn!(
                                 stage_id = %stage_id,
                                 status = ?stage.status,
+                                commits_ahead = commits_ahead,
+                                route = if route_to_handoff { "NeedsHandoff" } else { "Queued" },
                                 "Recovering orphaned stage"
                             );
 
-                            // Reset stage to Ready using validated transition
-                            // NeedsHandoff -> Queued and Blocked -> Queued are valid transitions
-                            // Executing -> Queued is not valid, so we go through Blocked first
-                            if stage.status == StageStatus::Executing {
-                                // Executing -> Blocked (intermediate step for recovery)
-                                if let Err(e) = stage.try_mark_blocked() {
-                                    tracing::warn!(error = %e, "Failed to transition Executing -> Blocked during recovery");
+                            // For Executing, Executing -> Queued is not a valid
+                            // transition. We either go Executing -> NeedsHandoff
+                            // directly (valid, see transitions.rs) or
+                            // Executing -> Blocked -> Queued for restart.
+                            if route_to_handoff {
+                                if let Err(e) = stage.try_mark_needs_handoff() {
+                                    tracing::warn!(
+                                        error = %e,
+                                        status = ?stage.status,
+                                        "Failed to transition to NeedsHandoff during orphan recovery, bypassing"
+                                    );
+                                    stage.status = StageStatus::NeedsHandoff;
+                                }
+                            } else {
+                                if stage.status == StageStatus::Executing {
+                                    if let Err(e) = stage.try_mark_blocked() {
+                                        tracing::warn!(error = %e, "Failed to transition Executing -> Blocked during recovery");
+                                    }
+                                }
+                                if let Err(e) = stage.try_mark_queued() {
+                                    tracing::warn!(
+                                        error = %e,
+                                        status = ?stage.status,
+                                        "State transition validation failed during orphaned session recovery, bypassing"
+                                    );
+                                    stage.status = StageStatus::Queued;
                                 }
                             }
-                            // Now Blocked/NeedsHandoff -> Queued is valid
-                            if let Err(e) = stage.try_mark_queued() {
-                                // Log a warning that validation was bypassed for recovery
-                                tracing::warn!(
-                                    error = %e,
-                                    status = ?stage.status,
-                                    "State transition validation failed during orphaned session recovery, bypassing"
-                                );
-                                stage.status = StageStatus::Queued;
-                            }
                             stage.session = None;
-                            stage.close_reason = Some("Session crashed/orphaned".to_string());
+                            stage.close_reason = Some(if route_to_handoff {
+                                format!(
+                                    "Session orphaned; branch has {commits_ahead} commit(s) ahead of {target_branch} — needs handoff (use `loom stage verify` or `loom stage retry --kill-session`)"
+                                )
+                            } else {
+                                "Session crashed/orphaned".to_string()
+                            });
                             stage.updated_at = chrono::Utc::now();
 
                             // ATOMIC UPDATE PATTERN:
@@ -669,9 +710,16 @@ impl Recovery for Orchestrator {
                                 self.graph.get_node(stage_id).map(|n| n.status.clone());
 
                             // Update graph first - only if not in terminal state
+                            let target_graph_status = if route_to_handoff {
+                                StageStatus::NeedsHandoff
+                            } else {
+                                StageStatus::Queued
+                            };
                             let graph_updated = if let Some(node) = self.graph.get_node(stage_id) {
                                 if node.status != StageStatus::Completed {
-                                    if let Err(e) = self.graph.mark_queued(stage_id) {
+                                    if let Err(e) =
+                                        self.graph.mark_status(stage_id, target_graph_status)
+                                    {
                                         tracing::warn!(
                                             "Failed to sync graph status for stage {}: {}",
                                             stage_id,
@@ -851,7 +899,9 @@ mod tests {
     use std::process::Command;
     use tempfile::TempDir;
 
-    use crate::git::branch::{branch_name_for_stage, get_branch_head, is_ancestor_of};
+    use crate::git::branch::{
+        branch_name_for_stage, commits_ahead_of, get_branch_head, is_ancestor_of,
+    };
 
     fn init_repo() -> TempDir {
         let tmp = TempDir::new().unwrap();
@@ -1010,6 +1060,82 @@ mod tests {
             is_anc,
             "after branch is merged into main, ancestry must be true — \
              recovery is then allowed to set merged=true"
+        );
+    }
+
+    /// Orphan-recovery decision input: a stage whose worktree branch has
+    /// uncommitted-merged commits beyond `main` should produce a positive
+    /// `commits_ahead_of` count, which `recover_orphaned_sessions` reads to
+    /// route the stage to `NeedsHandoff` instead of blindly re-queuing.
+    ///
+    /// Regression guard: this codifies the exact helper composition the
+    /// recovery path makes — `branch_name_for_stage` + `commits_ahead_of`
+    /// against the resolved target — so a refactor that breaks either
+    /// surface caught here, not in production where the symptom is a
+    /// wasteful retry of an already-committed stage.
+    #[test]
+    fn orphan_with_commits_ahead_signals_handoff_input() {
+        let repo = init_repo();
+        let root = repo.path();
+
+        // Stage A: branch has 2 commits past main → handoff signal.
+        Command::new("git")
+            .args(["checkout", "-b", "loom/stage-with-work"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        for (i, name) in ["a.rs", "b.rs"].iter().enumerate() {
+            std::fs::write(root.join(name), format!("{i}")).unwrap();
+            Command::new("git")
+                .args(["add", name])
+                .current_dir(root)
+                .output()
+                .unwrap();
+            Command::new("git")
+                .args(["commit", "-m", &format!("commit-{i}")])
+                .current_dir(root)
+                .output()
+                .unwrap();
+        }
+        Command::new("git")
+            .args(["checkout", "main"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        let with_work = branch_name_for_stage("stage-with-work");
+        assert_eq!(
+            commits_ahead_of(&with_work, "main", root).unwrap(),
+            2,
+            "orphan recovery must see commits_ahead > 0 to route to NeedsHandoff"
+        );
+
+        // Stage B: branch never had commits (created and abandoned) →
+        // no handoff signal, recovery should re-queue.
+        Command::new("git")
+            .args(["checkout", "-b", "loom/stage-no-work"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["checkout", "main"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        let no_work = branch_name_for_stage("stage-no-work");
+        assert_eq!(
+            commits_ahead_of(&no_work, "main", root).unwrap(),
+            0,
+            "branch without commits must produce no handoff signal so retry can proceed"
+        );
+
+        // Stage C: no branch at all → defensive 0, never panics.
+        let missing = branch_name_for_stage("never-spawned");
+        assert_eq!(
+            commits_ahead_of(&missing, "main", root).unwrap(),
+            0,
+            "missing branch must be treated as zero commits ahead (defensive)"
         );
     }
 }

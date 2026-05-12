@@ -17,7 +17,7 @@ mod operations;
 mod status;
 
 // Re-export all public items
-pub use ancestry::{get_branch_head, is_ancestor_of, is_branch_merged};
+pub use ancestry::{commits_ahead_of, get_branch_head, is_ancestor_of, is_branch_merged};
 pub use cleanup::cleanup_merged_branches;
 pub use info::BranchInfo;
 pub use naming::{branch_name_for_stage, stage_id_from_branch};
