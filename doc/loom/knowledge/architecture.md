@@ -496,6 +496,7 @@ The `hooks/` module provides Claude Code hooks integration for session lifecycle
 **Layering:** `hooks/` is used by `orchestrator/core/stage_executor.rs` (worktree hook setup) and `git/worktree/settings.rs` (settings injection). The intended fix is to extract hooks as a fully independent top-level module with no reverse imports.
 
 **Global vs session hooks distinction:**
+
 - **Global hooks** (commit-filter.sh, git-add-guard.sh, worktree-isolation.sh, prefer-modern-tools.sh): written once by `loom init` into the main repo's `.claude/settings.local.json` via `fs/permissions.rs`. Persist across all sessions.
 - **Session hooks** (session-start.sh, post-tool-use.sh, pre-compact.sh, session-end.sh, learning-validator.sh): generated fresh per-session by `hooks/generator.rs:generate_hooks_settings()`. Merged into worktree's `settings.local.json` with duplicate detection.
 
@@ -504,6 +505,7 @@ The `hooks/` module provides Claude Code hooks integration for session lifecycle
 ## Monitor Subsystem (orchestrator/monitor/)
 
 Full file list:
+
 - `core.rs` — `Monitor` struct, `poll()` API, stage/session loading
 - `config.rs` — `MonitorConfig` (work_dir, hung_timeout, etc.)
 - `detection.rs` — `Detection` struct: `detect_stage_changes()`, `detect_session_changes()`, `detect_heartbeat_events()`
@@ -515,6 +517,7 @@ Full file list:
 - `tests.rs` — Unit tests
 
 **`Monitor::poll()` flow:**
+
 1. Load all stages from `.work/stages/*.md`
 2. Load all sessions from `.work/sessions/*.md`
 3. `detection.detect_stage_changes()` — file-level changes
@@ -560,6 +563,7 @@ Claude Code container sessions emit a stream-json (JSONL) transcript when runnin
 **Content vs tool_use_result duplication:** User events often carry BOTH `message.content[].tool_result.content` AND a top-level `tool_use_result.content` field with identical content. The formatter deduplicates: if `tool_use_result.content == message.content[].tool_result.content` (last rendered), the top-level field is skipped. If they differ (or if no tool_result block was rendered), `tool_use_result` is rendered separately.
 
 **rate_limit_event shape** (reference only; suppressed in human format):
+
 ```json
 {"type":"rate_limit_event","delta":{"input_tokens":5,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}
 ```
@@ -571,6 +575,7 @@ Claude Code container sessions emit a stream-json (JSONL) transcript when runnin
 Soft signals are advisory per-session notices persisted to disk so that dedup survives daemon restarts. File: `.work/monitor/soft-signals.jsonl` (JSONL, append-only, no compaction).
 
 **Schema (single variant today):**
+
 ```json
 {"kind":"possibly_stuck","session_id":"s1","stage_id":"my-stage","recent_events":10,"failure_count":9,"failure_ratio":0.9,"emitted_at":"<RFC3339>","expires_at":"<RFC3339>"}
 ```
@@ -578,6 +583,7 @@ Soft signals are advisory per-session notices persisted to disk so that dedup su
 **Decay window:** `DECAY_WINDOW_SECS = 120` — signals expire 120 seconds after they are written. `read_active(work_dir, now)` filters out expired signals. `read_active_for_session(work_dir, now, session_id)` further filters by session.
 
 **Detection pipeline:**
+
 1. `post-tool-use.sh` appends rows to `.work/tool-events.jsonl` on every tool call.
 2. `orchestrator/monitor/tool_analysis::analyze_session()` reads the last 50 events for a session and computes `ToolAnalysis`.
 3. Stuck criteria: `recent_failure_count >= 5 (STUCK_MIN_EVENTS)` AND `failure_ratio >= 0.80 (STUCK_FAILURE_RATIO)` within a 60-second rolling window (`STUCK_WINDOW_SECS`). Failure-shaped events: `is_error == true` OR `output_bytes == Some(0)`.

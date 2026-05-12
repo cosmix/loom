@@ -194,6 +194,7 @@ The heartbeat JSON written by `post-tool-use.sh` always records `"context_percen
 **What's needed:** Stream-json events (specifically `"type":"system"` with a `usage` subkey, or similar) need to be parsed from the container's stdout to extract token counts. A separate sidecar process (or stdout tap in the container entrypoint) would be the cleanest approach without modifying the hook flow.
 
 **Where to look when implementing:**
+
 - `hooks/post-tool-use.sh` — heartbeat writer (add context_percent extraction here)
 - `orchestrator/monitor/context.rs` — context health thresholds (Green/Yellow/Red)
 - `orchestrator/monitor/detection.rs` — where heartbeat data is consumed

@@ -194,6 +194,7 @@ Old truths/truth_checks fields removed from StageDefinition. Serde silently igno
 Claude Code hooks communicate with the host process via stdin/stdout and exit codes.
 
 **Exit codes:**
+
 - `exit 0` — allow the operation to proceed (default, no output needed)
 - `exit 2` — block the operation; stderr is shown to Claude as a `PreToolUse:` prefixed message
 - Any other exit code — treated as an error (non-blocking, but logged)
@@ -208,6 +209,7 @@ To issue a warning without blocking (exit 0 with advisory), write a JSON object 
 The `LOOM_HOOK_WARN:` prefix is recognized by the loom formatter (`render_tool_result` in `log_format.rs`) and rendered as `[hook warn]` in `loom container logs --format=human`.
 
 **PostToolUse stdin schema:**
+
 ```json
 {
   "tool_name": "Bash",
@@ -217,6 +219,7 @@ The `LOOM_HOOK_WARN:` prefix is recognized by the loom formatter (`render_tool_r
   "session_info": {...}
 }
 ```
+
 Some fields may use `tool_response` instead of `tool_result` depending on Claude Code version — always use `(.tool_result.x // .tool_response.x)` patterns in shell hooks.
 
 **PreToolUse stdin schema:** `tool_name` and `tool_input` fields only (no result yet).

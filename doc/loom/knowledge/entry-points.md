@@ -276,6 +276,7 @@ Internal modules: `extraction.rs` (YAML block extraction, plan name), `validatio
 - `hooks/validators/` - Validator scripts for PreToolUse hooks (commit-filter, git-add-guard, worktree-isolation, prefer-modern-tools)
 
 **6 hook events:**
+
 | Event | Script | Purpose |
 | --- | --- | --- |
 | `SessionStart` | `session-start.sh` | Initial heartbeat |
@@ -292,6 +293,7 @@ Internal modules: `extraction.rs` (YAML block extraction, plan name), `validatio
 **Non-worktree container sessions** (knowledge, merge, base-conflict): settings written to `.work/container-settings/<session_id>.local.json` (NOT `.claude/settings.local.json`) to avoid corrupting the host operator's settings. The file is ro-mounted into the container at the expected location.
 
 **Env vars injected via settings.json env block:**
+
 - `LOOM_STAGE_ID` — current stage ID
 - `LOOM_SESSION_ID` — current session ID
 - `LOOM_WORK_DIR` — host path for native, `/repo/.work` for container
@@ -312,6 +314,7 @@ Both `loom container logs <stage-id>` and `loom container shell <stage-id>` shar
 4. `exec()` into `<runtime> logs` / `<runtime> exec -it` — replaces the loom process so Ctrl-C, stdout buffering, and signal handling work natively
 
 **Key difference between logs and shell:**
+
 - `logs`: accepts running OR exited containers (`require_running=false`) — useful post-crash
 - `shell`: requires `Running` state (`require_running=true`); exited containers suggest `loom container logs <stage-id>` instead
 
@@ -331,6 +334,7 @@ Both `loom container logs <stage-id>` and `loom container shell <stage-id>` shar
 - `commands/status/validation.rs` - `validate_markdown_files()`, `validate_references()`
 
 **3 display modes:**
+
 | Mode | Flag | Behavior |
 | --- | --- | --- |
 | Static (default) | none | Snapshot: logo → plan name → daemon indicator → progress bar → stage graph → merge status |
@@ -348,6 +352,7 @@ Both `loom container logs <stage-id>` and `loom container shell <stage-id>` shar
 **Reader / Rust struct:** `loom/src/hooks/events.rs::ToolEvent` (line 190) — `read_tool_events(work_dir)` and `tail_tool_events(work_dir, n)`.
 
 **ToolEvent fields:**
+
 ```rust
 pub struct ToolEvent {
     pub ts: String,            // ISO 8601 timestamp
