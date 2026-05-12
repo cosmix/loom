@@ -1,0 +1,2 @@
+-> Read(file_path=/etc/hosts)
+<- ok (19 bytes)
