@@ -180,3 +180,146 @@ pub fn read_stage_events(work_dir: &Path, stage_id: &str) -> Result<Vec<HookEven
         .filter(|e| e.stage_id == stage_id)
         .collect())
 }
+
+/// A tool execution event logged by the PostToolUse hook.
+///
+/// Written to `.work/tool-events.jsonl` by the `post-tool-use.sh` hook.
+/// Fields marked `Option` are best-effort and may be null if the hook
+/// payload lacked the data.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolEvent {
+    /// ISO 8601 timestamp
+    pub ts: String,
+    /// Tool name (e.g., "Bash", "Read", "Edit")
+    pub tool: String,
+    /// Whether the tool call resulted in an error
+    pub is_error: bool,
+    /// Session ID that executed the tool
+    pub session_id: String,
+    /// Stage ID that the session belongs to
+    pub stage_id: String,
+    /// Exit code for Bash tool, null for other tools
+    #[serde(default)]
+    pub exit: Option<i32>,
+    /// Byte length of the tool output
+    #[serde(default)]
+    pub output_bytes: Option<u64>,
+    /// First ~200 bytes of output (UTF-8 safe truncation)
+    #[serde(default)]
+    pub output_head: Option<String>,
+    /// Last ~200 bytes of output (UTF-8 safe truncation)
+    #[serde(default)]
+    pub output_tail: Option<String>,
+}
+
+/// Read all tool events from `.work/tool-events.jsonl`.
+///
+/// Returns `Ok(empty vec)` if the file does not exist.
+/// Skips blank lines and malformed lines (warns via tracing).
+pub fn read_tool_events(work_dir: &Path) -> std::io::Result<Vec<ToolEvent>> {
+    let events_file = work_dir.join("tool-events.jsonl");
+
+    if !events_file.exists() {
+        return Ok(Vec::new());
+    }
+
+    let content = fs::read_to_string(&events_file)?;
+
+    let events = content
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(|line| match serde_json::from_str(line) {
+            Ok(event) => Some(event),
+            Err(e) => {
+                tracing::warn!("Skipping malformed tool-events.jsonl line: {}", e);
+                None
+            }
+        })
+        .collect();
+
+    Ok(events)
+}
+
+/// Read the last `n` tool events from `.work/tool-events.jsonl`.
+///
+/// Returns `Ok(empty vec)` if the file does not exist.
+pub fn tail_tool_events(work_dir: &Path, n: usize) -> std::io::Result<Vec<ToolEvent>> {
+    let mut events = read_tool_events(work_dir)?;
+    let len = events.len();
+    if len > n {
+        events = events.split_off(len - n);
+    }
+    Ok(events)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::TempDir;
+
+    fn write_events_file(dir: &TempDir, content: &str) {
+        let path = dir.path().join("tool-events.jsonl");
+        let mut f = std::fs::File::create(path).unwrap();
+        f.write_all(content.as_bytes()).unwrap();
+    }
+
+    #[test]
+    fn test_parses_minimal_row() {
+        let dir = TempDir::new().unwrap();
+        write_events_file(
+            &dir,
+            r#"{"ts":"2026-01-01T00:00:00Z","tool":"Bash","is_error":false,"session_id":"s1","stage_id":"st1"}"#,
+        );
+        let events = read_tool_events(dir.path()).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].tool, "Bash");
+        assert!(!events[0].is_error);
+        assert!(events[0].exit.is_none());
+        assert!(events[0].output_bytes.is_none());
+    }
+
+    #[test]
+    fn test_parses_full_row() {
+        let dir = TempDir::new().unwrap();
+        write_events_file(
+            &dir,
+            r#"{"ts":"2026-01-01T00:00:00Z","tool":"Bash","is_error":false,"session_id":"s1","stage_id":"st1","exit":0,"output_bytes":42,"output_head":"hello","output_tail":"world"}"#,
+        );
+        let events = read_tool_events(dir.path()).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].exit, Some(0));
+        assert_eq!(events[0].output_bytes, Some(42));
+        assert_eq!(events[0].output_head.as_deref(), Some("hello"));
+        assert_eq!(events[0].output_tail.as_deref(), Some("world"));
+    }
+
+    #[test]
+    fn test_tail_returns_correct_slice() {
+        let dir = TempDir::new().unwrap();
+        let line = r#"{"ts":"2026-01-01T00:00:00Z","tool":"Bash","is_error":false,"session_id":"s1","stage_id":"st1"}"#;
+        let content = format!("{}\n{}\n{}\n", line, line, line);
+        write_events_file(&dir, &content);
+        let events = tail_tool_events(dir.path(), 2).unwrap();
+        assert_eq!(events.len(), 2);
+    }
+
+    #[test]
+    fn test_missing_file_returns_empty() {
+        let dir = TempDir::new().unwrap();
+        let events = read_tool_events(dir.path()).unwrap();
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_malformed_line_is_skipped() {
+        let dir = TempDir::new().unwrap();
+        write_events_file(
+            &dir,
+            "not-valid-json\n{\"ts\":\"2026-01-01T00:00:00Z\",\"tool\":\"Read\",\"is_error\":false,\"session_id\":\"s1\",\"stage_id\":\"st1\"}\n",
+        );
+        let events = read_tool_events(dir.path()).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].tool, "Read");
+    }
+}

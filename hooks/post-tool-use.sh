@@ -71,6 +71,41 @@ cat >"$HEARTBEAT_FILE" <<EOF
 }
 EOF
 
+# === TOOL EVENT LOGGING ===
+# Append a structured row to tool-events.jsonl for observability.
+# Entire section guarded by jq availability — heartbeat must never be broken.
+if command -v jq &>/dev/null; then
+	IS_ERROR=$(echo "$INPUT_JSON" | jq -r '(.tool_result.is_error // .tool_response.is_error) // false' 2>/dev/null || echo "false")
+	OUTPUT_TEXT=$(echo "$INPUT_JSON" | jq -r '(.tool_result.output // .tool_result.content // .tool_response.output // .tool_response.content) // ""' 2>/dev/null || echo "")
+	EXIT_CODE=$(echo "$INPUT_JSON" | jq -c '(.tool_result.exit_code // .tool_response.exit_code // null)' 2>/dev/null || echo "null")
+	OUTPUT_BYTES=$(echo "$OUTPUT_TEXT" | wc -c | tr -d ' ')
+
+	if command -v iconv &>/dev/null; then
+		OUTPUT_HEAD=$(echo "$OUTPUT_TEXT" | head -c 200 | iconv -c -t UTF-8 2>/dev/null || echo "$OUTPUT_TEXT" | head -c 200)
+		OUTPUT_TAIL=$(echo "$OUTPUT_TEXT" | tail -c 200 | iconv -c -t UTF-8 2>/dev/null || echo "$OUTPUT_TEXT" | tail -c 200)
+	else
+		OUTPUT_HEAD=$(echo "$OUTPUT_TEXT" | head -c 200)
+		OUTPUT_TAIL=$(echo "$OUTPUT_TEXT" | tail -c 200)
+	fi
+
+	JSONL_ROW=$(jq -nc \
+		--arg ts "$TIMESTAMP" \
+		--arg tool "$TOOL_NAME" \
+		--argjson is_error "$IS_ERROR" \
+		--arg session_id "$LOOM_SESSION_ID" \
+		--arg stage_id "$LOOM_STAGE_ID" \
+		--argjson exit_code "$EXIT_CODE" \
+		--arg output_bytes "$OUTPUT_BYTES" \
+		--arg output_head "$OUTPUT_HEAD" \
+		--arg output_tail "$OUTPUT_TAIL" \
+		'{ts: $ts, tool: $tool, is_error: $is_error, session_id: $session_id, stage_id: $stage_id, exit: $exit_code, output_bytes: ($output_bytes | tonumber), output_head: (if $output_head == "" then null else $output_head end), output_tail: (if $output_tail == "" then null else $output_tail end)}' \
+		2>/dev/null)
+
+	if [[ -n "$JSONL_ROW" ]]; then
+		echo "$JSONL_ROW" >> "${LOOM_WORK_DIR}/tool-events.jsonl"
+	fi
+fi
+
 # === COMPACTION RECOVERY DETECTION ===
 # After compaction, remind the agent to restore context
 RECOVERY_DIR="${LOOM_WORK_DIR}/compaction-recovery"

@@ -23,7 +23,7 @@
 //! The hook scripts are located in the loom installation directory under `hooks/`.
 
 mod config;
-mod events;
+pub mod events;
 mod generator;
 pub mod validators;
 
@@ -32,8 +32,8 @@ mod tests;
 
 pub use config::{HookEvent, HooksConfig};
 pub use events::{
-    log_hook_event, read_recent_events, read_session_events, read_stage_events, HookEventLog,
-    HookEventPayload,
+    log_hook_event, read_recent_events, read_session_events, read_stage_events, read_tool_events,
+    tail_tool_events, HookEventLog, HookEventPayload, ToolEvent,
 };
 pub use generator::{
     container_main_settings_path, find_hooks_dir, generate_hooks_settings,
