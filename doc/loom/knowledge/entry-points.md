@@ -372,3 +372,65 @@ pub struct ToolEvent {
 **Distinct from** `.work/hooks/events.jsonl` (HookEventLog struct in the same file) — that file logs session lifecycle hook events (SessionStart, PreCompact, SessionEnd, Stop). Both types live in `loom/src/hooks/events.rs`.
 
 **Consumer:** `orchestrator/monitor/tool_analysis::analyze_session(work_dir, session_id)` reads the last 50 events for a session and computes `ToolAnalysis` (stuck detection). See `architecture.md § Soft Signals` for the full pipeline.
+
+## .work/ Writer Inventory (Safe-FS Adoption — Stage 2 A1 Input)
+
+> Inventory of all orchestrator-side write operations targeting .work/ subtrees that are bind-mounted rw into containers. Each is a target for safe_write_in_workdir adoption to close the B2 symlink-attack surface.
+
+### Safe (already use locked_write with exclusive flock)
+
+- `orchestrator/core/persistence.rs:93` — writes stages/*.md via `locked_write`
+- `orchestrator/core/persistence.rs:127` — writes sessions/*.md via `locked_write`
+
+These two use `fs/locking.rs`'s `locked_write` which does open-lock-truncate-write semantics correctly.
+
+### Vulnerable (plain fs::write or unguarded append)
+
+**signals/ subtree** (7 generators + 1 CRUD update):
+- `orchestrator/signals/helpers.rs:30` — `fs::write(&signal_path, content)` — called by all signal generators
+- `orchestrator/signals/crud.rs:74` — `fs::write(&signal_path, updated_content)` — in-place update
+- Callers of `helpers::write_signal_file()`: generate.rs:103, generate.rs:299, merge.rs:36, base_conflict.rs:37, merge_conflict.rs:39, knowledge.rs:42, recovery.rs:34
+
+**handoffs/ subtree**:
+- `handoff/generator/mod.rs:61` — `fs::write(&handoff_path, markdown)` — creates context handoff files
+
+**memory/ subtree**:
+- `fs/memory/storage.rs:49` — `fs::write(&file_path, header)` — journal initialization (plain write)
+- `fs/memory/storage.rs:66-76` — `OpenOptions::new().append(true)` — journal entry append (no flock)
+- `fs/memory/storage.rs:102-112` — `OpenOptions::new().append(true)` — summary append (no flock)
+
+**pids/ subtree**:
+- `orchestrator/terminal/container/mod.rs:693` — `fs::write(&pid_file, pid.to_string())` — container PID tracking
+
+**wrappers/ subtree**:
+- `orchestrator/terminal/native/pid_tracking.rs:426` — `fs::write(&wrapper_path, &script)` — wrapper script creation (also note: wrapper path is currently STAGE-scoped, must become SESSION-scoped in Stage 3)
+
+**crashes/ subtree**:
+- `orchestrator/terminal/container/logs_capture.rs:77` — `fs::write(&path, content)` — container log persistence (also needs 4MiB cap — MN8)
+
+**network/ subtree**:
+- `orchestrator/terminal/container/network.rs:46` — `fs::write(&path, content)` — allowlist file creation
+
+### Safe-FS Helper Mapping (Stage 2 A1 task)
+
+Per the Stage 2 plan, adopt these helpers at each call site:
+
+| Subtree | Call Sites | Target Helper |
+|---------|-----------|---------------|
+| stages/, sessions/ | persistence.rs:93, :127 | `safe_locked_write_in_workdir` (already lock-based, migrate to safe API) |
+| signals/ | helpers.rs:30, crud.rs:74 | `safe_locked_write_in_workdir` |
+| handoffs/ | generator/mod.rs:61 | `safe_create_new_in_workdir` |
+| memory/ | storage.rs:49,66-76,102-112 | `safe_append_in_workdir` for appends, `safe_locked_write_in_workdir` for init |
+| pids/ | container/mod.rs:693 | `safe_locked_write_in_workdir` |
+| wrappers/ | pid_tracking.rs:426 | `safe_write_with_mode_in_workdir` (0o755 executable) |
+| crashes/ | logs_capture.rs:77 | `safe_locked_write_in_workdir` + 4MiB truncation |
+| network/ | network.rs:46 | `safe_locked_write_in_workdir` |
+
+### Directory Creation (also needs safe_create_dir_all_in_workdir)
+
+- `orchestrator/terminal/container/mod.rs:317-322` — creates sessions/memory/handoffs/crashes/wrappers/pids subdirs before mounting
+- `orchestrator/terminal/container/network.rs:25` — creates network/ subdir
+
+### Note on Wrapper Path Scoping
+
+Currently `pid_tracking.rs:426` writes `wrappers/{stage_id}-wrapper.sh` (stage-scoped). Stage 3 (harden-container-mod) changes this to `wrappers/{session_id}-wrapper.sh` (session-scoped). The safe-fs adoption in Stage 2 should use the path returned by the existing helper without hardcoding the format.

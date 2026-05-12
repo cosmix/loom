@@ -592,3 +592,53 @@ Soft signals are advisory per-session notices persisted to disk so that dedup su
 6. Static `loom status` reads via `commands/status/data.rs::collect_status_data()` using the same helper.
 
 **Key files:** `orchestrator/monitor/soft_signals.rs` (schema + I/O), `orchestrator/monitor/tool_analysis.rs` (analysis), `orchestrator/monitor/detection.rs` (event emission), `daemon/server/status.rs` (status derivation).
+
+## Container Backend — Mount Inventory and Attack Surface (Security Hardening Context)
+
+> For the container-security-hardening plan. Documents current mount topology as of pre-hardening state.
+
+### Constants (container/mod.rs:102-111)
+
+- `REPO_MOUNT = "/repo"` — container-side host repo root
+- `WORK_DIR_IN_CONTAINER = "/repo/.work"` — to be relocated to `/var/loom/work` in Stage 3
+- `HOOKS_MOUNT = "/home/loom/.claude/hooks/loom"` — operator hooks (ro)
+- `CLAUDE_CREDS_MOUNT = "/home/loom/.claude/.credentials.json"` — forwarded credentials (ro, opt-in)
+- `ALLOWLIST_MOUNT = "/etc/loom/network/allowed_domains.txt"` — firewall policy (ro)
+
+### Mount Table (build_mounts — container/mod.rs:240-473)
+
+| # | Layer | Host Source | Container Path | RW/RO | Session Types | Lines | Attack Surface |
+|---|-------|-------------|----------------|-------|---------------|-------|----------------|
+| 1 | Base | host_repo_root | /repo | RW (Knowledge/Merge/BaseConflict) or RO | All | 268-277 | RW: full repo modification, .git tampering; RO: read-only |
+| 2 | Per-stage | .worktrees/{id} | /repo/.worktrees/{id} | RW | Standard, IntegVerify | 287-289 | Modify own worktree, source files |
+| 3 | Per-stage | .git/ | /repo/.git | RW | Standard, IntegVerify | 291-294 | Tamper git history, refs, hooks — **B1 escape** |
+| 4-9 | .work subs | sessions/memory/handoffs/crashes/wrappers/pids | /repo/.work/{sub} | RW | All | 313-325 | Cross-session corruption, symlink attacks — **B2, C3, C4** |
+| 10 | Stage file | stages/NN-{id}.md | /repo/.work/stages/{file} | RW | All | 337-353 | Fake merged=true on own stage |
+| 11-15 | Config overlay | config.toml/daemon.token/lock/pid/log | /repo/.work/{file} | RO | Merge/BaseConflict/Knowledge | 365-379 | Without overlay: rewrite daemon.token to block orchestrator |
+| 16 | Settings | .claude/settings.local.json (per-worktree or per-session) | /repo/.worktrees/{id}/.claude/ or /repo/.claude/ | RO | All | 381-420 | Without ro: escalate mid-session permissions |
+| 17 | Hooks | ~/.claude/hooks/loom | /home/loom/.claude/hooks/loom | RO | All | 422-427 | Read hooks; cannot modify |
+| 18 | Creds | ~/.claude/.credentials.json | /home/loom/.claude/.credentials.json | RO | All | 429-439 | Read Claude API tokens — requires forward_credentials opt-in |
+| 19 | Allowlist | .work/network/allowed_domains.txt | /etc/loom/network/allowed_domains.txt | RO | All | 442-447 | Read-only; cannot modify firewall policy |
+| 20 | Loom binary | /proc/self/exe | /usr/local/bin/loom | RO | All | 449-470 | Read/exec loom CLI; cannot modify |
+
+### Mount Ordering Invariant
+
+Layer ordering is SECURITY-CRITICAL. Docker/Podman apply mounts in argument order — later entries shadow earlier ones at overlapping paths. The correct order:
+1. ro base (Layer 1 when ro)
+2. rw overlays (Layers 2-3, .work subtrees)
+3. ro overlays (Layers 3b, 4 — MUST come after rw to shadow)
+
+An rw overlay applied AFTER an ro overlay at the same path silently wins. A unit test at container/mod.rs:155-166 validates that settings.local.json ro overlay is listed after the worktree rw mount.
+
+### Key Escape Paths (pre-hardening)
+
+- **B1** (container escape): `.git` rw mount lets agent write git hooks that execute on the HOST during merge. Closed in Stage 4 (isolated-git-architecture) by eliminating the .git mount entirely.
+- **B2** (symlink attack): `.work/` rw subtrees lack `O_NOFOLLOW`; agent can plant a symlink, then orchestrator follows it when writing a log file. Closed in Stage 2 (safe-fs helper).
+- **B3** (daemon shutdown): `daemon.token` mounted rw in pre-hardening state (via full-rw /repo for Knowledge stages). Closed in Stage 2/3 by splitting into user.token/admin.token and never mounting admin.token.
+- **C1** (command injection): `effort` value in `claude_cmd` not shell-escaped. Closed in Stage 3 + schema validation in Stage 2.
+- **C2** (settings escalation): `.claude/settings.json` (not .local) not pinned ro. Closed in Stage 3.
+- **C3/C4** (cross-session forging): sessions/ and wrappers/ mounted as full directories rw — agent can modify sibling session files and wrapper scripts. Closed in Stage 3 (per-session file mounts).
+
+### Stale Comment Warning
+
+The module doc comment at `container/mod.rs:22-44` describes the mount layering in detail but will become stale after Stage 3 (WORK_DIR_IN_CONTAINER changes to `/var/loom/work`) and Stage 4 (no more /repo bind mount for Standard stages — replaced by container-private clone from bare mirror). Update that comment as part of Stages 3 and 4.
