@@ -356,7 +356,7 @@ pub fn safe_write_with_mode_in_workdir(
     mode: libc::mode_t,
 ) -> Result<()> {
     let content = enforce_size_limit(content)?;
-    let fd = open_safely(dirfd, relpath, libc::O_WRONLY | libc::O_CREAT, mode)?;
+    let fd = open_safely(dirfd, relpath, libc::O_WRONLY | libc::O_CREAT, mode.into())?;
     flock_exclusive(&fd)?;
     if unsafe { libc::ftruncate(fd.as_raw_fd(), 0) } < 0 {
         return Err(io::Error::last_os_error())
