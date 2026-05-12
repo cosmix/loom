@@ -126,7 +126,27 @@ impl StageExecutor for Orchestrator {
             self.graph
                 .mark_executing(stage_id)
                 .context("Failed to mark stage as executing in graph")?;
-            return self.start_knowledge_stage(stage);
+            // Wrap the spawn so a failure does not strand the stage in
+            // Executing state. Propagating the error here causes the
+            // orchestrator to exit, leaving disk state Executing — and the
+            // next `loom run` will then refuse to spawn it (graph keeps it
+            // out of ready_stages), polling forever with no progress.
+            if let Err(spawn_err) = self.start_knowledge_stage(stage) {
+                let err_msg = format!("{spawn_err:#}");
+                eprintln!("Knowledge stage '{stage_id}' spawn failed: {err_msg}");
+                if let Ok(mut reloaded) = self.load_stage(stage_id) {
+                    if reloaded.try_mark_blocked().is_ok() {
+                        reloaded.failure_info = Some(FailureInfo {
+                            failure_type: FailureType::InfrastructureError,
+                            detected_at: Utc::now(),
+                            evidence: vec![err_msg],
+                        });
+                        let _ = self.save_stage(&reloaded);
+                        let _ = self.graph.mark_status(stage_id, StageStatus::Blocked);
+                    }
+                }
+            }
+            return Ok(());
         }
 
         // For worktree stages: attempt worktree creation BEFORE marking as Executing
@@ -326,16 +346,39 @@ impl StageExecutor for Orchestrator {
         let original_session_id = session.id.clone();
 
         let spawned_session = if !self.config.manual_mode {
-            let spawned = self
-                .dispatcher
-                .for_stage(stage_backend)
-                .spawn_session(&stage, &worktree, session, &signal_path)
-                .with_context(|| format!("Failed to spawn session for stage: {stage_id}"))?;
-
-            // Print confirmation that stage was started
-            println!("  Started: {stage_id}");
-
-            spawned
+            // Wrap spawn so failure transitions the stage to Blocked rather
+            // than propagating to the orchestrator loop and killing the
+            // daemon. Without this, a transient spawn error strands the
+            // stage in Executing on disk; subsequent `loom run` invocations
+            // poll forever because Executing stages are never re-spawned.
+            match self.dispatcher.for_stage(stage_backend).spawn_session(
+                &stage,
+                &worktree,
+                session,
+                &signal_path,
+            ) {
+                Ok(spawned) => {
+                    println!("  Started: {stage_id}");
+                    spawned
+                }
+                Err(spawn_err) => {
+                    let err_msg =
+                        format!("Failed to spawn session for stage {stage_id}: {spawn_err:#}");
+                    eprintln!("{err_msg}");
+                    if let Ok(mut reloaded) = self.load_stage(stage_id) {
+                        if reloaded.try_mark_blocked().is_ok() {
+                            reloaded.failure_info = Some(FailureInfo {
+                                failure_type: FailureType::InfrastructureError,
+                                detected_at: Utc::now(),
+                                evidence: vec![err_msg],
+                            });
+                            let _ = self.save_stage(&reloaded);
+                            let _ = self.graph.mark_status(stage_id, StageStatus::Blocked);
+                        }
+                    }
+                    return Ok(());
+                }
+            }
         } else {
             println!("Manual mode: Session setup for stage '{stage_id}'");
             println!("  Worktree: {}", worktree.path.display());
