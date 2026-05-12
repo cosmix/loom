@@ -25,7 +25,7 @@
 # The :ubuntu-24.04 tag floats; the digest does not.
 #
 # The digest is resolved at build time by image.rs (`<runtime> pull` +
-# `inspect --format='{{index .RepoDigests 0}}'`) and passed via
+# `inspect --format='\{{index .RepoDigests 0}}'`) and passed via
 # `--build-arg BASE_IMAGE_DIGEST=sha256:...`. The all-zero default below
 # is intentional: it is overwritten on every build, and a build that
 # somehow proceeds without the override will fail at FROM with a clear
