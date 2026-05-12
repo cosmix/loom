@@ -10,7 +10,11 @@
 #      - `docker pull <ref>; docker inspect --format='\{{index .RepoDigests 0}}' <ref>`
 #
 #   2. npm / curl-installed binaries (claude-code, bun, uv, rustup, go)
-#      - claude-code: pinned to an explicit @version.
+#      - claude-code: INTENTIONALLY UNPINNED (@latest) so every image
+#        build picks up the newest CLI. The container backend invokes
+#        flags like `--effort` that only exist on recent releases; a
+#        stale pin silently breaks orchestration. Reproducibility of
+#        this layer is sacrificed deliberately.
 #      - rustup/uv/go: pinned via download + SHA256 verify + execute.
 #      - Bump the version AND its corresponding SHA256 together.
 #
@@ -93,9 +97,11 @@ RUN mkdir -p /home/${USERNAME}/.claude && \
     chown -R ${USER_UID}:${USER_GID} /home/${USERNAME}/.claude
 
 # Node.js 22 + Claude Code CLI (every loom image ships claude).
-# claude-code version is pinned. Bump the ARG to upgrade; the npm install
-# will refuse to silently float to a newer release.
-ARG CLAUDE_CODE_VERSION=2.1.140
+# claude-code is INTENTIONALLY tracked at @latest so every image build
+# picks up the newest CLI release — see the "PIN ROTATION" comment block
+# at the top of this file for the rationale (loom's container backend
+# emits flags like `--effort` that only exist on recent releases).
+ARG CLAUDE_CODE_VERSION=latest
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} && \
