@@ -456,3 +456,84 @@
 **Prevention:** When adding any resource-identity field to `Session` (or similar models), always implement both setter and clearer in the same commit. Callers that remove the resource (e.g., `kill_session`, `spawn_common` cleanup) must call the clearer before persisting.
 
 **Fix:** Call `session.clear_container_identity()` in `kill_session` and in the `spawn_common` error path, then persist the updated session file. `clear_container_identity` is already implemented in `models/session/methods.rs:135`.
+
+## Container Retry Collisions: Preemptive Removal Pattern (2026-05-12)
+
+**What happened:** When `spawn_session` failed and the stage was retried, `podman run` (or `docker run`) failed with "container name loom-<stage-id> is already in use". Similarly, worktrees and branches accumulated across retries.
+
+**Why:** The failure path in `stage_executor.rs` only marked the stage `Blocked` — it did not clean up the half-spawned container, git worktree, or branch left behind.
+
+**Prevention:**
+1. `spawn_common` must call `preemptive_remove_existing(runtime, container_name)` — a best-effort `rm -f` — at the very top, before network/mount setup. This is cheap and idempotent (`rm -f` exits 0 for non-existent containers).
+2. After the `spawn_session` call fails in `stage_executor.rs`, the rollback must clean: container (`preemptive_remove_existing`), worktree (`git::remove_worktree`), branch (`git::delete_branch`). Knowledge stages: container removal only (no worktree/branch to clean).
+3. All cleanup calls must be wrapped in `let _ = ...` — cleanup failures must not hide the original error.
+
+**Fix:** `preemptive_remove_existing` extracted as `pub(crate)` in `container/mod.rs`; failure rollback added to both the knowledge spawn path (~line 134) and standard-stage path (~line 364) in `stage_executor.rs`.
+
+## Hook Installation Asymmetry: Native vs Container Hook Paths (2026-05-12)
+
+**What happened:** Container-backend worktrees had `settings.local.json` with global hooks pointing to `~/.claude/hooks/loom/` (host paths). These paths don't exist inside the container — hooks dir is mounted at `/home/loom/.claude/hooks/loom`.
+
+**Why:** `generate_hooks_settings` in `hooks/generator.rs` called `configure_loom_hooks(obj)` unconditionally. `loom_hooks_config()` ALWAYS returns host-side paths. Session-specific hooks via `HooksConfig::to_settings_hooks()` already used `script_path()` (correct); the global-hook emission path was the bug.
+
+**Prevention:** `generate_hooks_settings` must branch on `config.backend`:
+- Native: `configure_loom_hooks(obj)` (host paths)
+- Container: `configure_loom_hooks_for_container(obj)` (uses `loom_hooks_config_for_dir("/home/loom/.claude/hooks/loom")`)
+
+The private helper `configure_loom_hooks_with_dir(obj, hooks_dir)` parameterizes both native and container paths — reuse it for both branches.
+
+**Fix:** `fs/permissions/hooks.rs` — extracted `loom_hooks_config_for_dir(dir)` + `configure_loom_hooks_with_dir(obj, dir)` helpers; added `configure_loom_hooks_for_container(obj)`. `hooks/generator.rs` now branches on backend type.
+
+## Per-Worktree Gitignore: Container settings.local.json Must Be Excluded (2026-05-12)
+
+**What happened:** `settings.local.json` inside a container-backed worktree contains `/home/loom/.claude/hooks/loom/` paths. An agent could `git add .claude/settings.local.json` and commit these container-specific paths to the repo, poisoning the hook config for native-backend users.
+
+**Why:** Container worktrees need `/home/loom/` paths in `settings.local.json`; host users expect `~/.claude/hooks/loom/` paths. Both can't be right simultaneously; only per-worktree exclusion keeps them separate.
+
+**Prevention:** After creating any container-backed worktree, append `.claude/settings.local.json` to `<worktree>/.git/info/exclude` (idempotently). Use per-worktree exclude — NOT `.gitignore` (which would pollute the user's repo). For knowledge stages (no worktree): append to main repo's `.git/info/exclude`.
+
+**Gotcha — gitignore path:** Per-worktree exclude is at `<repo>/.git/worktrees/<stage-id>/info/exclude` (the real gitdir path), NOT at `<worktree-dir>/.git/info/exclude`. The latter is a plain FILE containing a `gitdir:` pointer, not a directory.
+
+## Container Backend Git Identity: GIT_AUTHOR_* Is the Right Mechanism (2026-05-12)
+
+**What happened:** Container sessions had no `.gitconfig`, so git commits either used a broken/empty identity or failed with "Please tell me who you are."
+
+**Why:** Containers don't inherit the host `~/.gitconfig`. There's no automatic mechanism to pass user identity into a container environment.
+
+**Prevention:** Add `git_user_name: Option<String>` and `git_user_email: Option<String>` to `ProjectContainerConfig` (`plan/schema/execution.rs`). Populate at `loom init --backend container` time by reading `git config --global user.name/email` on the host. Inject as env vars in `ContainerBackend::build_env_for_session`:
+
+```
+GIT_AUTHOR_NAME, GIT_AUTHOR_EMAIL, GIT_COMMITTER_NAME, GIT_COMMITTER_EMAIL
+```
+
+Key rules:
+- Inject ALL FOUR or NONE. Partial identity (name only, no email) produces inconsistent commits — harder to debug than no identity at all.
+- Validate both fields: reject empty, >256 bytes, or any `char.is_control()`. Control chars are valid in podman `-e` values but produce malformed git objects.
+- Validation at two boundaries: `loom init` (warn + scrub) and `.work/config.toml` read time (silent scrub to `None`).
+
+**Fix:** `validate_git_identity()` in `plan/schema/execution.rs`; wired into `commands/init/execute.rs::sanitize_git_identity` (warns) and `fs/work_dir.rs::read_project_execution` (silent scrub).
+
+## Clippy --all-targets Required to Catch Test-Module Lints (2026-05-12)
+
+**What happened:** `cargo clippy -- -D warnings` (without `--all-targets`) did not compile test modules, so a style lint in `src/hooks/generator.rs` (items after a test module) went undetected during per-stage acceptance and only surfaced at integration-verify.
+
+**Why:** `cargo clippy` without `--all-targets` compiles only the default target (lib + bin). Test code (`#[cfg(test)] mod tests { ... }`) is in a different target and requires `--all-targets` to be included.
+
+**Prevention:** Stage acceptance criteria that include a clippy check should always use:
+```
+cargo clippy --all-targets -- -D warnings
+```
+Not `cargo clippy -- -D warnings`. The `--workspace` flag is also useful in monorepos.
+
+## Reviewer False Alarm: Verify Behavior Changes Against the Diff (2026-05-12)
+
+**What happened:** An integration-verify reviewer flagged a "HIGH native regression" in `hooks/generator.rs`, claiming the new backend match arm introduced double-firing of global hooks on native worktrees. The claim was false — the native branch was already unconditionally calling `configure_loom_hooks(obj)` before the change; the new commit only added the container arm.
+
+**Why:** The reviewer analyzed the stage description's framing rather than the actual diff. The description said "branching on config.backend" which sounds like it changes native behavior; the diff showed the native arm was structurally identical to the pre-existing unconditional call.
+
+**Prevention:** When a reviewer asserts a behavior change, verify against the actual diff:
+```
+git show <commit>~1 -- <file>  # before
+git show <commit> -- <file>    # after
+```
+Do not trust verbal descriptions of what a commit does — always compare before/after diffs directly.

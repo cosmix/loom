@@ -322,6 +322,20 @@ forward_credentials = ["claude"]
 
 Supported values: `"claude"` (mounts `~/.claude/.credentials.json`).
 
+### Git Identity
+
+Container sessions have no `~/.gitconfig`. `loom init --backend container` reads the host git identity and persists it in `.work/config.toml`:
+
+```toml
+[project_execution.container]
+git_user_name = "Jane Developer"
+git_user_email = "jane@example.com"
+```
+
+These are injected as `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME`, and `GIT_COMMITTER_EMAIL` environment variables into every container session. Both fields must be present — if either is missing, no identity env vars are injected (partial identity produces malformed commits).
+
+To override or set manually after init, edit `.work/config.toml` on the host. Values are validated at init time and on each load: empty strings, values longer than 256 bytes, and values containing control characters are rejected.
+
 ### permission_mode
 
 The `permission_mode` field controls Claude Code's permission prompting:

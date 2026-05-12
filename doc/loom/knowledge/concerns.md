@@ -151,26 +151,35 @@ The firewall enforcement probe (`container/probe.rs`) runs on the default bridge
 
 **Hardening path:** Tag base merges explicitly via session metadata (e.g., a marker file or distinct `SessionType::BaseConflict` always present during the base-merge window) and key the carve-out off that signal alone, not the current branch name. Until then, the heuristic is documented here so future work knows where to look.
 
-## Container Orphan Retry Collision (2026-05-12)
+## ~~Container Orphan Retry Collision~~ (RESOLVED 2026-05-12)
 
-When `spawn_session` fails in `stage_executor.rs` (knowledge or standard stage), the stage is marked `Blocked` but leftover resources persist: container (via `<runtime> run` naming), git worktree (`.worktrees/<stage-id>`), and branch (`loom/<stage-id>`). On retry, `podman run` fails with "container name loom-<stage-id> is already in use". Worktrees and branches also accumulate.
+**Fixed in plan:** PLAN-container-backend-hardening (stage: fix-orphan-cleanup)
 
-**Fix needed:** Two-part:
-1. Preemptive `rm -f <container_name>` at the top of `spawn_common` (cheap defense against retry collision)
-2. Failure rollback in `stage_executor.rs` calls `cleanup_worktree` + `cleanup_branch` + runtime `rm -f` before returning (standard stages). Knowledge stages: container removal only.
+`preemptive_remove_existing` (best-effort `rm -f`) at the top of `spawn_common` now clears stale containers before each spawn. Failure rollback in `stage_executor.rs` calls `cleanup_worktree` + `cleanup_branch` + container `rm -f` for standard stages; container removal only for knowledge stages. See mistakes.md — Container Retry Collisions for prevention rules.
 
-## Container settings.local.json Path Leakage (2026-05-12)
+## ~~Container settings.local.json Path Leakage~~ (RESOLVED 2026-05-12)
 
-`settings.local.json` inside a container-backed worktree has hooks configured with `/home/loom/.claude/hooks/loom/` paths. Without exclusion, an agent can `git add .claude/settings.local.json` and commit these paths back to the host repo, poisoning the hook configuration for native-backend users who run the same branch.
+**Fixed in plan:** PLAN-container-backend-hardening (stage: fix-container-hooks)
 
-**Fix needed:** Append `.claude/settings.local.json` to `<worktree>/.git/info/exclude` immediately after worktree creation. Use per-worktree exclude (not top-level `.gitignore`) so it doesn't pollute the user's repo `.gitignore`.
+After worktree creation, `.claude/settings.local.json` is now appended to `<worktree>/.git/info/exclude`. Uses per-worktree exclude (not top-level `.gitignore`) to avoid polluting the repo. Knowledge stages write to the main repo's `.git/info/exclude`. See mistakes.md — Hook Installation Asymmetry and Per-Worktree Gitignore Exclusion for prevention rules.
 
-## Container Git Identity Gap (2026-05-12)
+## ~~Container Git Identity Gap~~ (RESOLVED 2026-05-12)
 
-Container sessions have no `.gitconfig`. Commits either use git's fallback identity or fail. There is no way for operators to specify the git identity in the plan or `.work/config.toml`, and no automatic inheritance from the host's git identity.
+**Fixed in plan:** PLAN-container-backend-hardening (stage: fix-git-identity)
 
-**Fix needed:** Add `git_user_name: Option<String>` and `git_user_email: Option<String>` to `ProjectContainerConfig`. Default from host `git config --global user.name/email` at `loom init --backend container` time. Inject as `GIT_AUTHOR_*` / `GIT_COMMITTER_*` env vars in `ContainerBackend::build_env_for_session`. Only inject ALL FOUR env vars when both fields are Some.
+`git_user_name` and `git_user_email` fields added to `ProjectContainerConfig` (`plan/schema/execution.rs`). Populated at `loom init --backend container` time from host `git config --global`. Injected as all four `GIT_AUTHOR_*` / `GIT_COMMITTER_*` env vars (only when both are present). Validated against control chars and length via `validate_git_identity()` at init and read boundaries. See `README.md` § Container Backend — Git Identity for operator docs.
 
 ## container/mod.rs Size Update (2026-05-12)
 
 `container/mod.rs` grew from ~975 lines to **1141 lines** during the current hardening work. Still 185% over the 400-line limit. Refactor deferred.
+
+## Container Spawn-Failure Rollback: Zero Integration Test Coverage (2026-05-12)
+
+The failure rollback chain in `orchestrator/core/stage_executor.rs` — `preemptive_remove_existing` → `remove_container_on_failure` + `git::remove_worktree` + `git::delete_branch` + `try_mark_blocked` — has no direct integration test coverage. The retry-after-failure scenario (container spawn fails, stage retries cleanly) is unverified end-to-end.
+
+**Mitigations in place:**
+- `preemptive_remove_existing_is_infallible` unit test verifies the rm -f preamble contract
+- `smoke_rm_f_missing_container_exits_zero` (in `tests/container_smoke.rs`) validates podman's exit-0 contract on missing containers
+- Wiring check confirms `remove_worktree|delete_branch` patterns exist in `stage_executor.rs`
+
+**Gap:** No test injects a failing `TerminalBackend::spawn_session` and asserts that each rollback helper was called in sequence. To add: a unit-test seam that wraps `TerminalBackend` with a failing stub and verifies the rollback sequence.
