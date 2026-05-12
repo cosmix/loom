@@ -104,7 +104,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
 {{#if has_rust}}
 # Rust toolchain — download + SHA256 verify + execute rather than curl|sh.
 # rustup-init SHA256 must match the upstream release; rotate together.
-ARG RUSTUP_INIT_SHA256=a3339fb004c3d0bb9862ba0bce001861fe5cbde9c10d16591eb3f39ee6cd3e7f
+ARG RUSTUP_INIT_SHA256=6c30b75a75b28a96fd913a037c8581b580080b6ee9b8169a3c0feb1af7fe8caf
 RUN set -eux; \
     curl --proto '=https' --tlsv1.2 -sSf -o /tmp/rustup-init.sh https://sh.rustup.rs; \
     echo "${RUSTUP_INIT_SHA256}  /tmp/rustup-init.sh" | sha256sum -c -; \
