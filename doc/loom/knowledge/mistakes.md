@@ -544,3 +544,20 @@ git show <commit> -- <file>    # after
 ```
 
 Do not trust verbal descriptions of what a commit does — always compare before/after diffs directly.
+
+## Container Backend: Host `.claude/settings.local.json` Corruption (Fixed 2026-05-12)
+
+**What happened:** When a container-backed knowledge stage spawned, `stage_executor::start_knowledge_stage` called both `crate::sandbox::write_settings(..., &self.config.repo_root)` and `setup_hooks_for_worktree(&self.config.repo_root, &config)` against the **main repo** path. With `BackendType::Container`, those writes rewrote the host's `<repo>/.claude/settings.local.json` with:
+
+- Container hook paths (`/home/loom/.claude/hooks/loom/...`)
+- `permissions.defaultMode: "bypassPermissions"` (the container's default permission mode)
+
+That same file is what the operator's host Claude sessions read when working in the main repo. Result: parallel host work was broken (hooks pointed to paths that don't exist on the host) and the host inherited `bypassPermissions` — a security regression.
+
+**Why:** Native and container backends were sharing a write path that targets `<repo>/.claude/settings.local.json` (correct for native, where Claude runs on the host directly). The container backend's settings are an entirely different concern — they describe behavior inside the container — but the writer didn't distinguish.
+
+**Prevention — INVARIANT:** Container-backed non-worktree sessions (Knowledge, Merge, BaseConflict) MUST write their settings to a loom-owned, per-session overlay under `<work_dir>/container-settings/<session-id>.local.json` and have the container backend ro-mount that file at `/repo/.claude/settings.local.json`. The host's `<repo>/.claude/settings.local.json` must NEVER be written by container-backed paths.
+
+**Detection rule:** Any new code that writes `<repo>/.claude/settings.local.json` from inside an orchestrator path must branch on `BackendType`. Native → write to the repo file. Container → write to `<work_dir>/container-settings/<session-id>.local.json` via `crate::hooks::setup_container_main_session_settings(...)`.
+
+**Implementation:** `hooks/generator.rs::setup_container_main_session_settings` + `container_main_settings_path`. Mount selection lives in `orchestrator/terminal/container/mod.rs::build_mounts` (non-worktree branch). Regression tests: `hooks::generator::tests::container_main_session_settings_isolates_from_host_repo` and `orchestrator::terminal::container::tests::build_mounts_knowledge_session_uses_per_session_settings_overlay`.
