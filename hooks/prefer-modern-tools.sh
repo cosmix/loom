@@ -18,11 +18,10 @@
 #   {"tool_name": "Bash", "tool_input": {"command": "..."}, ...}
 #
 # Exit codes:
-#   0 - Allow the command to proceed
-#   2 - Block the command and return guidance to Claude
+#   0 - Allow the command to proceed (always; this hook is advisory only)
 #
-# Output format when blocking:
-#   {"continue": false, "reason": "..."}
+# Output format when warning:
+#   {"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "LOOM_HOOK_WARN: ..."}}
 
 set -euo pipefail
 
@@ -100,52 +99,20 @@ uses_find() {
 	echo "$cmd" | grep -qE '(^|[|;&[:space:]])(\/usr\/bin\/|\/bin\/)?find[[:space:]]'
 }
 
-# Check for grep usage - block and guide to native tools first, then rg
+# Check for grep usage - warn and guide to native tools first, then rg
 if uses_grep "$STRIPPED_COMMAND"; then
-	echo "BLOCKED: grep detected" >>"$DEBUG_LOG" 2>&1
-	# Output to stderr (shown to Claude) and exit 2 to block
-	cat >&2 <<'EOF'
-BLOCKED: Prefer Claude Code's native Grep tool for standard searches.
-
-For simple pattern matching, use the Grep tool directly:
-  Grep tool: pattern="error", path="src/", glob="*.rs"
-
-If you need advanced features (complex regex, pipes, output processing),
-use 'rg' (ripgrep) instead of 'grep':
-
-Examples:
-  grep -r "pattern" .     →  rg "pattern" .
-  grep -i "pattern" file  →  rg -i "pattern" file
-  grep -v "exclude" file  →  rg -v "exclude" file
-  grep -l "pattern" .     →  rg -l "pattern" .
-
-Use the native Grep tool when possible, or rewrite using rg.
-EOF
-	exit 2
+	echo "WARNED: grep detected" >>"$DEBUG_LOG" 2>&1
+	jq -nc --arg ctx "LOOM_HOOK_WARN: Prefer Claude Code's native Grep tool or 'rg' (ripgrep) over 'grep'. Examples: grep -r \"pattern\" . → rg \"pattern\" ." \
+		'{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $ctx}}'
+	exit 0
 fi
 
-# Check for find usage - block and guide to native tools first, then fd
+# Check for find usage - warn and guide to native tools first, then fd
 if uses_find "$STRIPPED_COMMAND"; then
-	echo "BLOCKED: find detected" >>"$DEBUG_LOG" 2>&1
-	# Output to stderr (shown to Claude) and exit 2 to block
-	cat >&2 <<'EOF'
-BLOCKED: Prefer Claude Code's native Glob tool for file searches.
-
-For finding files by pattern, use the Glob tool directly:
-  Glob tool: pattern="**/*.rs", path="src/"
-
-If you need advanced features (modification time, size, exec),
-use 'fd' instead of 'find':
-
-Examples:
-  find . -name "*.txt"           →  fd -e txt
-  find . -name "*.rs" -type f    →  fd -e rs -t f
-  find src -name "test*"         →  fd "test" src
-  find . -mtime -7               →  fd --changed-within 7d
-
-Use the native Glob tool when possible, or rewrite using fd.
-EOF
-	exit 2
+	echo "WARNED: find detected" >>"$DEBUG_LOG" 2>&1
+	jq -nc --arg ctx "LOOM_HOOK_WARN: Prefer Claude Code's native Glob tool or 'fd' over 'find'. Examples: find . -name \"*.txt\" → fd -e txt" \
+		'{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $ctx}}'
+	exit 0
 fi
 
 # Command is allowed as-is
