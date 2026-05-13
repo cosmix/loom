@@ -1,3 +1,4 @@
+pub mod adjudication;
 pub mod auto_merge;
 pub mod continuation;
 pub mod core;

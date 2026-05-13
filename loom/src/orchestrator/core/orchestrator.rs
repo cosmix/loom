@@ -13,6 +13,7 @@ use crate::language::{detect_project_languages, DetectedLanguage};
 use crate::models::session::Session;
 use crate::models::stage::StageStatus;
 use crate::models::worktree::Worktree;
+use crate::orchestrator::adjudication::AdjudicatorRegistry;
 use crate::orchestrator::monitor::{Monitor, MonitorConfig};
 use crate::plan::schema::SandboxConfig;
 use crate::plan::ExecutionGraph;
@@ -111,6 +112,9 @@ pub struct Orchestrator {
     /// the logs when a dependent stage cannot start because of a phantom
     /// merge. Used by `stage_executor.rs::start_stage`.
     pub(super) spawn_skip_logged: HashSet<String>,
+    /// Adjudicator registry — owns worker threads + completion channel.
+    /// Disabled (workers never spawn) when `ANTHROPIC_API_KEY` is unset.
+    pub(super) adjudicators: AdjudicatorRegistry,
 }
 
 impl Orchestrator {
@@ -159,6 +163,39 @@ impl Orchestrator {
         // Detect project languages for skill recommendations
         let detected_languages = detect_project_languages(&config.repo_root);
 
+        // Adjudicator: read ANTHROPIC_API_KEY at daemon startup. When the
+        // env var is absent, the registry stays in disabled mode for the
+        // entire daemon run and disputes route directly to NeedsHumanReview.
+        let api_key = std::env::var("ANTHROPIC_API_KEY").ok().and_then(|k| {
+            let trimmed = k.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+        if api_key.is_none() {
+            tracing::warn!(
+                target: "loom::adjudication",
+                "ANTHROPIC_API_KEY not set; adjudicator is disabled for this daemon run",
+            );
+        }
+        let adjudicators = AdjudicatorRegistry::new(api_key, &config.work_dir);
+
+        // Reconcile any orphaned plan-amendment snapshots from a prior
+        // crash. This is cheap (no I/O when no snapshots exist) and must
+        // happen BEFORE the first poll tick reads stage acceptance arrays.
+        if let Err(e) = crate::plan::amendment::verify_plan_versions_consistency(
+            &resolve_plan_path_for_startup(&config.work_dir).unwrap_or_default(),
+            &config.work_dir,
+        ) {
+            tracing::warn!(
+                target: "loom::adjudication",
+                error = %e,
+                "plan-amendment consistency check failed at startup",
+            );
+        }
+
         Ok(Self {
             config,
             graph,
@@ -172,6 +209,7 @@ impl Orchestrator {
             detected_languages,
             merge_retry_attempted: HashSet::new(),
             spawn_skip_logged: HashSet::new(),
+            adjudicators,
         })
     }
 
@@ -243,6 +281,16 @@ impl Orchestrator {
         self.sync_queued_status_to_files()
             .context("Failed to sync queued status to files")?;
 
+        // Adjudicator hooks: poll for pending disputes/verdicts and drain
+        // completed worker threads. Idempotent + cheap when there are no
+        // disputes on disk.
+        self.check_pending_disputes()
+            .context("Failed to check pending disputes")?;
+        self.apply_pending_verdicts()
+            .context("Failed to apply pending verdicts")?;
+        self.drain_completed_adjudicator_workers()
+            .context("Failed to drain completed adjudicator workers")?;
+
         // Spawn merge resolution sessions for stages stuck in MergeConflict/MergeBlocked
         let initial_merge_sessions = self
             .spawn_merge_resolution_sessions()
@@ -279,6 +327,16 @@ impl Orchestrator {
             // Sync queued status back to files so status display is accurate
             self.sync_queued_status_to_files()
                 .context("Failed to sync queued status to files")?;
+
+            // Adjudicator hooks (every tick): scan for new disputes,
+            // apply ready verdicts, drain completed workers. The calls
+            // are no-ops when there are no pending disputes on disk.
+            self.check_pending_disputes()
+                .context("Failed to check pending disputes")?;
+            self.apply_pending_verdicts()
+                .context("Failed to apply pending verdicts")?;
+            self.drain_completed_adjudicator_workers()
+                .context("Failed to drain completed adjudicator workers")?;
 
             // Spawn merge resolution sessions for stages stuck in MergeConflict/MergeBlocked
             let merge_sessions_spawned = self
@@ -391,6 +449,51 @@ impl Orchestrator {
     /// Count currently running sessions
     pub fn running_session_count(&self) -> usize {
         self.active_sessions.len()
+    }
+
+    /// Poll `.work/disputes/` for new dispute requests and spawn worker
+    /// threads as needed. See [`AdjudicatorRegistry::check_pending_disputes`].
+    pub(crate) fn check_pending_disputes(&mut self) -> Result<()> {
+        let work_dir = self.config.work_dir.clone();
+        self.adjudicators.check_pending_disputes(&work_dir)
+    }
+
+    /// Apply verdict files written by adjudicator workers to the
+    /// stage state. See [`AdjudicatorRegistry::apply_pending_verdicts`].
+    pub(crate) fn apply_pending_verdicts(&mut self) -> Result<()> {
+        let work_dir = self.config.work_dir.clone();
+        self.adjudicators.apply_pending_verdicts(&work_dir)
+    }
+
+    /// Drain the worker→orchestrator completion channel and join any
+    /// handles whose workers have reported done.
+    pub(crate) fn drain_completed_adjudicator_workers(&mut self) -> Result<()> {
+        let work_dir = self.config.work_dir.clone();
+        self.adjudicators.drain_completed_workers(&work_dir)
+    }
+
+    /// Cooperative shutdown for the adjudicator registry. Called from
+    /// the daemon shutdown path; signals workers to cancel and joins
+    /// their handles until `deadline`.
+    pub fn shutdown_adjudicators(&mut self, deadline: std::time::Instant) {
+        self.adjudicators.shutdown(deadline);
+    }
+}
+
+/// Resolve the plan source_path from `.work/config.toml` for daemon-
+/// startup recovery. Returns `None` when there is no config yet (e.g.
+/// during a test that doesn't initialise one).
+fn resolve_plan_path_for_startup(work_dir: &std::path::Path) -> Option<PathBuf> {
+    let cfg = crate::fs::work_dir::load_config(work_dir).ok().flatten()?;
+    let path = cfg.source_path()?;
+    if path.is_absolute() {
+        Some(path)
+    } else {
+        let root = work_dir
+            .canonicalize()
+            .ok()
+            .and_then(|wd| wd.parent().map(|p| p.to_path_buf()))?;
+        Some(root.join(path))
     }
 }
 

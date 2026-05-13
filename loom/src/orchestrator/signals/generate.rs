@@ -90,7 +90,7 @@ pub fn generate_signal_with_skills(
         }
     }
 
-    let content = format_signal_content(
+    let mut content = format_signal_content(
         session,
         stage,
         worktree,
@@ -99,6 +99,21 @@ pub fn generate_signal_with_skills(
         git_history,
         &embedded_context,
     );
+
+    // Inject adjudicator feedback (if any) for stages that have been
+    // disputed. Appended after the formatted sections so it sits near
+    // the end where the agent's recitation attention is highest.
+    if stage.dispute_count > 0 {
+        if let Ok(Some(text)) =
+            crate::orchestrator::adjudication::feedback::read_feedback(work_dir, &stage.id)
+        {
+            content.push_str("\n## Adjudicator Feedback (from your prior dispute)\n\n");
+            content.push_str(&text);
+            if !content.ends_with('\n') {
+                content.push('\n');
+            }
+        }
+    }
 
     super::helpers::write_signal_file(&session.id, &content, work_dir)
 }
