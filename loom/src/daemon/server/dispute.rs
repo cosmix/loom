@@ -43,6 +43,17 @@ pub fn handle_dispute_criteria(
     evidence_commit: Option<String>,
     failure_output: Option<String>,
 ) -> Result<Response> {
+    // Reject path-traversal or otherwise malformed ids BEFORE any FS
+    // touch. The handler runs under the daemon RPC trust boundary, but the
+    // stage_id arrives unvalidated from the wire: a string like
+    // "../../tmp/x" would otherwise force `create_dir_all` to materialise
+    // attacker-controlled directories outside `.work/disputes/`.
+    if let Err(e) = crate::validation::validate_id(stage_id) {
+        return Ok(Response::Error {
+            message: format!("invalid stage_id: {e}"),
+        });
+    }
+
     // Resolve canonical .work path. Worktrees use a `.work` symlink to
     // ../../.work; canonicalize so the dirfd-relative writes land in the
     // real directory and so the per-stage lock paths align.
@@ -398,6 +409,39 @@ mod tests {
                     .exists());
             }
             other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispute_rejects_path_traversal_in_stage_id() {
+        // SEC: handle_dispute_criteria takes stage_id straight from the wire
+        // and otherwise feeds it to create_dir_all / safe_fs. validate_id must
+        // reject path-traversal shapes BEFORE any FS write happens.
+        let (_tmp, work_dir) = setup(StageStatus::Executing, 1);
+        let evil = "../../tmp/escape";
+        let resp =
+            handle_dispute_criteria(&work_dir, evil, 0, "x".to_string(), None, None).unwrap();
+        match resp {
+            Response::Error { message } => {
+                assert!(
+                    message.contains("invalid stage_id"),
+                    "expected invalid stage_id error, got: {message}",
+                );
+            }
+            other => panic!("expected Error, got {other:?}"),
+        }
+        // Side-effect check: no escape-attempt directory should exist anywhere
+        // under disputes_root.
+        let disputes_root = work_dir.join("disputes");
+        if disputes_root.exists() {
+            for entry in std::fs::read_dir(&disputes_root).unwrap() {
+                let name = entry.unwrap().file_name();
+                let name = name.to_string_lossy();
+                assert!(
+                    !name.contains("..") && !name.contains('/'),
+                    "found suspicious entry under disputes/: {name}",
+                );
+            }
         }
     }
 

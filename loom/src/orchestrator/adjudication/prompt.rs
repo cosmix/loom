@@ -164,9 +164,20 @@ fn criterion_display(c: &AcceptanceCriterion) -> String {
 }
 
 fn run_git_show(work_dir: &Path, commit: &str) -> Result<String> {
+    // Defence-in-depth: the dispute RPC writes `evidence_commit` straight
+    // through from the agent. A value starting with `-` (e.g.
+    // `--output=/tmp/x`) would be parsed by `git show` as an option.
+    // Require a SHA-shaped string (4–64 hex chars) and pass `--` so any
+    // remaining shape oddity still lands in the positional slot.
+    let is_sha = !commit.is_empty()
+        && commit.len() <= 64
+        && commit.chars().all(|c| c.is_ascii_hexdigit());
+    if !is_sha {
+        anyhow::bail!("refusing git show: evidence_commit is not a SHA-shaped string");
+    }
     let project_root = work_dir.parent().unwrap_or(work_dir);
     let output = Command::new("git")
-        .args(["show", "--no-color", "--stat", "-p", commit])
+        .args(["show", "--no-color", "--stat", "-p", "--", commit])
         .current_dir(project_root)
         .output()
         .context("Failed to invoke git show")?;

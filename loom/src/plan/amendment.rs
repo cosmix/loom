@@ -403,6 +403,30 @@ pub fn apply_amendment(
     //       between steps leaves a state we can reconcile on startup.
     let _lock = PlanVersionsLock::acquire(work_dir)?;
 
+    // -- 0a. Idempotency under crash-mid-apply: if the audit log already
+    //        contains a row matching this (stage_id, dispute_id), the
+    //        previous call landed (snapshot + audit + plan rewrite) but
+    //        the caller crashed before writing its own success marker.
+    //        Re-applying the patch would double-patch (Insert duplicates,
+    //        Delete shifts to the wrong index, Replace adds another
+    //        snapshot row). Return the existing result instead.
+    if let Some(dispute_id) = request.dispute_id.as_deref() {
+        let prior = read_audit_rows(work_dir)?.into_iter().find(|r| {
+            r.stage_id == request.stage_id && r.dispute_id.as_deref() == Some(dispute_id)
+        });
+        if let Some(row) = prior {
+            let count = count_amendments_for_stage(work_dir, &request.stage_id)?;
+            return Ok(AmendmentResult {
+                version: row.version,
+                stage_id: row.stage_id,
+                field: row.field,
+                snapshot_path: plan_versions_dir(work_dir).join(snapshot_filename(row.version)),
+                amendments_applied: count,
+                applied_at: row.applied_at,
+            });
+        }
+    }
+
     // -- 1. Resolve the plan path (fall back to config.toml if the supplied
     //       path is not accessible).
     let plan_path = if plan_path.exists() {

@@ -301,7 +301,15 @@ impl AdjudicatorRegistry {
                 if let Ok(reloaded) = load_stage(&stage.id, work_dir) {
                     stage.acceptance = reloaded.acceptance;
                     stage.wiring = reloaded.wiring;
-                    stage.amendments_applied = reloaded.amendments_applied + 1;
+                    // Derive amendments_applied from the audit log (the
+                    // source of truth used by the cap check). Bumping the
+                    // in-memory field by +1 here would double-count on a
+                    // crash-mid-apply retry: apply_amendment is now
+                    // idempotent (returns the prior result), but the
+                    // increment-on-reload would have re-bumped each pass.
+                    stage.amendments_applied =
+                        crate::plan::amendment::count_amendments_for_stage(work_dir, &stage.id)
+                            .unwrap_or_else(|_| reloaded.amendments_applied.saturating_add(1));
                 }
                 // Accept verdict closes the evidence loop: clear feedback
                 // and re-queue the stage so the agent can retry.
