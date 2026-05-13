@@ -13,8 +13,14 @@
 //!   * Merge / base-conflict / knowledge cwd: `/repo`.
 //!   * `LOOM_WORK_DIR=/repo/.work`.
 //!   * `~/.claude/hooks/loom` -> `/home/loom/.claude/hooks/loom` (ro).
-//!   * `~/.claude/.credentials.json` -> `/home/loom/.claude/.credentials.json`
-//!     (ro, only when `forward_credentials` contains `"claude"`).
+//!   * `<work_dir>/container-creds/<session_id>.json` ->
+//!     `/home/loom/.claude/.credentials.json` (rw, only when
+//!     `forward_credentials` contains `"claude"`). The source is a fresh
+//!     per-session **copy** of the host's `~/.claude/.credentials.json`
+//!     made at spawn time, NOT the host file itself. This isolates each
+//!     container's OAuth refresh-token rotation so a host login or sibling
+//!     container's refresh does not invalidate the in-flight session's
+//!     tokens. See [`prepare_session_credentials`].
 //!   * `<host>/.work/network/allowed_domains.txt` ->
 //!     `/etc/loom/network/allowed_domains.txt` (ro). The full firewall +
 //!     allowlist sidecar lands in stage 4.
@@ -44,7 +50,11 @@
 //! 4. **`.claude/settings.local.json` ro overlay** — pinned read-only
 //!    AFTER the worktree rw mount so the agent cannot rewrite its own
 //!    permission grants mid-session.
-//! 5. **Hooks dir + credentials** — existing ro mounts, unchanged.
+//! 5. **Hooks dir (ro) + per-session credentials copy (rw)** — hooks are
+//!    a shared install bound ro. Credentials are a per-session writable
+//!    copy so the in-container Claude Code can persist OAuth refresh
+//!    rotations without invalidating the host's tokens or sibling
+//!    containers' tokens. The copy is removed in `kill_session`.
 //!
 //! Liveness uses `<runtime> inspect -f '{{.State.Running}}'`; we never
 //! `kill -0` against the host PID for container sessions.
@@ -131,6 +141,104 @@ pub const MIRROR_MOUNT: &str = "/var/loom/mirror";
 /// Env keys stripped at container launch. These leak host credentials or
 /// agent metadata that the containerised process must not inherit.
 const ENV_STRIP: &[&str] = &["SSH_AUTH_SOCK", "GH_TOKEN", "GITHUB_TOKEN"];
+
+/// Compute the host path of the per-session credentials copy.
+///
+/// Each container session gets its own writable copy of
+/// `~/.claude/.credentials.json` at this path. Keyed by session id so
+/// parallel stages don't collide, and so the cleanup in `kill_session`
+/// removes only that session's copy.
+fn container_session_credentials_path(work_dir: &Path, session_id: &str) -> PathBuf {
+    work_dir
+        .join("container-creds")
+        .join(format!("{session_id}.json"))
+}
+
+/// Materialize a per-session writable copy of the operator's Claude
+/// credentials and return the destination path so the caller can bind it
+/// rw into the container.
+///
+/// **Why per-session copy and not a direct bind of `~/.claude/.credentials.json`:**
+///
+/// 1. Claude Code rewrites the credentials file atomically (write tmp →
+///    rename), which produces a new inode each time. A single-file bind
+///    mount targets the *inode*, so after a host `/login` or background
+///    refresh, the container would keep seeing the previous (now
+///    server-invalidated) tokens.
+/// 2. Anthropic's OAuth flow rotates the refresh token on every refresh.
+///    Mounting the host file read-only would prevent the in-container
+///    Claude Code from persisting the new tokens, and mounting it
+///    read-write would cross-invalidate the host and every sibling
+///    container that shares the same file.
+///
+/// The per-session copy gives each container its own private refresh
+/// chain that is independent of the host and other stages. We never
+/// write it back: the host re-authenticates from its own file, and the
+/// container's refreshes are ephemeral.
+///
+/// Returns `Ok(None)` when:
+/// - `"claude"` is not in `forward_credentials` (opt-in feature), or
+/// - the source path does not exist (e.g., the operator never ran
+///   `claude login` on the host).
+fn prepare_session_credentials(
+    work_dir: &Path,
+    session_id: &str,
+    forward_credentials: &[String],
+    source: &Path,
+) -> Result<Option<PathBuf>> {
+    if !forward_credentials
+        .iter()
+        .any(|c| c.eq_ignore_ascii_case("claude"))
+    {
+        return Ok(None);
+    }
+    if !source.exists() {
+        return Ok(None);
+    }
+
+    let dst = container_session_credentials_path(work_dir, session_id);
+    let parent = dst
+        .parent()
+        .ok_or_else(|| anyhow!("container-creds path has no parent"))?;
+    std::fs::create_dir_all(parent).with_context(|| {
+        format!(
+            "Failed to create container-creds directory: {}",
+            parent.display()
+        )
+    })?;
+
+    // Pre-create the destination with mode 0600 then write the source
+    // contents. `std::fs::copy` preserves the source mode on Linux (which
+    // is also 0600 for `.credentials.json`), but we belt-and-suspenders
+    // the permission here in case the host file's mode is loosened.
+    let bytes = std::fs::read(source)
+        .with_context(|| format!("Failed to read host credentials: {}", source.display()))?;
+    {
+        use std::io::Write;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&dst)
+            .with_context(|| {
+                format!(
+                    "Failed to create per-session credentials file: {}",
+                    dst.display()
+                )
+            })?;
+        f.write_all(&bytes).with_context(|| {
+            format!("Failed to write per-session credentials: {}", dst.display())
+        })?;
+    }
+    Ok(Some(dst))
+}
+
+/// Default source path of the operator's Claude credentials. Split out so
+/// tests can call [`prepare_session_credentials`] with an explicit source.
+fn default_credentials_source() -> Option<PathBuf> {
+    dirs::home_dir().map(|h| h.join(".claude/.credentials.json"))
+}
 
 /// Container terminal backend.
 pub struct ContainerBackend {
@@ -487,17 +595,19 @@ impl ContainerBackend {
             if hooks_src.exists() {
                 mounts.push(Mount::ro(hooks_src, HOOKS_MOUNT));
             }
+        }
 
-            // Optional credentials — only when explicitly forwarded.
-            if self
-                .forward_credentials
-                .iter()
-                .any(|c| c.eq_ignore_ascii_case("claude"))
-            {
-                let creds = home.join(".claude/.credentials.json");
-                if creds.exists() {
-                    mounts.push(Mount::ro(creds, CLAUDE_CREDS_MOUNT));
-                }
+        // Optional credentials — only when explicitly forwarded. We mount
+        // a fresh per-session COPY of the host file rw, NOT the host file
+        // itself; see `prepare_session_credentials` for the rationale.
+        if let Some(source) = default_credentials_source() {
+            if let Some(creds_copy) = prepare_session_credentials(
+                &self.work_dir,
+                session_id,
+                &self.forward_credentials,
+                &source,
+            )? {
+                mounts.push(Mount::rw(creds_copy, CLAUDE_CREDS_MOUNT));
             }
         }
 
@@ -981,6 +1091,17 @@ impl TerminalBackend for ContainerBackend {
             let _ =
                 std::fs::remove_file(self.work_dir.join("pids").join(format!("{stage_id}.pid")));
         }
+
+        // Best-effort cleanup of the per-session credentials copy. The
+        // file holds OAuth tokens — we don't want it lingering under
+        // `.work/container-creds/` after the container is gone. Always
+        // attempted regardless of forward_credentials state so a config
+        // change between spawn and kill cannot orphan the file.
+        let _ = std::fs::remove_file(container_session_credentials_path(
+            &self.work_dir,
+            &session.id,
+        ));
+
         Ok(())
     }
 
@@ -1480,5 +1601,125 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn prepare_session_credentials_returns_none_when_not_forwarded() {
+        let tmp = TempDir::new().unwrap();
+        let work_dir = tmp.path().join(".work");
+        std::fs::create_dir_all(&work_dir).unwrap();
+        let source = tmp.path().join("fake-creds.json");
+        std::fs::write(&source, b"{\"claudeAiOauth\":{}}").unwrap();
+
+        // Empty forward_credentials → no copy, no mount.
+        let result = prepare_session_credentials(&work_dir, "sess-1", &[], &source).unwrap();
+        assert!(result.is_none());
+
+        // Unrelated credential types → no copy either.
+        let result =
+            prepare_session_credentials(&work_dir, "sess-1", &["github".to_string()], &source)
+                .unwrap();
+        assert!(result.is_none());
+
+        // The destination file must not have been created.
+        assert!(!work_dir.join("container-creds").exists());
+    }
+
+    #[test]
+    fn prepare_session_credentials_returns_none_when_source_missing() {
+        let tmp = TempDir::new().unwrap();
+        let work_dir = tmp.path().join(".work");
+        std::fs::create_dir_all(&work_dir).unwrap();
+        let missing = tmp.path().join("nope.json");
+
+        let result =
+            prepare_session_credentials(&work_dir, "sess-1", &["claude".to_string()], &missing)
+                .unwrap();
+        assert!(
+            result.is_none(),
+            "must skip when source file does not exist"
+        );
+    }
+
+    #[test]
+    fn prepare_session_credentials_copies_with_mode_0600() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = TempDir::new().unwrap();
+        let work_dir = tmp.path().join(".work");
+        std::fs::create_dir_all(&work_dir).unwrap();
+        let source = tmp.path().join("creds.json");
+        let payload = b"{\"claudeAiOauth\":{\"accessToken\":\"tok\"}}";
+        std::fs::write(&source, payload).unwrap();
+        // Loosen the source mode so we can verify the destination is
+        // tightened independently.
+        std::fs::set_permissions(&source, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        let dst =
+            prepare_session_credentials(&work_dir, "session-xyz", &["claude".to_string()], &source)
+                .unwrap()
+                .expect("expected per-session credentials copy to be created");
+
+        assert_eq!(
+            dst,
+            work_dir.join("container-creds").join("session-xyz.json")
+        );
+        assert_eq!(std::fs::read(&dst).unwrap(), payload);
+
+        let mode = std::fs::metadata(&dst).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            mode, 0o600,
+            "per-session credentials copy must be 0600, got {mode:o}"
+        );
+    }
+
+    #[test]
+    fn prepare_session_credentials_overwrites_existing_copy() {
+        // A retry/reuse path can call this twice for the same session id
+        // (e.g., spawn → crash → respawn). The second call must replace
+        // the stale copy with current host content.
+        let tmp = TempDir::new().unwrap();
+        let work_dir = tmp.path().join(".work");
+        std::fs::create_dir_all(&work_dir).unwrap();
+        let source = tmp.path().join("creds.json");
+        std::fs::write(&source, b"first").unwrap();
+
+        let first =
+            prepare_session_credentials(&work_dir, "sess-retry", &["claude".to_string()], &source)
+                .unwrap()
+                .unwrap();
+        assert_eq!(std::fs::read(&first).unwrap(), b"first");
+
+        std::fs::write(&source, b"second").unwrap();
+        let second =
+            prepare_session_credentials(&work_dir, "sess-retry", &["claude".to_string()], &source)
+                .unwrap()
+                .unwrap();
+        assert_eq!(first, second);
+        assert_eq!(
+            std::fs::read(&second).unwrap(),
+            b"second",
+            "second call must overwrite the stale per-session copy"
+        );
+    }
+
+    #[test]
+    fn build_mounts_skips_credentials_when_not_forwarded() {
+        // The default fixture leaves forward_credentials empty — no
+        // credentials mount should appear regardless of whether the host
+        // file exists.
+        let (_tmp, _repo_root, backend, stage) =
+            fixture_backend(StageType::Standard, "stage-creds-none");
+        let mounts = backend
+            .build_mounts(&stage, SessionType::Stage, "sess-no-creds")
+            .unwrap();
+
+        let creds_target = PathBuf::from(CLAUDE_CREDS_MOUNT);
+        assert!(
+            !mounts.iter().any(|m| m.target == creds_target),
+            "no credentials mount expected when forward_credentials is empty"
+        );
+        // And no per-session copy should have been materialized.
+        assert!(!backend.work_dir.join("container-creds").exists());
     }
 }
