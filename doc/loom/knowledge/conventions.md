@@ -163,7 +163,7 @@ Detectors skip: .git, .work, .worktrees, node_modules, target, .venv, **pycache*
 - Embedded resources (Dockerfile.tmpl, firewall.sh, entrypoint.sh) live in `loom/resources/` and are accessed via `include_str!()` through `container/resources.rs`
 - Backend type serializes as kebab-case: `"native"` / `"container"` (matches `BackendType` serde attribute)
 - Container mount constants are named `<ROLE>_MOUNT` (all-caps), defined at the top of `container/mod.rs`
-- `forward_credentials` default is `Vec::new()` (empty — explicit opt-in). Only add `"claude"` to mount `~/.claude/.credentials.json`. Other credential types (github, gitlab, ssh-agent) also supported.
+- `forward_credentials` default is `Vec::new()` (empty — explicit opt-in). Only add `"claude"` to forward `~/.claude/.credentials.json`. The mount is **not** the host file directly — `prepare_session_credentials` materializes a per-session writable copy at `<work_dir>/container-creds/<session_id>.json` and bind-mounts that rw at `/home/loom/.claude/.credentials.json`. Each container has its own OAuth refresh chain, isolated from the host and sibling containers. The copy is removed on `kill_session`. Other credential types (github, gitlab, ssh-agent) also supported.
 - `permission_mode` YAML values are kebab-case: `"auto"`, `"accept-edits"`, `"bypass-permissions"`, `"plan"`, `"default"`
 - `bypass-permissions` is only valid with `BackendType::Container` — `validate_config()` rejects it on native
 

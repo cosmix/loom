@@ -168,7 +168,7 @@ When `BackendType::Container` is resolved for a stage, `ContainerBackend` spawns
 | `/repo/.work/pids` | derived from `/repo` | rw overlay | All sessions |
 | `/repo/.worktrees/<id>/settings.local.json` | derived from worktree | ro overlay | All sessions |
 | `/home/loom/.claude/hooks/loom` | `~/.claude/hooks/loom` | ro | All sessions |
-| `/home/loom/.claude/.credentials.json` | `~/.claude/.credentials.json` | ro | Only when `forward_credentials` includes `"claude"` |
+| `/home/loom/.claude/.credentials.json` | `<work_dir>/container-creds/<session_id>.json` (fresh per-session copy of `~/.claude/.credentials.json`) | rw | Only when `forward_credentials` includes `"claude"` |
 | `/etc/loom/network/allowed_domains.txt` | `.work/network/allowed_domains.txt` | ro | All sessions |
 
 **Mount ordering invariant:** The ro base must be the first bind-mount in the `docker|podman run` args. rw overlays on tighter subtree paths must follow. Reversing order silently defeats the ro restriction (later mounts shadow earlier ones). See [mistakes.md — Mount order inversion](mistakes.md#mount-order-inversion-silently-defeats-the-ro-base).
@@ -180,6 +180,8 @@ When `BackendType::Container` is resolved for a stage, `ContainerBackend` spawns
 **Why `/repo`?** Git worktrees store relative symlinks (`.work -> ../../.work`). Mounting the host repo root at a fixed path preserves these symlinks and all git metadata. Stage cwd inside the container: `/repo/.worktrees/<stage-id>`. Merge/knowledge cwd: `/repo`.
 
 **forward_credentials:** Default is `Vec::new()` (empty — no credentials forwarded). Agents inside the container cannot escalate this because `.work/config.toml` is covered by the ro base and is NOT in the rw overlay set. Host-side editing by the operator remains possible. Agents must request credentials via operator action. This is stricter than the plan spec's suggested default of `["claude"]`.
+
+**Per-session credentials copy:** When `"claude"` is in `forward_credentials`, the container does **not** bind-mount `~/.claude/.credentials.json` directly. At spawn time, `prepare_session_credentials` copies the host file into `<work_dir>/container-creds/<session_id>.json` (mode 0600) and bind-mounts that copy **rw** into the container. Rationale: (1) Claude Code rewrites the credentials file atomically (rename → new inode), so a single-file bind would pin the container to a stale inode whenever the host re-authenticates; (2) Anthropic's OAuth flow rotates the refresh token on every refresh, so a shared writable mount would cross-invalidate the host and every sibling container. Each container gets its own ephemeral refresh chain; the copy is removed in `kill_session`. The host file is never written to from inside the container.
 
 **Firewall (defense-in-depth):** Image-resident `firewall.sh` script configured with: deny IPv6 (AF_INET6), block `169.254.169.254` (cloud metadata), block `127.0.0.0/8` except `127.0.0.1`, deny `*.internal`. Allowlist is host-owned and mounted ro — the agent process inside the container cannot edit it.
 
@@ -602,7 +604,7 @@ Soft signals are advisory per-session notices persisted to disk so that dedup su
 - `REPO_MOUNT = "/repo"` — container-side host repo root
 - `WORK_DIR_IN_CONTAINER = "/repo/.work"` — to be relocated to `/var/loom/work` in Stage 3
 - `HOOKS_MOUNT = "/home/loom/.claude/hooks/loom"` — operator hooks (ro)
-- `CLAUDE_CREDS_MOUNT = "/home/loom/.claude/.credentials.json"` — forwarded credentials (ro, opt-in)
+- `CLAUDE_CREDS_MOUNT = "/home/loom/.claude/.credentials.json"` — forwarded credentials (rw, opt-in; source is a per-session copy under `<work_dir>/container-creds/`)
 - `ALLOWLIST_MOUNT = "/etc/loom/network/allowed_domains.txt"` — firewall policy (ro)
 
 ### Mount Table (build_mounts — container/mod.rs:240-473)
@@ -617,7 +619,7 @@ Soft signals are advisory per-session notices persisted to disk so that dedup su
 | 11-15 | Config overlay | config.toml/daemon.token/lock/pid/log | /repo/.work/{file} | RO | Merge/BaseConflict/Knowledge | 365-379 | Without overlay: rewrite daemon.token to block orchestrator |
 | 16 | Settings | .claude/settings.local.json (per-worktree or per-session) | /repo/.worktrees/{id}/.claude/ or /repo/.claude/ | RO | All | 381-420 | Without ro: escalate mid-session permissions |
 | 17 | Hooks | ~/.claude/hooks/loom | /home/loom/.claude/hooks/loom | RO | All | 422-427 | Read hooks; cannot modify |
-| 18 | Creds | ~/.claude/.credentials.json | /home/loom/.claude/.credentials.json | RO | All | 429-439 | Read Claude API tokens — requires forward_credentials opt-in |
+| 18 | Creds | `<work_dir>/container-creds/{session}.json` (copy of `~/.claude/.credentials.json`) | /home/loom/.claude/.credentials.json | RW | All | 429-439 | Per-session writable copy so the agent's OAuth refresh chain is isolated from the host and sibling containers; requires forward_credentials opt-in |
 | 19 | Allowlist | .work/network/allowed_domains.txt | /etc/loom/network/allowed_domains.txt | RO | All | 442-447 | Read-only; cannot modify firewall policy |
 | 20 | Loom binary | /proc/self/exe | /usr/local/bin/loom | RO | All | 449-470 | Read/exec loom CLI; cannot modify |
 
