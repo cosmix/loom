@@ -167,9 +167,20 @@ fn criterion_display(c: &AcceptanceCriterion) -> String {
 }
 
 fn run_git_show(work_dir: &Path, commit: &str) -> Result<String> {
+    // Defence-in-depth: the dispute RPC writes `evidence_commit` straight
+    // through from the agent. A value starting with `-` (e.g.
+    // `--output=/tmp/x`) would be parsed by `git show` as an option.
+    // Require a SHA-shaped string (4–64 hex chars — 4 matches git's
+    // minimum unambiguous short SHA) and pass `--` so any remaining
+    // shape oddity still lands in the positional slot.
+    let is_sha =
+        commit.len() >= 4 && commit.len() <= 64 && commit.chars().all(|c| c.is_ascii_hexdigit());
+    if !is_sha {
+        anyhow::bail!("refusing git show: evidence_commit is not a SHA-shaped string");
+    }
     let project_root = work_dir.parent().unwrap_or(work_dir);
     let output = Command::new("git")
-        .args(["show", "--no-color", "--stat", "-p", commit])
+        .args(["show", "--no-color", "--stat", "-p", "--", commit])
         .current_dir(project_root)
         .output()
         .context("Failed to invoke git show")?;
@@ -424,6 +435,45 @@ mod tests {
         let prefix = utf8_safe_prefix(s, 2);
         assert!(s.starts_with(prefix));
         assert_eq!(prefix.len(), 1, "got: {prefix:?}");
+    }
+
+    #[test]
+    fn run_git_show_rejects_non_sha_evidence_commit() {
+        // The agent supplies evidence_commit via the dispute RPC. A value
+        // that doesn't look like a SHA must be rejected BEFORE git is
+        // invoked, so option-injection (`--output=...`) cannot reach the
+        // process. The SHA check also bounds the input to a small ASCII-
+        // hex string so even creative byte sequences cannot become
+        // arguments after the positional `--`.
+        let tmp = tempfile::tempdir().unwrap();
+        let work = tmp.path().join(".work");
+        std::fs::create_dir_all(&work).unwrap();
+        // Leading dash — classic option-injection attempt.
+        let err = run_git_show(&work, "--output=/tmp/escape").unwrap_err();
+        assert!(format!("{err:#}").contains("not a SHA-shaped string"));
+        // Non-hex characters.
+        let err = run_git_show(&work, "deadbeef; rm -rf /").unwrap_err();
+        assert!(format!("{err:#}").contains("not a SHA-shaped string"));
+        // Path-traversal shaped.
+        let err = run_git_show(&work, "../etc/passwd").unwrap_err();
+        assert!(format!("{err:#}").contains("not a SHA-shaped string"));
+        // Empty.
+        let err = run_git_show(&work, "").unwrap_err();
+        assert!(format!("{err:#}").contains("not a SHA-shaped string"));
+        // Too short (below git's 4-char short-SHA minimum). All-hex but
+        // sub-minimum length must be rejected before git is invoked.
+        for short in ["a", "ab", "abc"] {
+            let err = run_git_show(&work, short).unwrap_err();
+            assert!(
+                format!("{err:#}").contains("not a SHA-shaped string"),
+                "len {} should be rejected; got {err:#}",
+                short.len(),
+            );
+        }
+        // Too long (65 hex chars).
+        let too_long = "a".repeat(65);
+        let err = run_git_show(&work, &too_long).unwrap_err();
+        assert!(format!("{err:#}").contains("not a SHA-shaped string"));
     }
 
     #[test]

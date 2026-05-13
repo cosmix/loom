@@ -138,6 +138,19 @@ const PLAN_VERSIONS_DIR_NAME: &str = "plan_versions";
 const PLAN_VERSIONS_LOCK_NAME: &str = ".lock";
 const AUDIT_FILE_NAME: &str = "audit.md";
 
+/// Sentinel prefix used in the error returned when the per-stage amendment cap
+/// has been reached. Callers (the orchestrator's `apply_verdict_inner`) match
+/// on this prefix via [`is_amendment_cap_error`] to escalate the stage to
+/// `NeedsHumanReview` instead of looping the verdict forever.
+pub const AMENDMENT_CAP_ERROR_PREFIX: &str = "amendment cap exceeded";
+
+/// True when `err` (or any source in its chain) carries the amendment-cap
+/// sentinel produced by [`apply_amendment`].
+pub fn is_amendment_cap_error(err: &anyhow::Error) -> bool {
+    err.chain()
+        .any(|c| c.to_string().contains(AMENDMENT_CAP_ERROR_PREFIX))
+}
+
 /// Path to `.work/plan_versions/`.
 ///
 /// Returned as an absolute path when `work_dir` is absolute. The
@@ -401,6 +414,30 @@ pub fn apply_amendment(
     //       between steps leaves a state we can reconcile on startup.
     let _lock = PlanVersionsLock::acquire(work_dir)?;
 
+    // -- 0a. Idempotency under crash-mid-apply: if the audit log already
+    //        contains a row matching this (stage_id, dispute_id), the
+    //        previous call landed (snapshot + audit + plan rewrite) but
+    //        the caller crashed before writing its own success marker.
+    //        Re-applying the patch would double-patch (Insert duplicates,
+    //        Delete shifts to the wrong index, Replace adds another
+    //        snapshot row). Return the existing result instead.
+    if let Some(dispute_id) = request.dispute_id.as_deref() {
+        let prior = read_audit_rows(work_dir)?.into_iter().find(|r| {
+            r.stage_id == request.stage_id && r.dispute_id.as_deref() == Some(dispute_id)
+        });
+        if let Some(row) = prior {
+            let count = count_amendments_for_stage(work_dir, &request.stage_id)?;
+            return Ok(AmendmentResult {
+                version: row.version,
+                stage_id: row.stage_id,
+                field: row.field,
+                snapshot_path: plan_versions_dir(work_dir).join(snapshot_filename(row.version)),
+                amendments_applied: count,
+                applied_at: row.applied_at,
+            });
+        }
+    }
+
     // -- 1. Resolve the plan path (fall back to config.toml if the supplied
     //       path is not accessible).
     let plan_path = if plan_path.exists() {
@@ -544,7 +581,8 @@ pub fn apply_amendment(
     let prior_count = count_amendments_for_stage(work_dir, &request.stage_id)?;
     if prior_count >= cap {
         bail!(
-            "Stage '{}' has reached the amendment cap ({} of {})",
+            "{}: stage '{}' has reached the amendment cap ({} of {})",
+            AMENDMENT_CAP_ERROR_PREFIX,
             request.stage_id,
             prior_count,
             cap,

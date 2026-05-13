@@ -355,6 +355,57 @@ fn invalid_value_shape_rejected_via_real_type_deserialization() {
 }
 
 // --------------------------------------------------------------------------
+// 9b. Idempotency under crash-mid-apply retry
+// --------------------------------------------------------------------------
+#[test]
+fn apply_amendment_is_idempotent_under_dispute_id_retry() {
+    // Simulates the crash-mid-apply path: the caller (orchestrator
+    // apply_verdict) crashes between apply_amendment returning and the
+    // applied.marker being written. The next tick re-calls apply_amendment
+    // with the same dispute_id. The second call MUST NOT re-patch the plan,
+    // write a second snapshot, or append a second audit row.
+    let env = setup_env();
+    let make_req = || AmendmentRequest {
+        stage_id: "stage-a".to_string(),
+        field: AmendmentField::Acceptance,
+        patch: AmendmentPatch::Replace {
+            index: 0,
+            value: make_acceptance_yaml("cargo test --retry-idempotent"),
+        },
+        reason: Some("idempotency check".to_string()),
+        dispute_id: Some("d-retry".to_string()),
+    };
+
+    let first = apply_amendment(&env.plan_path, &env.work_dir, make_req()).unwrap();
+    assert_eq!(first.version, 1);
+    assert_eq!(snapshot_count(&env), 1);
+    assert_eq!(
+        count_amendments_for_stage(&env.work_dir, "stage-a").unwrap(),
+        1,
+    );
+
+    // Second call with the same dispute_id should be a no-op that returns
+    // the same version + same applied_at.
+    let second = apply_amendment(&env.plan_path, &env.work_dir, make_req()).unwrap();
+    assert_eq!(second.version, first.version);
+    assert_eq!(second.applied_at, first.applied_at);
+    assert_eq!(snapshot_count(&env), 1, "must not write 2.md");
+    assert_eq!(
+        count_amendments_for_stage(&env.work_dir, "stage-a").unwrap(),
+        1,
+        "must not append a second audit row",
+    );
+
+    // Plan still has exactly one occurrence of the patched command.
+    let plan = read_plan(&env);
+    assert_eq!(
+        plan.matches("cargo test --retry-idempotent").count(),
+        1,
+        "plan body must not contain duplicate amendment",
+    );
+}
+
+// --------------------------------------------------------------------------
 // 10. Human-readable preservation byte-for-byte
 // --------------------------------------------------------------------------
 #[test]

@@ -81,8 +81,9 @@ fn test_valid_transitions_completed_with_failures() {
     assert!(transitions.contains(&StageStatus::Queued));
     assert!(transitions.contains(&StageStatus::Executing));
     assert!(transitions.contains(&StageStatus::Completed)); // For re-verify
-    assert!(transitions.contains(&StageStatus::NeedsAdjudication));
-    assert_eq!(transitions.len(), 4);
+    assert!(transitions.contains(&StageStatus::NeedsAdjudication)); // For dispute filing
+    assert!(transitions.contains(&StageStatus::NeedsHumanReview)); // For dispute-budget escalation
+    assert_eq!(transitions.len(), 5);
 }
 
 #[test]

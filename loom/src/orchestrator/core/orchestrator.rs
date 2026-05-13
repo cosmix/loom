@@ -433,6 +433,14 @@ impl Orchestrator {
             }
         }
 
+        // Cooperative shutdown for adjudicator workers. Without this the
+        // AtomicBool cancellation flag is never set; in-flight HTTP workers
+        // keep running until reqwest's own timeout, their JoinHandles are
+        // dropped (detached), and `.inflight` markers can stay fresh into
+        // the next daemon run for up to INFLIGHT_TIMEOUT_SECS, blocking
+        // re-spawn of the same dispute.
+        self.shutdown_adjudicators(Instant::now() + Duration::from_secs(5));
+
         // Restore terminal state before returning (clears \r-based status line)
         cleanup_terminal();
 
