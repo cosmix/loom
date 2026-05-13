@@ -7,7 +7,9 @@ mod extraction;
 mod validation;
 
 // Re-export functions for internal use
-pub use extraction::{extract_plan_name, extract_yaml_metadata};
+pub use extraction::{
+    extract_plan_name, extract_yaml_metadata, extract_yaml_metadata_with_ranges, ExtractedMetadata,
+};
 pub use validation::parse_and_validate;
 
 /// Result of parsing a plan document

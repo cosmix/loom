@@ -14,10 +14,10 @@ pub use execution::{
     ProjectExecutionConfig, StageExecutionConfig,
 };
 pub use types::{
-    AcceptanceCriterion, ChangeImpactConfig, ChangeImpactPolicy, DeadCodeCheck, FilesystemConfig,
-    LinuxConfig, LoomConfig, LoomMetadata, NetworkConfig, PermissionMode, RegressionTest,
-    SandboxConfig, StageDefinition, StageSandboxConfig, StageType, SuccessCriteria, TruthCheck,
-    ValidationError, WiringCheck, WiringTest,
+    AcceptanceCriterion, AdjudicationConfig, ChangeImpactConfig, ChangeImpactPolicy, DeadCodeCheck,
+    FilesystemConfig, LinuxConfig, LoomConfig, LoomMetadata, NetworkConfig, PermissionMode,
+    RegressionTest, SandboxConfig, StageDefinition, StageSandboxConfig, StageType, SuccessCriteria,
+    TruthCheck, ValidationError, WiringCheck, WiringTest,
 };
 pub use validation::{
     check_knowledge_recommendations, check_sandbox_recommendations, validate,
