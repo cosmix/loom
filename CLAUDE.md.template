@@ -401,7 +401,7 @@ Write each mistake as an actionable prevention rule:
 
 - Prefer Edit over Write for existing files. Make surgical, targeted edits — don't replace large blocks for small changes.
 - Read specific line ranges when you know what you need. Read the full file only when surrounding context is required for correct edits.
-- Don't re-read files already in context.
+- Don't re-read files already in context. Before issuing a Read, check whether the file (or the relevant line range) already appears earlier in the conversation — including content shown via Grep `-A`/`-B`, prior Edits, or previous Read calls. Edit/Write report failures explicitly, so a successful edit does NOT require a re-read to "verify". Re-read only when: (a) the file was modified externally since you last saw it, (b) you need lines outside the range you previously read, or (c) enough conversation has passed that the earlier content may have been compacted out. When in doubt, scroll back before re-reading.
 
 **Command output:**
 
