@@ -347,6 +347,225 @@ pub fn safe_create_new_in_workdir(dirfd: RawFd, relpath: &Path, content: &[u8]) 
     Ok(())
 }
 
+/// `mkdirat` for the final component of `relpath` with `O_EXCL` semantics:
+/// fails with `EEXIST` if the directory already exists. Intermediate
+/// components are walked with `O_NOFOLLOW | O_DIRECTORY` (no auto-create),
+/// so an attacker cannot redirect creation through a planted symlink.
+pub fn safe_create_new_dir_in_workdir(
+    dirfd: RawFd,
+    relpath: &Path,
+    mode: libc::mode_t,
+) -> Result<()> {
+    let components = validate_relpath(relpath)?;
+    let parent_fd = parent_dirfd_for(dirfd, &components)?;
+    let final_name = components.last().unwrap();
+    let c = path_to_cstring(final_name)?;
+    // SAFETY: parent_fd is valid; c is NUL-terminated.
+    let r = unsafe { libc::mkdirat(parent_fd.as_raw_fd(), c.as_ptr(), mode) };
+    if r < 0 {
+        return Err(io::Error::last_os_error())
+            .with_context(|| format!("safe_fs: mkdirat failed on {}", relpath.display()));
+    }
+    Ok(())
+}
+
+/// `renameat` under `dirfd`. Both `from` and `to` are validated relpaths;
+/// each is anchored at the parent's dirfd resolved via `O_NOFOLLOW`-walked
+/// `open_dir_safely`, so neither the source nor the destination component
+/// may pass through a symlink.
+pub fn safe_rename_in_workdir(dirfd: RawFd, from: &Path, to: &Path) -> Result<()> {
+    let from_components = validate_relpath(from)?;
+    let to_components = validate_relpath(to)?;
+
+    let from_parent_fd = parent_dirfd_for(dirfd, &from_components)?;
+    let to_parent_fd = parent_dirfd_for(dirfd, &to_components)?;
+
+    let from_name = path_to_cstring(from_components.last().unwrap())?;
+    let to_name = path_to_cstring(to_components.last().unwrap())?;
+
+    // SAFETY: fds are valid; both names are NUL-terminated.
+    let r = unsafe {
+        libc::renameat(
+            from_parent_fd.as_raw_fd(),
+            from_name.as_ptr(),
+            to_parent_fd.as_raw_fd(),
+            to_name.as_ptr(),
+        )
+    };
+    if r < 0 {
+        return Err(io::Error::last_os_error()).with_context(|| {
+            format!(
+                "safe_fs: renameat failed: {} -> {}",
+                from.display(),
+                to.display()
+            )
+        });
+    }
+    Ok(())
+}
+
+fn parent_dirfd_for(dirfd: RawFd, components: &[Vec<u8>]) -> Result<OwnedFd> {
+    if components.len() == 1 {
+        // SAFETY: dup duplicates a valid fd, returning a fresh owned fd.
+        let dup = unsafe { libc::dup(dirfd) };
+        if dup < 0 {
+            return Err(io::Error::last_os_error()).context("safe_fs: dup dirfd failed");
+        }
+        return Ok(unsafe { OwnedFd::from_raw_fd(dup) });
+    }
+    let parent_components = &components[..components.len() - 1];
+    let parent_path = parent_components
+        .iter()
+        .map(|c| String::from_utf8_lossy(c).into_owned())
+        .collect::<Vec<_>>()
+        .join("/");
+    open_dir_safely(dirfd, Path::new(&parent_path))
+}
+
+/// Atomically replace a file that lives **outside** the `.work/` dirfd
+/// universe — used for the live plan file in `<project_root>/doc/plans/`.
+///
+/// Validates `target.starts_with(project_root)`; opens `target.parent()` with
+/// `O_NOFOLLOW | O_DIRECTORY`; creates `<target_name>.tmp` with `O_EXCL`;
+/// writes; fsyncs the file; fsyncs the dir; `renameat(dir, ".tmp", dir,
+/// target_name)`.
+///
+/// The dirfd anchors all writes so an attacker cannot redirect the rename
+/// by swapping the parent directory mid-operation; `O_NOFOLLOW` on the parent
+/// open refuses to traverse a symlink there.
+pub fn safe_replace_outside_workdir(
+    target: &Path,
+    project_root: &Path,
+    content: &[u8],
+) -> Result<()> {
+    let content = enforce_size_limit(content)?;
+
+    let canonical_root = project_root.canonicalize().with_context(|| {
+        format!(
+            "safe_fs: failed to canonicalise project_root {}",
+            project_root.display()
+        )
+    })?;
+
+    let target_name_os = target
+        .file_name()
+        .ok_or_else(|| anyhow::anyhow!("safe_fs: target has no filename: {}", target.display()))?;
+    let target_name = target_name_os.as_bytes();
+
+    let parent = target
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("safe_fs: target has no parent: {}", target.display()))?;
+    let canonical_parent = parent.canonicalize().with_context(|| {
+        format!(
+            "safe_fs: failed to canonicalise target parent {}",
+            parent.display()
+        )
+    })?;
+
+    if !canonical_parent.starts_with(&canonical_root) {
+        bail!(
+            "safe_fs: refusing replace — target {} not under project_root {}",
+            target.display(),
+            project_root.display()
+        );
+    }
+
+    // Open the parent directory with O_NOFOLLOW so we refuse to traverse
+    // a symlinked parent. The dirfd anchors both the tmp create and the
+    // final rename.
+    let parent_c = path_to_cstring(canonical_parent.as_os_str().as_bytes())?;
+    let parent_flags = libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_RDONLY;
+    // SAFETY: parent_c is NUL-terminated; flags are constants.
+    let parent_fd_raw = unsafe { libc::open(parent_c.as_ptr(), parent_flags) };
+    if parent_fd_raw < 0 {
+        return Err(io::Error::last_os_error()).with_context(|| {
+            format!(
+                "safe_fs: failed to open parent dir {}",
+                canonical_parent.display()
+            )
+        });
+    }
+    // SAFETY: parent_fd_raw is a valid fd we now own.
+    let parent_fd = unsafe { OwnedFd::from_raw_fd(parent_fd_raw) };
+
+    // Build "<target_name>.tmp".
+    let mut tmp_name_bytes: Vec<u8> = Vec::with_capacity(target_name.len() + 4);
+    tmp_name_bytes.extend_from_slice(target_name);
+    tmp_name_bytes.extend_from_slice(b".tmp");
+    let tmp_name_c = path_to_cstring(&tmp_name_bytes)?;
+    let target_name_c = path_to_cstring(target_name)?;
+
+    // Create the tmp file with O_EXCL — fail loudly if a prior write left
+    // a stale .tmp around so an operator can investigate.
+    let create_flags =
+        libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC;
+    // SAFETY: parent_fd is valid; tmp_name_c is NUL-terminated.
+    let tmp_fd_raw =
+        unsafe { libc::openat(parent_fd.as_raw_fd(), tmp_name_c.as_ptr(), create_flags, 0o600) };
+    if tmp_fd_raw < 0 {
+        return Err(io::Error::last_os_error()).with_context(|| {
+            format!(
+                "safe_fs: failed to create temp file {}.tmp",
+                target.display()
+            )
+        });
+    }
+    // SAFETY: tmp_fd_raw is a valid fd we now own.
+    let tmp_fd = unsafe { OwnedFd::from_raw_fd(tmp_fd_raw) };
+
+    // Best-effort cleanup of the tmp on any error path below.
+    let cleanup = |err: anyhow::Error| -> anyhow::Error {
+        // SAFETY: parent_fd is valid; tmp_name_c is NUL-terminated.
+        unsafe {
+            libc::unlinkat(parent_fd.as_raw_fd(), tmp_name_c.as_ptr(), 0);
+        }
+        err
+    };
+
+    if let Err(e) = write_all_at(&tmp_fd, content, target) {
+        return Err(cleanup(e));
+    }
+    // SAFETY: tmp_fd is valid.
+    if unsafe { libc::fsync(tmp_fd.as_raw_fd()) } < 0 {
+        let err = io::Error::last_os_error();
+        return Err(cleanup(
+            anyhow::Error::new(err)
+                .context(format!("safe_fs: fsync tmp failed on {}", target.display())),
+        ));
+    }
+    drop(tmp_fd);
+
+    // SAFETY: parent_fd is valid; both names are NUL-terminated.
+    let r = unsafe {
+        libc::renameat(
+            parent_fd.as_raw_fd(),
+            tmp_name_c.as_ptr(),
+            parent_fd.as_raw_fd(),
+            target_name_c.as_ptr(),
+        )
+    };
+    if r < 0 {
+        let err = io::Error::last_os_error();
+        return Err(cleanup(anyhow::Error::new(err).context(format!(
+            "safe_fs: renameat failed for {}",
+            target.display()
+        ))));
+    }
+
+    // fsync the directory so the rename is durable before we return.
+    // SAFETY: parent_fd is valid.
+    if unsafe { libc::fsync(parent_fd.as_raw_fd()) } < 0 {
+        return Err(io::Error::last_os_error()).with_context(|| {
+            format!(
+                "safe_fs: fsync parent dir failed for {}",
+                canonical_parent.display()
+            )
+        });
+    }
+
+    Ok(())
+}
+
 /// Like `safe_locked_write_in_workdir` but sets the file mode via `fchmod`
 /// after open. Used for wrapper scripts that must be executable (0o755).
 pub fn safe_write_with_mode_in_workdir(

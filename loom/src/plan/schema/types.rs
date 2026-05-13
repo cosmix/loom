@@ -298,7 +298,36 @@ pub struct LoomConfig {
     /// Plan-level change impact configuration
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub change_impact: Option<ChangeImpactConfig>,
+    /// Plan-level adjudication configuration (autonomous criteria amendment
+    /// limits). When omitted, defaults apply via [`AdjudicationConfig::default`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adjudication: Option<AdjudicationConfig>,
     pub stages: Vec<StageDefinition>,
+}
+
+/// Plan-level adjudication / amendment configuration.
+///
+/// Caps the number of runtime amendments that may be applied to a single
+/// stage before human intervention is required. The cap is **absolute**:
+/// once `amendments_applied >= max_amendments_per_stage`, further
+/// amendments are rejected by [`crate::plan::amendment::apply_amendment`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AdjudicationConfig {
+    /// Absolute cap on amendments per stage. Default 3.
+    #[serde(default = "default_max_amendments_per_stage")]
+    pub max_amendments_per_stage: u32,
+}
+
+impl Default for AdjudicationConfig {
+    fn default() -> Self {
+        Self {
+            max_amendments_per_stage: default_max_amendments_per_stage(),
+        }
+    }
+}
+
+fn default_max_amendments_per_stage() -> u32 {
+    3
 }
 
 /// Stage definition from plan metadata
