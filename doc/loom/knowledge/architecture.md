@@ -650,7 +650,7 @@ The module doc comment at `container/mod.rs:22-44` describes the mount layering 
 
 Main loop at `orchestrator/core/orchestrator.rs:258-376` — 5s poll cycle (100ms chunks for shutdown responsiveness):
 
-```
+```text
 1. reconcile_and_update_graph()        [recovery.rs:149-177]  — catch phantom merges pre-sync
 2. sync_graph_with_stage_files()       [recovery.rs:179-567]  — disk → in-memory graph
 3. sync_queued_status_to_files()       [recovery.rs:569-593]  — graph Queued → disk
@@ -667,7 +667,8 @@ No mpsc channels currently — entirely polling-based. The dispute adjudicator a
 ## Stage State Machine — NeedsAdjudication (New Variant)
 
 Current 12-variant enum (`models/stage/types.rs`):
-```
+
+```text
 WaitingForDeps → Queued → Executing → Completed/Skipped (terminal)
                   |           |
                   v           +→ Blocked, NeedsHandoff, WaitingForInput,
@@ -676,12 +677,14 @@ WaitingForDeps → Queued → Executing → Completed/Skipped (terminal)
 ```
 
 Autonomous adjudication adds `NeedsAdjudication` as a new NON-TERMINAL variant:
-```
+
+```text
 Executing → NeedsAdjudication → Queued   (accept verdict re-queues)
                               → NeedsHumanReview  (exhaust budget or disabled API key)
 ```
 
 Transitions FROM `NeedsAdjudication` (to be added to `transitions.rs`):
+
 - `Queued` — accept/reject verdict processed, stage re-queued
 - `NeedsHumanReview` — dispute budget exhausted OR ANTHROPIC_API_KEY not set
 
@@ -701,6 +704,7 @@ Container agents have NO rw mount to `.work/disputes/` — request.md is written
 ## Plan Versioning (New, Stage 3+)
 
 `.work/plan_versions/` directory for amendment audit trail:
+
 - `.work/plan_versions/.lock` — file lock (serializes amendments)
 - `.work/plan_versions/<n>.md` — snapshot of full plan content after amendment n
 - `.work/plan_versions/audit.md` — O_APPEND atomic rows (amendment log)

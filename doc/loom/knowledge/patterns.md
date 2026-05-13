@@ -529,7 +529,7 @@ If the agent could write both request and verdict, it could pre-fill `verdict: A
 
 For amending the IN_PROGRESS plan file safely (Stage 3):
 
-```
+```text
 1. Acquire .work/plan_versions/.lock  (file lock — serializes concurrent amendments)
 2. Compute new plan content in memory
 3. Atomic-write .work/plan_versions/<n>.md  (full snapshot)

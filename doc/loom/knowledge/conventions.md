@@ -229,6 +229,7 @@ Some fields may use `tool_response` instead of `tool_result` depending on Claude
 ## Dispute File Ownership Convention
 
 `.work/disputes/<stage>/<n>/` — always split by authority:
+
 - `request.md` — agent-attestable; written by daemon on behalf of agent RPC
 - `verdict.md` — daemon-only; worker thread writes after API call
 - `applied.marker` — daemon-only; zero-byte idempotency sentinel
@@ -238,6 +239,7 @@ Never collapse into one file — if agent can write the verdict section, it can 
 ## Admin Token Path Convention (After Stage 2)
 
 Admin token moves OUT of `.work/` to a daemon-runtime-only path:
+
 - Linux: `$XDG_RUNTIME_DIR/loom/admin.token` (via `dirs::runtime_dir()`)
 - Fallback: `dirs::data_dir().join("loom/admin.token")`
 - Mode: 0o600; created at daemon start, deleted at daemon stop
@@ -247,6 +249,7 @@ Container mounts are scoped to project root and `.work/` — the runtime dir is 
 ## Adjudicator Scope Convention
 
 The adjudicator amends ONLY:
+
 - `acceptance: Vec<AcceptanceCriterion>` (plan/schema/types.rs:316)
 - `wiring: Vec<WiringCheck>` (plan/schema/types.rs:336)
 
@@ -255,6 +258,7 @@ Never amends: `before_stage`, `after_stage`, `artifacts`, `dependencies`, `id`, 
 ## Dispute Budget Limits Convention
 
 Per-stage caps to bound the autonomy loop:
+
 - `dispute_count`: max 3 per stage (default)
 - `evidence_rounds` (NeedsMoreEvidence iterations): max 2 before escalation to NeedsHumanReview
 - `amendments_applied`: max 3 per stage (absolute, not percentage)
@@ -267,6 +271,7 @@ Worker threads write `.inflight` before starting HTTP call; delete on completion
 ## Daemon-as-Filesystem-Writer Convention
 
 For any operation where agent data must be persisted to `.work/` with authority separation: the CLI (running inside container) sends RPC to daemon; the daemon (host-only) writes the file. The container has no rw mount to the target subdirectory. Examples:
+
 - `loom memory note` → daemon writes `.work/memory/<id>.md`
 - `loom stage dispute-criteria` (after Stage 2) → daemon writes `.work/disputes/<stage>/<n>/request.md`
 

@@ -456,12 +456,14 @@ Currently `pid_tracking.rs:426` writes `wrappers/{stage_id}-wrapper.sh` (stage-s
 ## Plan Graph Loader — Stage File Preference (Critical)
 
 `plan/graph/loader.rs:56` — `build_graph_impl()`:
+
 - **Lines 60-86**: Prefers `.work/stages/` over plan file. If stages_dir exists with .md files → load from `fs::load_stages_from_work_dir()` + recover sandbox from `.work/config.toml [plan_sandbox]`. Falls back to parsing plan file only if stages_dir is empty/missing.
 - This means plan-file amendments are NOT automatically reflected until stages_dir is absent (i.e., fresh init). Plan-amendment stage MUST update `.work/stages/<id>.md` files in addition to the plan file.
 
 ## Plan Schema — StageDefinition Amendable Fields
 
 `plan/schema/types.rs:306` — `StageDefinition` struct:
+
 - Line 316: `acceptance: Vec<AcceptanceCriterion>` — amendable in v1
 - Line 336: `wiring: Vec<WiringCheck>` — amendable in v1
 - Line 347/352: `before_stage`/`after_stage: Vec<TruthCheck>` — deferred to v2
@@ -471,6 +473,7 @@ Currently `pid_tracking.rs:426` writes `wrappers/{stage_id}-wrapper.sh` (stage-s
 ## WorkDir Directory Helpers (Existing vs. Missing)
 
 `fs/work_dir.rs:270-294` — existing helpers:
+
 - `signals_dir()` → `.work/signals/`
 - `handoffs_dir()` → `.work/handoffs/`
 - `archive_dir()` → `.work/archive/`
@@ -485,10 +488,13 @@ Currently `pid_tracking.rs:426` writes `wrappers/{stage_id}-wrapper.sh` (stage-s
 ## Sandbox Settings — ANTHROPIC_API_KEY Filter
 
 `sandbox/settings.rs:16-34` — `SENSITIVE_ENV_KEYS` array:
+
 ```rust
 "ANTHROPIC_API_KEY"  // line 20 — explicitly filtered from container agents
 ```
+
 `scrub_settings_env_for_backend()` (lines 39-47) strips these for `BackendType::Container` only.
+
 - Daemon (host process): full access to host env, reads key directly via `std::env::var`
 - Container agents: key is stripped; agents cannot access it
 - When `ANTHROPIC_API_KEY` is absent at daemon startup: adjudication disabled; disputed stages go directly to `NeedsHumanReview`
@@ -496,6 +502,7 @@ Currently `pid_tracking.rs:426` writes `wrappers/{stage_id}-wrapper.sh` (stage-s
 ## HTTP Client Pattern — self_update/client.rs
 
 `commands/self_update/client.rs` — `create_http_client() -> Result<Client>`:
+
 - `Client::builder().connect_timeout(10s).timeout(120s).user_agent("loom-self-update").build()`
 - `validate_response_status(&response, context)` — checks `is_success()`, returns descriptive HTTP errors
 - Streaming download with size limit enforcement (buffer size 8192)
@@ -506,6 +513,7 @@ Adjudicator HTTP client should mirror this pattern with `user_agent("loom-adjudi
 ## Admin Token Write Location
 
 `daemon/server/lifecycle.rs:176-182`:
+
 - Generates 32-byte (256-bit) hex token
 - Currently writes to `<work_dir>/admin.token` (`.work/admin.token`)
 - Mode 0o600 (owner-only rw)
@@ -514,11 +522,13 @@ Adjudicator HTTP client should mirror this pattern with `user_agent("loom-adjudi
 ## Daemon Capability Surface (client.rs)
 
 `daemon/server/client.rs` — `verify_for_capability(work_dir, token, Capability) -> bool`:
+
 - Routes to USER_TOKEN_FILE or ADMIN_TOKEN_FILE via `token_path_for()`
 - Missing file → returns false (fails closed)
 - Constant-time comparison via `ct_eq()`
 
 `daemon/protocol.rs:83-97` — `Capability` enum:
+
 - `User` — Ping, Subscribe, Unsubscribe, CompleteStageContainer
 - `Admin` — Stop (only operation currently gated)
 - Stage 2 adds: all `--no-verify`, `--force-unsafe`, `--assume-merged` paths gate on `Admin`
@@ -526,6 +536,7 @@ Adjudicator HTTP client should mirror this pattern with `user_agent("loom-adjudi
 ## Dispute Criteria — Current Implementation
 
 `commands/stage/dispute_criteria.rs:16` — `dispute_criteria(stage_id, reason) -> Result<()>`:
+
 - Only accepts stages in `Executing` or `CompletedWithFailures` state
 - `CompletedWithFailures` → two-step: → `Executing` → `NeedsHumanReview`
 - `Executing` → direct `NeedsHumanReview`
@@ -535,6 +546,7 @@ Adjudicator HTTP client should mirror this pattern with `user_agent("loom-adjudi
 ## Network Allowlist — api.anthropic.com
 
 `resources/firewall.sh:29` — `ALWAYS=(api.anthropic.com registry.npmjs.org)`:
+
 - Hardcoded always-allowed domains, prepended before user-specified allowlist
 - Container agents already can reach api.anthropic.com
 - Daemon (host process): unrestricted network; no additional allowlist needed for adjudicator
@@ -542,6 +554,7 @@ Adjudicator HTTP client should mirror this pattern with `user_agent("loom-adjudi
 ## Fix Attempts Counter — Current Usage
 
 `models/stage/types.rs:254` — `fix_attempts: u32` field:
+
 - Incremented: `commands/stage/check_acceptance.rs:110` when criteria fail
 - Reset to 0: `commands/stage/human_review.rs:87` on human approve
 - Default max: 3 (via `get_effective_max_fix_attempts()` in methods.rs)
