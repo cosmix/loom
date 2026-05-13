@@ -185,11 +185,19 @@ impl DaemonServer {
 
         let admin_path = admin_token_path();
         if let Some(parent) = admin_path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("Failed to create admin token directory {}", parent.display()))?;
+            fs::create_dir_all(parent).with_context(|| {
+                format!(
+                    "Failed to create admin token directory {}",
+                    parent.display()
+                )
+            })?;
         }
-        fs::write(&admin_path, &admin_token)
-            .with_context(|| format!("Failed to write admin token file at {}", admin_path.display()))?;
+        fs::write(&admin_path, &admin_token).with_context(|| {
+            format!(
+                "Failed to write admin token file at {}",
+                admin_path.display()
+            )
+        })?;
         fs::set_permissions(&admin_path, Permissions::from_mode(0o600))
             .context("Failed to set admin token file permissions")?;
 

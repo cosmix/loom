@@ -66,6 +66,7 @@ pub(crate) fn create_valid_metadata() -> LoomMetadata {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             execution: None,
+            adjudication: None,
             stages: vec![stage1, stage2],
         },
     }

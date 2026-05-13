@@ -106,8 +106,7 @@ pub fn extract_yaml_metadata_with_ranges(content: &str) -> Result<ExtractedMetad
         .ok_or_else(|| anyhow::anyhow!("No closing {closing_fence} for YAML block"))?;
 
     let yaml_body_end_in_section = yaml_content_start_in_section + yaml_end_rel;
-    let yaml_content =
-        &metadata_section[yaml_content_start_in_section..yaml_body_end_in_section];
+    let yaml_content = &metadata_section[yaml_content_start_in_section..yaml_body_end_in_section];
 
     // Absolute byte ranges in `content`:
     // - metadata_block_range: [start_pos, end_pos)

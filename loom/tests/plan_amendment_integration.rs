@@ -15,8 +15,8 @@ use tempfile::TempDir;
 
 use loom::models::stage::Stage;
 use loom::plan::amendment::{
-    apply_amendment, count_amendments_for_stage, plan_versions_dir, AmendmentField,
-    AmendmentPatch, AmendmentRequest,
+    apply_amendment, count_amendments_for_stage, plan_versions_dir, AmendmentField, AmendmentPatch,
+    AmendmentRequest,
 };
 use loom::plan::schema::AcceptanceCriterion;
 use loom::verify::transitions::{load_stage, save_stage};
@@ -151,8 +151,12 @@ fn concurrent_amendments_produce_strictly_increasing_versions() {
 fn stage_file_reflects_latest_amendment_after_each_commit() {
     let env = setup();
     for i in 0..5 {
-        let r = apply_amendment(&env.plan_path, &env.work_dir, make_amendment(&i.to_string()))
-            .unwrap();
+        let r = apply_amendment(
+            &env.plan_path,
+            &env.work_dir,
+            make_amendment(&i.to_string()),
+        )
+        .unwrap();
         assert_eq!(r.amendments_applied as usize, i + 1);
         let stage = load_stage("stage-c", &env.work_dir).unwrap();
         let expected = format!("cargo test --variant-{i}");
@@ -179,12 +183,8 @@ fn audit_rows_appear_in_completion_order() {
         let work_dir = Arc::clone(&work_dir);
         let plan_path = Arc::clone(&plan_path);
         let handle = thread::spawn(move || {
-            let r = apply_amendment(
-                &plan_path,
-                &work_dir,
-                make_amendment(&format!("t{i}")),
-            )
-            .unwrap();
+            let r =
+                apply_amendment(&plan_path, &work_dir, make_amendment(&format!("t{i}"))).unwrap();
             r.version
         });
         handles.push(handle);
@@ -204,7 +204,10 @@ fn audit_rows_appear_in_completion_order() {
     // In the file itself, versions must be strictly increasing.
     let on_disk = read_audit_versions(&env.work_dir);
     for w in on_disk.windows(2) {
-        assert!(w[1] > w[0], "audit row order is not strictly increasing: {on_disk:?}");
+        assert!(
+            w[1] > w[0],
+            "audit row order is not strictly increasing: {on_disk:?}"
+        );
     }
 }
 

@@ -45,9 +45,7 @@ use std::path::{Path, PathBuf};
 use crate::fs::safe_fs;
 use crate::models::stage::{Stage, WiringCheck};
 use crate::plan::parser::{extract_yaml_metadata_with_ranges, parse_and_validate};
-use crate::plan::schema::{
-    AcceptanceCriterion, AdjudicationConfig, LoomMetadata, StageDefinition,
-};
+use crate::plan::schema::{AcceptanceCriterion, LoomMetadata, StageDefinition};
 use crate::verify::transitions::{load_stage, save_stage as persist_stage};
 
 /// Which field of a stage is being amended.
@@ -88,9 +86,7 @@ pub enum AmendmentPatch {
         value: String,
     },
     /// Remove the element at `index`.
-    Delete {
-        index: usize,
-    },
+    Delete { index: usize },
 }
 
 impl AmendmentPatch {
@@ -197,7 +193,9 @@ impl PlanVersionsLock {
             .write(true)
             .truncate(false)
             .open(&lock_path)
-            .with_context(|| format!("Failed to open plan-versions lock {}", lock_path.display()))?;
+            .with_context(|| {
+                format!("Failed to open plan-versions lock {}", lock_path.display())
+            })?;
         file.lock_exclusive().with_context(|| {
             format!(
                 "Failed to acquire plan-versions lock {}",
@@ -585,15 +583,10 @@ pub fn apply_amendment(
     let dirfd = safe_fs::safe_open_dirfd(&plan_versions)?;
     let tmp_rel = PathBuf::from(snapshot_tmp_filename(next_version));
     let final_rel = PathBuf::from(snapshot_filename(next_version));
-    safe_fs::safe_create_new_in_workdir(
-        dirfd.as_raw_fd(),
-        &tmp_rel,
-        new_plan_content.as_bytes(),
-    )
-    .with_context(|| format!("Failed to create snapshot tmp for version {next_version}"))?;
-    safe_fs::safe_rename_in_workdir(dirfd.as_raw_fd(), &tmp_rel, &final_rel).with_context(
-        || format!("Failed to rename snapshot for version {next_version}"),
-    )?;
+    safe_fs::safe_create_new_in_workdir(dirfd.as_raw_fd(), &tmp_rel, new_plan_content.as_bytes())
+        .with_context(|| format!("Failed to create snapshot tmp for version {next_version}"))?;
+    safe_fs::safe_rename_in_workdir(dirfd.as_raw_fd(), &tmp_rel, &final_rel)
+        .with_context(|| format!("Failed to rename snapshot for version {next_version}"))?;
 
     let applied_at = Utc::now();
 
@@ -616,12 +609,8 @@ pub fn apply_amendment(
     append_audit_row(work_dir, &audit_row)?;
 
     // -- 9. Replace the live plan file atomically.
-    safe_fs::safe_replace_outside_workdir(
-        &plan_path,
-        &project_root,
-        new_plan_content.as_bytes(),
-    )
-    .with_context(|| format!("Failed to replace live plan {}", plan_path.display()))?;
+    safe_fs::safe_replace_outside_workdir(&plan_path, &project_root, new_plan_content.as_bytes())
+        .with_context(|| format!("Failed to replace live plan {}", plan_path.display()))?;
 
     // -- 10. Persist the updated stage file. Without this, the runtime keeps
     //        the old criteria via sync_graph_with_stage_files.
@@ -675,9 +664,9 @@ pub fn verify_plan_versions_consistency(plan_path: &Path, work_dir: &Path) -> Re
     // Discover snapshot versions on disk.
     let mut snapshot_versions: Vec<u64> = Vec::new();
     let mut orphan_tmp: Vec<PathBuf> = Vec::new();
-    for entry in fs::read_dir(&dir).with_context(|| {
-        format!("Failed to read plan_versions directory {}", dir.display())
-    })? {
+    for entry in fs::read_dir(&dir)
+        .with_context(|| format!("Failed to read plan_versions directory {}", dir.display()))?
+    {
         let entry = entry?;
         let path = entry.path();
         let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
@@ -760,7 +749,12 @@ pub fn verify_plan_versions_consistency(plan_path: &Path, work_dir: &Path) -> Re
             .canonicalize()
             .ok()
             .and_then(|wd| wd.parent().map(|p| p.to_path_buf()))
-            .unwrap_or_else(|| plan_path_buf.parent().unwrap_or(Path::new(".")).to_path_buf());
+            .unwrap_or_else(|| {
+                plan_path_buf
+                    .parent()
+                    .unwrap_or(Path::new("."))
+                    .to_path_buf()
+            });
         // Best-effort: only attempt the write if plan_path_buf is under the
         // project root (the safe-fs helper enforces this anyway).
         if safe_fs::safe_replace_outside_workdir(
@@ -885,16 +879,15 @@ fn apply_patch_vec<T: Clone>(
             if *index >= vec.len() {
                 bail!("Replace index {} out of bounds (len {})", index, vec.len());
             }
-            let v = new_value
-                .ok_or_else(|| anyhow::anyhow!("Replace patch missing typed value"))?;
+            let v =
+                new_value.ok_or_else(|| anyhow::anyhow!("Replace patch missing typed value"))?;
             vec[*index] = v;
         }
         AmendmentPatch::Insert { index, .. } => {
             if *index > vec.len() {
                 bail!("Insert index {} out of bounds (len {})", index, vec.len());
             }
-            let v = new_value
-                .ok_or_else(|| anyhow::anyhow!("Insert patch missing typed value"))?;
+            let v = new_value.ok_or_else(|| anyhow::anyhow!("Insert patch missing typed value"))?;
             vec.insert(*index, v);
         }
         AmendmentPatch::Delete { index } => {
@@ -930,10 +923,7 @@ fn splice_metadata_yaml(
     // where the body starts — that's `fence_range.start + fence_len +
     // "yaml".len()`. We can derive fence_len from the original content.
     let fence_open_bytes = &original.as_bytes()[fence_range.start..];
-    let fence_len = fence_open_bytes
-        .iter()
-        .take_while(|&&b| b == b'`')
-        .count();
+    let fence_len = fence_open_bytes.iter().take_while(|&&b| b == b'`').count();
     let body_start = fence_range.start + fence_len + "yaml".len();
     let body_end = fence_range.end;
 

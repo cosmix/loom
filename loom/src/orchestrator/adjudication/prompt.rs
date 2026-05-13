@@ -115,7 +115,11 @@ fn build_user_prompt(
 
     u.push_str("## Stage acceptance criteria (all)\n\n");
     for (i, c) in stage.acceptance.iter().enumerate() {
-        let marker = if i == dispute.criterion_index { "→" } else { " " };
+        let marker = if i == dispute.criterion_index {
+            "→"
+        } else {
+            " "
+        };
         u.push_str(&format!("{marker} [{i}] {}\n", criterion_display(c)));
     }
     u.push('\n');
@@ -123,9 +127,8 @@ fn build_user_prompt(
     if let Some(commit) = dispute.evidence_commit.as_deref() {
         u.push_str("## Evidence commit diff (git show)\n\n");
         u.push_str(&format!("Commit: {commit}\n\n"));
-        let diff = run_git_show(work_dir, commit).unwrap_or_else(|e| {
-            format!("(git show failed: {e})")
-        });
+        let diff =
+            run_git_show(work_dir, commit).unwrap_or_else(|e| format!("(git show failed: {e})"));
         u.push_str("```diff\n");
         u.push_str(&diff);
         u.push_str("\n```\n\n");
@@ -185,9 +188,7 @@ fn run_listing(work_dir: &Path) -> Result<String> {
         .current_dir(project_root)
         .output();
     match output {
-        Ok(out) if out.status.success() => {
-            Ok(String::from_utf8_lossy(&out.stdout).into_owned())
-        }
+        Ok(out) if out.status.success() => Ok(String::from_utf8_lossy(&out.stdout).into_owned()),
         Ok(out) => {
             let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
             anyhow::bail!("find exited non-zero: {stderr}")
@@ -222,11 +223,10 @@ fn find_stage_block(yaml: &str, stage_id: &str) -> Option<String> {
     // Walk backwards to the start of the surrounding `- ` list item.
     let mut start = pos;
     for (i, ch) in yaml[..pos].char_indices().rev() {
-        if ch == '\n' {
-            if yaml[i + 1..].starts_with("    - ") || yaml[i + 1..].starts_with("  - ") {
-                start = i + 1;
-                break;
-            }
+        if ch == '\n' && (yaml[i + 1..].starts_with("    - ") || yaml[i + 1..].starts_with("  - "))
+        {
+            start = i + 1;
+            break;
         }
     }
     // Forward until the next list-item marker at the same indent.
@@ -307,9 +307,6 @@ fn halve_section(user: &mut String, header: &str) -> bool {
     };
     let body_end = body_start + fence_close_rel;
     let body_len = body_end - body_start;
-    if body_len <= TRUNCATION_MARKER.len() {
-        return false;
-    }
     // Keep the first half; replace the rest with the marker.
     let keep = body_len / 2;
     let mut new_body = String::with_capacity(keep + TRUNCATION_MARKER.len());
@@ -319,6 +316,12 @@ fn halve_section(user: &mut String, header: &str) -> bool {
         new_body.push('\n');
     }
     new_body.push_str(TRUNCATION_MARKER);
+    // Refuse to "halve" when the marker would make the new body the same
+    // size as (or larger than) the original — otherwise the outer trim
+    // loop spins forever once the body shrinks near `TRUNCATION_MARKER.len()`.
+    if new_body.len() >= body_len {
+        return false;
+    }
     user.replace_range(body_start..body_end, &new_body);
     true
 }
@@ -354,14 +357,15 @@ mod tests {
     use chrono::Utc;
 
     fn stage_with_criteria(criteria: Vec<&str>) -> Stage {
-        let mut stage = Stage::default();
-        stage.id = "demo".to_string();
-        stage.name = "Demo".to_string();
-        stage.acceptance = criteria
-            .into_iter()
-            .map(|s| AcceptanceCriterion::Simple(s.to_string()))
-            .collect();
-        stage
+        Stage {
+            id: "demo".to_string(),
+            name: "Demo".to_string(),
+            acceptance: criteria
+                .into_iter()
+                .map(|s| AcceptanceCriterion::Simple(s.to_string()))
+                .collect(),
+            ..Default::default()
+        }
     }
 
     fn dispute(criterion_index: usize) -> DisputeRequest {
@@ -424,9 +428,7 @@ mod tests {
 
     #[test]
     fn halve_section_shrinks_diff_fence() {
-        let mut u = String::from(
-            "## Evidence commit diff (git show)\n\n```diff\n",
-        );
+        let mut u = String::from("## Evidence commit diff (git show)\n\n```diff\n");
         for _ in 0..1000 {
             u.push_str("- old\n+ new\n");
         }

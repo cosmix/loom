@@ -9,8 +9,8 @@ use super::{
     MAX_EVIDENCE_ROUNDS,
 };
 use crate::models::dispute::{
-    request_file, verdict_file, Citation, DisputeRequest, DisputeVerdict,
-    DisputeVerdictRecord, PlanPatch,
+    request_file, verdict_file, Citation, DisputeRequest, DisputeVerdict, DisputeVerdictRecord,
+    PlanPatch,
 };
 use crate::models::stage::{Stage, StageStatus};
 use crate::plan::amendment::{AmendmentField, AmendmentPatch};
@@ -18,11 +18,12 @@ use chrono::Utc;
 use std::path::Path;
 
 fn make_stage(id: &str) -> Stage {
-    let mut stage = Stage::default();
-    stage.id = id.to_string();
-    stage.name = id.to_string();
-    stage.status = StageStatus::NeedsAdjudication;
-    stage
+    Stage {
+        id: id.to_string(),
+        name: id.to_string(),
+        status: StageStatus::NeedsAdjudication,
+        ..Default::default()
+    }
 }
 
 fn write_stage(work_dir: &Path, stage: &Stage) {
@@ -51,13 +52,7 @@ fn write_dispute_request(work_dir: &Path, stage_id: &str, id: u32, criterion_ind
     .unwrap();
 }
 
-fn write_verdict(
-    work_dir: &Path,
-    stage_id: &str,
-    id: u32,
-    verdict: DisputeVerdict,
-    attempt: u32,
-) {
+fn write_verdict(work_dir: &Path, stage_id: &str, id: u32, verdict: DisputeVerdict, attempt: u32) {
     let disputes_root = work_dir.join("disputes");
     std::fs::create_dir_all(disputes_root.join(stage_id).join(id.to_string())).unwrap();
     let record = DisputeVerdictRecord {

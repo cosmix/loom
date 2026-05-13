@@ -24,6 +24,7 @@ fn create_test_plan(dir: &Path, stages: Vec<StageDefinition>) -> PathBuf {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             execution: None,
+            adjudication: None,
             stages,
         },
     };
