@@ -13,7 +13,7 @@ impl StageStatus {
     /// - `NeedsHandoff` -> `Queued` (when resumed)
     /// - `WaitingForInput` -> `Executing` (when input provided)
     /// - `MergeConflict` -> `Completed` | `Blocked` (when conflicts resolved or resolution fails)
-    /// - `CompletedWithFailures` -> `Queued` | `Executing` | `Completed` | `NeedsAdjudication` (for retry, re-verify, or dispute)
+    /// - `CompletedWithFailures` -> `Queued` | `Executing` | `Completed` | `NeedsAdjudication` | `NeedsHumanReview` (for retry, re-verify, dispute, or dispute-budget escalation)
     /// - `MergeBlocked` -> `Queued` | `Executing` (for retry)
     /// - `NeedsHumanReview` -> `Executing` | `Completed` | `Blocked` (when approved, force-completed, or rejected)
     /// - `NeedsAdjudication` -> `Queued` | `NeedsAdjudication` | `NeedsHumanReview` (verdict applied, evidence loop, or escalation)
@@ -70,6 +70,7 @@ impl StageStatus {
                         | StageStatus::Executing
                         | StageStatus::Completed
                         | StageStatus::NeedsAdjudication
+                        | StageStatus::NeedsHumanReview
                 )
             }
             StageStatus::MergeBlocked => {
@@ -144,6 +145,7 @@ impl StageStatus {
                     StageStatus::Executing,
                     StageStatus::Completed,
                     StageStatus::NeedsAdjudication,
+                    StageStatus::NeedsHumanReview,
                 ]
             }
             StageStatus::MergeBlocked => vec![

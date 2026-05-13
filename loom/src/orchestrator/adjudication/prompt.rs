@@ -434,6 +434,35 @@ mod tests {
     }
 
     #[test]
+    fn run_git_show_rejects_non_sha_evidence_commit() {
+        // The agent supplies evidence_commit via the dispute RPC. A value
+        // that doesn't look like a SHA must be rejected BEFORE git is
+        // invoked, so option-injection (`--output=...`) cannot reach the
+        // process. The SHA check also bounds the input to a small ASCII-
+        // hex string so even creative byte sequences cannot become
+        // arguments after the positional `--`.
+        let tmp = tempfile::tempdir().unwrap();
+        let work = tmp.path().join(".work");
+        std::fs::create_dir_all(&work).unwrap();
+        // Leading dash — classic option-injection attempt.
+        let err = run_git_show(&work, "--output=/tmp/escape").unwrap_err();
+        assert!(format!("{err:#}").contains("not a SHA-shaped string"));
+        // Non-hex characters.
+        let err = run_git_show(&work, "deadbeef; rm -rf /").unwrap_err();
+        assert!(format!("{err:#}").contains("not a SHA-shaped string"));
+        // Path-traversal shaped.
+        let err = run_git_show(&work, "../etc/passwd").unwrap_err();
+        assert!(format!("{err:#}").contains("not a SHA-shaped string"));
+        // Empty.
+        let err = run_git_show(&work, "").unwrap_err();
+        assert!(format!("{err:#}").contains("not a SHA-shaped string"));
+        // Too long (65 hex chars).
+        let too_long = "a".repeat(65);
+        let err = run_git_show(&work, &too_long).unwrap_err();
+        assert!(format!("{err:#}").contains("not a SHA-shaped string"));
+    }
+
+    #[test]
     fn halve_section_shrinks_diff_fence() {
         let mut u = String::from(
             "## Evidence commit diff (git show)\n\n```diff\n",

@@ -142,6 +142,19 @@ const PLAN_VERSIONS_DIR_NAME: &str = "plan_versions";
 const PLAN_VERSIONS_LOCK_NAME: &str = ".lock";
 const AUDIT_FILE_NAME: &str = "audit.md";
 
+/// Sentinel prefix used in the error returned when the per-stage amendment cap
+/// has been reached. Callers (the orchestrator's `apply_verdict_inner`) match
+/// on this prefix via [`is_amendment_cap_error`] to escalate the stage to
+/// `NeedsHumanReview` instead of looping the verdict forever.
+pub const AMENDMENT_CAP_ERROR_PREFIX: &str = "amendment cap exceeded";
+
+/// True when `err` (or any source in its chain) carries the amendment-cap
+/// sentinel produced by [`apply_amendment`].
+pub fn is_amendment_cap_error(err: &anyhow::Error) -> bool {
+    err.chain()
+        .any(|c| c.to_string().contains(AMENDMENT_CAP_ERROR_PREFIX))
+}
+
 /// Path to `.work/plan_versions/`.
 ///
 /// Returned as an absolute path when `work_dir` is absolute. The
@@ -570,7 +583,8 @@ pub fn apply_amendment(
     let prior_count = count_amendments_for_stage(work_dir, &request.stage_id)?;
     if prior_count >= cap {
         bail!(
-            "Stage '{}' has reached the amendment cap ({} of {})",
+            "{}: stage '{}' has reached the amendment cap ({} of {})",
+            AMENDMENT_CAP_ERROR_PREFIX,
             request.stage_id,
             prior_count,
             cap,

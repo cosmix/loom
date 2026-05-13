@@ -359,16 +359,24 @@ fn accept_verdict_amends_plan_and_clears_feedback() {
     let verdict_path = verdict_file(&work.join("disputes"), "s1", 1);
     assert!(wait_for(|| verdict_path.exists(), Duration::from_secs(10)));
     reg.drain_completed_workers(work).unwrap();
-    // apply_pending_verdicts may fail if the plan markdown shape is too
-    // sparse for `apply_amendment`; that is itself a graceful error
-    // (the registry logs and continues). We instead assert the verdict
-    // file landed and the worker is no longer outstanding.
-    let _ = reg.apply_pending_verdicts(work);
+    // `apply_pending_verdicts` returns Ok even when individual verdicts
+    // fail to apply — per-verdict failures are logged via tracing and the
+    // outer call still walks the rest of the queue. The plan in this test
+    // intentionally lacks the `<!-- loom METADATA -->` markers needed by
+    // `apply_amendment`, so the amendment is expected to fail and the
+    // applied.marker SHOULD NOT exist. (For the success-path contract see
+    // `dispute_to_amendment_to_pass`.)
+    reg.apply_pending_verdicts(work)
+        .expect("apply_pending_verdicts should return Ok even when per-verdict apply fails");
 
-    // Plan amendment is best-effort here; what matters for this test
-    // is that the worker successfully produced a parseable verdict.
+    // The worker produced a parseable Accept verdict but the amendment
+    // did not land — the verdict file exists, the marker does not.
     let content = std::fs::read_to_string(&verdict_path).unwrap();
     assert!(content.contains("accept"));
+    assert!(
+        !applied_marker(&work.join("disputes"), "s1", 1).exists(),
+        "applied.marker must not exist when apply_amendment failed",
+    );
 }
 
 #[test]
@@ -604,6 +612,217 @@ fn dispute_amendment_is_idempotent_under_repeat_apply() {
     assert!(
         !snapshot_2.exists(),
         "second apply must NOT write a new snapshot",
+    );
+}
+
+/// Write a plan with the loom-METADATA markers and a configurable
+/// `max_amendments_per_stage`. The stage `s1` has three acceptance
+/// criteria so two successive Delete-index-0 amendments leave a
+/// schema-valid Standard stage; a third would still leave one criterion
+/// but is rejected by the cap.
+fn write_plan_with_cap(work_dir: &Path, max_amendments_per_stage: u32) -> PathBuf {
+    let plan = work_dir.join("PLAN.md");
+    let content = format!(
+        "# Plan: Adjudication Cap Test\n\
+\n\
+Prose section that must be preserved across amendments.\n\
+\n\
+<!-- loom METADATA -->\n\
+\n\
+```yaml\n\
+loom:\n  version: 1\n  adjudication:\n    max_amendments_per_stage: {max_amendments_per_stage}\n  stages:\n    - id: s1\n      name: s1\n      working_dir: \".\"\n      acceptance:\n        - \"test -f /__loom_wrong_a/marker.txt\"\n        - \"test -f /__loom_wrong_b/marker.txt\"\n        - \"ls /tmp\"\n```\n\
+\n\
+<!-- END loom METADATA -->\n\
+\n\
+Trailing prose section.\n",
+    );
+    std::fs::write(&plan, content).unwrap();
+    let cfg = format!(
+        "[plan]\nsource_path = \"{}\"\nplan_id = \"x\"\nplan_name = \"x\"\nbase_branch = \"main\"\n",
+        plan.display()
+    );
+    std::fs::write(work_dir.join("config.toml"), cfg).unwrap();
+    plan
+}
+
+fn make_stage_three_criteria(id: &str) -> Stage {
+    let mut stage = Stage::default();
+    stage.id = id.to_string();
+    stage.name = id.to_string();
+    stage.working_dir = Some(".".to_string());
+    stage.status = StageStatus::NeedsAdjudication;
+    stage.acceptance = vec![
+        AcceptanceCriterion::Simple(
+            "test -f /__loom_wrong_a/marker.txt".to_string(),
+        ),
+        AcceptanceCriterion::Simple(
+            "test -f /__loom_wrong_b/marker.txt".to_string(),
+        ),
+        AcceptanceCriterion::Simple("ls /tmp".to_string()),
+    ];
+    stage
+}
+
+/// Drive one dispute through the registry to apply.marker. Used to land
+/// successful amendments in the cap-exceeded e2e test. Re-seeds the
+/// stage to `NeedsAdjudication` before scanning so back-to-back disputes
+/// can be processed without an agent-flow round trip.
+fn drive_dispute_to_applied(
+    reg: &mut AdjudicatorRegistry,
+    work: &Path,
+    stage_id: &str,
+    dispute_id: u32,
+) {
+    let mut s = loom::verify::transitions::load_stage(stage_id, work).unwrap();
+    s.status = StageStatus::NeedsAdjudication;
+    loom::verify::transitions::save_stage(&s, work).unwrap();
+    write_dispute(work, stage_id, dispute_id);
+    reg.check_pending_disputes(work).unwrap();
+    let verdict_path = verdict_file(&work.join("disputes"), stage_id, dispute_id);
+    assert!(
+        wait_for(|| verdict_path.exists(), Duration::from_secs(10)),
+        "verdict.md never appeared for dispute {dispute_id}",
+    );
+    reg.drain_completed_workers(work).unwrap();
+    reg.apply_pending_verdicts(work)
+        .expect("apply_pending_verdicts should be Ok");
+}
+
+/// End-to-end coverage of the amendment-cap escalation path. Two
+/// accepted amendments use the cap of 2; the third dispute lands an
+/// Accept verdict that `apply_amendment` rejects with the
+/// `amendment cap exceeded` error. The orchestrator must NOT loop on
+/// that verdict — instead it escalates the stage to
+/// `NeedsHumanReview` and writes `applied.marker` for the third
+/// dispute so subsequent ticks short-circuit.
+#[test]
+fn amendment_cap_exceeded_escalates_to_human_review() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work = tmp.path();
+    write_plan_with_cap(work, 2);
+    let stage = make_stage_three_criteria("s1");
+    write_stage(work, &stage);
+
+    let server = MockServer::start();
+    let _m = mock_accept_delete_first(&server);
+    let endpoint = format!("{}/v1/messages", server.base_url());
+    let mut reg = make_registry(work, endpoint);
+
+    // Two accepted amendments under the cap.
+    drive_dispute_to_applied(&mut reg, work, "s1", 1);
+    drive_dispute_to_applied(&mut reg, work, "s1", 2);
+
+    let after_two = loom::verify::transitions::load_stage("s1", work).unwrap();
+    assert_eq!(after_two.amendments_applied, 2);
+    assert_eq!(after_two.status, StageStatus::Queued);
+
+    // Third dispute: stage must be put back into NeedsAdjudication first
+    // (apply_verdict refuses to act on Queued stages with no verdict file).
+    let mut staged = after_two;
+    staged.status = StageStatus::NeedsAdjudication;
+    loom::verify::transitions::save_stage(&staged, work).unwrap();
+    write_dispute(work, "s1", 3);
+    reg.check_pending_disputes(work).unwrap();
+    let verdict_path_3 = verdict_file(&work.join("disputes"), "s1", 3);
+    assert!(wait_for(|| verdict_path_3.exists(), Duration::from_secs(10)));
+    reg.drain_completed_workers(work).unwrap();
+    reg.apply_pending_verdicts(work)
+        .expect("apply_pending_verdicts should be Ok");
+
+    // The cap blocked the third amendment. The orchestrator must
+    // escalate AND write applied.marker so we don't retry forever.
+    let after_three = loom::verify::transitions::load_stage("s1", work).unwrap();
+    assert_eq!(
+        after_three.status,
+        StageStatus::NeedsHumanReview,
+        "third Accept must escalate via cap-exceeded path",
+    );
+    assert!(
+        after_three
+            .review_reason
+            .as_deref()
+            .unwrap_or("")
+            .contains("amendment cap exceeded"),
+        "review_reason should mention amendment cap; got: {:?}",
+        after_three.review_reason,
+    );
+    assert_eq!(
+        after_three.amendments_applied, 2,
+        "amendments_applied must NOT increment past the cap",
+    );
+    assert!(
+        applied_marker(&work.join("disputes"), "s1", 3).exists(),
+        "applied.marker for dispute 3 must exist so the verdict is not retried",
+    );
+
+    // A subsequent tick must be a no-op.
+    reg.apply_pending_verdicts(work).unwrap();
+    let after_replay = loom::verify::transitions::load_stage("s1", work).unwrap();
+    assert_eq!(after_replay.amendments_applied, 2);
+}
+
+/// End-to-end coverage of the evidence-rounds escalation path. The
+/// mocked server returns `NeedsMoreEvidence` every time; the
+/// orchestrator drives the stage Queued → NeedsAdjudication → Queued
+/// until `evidence_rounds >= MAX_EVIDENCE_ROUNDS`, at which point the
+/// stage must escalate to `NeedsHumanReview` instead of looping.
+#[test]
+fn evidence_rounds_exhausted_escalates_to_human_review() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work = tmp.path();
+    write_plan(work);
+    let stage = make_stage("s1");
+    write_stage(work, &stage);
+
+    let server = MockServer::start();
+    let _m = mock_needs_more(&server);
+    let endpoint = format!("{}/v1/messages", server.base_url());
+    let mut reg = make_registry(work, endpoint);
+
+    // Drive enough rounds to hit MAX_EVIDENCE_ROUNDS. Each round files a
+    // fresh dispute and lets the orchestrator apply the
+    // NeedsMoreEvidence verdict (which bumps evidence_rounds).
+    let mut dispute_id: u32 = 0;
+    loop {
+        let s = loom::verify::transitions::load_stage("s1", work).unwrap();
+        if s.status == StageStatus::NeedsHumanReview {
+            break;
+        }
+        // Safety: bound the loop so a regression doesn't hang the test.
+        assert!(
+            dispute_id < 10,
+            "did not escalate after 10 rounds; got status {:?}, evidence_rounds {}",
+            s.status,
+            s.evidence_rounds
+        );
+        // Ensure the stage is back in NeedsAdjudication so the next dispute
+        // can be processed.
+        let mut staged = s;
+        staged.status = StageStatus::NeedsAdjudication;
+        loom::verify::transitions::save_stage(&staged, work).unwrap();
+
+        dispute_id += 1;
+        write_dispute(work, "s1", dispute_id);
+        reg.check_pending_disputes(work).unwrap();
+        let v = verdict_file(&work.join("disputes"), "s1", dispute_id);
+        assert!(
+            wait_for(|| v.exists(), Duration::from_secs(10)),
+            "verdict.md never appeared for dispute {dispute_id}",
+        );
+        reg.drain_completed_workers(work).unwrap();
+        reg.apply_pending_verdicts(work).unwrap();
+    }
+
+    let after = loom::verify::transitions::load_stage("s1", work).unwrap();
+    assert_eq!(after.status, StageStatus::NeedsHumanReview);
+    assert!(
+        after
+            .review_reason
+            .as_deref()
+            .unwrap_or("")
+            .contains("evidence loop exhausted"),
+        "review_reason should mention evidence-loop exhaustion; got: {:?}",
+        after.review_reason,
     );
 }
 

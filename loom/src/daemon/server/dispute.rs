@@ -107,11 +107,34 @@ pub fn handle_dispute_criteria(
         });
     }
     if stage.dispute_budget_exhausted() {
+        // Escalate the stage to NeedsHumanReview so the agent does not loop
+        // futilely retrying the same failure. The state-machine permits
+        // this transition from both `CompletedWithFailures` (the typical
+        // entry point) and `NeedsAdjudication`; if the stage happens to be
+        // in some other status we still return the error to the caller
+        // and let an operator intervene.
+        let count = stage.dispute_count;
+        let max = stage.max_disputes_per_stage();
+        if let Err(e) = stage.try_request_human_review(format!(
+            "Dispute budget exhausted ({count} of {max} disputes filed)"
+        )) {
+            tracing::warn!(
+                target: "loom::dispute",
+                stage = %stage_id,
+                error = %e,
+                "dispute budget exhausted but stage could not be escalated to NeedsHumanReview",
+            );
+        } else if let Err(e) = save_stage(&stage, &work_canonical) {
+            tracing::warn!(
+                target: "loom::dispute",
+                stage = %stage_id,
+                error = %e,
+                "failed to persist escalated stage after dispute-budget exhaustion",
+            );
+        }
         return Ok(Response::Error {
             message: format!(
-                "Dispute budget exhausted ({} disputes filed; max is {}).",
-                stage.dispute_count,
-                stage.max_disputes_per_stage()
+                "Dispute budget exhausted ({count} disputes filed; max is {max}).",
             ),
         });
     }
@@ -323,6 +346,24 @@ mod tests {
             Response::Error { message } => assert!(message.contains("budget"), "msg: {message}"),
             other => panic!("expected Error, got {other:?}"),
         }
+        // Budget-exhausted MUST escalate the stage to NeedsHumanReview so
+        // the agent does not loop futilely. (The state-machine allows the
+        // direct Executing → NeedsHumanReview transition used here.)
+        let after = crate::verify::transitions::load_stage("stage-disp", &work_dir).unwrap();
+        assert_eq!(
+            after.status,
+            StageStatus::NeedsHumanReview,
+            "stage must escalate to NeedsHumanReview on budget exhaustion"
+        );
+        assert!(
+            after
+                .review_reason
+                .as_deref()
+                .unwrap_or("")
+                .contains("Dispute budget exhausted"),
+            "review_reason should mention budget exhaustion; got: {:?}",
+            after.review_reason,
+        );
     }
 
     #[test]

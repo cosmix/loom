@@ -294,8 +294,30 @@ impl AdjudicatorRegistry {
                 let plan_path = resolve_plan_path(work_dir)
                     .ok_or_else(|| anyhow::anyhow!("plan source_path missing"))?;
                 let request = build_amendment_request(stage.id.clone(), plan_patch, record.id)?;
-                apply_amendment(&plan_path, work_dir, request)
-                    .context("apply plan amendment from accept verdict")?;
+                match apply_amendment(&plan_path, work_dir, request) {
+                    Ok(_) => {}
+                    Err(e) if crate::plan::amendment::is_amendment_cap_error(&e) => {
+                        // Cap exceeded: a fourth accepted dispute would
+                        // exceed the per-stage amendment budget. Escalate
+                        // to human review and let the caller still write
+                        // applied.marker so we don't loop this verdict
+                        // forever on the next tick.
+                        let reason = format!("{e:#}");
+                        if let Err(transition_err) = stage.try_request_human_review(reason) {
+                            tracing::warn!(
+                                target: "loom::adjudication",
+                                stage = %stage.id,
+                                error = %transition_err,
+                                "amendment cap exceeded but stage could not be escalated to NeedsHumanReview",
+                            );
+                        }
+                        let _ = feedback::clear_feedback(work_dir, &stage.id);
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        return Err(e).context("apply plan amendment from accept verdict");
+                    }
+                }
                 // Resync the stage's acceptance/wiring from disk (the
                 // amendment also rewrites the stage file).
                 if let Ok(reloaded) = load_stage(&stage.id, work_dir) {

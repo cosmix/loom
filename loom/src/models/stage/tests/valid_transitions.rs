@@ -9,7 +9,7 @@ fn test_valid_transitions_waiting_for_deps() {
 #[test]
 fn test_valid_transitions_executing() {
     let transitions = StageStatus::Executing.valid_transitions();
-    assert_eq!(transitions.len(), 8);
+    assert_eq!(transitions.len(), 9);
     assert!(transitions.contains(&StageStatus::Completed));
     assert!(transitions.contains(&StageStatus::Blocked));
     assert!(transitions.contains(&StageStatus::NeedsHandoff));
@@ -18,6 +18,7 @@ fn test_valid_transitions_executing() {
     assert!(transitions.contains(&StageStatus::CompletedWithFailures));
     assert!(transitions.contains(&StageStatus::MergeBlocked));
     assert!(transitions.contains(&StageStatus::NeedsHumanReview));
+    assert!(transitions.contains(&StageStatus::NeedsAdjudication));
 }
 
 #[test]
@@ -55,8 +56,9 @@ fn test_valid_transitions_queued_includes_blocked() {
 fn test_valid_transitions_executing_includes_merge_conflict() {
     let transitions = StageStatus::Executing.valid_transitions();
     assert!(transitions.contains(&StageStatus::MergeConflict));
-    // Completed, Blocked, NeedsHandoff, WaitingForInput, MergeConflict, CompletedWithFailures, MergeBlocked, NeedsHumanReview
-    assert_eq!(transitions.len(), 8);
+    // Completed, Blocked, NeedsHandoff, WaitingForInput, MergeConflict,
+    // CompletedWithFailures, MergeBlocked, NeedsHumanReview, NeedsAdjudication
+    assert_eq!(transitions.len(), 9);
 }
 
 #[test]
@@ -79,7 +81,9 @@ fn test_valid_transitions_completed_with_failures() {
     assert!(transitions.contains(&StageStatus::Queued));
     assert!(transitions.contains(&StageStatus::Executing));
     assert!(transitions.contains(&StageStatus::Completed)); // For re-verify
-    assert_eq!(transitions.len(), 3);
+    assert!(transitions.contains(&StageStatus::NeedsAdjudication)); // For dispute filing
+    assert!(transitions.contains(&StageStatus::NeedsHumanReview)); // For dispute-budget escalation
+    assert_eq!(transitions.len(), 5);
 }
 
 #[test]
@@ -100,8 +104,9 @@ fn test_valid_transitions_merge_blocked() {
 #[test]
 fn test_valid_transitions_executing_count() {
     let transitions = StageStatus::Executing.valid_transitions();
-    // Completed, Blocked, NeedsHandoff, WaitingForInput, MergeConflict, CompletedWithFailures, MergeBlocked, NeedsHumanReview
-    assert_eq!(transitions.len(), 8);
+    // Completed, Blocked, NeedsHandoff, WaitingForInput, MergeConflict,
+    // CompletedWithFailures, MergeBlocked, NeedsHumanReview, NeedsAdjudication
+    assert_eq!(transitions.len(), 9);
 }
 
 #[test]
