@@ -82,7 +82,8 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
                                 | StageStatus::MergeConflict
                                 | StageStatus::CompletedWithFailures
                                 | StageStatus::MergeBlocked
-                                | StageStatus::NeedsHumanReview => {
+                                | StageStatus::NeedsHumanReview
+                                | StageStatus::NeedsAdjudication => {
                                     stages_blocked.push(stage_info);
                                 }
                             }

@@ -400,6 +400,7 @@ fn format_stage_status(status: &crate::models::stage::StageStatus) -> &'static s
         StageStatus::CompletedWithFailures => "completed-with-failures",
         StageStatus::MergeBlocked => "merge-blocked",
         StageStatus::NeedsHumanReview => "needs-human-review",
+        StageStatus::NeedsAdjudication => "needs-adjudication",
     }
 }
 

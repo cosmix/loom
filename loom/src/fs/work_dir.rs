@@ -295,6 +295,18 @@ Do not manually edit these files unless you know what you're doing.
         self.root.join("knowledge")
     }
 
+    /// Path to `.work/disputes/` — adjudication artifacts. See
+    /// `models/dispute.rs` for the per-id directory schema.
+    pub fn disputes_dir(&self) -> PathBuf {
+        self.root.join("disputes")
+    }
+
+    /// Path to `.work/plan_versions/` — plan amendment snapshots and
+    /// audit log. Populated by the Stage 3 plan-amendment pipeline.
+    pub fn plan_versions_dir(&self) -> PathBuf {
+        self.root.join("plan_versions")
+    }
+
     /// Get the config.toml path
     pub fn config_path(&self) -> PathBuf {
         self.root.join("config.toml")
@@ -658,6 +670,24 @@ mod tests {
             .expect("open_or_initialize must be idempotent on existing .work");
         // Structure still intact
         assert!(project_root.join(".work").join("stages").is_dir());
+    }
+
+    #[test]
+    fn disputes_dir_path_shape() {
+        let temp = TempDir::new().unwrap();
+        let project_root = temp.path();
+        fs::create_dir_all(project_root.join(".work")).unwrap();
+        let wd = WorkDir::new(project_root).unwrap();
+        assert_eq!(wd.disputes_dir(), wd.root().join("disputes"));
+    }
+
+    #[test]
+    fn plan_versions_dir_path_shape() {
+        let temp = TempDir::new().unwrap();
+        let project_root = temp.path();
+        fs::create_dir_all(project_root.join(".work")).unwrap();
+        let wd = WorkDir::new(project_root).unwrap();
+        assert_eq!(wd.plan_versions_dir(), wd.root().join("plan_versions"));
     }
 
     #[test]

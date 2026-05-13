@@ -2,7 +2,7 @@
 
 use super::super::protocol::{read_message, write_message, Request, Response};
 use super::broadcast::{spawn_log_tailer, spawn_status_broadcaster};
-use super::client::{handle_client_connection, ADMIN_TOKEN_FILE, USER_TOKEN_FILE};
+use super::client::{admin_token_path, handle_client_connection, USER_TOKEN_FILE};
 use super::core::{DaemonServer, MAX_CONNECTIONS};
 use super::orchestrator::spawn_orchestrator;
 use anyhow::{bail, Context, Result};
@@ -51,8 +51,10 @@ impl DaemonServer {
 
         // Stop is a privileged operation — only the admin token (mode 0o600,
         // host-only) authenticates this request. A container-resident agent
-        // that has only the user token cannot stop the daemon.
-        let token_path = work_dir.join(ADMIN_TOKEN_FILE);
+        // that has only the user token cannot stop the daemon. The admin
+        // token lives at `$XDG_RUNTIME_DIR/loom/admin.token` (host-only —
+        // never mounted into containers because containers only mount .work).
+        let token_path = admin_token_path();
         let auth_token = fs::read_to_string(&token_path)
             .with_context(|| {
                 format!(
@@ -167,17 +169,27 @@ impl DaemonServer {
 
         // Generate admin + user tokens and write to separate files.
         //
-        // - admin.token (mode 0o600): host-only; required for privileged ops
-        //   (Stop). Container agents cannot read this — never mounted in.
+        // admin.token lives at `$XDG_RUNTIME_DIR/loom/admin.token` (host-only).
+        // user.token stays under `.work/` since it's mounted into containers.
+        //
+        // - admin.token (mode 0o600): required for privileged ops (Stop and the
+        //   verification-bypass flags `--no-verify`, `--force-unsafe`,
+        //   `--assume-merged`). Located in the daemon runtime directory so the
+        //   container topology — which only mounts `.work/` — cannot reach it.
         // - user.token  (mode 0o644): mounted into containers RO; used for
-        //   Ping / Subscribe / Unsubscribe.
+        //   Ping / Subscribe / Unsubscribe / CompleteStageContainer.
         //
         // 32-byte / 256-bit random hex from /dev/urandom (OsRng-equivalent).
         let admin_token = generate_token_hex()?;
         let user_token = generate_token_hex()?;
 
-        let admin_path = self.work_dir.join(ADMIN_TOKEN_FILE);
-        fs::write(&admin_path, &admin_token).context("Failed to write admin token file")?;
+        let admin_path = admin_token_path();
+        if let Some(parent) = admin_path.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create admin token directory {}", parent.display()))?;
+        }
+        fs::write(&admin_path, &admin_token)
+            .with_context(|| format!("Failed to write admin token file at {}", admin_path.display()))?;
         fs::set_permissions(&admin_path, Permissions::from_mode(0o600))
             .context("Failed to set admin token file permissions")?;
 
@@ -422,13 +434,22 @@ impl DaemonServer {
                 return Err(e).context("Failed to remove PID file");
             }
         }
-        // Clean up token files (admin + user — daemon.token is no longer used).
-        for token_name in [ADMIN_TOKEN_FILE, USER_TOKEN_FILE] {
-            let token_path = self.work_dir.join(token_name);
-            if let Err(e) = fs::remove_file(&token_path) {
-                if e.kind() != std::io::ErrorKind::NotFound {
-                    return Err(e).with_context(|| format!("Failed to remove {token_name} file"));
-                }
+        // Clean up token files. user.token lives in .work/; admin.token lives
+        // at the host-only runtime path (NOT in .work/ — containers only mount
+        // .work/, so the relocation is what prevents container-resident agents
+        // from reading the admin token).
+        let user_token_path = self.work_dir.join(USER_TOKEN_FILE);
+        if let Err(e) = fs::remove_file(&user_token_path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                return Err(e).context("Failed to remove user.token file");
+            }
+        }
+        let admin_path = admin_token_path();
+        if let Err(e) = fs::remove_file(&admin_path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                return Err(e).with_context(|| {
+                    format!("Failed to remove admin token at {}", admin_path.display())
+                });
             }
         }
         // Clean up completion marker file

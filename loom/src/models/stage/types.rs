@@ -252,6 +252,15 @@ pub struct Stage {
     /// Number of fix attempts made for this stage (acceptance/review cycles)
     #[serde(default)]
     pub fix_attempts: u32,
+    /// Number of disputes filed against this stage's acceptance criteria.
+    #[serde(default)]
+    pub dispute_count: u32,
+    /// Number of evidence-loop rounds (NeedsMoreEvidence -> Executing -> NeedsAdjudication).
+    #[serde(default)]
+    pub evidence_rounds: u32,
+    /// Number of accepted plan amendments applied for this stage.
+    #[serde(default)]
+    pub amendments_applied: u32,
     /// Per-stage sandbox configuration
     #[serde(default)]
     pub sandbox: crate::plan::schema::StageSandboxConfig,
@@ -368,6 +377,12 @@ pub enum StageStatus {
     /// The agent has flagged something that requires human judgment.
     #[serde(rename = "needs-human-review")]
     NeedsHumanReview,
+
+    /// Stage's acceptance criterion was disputed; awaiting an
+    /// adjudicator verdict. The dispute records live at
+    /// .work/disputes/<stage>/<n>/.
+    #[serde(rename = "needs-adjudication")]
+    NeedsAdjudication,
 }
 
 impl std::fmt::Display for StageStatus {
@@ -385,6 +400,7 @@ impl std::fmt::Display for StageStatus {
             StageStatus::CompletedWithFailures => write!(f, "CompletedWithFailures"),
             StageStatus::MergeBlocked => write!(f, "MergeBlocked"),
             StageStatus::NeedsHumanReview => write!(f, "NeedsHumanReview"),
+            StageStatus::NeedsAdjudication => write!(f, "NeedsAdjudication"),
         }
     }
 }
@@ -406,6 +422,7 @@ impl std::str::FromStr for StageStatus {
             "merge-blocked" => Ok(StageStatus::MergeBlocked),
             "skipped" => Ok(StageStatus::Skipped),
             "needs-human-review" => Ok(StageStatus::NeedsHumanReview),
+            "needs-adjudication" => Ok(StageStatus::NeedsAdjudication),
             _ => anyhow::bail!("Unknown stage status: '{s}'"),
         }
     }
@@ -427,6 +444,7 @@ impl StageStatus {
             Self::CompletedWithFailures => "\u{26A0}", // ⚠
             Self::MergeBlocked => "\u{2297}",          // ⊗
             Self::NeedsHumanReview => "\u{23F8}",      // ⏸
+            Self::NeedsAdjudication => "\u{2696}",     // ⚖
         }
     }
 
@@ -446,11 +464,14 @@ impl StageStatus {
             Self::CompletedWithFailures => Color::Red,
             Self::MergeBlocked => Color::Red,
             Self::NeedsHumanReview => Color::Magenta,
+            Self::NeedsAdjudication => Color::Yellow,
         }
     }
 
     /// Returns whether this status should be bold
     pub fn is_bold(&self) -> bool {
+        // Bold by default except for low-attention states.
+        // NeedsAdjudication is bold (active attention needed).
         !matches!(
             self,
             Self::WaitingForDeps | Self::Skipped | Self::NeedsHumanReview
@@ -485,6 +506,7 @@ impl StageStatus {
             Self::CompletedWithFailures => Color::Red,
             Self::MergeBlocked => Color::Red,
             Self::NeedsHumanReview => Color::Magenta,
+            Self::NeedsAdjudication => Color::Yellow,
         };
         style = style.fg(color);
 
@@ -510,6 +532,7 @@ impl StageStatus {
             Self::CompletedWithFailures => "Failed",
             Self::MergeBlocked => "MergeErr",
             Self::NeedsHumanReview => "Review",
+            Self::NeedsAdjudication => "Adjudicate",
         }
     }
 }
@@ -564,6 +587,9 @@ impl Default for Stage {
             before_stage: Vec::new(),
             after_stage: Vec::new(),
             fix_attempts: 0,
+            dispute_count: 0,
+            evidence_rounds: 0,
+            amendments_applied: 0,
             sandbox: Default::default(),
             execution_mode: None,
             max_fix_attempts: None,

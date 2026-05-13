@@ -72,6 +72,11 @@ pub fn recover(stage_id: String, force: bool) -> Result<()> {
                     "Stage '{stage_id}' is awaiting human review. Use 'loom stage approve {stage_id}' or 'loom stage reject {stage_id}'."
                 );
             }
+            StageStatus::NeedsAdjudication => {
+                bail!(
+                    "Stage '{stage_id}' is awaiting an adjudicator verdict. Wait for the daemon to issue a verdict, or escalate via human review."
+                );
+            }
         }
     }
 
@@ -300,6 +305,9 @@ mod tests {
             before_stage: Vec::new(),
             after_stage: Vec::new(),
             fix_attempts: 0,
+            dispute_count: 0,
+            evidence_rounds: 0,
+            amendments_applied: 0,
             sandbox: Default::default(),
             execution_mode: None,
             max_fix_attempts: None,

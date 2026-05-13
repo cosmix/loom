@@ -136,9 +136,19 @@ pub fn dispatch(command: Commands) -> Result<()> {
                 force_complete,
                 reject,
             } => stage::human_review(stage_id, approve, force_complete, reject),
-            StageCommands::DisputeCriteria { stage_id, reason } => {
-                stage::dispute_criteria(stage_id, reason)
-            }
+            StageCommands::DisputeCriteria {
+                stage_id,
+                criterion_index,
+                reason,
+                evidence_commit,
+                failure_output,
+            } => stage::dispute_criteria(
+                stage_id,
+                criterion_index,
+                reason,
+                evidence_commit,
+                failure_output,
+            ),
             StageCommands::Output { command } => match command {
                 OutputCommands::Set {
                     stage_id,

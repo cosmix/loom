@@ -6,6 +6,6 @@ pub use protocol::{
     StageCompletionInfo, StageInfo,
 };
 pub use server::{
-    collect_completion_summary, read_admin_token, read_auth_token, read_user_token, DaemonServer,
-    DaemonStatus,
+    admin_token_path, collect_completion_summary, handle_dispute_criteria, read_admin_token,
+    read_auth_token, read_user_token, DaemonServer, DaemonStatus,
 };

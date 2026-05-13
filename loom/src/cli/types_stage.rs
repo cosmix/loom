@@ -172,19 +172,30 @@ pub enum StageCommands {
         reject: Option<String>,
     },
 
-    /// Dispute acceptance criteria and request human review
-    ///
-    /// Use this when acceptance criteria are incorrect or inappropriate.
-    /// Transitions the stage to NeedsHumanReview so a human can decide
-    /// whether to approve, force-complete, or reject.
+    /// Dispute an acceptance criterion. Files a structured dispute via the
+    /// daemon RPC; the daemon writes request.md and transitions the stage
+    /// to NeedsAdjudication. Verdict.md is written by the adjudicator
+    /// (daemon-only), never by the agent.
     DisputeCriteria {
         /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
         #[arg(value_parser = clap_id_validator)]
         stage_id: String,
 
-        /// Reason why the acceptance criteria are wrong (max 500 characters)
-        #[arg(value_parser = clap_description_validator)]
+        /// Index (0-based) of the acceptance criterion being disputed.
+        #[arg(long = "criterion-index")]
+        criterion_index: usize,
+
+        /// Reason the criterion is wrong or impossible (max 500 chars).
+        #[arg(long, value_parser = clap_description_validator)]
         reason: String,
+
+        /// Optional commit SHA cited as evidence.
+        #[arg(long = "evidence-commit")]
+        evidence_commit: Option<String>,
+
+        /// Optional path to a captured failure-output file (truncated to 4KB).
+        #[arg(long = "failure-output")]
+        failure_output: Option<std::path::PathBuf>,
     },
 
     /// Manage stage outputs (structured values passed to dependent stages)

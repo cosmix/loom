@@ -8,14 +8,15 @@ impl StageStatus {
     /// Valid transitions:
     /// - `WaitingForDeps` -> `Queued` | `Skipped` (when dependencies satisfied or user skips)
     /// - `Queued` -> `Executing` | `Skipped` | `Blocked` (when session spawns, user skips, or pre-execution failure)
-    /// - `Executing` -> `Completed` | `Blocked` | `NeedsHandoff` | `WaitingForInput` | `MergeConflict` | `CompletedWithFailures` | `MergeBlocked` | `NeedsHumanReview`
+    /// - `Executing` -> `Completed` | `Blocked` | `NeedsHandoff` | `WaitingForInput` | `MergeConflict` | `CompletedWithFailures` | `MergeBlocked` | `NeedsHumanReview` | `NeedsAdjudication`
     /// - `Blocked` -> `Queued` | `Skipped` (when unblocked or user skips)
     /// - `NeedsHandoff` -> `Queued` (when resumed)
     /// - `WaitingForInput` -> `Executing` (when input provided)
     /// - `MergeConflict` -> `Completed` | `Blocked` (when conflicts resolved or resolution fails)
-    /// - `CompletedWithFailures` -> `Queued` | `Executing` | `Completed` (for retry or re-verify)
+    /// - `CompletedWithFailures` -> `Queued` | `Executing` | `Completed` | `NeedsAdjudication` (for retry, re-verify, or dispute)
     /// - `MergeBlocked` -> `Queued` | `Executing` (for retry)
     /// - `NeedsHumanReview` -> `Executing` | `Completed` | `Blocked` (when approved, force-completed, or rejected)
+    /// - `NeedsAdjudication` -> `Queued` | `NeedsAdjudication` | `NeedsHumanReview` (verdict applied, evidence loop, or escalation)
     /// - `Completed` is a terminal state
     /// - `Skipped` is a terminal state
     ///
@@ -50,6 +51,7 @@ impl StageStatus {
                     | StageStatus::CompletedWithFailures
                     | StageStatus::MergeBlocked
                     | StageStatus::NeedsHumanReview
+                    | StageStatus::NeedsAdjudication
             ),
             StageStatus::WaitingForInput => matches!(new_status, StageStatus::Executing),
             StageStatus::Completed => false, // Terminal state
@@ -64,7 +66,10 @@ impl StageStatus {
             StageStatus::CompletedWithFailures => {
                 matches!(
                     new_status,
-                    StageStatus::Queued | StageStatus::Executing | StageStatus::Completed
+                    StageStatus::Queued
+                        | StageStatus::Executing
+                        | StageStatus::Completed
+                        | StageStatus::NeedsAdjudication
                 )
             }
             StageStatus::MergeBlocked => {
@@ -77,6 +82,14 @@ impl StageStatus {
                 matches!(
                     new_status,
                     StageStatus::Executing | StageStatus::Completed | StageStatus::Blocked
+                )
+            }
+            StageStatus::NeedsAdjudication => {
+                matches!(
+                    new_status,
+                    StageStatus::Queued
+                        | StageStatus::NeedsAdjudication
+                        | StageStatus::NeedsHumanReview
                 )
             }
         }
@@ -117,6 +130,7 @@ impl StageStatus {
                 StageStatus::CompletedWithFailures,
                 StageStatus::MergeBlocked,
                 StageStatus::NeedsHumanReview,
+                StageStatus::NeedsAdjudication,
             ],
             StageStatus::WaitingForInput => vec![StageStatus::Executing],
             StageStatus::Completed => vec![], // Terminal state
@@ -129,6 +143,7 @@ impl StageStatus {
                     StageStatus::Queued,
                     StageStatus::Executing,
                     StageStatus::Completed,
+                    StageStatus::NeedsAdjudication,
                 ]
             }
             StageStatus::MergeBlocked => vec![
@@ -140,6 +155,11 @@ impl StageStatus {
                 StageStatus::Executing,
                 StageStatus::Completed,
                 StageStatus::Blocked,
+            ],
+            StageStatus::NeedsAdjudication => vec![
+                StageStatus::Queued,
+                StageStatus::NeedsAdjudication,
+                StageStatus::NeedsHumanReview,
             ],
         }
     }

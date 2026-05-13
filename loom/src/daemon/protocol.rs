@@ -136,6 +136,17 @@ pub enum Request {
         /// list this OID as a prerequisite (force-rebase rejection).
         expected_base_oid: String,
     },
+    /// File a structured dispute against a stage's acceptance criterion.
+    /// The daemon writes request.md, increments dispute_count, transitions
+    /// the stage to NeedsAdjudication, and replies with the assigned id.
+    DisputeCriteria {
+        auth_token: String,
+        stage_id: String,
+        criterion_index: usize,
+        reason: String,
+        evidence_commit: Option<String>,
+        failure_output: Option<String>, // pre-truncated to 4KB by the CLI
+    },
 }
 
 impl Request {
@@ -150,7 +161,8 @@ impl Request {
             | Request::SubscribeStatus { .. }
             | Request::SubscribeLogs { .. }
             | Request::Unsubscribe { .. }
-            | Request::CompleteStageContainer { .. } => Capability::User,
+            | Request::CompleteStageContainer { .. }
+            | Request::DisputeCriteria { .. } => Capability::User,
         }
     }
 }
@@ -177,6 +189,10 @@ pub enum Response {
         line: String,
     },
     Pong,
+    /// Reply from a successful DisputeCriteria — carries the allocated dispute id.
+    DisputeCreated {
+        id: u32,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
