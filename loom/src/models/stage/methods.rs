@@ -3,6 +3,10 @@ use chrono::{DateTime, Utc};
 
 use super::types::{Stage, StageOutput, StageStatus, StageType};
 
+/// Maximum disputes a single stage may file before further requests
+/// are refused (escalation goes through `NeedsHumanReview`).
+const MAX_DISPUTES_PER_STAGE: u32 = 3;
+
 impl Stage {
     pub fn new(name: String, description: Option<String>) -> Self {
         let now = Utc::now();
@@ -55,6 +59,9 @@ impl Stage {
             before_stage: Vec::new(),
             after_stage: Vec::new(),
             fix_attempts: 0,
+            dispute_count: 0,
+            evidence_rounds: 0,
+            amendments_applied: 0,
             sandbox: Default::default(),
             execution_mode: None,
             max_fix_attempts: None,
@@ -351,6 +358,49 @@ impl Stage {
         self.try_transition(StageStatus::Blocked)?;
         self.review_reason = Some(reason);
         Ok(())
+    }
+
+    /// Request adjudication for this stage's acceptance criterion.
+    ///
+    /// Transitions to NeedsAdjudication. From `Executing` this is a
+    /// direct transition; from `CompletedWithFailures` the stage steps
+    /// through `Executing` first (the same two-step pattern the
+    /// pre-Stage 2 `dispute_criteria` used for human review).
+    ///
+    /// `reason` is recorded in `review_reason` for now — the
+    /// authoritative copy lives in `request.md` written by the daemon.
+    pub fn try_request_adjudication(&mut self, reason: Option<String>) -> Result<()> {
+        match self.status {
+            StageStatus::Executing => {
+                self.try_transition(StageStatus::NeedsAdjudication)?;
+            }
+            StageStatus::CompletedWithFailures => {
+                // Two-step: CompletedWithFailures → Executing →
+                // NeedsAdjudication, mirroring the existing dispute path.
+                self.try_transition(StageStatus::Executing)?;
+                self.try_transition(StageStatus::NeedsAdjudication)?;
+            }
+            _ => {
+                // Defer to the state machine for the bail message.
+                self.try_transition(StageStatus::NeedsAdjudication)?;
+            }
+        }
+        if let Some(r) = reason {
+            self.review_reason = Some(r);
+        }
+        Ok(())
+    }
+
+    /// Maximum number of disputes a stage may file before further
+    /// dispute requests are refused. See
+    /// `dispute_budget_exhausted`.
+    pub fn max_disputes_per_stage(&self) -> u32 {
+        MAX_DISPUTES_PER_STAGE
+    }
+
+    /// True when `dispute_count` has reached `max_disputes_per_stage`.
+    pub fn dispute_budget_exhausted(&self) -> bool {
+        self.dispute_count >= self.max_disputes_per_stage()
     }
 
     /// Increment the fix attempt counter and return the new count.

@@ -661,6 +661,26 @@ impl ContainerBackend {
             }
         }
 
+        // Defense-in-depth: assert that no mount source path references the
+        // relocated admin.token host path. This is impossible by construction
+        // (we never mount $XDG_RUNTIME_DIR), but a future refactor that
+        // introduces forward_credentials = "admin" or similar could regress
+        // this. Catch it at debug-build time.
+        #[cfg(debug_assertions)]
+        {
+            let admin_path = dirs::runtime_dir()
+                .unwrap_or_else(|| dirs::data_dir().expect("no runtime/data dir"))
+                .join("loom")
+                .join("admin.token");
+            for m in &mounts {
+                debug_assert!(
+                    m.source != admin_path,
+                    "container mount must never expose admin.token (source: {})",
+                    m.source.display()
+                );
+            }
+        }
+
         Ok(mounts)
     }
 
@@ -1561,6 +1581,35 @@ mod tests {
         assert_eq!(env_map.get("GIT_AUTHOR_EMAIL"), Some(&"bob@example.com"));
         assert_eq!(env_map.get("GIT_COMMITTER_NAME"), Some(&"Bob Builder"));
         assert_eq!(env_map.get("GIT_COMMITTER_EMAIL"), Some(&"bob@example.com"));
+    }
+
+    #[test]
+    fn container_mount_does_not_include_admin_token_host_path() {
+        // Even with all stage types and session types, no mount source must
+        // reference the relocated admin.token path. This is the structural
+        // backstop for the admin capability gate: containers cannot read the
+        // admin token because it is never mounted in.
+        let (_tmp, _repo_root, backend, stage) =
+            fixture_backend(StageType::Standard, "stage-no-admin-mount");
+        let admin_path = dirs::runtime_dir()
+            .unwrap_or_else(|| dirs::data_dir().expect("no runtime/data dir"))
+            .join("loom")
+            .join("admin.token");
+        for session_type in [
+            SessionType::Stage,
+            SessionType::Knowledge,
+            SessionType::Merge,
+            SessionType::BaseConflict,
+        ] {
+            let mounts = backend.build_mounts(&stage, session_type, "sess-x").unwrap();
+            for m in &mounts {
+                assert_ne!(
+                    m.source, admin_path,
+                    "{session_type:?} session must NOT mount admin.token (source: {})",
+                    m.source.display()
+                );
+            }
+        }
     }
 
     #[test]

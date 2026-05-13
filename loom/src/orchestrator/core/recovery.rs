@@ -812,6 +812,7 @@ impl Recovery for Orchestrator {
                 StageStatus::CompletedWithFailures => continue, // Terminal until retried
                 StageStatus::MergeBlocked => continue,  // Terminal until fixed
                 StageStatus::NeedsHumanReview => continue, // Waiting for human review
+                StageStatus::NeedsAdjudication => continue, // Waiting for adjudicator verdict
                 StageStatus::WaitingForDeps
                 | StageStatus::Queued
                 | StageStatus::Executing
@@ -857,6 +858,7 @@ impl Recovery for Orchestrator {
                 StageStatus::CompletedWithFailures => blocked += 1, // Failed acceptance, needs retry
                 StageStatus::MergeBlocked => blocked += 1,          // Blocked on merge error
                 StageStatus::NeedsHumanReview => blocked += 1,      // Waiting for human review
+                StageStatus::NeedsAdjudication => blocked += 1, // Waiting for adjudicator verdict
             }
         }
 

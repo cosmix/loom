@@ -31,6 +31,34 @@ use super::merge_verify::verify_or_derive_completed_commit;
 use super::progressive_complete::complete_with_merge;
 use super::session::cleanup_session_resources;
 
+/// Verify the host's admin token is readable before allowing
+/// verification-bypass flags (`--no-verify`, `--force-unsafe`,
+/// `--assume-merged`).
+///
+/// The admin token lives at `$XDG_RUNTIME_DIR/loom/admin.token` (or
+/// `data_dir()/loom/admin.token` as fallback) and is owner-only (0o600).
+/// Containers cannot reach it — it is NOT under `.work/`, so a
+/// container-resident agent cannot bypass acceptance.
+///
+/// TODO: Stage 4 of container-security-hardening introduces a
+/// `Request::CompleteStageContainer` daemon RPC for container-mode
+/// `loom stage complete`. That handler MUST also call this admin gate
+/// before honouring no_verify / force_unsafe flags so the container
+/// path cannot circumvent it. (See plan stage `container-security-hardening`.)
+pub fn require_admin_capability(_work_dir: &Path) -> Result<()> {
+    let path = crate::daemon::admin_token_path();
+    match std::fs::read_to_string(&path) {
+        Ok(s) if !s.trim().is_empty() => Ok(()),
+        _ => bail!(
+            "--no-verify, --force-unsafe, and --assume-merged require the admin \
+             token from the host's daemon runtime directory (expected: {}). \
+             Agents inside containers cannot invoke these flags; use \
+             `loom stage dispute-criteria` to request a criterion change.",
+            path.display()
+        ),
+    }
+}
+
 /// Load the full parsed plan from config
 fn load_parsed_plan(work_dir: &Path) -> Result<Option<ParsedPlan>> {
     let source_path = match crate::fs::resolve_source_path(work_dir)? {
@@ -325,6 +353,15 @@ pub fn complete(
     assume_merged: bool,
 ) -> Result<()> {
     let work_dir = Path::new(".work");
+
+    // Admin capability gate: --no-verify, --force-unsafe, and --assume-merged
+    // are verification-bypass flags. They require the host admin.token
+    // (located OUTSIDE the .work/ tree so a container-resident agent cannot
+    // forge them). The gate runs FIRST so it precedes container delegation,
+    // force-unsafe handling, and the regular acceptance pipeline.
+    if no_verify || force_unsafe || assume_merged {
+        require_admin_capability(work_dir)?;
+    }
 
     // Stage 4 (isolated-git-architecture): when running inside a
     // container-backed session, `loom stage complete` does NOT mutate

@@ -33,6 +33,16 @@ pub fn complete_knowledge_stage(
     force_unsafe: bool,
 ) -> Result<()> {
     let work_dir = Path::new(".work");
+
+    // Admin capability gate: --no-verify and --force-unsafe are
+    // verification-bypass flags and require the host admin.token (held
+    // outside the .work/ tree so a container-resident agent cannot
+    // invoke them). Knowledge stages have no --assume-merged flag —
+    // merged=true is auto-set for knowledge stages by design.
+    if no_verify || force_unsafe {
+        crate::commands::stage::complete::require_admin_capability(work_dir)?;
+    }
+
     let mut stage = load_stage(stage_id, work_dir)?;
 
     // Verify this is actually a knowledge stage
