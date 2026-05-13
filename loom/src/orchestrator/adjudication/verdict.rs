@@ -74,7 +74,9 @@ fn parse_json_lenient(raw: &str) -> Result<Value, serde_json::Error> {
 }
 
 fn strip_code_fence(s: &str) -> Option<&str> {
-    let inner = s.strip_prefix("```json").or_else(|| s.strip_prefix("```"))?;
+    let inner = s
+        .strip_prefix("```json")
+        .or_else(|| s.strip_prefix("```"))?;
     let body = inner.trim_start_matches('\n');
     let end = body.rfind("```")?;
     Some(body[..end].trim())

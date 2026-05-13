@@ -57,14 +57,11 @@ pub fn dispute_criteria(
         .context("Failed to set socket read timeout")?;
 
     write_message(&mut stream, &req).context("Failed to send DisputeCriteria request")?;
-    let response: Response =
-        read_message(&mut stream).context("Failed to read daemon response")?;
+    let response: Response = read_message(&mut stream).context("Failed to read daemon response")?;
 
     match response {
         Response::DisputeCreated { id } => {
-            println!(
-                "Filed dispute #{id} for stage '{stage_id}' (criterion {criterion_index})."
-            );
+            println!("Filed dispute #{id} for stage '{stage_id}' (criterion {criterion_index}).");
             println!("Reason: {reason}");
             println!();
             println!(

@@ -48,7 +48,10 @@ fn setup_env_with_plan(plan_text: &str) -> TestEnv {
     fs::create_dir_all(project_root.join("doc").join("plans")).unwrap();
 
     // Plan file under project_root/doc/plans/PLAN-amendment-test.md.
-    let plan_path = project_root.join("doc").join("plans").join("PLAN-amendment-test.md");
+    let plan_path = project_root
+        .join("doc")
+        .join("plans")
+        .join("PLAN-amendment-test.md");
     fs::write(&plan_path, plan_text).unwrap();
 
     // .work/config.toml pointing at the plan file (absolute path).
@@ -121,9 +124,7 @@ fn make_acceptance_yaml(cmd: &str) -> String {
 }
 
 fn make_wiring_yaml(source: &str, pattern: &str, description: &str) -> String {
-    format!(
-        "source: \"{source}\"\npattern: \"{pattern}\"\ndescription: \"{description}\"\n"
-    )
+    format!("source: \"{source}\"\npattern: \"{pattern}\"\ndescription: \"{description}\"\n")
 }
 
 // --------------------------------------------------------------------------
@@ -305,7 +306,10 @@ fn amendment_cap_blocks_after_three() {
         };
         apply_amendment(&env.plan_path, &env.work_dir, req).unwrap();
     }
-    assert_eq!(count_amendments_for_stage(&env.work_dir, "stage-a").unwrap(), 3);
+    assert_eq!(
+        count_amendments_for_stage(&env.work_dir, "stage-a").unwrap(),
+        3
+    );
 
     // Fourth must fail.
     let req = AmendmentRequest {
@@ -428,7 +432,10 @@ fn human_readable_preserved_byte_for_byte() {
     // Suffix (everything from the END marker onward) must match byte-for-byte.
     let orig_end_marker = PLAN_CONTENT.find("<!-- END loom METADATA").unwrap();
     let new_end_marker = new_plan.find("<!-- END loom METADATA").unwrap();
-    assert_eq!(&PLAN_CONTENT[orig_end_marker..], &new_plan[new_end_marker..]);
+    assert_eq!(
+        &PLAN_CONTENT[orig_end_marker..],
+        &new_plan[new_end_marker..]
+    );
 }
 
 // --------------------------------------------------------------------------

@@ -89,10 +89,7 @@ pub fn handle_dispute_criteria(
     let lock_fd = lock_file.as_raw_fd();
     let rc = unsafe { libc::flock(lock_fd, libc::LOCK_EX) };
     if rc != 0 {
-        bail!(
-            "Failed to acquire dispute lock at {}",
-            lock_path.display()
-        );
+        bail!("Failed to acquire dispute lock at {}", lock_path.display());
     }
     // Lock guard: dropped at end of scope releases via close.
 
@@ -133,9 +130,7 @@ pub fn handle_dispute_criteria(
             );
         }
         return Ok(Response::Error {
-            message: format!(
-                "Dispute budget exhausted ({count} disputes filed; max is {max}).",
-            ),
+            message: format!("Dispute budget exhausted ({count} disputes filed; max is {max}).",),
         });
     }
 
@@ -174,10 +169,7 @@ pub fn handle_dispute_criteria(
                 id = next_dispute_id(&stage_disputes)?;
                 continue;
             }
-            Err(e) => bail!(
-                "Failed to create dispute directory {}: {e}",
-                dir.display()
-            ),
+            Err(e) => bail!("Failed to create dispute directory {}: {e}", dir.display()),
         }
     };
 
@@ -185,9 +177,7 @@ pub fn handle_dispute_criteria(
     let mut record_to_write = record.clone();
     record_to_write.id = id;
     let yaml = serde_yaml::to_string(&record_to_write)?;
-    let content = format!(
-        "---\n{yaml}---\n\n# Dispute request {id} for stage {stage_id}\n"
-    );
+    let content = format!("---\n{yaml}---\n\n# Dispute request {id} for stage {stage_id}\n");
 
     // Use safe_create_new_in_workdir for the actual write. dirfd is the
     // dispute_dir we just created; relpath is "request.md".
@@ -339,9 +329,8 @@ mod tests {
         let mut stage = crate::verify::transitions::load_stage("stage-disp", &work_dir).unwrap();
         stage.dispute_count = 3;
         save_stage(&stage, &work_dir).unwrap();
-        let resp =
-            handle_dispute_criteria(&work_dir, "stage-disp", 0, "x".to_string(), None, None)
-                .unwrap();
+        let resp = handle_dispute_criteria(&work_dir, "stage-disp", 0, "x".to_string(), None, None)
+            .unwrap();
         match resp {
             Response::Error { message } => assert!(message.contains("budget"), "msg: {message}"),
             other => panic!("expected Error, got {other:?}"),
@@ -384,15 +373,9 @@ mod tests {
     fn dispute_with_failure_output_truncates_at_4kb() {
         let (_tmp, work_dir) = setup(StageStatus::Executing, 1);
         let big = "a".repeat(10_000);
-        let resp = handle_dispute_criteria(
-            &work_dir,
-            "stage-disp",
-            0,
-            "x".to_string(),
-            None,
-            Some(big),
-        )
-        .unwrap();
+        let resp =
+            handle_dispute_criteria(&work_dir, "stage-disp", 0, "x".to_string(), None, Some(big))
+                .unwrap();
         let id = match resp {
             Response::DisputeCreated { id } => id,
             other => panic!("got {other:?}"),
@@ -433,15 +416,9 @@ mod tests {
         save_stage(&stage, &real_work).unwrap();
 
         let symlinked_work = worktree.join(".work");
-        let resp = handle_dispute_criteria(
-            &symlinked_work,
-            "stage-sym",
-            0,
-            "y".to_string(),
-            None,
-            None,
-        )
-        .unwrap();
+        let resp =
+            handle_dispute_criteria(&symlinked_work, "stage-sym", 0, "y".to_string(), None, None)
+                .unwrap();
         match resp {
             Response::DisputeCreated { id } => {
                 // The request.md must land in the REAL .work, not the symlink.
@@ -490,9 +467,8 @@ mod tests {
     fn concurrent_disputes_allocate_distinct_ids_under_flock() {
         // Sequential simulation: file two disputes in quick succession.
         let (_tmp, work_dir) = setup(StageStatus::Executing, 5);
-        let r1 =
-            handle_dispute_criteria(&work_dir, "stage-disp", 0, "a".to_string(), None, None)
-                .unwrap();
+        let r1 = handle_dispute_criteria(&work_dir, "stage-disp", 0, "a".to_string(), None, None)
+            .unwrap();
         // The first dispute moves the stage to NeedsAdjudication. To
         // file a second, the stage must be back in a state that
         // permits dispute. Reset it to Executing for the second
@@ -501,9 +477,8 @@ mod tests {
         stage.status = StageStatus::Executing;
         save_stage(&stage, &work_dir).unwrap();
 
-        let r2 =
-            handle_dispute_criteria(&work_dir, "stage-disp", 1, "b".to_string(), None, None)
-                .unwrap();
+        let r2 = handle_dispute_criteria(&work_dir, "stage-disp", 1, "b".to_string(), None, None)
+            .unwrap();
         let id1 = match r1 {
             Response::DisputeCreated { id } => id,
             other => panic!("{other:?}"),

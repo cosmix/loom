@@ -27,6 +27,7 @@ fn test_validate_unsupported_version() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             execution: None,
+            adjudication: None,
             stages: vec![stage],
         },
     };
@@ -47,6 +48,7 @@ fn test_validate_empty_stages() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             execution: None,
+            adjudication: None,
             stages: vec![],
         },
     };
@@ -70,6 +72,7 @@ fn test_validate_empty_stage_id() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             execution: None,
+            adjudication: None,
             stages: vec![stage],
         },
     };
@@ -93,6 +96,7 @@ fn test_validate_empty_stage_name() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             execution: None,
+            adjudication: None,
             stages: vec![stage],
         },
     };
@@ -117,6 +121,7 @@ fn test_validate_unknown_dependency() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             execution: None,
+            adjudication: None,
             stages: vec![stage],
         },
     };
@@ -142,6 +147,7 @@ fn test_validate_self_dependency() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             execution: None,
+            adjudication: None,
             stages: vec![stage],
         },
     };
@@ -167,6 +173,7 @@ fn test_validate_multiple_errors() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             execution: None,
+            adjudication: None,
             stages: vec![stage1, stage2],
         },
     };
@@ -236,6 +243,7 @@ fn test_complex_dependency_chain() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             execution: None,
+            adjudication: None,
             stages: vec![stage1, stage2, stage3],
         },
     };
@@ -255,6 +263,7 @@ fn test_validate_duplicate_stage_ids() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             execution: None,
+            adjudication: None,
             stages: vec![stage1, stage2],
         },
     };
@@ -279,6 +288,7 @@ fn test_validate_working_dir_path_traversal() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             execution: None,
+            adjudication: None,
             stages: vec![stage],
         },
     };
@@ -301,6 +311,7 @@ fn test_validate_working_dir_absolute_path() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             execution: None,
+            adjudication: None,
             stages: vec![stage],
         },
     };
@@ -326,6 +337,7 @@ fn test_validate_working_dir_valid_subdirectory() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             execution: None,
+            adjudication: None,
             stages: vec![stage],
         },
     };
@@ -350,6 +362,7 @@ fn test_integration_verify_requires_goal_backward() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             execution: None,
+            adjudication: None,
             stages: vec![stage],
         },
     };
@@ -375,6 +388,7 @@ fn test_integration_verify_with_artifacts_passes() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             execution: None,
+            adjudication: None,
             stages: vec![stage],
         },
     };
@@ -400,6 +414,7 @@ fn test_integration_verify_with_wiring_tests_passes() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             execution: None,
+            adjudication: None,
             stages: vec![stage],
         },
     };
@@ -424,6 +439,7 @@ fn test_integration_verify_with_wiring_passes() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             execution: None,
+            adjudication: None,
             stages: vec![stage],
         },
     };
@@ -444,6 +460,7 @@ fn test_knowledge_stage_exempt_from_goal_backward() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             execution: None,
+            adjudication: None,
             stages: vec![stage],
         },
     };
@@ -582,6 +599,7 @@ fn test_knowledge_distill_exempt_from_goal_backward() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             execution: None,
+            adjudication: None,
             stages: vec![stage],
         },
     };
@@ -608,6 +626,7 @@ fn test_knowledge_distill_with_acceptance_passes() {
             sandbox: SandboxConfig::default(),
             change_impact: None,
             execution: None,
+            adjudication: None,
             stages: vec![stage],
         },
     };

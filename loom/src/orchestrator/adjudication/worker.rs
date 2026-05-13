@@ -216,8 +216,8 @@ fn run_inner(
     if cancellation.load(Ordering::Relaxed) {
         return Ok(WorkerOutcome::Error("cancelled before HTTP".to_string()));
     }
-    let prompt = prompt::build(plan_path, stage, dispute, work_dir)
-        .context("build adjudicator prompt")?;
+    let prompt =
+        prompt::build(plan_path, stage, dispute, work_dir).context("build adjudicator prompt")?;
     let raw = super::client::call_anthropic_with(
         api_key,
         &prompt,
@@ -232,8 +232,7 @@ fn run_inner(
         ValidationOutcome::Verdict(verdict) => {
             persist_verdict(work_dir, stage, dispute, &verdict, model, attempt)
                 .context("persist verdict")?;
-            propagate_feedback(work_dir, &stage.id, &verdict)
-                .context("write feedback file")?;
+            propagate_feedback(work_dir, &stage.id, &verdict).context("write feedback file")?;
             Ok(WorkerOutcome::Wrote)
         }
         ValidationOutcome::Escalate { reason } => Ok(WorkerOutcome::Escalate(reason)),

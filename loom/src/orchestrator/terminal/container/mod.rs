@@ -1601,10 +1601,13 @@ mod tests {
             SessionType::Merge,
             SessionType::BaseConflict,
         ] {
-            let mounts = backend.build_mounts(&stage, session_type, "sess-x").unwrap();
+            let mounts = backend
+                .build_mounts(&stage, session_type, "sess-x")
+                .unwrap();
             for m in &mounts {
                 assert_ne!(
-                    m.source, admin_path,
+                    m.source,
+                    admin_path,
                     "{session_type:?} session must NOT mount admin.token (source: {})",
                     m.source.display()
                 );

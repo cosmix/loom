@@ -500,8 +500,14 @@ pub fn safe_replace_outside_workdir(
     let create_flags =
         libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC;
     // SAFETY: parent_fd is valid; tmp_name_c is NUL-terminated.
-    let tmp_fd_raw =
-        unsafe { libc::openat(parent_fd.as_raw_fd(), tmp_name_c.as_ptr(), create_flags, 0o600) };
+    let tmp_fd_raw = unsafe {
+        libc::openat(
+            parent_fd.as_raw_fd(),
+            tmp_name_c.as_ptr(),
+            create_flags,
+            0o600,
+        )
+    };
     if tmp_fd_raw < 0 {
         return Err(io::Error::last_os_error()).with_context(|| {
             format!(
@@ -528,10 +534,10 @@ pub fn safe_replace_outside_workdir(
     // SAFETY: tmp_fd is valid.
     if unsafe { libc::fsync(tmp_fd.as_raw_fd()) } < 0 {
         let err = io::Error::last_os_error();
-        return Err(cleanup(
-            anyhow::Error::new(err)
-                .context(format!("safe_fs: fsync tmp failed on {}", target.display())),
-        ));
+        return Err(cleanup(anyhow::Error::new(err).context(format!(
+            "safe_fs: fsync tmp failed on {}",
+            target.display()
+        ))));
     }
     drop(tmp_fd);
 

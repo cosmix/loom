@@ -7,13 +7,12 @@
 //! orchestrator's main loop uses.
 
 use httpmock::prelude::*;
+use httpmock::Mock;
 use loom::models::dispute::{
     applied_marker, dispute_dir, request_file, verdict_file, DisputeRequest,
 };
 use loom::models::stage::{Stage, StageStatus};
-use loom::orchestrator::adjudication::{
-    feedback, worker as adj_worker, AdjudicatorRegistry,
-};
+use loom::orchestrator::adjudication::{feedback, worker as adj_worker, AdjudicatorRegistry};
 use loom::plan::schema::AcceptanceCriterion;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -24,32 +23,32 @@ fn write_stage(work_dir: &Path, stage: &Stage) {
 }
 
 fn make_stage(id: &str) -> Stage {
-    let mut stage = Stage::default();
-    stage.id = id.to_string();
-    stage.name = id.to_string();
-    stage.status = StageStatus::NeedsAdjudication;
-    stage.acceptance = vec![AcceptanceCriterion::Simple(
-        "cargo test".to_string(),
-    )];
-    stage
+    Stage {
+        id: id.to_string(),
+        name: id.to_string(),
+        status: StageStatus::NeedsAdjudication,
+        acceptance: vec![AcceptanceCriterion::Simple("cargo test".to_string())],
+        ..Default::default()
+    }
 }
 
 /// Stage seeded with two acceptance criteria so a Delete-index-0 amendment
 /// still produces a validatable Standard stage (validation requires at least
 /// one of acceptance/wiring/artifacts/wiring_tests to remain).
 fn make_stage_two_criteria(id: &str) -> Stage {
-    let mut stage = Stage::default();
-    stage.id = id.to_string();
-    stage.name = id.to_string();
-    stage.working_dir = Some(".".to_string());
-    stage.status = StageStatus::NeedsAdjudication;
-    stage.acceptance = vec![
-        AcceptanceCriterion::Simple(
-            "test -f /__loom_intentionally_wrong/marker.txt".to_string(),
-        ),
-        AcceptanceCriterion::Simple("ls /tmp".to_string()),
-    ];
-    stage
+    Stage {
+        id: id.to_string(),
+        name: id.to_string(),
+        working_dir: Some(".".to_string()),
+        status: StageStatus::NeedsAdjudication,
+        acceptance: vec![
+            AcceptanceCriterion::Simple(
+                "test -f /__loom_intentionally_wrong/marker.txt".to_string(),
+            ),
+            AcceptanceCriterion::Simple("ls /tmp".to_string()),
+        ],
+        ..Default::default()
+    }
 }
 
 fn write_dispute(work_dir: &Path, stage_id: &str, id: u32) {
@@ -125,7 +124,7 @@ Trailing prose section.
     plan
 }
 
-fn mock_accept_response(server: &MockServer) -> Mock {
+fn mock_accept_response(server: &MockServer) -> Mock<'_> {
     let body = serde_json::json!({
         "content": [
             {
@@ -148,7 +147,7 @@ fn mock_accept_response(server: &MockServer) -> Mock {
     })
 }
 
-fn mock_accept_with_amendment(server: &MockServer) -> Mock {
+fn mock_accept_with_amendment(server: &MockServer) -> Mock<'_> {
     let body = serde_json::json!({
         "content": [
             {
@@ -179,7 +178,7 @@ fn mock_accept_with_amendment(server: &MockServer) -> Mock {
 
 /// Mock an Accept verdict whose `plan_patch` deletes acceptance[0].
 /// Targets the stage seeded by [`make_stage_two_criteria`].
-fn mock_accept_delete_first(server: &MockServer) -> Mock {
+fn mock_accept_delete_first(server: &MockServer) -> Mock<'_> {
     let body = serde_json::json!({
         "content": [
             {
@@ -213,7 +212,7 @@ fn mock_accept_delete_first(server: &MockServer) -> Mock {
     })
 }
 
-fn mock_needs_more(server: &MockServer) -> Mock {
+fn mock_needs_more(server: &MockServer) -> Mock<'_> {
     let body = serde_json::json!({
         "content": [
             {
@@ -233,7 +232,7 @@ fn mock_needs_more(server: &MockServer) -> Mock {
     })
 }
 
-fn mock_500_then_success(server: &MockServer) -> Mock {
+fn mock_500_then_success(server: &MockServer) -> Mock<'_> {
     // Just configure a successful response; testing the retry path
     // requires sequenced responses which httpmock doesn't expose
     // directly. Acceptance of the retry behaviour is covered by
@@ -296,8 +295,7 @@ fn reject_verdict_round_trip() {
     // First tick: spawn the worker.
     reg.check_pending_disputes(work).unwrap();
     // Wait for the verdict file to land.
-    let verdict_path =
-        verdict_file(&work.join("disputes"), "s1", 1);
+    let verdict_path = verdict_file(&work.join("disputes"), "s1", 1);
     let ok = wait_for(|| verdict_path.exists(), Duration::from_secs(10));
     assert!(ok, "verdict.md never appeared");
 
@@ -436,7 +434,10 @@ fn inflight_marker_blocks_double_spawn() {
     // fail (no endpoint) but the registry's job is to NOT spawn it.
     let mut reg = make_registry(work, "http://127.0.0.1:1/should-not-be-hit".to_string());
     reg.check_pending_disputes(work).unwrap();
-    assert!(reg.handles.is_empty(), "must not spawn while inflight is fresh");
+    assert!(
+        reg.handles.is_empty(),
+        "must not spawn while inflight is fresh"
+    );
 }
 
 #[test]
@@ -646,21 +647,18 @@ Trailing prose section.\n",
 }
 
 fn make_stage_three_criteria(id: &str) -> Stage {
-    let mut stage = Stage::default();
-    stage.id = id.to_string();
-    stage.name = id.to_string();
-    stage.working_dir = Some(".".to_string());
-    stage.status = StageStatus::NeedsAdjudication;
-    stage.acceptance = vec![
-        AcceptanceCriterion::Simple(
-            "test -f /__loom_wrong_a/marker.txt".to_string(),
-        ),
-        AcceptanceCriterion::Simple(
-            "test -f /__loom_wrong_b/marker.txt".to_string(),
-        ),
-        AcceptanceCriterion::Simple("ls /tmp".to_string()),
-    ];
-    stage
+    Stage {
+        id: id.to_string(),
+        name: id.to_string(),
+        working_dir: Some(".".to_string()),
+        status: StageStatus::NeedsAdjudication,
+        acceptance: vec![
+            AcceptanceCriterion::Simple("test -f /__loom_wrong_a/marker.txt".to_string()),
+            AcceptanceCriterion::Simple("test -f /__loom_wrong_b/marker.txt".to_string()),
+            AcceptanceCriterion::Simple("ls /tmp".to_string()),
+        ],
+        ..Default::default()
+    }
 }
 
 /// Drive one dispute through the registry to apply.marker. Used to land
@@ -724,7 +722,10 @@ fn amendment_cap_exceeded_escalates_to_human_review() {
     write_dispute(work, "s1", 3);
     reg.check_pending_disputes(work).unwrap();
     let verdict_path_3 = verdict_file(&work.join("disputes"), "s1", 3);
-    assert!(wait_for(|| verdict_path_3.exists(), Duration::from_secs(10)));
+    assert!(wait_for(
+        || verdict_path_3.exists(),
+        Duration::from_secs(10)
+    ));
     reg.drain_completed_workers(work).unwrap();
     reg.apply_pending_verdicts(work)
         .expect("apply_pending_verdicts should be Ok");
@@ -835,6 +836,10 @@ fn worker_helper_paths_are_under_work_dir() {
     let app = adj_worker::applied_marker_path(work, "s1", 1);
     let inflight = adj_worker::inflight_marker_path(&work.join("disputes"), "s1", 1);
     for p in [&req, &ver, &app, &inflight] {
-        assert!(p.starts_with(work), "expected {} to start with work_dir", p.display());
+        assert!(
+            p.starts_with(work),
+            "expected {} to start with work_dir",
+            p.display()
+        );
     }
 }

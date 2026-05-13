@@ -42,14 +42,11 @@ use crate::models::dispute::{
     DisputeVerdictRecord,
 };
 use crate::models::stage::{Stage, StageStatus};
-use crate::plan::amendment::{
-    apply_amendment, AmendmentField, AmendmentPatch, AmendmentRequest,
-};
+use crate::plan::amendment::{apply_amendment, AmendmentField, AmendmentPatch, AmendmentRequest};
 use crate::verify::transitions::{load_stage, save_stage};
 
 use worker::{
-    is_inflight_fresh, spawn_worker, WorkerCompletion, WorkerJob, WorkerOutcome,
-    MAX_WORKER_RETRIES,
+    is_inflight_fresh, spawn_worker, WorkerCompletion, WorkerJob, WorkerOutcome, MAX_WORKER_RETRIES,
 };
 
 /// Maximum evidence-loop rounds. After this, the stage escalates to
@@ -244,7 +241,12 @@ impl AdjudicatorRegistry {
 
     /// Apply a single verdict to the stage. Public so callers under
     /// test can drive a verdict file end-to-end.
-    pub fn apply_verdict(&mut self, work_dir: &Path, stage_id: &str, dispute_id: u32) -> Result<()> {
+    pub fn apply_verdict(
+        &mut self,
+        work_dir: &Path,
+        stage_id: &str,
+        dispute_id: u32,
+    ) -> Result<()> {
         let disputes_root = work_dir.join("disputes");
         let verdict_path = verdict_file(&disputes_root, stage_id, dispute_id);
         let applied = applied_marker(&disputes_root, stage_id, dispute_id);
@@ -267,8 +269,7 @@ impl AdjudicatorRegistry {
         let result = self.apply_verdict_inner(work_dir, &mut stage, &record);
         let final_result: Result<()> = (|| -> Result<()> {
             result?;
-            save_stage(&stage, work_dir)
-                .context("save amended stage after verdict apply")?;
+            save_stage(&stage, work_dir).context("save amended stage after verdict apply")?;
             if let Some(parent) = applied.parent() {
                 std::fs::create_dir_all(parent).ok();
             }
@@ -409,8 +410,7 @@ impl AdjudicatorRegistry {
     /// workers exit on their own when reqwest finishes/times out; their
     /// `.inflight` markers will go stale and be cleaned on next start.
     pub fn shutdown(&mut self, deadline: Instant) {
-        self.cancel
-            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.cancel.store(true, std::sync::atomic::Ordering::SeqCst);
         while Instant::now() < deadline && !self.handles.is_empty() {
             match self.completion_rx.recv_timeout(Duration::from_millis(100)) {
                 Ok(c) => {
@@ -500,7 +500,10 @@ fn scan_pending_requests(disputes_root: &Path) -> Result<Vec<(String, u32)>> {
         if !path.is_dir() {
             continue;
         }
-        let Some(stage_id) = path.file_name().and_then(|s| s.to_str()).map(str::to_string)
+        let Some(stage_id) = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(str::to_string)
         else {
             continue;
         };
@@ -540,7 +543,10 @@ fn scan_pending_verdicts(disputes_root: &Path) -> Result<Vec<(String, u32)>> {
         if !path.is_dir() {
             continue;
         }
-        let Some(stage_id) = path.file_name().and_then(|s| s.to_str()).map(str::to_string)
+        let Some(stage_id) = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(str::to_string)
         else {
             continue;
         };
@@ -568,15 +574,15 @@ fn scan_pending_verdicts(disputes_root: &Path) -> Result<Vec<(String, u32)>> {
 }
 
 fn read_dispute_request(path: &Path) -> Result<DisputeRequest> {
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("read {}", path.display()))?;
+    let content =
+        std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
     parse_yaml_frontmatter::<DisputeRequest>(&content)
         .with_context(|| format!("parse dispute request {}", path.display()))
 }
 
 fn read_verdict_record(path: &Path) -> Result<DisputeVerdictRecord> {
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("read {}", path.display()))?;
+    let content =
+        std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
     parse_yaml_frontmatter::<DisputeVerdictRecord>(&content)
         .with_context(|| format!("parse verdict record {}", path.display()))
 }

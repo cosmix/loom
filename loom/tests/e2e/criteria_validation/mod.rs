@@ -60,6 +60,7 @@ pub(crate) fn create_metadata(stages: Vec<StageDefinition>) -> LoomMetadata {
             auto_merge: None,
             change_impact: None,
             execution: None,
+            adjudication: None,
             stages,
         },
     }

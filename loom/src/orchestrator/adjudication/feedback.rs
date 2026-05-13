@@ -23,7 +23,10 @@ const FEEDBACK_FILENAME: &str = "feedback.md";
 /// is created on demand so the first dispute against a stage works
 /// without a prior `mkdir`.
 fn feedback_path(work_dir: &Path, stage_id: &str) -> PathBuf {
-    work_dir.join("disputes").join(stage_id).join(FEEDBACK_FILENAME)
+    work_dir
+        .join("disputes")
+        .join(stage_id)
+        .join(FEEDBACK_FILENAME)
 }
 
 fn ensure_parent(path: &Path) -> Result<()> {
@@ -45,19 +48,15 @@ pub fn append_rejection(
 ) -> Result<()> {
     let path = feedback_path(work_dir, stage_id);
     ensure_parent(&path)?;
-    let mut body = String::from(
-        "The adjudicator rejected your dispute. The acceptance criterion stands.\n\n",
-    );
+    let mut body =
+        String::from("The adjudicator rejected your dispute. The acceptance criterion stands.\n\n");
     body.push_str("### Reasoning\n\n");
     body.push_str(reasoning.trim());
     body.push_str("\n\n");
     if !citations.is_empty() {
         body.push_str("### Citations\n\n");
         for c in citations {
-            let line = c
-                .line
-                .map(|n| format!(":{n}"))
-                .unwrap_or_default();
+            let line = c.line.map(|n| format!(":{n}")).unwrap_or_default();
             body.push_str(&format!("- `{}{}` — {}\n", c.file, line, c.claim));
             body.push_str(&format!("  > {}\n", c.excerpt.replace('\n', " ")));
         }
@@ -81,7 +80,9 @@ pub fn append_questions(work_dir: &Path, stage_id: &str, questions: &[String]) -
         body.push_str(&format!("{}. {}\n", i + 1, q));
     }
     body.push('\n');
-    body.push_str("Action: gather the requested evidence, commit it, and file a follow-up dispute.\n");
+    body.push_str(
+        "Action: gather the requested evidence, commit it, and file a follow-up dispute.\n",
+    );
     fs::write(&path, body).with_context(|| format!("Failed to write {}", path.display()))?;
     Ok(())
 }
@@ -106,10 +107,7 @@ pub fn clear_feedback(work_dir: &Path, stage_id: &str) -> Result<()> {
     match fs::remove_file(&path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(anyhow::anyhow!(
-            "Failed to remove {}: {e}",
-            path.display()
-        )),
+        Err(e) => Err(anyhow::anyhow!("Failed to remove {}: {e}", path.display())),
     }
 }
 
@@ -146,7 +144,10 @@ mod tests {
         append_questions(
             work,
             "stage-b",
-            &["why does X fail?".to_string(), "is Y reachable?".to_string()],
+            &[
+                "why does X fail?".to_string(),
+                "is Y reachable?".to_string(),
+            ],
         )
         .unwrap();
         let content = read_feedback(work, "stage-b").unwrap().unwrap();
@@ -168,7 +169,9 @@ mod tests {
     #[test]
     fn read_feedback_returns_none_when_missing() {
         let tmp = temp_work();
-        assert!(read_feedback(tmp.path(), "missing-stage").unwrap().is_none());
+        assert!(read_feedback(tmp.path(), "missing-stage")
+            .unwrap()
+            .is_none());
     }
 
     #[test]

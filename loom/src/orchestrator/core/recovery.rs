@@ -524,6 +524,18 @@ impl Recovery for Orchestrator {
                             );
                         }
                     }
+                    StageStatus::NeedsAdjudication => {
+                        if let Err(e) = self
+                            .graph
+                            .mark_status(&stage.id, StageStatus::NeedsAdjudication)
+                        {
+                            tracing::warn!(
+                                "Failed to sync graph status for stage {}: {}",
+                                stage.id,
+                                e
+                            );
+                        }
+                    }
                 }
             }
         }
