@@ -199,3 +199,205 @@ The heartbeat JSON written by `post-tool-use.sh` always records `"context_percen
 - `orchestrator/monitor/context.rs` — context health thresholds (Green/Yellow/Red)
 - `orchestrator/monitor/detection.rs` — where heartbeat data is consumed
 - Stream-json `"system"` event shape: `{"type":"system","subtype":"init","session_id":"...","usage":{"input_tokens":N,...}}`
+
+## Container Spawn: Fragile dependence on host worktree `.claude/settings.local.json` (2026-05-13)
+
+**Observed during:** `autonomous-criteria-adjudication` plan, `integration-verify` stage. After three sandboxed crashes (cargo PATH issue, since fixed) and `loom stage retry --force`, the daemon refused to spawn with:
+
+```text
+podman run failed: Error: statfs /home/dkaponis/src/loom/.worktrees/integration-verify/.claude/settings.local.json: no such file or directory
+```
+
+The worktree existed and was tracked by git, but its `.claude/` directory was gone. `setup_worktree_hooks` is supposed to recreate `.claude/settings.local.json` on every spawn (`orchestrator/core/stage_executor.rs:340`), and `sandbox::write_settings` also creates it (`sandbox/settings.rs:80`). Neither produced a warning in `.work/orchestrator.log`, yet the file did not exist when `build_mounts` ran.
+
+The mount-build defends with `if settings_local_host.exists()` (`orchestrator/terminal/container/mod.rs:588`), so a missing file should skip the mount — but the mount got pushed anyway and podman saw it. Either:
+
+1. `setup_worktree_hooks` *appeared* to succeed but didn't write the file (silent no-op somewhere in the merge/write path).
+2. The file existed at the moment `build_mounts` ran and was deleted between mount-build and `podman run` (TOCTOU).
+3. The `exists()` check on line 588 has a subtle false-positive (e.g. a symlink to a deleted target — `Path::exists()` does follow symlinks, so a dangling one returns false, but a broken symlink whose target was deleted *after* canonicalize may evaluate inconsistently).
+
+**Empirical workaround:** Manually creating `<worktree>/.claude/settings.local.json` with `{}` content unblocked the spawn. On the *next* spawn after that, `setup_worktree_hooks` correctly regenerated a real 5KB file. So once the directory exists, the regeneration path works — the bug is in the *first*-spawn-after-corruption case.
+
+**What's needed:**
+
+- Don't trust `exists()` at mount-build time. Either (a) make `setup_worktree_hooks` mandatory + fail-fast if its write didn't land, or (b) have `build_mounts` invoke (or assert) the hook-setup pipeline against its own input invariants before adding the mount.
+- Surface hook-setup warnings from `stage_executor.rs:349` somewhere more visible than `eprintln!` to a noisy daemon log — they're load-bearing for container spawn, despite the comment "hooks are optional enhancement". For container backend they are not optional.
+- Add an end-to-end test that deletes `<worktree>/.claude/` and runs a spawn, asserting the next attempt either regenerates the file *or* fails with a clear error pointing at the hook-setup step (not a podman statfs error).
+
+**Where to look:**
+
+- `orchestrator/core/stage_executor.rs:304-352` (sandbox + hook setup order)
+- `orchestrator/terminal/container/mod.rs:551-590` (mount build with `exists()` guard)
+- `hooks/generator.rs:226` (`setup_hooks_for_worktree`)
+- `sandbox/settings.rs:72` (`write_settings`)
+
+## Container Spawn: `loom repair` blind to missing worktree `.claude/` (2026-05-13)
+
+**Observed:** With `<worktree>/.claude/settings.local.json` missing — the exact precondition that crashes container spawn (see preceding entry) — `loom repair` reports "No issues found - workspace is healthy!" The user lost time investigating because the supposedly authoritative health check said nothing was wrong.
+
+**What's needed:** `loom repair` should walk every active worktree owned by a non-terminal stage with `BackendType::Container` and verify `.claude/settings.local.json` is present + parseable JSON. The `--fix` mode should call the same `setup_worktree_hooks` path the spawner uses, not roll its own template, so the two stay in sync. Same check for the per-session container-main-settings overlay for non-worktree stages.
+
+**Where to look:**
+
+- `commands/repair.rs` (or wherever the repair checks live — grep `pub fn repair` / "No issues found")
+- Cross-check against `orchestrator/terminal/container/mod.rs::build_mounts` so the repair scan tracks the actual mount preconditions.
+
+## Recovery: `retry --force` races daemon orphan-recovery on existing worktree (2026-05-13)
+
+**Observed:** `loom stage retry --force --context "..."` correctly set `integration-verify` to `Queued`, but on the next daemon poll the orphan-recovery routine in `orchestrator/core/recovery.rs:638-705` saw the (now-stale) session_id, found commits-ahead-of-base on the worktree branch, and immediately re-routed the stage to `NeedsHandoff` (commits_ahead path at `recovery.rs:668`). To the user, the stage looked stuck — they typed `retry`, it was ready for a second, then back to a handoff state with no agent activity.
+
+This is a logically defensible design (commits exist, don't burn tokens redoing them), but the user-visible interaction is confusing. The "fix" — using `retry --force` a *second* time after acknowledging the handoff — is undocumented in the recovery flow.
+
+**What's needed (pick one or both):**
+
+- `retry --force` should clear `stage.session` before saving, so subsequent orphan recovery doesn't treat the prior session as live and doesn't rerun its decision tree.
+- Orphan-recovery should respect a recently-saved "retry intent" marker (e.g., a timestamp on the stage indicating user-driven retry within the last poll interval) and skip its commits-ahead reroute for those.
+
+**Where to look:**
+
+- `commands/stage/skip_retry.rs` (the `retry` command sets Queued at line 122 but leaves `stage.session` populated)
+- `orchestrator/core/recovery.rs:633-707` (the orphan-recovery decision tree that re-routes to `NeedsHandoff`)
+
+## Status Dashboard: `started_at` not refreshed on retry, stage appears "stale/orphaned" (2026-05-13)
+
+**Observed:** After a successful `loom stage retry --force` that spawned a fresh session, the status dashboard rendered `integration-verify` as `19h4m · 🔄 · orphaned (stale)` for the duration of the new attempt. The number came from the original (long-dead) `started_at`; the new session was actually `Up About a minute` in podman and actively making tool calls.
+
+**What's needed:** `stage_executor`'s spawn path (or `retry`) should reset `stage.started_at` to `Utc::now()` when a new session is created. The dashboard's "stale" heuristic should key off the new attempt, not the cumulative duration.
+
+**Where to look:**
+
+- `commands/stage/skip_retry.rs::retry` (where retry mutates stage fields)
+- `orchestrator/core/stage_executor.rs:291-293` (`begin_attempt(Utc::now())` is already called here — confirm it's the only writer of `started_at` and that it's reached on retry).
+- The "stale" indicator emitter — likely in `commands/graph/indicators.rs` or a dashboard renderer.
+
+## Daemon Singleton Not Enforced: Two `loom run` Processes Alive Concurrently (2026-05-13)
+
+**Observed:** During the `autonomous-criteria-adjudication` plan's `integration-verify` stage, `loom status` (static) reported `○ daemon stopped` even though the orchestrator log (`.work/orchestrator.log`) was still being appended every ~5 seconds. `loom status --live` was still connected in another terminal. `ps -eo pid,etime,cmd | rg 'loom run'` revealed **two** daemon processes:
+
+```text
+  64657    11:19:57  loom run    # started ~06:30 UTC
+1038911    01:39:24  loom run    # started ~16:11 UTC (lock mtime 16:13:18 UTC)
+```
+
+State files in `.work/`:
+
+| File | State |
+|------|-------|
+| `orchestrator.sock` | **MISSING** |
+| `orchestrator.pid` | **MISSING** |
+| `orchestrator.lock` | Present, contains `1038911` (no newline), mtime 16:13:18 UTC |
+| `orchestrator.log` | Actively growing; first dated entry is 16:13:18 UTC (matches lock mtime), no startup banner for the 06:30 daemon survives in the file |
+
+`loom status` (static) thinks the daemon is down because it talks to `orchestrator.sock`, which no longer exists. `loom status --live` in another terminal was bound earlier and is still rendering stale state; new clients can't connect.
+
+**Why this matters for the user-visible "stuck integration-verify" symptom:** With the IPC socket gone, the daemon is invisible to the operator. The stage status (`status: executing`, `started_at` 19h ago) looked frozen because no fresh updates were rendered via the static command, and the dashboard's TUI was reading a cache. Meanwhile the agent inside the container was genuinely stuck on a hung cargo test (separate concern), but the operator couldn't tell whether the daemon or the agent was at fault.
+
+**Probable cause (best hypothesis):** A second `loom run` was invoked while the first was still alive — likely as an operator recovery action after the stage looked stalled. The startup path:
+
+1. Rewrote `.work/orchestrator.lock` to the new PID (1038911) without verifying the old PID was actually dead, OR the lock-acquire path uses a non-blocking `flock` that succeeded because the old process had released its lock (e.g., on a SIGSTOP/SIGTSTP, or a dropped guard in a code path that doesn't re-acquire).
+2. Bound a new socket at `.work/orchestrator.sock` — succeeded because either (a) the old socket file had been removed by a `loom stop` that failed to kill the process, or (b) `unlink + bind` is unconditional in the daemon startup path.
+3. Did NOT find an existing PID file (or failed-soft on its presence) and did NOT signal/kill the old daemon.
+
+Result: two competing daemons sharing the same `.work/` state, the older one inert or only partially functional, the newer one doing most of the work. The socket file went missing later (a third event we have no log evidence for — possibly `loom stop` was issued against the new daemon, removing the socket but leaving both processes alive because `loom stop` over a since-disconnected socket is a no-op or because both daemons trapped the signal and ignored it).
+
+**What's needed:**
+
+1. **`loom run` must enforce singleton invariant at startup.** Before claiming the lock or binding the socket, walk these in order: (a) read `orchestrator.pid` if present, (b) `kill -0 <pid>` to test liveness, (c) if alive AND its argv matches `loom run`, refuse to start with a clear `error: daemon already running (pid N)` message and exit non-zero. Do NOT delete state files in this path.
+2. **PID file must be written on every successful startup and removed on clean shutdown.** Current state shows `orchestrator.pid` missing despite an active daemon — either it was never written, or it was deleted by a parallel/cleanup path. Both bugs deserve their own probe.
+3. **Socket file existence and the daemon's aliveness should be reconciled by `loom status`.** When the static command can't connect to the socket but a `loom run` process matches in `ps`, report something more useful than "daemon stopped" — e.g., `daemon process N alive, socket missing — try 'loom repair'`.
+4. **`loom repair` should detect duplicate daemons and offer to kill the older one** (preferring the one whose PID matches `orchestrator.lock`). Today `loom repair` doesn't appear to scan for this.
+5. **Investigate whether the orchestrator-log file descriptor is held by both daemons.** Multiple writers to a single file with `O_APPEND` is benign per POSIX, but if either daemon does `truncate + write_at(0)` (i.e., overwrites with `O_TRUNC`), the other daemon's writes are silently lost. The log's first surviving line being timestamped to the newer daemon's startup suggests truncation happened.
+6. **Suppress the `[Polling...]` TUI status line from the orchestrator-log file.** The log currently contains hundreds of these lines (visible interleaved with real WARN entries) — the TUI subscriber output is leaking into the daemon's stderr/stdout sink. Logs should only contain structured tracing output, not the TUI dashboard.
+
+**Detection rules for future incidents:**
+
+- `pgrep -af 'loom run'` returning more than one row is always wrong. Add a `loom repair` check.
+- `loom status` reporting "daemon stopped" while `.work/orchestrator.log` is being actively appended to is always wrong — either the daemon is alive (bug: stale socket cleanup) or the log is being written by a stale child process (bug: orphaned background work).
+- `orchestrator.pid` missing while any `loom run` process exists is always wrong.
+
+**Where to look in code:**
+
+- `daemon/server/lifecycle.rs` — daemonization, socket binding, PID file write. Check the order of: lock-acquire → PID-file-write → socket-bind. Each step must be atomic or roll back the previous on failure.
+- `commands/run/mod.rs` — `loom run` entry point. Check whether it consults `orchestrator.pid` + `kill -0` before forking.
+- `commands/stop.rs` — `loom stop` must ALWAYS kill the underlying process before deleting socket/pid. Verify there's no path where the socket is removed but the process survives.
+- `commands/repair.rs` — extend with a "duplicate daemon" detector and a "socket-vs-process mismatch" detector.
+- `daemon/server/core.rs` — confirm `unlink(socket_path)` before `bind` is guarded by a process-liveness check on the prior owner.
+
+**Concrete evidence captured at time of writing:**
+
+```text
+$ ps -eo pid,etime,cmd | rg 'loom run'
+  64657    11:19:57  loom run
+1038911    01:39:24  loom run
+
+$ cat .work/orchestrator.lock
+1038911
+
+$ ls .work/orchestrator.sock .work/orchestrator.pid
+ls: .work/orchestrator.sock: No such file or directory
+ls: .work/orchestrator.pid: No such file or directory
+
+$ stat .work/orchestrator.log | rg Modify
+Modify: 2026-05-13 20:50:35 +0300   # still growing every poll cycle
+
+$ head -10 .work/orchestrator.log
+Loaded base_branch from config: main
+Warning: Failed to parse skill file ...
+Warning: Failed to parse skill file ...
+Warning: Failed to parse skill file ...
+Orchestrator started, spawning ready stages...
+[K2026-05-13T16:13:18.544430Z  WARN ... Recovering orphaned stage stage_id=integration-verify status=Blocked
+2026-05-13T16:13:18.544458Z  WARN ... Failed to transition to NeedsHandoff during orphan recovery, bypassing
+...
+```
+
+First dated log line is `2026-05-13T16:13:18.544430Z` — within 1s of the lock file's mtime. The 06:30 daemon's earlier log entries (10 hours of operation) are not present in this file; either the log was truncated at the second startup, or the first daemon was writing to a different sink (e.g., it had `eprintln!` redirected on stdout but the new daemon repointed the log fd).
+
+## Worktree-File-Guard Defeats Bash Background-Mode Output Capture (2026-05-13)
+
+**Observed:** Inside a container-backed integration-verify session, the agent ran `cargo test 2>&1 | tail -100` via Claude Code's Bash background mode. Claude Code writes background-task output to `/tmp/claude-1000/<repo-tag>/<uuid>/tasks/<task-id>.output`. The agent then tried to `Read` that file (with the Read tool) to inspect progress. Every `Read` returned `✗ blocked by hook: Read hook error: [/home/loom/.claude/hooks/loom/worktree-file-guard.sh]:` and an empty body. The agent fell back to a `while [ $wait_count -lt 20 ]; do ... sleep 15; done` shell loop polling the same file with `stat -c%s`. That bash trick worked (no Read tool, no hook), but `cargo test 2>&1 | tail -100` only writes to the output file when `tail` finishes, so the file stayed at 0 bytes the whole time and the loop completed 5 minutes later with nothing useful.
+
+Net effect: the agent burned ~5 minutes of context blind to a real hung test, and then started another `cargo test` that hung the same way. Three crash cycles in a row originated from this interaction.
+
+**Why:** `worktree-file-guard.sh` is a `Read` PreToolUse hook installed for every container-backed worktree. It correctly blocks reads of anything outside the worktree path. Claude Code's Bash background mode writes its task buffer to `$TMPDIR` (= `/tmp/claude-<uid>/`), which is intentionally outside the worktree. The two policies are individually correct but produce a dead zone: background-mode output is unreadable by the agent that started it.
+
+**What's needed:**
+
+- Either (a) teach the agent (via signal text or skill) to NOT use Bash background mode in container-backed sessions — use foreground Bash with capped output instead, or (b) carve out `/tmp/claude-*/tasks/*.output` in `worktree-file-guard.sh` as an exception, or (c) configure Claude Code to write its background task buffers under the worktree (e.g., via `$CLAUDE_TASKS_DIR` if such a knob exists).
+- Surface this in the standard-stage signal prefix so agents working inside container worktrees know foreground-only is mandatory. Currently the agent has no way to detect why its `Read` was blocked except the bare hook error.
+- A `loom repair` check could detect agents stuck in this pattern by reading `.work/tool-events.jsonl` for sequences of `Read` errors against `/tmp/claude-*/tasks/*.output`.
+
+**Where to look:**
+
+- `hooks/validators/worktree-file-guard.sh` (or wherever the hook lives — grep for "worktree-file-guard")
+- `orchestrator/signals/cache.rs` (standard-stage prefix; that's where the foreground-only rule belongs if we go path (a))
+- `tests/container_smoke.rs` could grow a regression test that runs Bash background mode inside a container and asserts the output is reachable (or that the agent gets a clear "use foreground" hint).
+
+## Container PID 1 (Claude Code) Does Not Reap Zombies (2026-05-13)
+
+**Observed:** Inside `loom-integration-verify`, after ~13 minutes of `cargo test` activity, `ps -ef` showed several hundred `[git] <defunct>` zombies parented to PID 1 (Claude Code). The test suite forks `git` extensively (verify/baseline, plan parsing) and Claude doesn't `wait()` on subprocesses it doesn't own, so they accumulate.
+
+```text
+loom       1       0  2 17:28 ?  claude --print --output-format stream-json ...
+loom   21195       1  0 17:35 ?  [git] <defunct>
+loom   21196       1  0 17:35 ?  [git] <defunct>
+...   (~200 more)
+```
+
+**Why this is a real concern (not cosmetic):**
+
+- Linux's default `pid_max` is 4 million but kernels often gate on per-uid limits. A long-running container with a non-reaping PID 1 will eventually exhaust the table.
+- Several test paths likely call `git` synchronously; if their `Child::wait()` is dropped (e.g., spawned and forgotten) the zombies pile up.
+- `podman` does not inject `tini` by default. The container entrypoint (`loom/resources/entrypoint.sh`) is `firewall.sh` → `resolver_loop` (bash) → exec target. None of these reap.
+
+**What's needed:**
+
+- Image-level fix: add `tini` (or `dumb-init`) to the Dockerfile and make it the literal PID 1, then exec the agent under it. `tini -- claude --print ...`. The image fingerprint already covers Dockerfile.tmpl content, so this is a clean change.
+- Alternative without an init: ensure every `Child` in test code is `.wait()`ed (lint with clippy's `let_underscore_must_use`).
+- A monitor probe inside the container that counts `Z` state processes and emits a soft signal if > 50.
+
+**Where to look:**
+
+- `loom/resources/Dockerfile.tmpl` (add `tini` install + ENTRYPOINT)
+- `loom/resources/entrypoint.sh` (wrap the resolver_loop under `exec tini --`)
+- `verify/baseline/capture.rs`, `verify/baseline/compare.rs` (frequent `git` callers in test paths)
