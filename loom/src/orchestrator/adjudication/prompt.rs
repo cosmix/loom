@@ -167,9 +167,10 @@ fn run_git_show(work_dir: &Path, commit: &str) -> Result<String> {
     // Defence-in-depth: the dispute RPC writes `evidence_commit` straight
     // through from the agent. A value starting with `-` (e.g.
     // `--output=/tmp/x`) would be parsed by `git show` as an option.
-    // Require a SHA-shaped string (4–64 hex chars) and pass `--` so any
-    // remaining shape oddity still lands in the positional slot.
-    let is_sha = !commit.is_empty()
+    // Require a SHA-shaped string (4–64 hex chars — 4 matches git's
+    // minimum unambiguous short SHA) and pass `--` so any remaining
+    // shape oddity still lands in the positional slot.
+    let is_sha = commit.len() >= 4
         && commit.len() <= 64
         && commit.chars().all(|c| c.is_ascii_hexdigit());
     if !is_sha {
@@ -456,6 +457,16 @@ mod tests {
         // Empty.
         let err = run_git_show(&work, "").unwrap_err();
         assert!(format!("{err:#}").contains("not a SHA-shaped string"));
+        // Too short (below git's 4-char short-SHA minimum). All-hex but
+        // sub-minimum length must be rejected before git is invoked.
+        for short in ["a", "ab", "abc"] {
+            let err = run_git_show(&work, short).unwrap_err();
+            assert!(
+                format!("{err:#}").contains("not a SHA-shaped string"),
+                "len {} should be rejected; got {err:#}",
+                short.len(),
+            );
+        }
         // Too long (65 hex chars).
         let too_long = "a".repeat(65);
         let err = run_git_show(&work, &too_long).unwrap_err();
