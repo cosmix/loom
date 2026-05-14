@@ -8,10 +8,33 @@
 
 use loom::orchestrator::{Orchestrator, OrchestratorConfig};
 use loom::plan::graph::ExecutionGraph;
+use serial_test::serial;
 use std::time::Duration;
 use tempfile::TempDir;
 
 use super::create_stage_def;
+
+struct EnvVarGuard {
+    key: &'static str,
+    original: Option<String>,
+}
+
+impl EnvVarGuard {
+    fn set(key: &'static str, value: &str) -> Self {
+        let original = std::env::var(key).ok();
+        std::env::set_var(key, value);
+        Self { key, original }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        match &self.original {
+            Some(value) => std::env::set_var(self.key, value),
+            None => std::env::remove_var(self.key),
+        }
+    }
+}
 
 /// Write a minimal `.work/config.toml` that includes a stale `[project_execution]`
 /// table along with a valid `[plan]` section.
@@ -31,10 +54,16 @@ backend = "native"
 }
 
 #[test]
+#[serial]
 fn test_orchestrator_config_ignores_stale_project_execution() {
     // Prove that building an OrchestratorConfig with a work_dir whose
     // config.toml contains a stale [project_execution] section does NOT cause
     // a panic, parse failure, or any behavioural difference from a clean config.
+    //
+    // Orchestrator::new eagerly constructs a NativeBackend even in manual mode.
+    // Pin LOOM_TERMINAL so headless CI runners without terminal emulators do not
+    // fail this config-parser regression for unrelated host-environment reasons.
+    let _terminal_env = EnvVarGuard::set("LOOM_TERMINAL", "xterm");
 
     let temp_dir = TempDir::new().unwrap();
     let work_dir = temp_dir.path().join(".work");
@@ -48,6 +77,7 @@ fn test_orchestrator_config_ignores_stale_project_execution() {
         repo_root: temp_dir.path().to_path_buf(),
         manual_mode: true,
         poll_interval: Duration::from_millis(50),
+        enable_skill_routing: false,
         ..Default::default()
     };
 
