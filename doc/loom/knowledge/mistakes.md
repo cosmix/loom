@@ -276,26 +276,6 @@
 
 **Fix:** Use test fixtures that are fully controlled by the test suite. Reference `tests/integration/plan_verify.rs` as the canonical example of building plan fixtures without touching `doc/plans/`.
 
-## Container Topology: Host Repo Must Be Mounted Whole (not just worktree)
-
-**Mistake:** Mounting only the stage worktree directory into the container (e.g., `-v .worktrees/<id>:/workspace`). Git worktrees store relative symlinks (`.work -> ../../.work`) that point into the parent repo tree. A partial mount breaks both the symlinks and git metadata.
-
-**Why:** Git worktree metadata (`<worktree>/.git`) is a file pointing at `<repo>/.git/worktrees/<id>/`. Mounting only the worktree severs this link — git commands fail with "not a git repository".
-
-**Prevention:** Always bind-mount the full host repo root at a fixed container path (`/repo`). Stage cwd = `/repo/.worktrees/<stage-id>`. Set `LOOM_WORK_DIR=/repo/.work` explicitly.
-
-**Fix:** ContainerBackend uses `REPO_MOUNT = "/repo"` as the invariant; worktree path inside container is always derived from this constant.
-
-## Config Must Be Persisted to .work/ Before loom run Reload
-
-**Mistake:** Storing plan-level backend config only in memory (transient struct). On `loom run` restart (e.g., after daemon crash), the config is re-read from `.work/config.toml` — if it was never written there, the backend selection silently reverts to native.
-
-**Why:** The orchestrator reconstructs its state entirely from disk on startup. Any config not written to `.work/config.toml` during `loom init` is gone on restart.
-
-**Prevention:** `loom init --backend container` MUST write `[project_execution]` to `.work/config.toml`. `ContainerBackend::new()` reads this section and refuses with a clear error if it's absent.
-
-**Fix:** `fs/work_dir::write_project_execution()` uses `toml_edit` for round-trip-safe writes. `ContainerBackend::new()` calls `work_dir_api::read_project_execution()` and bails if missing.
-
 ## Schema Root: LoomConfig vs Plan
 
 **Mistake:** Passing the top-level YAML document (which wraps `loom:` key) where a `LoomConfig` (the inner object) is expected, or vice versa. This commonly manifests as "missing field" serde errors.
@@ -306,19 +286,15 @@
 
 ## Session Identity: Backend Metadata Must Be Persisted
 
-**Mistake:** Relying on transient session state to route kill/liveness calls after a daemon restart. If `session.backend` is not written to disk, the restarted daemon defaults to the wrong backend (e.g., attempts `kill -0` on a container PID).
+**Mistake:** Relying on transient session state to route kill/liveness calls after a daemon restart.
 
 **Why:** Sessions are reconstructed from `.work/sessions/<id>.md` on daemon restart. Any field not in the session file is lost.
 
-**Prevention:** Add `#[serde(default)]` to backend-related session fields (backend, tracking_key, runtime, container_name) and ensure they are set before the session is written to disk. `Session::derive_tracking_key()` computes the container name from stage-id + session-id.
-
-**Fix:** Session struct fields `backend`, `tracking_key`, `runtime`, `container_name` all use `#[serde(default)]` and are populated in `spawn_session` implementations before persistence.
+**Prevention:** Add `#[serde(default)]` to backend-related session fields and ensure they are set before the session is written to disk.
 
 ## Liveness: Monitor Must Route Through TerminalBackend
 
-**Mistake:** Monitoring thread reads the PID from the session file and calls `kill -0 <pid>` directly. This gives false "dead" signals for container sessions, which have a host-side wrapper PID that may be dead even though the container is healthy, or vice versa.
-
-**Why:** Container session liveness is determined by `<runtime> inspect -f '{{.State.Running}}'`, not by host PID existence. The host wrapper PID can die after the container starts; container sessions look dead to `kill -0`.
+**Mistake:** Monitoring thread reads the PID from the session file and calls `kill -0 <pid>` directly.
 
 **Prevention:** Always route session liveness through `LivenessService::is_alive(session)`. Never `kill -0` directly in the monitor.
 
@@ -331,40 +307,6 @@
 **Why:** Sessions are spawned from multiple entry points beyond the main orchestrator. Each missing path falls back to a hard-coded NativeBackend.
 
 **Prevention:** When wiring a new backend dispatcher, `rg` for all `spawn_session\|spawn_merge_session\|spawn_knowledge_session` call sites before considering the work done. Typically 5+ sites: orchestrator main loop, foreground spawner, merge_handler, continuation, auto_merge.
-
-## Init Re-run: WorkDir Initialization Must Support Reconfigure
-
-**Mistake:** `WorkDir::initialize()` bails when `.work/` already exists (to prevent accidental re-init). Using it to reconfigure backend (e.g., `loom init --backend container` on an existing workspace) fails silently or corrupts state.
-
-**Prevention:** Add `open_or_initialize()` for the reconfigure path. It reads existing config if `.work/` exists, applies only the backend-related fields, and writes them back. Do NOT replace `initialize()` — existing callers rely on its "bail if exists" guard.
-
-**Fix:** `fs/work_dir.rs::open_or_initialize()` added; `loom init --backend container` uses this path; `initialize()` behavior unchanged.
-
-## Firewall: Agent-Writable Allowlist Defeats the Firewall
-
-**Mistake:** Mounting the allowlist file inside the agent-writable directory (e.g., inside the repo bind-mount) allows a compromised agent to append entries and bypass the egress filter.
-
-**Why:** If the allowlist path is within `/repo` (which is mounted rw for the agent), the agent can overwrite it.
-
-**Prevention:** Allowlist file must be mounted ro at a path outside the rw bind mount. In loom: `.work/network/allowed_domains.txt` on host, mounted ro at `/etc/loom/network/allowed_domains.txt` inside the container.
-
-## Cache Key Completeness: Hash All Embedded Resources
-
-**Mistake:** Fingerprinting only detected languages. If the Dockerfile template or firewall script changes, the cached image is stale but the fingerprint matches — agents get the old image with updated resources.
-
-**Why:** `include_str!()` embeds resource content at compile time. A rebuilt loom binary has new content but the old fingerprint unless the hash includes the resource content.
-
-**Prevention:** Include SHA-256 of ALL `include_str!()` resources in the fingerprint. In loom: fingerprint = `SHA-256(sorted_langs + DOCKERFILE_TMPL + FIREWALL_SH)`.
-
-**Fix:** `compute_fingerprint_inner(langs, dockerfile_tmpl_content, firewall_sh_content)` — takes content as args for testability. `compute_fingerprint` calls it with the `include_str!` constants.
-
-## include_str! Path Depth from Container Submodule
-
-**Mistake:** When writing `include_str!()` inside `loom/src/orchestrator/terminal/container/fingerprint.rs`, using 5 `../` segments to reach `loom/resources/`. The correct count is 4.
-
-**Why:** The file lives 4 levels below `loom/` (orchestrator → terminal → container → fingerprint.rs). Starting from the file's directory: `../../../../resources/Dockerfile.tmpl`.
-
-**Prevention:** Count the directory components from the file to `loom/`, then use that many `../`. The compiler error message will suggest the correction if you get it wrong.
 
 ## toml_edit vs toml: Different Use Cases
 
@@ -397,125 +339,6 @@
 
 **Fix:** `Self::Ghostty` arm in `emulator.rs:build_command()` is now cfg-gated; macOS reassigns `command = Command::new("open")` and uses `open -na Ghostty --args --working-directory=... --title=... -e bash -c CMD`. Linux behavior unchanged. `binary()` still returns `"ghostty"` (correct for Linux PATH lookup and for any macOS user with a manual shim). Tests `test_ghostty_build_command_macos` and `test_ghostty_build_command_linux` are cfg-gated so each runs on its target platform.
 
-## Mount order inversion silently defeats the ro base
-
-**What happened:** When hardening the container backend's `/repo` mount from rw to ro, a subagent could construct the mount list with the rw worktree overlay listed *before* the ro base mount (e.g., `--mount=type=bind,...,/repo/.worktrees/X` then `--mount=type=bind,...,/repo`). Docker/Podman apply mounts in argument order — later entries shadow earlier ones at overlapping paths. If the rw overlay on `.worktrees/X` is applied first and the ro base is applied second, the ro base silently overwrites (or shadows) the rw layer, making `/repo/.worktrees/X` also read-only. Worse, the reverse: if the ro base is applied first and then a rw overlay of `/repo` (for Merge stages) is applied second, the entire `/repo` becomes rw again.
-
-**Why:** Container runtimes apply bind mounts in the order they appear in the run command. There is no error — the later mount simply takes precedence at overlapping prefixes.
-
-**Prevention:** Always verify mount construction in `build_mounts` unit tests by asserting `mounts[0] == Mount::ro(_, "/repo")` (ro base is first), and that rw overlay paths are tighter subtrees that come after. For Merge/BaseConflict stages that need a full rw `/repo`, there should be no ro base at all — document this as the intentional exception.
-
-**Fix:** The ro base mount must always be `args[0]` in the list, with all rw overlays appended after it. Add an assertion in `build_mounts_standard_stage_has_ro_repo_and_rw_worktree` that checks mount ordering by index, not just presence.
-
-## Container backend: UID 1000 collision on Ubuntu 24.04 base (2026-05-11)
-
-**What happened:** `loom init --backend container ...` failed at STEP 6/15 of the image build with `useradd: UID 1000 is not unique`. The Dockerfile (`loom/resources/Dockerfile.tmpl`) creates a `loom` user at UID 1000, but `mcr.microsoft.com/devcontainers/base:ubuntu-24.04` ships a pre-existing `ubuntu` user at UID 1000 / GID 1000 (new in 24.04 — 22.04 had no such pre-baked user).
-
-**Misleading signal:** The Dockerfile guarded `useradd` with `if ! id -u ${USERNAME} >/dev/null 2>&1` — checking whether the *username* `loom` exists. It didn't, so `useradd` ran and collided with the existing user occupying that UID. The guard was correct in intent (skip creation if already present) but wrong in mechanism (check by name, not by UID).
-
-**Why it broke:** `useradd --uid N` fails if UID `N` is taken, regardless of the username. The base image's `ubuntu` user holds UID 1000 from the moment the FROM line lands, so any `useradd --uid 1000 loom` is guaranteed to fail. Loom's image build also passes no `--build-arg USER_UID=...`, so the default is the only path exercised.
-
-**Prevention:**
-
-- When creating a fixed-UID user on a base image, always check by UID *and* by name. Evict whatever occupant currently holds the UID before calling `useradd --uid`.
-- The canonical devcontainers pattern: `getent passwd ${USER_UID}` → if the matching name isn't ours, `userdel -r`, then create. Same for GID via `getent group`.
-- When upgrading a base image's distro version, re-check whether common UIDs (1000, 1001) are now pre-occupied — Ubuntu 24.04 introduced this; future LTS releases may shift again.
-
-**Fix:** `Dockerfile.tmpl` now runs an explicit eviction block before `useradd`: if `getent passwd ${USER_UID}` resolves to a non-`loom` user, `userdel -r` removes it (falling back to non-`-r` if the home dir is shared); same for GID. The fingerprint changes automatically because the template content is embedded in the image fingerprint (`fingerprint.rs:22`), so cached images rebuild without manual cache clearing.
-
-## Session Files Outlive Their Containers
-
-**What happened:** `loom container logs` and `loom container list` trust `container_name` in `.work/sessions/*.md` without checking if the container still exists. A stage that ran and completed leaves a session file with `container_name` set and `status: Completed`. The next call resolves the container name but fails at `<runtime> logs` because the container was already removed.
-
-**Why:** Session files are NOT deleted when containers are removed. Deletion only happens on explicit `loom clean`. A session file with a populated `container_name` is not proof the container is live.
-
-**Prevention:** Before executing any `<runtime> logs|exec|inspect` command against a resolved container name, call `<runtime> inspect -f '{{.State.Status}}' <name>` first. A non-zero exit or "No such container" means the container is gone — fall back to `.work/crashes/` log files. Detection: `rg 'container_name'` in session files does not imply container existence.
-
-**Fix:** Filter by runtime `inspect` status before trusting the session-file `container_name`. `loom container logs` should use `query_container_status()` (already in list.rs) as a pre-flight before exec-ing into `<runtime> logs`.
-
----
-
-## First-Match Session Iteration Is Unsafe for Retried Stages
-
-**What happened:** `resolve_session_for_stage()` in `logs.rs` iterates `.work/sessions/*.md` and returns the first match for a given `stage_id`. A stage that was retried has multiple session files — an older file with status `Crashed` and a newer file with status `Running`. Iteration order in `fs::read_dir` is unspecified; the stale session may be picked first, pointing to the wrong (or removed) container.
-
-**Why:** `fs::read_dir` returns entries in filesystem order, not creation order. Multiple session files can exist for one stage when retries produce new session IDs.
-
-**Prevention:** When scanning for a session matching a `stage_id`, sort candidates by `last_active` descending (or by session ID timestamp suffix) before picking the first match. Prefer status `Running` over `Completed`/`Crashed` when multiple are present.
-
-**Fix:** In `resolve_session_for_stage`, collect all matching sessions, sort by `last_active` DESC, and prefer `status == Running`. Fall back to the most-recently-active one.
-
----
-
-## Missing Clearer Breaks Stale-Session Lookups
-
-**What happened:** A `Session` method `set_container_identity` was added to write `runtime` and `container_name`. Without a matching `clear_container_identity` called after container removal, the session file permanently retains the container reference even after `rm -f`. Subsequent `loom container logs` or `loom container list` pick up the stale data and attempt to inspect a non-existent container.
-
-**Why:** Every long-lived resource handle stored on a model struct requires symmetric setter AND clearer. Calling the setter on spawn but not calling the clearer on removal leaves the model in an inconsistent state.
-
-**Prevention:** When adding any resource-identity field to `Session` (or similar models), always implement both setter and clearer in the same commit. Callers that remove the resource (e.g., `kill_session`, `spawn_common` cleanup) must call the clearer before persisting.
-
-**Fix:** Call `session.clear_container_identity()` in `kill_session` and in the `spawn_common` error path, then persist the updated session file. `clear_container_identity` is already implemented in `models/session/methods.rs:135`.
-
-## Container Retry Collisions: Preemptive Removal Pattern (2026-05-12)
-
-**What happened:** When `spawn_session` failed and the stage was retried, `podman run` (or `docker run`) failed with "container name loom-<stage-id> is already in use". Similarly, worktrees and branches accumulated across retries.
-
-**Why:** The failure path in `stage_executor.rs` only marked the stage `Blocked` — it did not clean up the half-spawned container, git worktree, or branch left behind.
-
-**Prevention:**
-
-1. `spawn_common` must call `preemptive_remove_existing(runtime, container_name)` — a best-effort `rm -f` — at the very top, before network/mount setup. This is cheap and idempotent (`rm -f` exits 0 for non-existent containers).
-2. After the `spawn_session` call fails in `stage_executor.rs`, the rollback must clean: container (`preemptive_remove_existing`), worktree (`git::remove_worktree`), branch (`git::delete_branch`). Knowledge stages: container removal only (no worktree/branch to clean).
-3. All cleanup calls must be wrapped in `let _ = ...` — cleanup failures must not hide the original error.
-
-**Fix:** `preemptive_remove_existing` extracted as `pub(crate)` in `container/mod.rs`; failure rollback added to both the knowledge spawn path (~line 134) and standard-stage path (~line 364) in `stage_executor.rs`.
-
-## Hook Installation Asymmetry: Native vs Container Hook Paths (2026-05-12)
-
-**What happened:** Container-backend worktrees had `settings.local.json` with global hooks pointing to `~/.claude/hooks/loom/` (host paths). These paths don't exist inside the container — hooks dir is mounted at `/home/loom/.claude/hooks/loom`.
-
-**Why:** `generate_hooks_settings` in `hooks/generator.rs` called `configure_loom_hooks(obj)` unconditionally. `loom_hooks_config()` ALWAYS returns host-side paths. Session-specific hooks via `HooksConfig::to_settings_hooks()` already used `script_path()` (correct); the global-hook emission path was the bug.
-
-**Prevention:** `generate_hooks_settings` must branch on `config.backend`:
-
-- Native: `configure_loom_hooks(obj)` (host paths)
-- Container: `configure_loom_hooks_for_container(obj)` (uses `loom_hooks_config_for_dir("/home/loom/.claude/hooks/loom")`)
-
-The private helper `configure_loom_hooks_with_dir(obj, hooks_dir)` parameterizes both native and container paths — reuse it for both branches.
-
-**Fix:** `fs/permissions/hooks.rs` — extracted `loom_hooks_config_for_dir(dir)` + `configure_loom_hooks_with_dir(obj, dir)` helpers; added `configure_loom_hooks_for_container(obj)`. `hooks/generator.rs` now branches on backend type.
-
-## Per-Worktree Gitignore: Container settings.local.json Must Be Excluded (2026-05-12)
-
-**What happened:** `settings.local.json` inside a container-backed worktree contains `/home/loom/.claude/hooks/loom/` paths. An agent could `git add .claude/settings.local.json` and commit these container-specific paths to the repo, poisoning the hook config for native-backend users.
-
-**Why:** Container worktrees need `/home/loom/` paths in `settings.local.json`; host users expect `~/.claude/hooks/loom/` paths. Both can't be right simultaneously; only per-worktree exclusion keeps them separate.
-
-**Prevention:** After creating any container-backed worktree, append `.claude/settings.local.json` to `<worktree>/.git/info/exclude` (idempotently). Use per-worktree exclude — NOT `.gitignore` (which would pollute the user's repo). For knowledge stages (no worktree): append to main repo's `.git/info/exclude`.
-
-**Gotcha — gitignore path:** Per-worktree exclude is at `<repo>/.git/worktrees/<stage-id>/info/exclude` (the real gitdir path), NOT at `<worktree-dir>/.git/info/exclude`. The latter is a plain FILE containing a `gitdir:` pointer, not a directory.
-
-## Container Backend Git Identity: GIT_AUTHOR_* Is the Right Mechanism (2026-05-12)
-
-**What happened:** Container sessions had no `.gitconfig`, so git commits either used a broken/empty identity or failed with "Please tell me who you are."
-
-**Why:** Containers don't inherit the host `~/.gitconfig`. There's no automatic mechanism to pass user identity into a container environment.
-
-**Prevention:** Add `git_user_name: Option<String>` and `git_user_email: Option<String>` to `ProjectContainerConfig` (`plan/schema/execution.rs`). Populate at `loom init --backend container` time by reading `git config --global user.name/email` on the host. Inject as env vars in `ContainerBackend::build_env_for_session`:
-
-```text
-GIT_AUTHOR_NAME, GIT_AUTHOR_EMAIL, GIT_COMMITTER_NAME, GIT_COMMITTER_EMAIL
-```
-
-Key rules:
-
-- Inject ALL FOUR or NONE. Partial identity (name only, no email) produces inconsistent commits — harder to debug than no identity at all.
-- Validate both fields: reject empty, >256 bytes, or any `char.is_control()`. Control chars are valid in podman `-e` values but produce malformed git objects.
-- Validation at two boundaries: `loom init` (warn + scrub) and `.work/config.toml` read time (silent scrub to `None`).
-
-**Fix:** `validate_git_identity()` in `plan/schema/execution.rs`; wired into `commands/init/execute.rs::sanitize_git_identity` (warns) and `fs/work_dir.rs::read_project_execution` (silent scrub).
-
 ## Clippy --all-targets Required to Catch Test-Module Lints (2026-05-12)
 
 **What happened:** `cargo clippy -- -D warnings` (without `--all-targets`) did not compile test modules, so a style lint in `src/hooks/generator.rs` (items after a test module) went undetected during per-stage acceptance and only surfaced at integration-verify.
@@ -544,36 +367,3 @@ git show <commit> -- <file>    # after
 ```
 
 Do not trust verbal descriptions of what a commit does — always compare before/after diffs directly.
-
-## Container Backend: Host `.claude/settings.local.json` Corruption (Fixed 2026-05-12)
-
-**What happened:** When a container-backed knowledge stage spawned, `stage_executor::start_knowledge_stage` called both `crate::sandbox::write_settings(..., &self.config.repo_root)` and `setup_hooks_for_worktree(&self.config.repo_root, &config)` against the **main repo** path. With `BackendType::Container`, those writes rewrote the host's `<repo>/.claude/settings.local.json` with:
-
-- Container hook paths (`/home/loom/.claude/hooks/loom/...`)
-- `permissions.defaultMode: "bypassPermissions"` (the container's default permission mode)
-
-That same file is what the operator's host Claude sessions read when working in the main repo. Result: parallel host work was broken (hooks pointed to paths that don't exist on the host) and the host inherited `bypassPermissions` — a security regression.
-
-**Why:** Native and container backends were sharing a write path that targets `<repo>/.claude/settings.local.json` (correct for native, where Claude runs on the host directly). The container backend's settings are an entirely different concern — they describe behavior inside the container — but the writer didn't distinguish.
-
-**Prevention — INVARIANT:** Container-backed non-worktree sessions (Knowledge, Merge, BaseConflict) MUST write their settings to a loom-owned, per-session overlay under `<work_dir>/container-settings/<session-id>.local.json` and have the container backend ro-mount that file at `/repo/.claude/settings.local.json`. The host's `<repo>/.claude/settings.local.json` must NEVER be written by container-backed paths.
-
-**Detection rule:** Any new code that writes `<repo>/.claude/settings.local.json` from inside an orchestrator path must branch on `BackendType`. Native → write to the repo file. Container → write to `<work_dir>/container-settings/<session-id>.local.json` via `crate::hooks::setup_container_main_session_settings(...)`.
-
-**Implementation:** `hooks/generator.rs::setup_container_main_session_settings` + `container_main_settings_path`. Mount selection lives in `orchestrator/terminal/container/mod.rs::build_mounts` (non-worktree branch). Regression tests: `hooks::generator::tests::container_main_session_settings_isolates_from_host_repo` and `orchestrator::terminal::container::tests::build_mounts_knowledge_session_uses_per_session_settings_overlay`.
-
-## Container Backend: Toolchain installed under `/root/` unreachable by runtime user (Fixed 2026-05-13)
-
-**What happened:** Inside a container-backed stage, the agent ran `cargo` and got `permission denied: cargo`. `ls /root/.cargo/bin/` returned `No such file or directory` for user `loom`. `integration-verify` crashed 3/3 times because every `cargo test` / `cargo clippy` / `cargo build` invocation failed before doing any work. Earlier stages (`plan-amendment`, `adjudicator`) survived only because they avoided cargo and noted the gotcha in `loom memory`; the integration-verify stage cannot — its acceptance is cargo-based.
-
-**Misleading signal:** `which cargo` returned `/usr/local/bin/cargo` and the file existed. The error referenced a different path (`/root/.cargo/bin/cargo`). The Dockerfile created the symlink `ln -sf /root/.cargo/bin/* /usr/local/bin/`, which looks correct in isolation — it forwards binaries onto PATH. But symlink resolution at execution time requires the unprivileged user to traverse `/root`, which is mode `0700` by Ubuntu default.
-
-**Why it broke:** `rustup-init` was invoked as root without `CARGO_HOME`/`RUSTUP_HOME`, so it installed to `$HOME/.cargo` and `$HOME/.rustup` — i.e. `/root/.cargo` and `/root/.rustup`. The runtime user `loom` (UID 1000) cannot read or `cd` into `/root`, so the `/usr/local/bin/*` symlinks were dangling for non-root callers. The same shape applies to the `uv` install at `/root/.local/bin/uv`.
-
-**Prevention — INVARIANT:** Container toolchains installed by build-time root MUST land in a world-readable prefix (`/usr/local/cargo`, `/usr/local/rustup`, `/usr/local/bin`), NOT under `/root`. For installers that respect `*_HOME` env vars, set them in the same `RUN` block. For installers that don't (like the uv install script), use the installer's `*_INSTALL_DIR` knob. Symlinks from `/usr/local/bin` are insufficient — they require the runtime user to traverse the install directory's parent.
-
-**Detection rule:** Grep `Dockerfile.tmpl` for `/root/.cargo`, `/root/.local`, or `ln -sf /root` and fail the build/test. Any toolchain install RUN block must declare its install destination via env var or installer flag, and that destination must be under `/usr/local` (or another world-readable prefix).
-
-**Fix:** `loom/resources/Dockerfile.tmpl` rust block sets `RUSTUP_HOME=/usr/local/rustup`, `CARGO_HOME=/usr/local/cargo`, prepends `/usr/local/cargo/bin` to `PATH`, calls rustup-init with `--no-modify-path --profile minimal --component clippy rustfmt`, then `chmod -R a+rX` on both directories. Python block sets `UV_INSTALL_DIR=/usr/local/bin` and drops the `/root/.local` symlink. Regression tests: `orchestrator::terminal::container::image::tests::render_dockerfile_rust_install_is_world_readable` and `render_dockerfile_python_install_is_world_readable` assert the rendered template carries the env-var pins and does NOT emit `ln -sf /root/...`.
-
-**Operational note:** Cargo still needs a writable `CARGO_HOME` for the registry cache and a writable `CARGO_TARGET_DIR` for build artifacts. The image's `/usr/local/cargo` is fine as the rustup install root (read-only at runtime), but agents building from source should override `CARGO_HOME=/home/loom/.cargo` and `CARGO_TARGET_DIR=/home/loom/loom-target` (or similar HOME-relative paths) per-session.

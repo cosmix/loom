@@ -37,10 +37,9 @@
 | `verify`      | `commands/verify.rs`          | Goal-backward verification                   |
 | `check`       | `commands/check.rs`           | Goal-backward verification (alias)           |
 | `completions` | `commands/completions/mod.rs` | Shell completions (custom scripts + dynamic) |
-| `container`   | `commands/container/mod.rs`   | Container image management (build/rebuild/doctor/shell/logs/list) |
 | `complete`    | Hidden (dynamic completions)  | Backend for shell tab completions            |
 
-Total: 23 visible commands + 1 hidden (complete for dynamic completions). Dispatch: `cli/dispatch.rs` match-based, two-level for nested commands.
+Total: 22 visible commands + 1 hidden (complete for dynamic completions). Dispatch: `cli/dispatch.rs` match-based, two-level for nested commands.
 
 ## Orchestrator Core
 
@@ -134,21 +133,12 @@ Total: 23 visible commands + 1 hidden (complete for dynamic completions). Dispat
 
 ## Terminal Backend
 
-- `orchestrator/terminal/mod.rs` - TerminalBackend trait (spawn/kill/alive) + BackendType re-export
-- `orchestrator/terminal/dispatcher.rs` - BackendDispatcher; routes spawn/kill/liveness by backend; BackendNeeds declares which backends to construct
+- `orchestrator/terminal/mod.rs` - TerminalBackend trait (spawn/kill/alive)
+- `orchestrator/terminal/dispatcher.rs` - BackendDispatcher; routes spawn/kill/liveness by backend
 - `orchestrator/terminal/native/spawner.rs` - Claude Code session spawning (native)
 - `orchestrator/terminal/emulator.rs` - 11 terminal emulator configs
 - `orchestrator/terminal/native/detection.rs` - Auto-detect terminal
 - `orchestrator/terminal/native/pid_tracking.rs` - Wrapper script, PID tracking, env vars
-- `orchestrator/terminal/container/mod.rs` - ContainerBackend (~975 lines — refactor candidate; split candidates: spawn_common, mount construction, env building); spawn/kill/liveness for containerised sessions
-- `orchestrator/terminal/container/fingerprint.rs` - compute_fingerprint(); encodes langs + Dockerfile.tmpl + firewall.sh SHA-256
-- `orchestrator/terminal/container/image.rs` - Global image cache + per-project digest pin
-- `orchestrator/terminal/container/lifecycle.rs` - Container run args and mount construction (ro-base + per-stage rw overlays via build_mounts())
-- `orchestrator/terminal/container/logs_capture.rs` - capture_logs() + persist_log(); wraps `<runtime> logs --tail=N`, used on crash/kill before container removal
-- `orchestrator/terminal/container/network.rs` - Per-stage network create + allowlist materialisation
-- `orchestrator/terminal/container/probe.rs` - Firewall enforcement smoke test; runs transient container post-build with empty allowlist, verifies egress is blocked
-- `orchestrator/terminal/container/resources.rs` - Embedded Dockerfile.tmpl + firewall.sh access
-- `orchestrator/terminal/container/runtime.rs` - Docker/Podman/Apple Container detection (is_apple_container checks binary + version output)
 - `orchestrator/liveness.rs` - LivenessService: wraps BackendDispatcher for monitor thread; fixed_for_tests() stub for unit tests
 
 ## Handoff System
@@ -175,16 +165,9 @@ Total: 23 visible commands + 1 hidden (complete for dynamic completions). Dispat
 ## Schema-to-Runtime Conversion
 
 - `plan/schema/types.rs` - StageDefinition (YAML input); SandboxConfig + StageSandboxConfig with `permission_mode: Option<PermissionMode>`
-- `plan/schema/execution.rs` - BackendType enum (canonical definition); PlanExecutionConfig, ProjectExecutionConfig, PlanContainerConfig, ProjectContainerConfig, NetworkConfig
+- `plan/schema/execution.rs` - PlanExecutionConfig, ProjectExecutionConfig
 - `models/stage/types.rs` - Stage (runtime model)
-- `commands/init/plan_setup.rs` - create_stage_from_definition(), detect_stage_type(); validate_config() called here for backend compatibility check
-
-## Container Subcommand Implementations
-
-- `commands/container/mod.rs` - ContainerCommands enum + dispatch (build, rebuild, doctor, shell, logs, list)
-- `commands/container/logs.rs` - `loom container logs <stage-id>` — scans `.work/sessions/` for a container-backed session matching the stage, then execs into `<runtime> logs [-f] [--tail N] <name>`. Key helper: `resolve_session_for_stage(sessions_dir, stage_id) -> ResolvedTarget` (also unit-tested).
-- `commands/container/list.rs` - `loom container list [--all] [--json]` — enumerates `.work/sessions/` for container-backed sessions and queries each runtime for live status via `inspect`. Default: running containers only; `--all` includes exited/removed. JSON output uses keys: `stage`, `container`, `runtime`, `status`, `session_id`. Key helper: `query_container_status(runtime, name)` returns `"running"`, `"exited"`, `"missing"`, or `"error: ..."` (reusable in logs.rs/shell.rs for liveness pre-flight).
-- `commands/container/shell.rs` - `loom container shell <stage-id>` — resolves the running container for a stage then `exec`s `<runtime> exec -it <name> /bin/bash`. Takes a positional `<stage-id>` argument (NOT `--stage`).
+- `commands/init/plan_setup.rs` - create_stage_from_definition(), detect_stage_type()
 
 ## CLI Subcommand Registration Pattern
 
@@ -211,16 +194,11 @@ Three files to add a new subcommand:
 
 ## Key Config Files
 
-- `.work/config.toml` - Active plan reference and settings; `[project_execution]` section holds container image digest + forward_credentials + backend default
+- `.work/config.toml` - Active plan reference and settings
 - `.work/stages/{depth}-{stage-id}.md` - Stage state (YAML frontmatter)
-- `.work/sessions/{session-id}.md` - Session tracking; `backend` field persists resolved BackendType
+- `.work/sessions/{session-id}.md` - Session tracking
 - `.work/signals/{session-id}.md` - Agent instruction signals
-- `.work/network/allowed_domains.txt` - Host-side container network allowlist (mounted ro into container)
 - `doc/plans/PLAN-*.md` - Plan definition files
-- `loom/resources/Dockerfile.tmpl` - Embedded container image template (handlebars)
-- `loom/resources/firewall.sh` - Embedded container firewall script (image-resident, applied at startup)
-- `loom/resources/entrypoint.sh` - Container entrypoint
-- `~/.local/share/loom/images/<fingerprint>.json` - Global image cache (host-wide)
 
 ## Verification System [UPDATED]
 
@@ -286,41 +264,19 @@ Internal modules: `extraction.rs` (YAML block extraction, plan name), `validatio
 | `Stop` | `learning-validator.sh` | Memory usage check on stop |
 | `PreferModernTools` | `prefer-modern-tools.sh` | Suggest fd/rg over find/grep in Bash |
 
-**Settings placement:** Session hooks → `<worktree>/.claude/settings.local.json`. Global hooks (commit-filter, git-add-guard, worktree-isolation) configured via `fs/permissions.rs:configure_loom_hooks()` / `configure_loom_hooks_for_container()`.
-
-**Container path difference:** Native hooks use host-absolute paths (`~/.claude/hooks/loom/<script>`); container hooks use fixed container mount path `/home/loom/.claude/hooks/loom/<script>`.
-
-**Non-worktree container sessions** (knowledge, merge, base-conflict): settings written to `.work/container-settings/<session_id>.local.json` (NOT `.claude/settings.local.json`) to avoid corrupting the host operator's settings. The file is ro-mounted into the container at the expected location.
+**Settings placement:** Session hooks → `<worktree>/.claude/settings.local.json`. Global hooks (commit-filter, git-add-guard, worktree-isolation) configured via `fs/permissions.rs:configure_loom_hooks()`.
 
 **Env vars injected via settings.json env block:**
 
 - `LOOM_STAGE_ID` — current stage ID
 - `LOOM_SESSION_ID` — current session ID
-- `LOOM_WORK_DIR` — host path for native, `/repo/.work` for container
+- `LOOM_WORK_DIR` — path to `.work/` directory
 
 **LOOM_MAIN_AGENT_PID:** Explicitly REMOVED from settings.json env in `generator.rs`. Must be set dynamically by the wrapper script (`export LOOM_MAIN_AGENT_PID=$$`) so it reflects the actual Claude process PID. A stale value from a previous session would cause commit-filter.sh to misidentify the main agent as a subagent.
 
 **Hooks discovery:** `find_hooks_dir()` checks `$LOOM_HOOKS_DIR` env first, then `~/.claude/hooks/loom/`. Returns `None` if not installed.
 
 **Permissions:** Absolute paths use `//` prefix in allow entries (e.g., `Read(//home/user/.work/signals/**)`). Single `/` means project-relative — wrong for `.work/` which resolves outside the worktree due to symlink.
-
-## Container Logs / Shell Commands (commands/container/logs.rs)
-
-Both `loom container logs <stage-id>` and `loom container shell <stage-id>` share session-lookup logic:
-
-1. Scan `.work/sessions/*.md` for sessions with matching `stage_id`, `backend: container`, and a populated `container_name`
-2. Pick newest by `last_active` timestamp (multiple sessions: newest wins)
-3. Verify container state via `<runtime> inspect -f '{{.State.Status}}' <name>`
-4. `exec()` into `<runtime> logs` / `<runtime> exec -it` — replaces the loom process so Ctrl-C, stdout buffering, and signal handling work natively
-
-**Key difference between logs and shell:**
-
-- `logs`: accepts running OR exited containers (`require_running=false`) — useful post-crash
-- `shell`: requires `Running` state (`require_running=true`); exited containers suggest `loom container logs <stage-id>` instead
-
-**Container missing error:** Directs user to `.work/crashes/` for captured logs, or `loom container list` to see what's running.
-
-**Runtime detection:** If session file has no `runtime` field, falls back to `rt::detect_runtime("auto")`.
 
 ## Status Command (commands/status/)
 
@@ -373,75 +329,6 @@ pub struct ToolEvent {
 
 **Consumer:** `orchestrator/monitor/tool_analysis::analyze_session(work_dir, session_id)` reads the last 50 events for a session and computes `ToolAnalysis` (stuck detection). See `architecture.md § Soft Signals` for the full pipeline.
 
-## .work/ Writer Inventory (Safe-FS Adoption — Stage 2 A1 Input)
-
-> Inventory of all orchestrator-side write operations targeting .work/ subtrees that are bind-mounted rw into containers. Each is a target for safe_write_in_workdir adoption to close the B2 symlink-attack surface.
-
-### Safe (already use locked_write with exclusive flock)
-
-- `orchestrator/core/persistence.rs:93` — writes stages/*.md via `locked_write`
-- `orchestrator/core/persistence.rs:127` — writes sessions/*.md via `locked_write`
-
-These two use `fs/locking.rs`'s `locked_write` which does open-lock-truncate-write semantics correctly.
-
-### Vulnerable (plain fs::write or unguarded append)
-
-**signals/ subtree** (7 generators + 1 CRUD update):
-
-- `orchestrator/signals/helpers.rs:30` — `fs::write(&signal_path, content)` — called by all signal generators
-- `orchestrator/signals/crud.rs:74` — `fs::write(&signal_path, updated_content)` — in-place update
-- Callers of `helpers::write_signal_file()`: generate.rs:103, generate.rs:299, merge.rs:36, base_conflict.rs:37, merge_conflict.rs:39, knowledge.rs:42, recovery.rs:34
-
-**handoffs/ subtree**:
-
-- `handoff/generator/mod.rs:61` — `fs::write(&handoff_path, markdown)` — creates context handoff files
-
-**memory/ subtree**:
-
-- `fs/memory/storage.rs:49` — `fs::write(&file_path, header)` — journal initialization (plain write)
-- `fs/memory/storage.rs:66-76` — `OpenOptions::new().append(true)` — journal entry append (no flock)
-- `fs/memory/storage.rs:102-112` — `OpenOptions::new().append(true)` — summary append (no flock)
-
-**pids/ subtree**:
-
-- `orchestrator/terminal/container/mod.rs:693` — `fs::write(&pid_file, pid.to_string())` — container PID tracking
-
-**wrappers/ subtree**:
-
-- `orchestrator/terminal/native/pid_tracking.rs:426` — `fs::write(&wrapper_path, &script)` — wrapper script creation (also note: wrapper path is currently STAGE-scoped, must become SESSION-scoped in Stage 3)
-
-**crashes/ subtree**:
-
-- `orchestrator/terminal/container/logs_capture.rs:77` — `fs::write(&path, content)` — container log persistence (also needs 4MiB cap — MN8)
-
-**network/ subtree**:
-
-- `orchestrator/terminal/container/network.rs:46` — `fs::write(&path, content)` — allowlist file creation
-
-### Safe-FS Helper Mapping (Stage 2 A1 task)
-
-Per the Stage 2 plan, adopt these helpers at each call site:
-
-| Subtree | Call Sites | Target Helper |
-|---------|-----------|---------------|
-| stages/, sessions/ | persistence.rs:93, :127 | `safe_locked_write_in_workdir` (already lock-based, migrate to safe API) |
-| signals/ | helpers.rs:30, crud.rs:74 | `safe_locked_write_in_workdir` |
-| handoffs/ | generator/mod.rs:61 | `safe_create_new_in_workdir` |
-| memory/ | storage.rs:49,66-76,102-112 | `safe_append_in_workdir` for appends, `safe_locked_write_in_workdir` for init |
-| pids/ | container/mod.rs:693 | `safe_locked_write_in_workdir` |
-| wrappers/ | pid_tracking.rs:426 | `safe_write_with_mode_in_workdir` (0o755 executable) |
-| crashes/ | logs_capture.rs:77 | `safe_locked_write_in_workdir` + 4MiB truncation |
-| network/ | network.rs:46 | `safe_locked_write_in_workdir` |
-
-### Directory Creation (also needs safe_create_dir_all_in_workdir)
-
-- `orchestrator/terminal/container/mod.rs:317-322` — creates sessions/memory/handoffs/crashes/wrappers/pids subdirs before mounting
-- `orchestrator/terminal/container/network.rs:25` — creates network/ subdir
-
-### Note on Wrapper Path Scoping
-
-Currently `pid_tracking.rs:426` writes `wrappers/{stage_id}-wrapper.sh` (stage-scoped). Stage 3 (harden-container-mod) changes this to `wrappers/{session_id}-wrapper.sh` (session-scoped). The safe-fs adoption in Stage 2 should use the path returned by the existing helper without hardcoding the format.
-
 ## Orchestrator Core Recovery Functions (Exact Locations)
 
 | Function | File | Lines | Called From |
@@ -485,18 +372,10 @@ Currently `pid_tracking.rs:426` writes `wrappers/{stage_id}-wrapper.sh` (stage-s
 
 **MISSING (stage 2/3 must add):** `disputes_dir()` → `.work/disputes/` and `plan_versions_dir()` → `.work/plan_versions/`
 
-## Sandbox Settings — ANTHROPIC_API_KEY Filter
+## Sandbox Settings — ANTHROPIC_API_KEY
 
-`sandbox/settings.rs:16-34` — `SENSITIVE_ENV_KEYS` array:
+`sandbox/settings.rs:16-34` — `SENSITIVE_ENV_KEYS` array filters `ANTHROPIC_API_KEY` from agent sandbox environments.
 
-```rust
-"ANTHROPIC_API_KEY"  // line 20 — explicitly filtered from container agents
-```
-
-`scrub_settings_env_for_backend()` (lines 39-47) strips these for `BackendType::Container` only.
-
-- Daemon (host process): full access to host env, reads key directly via `std::env::var`
-- Container agents: key is stripped; agents cannot access it
 - When `ANTHROPIC_API_KEY` is absent at daemon startup: adjudication disabled; disputed stages go directly to `NeedsHumanReview`
 
 ## HTTP Client Pattern — self_update/client.rs
@@ -515,9 +394,8 @@ Adjudicator HTTP client should mirror this pattern with `user_agent("loom-adjudi
 `daemon/server/lifecycle.rs:176-182`:
 
 - Generates 32-byte (256-bit) hex token
-- Currently writes to `<work_dir>/admin.token` (`.work/admin.token`)
+- Writes to `<work_dir>/admin.token` (`.work/admin.token`)
 - Mode 0o600 (owner-only rw)
-- **Stage 2 relocates to `$XDG_RUNTIME_DIR/loom/admin.token`** — see architecture.md § Admin Token Relocation
 
 ## Daemon Capability Surface (client.rs)
 
@@ -542,14 +420,6 @@ Adjudicator HTTP client should mirror this pattern with `user_agent("loom-adjudi
 - `Executing` → direct `NeedsHumanReview`
 - Stores reason in `stage.review_reason: Option<String>`
 - Stage 2 replaces this with structured `DisputeRequest` RPC payload + `NeedsAdjudication` state
-
-## Network Allowlist — api.anthropic.com
-
-`resources/firewall.sh:29` — `ALWAYS=(api.anthropic.com registry.npmjs.org)`:
-
-- Hardcoded always-allowed domains, prepended before user-specified allowlist
-- Container agents already can reach api.anthropic.com
-- Daemon (host process): unrestricted network; no additional allowlist needed for adjudicator
 
 ## Fix Attempts Counter — Current Usage
 

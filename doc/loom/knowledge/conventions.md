@@ -158,23 +158,9 @@ Signal files at .work/signals/{session-id}.md use markdown with structured secti
 
 Detectors skip: .git, .work, .worktrees, node_modules, target, .venv, **pycache**. Deep=3-level depth + concerns, Normal=2-level. Source extensions: .rs, .ts, .js, .py, .go, .java, .rb.
 
-## Container Backend Conventions
+## Permission Mode YAML Values
 
-- Embedded resources (Dockerfile.tmpl, firewall.sh, entrypoint.sh) live in `loom/resources/` and are accessed via `include_str!()` through `container/resources.rs`
-- Backend type serializes as kebab-case: `"native"` / `"container"` (matches `BackendType` serde attribute)
-- Container mount constants are named `<ROLE>_MOUNT` (all-caps), defined at the top of `container/mod.rs`
-- `forward_credentials` default is `Vec::new()` (empty — explicit opt-in). Only add `"claude"` to forward `~/.claude/.credentials.json`. The mount is **not** the host file directly — `prepare_session_credentials` materializes a per-session writable copy at `<work_dir>/container-creds/<session_id>.json` and bind-mounts that rw at `/home/loom/.claude/.credentials.json`. Each container has its own OAuth refresh chain, isolated from the host and sibling containers. The copy is removed on `kill_session`. Other credential types (github, gitlab, ssh-agent) also supported.
-- `permission_mode` YAML values are kebab-case: `"auto"`, `"accept-edits"`, `"bypass-permissions"`, `"plan"`, `"default"`
-- `bypass-permissions` is only valid with `BackendType::Container` — `validate_config()` rejects it on native
-
-## Resources Directory Convention
-
-`loom/resources/` holds files that are embedded at compile time via `include_str!()`. These files:
-
-- Are NOT installed to disk during `loom init` — they exist only inside the binary
-- Are accessed through `container/resources.rs` helper functions
-- Changes to these files automatically invalidate the image fingerprint (fingerprint hashes their content)
-- `cargo build` must succeed with new resources before `loom container build` is tested
+`permission_mode` YAML values are kebab-case: `"auto"`, `"accept-edits"`, `"plan"`, `"default"`
 
 ## Plan YAML Schema: Acceptance Field
 
@@ -206,7 +192,7 @@ To issue a warning without blocking (exit 0 with advisory), write a JSON object 
 {"hookSpecificOutput": "LOOM_HOOK_WARN: consider using rg instead of grep"}
 ```
 
-The `LOOM_HOOK_WARN:` prefix is recognized by the loom formatter (`render_tool_result` in `log_format.rs`) and rendered as `[hook warn]` in `loom container logs --format=human`.
+The `LOOM_HOOK_WARN:` prefix is recognized by the loom hook system and surfaced as a warning in output.
 
 **PostToolUse stdin schema:**
 
@@ -236,16 +222,6 @@ Some fields may use `tool_response` instead of `tool_result` depending on Claude
 
 Never collapse into one file — if agent can write the verdict section, it can self-approve.
 
-## Admin Token Path Convention (After Stage 2)
-
-Admin token moves OUT of `.work/` to a daemon-runtime-only path:
-
-- Linux: `$XDG_RUNTIME_DIR/loom/admin.token` (via `dirs::runtime_dir()`)
-- Fallback: `dirs::data_dir().join("loom/admin.token")`
-- Mode: 0o600; created at daemon start, deleted at daemon stop
-
-Container mounts are scoped to project root and `.work/` — the runtime dir is never mountable. This makes path-unreachable the actual security boundary, not file permissions.
-
 ## Adjudicator Scope Convention
 
 The adjudicator amends ONLY:
@@ -270,14 +246,13 @@ Worker threads write `.inflight` before starting HTTP call; delete on completion
 
 ## Daemon-as-Filesystem-Writer Convention
 
-For any operation where agent data must be persisted to `.work/` with authority separation: the CLI (running inside container) sends RPC to daemon; the daemon (host-only) writes the file. The container has no rw mount to the target subdirectory. Examples:
+For any operation where agent data must be persisted to `.work/` with authority separation: the CLI sends RPC to daemon; the daemon writes the file. Examples:
 
 - `loom memory note` → daemon writes `.work/memory/<id>.md`
 - `loom stage dispute-criteria` (after Stage 2) → daemon writes `.work/disputes/<stage>/<n>/request.md`
 
 ## ANTHROPIC_API_KEY Access Convention
 
-- Daemon process: reads from `std::env::var("ANTHROPIC_API_KEY")` directly (host env, no scrubbing)
-- Container agents: key is scrubbed by `scrub_settings_env_for_backend()` in `sandbox/settings.rs:39-47`
+- Daemon process: reads from `std::env::var("ANTHROPIC_API_KEY")` directly (host env)
 - Absent key at daemon startup: adjudication disabled for that daemon run; disputed stages go directly to `NeedsHumanReview`
 - Never pass the key to spawned sessions — it flows only to the daemon's adjudicator worker thread
