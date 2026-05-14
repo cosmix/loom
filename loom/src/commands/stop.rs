@@ -1,31 +1,20 @@
 //! Stop command - gracefully shuts down the daemon
 //!
 //! Stop is a **privileged** operation that requires the admin token. The
-//! ordering of side effects has been hardened (Codex foundation review):
+//! ordering of side effects has been hardened:
 //!
 //!   1. Read `admin.token` FIRST. If unreadable, abort with a clear error.
 //!   2. Send `Request::Stop` to the daemon and wait for ack.
-//!   3. Only AFTER the daemon ack do we terminate active container sessions.
-//!
-//! Why the order matters: the previous implementation terminated container
-//! sessions BEFORE checking auth, so a container-resident attacker could
-//! trigger session teardown by invoking `loom stop` even though their token
-//! was rejected by the daemon. The reordered flow makes auth a true gate.
 //!
 //! PID fallback (SIGTERM/SIGKILL to the daemon process) is reserved for the
 //! socket-hang case and requires `--force` to opt in.
 
 use crate::daemon::{read_admin_token, DaemonServer};
 use crate::fs::work_dir::WorkDir;
-use crate::models::session::Session;
-use crate::orchestrator::terminal::dispatcher::{BackendDispatcher, BackendNeeds};
-use crate::orchestrator::terminal::BackendType;
-use crate::parser::frontmatter::parse_from_markdown;
 use anyhow::{bail, Context, Result};
 use colored::Colorize;
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
-use std::path::Path;
 use std::thread;
 use std::time::Duration;
 
@@ -35,7 +24,6 @@ use std::time::Duration;
 ///   1. Verify daemon is running.
 ///   2. Read `admin.token`. If unreadable → abort.
 ///   3. Send `Stop` (via [`DaemonServer::stop`]). If auth fails → abort.
-///   4. After daemon ack: terminate active container sessions.
 ///
 /// PID fallback only triggers when `force` is true AND the socket is
 /// unreachable; never on `AuthenticationFailed`.
@@ -54,8 +42,7 @@ pub fn execute_with_force(force: bool) -> Result<()> {
     }
 
     // Step 1: Read admin token FIRST. Stop requires Capability::Admin and we
-    // refuse to perform any side effects without it. The user token (which
-    // is what container-resident agents have) is intentionally rejected.
+    // refuse to perform any side effects without it.
     if read_admin_token(work_dir.root()).is_none() {
         bail!(
             "{} Cannot stop daemon: admin.token unreadable or missing.\n  \
@@ -68,18 +55,9 @@ pub fn execute_with_force(force: bool) -> Result<()> {
     println!("{} Stopping daemon...", "→".cyan().bold());
 
     // Step 2: Send the Stop request. DaemonServer::stop reads admin.token
-    // again internally and sends it on the wire. Any auth/comms failure
-    // aborts before we touch container sessions.
+    // again internally and sends it on the wire.
     match DaemonServer::stop(work_dir.root()) {
         Ok(()) => {
-            // Step 3: ONLY after daemon ack do we tear down container sessions.
-            // This way an unauthenticated request cannot trigger teardown.
-            if let Err(e) = terminate_active_container_sessions(work_dir.root()) {
-                eprintln!(
-                    "{} Failed to terminate container sessions: {e}",
-                    "!".yellow().bold()
-                );
-            }
             println!("{} Daemon stopped", "✓".green().bold());
             Ok(())
         }
@@ -98,16 +76,13 @@ pub fn execute_with_force(force: bool) -> Result<()> {
                 bail!(
                     "{} Daemon did not respond cleanly: {e}\n  \
                      Re-run with --force to send SIGTERM/SIGKILL to the daemon PID.\n  \
-                     (PID-kill bypasses container session teardown; do this only if you \
-                     have already verified the daemon is hung.)",
+                     (Only use --force if you have already verified the daemon is hung.)",
                     "✗".red().bold()
                 );
             }
 
             // --force path: only used when the socket is unreachable AND the
-            // operator has explicitly opted in. We still do NOT touch
-            // container sessions — the daemon was never confirmed dead in a
-            // way that lets us safely reason about the runtime state.
+            // operator has explicitly opted in.
             let pid = DaemonServer::read_pid(work_dir.root())
                 .or_else(|| DaemonServer::check_lock(work_dir.root()));
             if let Some(pid) = pid {
@@ -117,75 +92,6 @@ pub fn execute_with_force(force: bool) -> Result<()> {
             }
         }
     }
-}
-
-/// Terminate every persisted container session — container sessions
-/// run in their own runtime namespace and won't exit just because the
-/// daemon process does. Native sessions are tied to their terminal and
-/// can be left alone here.
-fn terminate_active_container_sessions(work_dir: &Path) -> Result<()> {
-    let sessions_dir = work_dir.join("sessions");
-    if !sessions_dir.exists() {
-        return Ok(());
-    }
-
-    let mut sessions: Vec<Session> = Vec::new();
-    let entries = std::fs::read_dir(&sessions_dir)
-        .with_context(|| format!("Failed to read {}", sessions_dir.display()))?;
-    for entry in entries.flatten() {
-        if entry.path().extension().and_then(|s| s.to_str()) != Some("md") {
-            continue;
-        }
-        let Ok(content) = std::fs::read_to_string(entry.path()) else {
-            continue;
-        };
-        if let Ok(session) = parse_from_markdown::<Session>(&content, "Session") {
-            if session.backend == BackendType::Container {
-                sessions.push(session);
-            }
-        }
-    }
-
-    if sessions.is_empty() {
-        return Ok(());
-    }
-
-    let needs = BackendNeeds {
-        native: false,
-        container: true,
-    };
-    let dispatcher = BackendDispatcher::for_plan(BackendType::Container, needs, work_dir)
-        .context("Failed to construct container dispatcher for stop")?;
-
-    for session in &sessions {
-        println!(
-            "{} Terminating container session: {}",
-            "→".cyan().bold(),
-            session.id.dimmed()
-        );
-        let kill_result = dispatcher.for_session(session).kill_session(session);
-        if let Err(e) = &kill_result {
-            eprintln!(
-                "{} Failed to kill session {}: {e}",
-                "!".yellow().bold(),
-                session.id
-            );
-        }
-        if kill_result.is_ok() {
-            let mut updated_session = session.clone();
-            updated_session.clear_container_identity();
-            if let Err(e) =
-                crate::orchestrator::continuation::save_session(&updated_session, work_dir)
-            {
-                eprintln!(
-                    "{} Failed to clear container identity for session {}: {e}",
-                    "!".yellow().bold(),
-                    session.id
-                );
-            }
-        }
-    }
-    Ok(())
 }
 
 fn kill_daemon_pid(pid: u32, work_root: &std::path::Path) -> Result<()> {

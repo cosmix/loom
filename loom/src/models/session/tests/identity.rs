@@ -2,7 +2,7 @@ use super::super::*;
 use crate::plan::schema::execution::BackendType;
 
 // =========================================================================
-// Runtime identity tests (Stage 1: backend, tracking_key, knowledge variant)
+// Runtime identity tests (backend, tracking_key, knowledge variant)
 // =========================================================================
 
 #[test]
@@ -52,16 +52,8 @@ fn knowledge_constructor_derives_tracking_key() {
 fn backend_default_is_native_and_settable() {
     let mut session = Session::new();
     assert_eq!(session.backend, BackendType::Native);
-    session.set_backend(BackendType::Container);
-    assert_eq!(session.backend, BackendType::Container);
-}
-
-#[test]
-fn container_identity_setter_populates_runtime_and_name() {
-    let mut session = Session::new();
-    session.set_container_identity("podman".to_string(), "loom-x".to_string());
-    assert_eq!(session.runtime.as_deref(), Some("podman"));
-    assert_eq!(session.container_name.as_deref(), Some("loom-x"));
+    session.set_backend(BackendType::Native);
+    assert_eq!(session.backend, BackendType::Native);
 }
 
 #[test]
@@ -80,8 +72,6 @@ fn legacy_session_without_new_fields_deserializes() {
     }"#;
     let session: Session = serde_json::from_str(legacy_json).unwrap();
     assert_eq!(session.backend, BackendType::Native);
-    assert!(session.runtime.is_none());
-    assert!(session.container_name.is_none());
     assert!(session.tracking_key.is_empty());
     assert_eq!(session.session_type, SessionType::Stage);
 }
@@ -92,22 +82,4 @@ fn knowledge_session_serializes_with_session_type_knowledge() {
     let json = serde_json::to_string(&session).unwrap();
     assert!(json.contains("\"session_type\":\"knowledge\""));
     assert!(json.contains("\"tracking_key\":\"loom-knowledge-kb\""));
-}
-
-#[test]
-fn clear_container_identity_resets_runtime_and_name() {
-    let mut session = Session::new();
-    session.set_container_identity("podman".to_string(), "loom-clear-test".to_string());
-    assert!(session.runtime.is_some());
-    assert!(session.container_name.is_some());
-
-    session.clear_container_identity();
-    assert!(
-        session.runtime.is_none(),
-        "runtime should be None after clear"
-    );
-    assert!(
-        session.container_name.is_none(),
-        "container_name should be None after clear"
-    );
 }

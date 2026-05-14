@@ -4,7 +4,7 @@ use crate::fs::permissions::{ensure_loom_permissions, migrate_legacy_trust};
 use crate::fs::work_dir::WorkDir;
 use crate::fs::work_integrity::validate_work_dir_state;
 use crate::git::install_pre_commit_hook;
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use colored::Colorize;
 use std::path::{Path, PathBuf};
 
@@ -12,7 +12,7 @@ use super::cleanup::{
     cleanup_orphaned_sessions, cleanup_work_directory, cleanup_worktrees_directory,
     prune_stale_worktrees, remove_work_directory_on_failure,
 };
-use super::plan_setup::{initialize_with_plan, probe_firewall_or_bail};
+use super::plan_setup::initialize_with_plan;
 
 /// RAII guard that cleans up .work directory on drop unless disarmed.
 /// This ensures cleanup happens on ANY failure path, not just plan parsing.
@@ -58,19 +58,7 @@ impl Drop for InitGuard {
 /// # Arguments
 /// * `plan_path` - Optional path to a plan file to initialize with
 /// * `clean` - If true, clean up stale resources before initialization
-/// * `backend` - Optional project backend override (`native` | `container`).
-/// * `no_build` - When provisioning the container backend, skip the actual
-///   image build and pin `image_digest = "pending"`.
-/// * `allow_insecure_runtime` - Skip the firewall enforcement smoke test
-///   that runs after image build. Use only on runtimes known to lack
-///   reliable iptables egress filtering.
-pub fn execute(
-    plan_path: Option<PathBuf>,
-    clean: bool,
-    backend: Option<String>,
-    no_build: bool,
-    allow_insecure_runtime: bool,
-) -> Result<()> {
+pub fn execute(plan_path: Option<PathBuf>, clean: bool) -> Result<()> {
     let repo_root = std::env::current_dir()?;
     let repo_bootstrap = crate::git::ensure_repo_ready_for_worktrees(&repo_root)?;
 
@@ -166,179 +154,10 @@ pub fn execute(
         print_summary(None, 0);
     }
 
-    if let Some(backend_str) = backend {
-        apply_project_backend(
-            &work_dir,
-            &repo_root,
-            &backend_str,
-            no_build,
-            allow_insecure_runtime,
-        )?;
-    }
-
     // Success - disarm the guard to prevent cleanup
     guard.disarm();
 
     Ok(())
-}
-
-/// Apply a project-level backend selection to `.work/config.toml`.
-///
-/// For container backend: detects runtime, computes fingerprint, builds the
-/// image (unless `no_build`), and pins the resulting digest. For native
-/// backend: clears any container metadata.
-fn apply_project_backend(
-    work_dir: &WorkDir,
-    repo_root: &Path,
-    backend_str: &str,
-    no_build: bool,
-    allow_insecure_runtime: bool,
-) -> Result<()> {
-    use crate::plan::schema::execution::{
-        BackendType, ProjectContainerConfig, ProjectExecutionConfig,
-    };
-
-    let backend_type: BackendType = backend_str
-        .parse()
-        .with_context(|| format!("Invalid --backend value: {backend_str}"))?;
-
-    println!("\n{}", "Backend".bold());
-    println!("{}", "─".repeat(40).dimmed());
-
-    match backend_type {
-        BackendType::Native => {
-            crate::fs::work_dir::write_project_execution(
-                work_dir.root(),
-                &ProjectExecutionConfig {
-                    backend: BackendType::Native,
-                    container: None,
-                },
-            )?;
-            println!("  {} Backend: native", "✓".green().bold());
-        }
-        BackendType::Container => {
-            use crate::orchestrator::terminal::container::{
-                fingerprint as fp, image, runtime as rt,
-            };
-            let project_root_for_fp = work_dir
-                .project_root()
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(|| repo_root.to_path_buf());
-            let runtime = rt::detect_runtime("auto")?;
-            let working_dirs = fp::plan_working_dirs(work_dir.root());
-            let fingerprint = fp::compute_fingerprint(&project_root_for_fp, &working_dirs);
-            let started = std::time::Instant::now();
-            let (digest, action) = if no_build {
-                ("pending".to_string(), "skipped (--no-build)")
-            } else {
-                let d = image::ensure_image(&fingerprint, runtime, false)?;
-                (d, "built")
-            };
-
-            let git_user_name =
-                host_git_config("user.name").and_then(|v| sanitize_git_identity("user.name", v));
-            let git_user_email =
-                host_git_config("user.email").and_then(|v| sanitize_git_identity("user.email", v));
-
-            if git_user_name.is_none() || git_user_email.is_none() {
-                println!(
-                    "  {} No git user.name/email on host; commits inside container will use defaults. \
-                     Set via: git config --global user.name '...'",
-                    "!".yellow().bold()
-                );
-            }
-
-            crate::fs::work_dir::write_project_execution(
-                work_dir.root(),
-                &ProjectExecutionConfig {
-                    backend: BackendType::Container,
-                    container: Some(ProjectContainerConfig {
-                        runtime: runtime.binary().to_string(),
-                        fingerprint: fingerprint.clone(),
-                        image_digest: digest.clone(),
-                        // Default to forwarding Claude Code's OAuth
-                        // credentials. Container backend's primary use
-                        // case is running claude inside an isolated
-                        // environment; without these the agent has no
-                        // way to authenticate and immediately fails
-                        // with "Not logged in · Please run /login".
-                        // The credential file is mounted ro at
-                        // /home/loom/.claude/.credentials.json — the
-                        // agent can use it but cannot mutate it, so
-                        // there is no privilege-escalation path.
-                        forward_credentials: vec!["claude".to_string()],
-                        git_user_name,
-                        git_user_email,
-                    }),
-                },
-            )?;
-            let elapsed = started.elapsed();
-            println!("  {} Backend: container", "✓".green().bold());
-            println!("    Runtime:     {}", runtime);
-            println!("    Fingerprint: {}", fingerprint);
-            println!("    Image:       {} ({})", digest, action);
-            println!("    Elapsed:     {:?}", elapsed);
-
-            // Run the firewall enforcement smoke test after the image is
-            // available. The probe is skipped when `--no-build` is set
-            // (no real image to probe) and when the operator explicitly
-            // opts out via `--allow-insecure-runtime`.
-            if !no_build && !allow_insecure_runtime {
-                let image_ref = format!("loom/base:{fingerprint}");
-                probe_firewall_or_bail(runtime, &image_ref)?;
-                println!("  {} Firewall enforcement verified", "✓".green().bold());
-            } else if allow_insecure_runtime {
-                println!(
-                    "  {} Firewall smoke test skipped (--allow-insecure-runtime)",
-                    "!".yellow().bold()
-                );
-            }
-        }
-    }
-
-    Ok(())
-}
-
-/// Drop a git identity value that fails [`validate_git_identity`] (control
-/// chars, embedded newlines, oversize). Falling back to `None` makes the
-/// container path skip env-injection, which is safer than passing the bad
-/// value through and getting a malformed commit object or a corrupted env
-/// block downstream.
-fn sanitize_git_identity(key: &str, value: String) -> Option<String> {
-    match crate::plan::schema::execution::validate_git_identity(&value) {
-        Ok(()) => Some(value),
-        Err(err) => {
-            println!(
-                "  {} Ignoring invalid git {}: {}",
-                "!".yellow().bold(),
-                key,
-                err,
-            );
-            None
-        }
-    }
-}
-
-/// Query the host's global git config for a single key.
-///
-/// Returns `None` when git is unavailable, the key is unset, or the value
-/// is empty — all of which mean the container should fall back to git's own
-/// defaults rather than injecting a partial identity.
-fn host_git_config(key: &str) -> Option<String> {
-    let out = std::process::Command::new("git")
-        .args(["config", "--global", key])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let v = String::from_utf8(out.stdout).ok()?;
-    let v = v.trim();
-    if v.is_empty() {
-        None
-    } else {
-        Some(v.to_string())
-    }
 }
 
 fn print_repo_bootstrap(repo_bootstrap: crate::git::RepoBootstrapResult) {

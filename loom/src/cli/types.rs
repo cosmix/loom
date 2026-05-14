@@ -37,30 +37,6 @@ pub enum Commands {
         /// (removes old .work/, prunes worktrees, kills orphaned sessions)
         #[arg(long)]
         clean: bool,
-
-        /// Project backend: `native` or `container`. Defaults to current
-        /// project setting (native if unset).
-        #[arg(long)]
-        backend: Option<String>,
-
-        /// When provisioning the container backend, skip the image build
-        /// and write `image_digest = "pending"`. `loom run` will refuse to
-        /// start until the image is built. Has no effect with native backend.
-        #[arg(long)]
-        no_build: bool,
-
-        /// Skip the firewall-enforcement smoke test that normally runs after
-        /// container image build. Only use when knowingly running on a
-        /// runtime where iptables-based egress filtering is best-effort
-        /// (rootless Podman without slirp4netns ≥ 1.2.3, Apple Container).
-        #[arg(long)]
-        allow_insecure_runtime: bool,
-    },
-
-    /// Manage the container backend (build/rebuild image, doctor, exec shell)
-    Container {
-        #[command(subcommand)]
-        command: ContainerCommands,
     },
 
     /// Run stages from a plan (starts orchestrator in background)
@@ -306,76 +282,6 @@ pub enum SessionsCommands {
         /// Kill all sessions for a stage
         #[arg(long, conflicts_with = "session_ids", value_parser = clap_id_validator)]
         stage: Option<String>,
-    },
-}
-
-#[derive(Subcommand)]
-pub enum ContainerCommands {
-    /// Build the container image for the current project (cached by fingerprint)
-    Build {
-        /// Override fingerprint (default: compute from project)
-        #[arg(long)]
-        fingerprint: Option<String>,
-    },
-    /// Rebuild the container image, ignoring cache
-    Rebuild {
-        /// Override fingerprint (default: compute from project)
-        #[arg(long)]
-        fingerprint: Option<String>,
-        /// Rebuild every cached fingerprint, not just the current project's
-        #[arg(long)]
-        all: bool,
-    },
-    /// Diagnose the container backend (runtime, fingerprint, cache, capabilities)
-    Doctor,
-    /// Open an interactive shell in a running stage's container.
-    ///
-    /// Each stage runs in its own container, removed on completion / kill / stop / clean.
-    Shell {
-        /// Stage ID whose session container to attach to
-        #[arg(value_parser = clap_id_validator)]
-        stage_id: String,
-    },
-    /// Tail or follow the container logs for a running stage's session.
-    ///
-    /// Each stage runs in its own container, removed on completion / kill / stop / clean.
-    Logs {
-        /// Stage ID whose session container logs to read
-        #[arg(value_parser = clap_id_validator)]
-        stage_id: String,
-        /// Output format: human-readable (default) or raw JSON stream
-        #[arg(long, default_value = "human")]
-        format: loom::commands::container::log_format::LogFormat,
-        /// Show assistant thinking blocks (suppressed by default)
-        #[arg(long)]
-        show_thinking: bool,
-        /// Show suppressed event summary (system, rate-limit) in footer
-        #[arg(long)]
-        verbose: bool,
-        /// Follow the log stream (like `docker logs -f`)
-        #[arg(short = 'f', long)]
-        follow: bool,
-        /// Number of trailing lines to print (when not following)
-        #[arg(long, default_value_t = 500)]
-        tail: usize,
-        /// Disable ANSI color in human output (auto-disabled when stdout is not a TTY or NO_COLOR is set)
-        #[arg(long)]
-        no_color: bool,
-    },
-    /// List session-backed loom containers for this workspace.
-    ///
-    /// Shows containers tracked in .work/sessions/. For orphan
-    /// containers left behind by a crashed daemon, run
-    /// `loom clean --sessions`.
-    ///
-    /// Each stage runs in its own container, removed on completion / kill / stop / clean.
-    List {
-        /// Include exited/removed containers
-        #[arg(long)]
-        all: bool,
-        /// Emit JSON Lines instead of a table
-        #[arg(long)]
-        json: bool,
     },
 }
 

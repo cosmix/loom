@@ -91,9 +91,8 @@ pub struct Orchestrator {
     pub(super) monitor: Monitor,
     /// Track reported crashes to avoid duplicate messages
     pub(super) reported_crashes: HashSet<String>,
-    /// Multi-backend dispatcher — owns the native and/or container
-    /// backends actually required by this run, and routes spawn/kill
-    /// calls per-stage or per-session.
+    /// Backend dispatcher — owns the backends required by this run and
+    /// routes spawn/kill calls per-stage or per-session.
     pub(super) dispatcher: Arc<BackendDispatcher>,
     /// Backend-aware liveness probe (shared with the monitor thread).
     pub(super) liveness: LivenessService,

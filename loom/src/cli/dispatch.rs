@@ -8,57 +8,13 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use super::types::{
-    Commands, ContainerCommands, KnowledgeCommands, MemoryCommands, OutputCommands, PlanCommands,
-    SessionsCommands, StageCommands, WorktreeCommands,
+    Commands, KnowledgeCommands, MemoryCommands, OutputCommands, PlanCommands, SessionsCommands,
+    StageCommands, WorktreeCommands,
 };
 
 pub fn dispatch(command: Commands) -> Result<()> {
     match command {
-        Commands::Init {
-            plan_path,
-            clean,
-            backend,
-            no_build,
-            allow_insecure_runtime,
-        } => init::execute(
-            Some(PathBuf::from(plan_path)),
-            clean,
-            backend,
-            no_build,
-            allow_insecure_runtime,
-        ),
-        Commands::Container { command } => match command {
-            ContainerCommands::Build { fingerprint } => {
-                loom::commands::container::build::execute(fingerprint)
-            }
-            ContainerCommands::Rebuild { fingerprint, all } => {
-                loom::commands::container::rebuild::execute(fingerprint, all)
-            }
-            ContainerCommands::Doctor => loom::commands::container::doctor::execute(),
-            ContainerCommands::Shell { stage_id } => {
-                loom::commands::container::shell::execute(stage_id)
-            }
-            ContainerCommands::Logs {
-                stage_id,
-                format,
-                show_thinking,
-                verbose,
-                follow,
-                tail,
-                no_color,
-            } => loom::commands::container::logs::execute(
-                stage_id,
-                follow,
-                tail,
-                format,
-                show_thinking,
-                verbose,
-                no_color,
-            ),
-            ContainerCommands::List { all, json } => {
-                loom::commands::container::list::execute(all, json)
-            }
-        },
+        Commands::Init { plan_path, clean } => init::execute(Some(PathBuf::from(plan_path)), clean),
         Commands::Run {
             manual,
             max_parallel,

@@ -6,7 +6,6 @@ use tempfile::TempDir;
 
 // Submodules
 mod tests_commands;
-mod tests_container;
 mod tests_other;
 mod tests_stage;
 

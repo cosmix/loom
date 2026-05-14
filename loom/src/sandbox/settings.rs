@@ -7,45 +7,6 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
-/// Environment-variable keys that are always stripped when forwarding settings
-/// into a container backend. These hold host-level credentials that the
-/// containerised agent should not see.
-///
-/// Used by both [`scrub_settings_env_for_backend`] and the worktree settings
-/// copy to maintain a single source of truth for the deny list.
-pub const SENSITIVE_ENV_KEYS: &[&str] = &[
-    "SSH_AUTH_SOCK",
-    "GH_TOKEN",
-    "GITHUB_TOKEN",
-    "ANTHROPIC_API_KEY",
-];
-
-/// Prefixes whose env keys are always stripped for the container backend
-/// (cloud provider creds, MCP server inheritance, Google/GCP creds).
-pub const SENSITIVE_ENV_PREFIXES: &[&str] = &["AWS_", "GOOGLE_", "GCP_", "MCP_"];
-
-/// Return `true` if the env-var name should be stripped when copying settings
-/// into a container backend.
-pub fn is_sensitive_env_key(key: &str) -> bool {
-    if SENSITIVE_ENV_KEYS.contains(&key) {
-        return true;
-    }
-    SENSITIVE_ENV_PREFIXES.iter().any(|p| key.starts_with(p))
-}
-
-/// Remove sensitive env keys from a Claude `settings.json` `env` block when
-/// the backend is `Container`. A no-op for `Native` (host env is already the
-/// agent's env, no copy step to scrub).
-pub fn scrub_settings_env_for_backend(settings: &mut Value, backend: BackendType) {
-    if backend != BackendType::Container {
-        return;
-    }
-    let Some(env) = settings.get_mut("env").and_then(|v| v.as_object_mut()) else {
-        return;
-    };
-    env.retain(|key, _| !is_sensitive_env_key(key));
-}
-
 /// Write Claude Code's `permissions.defaultMode` into a settings JSON value.
 ///
 /// Uses the camelCase string Claude Code expects (e.g. `"acceptEdits"`,
@@ -66,9 +27,8 @@ pub fn apply_default_mode(settings: &mut Value, mode: PermissionMode) -> Result<
 
 /// Write Claude Code settings.local.json to worktree .claude/ directory
 ///
-/// `backend` is the resolved per-stage backend. The container backend's
-/// firewall enforces network policy authoritatively, so Claude-level network
-/// restrictions are redundant there and omitted to reduce two-layer drift.
+/// `backend` is the resolved per-stage backend, accepted for API symmetry
+/// with the rest of the sandbox path.
 pub fn write_settings(
     config: &MergedSandboxConfig,
     backend: BackendType,
@@ -179,27 +139,13 @@ fn build_tool_commands(detected_languages: &[DetectedLanguage]) -> Vec<String> {
 
 /// Generate Claude Code settings JSON from sandbox config
 ///
-/// `backend` is the resolved per-stage backend. Container-backed stages
-/// rely on the in-container firewall script to enforce network policy
-/// authoritatively, so Claude-level network restrictions (the `Network(...)`
-/// patterns embedded in `sandbox.network`) are redundant there and omitted
-/// to reduce two-layer drift. Filesystem deny entries and `excludedCommands`
-/// are still emitted because they constrain Claude's tool surface, not the
-/// kernel-level network namespace.
-pub fn generate_settings_json(config: &MergedSandboxConfig, backend: BackendType) -> Value {
+/// `backend` is the resolved per-stage backend, accepted for API symmetry
+/// with the rest of the sandbox path.
+pub fn generate_settings_json(config: &MergedSandboxConfig, _backend: BackendType) -> Value {
     let mut settings = json!({});
 
     // Build sandbox block with native sandbox configuration.
-    //
-    // For container backend: Claude Code's per-tool bwrap sandbox is
-    // redundant and actively harmful. The container itself provides
-    // OS-level isolation (capability drop, ro `/repo` base, network
-    // namespace + firewall). Claude's bwrap layer tries to create
-    // scratch state inside `/repo/.claude/skills` — which fails because
-    // `/repo` is a ro mount. The kernel-level isolation is already
-    // enforced one layer up; nested sandboxing has no win and breaks
-    // every tool call with "Can't create file ... Read-only file system".
-    let sandbox_enabled = config.enabled && backend != BackendType::Container;
+    let sandbox_enabled = config.enabled;
     let mut sandbox = json!({
         "enabled": sandbox_enabled
     });
@@ -219,12 +165,8 @@ pub fn generate_settings_json(config: &MergedSandboxConfig, backend: BackendType
         sandbox["allowUnsandboxedCommands"] = json!(true);
     }
 
-    // Network configuration. The container firewall enforces network policy
-    // authoritatively (image-resident firewall.sh + ro-mounted allowlist), so
-    // we skip emitting Claude-level Network(...) deny entries for container
-    // stages. Maintaining both layers led to silent drift when the allowlist
-    // and Claude's allowed_domains diverged.
-    if backend != BackendType::Container {
+    // Network configuration.
+    {
         let mut network = json!({});
         let mut domains = config.network.allowed_domains.clone();
         domains.extend(config.network.additional_domains.clone());
@@ -531,56 +473,6 @@ mod tests {
             let back: PermissionMode = serde_yaml::from_str(&yaml).unwrap();
             assert_eq!(back, mode);
         }
-    }
-
-    #[test]
-    fn test_is_sensitive_env_key() {
-        for key in [
-            "SSH_AUTH_SOCK",
-            "GH_TOKEN",
-            "GITHUB_TOKEN",
-            "ANTHROPIC_API_KEY",
-            "AWS_ACCESS_KEY_ID",
-            "GOOGLE_APPLICATION_CREDENTIALS",
-            "GCP_PROJECT",
-            "MCP_SERVER_PATH",
-        ] {
-            assert!(is_sensitive_env_key(key), "{key} should be sensitive");
-        }
-        for key in ["PATH", "HOME", "LOOM_STAGE_ID", "USER"] {
-            assert!(!is_sensitive_env_key(key), "{key} should not be sensitive");
-        }
-    }
-
-    #[test]
-    fn test_scrub_settings_env_for_container() {
-        let mut settings = json!({
-            "env": {
-                "KEEP_ME": "yes",
-                "AWS_REGION": "leak",
-                "GH_TOKEN": "leak",
-                "ANTHROPIC_API_KEY": "leak",
-                "MCP_SERVER_FOO": "leak"
-            }
-        });
-        scrub_settings_env_for_backend(&mut settings, BackendType::Container);
-
-        let env = settings["env"].as_object().unwrap();
-        assert!(env.contains_key("KEEP_ME"));
-        assert!(!env.contains_key("AWS_REGION"));
-        assert!(!env.contains_key("GH_TOKEN"));
-        assert!(!env.contains_key("ANTHROPIC_API_KEY"));
-        assert!(!env.contains_key("MCP_SERVER_FOO"));
-    }
-
-    #[test]
-    fn test_scrub_settings_env_for_native_is_noop() {
-        let original = json!({
-            "env": { "AWS_REGION": "stay", "GH_TOKEN": "stay" }
-        });
-        let mut settings = original.clone();
-        scrub_settings_env_for_backend(&mut settings, BackendType::Native);
-        assert_eq!(settings, original);
     }
 
     #[test]
@@ -994,11 +886,9 @@ mod tests {
     }
 
     #[test]
-    fn test_container_skips_network_deny() {
-        // The container backend's firewall enforces network policy
-        // authoritatively, so Claude-level Network(...) restrictions
-        // (the `sandbox.network` block) must be omitted for container
-        // stages — but filesystem deny entries must still be emitted.
+    fn test_generate_settings_emits_network_block() {
+        // The native backend emits the sandbox.network block whenever the
+        // sandbox config carries network policy.
         let config = MergedSandboxConfig {
             enabled: true,
             auto_allow: true,
@@ -1017,39 +907,28 @@ mod tests {
                 allow_all_unix_sockets: false,
             },
             linux: LinuxConfig::default(),
-            permission_mode: PermissionMode::BypassPermissions,
+            permission_mode: PermissionMode::Auto,
         };
 
-        // Container: no Network(...) deny / allowedDomains emitted.
-        let json_container = generate_settings_json(&config, BackendType::Container);
-        assert!(
-            json_container["sandbox"]["network"].is_null(),
-            "Container backend must NOT emit sandbox.network (firewall enforces network policy authoritatively)"
-        );
-        // Filesystem deny entries are still expected on container — they
-        // bound the Claude tool surface, not the kernel namespace.
-        let deny = json_container["permissions"]["deny"]
-            .as_array()
-            .expect("filesystem deny entries should still be present on container");
-        let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
-        assert!(
-            deny_strs.contains(&"Write(doc/loom/knowledge/**)"),
-            "Filesystem deny entries must still be emitted for container backend"
-        );
-
-        // Native: Network(...) deny / allowedDomains DO appear.
-        let json_native = generate_settings_json(&config, BackendType::Native);
-        let network = &json_native["sandbox"]["network"];
+        let json = generate_settings_json(&config, BackendType::Native);
+        let network = &json["sandbox"]["network"];
         assert!(
             !network.is_null(),
-            "Native backend must emit sandbox.network when allowed_domains is set"
+            "sandbox.network must be emitted when allowed_domains is set"
         );
         let domains = network["allowedDomains"]
             .as_array()
-            .expect("allowedDomains must be present for native");
+            .expect("allowedDomains must be present");
         assert_eq!(domains.len(), 2);
         assert!(domains.iter().any(|d| d == "github.com"));
         assert_eq!(network["allowLocalBinding"], true);
+
+        // Filesystem deny entries are emitted alongside the network block.
+        let deny = json["permissions"]["deny"]
+            .as_array()
+            .expect("filesystem deny entries should be present");
+        let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
+        assert!(deny_strs.contains(&"Write(doc/loom/knowledge/**)"));
     }
 
     #[test]

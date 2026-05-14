@@ -85,67 +85,12 @@ pub struct WorkDir {
     root: PathBuf,
 }
 
-/// True when `base` refers to the current directory ("." / "" / the
-/// process cwd). Used to gate the `LOOM_WORK_DIR` env override so it
-/// only fires when the caller hasn't supplied an explicit base path.
-fn is_cwd_relative_base(base: &Path) -> bool {
-    if base.as_os_str().is_empty() || base == Path::new(".") {
-        return true;
-    }
-    match (base.canonicalize(), std::env::current_dir()) {
-        (Ok(b), Ok(cwd)) => b == cwd,
-        _ => false,
-    }
-}
-
-/// Honour `LOOM_WORK_DIR` when it points at a real `.work`-shaped
-/// directory **inside the container topology** (path begins with
-/// `/repo/`). The container backend sets this to `/repo/.work` so
-/// commands invoked from outside `/repo` still find loom state. Host
-/// processes (including the test suite that inherits a parent loom
-/// session's env) intentionally do not honour the override — their
-/// upward walk is authoritative and was hijacking test setup.
-fn loom_work_dir_from_env() -> Option<PathBuf> {
-    let raw = std::env::var_os("LOOM_WORK_DIR")?;
-    let raw_str = raw.to_str()?.trim();
-    if raw_str.is_empty() {
-        return None;
-    }
-    // Container-topology marker: the path must live under /repo/.
-    // Hosts that legitimately want the env-var override should run via
-    // the container backend (which sets this path) or rely on the
-    // upward walk.
-    if !raw_str.starts_with("/repo/") && raw_str != "/repo/.work" {
-        return None;
-    }
-    let candidate = PathBuf::from(raw_str);
-    if !candidate.is_dir() {
-        return None;
-    }
-    if candidate.join("config.toml").exists() || candidate.join("stages").is_dir() {
-        Some(candidate)
-    } else {
-        None
-    }
-}
-
 impl WorkDir {
     pub fn new<P: AsRef<Path>>(base_path: P) -> Result<Self> {
         let base = base_path.as_ref();
         let candidate = base.join(".work");
         if candidate.exists() {
             return Ok(Self { root: candidate });
-        }
-
-        // Honour LOOM_WORK_DIR over the upward walk **only** when the
-        // caller's intent is "find any loom workspace" (`base_path` is
-        // `.` or the current directory). Tests that pass an explicit
-        // temp path are constructive and must not be hijacked by an
-        // ambient env var inherited from a parent loom session.
-        if is_cwd_relative_base(base) {
-            if let Some(env_root) = loom_work_dir_from_env() {
-                return Ok(Self { root: env_root });
-            }
         }
 
         // Search upward for .work (like git searches for .git)
@@ -189,11 +134,8 @@ impl WorkDir {
 
         fs::create_dir_all(&self.root).context("Failed to create .work directory")?;
 
-        // Includes `memory`, `wrappers`, `pids` because the container
-        // backend bind-mounts all of these (see ContainerBackend::build_mounts).
-        // Podman refuses to spawn the container when any rw mount source
-        // is missing; Docker silently creates them as root-owned dirs
-        // which defeats the rw overlay. Always pre-create on the host.
+        // Includes `memory`, `wrappers`, `pids` — session wrapper scripts,
+        // PID tracking files, and the memory journal all live under these.
         let subdirs = [
             "signals", "handoffs", "archive", "stages", "sessions", "crashes", "memory",
             "wrappers", "pids",
@@ -402,9 +344,7 @@ Do not manually edit these files unless you know what you're doing.
 //   source_path / plan_id / plan_name / base_branch
 //
 //   [project_execution]
-//   backend = "native" | "container"
-//   [project_execution.container]
-//   runtime / fingerprint / image_digest / forward_credentials
+//   backend = "native"
 //
 //   [plan_sandbox]   # persisted snapshot of plan-level sandbox at init time
 //   [plan_execution] # persisted snapshot of plan-level execution config
@@ -500,29 +440,8 @@ fn write_section<T: serde::Serialize>(work_dir: &Path, section: &str, value: &T)
 }
 
 /// Read the persisted project-level execution config (`[project_execution]`).
-///
-/// Drops `git_user_name` / `git_user_email` values that fail
-/// [`validate_git_identity`] — a hand-edited config.toml with control chars
-/// or oversize values must not silently propagate to env injection. The
-/// container path treats `None` as "fall back to git defaults".
 pub fn read_project_execution(work_dir: &Path) -> Result<Option<ProjectExecutionConfig>> {
-    let mut cfg: Option<ProjectExecutionConfig> =
-        read_section(work_dir, PROJECT_EXECUTION_SECTION)?;
-    if let Some(exec) = cfg.as_mut() {
-        if let Some(container) = exec.container.as_mut() {
-            scrub_invalid_identity(&mut container.git_user_name);
-            scrub_invalid_identity(&mut container.git_user_email);
-        }
-    }
-    Ok(cfg)
-}
-
-fn scrub_invalid_identity(value: &mut Option<String>) {
-    if let Some(v) = value {
-        if crate::plan::schema::execution::validate_git_identity(v).is_err() {
-            *value = None;
-        }
-    }
+    read_section(work_dir, PROJECT_EXECUTION_SECTION)
 }
 
 /// Persist the project-level execution config (`[project_execution]`).
@@ -710,10 +629,7 @@ mod tests {
 
     // ----- Centralized config.toml API tests -----
 
-    use crate::plan::schema::execution::{
-        BackendType, PlanContainerConfig, PlanExecutionConfig, ProjectContainerConfig,
-        ProjectExecutionConfig,
-    };
+    use crate::plan::schema::execution::{BackendType, ProjectExecutionConfig};
     use crate::plan::schema::SandboxConfig;
 
     fn init_work(temp: &TempDir) -> PathBuf {
@@ -746,83 +662,6 @@ mod tests {
     }
 
     #[test]
-    fn write_then_read_project_execution_round_trip() {
-        let temp = TempDir::new().unwrap();
-        let work = init_work(&temp);
-        let cfg = ProjectExecutionConfig {
-            backend: BackendType::Container,
-            container: Some(ProjectContainerConfig {
-                runtime: "docker".to_string(),
-                fingerprint: "abc".to_string(),
-                image_digest: "sha256:dead".to_string(),
-                forward_credentials: vec!["GH_TOKEN".to_string()],
-                git_user_name: None,
-                git_user_email: None,
-            }),
-        };
-        write_project_execution(&work, &cfg).unwrap();
-        let back = read_project_execution(&work).unwrap().unwrap();
-        assert_eq!(back, cfg);
-    }
-
-    #[test]
-    fn write_then_read_project_execution_git_identity_round_trip() {
-        let temp = TempDir::new().unwrap();
-        let work = init_work(&temp);
-        let cfg = ProjectExecutionConfig {
-            backend: BackendType::Container,
-            container: Some(ProjectContainerConfig {
-                runtime: "docker".to_string(),
-                fingerprint: "abc".to_string(),
-                image_digest: "sha256:dead".to_string(),
-                forward_credentials: vec![],
-                git_user_name: Some("Alice Dev".to_string()),
-                git_user_email: Some("alice@example.com".to_string()),
-            }),
-        };
-        write_project_execution(&work, &cfg).unwrap();
-        let back = read_project_execution(&work).unwrap().unwrap();
-        assert_eq!(back, cfg);
-
-        // A config.toml without git_user_name/email (old format) must still
-        // parse without error and produce None for the new fields.
-        let old_toml = "[project_execution]\nbackend = \"container\"\n\
-            [project_execution.container]\nruntime = \"docker\"\n\
-            fingerprint = \"fp\"\nimage_digest = \"sha256:abc\"\n";
-        fs::write(work.join("config.toml"), old_toml).unwrap();
-        let parsed = read_project_execution(&work).unwrap().unwrap();
-        let container = parsed.container.unwrap();
-        assert!(container.git_user_name.is_none());
-        assert!(container.git_user_email.is_none());
-    }
-
-    #[test]
-    fn read_project_execution_scrubs_invalid_git_identity() {
-        let temp = TempDir::new().unwrap();
-        let work = init_work(&temp);
-        // Embedded newline in user.name and an oversize email — both invalid.
-        let oversize = "a".repeat(300);
-        let bad_toml = format!(
-            "[project_execution]\nbackend = \"container\"\n\
-             [project_execution.container]\nruntime = \"docker\"\n\
-             fingerprint = \"fp\"\nimage_digest = \"sha256:abc\"\n\
-             git_user_name = \"Alice\\nGIT_PASSWORD=hunter2\"\n\
-             git_user_email = \"{oversize}@example.com\"\n",
-        );
-        fs::write(work.join("config.toml"), bad_toml).unwrap();
-        let parsed = read_project_execution(&work).unwrap().unwrap();
-        let container = parsed.container.unwrap();
-        assert!(
-            container.git_user_name.is_none(),
-            "invalid git_user_name must be scrubbed",
-        );
-        assert!(
-            container.git_user_email.is_none(),
-            "invalid git_user_email must be scrubbed",
-        );
-    }
-
-    #[test]
     fn write_then_read_plan_sandbox_round_trip() {
         let temp = TempDir::new().unwrap();
         let work = init_work(&temp);
@@ -835,21 +674,6 @@ mod tests {
     }
 
     #[test]
-    fn write_then_read_plan_execution_round_trip() {
-        let temp = TempDir::new().unwrap();
-        let work = init_work(&temp);
-        let cfg = PlanExecutionConfig {
-            container: Some(PlanContainerConfig {
-                forward_credentials: vec!["AWS_PROFILE".to_string()],
-                additional_mounts: vec!["/tmp/x:/x".to_string()],
-            }),
-        };
-        write_plan_execution(&work, &cfg).unwrap();
-        let back = read_plan_execution(&work).unwrap().unwrap();
-        assert_eq!(back, cfg);
-    }
-
-    #[test]
     fn writes_preserve_unrelated_sections_and_comments() {
         let temp = TempDir::new().unwrap();
         let work = init_work(&temp);
@@ -858,7 +682,6 @@ mod tests {
 
         let exec = ProjectExecutionConfig {
             backend: BackendType::Native,
-            container: None,
         };
         write_project_execution(&work, &exec).unwrap();
 

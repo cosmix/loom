@@ -174,8 +174,6 @@ pub fn generate_stable_prefix() -> String {
 
     append_path_boundaries(&mut content);
 
-    content.push_str("**Container Session Note:** In container-backed sessions, prefer foreground Bash with capped output for commands you need to monitor — background-mode output buffers live outside the worktree and the worktree-file-guard hook blocks reading them.\n\n");
-
     // working_dir reminder
     content.push_str(
         "**working_dir Reminder:** Acceptance criteria execute from `WORKTREE + working_dir`.\n",
@@ -362,8 +360,6 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("- MUST check stderr of ALL commands for failure indicators\n");
     content.push_str("- If sandbox blocked something needed, report as BLOCKER\n");
     content.push_str("- Verify external dependencies are present, not just referenced\n\n");
-
-    content.push_str("**Container Session Note:** In container-backed sessions, prefer foreground Bash with capped output for commands you need to monitor — background-mode output buffers live outside the worktree and the worktree-file-guard hook blocks reading them.\n\n");
 
     // Agent teams for IV - changed to MUST
     content.push_str("**Agent Teams for Integration Verification:**\n\n");

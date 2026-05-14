@@ -108,7 +108,7 @@ pub struct HooksConfig {
     pub work_dir: PathBuf,
     /// Resolved Claude Code permission mode for this session.
     pub permission_mode: PermissionMode,
-    /// Project execution backend (drives env scrubbing on container).
+    /// Project execution backend for this session.
     pub backend: BackendType,
 }
 
@@ -134,19 +134,10 @@ impl HooksConfig {
 
     /// Get the full path to a hook script.
     ///
-    /// Native sessions see host-absolute paths (the hooks are installed
-    /// at `~/.claude/hooks/loom/...` on the host). Container sessions
-    /// see the container-stable mountpoint
-    /// `/home/loom/.claude/hooks/loom/<script>` regardless of the host
-    /// path, because the hooks directory is bind-mounted into the
-    /// container at that fixed location.
+    /// Sessions see host-absolute paths — the hooks are installed at
+    /// `~/.claude/hooks/loom/...` on the host.
     pub fn script_path(&self, event: HookEvent) -> PathBuf {
-        match self.backend {
-            BackendType::Container => {
-                PathBuf::from("/home/loom/.claude/hooks/loom").join(event.script_name())
-            }
-            BackendType::Native => self.hooks_dir.join(event.script_name()),
-        }
+        self.hooks_dir.join(event.script_name())
     }
 
     /// Build the command string for a hook event

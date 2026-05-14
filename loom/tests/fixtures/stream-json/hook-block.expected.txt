@@ -1,2 +1,0 @@
-        ✗ blocked by hook: git commit blocked by commit-filter.sh
-

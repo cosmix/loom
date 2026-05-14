@@ -86,8 +86,7 @@ pub fn create_worktree(
     // Create symlink to main .work/ directory
     ensure_work_symlink(&worktree_path, repo_root)?;
 
-    // Set up .claude/ directory for worktree. The backend influences env
-    // scrubbing in the inherited settings.json — see create_worktree_settings.
+    // Set up .claude/ directory for worktree.
     setup_claude_directory(&worktree_path, repo_root, backend)?;
 
     // Symlink project-root CLAUDE.md
@@ -99,8 +98,9 @@ pub fn create_worktree(
     }
 
     // Exclude .claude/settings.local.json from the worktree's per-worktree gitignore.
-    // This prevents agents from accidentally committing container-baked hook paths into
-    // the main repository. Uses the per-worktree gitdir at .git/worktrees/<stage-id>/.
+    // This prevents agents from accidentally committing session-specific hook/sandbox
+    // settings into the main repository. Uses the per-worktree gitdir at
+    // .git/worktrees/<stage-id>/.
     if let Err(e) = super::settings::add_settings_local_to_worktree_gitignore(stage_id, repo_root) {
         eprintln!("Warning: Failed to add settings.local.json to worktree gitignore: {e}");
     }

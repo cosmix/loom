@@ -4,8 +4,6 @@ use crate::fs::stage_files::stage_file_path;
 use crate::fs::work_dir::{self, WorkDir};
 use crate::git::branch::current_branch;
 use crate::models::stage::{Stage, StageStatus};
-use crate::orchestrator::terminal::container::probe::{run_firewall_smoke_test, ProbeResult};
-use crate::orchestrator::terminal::container::runtime::Runtime;
 use crate::plan::graph::levels::compute_all_levels;
 use crate::plan::parser::parse_plan;
 use crate::plan::schema::{
@@ -14,7 +12,7 @@ use crate::plan::schema::{
 };
 use crate::sandbox::{merge_config as merge_sandbox_config, validate_config as validate_sandbox};
 use crate::verify::serialize_stage_to_markdown;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use chrono::Utc;
 use colored::Colorize;
 use std::fs;
@@ -228,30 +226,6 @@ pub fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<usiz
     }
 
     Ok(stage_count)
-}
-
-/// Run the container firewall enforcement smoke test for a freshly built
-/// image and bail with an actionable error if the firewall is not enforced.
-///
-/// Called by [`crate::commands::init::execute`] after the container image
-/// is built. Kept in `plan_setup` so the post-init wiring (image build →
-/// firewall probe → stage file generation) lives in one module and goal-
-/// backward wiring checks can spot the integration in a single place.
-pub(crate) fn probe_firewall_or_bail(runtime: Runtime, image_ref: &str) -> Result<ProbeResult> {
-    let result = run_firewall_smoke_test(runtime, image_ref)
-        .context("Failed to run firewall enforcement smoke test")?;
-    if !result.enforced {
-        bail!(
-            "Firewall enforcement failed on this runtime. The container \
-             firewall is the authoritative network policy for stages — \
-             refusing to proceed because traffic was not blocked despite \
-             an empty allowlist. Re-run with --allow-insecure-runtime to \
-             override (use with caution; container egress will not be \
-             filtered). Diagnostic:\n{}",
-            result.diagnostic
-        );
-    }
-    Ok(result)
 }
 
 /// Create a Stage from a StageDefinition

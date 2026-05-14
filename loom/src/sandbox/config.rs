@@ -40,23 +40,17 @@ pub struct MergedSandboxConfig {
 /// Resolve the default `PermissionMode` for a stage type when no explicit
 /// override is set at the plan or stage level.
 ///
-/// Container-backed stages default to `BypassPermissions`: the container is
-/// the safety boundary (firewalled network, no host filesystem access, no
-/// credentials by default), so Claude's permission prompts add no security —
-/// only the risk that an unattended stage hangs forever waiting for input
-/// nobody will give. Native-backed stages fall back to stage-type defaults
-/// since the OS sandbox alone cannot catch every host-damaging operation.
+/// `backend` is accepted for API symmetry with the rest of the sandbox
+/// resolution path; the native backend is the only execution backend, so
+/// the stage type alone determines the default.
 ///
-/// Native defaults:
+/// Defaults:
 /// - Knowledge / KnowledgeDistill → `AcceptEdits` — writes are scoped to
 ///   `doc/loom/knowledge/` and friction during knowledge curation hurts more
 ///   than it helps.
 /// - Standard / IntegrationVerify → `Auto` — Claude's heuristics approve
 ///   safe edits while still prompting for destructive ones.
-pub fn default_mode_for(stage_type: StageType, backend: BackendType) -> PermissionMode {
-    if backend == BackendType::Container {
-        return PermissionMode::BypassPermissions;
-    }
+pub fn default_mode_for(stage_type: StageType, _backend: BackendType) -> PermissionMode {
     match stage_type {
         StageType::Knowledge | StageType::KnowledgeDistill => PermissionMode::AcceptEdits,
         StageType::Standard | StageType::IntegrationVerify => PermissionMode::Auto,
@@ -107,18 +101,22 @@ pub fn merge_config(
     }
 }
 
-/// Validate that a merged sandbox config is compatible with the project backend.
+/// Validate that a merged sandbox config is safe for execution.
 ///
-/// `bypass-permissions` is only safe inside the container backend where the
-/// agent is fully sandboxed. Refusing it on the native backend prevents an
-/// agent from running with no permission prompts on the host filesystem.
-pub fn validate_config(merged: &MergedSandboxConfig, backend: BackendType) -> Result<()> {
-    if merged.permission_mode == PermissionMode::BypassPermissions && backend == BackendType::Native
-    {
+/// `bypass-permissions` is rejected unconditionally: it disables every Claude
+/// Code permission prompt, granting the agent unrestricted access to the host
+/// filesystem. No execution backend makes this safe, so it is refused
+/// regardless of the resolved backend.
+///
+/// `backend` is accepted for API symmetry with the rest of the sandbox
+/// resolution path; it does not affect the outcome.
+pub fn validate_config(merged: &MergedSandboxConfig, _backend: BackendType) -> Result<()> {
+    if merged.permission_mode == PermissionMode::BypassPermissions {
         bail!(
-            "permission_mode=bypass-permissions requires the container backend \
-             (current backend: native). \
-             Re-run `loom init <plan> --backend container` to enable bypass mode."
+            "permission_mode=bypass-permissions is not permitted: it disables all \
+             Claude Code permission prompts and grants unrestricted access to the \
+             host filesystem. Choose a different permission_mode (auto, accept-edits, \
+             plan, or default)."
         );
     }
     Ok(())
@@ -496,25 +494,6 @@ mod tests {
     }
 
     #[test]
-    fn test_default_mode_for_container_is_bypass() {
-        // Container is the safety boundary; default to BypassPermissions for
-        // every stage type so unattended sessions never hang on prompts.
-        for stage_type in [
-            StageType::Standard,
-            StageType::IntegrationVerify,
-            StageType::Knowledge,
-            StageType::KnowledgeDistill,
-        ] {
-            assert_eq!(
-                default_mode_for(stage_type, BackendType::Container),
-                PermissionMode::BypassPermissions,
-                "container default for {:?}",
-                stage_type
-            );
-        }
-    }
-
-    #[test]
     fn test_merge_config_permission_mode_precedence() {
         let plan = SandboxConfig {
             permission_mode: Some(PermissionMode::Plan),
@@ -523,16 +502,16 @@ mod tests {
 
         // Stage override beats plan override
         let stage_override = StageSandboxConfig {
-            permission_mode: Some(PermissionMode::BypassPermissions),
+            permission_mode: Some(PermissionMode::AcceptEdits),
             ..StageSandboxConfig::default()
         };
         let merged = merge_config(
             &plan,
             &stage_override,
             StageType::Standard,
-            BackendType::Container,
+            BackendType::Native,
         );
-        assert_eq!(merged.permission_mode, PermissionMode::BypassPermissions);
+        assert_eq!(merged.permission_mode, PermissionMode::AcceptEdits);
 
         // No stage override: plan wins over default
         let merged = merge_config(
@@ -543,7 +522,7 @@ mod tests {
         );
         assert_eq!(merged.permission_mode, PermissionMode::Plan);
 
-        // No plan / no stage override on native: stage type default
+        // No plan / no stage override: stage type default
         let plan_default = SandboxConfig::default();
         let merged = merge_config(
             &plan_default,
@@ -560,27 +539,10 @@ mod tests {
             BackendType::Native,
         );
         assert_eq!(merged.permission_mode, PermissionMode::AcceptEdits);
-
-        // No plan / no stage override on container: bypass for every stage type.
-        let merged = merge_config(
-            &plan_default,
-            &StageSandboxConfig::default(),
-            StageType::Standard,
-            BackendType::Container,
-        );
-        assert_eq!(merged.permission_mode, PermissionMode::BypassPermissions);
-
-        let merged = merge_config(
-            &plan_default,
-            &StageSandboxConfig::default(),
-            StageType::Knowledge,
-            BackendType::Container,
-        );
-        assert_eq!(merged.permission_mode, PermissionMode::BypassPermissions);
     }
 
     #[test]
-    fn test_validate_config_matrix() {
+    fn test_validate_config_rejects_bypass_permissions_unconditionally() {
         // Build a MergedSandboxConfig with a specific permission mode.
         let make = |mode: PermissionMode| MergedSandboxConfig {
             enabled: true,
@@ -593,6 +555,7 @@ mod tests {
             permission_mode: mode,
         };
 
+        // Every non-bypass mode is accepted.
         for mode in [
             PermissionMode::Default,
             PermissionMode::AcceptEdits,
@@ -600,15 +563,19 @@ mod tests {
             PermissionMode::Plan,
         ] {
             assert!(validate_config(&make(mode), BackendType::Native).is_ok());
-            assert!(validate_config(&make(mode), BackendType::Container).is_ok());
         }
 
-        // BypassPermissions rejected on Native, accepted on Container.
+        // BypassPermissions is rejected unconditionally, regardless of backend.
         let bypass = make(PermissionMode::BypassPermissions);
         let err = validate_config(&bypass, BackendType::Native).unwrap_err();
-        assert!(err.to_string().contains("bypass-permissions"));
-        assert!(err.to_string().contains("container"));
-        assert!(validate_config(&bypass, BackendType::Container).is_ok());
+        assert!(
+            err.to_string().contains("bypass-permissions"),
+            "error must name the rejected mode, got: {err}"
+        );
+        assert!(
+            err.to_string().contains("not permitted"),
+            "error must explain the mode is not permitted, got: {err}"
+        );
     }
 
     // =========================================================================

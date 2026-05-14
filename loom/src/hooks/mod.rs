@@ -35,7 +35,4 @@ pub use events::{
     log_hook_event, read_recent_events, read_session_events, read_stage_events, read_tool_events,
     tail_tool_events, HookEventLog, HookEventPayload, ToolEvent,
 };
-pub use generator::{
-    container_main_settings_path, find_hooks_dir, generate_hooks_settings,
-    setup_container_main_session_settings, setup_hooks_for_worktree,
-};
+pub use generator::{find_hooks_dir, generate_hooks_settings, setup_hooks_for_worktree};

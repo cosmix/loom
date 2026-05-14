@@ -12,12 +12,8 @@ use crate::git::branch::stage_id_from_branch;
 
 /// Find the .work directory.
 ///
-/// Resolution order:
-///   1. `$LOOM_WORK_DIR` when it points at a directory that contains a
-///      `.work`-shaped marker (`config.toml` or `stages/`). The
-///      container backend relies on this to find `/repo/.work` instead
-///      of walking the host filesystem.
-///   2. Walk upward from the current directory.
+/// Walks upward from the current directory looking for a `.work` directory,
+/// the same way git searches for `.git`.
 pub fn find_work_dir() -> Result<PathBuf> {
     let mut current = std::env::current_dir()?;
     loop {
@@ -29,40 +25,9 @@ pub fn find_work_dir() -> Result<PathBuf> {
         match current.parent() {
             Some(parent) => current = parent.to_path_buf(),
             None => {
-                // Upward walk yielded nothing — honour LOOM_WORK_DIR
-                // if validated. The container backend exports it at
-                // `/repo/.work` so commands inside the container still
-                // find state when invoked from a directory outside
-                // /repo.
-                if let Some(env_root) = work_dir_from_env() {
-                    return Ok(env_root);
-                }
                 bail!("Could not find .work directory. Are you in a loom workspace?");
             }
         }
-    }
-}
-
-/// Returns a validated `LOOM_WORK_DIR` if set **and** the path lives
-/// under the container topology (`/repo/...`). See
-/// `crate::fs::work_dir::loom_work_dir_from_env` for rationale.
-fn work_dir_from_env() -> Option<PathBuf> {
-    let raw = std::env::var_os("LOOM_WORK_DIR")?;
-    let s = raw.to_str()?.trim();
-    if s.is_empty() {
-        return None;
-    }
-    if !s.starts_with("/repo/") && s != "/repo/.work" {
-        return None;
-    }
-    let candidate = PathBuf::from(s);
-    if !candidate.is_dir() {
-        return None;
-    }
-    if candidate.join("config.toml").exists() || candidate.join("stages").is_dir() {
-        Some(candidate)
-    } else {
-        None
     }
 }
 

@@ -37,14 +37,6 @@ use super::session::cleanup_session_resources;
 ///
 /// The admin token lives at `$XDG_RUNTIME_DIR/loom/admin.token` (or
 /// `data_dir()/loom/admin.token` as fallback) and is owner-only (0o600).
-/// Containers cannot reach it — it is NOT under `.work/`, so a
-/// container-resident agent cannot bypass acceptance.
-///
-/// TODO: Stage 4 of container-security-hardening introduces a
-/// `Request::CompleteStageContainer` daemon RPC for container-mode
-/// `loom stage complete`. That handler MUST also call this admin gate
-/// before honouring no_verify / force_unsafe flags so the container
-/// path cannot circumvent it. (See plan stage `container-security-hardening`.)
 pub fn require_admin_capability(_work_dir: &Path) -> Result<()> {
     let path = crate::daemon::admin_token_path();
     match std::fs::read_to_string(&path) {
@@ -52,8 +44,7 @@ pub fn require_admin_capability(_work_dir: &Path) -> Result<()> {
         _ => bail!(
             "--no-verify, --force-unsafe, and --assume-merged require the admin \
              token from the host's daemon runtime directory (expected: {}). \
-             Agents inside containers cannot invoke these flags; use \
-             `loom stage dispute-criteria` to request a criterion change.",
+             Use `loom stage dispute-criteria` to request a criterion change.",
             path.display()
         ),
     }
@@ -355,30 +346,11 @@ pub fn complete(
     let work_dir = Path::new(".work");
 
     // Admin capability gate: --no-verify, --force-unsafe, and --assume-merged
-    // are verification-bypass flags. They require the host admin.token
-    // (located OUTSIDE the .work/ tree so a container-resident agent cannot
-    // forge them). The gate runs FIRST so it precedes container delegation,
-    // force-unsafe handling, and the regular acceptance pipeline.
+    // are verification-bypass flags. They require the host admin.token. The
+    // gate runs FIRST so it precedes force-unsafe handling and the regular
+    // acceptance pipeline.
     if no_verify || force_unsafe || assume_merged {
         require_admin_capability(work_dir)?;
-    }
-
-    // Stage 4 (isolated-git-architecture): when running inside a
-    // container-backed session, `loom stage complete` does NOT mutate
-    // host stage state directly. Instead it delegates to the daemon
-    // over the existing Unix-socket RPC; the daemon extracts a git
-    // bundle from the LIVE container, validates it, imports it into
-    // the host repo, runs auto_merge, and only then kills the
-    // container and finalizes stage state. This is the architectural
-    // fix for Codex blockers B1 (no .git mount), B2 (no in-container
-    // stage_file mutation) and B6 (container stays alive until
-    // extraction succeeds).
-    //
-    // `--force-unsafe` bypasses delegation and goes through the
-    // legacy local path so administrators can recover stuck states
-    // even when the daemon is unhealthy.
-    if !force_unsafe && is_container_completion() {
-        return delegate_completion_to_daemon(&stage_id, session_id.as_deref(), work_dir);
     }
 
     let mut stage = load_stage(&stage_id, work_dir)?;
@@ -516,83 +488,6 @@ pub fn complete(
     )?;
 
     Ok(())
-}
-
-/// Detect whether `loom stage complete` is running inside a
-/// container-backed session.
-///
-/// The container backend sets `LOOM_BACKEND=container` in
-/// [`ContainerBackend::build_env_for_session`]; everywhere else
-/// (native sessions, host operator shells, CI) the variable is unset.
-/// The check is deliberately just on this single env var — no
-/// filesystem probing, no socket probing, no inheritance from parent
-/// shells beyond what the orchestrator itself sets.
-pub fn is_container_completion() -> bool {
-    std::env::var("LOOM_BACKEND")
-        .map(|v| v.eq_ignore_ascii_case("container"))
-        .unwrap_or(false)
-}
-
-/// Send a [`Request::CompleteStageContainer`](crate::daemon::Request::CompleteStageContainer)
-/// to the host daemon and surface its response.
-///
-/// `expected_base_oid` and `target_branch` are read from
-/// `LOOM_BASE_OID` and `LOOM_BRANCH`, both populated by the
-/// orchestrator at container spawn time. Missing either is a HARD
-/// error — without them the daemon cannot validate the bundle.
-fn delegate_completion_to_daemon(
-    stage_id: &str,
-    session_id: Option<&str>,
-    work_dir: &Path,
-) -> Result<()> {
-    use crate::daemon::{read_message, read_user_token, write_message, Request, Response};
-    use std::os::unix::net::UnixStream;
-    use std::time::Duration;
-
-    let target_branch = std::env::var("LOOM_BRANCH").context(
-        "LOOM_BRANCH not set — required for container-mode completion. \
-         The orchestrator should set this when spawning a container session.",
-    )?;
-    let expected_base_oid = std::env::var("LOOM_BASE_OID").context(
-        "LOOM_BASE_OID not set — required for container-mode completion. \
-         The orchestrator should set this when spawning a container session.",
-    )?;
-    let session_id = session_id
-        .map(|s| s.to_string())
-        .or_else(|| std::env::var("LOOM_SESSION_ID").ok())
-        .context("No session_id and LOOM_SESSION_ID is not set")?;
-    let auth_token = read_user_token(work_dir)
-        .context("Failed to read .work/user.token for daemon authentication")?;
-
-    let req = Request::CompleteStageContainer {
-        auth_token,
-        stage_id: stage_id.to_string(),
-        session_id,
-        target_branch,
-        expected_base_oid,
-    };
-
-    let socket_path = work_dir.join("orchestrator.sock");
-    let mut stream = UnixStream::connect(&socket_path)
-        .with_context(|| format!("Failed to connect to daemon at {}", socket_path.display()))?;
-    stream
-        .set_read_timeout(Some(Duration::from_secs(120)))
-        .context("Failed to set socket read timeout")?;
-
-    write_message(&mut stream, &req).context("Failed to send CompleteStageContainer request")?;
-    let response: Response = read_message(&mut stream).context("Failed to read daemon response")?;
-
-    match response {
-        Response::Ok => {
-            println!("Stage '{stage_id}' completed via daemon (host-authoritative).");
-            Ok(())
-        }
-        Response::Error { message } => bail!("Daemon refused stage completion: {message}"),
-        Response::AuthenticationFailed => {
-            bail!("Daemon authentication failed — check .work/user.token")
-        }
-        other => bail!("Unexpected daemon response to CompleteStageContainer: {other:?}"),
-    }
 }
 
 /// Best-effort load of all sessions for the router. Routing must not fail on

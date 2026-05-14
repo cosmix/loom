@@ -1,2 +1,0 @@
-        ⚠ hook warn: suspicious pattern detected in command
-

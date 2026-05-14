@@ -226,10 +226,6 @@ fn complete_after_subcommand(
         // Session subcommands
         ("sessions", "kill") => complete_session_ids(cwd, prefix),
 
-        // Container subcommands
-        ("container", "shell" | "logs") => complete_stage_ids(cwd, prefix),
-        ("container", "list") => Ok(Vec::new()),
-
         // Worktree subcommands
         ("worktree", "remove") => complete_stage_ids(cwd, prefix),
 

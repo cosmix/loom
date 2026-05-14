@@ -25,8 +25,6 @@ impl Session {
             merge_source_branch: None,
             merge_target_branch: None,
             backend: BackendType::default(),
-            runtime: None,
-            container_name: None,
             tracking_key: String::new(),
         }
     }
@@ -68,8 +66,8 @@ impl Session {
     /// Derive the canonical tracking key for a session.
     ///
     /// The tracking key is used to find OS-level resources owned by this
-    /// session (terminal window titles, container names, etc.) without
-    /// having to thread the session ID through every spawn/kill code path.
+    /// session (terminal window titles, etc.) without having to thread the
+    /// session ID through every spawn/kill code path.
     ///
     /// Format: `loom-[<kind>-]<stage_id>` where `<kind>` is omitted for
     /// regular stage sessions.
@@ -105,8 +103,8 @@ impl Session {
 
     pub fn assign_to_stage(&mut self, stage_id: String) {
         // Derive the tracking key from the (stage_id, session_type) pair so
-        // OS-level resource lookups (terminal titles, container names) have a
-        // stable handle even before the session has a PID.
+        // OS-level resource lookups (terminal titles) have a stable handle
+        // even before the session has a PID.
         self.tracking_key = Self::derive_tracking_key(&stage_id, self.session_type);
         self.stage_id = Some(stage_id);
         self.last_active = Utc::now();
@@ -115,26 +113,6 @@ impl Session {
     /// Set the backend this session runs on. Refreshes `last_active`.
     pub fn set_backend(&mut self, backend: BackendType) {
         self.backend = backend;
-        self.last_active = Utc::now();
-    }
-
-    /// Set container metadata (runtime binary + container name) for sessions
-    /// running on a container backend.
-    pub fn set_container_identity(&mut self, runtime: String, container_name: String) {
-        self.runtime = Some(runtime);
-        self.container_name = Some(container_name);
-        self.last_active = Utc::now();
-    }
-
-    /// Clear container metadata after the container has been removed.
-    ///
-    /// Called after a successful `kill_session` on a container-backed session
-    /// so that persisted session files no longer reference a removed container.
-    /// This prevents stale `container_name` / `runtime` values from misleading
-    /// `loom container logs` and `loom container list`.
-    pub fn clear_container_identity(&mut self) {
-        self.runtime = None;
-        self.container_name = None;
         self.last_active = Utc::now();
     }
 

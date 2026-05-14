@@ -452,35 +452,9 @@ mod generator_tests {
     }
 
     #[test]
-    fn test_generate_hooks_settings_scrubs_env_for_container() {
-        let config = HooksConfig::new(
-            PathBuf::from("/hooks"),
-            "stage".to_string(),
-            "session".to_string(),
-            PathBuf::from("/work"),
-            PermissionMode::Auto,
-            BackendType::Container,
-        );
-
-        let existing = json!({
-            "env": {
-                "FOO": "keep",
-                "AWS_ACCESS_KEY_ID": "leak",
-                "GH_TOKEN": "leak",
-                "MCP_SERVER_PATH": "leak"
-            }
-        });
-
-        let settings = generate_hooks_settings(&config, Some(&existing)).unwrap();
-        let env = settings["env"].as_object().unwrap();
-        assert!(env.contains_key("FOO"));
-        assert!(!env.contains_key("AWS_ACCESS_KEY_ID"));
-        assert!(!env.contains_key("GH_TOKEN"));
-        assert!(!env.contains_key("MCP_SERVER_PATH"));
-    }
-
-    #[test]
-    fn test_generate_hooks_settings_preserves_env_for_native() {
+    fn test_generate_hooks_settings_preserves_inherited_env() {
+        // Native sessions run with the host env directly; an inherited `env`
+        // block in settings.json is passed through untouched.
         let config = HooksConfig::new(
             PathBuf::from("/hooks"),
             "stage".to_string(),
@@ -491,13 +465,14 @@ mod generator_tests {
         );
 
         let existing = json!({
-            "env": { "AWS_ACCESS_KEY_ID": "stay", "GH_TOKEN": "stay" }
+            "env": { "AWS_ACCESS_KEY_ID": "stay", "GH_TOKEN": "stay", "FOO": "stay" }
         });
 
         let settings = generate_hooks_settings(&config, Some(&existing)).unwrap();
         let env = settings["env"].as_object().unwrap();
         assert!(env.contains_key("AWS_ACCESS_KEY_ID"));
         assert!(env.contains_key("GH_TOKEN"));
+        assert!(env.contains_key("FOO"));
     }
 
     #[test]

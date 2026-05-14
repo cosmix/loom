@@ -2,16 +2,9 @@
 //!
 //! Replaces the legacy `kill -0 <session.pid>` checks scattered across
 //! the monitor with a single service that delegates to the right
-//! backend's `is_session_alive`.
-//!
-//! The previous design assumed every session had a host PID (`kill -0`
-//! works against the host's process table). Container sessions don't —
-//! their wrapper PID lives inside the container namespace. The monitor
-//! used to read the host-side pid file and bypass the backend entirely,
-//! which means a perfectly healthy container session would look "dead"
-//! every poll cycle. `LivenessService::is_alive` routes through the
-//! session's `backend` field so each runtime answers for its own
-//! sessions (`docker inspect` for containers, `kill -0` for native).
+//! backend's `is_session_alive`. `LivenessService::is_alive` routes
+//! through the session's `backend` field so each runtime answers for
+//! its own sessions.
 
 use anyhow::Result;
 use std::sync::Arc;
@@ -53,8 +46,8 @@ impl LivenessService {
         }
     }
 
-    /// Return `true` when the session's process / container is still
-    /// running. Errors surfaced from the underlying backend bubble up
+    /// Return `true` when the session's process is still running.
+    /// Errors surfaced from the underlying backend bubble up
     /// (the monitor treats `Err` as "unknown" and skips crash reporting
     /// for that tick).
     pub fn is_alive(&self, session: &Session) -> Result<bool> {

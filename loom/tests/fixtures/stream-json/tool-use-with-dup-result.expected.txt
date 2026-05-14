@@ -1,3 +1,0 @@
-  Read  /etc/hosts
-        1 line
-

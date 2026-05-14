@@ -287,7 +287,7 @@ pub struct Stage {
     /// When set, Claude Code sessions for this stage use this effort level
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
-    /// Backend override for this stage's execution (native, container, ...).
+    /// Backend override for this stage's execution.
     /// When `None`, falls back to the project-level setting in
     /// `.work/config.toml` (`[project_execution]`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
