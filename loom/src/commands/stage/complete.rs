@@ -483,6 +483,7 @@ pub fn complete(
         &stage_id,
         no_verify,
         &acceptance_dir,
+        &working_dir,
         session_id.as_deref(),
         work_dir,
     )?;
@@ -689,7 +690,7 @@ fn check_memory_covers_unwired(
 /// from all prior stages on the merged codebase.
 fn run_aggregated_wiring_reverification(
     _stage_id: &str,
-    verification_dir: &Path,
+    worktree_root: &Path,
     work_dir: &Path,
 ) -> Result<()> {
     // Load all stages
@@ -718,13 +719,13 @@ fn run_aggregated_wiring_reverification(
             // Re-run wiring checks from this stage on the merged codebase.
             // Wiring source paths are authored relative to the originating
             // stage's working_dir, NOT the integration-verify stage's
-            // working_dir — resolve against `verification_dir + working_dir`.
+            // working_dir — resolve against `worktree_root + working_dir`.
             if !stage_def.wiring.is_empty() {
                 println!("  Re-verifying wiring from stage '{}'...", stage.id);
                 let stage_working_dir = if stage_def.working_dir == "." {
-                    verification_dir.to_path_buf()
+                    worktree_root.to_path_buf()
                 } else {
-                    verification_dir.join(&stage_def.working_dir)
+                    worktree_root.join(&stage_def.working_dir)
                 };
                 let gaps = crate::verify::goal_backward::verify_wiring(
                     &stage_def.wiring,
@@ -791,6 +792,7 @@ fn run_verification_phase(
     stage_id: &str,
     no_verify: bool,
     acceptance_dir: &Option<PathBuf>,
+    worktree_root: &Option<PathBuf>,
     session_id: Option<&str>,
     work_dir: &Path,
 ) -> Result<()> {
@@ -959,9 +961,9 @@ fn run_verification_phase(
 
         // Aggregated wiring re-verification for integration-verify stages (3d)
         if stage.stage_type == StageType::IntegrationVerify {
-            if let Some(ref verification_dir) = *acceptance_dir {
+            if let Some(ref root) = *worktree_root {
                 println!("Running aggregated wiring re-verification...");
-                run_aggregated_wiring_reverification(stage_id, verification_dir, work_dir)?;
+                run_aggregated_wiring_reverification(stage_id, root, work_dir)?;
             }
         }
 
