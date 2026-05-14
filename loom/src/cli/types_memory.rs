@@ -159,9 +159,9 @@ pub enum MemoryCommands {
         stage: Option<String>,
     },
 
-    /// List memory entries from a stage
+    /// List memory entries (all journals in the plan, or one stage with --stage)
     List {
-        /// Stage ID (auto-detected if not provided)
+        /// Stage ID to scope to (lists every journal in the plan if not provided)
         #[arg(short = 'S', long, value_parser = clap_id_validator)]
         stage: Option<String>,
 

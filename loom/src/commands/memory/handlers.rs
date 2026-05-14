@@ -10,9 +10,7 @@ use crate::fs::memory::{
 };
 use crate::git::worktree::{find_repo_root_from_cwd, find_worktree_root_from_cwd};
 
-use super::formatters::{
-    format_entry_compact, format_entry_full, format_record_success, format_stage_summary,
-};
+use super::formatters::{format_entry_compact, format_entry_full, format_record_success};
 
 /// Get the .work directory, handling worktree symlinks
 ///
@@ -205,79 +203,17 @@ pub fn query(search: String, stage_id: Option<String>) -> Result<()> {
     Ok(())
 }
 
-/// List memory entries from a stage
-pub fn list(stage_id: Option<String>, entry_type: Option<String>) -> Result<()> {
-    if let Some(ref id) = stage_id {
-        validate_stage_id(id)?;
-    }
-
-    let work_dir = get_work_dir()?;
-
-    let stage = match stage_id {
-        Some(id) => id,
-        None => match std::env::var("LOOM_STAGE_ID").ok() {
-            Some(id) => id,
-            None => {
-                // No stage specified - show summary of all stages
-                let journals = list_journals(&work_dir)?;
-                if journals.is_empty() {
-                    println!("{} No memory journals found", "ℹ".blue());
-                    return Ok(());
-                }
-                println!("{} Memory Journals ({})", "📚".bold(), journals.len());
-                println!("{}", "─".repeat(60));
-                for stage_name in &journals {
-                    let journal = read_journal(&work_dir, stage_name)?;
-                    let notes = journal
-                        .entries
-                        .iter()
-                        .filter(|e| e.entry_type == MemoryEntryType::Note)
-                        .count();
-                    let decisions = journal
-                        .entries
-                        .iter()
-                        .filter(|e| e.entry_type == MemoryEntryType::Decision)
-                        .count();
-                    let questions = journal
-                        .entries
-                        .iter()
-                        .filter(|e| e.entry_type == MemoryEntryType::Question)
-                        .count();
-                    let changes = journal
-                        .entries
-                        .iter()
-                        .filter(|e| e.entry_type == MemoryEntryType::Change)
-                        .count();
-                    println!(
-                        "{}",
-                        format_stage_summary(
-                            stage_name,
-                            journal.entries.len(),
-                            notes,
-                            decisions,
-                            questions,
-                            changes
-                        )
-                    );
-                }
-                return Ok(());
-            }
-        },
-    };
-
-    let journal = read_journal(&work_dir, &stage)?;
-
-    if journal.entries.is_empty() {
-        println!(
-            "{} No entries in memory journal for stage '{}'",
-            "ℹ".blue(),
-            stage
-        );
-        return Ok(());
-    }
-
-    // Filter by type if specified
-    let type_filter: Option<MemoryEntryType> = entry_type.map(|t| t.parse()).transpose()?;
+/// Print a single stage's journal entries (compact), applying an optional type filter.
+///
+/// Returns the number of entries displayed (after filtering). A zero return means
+/// the journal had no entries matching the filter and nothing was printed.
+fn print_journal_entries(
+    work_dir: &std::path::Path,
+    stage: &str,
+    type_filter: Option<MemoryEntryType>,
+    limit: usize,
+) -> Result<usize> {
+    let journal = read_journal(work_dir, stage)?;
 
     let entries: Vec<_> = journal
         .entries
@@ -286,31 +222,104 @@ pub fn list(stage_id: Option<String>, entry_type: Option<String>) -> Result<()> 
         .collect();
 
     if entries.is_empty() {
+        return Ok(0);
+    }
+
+    println!(
+        "\n{} ({} {})",
+        stage.bold(),
+        entries.len(),
+        if entries.len() == 1 {
+            "entry"
+        } else {
+            "entries"
+        }
+    );
+    println!("{}", "─".repeat(60));
+
+    for entry in entries.iter().rev().take(limit) {
+        println!("{}", format_entry_compact(entry));
+    }
+
+    if entries.len() > limit {
+        println!("  {} {} more...", "...".dimmed(), entries.len() - limit);
+    }
+
+    Ok(entries.len())
+}
+
+/// List memory entries.
+///
+/// With an explicit `--stage`, lists only that stage's journal. Without one,
+/// aggregates every journal in the plan so a running stage sees all memories
+/// recorded so far — not just its own. `LOOM_STAGE_ID` no longer scopes `list`;
+/// use `--stage` to narrow to a single stage.
+pub fn list(stage_id: Option<String>, entry_type: Option<String>) -> Result<()> {
+    if let Some(ref id) = stage_id {
+        validate_stage_id(id)?;
+    }
+
+    let work_dir = get_work_dir()?;
+    let type_filter: Option<MemoryEntryType> = entry_type.map(|t| t.parse()).transpose()?;
+
+    // Explicit stage: scope to that single journal.
+    if let Some(stage) = stage_id {
+        let shown = print_journal_entries(&work_dir, &stage, type_filter, 20)?;
+        if shown == 0 {
+            println!(
+                "{} No {} entries in memory journal for stage '{}'",
+                "ℹ".blue(),
+                type_filter
+                    .map(|t| t.to_string())
+                    .unwrap_or_else(|| "matching".to_string()),
+                stage
+            );
+        }
+        return Ok(());
+    }
+
+    // No explicit stage: aggregate all journals in the plan.
+    let mut journals = list_journals(&work_dir)?;
+    if journals.is_empty() {
+        println!("{} No memory journals found", "ℹ".blue());
+        return Ok(());
+    }
+    journals.sort();
+
+    let current_stage = std::env::var("LOOM_STAGE_ID").ok();
+    println!(
+        "{} Plan Memory — {} journal{}",
+        "📚".bold(),
+        journals.len(),
+        if journals.len() == 1 { "" } else { "s" }
+    );
+    if let Some(ref cur) = current_stage {
+        println!("{} {}", "Current stage:".dimmed(), cur.cyan());
+    }
+
+    let mut total_shown = 0;
+    for stage_name in &journals {
+        total_shown += print_journal_entries(&work_dir, stage_name, type_filter, 20)?;
+    }
+
+    if total_shown == 0 {
         println!(
-            "{} No {} entries found in stage '{}'",
+            "\n{} No {} entries found across {} journal(s)",
             "ℹ".blue(),
             type_filter
                 .map(|t| t.to_string())
                 .unwrap_or_else(|| "matching".to_string()),
-            stage
+            journals.len()
         );
-        return Ok(());
-    }
-
-    println!(
-        "\n{} Memory Journal ({} entries)",
-        stage.bold(),
-        entries.len()
-    );
-    println!("{} {}", "Stage:".dimmed(), &journal.stage_id);
-    println!("{}", "─".repeat(60));
-
-    for entry in entries.iter().rev().take(20) {
-        println!("{}", format_entry_compact(entry));
-    }
-
-    if entries.len() > 20 {
-        println!("  {} {} more...", "...".dimmed(), entries.len() - 20);
+    } else {
+        println!(
+            "\n{} {} entr{} across {} journal{}",
+            "Total:".bold(),
+            total_shown,
+            if total_shown == 1 { "y" } else { "ies" },
+            journals.len(),
+            if journals.len() == 1 { "" } else { "s" }
+        );
     }
 
     Ok(())

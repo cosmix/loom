@@ -61,26 +61,6 @@ pub fn format_entry_full(entry: &MemoryEntry) -> String {
     output
 }
 
-/// Format stage summary for list display
-pub fn format_stage_summary(
-    stage_id: &str,
-    total: usize,
-    notes: usize,
-    decisions: usize,
-    questions: usize,
-    changes: usize,
-) -> String {
-    format!(
-        "{} - {} entries (📝 {} / ✅ {} / ❓ {} / 🔧 {})",
-        stage_id.cyan(),
-        total,
-        notes,
-        decisions,
-        questions,
-        changes
-    )
-}
-
 /// Format a success message for recording an entry
 pub fn format_record_success(entry_type: &MemoryEntryType, stage_id: &str, text: &str) -> String {
     let (emoji, action) = match entry_type {
