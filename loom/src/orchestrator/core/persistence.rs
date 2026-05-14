@@ -187,7 +187,6 @@ mod persistence_tests {
             model: None,
             reasoning_effort: None,
             code_review: None,
-            execution: None,
         }
     }
 

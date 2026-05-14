@@ -46,7 +46,6 @@ mod tests {
             work_dir: PathBuf::from("/tmp/test-work"),
             repo_root: PathBuf::from("/tmp/test-repo"),
             status_update_interval: Duration::from_secs(30),
-            backend_type: crate::orchestrator::terminal::BackendType::Native,
             auto_merge: false,
             base_branch: None,
             skills_dir: None,
@@ -84,7 +83,6 @@ mod tests {
             model: None,
             reasoning_effort: None,
             code_review: None,
-            execution: None,
         }];
 
         ExecutionGraph::build(stages).unwrap()

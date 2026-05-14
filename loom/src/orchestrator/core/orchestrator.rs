@@ -25,10 +25,7 @@ use super::persistence::Persistence;
 use super::recovery::Recovery;
 use super::stage_executor::StageExecutor;
 use crate::orchestrator::liveness::LivenessService;
-use crate::orchestrator::terminal::dispatcher::{
-    resolve_stage_backend, BackendDispatcher, BackendNeeds,
-};
-use crate::orchestrator::terminal::BackendType;
+use crate::orchestrator::terminal::native::NativeBackend;
 
 /// Configuration for the orchestrator
 #[derive(Debug, Clone)]
@@ -42,8 +39,6 @@ pub struct OrchestratorConfig {
     pub repo_root: PathBuf,
     /// How often to print status updates during polling (default: 30 seconds)
     pub status_update_interval: Duration,
-    /// Terminal backend to use for spawning sessions
-    pub backend_type: BackendType,
     /// Enable automatic merge when stages complete (default: true)
     pub auto_merge: bool,
     /// Base branch to use for stages with no dependencies (from config.toml)
@@ -70,7 +65,6 @@ impl Default for OrchestratorConfig {
             work_dir: PathBuf::from(".work"),
             repo_root: PathBuf::from("."),
             status_update_interval: Duration::from_secs(30),
-            backend_type: BackendType::Native,
             auto_merge: true,
             base_branch: None,
             skills_dir: None, // Will default to ~/.claude/skills/ when loading
@@ -91,10 +85,9 @@ pub struct Orchestrator {
     pub(super) monitor: Monitor,
     /// Track reported crashes to avoid duplicate messages
     pub(super) reported_crashes: HashSet<String>,
-    /// Backend dispatcher — owns the backends required by this run and
-    /// routes spawn/kill calls per-stage or per-session.
-    pub(super) dispatcher: Arc<BackendDispatcher>,
-    /// Backend-aware liveness probe (shared with the monitor thread).
+    /// Native terminal backend — spawns and kills sessions.
+    pub(super) native: Arc<NativeBackend>,
+    /// Liveness probe (shared with the monitor thread).
     pub(super) liveness: LivenessService,
     /// Skill index for generating skill recommendations in signals
     pub(super) skill_index: Option<SkillIndex>,
@@ -127,29 +120,8 @@ impl Orchestrator {
 
         let mut monitor = Monitor::new(monitor_config);
 
-        // Compute the per-stage backend overrides declared in the plan
-        // so the dispatcher only constructs the backends actually needed.
-        let stage_overrides = graph
-            .all_nodes()
-            .iter()
-            .filter_map(|node| {
-                crate::verify::transitions::load_stage(&node.id, &config.work_dir).ok()
-            })
-            .filter_map(|stage| {
-                stage.execution_backend().and_then(|backend| {
-                    // Validate at construction time so misconfigured
-                    // plans fail before the first poll.
-                    resolve_stage_backend(config.backend_type, Some(backend)).ok()
-                })
-            })
-            .collect::<Vec<_>>();
-
-        let needs = BackendNeeds::from_project_and_overrides(config.backend_type, &stage_overrides);
-        let dispatcher = Arc::new(
-            BackendDispatcher::for_plan(config.backend_type, needs, &config.work_dir)
-                .context("Failed to construct backend dispatcher")?,
-        );
-        let liveness = LivenessService::new(Arc::clone(&dispatcher));
+        let native = Arc::new(NativeBackend::new(config.work_dir.clone())?);
+        let liveness = LivenessService::new(Arc::clone(&native));
         monitor.set_liveness(liveness.clone());
 
         // Load skill index if skill routing is enabled
@@ -202,7 +174,7 @@ impl Orchestrator {
             active_worktrees: HashMap::new(),
             monitor,
             reported_crashes: HashSet::new(),
-            dispatcher,
+            native,
             liveness,
             skill_index,
             detected_languages,
