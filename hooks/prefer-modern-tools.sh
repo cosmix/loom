@@ -28,6 +28,11 @@ set -euo pipefail
 # Source shared utilities for strip_embedded_content()
 source "$(dirname "$0")/_common.sh"
 
+debug() {
+	[[ "${PREFER_MODERN_TOOLS_DEBUG:-}" == "1" ]] || return 0
+	echo "$@" >&2
+}
+
 # Read JSON input from stdin (Claude Code passes tool info via stdin)
 # Cross-platform timeout: gtimeout (macOS+coreutils), timeout (Linux), or plain cat
 if command -v gtimeout &>/dev/null; then
@@ -38,15 +43,8 @@ else
 	INPUT_JSON=$(cat 2>/dev/null || true)
 fi
 
-# Debug logging (fallback to /dev/null if log path not writable)
-DEBUG_LOG="/tmp/prefer-modern-debug.log"
-if ! touch "$DEBUG_LOG" 2>/dev/null; then
-	DEBUG_LOG=/dev/null
-fi
-{
-	echo "=== $(date) prefer-modern-tools ==="
-	echo "INPUT_JSON: $INPUT_JSON"
-} >>"$DEBUG_LOG" 2>&1
+debug "=== $(date) prefer-modern-tools ==="
+debug "INPUT_JSON: $INPUT_JSON"
 
 # Parse tool_name and tool_input from JSON using jq
 TOOL_NAME=$(echo "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
@@ -59,12 +57,9 @@ else
 	COMMAND=""
 fi
 
-# Debug parsed values
-{
-	echo "TOOL_NAME: $TOOL_NAME"
-	echo "COMMAND: $COMMAND"
-	echo "---"
-} >>"$DEBUG_LOG" 2>&1
+debug "TOOL_NAME: $TOOL_NAME"
+debug "COMMAND: $COMMAND"
+debug "---"
 
 # Only check Bash tool uses
 if [[ "$TOOL_NAME" != "Bash" ]]; then
@@ -81,7 +76,7 @@ STRIPPED_COMMAND=$(strip_embedded_content "$COMMAND")
 # Skip loom knowledge/memory commands — their text payloads often contain
 # words like "find" or "grep" that are not actual command invocations
 if echo "$COMMAND" | grep -qE '(^|[;&|[:space:]])loom[[:space:]]+(knowledge|memory)[[:space:]]'; then
-	echo "Skipping: loom knowledge/memory command" >>"$DEBUG_LOG" 2>&1
+	debug "Skipping: loom knowledge/memory command"
 	exit 0
 fi
 
@@ -101,7 +96,7 @@ uses_find() {
 
 # Check for grep usage - warn and guide to native tools first, then rg
 if uses_grep "$STRIPPED_COMMAND"; then
-	echo "WARNED: grep detected" >>"$DEBUG_LOG" 2>&1
+	debug "WARNED: grep detected"
 	jq -nc --arg ctx "LOOM_HOOK_WARN: Prefer Claude Code's native Grep tool or 'rg' (ripgrep) over 'grep'. Examples: grep -r \"pattern\" . → rg \"pattern\" ." \
 		'{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $ctx}}'
 	exit 0
@@ -109,12 +104,12 @@ fi
 
 # Check for find usage - warn and guide to native tools first, then fd
 if uses_find "$STRIPPED_COMMAND"; then
-	echo "WARNED: find detected" >>"$DEBUG_LOG" 2>&1
+	debug "WARNED: find detected"
 	jq -nc --arg ctx "LOOM_HOOK_WARN: Prefer Claude Code's native Glob tool or 'fd' over 'find'. Examples: find . -name \"*.txt\" → fd -e txt" \
 		'{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $ctx}}'
 	exit 0
 fi
 
 # Command is allowed as-is
-echo "Allowing command as-is" >>"$DEBUG_LOG" 2>&1
+debug "Allowing command as-is"
 exit 0
