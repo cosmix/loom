@@ -110,13 +110,24 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
 {{#if has_rust}}
 # Rust toolchain — download + SHA256 verify + execute rather than curl|sh.
 # rustup-init SHA256 must match the upstream release; rotate together.
+#
+# Install to /usr/local/{rustup,cargo} (world-readable), NOT /root/.cargo.
+# rustup-init runs as root here; if we let it default to $HOME, cargo lands
+# in /root/.cargo and the runtime `loom` user can't traverse into /root
+# (mode 0700 by default) — symlinks under /usr/local/bin/cargo resolve but
+# EACCES on the parent directory. Pinning CARGO_HOME/RUSTUP_HOME at build
+# time avoids that whole class of problem and bakes the env into every
+# downstream layer so cargo "just works" for the unprivileged runtime user.
 ARG RUSTUP_INIT_SHA256=6c30b75a75b28a96fd913a037c8581b580080b6ee9b8169a3c0feb1af7fe8caf
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:${PATH}
 RUN set -eux; \
     curl --proto '=https' --tlsv1.2 -sSf -o /tmp/rustup-init.sh https://sh.rustup.rs; \
     echo "${RUSTUP_INIT_SHA256}  /tmp/rustup-init.sh" | sha256sum -c -; \
-    sh /tmp/rustup-init.sh -y --default-toolchain stable; \
+    sh /tmp/rustup-init.sh -y --default-toolchain stable --no-modify-path --profile minimal --component clippy rustfmt; \
     rm /tmp/rustup-init.sh; \
-    ln -sf /root/.cargo/bin/* /usr/local/bin/ || true
+    chmod -R a+rX "${RUSTUP_HOME}" "${CARGO_HOME}"
 {{/if}}
 
 {{#if has_typescript}}
@@ -129,14 +140,19 @@ RUN npm install -g typescript@${TYPESCRIPT_VERSION} bun@${BUN_VERSION}
 
 {{#if has_python}}
 # Python toolchain (uv is project preference). uv installer SHA256 is pinned.
+#
+# Install to /usr/local/bin directly. Same rationale as the Rust block:
+# the default install location (/root/.local/bin) is unreadable by the
+# unprivileged runtime user, and a symlink under /usr/local/bin can't
+# resolve through a 0700 parent directory.
 ARG UV_INSTALL_SHA256=88c5cfdc6dd6df1a52e8bdbcf60d8f3e84bd09a3edd14e7c2f50e7d39ee52f96
+ENV UV_INSTALL_DIR=/usr/local/bin
 RUN set -eux; \
     curl -LsSf -o /tmp/uv-install.sh https://astral.sh/uv/install.sh; \
     echo "${UV_INSTALL_SHA256}  /tmp/uv-install.sh" | sha256sum -c - || \
         echo "warning: uv installer SHA256 mismatch (rotate UV_INSTALL_SHA256)"; \
     sh /tmp/uv-install.sh; \
-    rm /tmp/uv-install.sh; \
-    ln -sf /root/.local/bin/uv /usr/local/bin/uv
+    rm /tmp/uv-install.sh
 {{/if}}
 
 {{#if has_go}}

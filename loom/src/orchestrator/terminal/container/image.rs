@@ -413,6 +413,46 @@ mod tests {
         assert!(!out.contains(TS_MARKER));
     }
 
+    // Regression: rustup-init runs as root during image build; if we let it
+    // default to $HOME, cargo lands in /root/.cargo and the unprivileged
+    // `loom` runtime user can't traverse /root (mode 0700) to reach the
+    // symlinks under /usr/local/bin. CARGO_HOME/RUSTUP_HOME must be pinned
+    // to a world-readable location so cargo is usable from the runtime user.
+    #[test]
+    fn render_dockerfile_rust_install_is_world_readable() {
+        let out = render_dockerfile("rust-deadbeef").unwrap();
+        assert!(
+            out.contains("CARGO_HOME=/usr/local/cargo"),
+            "CARGO_HOME must be pinned to /usr/local/cargo: {out}"
+        );
+        assert!(
+            out.contains("RUSTUP_HOME=/usr/local/rustup"),
+            "RUSTUP_HOME must be pinned to /usr/local/rustup: {out}"
+        );
+        // Catch the specific broken pattern: symlinking from /root/.cargo
+        // into /usr/local/bin. Comments may mention /root/.cargo as
+        // documentation, so don't reject the substring outright.
+        assert!(
+            !out.contains("ln -sf /root/.cargo"),
+            "rust install must not symlink out of /root/.cargo: {out}"
+        );
+    }
+
+    // Regression: same class of bug for uv. The default installer drops
+    // into /root/.local/bin, which is unreachable from the runtime user.
+    #[test]
+    fn render_dockerfile_python_install_is_world_readable() {
+        let out = render_dockerfile("python-deadbeef").unwrap();
+        assert!(
+            out.contains("UV_INSTALL_DIR=/usr/local/bin"),
+            "uv must install directly into /usr/local/bin: {out}"
+        );
+        assert!(
+            !out.contains("ln -sf /root/.local"),
+            "uv install must not symlink out of /root/.local: {out}"
+        );
+    }
+
     // --- cache_dir ---
 
     #[test]
