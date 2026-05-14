@@ -1,39 +1,37 @@
-//! Backend-aware session liveness probe.
+//! Session liveness probe.
 //!
 //! Replaces the legacy `kill -0 <session.pid>` checks scattered across
-//! the monitor with a single service that delegates to the right
-//! backend's `is_session_alive`. `LivenessService::is_alive` routes
-//! through the session's `backend` field so each runtime answers for
-//! its own sessions.
+//! the monitor with a single service that delegates to the native
+//! backend's `is_session_alive`.
 
 use anyhow::Result;
 use std::sync::Arc;
 
-use super::terminal::dispatcher::BackendDispatcher;
+use super::terminal::native::NativeBackend;
 use crate::models::session::Session;
 
 /// How a [`LivenessService`] resolves liveness for a given session.
 #[derive(Clone)]
 enum LivenessSource {
-    /// Production: route via the backend dispatcher.
-    Dispatcher(Arc<BackendDispatcher>),
+    /// Production: route via the native backend.
+    Native(Arc<NativeBackend>),
     /// Test-only: every probe returns this fixed value.
     Fixed(bool),
 }
 
-/// Backend-aware liveness probe.
+/// Session liveness probe.
 ///
-/// Holds an `Arc<BackendDispatcher>` so the monitor (which runs on its
-/// own thread) and other callers can share a single dispatcher instance.
+/// Holds an `Arc<NativeBackend>` so the monitor (which runs on its
+/// own thread) and other callers can share a single backend instance.
 #[derive(Clone)]
 pub struct LivenessService {
     source: LivenessSource,
 }
 
 impl LivenessService {
-    pub fn new(dispatcher: Arc<BackendDispatcher>) -> Self {
+    pub fn new(native: Arc<NativeBackend>) -> Self {
         Self {
-            source: LivenessSource::Dispatcher(dispatcher),
+            source: LivenessSource::Native(native),
         }
     }
 
@@ -52,7 +50,7 @@ impl LivenessService {
     /// for that tick).
     pub fn is_alive(&self, session: &Session) -> Result<bool> {
         match &self.source {
-            LivenessSource::Dispatcher(d) => d.for_session(session).is_session_alive(session),
+            LivenessSource::Native(b) => b.is_session_alive(session),
             LivenessSource::Fixed(v) => Ok(*v),
         }
     }
