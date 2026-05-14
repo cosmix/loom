@@ -54,10 +54,15 @@ fn window_exists_for_terminal(title: &str, terminal: &super::emulator::TerminalE
 
 /// Build the `claude` invocation string shared by all native spawn sites.
 ///
-/// Produces `"{claude_path} --model {model} --effort {effort}[ --remote-control] {escaped_prompt}"`.
+/// Produces `"{claude_path} --model {model} --effort {effort} {escaped_prompt}[ --remote-control]"`.
 /// The `--remote-control` flag is appended only when `remote_control_enabled`
 /// is true — `claude --remote-control` exits non-zero when its prerequisites
 /// are unmet, so it must never be passed unconditionally.
+///
+/// `--remote-control [name]` takes an *optional* argument. It MUST come after
+/// the positional prompt: placed before it, the arg parser swallows the
+/// prompt as the RC session name and claude starts with no initial prompt
+/// (the session sits idle / "stuck").
 ///
 /// `model` and `effort` are interpolated verbatim; callers are responsible for
 /// any shell-escaping (matching the pre-existing per-site behavior).
@@ -73,7 +78,7 @@ fn build_claude_command(
     } else {
         ""
     };
-    format!("{claude_path} --model {model} --effort {effort}{remote_control_flag} {escaped_prompt}")
+    format!("{claude_path} --model {model} --effort {effort} {escaped_prompt}{remote_control_flag}")
 }
 
 /// Native terminal backend - spawns sessions in native terminal windows
@@ -597,11 +602,12 @@ mod tests {
         let cmd = build_claude_command("/usr/bin/claude", "sonnet", "high", true, "'prompt'");
         assert_eq!(
             cmd,
-            "/usr/bin/claude --model sonnet --effort high --remote-control 'prompt'"
+            "/usr/bin/claude --model sonnet --effort high 'prompt' --remote-control"
         );
-        // The flag must sit before the prompt positional.
+        // The flag must sit AFTER the prompt positional, otherwise
+        // `--remote-control [name]` swallows the prompt as its optional arg.
         let rc_idx = cmd.find("--remote-control").unwrap();
         let prompt_idx = cmd.find("'prompt'").unwrap();
-        assert!(rc_idx < prompt_idx);
+        assert!(prompt_idx < rc_idx);
     }
 }
