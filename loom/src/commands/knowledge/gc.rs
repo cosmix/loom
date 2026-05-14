@@ -39,7 +39,9 @@ pub fn gc(model: Option<String>, dry_run: bool, quick: bool) -> Result<()> {
     print_compaction_targets(&metrics);
 
     let claude_path = find_claude_path()?;
-    let effective_model = model.unwrap_or_else(|| "sonnet".to_string());
+    // GC is judgement-heavy: deciding what is stale vs. precious requires
+    // architectural taste, so default to Opus with the 1M context window.
+    let effective_model = model.unwrap_or_else(|| "opus[1m]".to_string());
 
     // NOTE: knowledge file contents are deliberately NOT embedded in the prompt.
     // The session Reads and Edits those files directly — embedding them would be
@@ -204,16 +206,26 @@ fn build_gc_system_prompt(model: &str, dry_run: bool, metrics: &GcMetrics) -> St
          - DO NOT change the file structure — top-level headers (## Architecture, etc.) stay.\n\
          - DO NOT invent new content. Only condense, dedupe, and remove stale.\n\
          - File paths with line numbers are precious context — preserve them.\n\
+         - DO NOT remove information that helps loom-spawned agents self-improve: \
+         recorded mistakes, gotchas, prevention rules, root-cause analyses, and \
+         hard-won lessons. This is the highest-value content in the knowledge base — \
+         condense its wording if verbose, but never drop the lesson itself.\n\
          - Use `loom knowledge audit` to verify your work; do NOT run `loom knowledge gc` (recursion).\n\n\
          ## Targets (these files need work)\n\n\
          {targets_str}\n\n\
          {mode_clause}\n\n\
          ## Strategy\n\n\
-         Use parallel Agent calls (with model: \"{model}\") to compact files independently \
-         since each knowledge file is a separate concern. After agents finish, do a final \
-         cross-file pass to check for content that should move between files (e.g., a \
-         pattern in architecture.md that belongs in patterns.md).\n\n\
-         When spawning Agent subagents, ALWAYS set model: \"{model}\".\n\n\
+         CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 is set — use an agent team for this \
+         work, not fire-and-forget subagents. Compaction needs coordination: teammates \
+         must surface content that belongs in a different file, and you must reconcile \
+         overlapping edits. Create a team with one teammate per knowledge file that \
+         needs work (use model \"{model}\" for every teammate), assign each teammate its \
+         file, and have them report cross-file moves back to you. YOU are the team lead: \
+         you own the final cross-file synthesis pass and you shut down ALL teammates \
+         before finishing. After teammates finish, do a final cross-file pass to check \
+         for content that should move between files (e.g., a pattern in architecture.md \
+         that belongs in patterns.md).\n\n\
+         When spawning teammates or Agent subagents, ALWAYS use model: \"{model}\".\n\n\
          ## Knowledge Files\n\n\
          The knowledge files are at doc/loom/knowledge/ — Read them directly. \
          Their contents are intentionally NOT embedded here.\n",
@@ -228,8 +240,11 @@ fn build_gc_initial_prompt(model: &str, dry_run: bool) -> String {
     };
     format!(
         "Compact the knowledge files at doc/loom/knowledge/. \
-         Spawn parallel agents (set model: \"{model}\" on each) — one per file that needs work \
-         — to dedupe headers, summarize promoted blocks, and remove stale content. \
+         Create an agent team (model \"{model}\" for every teammate) — one teammate per \
+         file that needs work — to dedupe headers, summarize promoted blocks, and remove \
+         stale content. Preserve recorded mistakes, gotchas, and prevention rules that \
+         help loom-spawned agents self-improve — condense wording, never drop the lesson. \
+         As team lead, do the final cross-file synthesis pass and shut down all teammates. \
          {action}",
     )
 }
@@ -307,8 +322,8 @@ mod tests {
 
     #[test]
     fn test_gc_initial_prompt_embeds_model() {
-        let prompt = build_gc_initial_prompt("opus", false);
-        assert!(prompt.contains("model: \"opus\""));
+        let prompt = build_gc_initial_prompt("opus[1m]", false);
+        assert!(prompt.contains("model \"opus[1m]\""));
         assert!(prompt.contains("Compact the files via Edit/Write"));
     }
 
@@ -316,6 +331,30 @@ mod tests {
     fn test_gc_initial_prompt_dry_run() {
         let prompt = build_gc_initial_prompt("sonnet", true);
         assert!(prompt.contains("Do NOT write"));
+    }
+
+    #[test]
+    fn test_gc_initial_prompt_uses_agent_team() {
+        let prompt = build_gc_initial_prompt("opus[1m]", false);
+        assert!(prompt.contains("agent team"));
+    }
+
+    #[test]
+    fn test_gc_system_prompt_uses_agent_team() {
+        let metrics = fake_metrics_recommended();
+        let prompt = build_gc_system_prompt("opus[1m]", false, &metrics);
+        assert!(prompt.contains("agent team"));
+        assert!(prompt.contains("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"));
+    }
+
+    #[test]
+    fn test_gc_system_prompt_protects_self_improvement_content() {
+        // Recorded mistakes / gotchas / prevention rules are the highest-value
+        // content — GC must condense but never drop them.
+        let metrics = fake_metrics_recommended();
+        let prompt = build_gc_system_prompt("opus[1m]", false, &metrics);
+        assert!(prompt.contains("self-improve"));
+        assert!(prompt.contains("prevention rules"));
     }
 
     #[test]

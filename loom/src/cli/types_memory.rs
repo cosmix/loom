@@ -74,7 +74,7 @@ pub enum KnowledgeCommands {
 
     /// Spawn Claude session to compact knowledge files (dedupe, summarize, drop stale)
     Gc {
-        /// Model to use for the Claude session (e.g., "sonnet", "opus")
+        /// Model for the Claude session (default: "opus[1m]" — GC is judgement-heavy)
         #[arg(long)]
         model: Option<String>,
 
