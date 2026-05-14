@@ -43,6 +43,11 @@ fn execute_foreground(
     auto_merge: bool,
     work_dir: &WorkDir,
 ) -> Result<()> {
+    // Advisory Remote Control preflight — never aborts startup.
+    if let Ok(claude_path) = crate::claude::find_claude_path() {
+        crate::remote_control::run_startup_preflight(&claude_path, work_dir.root());
+    }
+
     let (graph, plan_sandbox) = build_execution_graph(work_dir)?;
 
     // Parse config.toml to extract base_branch

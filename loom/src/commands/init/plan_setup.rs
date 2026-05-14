@@ -161,6 +161,14 @@ pub fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<usiz
     work_dir::write_plan_sandbox(work_dir.root(), &parsed_plan.metadata.loom.sandbox)
         .context("Failed to persist plan-level sandbox config")?;
 
+    // Persist a default [remote_control] section so the operator has a
+    // documented, editable toggle in .work/config.toml from the start.
+    work_dir::write_remote_control_config(
+        work_dir.root(),
+        &crate::remote_control::RemoteControlConfig::default(),
+    )
+    .context("Failed to persist remote control config")?;
+
     println!(
         "  {} Config saved {}",
         "✓".green().bold(),
