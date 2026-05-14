@@ -133,13 +133,13 @@ Total: 22 visible commands + 1 hidden (complete for dynamic completions). Dispat
 
 ## Terminal Backend
 
-- `orchestrator/terminal/mod.rs` - TerminalBackend trait (spawn/kill/alive)
-- `orchestrator/terminal/dispatcher.rs` - BackendDispatcher; routes spawn/kill/liveness by backend
+- `orchestrator/terminal/mod.rs` - terminal module root; re-exports `TerminalEmulator`
+- `orchestrator/terminal/native/mod.rs` - NativeBackend (spawn/kill/alive)
 - `orchestrator/terminal/native/spawner.rs` - Claude Code session spawning (native)
 - `orchestrator/terminal/emulator.rs` - 11 terminal emulator configs
 - `orchestrator/terminal/native/detection.rs` - Auto-detect terminal
 - `orchestrator/terminal/native/pid_tracking.rs` - Wrapper script, PID tracking, env vars
-- `orchestrator/liveness.rs` - LivenessService: wraps BackendDispatcher for monitor thread; fixed_for_tests() stub for unit tests
+- `orchestrator/liveness.rs` - LivenessService: wraps NativeBackend for monitor thread; fixed_for_tests() stub for unit tests
 
 ## Handoff System
 
@@ -165,7 +165,6 @@ Total: 22 visible commands + 1 hidden (complete for dynamic completions). Dispat
 ## Schema-to-Runtime Conversion
 
 - `plan/schema/types.rs` - StageDefinition (YAML input); SandboxConfig + StageSandboxConfig with `permission_mode: Option<PermissionMode>`
-- `plan/schema/execution.rs` - PlanExecutionConfig, ProjectExecutionConfig
 - `models/stage/types.rs` - Stage (runtime model)
 - `commands/init/plan_setup.rs` - create_stage_from_definition(), detect_stage_type()
 
@@ -247,9 +246,9 @@ Internal modules: `extraction.rs` (YAML block extraction, plan name), `validatio
 
 ## Hook System (loom/src/hooks/)
 
-- `hooks/mod.rs` - Module root; re-exports `HookEvent`, `HooksConfig`, `generate_hooks_settings`, `setup_hooks_for_worktree`, `setup_container_main_session_settings`, `find_hooks_dir`
+- `hooks/mod.rs` - Module root; re-exports `HookEvent`, `HooksConfig`, `generate_hooks_settings`, `setup_hooks_for_worktree`, `find_hooks_dir`
 - `hooks/config.rs` - `HookEvent` enum (6 variants) + `HooksConfig` struct + `to_settings_hooks()`
-- `hooks/generator.rs` - `generate_hooks_settings()` (merge session hooks into settings.json), `setup_hooks_for_worktree()`, `setup_container_main_session_settings()`, `find_hooks_dir()`
+- `hooks/generator.rs` - `generate_hooks_settings()` (merge session hooks into settings.json), `setup_hooks_for_worktree()`, `find_hooks_dir()`
 - `hooks/events.rs` - `log_hook_event()`, `read_recent_events()`, event log CRUD
 - `hooks/validators/` - Validator scripts for PreToolUse hooks (commit-filter, git-add-guard, worktree-isolation, prefer-modern-tools)
 
@@ -407,9 +406,8 @@ Adjudicator HTTP client should mirror this pattern with `user_agent("loom-adjudi
 
 `daemon/protocol.rs:83-97` — `Capability` enum:
 
-- `User` — Ping, Subscribe, Unsubscribe, CompleteStageContainer
-- `Admin` — Stop (only operation currently gated)
-- Stage 2 adds: all `--no-verify`, `--force-unsafe`, `--assume-merged` paths gate on `Admin`
+- `User` — Ping, Subscribe, Unsubscribe
+- `Admin` — Stop; all `--no-verify`, `--force-unsafe`, `--assume-merged` paths also gate on `Admin`
 
 ## Dispute Criteria — Current Implementation
 

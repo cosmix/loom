@@ -292,21 +292,21 @@
 
 **Prevention:** Add `#[serde(default)]` to backend-related session fields and ensure they are set before the session is written to disk.
 
-## Liveness: Monitor Must Route Through TerminalBackend
+## Liveness: Monitor Must Route Through LivenessService
 
 **Mistake:** Monitoring thread reads the PID from the session file and calls `kill -0 <pid>` directly.
 
 **Prevention:** Always route session liveness through `LivenessService::is_alive(session)`. Never `kill -0` directly in the monitor.
 
-**Fix:** `LivenessService` added in `orchestrator/liveness.rs`. Monitor thread holds `LivenessService`, not a raw `BackendDispatcher`.
+**Fix:** `LivenessService` added in `orchestrator/liveness.rs`, wrapping `Arc<NativeBackend>`. The monitor thread holds the `LivenessService`, not a raw backend handle.
 
-## Run-Path Coverage: All Spawn Sites Must Use the Dispatcher
+## Run-Path Coverage: All Spawn Sites Must Use the Shared Backend
 
-**Mistake:** Adding the BackendDispatcher for the main orchestrator loop but forgetting to update other spawn paths: foreground mode, daemon startup, merge resolver spawner, continuation (handoff) spawner, auto-merge spawner.
+**Mistake:** Wiring a session-spawning change into the main orchestrator loop but forgetting the other spawn paths: foreground mode, daemon startup, merge resolver spawner, continuation (handoff) spawner, auto-merge spawner.
 
-**Why:** Sessions are spawned from multiple entry points beyond the main orchestrator. Each missing path falls back to a hard-coded NativeBackend.
+**Why:** Sessions are spawned from multiple entry points beyond the main orchestrator. Each missed path drifts from the shared `Arc<NativeBackend>` the orchestrator holds.
 
-**Prevention:** When wiring a new backend dispatcher, `rg` for all `spawn_session\|spawn_merge_session\|spawn_knowledge_session` call sites before considering the work done. Typically 5+ sites: orchestrator main loop, foreground spawner, merge_handler, continuation, auto_merge.
+**Prevention:** When changing session spawning, `rg` for all `spawn_session\|spawn_merge_session\|spawn_knowledge_session` call sites before considering the work done. Typically 5+ sites: orchestrator main loop, foreground spawner, merge_handler, continuation, auto_merge.
 
 ## toml_edit vs toml: Different Use Cases
 
