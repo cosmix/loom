@@ -25,7 +25,7 @@ impl Orchestrator {
         self.reported_crashes.insert(session_id.to_string());
 
         if let Some(sid) = stage_id {
-            self.active_sessions.remove(&sid);
+            let crashed_session = self.active_sessions.remove(&sid);
 
             let mut stage = self.load_stage(&sid)?;
 
@@ -33,6 +33,27 @@ impl Orchestrator {
             if matches!(stage.status, StageStatus::Completed) {
                 // Stage already completed successfully, just clean up
                 return Ok(());
+            }
+
+            // Remote Control fast-fail fallback: `claude --remote-control` exits
+            // non-zero when its prerequisites are unmet. If Remote Control is
+            // currently active and a native session crashed very soon after
+            // spawn, treat that as "the flag is unsupported here" — write the
+            // `.work/remote_control-unsupported` marker so `resolve()` returns
+            // false on the upcoming retry (which omits `--remote-control`).
+            // Best-effort: marker write errors are intentionally ignored.
+            const FAST_FAIL_WINDOW_SECS: i64 = 15;
+            if let Some(session) = &crashed_session {
+                let crashed_fast =
+                    (Utc::now() - session.created_at).num_seconds() <= FAST_FAIL_WINDOW_SECS;
+                if crashed_fast && crate::remote_control::resolve(&self.config.work_dir) {
+                    let _ = crate::remote_control::write_unsupported_marker(&self.config.work_dir);
+                    clear_status_line();
+                    eprintln!(
+                        "Stage '{sid}' crashed within {FAST_FAIL_WINDOW_SECS}s of spawn; \
+                         disabling Remote Control for the rest of this run."
+                    );
+                }
             }
 
             clear_status_line();

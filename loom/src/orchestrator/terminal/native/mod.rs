@@ -52,6 +52,30 @@ fn window_exists_for_terminal(title: &str, terminal: &super::emulator::TerminalE
     }
 }
 
+/// Build the `claude` invocation string shared by all native spawn sites.
+///
+/// Produces `"{claude_path} --model {model} --effort {effort}[ --remote-control] {escaped_prompt}"`.
+/// The `--remote-control` flag is appended only when `remote_control_enabled`
+/// is true — `claude --remote-control` exits non-zero when its prerequisites
+/// are unmet, so it must never be passed unconditionally.
+///
+/// `model` and `effort` are interpolated verbatim; callers are responsible for
+/// any shell-escaping (matching the pre-existing per-site behavior).
+fn build_claude_command(
+    claude_path: &str,
+    model: &str,
+    effort: &str,
+    remote_control_enabled: bool,
+    escaped_prompt: &str,
+) -> String {
+    let remote_control_flag = if remote_control_enabled {
+        " --remote-control"
+    } else {
+        ""
+    };
+    format!("{claude_path} --model {model} --effort {effort}{remote_control_flag} {escaped_prompt}")
+}
+
 /// Native terminal backend - spawns sessions in native terminal windows
 pub struct NativeBackend {
     /// The terminal emulator to use
@@ -118,14 +142,15 @@ impl NativeBackend {
 
         // Find claude's absolute path (needed for macOS where terminals don't inherit PATH)
         let claude_path = find_claude_path()?;
-        let model_flag = format!(
-            " --model {}",
-            escape(Cow::Borrowed(stage.effective_model()))
-        );
-        let effort_flag = format!(" --effort {}", stage.effective_reasoning_effort());
-        let claude_cmd = format!(
-            "{}{model_flag}{effort_flag} {escaped_prompt}",
-            claude_path.display()
+        let model = escape(Cow::Borrowed(stage.effective_model()));
+        let effort = stage.effective_reasoning_effort();
+        let remote_control_enabled = crate::remote_control::resolve(&self.work_dir);
+        let claude_cmd = build_claude_command(
+            &claude_path.display().to_string(),
+            &model,
+            effort,
+            remote_control_enabled,
+            &escaped_prompt,
         );
 
         // Create wrapper script that writes PID before exec'ing claude
@@ -196,11 +221,13 @@ impl NativeBackend {
         // Merge conflict resolution always runs on opus[1m] with xhigh reasoning,
         // regardless of the originating stage's model/effort — conflicts benefit
         // from the strongest model and maximum deliberation.
-        let model_flag = " --model opus[1m]".to_string();
-        let effort_flag = " --effort xhigh".to_string();
-        let claude_cmd = format!(
-            "{}{model_flag}{effort_flag} {escaped_prompt}",
-            claude_path.display()
+        let remote_control_enabled = crate::remote_control::resolve(&self.work_dir);
+        let claude_cmd = build_claude_command(
+            &claude_path.display().to_string(),
+            "opus[1m]",
+            "xhigh",
+            remote_control_enabled,
+            &escaped_prompt,
         );
 
         // Create wrapper script for merge session
@@ -271,11 +298,13 @@ impl NativeBackend {
         let claude_path = find_claude_path()?;
         // Base-branch conflict resolution always runs on opus[1m] with xhigh
         // reasoning — same rationale as merge conflict sessions.
-        let model_flag = " --model opus[1m]".to_string();
-        let effort_flag = " --effort xhigh".to_string();
-        let claude_cmd = format!(
-            "{}{model_flag}{effort_flag} {escaped_prompt}",
-            claude_path.display()
+        let remote_control_enabled = crate::remote_control::resolve(&self.work_dir);
+        let claude_cmd = build_claude_command(
+            &claude_path.display().to_string(),
+            "opus[1m]",
+            "xhigh",
+            remote_control_enabled,
+            &escaped_prompt,
         );
 
         // Create wrapper script for base conflict session
@@ -343,14 +372,15 @@ impl NativeBackend {
 
         // Find claude's absolute path (needed for macOS where terminals don't inherit PATH)
         let claude_path = find_claude_path()?;
-        let model_flag = format!(
-            " --model {}",
-            escape(Cow::Borrowed(stage.effective_model()))
-        );
-        let effort_flag = format!(" --effort {}", stage.effective_reasoning_effort());
-        let claude_cmd = format!(
-            "{}{model_flag}{effort_flag} {escaped_prompt}",
-            claude_path.display()
+        let model = escape(Cow::Borrowed(stage.effective_model()));
+        let effort = stage.effective_reasoning_effort();
+        let remote_control_enabled = crate::remote_control::resolve(&self.work_dir);
+        let claude_cmd = build_claude_command(
+            &claude_path.display().to_string(),
+            &model,
+            effort,
+            remote_control_enabled,
+            &escaped_prompt,
         );
 
         // Create wrapper script for knowledge session
@@ -550,5 +580,28 @@ mod tests {
         // No tracking_key and no stage_id → nothing to resolve.
         let session = Session::new();
         assert!(NativeBackend::window_title_and_pid_key(&session).is_none());
+    }
+
+    #[test]
+    fn build_claude_command_omits_remote_control_when_disabled() {
+        let cmd = build_claude_command("/usr/bin/claude", "opus[1m]", "xhigh", false, "'prompt'");
+        assert_eq!(
+            cmd,
+            "/usr/bin/claude --model opus[1m] --effort xhigh 'prompt'"
+        );
+        assert!(!cmd.contains("--remote-control"));
+    }
+
+    #[test]
+    fn build_claude_command_appends_remote_control_when_enabled() {
+        let cmd = build_claude_command("/usr/bin/claude", "sonnet", "high", true, "'prompt'");
+        assert_eq!(
+            cmd,
+            "/usr/bin/claude --model sonnet --effort high --remote-control 'prompt'"
+        );
+        // The flag must sit before the prompt positional.
+        let rc_idx = cmd.find("--remote-control").unwrap();
+        let prompt_idx = cmd.find("'prompt'").unwrap();
+        assert!(rc_idx < prompt_idx);
     }
 }
