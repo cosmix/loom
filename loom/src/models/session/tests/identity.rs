@@ -1,8 +1,7 @@
 use super::super::*;
-use crate::plan::schema::execution::BackendType;
 
 // =========================================================================
-// Runtime identity tests (backend, tracking_key, knowledge variant)
+// Runtime identity tests (tracking_key, knowledge variant)
 // =========================================================================
 
 #[test]
@@ -49,14 +48,6 @@ fn knowledge_constructor_derives_tracking_key() {
 }
 
 #[test]
-fn backend_default_is_native_and_settable() {
-    let mut session = Session::new();
-    assert_eq!(session.backend, BackendType::Native);
-    session.set_backend(BackendType::Native);
-    assert_eq!(session.backend, BackendType::Native);
-}
-
-#[test]
 fn legacy_session_without_new_fields_deserializes() {
     // Sessions written before runtime-identity fields existed must still parse.
     let legacy_json = r#"{
@@ -71,7 +62,6 @@ fn legacy_session_without_new_fields_deserializes() {
         "last_active": "2024-01-01T00:00:00Z"
     }"#;
     let session: Session = serde_json::from_str(legacy_json).unwrap();
-    assert_eq!(session.backend, BackendType::Native);
     assert!(session.tracking_key.is_empty());
     assert_eq!(session.session_type, SessionType::Stage);
 }

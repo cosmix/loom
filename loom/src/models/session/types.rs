@@ -2,8 +2,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use crate::plan::schema::execution::BackendType;
-
 /// The type of session being executed
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
@@ -79,10 +77,6 @@ pub struct Session {
     pub merge_target_branch: Option<String>,
 
     // ----- Runtime identity -----
-    /// Backend the session is running on.
-    /// Defaults to `Native` for sessions written before this field existed.
-    #[serde(default)]
-    pub backend: BackendType,
     /// Stable identifier used to find OS-level resources (terminal title)
     /// belonging to this session. Derived from
     /// `(stage_id, session_type)` via [`Session::derive_tracking_key`].

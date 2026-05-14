@@ -73,11 +73,6 @@ fn build_graph_impl(
             let sandbox = work_dir::read_plan_sandbox(work_dir_path)
                 .context("Failed to read persisted plan sandbox config")?
                 .unwrap_or_default();
-            // plan-level execution config is read for completeness so the
-            // call surface is symmetric — orchestrator consumers fetch it
-            // via `work_dir::read_plan_execution` directly when needed.
-            let _ = work_dir::read_plan_execution(work_dir_path)
-                .context("Failed to read persisted plan execution config")?;
             return Ok((graph, sandbox));
         }
     }

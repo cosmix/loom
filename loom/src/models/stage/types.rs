@@ -287,11 +287,6 @@ pub struct Stage {
     /// When set, Claude Code sessions for this stage use this effort level
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
-    /// Backend override for this stage's execution.
-    /// When `None`, falls back to the project-level setting in
-    /// `.work/config.toml` (`[project_execution]`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub execution_backend: Option<crate::plan::schema::execution::BackendType>,
     /// Whether the monitor has flagged this stage's session as possibly stuck.
     /// Derived at read time from `.work/monitor/soft-signals.jsonl`; never persisted
     /// to stage files (and never read back from them).
@@ -598,7 +593,6 @@ impl Default for Stage {
             regression_test: None,
             model: None,
             reasoning_effort: None,
-            execution_backend: None,
             is_possibly_stuck: false,
         }
     }

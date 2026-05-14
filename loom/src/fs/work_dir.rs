@@ -4,10 +4,7 @@ use std::path::{Path, PathBuf};
 use toml_edit::DocumentMut;
 
 use crate::fs::knowledge::KnowledgeDir;
-use crate::plan::schema::{
-    execution::{PlanExecutionConfig, ProjectExecutionConfig},
-    SandboxConfig,
-};
+use crate::plan::schema::SandboxConfig;
 
 /// Parsed config.toml structure
 #[derive(Debug, Clone)]
@@ -333,8 +330,7 @@ Do not manually edit these files unless you know what you're doing.
 //
 // All read/write to `.work/config.toml` MUST go through this module so that:
 //   * comments and unknown keys are preserved (toml_edit, not toml::Value),
-//   * structured sub-tables (`[plan_sandbox]`, `[plan_execution]`,
-//     `[project_execution]`) have one canonical location,
+//   * structured sub-tables (`[plan_sandbox]`) have one canonical location,
 //   * concurrent access serializes through the file lock used by other
 //     `fs/` writers when needed by callers.
 //
@@ -343,19 +339,12 @@ Do not manually edit these files unless you know what you're doing.
 //   [plan]
 //   source_path / plan_id / plan_name / base_branch
 //
-//   [project_execution]
-//   backend = "native"
-//
 //   [plan_sandbox]   # persisted snapshot of plan-level sandbox at init time
-//   [plan_execution] # persisted snapshot of plan-level execution config
 //
-// Section keys for the persisted plan-level config (see
-// `read_plan_sandbox` / `read_plan_execution`).
+// Section keys for the persisted plan-level config (see `read_plan_sandbox`).
 // ==========================================================================
 
 const PLAN_SANDBOX_SECTION: &str = "plan_sandbox";
-const PLAN_EXECUTION_SECTION: &str = "plan_execution";
-const PROJECT_EXECUTION_SECTION: &str = "project_execution";
 
 fn config_path(work_dir: &Path) -> PathBuf {
     work_dir.join("config.toml")
@@ -439,16 +428,6 @@ fn write_section<T: serde::Serialize>(work_dir: &Path, section: &str, value: &T)
     write_config(work_dir, &doc)
 }
 
-/// Read the persisted project-level execution config (`[project_execution]`).
-pub fn read_project_execution(work_dir: &Path) -> Result<Option<ProjectExecutionConfig>> {
-    read_section(work_dir, PROJECT_EXECUTION_SECTION)
-}
-
-/// Persist the project-level execution config (`[project_execution]`).
-pub fn write_project_execution(work_dir: &Path, cfg: &ProjectExecutionConfig) -> Result<()> {
-    write_section(work_dir, PROJECT_EXECUTION_SECTION, cfg)
-}
-
 /// Read the persisted plan-level sandbox config (`[plan_sandbox]`).
 ///
 /// Returns `Ok(None)` if the section is missing — callers should fall back
@@ -460,16 +439,6 @@ pub fn read_plan_sandbox(work_dir: &Path) -> Result<Option<SandboxConfig>> {
 /// Persist the plan-level sandbox config (`[plan_sandbox]`).
 pub fn write_plan_sandbox(work_dir: &Path, sandbox: &SandboxConfig) -> Result<()> {
     write_section(work_dir, PLAN_SANDBOX_SECTION, sandbox)
-}
-
-/// Read the persisted plan-level execution config (`[plan_execution]`).
-pub fn read_plan_execution(work_dir: &Path) -> Result<Option<PlanExecutionConfig>> {
-    read_section(work_dir, PLAN_EXECUTION_SECTION)
-}
-
-/// Persist the plan-level execution config (`[plan_execution]`).
-pub fn write_plan_execution(work_dir: &Path, exec: &PlanExecutionConfig) -> Result<()> {
-    write_section(work_dir, PLAN_EXECUTION_SECTION, exec)
 }
 
 #[cfg(test)]
@@ -629,7 +598,6 @@ mod tests {
 
     // ----- Centralized config.toml API tests -----
 
-    use crate::plan::schema::execution::{BackendType, ProjectExecutionConfig};
     use crate::plan::schema::SandboxConfig;
 
     fn init_work(temp: &TempDir) -> PathBuf {
@@ -680,17 +648,15 @@ mod tests {
         let original = "# Header\n[plan]\nsource_path = \"a\"\nplan_id = \"id\"\nplan_name = \"n\"\nbase_branch = \"main\"\n# trailing comment\n";
         fs::write(work.join("config.toml"), original).unwrap();
 
-        let exec = ProjectExecutionConfig {
-            backend: BackendType::Native,
-        };
-        write_project_execution(&work, &exec).unwrap();
+        let mut sandbox = SandboxConfig::default();
+        sandbox.network.allowed_domains = vec!["github.com".to_string()];
+        write_plan_sandbox(&work, &sandbox).unwrap();
 
         let after = fs::read_to_string(work.join("config.toml")).unwrap();
         assert!(after.contains("[plan]"));
         assert!(after.contains("source_path = \"a\""));
         assert!(after.contains("# Header"));
-        assert!(after.contains("[project_execution]"));
-        assert!(after.contains("backend = \"native\""));
+        assert!(after.contains("[plan_sandbox]"));
     }
 
     #[test]
@@ -703,7 +669,33 @@ mod tests {
         )
         .unwrap();
         assert!(read_plan_sandbox(&work).unwrap().is_none());
-        assert!(read_plan_execution(&work).unwrap().is_none());
-        assert!(read_project_execution(&work).unwrap().is_none());
+    }
+
+    /// Regression: a stale `[project_execution]` table left over from the
+    /// removed multi-backend scaffolding must not break config reads. The
+    /// table is an unknown section now — `toml_edit` round-trips it
+    /// harmlessly and the normal read path is unaffected.
+    #[test]
+    fn stale_project_execution_section_is_harmless() {
+        let temp = TempDir::new().unwrap();
+        let work = init_work(&temp);
+        let original = "[plan]\nsource_path = \"x\"\nplan_id = \"id\"\nplan_name = \"n\"\nbase_branch = \"main\"\n\n[project_execution]\nbackend = \"native\"\n";
+        fs::write(work.join("config.toml"), original).unwrap();
+
+        // Normal config read path succeeds despite the stale table.
+        let doc = read_config(&work).unwrap();
+        assert!(doc.get("plan").is_some());
+
+        // The same path used by other section readers also succeeds and the
+        // stale table has no runtime effect (no known section consumes it).
+        assert!(read_plan_sandbox(&work).unwrap().is_none());
+
+        // Writing an unrelated section preserves the stale table verbatim —
+        // harmless, no behavior change.
+        let sandbox = SandboxConfig::default();
+        write_plan_sandbox(&work, &sandbox).unwrap();
+        let after = fs::read_to_string(work.join("config.toml")).unwrap();
+        assert!(after.contains("[project_execution]"));
+        assert!(after.contains("[plan_sandbox]"));
     }
 }

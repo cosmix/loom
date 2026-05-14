@@ -1,7 +1,6 @@
 //! Plan YAML schema definitions and validation
 
 mod detect;
-pub mod execution;
 mod types;
 mod validation;
 
@@ -9,9 +8,6 @@ mod validation;
 mod tests;
 
 pub use detect::detect_stage_type;
-pub use execution::{
-    BackendType, PlanExecutionConfig, ProjectExecutionConfig, StageExecutionConfig,
-};
 pub use types::{
     AcceptanceCriterion, AdjudicationConfig, ChangeImpactConfig, ChangeImpactPolicy, DeadCodeCheck,
     FilesystemConfig, LinuxConfig, LoomConfig, LoomMetadata, NetworkConfig, PermissionMode,

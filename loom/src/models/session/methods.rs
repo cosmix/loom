@@ -4,7 +4,6 @@ use std::path::PathBuf;
 
 use super::types::{Session, SessionStatus, SessionType};
 use crate::models::constants::{CONTEXT_CRITICAL_THRESHOLD, DEFAULT_CONTEXT_LIMIT};
-use crate::plan::schema::execution::BackendType;
 
 impl Session {
     pub fn new() -> Self {
@@ -24,7 +23,6 @@ impl Session {
             session_type: SessionType::default(),
             merge_source_branch: None,
             merge_target_branch: None,
-            backend: BackendType::default(),
             tracking_key: String::new(),
         }
     }
@@ -107,12 +105,6 @@ impl Session {
         // even before the session has a PID.
         self.tracking_key = Self::derive_tracking_key(&stage_id, self.session_type);
         self.stage_id = Some(stage_id);
-        self.last_active = Utc::now();
-    }
-
-    /// Set the backend this session runs on. Refreshes `last_active`.
-    pub fn set_backend(&mut self, backend: BackendType) {
-        self.backend = backend;
         self.last_active = Utc::now();
     }
 
