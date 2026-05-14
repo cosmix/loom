@@ -31,14 +31,15 @@ pub fn execute(model: Option<String>, skip_map: bool, quick: bool) -> Result<()>
         println!("  {} Codebase mapped", "✓".green());
     }
 
-    // Read existing knowledge for context embedding
-    let existing_knowledge = super::spawn::read_existing_knowledge(&knowledge);
-
     // Spawn Claude session
     let effective_model = model.unwrap_or_else(|| "sonnet".to_string());
 
-    // Build prompts (model is embedded so subagents use the same model)
-    let system_prompt = build_system_prompt(&existing_knowledge, &effective_model);
+    // Build prompts (model is embedded so subagents use the same model).
+    // NOTE: knowledge file contents are deliberately NOT embedded in the prompt.
+    // The session Reads those files directly — embedding them would, at scale,
+    // blow past Linux's 128 KiB per-argv-entry limit (MAX_ARG_STRLEN), failing
+    // with "Argument list too long".
+    let system_prompt = build_system_prompt(&effective_model);
     let initial_prompt = build_initial_prompt(&effective_model);
 
     // Write sandbox settings to restrict Claude's access
@@ -99,8 +100,8 @@ pub fn execute(model: Option<String>, skip_map: bool, quick: bool) -> Result<()>
 }
 
 /// Build the system prompt for the Claude session.
-fn build_system_prompt(existing_knowledge: &str, model: &str) -> String {
-    let mut prompt = format!(
+fn build_system_prompt(model: &str) -> String {
+    format!(
         "You are a senior software architect exploring this codebase to populate knowledge files.\n\n\
          ## Your Goal\n\n\
          Populate the project's knowledge files using `loom knowledge update` commands.\n\n\
@@ -112,6 +113,10 @@ fn build_system_prompt(existing_knowledge: &str, model: &str) -> String {
          5. Focus on PATTERNS and RELATIONSHIPS, not just listing files\n\
          6. Each knowledge update should add a complete section with a ## heading\n\
          7. When spawning Agent subagents, ALWAYS set model: \"{model}\" so they use the same model\n\n\
+         ## Existing Knowledge\n\n\
+         The knowledge files already exist at doc/loom/knowledge/ and may contain prior \
+         findings. BEFORE writing, Read the file you intend to update so you do NOT \
+         duplicate existing content — only add NEW discoveries.\n\n\
          ## Strategy\n\n\
          Use parallel Agent calls (with model: \"{model}\") to explore 4 dimensions simultaneously:\n\
          - Architecture and data flow -> architecture.md\n\
@@ -119,15 +124,7 @@ fn build_system_prompt(existing_knowledge: &str, model: &str) -> String {
          - Stack and entry points -> stack.md, entry-points.md\n\
          - Concerns and tech debt -> concerns.md\n\n\
          After agents complete, do a final synthesis pass on architecture.md.\n",
-    );
-
-    if !existing_knowledge.is_empty() {
-        prompt.push('\n');
-        prompt.push_str(existing_knowledge);
-        prompt.push('\n');
-    }
-
-    prompt
+    )
 }
 
 /// Build the initial user prompt for the Claude session.
@@ -196,22 +193,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_build_system_prompt_without_existing_knowledge() {
-        let prompt = build_system_prompt("", "sonnet");
+    fn test_build_system_prompt() {
+        let prompt = build_system_prompt("sonnet");
         assert!(prompt.contains("senior software architect"));
         assert!(prompt.contains("loom knowledge update"));
         assert!(prompt.contains("architecture.md"));
-        assert!(!prompt.contains("Existing Knowledge"));
         assert!(prompt.contains("model: \"sonnet\""));
     }
 
     #[test]
-    fn test_build_system_prompt_with_existing_knowledge() {
-        let existing = "## Existing Knowledge (DO NOT DUPLICATE)\n\nSome prior knowledge.";
-        let prompt = build_system_prompt(existing, "sonnet");
-        assert!(prompt.contains("senior software architect"));
-        assert!(prompt.contains("Existing Knowledge"));
-        assert!(prompt.contains("Some prior knowledge."));
+    fn test_build_system_prompt_does_not_embed_file_contents() {
+        // Regression: the system prompt must NOT embed knowledge file contents —
+        // that overflows Linux's per-argv-entry limit (MAX_ARG_STRLEN). It should
+        // instead instruct the session to Read the files directly.
+        let prompt = build_system_prompt("sonnet");
+        assert!(prompt.contains("Read the file"));
+        assert!(prompt.contains("doc/loom/knowledge/"));
     }
 
     #[test]
@@ -225,44 +222,5 @@ mod tests {
         assert!(prompt.contains("conventions.md"));
         assert!(prompt.contains("concerns.md"));
         assert!(prompt.contains("model: \"sonnet\""));
-    }
-
-    #[test]
-    fn test_read_existing_knowledge_empty_dir() {
-        let knowledge = KnowledgeDir::new("/nonexistent/path");
-        let result = super::super::spawn::read_existing_knowledge(&knowledge);
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn test_read_existing_knowledge_skips_short_files() {
-        let temp = tempfile::TempDir::new().unwrap();
-        let knowledge = KnowledgeDir::new(temp.path());
-        // Create a knowledge dir with only a short file (<=5 lines)
-        std::fs::create_dir_all(knowledge.root()).unwrap();
-        std::fs::write(
-            knowledge.file_path(KnowledgeFile::Architecture),
-            "# Architecture\n\n> Short.\n",
-        )
-        .unwrap();
-        let result = super::super::spawn::read_existing_knowledge(&knowledge);
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn test_read_existing_knowledge_includes_populated_files() {
-        let temp = tempfile::TempDir::new().unwrap();
-        let knowledge = KnowledgeDir::new(temp.path());
-        knowledge.initialize().unwrap();
-        // Add substantial content that exceeds 5-line threshold
-        knowledge
-            .append(
-                KnowledgeFile::Architecture,
-                "## Overview\n\nLine 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6",
-            )
-            .unwrap();
-        let result = super::super::spawn::read_existing_knowledge(&knowledge);
-        assert!(result.contains("Existing Knowledge"));
-        assert!(result.contains("## Overview"));
     }
 }

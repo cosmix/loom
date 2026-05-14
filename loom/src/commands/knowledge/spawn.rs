@@ -4,7 +4,6 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::fs::knowledge::KnowledgeDir;
 use crate::fs::work_dir::WorkDir;
 
 /// Resolve the project root directory.
@@ -32,40 +31,6 @@ pub(super) fn resolve_project_root() -> Result<PathBuf> {
     }
 
     std::env::current_dir().context("Failed to get current directory")
-}
-
-/// Read existing knowledge files and format them for context embedding.
-///
-/// Files that only contain the default template (≤5 lines) are skipped.
-pub(super) fn read_existing_knowledge(knowledge: &KnowledgeDir) -> String {
-    if !knowledge.exists() {
-        return String::new();
-    }
-
-    let mut sections = Vec::new();
-    if let Ok(files) = knowledge.read_all() {
-        for (file_type, content) in files {
-            let trimmed = content.trim().to_string();
-            if trimmed.lines().count() > 5 {
-                sections.push(format!(
-                    "### Existing {}\n\n{}",
-                    file_type.filename(),
-                    trimmed
-                ));
-            }
-        }
-    }
-
-    if sections.is_empty() {
-        return String::new();
-    }
-
-    format!(
-        "## Existing Knowledge (DO NOT DUPLICATE)\n\n\
-         The following knowledge has already been documented. \
-         Do NOT repeat this information. Only add NEW discoveries.\n\n{}",
-        sections.join("\n\n---\n\n")
-    )
 }
 
 /// Write sandbox settings for a knowledge-scoped Claude session.

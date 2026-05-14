@@ -40,9 +40,12 @@ pub fn gc(model: Option<String>, dry_run: bool, quick: bool) -> Result<()> {
 
     let claude_path = find_claude_path()?;
     let effective_model = model.unwrap_or_else(|| "sonnet".to_string());
-    let existing = super::spawn::read_existing_knowledge(&knowledge);
 
-    let system_prompt = build_gc_system_prompt(&existing, &effective_model, dry_run, &metrics);
+    // NOTE: knowledge file contents are deliberately NOT embedded in the prompt.
+    // The session Reads and Edits those files directly — embedding them would be
+    // redundant and, at scale, blows past Linux's 128 KiB per-argv-entry limit
+    // (MAX_ARG_STRLEN), failing with "Argument list too long".
+    let system_prompt = build_gc_system_prompt(&effective_model, dry_run, &metrics);
     let initial_prompt = build_gc_initial_prompt(&effective_model, dry_run);
 
     // Sandbox: in dry-run, deny all writes.
@@ -154,12 +157,7 @@ fn print_compaction_targets(metrics: &GcMetrics) {
     }
 }
 
-fn build_gc_system_prompt(
-    existing: &str,
-    model: &str,
-    dry_run: bool,
-    metrics: &GcMetrics,
-) -> String {
+fn build_gc_system_prompt(model: &str, dry_run: bool, metrics: &GcMetrics) -> String {
     let targets: Vec<String> = metrics
         .per_file
         .iter()
@@ -192,12 +190,6 @@ fn build_gc_system_prompt(
         targets.join("\n")
     };
 
-    let existing_block = if existing.is_empty() {
-        String::new()
-    } else {
-        format!("\n{existing}\n")
-    };
-
     format!(
         "You are a senior software architect compacting curated knowledge files.\n\n\
          ## Your Goal\n\n\
@@ -221,8 +213,10 @@ fn build_gc_system_prompt(
          since each knowledge file is a separate concern. After agents finish, do a final \
          cross-file pass to check for content that should move between files (e.g., a \
          pattern in architecture.md that belongs in patterns.md).\n\n\
-         When spawning Agent subagents, ALWAYS set model: \"{model}\".\n\
-         {existing_block}",
+         When spawning Agent subagents, ALWAYS set model: \"{model}\".\n\n\
+         ## Knowledge Files\n\n\
+         The knowledge files are at doc/loom/knowledge/ — Read them directly. \
+         Their contents are intentionally NOT embedded here.\n",
     )
 }
 
@@ -271,7 +265,7 @@ mod tests {
     #[test]
     fn test_gc_system_prompt_dry_run_includes_dry_run_clause() {
         let metrics = fake_metrics_recommended();
-        let prompt = build_gc_system_prompt("", "sonnet", true, &metrics);
+        let prompt = build_gc_system_prompt("sonnet", true, &metrics);
         assert!(prompt.contains("DRY-RUN"));
         assert!(prompt.contains("MUST NOT write"));
         assert!(!prompt.contains("Mode: COMPACT"));
@@ -280,7 +274,7 @@ mod tests {
     #[test]
     fn test_gc_system_prompt_compact_mode() {
         let metrics = fake_metrics_recommended();
-        let prompt = build_gc_system_prompt("", "sonnet", false, &metrics);
+        let prompt = build_gc_system_prompt("sonnet", false, &metrics);
         assert!(prompt.contains("Mode: COMPACT"));
         assert!(prompt.contains("Edit knowledge files directly"));
         assert!(!prompt.contains("DRY-RUN"));
@@ -289,7 +283,7 @@ mod tests {
     #[test]
     fn test_gc_system_prompt_includes_targets() {
         let metrics = fake_metrics_recommended();
-        let prompt = build_gc_system_prompt("", "sonnet", false, &metrics);
+        let prompt = build_gc_system_prompt("sonnet", false, &metrics);
         assert!(prompt.contains("architecture.md"));
         assert!(prompt.contains("500 lines"));
     }
@@ -297,8 +291,18 @@ mod tests {
     #[test]
     fn test_gc_system_prompt_recursion_warning() {
         let metrics = fake_metrics_recommended();
-        let prompt = build_gc_system_prompt("", "sonnet", false, &metrics);
+        let prompt = build_gc_system_prompt("sonnet", false, &metrics);
         assert!(prompt.contains("do NOT run `loom knowledge gc`"));
+    }
+
+    #[test]
+    fn test_gc_system_prompt_does_not_embed_file_contents() {
+        // Regression: the gc system prompt must NOT embed knowledge file
+        // contents — that overflows Linux's per-argv-entry limit.
+        let metrics = fake_metrics_recommended();
+        let prompt = build_gc_system_prompt("sonnet", false, &metrics);
+        assert!(!prompt.contains("Existing Knowledge"));
+        assert!(prompt.contains("Read them directly"));
     }
 
     #[test]
