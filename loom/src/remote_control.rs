@@ -101,6 +101,14 @@ fn parse_version_token(token: &str) -> Option<(u64, u64, u64)> {
     Some((major, minor, patch))
 }
 
+/// Whether a parsed version triple satisfies [`MIN_REMOTE_CONTROL_VERSION`].
+///
+/// The single source of truth for the version gate, shared by
+/// [`claude_supports_remote_control`] and [`preflight`].
+fn version_supported(version: (u64, u64, u64)) -> bool {
+    version >= MIN_REMOTE_CONTROL_VERSION
+}
+
 /// Run `<claude_path> --version` and return the parsed version string.
 ///
 /// Returns `None` on exec failure or unparseable output.
@@ -120,7 +128,7 @@ fn probe_claude_version(claude_path: &Path) -> Option<(u64, u64, u64)> {
 /// `false` (fail closed).
 pub fn claude_supports_remote_control(claude_path: &Path) -> bool {
     match probe_claude_version(claude_path) {
-        Some(version) => version >= MIN_REMOTE_CONTROL_VERSION,
+        Some(version) => version_supported(version),
         None => false,
     }
 }
@@ -161,7 +169,7 @@ pub fn remote_control_eligible() -> Result<(), String> {
 pub fn preflight(claude_path: &Path) -> RemoteControlStatus {
     let version = probe_claude_version(claude_path);
     match version {
-        Some(v) if v >= MIN_REMOTE_CONTROL_VERSION => {}
+        Some(v) if version_supported(v) => {}
         Some(v) => {
             return RemoteControlStatus::Disabled {
                 reason: format!(
@@ -317,6 +325,22 @@ mod tests {
         assert_eq!(parse_version("v10.20.30"), Some((10, 20, 30)));
         assert_eq!(parse_version("not a version"), None);
         assert_eq!(parse_version("2.1"), None);
+    }
+
+    #[test]
+    fn version_supported_covers_boundaries() {
+        // Exact minimum supported version.
+        assert!(version_supported(MIN_REMOTE_CONTROL_VERSION));
+        assert!(version_supported((2, 1, 51)));
+        // One patch below the minimum — unsupported.
+        assert!(!version_supported((2, 1, 50)));
+        // Newer patch / minor / major — all supported.
+        assert!(version_supported((2, 1, 52)));
+        assert!(version_supported((2, 2, 0)));
+        assert!(version_supported((3, 0, 0)));
+        // Older minor / major — unsupported.
+        assert!(!version_supported((2, 0, 99)));
+        assert!(!version_supported((1, 9, 9)));
     }
 
     #[test]
