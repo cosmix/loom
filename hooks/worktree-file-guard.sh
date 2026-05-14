@@ -156,6 +156,40 @@ EOF
         return 0
     fi
 
+    # Allow background task output files (Read tool only) - these live outside the
+    # worktree but are produced by the agent's own background tasks.
+    # Path shape: /tmp/claude-<uid>/<repo-tag>/<uuid>/tasks/<task-id>.output
+    if [[ "$TOOL_NAME" == "Read" ]]; then
+        if [[ "$target_path" == /tmp/claude-*/*/*/tasks/*.output ]]; then
+            # Canonicalize and reject symlinks
+            local canonical_path
+            if command -v readlink &>/dev/null && readlink -f "$target_path" &>/dev/null 2>&1; then
+                canonical_path=$(readlink -f "$target_path")
+            elif command -v realpath &>/dev/null; then
+                canonical_path=$(realpath "$target_path" 2>/dev/null || echo "")
+            else
+                canonical_path="$target_path"
+            fi
+
+            # Reject if canonicalization moved the path out of /tmp/
+            if [[ "$canonical_path" != /tmp/* ]]; then
+                debug_log "Rejecting background task output: canonical path left /tmp/: $canonical_path"
+                return 1
+            fi
+
+            # Reject if the file is not owned by the current UID
+            local file_uid
+            file_uid=$(stat -c '%u' "$canonical_path" 2>/dev/null || stat -f '%u' "$canonical_path" 2>/dev/null || echo "")
+            if [[ -z "$file_uid" ]] || [[ "$file_uid" != "$(id -u)" ]]; then
+                debug_log "Rejecting background task output: file not owned by current UID (owner=$file_uid, current=$(id -u))"
+                return 1
+            fi
+
+            debug_log "Allowing background task output: $canonical_path"
+            return 0
+        fi
+    fi
+
     # Check if path is within worktree boundary
     if [[ "$target_path" = "$WORKTREE_PATH"* ]]; then
         debug_log "Path within worktree boundary"
