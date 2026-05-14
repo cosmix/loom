@@ -317,20 +317,27 @@ Valid values: `accept-edits` (default), `auto`, `plan`, `default`. `bypass-permi
 
 ### Remote Control
 
-Loom enables Claude Code's `--remote-control` flag automatically when prerequisites are met:
+Claude Code's `--remote-control` flag lets the loom orchestrator drive spawned Claude sessions programmatically. Loom enables it automatically when prerequisites are met — no configuration required.
+
+**Prerequisites (preflight check):**
 
 - **Claude version** ≥ 2.1.51
-- **Auth**: claude.ai login (no `ANTHROPIC_API_KEY`, `CLAUDE_CODE_USE_BEDROCK`, or similar env vars)
+- **Auth**: claude.ai login — `~/.claude/.credentials.json` must be present and none of these env vars may be set: `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, `CLAUDE_CODE_USE_FOUNDRY`
 
-When prerequisites are unmet loom falls back silently to the standard mode. Disable explicitly:
+The flag exits non-zero when its prerequisites are not met, so loom never passes it blindly. When preflight fails, loom falls back silently to standard mode and prints a one-line advisory at orchestrator startup (e.g. `⚠ Remote Control disabled: <reason>`).
+
+**Configuration** — the `[remote_control]` section of `.work/config.toml` carries a single switch:
 
 ```toml
 # .work/config.toml
 [remote_control]
-mode = "off"
+mode = "auto"   # default: enable whenever preflight passes
+# mode = "off"  # never enable, regardless of preflight
 ```
 
-A session that crashes within 15 seconds of spawn while Remote Control is active causes loom to write `.work/remote_control-unsupported` and retry without the flag for the rest of the run.
+Toggling `mode` takes effect on the next session spawn — no daemon restart needed.
+
+**Mid-run fallback** — if a session crashes within 15 seconds of spawn while Remote Control is active, loom writes a `.work/remote_control-unsupported` marker, then respawns and omits the flag for the rest of the run.
 
 ## Agent Teams (Experimental)
 
