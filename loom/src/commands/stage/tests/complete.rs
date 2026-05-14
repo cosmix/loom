@@ -9,29 +9,10 @@ use serial_test::serial;
 use std::path::Path;
 use tempfile::TempDir;
 
-/// Test helper: write `<runtime>/loom/admin.token` with the given content.
-fn write_admin_token(runtime_dir: &Path, content: &str) {
-    let loom_dir = runtime_dir.join("loom");
-    std::fs::create_dir_all(&loom_dir).unwrap();
-    std::fs::write(loom_dir.join("admin.token"), content).unwrap();
-}
-
-/// Test helper: capture XDG_RUNTIME_DIR, set it to `value`, and return the
-/// previous value so the test can restore it on completion.
-fn set_xdg_runtime_dir(value: Option<&Path>) -> Option<std::ffi::OsString> {
-    let prev = std::env::var_os("XDG_RUNTIME_DIR");
-    match value {
-        Some(p) => std::env::set_var("XDG_RUNTIME_DIR", p),
-        None => std::env::remove_var("XDG_RUNTIME_DIR"),
-    }
-    prev
-}
-
-fn restore_xdg_runtime_dir(prev: Option<std::ffi::OsString>) {
-    match prev {
-        Some(v) => std::env::set_var("XDG_RUNTIME_DIR", v),
-        None => std::env::remove_var("XDG_RUNTIME_DIR"),
-    }
+/// Test helper: write `<work_dir>/admin.token` with the given content.
+fn write_admin_token(work_dir: &Path, content: &str) {
+    std::fs::create_dir_all(work_dir).unwrap();
+    std::fs::write(work_dir.join("admin.token"), content).unwrap();
 }
 
 #[test]
@@ -87,10 +68,9 @@ fn test_complete_no_verify_refuses_zero_commits_ahead() {
     let temp_dir = setup_work_dir();
     let work_dir_path = temp_dir.path().join(".work");
 
-    // --no-verify now requires the host admin.token. Provide one for this
+    // --no-verify now requires the admin.token. Provide one for this
     // test so it reaches the zero-commits-ahead guard.
-    let prev_xdg = set_xdg_runtime_dir(Some(temp_dir.path()));
-    write_admin_token(temp_dir.path(), "admin-secret-token");
+    write_admin_token(&work_dir_path, "admin-secret-token");
 
     // Bootstrap a real git repo with an initial commit so the branch
     // existence + commits_ahead probes have something to work with.
@@ -121,7 +101,6 @@ fn test_complete_no_verify_refuses_zero_commits_ahead() {
     let result = complete("test-stage".to_string(), None, true, false, false);
 
     std::env::set_current_dir(original_dir).unwrap();
-    restore_xdg_runtime_dir(prev_xdg);
 
     assert!(
         result.is_err(),
@@ -153,10 +132,9 @@ fn test_complete_with_no_verify_flag() {
     let temp_dir = setup_work_dir();
     let work_dir_path = temp_dir.path().join(".work");
 
-    // --no-verify now requires the host admin.token. Provide one for this
+    // --no-verify now requires the admin.token. Provide one for this
     // test so it reaches the (non-bypass) completion path.
-    let prev_xdg = set_xdg_runtime_dir(Some(temp_dir.path()));
-    write_admin_token(temp_dir.path(), "admin-secret-token");
+    write_admin_token(&work_dir_path, "admin-secret-token");
 
     let mut stage = create_test_stage("test-stage", StageStatus::Executing);
     stage.acceptance = vec![AcceptanceCriterion::Simple("exit 1".to_string())];
@@ -168,7 +146,6 @@ fn test_complete_with_no_verify_flag() {
     let result = complete("test-stage".to_string(), None, true, false, false);
 
     std::env::set_current_dir(original_dir).unwrap();
-    restore_xdg_runtime_dir(prev_xdg);
 
     assert!(result.is_ok());
 
@@ -304,24 +281,19 @@ fn test_complete_knowledge_stage_triggers_dependents() {
 
 #[test]
 #[serial]
-fn no_verify_succeeds_with_admin_token_at_host_path() {
-    // When XDG_RUNTIME_DIR/loom/admin.token exists, require_admin_capability
-    // must succeed. This guards the gate's pass-through for legitimate
+fn no_verify_succeeds_with_admin_token_present() {
+    // When `<work_dir>/admin.token` exists, require_admin_capability must
+    // succeed. This guards the gate's pass-through for legitimate
     // host-operator use of --no-verify / --force-unsafe / --assume-merged.
     let tmp = TempDir::new().unwrap();
-    let prev = set_xdg_runtime_dir(Some(tmp.path()));
-    write_admin_token(tmp.path(), "admin-secret-token");
-
     let work_dir = tmp.path().join(".work");
-    std::fs::create_dir_all(&work_dir).unwrap();
+    write_admin_token(&work_dir, "admin-secret-token");
 
     let result = require_admin_capability(&work_dir);
 
-    restore_xdg_runtime_dir(prev);
-
     assert!(
         result.is_ok(),
-        "require_admin_capability must pass when admin.token exists at host path: {:?}",
+        "require_admin_capability must pass when admin.token exists: {:?}",
         result.err()
     );
 }
@@ -329,20 +301,16 @@ fn no_verify_succeeds_with_admin_token_at_host_path() {
 #[test]
 #[serial]
 fn no_verify_rejected_when_admin_token_absent() {
-    // When --no-verify is requested but admin.token is missing at the host
-    // runtime path, require_admin_capability must fail closed with a clear
-    // error mentioning the admin token. This is the structural guarantee
-    // that container-resident agents cannot bypass acceptance.
+    // When --no-verify is requested but admin.token is missing,
+    // require_admin_capability must fail closed with a clear error
+    // mentioning the admin token. This is the structural guarantee that
+    // stage-confined agents cannot bypass acceptance.
     let tmp = TempDir::new().unwrap();
-    let prev = set_xdg_runtime_dir(Some(tmp.path()));
-    // No admin.token written.
-
     let work_dir = tmp.path().join(".work");
     std::fs::create_dir_all(&work_dir).unwrap();
+    // No admin.token written.
 
     let result = require_admin_capability(&work_dir);
-
-    restore_xdg_runtime_dir(prev);
 
     assert!(
         result.is_err(),
@@ -362,14 +330,10 @@ fn force_unsafe_rejected_when_admin_token_absent() {
     // at the check site — the caller in complete() decides when to call it
     // based on flag combinations. We assert the gate's behaviour here.)
     let tmp = TempDir::new().unwrap();
-    let prev = set_xdg_runtime_dir(Some(tmp.path()));
-
     let work_dir = tmp.path().join(".work");
     std::fs::create_dir_all(&work_dir).unwrap();
 
     let result = require_admin_capability(&work_dir);
-
-    restore_xdg_runtime_dir(prev);
 
     assert!(
         result.is_err(),
@@ -387,14 +351,10 @@ fn force_unsafe_rejected_when_admin_token_absent() {
 fn assume_merged_rejected_when_admin_token_absent() {
     // --assume-merged path exercises the same gate.
     let tmp = TempDir::new().unwrap();
-    let prev = set_xdg_runtime_dir(Some(tmp.path()));
-
     let work_dir = tmp.path().join(".work");
     std::fs::create_dir_all(&work_dir).unwrap();
 
     let result = require_admin_capability(&work_dir);
-
-    restore_xdg_runtime_dir(prev);
 
     assert!(
         result.is_err(),
@@ -417,10 +377,7 @@ fn verify_path_succeeds_without_admin_token() {
     // repo, etc.) are acceptable — we only assert the gate did not fire.
     let temp_dir = setup_work_dir();
     let work_dir_path = temp_dir.path().join(".work");
-
-    // Redirect XDG_RUNTIME_DIR to an empty tempdir — no admin.token present.
-    let xdg_tmp = TempDir::new().unwrap();
-    let prev = set_xdg_runtime_dir(Some(xdg_tmp.path()));
+    // No admin.token present in the work dir.
 
     let mut stage = create_test_stage("verify-path-stage", StageStatus::Executing);
     stage.acceptance = vec![AcceptanceCriterion::Simple("exit 0".to_string())];
@@ -438,7 +395,6 @@ fn verify_path_succeeds_without_admin_token() {
     );
 
     std::env::set_current_dir(original_dir).unwrap();
-    restore_xdg_runtime_dir(prev);
 
     // We don't require Ok — the test setup has no real git repo and other
     // checks may fail. The critical invariant: the admin-token gate must
@@ -455,19 +411,15 @@ fn verify_path_succeeds_without_admin_token() {
 #[test]
 #[serial]
 fn cli_without_admin_token_fails_admin_check() {
-    // $XDG_RUNTIME_DIR is set but no loom/admin.token exists. The admin
-    // gate must refuse the bypass flags. This is the structural defence
-    // against an agent invoking --no-verify without daemon authority.
+    // The work dir exists but no admin.token is present. The admin gate
+    // must refuse the bypass flags. This is the structural defence against
+    // an agent invoking --no-verify without daemon authority.
     let tmp = TempDir::new().unwrap();
-    let prev = set_xdg_runtime_dir(Some(tmp.path()));
-    // Deliberately do NOT write admin.token.
-
     let work_dir = tmp.path().join(".work");
     std::fs::create_dir_all(&work_dir).unwrap();
+    // Deliberately do NOT write admin.token.
 
     let result = require_admin_capability(&work_dir);
-
-    restore_xdg_runtime_dir(prev);
 
     assert!(
         result.is_err(),

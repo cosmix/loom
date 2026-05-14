@@ -10,25 +10,20 @@ use std::sync::{Arc, Mutex};
 /// Filename for the user-readable token (mode 0o644, lives under `.work/`).
 pub(super) const USER_TOKEN_FILE: &str = "user.token";
 
-/// Filename for the host-only admin token (mode 0o600). NOT placed under
-/// `.work/` (the canonical location is [`admin_token_path`] in the daemon
-/// runtime dir) — `.work/` is a shared, worktree-visible tree, so any token
-/// kept there would be reachable by stage-confined agents. Retained here as
-/// a single source of truth for the basename.
+/// Filename for the admin token (mode 0o600). Lives under the per-project
+/// `.work/` directory alongside `user.token`. It is owner-only so a
+/// stage-confined agent cannot read it, and being per-project means
+/// concurrent daemons for different projects never share — let alone
+/// clobber or delete — each other's token.
 pub(super) const ADMIN_TOKEN_FILE: &str = "admin.token";
 
-/// Host-only path to admin.token. Located in the daemon runtime
-/// directory (XDG_RUNTIME_DIR or fallback to data_dir()) so it stays
-/// outside the shared, worktree-visible `.work/` tree.
+/// Path to the per-project admin token: `<work_dir>/admin.token`.
 ///
-/// Layout: `$XDG_RUNTIME_DIR/loom/admin.token` on Linux, falling back
-/// to `~/.local/share/loom/admin.token` (or platform data_dir) when no
-/// runtime dir is set. Mode 0o600 (owner-only rw).
-pub fn admin_token_path() -> std::path::PathBuf {
-    dirs::runtime_dir()
-        .unwrap_or_else(|| dirs::data_dir().expect("HOME unset; no runtime/data dir"))
-        .join("loom")
-        .join(ADMIN_TOKEN_FILE)
+/// Mode 0o600 (owner-only rw). Kept per-project rather than in a shared
+/// runtime directory so two daemons (different projects, or a restart)
+/// can never overwrite or delete one another's token.
+pub fn admin_token_path(work_dir: &Path) -> PathBuf {
+    work_dir.join(ADMIN_TOKEN_FILE)
 }
 
 fn read_token_file(path: &Path) -> Option<String> {
@@ -47,12 +42,8 @@ pub fn read_user_token(work_dir: &Path) -> Option<String> {
 /// Returns `None` if `admin.token` is missing or unreadable; callers must
 /// treat that as an authentication failure rather than falling back to a
 /// less-privileged token.
-///
-/// `_work_dir` is retained for call-site compatibility but no longer used:
-/// admin.token lives at [`admin_token_path`] (a host-only runtime
-/// directory) rather than under the project's shared `.work/` tree.
-pub fn read_admin_token(_work_dir: &Path) -> Option<String> {
-    read_token_file(&admin_token_path())
+pub fn read_admin_token(work_dir: &Path) -> Option<String> {
+    read_token_file(&admin_token_path(work_dir))
 }
 
 /// Back-compat shim used by status UI helpers — returns the user token.
@@ -66,14 +57,12 @@ pub fn read_auth_token(work_dir: &Path) -> Option<String> {
 
 /// Path to the token file backing a given capability.
 ///
-/// `Capability::User` resolves to `<work_dir>/user.token` (under the shared
-/// `.work/` tree). `Capability::Admin` resolves to [`admin_token_path`] — a
-/// host-only runtime path outside `.work/`; the `work_dir` argument is
-/// unused for the admin case by design.
+/// Both tokens live under the per-project `.work/` tree: `user.token`
+/// (mode 0o644) and `admin.token` (mode 0o600).
 fn token_path_for(work_dir: &Path, capability: Capability) -> PathBuf {
     match capability {
         Capability::User => work_dir.join(USER_TOKEN_FILE),
-        Capability::Admin => admin_token_path(),
+        Capability::Admin => admin_token_path(work_dir),
     }
 }
 
@@ -252,29 +241,15 @@ pub fn handle_client_connection(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
     use tempfile::TempDir;
 
-    /// Test helper: redirect `dirs::runtime_dir()` (which resolves to
-    /// `$XDG_RUNTIME_DIR` on Linux) to a tempdir for the duration of a test.
-    /// Writes `<runtime>/loom/admin.token` with the given content.
-    fn write_admin_token_at_runtime(runtime_dir: &Path, content: &str) {
-        let loom_dir = runtime_dir.join("loom");
-        std::fs::create_dir_all(&loom_dir).unwrap();
-        std::fs::write(loom_dir.join("admin.token"), content).unwrap();
-    }
-
     #[test]
-    #[serial]
     fn user_token_rejects_admin_request() {
         let tmp = TempDir::new().unwrap();
-        // Redirect admin.token lookup to the tempdir so the test does not
-        // depend on the host's real XDG_RUNTIME_DIR.
-        let prev_xdg = std::env::var_os("XDG_RUNTIME_DIR");
-        std::env::set_var("XDG_RUNTIME_DIR", tmp.path());
-        write_admin_token_at_runtime(tmp.path(), "admin-secret");
-
+        // Both tokens live under the per-project work dir.
+        std::fs::write(admin_token_path(tmp.path()), "admin-secret").unwrap();
         std::fs::write(tmp.path().join(USER_TOKEN_FILE), "user-secret").unwrap();
+
         // The user token must NOT satisfy Capability::Admin.
         assert!(!verify_for_capability(
             tmp.path(),
@@ -299,20 +274,11 @@ mod tests {
             "admin-secret",
             Capability::User
         ));
-
-        match prev_xdg {
-            Some(v) => std::env::set_var("XDG_RUNTIME_DIR", v),
-            None => std::env::remove_var("XDG_RUNTIME_DIR"),
-        }
     }
 
     #[test]
-    #[serial]
     fn missing_token_file_fails_closed() {
         let tmp = TempDir::new().unwrap();
-        // Redirect admin.token lookup to a tempdir that has no loom/ subdir.
-        let prev_xdg = std::env::var_os("XDG_RUNTIME_DIR");
-        std::env::set_var("XDG_RUNTIME_DIR", tmp.path());
 
         // No token files written.
         assert!(!verify_for_capability(
@@ -325,27 +291,14 @@ mod tests {
             "anything",
             Capability::Admin
         ));
-
-        match prev_xdg {
-            Some(v) => std::env::set_var("XDG_RUNTIME_DIR", v),
-            None => std::env::remove_var("XDG_RUNTIME_DIR"),
-        }
     }
 
     #[test]
-    #[serial]
     fn empty_provided_token_fails() {
         let tmp = TempDir::new().unwrap();
-        let prev_xdg = std::env::var_os("XDG_RUNTIME_DIR");
-        std::env::set_var("XDG_RUNTIME_DIR", tmp.path());
-        write_admin_token_at_runtime(tmp.path(), "admin-secret");
+        std::fs::write(admin_token_path(tmp.path()), "admin-secret").unwrap();
 
         assert!(!verify_for_capability(tmp.path(), "", Capability::Admin));
-
-        match prev_xdg {
-            Some(v) => std::env::set_var("XDG_RUNTIME_DIR", v),
-            None => std::env::remove_var("XDG_RUNTIME_DIR"),
-        }
     }
 
     #[test]

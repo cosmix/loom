@@ -31,19 +31,18 @@ use super::merge_verify::verify_or_derive_completed_commit;
 use super::progressive_complete::complete_with_merge;
 use super::session::cleanup_session_resources;
 
-/// Verify the host's admin token is readable before allowing
-/// verification-bypass flags (`--no-verify`, `--force-unsafe`,
-/// `--assume-merged`).
+/// Verify the admin token is readable before allowing verification-bypass
+/// flags (`--no-verify`, `--force-unsafe`, `--assume-merged`).
 ///
-/// The admin token lives at `$XDG_RUNTIME_DIR/loom/admin.token` (or
-/// `data_dir()/loom/admin.token` as fallback) and is owner-only (0o600).
-pub fn require_admin_capability(_work_dir: &Path) -> Result<()> {
-    let path = crate::daemon::admin_token_path();
+/// The admin token lives at `<work_dir>/admin.token` and is owner-only
+/// (0o600).
+pub fn require_admin_capability(work_dir: &Path) -> Result<()> {
+    let path = crate::daemon::admin_token_path(work_dir);
     match std::fs::read_to_string(&path) {
         Ok(s) if !s.trim().is_empty() => Ok(()),
         _ => bail!(
             "--no-verify, --force-unsafe, and --assume-merged require the admin \
-             token from the host's daemon runtime directory (expected: {}). \
+             token written by the daemon (expected: {}). \
              Use `loom stage dispute-criteria` to request a criterion change.",
             path.display()
         ),

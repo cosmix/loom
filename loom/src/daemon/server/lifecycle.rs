@@ -49,10 +49,10 @@ impl DaemonServer {
             bail!("Daemon is not running");
         }
 
-        // Stop is a privileged operation — only the admin token (mode 0o600,
-        // host-only) authenticates this request. The admin token lives at
-        // `$XDG_RUNTIME_DIR/loom/admin.token`.
-        let token_path = admin_token_path();
+        // Stop is a privileged operation — only the admin token (mode 0o600)
+        // authenticates this request. The admin token lives at
+        // `<work_dir>/admin.token`.
+        let token_path = admin_token_path(work_dir);
         let auth_token = fs::read_to_string(&token_path)
             .with_context(|| {
                 format!(
@@ -165,11 +165,13 @@ impl DaemonServer {
         fs::set_permissions(&self.pid_path, Permissions::from_mode(0o600))
             .context("Failed to set PID file permissions")?;
 
-        // Generate admin + user tokens and write to separate files.
+        // Generate admin + user tokens and write to separate files. Both live
+        // under the per-project `.work/` directory.
         //
         // - admin.token (mode 0o600): required for privileged ops (Stop and the
         //   verification-bypass flags `--no-verify`, `--force-unsafe`,
-        //   `--assume-merged`). Located in the daemon runtime directory.
+        //   `--assume-merged`). Owner-only so a stage-confined agent cannot
+        //   read it.
         // - user.token  (mode 0o644): used for Ping / Subscribe / Unsubscribe /
         //   DisputeCriteria.
         //
@@ -177,15 +179,7 @@ impl DaemonServer {
         let admin_token = generate_token_hex()?;
         let user_token = generate_token_hex()?;
 
-        let admin_path = admin_token_path();
-        if let Some(parent) = admin_path.parent() {
-            fs::create_dir_all(parent).with_context(|| {
-                format!(
-                    "Failed to create admin token directory {}",
-                    parent.display()
-                )
-            })?;
-        }
+        let admin_path = admin_token_path(&self.work_dir);
         fs::write(&admin_path, &admin_token).with_context(|| {
             format!(
                 "Failed to write admin token file at {}",
@@ -436,15 +430,14 @@ impl DaemonServer {
                 return Err(e).context("Failed to remove PID file");
             }
         }
-        // Clean up token files. user.token lives in .work/; admin.token lives
-        // at the host-only runtime path.
+        // Clean up token files. Both user.token and admin.token live in .work/.
         let user_token_path = self.work_dir.join(USER_TOKEN_FILE);
         if let Err(e) = fs::remove_file(&user_token_path) {
             if e.kind() != std::io::ErrorKind::NotFound {
                 return Err(e).context("Failed to remove user.token file");
             }
         }
-        let admin_path = admin_token_path();
+        let admin_path = admin_token_path(&self.work_dir);
         if let Err(e) = fs::remove_file(&admin_path) {
             if e.kind() != std::io::ErrorKind::NotFound {
                 return Err(e).with_context(|| {
