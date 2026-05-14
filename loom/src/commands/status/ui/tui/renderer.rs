@@ -130,7 +130,6 @@ pub fn stage_info_to_stage(info: &StageInfo) -> Stage {
             Some(info.model.clone())
         },
         reasoning_effort: None,
-        execution_backend: None,
         is_possibly_stuck: info.is_possibly_stuck,
     }
 }

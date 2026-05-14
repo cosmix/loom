@@ -71,7 +71,6 @@ impl StageFrontmatter {
             model: self.model,
             reasoning_effort: self.reasoning_effort,
             code_review: None,
-            execution: None,
         }
     }
 }

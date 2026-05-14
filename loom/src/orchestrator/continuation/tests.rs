@@ -4,7 +4,6 @@ use super::*;
 use crate::git::branch::branch_name_for_stage;
 use crate::models::stage::StageStatus;
 use crate::models::worktree::Worktree;
-use crate::orchestrator::terminal::BackendType;
 use std::fs;
 use tempfile::TempDir;
 
@@ -88,8 +87,6 @@ Test the continuation feature.
 #[test]
 fn test_continuation_config_default() {
     let config = ContinuationConfig::default();
-    assert_eq!(config.backend_type, None);
-    let _ = BackendType::Native; // keep import used
     assert!(config.auto_spawn);
 }
 
@@ -181,10 +178,7 @@ fn test_continue_session_with_handoff() {
     let worktree = create_test_worktree(stage_id, project_root);
     let handoff_path = create_test_handoff(stage_id, &work_dir);
 
-    let config = ContinuationConfig {
-        backend_type: Some(BackendType::Native),
-        auto_spawn: false,
-    };
+    let config = ContinuationConfig { auto_spawn: false };
 
     let session = continue_session(&stage, Some(&handoff_path), &worktree, &config, &work_dir)
         .expect("Should create continuation session");
@@ -210,10 +204,7 @@ fn test_continue_session_without_handoff() {
     let stage = create_test_stage(stage_id, &work_dir);
     let worktree = create_test_worktree(stage_id, project_root);
 
-    let config = ContinuationConfig {
-        backend_type: Some(BackendType::Native),
-        auto_spawn: false,
-    };
+    let config = ContinuationConfig { auto_spawn: false };
 
     let session = continue_session(&stage, None, &worktree, &config, &work_dir)
         .expect("Should create continuation session without handoff");
@@ -233,10 +224,7 @@ fn test_continue_session_invalid_status() {
 
     let worktree = create_test_worktree(stage_id, project_root);
 
-    let config = ContinuationConfig {
-        backend_type: Some(BackendType::Native),
-        auto_spawn: false,
-    };
+    let config = ContinuationConfig { auto_spawn: false };
 
     let result = continue_session(&stage, None, &worktree, &config, &work_dir);
     assert!(result.is_err());

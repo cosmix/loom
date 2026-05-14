@@ -8,7 +8,7 @@ use crate::plan::graph::levels::compute_all_levels;
 use crate::plan::parser::parse_plan;
 use crate::plan::schema::{
     check_knowledge_recommendations, check_sandbox_recommendations, detect_stage_type,
-    validate_structural_preflight, BackendType, StageDefinition,
+    validate_structural_preflight, StageDefinition,
 };
 use crate::sandbox::{merge_config as merge_sandbox_config, validate_config as validate_sandbox};
 use crate::verify::serialize_stage_to_markdown;
@@ -106,27 +106,17 @@ pub fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<usiz
         println!("  {} {}", "⚠".yellow().bold(), warning.yellow());
     }
 
-    // Validate every stage's resolved sandbox against the project backend.
-    // This catches incompatible combinations (e.g. bypass-permissions on
-    // native) at init time — far cheaper than discovering the mismatch
-    // mid-run when the daemon refuses to spawn the session.
-    let project_backend = work_dir::read_project_execution(work_dir.root())
-        .context("Failed to read project execution config from .work/config.toml")?
-        .map(|cfg| cfg.backend)
-        .unwrap_or(BackendType::Native);
+    // Validate every stage's resolved sandbox configuration at init time.
+    // This catches incompatible combinations (e.g. bypass-permissions) before
+    // the daemon ever tries to spawn a session.
     let plan_sandbox = &parsed_plan.metadata.loom.sandbox;
     for stage_def in &stages {
         let stage_type = detect_stage_type(stage_def);
-        let merged = merge_sandbox_config(
-            plan_sandbox,
-            &stage_def.sandbox,
-            stage_type,
-            project_backend,
-        );
-        validate_sandbox(&merged, project_backend).with_context(|| {
+        let merged = merge_sandbox_config(plan_sandbox, &stage_def.sandbox, stage_type);
+        validate_sandbox(&merged).with_context(|| {
             format!(
-                "Stage '{}' has an incompatible sandbox configuration for backend '{}'",
-                stage_def.id, project_backend
+                "Stage '{}' has an incompatible sandbox configuration",
+                stage_def.id
             )
         })?;
     }
@@ -166,15 +156,10 @@ pub fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<usiz
 
     work_dir::write_config(work_dir.root(), &doc).context("Failed to write .work/config.toml")?;
 
-    // Persist plan-level sandbox + execution snapshots so loader fallbacks
-    // don't silently substitute defaults after .work/stages exists.
+    // Persist plan-level sandbox snapshot so the loader fallback doesn't
+    // silently substitute defaults after .work/stages exists.
     work_dir::write_plan_sandbox(work_dir.root(), &parsed_plan.metadata.loom.sandbox)
         .context("Failed to persist plan-level sandbox config")?;
-
-    if let Some(plan_exec) = &parsed_plan.metadata.loom.execution {
-        work_dir::write_plan_execution(work_dir.root(), plan_exec)
-            .context("Failed to persist plan-level execution config")?;
-    }
 
     println!(
         "  {} Config saved {}",
@@ -298,7 +283,6 @@ pub(crate) fn create_stage_from_definition(stage_def: &StageDefinition, plan_id:
         regression_test: stage_def.regression_test.clone(),
         model: stage_def.model.clone(),
         reasoning_effort: stage_def.reasoning_effort.clone(),
-        execution_backend: stage_def.execution.as_ref().and_then(|e| e.backend),
         is_possibly_stuck: false,
     }
 }

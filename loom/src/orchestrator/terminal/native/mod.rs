@@ -14,7 +14,6 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::{BackendType, TerminalBackend};
 use crate::claude::find_claude_path;
 use crate::models::session::Session;
 use crate::models::stage::Stage;
@@ -74,10 +73,22 @@ impl NativeBackend {
     pub fn terminal(&self) -> &super::emulator::TerminalEmulator {
         &self.terminal
     }
-}
 
-impl TerminalBackend for NativeBackend {
-    fn spawn_session(
+    /// Returns (window_title, pid_file_key) for a session — preferring the
+    /// session's tracking_key, with a legacy fallback to the bare stage id.
+    fn window_title_and_pid_key(session: &Session) -> Option<(String, String)> {
+        if !session.tracking_key.is_empty() {
+            let title = session.tracking_key.clone();
+            let pid_key = title.strip_prefix("loom-").unwrap_or(&title).to_string();
+            return Some((title, pid_key));
+        }
+        session
+            .stage_id
+            .as_ref()
+            .map(|sid| (format!("loom-{sid}"), sid.clone()))
+    }
+
+    pub fn spawn_session(
         &self,
         stage: &Stage,
         worktree: &Worktree,
@@ -153,7 +164,7 @@ impl TerminalBackend for NativeBackend {
         Ok(session)
     }
 
-    fn spawn_merge_session(
+    pub fn spawn_merge_session(
         &self,
         stage: &Stage,
         session: Session,
@@ -227,7 +238,7 @@ impl TerminalBackend for NativeBackend {
         Ok(session)
     }
 
-    fn spawn_base_conflict_session(
+    pub fn spawn_base_conflict_session(
         &self,
         stage: &Stage,
         session: Session,
@@ -302,7 +313,7 @@ impl TerminalBackend for NativeBackend {
         Ok(session)
     }
 
-    fn spawn_knowledge_session(
+    pub fn spawn_knowledge_session(
         &self,
         stage: &Stage,
         session: Session,
@@ -377,16 +388,20 @@ impl TerminalBackend for NativeBackend {
         Ok(session)
     }
 
-    fn kill_session(&self, session: &Session) -> Result<()> {
+    pub fn kill_session(&self, session: &Session) -> Result<()> {
+        // Resolve the window title and PID-file key for this session,
+        // preferring the session's tracking_key so that merge/knowledge/
+        // base-conflict sessions (which use prefixed titles and keys) are
+        // killed correctly, not just bare stage sessions.
+        let resolved = Self::window_title_and_pid_key(session);
+
         // First, try to close the window by title (more reliable for all terminals).
-        // The title is set to "loom-{stage_id}" when spawning.
         // This approach works correctly even for terminal emulators like gnome-terminal
         // that use a server process, where killing by PID would kill all windows.
-        if let Some(stage_id) = &session.stage_id {
-            let title = format!("loom-{stage_id}");
-            if close_window_for_terminal(&title, &self.terminal) {
+        if let Some((title, pid_key)) = &resolved {
+            if close_window_for_terminal(title, &self.terminal) {
                 // Clean up tracking files after closing the window
-                cleanup_stage_files(&self.work_dir, stage_id);
+                cleanup_stage_files(&self.work_dir, pid_key);
                 return Ok(());
             }
         }
@@ -412,29 +427,33 @@ impl TerminalBackend for NativeBackend {
             }
 
             // Clean up tracking files
-            if let Some(stage_id) = &session.stage_id {
-                cleanup_stage_files(&self.work_dir, stage_id);
+            if let Some((_, pid_key)) = &resolved {
+                cleanup_stage_files(&self.work_dir, pid_key);
             }
         }
         Ok(())
     }
 
-    fn is_session_alive(&self, session: &Session) -> Result<bool> {
+    pub fn is_session_alive(&self, session: &Session) -> Result<bool> {
         // Layered approach to checking if session is alive:
         // 1. Try reading from PID file (most current)
         // 2. Check if that PID is alive
         // 3. Fallback to stored session.pid
         // 4. Fallback to window existence check
 
+        // Resolve the window title and PID-file key, preferring the
+        // session's tracking_key so prefixed sessions resolve correctly.
+        let resolved = Self::window_title_and_pid_key(session);
+
         // First, try to get the most current PID from the PID file
-        if let Some(stage_id) = &session.stage_id {
-            if let Some(current_pid) = read_pid_file(&self.work_dir, stage_id) {
+        if let Some((_, pid_key)) = &resolved {
+            if let Some(current_pid) = read_pid_file(&self.work_dir, pid_key) {
                 // We have a PID from the tracking file, check if it's alive
                 if crate::process::is_process_alive(current_pid) {
                     return Ok(true);
                 }
                 // PID file exists but process is dead - clean up and continue checking
-                cleanup_stage_files(&self.work_dir, stage_id);
+                cleanup_stage_files(&self.work_dir, pid_key);
             }
         }
 
@@ -453,18 +472,13 @@ impl TerminalBackend for NativeBackend {
         }
 
         // Final fallback: check if window still exists
-        if let Some(stage_id) = &session.stage_id {
-            let title = format!("loom-{stage_id}");
-            if window_exists_for_terminal(&title, &self.terminal) {
+        if let Some((title, _)) = &resolved {
+            if window_exists_for_terminal(title, &self.terminal) {
                 return Ok(true);
             }
         }
 
         Ok(false)
-    }
-
-    fn backend_type(&self) -> BackendType {
-        BackendType::Native
     }
 }
 
@@ -475,11 +489,66 @@ mod tests {
 
     #[test]
     fn test_native_backend_creation() {
-        // May fail if no terminal is available
+        // May fail if no terminal is available; we only assert that when a
+        // terminal *is* available, construction succeeds.
         let temp_dir = TempDir::new().unwrap();
         let result = NativeBackend::new(temp_dir.path().to_path_buf());
         if let Ok(backend) = result {
-            assert_eq!(backend.backend_type(), BackendType::Native);
+            // Sanity: the constructed backend exposes its terminal emulator.
+            let _ = backend.terminal();
         }
+    }
+
+    #[test]
+    fn window_title_and_pid_key_for_stage_session() {
+        let mut session = Session::new();
+        session.assign_to_stage("worker-pool".to_string());
+        let (title, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
+        assert_eq!(title, "loom-worker-pool");
+        assert_eq!(pid_key, "worker-pool");
+    }
+
+    #[test]
+    fn window_title_and_pid_key_for_merge_session() {
+        let mut session = Session::new_merge("loom/feature".to_string(), "main".to_string());
+        session.assign_to_stage("feature".to_string());
+        let (title, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
+        assert_eq!(title, "loom-merge-feature");
+        assert_eq!(pid_key, "merge-feature");
+    }
+
+    #[test]
+    fn window_title_and_pid_key_for_knowledge_session() {
+        let session = Session::new_knowledge("kb");
+        let (title, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
+        assert_eq!(title, "loom-knowledge-kb");
+        assert_eq!(pid_key, "knowledge-kb");
+    }
+
+    #[test]
+    fn window_title_and_pid_key_for_base_conflict_session() {
+        let mut session = Session::new_base_conflict("loom/_base/feature".to_string());
+        session.assign_to_stage("feature".to_string());
+        let (title, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
+        assert_eq!(title, "loom-base-conflict-feature");
+        assert_eq!(pid_key, "base-conflict-feature");
+    }
+
+    #[test]
+    fn window_title_and_pid_key_legacy_fallback() {
+        // Legacy session: empty tracking_key, falls back to the bare stage id.
+        let mut session = Session::new();
+        session.stage_id = Some("legacy".to_string());
+        session.tracking_key = String::new();
+        let (title, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
+        assert_eq!(title, "loom-legacy");
+        assert_eq!(pid_key, "legacy");
+    }
+
+    #[test]
+    fn window_title_and_pid_key_none_without_stage() {
+        // No tracking_key and no stage_id → nothing to resolve.
+        let session = Session::new();
+        assert!(NativeBackend::window_title_and_pid_key(&session).is_none());
     }
 }

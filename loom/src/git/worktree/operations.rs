@@ -9,7 +9,6 @@ use crate::fs::permissions::{trust_worktree, untrust_worktree};
 use crate::git::branch::branch_name_for_stage;
 use crate::git::runner::{run_git, run_git_checked};
 use crate::models::worktree::Worktree;
-use crate::plan::schema::BackendType;
 use crate::validation::validate_id;
 
 use super::checks::is_valid_git_worktree;
@@ -30,7 +29,6 @@ pub fn create_worktree(
     stage_id: &str,
     repo_root: &Path,
     base_branch: Option<&str>,
-    backend: BackendType,
 ) -> Result<Worktree> {
     // Validate stage_id before using in paths
     validate_id(stage_id).context("Invalid stage ID for worktree")?;
@@ -87,7 +85,7 @@ pub fn create_worktree(
     ensure_work_symlink(&worktree_path, repo_root)?;
 
     // Set up .claude/ directory for worktree.
-    setup_claude_directory(&worktree_path, repo_root, backend)?;
+    setup_claude_directory(&worktree_path, repo_root)?;
 
     // Symlink project-root CLAUDE.md
     setup_root_claude_md(&worktree_path, repo_root)?;
@@ -175,7 +173,6 @@ pub fn get_or_create_worktree(
     stage_id: &str,
     repo_root: &Path,
     base_branch: Option<&str>,
-    backend: BackendType,
 ) -> Result<Worktree> {
     // Validate stage_id before using in paths
     validate_id(stage_id).context("Invalid stage ID for worktree")?;
@@ -211,5 +208,5 @@ pub fn get_or_create_worktree(
     }
 
     // Create new worktree
-    create_worktree(stage_id, repo_root, base_branch, backend)
+    create_worktree(stage_id, repo_root, base_branch)
 }

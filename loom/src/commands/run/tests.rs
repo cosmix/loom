@@ -18,7 +18,6 @@ fn create_test_plan(dir: &Path, stages: Vec<StageDefinition>) -> PathBuf {
             auto_merge: None,
             sandbox: SandboxConfig::default(),
             change_impact: None,
-            execution: None,
             adjudication: None,
             stages,
         },
@@ -66,7 +65,6 @@ fn setup_work_dir_with_plan(temp_dir: &TempDir) -> (PathBuf, WorkDir) {
         model: None,
         reasoning_effort: None,
         code_review: None,
-        execution: None,
     };
 
     let plan_path = create_test_plan(temp_dir.path(), vec![stage_def]);

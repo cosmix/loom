@@ -27,27 +27,19 @@ use std::path::Path;
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::models::worktree::Worktree;
-use crate::orchestrator::preflight::resolve_project_backend;
 use crate::orchestrator::signals::{generate_signal, DependencyStatus};
-use crate::orchestrator::terminal::dispatcher::{BackendDispatcher, BackendNeeds};
-use crate::orchestrator::terminal::BackendType;
+use crate::orchestrator::terminal::native::NativeBackend;
 
 /// Configuration for session continuation
 #[derive(Debug, Clone)]
 pub struct ContinuationConfig {
-    /// Optional backend override. When `None`, the continuation resolves
-    /// the project-level backend from `.work/config.toml`.
-    pub backend_type: Option<BackendType>,
     /// Whether to automatically spawn a terminal session
     pub auto_spawn: bool,
 }
 
 impl Default for ContinuationConfig {
     fn default() -> Self {
-        Self {
-            backend_type: None,
-            auto_spawn: true,
-        }
+        Self { auto_spawn: true }
     }
 }
 
@@ -94,20 +86,9 @@ pub fn continue_session(
     .context("Failed to generate signal for continuation")?;
 
     if config.auto_spawn {
-        let backend_type = match config.backend_type {
-            Some(b) => b,
-            None => resolve_project_backend(work_dir)
-                .context("Backend preflight failed for continuation")?,
-        };
-        let dispatcher = BackendDispatcher::for_plan(
-            backend_type,
-            BackendNeeds::from_project_and_overrides(backend_type, &[]),
-            work_dir,
-        )
-        .context("Failed to construct backend dispatcher for continuation")?;
-        session.set_backend(backend_type);
-        session = dispatcher
-            .for_stage(backend_type)
+        let native = NativeBackend::new(work_dir.to_path_buf())
+            .context("Failed to construct native backend for continuation")?;
+        session = native
             .spawn_session(stage, worktree, session, &signal_path)
             .context("Failed to spawn session for continuation")?;
     }

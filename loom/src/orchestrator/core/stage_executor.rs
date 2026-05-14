@@ -13,7 +13,6 @@ use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::orchestrator::signals::{
     generate_knowledge_signal, generate_signal_with_skills, DependencyStatus,
 };
-use crate::orchestrator::terminal::dispatcher::resolve_stage_backend;
 
 use super::persistence::Persistence;
 use super::Orchestrator;
@@ -193,7 +192,6 @@ impl StageExecutor for Orchestrator {
             stage_id,
             &self.config.repo_root,
             Some(resolved.branch_name()),
-            self.config.backend_type,
         ) {
             Ok(wt) => wt,
             Err(e) => {
@@ -262,22 +260,16 @@ impl StageExecutor for Orchestrator {
             .mark_executing(stage_id)
             .context("Failed to mark stage as executing in graph")?;
 
-        // Resolve the per-stage backend FIRST so the sandbox-default
-        // computation can branch on it.
-        let stage_backend =
-            resolve_stage_backend(self.config.backend_type, stage.execution_backend())?;
-
         // Generate and write sandbox settings to worktree
         let mut merged_sandbox = crate::sandbox::merge_config(
             &self.config.sandbox_config,
             &stage.sandbox,
             stage.stage_type,
-            stage_backend,
         );
         // Defense-in-depth: re-validate at spawn time. `loom init` already
         // rejects incompatible configs; refuse to spawn rather than silently
         // downgrade if the on-disk config has since become invalid.
-        if let Err(e) = crate::sandbox::validate_config(&merged_sandbox, stage_backend) {
+        if let Err(e) = crate::sandbox::validate_config(&merged_sandbox) {
             let err_msg = format!("{e:#}");
             eprintln!("Stage '{stage_id}' blocked: invalid sandbox config at spawn: {err_msg}");
             if stage.try_mark_blocked().is_ok() {
@@ -291,15 +283,12 @@ impl StageExecutor for Orchestrator {
             return Ok(());
         }
         crate::sandbox::expand_paths(&mut merged_sandbox);
-        if let Err(e) =
-            crate::sandbox::write_settings(&merged_sandbox, stage_backend, &worktree.path)
-        {
+        if let Err(e) = crate::sandbox::write_settings(&merged_sandbox, &worktree.path) {
             eprintln!("Warning: Failed to write sandbox settings for stage '{stage_id}': {e}");
             // Continue anyway - sandbox is optional enhancement
         }
 
-        let mut session = Session::new();
-        session.set_backend(stage_backend);
+        let session = Session::new();
 
         // Set up Claude Code hooks for this session
         if let Some(hooks_dir) = find_hooks_dir() {
@@ -310,7 +299,6 @@ impl StageExecutor for Orchestrator {
                 &self.config.work_dir,
                 &hooks_dir,
                 merged_sandbox.permission_mode,
-                stage_backend,
             ) {
                 eprintln!("Warning: Failed to set up hooks for stage '{stage_id}': {e}");
                 // Continue anyway - hooks are optional enhancement
@@ -350,12 +338,10 @@ impl StageExecutor for Orchestrator {
             // daemon. Without this, a transient spawn error strands the
             // stage in Executing on disk; subsequent `loom run` invocations
             // poll forever because Executing stages are never re-spawned.
-            match self.dispatcher.for_stage(stage_backend).spawn_session(
-                &stage,
-                &worktree,
-                session,
-                &signal_path,
-            ) {
+            match self
+                .native
+                .spawn_session(&stage, &worktree, session, &signal_path)
+            {
                 Ok(spawned) => {
                     println!("  Started: {stage_id}");
                     spawned
@@ -423,20 +409,14 @@ impl StageExecutor for Orchestrator {
     fn start_knowledge_stage(&mut self, mut stage: Stage) -> Result<()> {
         let stage_id = stage.id.clone();
 
-        // Resolve the per-stage backend FIRST so the sandbox-default
-        // computation can branch on it.
-        let stage_backend =
-            resolve_stage_backend(self.config.backend_type, stage.execution_backend())?;
-
         // Generate and write sandbox settings to main repo
         let mut merged_sandbox = crate::sandbox::merge_config(
             &self.config.sandbox_config,
             &stage.sandbox,
             stage.stage_type,
-            stage_backend,
         );
         // Defense-in-depth: re-validate at spawn time even for knowledge stages.
-        if let Err(e) = crate::sandbox::validate_config(&merged_sandbox, stage_backend) {
+        if let Err(e) = crate::sandbox::validate_config(&merged_sandbox) {
             let err_msg = format!("{e:#}");
             eprintln!(
                 "Knowledge stage '{stage_id}' blocked: invalid sandbox config at spawn: {err_msg}"
@@ -455,17 +435,14 @@ impl StageExecutor for Orchestrator {
         // Knowledge stages share the host's main-repo `.claude/settings.local.json`
         // (the agent runs on the host directly), so the sandbox/permissions settings
         // must be written there.
-        if let Err(e) =
-            crate::sandbox::write_settings(&merged_sandbox, stage_backend, &self.config.repo_root)
-        {
+        if let Err(e) = crate::sandbox::write_settings(&merged_sandbox, &self.config.repo_root) {
             eprintln!(
                 "Warning: Failed to write sandbox settings for knowledge stage '{stage_id}': {e}"
             );
             // Continue anyway - sandbox is optional enhancement
         }
 
-        let mut session = Session::new();
-        session.set_backend(stage_backend);
+        let session = Session::new();
 
         // Set up Claude Code hooks for this session by writing into the main
         // repo's `.claude/settings.local.json` (the host's agent reads this
@@ -484,7 +461,6 @@ impl StageExecutor for Orchestrator {
                 session.id.clone(),
                 absolute_work_dir,
                 merged_sandbox.permission_mode,
-                stage_backend,
             );
 
             if let Err(e) = setup_hooks_for_worktree(&self.config.repo_root, &config) {
@@ -529,8 +505,7 @@ impl StageExecutor for Orchestrator {
         let spawned_session = if !self.config.manual_mode {
             // Spawn session in the main repo directory (not a worktree)
             let spawned = self
-                .dispatcher
-                .for_stage(stage_backend)
+                .native
                 .spawn_knowledge_session(&stage, session, &signal_path, &self.config.repo_root)
                 .with_context(|| {
                     format!("Failed to spawn knowledge session for stage: {stage_id}")

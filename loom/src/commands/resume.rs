@@ -62,10 +62,7 @@ pub fn execute(stage_id: String) -> Result<()> {
         .context("Failed to prepare continuation context")?;
 
     // Create continuation configuration with auto_spawn enabled
-    let config = ContinuationConfig {
-        auto_spawn: true,
-        ..Default::default()
-    };
+    let config = ContinuationConfig { auto_spawn: true };
 
     // Check if we have a worktree to spawn the session in
     if let Some(worktree_id) = &stage.worktree {

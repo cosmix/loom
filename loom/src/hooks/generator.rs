@@ -212,7 +212,7 @@ pub fn find_hooks_dir() -> Option<std::path::PathBuf> {
 mod tests {
     use super::*;
     use crate::hooks::config::HooksConfig;
-    use crate::plan::schema::{BackendType, PermissionMode};
+    use crate::plan::schema::PermissionMode;
     use tempfile::TempDir;
 
     #[test]
@@ -224,7 +224,6 @@ mod tests {
             "test-session".to_string(),
             temp_dir.path().to_path_buf(),
             PermissionMode::Default,
-            BackendType::Native,
         );
 
         let settings = generate_hooks_settings(&config, None).unwrap();

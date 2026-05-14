@@ -2,7 +2,6 @@
 
 use crate::helpers::create_temp_git_repo;
 use loom::models::stage::{Stage, StageStatus};
-use loom::orchestrator::terminal::BackendType;
 use loom::orchestrator::OrchestratorConfig;
 use loom::plan::graph::ExecutionGraph;
 use loom::plan::schema::SandboxConfig;
@@ -57,7 +56,6 @@ fn test_orchestrator_with_manual_mode() {
         work_dir: work_dir.clone(),
         repo_root: repo_root.to_path_buf(),
         status_update_interval: Duration::from_secs(30),
-        backend_type: BackendType::Native,
         auto_merge: false,
         base_branch: None,
         skills_dir: None,

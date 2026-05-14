@@ -1,17 +1,7 @@
-//! DEPRECATED: Legacy spawner module
+//! Crash reporting utilities.
 //!
-//! This module is deprecated. Session spawning is now handled by the terminal backend
-//! abstraction in `crate::orchestrator::terminal`.
-//!
-//! # Migration Guide
-//!
-//! - `spawn_session` -> Use `TerminalBackend::spawn_session()` from `terminal` module
-//! - `SpawnerConfig` -> Use `OrchestratorConfig` or `BackendType` from `terminal` module
-//! - `kill_session` -> Use `TerminalBackend::kill_session()`
-//!
-//! # Retained Functionality
-//!
-//! The following crash reporting functions are still exported from this module
+//! Session spawning lives in `crate::orchestrator::terminal::native`
+//! (`NativeBackend`). This module retains the crash reporting types
 //! until they are migrated to a dedicated crash reporting module:
 //!
 //! - `CrashReport`

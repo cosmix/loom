@@ -12,9 +12,8 @@ use crate::git::merge::InProgressMerge;
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::continuation::save_session;
-use crate::orchestrator::preflight::resolve_project_backend;
 use crate::orchestrator::signals::{find_live_merge_session_for_stage, generate_merge_signal};
-use crate::orchestrator::terminal::dispatcher::{BackendDispatcher, BackendNeeds};
+use crate::orchestrator::terminal::native::NativeBackend;
 
 /// Result of attempting to spawn a merge resolver session.
 pub enum MergeResolverResult {
@@ -69,21 +68,15 @@ pub fn spawn_merge_resolver(
         return Ok(MergeResolverResult::AlreadyRunning { session_id });
     }
 
-    // Resolve project backend and construct a dispatcher that only
-    // includes the backend the merge session will actually use.
-    let backend_type =
-        resolve_project_backend(work_dir).context("Backend preflight failed for merge resolver")?;
-    let needs = BackendNeeds::from_project_and_overrides(backend_type, &[]);
-    let dispatcher = BackendDispatcher::for_plan(backend_type, needs, work_dir)
-        .context("Failed to construct backend dispatcher for merge resolver")?;
+    // Construct a native backend for spawning the merge session.
+    let native = NativeBackend::new(work_dir.to_path_buf())
+        .context("Failed to construct native backend for merge resolver")?;
 
     // Get the source branch name for this stage
     let source_branch = branch_name_for_stage(&stage.id);
 
-    // Create a merge resolution session, tagged with the project backend
-    // so subsequent kill/liveness routes correctly.
-    let mut session = Session::new_merge(source_branch.clone(), merge_point.to_string());
-    session.set_backend(backend_type);
+    // Create a merge resolution session.
+    let session = Session::new_merge(source_branch.clone(), merge_point.to_string());
     let session_id = session.id.clone();
 
     // Generate the merge signal file
@@ -98,9 +91,8 @@ pub fn spawn_merge_resolver(
     )
     .context("Failed to generate merge signal")?;
 
-    // Spawn the merge session via the dispatcher.
-    let spawned_session = dispatcher
-        .for_stage(backend_type)
+    // Spawn the merge session via the native backend.
+    let spawned_session = native
         .spawn_merge_session(stage, session, &signal_path, repo_root)
         .context("Failed to spawn merge resolver session")?;
 

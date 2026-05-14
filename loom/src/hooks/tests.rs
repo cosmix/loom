@@ -1,12 +1,12 @@
 //! Tests for hooks infrastructure
 
 use super::*;
-use crate::plan::schema::{BackendType, PermissionMode};
+use crate::plan::schema::PermissionMode;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
-/// Test helper: build a HooksConfig with sensible defaults matching the
-/// pre-Stage-2 behaviour (AcceptEdits + Native) so existing assertions hold.
+/// Test helper: build a HooksConfig with sensible defaults (AcceptEdits)
+/// so existing assertions hold.
 fn test_config(hooks: PathBuf, stage: &str, session: &str, work: PathBuf) -> HooksConfig {
     HooksConfig::new(
         hooks,
@@ -14,7 +14,6 @@ fn test_config(hooks: PathBuf, stage: &str, session: &str, work: PathBuf) -> Hoo
         session.to_string(),
         work,
         PermissionMode::AcceptEdits,
-        BackendType::Native,
     )
 }
 
@@ -73,7 +72,6 @@ mod config_tests {
         assert_eq!(config.session_id, "session-123");
         assert_eq!(config.work_dir, PathBuf::from("/path/to/.work"));
         assert_eq!(config.permission_mode, PermissionMode::AcceptEdits);
-        assert_eq!(config.backend, BackendType::Native);
     }
 
     #[test]
@@ -439,7 +437,6 @@ mod generator_tests {
                 "session".to_string(),
                 PathBuf::from("/work"),
                 mode,
-                BackendType::Native,
             );
 
             let settings = generate_hooks_settings(&config, None).unwrap();
@@ -461,7 +458,6 @@ mod generator_tests {
             "session".to_string(),
             PathBuf::from("/work"),
             PermissionMode::Auto,
-            BackendType::Native,
         );
 
         let existing = json!({

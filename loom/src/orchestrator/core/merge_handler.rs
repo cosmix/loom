@@ -499,8 +499,7 @@ impl Orchestrator {
             &self.config.repo_root,
             &self.config.work_dir,
             &target_branch,
-            &self.dispatcher,
-            self.config.backend_type,
+            &self.native,
         ) {
             Ok(AutoMergeResult::Success {
                 files_changed,
@@ -700,10 +699,7 @@ impl Orchestrator {
                 // Kill the original session to prevent zombie processes.
                 // When loom stage complete detected a merge conflict, the Stage session
                 // may still be running -- actively terminate it.
-                let kill_result = self
-                    .dispatcher
-                    .for_session(&stale_session)
-                    .kill_session(&stale_session);
+                let kill_result = self.native.kill_session(&stale_session);
                 if let Err(e) = &kill_result {
                     tracing::debug!(
                         session_id = %stale_session_id,
@@ -775,11 +771,8 @@ impl Orchestrator {
                 .unwrap_or_default()
             };
 
-        // Create a merge session. Merge sessions always run on the
-        // project-default backend (we don't currently support per-stage
-        // merge backends).
-        let mut session = Session::new_merge(source_branch.clone(), target_branch.clone());
-        session.set_backend(self.config.backend_type);
+        // Create a merge session.
+        let session = Session::new_merge(source_branch.clone(), target_branch.clone());
 
         // Detect any active merge in the main repo so the signal can branch
         // between "start a fresh merge" and "continue the existing one".
@@ -810,10 +803,9 @@ impl Orchestrator {
         )
         .context("Failed to generate merge signal")?;
 
-        // Spawn the merge resolution session via the project's backend.
+        // Spawn the merge resolution session.
         let spawned_session = self
-            .dispatcher
-            .for_stage(self.config.backend_type)
+            .native
             .spawn_merge_session(stage, session, &signal_path, &self.config.repo_root)
             .context("Failed to spawn merge resolution session")?;
 

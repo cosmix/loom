@@ -6,7 +6,6 @@ pub mod liveness;
 pub mod merge_attribution;
 pub mod monitor;
 pub mod notify;
-pub mod preflight;
 pub mod progressive_merge;
 pub mod retry;
 pub mod signals;
@@ -45,7 +44,6 @@ pub use signals::{
 pub use spawner::{generate_crash_report, CrashReport};
 // Re-export terminal functions (replaces legacy spawner exports)
 pub use terminal::native::NativeBackend;
-pub use terminal::{create_backend, BackendType, TerminalBackend};
 // Re-export hooks infrastructure from top-level hooks module
 pub use crate::hooks::{
     generate_hooks_settings, log_hook_event, setup_hooks_for_worktree, HookEvent, HookEventLog,
