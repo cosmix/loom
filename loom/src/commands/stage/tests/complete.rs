@@ -454,15 +454,13 @@ fn verify_path_succeeds_without_admin_token() {
 
 #[test]
 #[serial]
-fn cli_invoked_from_within_container_fails_admin_check() {
-    // Simulate the container scenario: $XDG_RUNTIME_DIR is set but no
-    // loom/admin.token exists (because the daemon writes admin.token on the
-    // host, and the container cannot see the host's runtime dir). The gate
-    // must refuse the bypass flags. This is the structural defence against
-    // a compromised container agent invoking --no-verify.
+fn cli_without_admin_token_fails_admin_check() {
+    // $XDG_RUNTIME_DIR is set but no loom/admin.token exists. The admin
+    // gate must refuse the bypass flags. This is the structural defence
+    // against an agent invoking --no-verify without daemon authority.
     let tmp = TempDir::new().unwrap();
     let prev = set_xdg_runtime_dir(Some(tmp.path()));
-    // Deliberately do NOT write admin.token — the container scenario.
+    // Deliberately do NOT write admin.token.
 
     let work_dir = tmp.path().join(".work");
     std::fs::create_dir_all(&work_dir).unwrap();
@@ -473,7 +471,7 @@ fn cli_invoked_from_within_container_fails_admin_check() {
 
     assert!(
         result.is_err(),
-        "container-simulated environment must fail the admin gate"
+        "missing admin token must fail the admin gate"
     );
     let err = format!("{:#}", result.unwrap_err());
     assert!(

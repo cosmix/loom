@@ -8,7 +8,6 @@
 //! - Merge sessions: run in main repository for conflict resolution
 //! - Knowledge sessions: run in main repository for knowledge gathering (no worktree)
 
-pub mod container;
 pub mod dispatcher;
 pub mod emulator;
 pub mod native;
@@ -120,10 +119,6 @@ pub fn create_backend(
     match backend_type {
         BackendType::Native => {
             let backend = native::NativeBackend::new(work_dir.to_path_buf())?;
-            Ok(Box::new(backend))
-        }
-        BackendType::Container => {
-            let backend = container::ContainerBackend::new(work_dir.to_path_buf())?;
             Ok(Box::new(backend))
         }
     }

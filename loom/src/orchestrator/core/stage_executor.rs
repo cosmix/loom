@@ -2,7 +2,6 @@
 
 use anyhow::{Context, Result};
 use chrono::Utc;
-use std::process::Command;
 
 use crate::git;
 use crate::git::worktree::setup_worktree_hooks;
@@ -14,39 +13,10 @@ use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::orchestrator::signals::{
     generate_knowledge_signal, generate_signal_with_skills, DependencyStatus,
 };
-use crate::orchestrator::terminal::container::runtime::detect_runtime;
 use crate::orchestrator::terminal::dispatcher::resolve_stage_backend;
-use crate::plan::schema::execution::BackendType;
 
 use super::persistence::Persistence;
 use super::Orchestrator;
-
-/// Remove the container for a stage as part of spawn-failure rollback.
-///
-/// Best-effort: errors are swallowed. Only acts when `backend` is
-/// `Container` and a runtime is detectable.
-fn remove_container_on_failure(backend: BackendType, container_name: &str) {
-    if backend != BackendType::Container {
-        return;
-    }
-    let runtime = match detect_runtime("auto") {
-        Ok(r) => r,
-        Err(_) => {
-            // Fall back to trying Docker and Podman in sequence rather than
-            // giving up — the container may still be removable.
-            if let Ok(r) = detect_runtime("docker") {
-                r
-            } else if let Ok(r) = detect_runtime("podman") {
-                r
-            } else {
-                return;
-            }
-        }
-    };
-    let _ = Command::new(runtime.binary())
-        .args(["rm", "-f", container_name])
-        .output();
-}
 
 /// Trait for stage execution operations
 pub(super) trait StageExecutor: Persistence {
@@ -164,9 +134,6 @@ impl StageExecutor for Orchestrator {
             if let Err(spawn_err) = self.start_knowledge_stage(stage) {
                 let err_msg = format!("{spawn_err:#}");
                 eprintln!("Knowledge stage '{stage_id}' spawn failed: {err_msg}");
-                // Remove orphan container — knowledge stages have no worktree/branch.
-                let container_name = format!("loom-knowledge-{stage_id}");
-                remove_container_on_failure(self.config.backend_type, &container_name);
                 if let Ok(mut reloaded) = self.load_stage(stage_id) {
                     if reloaded.try_mark_blocked().is_ok() {
                         reloaded.failure_info = Some(FailureInfo {
@@ -296,7 +263,7 @@ impl StageExecutor for Orchestrator {
             .context("Failed to mark stage as executing in graph")?;
 
         // Resolve the per-stage backend FIRST so the sandbox-default
-        // computation can branch on it (container → bypass-permissions).
+        // computation can branch on it.
         let stage_backend =
             resolve_stage_backend(self.config.backend_type, stage.execution_backend())?;
 
@@ -308,9 +275,8 @@ impl StageExecutor for Orchestrator {
             stage_backend,
         );
         // Defense-in-depth: re-validate at spawn time. `loom init` already
-        // rejects incompatible configs, but the user might have hand-edited
-        // .work/config.toml to drop the container backend marker between
-        // init and run. Refuse to spawn rather than silently downgrade.
+        // rejects incompatible configs; refuse to spawn rather than silently
+        // downgrade if the on-disk config has since become invalid.
         if let Err(e) = crate::sandbox::validate_config(&merged_sandbox, stage_backend) {
             let err_msg = format!("{e:#}");
             eprintln!("Stage '{stage_id}' blocked: invalid sandbox config at spawn: {err_msg}");
@@ -399,9 +365,6 @@ impl StageExecutor for Orchestrator {
                         format!("Failed to spawn session for stage {stage_id}: {spawn_err:#}");
                     eprintln!("{err_msg}");
                     // Remove orphan resources so a retry can start clean.
-                    // Container — best-effort, errors swallowed.
-                    let container_name = format!("loom-{stage_id}");
-                    remove_container_on_failure(stage_backend, &container_name);
                     // Worktree — best-effort force-removal; ignore "not found" etc.
                     let _ = git::remove_worktree(stage_id, &self.config.repo_root, true);
                     // Branch — force-delete so the next retry can recreate
@@ -461,7 +424,7 @@ impl StageExecutor for Orchestrator {
         let stage_id = stage.id.clone();
 
         // Resolve the per-stage backend FIRST so the sandbox-default
-        // computation can branch on it (container → bypass-permissions).
+        // computation can branch on it.
         let stage_backend =
             resolve_stage_backend(self.config.backend_type, stage.execution_backend())?;
 
@@ -489,40 +452,24 @@ impl StageExecutor for Orchestrator {
             return Ok(());
         }
         crate::sandbox::expand_paths(&mut merged_sandbox);
-        // Native knowledge stages share the host's main-repo `.claude/settings.local.json`
-        // (the agent runs on the host directly), so the sandbox/permissions settings must
-        // be written there. Container knowledge stages get their own per-session overlay
-        // under `.work/container-settings/` (written below alongside the hooks file) so the
-        // host file is never rewritten with `/home/loom` paths or `bypassPermissions`.
-        if stage_backend != BackendType::Container {
-            if let Err(e) = crate::sandbox::write_settings(
-                &merged_sandbox,
-                stage_backend,
-                &self.config.repo_root,
-            ) {
-                eprintln!(
-                    "Warning: Failed to write sandbox settings for knowledge stage '{stage_id}': {e}"
-                );
-                // Continue anyway - sandbox is optional enhancement
-            }
+        // Knowledge stages share the host's main-repo `.claude/settings.local.json`
+        // (the agent runs on the host directly), so the sandbox/permissions settings
+        // must be written there.
+        if let Err(e) =
+            crate::sandbox::write_settings(&merged_sandbox, stage_backend, &self.config.repo_root)
+        {
+            eprintln!(
+                "Warning: Failed to write sandbox settings for knowledge stage '{stage_id}': {e}"
+            );
+            // Continue anyway - sandbox is optional enhancement
         }
 
         let mut session = Session::new();
         session.set_backend(stage_backend);
 
-        // Set up Claude Code hooks for this session.
-        //
-        // Native: write into the main repo's `.claude/settings.local.json` (the
-        // host's agent reads this file directly).
-        //
-        // Container: write to a loom-owned, per-session overlay at
-        // `<work_dir>/container-settings/<session-id>.local.json`. The
-        // container backend ro-mounts that file at
-        // `/repo/.claude/settings.local.json`, so the agent inside the
-        // container sees container hook paths and bypassPermissions while
-        // the host's `<repo>/.claude/settings.local.json` keeps its native
-        // hook paths and permission mode (no host corruption, parallel host
-        // Claude work stays functional).
+        // Set up Claude Code hooks for this session by writing into the main
+        // repo's `.claude/settings.local.json` (the host's agent reads this
+        // file directly).
         if let Some(hooks_dir) = find_hooks_dir() {
             // Canonicalize work_dir to absolute path
             let absolute_work_dir = self
@@ -540,20 +487,14 @@ impl StageExecutor for Orchestrator {
                 stage_backend,
             );
 
-            let setup_result = if stage_backend == BackendType::Container {
-                crate::hooks::setup_container_main_session_settings(&self.config.work_dir, &config)
-                    .map(|_| ())
-            } else {
-                setup_hooks_for_worktree(&self.config.repo_root, &config)
-            };
-            if let Err(e) = setup_result {
+            if let Err(e) = setup_hooks_for_worktree(&self.config.repo_root, &config) {
                 eprintln!("Warning: Failed to set up hooks for knowledge stage '{stage_id}': {e}");
                 // Continue anyway - hooks are optional enhancement
             }
         }
 
         // Exclude .claude/settings.local.json from the main repo's gitignore so knowledge-stage
-        // hook configs (which may contain container-baked paths) cannot be accidentally committed.
+        // hook configs cannot be accidentally committed.
         if let Err(e) =
             crate::git::worktree::add_settings_local_to_main_gitignore(&self.config.repo_root)
         {

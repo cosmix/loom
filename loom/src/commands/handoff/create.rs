@@ -109,8 +109,6 @@ pub fn execute(
         merge_source_branch: None,
         merge_target_branch: None,
         backend: Default::default(),
-        runtime: None,
-        container_name: None,
         tracking_key: String::new(),
     };
 

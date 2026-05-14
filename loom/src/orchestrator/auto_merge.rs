@@ -32,7 +32,7 @@ pub enum AutoMergeResult {
     AlreadyUpToDate { cleanup: CleanupResult },
     /// Conflicts detected, spawned resolution session.
     /// Boxed to keep the enum compact — `Session` carries runtime-identity
-    /// fields (`tracking_key`, container metadata) and dwarfs other variants.
+    /// fields (`tracking_key`) and dwarfs other variants.
     ConflictResolutionSpawned {
         session: Box<Session>,
         conflicting_files: Vec<String>,

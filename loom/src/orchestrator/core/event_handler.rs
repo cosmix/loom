@@ -206,26 +206,12 @@ impl EventHandler for Orchestrator {
         // Kill old session if still tracked
         if let Some(session) = self.active_sessions.get(stage_id) {
             let session_clone = session.clone();
-            let kill_result = self
+            if let Err(e) = self
                 .dispatcher
                 .for_session(&session_clone)
-                .kill_session(&session_clone);
-            if let Err(e) = &kill_result {
-                eprintln!("Warning: Failed to kill session '{session_id}': {e}");
-            }
-            if kill_result.is_ok()
-                && session_clone.backend == crate::plan::schema::execution::BackendType::Container
+                .kill_session(&session_clone)
             {
-                // The old session file must not reference the now-removed container.
-                // The stage will be re-queued and a fresh session record will be
-                // written on the next spawn; clearing here prevents stale references.
-                let mut updated_session = session_clone.clone();
-                updated_session.clear_container_identity();
-                if let Err(e) = self.save_session(&updated_session) {
-                    eprintln!(
-                        "Warning: failed to clear container identity for session '{session_id}': {e}"
-                    );
-                }
+                eprintln!("Warning: Failed to kill session '{session_id}': {e}");
             }
             // Remove old signal file
             if let Err(e) = remove_signal(&session_clone.id, &self.config.work_dir) {

@@ -82,14 +82,12 @@ impl Default for DaemonConfig {
 
 /// Authorization capability required by a request.
 ///
-/// `User` requests are RPCs the agent-in-container performs (Ping,
-/// SubscribeStatus, SubscribeLogs, Unsubscribe). They use the user token
-/// readable from inside the container.
+/// `User` requests are unprivileged RPCs (Ping, SubscribeStatus,
+/// SubscribeLogs, Unsubscribe, DisputeCriteria). They use the user token.
 ///
 /// `Admin` requests are privileged host-only operations (Stop). They require
 /// the admin token, which is mode-0600 and only readable by the host user
-/// who started the daemon. Splitting these prevents a compromised container
-/// from killing the daemon.
+/// who started the daemon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Capability {
     User,
@@ -109,33 +107,6 @@ pub enum Request {
     Unsubscribe { auth_token: String },
     /// Ping to check if daemon is alive (Capability::User)
     Ping { auth_token: String },
-    /// Host-authoritative stage completion for a container-mode session
-    /// (Capability::User).
-    ///
-    /// Sent by the agent's in-container `loom stage complete` when the
-    /// stage ran with [`BackendType::Container`](crate::orchestrator::terminal::BackendType::Container).
-    /// The daemon extracts a git bundle from the live container,
-    /// validates it (size cap, expected base OID prerequisite, target
-    /// branch), imports it into the host repo, runs the existing
-    /// auto-merge flow, and only then kills the container and writes
-    /// final stage state on the host. This is the architectural fix
-    /// for Codex blockers B1 (no .git mount), B2 (no in-container
-    /// stage_file mutation), and B6 (container stays alive until
-    /// extraction succeeds).
-    CompleteStageContainer {
-        auth_token: String,
-        stage_id: String,
-        session_id: String,
-        /// Branch the daemon expects the bundle to export. Provided
-        /// by the agent for cross-checking; the daemon also derives
-        /// the expected target from `stage_type` and refuses any
-        /// mismatch.
-        target_branch: String,
-        /// OID of `target_branch` at spawn time, plumbed through
-        /// `LOOM_BASE_OID`. The daemon refuses bundles that don't
-        /// list this OID as a prerequisite (force-rebase rejection).
-        expected_base_oid: String,
-    },
     /// File a structured dispute against a stage's acceptance criterion.
     /// The daemon writes request.md, increments dispute_count, transitions
     /// the stage to NeedsAdjudication, and replies with the assigned id.
@@ -161,7 +132,6 @@ impl Request {
             | Request::SubscribeStatus { .. }
             | Request::SubscribeLogs { .. }
             | Request::Unsubscribe { .. }
-            | Request::CompleteStageContainer { .. }
             | Request::DisputeCriteria { .. } => Capability::User,
         }
     }

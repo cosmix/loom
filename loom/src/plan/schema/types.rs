@@ -20,7 +20,7 @@ pub enum PermissionMode {
     Auto,
     /// Plan-only mode — propose changes without executing them.
     Plan,
-    /// Bypass all permission prompts. Requires `container` backend (sandboxed).
+    /// Bypass all permission prompts.
     BypassPermissions,
 }
 
@@ -291,7 +291,7 @@ pub struct LoomConfig {
     /// Plan-level sandbox configuration (defaults for all stages)
     #[serde(default)]
     pub sandbox: SandboxConfig,
-    /// Plan-level execution configuration (container preferences, etc.)
+    /// Plan-level execution configuration.
     /// Project-level backend selection lives in `.work/config.toml`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution: Option<PlanExecutionConfig>,

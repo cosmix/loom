@@ -10,8 +10,7 @@ mod tests;
 
 pub use detect::detect_stage_type;
 pub use execution::{
-    BackendType, PlanContainerConfig, PlanExecutionConfig, ProjectContainerConfig,
-    ProjectExecutionConfig, StageExecutionConfig,
+    BackendType, PlanExecutionConfig, ProjectExecutionConfig, StageExecutionConfig,
 };
 pub use types::{
     AcceptanceCriterion, AdjudicationConfig, ChangeImpactConfig, ChangeImpactPolicy, DeadCodeCheck,

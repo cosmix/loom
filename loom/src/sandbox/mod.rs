@@ -11,7 +11,4 @@ pub use config::{
     is_legitimate_work_access, merge_config, validate_config, validate_paths, MergedSandboxConfig,
     PathEscapeAttempt,
 };
-pub use settings::{
-    apply_default_mode, generate_settings_json, is_sensitive_env_key,
-    scrub_settings_env_for_backend, write_settings, SENSITIVE_ENV_KEYS, SENSITIVE_ENV_PREFIXES,
-};
+pub use settings::{apply_default_mode, generate_settings_json, write_settings};

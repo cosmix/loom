@@ -7,7 +7,6 @@ const TOP_LEVEL_COMMANDS: &[&str] = &[
     "check",
     "clean",
     "completions",
-    "container",
     "diagnose",
     "graph",
     "handoff",
@@ -55,7 +54,6 @@ pub fn complete_subcommands(parent: &str, prefix: &str) -> Result<Vec<String>> {
         ],
         "sessions" => &["kill", "list"],
         "worktree" => &["list", "remove"],
-        "container" => &["build", "doctor", "list", "logs", "rebuild", "shell"],
         "knowledge" => &[
             "audit",
             "bootstrap",
@@ -89,17 +87,7 @@ pub fn complete_flags(command_path: &[&str], prefix: &str) -> Result<Vec<String>
             "--watch",
         ],
         ["status"] => &["--compact", "--live", "--verbose"],
-        ["init"] => &["--backend", "--clean", "--no-build"],
-        ["container", "build"] => &["--fingerprint"],
-        ["container", "list"] => &["--all", "--json"],
-        ["container", "logs"] => &[
-            "--follow",
-            "--format",
-            "--show-thinking",
-            "--tail",
-            "--verbose",
-        ],
-        ["container", "rebuild"] => &["--all", "--fingerprint"],
+        ["init"] => &["--clean"],
         ["clean"] => &["--all", "--sessions", "--state", "--worktrees"],
         ["repair"] => &["--fix"],
         ["map"] => &["--deep", "--focus", "--overwrite"],
@@ -157,7 +145,7 @@ pub fn complete_trigger_types(prefix: &str) -> Result<Vec<String>> {
 pub fn has_subcommands(command: &str) -> bool {
     matches!(
         command,
-        "stage" | "sessions" | "worktree" | "knowledge" | "memory" | "plan" | "container"
+        "stage" | "sessions" | "worktree" | "knowledge" | "memory" | "plan"
     )
 }
 

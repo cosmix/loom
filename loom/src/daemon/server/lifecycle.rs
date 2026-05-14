@@ -50,10 +50,8 @@ impl DaemonServer {
         }
 
         // Stop is a privileged operation — only the admin token (mode 0o600,
-        // host-only) authenticates this request. A container-resident agent
-        // that has only the user token cannot stop the daemon. The admin
-        // token lives at `$XDG_RUNTIME_DIR/loom/admin.token` (host-only —
-        // never mounted into containers because containers only mount .work).
+        // host-only) authenticates this request. The admin token lives at
+        // `$XDG_RUNTIME_DIR/loom/admin.token`.
         let token_path = admin_token_path();
         let auth_token = fs::read_to_string(&token_path)
             .with_context(|| {
@@ -169,15 +167,11 @@ impl DaemonServer {
 
         // Generate admin + user tokens and write to separate files.
         //
-        // admin.token lives at `$XDG_RUNTIME_DIR/loom/admin.token` (host-only).
-        // user.token stays under `.work/` since it's mounted into containers.
-        //
         // - admin.token (mode 0o600): required for privileged ops (Stop and the
         //   verification-bypass flags `--no-verify`, `--force-unsafe`,
-        //   `--assume-merged`). Located in the daemon runtime directory so the
-        //   container topology — which only mounts `.work/` — cannot reach it.
-        // - user.token  (mode 0o644): mounted into containers RO; used for
-        //   Ping / Subscribe / Unsubscribe / CompleteStageContainer.
+        //   `--assume-merged`). Located in the daemon runtime directory.
+        // - user.token  (mode 0o644): used for Ping / Subscribe / Unsubscribe /
+        //   DisputeCriteria.
         //
         // 32-byte / 256-bit random hex from /dev/urandom (OsRng-equivalent).
         let admin_token = generate_token_hex()?;
@@ -443,9 +437,7 @@ impl DaemonServer {
             }
         }
         // Clean up token files. user.token lives in .work/; admin.token lives
-        // at the host-only runtime path (NOT in .work/ — containers only mount
-        // .work/, so the relocation is what prevents container-resident agents
-        // from reading the admin token).
+        // at the host-only runtime path.
         let user_token_path = self.work_dir.join(USER_TOKEN_FILE);
         if let Err(e) = fs::remove_file(&user_token_path) {
             if e.kind() != std::io::ErrorKind::NotFound {

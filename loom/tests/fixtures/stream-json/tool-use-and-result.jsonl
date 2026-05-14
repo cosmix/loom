@@ -1,2 +1,0 @@
-{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tu1","name":"Bash","input":{"command":"ls -la"}}]}}
-{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tu1","content":"total 4\n-rw-r--r-- 1 user group 100 Jan 1 file.txt","is_error":false}]}}

@@ -66,8 +66,8 @@ fn run_orchestrator(
         }
     };
 
-    // Resolve project backend via shared preflight (rejects unpinned
-    // container images and invalid per-stage overrides up front).
+    // Resolve project backend via shared preflight (rejects invalid
+    // per-stage overrides up front).
     let backend_type = resolve_project_backend(work_dir).context("Backend preflight failed")?;
 
     // Configure orchestrator using daemon config

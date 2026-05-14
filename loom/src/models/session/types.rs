@@ -78,20 +78,13 @@ pub struct Session {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub merge_target_branch: Option<String>,
 
-    // ----- Runtime identity (Stage 1) -----
-    /// Backend the session is running on (native terminal, container, etc.).
+    // ----- Runtime identity -----
+    /// Backend the session is running on.
     /// Defaults to `Native` for sessions written before this field existed.
     #[serde(default)]
     pub backend: BackendType,
-    /// Container runtime binary (e.g., `"docker"`, `"podman"`) when the
-    /// session is running on a container backend. `None` for native sessions.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub runtime: Option<String>,
-    /// Container name assigned to this session, if any.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub container_name: Option<String>,
-    /// Stable identifier used to find OS-level resources (terminal title,
-    /// container name, etc.) belonging to this session. Derived from
+    /// Stable identifier used to find OS-level resources (terminal title)
+    /// belonging to this session. Derived from
     /// `(stage_id, session_type)` via [`Session::derive_tracking_key`].
     /// May be empty for legacy sessions or sessions created before assignment.
     #[serde(default)]

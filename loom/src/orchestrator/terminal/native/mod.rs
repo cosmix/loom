@@ -21,10 +21,7 @@ use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
 
 pub use detection::detect_terminal;
-pub use pid_tracking::{
-    cleanup_stage_files, create_wrapper_script, create_wrapper_script_with_paths, read_pid_file,
-    WrapperPaths,
-};
+pub use pid_tracking::{cleanup_stage_files, create_wrapper_script, read_pid_file};
 pub use spawner::spawn_in_terminal;
 pub use window_ops::{close_window_by_title, window_exists_by_title};
 #[cfg(target_os = "macos")]

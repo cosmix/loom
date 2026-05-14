@@ -14,7 +14,6 @@ use std::path::Path;
 
 use crate::hooks::{setup_hooks_for_worktree, HooksConfig};
 use crate::plan::schema::{BackendType, PermissionMode};
-use crate::sandbox::is_sensitive_env_key;
 
 /// Creates or restores the .work symlink in a worktree.
 ///
@@ -44,6 +43,9 @@ pub fn ensure_work_symlink(worktree_path: &Path, repo_root: &Path) -> Result<()>
 /// This ensures:
 /// 1. Instructions (CLAUDE.md) are shared
 /// 2. Permissions (settings.json) include both global hooks and session-specific hooks
+///
+/// `backend` is accepted for API symmetry with the rest of the worktree
+/// setup path.
 pub fn setup_claude_directory(
     worktree_path: &Path,
     repo_root: &Path,
@@ -303,8 +305,7 @@ fn set_permissions(settings: &mut Value, allow: Vec<String>, deny: Vec<String>) 
 /// This function:
 /// 1. Reads the main repo's settings.json (if it exists)
 /// 2. Sets `hasTrustDialogAccepted: true` to skip the trust prompt
-/// 3. Scrubs sensitive env keys from the inherited `env` block when targeting
-///    the container backend (per finding #14)
+/// 3. Strips the stale `LOOM_MAIN_AGENT_PID` from the inherited `env` block
 /// 4. Writes the merged result to the worktree
 ///
 /// Note: We deliberately do NOT write `permissions.defaultMode` here. The
@@ -315,11 +316,14 @@ fn set_permissions(settings: &mut Value, allow: Vec<String>, deny: Vec<String>) 
 ///
 /// This creates the base settings.json. The hooks system later merges in
 /// session-specific hooks via setup_worktree_hooks().
+///
+/// `backend` is accepted for API symmetry with the rest of the worktree
+/// setup path.
 fn create_worktree_settings(
     main_settings: &Path,
     worktree_settings: &Path,
     worktree_path: &Path,
-    backend: BackendType,
+    _backend: BackendType,
 ) -> Result<()> {
     // Start with main repo settings or empty object
     let mut settings: Value = if main_settings.exists() {
@@ -343,17 +347,10 @@ fn create_worktree_settings(
     // here — that's the sandbox-resolved value's job (see fn-level docs).
     obj.entry("permissions").or_insert_with(|| json!({}));
 
-    // Scrub the copied env block:
-    //   * LOOM_MAIN_AGENT_PID is set dynamically per-session by the wrapper.
-    //   * Sensitive host credentials are stripped when targeting the
-    //     container backend (see `sandbox::SENSITIVE_ENV_KEYS`). Native
-    //     backends inherit the host env directly, so there's nothing extra
-    //     to strip there beyond LOOM_MAIN_AGENT_PID.
+    // Scrub the copied env block: LOOM_MAIN_AGENT_PID is set dynamically
+    // per-session by the wrapper script, so any inherited value is stale.
     if let Some(env) = obj.get_mut("env").and_then(|v| v.as_object_mut()) {
         env.remove("LOOM_MAIN_AGENT_PID");
-        if backend == BackendType::Container {
-            env.retain(|key, _| !is_sensitive_env_key(key));
-        }
     }
 
     // Resolve the .work symlink to its absolute target path and add permissions.
@@ -485,7 +482,7 @@ fn add_to_gitignore_exclude(git_dir: &Path, pattern: &str) -> Result<()> {
     } else {
         std::fs::write(
             &exclude_path,
-            format!("# loom: container-backend-generated paths\n{pattern}\n"),
+            format!("# loom: per-worktree generated paths\n{pattern}\n"),
         )
         .with_context(|| format!("Failed to create {}", exclude_path.display()))?;
     }
@@ -498,7 +495,8 @@ fn add_to_gitignore_exclude(git_dir: &Path, pattern: &str) -> Result<()> {
 /// Git stores per-worktree state at `<repo>/.git/worktrees/<stage-id>/`. The
 /// `info/exclude` inside that directory acts as an uncommitted `.gitignore` scoped
 /// to this worktree. Adding `settings.local.json` here prevents agents from
-/// accidentally staging container-baked hook paths into the main repository.
+/// accidentally staging session-specific hook/sandbox settings into the main
+/// repository.
 pub fn add_settings_local_to_worktree_gitignore(stage_id: &str, repo_root: &Path) -> Result<()> {
     let gitdir = repo_root.join(".git/worktrees").join(stage_id);
     add_to_gitignore_exclude(&gitdir, ".claude/settings.local.json")
@@ -818,55 +816,6 @@ mod tests {
         assert!(
             allow.is_none(),
             "No allow array should exist when there is no .work symlink"
-        );
-    }
-
-    #[test]
-    fn test_create_worktree_settings_scrubs_sensitive_env_for_container() {
-        let temp_dir = TempDir::new().unwrap();
-        let worktree = temp_dir.path().join("worktree");
-        std::fs::create_dir_all(&worktree).unwrap();
-
-        let main_claude = temp_dir.path().join("repo").join(".claude");
-        std::fs::create_dir_all(&main_claude).unwrap();
-        let main_settings_json = json!({
-            "env": {
-                "FOO": "keep",
-                "AWS_ACCESS_KEY_ID": "leak",
-                "GH_TOKEN": "leak",
-                "ANTHROPIC_API_KEY": "leak",
-                "MCP_SERVER_PATH": "leak",
-                "LOOM_MAIN_AGENT_PID": "stale"
-            }
-        });
-        let main_settings_path = main_claude.join("settings.json");
-        std::fs::write(
-            &main_settings_path,
-            serde_json::to_string_pretty(&main_settings_json).unwrap(),
-        )
-        .unwrap();
-
-        let worktree_settings_path = worktree.join("settings.json");
-        create_worktree_settings(
-            &main_settings_path,
-            &worktree_settings_path,
-            &worktree,
-            BackendType::Container,
-        )
-        .unwrap();
-
-        let content = std::fs::read_to_string(&worktree_settings_path).unwrap();
-        let settings: Value = serde_json::from_str(&content).unwrap();
-
-        let env = settings["env"].as_object().unwrap();
-        assert!(env.contains_key("FOO"));
-        assert!(!env.contains_key("AWS_ACCESS_KEY_ID"));
-        assert!(!env.contains_key("GH_TOKEN"));
-        assert!(!env.contains_key("ANTHROPIC_API_KEY"));
-        assert!(!env.contains_key("MCP_SERVER_PATH"));
-        assert!(
-            !env.contains_key("LOOM_MAIN_AGENT_PID"),
-            "LOOM_MAIN_AGENT_PID is always stripped"
         );
     }
 

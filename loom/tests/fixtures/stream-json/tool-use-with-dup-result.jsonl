@@ -1,2 +1,0 @@
-{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tu2","name":"Read","input":{"file_path":"/etc/hosts"}}]}}
-{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tu2","content":"127.0.0.1 localhost","is_error":false}],"tool_use_result":{"content":"127.0.0.1 localhost"}}}

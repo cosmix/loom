@@ -9,8 +9,8 @@ use super::constants::LOOM_HOOKS;
 
 /// Generate global hooks configuration for a specific hooks directory.
 ///
-/// Internal helper shared by [`loom_hooks_config`] (host paths) and
-/// [`configure_loom_hooks_for_container`] (container paths).
+/// Internal helper used by [`loom_hooks_config`] to build the hook table
+/// against the host hooks directory.
 fn loom_hooks_config_for_dir(hooks_dir: &str) -> Value {
     json!({
         "PreToolUse": [
@@ -348,9 +348,8 @@ fn remove_loom_hooks(hooks_arr: &mut Vec<Value>) {
 
 /// Apply a loom hooks config (built from `hooks_dir`) to a settings object.
 ///
-/// Shared logic for [`configure_loom_hooks`] (host paths) and
-/// [`configure_loom_hooks_for_container`] (container paths):
-/// 1. Migrates old hook paths to the new loom/ subdirectory (no-op for container paths)
+/// Shared logic for [`configure_loom_hooks`]:
+/// 1. Migrates old hook paths to the new loom/ subdirectory
 /// 2. Removes ALL existing loom hooks from settings
 /// 3. Adds fresh loom hooks from the given directory
 ///
@@ -404,8 +403,7 @@ fn configure_loom_hooks_with_dir(
 
 /// Configure loom hooks in settings object using host paths.
 ///
-/// Intended for native backend sessions where hook scripts are accessed
-/// at `~/.claude/hooks/loom/` on the host filesystem.
+/// Hook scripts are accessed at `~/.claude/hooks/loom/` on the host filesystem.
 ///
 /// Returns true if hooks were added/updated.
 pub fn configure_loom_hooks(settings_obj: &mut serde_json::Map<String, Value>) -> Result<bool> {
@@ -413,19 +411,6 @@ pub fn configure_loom_hooks(settings_obj: &mut serde_json::Map<String, Value>) -
         .map(|h| h.join(".claude/hooks/loom").display().to_string())
         .unwrap_or_else(|| "~/.claude/hooks/loom".to_string());
     configure_loom_hooks_with_dir(settings_obj, &hooks_dir)
-}
-
-/// Configure loom hooks in settings object using container-stable paths.
-///
-/// Intended for container backend sessions where hook scripts are bind-mounted
-/// at `/home/loom/.claude/hooks/loom/` inside the container regardless of the
-/// host path.
-///
-/// Returns true if hooks were added/updated.
-pub fn configure_loom_hooks_for_container(
-    settings_obj: &mut serde_json::Map<String, Value>,
-) -> Result<bool> {
-    configure_loom_hooks_with_dir(settings_obj, "/home/loom/.claude/hooks/loom")
 }
 
 #[cfg(test)]
