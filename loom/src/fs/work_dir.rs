@@ -5,6 +5,7 @@ use toml_edit::DocumentMut;
 
 use crate::fs::knowledge::KnowledgeDir;
 use crate::plan::schema::SandboxConfig;
+use crate::remote_control::RemoteControlConfig;
 
 /// Parsed config.toml structure
 #[derive(Debug, Clone)]
@@ -345,6 +346,7 @@ Do not manually edit these files unless you know what you're doing.
 // ==========================================================================
 
 const PLAN_SANDBOX_SECTION: &str = "plan_sandbox";
+const REMOTE_CONTROL_SECTION: &str = "remote_control";
 
 fn config_path(work_dir: &Path) -> PathBuf {
     work_dir.join("config.toml")
@@ -439,6 +441,19 @@ pub fn read_plan_sandbox(work_dir: &Path) -> Result<Option<SandboxConfig>> {
 /// Persist the plan-level sandbox config (`[plan_sandbox]`).
 pub fn write_plan_sandbox(work_dir: &Path, sandbox: &SandboxConfig) -> Result<()> {
     write_section(work_dir, PLAN_SANDBOX_SECTION, sandbox)
+}
+
+/// Read the persisted Remote Control config (`[remote_control]`).
+///
+/// A missing section yields `RemoteControlConfig::default()` (mode = auto),
+/// so callers always get a usable value.
+pub fn read_remote_control_config(work_dir: &Path) -> Result<RemoteControlConfig> {
+    Ok(read_section(work_dir, REMOTE_CONTROL_SECTION)?.unwrap_or_default())
+}
+
+/// Persist the Remote Control config (`[remote_control]`).
+pub fn write_remote_control_config(work_dir: &Path, config: &RemoteControlConfig) -> Result<()> {
+    write_section(work_dir, REMOTE_CONTROL_SECTION, config)
 }
 
 #[cfg(test)]

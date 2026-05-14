@@ -41,6 +41,11 @@ pub fn execute_background(
     let work_dir = WorkDir::new(".")?;
     work_dir.load()?;
 
+    // Advisory Remote Control preflight — never aborts startup.
+    if let Ok(claude_path) = crate::claude::find_claude_path() {
+        crate::remote_control::run_startup_preflight(&claude_path, work_dir.root());
+    }
+
     // Mark plan as in-progress when starting execution
     plan_lifecycle::mark_plan_in_progress(&work_dir)?;
 
