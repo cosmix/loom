@@ -176,6 +176,10 @@ Three files to add a new subcommand:
 2. `cli/dispatch.rs` - Add dispatch match arm
 3. `commands/<module>/` - Implement handler
 
+## Remote Control Module
+
+- `loom/src/remote_control.rs` - `resolve(work_dir)` per-spawn gate, `preflight(path)`, `write_unsupported_marker(work_dir)`, `run_startup_preflight(path, work_dir)`, `RemoteControlConfig` / `RemoteControlMode` types
+
 ## Other Modules
 
 - `src/claude.rs` - Shared find_claude_path() utility
@@ -440,8 +444,7 @@ Stage 2/3 adds alongside: `dispute_count`, `evidence_rounds`, `amendments_applie
 
 - `loom/src/sandbox/config.rs:1-4` — `use crate::plan::schema::{..., PermissionMode, StageType, ...}` (no `BackendType` in scope anywhere in this file)
 - `loom/src/sandbox/config.rs:49-54` — `default_mode_for(stage_type: StageType) -> PermissionMode`
-  - Knowledge / KnowledgeDistill → `AcceptEdits`
-  - Standard / IntegrationVerify → `Auto`
+  - ALL stage types (Knowledge, KnowledgeDistill, Standard, IntegrationVerify) → `AcceptEdits`
 - `loom/src/sandbox/config.rs:60-95` — `merge_config(plan, stage, stage_type)` — precedence: stage > plan > `default_mode_for`
 - `loom/src/sandbox/config.rs:102-112` — `validate_config(merged)` — rejects `BypassPermissions` unconditionally
 - `loom/src/sandbox/config.rs:461-475` — `test_default_mode_for_stage_type`
