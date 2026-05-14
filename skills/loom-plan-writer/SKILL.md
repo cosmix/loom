@@ -260,6 +260,33 @@ Opus stage descriptions can be higher-level since the agent has the judgment to 
 
 **When in doubt, use opus.** A sonnet stage that fails and needs rework costs more than an opus stage that succeeds the first time.
 
+#### Sonnet stages MUST delegate aggressively — the 200k context window
+
+```text
+┌────────────────────────────────────────────────────────────────────┐
+│  ⚠️  SONNET HAS A 200k CONTEXT WINDOW — OPUS[1M] HAS 1M            │
+│                                                                    │
+│  A sonnet stage hits loom's default 65% context budget at ~130k   │
+│  tokens and the 75% hard stop at ~150k. The SAME stage on          │
+│  opus[1m] has ~650k of headroom before the budget warning.         │
+│                                                                    │
+│  When a sonnet stage's main agent does the bulky work itself, it   │
+│  compacts — and compaction forces a full uncached context re-read, │
+│  which is slow and token-expensive. The cheap model becomes the    │
+│  expensive one.                                                    │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+The structural fix: **subagents run in their own context windows, and only their final message returns to the main agent.** A sonnet stage that fans out aggressively keeps the main (sonnet) agent's context as a thin coordination ledger — the signal file, subagent prompts, and returned summaries — while the bulky work (reading files, iterating on code, scanning test output) burns *subagent* context that is discarded on return.
+
+When you assign `model: "sonnet"` to a stage, design it so the main agent is a **coordinator, not an implementer**:
+
+- Decompose the stage into subagent assignments that each own a slice of the work — not just for parallelism, but to keep file-reading and code-iteration out of the main context.
+- Avoid sonnet stages where the main agent must itself read many large files, run long test loops, or iterate extensively before delegating. If the stage cannot be decomposed that way, it is an **architectural stage** — use `opus[1m]` instead.
+- A sonnet stage with no subagent assignments is a red flag: it will likely do all the work in the main context and compact. Either add a `SUBAGENT FILE ASSIGNMENTS` block or switch the stage to `opus[1m]`.
+
+This is *why* CLAUDE.md Rule 6 says "prefer subagents" — not only token cost, but context-window survival. On opus[1m] the 1M window absorbs a heavier main-agent role; on sonnet it does not.
+
 **integration-verify stages:** Always use opus (set automatically if not specified).
 
 **knowledge stages:** Typically sonnet (exploration is well-scoped), but use opus if the codebase is large/unfamiliar and the agent must make strategic decisions about what to explore.
