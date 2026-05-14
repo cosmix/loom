@@ -383,6 +383,8 @@ All writes to `.work/config.toml` go through `fs/work_dir.rs` using `toml_edit` 
 
 **`loom plan verify` contract:** run `parse_plan()` first (auto-runs Tier 1); if it returns `Err`, report fatal errors and exit non-zero. If it succeeds, run the three Tier 2 functions, print their warnings, exit 0 (advisory only).
 
+**Known gap (2026-05-14):** `loom plan verify` does NOT validate `sandbox.permission_mode=bypass-permissions`. That check lives only in `sandbox::config::validate_config`, called from `commands/init/plan_setup.rs` (init path) and at spawn time. `plan verify` skips it, so a plan with `bypass-permissions` reports 0 errors from `plan verify` but fails at `loom init`. Fix: thread `validate_config` into the `plan verify` flow.
+
 **Call site:** `loom/src/commands/init/plan_setup.rs` — shows the canonical order and how warnings are surfaced to the user.
 
 ## Session Identity: Setter + Clearer Must Travel Together
