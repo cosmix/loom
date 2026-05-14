@@ -322,30 +322,28 @@ pub enum AcceptanceCriterion {
 
 **Why untagged**: avoids requiring a `type: simple` / `type: extended` discriminator in user-authored YAML. The trade-off is that serde error messages on malformed input are less precise.
 
-## TerminalBackend Extension Pattern
+## Session Spawning Pattern
 
-Adding a new backend requires:
-
-1. Implement `TerminalBackend` trait (spawn_session, spawn_merge_session, spawn_base_conflict_session, spawn_knowledge_session, kill_session, is_session_alive)
-2. Add construction logic to `orchestrator/terminal/mod.rs::create_backend()`
-3. Update `BackendNeeds` + `BackendDispatcher::for_plan()` in `dispatcher.rs`
-4. Wire liveness through `LivenessService` (not direct `kill -0`)
-
-One proven implementation: `NativeBackend` (host terminal, 11+ emulators).
-
-## BackendDispatcher Pattern
-
-`BackendDispatcher` is the single source-of-truth for which backends are constructed. Routing uses the session's persisted `backend` field (written at spawn time) — survives daemon restarts.
+`NativeBackend` (`orchestrator/terminal/native/`) is the single concrete type
+for spawning Claude Code sessions in host terminal windows. It exposes
+`spawn_session`, `spawn_merge_session`, `spawn_base_conflict_session`,
+`spawn_knowledge_session`, `kill_session`, and `is_session_alive`. The
+orchestrator holds it as `Arc<NativeBackend>` and shares it with the
+`LivenessService`; every spawn site (main loop, foreground spawner,
+merge_handler, continuation, auto_merge) uses the same `Arc<NativeBackend>`.
 
 ```rust
-let dispatcher = BackendDispatcher::for_plan(needs, work_dir)?;
-let liveness = LivenessService::new(Arc::new(dispatcher));
-// All spawn/kill/alive calls go through dispatcher
+let native = Arc::new(NativeBackend::new(work_dir)?);
+let liveness = LivenessService::new(Arc::clone(&native));
+// All spawn/kill/alive calls go through `native`.
 ```
 
 ## Liveness Pattern
 
-Use `LivenessService::is_alive(session)` rather than calling `kill -0` directly. This routes via the session's `backend` metadata to the appropriate implementation.
+Use `LivenessService::is_alive(session)` rather than calling `kill -0` directly.
+This routes through `NativeBackend::is_session_alive`, keyed on the session's
+`tracking_key` so prefixed merge/knowledge/base-conflict sessions resolve
+correctly.
 
 For tests: `LivenessService::fixed_for_tests(bool)` — returns a fixed value without constructing a backend.
 
@@ -455,7 +453,7 @@ Three-file trust boundary to prevent self-approval attacks:
 | File | Writer | Content | Rationale |
 |------|--------|---------|-----------|
 | `request.md` | Daemon (on agent's behalf via RPC) | Agent's evidence payload | Agent can read but never write directly |
-| `verdict.md` | Daemon worker thread only | Verdict + citations | Container has no rw mount here |
+| `verdict.md` | Daemon worker thread only | Verdict + citations | Stage agents never write here — daemon-authored only |
 | `applied.marker` | Daemon only (zero-byte) | Idempotency guard | Prevents re-application on restart |
 
 If the agent could write both request and verdict, it could pre-fill `verdict: Accept` and self-approve. The split enforces the trust boundary at the filesystem level.

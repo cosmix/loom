@@ -20,11 +20,10 @@ loom/src/
     core.rs, lifecycle.rs, protocol.rs, status.rs, client.rs, orchestrator.rs
   orchestrator/             # Core engine (~4K lines)
     core/                   # Main loop, stage executor, persistence, recovery
-    terminal/               # TerminalBackend trait + dispatching
+    terminal/               # NativeBackend — host OS terminal spawning
       native/               # Host OS terminal spawning (11+ emulators)
-      dispatcher.rs         # BackendDispatcher — route spawn/kill/liveness by backend
     monitor/                # Session health, heartbeat, failure tracking
-    liveness.rs             # LivenessService — backend-aware session liveness probe
+    liveness.rs             # LivenessService — session liveness probe
     signals/                # Signal generation (Manus format, cache, CRUD)
     continuation/           # Context handoff management
     progressive_merge/      # Merge orchestration + lock
@@ -89,15 +88,13 @@ Signal generation has 4 stable prefix generators in cache.rs (standard, knowledg
 
 States: Spawning -> Running -> Completed | Crashed | ContextExhausted | Paused. Tracks PID, terminal window ID, context usage %, timestamps.
 
-### TerminalBackend (orchestrator/terminal/)
+### NativeBackend (orchestrator/terminal/)
 
-Trait for spawning Claude Code in terminal windows. Two concrete implementations:
+Concrete type for spawning Claude Code in terminal windows.
 
 - **NativeBackend** (`orchestrator/terminal/native/`) — spawns Claude Code in a host terminal. Supports 11+ emulators via `TerminalEmulator` enum. PID tracking via wrapper scripts writing to `.work/pids/`.
 
-**BackendDispatcher** (`orchestrator/terminal/dispatcher.rs`) — routes spawn/kill/liveness calls to the appropriate backend implementation.
-
-**LivenessService** (`orchestrator/liveness.rs`) — replaces scattered `kill -0` checks. Delegates to `BackendDispatcher::is_session_alive()` for backend-aware session liveness probes.
+**LivenessService** (`orchestrator/liveness.rs`) — replaces scattered `kill -0` checks. Delegates to `NativeBackend::is_session_alive()` for session liveness probes.
 
 ## Data Flow
 
@@ -294,7 +291,7 @@ Full file list:
 5. `detection.detect_heartbeat_events()` — hung detection via `HeartbeatWatcher`
 6. Return `Vec<MonitorEvent>`
 
-**LivenessService injection:** `Monitor::set_liveness(liveness: LivenessService)` is called by the orchestrator after `BackendDispatcher` construction. Until set, session-alive checks fall back to legacy host-PID probe (`kill -0`).
+**LivenessService injection:** `Monitor::set_liveness(liveness: LivenessService)` is called by the orchestrator after `NativeBackend` construction. Until set, session-alive checks fall back to legacy host-PID probe (`kill -0`).
 
 ## Status Command Architecture (commands/status/)
 

@@ -483,6 +483,7 @@ pub fn complete(
         &stage_id,
         no_verify,
         &acceptance_dir,
+        &working_dir,
         session_id.as_deref(),
         work_dir,
     )?;
@@ -689,7 +690,7 @@ fn check_memory_covers_unwired(
 /// from all prior stages on the merged codebase.
 fn run_aggregated_wiring_reverification(
     _stage_id: &str,
-    verification_dir: &Path,
+    worktree_root: &Path,
     work_dir: &Path,
 ) -> Result<()> {
     // Load all stages
@@ -718,13 +719,13 @@ fn run_aggregated_wiring_reverification(
             // Re-run wiring checks from this stage on the merged codebase.
             // Wiring source paths are authored relative to the originating
             // stage's working_dir, NOT the integration-verify stage's
-            // working_dir — resolve against `verification_dir + working_dir`.
+            // working_dir — resolve against `worktree_root + working_dir`.
             if !stage_def.wiring.is_empty() {
                 println!("  Re-verifying wiring from stage '{}'...", stage.id);
                 let stage_working_dir = if stage_def.working_dir == "." {
-                    verification_dir.to_path_buf()
+                    worktree_root.to_path_buf()
                 } else {
-                    verification_dir.join(&stage_def.working_dir)
+                    worktree_root.join(&stage_def.working_dir)
                 };
                 let gaps = crate::verify::goal_backward::verify_wiring(
                     &stage_def.wiring,
@@ -791,6 +792,7 @@ fn run_verification_phase(
     stage_id: &str,
     no_verify: bool,
     acceptance_dir: &Option<PathBuf>,
+    worktree_root: &Option<PathBuf>,
     session_id: Option<&str>,
     work_dir: &Path,
 ) -> Result<()> {
@@ -959,9 +961,9 @@ fn run_verification_phase(
 
         // Aggregated wiring re-verification for integration-verify stages (3d)
         if stage.stage_type == StageType::IntegrationVerify {
-            if let Some(ref verification_dir) = *acceptance_dir {
+            if let Some(ref root) = *worktree_root {
                 println!("Running aggregated wiring re-verification...");
-                run_aggregated_wiring_reverification(stage_id, verification_dir, work_dir)?;
+                run_aggregated_wiring_reverification(stage_id, root, work_dir)?;
             }
         }
 
@@ -1048,11 +1050,10 @@ fn run_verification_phase(
             &Some(resolve_base_branch(work_dir)),
             &repo_root,
         );
-        // Skip the guard if the branch doesn't exist on the host — that's the
-        // shape unit tests (no real git repo) and isolated-git stages
-        // (commits live in the container's mirror, not on host) take. The
-        // phantom-merge class of bug requires an EXISTING empty branch:
-        // attempt_auto_merge happily fast-forwards to itself.
+        // Skip the guard if the branch doesn't exist on the host — the shape
+        // that shape unit tests (no real git repo) take. The phantom-merge
+        // class of bug requires an EXISTING empty branch: attempt_auto_merge
+        // happily fast-forwards to itself.
         let stage_branch = crate::git::branch::branch_name_for_stage(stage_id);
         let branch_exists =
             crate::git::branch::branch_exists(&stage_branch, &repo_root).unwrap_or(false);

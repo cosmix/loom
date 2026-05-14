@@ -7,19 +7,19 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-/// Filename for the user-readable token (mode 0o644, mounted into containers).
+/// Filename for the user-readable token (mode 0o644, lives under `.work/`).
 pub(super) const USER_TOKEN_FILE: &str = "user.token";
 
 /// Filename for the host-only admin token (mode 0o600). NOT placed under
 /// `.work/` (the canonical location is [`admin_token_path`] in the daemon
-/// runtime dir) — `.work/` is mounted into containers, so any token kept
-/// there would be reachable by container-resident agents. Retained here as
+/// runtime dir) — `.work/` is a shared, worktree-visible tree, so any token
+/// kept there would be reachable by stage-confined agents. Retained here as
 /// a single source of truth for the basename.
 pub(super) const ADMIN_TOKEN_FILE: &str = "admin.token";
 
 /// Host-only path to admin.token. Located in the daemon runtime
-/// directory (XDG_RUNTIME_DIR or fallback to data_dir()) so the
-/// container topology — which only mounts .work — cannot reach it.
+/// directory (XDG_RUNTIME_DIR or fallback to data_dir()) so it stays
+/// outside the shared, worktree-visible `.work/` tree.
 ///
 /// Layout: `$XDG_RUNTIME_DIR/loom/admin.token` on Linux, falling back
 /// to `~/.local/share/loom/admin.token` (or platform data_dir) when no
@@ -48,10 +48,9 @@ pub fn read_user_token(work_dir: &Path) -> Option<String> {
 /// treat that as an authentication failure rather than falling back to a
 /// less-privileged token.
 ///
-/// `_work_dir` is retained for backwards compatibility but no longer used:
-/// admin.token now lives at [`admin_token_path`] (a host-only runtime
-/// directory) rather than under the project's `.work/` tree, since `.work/`
-/// is mounted into containers.
+/// `_work_dir` is retained for call-site compatibility but no longer used:
+/// admin.token lives at [`admin_token_path`] (a host-only runtime
+/// directory) rather than under the project's shared `.work/` tree.
 pub fn read_admin_token(_work_dir: &Path) -> Option<String> {
     read_token_file(&admin_token_path())
 }
@@ -67,10 +66,10 @@ pub fn read_auth_token(work_dir: &Path) -> Option<String> {
 
 /// Path to the token file backing a given capability.
 ///
-/// `Capability::User` resolves to `<work_dir>/user.token` (mounted ro into
-/// containers). `Capability::Admin` resolves to [`admin_token_path`] — a
-/// host-only runtime path NOT reachable from inside containers; the
-/// `work_dir` argument is unused for the admin case by design.
+/// `Capability::User` resolves to `<work_dir>/user.token` (under the shared
+/// `.work/` tree). `Capability::Admin` resolves to [`admin_token_path`] — a
+/// host-only runtime path outside `.work/`; the `work_dir` argument is
+/// unused for the admin case by design.
 fn token_path_for(work_dir: &Path, capability: Capability) -> PathBuf {
     match capability {
         Capability::User => work_dir.join(USER_TOKEN_FILE),

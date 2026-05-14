@@ -32,8 +32,8 @@ impl Monitor {
         }
     }
 
-    /// Attach a backend-aware liveness service. The orchestrator calls
-    /// this once the dispatcher is constructed; until then,
+    /// Attach the session liveness service. The orchestrator calls this
+    /// once the `NativeBackend` is constructed; until then,
     /// `check_session_alive` falls back to the legacy host-PID probe.
     pub fn set_liveness(&mut self, liveness: LivenessService) {
         self.handlers.set_liveness(liveness);
