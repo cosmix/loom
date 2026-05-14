@@ -36,7 +36,7 @@ pub fn complete_knowledge_stage(
 
     // Admin capability gate: --no-verify and --force-unsafe are
     // verification-bypass flags and require the host admin.token (held
-    // outside the .work/ tree so a container-resident agent cannot
+    // outside the shared .work/ tree so a stage-confined agent cannot
     // invoke them). Knowledge stages have no --assume-merged flag —
     // merged=true is auto-set for knowledge stages by design.
     if no_verify || force_unsafe {

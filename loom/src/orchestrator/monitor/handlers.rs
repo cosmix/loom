@@ -21,8 +21,8 @@ use super::context::context_usage_percent;
 /// Handler functions for monitor events
 pub struct Handlers {
     config: MonitorConfig,
-    /// Backend-aware liveness probe. Optional because some test paths
-    /// construct `Handlers` without a dispatcher; production paths
+    /// Session liveness probe. Optional because some test paths
+    /// construct `Handlers` without a liveness service; production paths
     /// always attach one via `Monitor::set_liveness`.
     liveness: Option<LivenessService>,
 }

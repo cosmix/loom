@@ -1048,11 +1048,10 @@ fn run_verification_phase(
             &Some(resolve_base_branch(work_dir)),
             &repo_root,
         );
-        // Skip the guard if the branch doesn't exist on the host — that's the
-        // shape unit tests (no real git repo) and isolated-git stages
-        // (commits live in the container's mirror, not on host) take. The
-        // phantom-merge class of bug requires an EXISTING empty branch:
-        // attempt_auto_merge happily fast-forwards to itself.
+        // Skip the guard if the branch doesn't exist on the host — the shape
+        // that shape unit tests (no real git repo) take. The phantom-merge
+        // class of bug requires an EXISTING empty branch: attempt_auto_merge
+        // happily fast-forwards to itself.
         let stage_branch = crate::git::branch::branch_name_for_stage(stage_id);
         let branch_exists =
             crate::git::branch::branch_exists(&stage_branch, &repo_root).unwrap_or(false);
