@@ -297,6 +297,41 @@ loom:
 
 Note: knowledge file writes are intentionally protected by sandbox defaults; knowledge updates should be done via `loom knowledge ...` commands.
 
+### Permission Mode
+
+All stages default to `accept-edits` (agents can edit files without per-file confirmation). Override per-plan or per-stage:
+
+```yaml
+loom:
+  version: 1
+  sandbox:
+    permission_mode: auto   # plan-level override
+
+  stages:
+    - id: my-stage
+      sandbox:
+        permission_mode: auto   # stage-level override (takes precedence)
+```
+
+Valid values: `accept-edits` (default), `auto`, `plan`, `default`. `bypass-permissions` is rejected at init time.
+
+### Remote Control
+
+Loom enables Claude Code's `--remote-control` flag automatically when prerequisites are met:
+
+- **Claude version** ≥ 2.1.51
+- **Auth**: claude.ai login (no `ANTHROPIC_API_KEY`, `CLAUDE_CODE_USE_BEDROCK`, or similar env vars)
+
+When prerequisites are unmet loom falls back silently to the standard mode. Disable explicitly:
+
+```toml
+# .work/config.toml
+[remote_control]
+mode = "off"
+```
+
+A session that crashes within 15 seconds of spawn while Remote Control is active causes loom to write `.work/remote_control-unsupported` and retry without the flag for the rest of the run.
+
 ## Agent Teams (Experimental)
 
 Loom enables agent teams in spawned sessions (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) and injects team-usage guidance into stage signals.

@@ -353,8 +353,12 @@ For tests: `LivenessService::fixed_for_tests(bool)` — returns a fixed value wi
 
 | Stage type | Default permission_mode |
 | --- | --- |
-| Standard / IntegrationVerify | `auto` |
-| Knowledge / KnowledgeDistill | `accept-edits` |
+| Standard | `accept-edits` |
+| IntegrationVerify | `accept-edits` |
+| Knowledge | `accept-edits` |
+| KnowledgeDistill | `accept-edits` |
+
+All four stage types default to `accept-edits` as of 2026-05-14. Override at plan or stage level with `permission_mode: auto` if needed.
 
 YAML key is `permission_mode` (snake_case), values are kebab-case: `"auto"`, `"accept-edits"`, `"plan"`, `"default"`.
 
@@ -487,3 +491,46 @@ For new `NeedsAdjudication` state, mirror the existing `NeedsHumanReview` patter
 4. `orchestrator/core/recovery.rs:515-526` — sync status to in-memory graph
 
 Add parallel handling for `NeedsAdjudication` that fires the worker thread instead of continuing.
+
+## Remote Control Capability/Preflight/Resolve Pattern (2026-05-14)
+
+`--remote-control` requires claude >= 2.1.51 AND claude.ai login auth (no disqualifying env var, `~/.claude/.credentials.json` present). Because the flag exits non-zero on failure, it must never be passed unconditionally.
+
+**Three-function split:**
+
+| Function | What it does | When to call |
+|----------|-------------|--------------|
+| `preflight(path)` | Runs `claude --version` + auth eligibility check | Startup advisory only |
+| `resolve(work_dir)` | Per-spawn gate (mode + marker + memoized preflight) | Called at every spawn site |
+| `write_unsupported_marker(work_dir)` | Writes `.work/remote_control-unsupported` | Called by crash_handler on fast-fail |
+
+**`resolve()` check order (all cheap):**
+
+1. `[remote_control] mode = off` in `.work/config.toml` → false (operator opted out)
+2. `.work/remote_control-unsupported` marker exists → false (mid-run fast-fail)
+3. Memoized `preflight()` via `OnceLock` (runs `claude --version` at most once per process) → true/false
+
+**Fast-fail fallback (crash_handler.rs):**
+
+- Session crashes within 15 seconds of creation while `resolve()` is true → write unsupported marker → retry with `--remote-control` omitted.
+- No new retry code path: the existing exponential-backoff retry handles it; `resolve()` returning false is the only change.
+
+**`build_claude_command()` helper (native/mod.rs):**
+
+Pure function shared by all four spawn sites (`spawn_session`, `spawn_merge_session`, `spawn_base_conflict_session`, `spawn_knowledge_session`). Signature:
+
+```rust
+fn build_claude_command(
+    claude_path: &str,
+    model: &str,
+    effort: &str,
+    remote_control_enabled: bool,
+    escaped_prompt: &str,
+) -> String
+```
+
+Appends `--remote-control` before the prompt positional only when `remote_control_enabled` is true. Call `resolve(work_dir)` to compute the flag, then pass the bool into this helper.
+
+**OnceLock memoization note:**
+
+`cached_preflight_enabled()` uses a process-lifetime `OnceLock<bool>`. This is intentional: `claude --version` output is invariant for the lifetime of a daemon process. Config (`mode`) and the marker file are re-read on every `resolve()` call (both cheap) so operator changes or crash-handler writes take effect immediately without restarting the daemon.

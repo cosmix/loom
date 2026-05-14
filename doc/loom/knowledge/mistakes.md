@@ -422,3 +422,23 @@ Use `rg -i "container\|docker\|dispatcher" loom/src/ --include="*.rs"` to catch 
 **Prevention — Detection rule:** Any code path that loops over prior stages and builds a source-file path MUST start from `worktree_root`, then join the per-stage `working_dir`. Never start from an already-resolved `acceptance_dir`.
 
 **Fix:** Changed call site to pass `worktree_root` (from `StageExecutionPaths`) through `run_verification_phase` into the aggregated re-verifier; each stage's `working_dir` is joined against the worktree root.
+
+## Knowledge Prose Staleness After Sandbox/Permission-Mode Changes (2026-05-14)
+
+**What happened:** After changing `default_mode_for()` in `sandbox/config.rs` to return `AcceptEdits` for Standard and IntegrationVerify stages (previously `Auto`), three knowledge file locations still referenced the old `auto` default:
+
+1. `architecture.md` — Security Model section said `Standard/IntegrationVerify → auto`
+2. `entry-points.md` — Remote Control §1 table said `Standard / IntegrationVerify → Auto`
+3. `patterns.md` — Sandbox permission_mode Resolution table showed `auto` for both types
+
+These stale entries would have misled future agents into using `permission_mode: auto` when the actual default is already `accept-edits`.
+
+**Why:** The implementation stage correctly updated Rust source + tests, but did not search knowledge files for old values. Knowledge files are not compiled, so no tool catches the mismatch.
+
+**Prevention:** After changing any `default_mode_for()`-style constant or sandbox default:
+
+1. `rg -l "auto\|Auto" doc/loom/knowledge/` — find knowledge files with the old value
+2. Update each stale entry with `loom knowledge replace-section` or direct Edit
+3. Verify with `rg "permission.mode" doc/loom/knowledge/` that all entries agree
+
+**Generalization:** Any plan that changes an enumerated default (permission modes, stage-type behavior, config field defaults) MUST include a step that searches `doc/loom/knowledge/` for old values and corrects them. This applies even when the code change is a single-line constant update.
