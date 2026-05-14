@@ -27,6 +27,11 @@
 set -euo pipefail
 source "$(dirname "$0")/_common.sh"
 
+debug() {
+    [[ "${WORKTREE_ISOLATION_DEBUG:-}" == "1" ]] || return 0
+    echo "$@" >&2
+}
+
 # Read JSON input from stdin
 if command -v gtimeout &>/dev/null; then
     INPUT_JSON=$(gtimeout 1 cat 2>/dev/null || true)
@@ -36,26 +41,17 @@ else
     INPUT_JSON=$(cat 2>/dev/null || true)
 fi
 
-# Debug logging (fallback to /dev/null if log path not writable)
-DEBUG_LOG="/tmp/worktree-isolation-debug.log"
-if ! touch "$DEBUG_LOG" 2>/dev/null; then
-    DEBUG_LOG=/dev/null
-fi
-{
-    echo "=== $(date) worktree-isolation ==="
-    echo "INPUT_JSON: $INPUT_JSON"
-    echo "LOOM_STAGE_ID: ${LOOM_STAGE_ID:-unset}"
-    echo "PWD: $(pwd)"
-} >>"$DEBUG_LOG" 2>&1
+debug "=== $(date) worktree-isolation ==="
+debug "INPUT_JSON: $INPUT_JSON"
+debug "LOOM_STAGE_ID: ${LOOM_STAGE_ID:-unset}"
+debug "PWD: $(pwd)"
 
 # Parse tool_name and tool_input from JSON
 TOOL_NAME=$(echo "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
 TOOL_INPUT=$(echo "$INPUT_JSON" | jq -r '.tool_input // empty' 2>/dev/null || true)
 
-{
-    echo "TOOL_NAME: $TOOL_NAME"
-    echo "TOOL_INPUT: $TOOL_INPUT"
-} >>"$DEBUG_LOG" 2>&1
+debug "TOOL_NAME: $TOOL_NAME"
+debug "TOOL_INPUT: $TOOL_INPUT"
 
 # Only run in loom worktrees (check for stage ID)
 if [[ -z "${LOOM_STAGE_ID:-}" ]]; then
@@ -263,7 +259,7 @@ case "$TOOL_NAME" in
         COMMAND=$(echo "$TOOL_INPUT" | jq -r '.command // empty' 2>/dev/null || echo "$TOOL_INPUT")
         if [[ -n "$COMMAND" ]]; then
             if ! validate_bash_command "$COMMAND"; then
-                echo "BLOCKED: Bash command failed validation" >>"$DEBUG_LOG" 2>&1
+                debug "BLOCKED: Bash command failed validation"
                 exit 2
             fi
         fi
@@ -273,7 +269,7 @@ case "$TOOL_NAME" in
         FILE_PATH=$(echo "$TOOL_INPUT" | jq -r '.file_path // empty' 2>/dev/null || true)
         if [[ -n "$FILE_PATH" ]]; then
             if ! validate_file_path "$FILE_PATH"; then
-                echo "BLOCKED: Edit path failed validation: $FILE_PATH" >>"$DEBUG_LOG" 2>&1
+                debug "BLOCKED: Edit path failed validation: $FILE_PATH"
                 exit 2
             fi
         fi
@@ -283,7 +279,7 @@ case "$TOOL_NAME" in
         FILE_PATH=$(echo "$TOOL_INPUT" | jq -r '.file_path // empty' 2>/dev/null || true)
         if [[ -n "$FILE_PATH" ]]; then
             if ! validate_file_path "$FILE_PATH"; then
-                echo "BLOCKED: Write path failed validation: $FILE_PATH" >>"$DEBUG_LOG" 2>&1
+                debug "BLOCKED: Write path failed validation: $FILE_PATH"
                 exit 2
             fi
         fi
@@ -294,5 +290,5 @@ case "$TOOL_NAME" in
         ;;
 esac
 
-echo "Allowing operation" >>"$DEBUG_LOG" 2>&1
+debug "Allowing operation"
 exit 0

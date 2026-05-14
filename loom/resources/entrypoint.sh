@@ -1,5 +1,8 @@
 #!/bin/bash
 set -euo pipefail
+# Tini (PID 1) → loom-entrypoint.sh (this script, runs as root) → gosu loom <wrapper>
+# Tini handles signal forwarding and zombie reaping so this script doesn't need to.
+#
 # Loom container entrypoint.
 #
 # Per finding #15: the container starts as root just long enough to install

@@ -76,7 +76,7 @@ fn strip_embedded_content(command: &str) -> String {
 
     for line in command.lines() {
         if inside_heredoc {
-            if line.trim() == marker {
+            if line == marker {
                 inside_heredoc = false;
             }
             continue;
@@ -361,6 +361,22 @@ mod tests {
         assert!(
             stripped.contains("echo done"),
             "Post-heredoc content should remain"
+        );
+    }
+
+    #[test]
+    fn test_heredoc_indented_terminator_not_closed_by_trimmed_line() {
+        // An indented terminator must NOT close the heredoc.
+        // Only an exact-match (non-indented) terminator closes it.
+        // With the old `line.trim() == marker`, "    EOF".trim() == "EOF" would
+        // incorrectly close the heredoc early, leaving "still inside heredoc body"
+        // un-stripped — this test catches that regression.
+        let command = "git commit -m \"$(cat <<'EOF'\nThis is the message\n    EOF\nstill inside heredoc body\nEOF\n)\"";
+        let stripped = strip_embedded_content(command);
+        assert!(
+            !stripped.contains("still inside heredoc body"),
+            "Indented terminator should not close heredoc; 'still inside heredoc body' should be stripped.\nStripped: {:?}",
+            stripped
         );
     }
 }
