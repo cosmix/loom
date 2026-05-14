@@ -51,15 +51,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/bin/
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             loom/target/
-          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('loom/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-v2-${{ matrix.target }}-${{ hashFiles('loom/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-${{ matrix.target }}-
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-v2-${{ matrix.target }}-
+            ${{ runner.os }}-cargo-v2-
 
       - name: Build release binary
         working-directory: loom

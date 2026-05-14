@@ -35,14 +35,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/bin/
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             loom/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('loom/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-v2-${{ hashFiles('loom/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-v2-
 
       - name: Build all targets
         working-directory: loom
@@ -72,14 +71,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/bin/
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             loom/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('loom/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-v2-${{ hashFiles('loom/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-v2-
 
       - name: Run tests
         working-directory: loom
@@ -102,14 +100,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/bin/
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             loom/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('loom/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-v2-${{ hashFiles('loom/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-v2-
 
       - name: Run clippy
         working-directory: loom
