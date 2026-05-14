@@ -42,6 +42,7 @@
   - [CLI Subcommand Registration Pattern](#cli-subcommand-registration-pattern)
   - [AcceptanceCriterion Untagged Enum](#acceptancecriterion-untagged-enum)
   - [Plan Validation Tier Separation (loom init contract)](#plan-validation-tier-separation-loom-init-contract)
+  - [Session Identity: Setter + Clearer Must Travel Together](#session-identity-setter--clearer-must-travel-together)
 
 ---
 
@@ -326,56 +327,27 @@ pub enum AcceptanceCriterion {
 Adding a new backend requires:
 
 1. Implement `TerminalBackend` trait (spawn_session, spawn_merge_session, spawn_base_conflict_session, spawn_knowledge_session, kill_session, is_session_alive)
-2. Add a variant to `BackendType` enum in `plan/schema/execution.rs`
-3. Add construction logic to `orchestrator/terminal/mod.rs::create_backend()`
-4. Update `BackendNeeds` + `BackendDispatcher::for_plan()` in `dispatcher.rs`
-5. Update `sandbox/config.rs::validate_config()` for any permission restrictions
-6. Wire liveness through `LivenessService` (not direct `kill -0`)
+2. Add construction logic to `orchestrator/terminal/mod.rs::create_backend()`
+3. Update `BackendNeeds` + `BackendDispatcher::for_plan()` in `dispatcher.rs`
+4. Wire liveness through `LivenessService` (not direct `kill -0`)
 
-Two proven implementations: `NativeBackend` (host terminal, 11+ emulators) and `ContainerBackend` (Docker/Podman/Apple Container).
+One proven implementation: `NativeBackend` (host terminal, 11+ emulators).
 
 ## BackendDispatcher Pattern
 
-`BackendDispatcher` is the single source-of-truth for which backends are constructed. Callers declare `BackendNeeds` (which backends a plan uses) up-front; the dispatcher only constructs what's needed. Routing uses the session's persisted `backend` field (written at spawn time) — survives daemon restarts.
+`BackendDispatcher` is the single source-of-truth for which backends are constructed. Routing uses the session's persisted `backend` field (written at spawn time) — survives daemon restarts.
 
 ```rust
-// Read from stage files to determine needs, then:
-let dispatcher = BackendDispatcher::for_plan(project_backend, needs, work_dir)?;
+let dispatcher = BackendDispatcher::for_plan(needs, work_dir)?;
 let liveness = LivenessService::new(Arc::new(dispatcher));
 // All spawn/kill/alive calls go through dispatcher
 ```
 
-## Backend-Aware Liveness Pattern
+## Liveness Pattern
 
-Never `kill -0` directly for container sessions — the PID is inside the container namespace. Use `LivenessService::is_alive(session)` which routes via the session's `backend` metadata to the appropriate implementation (host `kill -0` for native, `<runtime> inspect` for containers).
+Use `LivenessService::is_alive(session)` rather than calling `kill -0` directly. This routes via the session's `backend` metadata to the appropriate implementation.
 
-For tests: `LivenessService::fixed_for_tests(bool)` — returns a fixed value without constructing a backend. Avoids spinning up Docker/process table for monitor unit tests.
-
-## Image Cache + Fingerprint Pattern
-
-Global image cache: `~/.local/share/loom/images/<fingerprint>.json`. Per-project digest pin in `.work/config.toml`. Cache key (fingerprint) encodes:
-
-1. Sorted list of detected language canonical names
-2. SHA-256 of embedded `Dockerfile.tmpl` content
-3. SHA-256 of embedded `firewall.sh` content
-
-Any change to languages detected or either embedded resource produces a distinct fingerprint → automatic rebuild. Fingerprint format: `"<langs>-<hex[:8]>"` (e.g. `"rust-typescript-a3b9ef12"`). `compute_fingerprint_inner` is testable (takes content as args; `compute_fingerprint` calls it with `include_str!` constants).
-
-## Firewall as Defense-in-Depth (Container)
-
-Firewall script lives inside the image (not on the host filesystem) — agents cannot edit it. Mounted allowlist is host-owned and mounted ro at `/etc/loom/network/allowed_domains.txt`. This separation means:
-
-- Agent writes to `/etc/loom/...` are refused by the container
-- Only `loom` (host process) can update the allowlist
-- Firewall denies: IPv6 (`AF_INET6`), `169.254.169.254` (cloud metadata), `127.0.0.0/8` except `127.0.0.1`, `*.internal`
-
-Write allowlist before container start: `network::write_allowlist(work_dir, &network_config)`.
-
-## Container Topology Invariant
-
-Host repo root MUST be bind-mounted at a fixed container path (`/repo`) with git worktrees preserved. The relative symlink `.work -> ../../.work` inside each worktree only resolves correctly when the full repo tree (including `.worktrees/`) is present at the mount point. Do NOT mount just the stage worktree — git and loom metadata break.
-
-Stage cwd in container: `/repo/.worktrees/<stage-id>`. Merge/knowledge cwd: `/repo`. `LOOM_WORK_DIR=/repo/.work` set explicitly.
+For tests: `LivenessService::fixed_for_tests(bool)` — returns a fixed value without constructing a backend.
 
 ## Sandbox permission_mode Resolution
 
@@ -386,19 +358,13 @@ Stage cwd in container: `/repo/.worktrees/<stage-id>`. Merge/knowledge cwd: `/re
 | Standard / IntegrationVerify | `auto` |
 | Knowledge / KnowledgeDistill | `accept-edits` |
 
-`bypass-permissions` ONLY allowed when `BackendType::Container`. `validate_config(merged, backend)` in `sandbox/config.rs` enforces this — called at both init and spawn time.
-
-YAML key is `permission_mode` (snake_case), values are kebab-case: `"auto"`, `"accept-edits"`, `"bypass-permissions"`, `"plan"`, `"default"`.
+YAML key is `permission_mode` (snake_case), values are kebab-case: `"auto"`, `"accept-edits"`, `"plan"`, `"default"`.
 
 ## Centralized Config File Ownership (toml_edit)
 
 All writes to `.work/config.toml` go through `fs/work_dir.rs` using `toml_edit` for round-trip-safe writes. `toml` is for typed reads. Never mix: `toml_edit Item -> serde` silently drops nested sub-tables.
 
 `read_section::<T>` re-parses the whole file with `toml::Value` then `try_into` on the section — preserves nested config sub-tables.
-
-## Cross-Platform Runtime Detection (cfg pattern)
-
-Runtime-specific behavior (e.g., Apple Container vs Docker on macOS) can be gated at source level with `#[cfg(target_os = "macos")]` per code path. The `runtime.rs::is_apple_container` check requires both `/usr/local/bin/container` to exist AND `container --version` to return Apple-signature output — `which::which("container")` alone would collide with unrelated tools.
 
 ## Plan Validation Tier Separation (loom init contract)
 
@@ -421,46 +387,15 @@ Runtime-specific behavior (e.g., Apple Container vs Docker on macOS) can be gate
 
 **Call site:** `loom/src/commands/init/plan_setup.rs` — shows the canonical order and how warnings are surfaced to the user.
 
-## Container CLI Defense-in-Depth: Query Runtime Before Trusting Session File
+## Session Identity: Setter + Clearer Must Travel Together
 
-Container CLI commands (`loom container logs`, `loom container shell`, `loom container list`) resolve the container name from `.work/sessions/*.md`. Session files are NOT deleted on container removal, so a populated `container_name` field is not proof of container liveness.
+Every field group on `Session` that represents a runtime resource identity requires a matching setter AND clearer method.
 
-**Pattern:** Before exec-ing into `<runtime> logs|exec|inspect`, call:
+| Field group | Setter | Called after |
+|---|---|---|
+| `pid` | `set_pid()` | Session spawned |
 
-```bash
-<runtime> inspect -f '{{.State.Status}}' <container_name>
-```
-
-Non-zero exit or "no such container" → container is gone. Fall back to `.work/crashes/<stage>-*.container.log` for post-mortem log access. This makes the CLI command robust to stale session files from completed, crashed, or cleaned stages.
-
-**Implementation:** `list.rs::query_container_status()` is the canonical helper — it returns `"running"`, `"exited"`, `"missing"`, or `"error: ..."`. Reuse it in `logs.rs` / `shell.rs` rather than reimplementing.
-
-**Why:** Defense-in-depth. The session file is a cache; the runtime is the authoritative source. Cross-checking prevents confusing errors ("no such container") from reaching the user.
-
----
-
-## Lifecycle Documentation Belongs in the Module That Owns the Lifecycle
-
-Lifecycle rules for per-stage containers (when created, when removed, what happens on crash) belong in the `//\!` module doc of `orchestrator/terminal/container/mod.rs`, not scattered across callers. This is the single module that owns container lifetime — all other modules call into it.
-
-**Pattern:** When a module owns the full lifecycle of a resource (create → run → cleanup), document that lifecycle contract in the module's top-level `//\!` comment block. Callers reference this doc rather than re-explaining the rules.
-
-**Applied to:** `orchestrator/terminal/container/mod.rs` — documents when containers are removed (spawn failure, kill_session, loom stop, loom clean) and the log-capture invariant (best-effort, never blocks removal).
-
----
-
-## Session Identity Symmetry: Setter + Clearer Must Travel Together
-
-Every field group on `Session` that represents a runtime resource identity (`container_name` + `runtime` for containers, `pid` for processes) requires a matching setter AND clearer method.
-
-| Field group | Setter | Clearer | Called after |
-|---|---|---|---|
-| `runtime` + `container_name` | `set_container_identity()` | `clear_container_identity()` | Container removed |
-| `pid` | `set_pid()` | *(no clearer — PID is fixed for session lifetime)* | N/A |
-
-**Rule:** Any caller that removes the runtime resource (container rm, process kill) must call the clearer before persisting the session file. `clear_container_identity()` is in `models/session/methods.rs:135`.
-
-**Why:** Without the clearer, session files become permanent references to removed containers. Lookups in `loom container logs` / `loom container list` will find stale entries and produce confusing errors.
+**Rule:** Any caller that releases a runtime resource must call the matching clearer before persisting the session file.
 
 ## reqwest::blocking HTTP Client Pattern
 

@@ -119,71 +119,11 @@ Pre-existing issue, not introduced by the merge conflict session lifecycle fix. 
 
 models/stage/methods.rs:443 defines is_knowledge_stage() but it is never called. All call sites use direct stage_type comparison. Contains fragile heuristic name matching that duplicates detect_stage_type() logic. Consider removing or consolidating with detect_stage_type and check_knowledge_recommendations.
 
-## container/mod.rs Exceeds 400-line Limit (2026-05-11, updated 2026-05-12)
-
-`loom/src/orchestrator/terminal/container/mod.rs` is 1141 lines — 185% over the 400-line CLAUDE.md code size limit (grew from 661 → 975 → 1141 during mounts-hardening + this plan). Functional and all tests pass; refactor deferred.
-
-**Recommended split:** Extract spawn logic into `spawn.rs`, mount construction into `mounts.rs` (build_mounts and helpers), env building into `env.rs`. The submodule files `fingerprint.rs`, `image.rs`, `lifecycle.rs`, `logs_capture.rs`, `network.rs`, `probe.rs`, `resources.rs`, `runtime.rs` are already appropriately sized.
-
-## forward_credentials Default Is Empty (2026-05-11)
-
-`loom init --backend container` writes `forward_credentials = []` to `.work/config.toml` (empty — no credentials forwarded by default). The plan spec suggested defaulting to `["claude"]` (mount `~/.claude/.credentials.json`). The current implementation is stricter (explicit opt-in) but requires manual operator action to authenticate Claude Code inside the container.
-
-**Agent escalation gap (partially closed):** `.work/config.toml` is covered by the ro base mount — an agent running inside the container cannot modify `forward_credentials` for the next stage. Host-side editing by the operator is still possible (not a security concern — operator trust is assumed).
-
-**Impact:** Container sessions without `"claude"` in `forward_credentials` cannot authenticate. Until there's a `loom container credentials add` command or the default changes, edit `.work/config.toml` manually on the host.
-
-## Probe Network Mismatch: bridge vs loom-net-\<stage\> (2026-05-11)
-
-The firewall enforcement probe (`container/probe.rs`) runs on the default bridge network. Production stage containers attach to `--network=loom-net-<stage-id>` (CNI/netavark). iptables rule injection behavior can differ between bridge networking and CNI-managed networks (especially on rootless Podman with slirp4netns). A probe that passes on bridge does not guarantee enforcement on the production network.
-
-**Hardening path:** Pass the production network name to the probe container (`--network=loom-net-<fingerprint>` or a freshly-created ephemeral network matching the production config) and clean it up after the probe. Until then, `--allow-insecure-runtime` should be considered for rootless Podman environments.
-
-## host_repo_root() Trusts Parent of .work Symlink (2026-05-11)
-
-`host_repo_root()` in `commands/init/execute.rs` derives the host repo root by canonicalizing the parent of the `.work` symlink. There is no sanity check that the rw mount targets (e.g., `.worktrees/<stage-id>`) actually exist on the host before `docker|podman run` is invoked. A missing directory would cause the runtime to create it as a root-owned directory, silently defeating the rw overlay intent.
-
-**Hardening path:** Verify that each rw overlay target exists (or create it with the correct mode) before constructing the run args in `build_mounts`.
-
 ## BaseConflict Carve-out is Heuristic (2026-04-27)
 
 `attribute_main_repo_merge` carves out `loom/_base/*` merges with a heuristic on the current branch name and on `SessionType::BaseConflict` session metadata. If a base-merge ever runs from a non-`loom/_base/*` branch (manual flow, future refactor) and no `BaseConflict` session is alive, attribution would tie the active merge to the stage whose branch HEAD shows up in `MERGE_HEAD` — leading to a spurious revert.
 
 **Hardening path:** Tag base merges explicitly via session metadata (e.g., a marker file or distinct `SessionType::BaseConflict` always present during the base-merge window) and key the carve-out off that signal alone, not the current branch name. Until then, the heuristic is documented here so future work knows where to look.
-
-## ~~Container Orphan Retry Collision~~ (RESOLVED 2026-05-12)
-
-**Fixed in plan:** PLAN-container-backend-hardening (stage: fix-orphan-cleanup)
-
-`preemptive_remove_existing` (best-effort `rm -f`) at the top of `spawn_common` now clears stale containers before each spawn. Failure rollback in `stage_executor.rs` calls `cleanup_worktree` + `cleanup_branch` + container `rm -f` for standard stages; container removal only for knowledge stages. See mistakes.md — Container Retry Collisions for prevention rules.
-
-## ~~Container settings.local.json Path Leakage~~ (RESOLVED 2026-05-12)
-
-**Fixed in plan:** PLAN-container-backend-hardening (stage: fix-container-hooks)
-
-After worktree creation, `.claude/settings.local.json` is now appended to `<worktree>/.git/info/exclude`. Uses per-worktree exclude (not top-level `.gitignore`) to avoid polluting the repo. Knowledge stages write to the main repo's `.git/info/exclude`. See mistakes.md — Hook Installation Asymmetry and Per-Worktree Gitignore Exclusion for prevention rules.
-
-## ~~Container Git Identity Gap~~ (RESOLVED 2026-05-12)
-
-**Fixed in plan:** PLAN-container-backend-hardening (stage: fix-git-identity)
-
-`git_user_name` and `git_user_email` fields added to `ProjectContainerConfig` (`plan/schema/execution.rs`). Populated at `loom init --backend container` time from host `git config --global`. Injected as all four `GIT_AUTHOR_*` / `GIT_COMMITTER_*` env vars (only when both are present). Validated against control chars and length via `validate_git_identity()` at init and read boundaries. See `README.md` § Container Backend — Git Identity for operator docs.
-
-## container/mod.rs Size Update (2026-05-12)
-
-`container/mod.rs` grew from ~975 lines to **1141 lines** during the current hardening work. Still 185% over the 400-line limit. Refactor deferred.
-
-## Container Spawn-Failure Rollback: Zero Integration Test Coverage (2026-05-12)
-
-The failure rollback chain in `orchestrator/core/stage_executor.rs` — `preemptive_remove_existing` → `remove_container_on_failure` + `git::remove_worktree` + `git::delete_branch` + `try_mark_blocked` — has no direct integration test coverage. The retry-after-failure scenario (container spawn fails, stage retries cleanly) is unverified end-to-end.
-
-**Mitigations in place:**
-
-- `preemptive_remove_existing_is_infallible` unit test verifies the rm -f preamble contract
-- `smoke_rm_f_missing_container_exits_zero` (in `tests/container_smoke.rs`) validates podman's exit-0 contract on missing containers
-- Wiring check confirms `remove_worktree|delete_branch` patterns exist in `stage_executor.rs`
-
-**Gap:** No test injects a failing `TerminalBackend::spawn_session` and asserts that each rollback helper was called in sequence. To add: a unit-test seam that wraps `TerminalBackend` with a failing stub and verifies the rollback sequence.
 
 ## Deferred: Context Velocity
 
@@ -191,7 +131,7 @@ The heartbeat JSON written by `post-tool-use.sh` always records `"context_percen
 
 **Current state:** `context_percent` field exists in the heartbeat JSON schema but is always `null`. The monitor reads it but never observes a non-null value through the hook path.
 
-**What's needed:** Stream-json events (specifically `"type":"system"` with a `usage` subkey, or similar) need to be parsed from the container's stdout to extract token counts. A separate sidecar process (or stdout tap in the container entrypoint) would be the cleanest approach without modifying the hook flow.
+**What's needed:** Stream-json events (specifically `"type":"system"` with a `usage` subkey, or similar) need to be parsed from the Claude process stdout to extract token counts. A separate sidecar process would be the cleanest approach without modifying the hook flow.
 
 **Where to look when implementing:**
 
@@ -199,48 +139,6 @@ The heartbeat JSON written by `post-tool-use.sh` always records `"context_percen
 - `orchestrator/monitor/context.rs` — context health thresholds (Green/Yellow/Red)
 - `orchestrator/monitor/detection.rs` — where heartbeat data is consumed
 - Stream-json `"system"` event shape: `{"type":"system","subtype":"init","session_id":"...","usage":{"input_tokens":N,...}}`
-
-## Container Spawn: Fragile dependence on host worktree `.claude/settings.local.json` (2026-05-13)
-
-**Observed during:** `autonomous-criteria-adjudication` plan, `integration-verify` stage. After three sandboxed crashes (cargo PATH issue, since fixed) and `loom stage retry --force`, the daemon refused to spawn with:
-
-```text
-podman run failed: Error: statfs /home/dkaponis/src/loom/.worktrees/integration-verify/.claude/settings.local.json: no such file or directory
-```
-
-The worktree existed and was tracked by git, but its `.claude/` directory was gone. `setup_worktree_hooks` is supposed to recreate `.claude/settings.local.json` on every spawn (`orchestrator/core/stage_executor.rs:340`), and `sandbox::write_settings` also creates it (`sandbox/settings.rs:80`). Neither produced a warning in `.work/orchestrator.log`, yet the file did not exist when `build_mounts` ran.
-
-The mount-build defends with `if settings_local_host.exists()` (`orchestrator/terminal/container/mod.rs:588`), so a missing file should skip the mount — but the mount got pushed anyway and podman saw it. Either:
-
-1. `setup_worktree_hooks` *appeared* to succeed but didn't write the file (silent no-op somewhere in the merge/write path).
-2. The file existed at the moment `build_mounts` ran and was deleted between mount-build and `podman run` (TOCTOU).
-3. The `exists()` check on line 588 has a subtle false-positive (e.g. a symlink to a deleted target — `Path::exists()` does follow symlinks, so a dangling one returns false, but a broken symlink whose target was deleted *after* canonicalize may evaluate inconsistently).
-
-**Empirical workaround:** Manually creating `<worktree>/.claude/settings.local.json` with `{}` content unblocked the spawn. On the *next* spawn after that, `setup_worktree_hooks` correctly regenerated a real 5KB file. So once the directory exists, the regeneration path works — the bug is in the *first*-spawn-after-corruption case.
-
-**What's needed:**
-
-- Don't trust `exists()` at mount-build time. Either (a) make `setup_worktree_hooks` mandatory + fail-fast if its write didn't land, or (b) have `build_mounts` invoke (or assert) the hook-setup pipeline against its own input invariants before adding the mount.
-- Surface hook-setup warnings from `stage_executor.rs:349` somewhere more visible than `eprintln!` to a noisy daemon log — they're load-bearing for container spawn, despite the comment "hooks are optional enhancement". For container backend they are not optional.
-- Add an end-to-end test that deletes `<worktree>/.claude/` and runs a spawn, asserting the next attempt either regenerates the file *or* fails with a clear error pointing at the hook-setup step (not a podman statfs error).
-
-**Where to look:**
-
-- `orchestrator/core/stage_executor.rs:304-352` (sandbox + hook setup order)
-- `orchestrator/terminal/container/mod.rs:551-590` (mount build with `exists()` guard)
-- `hooks/generator.rs:226` (`setup_hooks_for_worktree`)
-- `sandbox/settings.rs:72` (`write_settings`)
-
-## Container Spawn: `loom repair` blind to missing worktree `.claude/` (2026-05-13)
-
-**Observed:** With `<worktree>/.claude/settings.local.json` missing — the exact precondition that crashes container spawn (see preceding entry) — `loom repair` reports "No issues found - workspace is healthy!" The user lost time investigating because the supposedly authoritative health check said nothing was wrong.
-
-**What's needed:** `loom repair` should walk every active worktree owned by a non-terminal stage with `BackendType::Container` and verify `.claude/settings.local.json` is present + parseable JSON. The `--fix` mode should call the same `setup_worktree_hooks` path the spawner uses, not roll its own template, so the two stay in sync. Same check for the per-session container-main-settings overlay for non-worktree stages.
-
-**Where to look:**
-
-- `commands/repair.rs` (or wherever the repair checks live — grep `pub fn repair` / "No issues found")
-- Cross-check against `orchestrator/terminal/container/mod.rs::build_mounts` so the repair scan tracks the actual mount preconditions.
 
 ## Recovery: `retry --force` races daemon orphan-recovery on existing worktree (2026-05-13)
 
@@ -352,52 +250,3 @@ Orchestrator started, spawning ready stages...
 ```
 
 First dated log line is `2026-05-13T16:13:18.544430Z` — within 1s of the lock file's mtime. The 06:30 daemon's earlier log entries (10 hours of operation) are not present in this file; either the log was truncated at the second startup, or the first daemon was writing to a different sink (e.g., it had `eprintln!` redirected on stdout but the new daemon repointed the log fd).
-
-## Worktree-File-Guard Defeats Bash Background-Mode Output Capture (2026-05-13)
-
-**Observed:** Inside a container-backed integration-verify session, the agent ran `cargo test 2>&1 | tail -100` via Claude Code's Bash background mode. Claude Code writes background-task output to `/tmp/claude-1000/<repo-tag>/<uuid>/tasks/<task-id>.output`. The agent then tried to `Read` that file (with the Read tool) to inspect progress. Every `Read` returned `✗ blocked by hook: Read hook error: [/home/loom/.claude/hooks/loom/worktree-file-guard.sh]:` and an empty body. The agent fell back to a `while [ $wait_count -lt 20 ]; do ... sleep 15; done` shell loop polling the same file with `stat -c%s`. That bash trick worked (no Read tool, no hook), but `cargo test 2>&1 | tail -100` only writes to the output file when `tail` finishes, so the file stayed at 0 bytes the whole time and the loop completed 5 minutes later with nothing useful.
-
-Net effect: the agent burned ~5 minutes of context blind to a real hung test, and then started another `cargo test` that hung the same way. Three crash cycles in a row originated from this interaction.
-
-**Why:** `worktree-file-guard.sh` is a `Read` PreToolUse hook installed for every container-backed worktree. It correctly blocks reads of anything outside the worktree path. Claude Code's Bash background mode writes its task buffer to `$TMPDIR` (= `/tmp/claude-<uid>/`), which is intentionally outside the worktree. The two policies are individually correct but produce a dead zone: background-mode output is unreadable by the agent that started it.
-
-**What's needed:**
-
-- Either (a) teach the agent (via signal text or skill) to NOT use Bash background mode in container-backed sessions — use foreground Bash with capped output instead, or (b) carve out `/tmp/claude-*/tasks/*.output` in `worktree-file-guard.sh` as an exception, or (c) configure Claude Code to write its background task buffers under the worktree (e.g., via `$CLAUDE_TASKS_DIR` if such a knob exists).
-- Surface this in the standard-stage signal prefix so agents working inside container worktrees know foreground-only is mandatory. Currently the agent has no way to detect why its `Read` was blocked except the bare hook error.
-- A `loom repair` check could detect agents stuck in this pattern by reading `.work/tool-events.jsonl` for sequences of `Read` errors against `/tmp/claude-*/tasks/*.output`.
-
-**Where to look:**
-
-- `hooks/validators/worktree-file-guard.sh` (or wherever the hook lives — grep for "worktree-file-guard")
-- `orchestrator/signals/cache.rs` (standard-stage prefix; that's where the foreground-only rule belongs if we go path (a))
-- `tests/container_smoke.rs` could grow a regression test that runs Bash background mode inside a container and asserts the output is reachable (or that the agent gets a clear "use foreground" hint).
-
-## Container PID 1 (Claude Code) Does Not Reap Zombies (2026-05-13)
-
-**Observed:** Inside `loom-integration-verify`, after ~13 minutes of `cargo test` activity, `ps -ef` showed several hundred `[git] <defunct>` zombies parented to PID 1 (Claude Code). The test suite forks `git` extensively (verify/baseline, plan parsing) and Claude doesn't `wait()` on subprocesses it doesn't own, so they accumulate.
-
-```text
-loom       1       0  2 17:28 ?  claude --print --output-format stream-json ...
-loom   21195       1  0 17:35 ?  [git] <defunct>
-loom   21196       1  0 17:35 ?  [git] <defunct>
-...   (~200 more)
-```
-
-**Why this is a real concern (not cosmetic):**
-
-- Linux's default `pid_max` is 4 million but kernels often gate on per-uid limits. A long-running container with a non-reaping PID 1 will eventually exhaust the table.
-- Several test paths likely call `git` synchronously; if their `Child::wait()` is dropped (e.g., spawned and forgotten) the zombies pile up.
-- `podman` does not inject `tini` by default. The container entrypoint (`loom/resources/entrypoint.sh`) is `firewall.sh` → `resolver_loop` (bash) → exec target. None of these reap.
-
-**What's needed:**
-
-- Image-level fix: add `tini` (or `dumb-init`) to the Dockerfile and make it the literal PID 1, then exec the agent under it. `tini -- claude --print ...`. The image fingerprint already covers Dockerfile.tmpl content, so this is a clean change.
-- Alternative without an init: ensure every `Child` in test code is `.wait()`ed (lint with clippy's `let_underscore_must_use`).
-- A monitor probe inside the container that counts `Z` state processes and emits a soft signal if > 50.
-
-**Where to look:**
-
-- `loom/resources/Dockerfile.tmpl` (add `tini` install + ENTRYPOINT)
-- `loom/resources/entrypoint.sh` (wrap the resolver_loop under `exec tini --`)
-- `verify/baseline/capture.rs`, `verify/baseline/compare.rs` (frequent `git` callers in test paths)
