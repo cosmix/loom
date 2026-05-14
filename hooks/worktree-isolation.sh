@@ -69,7 +69,14 @@ if [[ -z "$CURRENT_WORKTREE" ]]; then
         CURRENT_STAGE="$LOOM_STAGE_ID"
     fi
 else
-    CURRENT_STAGE="$LOOM_STAGE_ID"
+    # Derive the stage from the worktree path itself. LOOM_STAGE_ID can be
+    # stale (a prior stage's value leaking into this session's env), but
+    # LOOM_WORKTREE_PATH is authoritative for which worktree this session owns.
+    if [[ "$CURRENT_WORKTREE" =~ \.worktrees/([^/]+) ]]; then
+        CURRENT_STAGE="${BASH_REMATCH[1]}"
+    else
+        CURRENT_STAGE="$LOOM_STAGE_ID"
+    fi
 fi
 
 # === BASH VALIDATION ===
