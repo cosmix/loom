@@ -250,3 +250,9 @@ Orchestrator started, spawning ready stages...
 ```
 
 First dated log line is `2026-05-13T16:13:18.544430Z` — within 1s of the lock file's mtime. The 06:30 daemon's earlier log entries (10 hours of operation) are not present in this file; either the log was truncated at the second startup, or the first daemon was writing to a different sink (e.g., it had `eprintln!` redirected on stdout but the new daemon repointed the log fd).
+
+## loom plan verify: Missing bypass-permissions Sandbox Validation (2026-05-14)
+
+`loom plan verify` does not call `sandbox::config::validate_config`, so a plan with `sandbox.permission_mode=bypass-permissions` reports 0 errors from `plan verify` but fails at `loom init`. The validation exists in `commands/init/plan_setup.rs` and at spawn time, but not in the verify path (`commands/plan/verify.rs`).
+
+**Recommended fix:** Thread `validate_config` into `commands/plan/verify.rs` so the same validation that blocks `loom init` is surfaced early at plan-authoring time.
