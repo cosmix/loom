@@ -258,7 +258,6 @@ mod tests {
                 model: None,
                 reasoning_effort: None,
                 code_review: None,
-                execution: None,
             })
             .collect();
 

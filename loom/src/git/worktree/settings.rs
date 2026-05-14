@@ -13,7 +13,7 @@ use std::io::{Read, Write};
 use std::path::Path;
 
 use crate::hooks::{setup_hooks_for_worktree, HooksConfig};
-use crate::plan::schema::{BackendType, PermissionMode};
+use crate::plan::schema::PermissionMode;
 
 /// Creates or restores the .work symlink in a worktree.
 ///
@@ -43,14 +43,7 @@ pub fn ensure_work_symlink(worktree_path: &Path, repo_root: &Path) -> Result<()>
 /// This ensures:
 /// 1. Instructions (CLAUDE.md) are shared
 /// 2. Permissions (settings.json) include both global hooks and session-specific hooks
-///
-/// `backend` is accepted for API symmetry with the rest of the worktree
-/// setup path.
-pub fn setup_claude_directory(
-    worktree_path: &Path,
-    repo_root: &Path,
-    backend: BackendType,
-) -> Result<()> {
+pub fn setup_claude_directory(worktree_path: &Path, repo_root: &Path) -> Result<()> {
     let main_claude_dir = repo_root.join(".claude");
     let worktree_claude_dir = worktree_path.join(".claude");
 
@@ -77,7 +70,7 @@ pub fn setup_claude_directory(
         // Create settings.json with trust and auto-accept settings merged with main repo settings
         let main_settings = main_claude_dir.join("settings.json");
         let worktree_settings = worktree_claude_dir.join("settings.json");
-        create_worktree_settings(&main_settings, &worktree_settings, worktree_path, backend)?;
+        create_worktree_settings(&main_settings, &worktree_settings, worktree_path)?;
 
         // Copy settings.local.json if it exists (contains user-granted runtime permissions)
         // Use file locking to prevent reading a partially written file during concurrent syncs
@@ -316,14 +309,10 @@ fn set_permissions(settings: &mut Value, allow: Vec<String>, deny: Vec<String>) 
 ///
 /// This creates the base settings.json. The hooks system later merges in
 /// session-specific hooks via setup_worktree_hooks().
-///
-/// `backend` is accepted for API symmetry with the rest of the worktree
-/// setup path.
 fn create_worktree_settings(
     main_settings: &Path,
     worktree_settings: &Path,
     worktree_path: &Path,
-    _backend: BackendType,
 ) -> Result<()> {
     // Start with main repo settings or empty object
     let mut settings: Value = if main_settings.exists() {
@@ -431,7 +420,6 @@ pub fn setup_worktree_hooks(
     work_dir: &Path,
     hooks_dir: &Path,
     permission_mode: PermissionMode,
-    backend: BackendType,
 ) -> Result<()> {
     // Canonicalize work_dir to absolute path so hooks work regardless of
     // Claude Code's current working directory. This fixes "spawn /bin/sh ENOENT"
@@ -446,7 +434,6 @@ pub fn setup_worktree_hooks(
         session_id.to_string(),
         absolute_work_dir,
         permission_mode,
-        backend,
     );
 
     setup_hooks_for_worktree(worktree_path, &config).with_context(|| {
@@ -725,13 +712,7 @@ mod tests {
 
         // Run create_worktree_settings
         let worktree_settings_path = worktree.join("settings.json");
-        create_worktree_settings(
-            &main_settings_path,
-            &worktree_settings_path,
-            &worktree,
-            BackendType::Native,
-        )
-        .unwrap();
+        create_worktree_settings(&main_settings_path, &worktree_settings_path, &worktree).unwrap();
 
         // Read and parse the generated settings
         let content = std::fs::read_to_string(&worktree_settings_path).unwrap();
@@ -791,13 +772,7 @@ mod tests {
         // No .work symlink exists -- function should still succeed
         let main_settings_path = temp_dir.path().join("nonexistent_settings.json");
         let worktree_settings_path = worktree.join("settings.json");
-        create_worktree_settings(
-            &main_settings_path,
-            &worktree_settings_path,
-            &worktree,
-            BackendType::Native,
-        )
-        .unwrap();
+        create_worktree_settings(&main_settings_path, &worktree_settings_path, &worktree).unwrap();
 
         let content = std::fs::read_to_string(&worktree_settings_path).unwrap();
         let settings: Value = serde_json::from_str(&content).unwrap();
@@ -928,13 +903,7 @@ mod tests {
         .unwrap();
 
         let worktree_settings_path = worktree.join("settings.json");
-        create_worktree_settings(
-            &main_settings_path,
-            &worktree_settings_path,
-            &worktree,
-            BackendType::Native,
-        )
-        .unwrap();
+        create_worktree_settings(&main_settings_path, &worktree_settings_path, &worktree).unwrap();
 
         let content = std::fs::read_to_string(&worktree_settings_path).unwrap();
         let settings: Value = serde_json::from_str(&content).unwrap();

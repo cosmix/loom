@@ -1,6 +1,6 @@
 use super::config::MergedSandboxConfig;
 use crate::language::{detect_project_languages, DetectedLanguage};
-use crate::plan::schema::{BackendType, PermissionMode};
+use crate::plan::schema::PermissionMode;
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
 use std::collections::HashSet;
@@ -26,14 +26,7 @@ pub fn apply_default_mode(settings: &mut Value, mode: PermissionMode) -> Result<
 }
 
 /// Write Claude Code settings.local.json to worktree .claude/ directory
-///
-/// `backend` is the resolved per-stage backend, accepted for API symmetry
-/// with the rest of the sandbox path.
-pub fn write_settings(
-    config: &MergedSandboxConfig,
-    backend: BackendType,
-    worktree_path: &Path,
-) -> Result<()> {
+pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Result<()> {
     let claude_dir = worktree_path.join(".claude");
 
     // Create .claude/ directory if it doesn't exist
@@ -64,7 +57,7 @@ pub fn write_settings(
     }
 
     // Generate new sandbox settings
-    let mut settings_json = generate_settings_json(&config, backend);
+    let mut settings_json = generate_settings_json(&config);
 
     // Resolve the .work symlink to its absolute target path.
     // In worktrees, .work is a symlink to ../../.work (the main repo's .work/).
@@ -138,10 +131,7 @@ fn build_tool_commands(detected_languages: &[DetectedLanguage]) -> Vec<String> {
 }
 
 /// Generate Claude Code settings JSON from sandbox config
-///
-/// `backend` is the resolved per-stage backend, accepted for API symmetry
-/// with the rest of the sandbox path.
-pub fn generate_settings_json(config: &MergedSandboxConfig, _backend: BackendType) -> Value {
+pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     let mut settings = json!({});
 
     // Build sandbox block with native sandbox configuration.
@@ -496,7 +486,7 @@ mod tests {
                 linux: LinuxConfig::default(),
                 permission_mode: mode,
             };
-            let json = generate_settings_json(&config, BackendType::Native);
+            let json = generate_settings_json(&config);
             assert_eq!(
                 json["permissions"]["defaultMode"],
                 json!(expected),
@@ -518,7 +508,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config, BackendType::Native);
+        let json = generate_settings_json(&config);
         // Sandbox block should have enabled: false
         assert_eq!(json["sandbox"]["enabled"], false);
     }
@@ -540,7 +530,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config, BackendType::Native);
+        let json = generate_settings_json(&config);
         // Sandbox enabled in sandbox block
         assert_eq!(json["sandbox"]["enabled"], true);
         assert_eq!(json["sandbox"]["autoAllowBashIfSandboxed"], true);
@@ -594,7 +584,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config, BackendType::Native);
+        let json = generate_settings_json(&config);
 
         // Network config is now in sandbox.network block
         let network = &json["sandbox"]["network"];
@@ -623,7 +613,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config, BackendType::Native);
+        let json = generate_settings_json(&config);
         assert_eq!(json["sandbox"]["enableWeakerNestedSandbox"], true);
     }
 
@@ -640,7 +630,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config, BackendType::Native);
+        let json = generate_settings_json(&config);
         // Excluded commands are now in sandbox block
         let excluded = json["sandbox"]["excludedCommands"].as_array().unwrap();
         assert_eq!(excluded.len(), 2);
@@ -661,7 +651,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config, BackendType::Native);
+        let json = generate_settings_json(&config);
         // allowUnsandboxedCommands is now in sandbox block
         assert_eq!(json["sandbox"]["allowUnsandboxedCommands"], true);
     }
@@ -679,7 +669,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config, BackendType::Native);
+        let json = generate_settings_json(&config);
         let allow = json["permissions"]["allow"].as_array().unwrap();
 
         // Should have Bash(loom *) and Bash(git *) in allow
@@ -709,7 +699,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config, BackendType::Native);
+        let json = generate_settings_json(&config);
         let allow = json["permissions"]["allow"].as_array().unwrap();
 
         let allow_strs: Vec<&str> = allow.iter().map(|v| v.as_str().unwrap()).collect();
@@ -747,7 +737,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config, BackendType::Native);
+        let json = generate_settings_json(&config);
         // No filesystem block when there are no deny_write paths to emit
         // (allowWrite is never emitted to avoid OS sandbox read-blocking)
         assert!(
@@ -775,7 +765,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config, BackendType::Native);
+        let json = generate_settings_json(&config);
         assert_eq!(json["sandbox"]["network"]["allowAllUnixSockets"], true);
     }
 
@@ -808,7 +798,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config, BackendType::Native);
+        let json = generate_settings_json(&config);
 
         // No filesystem block at all (no deny_write, no allowWrite)
         assert!(
@@ -855,7 +845,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config, BackendType::Native);
+        let json = generate_settings_json(&config);
 
         // OS sandbox denyWrite must NOT contain parent-traversal paths or knowledge paths
         // Both are filtered: parent-traversal resolves too broadly in sandbox-exec,
@@ -910,7 +900,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let json = generate_settings_json(&config, BackendType::Native);
+        let json = generate_settings_json(&config);
         let network = &json["sandbox"]["network"];
         assert!(
             !network.is_null(),
@@ -933,7 +923,7 @@ mod tests {
 
     #[test]
     fn test_no_path_in_both_allow_and_deny() {
-        use crate::plan::schema::{BackendType, SandboxConfig, StageSandboxConfig, StageType};
+        use crate::plan::schema::{SandboxConfig, StageSandboxConfig, StageType};
         use crate::sandbox::merge_config;
 
         // Test all stage types
@@ -945,8 +935,8 @@ mod tests {
         ] {
             let plan = SandboxConfig::default();
             let stage = StageSandboxConfig::default();
-            let merged = merge_config(&plan, &stage, stage_type, BackendType::Native);
-            let json = generate_settings_json(&merged, BackendType::Native);
+            let merged = merge_config(&plan, &stage, stage_type);
+            let json = generate_settings_json(&merged);
 
             let permissions = &json["permissions"];
             if permissions.is_null() {
@@ -1024,7 +1014,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        write_settings(&config, BackendType::Native, worktree_path).unwrap();
+        write_settings(&config, worktree_path).unwrap();
 
         // Read the result
         let result_content = fs::read_to_string(&settings_path).unwrap();
@@ -1083,7 +1073,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        write_settings(&config, BackendType::Native, worktree_path).unwrap();
+        write_settings(&config, worktree_path).unwrap();
 
         // Read the result
         let result_content = fs::read_to_string(&settings_path).unwrap();
@@ -1132,7 +1122,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        write_settings(&config, BackendType::Native, worktree_path).unwrap();
+        write_settings(&config, worktree_path).unwrap();
 
         // Read the result
         let settings_path = worktree_path.join(".claude/settings.local.json");
@@ -1189,7 +1179,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        write_settings(&config, BackendType::Native, &worktree_path).unwrap();
+        write_settings(&config, &worktree_path).unwrap();
 
         let settings_path = worktree_path.join(".claude/settings.local.json");
         let result_content = fs::read_to_string(&settings_path).unwrap();
@@ -1242,7 +1232,7 @@ mod tests {
             permission_mode: PermissionMode::Auto,
         };
 
-        let mut new_settings = generate_settings_json(&config, BackendType::Native);
+        let mut new_settings = generate_settings_json(&config);
         let original_allow_count = new_settings["permissions"]["allow"]
             .as_array()
             .unwrap()
