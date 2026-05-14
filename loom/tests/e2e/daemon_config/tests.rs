@@ -1,10 +1,9 @@
 //! Remaining orchestrator configuration tests
 //!
-//! Tests for orchestrator creation, auto-merge, backend types, watch mode,
+//! Tests for orchestrator creation, auto-merge, watch mode,
 //! directory configuration, and stage-specific execution.
 
 use loom::models::stage::Stage;
-use loom::orchestrator::terminal::BackendType;
 use loom::orchestrator::{Orchestrator, OrchestratorConfig};
 use loom::plan::graph::ExecutionGraph;
 use loom::plan::schema::SandboxConfig;
@@ -33,7 +32,6 @@ fn test_orchestrator_creation_with_config() {
         work_dir: work_dir.to_path_buf(),
         repo_root: work_dir.to_path_buf(),
         status_update_interval: Duration::from_secs(5),
-        backend_type: BackendType::Native,
         auto_merge: false,
         base_branch: None,
         skills_dir: None,
@@ -84,7 +82,6 @@ fn test_auto_merge_config_cascade() {
         model: None,
         reasoning_effort: None,
         code_review: None,
-        execution: None,
     };
 
     assert_eq!(stage_with_auto_merge.auto_merge, Some(true));
@@ -116,7 +113,6 @@ fn test_auto_merge_config_cascade() {
         model: None,
         reasoning_effort: None,
         code_review: None,
-        execution: None,
     };
 
     assert_eq!(stage_without_override.auto_merge, None);
@@ -124,11 +120,8 @@ fn test_auto_merge_config_cascade() {
 
 #[test]
 #[ignore] // Requires a terminal emulator - skipped in CI
-fn test_backend_type_native() {
-    // Test that Native backend type is the default and works correctly
-    let config = OrchestratorConfig::default();
-    assert_eq!(config.backend_type, BackendType::Native);
-
+fn test_orchestrator_creates_successfully() {
+    // Test that the orchestrator creates with default config
     let temp_dir = TempDir::new().unwrap();
     let work_dir = temp_dir.path();
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
@@ -137,7 +130,6 @@ fn test_backend_type_native() {
     let graph = ExecutionGraph::build(stage_defs).unwrap();
 
     let config = OrchestratorConfig {
-        backend_type: BackendType::Native,
         work_dir: work_dir.to_path_buf(),
         repo_root: work_dir.to_path_buf(),
         ..Default::default()
@@ -146,7 +138,7 @@ fn test_backend_type_native() {
     let orchestrator = Orchestrator::new(config, graph);
     assert!(
         orchestrator.is_ok(),
-        "Native backend should create successfully"
+        "Orchestrator should create successfully"
     );
 }
 

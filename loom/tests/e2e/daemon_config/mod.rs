@@ -9,12 +9,14 @@
 //! - `intervals` - Tests for poll and status update intervals
 //! - `manual_mode` - Tests for manual mode orchestrator behavior
 //! - `parallel_sessions` - Tests for parallel session configuration
-//! - `tests` - Remaining orchestrator tests (auto-merge, backend types, etc.)
+//! - `stale_project_execution` - Regression: stale [project_execution] in config.toml is ignored
+//! - `tests` - Remaining orchestrator tests (auto-merge, watch mode, etc.)
 
 mod defaults;
 mod intervals;
 mod manual_mode;
 mod parallel_sessions;
+mod stale_project_execution;
 mod tests;
 
 use loom::plan::schema::StageDefinition;
@@ -47,6 +49,5 @@ pub fn create_stage_def(id: &str, name: &str, deps: Vec<String>) -> StageDefinit
         model: None,
         reasoning_effort: None,
         code_review: None,
-        execution: None,
     }
 }

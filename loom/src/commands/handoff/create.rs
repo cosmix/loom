@@ -108,7 +108,6 @@ pub fn execute(
         session_type: Default::default(),
         merge_source_branch: None,
         merge_target_branch: None,
-        backend: Default::default(),
         tracking_key: String::new(),
     };
 

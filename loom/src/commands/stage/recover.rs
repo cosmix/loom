@@ -316,7 +316,6 @@ mod tests {
             regression_test: None,
             model: None,
             reasoning_effort: None,
-            execution_backend: None,
             is_possibly_stuck: false,
         };
 

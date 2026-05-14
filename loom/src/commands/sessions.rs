@@ -7,7 +7,7 @@ use crate::commands::common::find_work_dir;
 use crate::fs::session_files::find_session_file;
 use crate::fs::worktree_files::find_sessions_for_stage;
 use crate::models::session::Session;
-use crate::orchestrator::terminal::dispatcher::{BackendDispatcher, BackendNeeds};
+use crate::orchestrator::terminal::native::NativeBackend;
 use crate::parser::frontmatter::parse_from_markdown;
 
 /// List all sessions
@@ -126,26 +126,13 @@ fn kill_single_session(work_dir: &std::path::Path, session_id: &str) -> Result<(
     let session: Session = parse_from_markdown(&content, "Session")
         .context("Failed to parse session from markdown")?;
 
-    // Route via the session's persisted backend metadata. This is
-    // correct even after restart: every session writes its `backend`
-    // field at spawn time and on disk we never lose it.
-    let backend_type = session.backend;
-    println!("  Backend: {backend_type}");
+    // Use the native backend for kill/liveness — all sessions are native.
+    let native = NativeBackend::new(work_dir.to_path_buf())
+        .with_context(|| "Failed to construct native backend for session kill")?;
 
-    // Build a single-backend dispatcher and let `for_session` pick.
-    // We use a single-backend dispatcher rather than reading the
-    // project default because the session's own metadata is the ground
-    // truth — even if the project has since been re-provisioned with a
-    // different backend, the still-running session belongs to whatever
-    // backend it was spawned under.
-    let needs = BackendNeeds::from_project_and_overrides(backend_type, &[]);
-    let dispatcher = BackendDispatcher::for_plan(backend_type, needs, work_dir)
-        .with_context(|| format!("Failed to construct {backend_type} backend dispatcher"))?;
-    let backend = dispatcher.for_session(&session);
-
-    if backend.is_session_alive(&session)? {
-        println!("  Killing session using {backend_type} backend...");
-        backend.kill_session(&session)?;
+    if native.is_session_alive(&session)? {
+        println!("  Killing session...");
+        native.kill_session(&session)?;
         println!("  Session killed successfully");
     } else {
         println!("  Session already terminated");
@@ -172,13 +159,6 @@ fn kill_single_session(work_dir: &std::path::Path, session_id: &str) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plan::schema::BackendType;
-
-    #[test]
-    fn test_session_backend_defaults_to_native() {
-        let session = Session::new();
-        assert_eq!(session.backend, BackendType::Native);
-    }
 
     #[test]
     fn test_parse_session_from_markdown_valid() {

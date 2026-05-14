@@ -8,7 +8,6 @@ use std::process::Command;
 
 use loom::git::create_worktree;
 use loom::git::worktree::{resolve_base_branch, ResolvedBase};
-use loom::plan::schema::BackendType;
 
 use super::helpers::*;
 
@@ -30,13 +29,8 @@ fn test_simple_chain_b_inherits_from_a() {
 
     assert_eq!(result, ResolvedBase::Branch("loom/stage-a".to_string()));
 
-    let worktree = create_worktree(
-        "stage-b",
-        repo_root,
-        Some(result.branch_name()),
-        BackendType::Native,
-    )
-    .expect("Failed to create worktree");
+    let worktree = create_worktree("stage-b", repo_root, Some(result.branch_name()))
+        .expect("Failed to create worktree");
 
     assert!(
         verify_worktree_has_file(&worktree.path, "a_file.txt"),
@@ -119,13 +113,8 @@ fn test_worktree_inherits_full_git_history() {
     let result = resolve_base_branch("stage-b", &["stage-a".to_string()], &graph, repo_root, None)
         .expect("Failed to resolve");
 
-    let worktree = create_worktree(
-        "stage-b",
-        repo_root,
-        Some(result.branch_name()),
-        BackendType::Native,
-    )
-    .expect("Failed to create worktree");
+    let worktree = create_worktree("stage-b", repo_root, Some(result.branch_name()))
+        .expect("Failed to create worktree");
 
     assert!(verify_worktree_has_file(&worktree.path, "file1.txt"));
     assert!(verify_worktree_has_file(&worktree.path, "file2.txt"));
@@ -153,13 +142,8 @@ fn test_dep_already_merged_fallback_to_main() {
 
     assert_eq!(result, ResolvedBase::Main("main".to_string()));
 
-    let worktree = create_worktree(
-        "stage-b",
-        repo_root,
-        Some(result.branch_name()),
-        BackendType::Native,
-    )
-    .expect("Failed to create worktree");
+    let worktree = create_worktree("stage-b", repo_root, Some(result.branch_name()))
+        .expect("Failed to create worktree");
 
     assert!(
         verify_worktree_has_file(&worktree.path, "a_file.txt"),

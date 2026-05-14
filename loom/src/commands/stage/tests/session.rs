@@ -62,7 +62,6 @@ fn test_session_to_markdown() {
         session_type: SessionType::default(),
         merge_source_branch: None,
         merge_target_branch: None,
-        backend: Default::default(),
         tracking_key: String::new(),
     };
 
@@ -157,7 +156,6 @@ fn test_cleanup_session_resources() {
         session_type: SessionType::default(),
         merge_source_branch: None,
         merge_target_branch: None,
-        backend: Default::default(),
         tracking_key: String::new(),
     };
 

@@ -740,20 +740,12 @@ fn rebuild_skill_index() -> Result<()> {
 
 /// Apply default sandbox settings
 fn fix_sandbox_settings(repo_root: &Path) -> Result<()> {
-    use crate::plan::schema::{BackendType, SandboxConfig, StageSandboxConfig, StageType};
+    use crate::plan::schema::{SandboxConfig, StageSandboxConfig, StageType};
     let config = SandboxConfig::default();
     let stage_config = StageSandboxConfig::default();
-    // Repair runs without a resolved per-stage backend; use the Native
-    // defaults. Stage spawns rewrite `.claude/settings.local.json` with the
-    // correct per-stage permission mode for container projects.
-    let mut merged = sandbox::merge_config(
-        &config,
-        &stage_config,
-        StageType::Standard,
-        BackendType::Native,
-    );
+    let mut merged = sandbox::merge_config(&config, &stage_config, StageType::Standard);
     sandbox::expand_paths(&mut merged);
-    sandbox::write_settings(&merged, BackendType::Native, repo_root)?;
+    sandbox::write_settings(&merged, repo_root)?;
     Ok(())
 }
 
