@@ -6,13 +6,13 @@ Two errors are occurring in loom-managed worktree sessions (and even the main pr
 
 1. **Shell snapshots blocked:**
 
-   ```
+   ```text
    zsh:source:1: operation not permitted: /Users/dkaponis/.claude/shell-snapshots/snapshot-zsh-*.sh
    ```
 
 2. **`loom` CLI can't get CWD:**
 
-   ```
+   ```text
    Error: Failed to get current directory
    Caused by: Operation not permitted (os error 1)
    ```
