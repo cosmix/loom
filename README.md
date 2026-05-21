@@ -150,7 +150,7 @@ loom knowledge list
 loom knowledge check [--min-coverage N] [--src-path <path>] [--quiet]
 loom knowledge audit [--max-file-lines N] [--max-total-lines N] [--quiet]   # Report size/duplicate/promoted-block issues
 loom knowledge gc [--model NAME] [--dry-run] [--quick]                       # Spawn Claude to compact (dedupe, summarize, drop stale)
-loom knowledge bootstrap [--model <name>] [--skip-map] [--quick]
+loom knowledge bootstrap [--model <name>] [--skip-map] [--quick]             # --quick uses headless `claude -p` (see Billing note)
 
 loom memory note <text> [--stage <id>]
 loom memory decision <text> [--context <why>] [--stage <id>]
@@ -166,6 +166,7 @@ loom memory show [--stage <id>] [--all]
 ### Other Commands
 
 ```bash
+loom review [--ai-summary]                                                   # Generate a code-review doc from stage memories; --ai-summary uses headless `claude -p` (see Billing note)
 loom sessions list
 loom sessions kill <session-id...> | --stage <stage-id>
 loom worktree list
@@ -177,6 +178,18 @@ loom clean [--all|--worktrees|--sessions|--state]
 loom self-update
 loom completions [<shell>] [--install] [--migrate]
 ```
+
+### ⚠️ Billing: headless `claude -p` flags
+
+Loom runs every orchestrated stage as a normal **interactive** Claude Code session, which bills against your Claude subscription exactly like launching `claude` yourself. A few **opt-in** flags instead invoke Claude in headless print mode (`claude -p`):
+
+| Command                    | Flag           | Behavior without the flag                                       |
+| -------------------------- | -------------- | --------------------------------------------------------------- |
+| `loom knowledge bootstrap` | `--quick`      | Runs an interactive bootstrap session instead                   |
+| `loom knowledge gc`        | `--quick`      | Runs an interactive compaction session instead                  |
+| `loom review`              | `--ai-summary` | Uses the plan's first paragraph as the summary (no Claude call) |
+
+Headless `claude -p` usage may be billed **separately from (and in addition to) your Claude subscription** as API/extra charges, depending on your account and auth setup. These flags are **off by default** so loom never silently incurs those charges — only pass them when you knowingly accept the headless billing.
 
 ## Plan Format
 
@@ -305,12 +318,12 @@ All stages default to `accept-edits` (agents can edit files without per-file con
 loom:
   version: 1
   sandbox:
-    permission_mode: auto   # plan-level override
+    permission_mode: auto # plan-level override
 
   stages:
     - id: my-stage
       sandbox:
-        permission_mode: auto   # stage-level override (takes precedence)
+        permission_mode: auto # stage-level override (takes precedence)
 ```
 
 Valid values: `accept-edits` (default), `auto`, `plan`, `default`. `bypass-permissions` is rejected at init time.
