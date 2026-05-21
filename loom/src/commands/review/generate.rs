@@ -273,7 +273,11 @@ fn render_stage_section(stage: &StageInfo, entries: &[&MemoryEntry]) -> String {
 }
 
 /// Execute the `loom review` command.
-pub fn execute() -> Result<()> {
+///
+/// `ai_summary` opts into a headless Claude Haiku (`claude -p`) summary of the
+/// plan. It is off by default so `loom review` never silently incurs headless
+/// API charges; without it the plan's first paragraph is used as the summary.
+pub fn execute(ai_summary: bool) -> Result<()> {
     let work_dir = get_work_dir()?;
 
     // Resolve the project root (follow symlinks for worktrees)
@@ -306,7 +310,9 @@ pub fn execute() -> Result<()> {
         plan_name.bold()
     );
 
-    // Summarize the plan file via Claude Haiku (falls back to first paragraph)
+    // Summarize the plan. With --ai-summary, use a headless Claude Haiku call
+    // (falls back to first paragraph on failure); otherwise read the plan's
+    // first paragraph directly so no headless `claude -p` charge is incurred.
     let plan_description = match &source_path {
         Some(path) => {
             let resolved = if path.is_absolute() {
@@ -314,11 +320,18 @@ pub fn execute() -> Result<()> {
             } else {
                 project_root.join(path)
             };
-            println!(
-                "{} Summarizing plan with Claude Haiku...",
-                "→".cyan().bold()
-            );
-            summarize_plan(&resolved)
+            if ai_summary {
+                println!(
+                    "{} Summarizing plan with Claude Haiku...",
+                    "→".cyan().bold()
+                );
+                summarize_plan(&resolved)
+            } else {
+                match fs::read_to_string(&resolved) {
+                    Ok(content) => fallback_description(&content),
+                    Err(_) => "No plan description available.".to_string(),
+                }
+            }
         }
         None => "No plan description available.".to_string(),
     };

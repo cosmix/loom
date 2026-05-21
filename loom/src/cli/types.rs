@@ -137,7 +137,13 @@ pub enum Commands {
     },
 
     /// Generate code review documents from stage memories
-    Review,
+    Review {
+        /// Summarize the plan with a headless Claude Haiku call (`claude -p`).
+        /// Off by default to avoid headless API charges; without it the plan's
+        /// first paragraph is used as the summary.
+        #[arg(long)]
+        ai_summary: bool,
+    },
 
     /// Update loom and configuration files
     SelfUpdate,
