@@ -14,6 +14,72 @@ These files contain curated, authoritative knowledge about the system under deve
 
 **Where to record system knowledge:** All knowledge about the codebase belongs in `doc/loom/knowledge/` via `loom knowledge update`. Do NOT write system knowledge into the project's CLAUDE.md — that file is maintained by the user.
 
+### 🧠 MEMORY SYSTEM — WHERE INSIGHTS GO (DECISION TREE)
+
+**The existence of `doc/loom/knowledge/` decides which memory system to use. CHECK FOR IT FIRST, then follow the matching branch. Applies to the main agent AND subagents, in every context.**
+
+**1. `doc/loom/knowledge/` EXISTS → do NOT use Claude Code's auto-memory at all.** (A project executing a loom plan ALWAYS has it.)
+
+- **a. Executing a loom plan:**
+  - Standard stage → `loom memory note` / `loom memory decision`
+  - Knowledge-bootstrap or knowledge-distill stage → `loom knowledge update`
+- **b. NOT executing a loom plan** (interactive / ad-hoc session) → Write/Edit the `doc/loom/knowledge/*.md` files directly (see Rule 12).
+- In BOTH sub-cases: **⛔ NEVER** Write/Edit under `~/.claude/projects/*/memory/` (including its `MEMORY.md`) and **NEVER** use Claude Code's built-in memory tool — it is invisible to loom and git, so anything stored there is lost to the project.
+
+**2. `doc/loom/knowledge/` DOES NOT EXIST → use Claude Code's auto-memory normally.** The loom routing above does not apply; there is nowhere else for insights to live.
+
+**⚠️ The trap:** in an interactive session inside a loom project, the harness may suggest updating its own memory file or offer a `MEMORY.md` to edit. If `doc/loom/knowledge/` exists, DECLINE that — use branch 1b instead.
+
+---
+
+## ⚙️ ENGINEERING DISCIPLINE (FOUNDATIONAL)
+
+These four principles govern HOW you write code, beneath every rule below. They bias toward caution over speed; for trivial edits, use judgment. They reduce the most common failure modes in agent-written code: wrong assumptions, over-engineering, collateral damage, and aimless looping.
+
+### A. Think Before Coding
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+- State your assumptions explicitly before implementing. If multiple interpretations exist, name them — don't silently pick one.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is genuinely unclear, stop and name what's confusing.
+
+**⚠️ LOOM CONTEXT — interactive vs. autonomous:** In an **interactive** session (planning with the user, ad-hoc work), ASK. In an **autonomous worktree session** you cannot pause for the user — so resolve ambiguity against your **stage's acceptance criteria and the `doc/loom/knowledge/` files**, which encode the intended behavior. Record the assumption you made via `loom memory decision "..." --context "..."`. Only when a load-bearing decision is genuinely unresolvable should you transition the stage to `WaitingForInput`/`Blocked` (or write a handoff) — never guess destructively on an irreversible change.
+
+### B. Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what the stage/task asked for. No abstractions for single-use code. No "flexibility" or "configurability" nobody requested. No error handling for impossible scenarios.
+- If you wrote 200 lines and it could be 50, rewrite it. Ask: "Would a senior engineer call this overcomplicated?"
+
+This **complements** Rule 2 (NO PLACEHOLDERS): write code that is *complete* but *minimal* — "complete" means no stubs, NOT elaborate. The size limits in Rule 17 are an upper bound to refactor against, never a target to fill. Add complexity only when a real requirement demands it, not in anticipation.
+
+### C. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+- Don't "improve" adjacent code, comments, or formatting. Don't refactor things that aren't broken. Match existing style even if you'd do it differently.
+- Remove imports/variables/functions that YOUR change orphaned. Do NOT delete pre-existing dead code unless asked — record it via `loom memory note` or in `concerns.md` instead.
+- The test: **every changed line should trace directly to the task.**
+
+**⚠️ Why this matters doubly in loom:** parallel worktree stages merge back into one branch. Drive-by reformatting or unrelated refactors in one stage cause **merge conflicts** with sibling stages touching nearby lines — turning a clean parallel run into manual conflict resolution. Surgical diffs are a prerequisite for the progressive-merge model, not just good taste.
+
+### D. Goal-Driven Execution
+
+**Define verifiable success criteria, then loop until they pass.**
+
+- Transform vague tasks into checkable goals: "Add validation" → "write tests for invalid inputs, then make them pass"; "Fix the bug" → "write a test that reproduces it, then make it pass"; "Refactor X" → "tests green before AND after."
+- For a multi-step task, state a brief plan up front with a check per step, then work it top to bottom:
+  1. [step] → verify: [check]
+  2. [step] → verify: [check]
+- LLMs excel at looping toward a concrete goal; they flounder against "make it work."
+
+This **IS loom's design.** Goal-backward verification (`acceptance` / `artifacts` / `wiring`) gives you the loop target.
+
+- **Executing a stage:** treat acceptance criteria as the loop condition — run them, read the failures, fix, repeat until green. Don't declare done until they actually pass (Rule 13: exit 0 ≠ success).
+- **Authoring a plan:** write criteria strong enough for the agent to loop against unattended. Weak criteria force halts and clarification; strong criteria enable autonomy. (See `/loom-plan-writer`, `/loom-before-after`, `/loom-wiring-test`.)
+
 ---
 
 ## CRITICAL RULES
@@ -435,7 +501,7 @@ File: 400 lines | Function: 50 lines | Class: 300 lines — Exceed = refactor im
 
 ### 18. SESSION STATE & KNOWLEDGE PLACEMENT
 
-System knowledge belongs in `doc/loom/knowledge/`. Do NOT modify the project's CLAUDE.md.
+System knowledge belongs in `doc/loom/knowledge/`. Do NOT modify the project's CLAUDE.md. When `doc/loom/knowledge/` exists, do NOT use Claude Code's auto-memory (`~/.claude/projects/*/memory/`) — route insights per the MEMORY SYSTEM decision tree under KNOWLEDGE-FIRST.
 
 ---
 
@@ -541,7 +607,8 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 3. ⛔ **Worktree exit** → Commit + `loom stage complete` from worktree root, or hook BLOCKS.
 4. ⛔ **No placeholders** → Complete code or ASK.
 5. ⛔ **Parallel subagents** → Spawn ALL in ONE message with SUBAGENT PREAMBLE (Rule 5).
-6. ⛔ **Memory** → During loom execution, use `loom memory` ONLY. NEVER write to `~/.claude/projects/*/memory/`.
+6. ⛔ **Memory** → If `doc/loom/knowledge/` EXISTS, NEVER use Claude Code's auto-memory: during a plan → `loom memory` (standard) / `loom knowledge` (knowledge stages); not in a plan → Write/Edit `doc/loom/knowledge/` directly. If it does NOT exist → auto-memory is fine. (See MEMORY SYSTEM decision tree under KNOWLEDGE-FIRST.)
+7. ⚙️ **Engineering discipline** → Surface assumptions, simplest code that works, surgical diffs (clean merges), loop until acceptance passes. See ENGINEERING DISCIPLINE (A–D).
 
 **BEFORE EVERY PLAN:**
 □ Explore codebase □ Review knowledge □ Ask about sandbox □ Run `loom repair`
