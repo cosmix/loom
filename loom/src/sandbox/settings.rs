@@ -300,6 +300,17 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     apply_default_mode(&mut settings, config.permission_mode)
         .expect("settings is a JSON object built above");
 
+    // Disable Claude Code's own worktree isolation for this session.
+    //
+    // Loom already runs each stage inside its own git worktree
+    // (.worktrees/<stage-id>/). Claude Code's default bgIsolation ("worktree")
+    // blocks Edit/Write in the checkout until EnterWorktree is called, which
+    // would push subagents into *nested* worktrees on top of loom's — creating
+    // stray branches and a tangle of checkouts. "none" lets the session and its
+    // subagents edit the loom worktree directly, which is exactly what loom
+    // expects. (Claude Code v2.1.143+; older versions ignore the key.)
+    settings["worktree"] = json!({ "bgIsolation": "none" });
+
     settings
 }
 
@@ -493,6 +504,25 @@ mod tests {
                 "generate_settings_json must emit camelCase for {mode:?}"
             );
         }
+    }
+
+    #[test]
+    fn test_generate_settings_disables_worktree_isolation() {
+        // Loom owns the worktree, so Claude Code's bgIsolation must be "none"
+        // to keep subagents from spawning nested worktrees/branches.
+        let config = MergedSandboxConfig {
+            enabled: true,
+            auto_allow: true,
+            allow_unsandboxed_escape: false,
+            excluded_commands: vec![],
+            filesystem: FilesystemConfig::default(),
+            network: NetworkConfig::default(),
+            linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::Auto,
+        };
+
+        let json = generate_settings_json(&config);
+        assert_eq!(json["worktree"]["bgIsolation"], json!("none"));
     }
 
     #[test]

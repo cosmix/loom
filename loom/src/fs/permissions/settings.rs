@@ -199,8 +199,27 @@ pub fn ensure_loom_hooks_local(repo_root: &Path) -> Result<()> {
         false
     };
 
+    // Disable Claude Code's worktree isolation for subagents in the main repo.
+    //
+    // Knowledge stages (and interactive sessions) run in the main checkout
+    // rather than a loom worktree. With Claude Code's default bgIsolation
+    // ("worktree"), their subagents would be forced into nested git worktrees,
+    // leaving stray branches behind. "none" lets subagents edit the checkout
+    // directly. Worktree stage sessions get the same setting via the sandbox
+    // settings generator. (Claude Code v2.1.143+; older versions ignore it.)
+    let worktree_obj = settings_obj.entry("worktree").or_insert_with(|| json!({}));
+    let worktree_map = worktree_obj
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("worktree must be a JSON object"))?;
+    let worktree_configured = if worktree_map.get("bgIsolation") != Some(&json!("none")) {
+        worktree_map.insert("bgIsolation".to_string(), json!("none"));
+        true
+    } else {
+        false
+    };
+
     // Write back if we made any changes
-    if hooks_configured || env_configured {
+    if hooks_configured || env_configured || worktree_configured {
         let content = serde_json::to_string_pretty(&settings)
             .context("Failed to serialize settings.local.json to JSON")?;
 
@@ -212,6 +231,9 @@ pub fn ensure_loom_hooks_local(repo_root: &Path) -> Result<()> {
         }
         if env_configured {
             println!("  Configured agent teams env var in .claude/settings.local.json");
+        }
+        if worktree_configured {
+            println!("  Disabled Claude Code worktree isolation in .claude/settings.local.json");
         }
     } else {
         println!("  Hooks and env vars already configured in .claude/settings.local.json");
@@ -347,6 +369,29 @@ mod tests {
 
         // Env should be present
         assert_eq!(settings["env"]["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"], "1");
+    }
+
+    #[test]
+    fn test_ensure_loom_disables_worktree_isolation_in_settings_local() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path();
+        let hooks_dir = temp_dir.path().join("hooks");
+
+        ensure_loom_permissions_to(repo_root, Some(&hooks_dir)).unwrap();
+
+        let settings_local_path = repo_root.join(".claude/settings.local.json");
+        let content = fs::read_to_string(&settings_local_path).unwrap();
+        let settings: Value = serde_json::from_str(&content).unwrap();
+
+        // Worktree isolation must be off so main-repo subagents (knowledge
+        // stages, interactive sessions) don't spawn nested worktrees.
+        assert_eq!(settings["worktree"]["bgIsolation"], "none");
+
+        // Running again is idempotent — the value is already "none".
+        ensure_loom_permissions_to(repo_root, Some(&hooks_dir)).unwrap();
+        let content = fs::read_to_string(&settings_local_path).unwrap();
+        let settings: Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(settings["worktree"]["bgIsolation"], "none");
     }
 
     #[test]
