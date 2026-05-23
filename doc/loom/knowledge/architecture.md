@@ -257,6 +257,25 @@ After worktree creation, `.claude/settings.local.json` is appended (idempotently
 - Knowledge stages: append to main repo's `.git/info/exclude` (no worktree created)
 - The per-worktree exclude file lives at `<worktree>/.git/info/exclude` — NOT at `<worktree-dir>/.git/info/exclude` (the latter is a FILE pointing at the real gitdir, not a directory; the real exclude is at `<repo>/.git/worktrees/<stage-id>/info/exclude`)
 
+## Claude Code Worktree Isolation Disabled in Generated Settings
+
+Loom owns the per-stage git worktree, so it disables Claude Code's *own* worktree
+isolation (`worktree.bgIsolation`) in every settings file it generates. Claude
+Code's default (`"worktree"`) blocks Edit/Write in the checkout until
+`EnterWorktree`, which would push subagents into nested worktrees on top of loom's
+— leaving stray branches and tangled checkouts. Loom emits `"none"` so subagents
+edit the loom worktree directly (Claude Code v2.1.143+; older versions ignore it).
+
+Two write sites, both targeting `settings.local.json` (never the committed
+`settings.json`, to avoid imposing on non-loom teammates):
+
+- **Worktree stage sessions** — `sandbox/settings.rs:generate_settings_json()`
+  emits a top-level `"worktree": { "bgIsolation": "none" }` block. Survives the
+  `merge_existing_permissions()` step, which only touches `permissions.*`.
+- **Main-repo sessions** (knowledge stages, interactive) —
+  `fs/permissions/settings.rs:ensure_loom_hooks_local()` sets it idempotently
+  alongside the agent-teams env var.
+
 ## Hook System Architecture (hooks/)
 
 The `hooks/` module provides Claude Code hooks integration for session lifecycle management. It is a **top-level module** — currently imported by `orchestrator/` and `git/worktree/`, which is a known layering violation (both should import a stable hooks interface instead).
