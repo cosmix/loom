@@ -442,3 +442,18 @@ These stale entries would have misled future agents into using `permission_mode:
 3. Verify with `rg "permission.mode" doc/loom/knowledge/` that all entries agree
 
 **Generalization:** Any plan that changes an enumerated default (permission modes, stage-type behavior, config field defaults) MUST include a step that searches `doc/loom/knowledge/` for old values and corrects them. This applies even when the code change is a single-line constant update.
+
+## Sandbox excludedCommands: Bare Names Are Matched Exactly, Not as Prefixes (2026-05-26)
+
+**What happened:** Every worktree stage failed at `loom stage complete` with `Read-only file system (os error 30)` writing to `.work/sessions/`, `.work/signals/`, and `.work/stages/`. `.work` is a symlink resolving to the main repo (outside the worktree), so the OS sandbox treats it as read-only. The loom CLI was supposed to be exempt because `default_excluded_commands()` returns `["loom", "git"]`, but the exemption never applied.
+
+**Why:** Claude Code's sandbox matcher (`pK8`/`XR_` in the binary) classifies each `excludedCommands` entry:
+- `"loom:*"` → **prefix** → matches `loom` AND `loom <anything>`
+- `"loom *"` → **wildcard** → matches `loom <anything>` (NOT bare `loom`)
+- `"loom"`   → **exact** → matches ONLY the literal command line `loom` with zero args
+
+`generate_settings_json` emitted bare `"loom"`, classified as **exact**, so `loom stage complete <id>` never matched and ran *inside* the sandbox → EROFS. This regression surfaced on Linux once Claude Code (v2.1.150) enforced the native bubblewrap sandbox; the code's macOS-era comment misattributed it to "excludedCommands does NOT bypass OS-level filesystem restrictions."
+
+**Prevention:** `sandbox.excludedCommands` entries must use the prefix form `"<cmd>:*"` (or a `*` wildcard) to exempt a command's subcommands. A bare program name only exempts the argument-less invocation. Verify sandbox-matcher assumptions against the actual Claude Code binary (`rg -a` the unstripped ELF at `~/.local/share/claude/versions/<ver>`), not docs alone — the exact-match rule is undocumented.
+
+**Fix:** Added `to_exclude_pattern()` in `sandbox/settings.rs` that appends `:*` to any entry lacking a glob/`:*`, applied when emitting `sandbox.excludedCommands`. `permissions.allow` `Bash(loom *)` entries use a different matcher and were already correct.
