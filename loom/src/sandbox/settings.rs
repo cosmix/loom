@@ -130,6 +130,22 @@ fn build_tool_commands(detected_languages: &[DetectedLanguage]) -> Vec<String> {
     commands
 }
 
+/// Normalize a sandbox `excludedCommands` entry into a prefix pattern.
+///
+/// Claude Code matches a bare program name *exactly* (the whole command line
+/// must equal it), so `loom` would not exempt `loom stage complete <id>`.
+/// Appending `:*` produces a prefix match that covers the command and every
+/// subcommand/argument. Entries that already contain a glob (`*`) or a prefix
+/// suffix (`:*`) are returned unchanged so caller-supplied patterns are honored.
+fn to_exclude_pattern(cmd: &str) -> String {
+    let trimmed = cmd.trim();
+    if trimmed.ends_with(":*") || trimmed.contains('*') {
+        trimmed.to_string()
+    } else {
+        format!("{trimmed}:*")
+    }
+}
+
 /// Generate Claude Code settings JSON from sandbox config
 pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     let mut settings = json!({});
@@ -145,9 +161,29 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
         sandbox["autoAllowBashIfSandboxed"] = json!(true);
     }
 
-    // Add excluded commands if any
+    // Add excluded commands if any.
+    //
+    // Claude Code classifies each excludedCommands entry (sandbox matcher):
+    //   "loom:*"  -> prefix  -> matches `loom` AND `loom <anything>`
+    //   "loom *"  -> wildcard -> matches `loom <anything>` (NOT bare `loom`)
+    //   "loom"    -> exact    -> matches ONLY the literal command `loom`
+    // A bare program name is therefore matched *exactly*: `loom stage complete
+    // <id>` would NOT match "loom" and would run sandboxed, so its writes to the
+    // `.work` symlink (which resolves outside the worktree) fail with EROFS.
+    // Emit the prefix form ("loom:*") so the command and all its subcommands run
+    // unsandboxed. Entries that already carry a glob (`*`) or prefix (`:*`) are
+    // left untouched so plan-authored patterns are honored.
     if !config.excluded_commands.is_empty() {
-        sandbox["excludedCommands"] = json!(config.excluded_commands);
+        let patterns: Vec<String> = config
+            .excluded_commands
+            .iter()
+            .map(|c| c.trim())
+            .filter(|c| !c.is_empty())
+            .map(to_exclude_pattern)
+            .collect();
+        if !patterns.is_empty() {
+            sandbox["excludedCommands"] = json!(patterns);
+        }
     }
 
     // Add allowUnsandboxedCommands if enabled
@@ -198,8 +234,8 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
     //
     // IMPORTANT: Do NOT emit doc/loom/knowledge/** in denyWrite.
     // The `loom knowledge update` CLI command needs to write to this path.
-    // excludedCommands does NOT bypass OS-level filesystem restrictions,
-    // so the loom binary gets blocked by sandbox-exec. Knowledge writes
+    // A denyWrite entry leaks into the OS-level sandbox, so it would block the
+    // loom binary's own writes regardless of excludedCommands. Knowledge writes
     // are protected via permissions.deny Write() entries instead, which
     // block Claude Code's Write/Edit tools but not CLI commands.
     //
@@ -661,11 +697,26 @@ mod tests {
         };
 
         let json = generate_settings_json(&config);
-        // Excluded commands are now in sandbox block
+        // Excluded commands are emitted as prefix patterns (":*") so the command
+        // and all its subcommands/arguments are exempted from the sandbox. A bare
+        // name would only match the argument-less invocation (exact match).
         let excluded = json["sandbox"]["excludedCommands"].as_array().unwrap();
         assert_eq!(excluded.len(), 2);
-        assert_eq!(excluded[0], "loom");
-        assert_eq!(excluded[1], "git");
+        assert_eq!(excluded[0], "loom:*");
+        assert_eq!(excluded[1], "git:*");
+    }
+
+    #[test]
+    fn test_exclude_pattern_normalization() {
+        // Bare names get the ":*" prefix suffix so subcommands match.
+        assert_eq!(to_exclude_pattern("loom"), "loom:*");
+        assert_eq!(to_exclude_pattern("npm run"), "npm run:*");
+        // Already-patterned entries are left untouched.
+        assert_eq!(to_exclude_pattern("loom:*"), "loom:*");
+        assert_eq!(to_exclude_pattern("docker *"), "docker *");
+        assert_eq!(to_exclude_pattern("npm run *"), "npm run *");
+        // Whitespace is trimmed.
+        assert_eq!(to_exclude_pattern("  cargo  "), "cargo:*");
     }
 
     #[test]
