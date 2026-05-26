@@ -97,7 +97,7 @@ uses_find() {
 # Check for grep usage - warn and guide to native tools first, then rg
 if uses_grep "$STRIPPED_COMMAND"; then
 	debug "WARNED: grep detected"
-	jq -nc --arg ctx "LOOM_HOOK_WARN: Prefer Claude Code's native Grep tool or 'rg' (ripgrep) over 'grep'. Examples: grep -r \"pattern\" . → rg \"pattern\" ." \
+	jq -nc --arg ctx "LOOM_HOOK_WARN: STOP — do NOT run this 'grep' command. CLAUDE.md rule 8 bans 'grep' in this project. Cancel it and redo the search NOW with the native Grep tool (preferred), or 'rg' only if you genuinely need a shell pipeline. Translate before retrying: grep -rn \"pat\" path → Grep(pattern=\"pat\", path=\"path\") OR rg -n \"pat\" path" \
 		'{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $ctx}}'
 	exit 0
 fi
@@ -105,7 +105,7 @@ fi
 # Check for find usage - warn and guide to native tools first, then fd
 if uses_find "$STRIPPED_COMMAND"; then
 	debug "WARNED: find detected"
-	jq -nc --arg ctx "LOOM_HOOK_WARN: Prefer Claude Code's native Glob tool or 'fd' over 'find'. Examples: find . -name \"*.txt\" → fd -e txt" \
+	jq -nc --arg ctx "LOOM_HOOK_WARN: STOP — do NOT run this 'find' command. CLAUDE.md rule 8 bans 'find' in this project. Cancel it and redo the search NOW with the native Glob tool (preferred), or 'fd' only if you genuinely need a shell pipeline. Translate before retrying: find . -name \"*.txt\" → Glob(pattern=\"**/*.txt\") OR fd -e txt" \
 		'{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $ctx}}'
 	exit 0
 fi
