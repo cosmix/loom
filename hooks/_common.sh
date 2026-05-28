@@ -80,3 +80,34 @@ BEGIN { inside = 0; marker = "" }
 
     printf '%s' "$phase2"
 }
+
+# loom_current_worktree - Echo the loom worktree root this session is operating
+# in, or return non-zero if this is NOT a loom worktree session.
+#
+# A loom worktree lives at `<repo>/.worktrees/<stage-id>/`. Membership is decided
+# by LOCATION, never by LOOM_STAGE_ID: that variable leaks into plain Claude Code
+# sessions (e.g. a prior loom run exported it into the shell), so gating on it
+# alone makes the isolation hooks wrongly fire on ordinary branches like main.
+#
+# A session counts as inside a worktree when either:
+#   (a) the current working directory is inside `.worktrees/<stage>/`, or
+#   (b) LOOM_WORKTREE_PATH points into `.worktrees/` AND that directory still
+#       exists on disk (the on-disk check rejects a stale, leaked value).
+#
+# Returns the worktree root on stdout.
+loom_current_worktree() {
+    local dir
+    dir=$(pwd 2>/dev/null) || dir=""
+    if [[ "$dir" =~ ^(.*/\.worktrees/[^/]+) ]]; then
+        printf '%s' "${BASH_REMATCH[1]}"
+        return 0
+    fi
+
+    local wt="${LOOM_WORKTREE_PATH:-}"
+    if [[ -n "$wt" && -d "$wt" && "$wt" =~ /\.worktrees/[^/]+ ]]; then
+        printf '%s' "$wt"
+        return 0
+    fi
+
+    return 1
+}

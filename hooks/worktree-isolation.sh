@@ -53,31 +53,19 @@ TOOL_INPUT=$(echo "$INPUT_JSON" | jq -r '.tool_input // empty' 2>/dev/null || tr
 debug "TOOL_NAME: $TOOL_NAME"
 debug "TOOL_INPUT: $TOOL_INPUT"
 
-# Only run in loom worktrees (check for stage ID)
-if [[ -z "${LOOM_STAGE_ID:-}" ]]; then
+# Only enforce inside a genuine loom worktree. Membership is decided by the
+# working directory, NOT by LOOM_STAGE_ID: that variable leaks into plain Claude
+# Code sessions (e.g. a prior loom run exported it), so gating on it alone made
+# this hook wrongly fire on ordinary branches like main. If we are not inside a
+# loom worktree, stay inert.
+CURRENT_WORKTREE=$(loom_current_worktree) || {
+    debug "Not inside a loom worktree; allowing"
     exit 0
-fi
+}
 
-# Determine current worktree from environment or current directory
-CURRENT_WORKTREE="${LOOM_WORKTREE_PATH:-}"
-if [[ -z "$CURRENT_WORKTREE" ]]; then
-    # Try to detect from current directory
-    CURRENT_DIR=$(pwd)
-    if [[ "$CURRENT_DIR" =~ \.worktrees/([^/]+) ]]; then
-        CURRENT_STAGE="${BASH_REMATCH[1]}"
-    else
-        CURRENT_STAGE="$LOOM_STAGE_ID"
-    fi
-else
-    # Derive the stage from the worktree path itself. LOOM_STAGE_ID can be
-    # stale (a prior stage's value leaking into this session's env), but
-    # LOOM_WORKTREE_PATH is authoritative for which worktree this session owns.
-    if [[ "$CURRENT_WORKTREE" =~ \.worktrees/([^/]+) ]]; then
-        CURRENT_STAGE="${BASH_REMATCH[1]}"
-    else
-        CURRENT_STAGE="$LOOM_STAGE_ID"
-    fi
-fi
+# Derive the stage from the worktree path itself — authoritative for which
+# worktree this session owns, and immune to a stale LOOM_STAGE_ID.
+CURRENT_STAGE=$(basename "$CURRENT_WORKTREE")
 
 # === BASH VALIDATION ===
 validate_bash_command() {

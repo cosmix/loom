@@ -21,6 +21,7 @@
 #   LOOM_DEBUG - Set to 1 to enable debug logging (optional)
 
 set -euo pipefail
+source "$(dirname "$0")/_common.sh"
 
 # Debug logging helper - only writes if LOOM_DEBUG=1
 # Uses user-specific log file to avoid multi-user security issues
@@ -53,25 +54,15 @@ TOOL_INPUT=$(echo "$INPUT_JSON" | jq -r '.tool_input // empty' 2>/dev/null || tr
 debug_log "TOOL_NAME: $TOOL_NAME"
 debug_log "TOOL_INPUT: $TOOL_INPUT"
 
-# Only run in loom worktrees (check for stage ID)
-if [[ -z "${LOOM_STAGE_ID:-}" ]]; then
+# Only enforce inside a genuine loom worktree. Membership is decided by
+# location, NOT by LOOM_STAGE_ID: that variable leaks into plain Claude Code
+# sessions (e.g. a prior loom run exported it), so gating on it alone would make
+# this hook wrongly fire on ordinary branches like main. If we are not inside a
+# loom worktree, stay inert.
+WORKTREE_PATH=$(loom_current_worktree) || {
+    debug_log "Not inside a loom worktree; allowing"
     exit 0
-fi
-
-# Get worktree boundary from environment
-WORKTREE_PATH="${LOOM_WORKTREE_PATH:-}"
-if [[ -z "$WORKTREE_PATH" ]]; then
-    # Try to detect from current directory
-    CURRENT_DIR=$(pwd)
-    if [[ "$CURRENT_DIR" =~ \.worktrees/([^/]+) ]]; then
-        # Extract the worktree root from current path
-        WORKTREE_PATH="${CURRENT_DIR%%/.worktrees/*}/.worktrees/${BASH_REMATCH[1]}"
-    else
-        # Cannot determine boundary, allow operation
-        debug_log "No worktree path, allowing"
-        exit 0
-    fi
-fi
+}
 
 # Canonicalize worktree path if it exists
 if [[ -d "$WORKTREE_PATH" ]]; then
