@@ -448,6 +448,7 @@ These stale entries would have misled future agents into using `permission_mode:
 **What happened:** Every worktree stage failed at `loom stage complete` with `Read-only file system (os error 30)` writing to `.work/sessions/`, `.work/signals/`, and `.work/stages/`. `.work` is a symlink resolving to the main repo (outside the worktree), so the OS sandbox treats it as read-only. The loom CLI was supposed to be exempt because `default_excluded_commands()` returns `["loom", "git"]`, but the exemption never applied.
 
 **Why:** Claude Code's sandbox matcher (`pK8`/`XR_` in the binary) classifies each `excludedCommands` entry:
+
 - `"loom:*"` → **prefix** → matches `loom` AND `loom <anything>`
 - `"loom *"` → **wildcard** → matches `loom <anything>` (NOT bare `loom`)
 - `"loom"`   → **exact** → matches ONLY the literal command line `loom` with zero args
@@ -457,3 +458,15 @@ These stale entries would have misled future agents into using `permission_mode:
 **Prevention:** `sandbox.excludedCommands` entries must use the prefix form `"<cmd>:*"` (or a `*` wildcard) to exempt a command's subcommands. A bare program name only exempts the argument-less invocation. Verify sandbox-matcher assumptions against the actual Claude Code binary (`rg -a` the unstripped ELF at `~/.local/share/claude/versions/<ver>`), not docs alone — the exact-match rule is undocumented.
 
 **Fix:** Added `to_exclude_pattern()` in `sandbox/settings.rs` that appends `:*` to any entry lacking a glob/`:*`, applied when emitting `sandbox.excludedCommands`. `permissions.allow` `Bash(loom *)` entries use a different matcher and were already correct.
+
+## Worktree-Isolation Hooks Gated on LOOM_STAGE_ID, Which Leaks Into Plain Sessions (2026-05-28)
+
+**What happened:** `worktree-isolation.sh` (and `worktree-file-guard.sh`) decided "are we in a loom worktree?" solely via `if [[ -z "${LOOM_STAGE_ID:-}" ]]; then exit 0; fi`. `LOOM_STAGE_ID` is exported into the worktree session's shell (pid_tracking.rs) and persists in the user's interactive shell environment afterward. A normal Claude Code session in the **main** repo on `main` then had `LOOM_STAGE_ID` still set, so the hook activated and blocked ordinary commands — e.g. any Bash command line merely *containing* the substring `.worktrees/` (like an `rg`/`ls` that references another stage's dir) was rejected as "cross-worktree access," even though the session was nowhere near a worktree.
+
+**Misleading signal:** `LOOM_STAGE_ID` being set *looks* like proof you're executing a stage. It isn't — env vars outlive the process that set them. The hook even had a comment acknowledging `LOOM_STAGE_ID` "can be stale" but still used it as the activation gate.
+
+**Why:** Worktree membership is a property of **location** (`<repo>/.worktrees/<stage-id>/`), not of an env var. Gating on an env var that leaks conflates "a loom run happened in this shell once" with "this command is running inside a worktree right now."
+
+**Prevention:** Decide worktree membership from the working directory (cwd inside `.worktrees/<stage>/`), or from `LOOM_WORKTREE_PATH` only when it points at an existing `.worktrees/` dir. Never gate isolation enforcement on `LOOM_STAGE_ID` alone. Derive the current stage from the worktree path (`basename`), not from the possibly-stale env var.
+
+**Fix:** Added `loom_current_worktree()` to `hooks/_common.sh` (returns the worktree root by cwd/`LOOM_WORKTREE_PATH`, else non-zero). Both `worktree-isolation.sh` and `worktree-file-guard.sh` now gate on it and derive the stage from the path. `worktree-file-guard.sh` now also sources `_common.sh`. Remember to reinstall hooks (`install.sh`) after editing — the runtime copy lives at `~/.claude/hooks/loom/`, separate from the repo source (see "Source vs Installed: Editing Wrong File").
