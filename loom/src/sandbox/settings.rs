@@ -25,6 +25,54 @@ pub fn apply_default_mode(settings: &mut Value, mode: PermissionMode) -> Result<
     Ok(())
 }
 
+/// Detect whether a settings target is a loom worktree (vs. the main repo root).
+///
+/// Loom worktrees always live at `<repo>/.worktrees/<stage-id>/` and carry a
+/// `.work` symlink into the main repo's shared state; the main repo root has
+/// neither. This distinction decides whether worktree-relative escape rules
+/// (`../../**`, `../.worktrees/**`) are meaningful: inside a worktree `../..`
+/// is the repo root (the intended isolation boundary), but at the repo root
+/// `../..` is the repo's parent — typically `$HOME`.
+fn target_is_worktree(target: &Path) -> bool {
+    if target.components().any(|c| c.as_os_str() == ".worktrees") {
+        return true;
+    }
+    // Fallback: a worktree's `.work` is a symlink; the main repo's is a real dir.
+    std::fs::symlink_metadata(target.join(".work"))
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false)
+}
+
+/// Whether a filesystem deny path is a worktree-relative escape rule.
+///
+/// These (`../../**`, `../.worktrees/**`, …) are resolved relative to the
+/// directory holding `settings.local.json`. They isolate a worktree from its
+/// repo, but are nonsensical — and actively harmful — at the main repo root,
+/// where `../..` resolves to `$HOME`.
+fn is_worktree_escape_path(path: &str) -> bool {
+    let t = path.trim();
+    t.starts_with("..") || t.contains("../") || t.contains(".worktrees")
+}
+
+/// Drop worktree-relative escape rules from a config destined for the MAIN repo.
+///
+/// At the repo root `../../**` resolves to `$HOME`, so emitting it as a deny
+/// rule blocks reads/writes across the entire home directory — breaking git
+/// (`~/.gitconfig`) and any home-dir tooling. Worktree isolation is meaningless
+/// for the main checkout, so these entries must not be written there. Worktree
+/// targets keep them (generated relative to the worktree, where they are
+/// correct), and isolation is independently enforced by the worktree hooks.
+fn strip_worktree_escape_denies(config: &mut MergedSandboxConfig) {
+    config
+        .filesystem
+        .deny_read
+        .retain(|p| !is_worktree_escape_path(p));
+    config
+        .filesystem
+        .deny_write
+        .retain(|p| !is_worktree_escape_path(p));
+}
+
 /// Write Claude Code settings.local.json to worktree .claude/ directory
 pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Result<()> {
     let claude_dir = worktree_path.join(".claude");
@@ -45,8 +93,20 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
         json!({})
     };
 
-    // Auto-detect project build tools and add them to excluded commands
     let mut config = config.clone();
+
+    // Worktree-relative escape rules (`../../**`, `../.worktrees/**`) are only
+    // valid inside a worktree, where `../..` is the repo root. At the main repo
+    // root `../..` is `$HOME`, so writing them there denies reads/writes across
+    // the whole home directory (breaking git's `~/.gitconfig`). Strip them when
+    // the target is the main repo; worktree targets keep them. This guards every
+    // main-repo caller at once: `loom repair --fix` and knowledge-stage spawns.
+    let is_worktree = target_is_worktree(worktree_path);
+    if !is_worktree {
+        strip_worktree_escape_denies(&mut config);
+    }
+
+    // Auto-detect project build tools and add them to excluded commands
     let detected_languages = detect_project_languages(worktree_path);
     let build_commands = build_tool_commands(&detected_languages);
     let existing: HashSet<String> = config.excluded_commands.iter().cloned().collect();
@@ -92,7 +152,7 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
     }
 
     // Merge existing permissions into the new settings
-    merge_existing_permissions(&mut settings_json, &existing_settings);
+    merge_existing_permissions(&mut settings_json, &existing_settings, is_worktree);
 
     // Write settings file with pretty formatting
     let settings_string = serde_json::to_string_pretty(&settings_json)
@@ -357,7 +417,17 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
 /// `permissions.deny` are merged - sandbox/network/linux config always comes from the generator.
 ///
 /// Uses HashSet for deduplication to avoid duplicate permissions in the merged result.
-fn merge_existing_permissions(new_settings: &mut Value, existing_settings: &Value) {
+///
+/// `is_worktree` indicates whether the destination settings file lives inside a
+/// loom worktree. When false (the main repo root), stale worktree-relative
+/// escape entries carried over from a prior file (e.g. `Write(../../**)` written
+/// by an older loom version) are dropped, because at the repo root `../..` is
+/// `$HOME` and such a rule would deny writes across the entire home directory.
+fn merge_existing_permissions(
+    new_settings: &mut Value,
+    existing_settings: &Value,
+    is_worktree: bool,
+) {
     // Extract existing permissions if they exist
     let existing_permissions = existing_settings.get("permissions");
     if existing_permissions.is_none() || existing_permissions.unwrap().is_null() {
@@ -442,6 +512,13 @@ fn merge_existing_permissions(new_settings: &mut Value, existing_settings: &Valu
             for perm in existing_deny {
                 if perm.starts_with("Read(") && (perm.contains("../") || perm.starts_with("Read(/"))
                 {
+                    continue;
+                }
+                // For the MAIN repo (not a worktree), also drop worktree-relative
+                // escape rules on the write side and any cross-worktree refs: at
+                // the repo root `../..` is `$HOME`, so a stale `Write(../../**)`
+                // would deny writes across the entire home directory.
+                if !is_worktree && (perm.contains("../") || perm.contains(".worktrees")) {
                     continue;
                 }
                 all_deny.insert(perm);
@@ -1320,12 +1397,184 @@ mod tests {
             .len();
 
         // Merge should be a no-op
-        merge_existing_permissions(&mut new_settings, &existing);
+        merge_existing_permissions(&mut new_settings, &existing, false);
 
         let after_allow_count = new_settings["permissions"]["allow"]
             .as_array()
             .unwrap()
             .len();
         assert_eq!(original_allow_count, after_allow_count);
+    }
+
+    #[test]
+    fn test_target_is_worktree_detection() {
+        // A `.worktrees` path component marks a worktree (no filesystem needed).
+        assert!(target_is_worktree(Path::new(
+            "/home/u/proj/.worktrees/stage-1"
+        )));
+        // A plain repo root is the main repo.
+        assert!(!target_is_worktree(Path::new("/home/u/proj")));
+
+        #[cfg(unix)]
+        {
+            use tempfile::TempDir;
+            let temp_dir = TempDir::new().unwrap();
+            let base = temp_dir.path();
+
+            // A symlinked `.work` marks a worktree even without a `.worktrees`
+            // component (the structural invariant loom relies on).
+            let real_work = base.join("real-work");
+            fs::create_dir_all(&real_work).unwrap();
+            let wt = base.join("checkout");
+            fs::create_dir_all(&wt).unwrap();
+            std::os::unix::fs::symlink(&real_work, wt.join(".work")).unwrap();
+            assert!(target_is_worktree(&wt));
+
+            // A real `.work` directory is the main repo.
+            let main = base.join("main");
+            fs::create_dir_all(main.join(".work")).unwrap();
+            assert!(!target_is_worktree(&main));
+        }
+    }
+
+    #[test]
+    fn test_write_settings_main_repo_strips_worktree_escape_denies() {
+        use tempfile::TempDir;
+
+        // A plain repo root (not under .worktrees, no `.work` symlink) is the main
+        // repo: worktree-relative escape rules must be stripped, because `../..`
+        // resolves to `$HOME` there and would deny the entire home directory.
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path();
+
+        let config = MergedSandboxConfig {
+            enabled: true,
+            auto_allow: true,
+            allow_unsandboxed_escape: false,
+            excluded_commands: vec![],
+            // FilesystemConfig::default() includes ../../** and ../.worktrees/**.
+            filesystem: FilesystemConfig::default(),
+            network: NetworkConfig::default(),
+            linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::Auto,
+        };
+
+        write_settings(&config, repo_root).unwrap();
+
+        let result: Value = serde_json::from_str(
+            &fs::read_to_string(repo_root.join(".claude/settings.local.json")).unwrap(),
+        )
+        .unwrap();
+        let deny = result["permissions"]["deny"].as_array().unwrap();
+        let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
+
+        assert!(
+            !deny_strs.iter().any(|p| p.contains("../")),
+            "main repo deny must not contain parent-traversal rules, got: {deny_strs:?}"
+        );
+        assert!(
+            !deny_strs.iter().any(|p| p.contains(".worktrees")),
+            "main repo deny must not reference .worktrees, got: {deny_strs:?}"
+        );
+        // Non-traversal protections survive.
+        assert!(deny_strs.contains(&"Read(~/.ssh/**)"));
+        assert!(deny_strs.contains(&"Write(doc/loom/knowledge/**)"));
+    }
+
+    #[test]
+    fn test_write_settings_worktree_keeps_escape_write_deny() {
+        use tempfile::TempDir;
+
+        // Inside a real worktree (path under .worktrees/<stage>/), `../..` is the
+        // repo root — the intended isolation boundary — so the write-side escape
+        // rule is kept. (Read-side `../` is filtered by generate_settings_json
+        // regardless, because it leaks into the OS sandbox.)
+        let temp_dir = TempDir::new().unwrap();
+        let worktree_path = temp_dir.path().join(".worktrees").join("my-stage");
+        fs::create_dir_all(&worktree_path).unwrap();
+
+        let config = MergedSandboxConfig {
+            enabled: true,
+            auto_allow: true,
+            allow_unsandboxed_escape: false,
+            excluded_commands: vec![],
+            filesystem: FilesystemConfig::default(),
+            network: NetworkConfig::default(),
+            linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::Auto,
+        };
+
+        write_settings(&config, &worktree_path).unwrap();
+
+        let result: Value = serde_json::from_str(
+            &fs::read_to_string(worktree_path.join(".claude/settings.local.json")).unwrap(),
+        )
+        .unwrap();
+        let deny = result["permissions"]["deny"].as_array().unwrap();
+        let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
+
+        assert!(
+            deny_strs.contains(&"Write(../../**)"),
+            "worktree deny must keep Write(../../**), got: {deny_strs:?}"
+        );
+    }
+
+    #[test]
+    fn test_write_settings_main_repo_drops_stale_escape_from_existing() {
+        use tempfile::TempDir;
+
+        // Simulate a main-repo settings.local.json written by an OLDER loom
+        // version that leaked worktree-relative escape rules. Re-running the
+        // generator on the main repo must scrub them (both Read and Write sides),
+        // even though the merge preserves other user-approved permissions.
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path();
+        let claude_dir = repo_root.join(".claude");
+        fs::create_dir_all(&claude_dir).unwrap();
+
+        let stale = json!({
+            "permissions": {
+                "deny": [
+                    "Read(../../**)",
+                    "Read(../.worktrees/**)",
+                    "Write(../../**)",
+                    "Write(doc/loom/knowledge/**)"
+                ]
+            }
+        });
+        fs::write(
+            claude_dir.join("settings.local.json"),
+            serde_json::to_string_pretty(&stale).unwrap(),
+        )
+        .unwrap();
+
+        let config = MergedSandboxConfig {
+            enabled: true,
+            auto_allow: true,
+            allow_unsandboxed_escape: false,
+            excluded_commands: vec![],
+            filesystem: FilesystemConfig::default(),
+            network: NetworkConfig::default(),
+            linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::Auto,
+        };
+
+        write_settings(&config, repo_root).unwrap();
+
+        let result: Value = serde_json::from_str(
+            &fs::read_to_string(claude_dir.join("settings.local.json")).unwrap(),
+        )
+        .unwrap();
+        let deny = result["permissions"]["deny"].as_array().unwrap();
+        let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
+
+        assert!(
+            !deny_strs
+                .iter()
+                .any(|p| p.contains("../") || p.contains(".worktrees")),
+            "stale escape rules must be scrubbed from the main repo file, got: {deny_strs:?}"
+        );
+        // Legitimate knowledge write-protection is preserved.
+        assert!(deny_strs.contains(&"Write(doc/loom/knowledge/**)"));
     }
 }
