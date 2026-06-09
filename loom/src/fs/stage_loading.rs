@@ -1,4 +1,13 @@
 //! Shared utilities for loading stage definitions from .work/stages/ files.
+//!
+//! On-disk `.work/stages/*.md` files carry a full serialized [`Stage`] in their
+//! YAML frontmatter (written by `serialize_stage_to_markdown`). A
+//! [`StageDefinition`] is a strict subset of those fields, so we deserialize the
+//! frontmatter *directly* into a `StageDefinition` — serde ignores the runtime-only
+//! keys (`status`, `created_at`, `merged`, …). This is deliberately NOT a partial
+//! hand-rolled struct: an intermediate struct previously dropped `stage_type`,
+//! `auto_merge`, `sandbox`, `context_budget`, and `before_stage`/`after_stage` on
+//! every daemon restart (the loader prefers stage files over the plan).
 
 use anyhow::{Context, Result};
 use std::path::Path;
@@ -7,80 +16,14 @@ use crate::parser::frontmatter::parse_from_markdown;
 use crate::plan::schema::StageDefinition;
 use crate::validation::validate_id;
 
-/// Stage frontmatter data extracted from .work/stages/*.md files
-#[derive(Debug, serde::Deserialize)]
-pub struct StageFrontmatter {
-    pub id: String,
-    pub name: String,
-    #[serde(default)]
-    pub description: Option<String>,
-    #[serde(default)]
-    pub dependencies: Vec<String>,
-    #[serde(default)]
-    pub parallel_group: Option<String>,
-    #[serde(default)]
-    pub acceptance: Vec<crate::plan::schema::AcceptanceCriterion>,
-    #[serde(default)]
-    pub setup: Vec<String>,
-    #[serde(default)]
-    pub files: Vec<String>,
-    #[serde(default)]
-    pub working_dir: Option<String>,
-    #[serde(default)]
-    pub artifacts: Vec<String>,
-    #[serde(default)]
-    pub wiring: Vec<crate::plan::schema::WiringCheck>,
-    #[serde(default)]
-    pub wiring_tests: Vec<crate::plan::schema::WiringTest>,
-    #[serde(default)]
-    pub dead_code_check: Option<crate::plan::schema::DeadCodeCheck>,
-    #[serde(default)]
-    pub execution_mode: Option<crate::models::stage::ExecutionMode>,
-    #[serde(default)]
-    pub model: Option<String>,
-    #[serde(default)]
-    pub reasoning_effort: Option<String>,
-}
-
-impl StageFrontmatter {
-    /// Convert frontmatter to StageDefinition
-    pub fn to_stage_definition(self) -> StageDefinition {
-        StageDefinition {
-            id: self.id,
-            name: self.name,
-            description: self.description,
-            dependencies: self.dependencies,
-            parallel_group: self.parallel_group,
-            acceptance: self.acceptance,
-            setup: self.setup,
-            files: self.files,
-            auto_merge: None,
-            working_dir: self.working_dir.unwrap_or_else(|| ".".to_string()),
-            stage_type: crate::plan::schema::StageType::default(),
-            artifacts: self.artifacts,
-            wiring: self.wiring,
-            wiring_tests: self.wiring_tests,
-            dead_code_check: self.dead_code_check,
-            before_stage: vec![],
-            after_stage: vec![],
-            context_budget: None,
-            sandbox: crate::plan::schema::StageSandboxConfig::default(),
-            execution_mode: self.execution_mode,
-            bug_fix: None,
-            regression_test: None,
-            model: self.model,
-            reasoning_effort: self.reasoning_effort,
-            code_review: None,
-        }
-    }
-}
-
-/// Extract YAML frontmatter from stage markdown file
+/// Deserialize a [`StageDefinition`] directly from a stage markdown file's YAML
+/// frontmatter.
 ///
-/// Uses the canonical frontmatter parser which handles indentation-aware parsing
-/// and embedded delimiters in YAML block scalars.
-pub fn extract_stage_frontmatter(content: &str) -> Result<StageFrontmatter> {
-    parse_from_markdown(content, "StageFrontmatter")
+/// Every field a stage file can carry has a serde default on `StageDefinition`
+/// (including `working_dir`, which falls back to `"."`), so older or partially
+/// written stage files still load without error.
+pub fn extract_stage_definition(content: &str) -> Result<StageDefinition> {
+    parse_from_markdown(content, "StageDefinition")
 }
 
 /// Load stage definitions from .work/stages/ directory
@@ -102,15 +45,17 @@ pub fn load_stages_from_work_dir(stages_dir: &Path) -> Result<Vec<StageDefinitio
         let content = std::fs::read_to_string(&path)
             .with_context(|| format!("Failed to read stage file: {}", path.display()))?;
 
-        // Extract YAML frontmatter
-        let frontmatter = match extract_stage_frontmatter(&content) {
-            Ok(fm) => {
+        // Deserialize the full StageDefinition from frontmatter (lossless for
+        // every field a StageDefinition carries — stage_type, auto_merge,
+        // sandbox, context_budget, before/after_stage all survive).
+        let stage_def = match extract_stage_definition(&content) {
+            Ok(def) => {
                 // Validate the stage ID before using it
-                if let Err(e) = validate_id(&fm.id) {
+                if let Err(e) = validate_id(&def.id) {
                     eprintln!("Warning: Invalid stage ID in {}: {}", path.display(), e);
                     continue;
                 }
-                fm
+                def
             }
             Err(e) => {
                 eprintln!("Warning: Could not parse {}: {}", path.display(), e);
@@ -118,8 +63,7 @@ pub fn load_stages_from_work_dir(stages_dir: &Path) -> Result<Vec<StageDefinitio
             }
         };
 
-        // Convert to StageDefinition
-        stages.push(frontmatter.to_stage_definition());
+        stages.push(stage_def);
     }
 
     Ok(stages)

@@ -14,8 +14,21 @@ pub fn detect_stage_type(stage_def: &StageDefinition) -> StageType {
         return stage_def.stage_type;
     }
 
-    let id_lower = stage_def.id.to_lowercase();
-    let name_lower = stage_def.name.to_lowercase();
+    detect_stage_type_from_id_name(&stage_def.id, &stage_def.name)
+}
+
+/// Detect the stage type from an id and name alone, using the same id/name
+/// pattern heuristics as [`detect_stage_type`].
+///
+/// This is the heuristic half of detection — it does NOT consider an explicit
+/// `stage_type` field (callers that have a full definition should use
+/// [`detect_stage_type`]). It exists so that paths which only have a stage id
+/// and name (e.g. reconstructing a stage from a graph node when its file is
+/// missing) can still classify a knowledge / knowledge-distill / integration-verify
+/// stage correctly instead of defaulting everything to Standard.
+pub fn detect_stage_type_from_id_name(id: &str, name: &str) -> StageType {
+    let id_lower = id.to_lowercase();
+    let name_lower = name.to_lowercase();
 
     if id_lower.contains("knowledge-distill")
         || name_lower.contains("knowledge-distill")

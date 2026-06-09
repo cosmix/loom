@@ -33,7 +33,10 @@ pub(super) trait Persistence {
                 let stages_dir = self.persistence_work_dir().join("stages");
                 match find_stage_file(&stages_dir, stage_id) {
                     Ok(None) => {
-                        // File genuinely missing — create from graph
+                        // File genuinely missing — reconstruct from the graph node.
+                        // The node is the ONLY remaining source for this stage, so it
+                        // is legitimate to copy node-sourced fields here (unlike the
+                        // normal load path, where the on-disk Stage is authoritative).
                         let node =
                             self.persistence_graph().get_node(stage_id).ok_or_else(|| {
                                 anyhow::anyhow!("Stage not found in graph: {stage_id}")
@@ -47,6 +50,15 @@ pub(super) trait Persistence {
                         stage.setup = node.setup.clone();
                         stage.files = node.files.clone();
                         stage.auto_merge = node.auto_merge;
+                        // Derive the stage type from id/name so a reconstructed
+                        // knowledge / knowledge-distill / integration-verify stage is
+                        // NOT rebuilt as Standard (which would wrongly give a
+                        // knowledge stage a worktree). The graph node does not carry
+                        // stage_type, so id/name heuristics are the best available
+                        // source — the same heuristics used at plan-init time.
+                        stage.stage_type = crate::plan::schema::detect_stage_type_from_id_name(
+                            &node.id, &node.name,
+                        );
 
                         Ok(stage)
                     }

@@ -4,6 +4,4 @@
 
 // Re-export the shared implementation
 #[allow(unused_imports)]
-pub use crate::fs::stage_loading::{
-    extract_stage_frontmatter, load_stages_from_work_dir, StageFrontmatter,
-};
+pub use crate::fs::stage_loading::{extract_stage_definition, load_stages_from_work_dir};

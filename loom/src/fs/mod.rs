@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 pub use work_dir::{load_config, load_config_required, Config};
 
 // Re-export stage loading functions
-pub use stage_loading::{extract_stage_frontmatter, load_stages_from_work_dir, StageFrontmatter};
+pub use stage_loading::{extract_stage_definition, load_stages_from_work_dir};
 
 // Re-export session file utilities
 pub use session_files::{

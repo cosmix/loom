@@ -7,7 +7,7 @@ mod validation;
 #[cfg(test)]
 mod tests;
 
-pub use detect::detect_stage_type;
+pub use detect::{detect_stage_type, detect_stage_type_from_id_name};
 pub use types::{
     AcceptanceCriterion, AdjudicationConfig, ChangeImpactConfig, ChangeImpactPolicy, DeadCodeCheck,
     FilesystemConfig, LinuxConfig, LoomConfig, LoomMetadata, NetworkConfig, PermissionMode,

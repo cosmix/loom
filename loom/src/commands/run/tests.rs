@@ -1,6 +1,6 @@
 //! Tests for the run command module.
 
-use super::frontmatter::{extract_stage_frontmatter, load_stages_from_work_dir};
+use super::frontmatter::{extract_stage_definition, load_stages_from_work_dir};
 use super::graph_loader::build_execution_graph;
 use crate::fs::work_dir::WorkDir;
 use crate::orchestrator::OrchestratorResult;
@@ -79,10 +79,11 @@ fn setup_work_dir_with_plan(temp_dir: &TempDir) -> (PathBuf, WorkDir) {
 }
 
 #[test]
-fn test_extract_stage_frontmatter_valid() {
+fn test_extract_stage_definition_valid() {
     let content = r#"---
 id: stage-1
 name: Test Stage
+working_dir: "."
 dependencies: []
 acceptance: []
 setup: []
@@ -94,21 +95,22 @@ files: []
 Content here
 "#;
 
-    let result = extract_stage_frontmatter(content);
+    let result = extract_stage_definition(content);
 
     assert!(result.is_ok());
-    let frontmatter = result.unwrap();
-    assert_eq!(frontmatter.id, "stage-1");
-    assert_eq!(frontmatter.name, "Test Stage");
-    assert_eq!(frontmatter.dependencies.len(), 0);
+    let def = result.unwrap();
+    assert_eq!(def.id, "stage-1");
+    assert_eq!(def.name, "Test Stage");
+    assert_eq!(def.dependencies.len(), 0);
 }
 
 #[test]
-fn test_extract_stage_frontmatter_with_fields() {
+fn test_extract_stage_definition_with_fields() {
     let content = r#"---
 id: stage-2
 name: Complex Stage
 description: A complex stage
+working_dir: "loom"
 dependencies:
   - stage-1
 parallel_group: core
@@ -123,34 +125,80 @@ files:
 # Stage
 "#;
 
-    let result = extract_stage_frontmatter(content);
+    let result = extract_stage_definition(content);
 
     assert!(result.is_ok());
-    let frontmatter = result.unwrap();
-    assert_eq!(frontmatter.id, "stage-2");
-    assert_eq!(frontmatter.description, Some("A complex stage".to_string()));
-    assert_eq!(frontmatter.dependencies, vec!["stage-1".to_string()]);
-    assert_eq!(frontmatter.parallel_group, Some("core".to_string()));
-    assert_eq!(frontmatter.acceptance.len(), 1);
-    assert_eq!(frontmatter.setup.len(), 1);
-    assert_eq!(frontmatter.files.len(), 1);
+    let def = result.unwrap();
+    assert_eq!(def.id, "stage-2");
+    assert_eq!(def.description, Some("A complex stage".to_string()));
+    assert_eq!(def.working_dir, "loom");
+    assert_eq!(def.dependencies, vec!["stage-1".to_string()]);
+    assert_eq!(def.parallel_group, Some("core".to_string()));
+    assert_eq!(def.acceptance.len(), 1);
+    assert_eq!(def.setup.len(), 1);
+    assert_eq!(def.files.len(), 1);
+}
+
+/// Regression test for A-10: the old `StageFrontmatter` intermediate struct
+/// hardcoded `stage_type`, `auto_merge`, `sandbox`, `context_budget`, and
+/// `before_stage`/`after_stage` to defaults, silently dropping them on every
+/// daemon restart (the loader prefers stage files over the plan). Deserializing
+/// `StageDefinition` directly must preserve all of them.
+#[test]
+fn test_extract_stage_definition_preserves_previously_dropped_fields() {
+    use crate::models::stage::StageType;
+
+    let content = r#"---
+id: kn-stage
+name: Knowledge Stage
+working_dir: "."
+stage_type: knowledge
+auto_merge: false
+context_budget: 50
+before_stage:
+  - command: "echo pre"
+after_stage:
+  - command: "echo post"
+sandbox:
+  enabled: false
+---
+
+# Stage
+"#;
+
+    let def = extract_stage_definition(content).expect("should deserialize");
+
+    assert_eq!(
+        def.stage_type,
+        StageType::Knowledge,
+        "stage_type must survive"
+    );
+    assert_eq!(def.auto_merge, Some(false), "auto_merge must survive");
+    assert_eq!(def.context_budget, Some(50), "context_budget must survive");
+    assert_eq!(def.before_stage.len(), 1, "before_stage must survive");
+    assert_eq!(def.after_stage.len(), 1, "after_stage must survive");
+    assert_eq!(
+        def.sandbox.enabled,
+        Some(false),
+        "sandbox override must survive"
+    );
 }
 
 #[test]
-fn test_extract_stage_frontmatter_no_delimiter() {
+fn test_extract_stage_definition_no_delimiter() {
     let content = "No frontmatter here";
 
-    let result = extract_stage_frontmatter(content);
+    let result = extract_stage_definition(content);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("frontmatter"));
 }
 
 #[test]
-fn test_extract_stage_frontmatter_not_closed() {
+fn test_extract_stage_definition_not_closed() {
     let content = "---\nid: test\nname: Test\n\nNo closing delimiter";
 
-    let result = extract_stage_frontmatter(content);
+    let result = extract_stage_definition(content);
 
     assert!(result.is_err());
     assert!(result
@@ -160,10 +208,10 @@ fn test_extract_stage_frontmatter_not_closed() {
 }
 
 #[test]
-fn test_extract_stage_frontmatter_invalid_yaml() {
+fn test_extract_stage_definition_invalid_yaml() {
     let content = "---\ninvalid: yaml: content:\n---\n";
 
-    let result = extract_stage_frontmatter(content);
+    let result = extract_stage_definition(content);
 
     assert!(result.is_err());
 }
@@ -228,6 +276,7 @@ fn test_load_stages_from_work_dir_with_stages() {
     let stage_content = r#"---
 id: stage-1
 name: Test Stage
+working_dir: "."
 dependencies: []
 acceptance: []
 setup: []
@@ -270,6 +319,7 @@ fn test_load_stages_from_work_dir_skips_invalid() {
     let valid_stage = r#"---
 id: valid
 name: Valid
+working_dir: "."
 dependencies: []
 ---
 "#;
