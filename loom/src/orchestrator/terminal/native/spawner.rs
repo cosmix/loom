@@ -41,18 +41,21 @@ fn spawn_reaper_thread(mut child: std::process::Child) {
 /// * `workdir` - Working directory for the command
 /// * `cmd` - The command to execute
 /// * `work_dir` - Optional .work directory for PID tracking
-/// * `stage_id` - Optional stage ID for PID file
+/// * `pid_key` - Optional per-session PID-file key (tracking_key + session.id)
+/// * `session_id` - Optional LOOM_SESSION_ID marker for `/proc`-based discovery
 ///
 /// # Returns
-/// The PID of the spawned process. If `work_dir` and `stage_id` are provided,
-/// attempts to resolve the actual Claude PID instead of the terminal PID.
+/// The PID of the spawned process. If `work_dir`, `pid_key`, and `session_id`
+/// are provided, attempts to resolve the actual Claude PID instead of the
+/// terminal PID.
 pub fn spawn_in_terminal(
     terminal: &TerminalEmulator,
     title: &str,
     workdir: &Path,
     cmd: &str,
     work_dir: Option<&Path>,
-    stage_id: Option<&str>,
+    pid_key: Option<&str>,
+    session_id: Option<&str>,
 ) -> Result<u32> {
     let mut command = terminal.build_command(title, workdir, cmd);
 
@@ -70,14 +73,14 @@ pub fn spawn_in_terminal(
     spawn_reaper_thread(child);
 
     // If PID tracking is enabled, try to resolve the actual Claude PID
-    if let (Some(work_dir), Some(stage_id)) = (work_dir, stage_id) {
+    if let (Some(work_dir), Some(pid_key), Some(session_id)) = (work_dir, pid_key, session_id) {
         // Wait initial delay for terminal to start
         thread::sleep(Duration::from_millis(CLAUDE_STARTUP_DELAY_MS));
 
         // Try to read the PID from the PID file with retries
         // The wrapper script may take time to execute and write the PID
         for retry in 0..PID_FILE_MAX_RETRIES {
-            if let Some(claude_pid) = pid_tracking::read_pid_file(work_dir, stage_id) {
+            if let Some(claude_pid) = pid_tracking::read_pid_file(work_dir, pid_key) {
                 // Verify the PID is actually alive
                 if crate::process::is_process_alive(claude_pid) {
                     return Ok(claude_pid);
@@ -89,9 +92,12 @@ pub fn spawn_in_terminal(
             }
         }
 
-        // Fallback: try to discover the Claude process by scanning /proc
+        // Fallback: discover the Claude process constrained by this session's
+        // LOOM_SESSION_ID marker, so we never latch onto a user's interactive
+        // claude that shares the spawn directory (e.g. the repo root).
         if let Some(claude_pid) = pid_tracking::discover_claude_pid(
             workdir,
+            session_id,
             Duration::from_secs(PID_DISCOVERY_TIMEOUT_SECS),
         ) {
             return Ok(claude_pid);
