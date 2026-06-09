@@ -17,6 +17,16 @@ use crate::verify::transitions::load_stage;
 use super::persistence::Persistence;
 use super::{clear_status_line, Orchestrator};
 
+/// Maximum number of merge-resolver sessions the daemon will spawn for a single
+/// stage before giving up and routing it to `NeedsHumanReview`. Mirrors the
+/// crash-retry cap (`DEFAULT_MAX_RETRIES`).
+///
+/// Without this cap a resolver that fails fast and deterministically would be
+/// respawned on every ~5s poll cycle (the kept signal file is NOT a guard —
+/// `find_live_merge_session_for_stage` deletes it once the PID is dead), each
+/// spawn on `opus[1m]`/`xhigh` → unbounded token + window burn (O-3).
+const MAX_MERGE_RESOLVER_ATTEMPTS: u32 = 3;
+
 impl Orchestrator {
     pub(super) fn handle_merge_session_completed(
         &mut self,
@@ -66,6 +76,7 @@ impl Orchestrator {
                     eprintln!("Warning: Failed to remove merge signal: {e}");
                 }
                 self.active_sessions.remove(stage_id);
+                self.clear_merge_resolver_attempts(stage_id);
                 clear_status_line();
                 eprintln!("Stage '{stage_id}' merge completed successfully");
                 return Ok(());
@@ -126,67 +137,148 @@ impl Orchestrator {
 
         match merge_state {
             Ok(MergeState::Merged) => {
-                self.finalize_merge_resolution(
+                // `finalize_merge_resolution` re-verifies git ancestry before
+                // writing merged=true (phantom-merge invariant). If verification
+                // unexpectedly fails here, it routes to the surface-to-user arm
+                // instead of lying about merge status.
+                if !self.finalize_merge_resolution(
                     &mut stage,
                     session_id,
                     stage_id,
+                    &merge_point,
                     "merge verified and marked as complete",
-                );
+                ) {
+                    self.surface_unresolved_merge(stage_id);
+                }
             }
             Ok(MergeState::BranchMissing) => {
-                self.finalize_merge_resolution(
+                // BranchMissing means a commit was recorded but is NOT an ancestor
+                // of the merge point AND the branch is gone — i.e. stranded work,
+                // not a completed merge. Writing merged=true here is the documented
+                // phantom-merge bug. `finalize_merge_resolution` ancestry-checks and
+                // will return false; route to surface-to-user without lying.
+                if !self.finalize_merge_resolution(
                     &mut stage,
                     session_id,
                     stage_id,
-                    "branch cleaned up, marking as merged",
-                );
+                    &merge_point,
+                    "branch cleaned up after verified merge",
+                ) {
+                    tracing::error!(
+                        stage_id = %stage_id,
+                        "Merge session ended with branch missing but no ancestry proof \
+                         that the work landed in the target. NOT marking merged=true \
+                         (phantom-merge prevention). Run `loom stage merge {}` manually.",
+                        stage_id
+                    );
+                    self.surface_unresolved_merge(stage_id);
+                }
             }
             Ok(MergeState::Pending) | Ok(MergeState::Conflict) | Ok(MergeState::Unknown) => {
                 // PID dead but merge not resolved - remove active session but KEEP signal
-                // file as guard against respawning every poll cycle
-                self.active_sessions.remove(stage_id);
-
-                // Merge not complete - log next steps for the user
-                eprintln!("Merge may not be complete. To finish:");
-                eprintln!("  1. Verify the merge was successful: git status");
-                eprintln!("  2. If merge is complete, run: loom worktree remove {stage_id}");
-                eprintln!("  3. If issues remain, run: loom stage merge {stage_id}");
+                // file so the user-facing instructions below are surfaced. NOTE: the
+                // signal does NOT prevent respawn — `find_live_merge_session_for_stage`
+                // deletes it once the PID is dead. Respawn is bounded by the per-stage
+                // resolver attempt cap in `spawn_merge_resolution_sessions` (see O-3).
+                self.surface_unresolved_merge(stage_id);
             }
             Err(e) => {
                 // PID dead but merge state unknown - remove active session but KEEP signal
-                // file as guard against respawning every poll cycle
-                self.active_sessions.remove(stage_id);
-
+                // file so the user-facing instructions below are surfaced. As above, the
+                // signal is not a respawn guard; the attempt cap bounds respawning.
                 eprintln!("Warning: Failed to verify merge state: {e}");
-                eprintln!("To complete:");
-                eprintln!("  1. Verify the merge was successful: git status");
-                eprintln!("  2. If merge is complete, run: loom worktree remove {stage_id}");
-                eprintln!("  3. If issues remain, run: loom stage merge {stage_id}");
+                self.surface_unresolved_merge(stage_id);
             }
         }
 
         Ok(())
     }
 
-    /// Common logic for resolving a merge session (Merged or BranchMissing outcomes).
+    /// Remove active-session tracking for an unresolved merge and print
+    /// user-facing recovery instructions.
     ///
-    /// Transitions the stage to Completed, updates the graph, and cleans up
-    /// the signal file and active session tracking.
+    /// Used by all non-finalizing arms of `handle_merge_session_completed`.
+    /// The stage is left in its current (MergeConflict/MergeBlocked) status so
+    /// it remains visible to the user and to `spawn_merge_resolution_sessions`.
+    fn surface_unresolved_merge(&mut self, stage_id: &str) {
+        self.active_sessions.remove(stage_id);
+        clear_status_line();
+        eprintln!("Merge may not be complete. To finish:");
+        eprintln!("  1. Verify the merge was successful: git status");
+        eprintln!("  2. If merge is complete, run: loom worktree remove {stage_id}");
+        eprintln!("  3. If issues remain, run: loom stage merge {stage_id}");
+    }
+
+    /// Finalize a resolved merge: write `merged=true`, transition to Completed,
+    /// update the graph, and clean up the signal + active session.
+    ///
+    /// PHANTOM-MERGE INVARIANT: this is a daemon-side automated path, so it MUST
+    /// NOT write `merged=true` without git ancestry proof. Before finalizing it
+    /// derives `completed_commit` from the stage branch HEAD when missing and
+    /// requires `verify_merge_succeeded(commit, merge_point)` to return
+    /// `Ok(true)`. If that proof is unavailable the stage is left unchanged and
+    /// the function returns `false` so the caller can surface the situation to
+    /// the user instead of lying about merge status. Mirrors
+    /// `verify_and_finalize_merge`.
+    ///
+    /// Returns `true` only when the merge was ancestry-verified and finalized.
     fn finalize_merge_resolution(
         &mut self,
         stage: &mut crate::models::stage::Stage,
         session_id: &str,
         stage_id: &str,
+        merge_point: &str,
         log_message: &str,
-    ) {
+    ) -> bool {
+        // Derive completed_commit from the branch HEAD if missing so we have
+        // something to ancestry-check. If neither is available, refuse.
+        if stage.completed_commit.is_none() {
+            let branch_name = branch_name_for_stage(stage_id);
+            match crate::git::get_branch_head(&branch_name, &self.config.repo_root) {
+                Ok(head) => stage.completed_commit = Some(head),
+                Err(_) => {
+                    tracing::error!(
+                        stage_id = %stage_id,
+                        "Cannot finalize merge: no completed_commit and branch HEAD \
+                         unavailable; refusing to write merged=true (phantom-merge prevention)"
+                    );
+                    return false;
+                }
+            }
+        }
+
+        // Safe to unwrap: ensured Some above.
+        let completed_commit = stage.completed_commit.clone().unwrap();
+        match verify_merge_succeeded(&completed_commit, merge_point, &self.config.repo_root) {
+            Ok(true) => {}
+            other => {
+                tracing::error!(
+                    stage_id = %stage_id,
+                    commit = %completed_commit,
+                    target = %merge_point,
+                    verified = ?other,
+                    "Refusing to finalize merge: ancestry verification did not pass \
+                     (phantom-merge prevention)"
+                );
+                return false;
+            }
+        }
+
         stage.merged = true;
         stage.merge_conflict = false;
 
         if stage.status == StageStatus::MergeConflict || stage.status == StageStatus::MergeBlocked {
-            if let Err(e) = stage.status.try_transition(StageStatus::Completed) {
-                eprintln!("Warning: Failed to transition stage to Completed: {e}");
-            } else {
-                stage.status = StageStatus::Completed;
+            // MergeConflict->Completed and MergeBlocked->Completed are legal edges.
+            if let Err(e) = stage.try_transition(StageStatus::Completed) {
+                tracing::warn!(
+                    stage_id = %stage_id,
+                    error = %e,
+                    "Failed to transition stage to Completed after merge resolution"
+                );
+                stage.force_status_with_reason(
+                    StageStatus::Completed,
+                    "merge resolved but transition to Completed was illegal",
+                );
             }
         }
 
@@ -203,9 +295,11 @@ impl Orchestrator {
             eprintln!("Warning: Failed to remove merge signal: {e}");
         }
         self.active_sessions.remove(stage_id);
+        self.clear_merge_resolver_attempts(stage_id);
 
         clear_status_line();
         eprintln!("Stage '{stage_id}' {log_message}");
+        true
     }
 
     /// Verify merge succeeded and update stage state accordingly.
@@ -306,7 +400,10 @@ impl Orchestrator {
                         error = %e,
                         "Failed to transition to MergeBlocked"
                     );
-                    stage.status = StageStatus::MergeBlocked;
+                    stage.force_status_with_reason(
+                        StageStatus::MergeBlocked,
+                        "merge verification failed but transition to MergeBlocked was illegal",
+                    );
                 }
                 if let Err(e) = self.save_stage(stage) {
                     tracing::warn!(
@@ -351,7 +448,10 @@ impl Orchestrator {
                         error = %e,
                         "Failed to transition to MergeBlocked"
                     );
-                    stage.status = StageStatus::MergeBlocked;
+                    stage.force_status_with_reason(
+                        StageStatus::MergeBlocked,
+                        "merge verification errored but transition to MergeBlocked was illegal",
+                    );
                 }
                 if let Err(e) = self.save_stage(stage) {
                     tracing::warn!(
@@ -398,20 +498,15 @@ impl Orchestrator {
             return true;
         }
 
-        // Load plan-level auto_merge setting from config
-        let plan_auto_merge = (|| -> Option<bool> {
-            let config = crate::fs::load_config(&self.config.work_dir).ok()??;
-            let source_path = config.source_path()?;
-            // source_path is relative to project root
-            let plan_path = self.config.repo_root.join(&source_path);
-            let plan_content = std::fs::read_to_string(&plan_path).ok()?;
-
-            // Extract YAML metadata from plan content
-            let yaml_content = crate::plan::parser::extract_yaml_metadata(&plan_content).ok()?;
-            let metadata = crate::plan::parser::parse_and_validate(&yaml_content).ok()?;
-
-            metadata.loom.auto_merge
-        })();
+        // Load plan-level auto_merge setting from config.
+        //
+        // O-20: distinguish "no plan-level setting exists" (legitimate None →
+        // fall back to the daemon/stage default) from "the plan file exists but
+        // could not be read or parsed". In the latter case a plan-level
+        // `auto_merge: false` may be present-but-unseen; silently defaulting to
+        // enabled would merge a stage the user asked NOT to auto-merge. Log a
+        // warning so the fallback is visible rather than silent.
+        let plan_auto_merge = self.read_plan_level_auto_merge(stage_id);
 
         if !is_auto_merge_enabled(&stage, self.config.auto_merge, plan_auto_merge) {
             // Auto-merge disabled - skip the merge attempt and leave the stage as
@@ -540,9 +635,16 @@ impl Orchestrator {
                 // from starting before conflicts are resolved
                 stage.merge_conflict = true;
                 if let Err(e) = stage.try_mark_merge_conflict() {
-                    eprintln!("Warning: Failed to transition stage to MergeConflict status: {e}");
-                    // Fallback: force the status (this should not fail based on transitions.rs)
-                    stage.status = StageStatus::MergeConflict;
+                    tracing::warn!(
+                        stage_id = %stage_id,
+                        error = %e,
+                        "Failed to transition stage to MergeConflict status"
+                    );
+                    stage.force_status_with_reason(
+                        StageStatus::MergeConflict,
+                        "auto-merge spawned a conflict resolver but transition to \
+                         MergeConflict was illegal",
+                    );
                 }
                 if let Err(e) = self.save_stage(&stage) {
                     eprintln!("Warning: Failed to save stage merge conflict status: {e}");
@@ -607,7 +709,10 @@ impl Orchestrator {
                         error = %transition_err,
                         "Failed to transition stage to MergeBlocked status"
                     );
-                    stage.status = StageStatus::MergeBlocked;
+                    stage.force_status_with_reason(
+                        StageStatus::MergeBlocked,
+                        "auto-merge errored but transition to MergeBlocked was illegal",
+                    );
                 }
                 if let Err(e) = self.save_stage(&stage) {
                     tracing::warn!(
@@ -625,6 +730,81 @@ impl Orchestrator {
                 }
                 // Return false - merge failed, stage should not be marked Completed
                 false
+            }
+        }
+    }
+
+    /// Read the plan-level `auto_merge` flag from the active plan file.
+    ///
+    /// Returns:
+    /// - `Some(flag)` when the plan declares an explicit `auto_merge` value.
+    /// - `None` when there is genuinely no plan-level setting (no config, no
+    ///   `source_path`, or the plan omits `auto_merge`) — callers fall back to
+    ///   the daemon/stage default.
+    ///
+    /// O-20: when the plan path is known (a `source_path` exists) but the file
+    /// cannot be read or its metadata cannot be parsed, this logs a warning and
+    /// returns `None`. A plan-level `auto_merge: false` could be hiding in an
+    /// unreadable plan; defaulting to enabled without surfacing that would
+    /// silently override the user's intent.
+    fn read_plan_level_auto_merge(&self, stage_id: &str) -> Option<bool> {
+        let config = match crate::fs::load_config(&self.config.work_dir) {
+            Ok(Some(c)) => c,
+            Ok(None) => return None,
+            Err(e) => {
+                tracing::warn!(
+                    stage_id = %stage_id,
+                    error = %e,
+                    "Failed to load config for plan-level auto_merge; \
+                     falling back to default auto-merge setting"
+                );
+                return None;
+            }
+        };
+
+        // No source_path → no plan file to consult; legitimate None.
+        let source_path = config.source_path()?;
+        let plan_path = self.config.repo_root.join(&source_path);
+
+        let plan_content = match std::fs::read_to_string(&plan_path) {
+            Ok(content) => content,
+            Err(e) => {
+                tracing::warn!(
+                    stage_id = %stage_id,
+                    plan_path = %plan_path.display(),
+                    error = %e,
+                    "Plan file is referenced but could not be read; a plan-level \
+                     auto_merge:false may be ignored — falling back to default auto-merge setting"
+                );
+                return None;
+            }
+        };
+
+        let yaml_content = match crate::plan::parser::extract_yaml_metadata(&plan_content) {
+            Ok(y) => y,
+            Err(e) => {
+                tracing::warn!(
+                    stage_id = %stage_id,
+                    plan_path = %plan_path.display(),
+                    error = %e,
+                    "Failed to extract YAML metadata from plan; a plan-level \
+                     auto_merge:false may be ignored — falling back to default auto-merge setting"
+                );
+                return None;
+            }
+        };
+
+        match crate::plan::parser::parse_and_validate(&yaml_content) {
+            Ok(metadata) => metadata.loom.auto_merge,
+            Err(e) => {
+                tracing::warn!(
+                    stage_id = %stage_id,
+                    plan_path = %plan_path.display(),
+                    error = %e,
+                    "Failed to parse plan metadata; a plan-level auto_merge:false may \
+                     be ignored — falling back to default auto-merge setting"
+                );
+                None
             }
         }
     }
@@ -727,6 +907,20 @@ impl Orchestrator {
                 }
             }
 
+            // O-3: bound merge-resolver respawning. Reaching this point means no
+            // live resolver exists for a stage still in MergeConflict/MergeBlocked
+            // — i.e. the previous resolver (if any) died without resolving. The
+            // kept signal file is NOT a respawn guard (it was just deleted by
+            // find_live_merge_session_for_stage when its PID was found dead), so
+            // without a cap this loop respawns a fresh resolver every poll cycle.
+            // Count attempts; after MAX_MERGE_RESOLVER_ATTEMPTS, escalate to
+            // NeedsHumanReview instead of spawning yet another resolver.
+            let attempts = self.next_merge_resolver_attempt(&stage_id);
+            if attempts > MAX_MERGE_RESOLVER_ATTEMPTS {
+                self.escalate_merge_resolver_exhausted(&stage_id, attempts - 1);
+                continue;
+            }
+
             // Spawn a merge resolution session
             if let Err(e) = self.spawn_merge_resolution_session(&stage) {
                 clear_status_line();
@@ -739,6 +933,131 @@ impl Orchestrator {
         }
 
         Ok(spawned)
+    }
+
+    /// Directory holding per-stage merge-resolver attempt counters.
+    ///
+    /// Stored on disk (rather than in memory) so the cap survives daemon
+    /// restarts — a resolver that crash-loops across restarts must not reset
+    /// its budget each time `loom run` starts.
+    fn merge_resolver_attempts_dir(&self) -> std::path::PathBuf {
+        self.config.work_dir.join("merge-resolver-attempts")
+    }
+
+    /// Increment and return the merge-resolver attempt count for `stage_id`.
+    ///
+    /// The returned value is the count INCLUDING the attempt about to be made
+    /// (1 for the first spawn). On any I/O error the attempt is allowed to
+    /// proceed (returns 1) rather than blocking resolution — failing open here
+    /// is safe because the cap is a backstop against runaway loops, not a
+    /// correctness invariant.
+    fn next_merge_resolver_attempt(&self, stage_id: &str) -> u32 {
+        let dir = self.merge_resolver_attempts_dir();
+        let path = dir.join(format!("{stage_id}.count"));
+        let current = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| s.trim().parse::<u32>().ok())
+            .unwrap_or(0);
+        let next = current.saturating_add(1);
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            tracing::warn!(
+                stage_id = %stage_id,
+                error = %e,
+                "Failed to create merge-resolver-attempts dir; proceeding without persisting count"
+            );
+            return next;
+        }
+        if let Err(e) = std::fs::write(&path, next.to_string()) {
+            tracing::warn!(
+                stage_id = %stage_id,
+                error = %e,
+                "Failed to persist merge-resolver attempt count; proceeding"
+            );
+        }
+        next
+    }
+
+    /// Clear the persisted merge-resolver attempt counter for `stage_id`.
+    ///
+    /// Called once a merge is finalized so a later, unrelated conflict on the
+    /// same stage id starts with a fresh budget.
+    fn clear_merge_resolver_attempts(&self, stage_id: &str) {
+        let path = self
+            .merge_resolver_attempts_dir()
+            .join(format!("{stage_id}.count"));
+        if path.exists() {
+            if let Err(e) = std::fs::remove_file(&path) {
+                tracing::warn!(
+                    stage_id = %stage_id,
+                    error = %e,
+                    "Failed to clear merge-resolver attempt counter"
+                );
+            }
+        }
+    }
+
+    /// Route a stage whose merge-resolver budget is exhausted to
+    /// `NeedsHumanReview` and persist it.
+    ///
+    /// `MergeConflict`/`MergeBlocked -> NeedsHumanReview` is not a legal edge, so
+    /// this uses the sanctioned forced-assignment path. After escalation the
+    /// stage is no longer in MergeConflict/MergeBlocked, so the spawn loop stops
+    /// considering it and respawning ceases.
+    fn escalate_merge_resolver_exhausted(&mut self, stage_id: &str, failed_attempts: u32) {
+        let mut stage = match self.load_stage(stage_id) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!(
+                    stage_id = %stage_id,
+                    error = %e,
+                    "Merge-resolver budget exhausted but failed to load stage for escalation"
+                );
+                return;
+            }
+        };
+
+        let reason = format!(
+            "merge resolution failed after {failed_attempts} resolver attempt(s); \
+             escalating to human review. Resolve manually with `loom stage merge {stage_id}`."
+        );
+        tracing::error!(
+            stage_id = %stage_id,
+            failed_attempts = %failed_attempts,
+            "Merge-resolver attempt cap reached; routing stage to NeedsHumanReview"
+        );
+        // Illegal edge from MergeConflict/MergeBlocked — forced assignment is the
+        // sanctioned bypass and logs at error level.
+        stage.force_status_with_reason(StageStatus::NeedsHumanReview, &reason);
+        stage.review_reason = Some(reason);
+
+        if let Err(e) = self.save_stage(&stage) {
+            tracing::warn!(
+                stage_id = %stage_id,
+                error = %e,
+                "Failed to save stage after merge-resolver escalation"
+            );
+        }
+        if let Err(e) = self
+            .graph
+            .mark_status(stage_id, StageStatus::NeedsHumanReview)
+        {
+            tracing::warn!(
+                stage_id = %stage_id,
+                error = %e,
+                "Failed to mark stage NeedsHumanReview in graph after escalation"
+            );
+        }
+
+        // Remove any lingering active session and clear the counter so a future
+        // manual re-merge starts fresh.
+        self.active_sessions.remove(stage_id);
+        self.clear_merge_resolver_attempts(stage_id);
+
+        clear_status_line();
+        eprintln!(
+            "Stage '{stage_id}' needs human review: merge resolution failed after \
+             {failed_attempts} attempt(s). Run `loom stage merge {stage_id}` manually."
+        );
     }
 
     /// Spawn a merge resolution session for a stage with merge issues.
@@ -861,6 +1180,33 @@ mod tests {
             status.can_transition_to(&StageStatus::Completed),
             "MergeConflict -> Completed should be a valid transition"
         );
+    }
+
+    #[test]
+    fn test_merge_states_to_human_review_require_forced_assignment() {
+        // O-3 escalation routes an exhausted-budget merge stage to
+        // NeedsHumanReview. That edge is intentionally NOT in the transition
+        // table (MergeConflict/MergeBlocked only legally go to Completed/Blocked
+        // /Queued/Executing), so `escalate_merge_resolver_exhausted` MUST use
+        // `force_status_with_reason`. If a future change makes this edge legal,
+        // update the escalation path to prefer a `try_*` transition.
+        use crate::models::stage::StageStatus;
+
+        assert!(
+            !StageStatus::MergeConflict.can_transition_to(&StageStatus::NeedsHumanReview),
+            "MergeConflict -> NeedsHumanReview is expected to be illegal (escalation forces it)"
+        );
+        assert!(
+            !StageStatus::MergeBlocked.can_transition_to(&StageStatus::NeedsHumanReview),
+            "MergeBlocked -> NeedsHumanReview is expected to be illegal (escalation forces it)"
+        );
+    }
+
+    #[test]
+    fn test_max_merge_resolver_attempts_matches_default_retries() {
+        // The merge-resolver respawn cap should mirror the crash-retry cap so
+        // both failure-bounding mechanisms agree on "3 attempts".
+        assert_eq!(super::MAX_MERGE_RESOLVER_ATTEMPTS, 3);
     }
 
     #[test]

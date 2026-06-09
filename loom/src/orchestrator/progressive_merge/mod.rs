@@ -29,14 +29,20 @@ pub enum ProgressiveMergeResult {
 }
 
 impl ProgressiveMergeResult {
-    /// Returns true if the merge succeeded (no conflicts)
+    /// Returns true if the merge succeeded (the stage's work is provably in the
+    /// target branch).
+    ///
+    /// `NoBranch` is deliberately NOT a success: a missing stage branch means
+    /// the work was never committed (or was lost), not that it landed. Counting
+    /// it as success would let a stage be treated as merged with no ancestry
+    /// proof — the phantom-merge bug (A-3/O-2). Callers must route `NoBranch`
+    /// through the same surface-to-user / blocked path as a conflict.
     pub fn is_success(&self) -> bool {
         matches!(
             self,
             ProgressiveMergeResult::Success { .. }
                 | ProgressiveMergeResult::FastForward
                 | ProgressiveMergeResult::AlreadyMerged
-                | ProgressiveMergeResult::NoBranch
         )
     }
 
@@ -71,7 +77,9 @@ mod tests {
         assert!(ProgressiveMergeResult::Success { files_changed: 5 }.is_success());
         assert!(ProgressiveMergeResult::FastForward.is_success());
         assert!(ProgressiveMergeResult::AlreadyMerged.is_success());
-        assert!(ProgressiveMergeResult::NoBranch.is_success());
+        // NoBranch is NOT success: a missing branch means the work was never
+        // committed, not that it merged (phantom-merge prevention, A-3/O-2).
+        assert!(!ProgressiveMergeResult::NoBranch.is_success());
         assert!(!ProgressiveMergeResult::Conflict {
             conflicting_files: vec!["file.rs".to_string()]
         }
