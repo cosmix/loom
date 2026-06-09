@@ -56,58 +56,76 @@ pub fn extract_frontmatter_field(content: &str, field: &str) -> Result<Option<St
     Ok(Some(value))
 }
 
-/// Extract YAML frontmatter from markdown content
+/// Extract the raw frontmatter text (without delimiters) from markdown content.
 ///
-/// Expects frontmatter delimited by `---` at the start and end.
-/// Returns the parsed YAML as a `serde_yaml::Value`.
+/// Matches the closing `---` at the same indentation as the opening delimiter,
+/// so `---` inside YAML block scalars (which are indented) are not mistaken for
+/// the closing delimiter.
 ///
-/// # Example
+/// # Returns
 ///
-/// ```text
-/// ---
-/// key: value
-/// status: Pending
-/// ---
-/// # Markdown content here
-/// ```
+/// A `&str` slice of the YAML text between the two `---` delimiters.
 ///
 /// # Errors
 ///
 /// Returns an error if:
 /// - Content is empty or missing opening `---`
-/// - Closing `---` is not found
-/// - YAML content cannot be parsed
-pub fn extract_yaml_frontmatter(content: &str) -> Result<serde_yaml::Value> {
-    let lines: Vec<&str> = content.lines().collect();
-
-    if lines.is_empty() || !lines[0].trim().starts_with("---") {
+/// - Closing `---` (at the same indentation) is not found
+pub fn extract_frontmatter_raw(content: &str) -> Result<&str> {
+    if content.is_empty() {
         bail!("No frontmatter delimiter found at start of content");
     }
 
-    // Track indentation of opening delimiter to match closing delimiter at same level.
-    // This prevents embedded `---` in YAML block scalars (which are indented) from
-    // being mistakenly treated as the closing delimiter.
-    let opening_indent = lines[0].len() - lines[0].trim_start().len();
-
-    let mut end_idx = None;
-    for (idx, line) in lines.iter().enumerate().skip(1) {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("---") {
-            // Only match delimiter at the same indentation level as opening
-            let line_indent = line.len() - trimmed.len();
-            if line_indent == opening_indent {
-                end_idx = Some(idx);
-                break;
-            }
-        }
+    // Find the end of the first line (the opening delimiter)
+    let first_newline = content.find('\n').unwrap_or(content.len());
+    let first_line = &content[..first_newline];
+    if !first_line.trim().starts_with("---") {
+        bail!("No frontmatter delimiter found at start of content");
     }
 
-    let end_idx =
-        end_idx.ok_or_else(|| anyhow::anyhow!("Frontmatter not properly closed with ---"))?;
+    // Compute indentation of opening delimiter
+    let opening_indent = first_line.len() - first_line.trim_start().len();
 
-    let yaml_content = lines[1..end_idx].join("\n");
+    // The frontmatter body starts after the first newline
+    let body_start = if first_newline < content.len() {
+        first_newline + 1
+    } else {
+        bail!("Frontmatter not properly closed with ---");
+    };
 
-    serde_yaml::from_str(&yaml_content).context("Failed to parse YAML frontmatter")
+    // Find closing delimiter at the same indentation
+    let mut search_offset = body_start;
+    loop {
+        let remaining = &content[search_offset..];
+        let line_end = remaining.find('\n').unwrap_or(remaining.len());
+        let line = &remaining[..line_end];
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("---") {
+            let line_indent = line.len() - trimmed.len();
+            if line_indent == opening_indent {
+                // Return the slice between the opening and closing delimiters
+                return Ok(&content[body_start..search_offset]);
+            }
+        }
+        if line_end == remaining.len() {
+            // Reached end of content without finding closing delimiter
+            bail!("Frontmatter not properly closed with ---");
+        }
+        search_offset += line_end + 1;
+    }
+}
+
+/// Extract YAML frontmatter from markdown content and deserialize it.
+///
+/// Delegates to [`extract_frontmatter_raw`] for the indentation-aware extraction,
+/// then parses the resulting text as YAML.
+///
+/// # Errors
+///
+/// Returns an error if frontmatter extraction fails or YAML cannot be parsed.
+pub fn extract_yaml_frontmatter(content: &str) -> Result<serde_yaml::Value> {
+    let yaml_content = extract_frontmatter_raw(content)?;
+    serde_yaml::from_str(yaml_content).context("Failed to parse YAML frontmatter")
 }
 
 #[cfg(test)]
@@ -294,5 +312,44 @@ count: 42
             extract_frontmatter_field(content, "count").unwrap(),
             Some("42".to_string())
         );
+    }
+
+    #[test]
+    fn test_extract_frontmatter_raw_basic() {
+        let content = "---\nkey: value\nstatus: Pending\n---\n# Content";
+        let raw = extract_frontmatter_raw(content).unwrap();
+        assert_eq!(raw, "key: value\nstatus: Pending\n");
+    }
+
+    #[test]
+    fn test_extract_frontmatter_raw_embedded_delimiter() {
+        // --- inside a block scalar must not be treated as the closing delimiter
+        let content = "---\ndesc: |\n  ---\n  inner\n  ---\nstatus: ok\n---\n# body";
+        let raw = extract_frontmatter_raw(content).unwrap();
+        assert!(raw.contains("inner"));
+        assert!(raw.contains("status: ok"));
+    }
+
+    #[test]
+    fn test_extract_frontmatter_raw_no_opening() {
+        let result = extract_frontmatter_raw("no frontmatter\n---\nfoo");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("No frontmatter"));
+    }
+
+    #[test]
+    fn test_extract_frontmatter_raw_no_closing() {
+        let result = extract_frontmatter_raw("---\nkey: value\n# no close");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("not properly closed"));
+    }
+
+    #[test]
+    fn test_extract_frontmatter_raw_empty() {
+        let result = extract_frontmatter_raw("");
+        assert!(result.is_err());
     }
 }

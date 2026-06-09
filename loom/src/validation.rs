@@ -73,6 +73,24 @@ pub fn validate_id(id: &str) -> Result<()> {
         bail!("ID '{id}' uses a reserved name");
     }
 
+    // Disallow IDs that look like stage-file depth prefixes (e.g. "01-foo").
+    // `find_stage_file` strips a two-digit prefix to recover the stage ID, so a
+    // stage whose ID literally starts with two digits and a dash is
+    // indistinguishable from the prefixed filename of a stage called "foo".
+    // This prevents ambiguous matches that depend on directory iteration order.
+    let bytes = id.as_bytes();
+    if bytes.len() >= 3
+        && bytes[0].is_ascii_digit()
+        && bytes[1].is_ascii_digit()
+        && bytes[2] == b'-'
+    {
+        bail!(
+            "ID '{id}' starts with a two-digit depth prefix (NN-). \
+             Such IDs are ambiguous with stage filenames. \
+             Use a non-numeric start character."
+        );
+    }
+
     Ok(())
 }
 
@@ -195,6 +213,18 @@ mod tests {
         assert!(validate_id("CON").is_err());
         assert!(validate_id("nul").is_err());
         assert!(validate_id("AUX").is_err());
+    }
+
+    #[test]
+    fn test_validate_id_depth_prefix_forbidden() {
+        // Stage IDs that look like depth-prefixed filenames must be rejected (C-23)
+        assert!(validate_id("01-foo").is_err());
+        assert!(validate_id("12-some-stage").is_err());
+        assert!(validate_id("99-last").is_err());
+        // Valid: no two-digit-dash prefix
+        assert!(validate_id("1-foo").is_ok()); // only one leading digit — not a prefix
+        assert!(validate_id("foo-01").is_ok()); // digits not at start
+        assert!(validate_id("stage-01-core").is_ok());
     }
 
     #[test]

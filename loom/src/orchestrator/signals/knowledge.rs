@@ -59,15 +59,12 @@ fn format_knowledge_signal_content(
     content.push_str(&generate_knowledge_stable_prefix());
 
     // Target section
-    content.push_str("## Target\n\n");
-    content.push_str(&format!("- **Session**: {}\n", &session.id));
-    content.push_str(&format!("- **Stage**: {}\n", &stage.id));
-    content.push_str("- **Type**: Knowledge (no worktree)\n");
-    if let Some(plan_id) = &stage.plan_id {
-        content.push_str(&format!("- **Plan**: {plan_id}\n"));
-    }
-    content.push_str(&format!("- **Directory**: {}\n", repo_root.display()));
-    content.push('\n');
+    content.push_str(&super::helpers::format_knowledge_target_section(
+        &session.id,
+        &stage.id,
+        stage.plan_id.as_deref(),
+        &repo_root.display().to_string(),
+    ));
 
     // Plan overview if available
     if let Some(plan_overview) = &embedded_context.plan_overview {

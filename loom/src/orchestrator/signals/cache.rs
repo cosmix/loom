@@ -101,6 +101,28 @@ fn append_completion_rules(content: &mut String) {
     content.push_str("- **NEVER use `loom stage retry` from an active session** — it creates a parallel session\n\n");
 }
 
+/// Append the two-bullet "Isolation Boundaries (STRICT)" block used by IV and knowledge-distill.
+///
+/// The standard prefix uses a three-bullet version (with the "embedded below" bullet)
+/// written inline. This helper covers the shorter two-bullet form.
+fn append_isolation_boundaries_simple(content: &mut String) {
+    content.push_str("**Isolation Boundaries (STRICT):**\n\n");
+    content.push_str("- You are **CONFINED** to this worktree - do not access files outside it\n");
+    content
+        .push_str("- Git commands must target THIS worktree only - no `git -C`, no `cd ../..`\n\n");
+}
+
+/// Append the common "## Execution Rules" intro used by IV, knowledge-distill, and knowledge.
+///
+/// Standard prefix uses a slightly different wording ("both are symlinked into this worktree")
+/// and writes the header inline.
+fn append_execution_rules_intro(content: &mut String) {
+    content.push_str("## Execution Rules\n\n");
+    content.push_str(
+        "Follow your `~/.claude/CLAUDE.md` and project `CLAUDE.md` rules. Key reminders:\n\n",
+    );
+}
+
 /// Append binary usage, state files, and context recovery (shared by all prefix types)
 fn append_common_footer(content: &mut String) {
     content.push_str("**Binary Usage (CRITICAL when working on loom):**\n");
@@ -375,18 +397,11 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("Teams allow verification tasks to coordinate on discovered issues.\n\n");
 
     // Isolation + path boundaries (shared)
-    content.push_str("**Isolation Boundaries (STRICT):**\n\n");
-    content.push_str("- You are **CONFINED** to this worktree - do not access files outside it\n");
-    content
-        .push_str("- Git commands must target THIS worktree only - no `git -C`, no `cd ../..`\n\n");
-
+    append_isolation_boundaries_simple(&mut content);
     append_path_boundaries(&mut content);
 
     // Execution rules
-    content.push_str("## Execution Rules\n\n");
-    content.push_str(
-        "Follow your `~/.claude/CLAUDE.md` and project `CLAUDE.md` rules. Key reminders:\n\n",
-    );
+    append_execution_rules_intro(&mut content);
 
     content.push_str("**Delegation & Efficiency (CRITICAL):**\n\n");
     content.push_str("**USE THE TASK TOOL** to spawn parallel subagents for verification:\n");
@@ -482,18 +497,11 @@ pub fn generate_knowledge_distill_stable_prefix() -> String {
     content.push_str("```\n\n");
 
     // Isolation + path boundaries (shared)
-    content.push_str("**Isolation Boundaries (STRICT):**\n\n");
-    content.push_str("- You are **CONFINED** to this worktree - do not access files outside it\n");
-    content
-        .push_str("- Git commands must target THIS worktree only - no `git -C`, no `cd ../..`\n\n");
-
+    append_isolation_boundaries_simple(&mut content);
     append_path_boundaries(&mut content);
 
     // Execution rules
-    content.push_str("## Execution Rules\n\n");
-    content.push_str(
-        "Follow your `~/.claude/CLAUDE.md` and project `CLAUDE.md` rules. Key reminders:\n\n",
-    );
+    append_execution_rules_intro(&mut content);
 
     content.push_str("**Completion:**\n");
     append_completion_rules(&mut content);
@@ -575,10 +583,7 @@ pub fn generate_knowledge_stable_prefix() -> String {
     content.push_str("```\n\n");
 
     // Execution rules
-    content.push_str("## Execution Rules\n\n");
-    content.push_str(
-        "Follow your `~/.claude/CLAUDE.md` and project `CLAUDE.md` rules. Key reminders:\n\n",
-    );
+    append_execution_rules_intro(&mut content);
     content.push_str("**Delegation & Efficiency (CRITICAL):**\n\n");
     content.push_str("**USE THE TASK TOOL** to spawn parallel subagents for exploration:\n");
     content.push_str("- Different codebase areas, multiple knowledge files, independent research → spawn parallel Explore agents\n");

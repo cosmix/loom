@@ -10,6 +10,8 @@ use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::Path;
 
+use crate::parser::frontmatter::extract_frontmatter_raw as canonical_extract_frontmatter_raw;
+
 /// YAML frontmatter structure for SKILL.md files
 #[derive(Deserialize, Default)]
 #[allow(dead_code)]
@@ -206,23 +208,13 @@ fn parse_skill_triggers(path: &Path) -> Result<Vec<String>> {
     Ok(triggers)
 }
 
-/// Extract the raw frontmatter text between `---` markers
+/// Extract the raw frontmatter text between `---` markers.
+///
+/// Delegates to the canonical [`crate::parser::frontmatter::extract_frontmatter_raw`]
+/// which correctly handles `---` inside YAML block scalars by matching the closing
+/// delimiter at the same indentation as the opening one.
 fn extract_frontmatter_raw(content: &str) -> Result<String> {
-    let lines: Vec<&str> = content.lines().collect();
-    if lines.is_empty() || lines[0].trim() != "---" {
-        anyhow::bail!("No frontmatter found");
-    }
-
-    let mut end_idx = None;
-    for (idx, line) in lines.iter().enumerate().skip(1) {
-        if line.trim() == "---" {
-            end_idx = Some(idx);
-            break;
-        }
-    }
-
-    let end_idx = end_idx.context("Frontmatter not closed")?;
-    Ok(lines[1..end_idx].join("\n"))
+    Ok(canonical_extract_frontmatter_raw(content)?.to_string())
 }
 
 /// Parse a `triggers:` YAML list from raw frontmatter text (line-by-line)

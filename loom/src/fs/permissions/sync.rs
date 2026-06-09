@@ -15,8 +15,14 @@ use std::path::{Path, PathBuf};
 
 use crate::git::worktree::refresh_worktree_settings_local;
 
-/// Patterns that indicate a worktree-specific permission that should not be synced
-const WORKTREE_PATH_PATTERNS: &[&str] = &["../../", ".worktrees/"];
+/// Patterns that indicate a worktree-specific permission that should not be synced.
+///
+/// Any permission whose path argument starts with `../` (single or double level)
+/// is worktree-specific: the path resolves relative to the settings file location,
+/// which in a worktree is `.worktrees/<stage-id>/`, so `../` already escapes the
+/// worktree root. Merging such paths verbatim into the main-repo settings resolves
+/// to a completely different — and usually dangerous — location.
+const WORKTREE_PATH_PATTERNS: &[&str] = &["../", ".worktrees/"];
 
 /// Sync permissions from a worktree's settings.local.json to the main repo's settings
 ///
@@ -247,11 +253,11 @@ fn transform_worktree_path(permission: &str) -> Option<String> {
                 None
             }
         }
-    } else if path_str.starts_with("../../") {
-        // Handle relative path with ../../
-        // Resolve by stripping ../ prefixes
+    } else if path_str.starts_with("../") {
+        // Handle any relative path that starts with ../ (single or multiple levels).
+        // Resolve by stripping all ../ prefixes.
+        // ../doc/**     -> doc/**
         // ../../.work/** -> .work/**
-        // ../../doc/plans/** -> doc/plans/**
         let mut path = path_str;
         while path.starts_with("../") {
             path = &path[3..];
@@ -500,6 +506,9 @@ mod tests {
         assert!(is_worktree_specific_permission(
             "Write(.worktrees/stage-1/**)"
         ));
+        // Single-level ../ must also be treated as worktree-specific (C-18)
+        assert!(is_worktree_specific_permission("Read(../doc/**)"));
+        assert!(is_worktree_specific_permission("Write(../src/**)"));
         assert!(!is_worktree_specific_permission("Read(.work/**)"));
         assert!(!is_worktree_specific_permission("Bash(cargo:*)"));
     }
@@ -554,6 +563,15 @@ mod tests {
         assert_eq!(
             transform_worktree_path("Read(../../../foo/bar)"),
             Some("Read(foo/bar)".to_string())
+        );
+        // Single-level ../ (C-18: previously missed)
+        assert_eq!(
+            transform_worktree_path("Read(../doc/**)"),
+            Some("Read(doc/**)".to_string())
+        );
+        assert_eq!(
+            transform_worktree_path("Write(../src/main.rs)"),
+            Some("Write(src/main.rs)".to_string())
         );
     }
 

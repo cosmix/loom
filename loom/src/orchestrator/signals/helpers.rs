@@ -111,6 +111,31 @@ pub(super) fn format_conflicting_files_section(files: &[String]) -> String {
     content
 }
 
+/// Format the "## Target" markdown section for knowledge stage signals.
+///
+/// Knowledge stages run in the main repo (no worktree / no source branch), so
+/// their Target section uses Type and Directory fields instead of branches.
+pub(super) fn format_knowledge_target_section(
+    session_id: &str,
+    stage_id: &str,
+    plan_id: Option<&str>,
+    repo_root: &str,
+) -> String {
+    let mut content = String::new();
+
+    content.push_str("## Target\n\n");
+    content.push_str(&format!("- **Session**: {session_id}\n"));
+    content.push_str(&format!("- **Stage**: {stage_id}\n"));
+    content.push_str("- **Type**: Knowledge (no worktree)\n");
+    if let Some(plan) = plan_id {
+        content.push_str(&format!("- **Plan**: {plan}\n"));
+    }
+    content.push_str(&format!("- **Directory**: {repo_root}\n"));
+    content.push('\n');
+
+    content
+}
+
 /// Parse markdown content into sections keyed by `## ` headers.
 ///
 /// Returns a map from section name to the non-empty trimmed lines in that section.
