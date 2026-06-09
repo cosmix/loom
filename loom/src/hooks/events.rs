@@ -6,11 +6,30 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::fs::{self, File, OpenOptions};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
 use super::config::HookEvent;
+
+/// Number of trailing bytes scanned by [`tail_tool_events`] when the file is
+/// larger than this. Sized to comfortably hold several hundred event lines
+/// (each ~0.3-0.7 KiB) so that, even with multiple concurrent sessions
+/// interleaving their rows, the per-session window in
+/// [`crate::orchestrator::monitor::tool_analysis`] still sees a useful slice.
+const TAIL_SCAN_BYTES: u64 = 256 * 1024;
+
+/// Size threshold above which [`enforce_tool_events_retention`] truncates
+/// `tool-events.jsonl` (and siblings) down to their trailing
+/// [`RETENTION_KEEP_BYTES`]. 8 MiB keeps weeks of single-session activity
+/// well below the unbounded-growth failure mode while leaving ample history.
+const RETENTION_MAX_BYTES: u64 = 8 * 1024 * 1024;
+
+/// Number of trailing bytes preserved when retention rotates a JSONL file.
+const RETENTION_KEEP_BYTES: u64 = 2 * 1024 * 1024;
+
+/// Names of the append-only JSONL telemetry files subject to retention.
+const RETENTION_FILES: &[&str] = &["tool-events.jsonl"];
 
 /// A logged hook event
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -242,14 +261,129 @@ pub fn read_tool_events(work_dir: &Path) -> std::io::Result<Vec<ToolEvent>> {
 
 /// Read the last `n` tool events from `.work/tool-events.jsonl`.
 ///
+/// This is a **true tail**: rather than reading and parsing the entire
+/// (unbounded, append-only) file, it `seek`s to at most the last
+/// [`TAIL_SCAN_BYTES`] and parses only the complete lines found there. This
+/// keeps the per-tick monitor cost bounded regardless of how large the file
+/// has grown. The seek-to-end technique mirrors the daemon log tailer in
+/// `daemon/server/broadcast.rs`.
+///
 /// Returns `Ok(empty vec)` if the file does not exist.
+///
+/// NOTE: the tail spans ALL sessions interleaved in the file, so callers that
+/// want the last `n` events for a *single* session
+/// (e.g. [`crate::orchestrator::monitor::tool_analysis::analyze_session`])
+/// see a window diluted by concurrent sessions. [`TAIL_SCAN_BYTES`] is sized
+/// large enough that the per-session slice remains useful in practice; reading
+/// strictly `n` events *per session* would require either a per-session file
+/// or a full scan, neither of which is worth the cost on the 5s tick path.
 pub fn tail_tool_events(work_dir: &Path, n: usize) -> std::io::Result<Vec<ToolEvent>> {
-    let mut events = read_tool_events(work_dir)?;
+    let events_file = work_dir.join("tool-events.jsonl");
+
+    let mut file = match File::open(&events_file) {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e),
+    };
+
+    let file_len = file.metadata()?.len();
+    if file_len == 0 {
+        return Ok(Vec::new());
+    }
+
+    // Read only the trailing window of the file.
+    let scan_bytes = file_len.min(TAIL_SCAN_BYTES);
+    let seeked_into_middle = scan_bytes < file_len;
+    file.seek(SeekFrom::End(-(scan_bytes as i64)))?;
+
+    let mut buf = Vec::with_capacity(scan_bytes as usize);
+    file.take(scan_bytes).read_to_end(&mut buf)?;
+
+    // The buffer is JSONL; lossy decode tolerates a split multi-byte char at
+    // the start (the first partial line is discarded below regardless).
+    let text = String::from_utf8_lossy(&buf);
+    let mut lines: Vec<&str> = text.lines().collect();
+
+    // When we seeked into the middle of the file the first "line" is almost
+    // certainly a fragment of a row that started before the window — drop it.
+    if seeked_into_middle && !lines.is_empty() {
+        lines.remove(0);
+    }
+
+    let mut events: Vec<ToolEvent> = lines
+        .iter()
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(|line| match serde_json::from_str(line) {
+            Ok(event) => Some(event),
+            Err(e) => {
+                tracing::warn!("Skipping malformed tool-events.jsonl line: {}", e);
+                None
+            }
+        })
+        .collect();
+
     let len = events.len();
     if len > n {
         events = events.split_off(len - n);
     }
     Ok(events)
+}
+
+/// Enforce a size-based retention policy on the append-only tool-events
+/// telemetry files under `work_dir`.
+///
+/// For each retained file that exceeds [`RETENTION_MAX_BYTES`], the trailing
+/// [`RETENTION_KEEP_BYTES`] are preserved (aligned to the next line boundary so
+/// no partial row survives) and the rest is discarded by rewriting the file.
+/// Intended to be called once at daemon startup; cheap and idempotent when the
+/// files are already small. Errors on individual files are logged and skipped
+/// so retention never aborts startup.
+pub fn enforce_tool_events_retention(work_dir: &Path) {
+    for name in RETENTION_FILES {
+        let path = work_dir.join(name);
+        if let Err(e) = truncate_jsonl_to_tail(&path, RETENTION_MAX_BYTES, RETENTION_KEEP_BYTES) {
+            tracing::warn!("Failed to enforce retention on {}: {}", path.display(), e);
+        }
+    }
+}
+
+/// Rewrite `path` keeping only its trailing `keep_bytes` (line-aligned) when it
+/// exceeds `max_bytes`. No-op if the file is missing or already small enough.
+fn truncate_jsonl_to_tail(path: &Path, max_bytes: u64, keep_bytes: u64) -> std::io::Result<()> {
+    let mut file = match File::open(path) {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+    };
+
+    let file_len = file.metadata()?.len();
+    if file_len <= max_bytes {
+        return Ok(());
+    }
+
+    let keep = keep_bytes.min(file_len);
+    file.seek(SeekFrom::End(-(keep as i64)))?;
+    let mut buf = Vec::with_capacity(keep as usize);
+    file.take(keep).read_to_end(&mut buf)?;
+
+    // Drop everything up to and including the first newline so the retained
+    // file begins on a clean row boundary (the seek lands mid-row).
+    let start = match buf.iter().position(|&b| b == b'\n') {
+        Some(idx) => idx + 1,
+        None => 0,
+    };
+    let kept = &buf[start..];
+
+    // Rewrite atomically via a temp file + rename so a crash mid-write can't
+    // leave a half-written telemetry file.
+    let tmp_path = path.with_extension("jsonl.tmp");
+    {
+        let mut tmp = File::create(&tmp_path)?;
+        tmp.write_all(kept)?;
+        tmp.flush()?;
+    }
+    fs::rename(&tmp_path, path)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -302,6 +436,111 @@ mod tests {
         write_events_file(&dir, &content);
         let events = tail_tool_events(dir.path(), 2).unwrap();
         assert_eq!(events.len(), 2);
+    }
+
+    #[test]
+    fn test_tail_missing_file_returns_empty() {
+        let dir = TempDir::new().unwrap();
+        let events = tail_tool_events(dir.path(), 50).unwrap();
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_tail_returns_newest_when_more_than_n() {
+        let dir = TempDir::new().unwrap();
+        // 10 distinct rows; tail of 3 must be the last 3 written.
+        let mut content = String::new();
+        for i in 0..10 {
+            content.push_str(&format!(
+                r#"{{"ts":"2026-01-01T00:00:0{}Z","tool":"Bash","is_error":false,"session_id":"s1","stage_id":"st1","output_bytes":{}}}"#,
+                i % 10,
+                i
+            ));
+            content.push('\n');
+        }
+        write_events_file(&dir, &content);
+        let events = tail_tool_events(dir.path(), 3).unwrap();
+        assert_eq!(events.len(), 3);
+        // Last three rows had output_bytes 7,8,9.
+        assert_eq!(events[0].output_bytes, Some(7));
+        assert_eq!(events[2].output_bytes, Some(9));
+    }
+
+    #[test]
+    fn test_tail_seeks_into_middle_drops_partial_first_line() {
+        // Build a file larger than TAIL_SCAN_BYTES so the seek lands mid-row,
+        // then confirm we never surface a corrupted (partial) first row and
+        // that the newest rows are returned intact.
+        let dir = TempDir::new().unwrap();
+        let mut content = String::new();
+        let mut idx: u64 = 0;
+        while (content.len() as u64) < TAIL_SCAN_BYTES + 64 * 1024 {
+            content.push_str(&format!(
+                r#"{{"ts":"2026-01-01T00:00:00Z","tool":"Bash","is_error":false,"session_id":"s1","stage_id":"st1","output_bytes":{idx}}}"#
+            ));
+            content.push('\n');
+            idx += 1;
+        }
+        write_events_file(&dir, &content);
+
+        let events = tail_tool_events(dir.path(), 5).unwrap();
+        assert_eq!(events.len(), 5);
+        // Newest row is idx-1; all five parsed cleanly (no partial-line panic).
+        assert_eq!(events[4].output_bytes, Some(idx - 1));
+    }
+
+    #[test]
+    fn test_retention_truncates_oversized_file() {
+        let dir = TempDir::new().unwrap();
+        // Write a file well over RETENTION_MAX_BYTES.
+        let mut content = String::new();
+        let mut idx: u64 = 0;
+        while (content.len() as u64) < RETENTION_MAX_BYTES + 1024 * 1024 {
+            content.push_str(&format!(
+                r#"{{"ts":"2026-01-01T00:00:00Z","tool":"Bash","is_error":false,"session_id":"s1","stage_id":"st1","output_bytes":{idx}}}"#
+            ));
+            content.push('\n');
+            idx += 1;
+        }
+        write_events_file(&dir, &content);
+        let newest = idx - 1;
+
+        enforce_tool_events_retention(dir.path());
+
+        let path = dir.path().join("tool-events.jsonl");
+        let new_len = std::fs::metadata(&path).unwrap().len();
+        assert!(
+            new_len <= RETENTION_KEEP_BYTES,
+            "file should be truncated to tail"
+        );
+
+        // The newest row must survive and the file must still parse cleanly
+        // (begins on a row boundary — no leading partial row).
+        let events = read_tool_events(dir.path()).unwrap();
+        assert!(!events.is_empty());
+        assert_eq!(events.last().unwrap().output_bytes, Some(newest));
+    }
+
+    #[test]
+    fn test_retention_noop_when_small() {
+        let dir = TempDir::new().unwrap();
+        let line = r#"{"ts":"2026-01-01T00:00:00Z","tool":"Bash","is_error":false,"session_id":"s1","stage_id":"st1"}"#;
+        let content = format!("{line}\n{line}\n");
+        write_events_file(&dir, &content);
+
+        enforce_tool_events_retention(dir.path());
+
+        // Unchanged: both rows still present.
+        let events = read_tool_events(dir.path()).unwrap();
+        assert_eq!(events.len(), 2);
+    }
+
+    #[test]
+    fn test_retention_missing_file_is_noop() {
+        let dir = TempDir::new().unwrap();
+        // No file exists — must not error.
+        enforce_tool_events_retention(dir.path());
+        assert!(!dir.path().join("tool-events.jsonl").exists());
     }
 
     #[test]

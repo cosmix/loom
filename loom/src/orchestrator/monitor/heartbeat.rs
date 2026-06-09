@@ -189,10 +189,22 @@ impl HeartbeatWatcher {
         self.heartbeats.get(stage_id)
     }
 
-    /// Check if a session is hung based on heartbeat staleness
-    pub fn check_session_hung(&self, stage_id: &str) -> HeartbeatStatus {
+    /// Check if a session is hung based on heartbeat staleness.
+    ///
+    /// `session_id` is the ID of the session currently occupying the stage.
+    /// Heartbeat files are keyed by stage ID, so a heartbeat written by a
+    /// previous session for the same stage can linger after that session
+    /// exits. If the cached heartbeat's `session_id` does not match the
+    /// session we are checking, it belongs to a stale/previous session and
+    /// must NOT flag the fresh session as hung — treat it as `NoHeartbeat`
+    /// (the fresh session has simply not written its own heartbeat yet).
+    pub fn check_session_hung(&self, stage_id: &str, session_id: &str) -> HeartbeatStatus {
         match self.heartbeats.get(stage_id) {
             None => HeartbeatStatus::NoHeartbeat,
+            Some(heartbeat) if heartbeat.session_id != session_id => {
+                // Stale heartbeat from a previous session for this stage.
+                HeartbeatStatus::NoHeartbeat
+            }
             Some(heartbeat) => {
                 if heartbeat.is_stale(self.hung_timeout) {
                     let age = heartbeat.age();
@@ -362,7 +374,7 @@ mod tests {
 
         // No heartbeat
         assert_eq!(
-            watcher.check_session_hung("unknown"),
+            watcher.check_session_hung("unknown", "session-1"),
             HeartbeatStatus::NoHeartbeat
         );
 
@@ -371,15 +383,28 @@ mod tests {
         watcher.heartbeats.insert("stage-1".to_string(), hb);
 
         assert_eq!(
-            watcher.check_session_hung("stage-1"),
+            watcher.check_session_hung("stage-1", "session-1"),
             HeartbeatStatus::Healthy
+        );
+
+        // A heartbeat from a different session for the same stage must not
+        // flag the current session — treated as NoHeartbeat.
+        assert_eq!(
+            watcher.check_session_hung("stage-1", "session-2"),
+            HeartbeatStatus::NoHeartbeat
         );
 
         // Add an old heartbeat (simulate by setting timeout to 0)
         watcher.set_timeout(Duration::from_secs(0));
-        match watcher.check_session_hung("stage-1") {
+        match watcher.check_session_hung("stage-1", "session-1") {
             HeartbeatStatus::Hung { .. } => (),
             other => panic!("Expected Hung, got {other:?}"),
         }
+
+        // Stale-session guard still wins even when the cached heartbeat is old.
+        assert_eq!(
+            watcher.check_session_hung("stage-1", "session-2"),
+            HeartbeatStatus::NoHeartbeat
+        );
     }
 }

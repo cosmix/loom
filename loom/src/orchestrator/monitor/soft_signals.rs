@@ -124,6 +124,56 @@ pub fn read_active_for_session(
         .collect())
 }
 
+/// Filter a [`SoftSignal`] slice down to those belonging to `session_id`.
+///
+/// Used by callers that have already loaded the active signals once for the
+/// current tick (see the per-tick cache in `detection.rs`) and want the
+/// per-session view without re-reading the file.
+pub fn filter_for_session<'a>(signals: &'a [SoftSignal], session_id: &str) -> Vec<&'a SoftSignal> {
+    signals
+        .iter()
+        .filter(|s| match s {
+            SoftSignal::PossiblyStuck {
+                session_id: sid, ..
+            } => sid == session_id,
+        })
+        .collect()
+}
+
+/// Compact `soft-signals.jsonl` in place, keeping only non-expired rows.
+///
+/// The file is append-only and never pruned during normal operation, so over a
+/// long daemon run it accumulates expired rows that every `read_active` call
+/// must parse and discard. Calling this once at daemon startup rewrites the
+/// file with only the rows that are still active relative to `now`, bounding
+/// reader cost. No-op when the file is missing. The rewrite is atomic
+/// (temp file + rename) so a crash mid-compaction cannot truncate the log.
+pub fn compact(work_dir: &Path, now: SystemTime) -> io::Result<()> {
+    let path = signals_path(work_dir);
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let active = read_active(work_dir, now)?;
+
+    let mut body = String::new();
+    for sig in &active {
+        let line = serde_json::to_string(sig)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        body.push_str(&line);
+        body.push('\n');
+    }
+
+    let tmp_path = path.with_extension("jsonl.tmp");
+    {
+        let mut tmp = fs::File::create(&tmp_path)?;
+        tmp.write_all(body.as_bytes())?;
+        tmp.flush()?;
+    }
+    fs::rename(&tmp_path, &path)?;
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Unit tests
 // ---------------------------------------------------------------------------
@@ -208,5 +258,57 @@ mod tests {
         let active = read_active(dir.path(), SystemTime::now()).unwrap();
         assert_eq!(active.len(), 1, "malformed line should be skipped");
         assert_eq!(active[0], valid_sig);
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 5: compact drops expired rows, keeps active ones
+    // -----------------------------------------------------------------------
+    #[test]
+    fn compact_drops_expired_keeps_active() {
+        let dir = TempDir::new().unwrap();
+        // Two expired, one active.
+        append(dir.path(), &make_signal("s1", "st1", -10)).unwrap();
+        append(dir.path(), &make_signal("s2", "st2", 200)).unwrap();
+        append(dir.path(), &make_signal("s3", "st3", -5)).unwrap();
+
+        compact(dir.path(), SystemTime::now()).unwrap();
+
+        // After compaction only the active signal remains on disk.
+        let active = read_active(dir.path(), SystemTime::now()).unwrap();
+        assert_eq!(active.len(), 1);
+        match &active[0] {
+            SoftSignal::PossiblyStuck { session_id, .. } => assert_eq!(session_id, "s2"),
+        }
+
+        // Verify the file physically shrank to a single row.
+        let path = signals_path(dir.path());
+        let raw = fs::read_to_string(&path).unwrap();
+        assert_eq!(raw.lines().filter(|l| !l.trim().is_empty()).count(), 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 6: compact on missing file is a no-op
+    // -----------------------------------------------------------------------
+    #[test]
+    fn compact_missing_file_is_noop() {
+        let dir = TempDir::new().unwrap();
+        compact(dir.path(), SystemTime::now()).unwrap();
+        assert!(!signals_path(dir.path()).exists());
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 7: filter_for_session narrows to the requested session
+    // -----------------------------------------------------------------------
+    #[test]
+    fn filter_for_session_narrows() {
+        let signals = vec![
+            make_signal("s1", "st1", 200),
+            make_signal("s2", "st2", 200),
+            make_signal("s1", "st3", 200),
+        ];
+        let for_s1 = filter_for_session(&signals, "s1");
+        assert_eq!(for_s1.len(), 2);
+        let for_missing = filter_for_session(&signals, "nope");
+        assert!(for_missing.is_empty());
     }
 }

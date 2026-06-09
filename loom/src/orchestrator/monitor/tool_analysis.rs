@@ -44,6 +44,16 @@ impl ToolAnalysis {
 ///
 /// Events are read from `<work_dir>/tool-events.jsonl`.  Returns an empty
 /// analysis (all zeros) when no events exist for the session.
+///
+/// NOTE on the window: `tail_tool_events(.., 50)` returns the GLOBAL last 50
+/// rows across all sessions, which are then filtered down to `session_id`.
+/// When several sessions run concurrently they interleave their rows, so each
+/// session's effective window is smaller than 50 (the others dilute it). This
+/// is an accepted trade-off: `tail_tool_events` reads a generous trailing byte
+/// window (see `TAIL_SCAN_BYTES` in `hooks/events.rs`) so the per-session slice
+/// stays useful, while avoiding a full-file scan on the 5s monitor tick.
+/// Reading exactly 50 *per session* would require a per-session file or a full
+/// scan — not worth the cost here.
 pub fn analyze_session(work_dir: &Path, session_id: &str) -> io::Result<ToolAnalysis> {
     let all_events = tail_tool_events(work_dir, 50)?;
 

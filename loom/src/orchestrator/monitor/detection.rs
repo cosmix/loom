@@ -1,6 +1,7 @@
 //! Change detection for stages and sessions
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use crate::models::constants::DEFAULT_CONTEXT_BUDGET;
 use crate::models::session::{Session, SessionStatus};
@@ -15,9 +16,27 @@ use super::config::MonitorConfig;
 use super::context::{context_health, context_usage_percent, ContextHealth};
 use super::events::MonitorEvent;
 use super::handlers::Handlers;
-use super::heartbeat::{HeartbeatStatus, HeartbeatWatcher};
+use super::heartbeat::{remove_heartbeat, HeartbeatStatus, HeartbeatWatcher};
 use super::soft_signals;
 use super::tool_analysis;
+
+/// Remove the on-disk heartbeat file for a session's stage when the session
+/// reaches a terminal status (crash/completion). Heartbeat files are keyed by
+/// stage ID, so leaving a dead session's heartbeat behind lets it later flag a
+/// fresh session that reuses the same stage as hung. Best-effort: a failure to
+/// remove is logged but never blocks detection.
+fn cleanup_heartbeat_for_session(work_dir: &Path, session: &Session) {
+    if let Some(stage_id) = &session.stage_id {
+        if let Err(e) = remove_heartbeat(work_dir, stage_id) {
+            tracing::warn!(
+                "Failed to remove heartbeat for stage '{}' (session '{}'): {}",
+                stage_id,
+                session.id,
+                e
+            );
+        }
+    }
+}
 
 /// Detection state for tracking changes
 pub struct Detection {
@@ -119,6 +138,13 @@ impl Detection {
     ) -> Vec<MonitorEvent> {
         let mut events = Vec::new();
 
+        // Read all active soft signals ONCE per tick (rather than re-parsing
+        // soft-signals.jsonl per session below). The file is append-only, so a
+        // single read here is cheaper than N reads in the stuck-detection loop.
+        let stuck_now = std::time::SystemTime::now();
+        let active_soft_signals =
+            soft_signals::read_active(handlers.work_dir(), stuck_now).unwrap_or_default();
+
         for session in sessions {
             let previous_status = self.last_session_states.get(&session.id);
             let current_status = &session.status;
@@ -144,6 +170,7 @@ impl Detection {
 
                                 // Persist session status to file immediately
                                 handlers.persist_session_status(session, SessionStatus::Completed);
+                                cleanup_heartbeat_for_session(handlers.work_dir(), session);
 
                                 self.last_session_states
                                     .insert(session.id.clone(), SessionStatus::Completed);
@@ -166,6 +193,7 @@ impl Detection {
                                     // Persist session status to file immediately
                                     handlers
                                         .persist_session_status(session, SessionStatus::Completed);
+                                    cleanup_heartbeat_for_session(handlers.work_dir(), session);
 
                                     self.last_session_states
                                         .insert(session.id.clone(), SessionStatus::Completed);
@@ -185,6 +213,10 @@ impl Detection {
 
                         // Persist session status to file immediately
                         handlers.persist_session_status(session, SessionStatus::Crashed);
+
+                        // Remove the now-dead session's heartbeat so it can't
+                        // later flag a fresh session reusing this stage as hung.
+                        cleanup_heartbeat_for_session(handlers.work_dir(), session);
 
                         events.push(MonitorEvent::SessionCrashed {
                             session_id: session.id.clone(),
@@ -322,7 +354,6 @@ impl Detection {
             if session.status == SessionStatus::Running {
                 if let Some(stage_id) = &session.stage_id {
                     let work_dir = handlers.work_dir();
-                    let now = std::time::SystemTime::now();
 
                     let was_stuck = self
                         .last_stuck_detected
@@ -330,9 +361,10 @@ impl Detection {
                         .copied()
                         .unwrap_or(false);
 
+                    // Reuse the per-tick active-signals snapshot rather than
+                    // re-reading soft-signals.jsonl for every session.
                     let has_active_signal =
-                        soft_signals::read_active_for_session(work_dir, now, &session.id)
-                            .unwrap_or_default()
+                        soft_signals::filter_for_session(&active_soft_signals, &session.id)
                             .iter()
                             .any(|s| matches!(s, soft_signals::SoftSignal::PossiblyStuck { .. }));
 
@@ -425,8 +457,10 @@ impl Detection {
                 None => continue,
             };
 
-            // Check heartbeat status for this stage
-            let heartbeat_status = heartbeat_watcher.check_session_hung(stage_id);
+            // Check heartbeat status for this stage. Pass the session ID so a
+            // stale heartbeat left by a previous session for the same stage
+            // does not flag this fresh session as hung (treated as NoHeartbeat).
+            let heartbeat_status = heartbeat_watcher.check_session_hung(stage_id, &session.id);
 
             match heartbeat_status {
                 HeartbeatStatus::Hung {

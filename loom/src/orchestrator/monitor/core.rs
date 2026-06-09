@@ -23,6 +23,19 @@ pub struct Monitor {
 
 impl Monitor {
     pub fn new(config: MonitorConfig) -> Self {
+        // Enforce retention on the append-only tool-events telemetry once, at
+        // monitor construction (daemon startup). Without this the file grows
+        // unboundedly and `tail_tool_events` re-reads it every tick. Truncating
+        // here bounds the trailing window the seek-tail must scan. Best-effort.
+        crate::hooks::events::enforce_tool_events_retention(&config.work_dir);
+
+        // Compact the append-only soft-signals log once at startup, dropping
+        // expired rows so per-tick readers don't re-parse stale history.
+        if let Err(e) = super::soft_signals::compact(&config.work_dir, std::time::SystemTime::now())
+        {
+            tracing::warn!("Failed to compact soft-signals.jsonl at startup: {e}");
+        }
+
         let heartbeat_watcher = HeartbeatWatcher::with_timeout(config.hung_timeout);
         Self {
             handlers: Handlers::new(config.clone(), None),
