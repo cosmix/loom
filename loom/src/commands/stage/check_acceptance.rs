@@ -13,9 +13,6 @@ use crate::verify::transitions::{load_stage, save_stage};
 
 use super::acceptance_runner::resolve_stage_execution_paths;
 
-/// Default maximum fix attempts before suggesting dispute-criteria
-const DEFAULT_MAX_FIX_ATTEMPTS: u32 = 3;
-
 /// Run acceptance criteria for a stage and display detailed results.
 ///
 /// This command:
@@ -110,7 +107,7 @@ pub fn check_acceptance(stage_id: String) -> Result<()> {
         stage.fix_attempts += 1;
         save_stage(&stage, work_dir)?;
 
-        let max = stage.max_retries.unwrap_or(DEFAULT_MAX_FIX_ATTEMPTS);
+        let max = stage.get_effective_max_fix_attempts();
         println!("Fix attempts: {}/{max}", stage.fix_attempts);
 
         if stage.fix_attempts >= max {

@@ -9,6 +9,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 use wait_timeout::ChildExt;
 
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+
 use super::config::DEFAULT_COMMAND_TIMEOUT;
 use super::result::CriterionResult;
 
@@ -132,27 +135,46 @@ pub fn run_single_criterion_with_timeout(
 /// Uses `sh -c` on Unix and `cmd /C` on Windows to execute the command.
 /// The command string is passed as a single argument to avoid shell injection
 /// through improper argument splitting.
+///
+/// On Unix the child is placed in its own process group (pgid == child pid) so
+/// that a timeout kill can reach grandchildren (e.g. `cargo test` in `a && b`).
 pub(crate) fn spawn_shell_command(command: &str, working_dir: Option<&Path>) -> Result<Child> {
-    let mut cmd = if cfg!(target_family = "unix") {
-        let mut c = Command::new("sh");
-        c.arg("-c").arg(command);
-        c
-    } else {
-        let mut c = Command::new("cmd");
-        c.arg("/C").arg(command);
-        c
-    };
-
-    cmd.stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    if let Some(dir) = working_dir {
-        cmd.current_dir(dir);
+    #[cfg(unix)]
+    {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg(command);
+        // Place the child in its own process group so kill(-pgid, SIGKILL) on
+        // timeout kills the entire subtree including grandchildren.
+        // Safety: setpgid(0,0) is async-signal-safe per POSIX.
+        unsafe {
+            cmd.pre_exec(|| {
+                nix::unistd::setpgid(nix::unistd::Pid::from_raw(0), nix::unistd::Pid::from_raw(0))
+                    .map_err(|e| std::io::Error::from_raw_os_error(e as i32))
+            });
+        }
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if let Some(dir) = working_dir {
+            cmd.current_dir(dir);
+        }
+        cmd.spawn()
+            .with_context(|| format!("Failed to spawn command: {command}"))
     }
 
-    cmd.spawn()
-        .with_context(|| format!("Failed to spawn command: {command}"))
+    #[cfg(not(unix))]
+    {
+        let mut cmd = Command::new("cmd");
+        cmd.arg("/C").arg(command);
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if let Some(dir) = working_dir {
+            cmd.current_dir(dir);
+        }
+        cmd.spawn()
+            .with_context(|| format!("Failed to spawn command: {command}"))
+    }
 }
 
 /// Read a stream to string, handling errors gracefully
@@ -199,15 +221,35 @@ fn read_stream_to_string<R: Read>(mut stream: R) -> String {
     String::from_utf8_lossy(&buf).to_string()
 }
 
-/// Terminate a child process
+/// Terminate a child process and its entire process group.
 ///
-/// Attempts to kill the process. On Unix, this sends SIGKILL.
-/// On Windows, this calls TerminateProcess.
+/// On Unix, sends SIGKILL to the negative PID (the process group) so that
+/// grandchildren spawned by compound commands (e.g. `cargo test` in `a && b`)
+/// are also killed. Falls back to killing only the direct child if the group
+/// kill fails (e.g. the child already exited).
+///
+/// On Windows, calls TerminateProcess on the direct child.
 fn kill_child_process(child: &mut Child) {
-    // Attempt to kill - ignore errors since the process may have already exited
-    let _ = child.kill();
-    // Wait to reap the zombie process
-    let _ = child.wait();
+    #[cfg(unix)]
+    {
+        // Kill the entire process group — the child was spawned with
+        // setpgid(0,0) so its pgid equals its pid. Negative pid targets
+        // the whole group.
+        if let Ok(pid) = i32::try_from(child.id()) {
+            let pgid = nix::unistd::Pid::from_raw(-pid);
+            let _ = nix::sys::signal::kill(pgid, nix::sys::signal::Signal::SIGKILL);
+        }
+        // Also kill the direct child (covers the edge case where setpgid
+        // raced with the child exec-ing into a new pgid).
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
 }
 
 #[cfg(test)]

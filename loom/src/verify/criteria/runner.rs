@@ -149,7 +149,16 @@ pub fn run_acceptance_with_config(
                     }
                 }
 
+                // C-10: reflect actual pass/fail in result.success so display is consistent.
+                // Raw exit code is preserved in result.exit_code for diagnostics.
+                // Note: when timed_out, criterion_failures is non-empty so is_empty()==false.
+                let mut result_with_original = result;
+                result_with_original.command = command_str.to_string();
+                result_with_original.success = criterion_failures.is_empty();
+
                 failures.extend(criterion_failures);
+                results.push(result_with_original);
+                continue;
             }
         }
 

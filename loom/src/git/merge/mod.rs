@@ -110,7 +110,7 @@ pub fn merge_stage(
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     if output.status.success() {
-        // Parse merge output to determine result type
+        // Parse merge output to determine result type (git output is C locale, safe to match)
         if stdout.contains("Already up to date") || stdout.contains("Already up-to-date") {
             return Ok(MergeResult::AlreadyUpToDate);
         }
@@ -128,22 +128,36 @@ pub fn merge_stage(
         });
     }
 
-    // Check for conflicts
-    if stderr.contains("CONFLICT") || stdout.contains("CONFLICT") {
-        let conflicts = get_conflicting_files(repo_root)?;
+    // C-8: Detect conflicts structurally — check MERGE_HEAD (set by git on conflict)
+    // and confirm with `git diff --diff-filter=U`. This is locale-independent unlike
+    // matching the word "CONFLICT" in stderr (which git localises).
+    let has_merge_head = merge_head_exists(repo_root).unwrap_or(false);
+    let unmerged_files = if has_merge_head {
+        get_conflicting_files(repo_root).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
 
+    if has_merge_head && !unmerged_files.is_empty() {
         // Abort the merge to leave repo in clean state
-        abort_merge(repo_root).ok(); // Ignore abort errors
+        abort_merge(repo_root).ok();
 
         // Restore original branch
         checkout_branch(&original_branch, repo_root).ok();
 
         return Ok(MergeResult::Conflict {
-            conflicting_files: conflicts,
+            conflicting_files: unmerged_files,
         });
     }
 
-    // Some other error - include comprehensive diagnostics
+    // Non-conflict failure — abort any partial merge state and restore branch,
+    // so all failure paths leave the repo clean (C-8 requirement).
+    if merge_head_exists(repo_root).unwrap_or(false) {
+        abort_merge(repo_root).ok();
+    }
+    checkout_branch(&original_branch, repo_root).ok();
+
+    // D-9: use canonical command+dir+exit+stdout+stderr error format (conventions.md).
     let exit_code = output
         .status
         .code()
@@ -152,20 +166,21 @@ pub fn merge_stage(
 
     bail!(
         "git merge failed (exit code {exit_code}):\n\
+         Command: git merge --no-ff -m <msg> {branch_name}\n\
          Directory: {}\n\
          Stdout: {}\n\
          Stderr: {}",
         repo_root.display(),
-        if stdout.is_empty() {
+        if stdout.trim().is_empty() {
             "(empty)"
         } else {
             stdout.trim()
         },
-        if stderr.is_empty() {
+        if stderr.trim().is_empty() {
             "(empty)"
         } else {
             stderr.trim()
-        }
+        },
     );
 }
 
@@ -245,13 +260,9 @@ pub fn get_conflicting_files_from_status(
         repo_root,
     )?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    let conflicts = if !output.status.success()
-        && (stderr.contains("CONFLICT") || stdout.contains("CONFLICT"))
-    {
-        // Get the conflicting files
+    // C-8: Detect conflicts structurally via MERGE_HEAD + unmerged files
+    // rather than locale-sensitive "CONFLICT" text matching.
+    let conflicts = if !output.status.success() && merge_head_exists(repo_root).unwrap_or(false) {
         get_conflicting_files(repo_root).unwrap_or_default()
     } else {
         Vec::new()

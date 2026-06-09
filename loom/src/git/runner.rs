@@ -10,6 +10,9 @@ use std::process::{Command, Output};
 /// Run a git command and return the raw Output.
 ///
 /// Wraps `Command::new("git")` with `current_dir` and error context.
+/// Sets `LC_ALL=C` and `LANG=C` so git output is always in English,
+/// making stdout/stderr parsing locale-independent.
+///
 /// Use this when you need access to both stdout and stderr, or when
 /// you need custom error handling logic.
 ///
@@ -19,6 +22,8 @@ use std::process::{Command, Output};
 pub fn run_git(args: &[&str], repo_root: &Path) -> Result<Output> {
     Command::new("git")
         .args(args)
+        .env("LC_ALL", "C")
+        .env("LANG", "C")
         .current_dir(repo_root)
         .output()
         .with_context(|| format!("Failed to execute: git {}", args.join(" ")))
@@ -26,8 +31,8 @@ pub fn run_git(args: &[&str], repo_root: &Path) -> Result<Output> {
 
 /// Run a git command, check for success, and return stdout as a trimmed String.
 ///
-/// On failure, bails with the stderr content. Use this for commands where
-/// you expect success and want the output as a string.
+/// On failure, bails with the full command + directory + exit code + stdout +
+/// stderr context (conventions.md git error format).
 ///
 /// # Arguments
 /// * `args` - Git command arguments
@@ -35,9 +40,33 @@ pub fn run_git(args: &[&str], repo_root: &Path) -> Result<Output> {
 pub fn run_git_checked(args: &[&str], repo_root: &Path) -> Result<String> {
     let output = run_git(args, repo_root)?;
     if !output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
-        let cmd = args.first().unwrap_or(&"");
-        bail!("git {cmd} failed: {stderr}");
+        let exit_code = output
+            .status
+            .code()
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "signal".to_string());
+        bail!(
+            "git {} failed (exit code {exit_code}):\n\
+             Command: git {}\n\
+             Directory: {}\n\
+             Stdout: {}\n\
+             Stderr: {}",
+            args.first().unwrap_or(&""),
+            args.join(" "),
+            repo_root.display(),
+            if stdout.trim().is_empty() {
+                "(empty)"
+            } else {
+                stdout.trim()
+            },
+            if stderr.trim().is_empty() {
+                "(empty)"
+            } else {
+                stderr.trim()
+            },
+        );
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
