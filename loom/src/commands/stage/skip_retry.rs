@@ -41,12 +41,14 @@ pub fn retry(stage_id: String, force: bool, context: Option<String>) -> Result<(
 
     let mut stage = load_stage(&stage_id, work_dir)?;
 
-    // Defense-in-depth: check for active session to prevent parallel session spawning
+    // Defense-in-depth: refuse to spawn a parallel session only if the recorded
+    // session is genuinely still alive. A stale session *file* left behind by a
+    // crashed/orphaned session must not force `--force` (C-22): probe liveness
+    // via the native backend (PID), not file existence.
     if let Some(ref session_id) = stage.session {
-        let session_path = work_dir.join("sessions").join(format!("{session_id}.md"));
-        if session_path.exists() {
+        if session_is_live(work_dir, session_id) {
             eprintln!(
-                "WARNING: Stage '{}' may have an active session ({})",
+                "WARNING: Stage '{}' has an active (live) session ({})",
                 stage_id, session_id
             );
             eprintln!("  If the session is still running, retry will create a parallel session.");
@@ -54,9 +56,9 @@ pub fn retry(stage_id: String, force: bool, context: Option<String>) -> Result<(
                 "  Fix issues in the current session and run 'loom stage complete {stage_id}'."
             );
             if !force {
-                bail!("Stage has active session. Use --force to override.");
+                bail!("Stage has a live session. Use --force to override.");
             }
-            eprintln!("  --force used, proceeding with retry despite active session.");
+            eprintln!("  --force used, proceeding with retry despite live session.");
         }
     }
 
@@ -119,6 +121,19 @@ pub fn retry(stage_id: String, force: bool, context: Option<String>) -> Result<(
         stage.retry_count += 1;
     }
     stage.last_failure_at = None;
+    // Fresh attempt: clear the previous attempt's start time so the next spawn
+    // records a new `started_at`/`attempt_started_at` rather than measuring from
+    // the dead session (C-22).
+    stage.started_at = None;
+    stage.attempt_started_at = None;
+
+    // `Executing -> Queued` is not a valid transition; do the two-step
+    // `Executing -> Blocked -> Queued` (mirrors orphan recovery in
+    // recovery.rs) so retrying a stage whose session died while still marked
+    // Executing succeeds instead of erroring (C-4).
+    if stage.status == StageStatus::Executing {
+        stage.try_mark_blocked()?;
+    }
     stage.try_mark_queued()?;
 
     // Generate recovery signal if needed
@@ -203,7 +218,11 @@ pub fn retry(stage_id: String, force: bool, context: Option<String>) -> Result<(
         println!("The stage will be picked up by the next orchestrator poll.");
         println!("Run 'loom run' to start the orchestrator if not running.");
     } else {
-        // Simple retry without recovery signal
+        // Simple retry without recovery signal. Clear the stale session pointer
+        // so the executor spawns a fresh session rather than mistaking the dead
+        // session's ID for a live/recovery one (C-22).
+        stage.session = None;
+        stage.updated_at = chrono::Utc::now();
         save_stage(&stage, work_dir)?;
 
         println!("Stage '{stage_id}' queued for retry.");
@@ -213,4 +232,30 @@ pub fn retry(stage_id: String, force: bool, context: Option<String>) -> Result<(
     }
 
     Ok(())
+}
+
+/// Probe whether a recorded session is genuinely still running.
+///
+/// Returns `true` only if the session file parses AND the native backend
+/// reports the session alive (PID-based). A missing/unparseable file or a dead
+/// process returns `false` — a stale session file must not block retry (C-22).
+fn session_is_live(work_dir: &Path, session_id: &str) -> bool {
+    use crate::models::session::Session;
+    use crate::orchestrator::terminal::native::NativeBackend;
+    use crate::parser::frontmatter::parse_from_markdown;
+
+    let session_path = work_dir.join("sessions").join(format!("{session_id}.md"));
+    let Ok(content) = std::fs::read_to_string(&session_path) else {
+        return false;
+    };
+    let Ok(session) = parse_from_markdown::<Session>(&content, "Session") else {
+        return false;
+    };
+    let Ok(backend) = NativeBackend::new(work_dir.to_path_buf()) else {
+        return false;
+    };
+    // A probe error is treated as "not live": the worst case is creating a
+    // parallel session, which `--force` already guards, and stale files (the
+    // common case) must not require `--force`.
+    backend.is_session_alive(&session).unwrap_or(false)
 }

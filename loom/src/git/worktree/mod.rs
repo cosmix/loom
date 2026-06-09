@@ -22,7 +22,7 @@ mod paths;
 mod settings;
 
 // Re-export all public items for backwards compatibility
-pub use base::{resolve_base_branch, ResolvedBase};
+pub use base::{resolve_base_branch, BaseBranchError, ResolvedBase};
 pub use checks::{check_git_available, check_worktree_support, get_worktree_path, worktree_exists};
 pub use discovery::{
     extract_stage_id_from_path, extract_worktree_stage_id, find_worktree_by_prefix,

@@ -148,7 +148,15 @@ pub fn recover(stage_id: String, force: bool) -> Result<()> {
     generate_recovery_signal(&signal_content, &stage, work_dir)
         .context("Failed to generate recovery signal")?;
 
-    // Reset stage to Queued for the new session using validated transition
+    // Reset stage to Queued for the new session using validated transitions.
+    // `Executing -> Queued` is not a valid edge, so an Executing stage goes
+    // through `Executing -> Blocked -> Queued` (mirrors orphan recovery in
+    // recovery.rs) instead of erroring (C-4).
+    if stage.status == StageStatus::Executing {
+        stage
+            .try_mark_blocked()
+            .context("Failed to transition Executing -> Blocked for recovery")?;
+    }
     stage
         .try_mark_queued()
         .context("Failed to transition stage to Queued for recovery")?;

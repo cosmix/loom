@@ -5,6 +5,7 @@ use chrono::Utc;
 
 use crate::git;
 use crate::git::worktree::setup_worktree_hooks;
+use crate::git::BaseBranchError;
 use crate::handoff::find_latest_handoff;
 use crate::hooks::{find_hooks_dir, setup_hooks_for_worktree, HooksConfig};
 use crate::models::failure::{FailureInfo, FailureType};
@@ -79,11 +80,16 @@ impl StageExecutor for Orchestrator {
         // dependent hasn't been attempted, and Queued -> Blocked is technically
         // valid but semantically wrong. Skip silently; the next poll cycle
         // re-evaluates once the upstream dependency stage is fixed.
+        //
+        // The check is memoized per stage (P-6): the underlying per-dep
+        // `git merge-base --is-ancestor` work only re-runs when a dependency
+        // stage file changes or the recheck interval elapses, so a stuck
+        // dependent does not shell out to git every poll cycle.
         let target_branch = crate::git::branch::resolve_target_branch(
             &self.config.base_branch,
             &self.config.repo_root,
         );
-        match crate::verify::transitions::are_all_dependencies_satisfied(
+        match crate::verify::transitions::are_all_dependencies_satisfied_cached(
             &stage,
             &self.config.work_dir,
             &self.config.repo_root,
@@ -151,7 +157,12 @@ impl StageExecutor for Orchestrator {
         // For worktree stages: attempt worktree creation BEFORE marking as Executing
         // This ensures we don't leave stages in Executing state if worktree creation fails
 
-        // Resolve the base branch for worktree creation
+        // Resolve the base branch for worktree creation.
+        //
+        // Route on the *typed* `BaseBranchError` variant rather than matching
+        // substrings of the error text (A-13): rewording a message can no
+        // longer silently reclassify a handled condition into a propagated
+        // error that exits the orchestrator loop.
         let resolved = match git::resolve_base_branch(
             stage_id,
             &stage.dependencies,
@@ -160,28 +171,21 @@ impl StageExecutor for Orchestrator {
             self.config.base_branch.as_deref(),
         ) {
             Ok(resolved) => resolved,
-            Err(e) => {
-                let err_msg = e.to_string();
-
-                // Check for merge conflict - mark stage as Blocked
-                // Stage is in Queued state here, can transition directly to Blocked
-                if err_msg.contains("Merge conflict") {
-                    eprintln!("Stage '{stage_id}' blocked due to merge conflict: {err_msg}");
-                    if stage.try_mark_blocked().is_ok() {
-                        self.save_stage(&stage)?;
-                    }
-                    return Ok(());
+            Err(BaseBranchError::MergeConflict(msg)) => {
+                // Mark stage as Blocked — a resolver is needed.
+                // Stage is in Queued state here, can transition directly to Blocked.
+                eprintln!("Stage '{stage_id}' blocked due to merge conflict: {msg}");
+                if stage.try_mark_blocked().is_ok() {
+                    self.save_stage(&stage)?;
                 }
-
-                // Check for scheduling error - skip stage, will retry next cycle
-                if err_msg.contains("Scheduling error") {
-                    eprintln!(
-                        "Stage '{stage_id}' skipped due to scheduling error (will retry): {err_msg}"
-                    );
-                    return Ok(());
-                }
-
-                // Other errors - propagate
+                return Ok(());
+            }
+            Err(BaseBranchError::SchedulingNotReady(msg)) => {
+                // Transient — skip this cycle, retry on the next poll.
+                eprintln!("Stage '{stage_id}' skipped due to scheduling error (will retry): {msg}");
+                return Ok(());
+            }
+            Err(BaseBranchError::Other(e)) => {
                 return Err(e).with_context(|| {
                     format!("Failed to resolve base branch for stage: {stage_id}")
                 });
@@ -288,9 +292,25 @@ impl StageExecutor for Orchestrator {
             // Continue anyway - sandbox is optional enhancement
         }
 
-        let session = Session::new();
+        // Honor a pending recovery signal (C-5). `loom stage retry --context`
+        // (and crash/hung auto-recovery) writes a `recovery-<...>` signal file
+        // keyed to a new session ID and stores that ID in `stage.session`. If
+        // such a signal exists, reuse its session ID and signal path so the new
+        // agent actually receives the recovery context, instead of overwriting
+        // it with a freshly generated signal. The tracking key is derived from
+        // the stage ID (not the session ID), so kill/liveness still work.
+        let recovery_signal = self.pending_recovery_signal(&stage);
+        let mut session = Session::new();
+        if let Some((recovery_session_id, _)) = &recovery_signal {
+            session.id = recovery_session_id.clone();
+        }
 
-        // Set up Claude Code hooks for this session
+        // Set up Claude Code hooks for this session. A failure here must not
+        // strand the stage as Executing+session:None (O-11): the daemon would
+        // exit (via per-tick error propagation) and orphan recovery, which
+        // iterates session files only, would never see the stage. Hooks are an
+        // optional enhancement, so we only warn — but the same containment
+        // applies to the fatal `?`-propagating steps below.
         if let Some(hooks_dir) = find_hooks_dir() {
             if let Err(e) = setup_worktree_hooks(
                 &worktree.path,
@@ -305,29 +325,46 @@ impl StageExecutor for Orchestrator {
             }
         }
 
-        let deps = get_dependency_status(&stage, &self.graph);
+        let signal_path = if let Some((_, recovery_path)) = recovery_signal {
+            // Reuse the pre-written recovery signal.
+            recovery_path
+        } else {
+            let deps = get_dependency_status(&stage, &self.graph);
 
-        // Check for existing handoff file to include in signal for continuation
-        let handoff_file = find_latest_handoff(&stage.id, &self.config.work_dir)
-            .ok()
-            .flatten()
-            .and_then(|p| {
-                p.file_stem()
-                    .and_then(|s| s.to_str().map(|s| s.to_string()))
-            });
+            // Check for existing handoff file to include in signal for continuation
+            let handoff_file = find_latest_handoff(&stage.id, &self.config.work_dir)
+                .ok()
+                .flatten()
+                .and_then(|p| {
+                    p.file_stem()
+                        .and_then(|s| s.to_str().map(|s| s.to_string()))
+                });
 
-        let signal_path = generate_signal_with_skills(
-            &session,
-            &stage,
-            &worktree,
-            &deps,
-            handoff_file.as_deref(),
-            None, // git_history will be extracted from worktree in future enhancement
-            &self.config.work_dir,
-            self.skill_index.as_ref(),
-            &self.detected_languages,
-        )
-        .context("Failed to generate signal file")?;
+            // Generating the signal can fail (e.g. unwritable signals dir).
+            // Contain it: mark Blocked rather than propagating and killing the
+            // daemon while the stage is Executing with no session yet (O-11).
+            match generate_signal_with_skills(
+                &session,
+                &stage,
+                &worktree,
+                &deps,
+                handoff_file.as_deref(),
+                None, // git_history will be extracted from worktree in future enhancement
+                &self.config.work_dir,
+                self.skill_index.as_ref(),
+                &self.detected_languages,
+            ) {
+                Ok(path) => path,
+                Err(e) => {
+                    let err_msg = format!("Failed to generate signal file: {e:#}");
+                    self.block_stranded_stage(stage_id, err_msg);
+                    return Ok(());
+                }
+            }
+        };
+
+        // Stale recovery signals from earlier attempts must not accumulate.
+        self.cleanup_stale_recovery_signals(stage_id, &session.id);
 
         // Store original session ID to verify consistency after spawn
         let original_session_id = session.id.clone();
@@ -390,14 +427,31 @@ impl StageExecutor for Orchestrator {
             original_session_id, spawned_session.id
         );
 
-        self.save_session(&spawned_session)?;
+        // Persisting the session can fail. At this point a real session may be
+        // running, but the stage on disk is still Executing+session:None, which
+        // orphan recovery cannot see (it scans session files). Contain the
+        // failure: mark Blocked + InfrastructureError so a retry can clean up,
+        // rather than propagating and killing the daemon (O-11).
+        if let Err(e) = self.save_session(&spawned_session) {
+            let err_msg = format!("Failed to save session for stage {stage_id}: {e:#}");
+            self.block_stranded_stage(stage_id, err_msg);
+            return Ok(());
+        }
 
-        // Update stage with session and worktree info (already marked Executing earlier)
-        let mut updated_stage = stage;
+        // Update the stage with session/worktree/resolved_base. Reload from disk
+        // first and merge only these executor-owned fields, so a concurrent CLI
+        // update (e.g. `loom stage` editing the same file during the slow spawn)
+        // is not clobbered by a stale in-memory copy (O-22). The spawn-error
+        // path already reloads; this mirrors it on the success path.
+        let mut updated_stage = self.load_stage(stage_id).unwrap_or(stage);
         updated_stage.assign_session(spawned_session.id.clone());
         updated_stage.set_worktree(Some(worktree.id.clone()));
         updated_stage.set_resolved_base(Some(resolved.branch_name().to_string()));
-        self.save_stage(&updated_stage)?;
+        if let Err(e) = self.save_stage(&updated_stage) {
+            let err_msg = format!("Failed to save stage after spawn for {stage_id}: {e:#}");
+            self.block_stranded_stage(stage_id, err_msg);
+            return Ok(());
+        }
 
         self.active_sessions
             .insert(stage_id.to_string(), spawned_session);
@@ -549,6 +603,103 @@ impl StageExecutor for Orchestrator {
 
         Ok(())
     }
+}
+
+/// Helpers shared by the worktree spawn path (recovery-signal delivery and
+/// infrastructure-failure containment).
+impl Orchestrator {
+    /// Mark a stage Blocked with an `InfrastructureError` after a failure that
+    /// occurred *after* it was already marked Executing but *before* a session
+    /// was successfully recorded (O-11).
+    ///
+    /// Such a stage would otherwise be stranded as `Executing, session: None`:
+    /// the daemon would exit on the propagated error and orphan recovery, which
+    /// iterates session *files*, would never route it back to a runnable state.
+    /// We reload from disk (the in-memory copy may be stale) and best-effort
+    /// transition + persist; failures here are logged, not propagated.
+    fn block_stranded_stage(&mut self, stage_id: &str, err_msg: String) {
+        eprintln!("Stage '{stage_id}' blocked due to spawn-setup failure: {err_msg}");
+        if let Ok(mut reloaded) = self.load_stage(stage_id) {
+            if reloaded.try_mark_blocked().is_ok() {
+                reloaded.failure_info = Some(FailureInfo {
+                    failure_type: FailureType::InfrastructureError,
+                    detected_at: Utc::now(),
+                    evidence: vec![err_msg],
+                });
+                let _ = self.save_stage(&reloaded);
+                let _ = self.graph.mark_status(stage_id, StageStatus::Blocked);
+            }
+        }
+    }
+
+    /// If the stage's recorded session points at an existing `recovery-*` signal
+    /// file, return `(recovery_session_id, signal_path)` so the spawn path can
+    /// reuse it and deliver the recovery context (C-5).
+    fn pending_recovery_signal(&self, stage: &Stage) -> Option<(String, std::path::PathBuf)> {
+        let session_id = stage.session.as_ref()?;
+        if !session_id.starts_with("recovery-") {
+            return None;
+        }
+        let signal_path = self
+            .config
+            .work_dir
+            .join("signals")
+            .join(format!("{session_id}.md"));
+        if signal_path.exists() {
+            Some((session_id.clone(), signal_path))
+        } else {
+            None
+        }
+    }
+
+    /// Remove `recovery-<stage_id>-*` signal files that do not belong to the
+    /// session about to spawn, so stale recovery signals from prior attempts do
+    /// not accumulate in `.work/signals/` (C-5).
+    ///
+    /// Recovery session IDs are `recovery-<stage_id>-<8hex>-<timestamp>`. We
+    /// match the trailing `<8hex>-<timestamp>` shape exactly so a sibling stage
+    /// whose ID shares this stage's prefix (e.g. `auth` vs `auth-tests`) is not
+    /// caught by a naive `starts_with` — the prefix-collision class behind O-5.
+    fn cleanup_stale_recovery_signals(&self, stage_id: &str, keep_session_id: &str) {
+        let signals_dir = self.config.work_dir.join("signals");
+        let prefix = format!("recovery-{stage_id}-");
+        let keep_file = format!("{keep_session_id}.md");
+        let Ok(entries) = std::fs::read_dir(&signals_dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else { continue };
+            if name == keep_file {
+                continue;
+            }
+            let Some(stem) = name.strip_suffix(".md") else {
+                continue;
+            };
+            let Some(suffix) = stem.strip_prefix(&prefix) else {
+                continue;
+            };
+            // Suffix must be exactly `<8hex>-<digits>` for this stage — not a
+            // sibling stage whose ID begins with `stage_id-`.
+            if is_recovery_id_suffix(suffix) {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
+}
+
+/// Whether `suffix` is the `<8hex>-<timestamp>` tail of a recovery session ID.
+///
+/// Used to distinguish this stage's recovery signals from those of a sibling
+/// stage whose ID merely begins with `<stage_id>-`.
+fn is_recovery_id_suffix(suffix: &str) -> bool {
+    let Some((hex, ts)) = suffix.split_once('-') else {
+        return false;
+    };
+    hex.len() == 8
+        && hex.chars().all(|c| c.is_ascii_hexdigit())
+        && !ts.is_empty()
+        && ts.chars().all(|c| c.is_ascii_digit())
 }
 
 /// Get dependency status for signal generation

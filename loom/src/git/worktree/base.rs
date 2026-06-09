@@ -4,12 +4,56 @@
 //! With progressive merge, all dependency work is merged to main before dependent stages
 //! can be scheduled, so the base is always main (or a single unmerged dependency branch).
 
-use anyhow::{bail, Result};
+use std::fmt;
 use std::path::Path;
 
 use crate::git::branch::{branch_exists, branch_name_for_stage, resolve_target_branch};
 use crate::models::stage::StageStatus;
 use crate::plan::graph::ExecutionGraph;
+
+/// Typed failure modes for base-branch resolution.
+///
+/// Callers (notably the stage executor) route on the *variant* rather than
+/// matching substrings of an error message, so rewording a message can never
+/// silently reclassify a handled condition into a propagated error.
+#[derive(Debug)]
+pub enum BaseBranchError {
+    /// Merging dependency branches into the base produced a conflict; the
+    /// stage should be marked Blocked (a resolver is needed).
+    ///
+    /// Reserved for the multi-dependency `loom/_base/<stage>` merge path: the
+    /// current progressive-merge architecture merges every dependency into the
+    /// target branch *before* a dependent is scheduled, so `resolve_base_branch`
+    /// does not itself merge. The executor still routes this variant to Blocked
+    /// so re-introducing a base merge (or surfacing one from `git/merge`, owned
+    /// by another cluster) needs no executor change.
+    #[allow(dead_code)]
+    MergeConflict(String),
+    /// Dependencies are not yet ready (not completed/merged) — a transient
+    /// condition that should be retried on the next poll cycle, not an error.
+    SchedulingNotReady(String),
+    /// Any other failure (e.g. a git command failing, a dependency missing
+    /// from the graph) — propagate to the caller.
+    Other(anyhow::Error),
+}
+
+impl fmt::Display for BaseBranchError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BaseBranchError::MergeConflict(msg) => write!(f, "{msg}"),
+            BaseBranchError::SchedulingNotReady(msg) => write!(f, "{msg}"),
+            BaseBranchError::Other(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl std::error::Error for BaseBranchError {}
+
+impl From<anyhow::Error> for BaseBranchError {
+    fn from(e: anyhow::Error) -> Self {
+        BaseBranchError::Other(e)
+    }
+}
 
 /// Result of resolving the base branch for a stage
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,14 +98,15 @@ impl ResolvedBase {
 /// # Returns
 ///
 /// * `Ok(ResolvedBase)` - The resolved base branch to use
-/// * `Err` - If dependencies are not ready (not completed or not merged)
+/// * `Err(BaseBranchError)` - A typed failure: `MergeConflict` (mark Blocked),
+///   `SchedulingNotReady` (retry next cycle), or `Other` (propagate).
 pub fn resolve_base_branch(
     stage_id: &str,
     dependencies: &[String],
     graph: &ExecutionGraph,
     repo_root: &Path,
     init_base_branch: Option<&str>,
-) -> Result<ResolvedBase> {
+) -> Result<ResolvedBase, BaseBranchError> {
     tracing::debug!(
         stage_id,
         ?dependencies,
@@ -124,14 +169,14 @@ pub fn resolve_base_branch(
         }
 
         // Dependency not completed
-        bail!(
+        return Err(BaseBranchError::SchedulingNotReady(format!(
             "Scheduling error: dependency '{}' is {:?} (completed={}, merged={}). \
              Stages should only be scheduled after their dependencies complete and merge.",
             dep,
             graph.get_node(dep).map(|n| &n.status),
             is_completed,
             is_merged
-        );
+        )));
     }
 
     // Multiple dependencies with some not ready - scheduling error
@@ -140,12 +185,12 @@ pub fn resolve_base_branch(
         .map(|(id, completed, merged)| format!("{id}(completed={completed}, merged={merged})"))
         .collect();
 
-    bail!(
+    Err(BaseBranchError::SchedulingNotReady(format!(
         "Scheduling error: stage '{}' has dependencies not ready: [{}]. \
          All dependencies must be completed AND merged before scheduling.",
         stage_id,
         not_ready.join(", ")
-    );
+    )))
 }
 
 #[cfg(test)]
