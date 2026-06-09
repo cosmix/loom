@@ -78,9 +78,9 @@ pub fn is_backoff_elapsed(last_failure: Option<DateTime<Utc>>, backoff: Duration
 /// # Classification Order
 ///
 /// Checks are performed in priority order (first match wins):
-/// 1. **MergeConflict** - Structural issue requiring manual resolution
-/// 2. **ContextExhausted** - Handled by handoff mechanism, not retry
-/// 3. **SessionCrash** - Process-level failures (transient)
+/// 1. **SessionCrash** - Process-level failures (transient)
+/// 2. **MergeConflict** - Structural issue requiring manual resolution
+/// 3. **ContextExhausted** - Handled by handoff mechanism, not retry
 /// 4. **Timeout** - Execution timeouts (possibly transient)
 /// 5. **BuildFailure** - Compilation failures (checked before TestFailure due to "failed" keyword)
 /// 6. **TestFailure** - Test execution failures
@@ -90,10 +90,27 @@ pub fn is_backoff_elapsed(last_failure: Option<DateTime<Utc>>, backoff: Duration
 ///
 /// Order matters: more specific checks come first, broader checks later.
 /// For example, "build failed" should match BuildFailure, not TestFailure.
+///
+/// **`crash` is checked before `merge`/`context`** so a genuine crash is never
+/// reclassified as MergeConflict/ContextExhausted (which `should_auto_retry`
+/// rejects). The caller MUST pass a path-free reason: an absolute repo path
+/// such as `~/src/merge-tool/` embedded in the reason would otherwise match the
+/// `merge`/`context`/`token` keywords. See `crash_handler.rs`, which classifies
+/// from the bare reason BEFORE appending the crash-report path.
 pub fn classify_failure(close_reason: &str) -> FailureType {
     let reason_lower = close_reason.to_lowercase();
 
-    // MergeConflict: Git merge conflicts (highest priority - structural issue)
+    // SessionCrash: Process-level failures (transient). Checked first so a
+    // crash is auto-retried regardless of incidental "merge"/"context"
+    // substrings that may appear in paths elsewhere in the reason.
+    if reason_lower.contains("crash")
+        || reason_lower.contains("process")
+        || reason_lower.contains("orphan")
+    {
+        return FailureType::SessionCrash;
+    }
+
+    // MergeConflict: Git merge conflicts (structural issue)
     if reason_lower.contains("conflict") || reason_lower.contains("merge") {
         return FailureType::MergeConflict;
     }
@@ -104,14 +121,6 @@ pub fn classify_failure(close_reason: &str) -> FailureType {
         || reason_lower.contains("handoff")
     {
         return FailureType::ContextExhausted;
-    }
-
-    // SessionCrash: Process-level failures (transient)
-    if reason_lower.contains("crash")
-        || reason_lower.contains("process")
-        || reason_lower.contains("orphan")
-    {
-        return FailureType::SessionCrash;
     }
 
     // Timeout: Execution timeout (possibly transient)
@@ -319,5 +328,23 @@ mod tests {
             FailureType::ContextExhausted
         );
         assert_eq!(classify_failure("BUILD FAILED"), FailureType::BuildFailure);
+    }
+
+    #[test]
+    fn test_classify_crash_before_merge_and_context() {
+        // O-12: a genuine crash whose reason incidentally contains the
+        // substrings "merge" or "context" (e.g. from a repo path) must still
+        // classify as SessionCrash so it is auto-retried — `crash` wins over
+        // `merge`/`context`/`token`.
+        assert_eq!(
+            classify_failure(
+                "Session crashed - see crash report at /home/u/src/merge-tool/.work/x"
+            ),
+            FailureType::SessionCrash
+        );
+        assert_eq!(
+            classify_failure("Session crashed in /home/u/token-app/repo"),
+            FailureType::SessionCrash
+        );
     }
 }

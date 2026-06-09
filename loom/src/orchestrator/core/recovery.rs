@@ -1,7 +1,7 @@
 //! Error recovery and state synchronization
 
 use anyhow::Result;
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
@@ -46,25 +46,43 @@ pub(super) trait Recovery: Persistence {
     fn print_status_update(&self);
 }
 
-/// Check if a blocked stage is eligible for automatic retry.
+/// Check whether a Blocked stage is *retryable at all* — i.e. it has a
+/// retryable failure type and has not exhausted its retry budget — WITHOUT
+/// considering backoff timing.
+///
+/// This is the shared predicate behind both the requeue decision and the
+/// watch-mode exit check. `all_stages_terminal()` uses it so the daemon does
+/// NOT shut down while a crashed stage is still *pending backoff* (the backoff
+/// has not elapsed yet, so `check_retry_eligibility` is currently false, but
+/// the retry WILL fire on a later tick). See O-1.
+///
+/// # Arguments
+/// * `stage` - The stage to check
+///
+/// # Returns
+/// `true` if the stage will be auto-retried now or after its backoff elapses.
+fn is_retry_pending(stage: &Stage) -> bool {
+    let Some(ref info) = stage.failure_info else {
+        return false;
+    };
+    let max = stage.max_retries.unwrap_or(3);
+    should_auto_retry(&info.failure_type, stage.retry_count, max)
+}
+
+/// Check if a blocked stage is eligible for automatic retry *right now*.
 ///
 /// A stage is eligible for retry if:
-/// - It has failure_info with a retryable failure_type (SessionCrash or Timeout)
-/// - retry_count < max_retries (default 3)
+/// - It is retryable at all (`is_retry_pending`: retryable failure_type and
+///   retry_count < max_retries (default 3))
 /// - Sufficient time has elapsed since the last failure (exponential backoff)
 ///
 /// # Arguments
 /// * `stage` - The stage to check
 ///
 /// # Returns
-/// `true` if the stage should be automatically retried, `false` otherwise
+/// `true` if the stage should be automatically retried now, `false` otherwise
 fn check_retry_eligibility(stage: &Stage) -> bool {
-    let Some(ref info) = stage.failure_info else {
-        return false;
-    };
-
-    let max = stage.max_retries.unwrap_or(3);
-    if !should_auto_retry(&info.failure_type, stage.retry_count, max) {
+    if !is_retry_pending(stage) {
         return false;
     }
 
@@ -74,13 +92,36 @@ fn check_retry_eligibility(stage: &Stage) -> bool {
 }
 
 impl Orchestrator {
+    /// Whether a graph-Blocked stage should keep the watch-mode daemon alive.
+    ///
+    /// Returns `true` when the stage file shows a crash auto-retry is still
+    /// pending (retryable failure type + retry budget remaining), regardless of
+    /// whether the backoff has elapsed. Used by `all_stages_terminal` so the
+    /// daemon does not shut down before a pending retry fires (O-1). A stage
+    /// that cannot be loaded is treated as not keeping the daemon alive (the
+    /// corrupt-file diagnostic is logged elsewhere during sync).
+    fn blocked_stage_keeps_daemon_alive(&self, stage_id: &str) -> bool {
+        match self.load_stage(stage_id) {
+            Ok(stage) => is_retry_pending(&stage),
+            Err(_) => false,
+        }
+    }
+
     /// Re-verify a `Completed + merged=true` non-knowledge stage at sync time.
     ///
     /// Derives `completed_commit` from `loom/<id>` HEAD when missing, then
-    /// checks ancestry against the target branch. If the ancestry check fails
-    /// OR the branch is also missing, reverts `merged=false` so dependents
-    /// don't treat the stage as satisfied.
-    pub(super) fn verify_merged_true_or_revert(&mut self, stage: &mut Stage) {
+    /// checks ancestry against the (pre-resolved) target branch. If the
+    /// ancestry check fails OR the branch is also missing, reverts
+    /// `merged=false` so dependents don't treat the stage as satisfied.
+    ///
+    /// `target` is passed in so the caller resolves it once per sync pass
+    /// rather than spawning `git symbolic-ref` per stage (P-3).
+    ///
+    /// # Returns
+    /// `true` if the stage is verified `merged=true` (ancestry holds) — the
+    /// caller memoizes this so the verification is not repeated every tick.
+    /// `false` if the merge was reverted or could not be verified.
+    pub(super) fn verify_merged_true_or_revert(&mut self, stage: &mut Stage, target: &str) -> bool {
         // Derive completed_commit when missing.
         if stage.completed_commit.is_none() {
             let branch_name = crate::git::branch::branch_name_for_stage(&stage.id);
@@ -112,17 +153,13 @@ impl Orchestrator {
                             "Failed to save merged=false revert"
                         );
                     }
-                    return; // Nothing more to verify.
+                    return false; // Nothing more to verify.
                 }
             }
         }
 
         if let Some(commit) = stage.completed_commit.clone() {
-            let target = crate::git::branch::resolve_target_branch(
-                &self.config.base_branch,
-                &self.config.repo_root,
-            );
-            if !crate::git::merge::verify_merge_succeeded(&commit, &target, &self.config.repo_root)
+            if !crate::git::merge::verify_merge_succeeded(&commit, target, &self.config.repo_root)
                 .unwrap_or(false)
             {
                 tracing::error!(
@@ -140,8 +177,12 @@ impl Orchestrator {
                         "Failed to save merged=false revert"
                     );
                 }
+                return false;
             }
+            // Ancestry holds — verified merged.
+            return true;
         }
+        false
     }
 }
 
@@ -159,6 +200,10 @@ impl Recovery for Orchestrator {
                 // caller in this iteration sees the corrected state. The
                 // next sync_graph_with_stage_files call will pick this up
                 // again, which is harmless (idempotent).
+                // P-3: a phantom-merge revert changes git ancestry reality, so
+                // invalidate the verified-merged memo for this stage; the next
+                // sync re-verifies it instead of trusting the cached result.
+                self.verified_merged.remove(&stage_id);
                 self.graph.set_node_merged(&stage_id, false);
                 if let Err(e) = self
                     .graph
@@ -188,6 +233,13 @@ impl Recovery for Orchestrator {
         // `self.try_auto_merge` while holding a loaded stage.
         let mut stuck_completed_stage_ids: Vec<String> = Vec::new();
 
+        // Resolve the target branch ONCE per pass instead of spawning
+        // `git symbolic-ref` per Completed stage every tick (P-3).
+        let target_branch = crate::git::branch::resolve_target_branch(
+            &self.config.base_branch,
+            &self.config.repo_root,
+        );
+
         // Read all stage files and sync their status to the graph
         for entry in std::fs::read_dir(&stages_dir)? {
             let entry = entry?;
@@ -197,23 +249,38 @@ impl Recovery for Orchestrator {
                 continue;
             }
 
-            // Extract stage ID from filename (handles prefixed format like 01-stage-id.md)
-            let filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-            let stage_id = if let Some(rest) = filename.strip_prefix(|c: char| c.is_ascii_digit()) {
-                // Remove leading digits and dash
-                rest.trim_start_matches(|c: char| c.is_ascii_digit() || c == '-')
-            } else {
-                filename
+            // Extract stage ID from filename (handles prefixed format like
+            // 01-stage-id.md) via the canonical helper. A hand-rolled parser
+            // here previously ate the leading digits of digit-leading IDs like
+            // `2fa-login`, so the stage never synced (A-2 / O-10).
+            let filename = match path.file_name().and_then(|s| s.to_str()) {
+                Some(name) => name,
+                None => continue,
             };
-
-            if stage_id.is_empty() {
-                continue;
-            }
+            let stage_id = match crate::fs::stage_files::extract_stage_id(filename) {
+                Some(id) if !id.is_empty() => id,
+                _ => continue,
+            };
 
             // Load the stage and sync status
             // NOTE: We use stage.id (from YAML frontmatter) for graph operations,
             // not stage_id (from filename), because the graph is built using frontmatter IDs.
-            if let Ok(mut stage) = self.load_stage(stage_id) {
+            let mut stage = match self.load_stage(&stage_id) {
+                Ok(stage) => stage,
+                Err(e) => {
+                    // A-4: do not silently skip a corrupt/unparseable stage file
+                    // forever. Log at error with the file path so the operator
+                    // sees a diagnostic instead of a frozen stage.
+                    tracing::error!(
+                        stage_id = %stage_id,
+                        path = %path.display(),
+                        error = %e,
+                        "Failed to load stage file during sync; skipping (corrupt stage file?)"
+                    );
+                    continue;
+                }
+            };
+            {
                 tracing::debug!(
                     stage_id = %stage.id,
                     status = ?stage.status,
@@ -234,10 +301,21 @@ impl Recovery for Orchestrator {
                         // without ever populating completed_commit, so a
                         // sync guard that only runs "when a commit exists"
                         // misses exactly that bug class.
+                        // P-3: skip the git ancestry subprocess for a stage
+                        // already verified merged this daemon session — the
+                        // fact cannot change absent a history rewrite, and
+                        // reconcile mutations invalidate the memo.
                         if stage.merged
                             && stage.stage_type != crate::models::stage::StageType::Knowledge
+                            && !self.verified_merged.contains(&stage.id)
                         {
-                            self.verify_merged_true_or_revert(&mut stage);
+                            if self.verify_merged_true_or_revert(&mut stage, &target_branch) {
+                                self.verified_merged.insert(stage.id.clone());
+                            } else {
+                                // Reverted / unverifiable — ensure it is not
+                                // memoized so a later tick re-checks it.
+                                self.verified_merged.remove(&stage.id);
+                            }
                         }
 
                         // If stage is Completed but not merged, try to verify the
@@ -288,12 +366,9 @@ impl Recovery for Orchestrator {
                             }
 
                             // If we have a completed_commit (either pre-existing or
-                            // just derived), run the ancestry check.
+                            // just derived), run the ancestry check against the
+                            // pass-hoisted target branch (P-3).
                             if let Some(ref completed_commit) = stage.completed_commit {
-                                let target_branch = crate::git::branch::resolve_target_branch(
-                                    &self.config.base_branch,
-                                    &self.config.repo_root,
-                                );
                                 match crate::git::merge::verify_merge_succeeded(
                                     completed_commit,
                                     &target_branch,
@@ -306,6 +381,9 @@ impl Recovery for Orchestrator {
                                              marking as merged"
                                         );
                                         stage.merged = true;
+                                        // Memoize: ancestry holds, so future
+                                        // ticks need not re-verify (P-3).
+                                        self.verified_merged.insert(stage.id.clone());
                                         if let Err(e) = self.save_stage(&stage) {
                                             tracing::warn!(
                                                 error = %e,
@@ -590,13 +668,23 @@ impl Recovery for Orchestrator {
 
         // For each queued stage, update the file if it's still WaitingForDeps
         for stage_id in queued_stage_ids {
-            if let Ok(mut stage) = self.load_stage(&stage_id) {
-                // Only update if the file says WaitingForDeps but graph says Queued
-                if stage.status == StageStatus::WaitingForDeps {
-                    // Use validated transition
-                    if stage.try_mark_queued().is_ok() {
-                        self.save_stage(&stage)?;
-                    }
+            let mut stage = match self.load_stage(&stage_id) {
+                Ok(stage) => stage,
+                Err(e) => {
+                    // A-4: log + skip a corrupt stage file rather than swallowing.
+                    tracing::error!(
+                        stage_id = %stage_id,
+                        error = %e,
+                        "Failed to load stage during queued-status sync; skipping (corrupt stage file?)"
+                    );
+                    continue;
+                }
+            };
+            // Only update if the file says WaitingForDeps but graph says Queued
+            if stage.status == StageStatus::WaitingForDeps {
+                // Use validated transition
+                if stage.try_mark_queued().is_ok() {
+                    self.save_stage(&stage)?;
                 }
             }
         }
@@ -620,168 +708,223 @@ impl Recovery for Orchestrator {
                 continue;
             }
 
-            // Load session from file
-            let content = std::fs::read_to_string(&path)?;
+            // Load session from file. A read or parse failure must not abort
+            // the whole recovery pass / daemon (O-4) — log and skip this file.
+            let content = match std::fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::warn!(
+                        path = %path.display(),
+                        error = %e,
+                        "Failed to read session file during orphan recovery; skipping"
+                    );
+                    continue;
+                }
+            };
             let session: Session = match parse_from_markdown(&content, "Session") {
                 Ok(s) => s,
-                Err(_) => continue,
+                Err(e) => {
+                    tracing::warn!(
+                        path = %path.display(),
+                        error = %e,
+                        "Failed to parse session file during orphan recovery; skipping"
+                    );
+                    continue;
+                }
             };
 
-            // Check if session is still running
-            let is_running = self.liveness.is_alive(&session).unwrap_or(false);
+            // Check if the session is still running. Treat a probe *error* as
+            // "unknown" and skip recovery this pass (O-9) — matching the
+            // monitor's fail-safe behavior. Failing UNSAFE here (unwrap_or
+            // false) would delete a live session's files and requeue its
+            // stage, spawning a duplicate session into the same worktree.
+            let is_running = match self.liveness.is_alive(&session) {
+                Ok(alive) => alive,
+                Err(e) => {
+                    tracing::warn!(
+                        session_id = %session.id,
+                        error = %e,
+                        "Liveness probe errored during orphan recovery; treating as unknown and skipping this pass"
+                    );
+                    continue;
+                }
+            };
 
             if !is_running {
                 // Orphaned session - get stage ID and reset it
                 if let Some(stage_id) = &session.stage_id {
-                    // Load the stage
-                    if let Ok(mut stage) = self.load_stage(stage_id) {
-                        // Recover if stage was Executing, NeedsHandoff, or Blocked due to crash
-                        if matches!(
-                            stage.status,
-                            StageStatus::Executing
-                                | StageStatus::NeedsHandoff
-                                | StageStatus::Blocked
-                        ) {
-                            clear_status_line();
+                    // Load the stage. A-4: a corrupt/unparseable stage file must
+                    // be logged (with its path) rather than silently skipped, so
+                    // the operator sees a diagnostic instead of a frozen stage.
+                    match self.load_stage(stage_id) {
+                        Ok(mut stage) => {
+                            // Recover if stage was Executing, NeedsHandoff, or Blocked due to crash
+                            if matches!(
+                                stage.status,
+                                StageStatus::Executing
+                                    | StageStatus::NeedsHandoff
+                                    | StageStatus::Blocked
+                            ) {
+                                clear_status_line();
 
-                            // Decide whether to re-queue or hand off based on
-                            // whether the agent already committed work on the
-                            // stage branch. Re-queuing a stage whose worktree
-                            // branch is ahead of base discards no commits (git
-                            // keeps them), but it spawns a new session that
-                            // races against the prior, possibly-good work and
-                            // burns tokens redoing what was already done.
-                            // Instead, route those to `NeedsHandoff` so a
-                            // human (or `loom stage retry`) decides whether
-                            // to verify-and-complete, merge as-is, or restart.
-                            let branch_name = crate::git::branch::branch_name_for_stage(stage_id);
-                            let target_branch = crate::git::branch::resolve_target_branch(
-                                &self.config.base_branch,
-                                &self.config.repo_root,
-                            );
-                            let commits_ahead = crate::git::branch::commits_ahead_of(
-                                &branch_name,
-                                &target_branch,
-                                &self.config.repo_root,
-                            )
-                            .unwrap_or(0);
-                            let route_to_handoff = commits_ahead > 0;
-
-                            tracing::warn!(
-                                stage_id = %stage_id,
-                                status = ?stage.status,
-                                commits_ahead = commits_ahead,
-                                route = if route_to_handoff { "NeedsHandoff" } else { "Queued" },
-                                "Recovering orphaned stage"
-                            );
-
-                            // For Executing, Executing -> Queued is not a valid
-                            // transition. We either go Executing -> NeedsHandoff
-                            // directly (valid, see transitions.rs) or
-                            // Executing -> Blocked -> Queued for restart.
-                            if route_to_handoff {
-                                if let Err(e) = stage.try_mark_needs_handoff() {
-                                    tracing::warn!(
-                                        error = %e,
-                                        status = ?stage.status,
-                                        "Failed to transition to NeedsHandoff during orphan recovery, bypassing"
-                                    );
-                                    stage.status = StageStatus::NeedsHandoff;
-                                }
-                            } else {
-                                if stage.status == StageStatus::Executing {
-                                    if let Err(e) = stage.try_mark_blocked() {
-                                        tracing::warn!(error = %e, "Failed to transition Executing -> Blocked during recovery");
-                                    }
-                                }
-                                if let Err(e) = stage.try_mark_queued() {
-                                    tracing::warn!(
-                                        error = %e,
-                                        status = ?stage.status,
-                                        "State transition validation failed during orphaned session recovery, bypassing"
-                                    );
-                                    stage.status = StageStatus::Queued;
-                                }
-                            }
-                            stage.session = None;
-                            stage.close_reason = Some(if route_to_handoff {
-                                format!(
-                                    "Session orphaned; branch has {commits_ahead} commit(s) ahead of {target_branch} — needs handoff (use `loom stage verify` or `loom stage retry --kill-session`)"
+                                // Decide whether to re-queue or hand off based on
+                                // whether the agent already committed work on the
+                                // stage branch. Re-queuing a stage whose worktree
+                                // branch is ahead of base discards no commits (git
+                                // keeps them), but it spawns a new session that
+                                // races against the prior, possibly-good work and
+                                // burns tokens redoing what was already done.
+                                // Instead, route those to `NeedsHandoff` so a
+                                // human (or `loom stage retry`) decides whether
+                                // to verify-and-complete, merge as-is, or restart.
+                                let branch_name =
+                                    crate::git::branch::branch_name_for_stage(stage_id);
+                                let target_branch = crate::git::branch::resolve_target_branch(
+                                    &self.config.base_branch,
+                                    &self.config.repo_root,
+                                );
+                                let commits_ahead = crate::git::branch::commits_ahead_of(
+                                    &branch_name,
+                                    &target_branch,
+                                    &self.config.repo_root,
                                 )
-                            } else {
-                                "Session crashed/orphaned".to_string()
-                            });
-                            stage.updated_at = chrono::Utc::now();
+                                .unwrap_or(0);
+                                let route_to_handoff = commits_ahead > 0;
 
-                            // ATOMIC UPDATE PATTERN:
-                            // 1. Save original graph state for potential rollback
-                            // 2. Update graph first (tentatively)
-                            // 3. Save file
-                            // 4. If save fails, rollback graph to original state
-                            let original_graph_status =
-                                self.graph.get_node(stage_id).map(|n| n.status.clone());
+                                tracing::warn!(
+                                    stage_id = %stage_id,
+                                    status = ?stage.status,
+                                    commits_ahead = commits_ahead,
+                                    route = if route_to_handoff { "NeedsHandoff" } else { "Queued" },
+                                    "Recovering orphaned stage"
+                                );
 
-                            // Update graph first - only if not in terminal state
-                            let target_graph_status = if route_to_handoff {
-                                StageStatus::NeedsHandoff
-                            } else {
-                                StageStatus::Queued
-                            };
-                            let graph_updated = if let Some(node) = self.graph.get_node(stage_id) {
-                                if node.status != StageStatus::Completed {
-                                    if let Err(e) =
-                                        self.graph.mark_status(stage_id, target_graph_status)
-                                    {
-                                        tracing::warn!(
-                                            "Failed to sync graph status for stage {}: {}",
-                                            stage_id,
-                                            e
+                                // For Executing, Executing -> Queued is not a valid
+                                // transition. We either go Executing -> NeedsHandoff
+                                // directly (valid, see transitions.rs; Blocked ->
+                                // NeedsHandoff is now also legal) or
+                                // Executing -> Blocked -> Queued for restart.
+                                if route_to_handoff {
+                                    if let Err(e) = stage.try_mark_needs_handoff() {
+                                        // Only reachable when already NeedsHandoff
+                                        // (idempotent) — force so the orphaned stage
+                                        // is consistently reset.
+                                        stage.force_status_with_reason(
+                                            StageStatus::NeedsHandoff,
+                                            &format!("orphan recovery (route=handoff): {e}"),
                                         );
                                     }
-                                    true
                                 } else {
-                                    false
-                                }
-                            } else {
-                                false
-                            };
-
-                            // Now save the file
-                            if let Err(e) = self.save_stage(&stage) {
-                                // Rollback graph to original state if we updated it
-                                if graph_updated {
-                                    if let Some(original_status) = original_graph_status {
-                                        let _ = self.graph.mark_status(stage_id, original_status);
+                                    if stage.status == StageStatus::Executing {
+                                        if let Err(e) = stage.try_mark_blocked() {
+                                            tracing::warn!(error = %e, "Failed to transition Executing -> Blocked during recovery");
+                                        }
+                                    }
+                                    if let Err(e) = stage.try_mark_queued() {
+                                        stage.force_status_with_reason(
+                                            StageStatus::Queued,
+                                            &format!("orphan recovery (route=requeue): {e}"),
+                                        );
                                     }
                                 }
-                                return Err(e);
-                            }
+                                stage.session = None;
+                                stage.close_reason = Some(if route_to_handoff {
+                                    format!(
+                                    "Session orphaned; branch has {commits_ahead} commit(s) ahead of {target_branch} — needs handoff (use `loom stage verify` or `loom stage retry --kill-session`)"
+                                )
+                                } else {
+                                    "Session crashed/orphaned".to_string()
+                                });
+                                stage.updated_at = chrono::Utc::now();
 
-                            recovered += 1;
-                        } else if matches!(
-                            stage.status,
-                            StageStatus::MergeConflict | StageStatus::MergeBlocked
-                        ) {
-                            // Merge session died without resolving - clean up session reference
-                            // but keep the stage in its current status so spawn_merge_resolution_sessions()
-                            // can detect it and spawn a fresh merge session
-                            clear_status_line();
-                            tracing::warn!(
+                                // ATOMIC UPDATE PATTERN:
+                                // 1. Save original graph state for potential rollback
+                                // 2. Update graph first (tentatively)
+                                // 3. Save file
+                                // 4. If save fails, rollback graph to original state
+                                let original_graph_status =
+                                    self.graph.get_node(stage_id).map(|n| n.status.clone());
+
+                                // Update graph first - only if not in terminal state
+                                let target_graph_status = if route_to_handoff {
+                                    StageStatus::NeedsHandoff
+                                } else {
+                                    StageStatus::Queued
+                                };
+                                let graph_updated = if let Some(node) =
+                                    self.graph.get_node(stage_id)
+                                {
+                                    if node.status != StageStatus::Completed {
+                                        if let Err(e) =
+                                            self.graph.mark_status(stage_id, target_graph_status)
+                                        {
+                                            tracing::warn!(
+                                                "Failed to sync graph status for stage {}: {}",
+                                                stage_id,
+                                                e
+                                            );
+                                        }
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                };
+
+                                // Now save the file
+                                if let Err(e) = self.save_stage(&stage) {
+                                    // Rollback graph to original state if we updated it
+                                    if graph_updated {
+                                        if let Some(original_status) = original_graph_status {
+                                            let _ =
+                                                self.graph.mark_status(stage_id, original_status);
+                                        }
+                                    }
+                                    return Err(e);
+                                }
+
+                                recovered += 1;
+                            } else if matches!(
+                                stage.status,
+                                StageStatus::MergeConflict | StageStatus::MergeBlocked
+                            ) {
+                                // Merge session died without resolving - clean up session reference
+                                // but keep the stage in its current status so spawn_merge_resolution_sessions()
+                                // can detect it and spawn a fresh merge session
+                                clear_status_line();
+                                tracing::warn!(
+                                    stage_id = %stage_id,
+                                    status = ?stage.status,
+                                    "Recovering orphaned merge session"
+                                );
+
+                                stage.session = None;
+                                stage.close_reason =
+                                    Some("Merge session crashed/orphaned".to_string());
+                                stage.updated_at = chrono::Utc::now();
+
+                                // Save the updated stage - no graph status change needed since we keep the status
+                                if let Err(e) = self.save_stage(&stage) {
+                                    tracing::warn!(error = %e, "Failed to save stage during merge session recovery");
+                                }
+
+                                recovered += 1;
+                            }
+                        }
+                        Err(e) => {
+                            let stage_path = crate::fs::stage_files::find_stage_file(
+                                &self.config.work_dir.join("stages"),
+                                stage_id,
+                            )
+                            .ok()
+                            .flatten();
+                            tracing::error!(
                                 stage_id = %stage_id,
-                                status = ?stage.status,
-                                "Recovering orphaned merge session"
+                                path = ?stage_path,
+                                error = %e,
+                                "Failed to load stage during orphan recovery; cannot reset it (corrupt stage file?)"
                             );
-
-                            stage.session = None;
-                            stage.close_reason = Some("Merge session crashed/orphaned".to_string());
-                            stage.updated_at = chrono::Utc::now();
-
-                            // Save the updated stage - no graph status change needed since we keep the status
-                            if let Err(e) = self.save_stage(&stage) {
-                                tracing::warn!(error = %e, "Failed to save stage during merge session recovery");
-                            }
-
-                            recovered += 1;
                         }
                     }
                 }
@@ -818,7 +961,16 @@ impl Recovery for Orchestrator {
             // Check graph status first
             match node.status {
                 StageStatus::Completed => continue,
-                StageStatus::Blocked => continue,
+                StageStatus::Blocked => {
+                    // A Blocked stage is NOT terminal while a crash auto-retry
+                    // is still pending (retryable failure + budget remaining),
+                    // even if its backoff has not yet elapsed. Exiting here
+                    // would kill the daemon before the retry fires (O-1).
+                    if self.blocked_stage_keeps_daemon_alive(&node.id) {
+                        return false;
+                    }
+                    continue;
+                }
                 StageStatus::Skipped => continue,
                 StageStatus::MergeConflict => continue, // Terminal until resolved
                 StageStatus::CompletedWithFailures => continue, // Terminal until retried
@@ -833,7 +985,13 @@ impl Recovery for Orchestrator {
                     // Need to check the actual stage file for held status
                     if let Ok(stage) = self.load_stage(&node.id) {
                         match stage.status {
-                            StageStatus::Blocked | StageStatus::Completed => {
+                            StageStatus::Blocked => {
+                                if is_retry_pending(&stage) {
+                                    return false;
+                                }
+                                continue;
+                            }
+                            StageStatus::Completed => {
                                 continue;
                             }
                             StageStatus::Queued | StageStatus::WaitingForDeps if stage.held => {
@@ -851,6 +1009,15 @@ impl Recovery for Orchestrator {
     }
 
     fn print_status_update(&self) {
+        // The `\r[Polling...]` line only makes sense on a TTY, where the
+        // carriage return redraws it in place. When the daemon redirects
+        // stdout to a log file (lifecycle.rs), these lines accumulate as
+        // noise interleaved with tracing output (A-15 / O-17). Suppress them
+        // when stdout is not a terminal; real tracing output is unaffected.
+        if !io::stdout().is_terminal() {
+            return;
+        }
+
         let nodes = self.graph.all_nodes();
         let mut running = 0;
         let mut pending = 0;
@@ -916,6 +1083,35 @@ mod tests {
     use crate::git::branch::{
         branch_name_for_stage, commits_ahead_of, get_branch_head, is_ancestor_of,
     };
+
+    /// A-2 / O-10 regression: `sync_graph_with_stage_files` derives the stage
+    /// ID from the filename via `crate::fs::stage_files::extract_stage_id`. The
+    /// previous hand-rolled parser stripped a leading digit then trimmed all
+    /// leading digits+dashes, corrupting digit-leading IDs (`01-2fa-login.md`
+    /// → `fa-login`). The stage then never synced and the plan deadlocked.
+    /// This guards the exact extractor the sync loop now calls.
+    #[test]
+    fn extract_stage_id_preserves_digit_leading_ids() {
+        use crate::fs::stage_files::extract_stage_id;
+        assert_eq!(
+            extract_stage_id("01-2fa-login.md"),
+            Some("2fa-login".to_string()),
+            "digit-leading stage IDs must survive filename parsing during sync"
+        );
+        assert_eq!(
+            extract_stage_id("02-3d-render.md"),
+            Some("3d-render".to_string())
+        );
+        // Non-digit-leading IDs and the no-prefix form must still work.
+        assert_eq!(
+            extract_stage_id("03-core-arch.md"),
+            Some("core-arch".to_string())
+        );
+        assert_eq!(
+            extract_stage_id("plain-id.md"),
+            Some("plain-id".to_string())
+        );
+    }
 
     fn init_repo() -> TempDir {
         let tmp = TempDir::new().unwrap();

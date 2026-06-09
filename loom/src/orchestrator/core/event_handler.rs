@@ -47,133 +47,12 @@ pub(super) trait EventHandler: Persistence {
 impl EventHandler for Orchestrator {
     fn handle_events(&mut self, events: Vec<MonitorEvent>) -> Result<()> {
         for event in events {
-            match event {
-                MonitorEvent::StageCompleted { stage_id } => {
-                    self.on_stage_completed(&stage_id)?;
-                }
-                MonitorEvent::StageBlocked { stage_id, reason } => {
-                    clear_status_line();
-                    eprintln!("Stage '{stage_id}' blocked: {reason}");
-                    self.graph.mark_status(&stage_id, StageStatus::Blocked)?;
-                }
-                MonitorEvent::SessionContextWarning {
-                    session_id,
-                    usage_percent,
-                } => {
-                    clear_status_line();
-                    eprintln!("Warning: Session '{session_id}' context at {usage_percent:.1}%");
-                }
-                MonitorEvent::SessionContextCritical {
-                    session_id,
-                    usage_percent,
-                } => {
-                    clear_status_line();
-                    eprintln!("Critical: Session '{session_id}' context at {usage_percent:.1}%");
-                }
-                MonitorEvent::SessionCrashed {
-                    session_id,
-                    stage_id,
-                    crash_report_path,
-                } => {
-                    self.on_session_crashed(&session_id, stage_id, crash_report_path)?;
-                }
-                MonitorEvent::SessionNeedsHandoff {
-                    session_id,
-                    stage_id,
-                } => {
-                    self.on_needs_handoff(&session_id, &stage_id)?;
-                }
-                MonitorEvent::StageWaitingForInput {
-                    stage_id,
-                    session_id,
-                } => {
-                    clear_status_line();
-                    if let Some(sid) = session_id {
-                        eprintln!("Stage '{stage_id}' (session '{sid}') is waiting for user input");
-                    } else {
-                        eprintln!("Stage '{stage_id}' is waiting for user input");
-                    }
-                }
-                MonitorEvent::StageResumedExecution { stage_id } => {
-                    clear_status_line();
-                    eprintln!("Stage '{stage_id}' resumed execution after user input");
-                }
-                MonitorEvent::MergeSessionCompleted {
-                    session_id,
-                    stage_id,
-                } => {
-                    self.on_merge_session_completed(&session_id, &stage_id)?;
-                }
-                MonitorEvent::SessionHung {
-                    session_id,
-                    stage_id,
-                    stale_duration_secs,
-                    last_activity,
-                } => {
-                    clear_status_line();
-                    let stage_info = stage_id
-                        .as_ref()
-                        .map(|s| format!(" (stage '{s}')"))
-                        .unwrap_or_default();
-                    let activity_info = last_activity
-                        .as_ref()
-                        .map(|a| format!(", last: {a}"))
-                        .unwrap_or_default();
-                    eprintln!(
-                        "Warning: Session '{session_id}'{stage_info} appears hung (no heartbeat for {stale_duration_secs}s{activity_info})"
-                    );
-                }
-                MonitorEvent::HeartbeatReceived {
-                    stage_id: _,
-                    session_id: _,
-                    context_percent: _,
-                    last_tool: _,
-                } => {
-                    // Heartbeat events are silent - just used for internal tracking
-                }
-                MonitorEvent::BudgetExceeded {
-                    session_id,
-                    stage_id,
-                    usage_percent,
-                    budget_percent,
-                } => {
-                    self.on_budget_exceeded(&session_id, &stage_id, usage_percent, budget_percent)?;
-                }
-                MonitorEvent::StageNeedsHumanReview {
-                    stage_id,
-                    review_reason,
-                } => {
-                    clear_status_line();
-                    let reason_str = review_reason.as_deref().unwrap_or("No reason provided");
-                    eprintln!(
-                        "{} Stage '{}' needs human review: {}",
-                        "REVIEW NEEDED:".magenta().bold(),
-                        stage_id,
-                        reason_str
-                    );
-                    crate::orchestrator::notify::notify_needs_human_review(
-                        &stage_id,
-                        review_reason.as_deref(),
-                    );
-                }
-                MonitorEvent::PossiblyStuck {
-                    session_id,
-                    stage_id,
-                    recent_events,
-                    failure_count,
-                    failure_ratio,
-                } => {
-                    clear_status_line();
-                    eprintln!(
-                        "{} Session '{}' (stage '{}') may be stuck: {}/{} tool calls failed ({:.0}%)",
-                        "STUCK DETECTED:".yellow().bold(),
-                        session_id,
-                        stage_id,
-                        failure_count,
-                        recent_events,
-                        failure_ratio * 100.0,
-                    );
-                }
+            // O-4: one failing event must not drop the rest of the batch or
+            // kill the daemon. Each event is handled in isolation; a handler
+            // error is logged and the loop moves on to the next event.
+            if let Err(e) = self.handle_one_event(event) {
+                clear_status_line();
+                tracing::error!(error = %e, "Failed to handle monitor event; continuing with next event");
             }
         }
         Ok(())
@@ -240,6 +119,143 @@ impl EventHandler for Orchestrator {
     ) -> Result<()> {
         // Implementation in event_handler.rs
         self.handle_budget_exceeded(session_id, stage_id, usage_percent, budget_percent)
+    }
+}
+
+impl Orchestrator {
+    /// Handle a single monitor event. Errors are isolated per event by the
+    /// caller (`handle_events`) so one bad event cannot abort the batch or the
+    /// daemon (O-4).
+    fn handle_one_event(&mut self, event: MonitorEvent) -> Result<()> {
+        match event {
+            MonitorEvent::StageCompleted { stage_id } => {
+                self.on_stage_completed(&stage_id)?;
+            }
+            MonitorEvent::StageBlocked { stage_id, reason } => {
+                clear_status_line();
+                eprintln!("Stage '{stage_id}' blocked: {reason}");
+                self.graph.mark_status(&stage_id, StageStatus::Blocked)?;
+            }
+            MonitorEvent::SessionContextWarning {
+                session_id,
+                usage_percent,
+            } => {
+                clear_status_line();
+                eprintln!("Warning: Session '{session_id}' context at {usage_percent:.1}%");
+            }
+            MonitorEvent::SessionContextCritical {
+                session_id,
+                usage_percent,
+            } => {
+                clear_status_line();
+                eprintln!("Critical: Session '{session_id}' context at {usage_percent:.1}%");
+            }
+            MonitorEvent::SessionCrashed {
+                session_id,
+                stage_id,
+                crash_report_path,
+            } => {
+                self.on_session_crashed(&session_id, stage_id, crash_report_path)?;
+            }
+            MonitorEvent::SessionNeedsHandoff {
+                session_id,
+                stage_id,
+            } => {
+                self.on_needs_handoff(&session_id, &stage_id)?;
+            }
+            MonitorEvent::StageWaitingForInput {
+                stage_id,
+                session_id,
+            } => {
+                clear_status_line();
+                if let Some(sid) = session_id {
+                    eprintln!("Stage '{stage_id}' (session '{sid}') is waiting for user input");
+                } else {
+                    eprintln!("Stage '{stage_id}' is waiting for user input");
+                }
+            }
+            MonitorEvent::StageResumedExecution { stage_id } => {
+                clear_status_line();
+                eprintln!("Stage '{stage_id}' resumed execution after user input");
+            }
+            MonitorEvent::MergeSessionCompleted {
+                session_id,
+                stage_id,
+            } => {
+                self.on_merge_session_completed(&session_id, &stage_id)?;
+            }
+            MonitorEvent::SessionHung {
+                session_id,
+                stage_id,
+                stale_duration_secs,
+                last_activity,
+            } => {
+                clear_status_line();
+                let stage_info = stage_id
+                    .as_ref()
+                    .map(|s| format!(" (stage '{s}')"))
+                    .unwrap_or_default();
+                let activity_info = last_activity
+                    .as_ref()
+                    .map(|a| format!(", last: {a}"))
+                    .unwrap_or_default();
+                eprintln!(
+                        "Warning: Session '{session_id}'{stage_info} appears hung (no heartbeat for {stale_duration_secs}s{activity_info})"
+                    );
+            }
+            MonitorEvent::HeartbeatReceived {
+                stage_id: _,
+                session_id: _,
+                context_percent: _,
+                last_tool: _,
+            } => {
+                // Heartbeat events are silent - just used for internal tracking
+            }
+            MonitorEvent::BudgetExceeded {
+                session_id,
+                stage_id,
+                usage_percent,
+                budget_percent,
+            } => {
+                self.on_budget_exceeded(&session_id, &stage_id, usage_percent, budget_percent)?;
+            }
+            MonitorEvent::StageNeedsHumanReview {
+                stage_id,
+                review_reason,
+            } => {
+                clear_status_line();
+                let reason_str = review_reason.as_deref().unwrap_or("No reason provided");
+                eprintln!(
+                    "{} Stage '{}' needs human review: {}",
+                    "REVIEW NEEDED:".magenta().bold(),
+                    stage_id,
+                    reason_str
+                );
+                crate::orchestrator::notify::notify_needs_human_review(
+                    &stage_id,
+                    review_reason.as_deref(),
+                );
+            }
+            MonitorEvent::PossiblyStuck {
+                session_id,
+                stage_id,
+                recent_events,
+                failure_count,
+                failure_ratio,
+            } => {
+                clear_status_line();
+                eprintln!(
+                    "{} Session '{}' (stage '{}') may be stuck: {}/{} tool calls failed ({:.0}%)",
+                    "STUCK DETECTED:".yellow().bold(),
+                    session_id,
+                    stage_id,
+                    failure_count,
+                    recent_events,
+                    failure_ratio * 100.0,
+                );
+            }
+        }
+        Ok(())
     }
 }
 

@@ -99,6 +99,17 @@ pub struct Orchestrator {
     ///
     /// Lifecycle: in-memory only; reset on next `loom run`.
     pub(super) merge_retry_attempted: HashSet<String>,
+    /// Stage IDs whose `Completed + merged=true` ancestry has already been
+    /// git-verified during this daemon session. Memoizes the result so
+    /// `verify_merged_true_or_revert` does not re-run `git symbolic-ref` +
+    /// `git merge-base --is-ancestor` per Completed+merged stage every 5s
+    /// tick (P-3) — these facts cannot change absent a history rewrite.
+    ///
+    /// Invalidated (entry removed) whenever a reconcile mutation flips a
+    /// stage's merged flag, so a phantom-merge revert forces re-verification.
+    ///
+    /// Lifecycle: in-memory only; reset on next `loom run`.
+    pub(super) verified_merged: HashSet<String>,
     /// Stage IDs for which spawn-time dependency verification has already
     /// logged a skip reason. Prevents the 5-second poll loop from flooding
     /// the logs when a dependent stage cannot start because of a phantom
@@ -179,6 +190,7 @@ impl Orchestrator {
             skill_index,
             detected_languages,
             merge_retry_attempted: HashSet::new(),
+            verified_merged: HashSet::new(),
             spawn_skip_logged: HashSet::new(),
             adjudicators,
         })
@@ -343,8 +355,8 @@ impl Orchestrator {
                     .context("Failed to handle monitor events")?;
 
                 for stage_id in &stage_ids {
-                    if let Ok(stage) = self.load_stage(stage_id) {
-                        match stage.status {
+                    match self.load_stage(stage_id) {
+                        Ok(stage) => match stage.status {
                             StageStatus::Completed if !completed_stages.contains(stage_id) => {
                                 completed_stages.push(stage_id.clone());
                             }
@@ -355,6 +367,23 @@ impl Orchestrator {
                                 needs_handoff.push(stage_id.clone());
                             }
                             _ => {}
+                        },
+                        Err(e) => {
+                            // A-4: a corrupt stage file must not be silently
+                            // skipped (and must NOT abort the loop — O-4). Log
+                            // with the file path; the stage stays tracked.
+                            let path = crate::fs::stage_files::find_stage_file(
+                                &self.config.work_dir.join("stages"),
+                                stage_id,
+                            )
+                            .ok()
+                            .flatten();
+                            tracing::error!(
+                                stage_id = %stage_id,
+                                path = ?path,
+                                error = %e,
+                                "Failed to load stage during result collection; skipping (corrupt stage file?)"
+                            );
                         }
                     }
                 }

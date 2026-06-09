@@ -27,7 +27,27 @@ impl Orchestrator {
         if let Some(sid) = stage_id {
             let crashed_session = self.active_sessions.remove(&sid);
 
-            let mut stage = self.load_stage(&sid)?;
+            // A corrupt/unparseable stage file must not abort the whole daemon
+            // (O-4). Log and skip this crash; other stages keep running.
+            let mut stage = match self.load_stage(&sid) {
+                Ok(stage) => stage,
+                Err(e) => {
+                    let path = crate::fs::stage_files::find_stage_file(
+                        &self.config.work_dir.join("stages"),
+                        &sid,
+                    )
+                    .ok()
+                    .flatten();
+                    clear_status_line();
+                    tracing::error!(
+                        stage_id = %sid,
+                        path = ?path,
+                        error = %e,
+                        "Failed to load stage during crash handling; skipping (corrupt stage file?)"
+                    );
+                    return Ok(());
+                }
+            };
 
             // Don't override terminal states - stage may have completed before session died
             if matches!(stage.status, StageStatus::Completed) {
@@ -59,14 +79,19 @@ impl Orchestrator {
             clear_status_line();
             eprintln!("Session '{session_id}' crashed for stage '{sid}'");
 
-            // Build the failure reason
+            // Classify from a path-FREE reason. The crash-report path embeds
+            // `path.display()` (under the user's repo); a repo path containing
+            // "merge"/"token" would otherwise reclassify a crash as
+            // MergeConflict/ContextExhausted (which `should_auto_retry` rejects),
+            // permanently blocking auto-retry. See O-12.
+            let classification_reason = "Session crashed";
+            let failure_type = classify_failure(classification_reason);
+
+            // Build the human-facing failure reason (may include the path).
             let reason = crash_report_path
                 .as_ref()
                 .map(|p| format!("Session crashed - see crash report at {}", p.display()))
-                .unwrap_or_else(|| "Session crashed".to_string());
-
-            // Classify the failure
-            let failure_type = classify_failure(&reason);
+                .unwrap_or_else(|| classification_reason.to_string());
 
             // Accumulate execution time before updating retry count
             stage.accumulate_attempt_time(Utc::now());
@@ -134,8 +159,21 @@ impl Orchestrator {
             // Only persist state if transition succeeds to avoid inconsistent state
             match stage.try_mark_blocked() {
                 Ok(()) => {
-                    self.save_stage(&stage)?;
-                    self.graph.mark_status(&sid, StageStatus::Blocked)?;
+                    if let Err(e) = self.save_stage(&stage) {
+                        tracing::error!(
+                            stage_id = %sid,
+                            error = %e,
+                            "Failed to persist Blocked stage after crash; skipping (will retry next tick)"
+                        );
+                        return Ok(());
+                    }
+                    if let Err(e) = self.graph.mark_status(&sid, StageStatus::Blocked) {
+                        tracing::warn!(
+                            stage_id = %sid,
+                            error = %e,
+                            "Failed to sync graph status to Blocked after crash"
+                        );
+                    }
                 }
                 Err(e) => {
                     eprintln!("Warning: Failed to transition stage to Blocked: {e}");
