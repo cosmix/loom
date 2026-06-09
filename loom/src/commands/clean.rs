@@ -4,8 +4,10 @@
 use anyhow::{Context, Result};
 use colored::Colorize;
 use std::fs;
+use std::io::{IsTerminal, Write};
 use std::path::Path;
 
+use crate::git::branch::{commits_ahead_of, list_loom_branches, resolve_target_branch};
 use crate::git::cleanup::{
     cleanup_all_base_branches, cleanup_multiple_stages, prune_worktrees, CleanupConfig,
 };
@@ -27,15 +29,33 @@ struct CleanStats {
 /// * `sessions` - Kill only sessions
 /// * `state` - Remove only .work/ state directory
 ///
-/// If no flags are provided, cleans everything (same as --all)
+/// Bare `loom clean` (no flags) is intentionally NON-destructive: it only
+/// prunes stale git worktree references and prints help. The destructive path
+/// (deleting worktrees, `loom/*` branches, and `.work/`) requires an explicit
+/// flag — `--all`, `--worktrees`, or `--state`. Before any `loom/*` branch with
+/// unmerged commits is deleted, the user is shown the commits-ahead counts and
+/// asked to confirm (skip the prompt with `LOOM_CLEAN_YES=1`).
 pub fn execute(all: bool, worktrees: bool, sessions: bool, state: bool) -> Result<()> {
     let repo_root = std::env::current_dir()?;
 
     // Print header
     print_header();
 
-    // If no specific flags provided, clean everything
-    let clean_all = all || (!worktrees && !sessions && !state);
+    // Bare invocation with no flags: do NOT treat as --all. Prune-only + help.
+    if !all && !worktrees && !sessions && !state {
+        return run_bare_clean(&repo_root);
+    }
+
+    let clean_all = all;
+
+    // If we are about to delete worktree branches, surface any unmerged work and
+    // require confirmation. This guards a user who typed `loom clean --all`
+    // mid-plan from silently losing committed-but-unmerged branches.
+    if (clean_all || worktrees) && !confirm_branch_deletion(&repo_root)? {
+        println!();
+        println!("{} Aborted — nothing was deleted.", "✗".red().bold());
+        return Ok(());
+    }
 
     let mut stats = CleanStats::default();
 
@@ -70,6 +90,131 @@ pub fn execute(all: bool, worktrees: bool, sessions: bool, state: bool) -> Resul
 /// Print the loom clean header
 fn print_header() {
     crate::utils::print_logo_header("Cleaning...");
+}
+
+/// Non-destructive default for a flagless `loom clean`.
+///
+/// Only prunes stale git worktree references (which cannot lose committed
+/// work) and prints the explicit flags needed for the destructive paths.
+fn run_bare_clean(repo_root: &Path) -> Result<()> {
+    println!("\n{}", "Prune".bold());
+    println!("{}", "─".repeat(40).dimmed());
+    match prune_worktrees(repo_root) {
+        Ok(()) => println!("  {} Stale worktree references pruned", "✓".green().bold()),
+        Err(e) => println!(
+            "  {} Worktree prune: {}",
+            "⚠".yellow().bold(),
+            e.to_string().dimmed()
+        ),
+    }
+
+    println!();
+    println!(
+        "{} Bare `loom clean` only prunes stale references.",
+        "ℹ".cyan().bold()
+    );
+    println!("  To delete resources, pass an explicit flag:");
+    println!(
+        "    {}  remove worktrees + their loom/* branches",
+        "loom clean --worktrees".dimmed()
+    );
+    println!(
+        "    {}    remove the .work/ state directory",
+        "loom clean --state".dimmed()
+    );
+    println!(
+        "    {}      remove everything (worktrees, branches, state)",
+        "loom clean --all".dimmed()
+    );
+    println!(
+        "  {} You will be asked to confirm before unmerged loom/* branches are deleted.",
+        "─".dimmed()
+    );
+    println!();
+    Ok(())
+}
+
+/// Show any `loom/*` branches that carry unmerged commits and require the user
+/// to confirm before they are deleted.
+///
+/// Returns `Ok(true)` when it is safe to proceed:
+/// - no `loom/*` branches have unmerged work (nothing to lose), or
+/// - the user typed `y`, or `LOOM_CLEAN_YES=1` was set.
+///
+/// Returns `Ok(false)` to abort (user declined, or non-interactive stdin with
+/// unmerged work and no `LOOM_CLEAN_YES`).
+fn confirm_branch_deletion(repo_root: &Path) -> Result<bool> {
+    // Resolve the merge target so commits-ahead is measured against the right base.
+    let work_dir = repo_root.join(".work");
+    let config_branch = crate::fs::work_dir::load_config(&work_dir)
+        .ok()
+        .flatten()
+        .and_then(|c| c.base_branch());
+    let target_branch = resolve_target_branch(&config_branch, repo_root);
+
+    // Collect loom/* branches with unmerged commits (commits ahead of target).
+    let branches = list_loom_branches(repo_root).unwrap_or_default();
+    let mut unmerged: Vec<(String, usize)> = Vec::new();
+    for branch in &branches {
+        // Fail closed: a git error here counts as "has unmerged work" so we warn
+        // rather than silently delete.
+        let ahead = commits_ahead_of(branch, &target_branch, repo_root).unwrap_or(1);
+        if ahead > 0 {
+            unmerged.push((branch.clone(), ahead));
+        }
+    }
+
+    if unmerged.is_empty() {
+        // Nothing committed-but-unmerged would be lost.
+        return Ok(true);
+    }
+
+    println!();
+    println!(
+        "{} The following {} loom branch(es) have UNMERGED commits and will be deleted:",
+        "⚠".yellow().bold(),
+        unmerged.len()
+    );
+    for (branch, ahead) in &unmerged {
+        println!(
+            "    {} {} ({} commit{} ahead of {})",
+            "•".yellow(),
+            branch.cyan(),
+            ahead,
+            if *ahead == 1 { "" } else { "s" },
+            target_branch.dimmed()
+        );
+    }
+    println!(
+        "  {} This work exists only on these branches and is not on {}.",
+        "─".dimmed(),
+        target_branch.dimmed()
+    );
+
+    // Non-interactive escape hatch (CI / scripts).
+    if std::env::var("LOOM_CLEAN_YES").is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true")) {
+        println!(
+            "  {} LOOM_CLEAN_YES set — proceeding without prompt.",
+            "─".dimmed()
+        );
+        return Ok(true);
+    }
+
+    if !std::io::stdin().is_terminal() {
+        println!();
+        println!(
+            "{} Refusing to delete unmerged branches non-interactively. \
+             Re-run with LOOM_CLEAN_YES=1 to override.",
+            "✗".red().bold()
+        );
+        return Ok(false);
+    }
+
+    print!("\nDelete these unmerged branches and their worktrees? (y/N): ");
+    std::io::stdout().flush().ok();
+    let mut response = String::new();
+    std::io::stdin().read_line(&mut response)?;
+    Ok(response.trim().eq_ignore_ascii_case("y"))
 }
 
 /// Print the final summary

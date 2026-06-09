@@ -81,16 +81,52 @@ impl MergeLock {
         }
     }
 
-    /// Check if an existing lock is stale (older than 5 minutes)
+    /// Check if an existing lock is stale.
+    ///
+    /// Staleness is decided by the holder's liveness first, NOT by mtime alone.
+    /// A legitimately long merge (>5min) must not have its lock stolen just
+    /// because the holder never refreshed the file's mtime. So:
+    /// - If the lock records a `pid=` and that process is **alive**, the lock is
+    ///   held — never stale, regardless of age.
+    /// - If the recorded holder process is **dead**, the lock is stale (the
+    ///   holder crashed without releasing it).
+    /// - If no PID can be read from the file (truncated/legacy/partial write),
+    ///   fall back to the mtime ceiling so a genuinely abandoned lock still
+    ///   eventually clears.
     fn is_lock_stale(lock_path: &Path) -> Result<bool> {
-        let metadata = fs::metadata(lock_path)?;
-        let modified = metadata.modified()?;
-        let age = std::time::SystemTime::now()
-            .duration_since(modified)
-            .unwrap_or(Duration::ZERO);
+        match Self::read_holder_pid(lock_path) {
+            Some(pid) => {
+                if crate::process::is_process_alive(pid) {
+                    // Holder is still running — the lock is valid no matter how old.
+                    Ok(false)
+                } else {
+                    // Holder is gone — reclaim the lock.
+                    Ok(true)
+                }
+            }
+            None => {
+                // Couldn't read the holder PID; use the mtime backstop.
+                let metadata = fs::metadata(lock_path)?;
+                let modified = metadata.modified()?;
+                let age = std::time::SystemTime::now()
+                    .duration_since(modified)
+                    .unwrap_or(Duration::ZERO);
+                Ok(age > Duration::from_secs(MERGE_LOCK_STALE_TIMEOUT_SECS))
+            }
+        }
+    }
 
-        // Consider lock stale if older than MERGE_LOCK_STALE_TIMEOUT_SECS
-        Ok(age > Duration::from_secs(MERGE_LOCK_STALE_TIMEOUT_SECS))
+    /// Parse the `pid=<n>` line written by [`Self::try_acquire`].
+    ///
+    /// Returns `None` if the file can't be read or has no parseable `pid=` line
+    /// (e.g. a partially-written lock), signalling the caller to fall back to
+    /// the mtime heuristic.
+    fn read_holder_pid(lock_path: &Path) -> Option<u32> {
+        let contents = fs::read_to_string(lock_path).ok()?;
+        contents
+            .lines()
+            .find_map(|line| line.strip_prefix("pid="))
+            .and_then(|v| v.trim().parse::<u32>().ok())
     }
 
     /// Release the lock
@@ -158,5 +194,45 @@ mod tests {
 
         // Lock should be released on drop
         assert!(!work_dir.join("merge.lock").exists());
+    }
+
+    #[test]
+    fn test_lock_with_live_holder_is_not_stale() {
+        // A lock held by a live PID must NOT be considered stale. The live-holder
+        // branch short-circuits before mtime is even consulted, which is the
+        // >5min legitimate-merge no-steal guarantee (no mtime backdating needed).
+        use std::io::Write;
+        let temp_dir = TempDir::new().unwrap();
+        let lock_path = temp_dir.path().join("merge.lock");
+
+        let mut f = fs::File::create(&lock_path).unwrap();
+        // Our own PID is guaranteed alive.
+        writeln!(f, "pid={}", std::process::id()).unwrap();
+        writeln!(f, "timestamp=2000-01-01T00:00:00Z").unwrap();
+        drop(f);
+
+        assert!(
+            !MergeLock::is_lock_stale(&lock_path).unwrap(),
+            "a lock held by a live process must never be stale"
+        );
+    }
+
+    #[test]
+    fn test_lock_with_dead_holder_is_stale() {
+        // A lock whose recorded holder PID is dead must be reclaimable.
+        use std::io::Write;
+        let temp_dir = TempDir::new().unwrap();
+        let lock_path = temp_dir.path().join("merge.lock");
+
+        let mut f = fs::File::create(&lock_path).unwrap();
+        // A PID that will not exist.
+        writeln!(f, "pid=4294967294").unwrap();
+        writeln!(f, "timestamp=2000-01-01T00:00:00Z").unwrap();
+        drop(f);
+
+        assert!(
+            MergeLock::is_lock_stale(&lock_path).unwrap(),
+            "a lock whose holder is dead must be stale"
+        );
     }
 }

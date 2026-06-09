@@ -19,7 +19,8 @@ pub mod worktree;
 pub use worktree::{
     check_git_available, check_worktree_support, clean_worktrees, create_worktree,
     ensure_work_symlink, get_or_create_worktree, get_worktree_path, list_worktrees,
-    remove_worktree, resolve_base_branch, worktree_exists, ResolvedBase, WorktreeInfo,
+    remove_worktree, resolve_base_branch, worktree_exists, BaseBranchError, ResolvedBase,
+    WorktreeInfo,
 };
 
 pub use merge::{

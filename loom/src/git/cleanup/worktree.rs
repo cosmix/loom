@@ -28,15 +28,32 @@ pub fn cleanup_worktree(stage_id: &str, repo_root: &Path, force: bool) -> Result
     match remove_worktree(stage_id, repo_root, force) {
         Ok(()) => Ok(true),
         Err(e) => {
-            // If git worktree remove fails, try manual cleanup
-            std::fs::remove_dir_all(&worktree_path).with_context(|| {
-                format!(
-                    "Failed to manually remove worktree at {} after git error: {}",
-                    worktree_path.display(),
-                    e
-                )
-            })?;
-            Ok(true)
+            // `git worktree remove` (non-force) refuses when the worktree has
+            // modified or untracked files. Falling back to `remove_dir_all`
+            // unconditionally — as the old code did — made the `force` flag
+            // meaningless and destroyed uncommitted work that the caller
+            // deliberately asked to preserve (complete_with_merge passes
+            // force:false for exactly this reason). Only escalate to a hard
+            // directory wipe when force was requested; otherwise propagate
+            // git's refusal so the caller sees the real error.
+            if force {
+                std::fs::remove_dir_all(&worktree_path).with_context(|| {
+                    format!(
+                        "Failed to manually remove worktree at {} after git error: {}",
+                        worktree_path.display(),
+                        e
+                    )
+                })?;
+                Ok(true)
+            } else {
+                Err(e).with_context(|| {
+                    format!(
+                        "git worktree remove refused for {} and force was not set; \
+                         not destroying uncommitted files. Re-run with force to override.",
+                        worktree_path.display()
+                    )
+                })
+            }
         }
     }
 }

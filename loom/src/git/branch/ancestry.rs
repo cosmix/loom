@@ -27,7 +27,39 @@ pub fn is_ancestor_of(commit_sha: &str, branch: &str, repo_root: &Path) -> Resul
         &["merge-base", "--is-ancestor", commit_sha, branch],
         repo_root,
     )?;
-    Ok(output.status.success())
+    // `git merge-base --is-ancestor` exit codes:
+    //   0   -> commit IS an ancestor of branch
+    //   1   -> commit is NOT an ancestor
+    //   else (commonly 128) -> a real git error (bad/missing ref, not a repo, …)
+    // The previous `Ok(status.success())` collapsed 1 and 128 into `Ok(false)`,
+    // making the documented `Err` contract unreachable. Callers that fall back to
+    // metadata on `Err` (check_merge_state, repair) must be able to tell a genuine
+    // "not an ancestor" from "git couldn't answer" (e.g. a gc'd/rewritten commit).
+    match output.status.code() {
+        Some(0) => Ok(true),
+        Some(1) => Ok(false),
+        _ => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!(
+                "git merge-base --is-ancestor failed (exit {}):\n\
+                 Directory: {}\n\
+                 Commit: {commit_sha}\n\
+                 Branch: {branch}\n\
+                 Stderr: {}",
+                output
+                    .status
+                    .code()
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "signal".to_string()),
+                repo_root.display(),
+                if stderr.trim().is_empty() {
+                    "(empty)"
+                } else {
+                    stderr.trim()
+                }
+            )
+        }
+    }
 }
 
 /// Get the HEAD commit SHA of a branch
@@ -60,13 +92,47 @@ pub fn commits_ahead_of(branch: &str, base: &str, repo_root: &Path) -> Result<us
     let range = format!("{base}..{branch}");
     let output = run_git(&["rev-list", "--count", &range], repo_root)?;
     if !output.status.success() {
-        // Missing branch / unknown ref → treat as zero so callers can
-        // proceed defensively. Real git errors (e.g., not a repo) still
-        // surface as Err via run_git.
-        return Ok(0);
+        // A non-zero exit is ambiguous: it can mean either a missing ref
+        // (callers want a defensive 0) or a genuine git error (callers that
+        // gate destructive deletion on commits-ahead must NOT see a false 0).
+        // Disambiguate by probing whether `branch` actually resolves. If the
+        // branch is genuinely absent there are no commits to lose, so 0 is
+        // safe; otherwise surface the error so deletion callers fail closed.
+        if !branch_exists_ref(branch, repo_root) {
+            return Ok(0);
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!(
+            "git rev-list --count {range} failed (exit {}):\n\
+             Directory: {}\n\
+             Stderr: {}",
+            output
+                .status
+                .code()
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "signal".to_string()),
+            repo_root.display(),
+            if stderr.trim().is_empty() {
+                "(empty)"
+            } else {
+                stderr.trim()
+            }
+        );
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
     Ok(stdout.trim().parse::<usize>().unwrap_or(0))
+}
+
+/// Resolve whether a ref (branch name or SHA) exists, swallowing all errors.
+///
+/// Used by [`commits_ahead_of`] to disambiguate "range failed because the
+/// branch is missing" (safe → 0) from "range failed for another reason"
+/// (must surface as `Err`). Kept local and infallible on purpose: the caller
+/// is already in an error path and only needs a best-effort yes/no.
+fn branch_exists_ref(reference: &str, repo_root: &Path) -> bool {
+    run_git(&["rev-parse", "--verify", "--quiet", reference], repo_root)
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }
 
 /// Check if a branch has been fully merged into a target branch
@@ -183,6 +249,48 @@ mod tests {
 
         // Test: second commit should NOT be an ancestor of first commit
         assert!(!is_ancestor_of(&second_commit, &first_commit, repo_path).unwrap());
+    }
+
+    #[test]
+    fn test_is_ancestor_of_errors_on_bad_ref() {
+        // A nonexistent commit/branch makes git exit 128, which must surface
+        // as Err (not a silent Ok(false)) so callers can fall back to metadata.
+        let temp_dir = init_test_repo();
+        let repo_path = temp_dir.path();
+
+        let result = is_ancestor_of(
+            "0000000000000000000000000000000000000000",
+            "main",
+            repo_path,
+        );
+        assert!(
+            result.is_err(),
+            "git error (exit 128) must surface as Err, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_commits_ahead_of_errors_on_bad_base() {
+        // Branch exists but base ref is bogus → git error, must be Err (not 0).
+        let temp_dir = init_test_repo();
+        let repo_path = temp_dir.path();
+
+        let branch = String::from_utf8_lossy(
+            &Command::new("git")
+                .args(["rev-parse", "--abbrev-ref", "HEAD"])
+                .current_dir(repo_path)
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .trim()
+        .to_string();
+
+        let result = commits_ahead_of(&branch, "nonexistent-base", repo_path);
+        assert!(
+            result.is_err(),
+            "real git error with an existing branch must surface as Err, got {result:?}"
+        );
     }
 
     #[test]

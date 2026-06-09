@@ -3,13 +3,15 @@
 
 use anyhow::{bail, Context, Result};
 use colored::Colorize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::fs::stage_files::find_stage_file;
-use crate::git::branch::branch_name_for_stage;
+use crate::git::branch::{
+    branch_name_for_stage, commits_ahead_of, is_ancestor_of, resolve_target_branch,
+};
 use crate::git::cleanup::{cleanup_after_merge, prune_worktrees, CleanupConfig};
 use crate::git::worktree::find_worktree_by_prefix;
-use crate::models::stage::StageStatus;
+use crate::models::stage::{Stage, StageStatus};
 use crate::verify::transitions::{load_stage, parse_stage_from_markdown, save_stage};
 
 /// List all worktrees
@@ -44,12 +46,20 @@ pub fn list() -> Result<()> {
 
 /// Clean orphaned worktrees
 ///
-/// A worktree is considered orphaned if:
-/// - The corresponding stage file doesn't exist
-/// - The stage is in a terminal state (Completed, Blocked, Skipped)
-/// - The stage is waiting for dependencies (not actively executing)
-///
-/// Active states that keep worktrees alive: Executing, NeedsHandoff, MergeConflict, WaitingForInput
+/// Deletion safety policy (a worktree's branch may hold unmerged committed
+/// work, so we never delete on a guess):
+/// - **Active** (kept): every non-terminal state. Terminal means only
+///   `Completed + merged == true` or `Skipped`. States like `Blocked`,
+///   `CompletedWithFailures`, `MergeBlocked`, `MergeConflict`,
+///   `NeedsHumanReview`, `NeedsAdjudication` all hold committed-but-unmerged
+///   work and are treated as active.
+/// - **Terminal** (`Completed + merged`, `Skipped`): only cleaned once the
+///   branch is proven safe — its `completed_commit` is an ancestor of the
+///   target branch, or it has zero commits ahead of the target. If neither can
+///   be proven (or git errors), the worktree is kept.
+/// - **Unparseable / unreadable stage files**: kept — never auto-deleted.
+/// - **No stage file at all**: only cleaned when the branch has zero commits
+///   ahead of the target (truly nothing to lose); otherwise kept.
 pub fn clean() -> Result<()> {
     println!("Cleaning orphaned worktrees...");
     println!("{}", "─".repeat(50).dimmed());
@@ -89,6 +99,13 @@ pub fn clean() -> Result<()> {
     );
     println!();
 
+    // Resolve the merge target branch once (config base_branch, else repo default).
+    let config_branch = crate::fs::work_dir::load_config(&work_dir)
+        .ok()
+        .flatten()
+        .and_then(|c| c.base_branch());
+    let target_branch = resolve_target_branch(&config_branch, &repo_root);
+
     // Check each worktree for orphan status
     let mut orphaned: Vec<String> = Vec::new();
     let mut active: Vec<String> = Vec::new();
@@ -96,65 +113,48 @@ pub fn clean() -> Result<()> {
     for stage_id in &worktree_ids {
         let is_orphan = match find_stage_file(&stages_dir, stage_id)? {
             None => {
-                // No stage file exists - orphaned
-                println!(
-                    "  {} {} (no stage file)",
-                    "orphan:".yellow(),
-                    stage_id.cyan()
-                );
-                true
+                // No stage file — only safe to clean if the branch has no
+                // commits ahead of the target (nothing committed to lose).
+                if branch_has_no_unmerged_work(stage_id, &target_branch, &repo_root) {
+                    println!(
+                        "  {} {} (no stage file, branch fully merged)",
+                        "orphan:".yellow(),
+                        stage_id.cyan()
+                    );
+                    true
+                } else {
+                    println!(
+                        "  {} {} (no stage file, branch holds unmerged commits — keeping)",
+                        "keep:".green(),
+                        stage_id.cyan()
+                    );
+                    false
+                }
             }
             Some(stage_path) => {
                 // Parse stage file to check status
                 match std::fs::read_to_string(&stage_path) {
                     Ok(content) => match parse_stage_from_markdown(&content) {
-                        Ok(stage) => {
-                            let status = &stage.status;
-                            let is_active = matches!(
-                                status,
-                                StageStatus::Executing
-                                    | StageStatus::NeedsHandoff
-                                    | StageStatus::MergeConflict
-                                    | StageStatus::WaitingForInput
-                                    | StageStatus::Queued
-                            );
-
-                            if is_active {
-                                println!(
-                                    "  {} {} ({})",
-                                    "active:".green(),
-                                    stage_id.cyan(),
-                                    format!("{status}").dimmed()
-                                );
-                                false
-                            } else {
-                                println!(
-                                    "  {} {} ({})",
-                                    "orphan:".yellow(),
-                                    stage_id.cyan(),
-                                    format!("{status}").dimmed()
-                                );
-                                true
-                            }
-                        }
+                        Ok(stage) => classify_stage(stage_id, &stage, &target_branch, &repo_root),
                         Err(_) => {
-                            // Can't parse stage - treat as orphan
+                            // Can't parse stage — NEVER auto-delete (the file may
+                            // be crash-corrupted and the branch may hold work).
                             println!(
-                                "  {} {} (unparseable stage file)",
-                                "orphan:".yellow(),
+                                "  {} {} (unparseable stage file — keeping)",
+                                "keep:".green(),
                                 stage_id.cyan()
                             );
-                            true
+                            false
                         }
                     },
                     Err(_) => {
-                        // Can't read stage file - treat as orphan
+                        // Can't read stage file — NEVER auto-delete.
                         println!(
-                            "  {} {} (unreadable stage file)",
-                            "orphan:".yellow(),
+                            "  {} {} (unreadable stage file — keeping)",
+                            "keep:".green(),
                             stage_id.cyan()
                         );
-                        true
+                        false
                     }
                 }
             }
@@ -233,6 +233,70 @@ pub fn clean() -> Result<()> {
     println!("{} Cleanup complete!", "✓".green().bold());
 
     Ok(())
+}
+
+/// Decide whether a worktree backed by a parsed stage is safe to clean.
+///
+/// Returns `true` only when the stage is in a terminal resting state
+/// (`Completed + merged`, or `Skipped`) AND its branch is proven to hold no
+/// unmerged work. Every other state — including the failure/review states that
+/// hold committed-but-unmerged work — keeps the worktree. Prints the decision.
+fn classify_stage(stage_id: &str, stage: &Stage, target_branch: &str, repo_root: &Path) -> bool {
+    let status = &stage.status;
+
+    // Terminal resting states: only these are even eligible for cleanup.
+    let terminal = matches!(status, StageStatus::Skipped)
+        || (matches!(status, StageStatus::Completed) && stage.merged);
+
+    if !terminal {
+        println!(
+            "  {} {} ({})",
+            "active:".green(),
+            stage_id.cyan(),
+            format!("{status}").dimmed()
+        );
+        return false;
+    }
+
+    // Eligible — but still prove the branch carries no unmerged work before
+    // deleting. Prefer the recorded completed_commit ancestry check; fall back
+    // to a commits-ahead count. Either proof of "fully merged" is enough.
+    let proven_merged = match &stage.completed_commit {
+        Some(commit) => is_ancestor_of(commit, target_branch, repo_root).unwrap_or(false),
+        None => false,
+    } || branch_has_no_unmerged_work(stage_id, target_branch, repo_root);
+
+    if proven_merged {
+        println!(
+            "  {} {} ({}, merged)",
+            "orphan:".yellow(),
+            stage_id.cyan(),
+            format!("{status}").dimmed()
+        );
+        true
+    } else {
+        println!(
+            "  {} {} ({}, unverified merge — keeping)",
+            "keep:".green(),
+            stage_id.cyan(),
+            format!("{status}").dimmed()
+        );
+        false
+    }
+}
+
+/// Return `true` iff the stage's `loom/<stage-id>` branch is provably free of
+/// unmerged work — zero commits ahead of `target_branch`.
+///
+/// Fails closed: if `commits_ahead_of` errors (e.g. a git failure surfaced per
+/// C-9), returns `false` so the caller keeps the worktree rather than risk
+/// deleting committed work.
+fn branch_has_no_unmerged_work(stage_id: &str, target_branch: &str, repo_root: &Path) -> bool {
+    let branch_name = branch_name_for_stage(stage_id);
+    matches!(
+        commits_ahead_of(&branch_name, target_branch, repo_root),
+        Ok(0)
+    )
 }
 
 /// Update stage status to Completed and mark as merged after successful merge

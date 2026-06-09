@@ -6,7 +6,7 @@ use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 use crate::fs::permissions::{trust_worktree, untrust_worktree};
-use crate::git::branch::branch_name_for_stage;
+use crate::git::branch::{branch_name_for_stage, commits_ahead_of, default_branch};
 use crate::git::runner::{run_git, run_git_checked};
 use crate::models::worktree::Worktree;
 use crate::validation::validate_id;
@@ -63,18 +63,52 @@ pub fn create_worktree(
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
 
-        // If branch already exists, delete it and recreate from correct base
-        // This ensures we always use the correct base branch, not a stale one
+        // The branch loom/<stage-id> already exists but has no worktree (cleanup
+        // or manual removal left the branch behind, then the stage was re-queued).
+        // Force-deleting it unconditionally — as the old code did — silently
+        // destroys any unmerged commits the branch holds (reflog-only recovery).
+        // The daemon's orphan-recovery routes commits-ahead branches to
+        // NeedsHandoff precisely because they hold value; this path must not undo
+        // that. So: only force-delete when the branch has NO commits ahead of its
+        // base. Otherwise REUSE the existing branch (worktree add without -b),
+        // preserving the work and letting the stage resume against it.
         if stderr.contains("already exists") {
-            // Delete the existing branch
-            run_git_checked(&["branch", "-D", &branch_name], repo_root)?;
+            // Determine the base to measure "commits ahead" against. Prefer the
+            // explicit base_branch; fall back to the repo default (main/master).
+            let base = match base_branch {
+                Some(b) => b.to_string(),
+                None => default_branch(repo_root).unwrap_or_else(|_| "main".to_string()),
+            };
 
-            // Retry creating the worktree with the correct base
-            let retry_output = run_git(&args, repo_root)?;
+            // Fail closed: if commits_ahead_of errors (it now surfaces real git
+            // errors per C-9), do NOT force-delete — reuse instead.
+            let ahead = commits_ahead_of(&branch_name, &base, repo_root).unwrap_or(1);
 
-            if !retry_output.status.success() {
-                let retry_stderr = String::from_utf8_lossy(&retry_output.stderr);
-                bail!("git worktree add failed after branch deletion: {retry_stderr}");
+            if ahead == 0 {
+                // No unmerged work — safe to recreate from the correct base.
+                run_git_checked(&["branch", "-D", &branch_name], repo_root)?;
+
+                let retry_output = run_git(&args, repo_root)?;
+                if !retry_output.status.success() {
+                    let retry_stderr = String::from_utf8_lossy(&retry_output.stderr);
+                    bail!("git worktree add failed after branch deletion: {retry_stderr}");
+                }
+            } else {
+                // Branch holds unmerged commits — reuse it rather than destroy it.
+                // `git worktree add <path> <branch>` (no -b) checks the existing
+                // branch out into the new worktree.
+                let reuse_args: Vec<&str> =
+                    vec!["worktree", "add", &worktree_path_str, &branch_name];
+                let reuse_output = run_git(&reuse_args, repo_root)?;
+                if !reuse_output.status.success() {
+                    let reuse_stderr = String::from_utf8_lossy(&reuse_output.stderr);
+                    bail!(
+                        "branch '{branch_name}' has {ahead} unmerged commit(s) ahead of \
+                         '{base}'; refusing to delete it. Tried to reuse the existing branch \
+                         but `git worktree add` failed: {reuse_stderr}. \
+                         Resolve via `loom stage merge {stage_id}` or `loom stage verify`."
+                    );
+                }
             }
         } else {
             bail!("git worktree add failed: {stderr}");
