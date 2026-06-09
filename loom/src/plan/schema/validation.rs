@@ -631,8 +631,8 @@ pub fn validate_structural_preflight(
     }
 
     // Cross-stage wiring coverage: warn when artifact coverage is absent across the DAG.
-    // This is a superset of check_artifact_wiring_coherence, so we only call this one
-    // to avoid duplicate warnings.
+    // This is the DAG-wide check; per-stage coherence is subsumed here to avoid
+    // duplicate warnings.
     warnings.extend(check_cross_stage_wiring_coverage(stages));
 
     // Build tool command patterns and their expected config files
@@ -782,42 +782,6 @@ pub(crate) fn check_wiring_pattern_quality(pattern: &str) -> Option<String> {
     }
 
     None
-}
-
-/// Check coherence between artifact declarations and wiring checks within each stage.
-///
-/// Returns warnings for Standard stages that declare artifacts but provide no wiring
-/// verification. Artifacts without wiring checks are a red flag because the plan says
-/// "these files will exist" but never verifies that they are actually connected to
-/// anything the system uses.
-///
-/// Note: `check_cross_stage_wiring_coverage` is a superset of this check and is used
-/// in `validate_structural_preflight` instead to avoid duplicate warnings. This function
-/// is retained for targeted per-stage use.
-#[allow(dead_code)]
-pub fn check_artifact_wiring_coherence(stages: &[super::types::StageDefinition]) -> Vec<String> {
-    let mut warnings = Vec::new();
-
-    for stage in stages {
-        if !matches!(stage.stage_type, super::types::StageType::Standard) {
-            continue;
-        }
-        if stage.artifacts.is_empty() {
-            continue;
-        }
-        if !stage.wiring.is_empty() || !stage.wiring_tests.is_empty() {
-            continue;
-        }
-
-        warnings.push(format!(
-            "Stage '{}': declares {} artifact(s) but has no wiring or wiring_tests checks. \
-             Consider adding wiring checks to verify the artifacts are actually integrated.",
-            stage.id,
-            stage.artifacts.len()
-        ));
-    }
-
-    warnings
 }
 
 /// Check that artifact-producing stages are covered by wiring verification somewhere in the DAG.

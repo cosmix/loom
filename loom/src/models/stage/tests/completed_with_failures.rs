@@ -30,8 +30,11 @@ fn test_completed_with_failures_cannot_transition_to_invalid_states() {
     assert!(!status.can_transition_to(&StageStatus::NeedsHandoff));
     assert!(!status.can_transition_to(&StageStatus::WaitingForInput));
     assert!(!status.can_transition_to(&StageStatus::Skipped));
-    assert!(!status.can_transition_to(&StageStatus::MergeConflict));
-    assert!(!status.can_transition_to(&StageStatus::MergeBlocked));
+    // Note: MergeConflict and MergeBlocked ARE valid now — re-verifying a
+    // fixed CompletedWithFailures stage runs progressive merge, which can
+    // surface conflicts (MergeConflict) or merge errors (MergeBlocked).
+    assert!(status.can_transition_to(&StageStatus::MergeConflict));
+    assert!(status.can_transition_to(&StageStatus::MergeBlocked));
 }
 
 #[test]

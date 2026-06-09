@@ -161,6 +161,35 @@ impl Stage {
         Ok(())
     }
 
+    /// Force the stage into `status`, bypassing transition validation.
+    ///
+    /// This is the **single sanctioned** direct-assignment API. Every place that
+    /// previously caught a `try_transition` error and assigned `stage.status`
+    /// directly should route through here so the bypass is uniform and visible.
+    ///
+    /// A forced assignment means the transition was deemed illegal by the state
+    /// machine yet applied anyway — usually because a recovery/failure path knows
+    /// better than the table, or papers over a caller whose mental model is wrong.
+    /// Either way it is noteworthy, so it logs at `tracing::error!` with the stage
+    /// id, the from/to statuses, and the caller-supplied `reason`. Prefer adding a
+    /// legal edge to `can_transition_to` (and using `try_mark_*`) over forcing.
+    ///
+    /// # Arguments
+    /// * `status` - The status to assign unconditionally
+    /// * `reason` - Why the forced assignment is being made (logged)
+    pub fn force_status_with_reason(&mut self, status: StageStatus, reason: &str) {
+        let from = self.status.clone();
+        tracing::error!(
+            stage_id = %self.id,
+            from = %from,
+            to = %status,
+            reason = %reason,
+            "Forced stage status assignment bypassing transition validation"
+        );
+        self.status = status;
+        self.updated_at = Utc::now();
+    }
+
     /// Complete the stage with validation.
     ///
     /// Computes and stores `duration_secs` from `started_at` to completion.
@@ -484,23 +513,6 @@ impl Stage {
     /// `true` if the key exists, `false` otherwise
     pub fn has_output(&self, key: &str) -> bool {
         self.outputs.iter().any(|o| o.key == key)
-    }
-
-    /// Check if this stage is a knowledge-gathering stage.
-    ///
-    /// A stage is considered a knowledge stage if:
-    /// 1. Its `stage_type` is explicitly set to `Knowledge`, OR
-    /// 2. Its ID or name contains "knowledge" (case-insensitive)
-    ///
-    /// This allows both explicit typing via plan YAML and implicit
-    /// detection based on naming conventions.
-    pub fn is_knowledge_stage(&self) -> bool {
-        self.stage_type == StageType::Knowledge
-            || (self.id.to_lowercase().contains("knowledge")
-                && !self.id.to_lowercase().contains("knowledge-distill"))
-            || (self.name.to_lowercase().contains("knowledge")
-                && !self.name.to_lowercase().contains("knowledge-distill")
-                && !self.name.to_lowercase().contains("knowledge distill"))
     }
 
     /// Check if this stage has any goal-backward verification checks defined.

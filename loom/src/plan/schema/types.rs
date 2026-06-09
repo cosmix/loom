@@ -229,6 +229,19 @@ fn default_deny_read() -> Vec<String> {
         "~/.aws/**".to_string(),
         "~/.config/gcloud/**".to_string(),
         "~/.gnupg/**".to_string(),
+        // Daemon IPC tokens — must never be readable by a sandboxed worktree
+        // agent. The broad `.work/**` allow (emitted to grant the worktree its
+        // EROFS exemption) would otherwise expose `.work/admin.token` (Admin
+        // capability) and `.work/user.token` (User capability), defeating the
+        // RPC privilege split. These deny entries must be emitted *before* the
+        // broad allow (deny-before-allow) — that ordering is handled by the
+        // settings emitter; here we only declare the carve-out. Both relative
+        // forms are listed because `.work` is a symlink and Claude Code matches
+        // patterns against the path as written.
+        ".work/admin.token".to_string(),
+        ".work/user.token".to_string(),
+        "../.work/admin.token".to_string(),
+        "../.work/user.token".to_string(),
         // Worktree escape prevention - block access to parent directories
         "../../**".to_string(),
         // Block access to other worktrees

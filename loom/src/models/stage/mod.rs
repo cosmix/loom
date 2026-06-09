@@ -5,4 +5,6 @@ mod types;
 #[cfg(test)]
 mod tests;
 
-pub use types::{ExecutionMode, Stage, StageOutput, StageStatus, StageType, WiringCheck};
+pub use types::{
+    ExecutionMode, Stage, StageOutput, StageStatus, StageType, StatusBucket, WiringCheck,
+};
