@@ -23,7 +23,9 @@ pub use work_dir::{load_config, load_config_required, Config};
 pub use stage_loading::{extract_stage_frontmatter, load_stages_from_work_dir, StageFrontmatter};
 
 // Re-export session file utilities
-pub use session_files::{find_session_for_stage, find_sessions_for_stage};
+pub use session_files::{
+    find_session_for_stage, find_sessions_for_stage, save_session, session_to_markdown,
+};
 
 // Re-export verification utilities
 pub use verifications::{

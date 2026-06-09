@@ -3,12 +3,13 @@
 //! Note: Session finding functions (find_session_for_stage, find_sessions_for_stage)
 //! are now in `crate::fs::session_files`. Import from there instead.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use std::fs;
 use std::path::Path;
 
+use crate::fs::locking::locked_read;
+use crate::fs::session_files::save_session;
 use crate::models::session::{Session, SessionStatus};
-use crate::orchestrator::continuation::session_to_markdown;
 use crate::parser::frontmatter::parse_from_markdown;
 
 /// Clean up resources associated with a completed stage
@@ -41,6 +42,11 @@ pub fn cleanup_session_resources(_stage_id: &str, session_id: &str, work_dir: &P
 }
 
 /// Update a session's status in .work/sessions/
+///
+/// Reads through the shared file lock (`locked_read`) and writes through the
+/// canonical `save_session` (`locked_write` + atomic rename) so this CLI path
+/// cannot race the daemon/monitor readers and writers that touch the same
+/// session files under locks.
 fn update_session_status(work_dir: &Path, session_id: &str, status: SessionStatus) -> Result<()> {
     let sessions_dir = work_dir.join("sessions");
     let session_path = sessions_dir.join(format!("{session_id}.md"));
@@ -49,21 +55,17 @@ fn update_session_status(work_dir: &Path, session_id: &str, status: SessionStatu
         bail!("Session file not found: {}", session_path.display());
     }
 
-    let content = fs::read_to_string(&session_path)
-        .with_context(|| format!("Failed to read session file: {}", session_path.display()))?;
+    let content = locked_read(&session_path)?;
 
     // Parse session from markdown
-    let session: Session = parse_from_markdown(&content, "Session")?;
+    let mut session: Session = parse_from_markdown(&content, "Session")?;
 
     // Update status
-    let mut session = session;
     session.status = status;
     session.last_active = chrono::Utc::now();
 
-    // Write back
-    let updated_content = session_to_markdown(&session);
-    fs::write(&session_path, updated_content)
-        .with_context(|| format!("Failed to write session file: {}", session_path.display()))?;
+    // Write back through the canonical locked + atomic path.
+    save_session(&session, work_dir)?;
 
     Ok(())
 }

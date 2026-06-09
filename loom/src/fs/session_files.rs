@@ -8,7 +8,52 @@ use anyhow::{bail, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::fs::locking::locked_write;
+use crate::models::session::Session;
 use crate::parser::markdown::MarkdownDocument;
+
+/// Persist a session to `.work/sessions/{id}.md`.
+///
+/// This is the single canonical session-persistence routine: it serializes the
+/// session via [`session_to_markdown`] and writes through
+/// [`crate::fs::locking::locked_write`] so the write is crash-atomic and
+/// serialized against the monitor/CLI/daemon readers that read the same files
+/// under locks. All call sites (orchestrator persistence, monitor handlers,
+/// continuation, merge-resolver, CLI session updates) route through here so the
+/// locking discipline cannot diverge.
+///
+/// The public signature `(session, work_dir)` is stable — external callers
+/// depend on it.
+pub fn save_session(session: &Session, work_dir: &Path) -> Result<()> {
+    let sessions_dir = work_dir.join("sessions");
+    if !sessions_dir.exists() {
+        fs::create_dir_all(&sessions_dir).context("Failed to create sessions directory")?;
+    }
+
+    let session_file = sessions_dir.join(format!("{}.md", session.id));
+    let content = session_to_markdown(session);
+
+    locked_write(&session_file, &content)
+        .with_context(|| format!("Failed to write session file: {}", session_file.display()))?;
+
+    Ok(())
+}
+
+/// Serialize a session to its on-disk markdown representation: YAML frontmatter
+/// (the authoritative machine-readable form parsed back via
+/// [`crate::parser::frontmatter::parse_from_markdown`]) followed by a
+/// human-readable body.
+pub fn session_to_markdown(session: &Session) -> String {
+    let yaml = serde_yaml::to_string(session).unwrap_or_else(|_| String::from("{}"));
+
+    format!(
+        "---\n{yaml}---\n\n# Session: {}\n\n## Details\n\n- **Status**: {:?}\n- **Stage**: {}\n- **Context**: {:.1}%\n",
+        session.id,
+        session.status,
+        session.stage_id.as_deref().unwrap_or("None"),
+        session.context_usage_percent()
+    )
+}
 
 /// Find a session file by ID or prefix.
 ///

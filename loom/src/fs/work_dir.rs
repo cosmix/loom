@@ -367,8 +367,19 @@ pub fn read_config(work_dir: &Path) -> Result<DocumentMut> {
         .with_context(|| format!("Failed to parse {}", path.display()))
 }
 
-/// Write the document back to `.work/config.toml`. Caller is responsible for
-/// holding any required lock.
+/// Write the document back to `.work/config.toml`, crash-atomically and under
+/// the `.work/` directory lock.
+///
+/// The write goes through [`crate::fs::locking::locked_write`] (temp file +
+/// `fsync` + `rename`), so a crash mid-write leaves either the old config or the
+/// fully-written new config — never a truncated file. The lock serializes
+/// against other config writers using the same module.
+///
+/// NOTE: callers performing a read-modify-write (`read_config` → mutate →
+/// `write_config`) should prefer [`update_config`], which holds the lock across
+/// the entire sequence so concurrent writers cannot lose each other's sections.
+/// A bare `write_config` only makes the final write atomic, not the surrounding
+/// read-modify-write.
 pub fn write_config(work_dir: &Path, doc: &DocumentMut) -> Result<()> {
     let path = config_path(work_dir);
     if let Some(parent) = path.parent() {
@@ -377,9 +388,42 @@ pub fn write_config(work_dir: &Path, doc: &DocumentMut) -> Result<()> {
                 .with_context(|| format!("Failed to create {}", parent.display()))?;
         }
     }
-    fs::write(&path, doc.to_string())
+    crate::fs::locking::locked_write(&path, &doc.to_string())
         .with_context(|| format!("Failed to write {}", path.display()))?;
     Ok(())
+}
+
+/// Read-modify-write `.work/config.toml` while holding the `.work/` directory
+/// lock for the whole sequence.
+///
+/// This is the lost-update-safe way to mutate the config: the read, the
+/// `modify` closure, and the atomic write all happen under a single exclusive
+/// directory lock, so a concurrent daemon plan-rename and a CLI section write
+/// can no longer interleave and drop each other's sections.
+pub fn update_config<F>(work_dir: &Path, modify: F) -> Result<()>
+where
+    F: FnOnce(&mut DocumentMut) -> Result<()>,
+{
+    let path = config_path(work_dir);
+    if let Some(parent) = path.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create {}", parent.display()))?;
+        }
+    }
+
+    crate::fs::locking::locked_update(&path, |existing| {
+        let mut doc = if existing.is_empty() {
+            DocumentMut::new()
+        } else {
+            existing
+                .parse::<DocumentMut>()
+                .with_context(|| format!("Failed to parse {}", path.display()))?
+        };
+        modify(&mut doc)?;
+        Ok(doc.to_string())
+    })
+    .with_context(|| format!("Failed to update {}", path.display()))
 }
 
 fn read_section<T: serde::de::DeserializeOwned>(
@@ -404,8 +448,6 @@ fn read_section<T: serde::de::DeserializeOwned>(
 }
 
 fn write_section<T: serde::Serialize>(work_dir: &Path, section: &str, value: &T) -> Result<()> {
-    let mut doc = read_config(work_dir)?;
-
     // Serialize the typed value to a toml::Value, then convert to a
     // toml_edit Item by parsing its string representation.
     let toml_value = toml::Value::try_from(value)
@@ -421,13 +463,19 @@ fn write_section<T: serde::Serialize>(work_dir: &Path, section: &str, value: &T)
         .parse()
         .with_context(|| format!("Failed to re-parse rendered [{section}] section"))?;
 
-    if let Some(item) = new_doc.get(section) {
-        doc.insert(section, item.clone());
-    } else {
-        // Section serialized to nothing (empty table) — remove from doc.
-        doc.remove(section);
-    }
-    write_config(work_dir, &doc)
+    let section = section.to_string();
+    // RMW under the directory lock so a concurrent writer (e.g. the daemon
+    // plan-rename touching `[plan]`) cannot drop the section we are inserting,
+    // nor we theirs.
+    update_config(work_dir, |doc| {
+        if let Some(item) = new_doc.get(&section) {
+            doc.insert(&section, item.clone());
+        } else {
+            // Section serialized to nothing (empty table) — remove from doc.
+            doc.remove(&section);
+        }
+        Ok(())
+    })
 }
 
 /// Read the persisted plan-level sandbox config (`[plan_sandbox]`).
@@ -684,6 +732,58 @@ mod tests {
         )
         .unwrap();
         assert!(read_plan_sandbox(&work).unwrap().is_none());
+    }
+
+    #[test]
+    fn update_config_round_trips_under_lock() {
+        let temp = TempDir::new().unwrap();
+        let work = init_work(&temp);
+        update_config(&work, |doc| {
+            let plan = doc.entry("plan").or_insert(toml_edit::table());
+            if let Some(t) = plan.as_table_mut() {
+                t["plan_id"] = toml_edit::value("abc");
+            }
+            Ok(())
+        })
+        .unwrap();
+        let doc = read_config(&work).unwrap();
+        assert_eq!(doc["plan"]["plan_id"].as_str(), Some("abc"));
+        // No stray temp file left behind by the atomic write.
+        assert!(!work.join("config.toml.tmp").exists());
+    }
+
+    #[test]
+    fn write_section_preserves_concurrently_written_plan_section() {
+        // Simulates the daemon plan-rename ([plan]) and a CLI section write
+        // ([plan_sandbox]) not clobbering each other. Sequential here, but the
+        // point is that write_section reads-modifies-writes under the lock and
+        // therefore preserves the pre-existing [plan] section.
+        let temp = TempDir::new().unwrap();
+        let work = init_work(&temp);
+
+        // Daemon writes the plan section first.
+        update_config(&work, |doc| {
+            let plan = doc.entry("plan").or_insert(toml_edit::table());
+            if let Some(t) = plan.as_table_mut() {
+                t["source_path"] = toml_edit::value("doc/plans/PLAN-x.md");
+                t["plan_id"] = toml_edit::value("x");
+            }
+            Ok(())
+        })
+        .unwrap();
+
+        // CLI writes a different section.
+        let mut sandbox = SandboxConfig::default();
+        sandbox.network.allowed_domains = vec!["github.com".to_string()];
+        write_plan_sandbox(&work, &sandbox).unwrap();
+
+        // Both sections survive.
+        let doc = read_config(&work).unwrap();
+        assert_eq!(
+            doc["plan"]["source_path"].as_str(),
+            Some("doc/plans/PLAN-x.md")
+        );
+        assert!(doc.get("plan_sandbox").is_some());
     }
 
     /// Regression: a stale `[project_execution]` table left over from the

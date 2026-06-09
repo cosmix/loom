@@ -108,25 +108,12 @@ pub(super) trait Persistence {
     }
 
     /// Save session state to .work/sessions/
+    ///
+    /// Delegates to the single canonical `save_session` in `fs/session_files`
+    /// so the daemon, monitor thread, and CLI all share one locked + atomic
+    /// persistence routine and one markdown body.
     fn save_session(&self, session: &Session) -> Result<()> {
-        let sessions_dir = self.persistence_work_dir().join("sessions");
-        if !sessions_dir.exists() {
-            std::fs::create_dir_all(&sessions_dir)
-                .context("Failed to create sessions directory")?;
-        }
-
-        let session_path = sessions_dir.join(format!("{}.md", session.id));
-
-        let yaml = serde_yaml::to_string(session).context("Failed to serialize session to YAML")?;
-
-        let content = format!(
-            "---\n{}---\n\n# Session: {}\n\nStatus: {:?}\n",
-            yaml, session.id, session.status
-        );
-
-        locked_write(&session_path, &content)?;
-
-        Ok(())
+        crate::fs::session_files::save_session(session, self.persistence_work_dir())
     }
 }
 
