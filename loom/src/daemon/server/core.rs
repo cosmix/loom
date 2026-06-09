@@ -32,6 +32,11 @@ pub struct DaemonServer {
     pub(super) connection_count: Arc<AtomicUsize>,
     pub(super) status_subscribers: Arc<Mutex<Vec<UnixStream>>>,
     pub(super) log_subscribers: Arc<Mutex<Vec<UnixStream>>>,
+    /// Set to `true` only after this process has acquired the singleton flock
+    /// AND bound the socket. `Drop::cleanup()` is gated on this so a daemon that
+    /// loses the singleton race (or fails before bind) never deletes the live
+    /// daemon's socket/PID/admin.token/log. See A-1/O-7.
+    pub(super) was_running: Arc<AtomicBool>,
 }
 
 impl DaemonServer {
@@ -65,6 +70,7 @@ impl DaemonServer {
             connection_count: Arc::new(AtomicUsize::new(0)),
             status_subscribers: Arc::new(Mutex::new(Vec::new())),
             log_subscribers: Arc::new(Mutex::new(Vec::new())),
+            was_running: Arc::new(AtomicBool::new(false)),
         }
     }
 

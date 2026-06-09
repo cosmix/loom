@@ -104,14 +104,10 @@ impl DaemonServer {
     /// # Returns
     /// `Ok(())` on success, error if daemon fails to start
     pub fn start(&self) -> Result<()> {
-        // Remove stale socket if it exists (ignore NotFound to avoid TOCTOU race)
-        if let Err(e) = fs::remove_file(&self.socket_path) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                return Err(e).context("Failed to remove stale socket file");
-            }
-        }
-
-        // Create pipe for error propagation from grandchild to original parent
+        // Create pipe for error propagation from grandchild to original parent.
+        // The success byte is written by `run_server` only AFTER the socket is
+        // bound (see A-1/O-7), so the parent's `loom run` exits 0 only when the
+        // daemon is genuinely listening.
         let (read_fd, write_fd) = pipe().context("Failed to create pipe")?;
 
         // First fork - parent exits, child continues
@@ -157,6 +153,31 @@ impl DaemonServer {
             }
         }
 
+        // CRITICAL (A-1/O-7): Acquire the singleton flock BEFORE any destructive
+        // op (socket unlink, PID overwrite, token regeneration, log truncation).
+        // A losing race or a corrupt lock must NOT delete the live daemon's
+        // control-plane files. `Drop`/`cleanup` are gated on `was_running`, which
+        // is only set after a successful socket bind in `run_server`. If lock
+        // acquisition fails here, we return Err before touching anything; the
+        // success byte is never written so the parent reports failure.
+        let lock_guard = match self.acquire_exclusive_lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                // We do NOT hold the lock — `was_running` is false, so the Drop
+                // cleanup is a no-op and the winning daemon's files survive.
+                return Err(e).context("Failed to acquire daemon lock");
+            }
+        };
+
+        // From here on we hold the singleton lock; destructive setup is safe.
+
+        // Remove stale socket if it exists (ignore NotFound to avoid TOCTOU race)
+        if let Err(e) = fs::remove_file(&self.socket_path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                return Err(e).context("Failed to remove stale socket file");
+            }
+        }
+
         // Write PID file
         fs::write(&self.pid_path, format!("{}", std::process::id()))
             .context("Failed to write PID file")?;
@@ -172,8 +193,9 @@ impl DaemonServer {
         //   verification-bypass flags `--no-verify`, `--force-unsafe`,
         //   `--assume-merged`). Owner-only so a stage-confined agent cannot
         //   read it.
-        // - user.token  (mode 0o644): used for Ping / Subscribe / Unsubscribe /
-        //   DisputeCriteria.
+        // - user.token  (mode 0o600): used for Ping / Subscribe / Unsubscribe /
+        //   DisputeCriteria. Owner-only so another local user cannot read it
+        //   and exercise User-capability RPCs (S-8a).
         //
         // 32-byte / 256-bit random hex from /dev/urandom (OsRng-equivalent).
         let admin_token = generate_token_hex()?;
@@ -191,7 +213,7 @@ impl DaemonServer {
 
         let user_path = self.work_dir.join(USER_TOKEN_FILE);
         fs::write(&user_path, &user_token).context("Failed to write user token file")?;
-        fs::set_permissions(&user_path, Permissions::from_mode(0o644))
+        fs::set_permissions(&user_path, Permissions::from_mode(0o600))
             .context("Failed to set user token file permissions")?;
 
         // Redirect stdout and stderr to log file
@@ -206,13 +228,9 @@ impl DaemonServer {
             libc::dup2(log_file.as_raw_fd(), 2);
         }
 
-        // Signal success to original parent AFTER all initialization succeeds
-        let success_signal = [1u8];
-        let _ = nix::unistd::write(&write_fd, &success_signal);
-        drop(write_fd); // Close pipe after writing success
-
-        // Run the server
-        self.run_server()
+        // Run the server. The success byte is signaled to the original parent
+        // from inside `run_server`, immediately after the socket bind succeeds.
+        self.run_server(lock_guard, Some(write_fd))
     }
 
     /// Run the daemon in foreground (for testing).
@@ -220,6 +238,14 @@ impl DaemonServer {
     /// # Returns
     /// `Ok(())` on success, error if server fails to start
     pub fn run_foreground(&self) -> Result<()> {
+        // Acquire the singleton lock BEFORE any destructive op (A-1/O-7). If a
+        // daemon is already running this fails and we touch nothing; `was_running`
+        // stays false so Drop cleanup is a no-op and the live daemon's files are
+        // preserved.
+        let lock_guard = self
+            .acquire_exclusive_lock()
+            .context("Failed to acquire daemon lock")?;
+
         // Write PID file manually
         fs::write(&self.pid_path, format!("{}", std::process::id()))
             .context("Failed to write PID file")?;
@@ -235,7 +261,7 @@ impl DaemonServer {
             }
         }
 
-        self.run_server()
+        self.run_server(lock_guard, None)
     }
 
     /// Acquire an exclusive flock on orchestrator.lock to prevent multiple daemons.
@@ -304,13 +330,21 @@ impl DaemonServer {
     }
 
     /// Main server loop (listens on socket and accepts connections).
-    pub(super) fn run_server(&self) -> Result<()> {
-        // Acquire exclusive lock BEFORE anything else — prevents multiple daemons.
-        // The _lock_guard is kept alive for the entire server lifetime; the OS
-        // releases the flock when this process exits (even via SIGKILL).
-        let _lock_guard = self
-            .acquire_exclusive_lock()
-            .context("Failed to acquire daemon lock")?;
+    ///
+    /// `lock_guard` is the held singleton flock acquired by the caller BEFORE any
+    /// destructive setup (A-1/O-7). It is kept alive for the entire server
+    /// lifetime; the OS releases the flock when this process exits (even via
+    /// SIGKILL). `success_pipe`, when present, is the write end of the start
+    /// pipe — the success byte is written to it only after the socket bind
+    /// succeeds, so the parent `loom run` reports failure if the daemon could
+    /// not actually start listening.
+    pub(super) fn run_server(
+        &self,
+        lock_guard: File,
+        success_pipe: Option<std::os::fd::OwnedFd>,
+    ) -> Result<()> {
+        // The guard is owned for the full server lifetime.
+        let _lock_guard = lock_guard;
 
         // Set restrictive umask before socket bind to close TOCTOU window
         // between bind() and chmod(). The socket is created with permissions
@@ -327,6 +361,22 @@ impl DaemonServer {
         // but being explicit is safer and documents intent)
         fs::set_permissions(&self.socket_path, Permissions::from_mode(0o600))
             .context("Failed to set socket permissions")?;
+
+        // We now hold the singleton lock AND own a bound socket: this process is
+        // the live daemon. Mark `was_running` so Drop cleanup is allowed to remove
+        // OUR control-plane files on exit. (A-1/O-7) Anything that failed before
+        // this point leaves `was_running` false, so a losing-race or pre-bind
+        // failure never deletes the winning daemon's files.
+        self.was_running.store(true, Ordering::SeqCst);
+
+        // Signal success to the original parent now that the socket is bound and
+        // permissions are set. Closing the pipe afterwards lets the parent's read
+        // return. Only the daemonized `start()` path supplies a pipe.
+        if let Some(write_fd) = success_pipe {
+            let success_signal = [1u8];
+            let _ = nix::unistd::write(&write_fd, &success_signal);
+            drop(write_fd);
+        }
 
         // Set socket to non-blocking mode for graceful shutdown
         listener
@@ -418,7 +468,30 @@ impl DaemonServer {
     }
 
     /// Clean up socket, PID, token, and completion marker files.
+    ///
+    /// CRITICAL (A-1/O-7): This only removes files when THIS process was the live
+    /// daemon — i.e. it acquired the singleton lock and bound the socket
+    /// (`was_running == true`). A `DaemonServer` that lost the singleton race or
+    /// failed before binding must NEVER delete the winning daemon's
+    /// socket/PID/admin.token/user.token/log. As defense-in-depth we also verify
+    /// the lock file still names our PID before deleting.
     pub(super) fn cleanup(&self) -> Result<()> {
+        if !self.was_running.load(Ordering::SeqCst) {
+            // We never became the live daemon — touch nothing.
+            return Ok(());
+        }
+        // Defense-in-depth: only clean up if the lock file still records OUR PID.
+        // If another daemon has since claimed the lock and overwritten the PID,
+        // refuse to delete its files.
+        let lock_path = self.work_dir.join("orchestrator.lock");
+        if let Ok(contents) = fs::read_to_string(&lock_path) {
+            if let Ok(lock_pid) = contents.trim().parse::<u32>() {
+                if lock_pid != std::process::id() {
+                    return Ok(());
+                }
+            }
+        }
+
         // Remove files directly, ignoring NotFound to avoid TOCTOU race
         if let Err(e) = fs::remove_file(&self.socket_path) {
             if e.kind() != std::io::ErrorKind::NotFound {

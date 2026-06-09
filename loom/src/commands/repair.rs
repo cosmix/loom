@@ -9,7 +9,9 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 
+use crate::daemon::{DaemonServer, DaemonStatus};
 use crate::fs::permissions::LOOM_PERMISSIONS;
 use crate::fs::work_dir::load_config;
 use crate::fs::work_integrity::{
@@ -545,7 +547,136 @@ fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
         }
     }
 
+    // Check 12: Daemon health — detect the singleton/socket failure modes
+    // documented in concerns.md (2026-05-13). These are diagnostic-only: there is
+    // no safe automatic fix (killing the wrong daemon loses orchestration state),
+    // so each is reported with manual remediation guidance.
+    {
+        let work_dir = repo_root.join(".work");
+        if work_dir.is_dir() {
+            // (1) More than one `loom run` process alive is always wrong.
+            let run_pids = find_loom_run_pids();
+            if run_pids.len() > 1 {
+                let pid_list = run_pids
+                    .iter()
+                    .map(|p| p.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let lock_pid = DaemonServer::check_lock(&work_dir);
+                let keep_hint = match lock_pid {
+                    Some(pid) => format!(
+                        "Keep the lock holder (PID {pid}); stop the others with `kill <pid>`"
+                    ),
+                    None => "Stop the stale daemons with `kill <pid>` (no lock holder found)"
+                        .to_string(),
+                };
+                issues.push(RepairIssue {
+                    severity: Severity::Critical,
+                    description: format!("Multiple 'loom run' processes alive (PIDs: {pid_list})"),
+                    fix_description: keep_hint,
+                });
+            }
+
+            // (2)/(3) Lock held by a live daemon, but PID file or socket missing.
+            if let Some(lock_pid) = DaemonServer::check_lock(&work_dir) {
+                if crate::process::is_process_alive(lock_pid) {
+                    let pid_path = work_dir.join("orchestrator.pid");
+                    let socket_path = work_dir.join("orchestrator.sock");
+
+                    if !pid_path.exists() {
+                        issues.push(RepairIssue {
+                            severity: Severity::Warning,
+                            description: format!(
+                                "Daemon lock held (PID {lock_pid}) but orchestrator.pid is missing"
+                            ),
+                            fix_description:
+                                "Restart the daemon: `loom stop` then `loom run` (PID file was lost)"
+                                    .to_string(),
+                        });
+                    }
+
+                    if !socket_path.exists() {
+                        issues.push(RepairIssue {
+                            severity: Severity::Critical,
+                            description: format!(
+                                "Daemon lock held (PID {lock_pid}) but orchestrator.sock is missing (daemon unreachable)"
+                            ),
+                            fix_description:
+                                "Restart the daemon: `kill <pid>` then `loom run` (control socket was lost)"
+                                    .to_string(),
+                        });
+                    }
+                }
+            } else if DaemonServer::check_status(&work_dir) == DaemonStatus::ProcessOnly {
+                // No flock holder, but a daemon process appears alive with an
+                // unreachable socket (legacy daemon started before the flock fix).
+                issues.push(RepairIssue {
+                    severity: Severity::Warning,
+                    description: "Daemon process appears alive but its socket is unreachable"
+                        .to_string(),
+                    fix_description: "Restart the daemon: `loom stop` then `loom run`".to_string(),
+                });
+            }
+        }
+    }
+
     issues
+}
+
+/// Enumerate the PIDs of currently-running `loom run` processes.
+///
+/// Uses `ps aux` (portable across Linux and macOS, matching the existing
+/// process-scan pattern in `native/pid_tracking.rs`) and matches command lines
+/// containing the `loom run` invocation, excluding this `loom repair` process.
+/// On any `ps` failure returns an empty vec — the daemon-health checks degrade to
+/// "no duplicates detected" rather than failing the whole repair run.
+fn find_loom_run_pids() -> Vec<u32> {
+    let our_pid = std::process::id();
+    let output = match Command::new("ps")
+        .arg("axww")
+        .arg("-o")
+        .arg("pid=,args=")
+        .output()
+    {
+        Ok(o) if o.status.success() => o,
+        _ => return Vec::new(),
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut pids = Vec::new();
+    for line in stdout.lines() {
+        let line = line.trim_start();
+        let mut parts = line.splitn(2, char::is_whitespace);
+        let pid: u32 = match parts.next().and_then(|p| p.trim().parse().ok()) {
+            Some(p) => p,
+            None => continue,
+        };
+        let args = parts.next().unwrap_or("");
+        if pid == our_pid {
+            continue;
+        }
+        // Match the `loom run` invocation. Require the program component to end in
+        // `loom` and the next token to be `run` so unrelated commands that merely
+        // mention the words (e.g. an editor on this file) are not counted.
+        if is_loom_run_cmdline(args) {
+            pids.push(pid);
+        }
+    }
+    pids
+}
+
+/// Return true if `args` is a `loom run ...` command line.
+fn is_loom_run_cmdline(args: &str) -> bool {
+    let mut tokens = args.split_whitespace();
+    let Some(program) = tokens.next() else {
+        return false;
+    };
+    // The program token may be a path like `/usr/local/bin/loom` or `loom`.
+    let prog_name = program.rsplit('/').next().unwrap_or(program);
+    if prog_name != "loom" {
+        return false;
+    }
+    tokens.next() == Some("run")
 }
 
 /// Attempt to fix detected issues
@@ -861,4 +992,34 @@ fn fix_settings_skill_refs() -> Result<()> {
     fs::write(&settings_path, &content)
         .with_context(|| format!("Failed to write {}", settings_path.display()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn loom_run_cmdline_matches_plain_and_pathed() {
+        assert!(is_loom_run_cmdline("loom run"));
+        assert!(is_loom_run_cmdline("loom run --watch --max-parallel 4"));
+        assert!(is_loom_run_cmdline("/usr/local/bin/loom run"));
+        assert!(is_loom_run_cmdline(
+            "/home/u/.cargo/bin/loom run --no-merge"
+        ));
+    }
+
+    #[test]
+    fn loom_run_cmdline_rejects_non_run_and_unrelated() {
+        // Other loom subcommands are not the daemon.
+        assert!(!is_loom_run_cmdline("loom status"));
+        assert!(!is_loom_run_cmdline("loom stop"));
+        // A bare `loom` with no subcommand.
+        assert!(!is_loom_run_cmdline("loom"));
+        // Unrelated commands that merely mention the words.
+        assert!(!is_loom_run_cmdline("vim loom/src/commands/run/mod.rs"));
+        assert!(!is_loom_run_cmdline("cargo run -- loom"));
+        // A program named like loom but not exactly loom.
+        assert!(!is_loom_run_cmdline("loomx run"));
+        assert!(!is_loom_run_cmdline(""));
+    }
 }

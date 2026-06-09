@@ -6,6 +6,26 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+/// Write timeout applied to each subscriber stream clone at subscription time.
+///
+/// The status/log broadcaster holds the subscriber mutex while writing to every
+/// subscriber. Without a write timeout, a subscriber that stops reading (e.g. a
+/// TUI suspended with Ctrl+Z) fills its socket buffer and blocks the broadcaster
+/// forever while holding the lock, stalling all status updates and every new
+/// `SubscribeStatus`/`SubscribeLogs` (O-15). With a timeout, the blocked write
+/// fails and `retain_mut` in the broadcaster drops that subscriber.
+const SUBSCRIBER_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Read timeout applied to each accepted client connection (O-21).
+///
+/// A client that connects but never sends a complete request — or dribbles bytes
+/// to keep the connection nominally alive — otherwise pins its handler thread and
+/// a slot in the [`MAX_CONNECTIONS`](super::core::MAX_CONNECTIONS) cap forever,
+/// eventually starving legitimate clients (including `Stop`). 30s is generous for
+/// any real request: the CLI sends one immediately on connect.
+const CLIENT_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Filename for the user-readable token (mode 0o644, lives under `.work/`).
 pub(super) const USER_TOKEN_FILE: &str = "user.token";
@@ -92,6 +112,21 @@ pub fn verify_for_capability(
     ct_eq(&expected, provided_token)
 }
 
+/// Clone a client stream for use as a broadcast subscriber, applying a write
+/// timeout so a stalled subscriber cannot freeze the broadcaster (O-15).
+///
+/// Returns the configured clone, or a human-readable error message suitable for
+/// a [`Response::Error`] if cloning or setting the timeout fails.
+fn prepare_subscriber_clone(stream: &UnixStream) -> std::result::Result<UnixStream, String> {
+    let clone = stream
+        .try_clone()
+        .map_err(|e| format!("Failed to clone stream: {e}"))?;
+    clone
+        .set_write_timeout(Some(SUBSCRIBER_WRITE_TIMEOUT))
+        .map_err(|e| format!("Failed to set subscriber write timeout: {e}"))?;
+    Ok(clone)
+}
+
 /// Handle a client connection.
 pub fn handle_client_connection(
     mut stream: UnixStream,
@@ -104,6 +139,14 @@ pub fn handle_client_connection(
     // a non-blocking listener may inherit non-blocking mode, causing
     // read_message to fail with WouldBlock immediately.
     stream.set_nonblocking(false)?;
+
+    // Apply a read timeout so an idle or dribbling client cannot pin this thread
+    // (and a slot in the 100-connection cap) indefinitely (O-21). A request that
+    // does not arrive within the window causes `read_message` to error, ending
+    // the handler. A subscriber that has already registered its broadcast clone
+    // keeps receiving updates even after its handler thread exits, because the
+    // clone is an independent fd held by the broadcaster.
+    stream.set_read_timeout(Some(CLIENT_READ_TIMEOUT))?;
 
     loop {
         let request: Request = match read_message(&mut stream) {
@@ -148,55 +191,51 @@ pub fn handle_client_connection(
                 break;
             }
             Request::SubscribeStatus { .. } => {
-                if let Ok(stream_clone) = stream.try_clone() {
-                    // Acquire lock, add subscriber, release lock before I/O
-                    let lock_result = status_subscribers.lock().map(|mut subs| {
-                        subs.push(stream_clone);
-                    });
-                    // Write response AFTER releasing the lock
-                    if lock_result.is_ok() {
-                        write_message(&mut stream, &Response::Ok)?;
-                    } else {
-                        write_message(
-                            &mut stream,
-                            &Response::Error {
-                                message: "Failed to acquire subscriber lock".to_string(),
-                            },
-                        )?;
+                match prepare_subscriber_clone(&stream) {
+                    Ok(stream_clone) => {
+                        // Acquire lock, add subscriber, release lock before I/O
+                        let lock_result = status_subscribers.lock().map(|mut subs| {
+                            subs.push(stream_clone);
+                        });
+                        // Write response AFTER releasing the lock
+                        if lock_result.is_ok() {
+                            write_message(&mut stream, &Response::Ok)?;
+                        } else {
+                            write_message(
+                                &mut stream,
+                                &Response::Error {
+                                    message: "Failed to acquire subscriber lock".to_string(),
+                                },
+                            )?;
+                        }
                     }
-                } else {
-                    write_message(
-                        &mut stream,
-                        &Response::Error {
-                            message: "Failed to clone stream".to_string(),
-                        },
-                    )?;
+                    Err(message) => {
+                        write_message(&mut stream, &Response::Error { message })?;
+                    }
                 }
             }
             Request::SubscribeLogs { .. } => {
-                if let Ok(stream_clone) = stream.try_clone() {
-                    // Acquire lock, add subscriber, release lock before I/O
-                    let lock_result = log_subscribers.lock().map(|mut subs| {
-                        subs.push(stream_clone);
-                    });
-                    // Write response AFTER releasing the lock
-                    if lock_result.is_ok() {
-                        write_message(&mut stream, &Response::Ok)?;
-                    } else {
-                        write_message(
-                            &mut stream,
-                            &Response::Error {
-                                message: "Failed to acquire subscriber lock".to_string(),
-                            },
-                        )?;
+                match prepare_subscriber_clone(&stream) {
+                    Ok(stream_clone) => {
+                        // Acquire lock, add subscriber, release lock before I/O
+                        let lock_result = log_subscribers.lock().map(|mut subs| {
+                            subs.push(stream_clone);
+                        });
+                        // Write response AFTER releasing the lock
+                        if lock_result.is_ok() {
+                            write_message(&mut stream, &Response::Ok)?;
+                        } else {
+                            write_message(
+                                &mut stream,
+                                &Response::Error {
+                                    message: "Failed to acquire subscriber lock".to_string(),
+                                },
+                            )?;
+                        }
                     }
-                } else {
-                    write_message(
-                        &mut stream,
-                        &Response::Error {
-                            message: "Failed to clone stream".to_string(),
-                        },
-                    )?;
+                    Err(message) => {
+                        write_message(&mut stream, &Response::Error { message })?;
+                    }
                 }
             }
             Request::Unsubscribe { .. } => {

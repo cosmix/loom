@@ -15,8 +15,13 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 /// Interval between status broadcasts in milliseconds.
-/// Reduced to 200ms for faster shutdown detection after orchestration completes.
-const STATUS_BROADCAST_INTERVAL_MS: u64 = 200;
+///
+/// Set to 1s (P-1): the prior 200ms cadence drove a full stage rescan plus git
+/// subprocesses five times a second for the daemon's entire life — even with
+/// zero subscribers, since the emptiness check happened *after* collection.
+/// Status updates are now skipped entirely when no one is subscribed (see
+/// `run_status_broadcaster`), and 1s is ample for a live TUI.
+const STATUS_BROADCAST_INTERVAL_MS: u64 = 1000;
 
 /// Interval between log file rotation checks in iterations.
 const LOG_ROTATION_CHECK_INTERVAL: u32 = 50; // ~5 seconds at 100ms sleep
@@ -144,7 +149,23 @@ fn run_status_broadcaster(
     let mut completion_sent = false;
 
     while !shutdown_flag.load(Ordering::Relaxed) {
-        // Collect data outside of lock to minimize lock hold time
+        // P-1: short-circuit BEFORE collecting status. `collect_status` re-parses
+        // every stage file and spawns several git subprocesses per worktree; doing
+        // that work and then discarding it because nobody is subscribed wasted
+        // 20-60% of a core, 24/7. Acquire the subscriber lock only briefly to test
+        // emptiness, then release it before any I/O.
+        let has_subscribers = {
+            let subs = lock_or_recover(&status_subscribers);
+            !subs.is_empty()
+        };
+
+        if !has_subscribers {
+            thread::sleep(Duration::from_millis(STATUS_BROADCAST_INTERVAL_MS));
+            continue;
+        }
+
+        // Collect data outside of the lock to minimize lock hold time. Only
+        // reached when at least one subscriber is connected.
         let completion_response = if !completion_sent && completion_marker_path.exists() {
             collect_completion_summary(work_dir).ok().map(|summary| {
                 completion_sent = true;
@@ -160,6 +181,8 @@ fn run_status_broadcaster(
         let subscriber_count = {
             let mut subs = lock_or_recover(&status_subscribers);
             if subs.is_empty() {
+                // A subscriber may have disconnected between the emptiness check
+                // and now; nothing to send.
                 0
             } else {
                 // Send completion notification if we have one

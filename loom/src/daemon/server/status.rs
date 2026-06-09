@@ -3,12 +3,13 @@
 use super::super::protocol::{CompletionSummary, Response, StageCompletionInfo, StageInfo};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::git::branch::{branch_name_for_stage, resolve_target_branch};
-use crate::models::stage::{Stage, StageStatus};
+use crate::models::stage::{Stage, StatusBucket};
 use crate::models::worktree::WorktreeStatus;
 use crate::parser::frontmatter::{extract_yaml_frontmatter, parse_from_markdown};
 
@@ -22,6 +23,17 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
+
+    // P-1(c): resolve the target branch ONCE per collection. `is_manually_merged`
+    // previously re-read config.toml and ran `git symbolic-ref` for every stage;
+    // the result is invariant across a single collection pass.
+    let base_branch = crate::fs::parse_base_branch_from_config(work_dir).unwrap_or(None);
+    let target_branch = resolve_target_branch(&base_branch, &repo_root);
+
+    // P-5: read soft-signals ONCE per collection rather than full-scanning the
+    // append-only JSONL file for every stage. Build the set of session IDs that
+    // currently have an active `PossiblyStuck` signal.
+    let stuck_sessions = active_stuck_sessions(work_dir);
 
     let mut stages_executing = Vec::new();
     let mut stages_pending = Vec::new();
@@ -40,15 +52,19 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
                                 get_session_pid(&sessions_dir, stage.session.as_deref());
                             let started_at = stage.started_at.unwrap_or_else(chrono::Utc::now);
                             let completed_at = stage.completed_at;
-                            let worktree_status =
-                                detect_worktree_status(&stage.id, &repo_root, work_dir);
+                            let worktree_status = detect_worktree_status_with_target(
+                                &stage.id,
+                                &repo_root,
+                                &target_branch,
+                            );
 
                             let model = stage.effective_model().to_string();
                             let is_possibly_stuck = stage
                                 .session
                                 .as_deref()
-                                .map(|sid| has_active_stuck_signal(work_dir, sid))
+                                .map(|sid| stuck_sessions.contains(sid))
                                 .unwrap_or(false);
+                            let bucket = stage.status.bucket();
                             let stage_info = StageInfo {
                                 id: stage.id,
                                 name: stage.name,
@@ -63,29 +79,14 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
                                 is_possibly_stuck,
                             };
 
-                            // Categorize into lists based on status.
-                            // NeedsHandoff and WaitingForInput are active states where
-                            // work is ongoing, so they belong in executing (matching CLI semantics).
-                            match stage.status {
-                                StageStatus::Executing
-                                | StageStatus::NeedsHandoff
-                                | StageStatus::WaitingForInput => {
-                                    stages_executing.push(stage_info);
-                                }
-                                StageStatus::WaitingForDeps | StageStatus::Queued => {
-                                    stages_pending.push(stage_info);
-                                }
-                                StageStatus::Completed | StageStatus::Skipped => {
-                                    stages_completed.push(stage_info);
-                                }
-                                StageStatus::Blocked
-                                | StageStatus::MergeConflict
-                                | StageStatus::CompletedWithFailures
-                                | StageStatus::MergeBlocked
-                                | StageStatus::NeedsHumanReview
-                                | StageStatus::NeedsAdjudication => {
-                                    stages_blocked.push(stage_info);
-                                }
+                            // D-5: categorize via the canonical StageStatus::bucket()
+                            // instead of a hand-synced match block. NeedsHandoff and
+                            // WaitingForInput map to Executing (active work ongoing).
+                            match bucket {
+                                StatusBucket::Executing => stages_executing.push(stage_info),
+                                StatusBucket::Pending => stages_pending.push(stage_info),
+                                StatusBucket::Completed => stages_completed.push(stage_info),
+                                StatusBucket::Blocked => stages_blocked.push(stage_info),
                             }
                         }
                     }
@@ -102,16 +103,21 @@ pub fn collect_status(work_dir: &Path) -> Result<Response> {
     })
 }
 
-/// Check whether the monitor has emitted an active `PossiblyStuck` soft signal
-/// for the given session. Mirrors the logic in `commands::status::data::collector`
-/// so static, compact, and live status modes render the same `[stuck?]` flag.
-fn has_active_stuck_signal(work_dir: &Path, session_id: &str) -> bool {
-    use crate::orchestrator::monitor::soft_signals::{read_active_for_session, SoftSignal};
+/// Collect the set of session IDs that currently have an active `PossiblyStuck`
+/// soft signal, reading the soft-signals file exactly once (P-5).
+///
+/// Mirrors the per-session check in `commands::status::data::collector` so
+/// static, compact, and live status modes render the same `[stuck?]` flag.
+fn active_stuck_sessions(work_dir: &Path) -> HashSet<String> {
+    use crate::orchestrator::monitor::soft_signals::{read_active, SoftSignal};
     let now = std::time::SystemTime::now();
-    read_active_for_session(work_dir, now, session_id)
+    read_active(work_dir, now)
         .unwrap_or_default()
         .into_iter()
-        .any(|s| matches!(s, SoftSignal::PossiblyStuck { .. }))
+        .map(|s| match s {
+            SoftSignal::PossiblyStuck { session_id, .. } => session_id,
+        })
+        .collect()
 }
 
 /// Detect the worktree status for a stage.
@@ -121,10 +127,33 @@ fn has_active_stuck_signal(work_dir: &Path, session_id: &str) -> bool {
 /// - Whether there are merge conflicts
 /// - Whether a merge is in progress
 /// - Whether the branch was manually merged outside of loom
+///
+/// Test seam: production `collect_status` calls `detect_worktree_status_with_target`
+/// with a once-per-pass target branch (P-1(c)); this config-resolving wrapper is
+/// retained for unit tests that don't precompute the target branch.
+#[cfg(test)]
 pub fn detect_worktree_status(
     stage_id: &str,
     repo_root: &Path,
     work_dir: &Path,
+) -> Option<WorktreeStatus> {
+    // Resolve the target branch from config (respects base_branch setting) and
+    // delegate. `collect_status` instead calls the `_with_target` variant with a
+    // once-per-pass target branch (P-1(c)).
+    let base_branch = crate::fs::parse_base_branch_from_config(work_dir).unwrap_or(None);
+    let target_branch = resolve_target_branch(&base_branch, repo_root);
+    detect_worktree_status_with_target(stage_id, repo_root, &target_branch)
+}
+
+/// Detect the worktree status for a stage, using a precomputed `target_branch`.
+///
+/// This is the hot-path variant called once per stage by `collect_status`; the
+/// caller resolves the target branch a single time per collection rather than
+/// re-reading config + spawning `git symbolic-ref` for every stage (P-1(c)).
+fn detect_worktree_status_with_target(
+    stage_id: &str,
+    repo_root: &Path,
+    target_branch: &str,
 ) -> Option<WorktreeStatus> {
     let worktree_path = repo_root.join(".worktrees").join(stage_id);
 
@@ -145,7 +174,7 @@ pub fn detect_worktree_status(
 
     // Check if the branch was manually merged outside loom
     // This detects when users run `git merge loom/stage-id` manually
-    if is_manually_merged(stage_id, repo_root, work_dir) {
+    if is_manually_merged_into(stage_id, repo_root, target_branch) {
         return Some(WorktreeStatus::Merged);
     }
 
@@ -157,16 +186,25 @@ pub fn detect_worktree_status(
 /// This is used to detect merges performed outside of loom (e.g., via CLI).
 /// When detected, the orchestrator can trigger cleanup of the worktree.
 /// Uses `resolve_target_branch` to respect configured `base_branch` from config.toml.
+///
+/// Test seam: production code calls `is_manually_merged_into` with a precomputed
+/// target branch (P-1(c)); this config-resolving wrapper is retained for unit tests.
+#[cfg(test)]
 pub fn is_manually_merged(stage_id: &str, repo_root: &Path, work_dir: &Path) -> bool {
-    use crate::git::is_branch_merged;
-
     // Resolve target branch from config (respects base_branch setting)
     let base_branch = crate::fs::parse_base_branch_from_config(work_dir).unwrap_or(None);
     let target_branch = resolve_target_branch(&base_branch, repo_root);
+    is_manually_merged_into(stage_id, repo_root, &target_branch)
+}
 
-    // Check if the loom branch has been merged into the target branch
+/// Check whether a stage's loom branch has been merged into `target_branch`.
+///
+/// Internal hot-path variant taking a precomputed target branch (P-1(c)).
+fn is_manually_merged_into(stage_id: &str, repo_root: &Path, target_branch: &str) -> bool {
+    use crate::git::is_branch_merged;
+
     let branch_name = branch_name_for_stage(stage_id);
-    is_branch_merged(&branch_name, &target_branch, repo_root).unwrap_or_default()
+    is_branch_merged(&branch_name, target_branch, repo_root).unwrap_or_default()
 }
 
 /// Check if there are unmerged paths (merge conflicts) in the worktree
@@ -275,18 +313,16 @@ pub fn collect_completion_summary(work_dir: &Path) -> Result<CompletionSummary> 
                                 }
                             }
 
-                            // Count successes and failures
-                            match stage.status {
-                                StageStatus::Completed | StageStatus::Skipped => {
-                                    success_count += 1;
-                                }
-                                StageStatus::Blocked
-                                | StageStatus::MergeConflict
-                                | StageStatus::MergeBlocked
-                                | StageStatus::CompletedWithFailures => {
-                                    failure_count += 1;
-                                }
-                                _ => {}
+                            // Count successes and failures via the canonical
+                            // StageStatus::bucket() (D-5). Completed/Skipped count
+                            // as success; all blocked/merge-failure/review states
+                            // count as failure; in-flight (Executing/Pending) are
+                            // ignored — a completion summary is produced once
+                            // orchestration is terminal, so those are not expected.
+                            match stage.status.bucket() {
+                                StatusBucket::Completed => success_count += 1,
+                                StatusBucket::Blocked => failure_count += 1,
+                                StatusBucket::Executing | StatusBucket::Pending => {}
                             }
 
                             // Calculate duration if both timestamps exist
@@ -332,7 +368,7 @@ pub fn collect_completion_summary(work_dir: &Path) -> Result<CompletionSummary> 
 mod tests {
     use super::*;
     use crate::daemon::protocol::Response;
-    use crate::models::stage::Stage;
+    use crate::models::stage::{Stage, StageStatus};
     use crate::verify::transitions::serialize_stage_to_markdown;
 
     fn write_stage_file(stages_dir: &Path, stage: &Stage) {

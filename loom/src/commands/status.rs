@@ -6,7 +6,7 @@ pub mod render;
 pub mod ui;
 mod validation;
 
-use crate::daemon::DaemonServer;
+use crate::daemon::{DaemonServer, DaemonStatus};
 use crate::fs::work_dir::WorkDir;
 use anyhow::Result;
 use colored::Colorize;
@@ -63,7 +63,7 @@ fn execute_static(work_dir: &WorkDir, verbose: bool) -> Result<()> {
     let status_data = collect_status_data(work_dir)?;
     let mut out = stdout();
     let stage_count = count_files(&work_dir.stages_dir())?;
-    let daemon_running = DaemonServer::is_running(work_dir.root());
+    let daemon_status = DaemonServer::check_status(work_dir.root());
 
     // Logo: prints a blank line above and below the ASCII art.
     crate::utils::print_logo_header("");
@@ -75,21 +75,34 @@ fn execute_static(work_dir: &WorkDir, verbose: bool) -> Result<()> {
     }
 
     // Daemon status: indicator + hint, separated by a wide gap so they don't
-    // run together visually.
-    if daemon_running {
-        println!(
-            "   {} {}        {}",
-            "●".green(),
-            "daemon running".dimmed(),
-            "loom status --live for real-time updates".dimmed()
-        );
-    } else {
-        println!(
-            "   {} {}        {}",
-            "○".dimmed(),
-            "daemon stopped".dimmed(),
-            "run `loom run` to start".dimmed()
-        );
+    // run together visually. ProcessOnly is surfaced distinctly (A-16): the
+    // daemon process is alive but the IPC socket is missing/unreachable, so the
+    // operator gets an actionable hint instead of a misleading "stopped".
+    match daemon_status {
+        DaemonStatus::Running => {
+            println!(
+                "   {} {}        {}",
+                "●".green(),
+                "daemon running".dimmed(),
+                "loom status --live for real-time updates".dimmed()
+            );
+        }
+        DaemonStatus::ProcessOnly => {
+            println!(
+                "   {} {}        {}",
+                "●".yellow(),
+                "daemon process alive, socket missing".yellow(),
+                "try `loom repair`".dimmed()
+            );
+        }
+        DaemonStatus::NotRunning => {
+            println!(
+                "   {} {}        {}",
+                "○".dimmed(),
+                "daemon stopped".dimmed(),
+                "run `loom run` to start".dimmed()
+            );
+        }
     }
     println!();
 
