@@ -1,7 +1,7 @@
 //! Shared utility functions for verification operations
 
 use anyhow::{Context, Result};
-use regex::Regex;
+use regex::{Regex, RegexBuilder};
 use std::collections::HashSet;
 
 /// Extract lines from output that match any of the given patterns.
@@ -22,7 +22,12 @@ pub fn extract_matching_lines(output: &str, patterns: &[String]) -> Result<Vec<S
     let mut matching_lines = Vec::new();
     let regexes: Vec<Regex> = patterns
         .iter()
-        .map(|p| Regex::new(p).with_context(|| format!("Invalid pattern: {p}")))
+        .map(|p| {
+            RegexBuilder::new(p)
+                .size_limit(1 << 20) // 1MB compiled size limit (matches verify/goal_backward/wiring.rs)
+                .build()
+                .with_context(|| format!("Invalid pattern: {p}"))
+        })
         .collect::<Result<Vec<_>>>()?;
 
     for line in output.lines() {

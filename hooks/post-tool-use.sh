@@ -58,9 +58,27 @@ mkdir -p "$HEARTBEAT_DIR" 2>/dev/null || exit 0
 # Get timestamp
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 
-# Update heartbeat file in JSON format
+# Update heartbeat file in JSON format.
+# Build via `jq -n --arg` so a value containing a quote/backslash (e.g. an exotic
+# TOOL_NAME) can never produce malformed JSON. Fall back to the heredoc only when
+# jq is unavailable — the heartbeat must never be broken by a missing dependency,
+# and these values are loom-controlled.
 HEARTBEAT_FILE="${HEARTBEAT_DIR}/${LOOM_STAGE_ID}.json"
-cat >"$HEARTBEAT_FILE" <<EOF
+HEARTBEAT_JSON=""
+if command -v jq &>/dev/null; then
+	HEARTBEAT_JSON=$(jq -n \
+		--arg stage_id "$LOOM_STAGE_ID" \
+		--arg session_id "$LOOM_SESSION_ID" \
+		--arg timestamp "$TIMESTAMP" \
+		--arg last_tool "$TOOL_NAME" \
+		'{stage_id: $stage_id, session_id: $session_id, timestamp: $timestamp, context_percent: null, last_tool: $last_tool, activity: ("Tool executed: " + $last_tool)}' \
+		2>/dev/null || true)
+fi
+
+if [[ -n "$HEARTBEAT_JSON" ]]; then
+	printf '%s\n' "$HEARTBEAT_JSON" >"$HEARTBEAT_FILE"
+else
+	cat >"$HEARTBEAT_FILE" <<EOF
 {
   "stage_id": "${LOOM_STAGE_ID}",
   "session_id": "${LOOM_SESSION_ID}",
@@ -70,6 +88,7 @@ cat >"$HEARTBEAT_FILE" <<EOF
   "activity": "Tool executed: ${TOOL_NAME}"
 }
 EOF
+fi
 
 # === TOOL EVENT LOGGING ===
 # Append a structured row to tool-events.jsonl for observability.

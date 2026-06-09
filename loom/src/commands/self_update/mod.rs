@@ -256,13 +256,17 @@ fn update_config_files(release: &Release) -> Result<()> {
         let content =
             download_text_with_limit(response, MAX_TEXT_SIZE, "CLAUDE.md.template download")?;
 
-        // Verify checksum if available
-        if let Some(ref checksums) = checksums {
-            if let Some(expected) = checksums.get("CLAUDE.md.template") {
-                verify_checksum(content.as_bytes(), expected, "CLAUDE.md.template")?;
-                println!("  {} CLAUDE.md.template checksum verified", "✓".green());
-            }
-        }
+        // Verify checksum — a missing per-asset entry is a HARD error (fail closed),
+        // mirroring the binary's mandatory signature. checksums.txt is already required
+        // above; here we require it to contain an entry for THIS asset.
+        let checksums = checksums.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("Release is missing checksums.txt — cannot verify CLAUDE.md.template integrity. This may indicate a compromised release.")
+        })?;
+        let expected = checksums.get("CLAUDE.md.template").ok_or_else(|| {
+            anyhow::anyhow!("checksums.txt has no entry for CLAUDE.md.template — refusing to install unverified asset. This may indicate a compromised release.")
+        })?;
+        verify_checksum(content.as_bytes(), expected, "CLAUDE.md.template")?;
+        println!("  {} CLAUDE.md.template checksum verified", "✓".green());
 
         // Save with timestamp header
         save_with_header(&content, &claude_dir.join("CLAUDE.md"))?;
@@ -326,13 +330,17 @@ fn download_verify_and_extract_zip(
     validate_response_status(&response, "Zip download failed")?;
     let bytes = download_with_limit(response, zip::MAX_ZIP_SIZE, asset_name)?;
 
-    // Verify checksum if available
-    if let Some(ref checksums) = checksums {
-        if let Some(expected) = checksums.get(asset_name) {
-            verify_checksum(&bytes, expected, asset_name)?;
-            println!("  {} {} checksum verified", "✓".green(), asset_name);
-        }
-    }
+    // Verify checksum — a missing per-asset entry is a HARD error (fail closed),
+    // mirroring the binary's mandatory signature. An attacker who can omit a row
+    // from checksums.txt must not be able to ship an unverified zip into ~/.claude/.
+    let checksums = checksums.as_ref().ok_or_else(|| {
+        anyhow::anyhow!("Release is missing checksums.txt — cannot verify {asset_name} integrity. This may indicate a compromised release.")
+    })?;
+    let expected = checksums.get(asset_name).ok_or_else(|| {
+        anyhow::anyhow!("checksums.txt has no entry for {asset_name} — refusing to install unverified asset. This may indicate a compromised release.")
+    })?;
+    verify_checksum(&bytes, expected, asset_name)?;
+    println!("  {} {} checksum verified", "✓".green(), asset_name);
 
     // Extract using zip crate directly (replicating safe extraction from zip.rs)
     let cursor = Cursor::new(&bytes);

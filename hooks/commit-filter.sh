@@ -9,6 +9,15 @@
 # Instead of trying to modify the command (fragile with JSON escaping),
 # this hook blocks and provides guidance so Claude regenerates the command.
 #
+# SECURITY NOTE (best-effort, defense-in-depth): the git/attribution checks are
+# regex-on-shell, not a parser, so determined evasion is still possible — e.g.
+# command substitution that builds "git" from pieces, $IFS tricks, base64|sh, or
+# spawning git from a child interpreter. The hook now blocks the obvious classes
+# (eval, simple variable indirection like `c=commit; git $c`, tab-separated
+# `git<TAB>commit`, and `env -u LOOM_MAIN_AGENT_PID` which exists only to unset
+# the subagent gate). The DURABLE guarantee is architectural: the main agent owns
+# commits and stage completion (CLAUDE.md rule 5); this hook just raises the cost.
+#
 # Input: JSON from stdin (Claude Code passes tool info via stdin)
 #   {"tool_name": "Bash", "tool_input": {"command": "..."}, ...}
 #
@@ -72,6 +81,49 @@ fi
 
 if [[ -z "$COMMAND" ]]; then
 	exit 0
+fi
+
+# === ANTI-EVASION GUARD (applies to ALL Bash, not just detected subagents) ===
+# These patterns exist only to defeat this hook's own checks, so block them
+# outright when combined with a git/loom-stage-complete intent:
+#   - `env -u LOOM_MAIN_AGENT_PID ...` unsets the subagent-detection gate
+#   - `eval ...` hides the real command from the regex
+#   - simple variable indirection: `c=commit; git $c` / `g=git; $g commit`
+#   - tab/newline-separated keywords: `git<TAB>commit`
+# Best-effort only — see the SECURITY NOTE in the header for known residual evasion.
+references_git_or_loom() {
+	# Look in the ORIGINAL command (indirection lives outside the stripped body).
+	# NOTE: in ERE, [[:space:]] already matches TAB/newline, so `git<TAB>commit`
+	# is covered by the space-class patterns elsewhere in this hook. The leading
+	# char class includes quotes so `eval "git commit"` (git inside a quoted
+	# string) is still recognized.
+	echo "$COMMAND" | grep -qiE '(^|[[:space:];&|("'"'"'])git([[:space:]]|$)' ||
+		echo "$COMMAND" | grep -qiE 'loom[[:space:]]+stage[[:space:]]+complete' ||
+		# var-indirection: a var assigned "commit"/"git" then expanded later
+		echo "$COMMAND" | grep -qiE '=[[:space:]]*["'"'"']?(git|commit)([[:space:]"'"'"';]|$)'
+}
+
+if references_git_or_loom; then
+	EVASION_REASON=""
+	if echo "$COMMAND" | grep -qiE 'env[[:space:]]+(-[^[:space:]]*[[:space:]]+)*-u[[:space:]]+LOOM_MAIN_AGENT_PID\b' ||
+		echo "$COMMAND" | grep -qiE '\bunset[[:space:]]+([^;&|]*[[:space:]])?LOOM_MAIN_AGENT_PID\b'; then
+		EVASION_REASON="unsetting LOOM_MAIN_AGENT_PID (the subagent-detection gate)"
+	elif echo "$COMMAND" | grep -qiE '(^|[[:space:];&|(])eval([[:space:]]|$)'; then
+		EVASION_REASON="wrapping git/loom in eval (hides the command from isolation checks)"
+	fi
+
+	if [[ -n "$EVASION_REASON" ]]; then
+		debug "DEBUG: BLOCKED - anti-evasion: $EVASION_REASON"
+		cat >&2 <<EOF
+⛔ BLOCKED: git/loom command uses an isolation-bypass pattern.
+Reason: $EVASION_REASON
+
+Run git/loom directly, without env -u / unset / eval wrappers. The main agent
+owns all commits and stage completion (CLAUDE.md rule 5); bypassing the guard
+causes lost work and broken attribution.
+EOF
+		exit 2
+	fi
 fi
 
 # === SUBAGENT COMMIT PREVENTION ===
@@ -230,8 +282,13 @@ if [[ -n "${LOOM_MAIN_AGENT_PID:-}" ]]; then
 				# Subagent - there's another Claude process in between (the main agent)
 				debug "DEBUG: Subagent detected - $CLAUDE_COUNT intermediate Claude process(es)"
 
-				# Check if this is a git commit or loom stage complete command
-				if echo "$STRIPPED_COMMAND" | grep -qiE 'git[[:space:]]+.*\b(commit|add[[:space:]]+-A|add[[:space:]]+\.)\b'; then
+				# Check if this is a git commit or loom stage complete command.
+				# Direct form: `git ... commit|add -A|add .`. Indirection form:
+				# a variable assigned to git/commit then expanded (`c=commit; git $c`,
+				# `g=git; $g commit`). `[[:space:]]` covers TAB/newline separators.
+				if echo "$STRIPPED_COMMAND" | grep -qiE 'git[[:space:]]+.*\b(commit|add[[:space:]]+-A|add[[:space:]]+\.)\b' ||
+					{ echo "$STRIPPED_COMMAND" | grep -qiE '=[[:space:]]*["'"'"']?(git|commit)([[:space:]"'"'"';]|$)' &&
+						echo "$STRIPPED_COMMAND" | grep -qiE '(git|\$[A-Za-z_][A-Za-z0-9_]*)[[:space:]]+\$?[A-Za-z_]'; }; then
 					debug "DEBUG: BLOCKED - Subagent attempting git operation"
 
 					cat >&2 <<'EOF'

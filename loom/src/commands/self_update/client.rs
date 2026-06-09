@@ -10,6 +10,7 @@ use std::time::Duration;
 // HTTP Security Constants
 pub(crate) const HTTP_CONNECT_TIMEOUT_SECS: u64 = 10;
 pub(crate) const HTTP_REQUEST_TIMEOUT_SECS: u64 = 120; // Total request timeout (includes connection + transfer)
+const MAX_REDIRECTS: usize = 10; // Bounded redirect chain (GitHub release assets redirect to a CDN)
 
 // Download buffer size for streaming responses
 const DOWNLOAD_BUFFER_SIZE: usize = 8192;
@@ -23,6 +24,20 @@ pub(crate) fn create_http_client() -> Result<Client> {
         .connect_timeout(Duration::from_secs(HTTP_CONNECT_TIMEOUT_SECS))
         .timeout(Duration::from_secs(HTTP_REQUEST_TIMEOUT_SECS))
         .user_agent("loom-self-update")
+        // Enforce HTTPS for every request — refuse plaintext URLs outright.
+        .https_only(true)
+        // Bounded redirect policy that rejects an https->http downgrade. A scheme
+        // downgrade on redirect is the MITM precondition that would let a tampered
+        // asset/checksums file be served, so we refuse it rather than follow it.
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= MAX_REDIRECTS {
+                return attempt.error("too many redirects");
+            }
+            if attempt.url().scheme() != "https" {
+                return attempt.error("refusing redirect to non-https URL (scheme downgrade)");
+            }
+            attempt.follow()
+        }))
         .build()
         .context("Failed to create HTTP client")
 }

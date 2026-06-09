@@ -5,9 +5,17 @@
 # worktree isolation boundaries:
 #
 # For Bash tool:
-#   - Block `git -C` or `git --work-tree` (accessing other git dirs)
+#   - Block `git -C`, `git --work-tree`, `git --git-dir` (accessing other git dirs)
+#   - Block GIT_DIR= / GIT_WORK_TREE= env assignments that retarget git
+#   - Block `eval`-reached git (the regex cannot see inside eval'd strings)
 #   - Block `../../` path traversal (escaping worktree)
 #   - Block `.worktrees/` access (except current worktree)
+#
+# SECURITY NOTE (best-effort): this is regex-on-shell, not a parser. It cannot
+# catch every evasion — variable indirection (g=-C; git $g ..), $IFS tricks,
+# command substitution, or a cd into a sibling repo followed by a plain `git`.
+# The DURABLE boundary is the OS sandbox `Write` deny on parent paths; this hook
+# is defense-in-depth that raises the cost of the obvious bypasses.
 #
 # For Edit/Write tools:
 #   - Block paths outside worktree bounds
@@ -73,25 +81,37 @@ validate_bash_command() {
     local stripped
     stripped=$(strip_embedded_content "$cmd")
 
-    # Pattern 1: Block git -C or git --work-tree (accessing other directories)
+    # Pattern 1: Block git directory/work-tree overrides and eval-reached git.
+    #   - `git -C <dir>` / `git --work-tree[=| ]` / `git --git-dir[=| ]`
+    #   - `GIT_DIR=...` / `GIT_WORK_TREE=...` env assignments (retarget any git)
+    #   - `eval ... git ...` — the regex cannot see inside an eval'd string, so we
+    #     refuse the whole command rather than let it through unparsed.
+    # Best-effort only — see the SECURITY NOTE in the header for known evasions.
     if echo "$stripped" | grep -qE 'git[[:space:]]+-C[[:space:]]' || \
-       echo "$stripped" | grep -qE 'git[[:space:]]+--work-tree'; then
+       echo "$stripped" | grep -qE 'git[[:space:]]+--work-tree([=[:space:]]|$)' || \
+       echo "$stripped" | grep -qE 'git[[:space:]]+--git-dir([=[:space:]]|$)' || \
+       echo "$stripped" | grep -qE '(^|[[:space:];&|(])GIT_DIR=' || \
+       echo "$stripped" | grep -qE '(^|[[:space:];&|(])GIT_WORK_TREE=' || \
+       echo "$stripped" | grep -qE '(^|[[:space:];&|(])eval([[:space:]]|$)'; then
         cat >&2 <<'EOF'
 
 ============================================================
   LOOM: BLOCKED - Git directory override detected
 ============================================================
 
-You tried to: Use git -C or --work-tree to access another directory
+You tried to: Retarget git at another directory (-C / --work-tree /
+--git-dir / GIT_DIR= / GIT_WORK_TREE=) or reach git via eval
 
 This is FORBIDDEN in loom worktrees because:
   - Each worktree has its own isolated git state
   - Cross-worktree git operations corrupt state
+  - eval hides the real command from isolation checks
 
 Instead, you should:
   - Run git commands in the CURRENT worktree only
   - Use relative paths within this worktree
   - Stay confined to your assigned worktree
+  - Do not wrap git in eval
 
 Git commands should operate on the current directory.
 ============================================================

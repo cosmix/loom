@@ -124,7 +124,19 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
     // Claude Code resolves symlinks before checking permission patterns, so
     // the relative Read(.work/**) pattern doesn't match the resolved absolute
     // path (which is outside the worktree boundary). Adding the resolved
-    // absolute path ensures reads/writes are auto-allowed without prompting.
+    // absolute paths ensures reads/writes are auto-allowed without prompting.
+    //
+    // SECURITY (S-1): the broad `Read(/{resolved}/**)` + `Write(/{resolved}/**)`
+    // allow used to expose `.work/admin.token` (Admin RPC capability) and
+    // `.work/user.token` (User capability) to a sandboxed worktree agent —
+    // privilege escalation across the daemon's RPC trust boundary. We now:
+    //   1. emit explicit `deny` rules for the resolved-absolute token paths
+    //      *before* the allow (the relative forms come from default_deny_read);
+    //   2. narrow the broad allow from `/**` down to only the subdirs an agent
+    //      legitimately touches (signals/, handoffs/, disputes/, memory/, and
+    //      config.toml). This preserves the EROFS write exemption for exactly
+    //      those paths while no longer granting blanket read/write over the
+    //      tokens (or anything else) under the resolved .work root.
     //
     // IMPORTANT: Claude Code requires the // prefix for absolute filesystem paths.
     // A single / means "relative to project root", NOT absolute. See:
@@ -134,16 +146,36 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
         if let Ok(resolved) = work_link.canonicalize() {
             let resolved_str = resolved.to_string_lossy();
             if let Some(permissions) = settings_json.get_mut("permissions") {
+                // Deny the resolved-absolute token paths first so deny wins over
+                // any (current or future) allow that might match the .work root.
+                if let Some(deny) = permissions.get_mut("deny") {
+                    if let Some(deny_arr) = deny.as_array_mut() {
+                        for token in ["admin.token", "user.token"] {
+                            let deny_perm = format!("Read(/{}/{})", resolved_str, token);
+                            if !deny_arr.iter().any(|v| v.as_str() == Some(&deny_perm)) {
+                                deny_arr.push(json!(deny_perm));
+                            }
+                        }
+                    }
+                }
                 if let Some(allow) = permissions.get_mut("allow") {
                     if let Some(allow_arr) = allow.as_array_mut() {
-                        // Use // prefix for absolute paths (Claude Code convention)
-                        let read_perm = format!("Read(/{}/**)", resolved_str);
-                        let write_perm = format!("Write(/{}/**)", resolved_str);
-                        if !allow_arr.iter().any(|v| v.as_str() == Some(&read_perm)) {
-                            allow_arr.push(json!(read_perm));
+                        // Narrowed allow: only the subdirs/files agents need.
+                        // `config.toml` is read-only; the rest get both read and
+                        // write (handoffs/disputes/memory are agent-written; the
+                        // write grant is what supplies the EROFS exemption).
+                        let mut perms = vec![
+                            format!("Read(/{}/config.toml)", resolved_str),
+                            format!("Read(/{}/signals/**)", resolved_str),
+                        ];
+                        for sub in ["signals", "handoffs", "disputes", "memory"] {
+                            perms.push(format!("Read(/{}/{}/**)", resolved_str, sub));
+                            perms.push(format!("Write(/{}/{}/**)", resolved_str, sub));
                         }
-                        if !allow_arr.iter().any(|v| v.as_str() == Some(&write_perm)) {
-                            allow_arr.push(json!(write_perm));
+                        for perm in perms {
+                            if !allow_arr.iter().any(|v| v.as_str() == Some(&perm)) {
+                                allow_arr.push(json!(perm));
+                            }
                         }
                     }
                 }
@@ -374,12 +406,20 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
         allow.push(json!(format!("Bash({} *)", cmd_trimmed)));
     }
 
-    // Add narrow Read permissions for orchestration state files agents need.
-    // The main settings.json grants broader Read(.work/**) via LOOM_PERMISSIONS_WORKTREE,
-    // but settings.local.json uses these narrow grants as defense-in-depth.
+    // Add narrow Read/Write permissions for orchestration state files agents
+    // need. These are the *relative* forms; `write_settings` adds matching
+    // resolved-absolute forms because `.work` is a symlink that Claude Code
+    // resolves before matching. The set is deliberately scoped to the subdirs
+    // an agent legitimately touches — never the bare `.work/**` that would also
+    // expose `.work/admin.token` / `.work/user.token` (see S-1, default_deny_read).
+    allow.push(json!("Read(.work/config.toml)"));
     allow.push(json!("Read(.work/signals/**)"));
     allow.push(json!("Read(.work/handoffs/**)"));
-    allow.push(json!("Read(.work/config.toml)"));
+    allow.push(json!("Write(.work/handoffs/**)"));
+    allow.push(json!("Read(.work/disputes/**)"));
+    allow.push(json!("Write(.work/disputes/**)"));
+    allow.push(json!("Read(.work/memory/**)"));
+    allow.push(json!("Write(.work/memory/**)"));
 
     if !allow.is_empty() {
         permissions["allow"] = json!(allow);
@@ -686,12 +726,21 @@ mod tests {
         assert_eq!(deny[0], "Read(~/.ssh/**)");
         assert_eq!(deny[1], "Write(.work/**)");
 
+        // allow_write paths come first, then the narrowly-scoped .work/ state
+        // permissions agents need (signals/handoffs/disputes/memory). The set is
+        // deliberately scoped to subdirs an agent touches — never bare `.work/**`,
+        // which would also expose `.work/admin.token` / `.work/user.token` (S-1).
         let allow = json["permissions"]["allow"].as_array().unwrap();
-        assert_eq!(allow.len(), 4);
+        assert_eq!(allow.len(), 9);
         assert_eq!(allow[0], "Write(src/**)");
-        assert_eq!(allow[1], "Read(.work/signals/**)");
-        assert_eq!(allow[2], "Read(.work/handoffs/**)");
-        assert_eq!(allow[3], "Read(.work/config.toml)");
+        assert_eq!(allow[1], "Read(.work/config.toml)");
+        assert_eq!(allow[2], "Read(.work/signals/**)");
+        assert_eq!(allow[3], "Read(.work/handoffs/**)");
+        assert_eq!(allow[4], "Write(.work/handoffs/**)");
+        assert_eq!(allow[5], "Read(.work/disputes/**)");
+        assert_eq!(allow[6], "Write(.work/disputes/**)");
+        assert_eq!(allow[7], "Read(.work/memory/**)");
+        assert_eq!(allow[8], "Write(.work/memory/**)");
 
         // Sandbox filesystem block: NO denyRead, NO allowWrite (OS sandbox breaks with both)
         let fs_block = &json["sandbox"]["filesystem"];
@@ -1346,20 +1395,53 @@ mod tests {
         let allow = result["permissions"]["allow"].as_array().unwrap();
         let allow_strs: Vec<&str> = allow.iter().filter_map(|v| v.as_str()).collect();
 
-        // Should have the resolved absolute path of .work with // prefix
         let resolved_work = work_dir.canonicalize().unwrap();
-        let expected_read = format!("Read(/{}/**)", resolved_work.to_string_lossy());
-        let expected_write = format!("Write(/{}/**)", resolved_work.to_string_lossy());
+        let resolved_str = resolved_work.to_string_lossy();
 
+        // S-1: the broad `**` allow over the resolved .work root is GONE — it
+        // would have exposed the daemon tokens. Narrowed subdir grants remain.
+        let broad_read = format!("Read(/{}/**)", resolved_str);
+        let broad_write = format!("Write(/{}/**)", resolved_str);
         assert!(
-            allow_strs.contains(&expected_read.as_str()),
-            "Should have resolved .work read permission, got: {:?}",
+            !allow_strs.contains(&broad_read.as_str()),
+            "broad Read(/.work/**) must NOT be granted, got: {:?}",
             allow_strs
         );
         assert!(
-            allow_strs.contains(&expected_write.as_str()),
-            "Should have resolved .work write permission, got: {:?}",
+            !allow_strs.contains(&broad_write.as_str()),
+            "broad Write(/.work/**) must NOT be granted, got: {:?}",
             allow_strs
+        );
+
+        // Narrowed resolved-absolute grants for the subdirs agents need
+        // (signals/ supplies reads; handoffs/ supplies the EROFS write exemption).
+        let expected_read_signals = format!("Read(/{}/signals/**)", resolved_str);
+        let expected_write_handoffs = format!("Write(/{}/handoffs/**)", resolved_str);
+        assert!(
+            allow_strs.contains(&expected_read_signals.as_str()),
+            "Should have resolved .work/signals read permission, got: {:?}",
+            allow_strs
+        );
+        assert!(
+            allow_strs.contains(&expected_write_handoffs.as_str()),
+            "Should have resolved .work/handoffs write permission (EROFS exemption), got: {:?}",
+            allow_strs
+        );
+
+        // S-1: the daemon tokens must be explicitly denied in resolved-absolute form.
+        let deny = result["permissions"]["deny"].as_array().unwrap();
+        let deny_strs: Vec<&str> = deny.iter().filter_map(|v| v.as_str()).collect();
+        let deny_admin = format!("Read(/{}/admin.token)", resolved_str);
+        let deny_user = format!("Read(/{}/user.token)", resolved_str);
+        assert!(
+            deny_strs.contains(&deny_admin.as_str()),
+            "admin.token must be denied (resolved-absolute), got: {:?}",
+            deny_strs
+        );
+        assert!(
+            deny_strs.contains(&deny_user.as_str()),
+            "user.token must be denied (resolved-absolute), got: {:?}",
+            deny_strs
         );
 
         // Should also still have the relative permissions
