@@ -4,6 +4,9 @@
 //! - Work directory discovery
 //! - Stage ID detection from worktree branch
 //! - String truncation for display
+//! - Shared tree-rendering helpers (see [`tree`])
+
+pub mod tree;
 
 use anyhow::{bail, Result};
 use std::path::PathBuf;

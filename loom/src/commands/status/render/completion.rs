@@ -9,7 +9,6 @@ use colored::Colorize;
 
 use crate::commands::common::truncate;
 use crate::daemon::{CompletionSummary, StageCompletionInfo};
-use crate::models::stage::StageStatus;
 use crate::utils::format_elapsed;
 
 /// Get stage duration - prefer execution_secs (excludes wait time) over duration_secs (wall clock)
@@ -103,24 +102,20 @@ pub fn render_completion_screen(summary: &CompletionSummary) {
         let icon = stage.status.icon();
         let duration_display = build_duration_display(stage);
 
-        let status_str = match stage.status {
-            StageStatus::Completed => "Completed".green(),
-            StageStatus::Skipped => "Skipped".dimmed(),
-            StageStatus::Blocked => "Blocked".red(),
-            StageStatus::MergeConflict => "Conflict".yellow(),
-            StageStatus::CompletedWithFailures => "Failed".red(),
-            StageStatus::MergeBlocked => "MergeBlk".red(),
-            _ => stage.status.to_string().dimmed(),
-        };
-
-        let icon_colored = match stage.status {
-            StageStatus::Completed => icon.green(),
-            StageStatus::Skipped => icon.dimmed(),
-            StageStatus::Blocked
-            | StageStatus::CompletedWithFailures
-            | StageStatus::MergeBlocked => icon.red(),
-            StageStatus::MergeConflict => icon.yellow(),
-            _ => icon.dimmed(),
+        // Use canonical label and terminal_color from StageStatus to ensure
+        // consistent display across all renderers (fixes D-2 divergence).
+        let label = stage.status.label();
+        let tc = stage.status.terminal_color();
+        let status_str = label.color(tc);
+        let icon_colored = {
+            let c = icon.color(tc);
+            if stage.status.is_bold() {
+                c.bold()
+            } else if stage.status.is_dimmed() {
+                c.dimmed()
+            } else {
+                c
+            }
         };
 
         // Truncate stage id if too long (UTF-8 safe)
@@ -198,6 +193,7 @@ pub fn render_completion_lines(summary: &CompletionSummary) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::stage::StageStatus;
 
     fn make_stage_info(id: &str, status: StageStatus, completed: bool) -> StageCompletionInfo {
         StageCompletionInfo {

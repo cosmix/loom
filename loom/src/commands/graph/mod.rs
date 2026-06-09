@@ -13,15 +13,15 @@ pub mod colors;
 mod display;
 pub mod indicators;
 mod levels;
-mod tree;
+pub mod tree;
 
 #[cfg(test)]
 mod tests;
 
 use anyhow::Result;
-use colored::Colorize;
 
 use crate::commands::common::find_work_dir;
+use crate::models::stage::StageStatus;
 use crate::verify::transitions::list_all_stages;
 
 // Re-export the public API
@@ -30,6 +30,25 @@ pub use display::build_graph_display;
 pub use indicators::{status_indicator, status_priority};
 pub use levels::compute_stage_levels;
 pub use tree::build_tree_display;
+
+/// All variants in display order for legend generation.
+///
+/// Ordered by operational significance (active → terminal → blocked).
+const ALL_STATUSES: &[StageStatus] = &[
+    StageStatus::Completed,
+    StageStatus::Executing,
+    StageStatus::Queued,
+    StageStatus::WaitingForDeps,
+    StageStatus::WaitingForInput,
+    StageStatus::Blocked,
+    StageStatus::NeedsHandoff,
+    StageStatus::Skipped,
+    StageStatus::MergeConflict,
+    StageStatus::CompletedWithFailures,
+    StageStatus::MergeBlocked,
+    StageStatus::NeedsHumanReview,
+    StageStatus::NeedsAdjudication,
+];
 
 /// Show the execution graph
 pub fn show() -> Result<()> {
@@ -41,23 +60,21 @@ pub fn show() -> Result<()> {
     let tree_display = build_tree_display(&stages);
     println!("{tree_display}");
 
-    // Print legend with colored symbols
+    // Print legend generated from the canonical StageStatus methods so no
+    // variant is ever omitted and icons/colors stay in sync automatically.
     println!();
     print!("Legend: ");
-    print!("{} ", "✓".green().bold());
-    print!("completed  ");
-    print!("{} ", "●".blue().bold());
-    print!("executing  ");
-    print!("{} ", "▶".cyan().bold());
-    print!("ready  ");
-    print!("{} ", "○".white().dimmed());
-    print!("pending  ");
-    print!("{} ", "?".magenta().bold());
-    print!("waiting  ");
-    print!("{} ", "✗".red().bold());
-    print!("blocked  ");
-    print!("{} ", "⟳".yellow().bold());
-    println!("handoff");
+    for (i, status) in ALL_STATUSES.iter().enumerate() {
+        if i > 0 {
+            print!("  ");
+        }
+        print!(
+            "{} {}",
+            indicators::status_indicator(status),
+            status.label()
+        );
+    }
+    println!();
     println!();
 
     Ok(())

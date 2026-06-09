@@ -1,14 +1,16 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
+use std::collections::HashSet;
 use std::fs;
 
 use crate::commands::status::merge_status::build_merge_report;
 use crate::fs::work_dir::{load_config, WorkDir};
 use crate::models::constants::STALENESS_THRESHOLD_SECS;
 use crate::models::session::{Session, SessionStatus};
-use crate::models::stage::{Stage, StageStatus};
+use crate::models::stage::{Stage, StageStatus, StatusBucket};
 use crate::orchestrator::get_merge_point;
 use crate::orchestrator::monitor::heartbeat::{read_heartbeat, Heartbeat};
+use crate::orchestrator::monitor::soft_signals::{read_active, SoftSignal};
 use crate::parser::frontmatter::parse_from_markdown;
 use crate::plan::parser::extract_plan_name;
 use crate::verify::transitions::list_all_stages;
@@ -94,8 +96,17 @@ fn load_session_from_file(path: &std::path::Path) -> Result<Session> {
     parse_from_markdown(&content, "Session")
 }
 
-/// Build a StageSummary from a Stage and optional associated Session
-fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) -> StageSummary {
+/// Build a StageSummary from a Stage and optional associated Session.
+///
+/// `stuck_session_ids` is a pre-built set of session IDs that have an active
+/// `PossiblyStuck` soft signal; the caller reads the soft-signals file once and
+/// passes the set here so we avoid an O(N) scan per stage (P-5).
+fn build_stage_summary(
+    stage: &Stage,
+    sessions: &[Session],
+    work_dir: &WorkDir,
+    stuck_session_ids: &HashSet<String>,
+) -> StageSummary {
     let session = sessions
         .iter()
         .find(|s| s.stage_id.as_ref() == Some(&stage.id));
@@ -129,25 +140,11 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
     let last_tool = heartbeat.as_ref().and_then(|hb| hb.last_tool.clone());
     let last_activity = heartbeat.as_ref().and_then(|hb| hb.activity.clone());
 
-    // Detect if the session is possibly stuck
-    let is_possibly_stuck = if let Some(session) = session {
-        let now = std::time::SystemTime::now();
-        crate::orchestrator::monitor::soft_signals::read_active_for_session(
-            work_dir.root(),
-            now,
-            &session.id,
-        )
-        .unwrap_or_default()
-        .into_iter()
-        .any(|s| {
-            matches!(
-                s,
-                crate::orchestrator::monitor::soft_signals::SoftSignal::PossiblyStuck { .. }
-            )
-        })
-    } else {
-        false
-    };
+    // Look up in the pre-built stuck-session index (O(1)) instead of
+    // re-reading the soft-signals file once per stage.
+    let is_possibly_stuck = session
+        .map(|s| stuck_session_ids.contains(&s.id))
+        .unwrap_or(false);
 
     StageSummary {
         id: stage.id.clone(),
@@ -204,18 +201,18 @@ fn calculate_progress(stages: &[Stage]) -> ProgressSummary {
     let mut blocked = 0;
 
     for stage in stages {
-        match stage.status {
-            StageStatus::Completed => completed += 1,
-            StageStatus::Executing => executing += 1,
-            StageStatus::WaitingForDeps | StageStatus::Queued => pending += 1,
-            StageStatus::Blocked
-            | StageStatus::MergeConflict
-            | StageStatus::CompletedWithFailures
-            | StageStatus::MergeBlocked => blocked += 1,
-            StageStatus::NeedsHandoff | StageStatus::WaitingForInput => executing += 1,
-            StageStatus::NeedsHumanReview => blocked += 1,
-            StageStatus::NeedsAdjudication => blocked += 1,
-            StageStatus::Skipped => {}
+        // Use canonical bucket() to categorise statuses — prevents the three
+        // status-count copies diverging (D-5). Skipped maps to Completed bucket
+        // but we exclude it from the visible completed count.
+        match stage.status.bucket() {
+            StatusBucket::Executing => executing += 1,
+            StatusBucket::Pending => pending += 1,
+            StatusBucket::Completed => {
+                if stage.status != StageStatus::Skipped {
+                    completed += 1;
+                }
+            }
+            StatusBucket::Blocked => blocked += 1,
         }
     }
 
@@ -257,10 +254,21 @@ pub fn collect_status_data(work_dir: &WorkDir) -> Result<StatusData> {
     // Load all sessions
     let sessions = load_all_sessions(work_dir)?;
 
+    // Read soft-signals once and build a session-id index (P-5).
+    // This avoids a full file re-read per stage inside build_stage_summary.
+    let now_sys = std::time::SystemTime::now();
+    let stuck_session_ids: HashSet<String> = read_active(work_dir.root(), now_sys)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|sig| match sig {
+            SoftSignal::PossiblyStuck { session_id, .. } => session_id,
+        })
+        .collect();
+
     // Build stage summaries
     let stage_summaries: Vec<StageSummary> = stages
         .iter()
-        .map(|stage| build_stage_summary(stage, &sessions, work_dir))
+        .map(|stage| build_stage_summary(stage, &sessions, work_dir, &stuck_session_ids))
         .collect();
 
     // Get merge point for merge report
@@ -421,7 +429,8 @@ mod tests {
         session.context_tokens = 50000;
         session.context_limit = 200000;
 
-        let summary = build_stage_summary(&stage, &[session], &work_dir);
+        let empty_stuck: HashSet<String> = HashSet::new();
+        let summary = build_stage_summary(&stage, &[session], &work_dir, &empty_stuck);
 
         assert_eq!(summary.id, "test-stage");
         assert_eq!(summary.status, StageStatus::Executing);
@@ -442,7 +451,8 @@ mod tests {
 
         let stage = make_test_stage("test-stage", StageStatus::WaitingForDeps);
 
-        let summary = build_stage_summary(&stage, &[], &work_dir);
+        let empty_stuck: HashSet<String> = HashSet::new();
+        let summary = build_stage_summary(&stage, &[], &work_dir, &empty_stuck);
 
         assert_eq!(summary.id, "test-stage");
         assert_eq!(summary.status, StageStatus::WaitingForDeps);
@@ -548,8 +558,19 @@ status: executing"#;
         };
         append(work_dir.root(), &sig).unwrap();
 
+        // Build the stuck-session index from the file (mirrors what
+        // collect_status_data does at runtime) and pass it to build_stage_summary.
+        let now_sys = std::time::SystemTime::now();
+        let stuck_session_ids: HashSet<String> = read_active(work_dir.root(), now_sys)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|s| match s {
+                SoftSignal::PossiblyStuck { session_id, .. } => session_id,
+            })
+            .collect();
+
         // Build a stage summary and verify the flag
-        let summary = build_stage_summary(&stage, &[session], &work_dir);
+        let summary = build_stage_summary(&stage, &[session], &work_dir, &stuck_session_ids);
         assert!(
             summary.is_possibly_stuck,
             "StageSummary should report is_possibly_stuck"

@@ -8,6 +8,7 @@ use std::io::Write;
 
 use colored::{Color, Colorize};
 
+use crate::commands::common::tree::{compute_connector, format_dep_annotation};
 use crate::commands::graph::colors::color_by_index;
 use crate::commands::graph::indicators::status_indicator;
 use crate::commands::status::data::{StageSummary, StatusData};
@@ -16,49 +17,28 @@ use crate::models::stage::{StageStatus, StageType};
 use crate::plan::graph::levels;
 use crate::utils::{context_pct_terminal_color, format_elapsed};
 
+/// All `StageStatus` variants in display order for legend generation.
+///
+/// Ordered by operational significance so operators can scan quickly.
+const LEGEND_STATUSES: &[StageStatus] = &[
+    StageStatus::Completed,
+    StageStatus::Executing,
+    StageStatus::Queued,
+    StageStatus::WaitingForDeps,
+    StageStatus::WaitingForInput,
+    StageStatus::Blocked,
+    StageStatus::NeedsHandoff,
+    StageStatus::Skipped,
+    StageStatus::MergeConflict,
+    StageStatus::CompletedWithFailures,
+    StageStatus::MergeBlocked,
+    StageStatus::NeedsHumanReview,
+    StageStatus::NeedsAdjudication,
+];
+
 /// Compute topological level for each stage (level = max(dep_levels) + 1)
 fn compute_stage_levels(stages: &[StageSummary]) -> HashMap<String, usize> {
     levels::compute_all_levels(stages, |s| s.id.as_str(), |s| &s.dependencies)
-}
-
-/// Compute the tree connector prefix.
-///
-/// Indents 3 columns per level and uses `└─ ` for the last stage at any level,
-/// `├─ ` otherwise. Root-level stages get no connector. The original
-/// implementation only used `└─` for the very last row in the very last level,
-/// which made single-child chains render as `├──` everywhere — visually wrong.
-fn compute_connector(level: usize, index_in_level: usize, level_size: usize) -> String {
-    let indent = "   ".repeat(level);
-
-    if level == 0 {
-        indent
-    } else if index_in_level == level_size - 1 {
-        format!("{indent}└─ ")
-    } else {
-        format!("{indent}├─ ")
-    }
-}
-
-/// Format inline dependency annotation: `  ← dep1, dep2` placed right after the
-/// stage id. Colors each dep id using the shared color map. Returns an empty
-/// string when the stage has no deps.
-fn format_dep_annotation(deps: &[String], color_map: &HashMap<&str, Color>) -> String {
-    if deps.is_empty() {
-        return String::new();
-    }
-
-    let colored_deps: Vec<String> = deps
-        .iter()
-        .map(|dep| {
-            if let Some(&color) = color_map.get(dep.as_str()) {
-                format!("{}", dep.color(color))
-            } else {
-                dep.clone()
-            }
-        })
-        .collect();
-
-    format!("  {} {}", "←".dimmed(), colored_deps.join(", "))
 }
 
 /// Format inline annotations for a stage (session, failure, merge, held)
@@ -238,18 +218,17 @@ pub fn render_graph<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<(
     Ok(())
 }
 
-/// Render the legend explaining status indicators. Items separated by a dimmed
-/// middle dot and indented to match the rest of the dashboard.
+/// Render the legend explaining status indicators.
+///
+/// Generated from `LEGEND_STATUSES` so no variant is ever omitted and icons /
+/// colors stay in sync with the canonical `StageStatus` methods automatically.
+/// Items separated by a dimmed middle dot, indented to match the dashboard.
 fn render_legend<W: Write>(w: &mut W) -> std::io::Result<()> {
     let dot = format!(" {} ", "·".dimmed());
-    let parts = [
-        format!("{} {}", "✓".green(), "done"),
-        format!("{} {}", "●".blue(), "exec"),
-        format!("{} {}", "▶".cyan(), "ready"),
-        format!("{} {}", "○".dimmed(), "wait"),
-        format!("{} {}", "✗".red(), "blocked"),
-        format!("{} {}", "⟳".yellow(), "handoff"),
-    ];
+    let parts: Vec<String> = LEGEND_STATUSES
+        .iter()
+        .map(|s| format!("{} {}", status_indicator(s), s.label()))
+        .collect();
     writeln!(w, "{ROW_INDENT}{}", parts.join(&dot))?;
     Ok(())
 }

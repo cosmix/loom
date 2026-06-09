@@ -144,34 +144,35 @@ impl TuiActivityLog {
                 continue;
             }
 
+            // Use canonical icon() so activity log glyphs match the tree graph.
             let entry = match stage.status {
                 StageStatus::Executing => Some(TuiActivityEntry {
                     timestamp: now,
-                    icon: "●",
+                    icon: StageStatus::Executing.icon(),
                     message: format!("{} started", stage.id),
                     style: Theme::status_executing(),
                 }),
                 StageStatus::Completed => Some(TuiActivityEntry {
                     timestamp: now,
-                    icon: "✓",
+                    icon: StageStatus::Completed.icon(),
                     message: format!("{} completed", stage.id),
                     style: Theme::status_completed(),
                 }),
                 StageStatus::Blocked => Some(TuiActivityEntry {
                     timestamp: now,
-                    icon: "✗",
+                    icon: StageStatus::Blocked.icon(),
                     message: format!("{} blocked", stage.id),
                     style: Theme::status_blocked(),
                 }),
                 StageStatus::Queued => Some(TuiActivityEntry {
                     timestamp: now,
-                    icon: "▶",
+                    icon: StageStatus::Queued.icon(),
                     message: format!("{} ready", stage.id),
                     style: Theme::status_queued(),
                 }),
                 StageStatus::NeedsHandoff => Some(TuiActivityEntry {
                     timestamp: now,
-                    icon: "⟳",
+                    icon: StageStatus::NeedsHandoff.icon(),
                     message: format!("{} needs handoff", stage.id),
                     style: Theme::status_warning(),
                 }),

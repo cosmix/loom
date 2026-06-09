@@ -12,7 +12,7 @@ use super::state::TuiActivityLog;
 use crate::commands::status::ui::theme::{StatusColors, Theme};
 use crate::commands::status::ui::tree_widget::TreeWidget;
 use crate::daemon::{CompletionSummary, StageInfo};
-use crate::models::stage::{Stage, StageStatus};
+use crate::models::stage::Stage;
 use crate::utils::format_elapsed;
 
 /// Render compact header with logo and inline progress.
@@ -287,45 +287,23 @@ pub fn render_completion(frame: &mut Frame, area: Rect, summary: &CompletionSumm
     let rows: Vec<Row> = sorted_stages
         .iter()
         .map(|stage| {
-            let icon = match stage.status {
-                StageStatus::Completed => "\u{2713}",
-                StageStatus::Skipped => "\u{2298}",
-                StageStatus::Blocked => "\u{2717}",
-                StageStatus::MergeConflict => "\u{26A1}",
-                StageStatus::CompletedWithFailures => "\u{26A0}",
-                StageStatus::MergeBlocked => "\u{2297}",
-                _ => "\u{25CB}",
-            };
+            let icon = stage.status.icon();
+            let status_str = stage.status.label();
+            let style = stage.status.tui_style();
 
             let duration = stage
                 .duration_secs
                 .map(format_elapsed)
                 .unwrap_or_else(|| "-".to_string());
 
-            let status_str = match stage.status {
-                StageStatus::Completed => "Completed",
-                StageStatus::Skipped => "Skipped",
-                StageStatus::Blocked => "Blocked",
-                StageStatus::MergeConflict => "Conflict",
-                StageStatus::CompletedWithFailures => "Failed",
-                StageStatus::MergeBlocked => "MergeBlk",
-                _ => "Other",
-            };
-
-            let style = match stage.status {
-                StageStatus::Completed => Theme::status_completed(),
-                StageStatus::Skipped => Theme::dimmed(),
-                StageStatus::Blocked
-                | StageStatus::CompletedWithFailures
-                | StageStatus::MergeBlocked => Theme::status_blocked(),
-                StageStatus::MergeConflict => Theme::status_warning(),
-                _ => Theme::dimmed(),
-            };
-
-            let id_display = if stage.id.len() > 30 {
-                format!("{}...", &stage.id[..27])
-            } else {
-                stage.id.clone()
+            // UTF-8-safe truncation (fixes byte-slice panic on multi-byte IDs)
+            let id_display = {
+                let truncated: String = stage.id.chars().take(27).collect();
+                if truncated.len() < stage.id.chars().count() {
+                    format!("{truncated}...")
+                } else {
+                    stage.id.clone()
+                }
             };
 
             Row::new(vec![
@@ -359,6 +337,7 @@ pub fn render_completion(frame: &mut Frame, area: Rect, summary: &CompletionSumm
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::stage::StageStatus;
 
     #[test]
     fn test_format_elapsed() {

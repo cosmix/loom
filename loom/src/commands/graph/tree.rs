@@ -1,53 +1,21 @@
 //! Vertical tree display for stage dependency graphs
 //!
 //! Renders stages as a vertical tree with connectors and dependency annotations.
+//!
+//! The shared tree helpers (`compute_connector`, `format_dep_annotation`) live
+//! in `commands/common/tree.rs` (their canonical D-6 home) and are imported by
+//! both this renderer and `commands/status/render/graph.rs`.
 
 use std::collections::HashMap;
 
 use colored::{Color, Colorize};
 
+use crate::commands::common::tree::{compute_connector, format_dep_annotation};
 use crate::models::stage::{Stage, StageStatus};
 
 use super::colors::color_by_index;
 use super::indicators::status_indicator;
 use super::levels::compute_stage_levels;
-
-/// Compute the tree connector prefix.
-///
-/// 3-column indent per level. Last stage at any level uses `└─ `; siblings use
-/// `├─ `. Root-level stages get just the indent.
-fn compute_connector(level: usize, index_in_level: usize, level_size: usize) -> String {
-    let indent = "   ".repeat(level);
-
-    if level == 0 {
-        indent
-    } else if index_in_level == level_size - 1 {
-        format!("{indent}└─ ")
-    } else {
-        format!("{indent}├─ ")
-    }
-}
-
-/// Format inline dependency annotation: `  ← dep1, dep2` placed right after the
-/// stage id. Returns an empty string when the stage has no deps.
-fn format_dep_annotation(deps: &[String], color_map: &HashMap<&str, Color>) -> String {
-    if deps.is_empty() {
-        return String::new();
-    }
-
-    let colored_deps: Vec<String> = deps
-        .iter()
-        .map(|dep| {
-            if let Some(&color) = color_map.get(dep.as_str()) {
-                format!("{}", dep.color(color))
-            } else {
-                dep.clone()
-            }
-        })
-        .collect();
-
-    format!("  {} {}", "←".dimmed(), colored_deps.join(", "))
-}
 
 /// Format base branch info for a stage
 fn format_base_branch_info(stage: &Stage, color_map: &HashMap<&str, Color>) -> Option<String> {
