@@ -19,7 +19,7 @@ use crate::plan::parser::{parse_plan, ParsedPlan};
 use crate::plan::schema::{ChangeImpactConfig, ChangeImpactPolicy};
 use crate::verify::baseline::compare_to_baseline;
 use crate::verify::duplicate_detection::detect_duplicate_symbols;
-use crate::verify::transitions::{list_all_stages, load_stage, save_stage, trigger_dependents};
+use crate::verify::transitions::{list_all_stages, load_stage, trigger_dependents, update_stage};
 use crate::verify::wiring_detection::detect_unwired_files;
 
 use super::acceptance_runner::{
@@ -384,11 +384,13 @@ pub fn complete(
             // Fall through to the normal completion pipeline below.
         }
         CompleteConflictRoute::ForceUnsafeAssumeMergedVerified { derived_commit } => {
-            // Persist derived commit only on the success path so refusal
-            // preserves stage file state.
+            // Carry the derived commit in-memory; handle_force_unsafe_completion
+            // re-applies it (and the forced status/merged) onto the fresh on-disk
+            // stage via update_stage. Persisting only on this success path keeps
+            // the "refusal preserves stage file state" invariant (A-5: no early
+            // whole-Stage save that could revert a concurrent writer).
             if let Some(commit) = derived_commit {
                 stage.completed_commit = Some(commit);
-                save_stage(&stage, work_dir)?;
             }
             return handle_force_unsafe_completion(stage, &stage_id, true, work_dir);
         }
@@ -429,13 +431,24 @@ pub fn complete(
             // force_status_with_reason is appropriate here: Completed is a
             // terminal state, so try_mark_merge_conflict() would refuse; but this
             // is a legitimate forced revert when an active merge is detected.
+            // Re-apply only the revert-owned fields (status, merged,
+            // merge_conflict) onto the fresh on-disk stage so the revert does not
+            // clobber concurrent writes to unrelated fields (A-5).
             stage.force_status_with_reason(
                 StageStatus::MergeConflict,
                 "phantom-merge revert: active merge detected for stage in non-conflict status",
             );
             stage.merged = false;
             stage.merge_conflict = true;
-            save_stage(&stage, work_dir)?;
+            update_stage(&stage_id, work_dir, |s| {
+                s.force_status_with_reason(
+                    StageStatus::MergeConflict,
+                    "phantom-merge revert: active merge detected for stage in non-conflict status",
+                );
+                s.merged = false;
+                s.merge_conflict = true;
+                Ok(())
+            })?;
             return spawn_resolver_for_route(
                 &stage,
                 &conflicting_files,
@@ -578,7 +591,22 @@ fn handle_force_unsafe_completion(
         eprintln!();
     }
 
-    save_stage(&stage, work_dir)?;
+    // Re-apply only the force-completion-owned fields (forced status, merged,
+    // completed_commit) onto the FRESH on-disk stage so an administrative
+    // force-complete does not revert concurrent daemon/dispute writes to
+    // unrelated fields (A-5). force_status_with_reason bypasses transition
+    // validation by design — this is the documented administrative override.
+    let forced_merged = stage.merged;
+    let forced_commit = stage.completed_commit.clone();
+    update_stage(stage_id, work_dir, |s| {
+        s.force_status_with_reason(
+            StageStatus::Completed,
+            "--force-unsafe: administrative force-completion from any state",
+        );
+        s.merged = forced_merged;
+        s.completed_commit = forced_commit.clone();
+        Ok(())
+    })?;
     println!("Stage '{stage_id}' force-completed!");
 
     // Only trigger dependent stages if merged=true (i.e., --assume-merged was used)
@@ -1084,9 +1112,12 @@ fn run_verification_phase(
             }
         }
 
-        // The orchestrator daemon will auto-merge and trigger dependents
+        // The orchestrator daemon will auto-merge and trigger dependents.
+        // Re-apply only the Completed transition onto the FRESH on-disk stage so
+        // a concurrent daemon/dispute write is not reverted (A-5). merged stays
+        // whatever it was on disk (normally false here; daemon auto-merges).
         stage.try_complete(None)?;
-        save_stage(stage, work_dir)?;
+        update_stage(stage_id, work_dir, |s| s.try_complete(None))?;
         println!("Stage '{stage_id}' completed (skipped verification).");
         println!("The orchestrator will handle merge and dependent triggering.");
     }

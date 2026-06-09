@@ -9,7 +9,7 @@ use std::path::Path;
 
 use crate::models::stage::{StageStatus, StageType};
 use crate::verify::criteria::run_acceptance;
-use crate::verify::transitions::{load_stage, save_stage};
+use crate::verify::transitions::{load_stage, update_stage};
 
 use super::acceptance_runner::resolve_stage_execution_paths;
 
@@ -104,8 +104,15 @@ pub fn check_acceptance(stage_id: String) -> Result<()> {
     println!("Summary: {passed}/{total} passed");
 
     if !result.all_passed() {
-        stage.fix_attempts += 1;
-        save_stage(&stage, work_dir)?;
+        // Re-read under the stages-dir lock and increment fix_attempts from the
+        // FRESH on-disk value (this command runs acceptance, which can take
+        // minutes; the in-memory stage is stale). Only fix_attempts is owned
+        // here — status is deliberately left unchanged (A-5).
+        let updated = update_stage(&stage_id, work_dir, |s| {
+            s.fix_attempts += 1;
+            Ok(())
+        })?;
+        stage.fix_attempts = updated.fix_attempts;
 
         let max = stage.get_effective_max_fix_attempts();
         println!("Fix attempts: {}/{max}", stage.fix_attempts);

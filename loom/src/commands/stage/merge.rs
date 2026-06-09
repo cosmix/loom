@@ -12,7 +12,7 @@ use crate::git::branch::{branch_name_for_stage, resolve_target_branch};
 use crate::git::merge::merge_head_exists;
 use crate::git::{get_conflicting_files, merge_stage, MergeResult};
 use crate::models::stage::StageStatus;
-use crate::verify::transitions::{load_stage, save_stage, trigger_dependents};
+use crate::verify::transitions::{load_stage, trigger_dependents, update_stage};
 
 /// Unified merge command entry point.
 ///
@@ -49,7 +49,7 @@ fn merge_resolved(stage_id: Option<String>) -> Result<()> {
         })?,
     };
 
-    let mut stage = load_stage(&stage_id, work_dir)?;
+    let stage = load_stage(&stage_id, work_dir)?;
 
     // Verify stage is in a merge-failed status
     if stage.status != StageStatus::MergeConflict && stage.status != StageStatus::MergeBlocked {
@@ -92,15 +92,21 @@ fn merge_resolved(stage_id: Option<String>) -> Result<()> {
         &target_branch,
         &repo_root,
     )?;
-    if let Some(commit) = verified.persist_commit {
-        // Persist the derived commit before continuing.
-        stage.completed_commit = Some(commit);
-        save_stage(&stage, work_dir)?;
-    }
 
-    // Transition to Completed with merged=true
-    stage.try_complete_merge()?;
-    save_stage(&stage, work_dir)?;
+    // Apply the derived commit (if any) and the merge-completion transition in a
+    // single locked read-modify-write on the FRESH on-disk stage (A-5). The
+    // ancestry verification above already established that `completed_commit` is
+    // in the target branch's history, so `try_complete_merge`'s `merged=true`
+    // write does NOT violate the phantom-merge invariant. `try_complete_merge`
+    // also re-validates the Completed transition against the current on-disk
+    // status. Only the merge-completion-owned fields are touched here.
+    let persist_commit = verified.persist_commit.clone();
+    update_stage(&stage_id, work_dir, |s| {
+        if let Some(commit) = persist_commit.clone() {
+            s.completed_commit = Some(commit);
+        }
+        s.try_complete_merge()
+    })?;
 
     println!("Stage '{stage_id}' merge conflict resolution complete!");
     println!("  Status: Completed (merged: true)");
@@ -231,8 +237,17 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
         return Ok(());
     }
 
-    // Increment fix_attempts after the limit guard so the count is accurate
-    let attempts = stage.increment_fix_attempts();
+    // Increment fix_attempts after the limit guard so the count is accurate.
+    // Persist the increment via a locked read-modify-write on the FRESH on-disk
+    // stage so a concurrent daemon/CLI write is not reverted, and so the count
+    // is incremented from the current persisted value rather than a stale
+    // in-memory one (A-5). Mirror the new value into the local copy for display.
+    let attempts = update_stage(&stage_id, work_dir, |s| {
+        s.increment_fix_attempts();
+        Ok(())
+    })?
+    .fix_attempts;
+    stage.fix_attempts = attempts;
 
     println!("Retrying merge for stage '{stage_id}' (attempt {attempts}/{max_attempts})");
 
@@ -255,10 +270,14 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
             println!("Merge successful!");
             println!("  {files_changed} files changed, +{insertions} -{deletions}");
 
-            // Clear merge conflict flag and mark as completed+merged
-            stage.merge_conflict = false;
-            stage.try_complete_merge()?;
-            save_stage(&stage, work_dir)?;
+            // Clear merge conflict flag and mark as completed+merged on the fresh
+            // on-disk stage (A-5). The real merge above already landed the commit
+            // in the target branch, so try_complete_merge's merged=true is a
+            // verified-merge success, not a phantom merge.
+            update_stage(&stage_id, work_dir, |s| {
+                s.merge_conflict = false;
+                s.try_complete_merge()
+            })?;
 
             println!();
             println!("Stage '{stage_id}' merge complete! (Completed, merged: true)");
@@ -281,9 +300,10 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
         Ok(MergeResult::FastForward) => {
             println!("Fast-forward merge completed!");
 
-            stage.merge_conflict = false;
-            stage.try_complete_merge()?;
-            save_stage(&stage, work_dir)?;
+            update_stage(&stage_id, work_dir, |s| {
+                s.merge_conflict = false;
+                s.try_complete_merge()
+            })?;
 
             println!("Stage '{stage_id}' merge complete! (Completed, merged: true)");
 
@@ -303,9 +323,10 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
         Ok(MergeResult::AlreadyUpToDate) => {
             println!("Branch is already up to date with {target_branch}.");
 
-            stage.merge_conflict = false;
-            stage.try_complete_merge()?;
-            save_stage(&stage, work_dir)?;
+            update_stage(&stage_id, work_dir, |s| {
+                s.merge_conflict = false;
+                s.try_complete_merge()
+            })?;
 
             println!("Stage '{stage_id}' marked as merged.");
 
@@ -320,8 +341,7 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
         }
 
         Ok(MergeResult::Conflict { conflicting_files }) => {
-            // Save the incremented fix_attempts
-            save_stage(&stage, work_dir)?;
+            // fix_attempts was already persisted by the locked increment above.
 
             println!();
             println!("Merge conflict persists.");
@@ -351,8 +371,7 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
         }
 
         Err(e) => {
-            // Save the incremented fix_attempts even on error
-            save_stage(&stage, work_dir)?;
+            // fix_attempts was already persisted by the locked increment above.
 
             println!();
             println!("Merge failed with error:");

@@ -121,6 +121,43 @@ fn atomic_write(path: &Path, content: &str) -> Result<()> {
     Ok(())
 }
 
+/// Acquire an exclusive advisory lock on `dir` for the duration of `f`.
+///
+/// This is the multi-file analogue of [`locked_update`]: it locks a *directory*
+/// (a stable inode) so a caller can find-read-modify-write one of several files
+/// living under it as a single critical section. Use it when the target file's
+/// exact path is not known up front — e.g. depth-prefixed stage files whose
+/// `NN-` prefix has to be discovered by enumerating the directory.
+///
+/// The same directory lock is what [`locked_read`], [`locked_write`], and
+/// [`locked_update`] take on a file's *parent* directory, so a `f` that operates
+/// on files directly inside `dir` is mutually exclusive with every other locked
+/// read/write of those files. Within `f`, perform the actual file replacement via
+/// [`atomic_write_locked`] so the write stays crash-atomic.
+///
+/// The directory is created if it does not exist (mirroring [`lock_parent_dir`]).
+pub fn locked_dir_update<T, F>(dir: &Path, f: F) -> Result<T>
+where
+    F: FnOnce() -> Result<T>,
+{
+    // `lock_parent_dir` locks the *parent* of the path it is given, so pass a
+    // sentinel child of `dir` to make `dir` itself the locked inode.
+    let _dir_lock = lock_parent_dir(&dir.join(".loom-dir-lock"), true)?;
+    f()
+}
+
+/// Crash-atomically write `content` to `path`, assuming the caller already holds
+/// the relevant directory lock (e.g. via [`locked_dir_update`]).
+///
+/// This is the public entry point for the temp-file + `rename` write used by all
+/// the locked writers in this module. It performs NO locking of its own — the
+/// caller is responsible for serialization. Calling it outside a held directory
+/// lock reintroduces the lost-update/torn-read races these helpers exist to
+/// prevent.
+pub fn atomic_write_locked(path: &Path, content: &str) -> Result<()> {
+    atomic_write(path, content)
+}
+
 /// Read file contents with a shared (read) lock.
 ///
 /// Acquires a shared lock on the parent directory before reading, allowing
@@ -369,6 +406,59 @@ mod tests {
         .unwrap();
         let content = locked_read(&path).unwrap();
         assert_eq!(content, "created content");
+    }
+
+    #[test]
+    fn test_locked_dir_update_serializes_find_read_write() {
+        // Two files share a directory; concurrent locked_dir_update closures that
+        // each read-modify-write one of them must not interleave (the lock is on
+        // the directory inode, so all are serialized).
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("d");
+        std::fs::create_dir_all(&dir).unwrap();
+        let counter = dir.join("counter.txt");
+        atomic_write_locked(&counter, "0").unwrap();
+
+        let handles: Vec<_> = (0..20)
+            .map(|_| {
+                let dir = dir.clone();
+                let counter = counter.clone();
+                thread::spawn(move || {
+                    locked_dir_update(&dir, || {
+                        let n: u64 = std::fs::read_to_string(&counter)
+                            .unwrap()
+                            .trim()
+                            .parse()
+                            .unwrap();
+                        atomic_write_locked(&counter, &(n + 1).to_string())
+                    })
+                    .unwrap();
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        let final_n: u64 = std::fs::read_to_string(&counter)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert_eq!(final_n, 20, "lost updates under locked_dir_update");
+    }
+
+    #[test]
+    fn test_locked_dir_update_propagates_closure_value_and_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("d2");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let v = locked_dir_update(&dir, || Ok(42u32)).unwrap();
+        assert_eq!(v, 42);
+
+        let e: Result<u32> = locked_dir_update(&dir, || anyhow::bail!("boom"));
+        assert!(e.is_err());
     }
 
     #[test]

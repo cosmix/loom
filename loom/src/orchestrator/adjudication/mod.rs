@@ -43,7 +43,7 @@ use crate::models::dispute::{
 };
 use crate::models::stage::{Stage, StageStatus};
 use crate::plan::amendment::{apply_amendment, AmendmentField, AmendmentPatch, AmendmentRequest};
-use crate::verify::transitions::{load_stage, save_stage};
+use crate::verify::transitions::{load_stage, update_stage};
 
 use worker::{
     is_inflight_fresh, spawn_worker, WorkerCompletion, WorkerJob, WorkerOutcome, MAX_WORKER_RETRIES,
@@ -269,7 +269,33 @@ impl AdjudicatorRegistry {
         let result = self.apply_verdict_inner(work_dir, &mut stage, &record);
         let final_result: Result<()> = (|| -> Result<()> {
             result?;
-            save_stage(&stage, work_dir).context("save amended stage after verdict apply")?;
+            // Re-apply ONLY the verdict-owned fields onto the FRESH on-disk
+            // stage so a concurrent dispute-thread write (e.g. dispute_count for
+            // a parallel filing) or CLI write is not reverted (A-5). The verdict
+            // owns: status (+ review_reason via try_request_human_review),
+            // evidence_rounds, amendments_applied, and acceptance/wiring (the
+            // latter two were already written to disk by apply_amendment's own
+            // locked update; re-applying the in-memory copy keeps them coherent
+            // under this lock). force_status_with_reason is used because the
+            // in-memory `stage` already holds the verdict's resolved status and
+            // the on-disk status is re-read here — re-validating the transition
+            // would risk a spurious refusal against an intermediate on-disk state.
+            let verdict_status = stage.status.clone();
+            let verdict_review_reason = stage.review_reason.clone();
+            let verdict_evidence_rounds = stage.evidence_rounds;
+            let verdict_amendments_applied = stage.amendments_applied;
+            let verdict_acceptance = stage.acceptance.clone();
+            let verdict_wiring = stage.wiring.clone();
+            update_stage(stage_id, work_dir, |s| {
+                s.force_status_with_reason(verdict_status.clone(), "adjudicator verdict applied");
+                s.review_reason = verdict_review_reason.clone();
+                s.evidence_rounds = verdict_evidence_rounds;
+                s.amendments_applied = verdict_amendments_applied;
+                s.acceptance = verdict_acceptance.clone();
+                s.wiring = verdict_wiring.clone();
+                Ok(())
+            })
+            .context("save amended stage after verdict apply")?;
             if let Some(parent) = applied.parent() {
                 std::fs::create_dir_all(parent).ok();
             }
@@ -379,16 +405,21 @@ impl AdjudicatorRegistry {
             match completion.outcome {
                 WorkerOutcome::Wrote => {}
                 WorkerOutcome::Escalate(reason) => {
-                    if let Ok(mut stage) = load_stage(&completion.stage_id, work_dir) {
-                        stage.try_request_human_review(reason).ok();
-                        if let Err(e) = save_stage(&stage, work_dir) {
-                            tracing::warn!(
-                                target: "loom::adjudication",
-                                stage = %completion.stage_id,
-                                error = %e,
-                                "failed to persist escalated stage",
-                            );
-                        }
+                    // Re-apply only the human-review transition onto the fresh
+                    // on-disk stage so a concurrent dispute-thread/CLI write is
+                    // not reverted (A-5). A refused transition is logged inside
+                    // the closure and ignored (best-effort escalation).
+                    let res = update_stage(&completion.stage_id, work_dir, |s| {
+                        s.try_request_human_review(reason.clone()).ok();
+                        Ok(())
+                    });
+                    if let Err(e) = res {
+                        tracing::warn!(
+                            target: "loom::adjudication",
+                            stage = %completion.stage_id,
+                            error = %e,
+                            "failed to persist escalated stage",
+                        );
                     }
                 }
                 WorkerOutcome::Error(err) => {
@@ -456,34 +487,36 @@ fn transition_to_queued(stage: &mut Stage) -> Result<()> {
 }
 
 fn escalate_no_api_key(work_dir: &Path, stage_id: &str) -> Result<()> {
-    let mut stage = load_stage(stage_id, work_dir)?;
-    stage
-        .try_request_human_review("ANTHROPIC_API_KEY not set; adjudicator disabled".to_string())
-        .ok();
-    save_stage(&stage, work_dir)?;
+    // Single locked read-modify-write: re-apply only the human-review
+    // transition onto the fresh on-disk stage (A-5).
+    update_stage(stage_id, work_dir, |s| {
+        s.try_request_human_review("ANTHROPIC_API_KEY not set; adjudicator disabled".to_string())
+            .ok();
+        Ok(())
+    })?;
     Ok(())
 }
 
 fn escalate_evidence_cap(work_dir: &Path, stage_id: &str) -> Result<()> {
-    let mut stage = load_stage(stage_id, work_dir)?;
-    stage
-        .try_request_human_review(format!(
+    update_stage(stage_id, work_dir, |s| {
+        s.try_request_human_review(format!(
             "Evidence loop exhausted at {} rounds",
             MAX_EVIDENCE_ROUNDS
         ))
         .ok();
-    save_stage(&stage, work_dir)?;
+        Ok(())
+    })?;
     Ok(())
 }
 
 fn escalate_attempt_cap(work_dir: &Path, stage_id: &str, dispute_id: u32) -> Result<()> {
-    let mut stage = load_stage(stage_id, work_dir)?;
-    stage
-        .try_request_human_review(format!(
+    update_stage(stage_id, work_dir, |s| {
+        s.try_request_human_review(format!(
             "Adjudicator worker exhausted retry budget for dispute {dispute_id}"
         ))
         .ok();
-    save_stage(&stage, work_dir)?;
+        Ok(())
+    })?;
     Ok(())
 }
 

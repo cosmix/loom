@@ -52,7 +52,33 @@ Stage has 12 states: WaitingForDeps -> Queued -> Executing -> Completed (termina
 
 ## File-Based State Pattern
 
-All state persisted to `.work/` as markdown with YAML frontmatter. Benefits: git-friendly diffing, human-readable, crash recovery via file re-read. No explicit file locking; relies on daemon single-writer model. Stage files named with topological depth prefix (e.g., `01-knowledge-bootstrap.md`).
+All state persisted to `.work/` as markdown with YAML frontmatter. Benefits: git-friendly diffing, human-readable, crash recovery via file re-read. Stage files named with topological depth prefix (e.g., `01-knowledge-bootstrap.md`).
+
+**Concurrency is NOT single-writer.** Three writer classes mutate stage files concurrently: the orchestrator main loop (`orchestrator/core/persistence.rs::save_stage`), the daemon dispute IPC thread (`daemon/server/dispute.rs`), and agent-run CLI commands (`commands/stage/{complete,merge,check_acceptance,skip_retry}.rs`). All stage-file reads/writes go through `fs/locking.rs` advisory `flock`s on the **parent directory** inode (`stages/`), and writes are crash-atomic (temp-file + `rename`). See the Locked Stage Read-Modify-Write Pattern below — the old "no explicit file locking; single-writer model" assumption was false and produced the A-5 lost-update class.
+
+## Locked Stage Read-Modify-Write Pattern (A-5)
+
+`locked_read`/`locked_write` serialize *individual* reads/writes, but the load → mutate → save flow releases the lock between load and save. Each `save_stage` serializes the **entire** `Stage`, so a writer that loaded the stage minutes earlier (e.g. `loom stage complete` holding a stage across a multi-minute acceptance run) reverts any field a concurrent writer changed in the gap — a lost update (status reverted, `dispute_count`/`retry_count`/`close_reason`/`session`/amended `acceptance` clobbered).
+
+**Fix — `verify::transitions::update_stage(stage_id, work_dir, |s| { ... })`:** holds the `stages/` directory lock across a *fresh* on-disk read, the closure, and the crash-atomic write. The closure mutates the **current** persisted `Stage`, so it only touches the fields the operation owns; a concurrent writer's other fields survive. Returns the written `Stage`. The file must already exist (creation still uses `save_stage`). A closure `Err` leaves the file untouched.
+
+```rust
+// Re-read under the lock, apply only the operation-owned delta:
+update_stage(stage_id, work_dir, |s| {
+    s.dispute_count = s.dispute_count.saturating_add(1); // incremented from on-disk value
+    s.try_request_adjudication(reason)                   // status transition validated on-disk
+})?;
+```
+
+Underlying primitives (`fs/locking.rs`): `locked_dir_update(dir, f)` locks a directory inode for the duration of `f` (for find-read-write when the file's exact prefixed path is unknown); `atomic_write_locked(path, content)` is the temp+rename write used *inside* a held lock.
+
+**Field-ownership rule (the judgment-heavy part):** for a LONG operation, re-apply ONLY the fields that operation owns and leave every other field at its on-disk value. Ownership as migrated: progressive-merge completion owns `completed_commit`/`merged`/`merge_conflict`/status (`progressive_complete.rs`); `loom stage merge` owns `fix_attempts` + the merge-completion transition (`merge.rs`); `check_acceptance` owns only `fix_attempts`; the dispute handler owns `dispute_count`/`evidence_rounds`/status (`dispute.rs`); the adjudicator verdict owns status/`review_reason`/`evidence_rounds`/`amendments_applied`/`acceptance`/`wiring` (`adjudication/mod.rs`); plan amendment owns only `acceptance`/`wiring` (`plan/amendment.rs`, per the Adjudicator Scope Convention).
+
+**Long-op shape:** run the slow work (git merge under its own `MergeLock`, acceptance commands) OUTSIDE the stages-dir lock, then apply the owned fields in a SHORT `update_stage` closure — never hold the stages-dir lock across git/subprocess work.
+
+**Invariants preserved:** never write `merged=true` without ancestry verification (the `merged=true` writes in `merge.rs`/`merge.rs --resolved` follow a real merge or a `verify_or_derive_completed_commit` ancestry check, both done before the closure); `route_complete_for_conflicts` stays a pure read-only seam (no early whole-`Stage` save before its decision); status transitions still go through `try_*`/`force_status_with_reason`.
+
+**Not migrated (deliberate):** orchestrator main-loop `save_stage` sites in `recovery.rs`/`merge_handler.rs`/`event_handler.rs`/`stage_executor.rs`. They operate on a stage freshly read into the graph in the same tick (`sync_graph_with_stage_files` re-reads disk every tick), the loop is single-threaded, and they do not overlap the dispute/adjudication field set. Migrating all ~40 would be a large blast radius across the merge/recovery lifecycle for no realized-lost-update benefit.
 
 ## Signal Generation Pattern
 

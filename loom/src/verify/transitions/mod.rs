@@ -13,7 +13,7 @@ mod state;
 mod tests;
 
 // Public API
-pub use persistence::{list_all_stages, load_stage, save_stage};
+pub use persistence::{list_all_stages, load_stage, save_stage, update_stage};
 pub use serialization::{parse_stage_from_markdown, serialize_stage_to_markdown};
 pub use state::{
     are_all_dependencies_satisfied, are_all_dependencies_satisfied_cached, transition_stage,

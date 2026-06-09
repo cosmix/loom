@@ -11,7 +11,7 @@ use crate::git::cleanup::{cleanup_after_merge, CleanupConfig};
 use crate::git::get_branch_head;
 use crate::models::stage::Stage;
 use crate::orchestrator::{get_merge_point, merge_completed_stage, ProgressiveMergeResult};
-use crate::verify::transitions::save_stage;
+use crate::verify::transitions::update_stage;
 
 /// Result of attempting to merge a completed stage
 pub enum MergeOutcome {
@@ -27,6 +27,19 @@ pub enum MergeOutcome {
 ///
 /// This function handles the git merge operations and updates the stage's
 /// merge-related fields (merged, completed_commit).
+///
+/// # Concurrency (A-5)
+///
+/// The in-memory `stage` handed to `complete_with_merge` was loaded before the
+/// (potentially multi-minute) acceptance and verification phases ran, so it is
+/// stale relative to concurrent daemon/dispute writes. The git merge itself runs
+/// *outside* the stages-dir lock (it holds the separate `MergeLock` and can take
+/// time), then the merge-completion fields are re-applied to the **fresh**
+/// on-disk stage via `update_stage`. The completion operation owns exactly:
+/// `completed_commit`, `merged`, `merge_conflict`, and the status transition; it
+/// re-applies only those, so a concurrent writer's unrelated fields
+/// (`dispute_count`, `retry_count`, amended `acceptance`, …) survive. The
+/// in-memory `stage` is also updated so the caller can drive resolver spawning.
 ///
 /// # Returns
 /// - `MergeOutcome::Success` if merge succeeded (stage should be marked Completed)
@@ -46,6 +59,8 @@ pub fn attempt_progressive_merge(
     if let Ok(commit) = get_branch_head(&branch_name, repo_root) {
         stage.completed_commit = Some(commit);
     }
+    // Snapshot the commit to re-apply onto the fresh on-disk stage below.
+    let completed_commit = stage.completed_commit.clone();
 
     println!("Attempting progressive merge into '{merge_point}'...");
     match merge_completed_stage(stage, repo_root, &merge_point) {
@@ -70,7 +85,12 @@ pub fn attempt_progressive_merge(
                 "Progressive merge: branch missing — cannot verify merge succeeded"
             );
             stage.try_mark_merge_blocked()?;
-            save_stage(stage, work_dir)?;
+            // Re-apply only the merge-block transition onto the fresh on-disk
+            // stage (A-5). completed_commit is preserved if it was captured.
+            update_stage(&stage.id, work_dir, |s| {
+                s.completed_commit = completed_commit.clone();
+                s.try_mark_merge_blocked()
+            })?;
             Ok(MergeOutcome::Blocked)
         }
         Ok(ProgressiveMergeResult::Conflict { conflicting_files }) => {
@@ -82,7 +102,12 @@ pub fn attempt_progressive_merge(
             println!();
             println!("    Stage transitioning to MergeConflict status.");
             stage.try_mark_merge_conflict()?;
-            save_stage(stage, work_dir)?;
+            // Re-apply only the merge-conflict transition + commit onto the fresh
+            // on-disk stage (A-5).
+            update_stage(&stage.id, work_dir, |s| {
+                s.completed_commit = completed_commit.clone();
+                s.try_mark_merge_conflict()
+            })?;
 
             // Try to auto-spawn a merge resolver session. Fresh-conflict path:
             // the test merge in merge_stage was already aborted before
@@ -121,7 +146,12 @@ pub fn attempt_progressive_merge(
         Err(e) => {
             eprintln!("Progressive merge failed: {e}");
             stage.try_mark_merge_blocked()?;
-            save_stage(stage, work_dir)?;
+            // Re-apply only the merge-block transition onto the fresh on-disk
+            // stage (A-5).
+            update_stage(&stage.id, work_dir, |s| {
+                s.completed_commit = completed_commit.clone();
+                s.try_mark_merge_blocked()
+            })?;
             eprintln!("Stage '{}' marked as MergeBlocked", stage.id);
             eprintln!("  Fix the issue and run: loom stage retry {}", stage.id);
             Ok(MergeOutcome::Blocked)
@@ -136,9 +166,21 @@ pub fn attempt_progressive_merge(
 pub fn complete_with_merge(stage: &mut Stage, repo_root: &Path, work_dir: &Path) -> Result<bool> {
     match attempt_progressive_merge(stage, repo_root, work_dir)? {
         MergeOutcome::Success => {
-            // Mark stage as completed - only after merge succeeds
+            // Mark stage as completed - only after merge succeeds.
             stage.try_complete(None)?;
-            save_stage(stage, work_dir)?;
+            // Re-apply only the completion-owned fields (merged, completed_commit,
+            // and the Completed transition) onto the FRESH on-disk stage, so a
+            // concurrent daemon/dispute write during the multi-minute acceptance
+            // run is not reverted (A-5). `try_complete` recomputes duration from
+            // the on-disk `started_at` (owned by the executor) and validates the
+            // transition against the current on-disk status — if a dispute moved
+            // the stage to NeedsAdjudication meanwhile, it correctly refuses.
+            let completed_commit = stage.completed_commit.clone();
+            update_stage(&stage.id, work_dir, |s| {
+                s.completed_commit = completed_commit.clone();
+                s.merged = true;
+                s.try_complete(None)
+            })?;
 
             println!("Stage '{}' completed!", stage.id);
 

@@ -31,7 +31,7 @@ use crate::daemon::protocol::Response;
 use crate::fs::safe_fs::safe_create_new_in_workdir;
 use crate::fs::work_dir::WorkDir;
 use crate::models::dispute::DisputeRequest;
-use crate::verify::transitions::{load_stage, save_stage};
+use crate::verify::transitions::{load_stage, update_stage};
 
 const FAILURE_OUTPUT_MAX_BYTES: usize = 4096;
 
@@ -93,7 +93,7 @@ pub fn handle_dispute_criteria(
     }
     // Lock guard: dropped at end of scope releases via close.
 
-    let mut stage = load_stage(stage_id, &work_canonical)?;
+    let stage = load_stage(stage_id, &work_canonical)?;
 
     if criterion_index >= stage.acceptance.len() {
         return Ok(Response::Error {
@@ -110,23 +110,26 @@ pub fn handle_dispute_criteria(
         // entry point) and `NeedsAdjudication`; if the stage happens to be
         // in some other status we still return the error to the caller
         // and let an operator intervene.
+        //
+        // Re-read under the stages-dir lock and mutate only the review/status
+        // fields this operation owns, so a concurrent orchestrator/CLI write to
+        // other fields is preserved (A-5). The budget re-check inside the
+        // closure is against the fresh on-disk count.
         let count = stage.dispute_count;
         let max = stage.max_disputes_per_stage();
-        if let Err(e) = stage.try_request_human_review(format!(
-            "Dispute budget exhausted ({count} of {max} disputes filed)"
-        )) {
+        let escalate = update_stage(stage_id, &work_canonical, |s| {
+            s.try_request_human_review(format!(
+                "Dispute budget exhausted ({} of {} disputes filed)",
+                s.dispute_count,
+                s.max_disputes_per_stage()
+            ))
+        });
+        if let Err(e) = escalate {
             tracing::warn!(
                 target: "loom::dispute",
                 stage = %stage_id,
                 error = %e,
                 "dispute budget exhausted but stage could not be escalated to NeedsHumanReview",
-            );
-        } else if let Err(e) = save_stage(&stage, &work_canonical) {
-            tracing::warn!(
-                target: "loom::dispute",
-                stage = %stage_id,
-                error = %e,
-                "failed to persist escalated stage after dispute-budget exhaustion",
             );
         }
         return Ok(Response::Error {
@@ -188,12 +191,18 @@ pub fn handle_dispute_criteria(
         content.as_bytes(),
     )?;
 
-    // Update stage state and persist.
-    stage.dispute_count = stage.dispute_count.saturating_add(1);
-    stage.evidence_rounds = 0;
-    // Transition (handles both Executing and CompletedWithFailures via the helper).
-    stage.try_request_adjudication(Some(record_to_write.reason.clone()))?;
-    save_stage(&stage, &work_canonical)?;
+    // Update stage state and persist. Re-read under the stages-dir lock and
+    // mutate only the dispute-owned fields (`dispute_count`, `evidence_rounds`,
+    // status/close_reason via the transition helper) on the fresh on-disk state,
+    // so a concurrent orchestrator/CLI write to unrelated fields is not reverted
+    // (A-5). `dispute_count` is incremented from the current persisted value.
+    let dispute_reason = record_to_write.reason.clone();
+    update_stage(stage_id, &work_canonical, |s| {
+        s.dispute_count = s.dispute_count.saturating_add(1);
+        s.evidence_rounds = 0;
+        // Transition (handles both Executing and CompletedWithFailures via the helper).
+        s.try_request_adjudication(Some(dispute_reason))
+    })?;
 
     // Lock will release when lock_file drops at end of scope.
     drop(lock_file);

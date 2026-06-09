@@ -46,7 +46,7 @@ use crate::fs::safe_fs;
 use crate::models::stage::{Stage, WiringCheck};
 use crate::plan::parser::{extract_yaml_metadata_with_ranges, parse_and_validate};
 use crate::plan::schema::{AcceptanceCriterion, LoomMetadata, StageDefinition};
-use crate::verify::transitions::{load_stage, save_stage as persist_stage};
+use crate::verify::transitions::{load_stage, update_stage};
 
 /// Which field of a stage is being amended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -400,8 +400,10 @@ fn resolve_plan_path(work_dir: &Path) -> Result<PathBuf> {
 /// 8. Append one row to `.work/plan_versions/audit.md` (O_APPEND under flock).
 /// 9. Write the new plan content to `plan_path` via
 ///    `safe_replace_outside_workdir` (dirfd-anchored atomic rename).
-/// 10. Persist the updated stage definition via
-///     `verify::transitions::save_stage` — this is what
+/// 10. Persist the amended `acceptance`/`wiring` via
+///     `verify::transitions::update_stage` (a locked read-modify-write that
+///     re-reads the on-disk stage so a concurrent dispute/orchestrator write to
+///     other fields is not reverted — A-5) — this is what
 ///     `sync_graph_with_stage_files` consumes; skipping it leaves stale
 ///     criteria in effect at runtime.
 pub fn apply_amendment(
@@ -651,9 +653,19 @@ pub fn apply_amendment(
         .with_context(|| format!("Failed to replace live plan {}", plan_path.display()))?;
 
     // -- 10. Persist the updated stage file. Without this, the runtime keeps
-    //        the old criteria via sync_graph_with_stage_files.
-    persist_stage(&stage, work_dir)
-        .with_context(|| format!("Failed to save amended stage '{}'", request.stage_id))?;
+    //        the old criteria via sync_graph_with_stage_files. Re-apply ONLY the
+    //        amendment-owned fields (acceptance, wiring — the Adjudicator Scope
+    //        Convention) onto the FRESH on-disk stage, so a concurrent
+    //        dispute-thread / orchestrator write to other fields
+    //        (dispute_count, status, session, …) is not reverted (A-5).
+    let amended_acceptance = stage.acceptance.clone();
+    let amended_wiring = stage.wiring.clone();
+    update_stage(&request.stage_id, work_dir, |s| {
+        s.acceptance = amended_acceptance.clone();
+        s.wiring = amended_wiring.clone();
+        Ok(())
+    })
+    .with_context(|| format!("Failed to save amended stage '{}'", request.stage_id))?;
 
     Ok(AmendmentResult {
         version: next_version,
@@ -823,13 +835,20 @@ pub fn verify_plan_versions_consistency(plan_path: &Path, work_dir: &Path) -> Re
     else {
         return Ok(actions);
     };
-    if let Ok(mut current_stage) = load_stage(&row.stage_id, work_dir) {
+    if let Ok(current_stage) = load_stage(&row.stage_id, work_dir) {
         if !stage_field_matches(&current_stage, snap_stage_def, row.field) {
-            sync_stage_from_definition(&mut current_stage, snap_stage_def, row.field);
-            // Don't bump amendments_applied here — it was already incremented
-            // when the original `apply_amendment` ran (step 10). Recovery
-            // only catches up the field content.
-            if persist_stage(&current_stage, work_dir).is_ok() {
+            // Re-apply ONLY the amended field (acceptance or wiring) onto the
+            // fresh on-disk stage so recovery does not revert other concurrently
+            // written fields (A-5). Don't bump amendments_applied — it was
+            // already incremented when the original apply_amendment ran.
+            let field = row.field;
+            let snap_stage_def = snap_stage_def.clone();
+            if update_stage(&row.stage_id, work_dir, |s| {
+                sync_stage_from_definition(s, &snap_stage_def, field);
+                Ok(())
+            })
+            .is_ok()
+            {
                 actions += 1;
             }
         }

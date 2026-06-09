@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::Path;
 
-use crate::fs::locking::{locked_read, locked_write};
+use crate::fs::locking::{atomic_write_locked, locked_dir_update, locked_read, locked_write};
 use crate::fs::stage_files::{find_stage_file, stage_file_path};
 use crate::models::stage::Stage;
 use crate::plan::graph::levels::compute_all_levels;
@@ -78,6 +78,67 @@ pub fn save_stage(stage: &Stage, work_dir: &Path) -> Result<()> {
     locked_write(&stage_path, &content)?;
 
     Ok(())
+}
+
+/// Atomically read-modify-write a stage file under a single exclusive lock.
+///
+/// This is the lost-update-safe alternative to the load → mutate → `save_stage`
+/// pattern. The whole-`Stage` save approach reverts any field a *concurrent*
+/// writer changed between this caller's load and its save, because each save
+/// serializes the entire in-memory `Stage`. With three writer classes racing on
+/// the same file (the orchestrator main loop, the daemon dispute IPC thread, and
+/// agent-run CLI commands), the last writer silently clobbers the others'
+/// changes (status reverted, `dispute_count`/`retry_count`/`close_reason`/
+/// `session` lost).
+///
+/// `update_stage` closes the window: it holds the `stages/` directory lock across
+/// a *fresh* on-disk read, the `modify` closure, and the write. The closure
+/// therefore mutates the **current** persisted state, so it only needs to touch
+/// the fields the operation owns — it never reverts a sibling writer's field.
+///
+/// The directory lock is the same inode every `locked_read`/`locked_write` of a
+/// stage file takes (they lock the file's parent, which is `stages/`), so this
+/// critical section is mutually exclusive with all other stage-file reads and
+/// writes — across processes, since these are advisory `flock`s.
+///
+/// The stage file MUST already exist; a missing file is an error (this API is for
+/// mutating live stages, not creating them — use [`save_stage`] for creation).
+///
+/// # Arguments
+/// * `stage_id` - The ID of the stage to update
+/// * `work_dir` - Path to the `.work` directory
+/// * `modify` - Closure applied to the freshly-read on-disk `Stage`. It may fail
+///   (e.g. a state-machine transition is refused); on `Err` the file is left
+///   untouched.
+///
+/// # Returns
+/// The post-modification `Stage` (a clone of what was written) on success.
+pub fn update_stage<F>(stage_id: &str, work_dir: &Path, modify: F) -> Result<Stage>
+where
+    F: FnOnce(&mut Stage) -> Result<()>,
+{
+    let stages_dir = work_dir.join("stages");
+
+    locked_dir_update(&stages_dir, || {
+        // Re-read the CURRENT on-disk stage under the lock. Anything a concurrent
+        // writer committed before we took the lock is visible here and preserved.
+        let stage_path = find_stage_file(&stages_dir, stage_id)?
+            .ok_or_else(|| anyhow::anyhow!("Stage file not found for update: {stage_id}"))?;
+
+        let content = std::fs::read_to_string(&stage_path)
+            .with_context(|| format!("Failed to read stage file: {}", stage_path.display()))?;
+        let mut stage = parse_stage_from_markdown(&content)
+            .with_context(|| format!("Failed to parse stage from: {}", stage_path.display()))?;
+
+        // Apply the operation-owned delta to the fresh state. A closure error
+        // (e.g. a refused transition) leaves the file untouched.
+        modify(&mut stage)?;
+
+        let new_content = serialize_stage_to_markdown(&stage)?;
+        atomic_write_locked(&stage_path, &new_content)?;
+
+        Ok(stage)
+    })
 }
 
 /// Compute the topological depth for a single stage based on its dependencies
@@ -154,4 +215,131 @@ fn load_stage_from_path(path: &Path) -> Result<Stage> {
 
     parse_stage_from_markdown(&content)
         .with_context(|| format!("Failed to parse stage from: {}", path.display()))
+}
+
+#[cfg(test)]
+mod update_stage_tests {
+    use super::*;
+    use crate::models::stage::{Stage, StageStatus};
+
+    fn seed_stage(work_dir: &Path, id: &str) -> Stage {
+        let stage = Stage {
+            id: id.to_string(),
+            name: format!("Stage {id}"),
+            status: StageStatus::Executing,
+            ..Stage::default()
+        };
+        save_stage(&stage, work_dir).unwrap();
+        stage
+    }
+
+    #[test]
+    fn update_stage_applies_delta_and_returns_written_stage() {
+        let temp = tempfile::tempdir().unwrap();
+        let work_dir = temp.path();
+        seed_stage(work_dir, "s1");
+
+        let written = update_stage("s1", work_dir, |s| {
+            s.dispute_count += 1;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(written.dispute_count, 1);
+
+        let reloaded = load_stage("s1", work_dir).unwrap();
+        assert_eq!(reloaded.dispute_count, 1);
+    }
+
+    #[test]
+    fn update_stage_preserves_concurrent_field_written_after_load() {
+        // Models the A-5 lost-update class: a long-running op loads the stage,
+        // then a *different* writer commits a change to another field; the
+        // long-running op must NOT revert that field. update_stage re-reads the
+        // current on-disk state inside the lock, so it only touches its own
+        // field and preserves the concurrent writer's change.
+        let temp = tempfile::tempdir().unwrap();
+        let work_dir = temp.path();
+        let stale = seed_stage(work_dir, "s2");
+
+        // Concurrent writer (e.g. dispute thread) bumps dispute_count on disk.
+        update_stage("s2", work_dir, |s| {
+            s.dispute_count = 5;
+            Ok(())
+        })
+        .unwrap();
+
+        // The "long-running op" still holds `stale` (dispute_count == 0). It
+        // applies its own owned field via update_stage, which re-reads disk.
+        assert_eq!(stale.dispute_count, 0);
+        update_stage("s2", work_dir, |s| {
+            s.retry_count += 1;
+            Ok(())
+        })
+        .unwrap();
+
+        let reloaded = load_stage("s2", work_dir).unwrap();
+        // Concurrent writer's field survived...
+        assert_eq!(reloaded.dispute_count, 5);
+        // ...and our owned field was applied.
+        assert_eq!(reloaded.retry_count, 1);
+    }
+
+    #[test]
+    fn update_stage_leaves_file_untouched_on_closure_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let work_dir = temp.path();
+        seed_stage(work_dir, "s3");
+        update_stage("s3", work_dir, |s| {
+            s.dispute_count = 9;
+            Ok(())
+        })
+        .unwrap();
+
+        let err = update_stage("s3", work_dir, |s| {
+            s.dispute_count = 99; // mutated, but the closure then fails
+            anyhow::bail!("closure failed")
+        });
+        assert!(err.is_err());
+
+        // The failed update must not have written the mutation.
+        let reloaded = load_stage("s3", work_dir).unwrap();
+        assert_eq!(reloaded.dispute_count, 9);
+    }
+
+    #[test]
+    fn update_stage_errors_when_file_missing() {
+        let temp = tempfile::tempdir().unwrap();
+        let work_dir = temp.path();
+        std::fs::create_dir_all(work_dir.join("stages")).unwrap();
+        let res = update_stage("does-not-exist", work_dir, |_s| Ok(()));
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn update_stage_concurrent_increments_have_no_lost_updates() {
+        use std::thread;
+        let temp = tempfile::tempdir().unwrap();
+        let work_dir = temp.path().to_path_buf();
+        seed_stage(&work_dir, "s4");
+
+        let handles: Vec<_> = (0..10)
+            .map(|_| {
+                let work_dir = work_dir.clone();
+                thread::spawn(move || {
+                    update_stage("s4", &work_dir, |s| {
+                        s.dispute_count += 1;
+                        Ok(())
+                    })
+                    .unwrap();
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        let reloaded = load_stage("s4", &work_dir).unwrap();
+        // All 10 increments landed — the exclusive lock serializes the RMW.
+        assert_eq!(reloaded.dispute_count, 10);
+    }
 }
