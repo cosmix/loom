@@ -3,7 +3,6 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
 use crate::models::failure::FailureInfo;
-use crate::plan::schema::ALLOWED_REASONING_EFFORTS;
 
 /// Type of stage for specialized handling.
 ///
@@ -87,6 +86,337 @@ pub struct WiringCheck {
     pub description: String,
 }
 
+/// Claude Code permission mode controlling default tool-approval behavior.
+///
+/// Serialized as kebab-case in YAML (`accept-edits`, `bypass-permissions`) but
+/// emitted to Claude Code's `settings.json` as camelCase via
+/// [`PermissionMode::as_settings_value`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PermissionMode {
+    /// Prompt for every action requiring approval.
+    Default,
+    /// Auto-accept Edit/Write operations on session-owned files.
+    AcceptEdits,
+    /// Auto-accept any action Claude's heuristics deem safe.
+    Auto,
+    /// Plan-only mode — propose changes without executing them.
+    Plan,
+    /// Bypass all permission prompts.
+    BypassPermissions,
+}
+
+impl PermissionMode {
+    /// Return the camelCase string Claude Code expects in `settings.json`
+    /// under `permissions.defaultMode`.
+    pub fn as_settings_value(self) -> &'static str {
+        match self {
+            PermissionMode::Default => "default",
+            PermissionMode::AcceptEdits => "acceptEdits",
+            PermissionMode::Auto => "auto",
+            PermissionMode::Plan => "plan",
+            PermissionMode::BypassPermissions => "bypassPermissions",
+        }
+    }
+}
+
+/// Per-stage sandbox configuration (overrides plan-level defaults)
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct StageSandboxConfig {
+    /// Override enabled setting for this stage
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+
+    /// Override auto_allow setting for this stage
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_allow: Option<bool>,
+
+    /// Override allow_unsandboxed_escape for this stage
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_unsandboxed_escape: Option<bool>,
+
+    /// Additional excluded commands for this stage
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub excluded_commands: Vec<String>,
+
+    /// Filesystem overrides for this stage
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filesystem: Option<FilesystemConfig>,
+
+    /// Network overrides for this stage
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network: Option<NetworkConfig>,
+
+    /// Linux-specific overrides for this stage
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linux: Option<LinuxConfig>,
+
+    /// Per-stage Claude Code permission-mode override.
+    /// When unset, the plan-level override (or stage type default) applies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<PermissionMode>,
+}
+
+/// Filesystem access configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FilesystemConfig {
+    /// Paths that agents cannot read (glob patterns)
+    /// Default: ~/.ssh/**, ~/.aws/**, ~/.config/gcloud/**, ~/.gnupg/**
+    #[serde(default = "default_deny_read")]
+    pub deny_read: Vec<String>,
+
+    /// Paths that agents cannot write (glob patterns)
+    /// Default: ../../**, doc/loom/knowledge/**
+    #[serde(default = "default_deny_write")]
+    pub deny_write: Vec<String>,
+
+    /// Additional paths agents are allowed to write (glob patterns)
+    /// Use this to grant exceptions to deny rules
+    #[serde(default)]
+    pub allow_write: Vec<String>,
+}
+
+impl Default for FilesystemConfig {
+    fn default() -> Self {
+        Self {
+            deny_read: default_deny_read(),
+            deny_write: default_deny_write(),
+            allow_write: Vec::new(),
+        }
+    }
+}
+
+/// Network access configuration
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct NetworkConfig {
+    /// Allowed network domains (glob patterns)
+    /// Empty means no network access allowed
+    #[serde(default)]
+    pub allowed_domains: Vec<String>,
+
+    /// Additional domains to allow beyond the defaults
+    #[serde(default)]
+    pub additional_domains: Vec<String>,
+
+    /// Allow binding to local ports (default: false)
+    #[serde(default)]
+    pub allow_local_binding: bool,
+
+    /// Allow specific Unix socket paths (glob patterns)
+    /// Accepts either a list of paths or `false` (treated as empty list)
+    #[serde(default, deserialize_with = "deserialize_bool_or_string_vec")]
+    pub allow_unix_sockets: Vec<String>,
+
+    /// Allow all Unix socket connections (default: false)
+    #[serde(default)]
+    pub allow_all_unix_sockets: bool,
+}
+
+/// Linux-specific sandbox configuration
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LinuxConfig {
+    /// Enable weaker nested sandboxing for compatibility (default: false)
+    /// Use this if running inside containers or VMs with restricted capabilities
+    #[serde(default)]
+    pub enable_weaker_nested: bool,
+}
+
+/// Deserializes a field that can be either a boolean `false` (→ empty vec) or a list of strings.
+/// This allows plan authors to write `allow_unix_sockets: false` as shorthand for an empty list.
+fn deserialize_bool_or_string_vec<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum BoolOrVec {
+        #[allow(dead_code)]
+        Bool(bool),
+        Vec(Vec<String>),
+    }
+
+    match BoolOrVec::deserialize(deserializer)? {
+        BoolOrVec::Bool(_) => Ok(Vec::new()),
+        BoolOrVec::Vec(v) => Ok(v),
+    }
+}
+
+fn default_deny_read() -> Vec<String> {
+    vec![
+        // Sensitive credential directories
+        "~/.ssh/**".to_string(),
+        "~/.aws/**".to_string(),
+        "~/.config/gcloud/**".to_string(),
+        "~/.gnupg/**".to_string(),
+        // Daemon IPC tokens — must never be readable by a sandboxed worktree
+        // agent. The broad `.work/**` allow (emitted to grant the worktree its
+        // EROFS exemption) would otherwise expose `.work/admin.token` (Admin
+        // capability) and `.work/user.token` (User capability), defeating the
+        // RPC privilege split. These deny entries must be emitted *before* the
+        // broad allow (deny-before-allow) — that ordering is handled by the
+        // settings emitter; here we only declare the carve-out. Both relative
+        // forms are listed because `.work` is a symlink and Claude Code matches
+        // patterns against the path as written.
+        ".work/admin.token".to_string(),
+        ".work/user.token".to_string(),
+        "../.work/admin.token".to_string(),
+        "../.work/user.token".to_string(),
+        // Worktree escape prevention - block access to parent directories
+        "../../**".to_string(),
+        // Block access to other worktrees
+        "../.worktrees/**".to_string(),
+    ]
+}
+
+fn default_deny_write() -> Vec<String> {
+    vec![
+        // Worktree escape prevention - block writes to parent directories
+        "../../**".to_string(),
+        // Knowledge files - protected by default, knowledge stages get explicit allow
+        "doc/loom/knowledge/**".to_string(),
+    ]
+}
+
+/// Enhanced truth check with extended success criteria.
+///
+/// TruthCheck allows verifying observable behaviors with more than just exit code.
+/// All extended fields are optional for backward compatibility.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TruthCheck {
+    /// Shell command to execute
+    pub command: String,
+    /// Strings that must appear in stdout
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stdout_contains: Vec<String>,
+    /// Strings that must NOT appear in stdout
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stdout_not_contains: Vec<String>,
+    /// Whether stderr must be empty (default: false, meaning stderr is ignored)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stderr_empty: Option<bool>,
+    /// Expected exit code (default: 0)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    /// Human-readable description of what this truth verifies
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+/// Unified acceptance criterion - either a simple shell command or an extended check.
+///
+/// In YAML, simple criteria are plain strings, extended criteria are objects:
+/// ```yaml
+/// acceptance:
+///   - "cargo test"                           # Simple
+///   - command: "loom --help"                  # Extended
+///     stdout_contains: ["Usage:"]
+///     exit_code: 0
+/// ```
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum AcceptanceCriterion {
+    /// Simple shell command - succeeds if exit code is 0
+    Simple(String),
+    /// Extended check with output validation (reuses TruthCheck structure)
+    Extended(TruthCheck),
+}
+
+impl AcceptanceCriterion {
+    /// Get the shell command string for this criterion
+    pub fn command(&self) -> &str {
+        match self {
+            AcceptanceCriterion::Simple(cmd) => cmd,
+            AcceptanceCriterion::Extended(check) => &check.command,
+        }
+    }
+
+    /// Whether this is an extended criterion with output validation
+    pub fn is_extended(&self) -> bool {
+        matches!(self, AcceptanceCriterion::Extended(_))
+    }
+}
+
+impl std::fmt::Display for AcceptanceCriterion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.command())
+    }
+}
+
+/// Success criteria for wiring tests.
+///
+/// Defines how to determine if a wiring test passed.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SuccessCriteria {
+    /// Expected exit code (default: 0)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    /// Strings that must appear in stdout
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stdout_contains: Vec<String>,
+    /// Strings that must NOT appear in stdout
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stdout_not_contains: Vec<String>,
+    /// Strings that must appear in stderr
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stderr_contains: Vec<String>,
+    /// Whether stderr must be empty
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stderr_empty: Option<bool>,
+}
+
+/// Wiring test to verify component integration.
+///
+/// Unlike WiringCheck (grep-based pattern matching), WiringTest runs
+/// actual commands to verify runtime behavior of component connections.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WiringTest {
+    /// Human-readable name for this test
+    pub name: String,
+    /// Shell command to execute
+    pub command: String,
+    /// Success criteria for this test
+    #[serde(default)]
+    pub success_criteria: SuccessCriteria,
+    /// Human-readable description of what this test verifies
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+/// Configuration for dead code detection.
+///
+/// Runs a command and checks output for patterns indicating dead code.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeadCodeCheck {
+    /// Command to run for dead code detection (e.g., "cargo build --message-format=json")
+    pub command: String,
+    /// Patterns in output that indicate dead code (e.g., "warning: unused")
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fail_patterns: Vec<String>,
+    /// Patterns to ignore (e.g., "allowed_unused_function")
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ignore_patterns: Vec<String>,
+}
+
+/// Regression test requirement for bug-fix stages.
+///
+/// When a stage is marked as `bug_fix: true`, a regression test must be defined
+/// to verify the fix is actually tested and won't regress.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegressionTest {
+    /// Path to the test file (relative to working_dir)
+    pub file: String,
+    /// Patterns that must appear in the test file content
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub must_contain: Vec<String>,
+}
+
+/// Allowed values for `reasoning_effort` on a stage.
+///
+/// Anchored to the set Claude Code itself accepts on its CLI. Adding a new
+/// value here requires a coordinated change in `native/mod.rs` where the
+/// effort is concatenated into the command line as `--effort <value>`.
+pub const ALLOWED_REASONING_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
+
 /// Status of goal-backward verification for a stage
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -138,7 +468,7 @@ pub struct Stage {
     pub status: StageStatus,
     pub dependencies: Vec<String>,
     pub parallel_group: Option<String>,
-    pub acceptance: Vec<crate::plan::schema::AcceptanceCriterion>,
+    pub acceptance: Vec<AcceptanceCriterion>,
     #[serde(default)]
     pub setup: Vec<String>,
     pub files: Vec<String>,
@@ -240,16 +570,16 @@ pub struct Stage {
     pub wiring: Vec<WiringCheck>,
     /// Runtime wiring tests (command-based integration verification)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub wiring_tests: Vec<crate::plan::schema::WiringTest>,
+    pub wiring_tests: Vec<WiringTest>,
     /// Dead code detection configuration
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dead_code_check: Option<crate::plan::schema::DeadCodeCheck>,
+    pub dead_code_check: Option<DeadCodeCheck>,
     /// Before-stage verification checks (pre-conditions)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub before_stage: Vec<crate::plan::schema::TruthCheck>,
+    pub before_stage: Vec<TruthCheck>,
     /// After-stage verification checks (post-conditions)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub after_stage: Vec<crate::plan::schema::TruthCheck>,
+    pub after_stage: Vec<TruthCheck>,
     /// Number of fix attempts made for this stage (acceptance/review cycles)
     #[serde(default)]
     pub fix_attempts: u32,
@@ -264,7 +594,7 @@ pub struct Stage {
     pub amendments_applied: u32,
     /// Per-stage sandbox configuration
     #[serde(default)]
-    pub sandbox: crate::plan::schema::StageSandboxConfig,
+    pub sandbox: StageSandboxConfig,
     /// Hint for execution mode (single agent vs team)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_mode: Option<ExecutionMode>,
@@ -279,7 +609,7 @@ pub struct Stage {
     pub bug_fix: Option<bool>,
     /// Regression test requirement (required when bug_fix is true)
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub regression_test: Option<crate::plan::schema::RegressionTest>,
+    pub regression_test: Option<RegressionTest>,
     /// Model override for this stage (e.g., "sonnet", "opus", "haiku")
     /// When set, Claude Code sessions for this stage use this model
     #[serde(default, skip_serializing_if = "Option::is_none")]

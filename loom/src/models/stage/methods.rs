@@ -1,7 +1,7 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 
-use super::types::{Stage, StageOutput, StageStatus, StageType};
+use super::types::{AcceptanceCriterion, Stage, StageOutput, StageStatus, StageType};
 
 /// Maximum disputes a single stage may file before further requests
 /// are refused (escalation goes through `NeedsHumanReview`).
@@ -109,10 +109,7 @@ impl Stage {
         }
     }
 
-    pub fn add_acceptance_criterion(
-        &mut self,
-        criterion: crate::plan::schema::AcceptanceCriterion,
-    ) {
+    pub fn add_acceptance_criterion(&mut self, criterion: AcceptanceCriterion) {
         self.acceptance.push(criterion);
         self.updated_at = Utc::now();
     }

@@ -6,5 +6,8 @@ mod types;
 mod tests;
 
 pub use types::{
-    ExecutionMode, Stage, StageOutput, StageStatus, StageType, StatusBucket, WiringCheck,
+    AcceptanceCriterion, DeadCodeCheck, ExecutionMode, FilesystemConfig, LinuxConfig,
+    NetworkConfig, PermissionMode, RegressionTest, Stage, StageOutput, StageSandboxConfig,
+    StageStatus, StageType, StatusBucket, SuccessCriteria, TruthCheck, WiringCheck, WiringTest,
+    ALLOWED_REASONING_EFFORTS,
 };
