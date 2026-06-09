@@ -8,7 +8,7 @@ use std::path::Path;
 
 use crate::git::worktree::find_repo_root_from_cwd;
 use crate::models::stage::StageStatus;
-use crate::verify::transitions::{load_stage, save_stage, trigger_dependents};
+use crate::verify::transitions::{load_stage, save_stage};
 
 /// Handle human review response for a stage.
 ///
@@ -92,7 +92,12 @@ fn handle_approve(
     Ok(())
 }
 
-/// Force-complete the review: skip acceptance criteria and mark as completed.
+/// Force-complete the review: skip acceptance criteria and merge, then mark as completed.
+///
+/// Merge is attempted BEFORE transitioning to Completed so that if a conflict
+/// occurs, the stage can move to MergeConflict/MergeBlocked via the valid
+/// Executing→MergeConflict/MergeBlocked edges instead of the illegal
+/// Completed→MergeConflict path.
 fn handle_force_complete(
     stage: &mut crate::models::stage::Stage,
     stage_id: &str,
@@ -102,45 +107,25 @@ fn handle_force_complete(
         "WARNING: Force-completing stage '{stage_id}' without acceptance criteria verification."
     );
 
-    stage.try_force_complete_review()?;
+    // Transition to Executing first so all merge-outcome transitions are legal:
+    //   Executing → MergeConflict | MergeBlocked | Completed
+    // complete_with_merge handles Completed via try_complete(None) internally.
+    stage.try_approve_review()?;
 
-    // Attempt progressive merge
     let cwd = std::env::current_dir().context("Failed to get current directory")?;
     let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or_else(|| cwd.clone());
 
-    // Reset status to allow complete_with_merge to work
-    // complete_with_merge calls try_complete which expects a non-Completed status.
-    // Since try_force_complete_review already moved to Completed, we need to
-    // handle merge separately.
-    stage.merged = false;
-
-    // Try to merge the stage branch
-    match super::progressive_complete::attempt_progressive_merge(stage, &repo_root, work_dir)? {
-        super::progressive_complete::MergeOutcome::Success => {
-            save_stage(stage, work_dir)?;
-            println!("Stage '{stage_id}' force-completed. Review the merge result.");
-
-            let target_branch = crate::fs::work_dir::load_config(work_dir)
-                .ok()
-                .flatten()
-                .and_then(|c| c.base_branch());
-            let target_branch =
-                crate::git::branch::resolve_target_branch(&target_branch, &repo_root);
-            let triggered = trigger_dependents(stage_id, work_dir, &repo_root, &target_branch)
-                .context("Failed to trigger dependent stages")?;
-            if !triggered.is_empty() {
-                println!("Triggered {} dependent stage(s):", triggered.len());
-                for dep_id in &triggered {
-                    println!("  -> {dep_id}");
-                }
-            }
+    // Attempt progressive merge + completion. On Success, complete_with_merge
+    // transitions Executing → Completed and triggers dependents. On
+    // Conflict/Blocked it transitions to the appropriate merge state and saves.
+    match super::progressive_complete::complete_with_merge(stage, &repo_root, work_dir) {
+        Ok(_) => {
+            println!("Stage '{stage_id}' force-completed and merged successfully.");
         }
-        super::progressive_complete::MergeOutcome::Conflict
-        | super::progressive_complete::MergeOutcome::Blocked => {
-            // Stage already saved in conflict/blocked state by attempt_progressive_merge
-            println!(
-                "Stage '{stage_id}' force-completed but merge had issues. Review the merge result."
-            );
+        Err(e) => {
+            // complete_with_merge bails on Conflict/Blocked after saving the stage
+            // in the appropriate terminal state — the session should exit.
+            println!("Stage '{stage_id}' force-complete: merge encountered an issue — {e}");
         }
     }
 

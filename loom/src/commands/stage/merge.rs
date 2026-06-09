@@ -210,31 +210,31 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
         );
     }
 
-    // Increment fix_attempts
-    let attempts = stage.increment_fix_attempts();
     let max_attempts = stage.get_effective_max_fix_attempts();
 
-    println!("Retrying merge for stage '{stage_id}' (attempt {attempts}/{max_attempts})");
-
-    // Check fix limit before attempting
+    // Check the limit BEFORE incrementing so each attempt number is consumed
+    // only when actually attempted. Checking after increment burns one extra
+    // attempt at the boundary (off-by-one: with max=3, only 2 real attempts ran).
     if stage.is_at_fix_limit() {
-        save_stage(&stage, work_dir)?;
         println!();
         println!(
             "Stage '{}' has reached the fix attempt limit ({}/{}).",
-            stage_id, attempts, max_attempts
+            stage_id, stage.fix_attempts, max_attempts
         );
         println!();
         println!("Options:");
-        println!("  - Request human review:  loom stage waiting {stage_id}");
+        println!("  - Resolve conflicts manually then:  loom stage merge {stage_id} --resolved");
+        println!("  - Request human review:             loom stage human-review {stage_id}");
         println!(
-            "  - Force retry:           loom stage reset {stage_id} && loom stage merge {stage_id}"
-        );
-        println!(
-            "  - Skip this stage:       loom stage skip {stage_id} --reason \"merge too complex\""
+            "  - Skip this stage:                  loom stage skip {stage_id} --reason \"merge too complex\""
         );
         return Ok(());
     }
+
+    // Increment fix_attempts after the limit guard so the count is accurate
+    let attempts = stage.increment_fix_attempts();
+
+    println!("Retrying merge for stage '{stage_id}' (attempt {attempts}/{max_attempts})");
 
     // Determine target branch, respecting configured base_branch over repo default
     let base_branch = crate::fs::parse_base_branch_from_config(work_dir).unwrap_or(None);
@@ -336,8 +336,9 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
                 println!("Fix attempt limit reached ({attempts}/{max_attempts}).");
                 println!();
                 println!("Options:");
-                println!("  - Request human review:  loom stage waiting {stage_id}");
-                println!("  - Skip this stage:       loom stage skip {stage_id} --reason \"unresolvable conflicts\"");
+                println!("  - Resolve manually then:  loom stage merge {stage_id} --resolved");
+                println!("  - Request human review:   loom stage human-review {stage_id}");
+                println!("  - Skip this stage:        loom stage skip {stage_id} --reason \"unresolvable conflicts\"");
             } else {
                 println!("Resolve the conflicts above, then run:");
                 println!("  loom stage merge {stage_id}");
@@ -362,7 +363,7 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
                 println!("Fix attempt limit reached ({attempts}/{max_attempts}).");
                 println!();
                 println!("Options:");
-                println!("  - Request human review:  loom stage waiting {stage_id}");
+                println!("  - Request human review:  loom stage human-review {stage_id}");
                 println!("  - Skip this stage:       loom stage skip {stage_id} --reason \"merge error\"");
             } else {
                 println!(

@@ -47,7 +47,8 @@ pub enum StageCommands {
         #[arg(value_parser = clap_id_validator)]
         stage_id: String,
 
-        /// Also reset worktree to clean state (git reset --hard)
+        /// Also clear the stage's session assignment (does NOT run git reset --hard in the
+        /// worktree — clean the worktree manually if needed)
         #[arg(long)]
         hard: bool,
 

@@ -426,13 +426,13 @@ pub fn complete(
             // Phantom-merge revert (CLI parity with daemon's
             // reconcile_main_repo_active_merge): persist BEFORE spawn so the
             // resolver-spawn status contract is satisfied.
-            tracing::error!(
-                stage_id = %stage.id,
-                prior_status = ?stage.status,
-                "Detected active merge for stage in non-conflict status; \
-                 reverting to MergeConflict + merged=false (phantom-merge revert)."
+            // force_status_with_reason is appropriate here: Completed is a
+            // terminal state, so try_mark_merge_conflict() would refuse; but this
+            // is a legitimate forced revert when an active merge is detected.
+            stage.force_status_with_reason(
+                StageStatus::MergeConflict,
+                "phantom-merge revert: active merge detected for stage in non-conflict status",
             );
-            stage.status = StageStatus::MergeConflict;
             stage.merged = false;
             stage.merge_conflict = true;
             save_stage(&stage, work_dir)?;
@@ -557,10 +557,13 @@ fn handle_force_unsafe_completion(
         stage_id, stage.status
     );
 
-    // INTENTIONAL STATE MACHINE BYPASS: This is a manual recovery command
-    // that allows administrators to force completion from any state.
-    // This is the ONLY place where direct status assignment is acceptable.
-    stage.status = StageStatus::Completed;
+    // Forced status assignment: --force-unsafe is an explicit administrative
+    // override that may be invoked from any source status. Use
+    // force_status_with_reason so the bypass is logged and visible.
+    stage.force_status_with_reason(
+        StageStatus::Completed,
+        "--force-unsafe: administrative force-completion from any state",
+    );
 
     // Only set merged=true if explicitly requested via --assume-merged
     if assume_merged {
@@ -1065,9 +1068,10 @@ fn run_verification_phase(
                          The agent never committed any work for this stage, so \
                          completing now would create a phantom merge (merged=true \
                          against the unchanged base). Either redo the stage so the \
-                         agent commits real work, run `loom stage retry --kill-session \
-                         {stage_id}`, or use `loom stage complete --force-unsafe` if \
-                         you genuinely intend to mark an empty stage complete."
+                         agent commits real work, run `loom stage reset --kill-session \
+                         {stage_id}` to kill the session and re-queue, or use \
+                         `loom stage complete --force-unsafe` if you genuinely intend \
+                         to mark an empty stage complete."
                     );
                 }
                 Ok(_) => {}

@@ -39,12 +39,13 @@ pub fn attempt_progressive_merge(
 ) -> Result<MergeOutcome> {
     let merge_point = get_merge_point(work_dir)?;
 
-    // Capture the completed commit SHA before merge (the HEAD of the stage branch).
-    // This represents the stage's work output and is set for ALL outcomes (including
-    // conflict) so the orchestrator can later verify merge resolution via git ancestry.
+    // Capture the completed commit SHA from the stage branch HEAD.
+    // Only assign when get_branch_head succeeds — overwriting a previously
+    // persisted completed_commit with None would lose the ancestry proof.
     let branch_name = branch_name_for_stage(&stage.id);
-    let completed_commit = get_branch_head(&branch_name, repo_root).ok();
-    stage.completed_commit = completed_commit;
+    if let Ok(commit) = get_branch_head(&branch_name, repo_root) {
+        stage.completed_commit = Some(commit);
+    }
 
     println!("Attempting progressive merge into '{merge_point}'...");
     match merge_completed_stage(stage, repo_root, &merge_point) {
@@ -68,6 +69,8 @@ pub fn attempt_progressive_merge(
                 stage_id = %stage.id,
                 "Progressive merge: branch missing — cannot verify merge succeeded"
             );
+            stage.try_mark_merge_blocked()?;
+            save_stage(stage, work_dir)?;
             Ok(MergeOutcome::Blocked)
         }
         Ok(ProgressiveMergeResult::Conflict { conflicting_files }) => {
