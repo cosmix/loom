@@ -51,7 +51,7 @@ When any agent needs to create a plan for Loom orchestration, this skill MUST be
 - Functional verification requirements (tests passing ≠ feature working)
 - Alignment with all CLAUDE.md rules for plan writing
 
-Plans maximize throughput through two levels of parallelism: subagents within stages (FIRST priority), and concurrent worktree stages (SECOND priority).
+Plans maximize throughput through two levels of parallelism: subagents within stages (FIRST priority), and concurrent worktree stages (SECOND priority). Within-stage subagent execution can be flat (all workers report to the main agent) or a 2-level hierarchy (coordinator subagents each managing worker subagents — see Section 4; requires Claude Code ≥ 2.1.172).
 
 ## Instructions
 
@@ -172,10 +172,10 @@ loom:
 
 **Two categories of stage work:**
 
-| Category | Model | Reasoning | When |
-| --- | --- | --- | --- |
-| **Architectural** | `model: "opus[1m]"` | `reasoning_effort: "xhigh"` | Stage requires design decisions, novel patterns, cross-cutting judgment |
-| **Execution** | `model: "sonnet"` | `reasoning_effort: "high"` | Stage follows detailed instructions, applies existing patterns, well-scoped |
+| Category          | Model               | Reasoning                   | When                                                                        |
+| ----------------- | ------------------- | --------------------------- | --------------------------------------------------------------------------- |
+| **Architectural** | `model: "opus[1m]"` | `reasoning_effort: "xhigh"` | Stage requires design decisions, novel patterns, cross-cutting judgment     |
+| **Execution**     | `model: "sonnet"`   | `reasoning_effort: "high"`  | Stage follows detailed instructions, applies existing patterns, well-scoped |
 
 **Architectural stages** (use opus) — the agent must make judgment calls:
 
@@ -285,7 +285,7 @@ When you assign `model: "sonnet"` to a stage, design it so the main agent is a *
 - Avoid sonnet stages where the main agent must itself read many large files, run long test loops, or iterate extensively before delegating. If the stage cannot be decomposed that way, it is an **architectural stage** — use `opus[1m]` instead.
 - A sonnet stage with no subagent assignments is a red flag: it will likely do all the work in the main context and compact. Either add a `SUBAGENT FILE ASSIGNMENTS` block or switch the stage to `opus[1m]`.
 
-This is *why* CLAUDE.md Rule 6 says "prefer subagents" — not only token cost, but context-window survival. On opus[1m] the 1M window absorbs a heavier main-agent role; on sonnet it does not.
+This is *why* CLAUDE.md Rule 6 says "prefer subagents" — not only token cost, but context-window survival. On opus[1m] the 1M window absorbs a heavier main-agent role; on sonnet it does not. When fan-out exceeds ~6 workers, use a 2-level hierarchy (see Section 4): the sonnet main agent manages 2-4 coordinators and absorbs 2-4 compact summaries instead of 12 raw results.
 
 **integration-verify stages:** Always use opus (set automatically if not specified).
 
@@ -337,30 +337,25 @@ Match subagent type to the work:
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-Maximize parallel execution at THREE levels:
+Pick the strategy whose criteria match the work (criteria-keyed, NOT a ranking):
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│  PARALLELIZATION PRIORITY                                           │
-│                                                                     │
-│  1. AGENT TEAMS FIRST  - For wide-scope stages where inter-agent   │
-│                          communication adds value (knowledge,       │
-│                          review, verify)                            │
-│                                                                     │
-│  2. SUBAGENTS SECOND   - Within a stage, for concrete tasks with   │
-│                          NO file overlap and clear assignments      │
-│                                                                     │
-│  3. STAGES THIRD       - Separate stages for tasks that touch      │
-│                          same files or have code dependencies       │
-│                          (loom merges branches)                     │
-└─────────────────────────────────────────────────────────────────────┘
+1.  AGENT TEAMS          - wide-scope exploratory stages needing inter-agent comms
+2.  SUBAGENTS (FLAT)     - ~6 or fewer independent concrete tasks in one stage
+2a. SUBAGENT HIERARCHY   - >~6 well-defined tasks in 2-4 disjoint territories:
+                           coordinator subagents each spawn worker subagents
+                           (2-LEVEL CAP - loom policy)
+2b. ULTRACODE STAGE      - >=~10 homogeneous units or adversarial verification:
+                           set ultracode: true on the stage (workflow orchestration)
+3.  STAGES               - file overlap or code dependencies between clusters
 ```
 
-| Files Overlap? | Inter-agent Comms Needed? | Solution                       |
-| -------------- | ------------------------- | ------------------------------ |
-| NO             | NO                        | Same stage, parallel subagents |
-| NO             | YES                       | Same stage, agent team         |
-| YES            | Any                       | Separate stages, loom merges   |
+| Files Overlap? | Inter-agent Comms Needed? | >~6 worker tasks? | Solution                                |
+| -------------- | ------------------------- | ----------------- | --------------------------------------- |
+| NO             | NO                        | NO                | Same stage, parallel subagents          |
+| NO             | NO                        | YES               | Same stage, 2-level hierarchy (Rule 6c) |
+| NO             | YES                       | Any               | Same stage, agent team                  |
+| YES            | Any                       | Any               | Separate stages, loom merges            |
 
 #### SUBAGENT FILE EXCLUSIVITY (CRITICAL)
 
@@ -371,16 +366,78 @@ Maximize parallel execution at THREE levels:
 
 **File Ownership Table Template:**
 
-| Subagent | Files Owned (write) | Files Read-Only |
-| -------- | ------------------- | --------------- |
-| Subagent 1 — [role] | `src/auth/*.rs` | `src/config.rs` |
-| Subagent 2 — [role] | `src/logging/*.rs` | `src/config.rs` |
+| Subagent            | Files Owned (write)  | Files Read-Only |
+| ------------------- | -------------------- | --------------- |
+| Subagent 1 — [role] | `src/auth/*.rs`      | `src/config.rs` |
+| Subagent 2 — [role] | `src/logging/*.rs`   | `src/config.rs` |
 | Subagent 3 — [role] | `tests/auth_test.rs` | `src/auth/*.rs` |
+
+#### HIERARCHICAL EXECUTION PLAN BLOCKS (2-LEVEL CAP)
+
+Claude Code ≥ 2.1.172 lets subagents spawn subagents (the platform allows 5 levels); loom policy caps trees at TWO levels: main agent → coordinators → workers. **Workers NEVER spawn subagents.**
+
+**Use a hierarchy when ALL hold:** the work is well-defined (detailed instructions exist — no cross-territory discussion needed); it splits into 2-4 DISJOINT file territories; each territory subdivides into 2+ worker tasks; flat fan-out would force the main agent to author/manage >~6 worker prompts, absorb N raw results into its own context, or serialize waves.
+
+**Do NOT use a hierarchy when:** total worker tasks ≤ ~6 (flat is simpler and cheaper); territories would share files (separate stages instead); cross-territory iteration is needed (agent team); the work is inherently sequential.
+
+**Model mix:** coordinators AND workers default to sonnet. Always spawn workers BY AGENT TYPE (`loom-software-engineer` pins sonnet) — an untyped worker inherits the MAIN session model; on an opus stage that silently makes every worker opus. Opus coordinator only when integrating its territory requires architectural judgment.
+
+**Description-block format** (plain indented text — NO triple backticks inside YAML descriptions):
+
+```yaml
+description: |
+  Implement 12 API endpoint handlers plus tests.
+
+  Use parallel subagents and skills to maximize performance.
+
+  EXECUTION PLAN - HIERARCHICAL (2-LEVEL CAP):
+    Coordinator A - REST endpoints (loom-software-engineer, sonnet):
+      Territory: src/api/rest/**
+      Workers:
+        Worker A1: src/api/rest/users.rs
+        Worker A2: src/api/rest/orders.rs
+        Worker A3: src/api/rest/billing.rs
+        Worker A4: tests/api/rest/
+      Verify: cargo test --test rest_api
+    Coordinator B - GraphQL resolvers (loom-software-engineer, sonnet):
+      Territory: src/api/graphql/**
+      Workers: [...]
+      Verify: cargo test --test graphql
+
+  Territories are DISJOINT. Workers NEVER spawn subagents.
+  Coordinators return compact summaries only. Main agent verifies globally, commits, completes.
+```
+
+No Rust schema change is needed for this block — stage descriptions pass verbatim into the signal's `## Assignment` section.
+
+#### ULTRACODE STAGES
+
+`ultracode: true` licenses the stage's spawned session for Workflow orchestration (Claude Code's multi-agent workflow tool — deterministic fan-out/pipeline/verification scripts running potentially tens of agents).
+
+**Set `ultracode: true` when:** the work decomposes into MANY (≳10) homogeneous units (files to migrate, findings to verify, areas to audit) where scripted fan-out + adversarial verification materially beats ad-hoc delegation; or the stage is a high-stakes verification gate that justifies a multi-perspective judge/verify pass.
+
+**Do NOT mark ordinary implementation stages** — a hierarchy or flat subagents cover those at a fraction of the cost. The plan author owns this call and MUST justify it in one sentence in the stage description (why scale pays here).
+
+```yaml
+- id: migrate-call-sites
+  name: "Migrate 40 call sites to new API"
+  stage_type: standard
+  model: "sonnet"
+  working_dir: "loom"
+  ultracode: true
+  description: |
+    Migrate all 40 call sites of old_api() to new_api() and verify each.
+    Ultracode justified: 40 homogeneous migration units benefit from
+    scripted fan-out plus adversarial per-site verification.
+  acceptance: ["cargo test"]
+```
+
+Workflow agents remain subagents: all Rule 5 restrictions apply (no git commit, no `loom stage complete`); the main agent owns git and stage completion, and acceptance criteria remain the loop target. The stage description MAY include a token-budget directive for the workflow (e.g. "+500k tokens for the verification sweep").
 
 **Stage-Specific Defaults:**
 
 - knowledge-bootstrap: Default to TEAM (coordinated exploration, researchers share discoveries that inform each other)
-- standard (implementation): Default to SUBAGENTS (concrete file assignments, fire-and-forget). Use team only for wide/exploratory scope
+- standard (implementation): Default to SUBAGENTS (concrete file assignments, fire-and-forget). Use a 2-level HIERARCHY for >~6 well-defined worker tasks; `ultracode: true` for ≳10 homogeneous units or adversarial verification; team only for wide/exploratory scope
 - integration-verify: Default to TEAM (build + functional + code review tasks that may require iterative fixes)
 - knowledge-distill: Default to SINGLE or SUBAGENTS (memory reading + knowledge writing is sequential, not parallel)
 
@@ -430,11 +487,11 @@ Maximize parallel execution at THREE levels:
 
 **WHEN STAGES ARE JUSTIFIED — concrete examples:**
 
-| Scenario | Why Separate Stages |
-| -------- | ------------------- |
-| Data model stage → API stage | Code dependency: API imports model types |
-| Same handler file modified by auth + logging | File conflict: both write to same file |
-| Core library → multiple consumers | Verification checkpoint: consumers need stable base |
+| Scenario                                     | Why Separate Stages                                 |
+| -------------------------------------------- | --------------------------------------------------- |
+| Data model stage → API stage                 | Code dependency: API imports model types            |
+| Same handler file modified by auth + logging | File conflict: both write to same file              |
+| Core library → multiple consumers            | Verification checkpoint: consumers need stable base |
 
 ### 4c. Memory System (CRITICAL)
 
@@ -479,6 +536,10 @@ This ensures Claude Code instances spawn concurrent subagents for independent ta
 - Each subagent's owned files and read-only files
 - Explicit statement that NO file overlap exists between subagents
 - Match subagent type to work: execution → `loom-software-engineer`, judgment → `loom-senior-software-engineer`
+
+**Hierarchical stage descriptions MUST include** an `EXECUTION PLAN - HIERARCHICAL` block (see Section 4): coordinator territories, nested worker file lists, a per-coordinator Verify command, and the statements "Territories are DISJOINT" and "Workers NEVER spawn subagents".
+
+**Ultracode stages MUST include** a one-sentence cost justification in the stage description (why scripted multi-agent scale pays for this work).
 
 **Example in stage description:**
 
@@ -711,38 +772,38 @@ acceptance:
 
 **YAML Quoting Decision Table:**
 
-| Command Contains | Use YAML | Example |
-|---|---|---|
-| Nothing special | Either works | `"cargo test"` |
-| Double quotes `"` | Single quotes | `'grep -q "pattern" file'` |
-| Backslashes `\` | Single quotes | `'rg "\bword\b" file'` |
-| Regex `[]{}()+*` | Single quotes | `'rg -q "fn\s+\w+" file'` |
-| Single quotes `'` | Double quotes | `"grep -qF \"it's\" file"` |
-| Both quote types | Double + escape `\"` | `"rg -qF \"it's a \\\"test\\\"\" file"` — or better: restructure the command |
+| Command Contains  | Use YAML             | Example                                                                      |
+| ----------------- | -------------------- | ---------------------------------------------------------------------------- |
+| Nothing special   | Either works         | `"cargo test"`                                                               |
+| Double quotes `"` | Single quotes        | `'grep -q "pattern" file'`                                                   |
+| Backslashes `\`   | Single quotes        | `'rg "\bword\b" file'`                                                       |
+| Regex `[]{}()+*`  | Single quotes        | `'rg -q "fn\s+\w+" file'`                                                    |
+| Single quotes `'` | Double quotes        | `"grep -qF \"it's\" file"`                                                   |
+| Both quote types  | Double + escape `\"` | `"rg -qF \"it's a \\\"test\\\"\" file"` — or better: restructure the command |
 
 **Prefer robust, simple commands:**
 
-| Fragile Pattern | Robust Alternative |
-|---|---|
+| Fragile Pattern                               | Robust Alternative                                           |
+| --------------------------------------------- | ------------------------------------------------------------ |
 | `grep "pattern" file \| wc -l \| grep -q "1"` | `grep -qc "pattern" file` or simply `grep -q "pattern" file` |
-| `cat file \| grep "pattern"` | `grep -q "pattern" file` |
-| `test "$(cmd)" = "value"` | `cmd \| grep -qxF "value"` |
-| Regex with special chars | `grep -qF` or `rg -qF` for literal/fixed string matching |
-| `echo "..." \| grep ...` | `rg -q "pattern" file` (search file directly) |
+| `cat file \| grep "pattern"`                  | `grep -q "pattern" file`                                     |
+| `test "$(cmd)" = "value"`                     | `cmd \| grep -qxF "value"`                                   |
+| Regex with special chars                      | `grep -qF` or `rg -qF` for literal/fixed string matching     |
+| `echo "..." \| grep ...`                      | `rg -q "pattern" file` (search file directly)                |
 
 **Cross-Platform Compatibility (Linux + macOS):**
 
 Loom runs on both Linux and macOS. Shell commands in acceptance criteria MUST work on both. Key differences:
 
-| Tool/Feature | Linux | macOS | Safe Alternative |
-|---|---|---|---|
-| `grep` | GNU grep (supports `-P`) | BSD grep (NO `-P` flag) | Use `rg` instead of `grep` |
-| `grep -P` (Perl regex) | Works | **FAILS** | `rg` natively supports Perl regex |
-| `grep -oP` | Works | **FAILS** | `rg -o` |
-| `readlink -f` | Works | **FAILS** | Avoid; use `test -f` or `test -d` |
-| `sed -i` | `sed -i 's/...'` | `sed -i '' 's/...'` | Don't use `sed` in acceptance — use `rg` |
-| `stat` format flags | `stat -c` | `stat -f` | Avoid `stat` in acceptance criteria |
-| `sh -c` | POSIX sh (dash/bash) | POSIX sh (zsh backend) | Stick to POSIX features |
+| Tool/Feature           | Linux                    | macOS                   | Safe Alternative                         |
+| ---------------------- | ------------------------ | ----------------------- | ---------------------------------------- |
+| `grep`                 | GNU grep (supports `-P`) | BSD grep (NO `-P` flag) | Use `rg` instead of `grep`               |
+| `grep -P` (Perl regex) | Works                    | **FAILS**               | `rg` natively supports Perl regex        |
+| `grep -oP`             | Works                    | **FAILS**               | `rg -o`                                  |
+| `readlink -f`          | Works                    | **FAILS**               | Avoid; use `test -f` or `test -d`        |
+| `sed -i`               | `sed -i 's/...'`         | `sed -i '' 's/...'`     | Don't use `sed` in acceptance — use `rg` |
+| `stat` format flags    | `stat -c`                | `stat -f`               | Avoid `stat` in acceptance criteria      |
+| `sh -c`                | POSIX sh (dash/bash)     | POSIX sh (zsh backend)  | Stick to POSIX features                  |
 
 **Rules for cross-platform acceptance criteria:**
 
@@ -756,12 +817,12 @@ Loom runs on both Linux and macOS. Shell commands in acceptance criteria MUST wo
 
 **stage_type Field (REQUIRED on every stage):**
 
-| Value                | Use For                   | Special Behavior                         |
-| -------------------- | ------------------------- | ---------------------------------------- |
-| `knowledge`          | knowledge-bootstrap stage  | Can write to doc/loom/knowledge/\*\*     |
-| `standard`           | All implementation stages  | Cannot write to knowledge files          |
-| `integration-verify` | Second-to-last stage       | Can write to doc/loom/knowledge/\*\*, reviews |
-| `knowledge-distill`  | Final knowledge curation   | Can write to knowledge, sonnet default   |
+| Value                | Use For                   | Special Behavior                              |
+| -------------------- | ------------------------- | --------------------------------------------- |
+| `knowledge`          | knowledge-bootstrap stage | Can write to doc/loom/knowledge/\*\*          |
+| `standard`           | All implementation stages | Cannot write to knowledge files               |
+| `integration-verify` | Second-to-last stage      | Can write to doc/loom/knowledge/\*\*, reviews |
+| `knowledge-distill`  | Final knowledge curation  | Can write to knowledge, sonnet default        |
 
 **NEVER use PascalCase** (Knowledge, Standard, IntegrationVerify) - the parser rejects these.
 
@@ -795,11 +856,11 @@ EXECUTION_PATH = WORKTREE_ROOT / working_dir
 
 All acceptance commands, truths, artifacts, and wiring paths resolve relative to `EXECUTION_PATH`. When you write an acceptance criterion, imagine you have `cd`-ed into `EXECUTION_PATH` first — that is where your command runs.
 
-| `working_dir` | Worktree Root | Commands run from | `Cargo.toml` reference |
-|---|---|---|---|
-| `"."` | `.worktrees/my-stage/` | `.worktrees/my-stage/` | `Cargo.toml` (if at root) |
-| `"loom"` | `.worktrees/my-stage/` | `.worktrees/my-stage/loom/` | `Cargo.toml` (NOT `loom/Cargo.toml`) |
-| `"packages/core"` | `.worktrees/my-stage/` | `.worktrees/my-stage/packages/core/` | `Cargo.toml` (if it exists there) |
+| `working_dir`     | Worktree Root          | Commands run from                    | `Cargo.toml` reference               |
+| ----------------- | ---------------------- | ------------------------------------ | ------------------------------------ |
+| `"."`             | `.worktrees/my-stage/` | `.worktrees/my-stage/`               | `Cargo.toml` (if at root)            |
+| `"loom"`          | `.worktrees/my-stage/` | `.worktrees/my-stage/loom/`          | `Cargo.toml` (NOT `loom/Cargo.toml`) |
+| `"packages/core"` | `.worktrees/my-stage/` | `.worktrees/my-stage/packages/core/` | `Cargo.toml` (if it exists there)    |
 
 **Examples:**
 
@@ -843,13 +904,13 @@ All acceptance commands, truths, artifacts, and wiring paths resolve relative to
 
 **Common Path Mistakes and Fixes:**
 
-| Symptom | Cause | Fix |
-|---|---|---|
-| `could not find Cargo.toml` | `working_dir: "."` but Cargo.toml is in `loom/` | Set `working_dir: "loom"` |
-| `No such file or directory` | Path not relative to `working_dir` | Remove redundant prefix |
-| Double-path `loom/loom/src/...` | `working_dir: "loom"` with `loom/src/...` paths | Use `src/...` (already inside `loom/`) |
-| Binary not found | Wrong path to compiled binary | Use path relative to `working_dir` |
-| `rg` finds nothing | Searching from wrong directory | Check `working_dir` matches where files live |
+| Symptom                         | Cause                                           | Fix                                          |
+| ------------------------------- | ----------------------------------------------- | -------------------------------------------- |
+| `could not find Cargo.toml`     | `working_dir: "."` but Cargo.toml is in `loom/` | Set `working_dir: "loom"`                    |
+| `No such file or directory`     | Path not relative to `working_dir`              | Remove redundant prefix                      |
+| Double-path `loom/loom/src/...` | `working_dir: "loom"` with `loom/src/...` paths | Use `src/...` (already inside `loom/`)       |
+| Binary not found                | Wrong path to compiled binary                   | Use path relative to `working_dir`           |
+| `rg` finds nothing              | Searching from wrong directory                  | Check `working_dir` matches where files live |
 
 **Binary path resolution:**
 
@@ -1213,13 +1274,13 @@ Curates all stage memories into permanent knowledge. Runs AFTER integration-veri
 
 **Why knowledge-distill is mandatory (not optional):**
 
-| Reason | Explanation |
-| ------ | ----------- |
-| Context isolation | integration-verify runs build, tests, code review — distillation needs a fresh context |
-| Focus | integration-verify focuses on build/test/review; distillation focuses on learning curation |
-| Sequential | Must run after integration-verify to capture its discoveries in memory |
-| Sonnet-friendly | Mechanical curation work is well-scoped, no architectural judgment needed |
-| Permanent learning | Without this stage, all session memories are lost when the plan completes |
+| Reason             | Explanation                                                                                |
+| ------------------ | ------------------------------------------------------------------------------------------ |
+| Context isolation  | integration-verify runs build, tests, code review — distillation needs a fresh context     |
+| Focus              | integration-verify focuses on build/test/review; distillation focuses on learning curation |
+| Sequential         | Must run after integration-verify to capture its discoveries in memory                     |
+| Sonnet-friendly    | Mechanical curation work is well-scoped, no architectural judgment needed                  |
+| Permanent learning | Without this stage, all session memories are lost when the plan completes                  |
 
 **Skip ONLY if:** The plan genuinely produces no new knowledge worth preserving (rare). When in doubt, include it.
 
@@ -1264,12 +1325,12 @@ description: |
 
 **Why this is mandatory:**
 
-| Benefit                | Explanation                                                |
-| ---------------------- | ---------------------------------------------------------- |
-| Insight persistence    | Memory entries persist across sessions and context resets  |
-| Mistake prevention     | Curated mistakes become knowledge that future agents read  |
-| Decision documentation | Records WHY choices were made, not just what was done      |
-| Learning transfer      | Memory → Knowledge curation makes lessons permanent        |
+| Benefit                | Explanation                                               |
+| ---------------------- | --------------------------------------------------------- |
+| Insight persistence    | Memory entries persist across sessions and context resets |
+| Mistake prevention     | Curated mistakes become knowledge that future agents read |
+| Decision documentation | Records WHY choices were made, not just what was done     |
+| Learning transfer      | Memory → Knowledge curation makes lessons permanent       |
 
 **Subagent Memory Recording:**
 
@@ -1299,12 +1360,12 @@ description: |
 
 **CRITICAL: Different stages have different recording permissions.**
 
-| Stage Type            | `loom memory` | `loom knowledge`   |
-| --------------------- | ------------- | ------------------ |
-| knowledge-bootstrap   | YES           | YES                |
-| Implementation stages | YES (ONLY)    | **FORBIDDEN**      |
+| Stage Type            | `loom memory` | `loom knowledge`                                                           |
+| --------------------- | ------------- | -------------------------------------------------------------------------- |
+| knowledge-bootstrap   | YES           | YES                                                                        |
+| Implementation stages | YES (ONLY)    | **FORBIDDEN**                                                              |
 | integration-verify    | YES           | NO (focused on build/test/review — record to memory for knowledge-distill) |
-| knowledge-distill     | YES           | YES (curate from memory) |
+| knowledge-distill     | YES           | YES (curate from memory)                                                   |
 
 **Why this separation?**
 
@@ -1800,10 +1861,87 @@ stages:
 
 **Why this is better:**
 
-| Aspect | 3 Stages | 1 Stage + 3 Subagents |
-| ------ | -------- | --------------------- |
-| Worktrees created | 3 | 1 |
-| Sessions spawned | 3 | 1 (spawns 3 subagents) |
-| Token cost | ~3x | ~1x |
-| Merge operations | 3 | 1 |
+| Aspect            | 3 Stages          | 1 Stage + 3 Subagents  |
+| ----------------- | ----------------- | ---------------------- |
+| Worktrees created | 3                 | 1                      |
+| Sessions spawned  | 3                 | 1 (spawns 3 subagents) |
+| Token cost        | ~3x               | ~1x                    |
+| Merge operations  | 3                 | 1                      |
 | Risk of conflicts | Higher (3 merges) | None (exclusive files) |
+
+### Example 5: 2-Level Hierarchy for Large Fan-Out (vs Wrong: Flat 12 Subagents)
+
+```yaml
+# ❌ WRONG: main agent flatly manages 12 workers — authors 12 prompts,
+# absorbs 12 raw results, serializes waves, bloats its own context
+stages:
+  - id: implement-endpoints
+    dependencies: ["knowledge-bootstrap"]
+    model: "sonnet"
+    working_dir: "."
+    description: |
+      Implement 12 API endpoint handlers plus tests.
+
+      SUBAGENT FILE ASSIGNMENTS:
+        Subagent 1 — users REST handler: src/api/rest/users.rs
+        Subagent 2 — orders REST handler: src/api/rest/orders.rs
+        ... (10 more subagents) ...
+
+# ✅ CORRECT: 3 coordinators × 4 workers — main agent absorbs 3 compact summaries
+stages:
+  - id: implement-endpoints
+    dependencies: ["knowledge-bootstrap"]
+    model: "sonnet"
+    working_dir: "."
+    description: |
+      Implement 12 API endpoint handlers plus tests.
+
+      Use parallel subagents and skills to maximize performance.
+
+      EXECUTION PLAN - HIERARCHICAL (2-LEVEL CAP):
+        Coordinator A - REST endpoints (loom-software-engineer, sonnet):
+          Territory: src/api/rest/**
+          Workers:
+            Worker A1: src/api/rest/users.rs
+            Worker A2: src/api/rest/orders.rs
+            Worker A3: src/api/rest/billing.rs
+            Worker A4: tests/api/rest/
+          Verify: cargo test --test rest_api
+        Coordinator B - GraphQL resolvers (loom-software-engineer, sonnet):
+          Territory: src/api/graphql/**
+          Workers:
+            Worker B1: src/api/graphql/queries.rs
+            Worker B2: src/api/graphql/mutations.rs
+            Worker B3: src/api/graphql/subscriptions.rs
+            Worker B4: tests/api/graphql/
+          Verify: cargo test --test graphql
+        Coordinator C - Webhooks (loom-software-engineer, sonnet):
+          Territory: src/api/webhooks/**
+          Workers:
+            Worker C1: src/api/webhooks/receive.rs
+            Worker C2: src/api/webhooks/sign.rs
+            Worker C3: src/api/webhooks/retry.rs
+            Worker C4: tests/api/webhooks/
+          Verify: cargo test --test webhooks
+
+      Territories are DISJOINT. Workers NEVER spawn subagents.
+      Coordinators return compact summaries only. Main agent verifies
+      globally, commits, completes.
+    files: ["src/api/**", "tests/api/**"]
+    artifacts:
+      - "src/api/rest/users.rs"
+      - "src/api/graphql/queries.rs"
+      - "src/api/webhooks/receive.rs"
+```
+
+**Honest comparison (flat 12 vs 3 coordinators × 4 workers):**
+
+| Aspect                         | Flat 12 subagents            | 3 coordinators × 4 workers                    |
+| ------------------------------ | ---------------------------- | --------------------------------------------- |
+| Prompts the main agent writes  | 12                           | 3                                             |
+| Results absorbed by main agent | 12 raw                       | 3 compact summaries                           |
+| Main-agent context             | bloats → compaction + rework | thin coordination ledger                      |
+| Wall clock                     | serialized fan-out waves     | concurrent subtrees, per-subtree verification |
+| Raw token cost                 | ~12 sonnet task-units        | ~15 sonnet task-units                         |
+
+The hierarchy buys context headroom, wall-clock, and pre-verified subtrees for ~3 extra sonnet task-units — versus a team's whole-job ~7x multiplier from messaging/idling overhead (a different cost shape: task-units vs multiplier).
