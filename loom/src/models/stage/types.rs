@@ -629,6 +629,10 @@ pub struct Stage {
     /// to stage files (and never read back from them).
     #[serde(skip)]
     pub is_possibly_stuck: bool,
+    /// License this stage's session for ultracode Workflow orchestration
+    /// (multi-agent fan-out). Copied from the plan's StageDefinition.
+    #[serde(default)]
+    pub ultracode: bool,
 }
 
 /// Status of a stage in the execution lifecycle.
@@ -1017,6 +1021,7 @@ impl Default for Stage {
             model: None,
             reasoning_effort: None,
             is_possibly_stuck: false,
+            ultracode: false,
         }
     }
 }

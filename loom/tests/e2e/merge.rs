@@ -66,6 +66,7 @@ fn create_test_stage(id: &str, auto_merge: Option<bool>) -> Stage {
         model: None,
         reasoning_effort: None,
         is_possibly_stuck: false,
+        ultracode: false,
     }
 }
 

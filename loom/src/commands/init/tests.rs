@@ -66,6 +66,7 @@ fn test_create_stage_from_definition_no_dependencies() {
         model: None,
         reasoning_effort: None,
         code_review: None,
+        ultracode: false,
     };
 
     let stage = create_stage_from_definition(&stage_def, "plan-001");
@@ -76,6 +77,15 @@ fn test_create_stage_from_definition_no_dependencies() {
     assert_eq!(stage.plan_id, Some("plan-001".to_string()));
     assert_eq!(stage.dependencies.len(), 0);
     assert_eq!(stage.acceptance.len(), 1);
+    assert!(!stage.ultracode, "ultracode defaults to false");
+
+    // The ultracode license propagates from the definition to the stage model
+    let ultracode_def = StageDefinition {
+        ultracode: true,
+        ..stage_def
+    };
+    let ultracode_stage = create_stage_from_definition(&ultracode_def, "plan-001");
+    assert!(ultracode_stage.ultracode);
 }
 
 #[test]
@@ -106,6 +116,7 @@ fn test_create_stage_from_definition_with_dependencies() {
         model: None,
         reasoning_effort: None,
         code_review: None,
+        ultracode: false,
     };
 
     let stage = create_stage_from_definition(&stage_def, "plan-002");
@@ -177,6 +188,7 @@ fn test_serialize_stage_to_markdown_minimal() {
         model: None,
         reasoning_effort: None,
         is_possibly_stuck: false,
+        ultracode: false,
     };
 
     let content = serialize_stage_to_markdown(&stage).unwrap();
@@ -250,6 +262,7 @@ fn test_serialize_stage_to_markdown_with_all_fields() {
         model: None,
         reasoning_effort: None,
         is_possibly_stuck: false,
+        ultracode: false,
     };
 
     let content = serialize_stage_to_markdown(&stage).unwrap();
@@ -312,6 +325,7 @@ fn test_initialize_with_plan_creates_config() {
         model: None,
         reasoning_effort: None,
         code_review: None,
+        ultracode: false,
     };
 
     let plan_path = create_test_plan(temp_dir.path(), vec![stage_def]);
@@ -362,6 +376,7 @@ fn test_initialize_with_plan_creates_stage_files() {
             model: None,
             reasoning_effort: None,
             code_review: None,
+            ultracode: false,
         },
         StageDefinition {
             id: "stage-2".to_string(),
@@ -389,6 +404,7 @@ fn test_initialize_with_plan_creates_stage_files() {
             model: None,
             reasoning_effort: None,
             code_review: None,
+            ultracode: false,
         },
     ];
 

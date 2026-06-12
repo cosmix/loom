@@ -131,6 +131,7 @@ pub fn stage_info_to_stage(info: &StageInfo) -> Stage {
         },
         reasoning_effort: None,
         is_possibly_stuck: info.is_possibly_stuck,
+        ultracode: false,
     }
 }
 

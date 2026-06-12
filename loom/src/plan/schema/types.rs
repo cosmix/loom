@@ -259,6 +259,11 @@ pub struct StageDefinition {
     /// Structured code review configuration (recommended for integration-verify)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code_review: Option<CodeReviewConfig>,
+    /// License this stage's session for ultracode Workflow orchestration
+    /// (multi-agent fan-out, potentially tens of agents). Default false;
+    /// per-stage opt-in keeps the cost decision explicit.
+    #[serde(default)]
+    pub ultracode: bool,
 }
 
 impl StageDefinition {

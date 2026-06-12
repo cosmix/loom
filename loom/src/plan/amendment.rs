@@ -1147,6 +1147,7 @@ mod tests {
             model: None,
             reasoning_effort: None,
             code_review: None,
+            ultracode: false,
         };
         assert_eq!(current_field_len(&def, AmendmentField::Acceptance), 2);
         assert_eq!(current_field_len(&def, AmendmentField::Wiring), 0);

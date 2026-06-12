@@ -628,6 +628,24 @@ pub fn validate_structural_preflight(
                 stage.id
             ));
         }
+
+        // ultracode on knowledge-type stages is likely unintended: those stages
+        // explore/curate rather than fan out over many homogeneous work units.
+        if stage.ultracode {
+            let type_name = match stage.stage_type {
+                super::types::StageType::Knowledge => Some("knowledge"),
+                super::types::StageType::KnowledgeDistill => Some("knowledge-distill"),
+                _ => None,
+            };
+            if let Some(type_name) = type_name {
+                warnings.push(format!(
+                    "Stage '{}': ultracode: true on a {} stage is likely unintended. \
+                     Ultracode targets massive decomposable work (audits, migrations, sweeps) \
+                     or adversarial verification gates, not knowledge stages.",
+                    stage.id, type_name
+                ));
+            }
+        }
     }
 
     // Cross-stage wiring coverage: warn when artifact coverage is absent across the DAG.

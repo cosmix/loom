@@ -30,6 +30,7 @@ fn make_stage(id: &str, deps: Vec<&str>, group: Option<&str>) -> StageDefinition
         model: None,
         reasoning_effort: None,
         code_review: None,
+        ultracode: false,
     }
 }
 

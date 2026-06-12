@@ -114,6 +114,7 @@ pub fn build_test_graph(stages: Vec<(&str, Vec<&str>)>) -> ExecutionGraph {
             model: None,
             reasoning_effort: None,
             code_review: None,
+            ultracode: false,
         })
         .collect();
 

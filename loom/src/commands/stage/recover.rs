@@ -325,6 +325,7 @@ mod tests {
             model: None,
             reasoning_effort: None,
             is_possibly_stuck: false,
+            ultracode: false,
         };
 
         // No reason - should be Manual
