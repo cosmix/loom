@@ -256,6 +256,70 @@ fn test_signal_contains_knowledge_management_section_for_knowledge_stages() {
 }
 
 #[test]
+fn test_signal_contains_delegation_choices_three_way() {
+    let session = create_test_session();
+    let stage = create_test_stage(); // Standard stage (default)
+    let worktree = create_test_worktree();
+    let embedded_context = EmbeddedContext::default();
+
+    let content = format_signal_content(
+        &session,
+        &stage,
+        &worktree,
+        &[],
+        None,
+        None,
+        &embedded_context,
+    );
+
+    // Semi-stable section presents the three-way delegation framework
+    assert!(content.contains("## Delegation Choices"));
+    assert!(content.contains("SUBAGENT HIERARCHY"));
+    assert!(content.contains("2-LEVEL CAP"));
+    assert!(content.contains("Workers NEVER spawn subagents"));
+    // The old standalone semi-stable header is gone (the stable prefix's
+    // "Agent Teams (WHEN AVAILABLE)" bold heading is unaffected)
+    assert!(!content.contains("## Agent Teams\n"));
+}
+
+#[test]
+fn test_signal_ultracode_section_gated() {
+    let temp_dir = TempDir::new().unwrap();
+    let work_dir = temp_dir.path().join(".work");
+    fs::create_dir_all(&work_dir).unwrap();
+
+    let session = create_test_session();
+    let worktree = create_test_worktree();
+
+    // Default stage: no ultracode section
+    let stage = create_test_stage();
+    let (signal_path, _) =
+        generate_signal_with_metrics(&session, &stage, &worktree, &[], None, None, &work_dir)
+            .unwrap();
+    let content = fs::read_to_string(&signal_path).unwrap();
+    assert!(!content.contains("## Ultracode Mode"));
+
+    // Ultracode-licensed stage: section present (flag propagates stage → context → signal)
+    let mut ultracode_stage = create_test_stage();
+    ultracode_stage.ultracode = true;
+    let mut session2 = create_test_session();
+    session2.id = "session-ultracode".to_string();
+    let (signal_path, _) = generate_signal_with_metrics(
+        &session2,
+        &ultracode_stage,
+        &worktree,
+        &[],
+        None,
+        None,
+        &work_dir,
+    )
+    .unwrap();
+    let content = fs::read_to_string(&signal_path).unwrap();
+    assert!(content.contains("## Ultracode Mode"));
+    assert!(content.contains("Workflow tool"));
+}
+
+#[test]
 fn test_stable_prefix_hash_changes_with_session() {
     // The stable prefix includes the session header, so different sessions
     // will have different hashes (but the execution rules portion is stable)

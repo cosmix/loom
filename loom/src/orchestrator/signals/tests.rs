@@ -176,6 +176,7 @@ fn test_format_signal_content_with_embedded_context() {
         sandbox_summary: None,
         cross_stage_summary: None,
         wiring_checklist: None,
+        ultracode: false,
     };
 
     let content = format_signal_content(
