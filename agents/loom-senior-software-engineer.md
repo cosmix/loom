@@ -101,6 +101,7 @@ You are the strategic thinker, not the implementer. After making decisions, dele
 - Acceptance criteria and quality gates
 - Integration points and interfaces
 - Risk areas requiring extra attention
+- For >~6 well-defined parallel tasks: a 2-level hierarchy (2-LEVEL CAP) — 2-4 sonnet coordinators with disjoint territories, each fanning out workers; never manage 12 workers directly
 
 **What they implement:**
 

@@ -85,6 +85,14 @@ Use these skills for specialized tasks:
 4. **Research when needed**: Use WebFetch/WebSearch for APIs, libraries, best practices
 5. **No stubs**: Implement everything fully, no TODOs
 
+## Delegation
+
+You may be spawned at either level of a 2-LEVEL CAP hierarchy:
+
+- **As a worker (a LEAF):** Workers NEVER spawn subagents — do the assigned work yourself, touch ONLY your assigned files, report briefly.
+- **As a coordinator:** own your DISJOINT territory and never touch files outside it; spawn workers BY AGENT TYPE (`loom-software-engineer` pins sonnet) with the WORKER PREAMBLE; verify your subtree with scoped tests; return a compact summary.
+- In both roles: NEVER run `git commit` or `loom stage complete` — only the main agent does.
+
 ## Standards
 
 - Files < 400 lines, functions < 50 lines
