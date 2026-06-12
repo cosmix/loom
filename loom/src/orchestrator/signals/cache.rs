@@ -222,13 +222,21 @@ pub fn generate_stable_prefix() -> String {
         "- Skills: /loom-auth, /loom-testing, /loom-ci-cd, /loom-logging-observability\n\n",
     );
     content.push_str("- **FILE EXCLUSIVITY**: Each subagent must own exclusive write files. Overlap = lost work. List file assignments in each Task prompt.\n");
+    content.push_str("**Subagent Hierarchies (2-LEVEL CAP):**\n");
+    content.push_str("- For more than ~6 independent worker tasks, split into 2-4 coordinator subagents, each owning a DISJOINT file territory and spawning its own workers (requires Claude Code >= 2.1.172)\n");
+    content.push_str("- Loom policy caps the tree at 2 levels: main agent → coordinators → workers. Workers NEVER spawn subagents.\n");
+    content.push_str("- Spawn workers BY AGENT TYPE (loom-software-engineer = sonnet); untyped workers inherit the MAIN session model\n");
+    content.push_str("- Coordinators verify their territory (scoped tests) and return COMPACT summaries; the main agent verifies globally and commits\n");
+    content.push_str(
+        "- ~6 or fewer tasks → plain flat subagents; do NOT add a hierarchy for small work\n\n",
+    );
     append_subagent_restrictions(
         &mut content,
-        "- Subagents write code and report results; main agent handles git\n\n",
+        "- Subagents write code (coordinators delegate) and report results; main agent handles git\n\n",
     );
     content.push_str("**Agent Teams (WHEN AVAILABLE):**\n\n");
     content.push_str("If CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 is set, you can create\n");
-    content.push_str("agent teams for richer coordination than subagents:\n");
+    content.push_str("agent teams for richer coordination than subagents or hierarchies:\n");
     content.push_str(
         "- Teams provide: inter-agent messaging, shared task lists, idle/wake lifecycle\n",
     );
@@ -711,6 +719,11 @@ mod tests {
         // File exclusivity guidance
         assert!(prefix.contains("FILE EXCLUSIVITY"));
         assert!(prefix.contains("exclusive"));
+        // Subagent hierarchy guidance (2-level cap)
+        assert!(prefix.contains("Subagent Hierarchies (2-LEVEL CAP)"));
+        assert!(prefix.contains("Workers NEVER spawn subagents"));
+        assert!(prefix.contains("DISJOINT file territory"));
+        assert!(prefix.contains("BY AGENT TYPE"));
     }
 
     #[test]

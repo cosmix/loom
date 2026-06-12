@@ -247,11 +247,20 @@ impl NativeBackend {
         // Build the kind-specific initial prompt.
         let signal_path_str = signal_path.to_string_lossy();
         let initial_prompt = match kind {
-            SessionType::Stage => format!(
-                "Read the signal file at {signal_path_str} and execute the assigned stage work. \
-                 This file contains your assignment, tasks, acceptance criteria, \
-                 and context files to read."
-            ),
+            SessionType::Stage => {
+                // The literal keyword "ultracode" in the prompt is what licenses
+                // Claude Code's Workflow tool for the session.
+                let ultracode_suffix = if stage.ultracode {
+                    " This stage is licensed for ultracode workflow orchestration."
+                } else {
+                    ""
+                };
+                format!(
+                    "Read the signal file at {signal_path_str} and execute the assigned stage work. \
+                     This file contains your assignment, tasks, acceptance criteria, \
+                     and context files to read.{ultracode_suffix}"
+                )
+            }
             SessionType::Merge => format!(
                 "Read the merge signal file at {signal_path_str} and resolve the merge conflicts. \
                  This file contains the conflicting files, merge context, and resolution instructions."

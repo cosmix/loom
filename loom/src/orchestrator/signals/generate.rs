@@ -520,6 +520,9 @@ fn build_signal_context(
     // Populate sandbox summary from stage config
     embedded_context.sandbox_summary = Some(build_sandbox_summary(stage));
 
+    // Propagate the ultracode license so the semi-stable section can gate on it
+    embedded_context.ultracode = stage.ultracode;
+
     // Build integration-verify and knowledge-distill enrichments
     if matches!(
         stage.stage_type,

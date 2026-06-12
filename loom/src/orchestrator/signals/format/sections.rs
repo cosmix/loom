@@ -316,15 +316,21 @@ pub(super) fn format_semi_stable_section(
         }
     }
 
-    // Agent Teams decision framework
-    content.push_str("## Agent Teams\n\n");
+    // Delegation decision framework (flat subagents vs hierarchy vs teams)
+    content.push_str("## Delegation Choices\n\n");
     content
         .push_str("You have agent teams available (CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1).\n\n");
-    content.push_str("**When to use SUBAGENTS (Task tool):**\n");
-    content.push_str("- Tasks have clear, concrete file assignments\n");
+    content.push_str("**When to use SUBAGENTS (Task tool, flat):**\n");
+    content.push_str("- ~6 or fewer tasks with clear, concrete file assignments\n");
     content.push_str("- No inter-agent communication needed\n");
     content.push_str("- Fire-and-forget parallel work\n\n");
-    content.push_str("**When to use AGENT TEAMS:**\n");
+    content
+        .push_str("**When to use a SUBAGENT HIERARCHY (coordinators → workers, 2-LEVEL CAP):**\n");
+    content.push_str("- >~6 independent worker tasks, or results would bloat your context\n");
+    content.push_str("- Work clusters into DISJOINT file territories\n");
+    content.push_str("- Each coordinator subagent owns one territory, spawns sonnet workers BY TYPE, verifies its subtree, returns a compact summary\n");
+    content.push_str("- Workers NEVER spawn subagents\n\n");
+    content.push_str("**When to use AGENT TEAMS (~7x cost):**\n");
     content.push_str("- Tasks require discussion or iterative discovery\n");
     content.push_str("- Work scope may expand during execution\n");
     content.push_str("- Multiple review dimensions (security, quality, tests)\n");
@@ -337,6 +343,24 @@ pub(super) fn format_semi_stable_section(
     content.push_str("- Keep your own context for coordination (aim for <40% utilization)\n");
     content.push_str("- Delegate implementation, do not implement yourself\n");
     content.push_str("- Shut down all teammates before completing the stage\n\n");
+
+    // Ultracode license (semi-stable - gated on the stage's ultracode flag)
+    if embedded_context.ultracode {
+        content.push_str("## Ultracode Mode\n\n");
+        content.push_str(
+            "This stage is licensed for ultracode workflow orchestration. Use the Workflow tool\n",
+        );
+        content.push_str(
+            "for the large fan-out this stage was designed for; scale agent count to the work.\n",
+        );
+        content.push_str(
+            "Workflow agents are subagents (Rule 5 applies — no commits, no stage completion);\n",
+        );
+        content.push_str(
+            "the main agent runs acceptance criteria and commits. Do not exceed the stage's\n",
+        );
+        content.push_str("scope just because orchestration is available.\n\n");
+    }
 
     // Embed sandbox restrictions (semi-stable - based on stage config)
     if let Some(sandbox_summary) = &embedded_context.sandbox_summary {

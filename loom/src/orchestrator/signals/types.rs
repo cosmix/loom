@@ -45,6 +45,8 @@ pub struct EmbeddedContext {
     pub cross_stage_summary: Option<String>,
     /// Memory-based wiring checklist aggregated from all stages
     pub wiring_checklist: Option<String>,
+    /// Whether the stage is licensed for ultracode Workflow orchestration
+    pub ultracode: bool,
 }
 
 #[derive(Debug, Clone)]
