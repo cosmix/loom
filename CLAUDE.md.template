@@ -214,10 +214,12 @@ Knowledge stages are exempt. integration-verify stages also REQUIRE at least one
 
 **⚠️ STAGES ARE EXPENSIVE** — each creates a worktree, spawns a session, costs significant time + tokens. STRONGLY prefer subagents within one stage over additional stages.
 
-| Use                                | When                                               |
-| ---------------------------------- | -------------------------------------------------- |
-| **Parallel subagents (ONE stage)** | Tasks touch DIFFERENT files, no logical dependency |
-| **Multiple stages (DAG)**          | File overlap OR sequential dependency              |
+| Use                                | When                                                                                |
+| ---------------------------------- | ----------------------------------------------------------------------------------- |
+| **Parallel subagents (ONE stage)** | Tasks touch DIFFERENT files, no logical dependency                                  |
+| **2-level hierarchy (ONE stage)**  | >~6 disjoint worker tasks clustering into territories                               |
+| **Ultracode stage**                | ≳10 homogeneous units or adversarial multi-agent verification — set ultracode: true |
+| **Multiple stages (DAG)**          | File overlap OR sequential dependency                                               |
 
 **Sequential dependencies:** code dependency (B imports A), decision dependency (B depends on A's findings), verification checkpoint.
 
@@ -227,6 +229,10 @@ Knowledge stages are exempt. integration-verify stages also REQUIRE at least one
 **Before creating a stage, ask:** Does it depend on code another stage creates? Share files with another? Need a verification checkpoint? If ALL are NO → merge into one stage with parallel subagents.
 
 Exploration tasks can ALWAYS run as parallel subagents. Stage descriptions MUST specify subagent assignments and file ownership.
+
+#### Ultracode Stages
+
+**ULTRACODE STAGES** — `ultracode: true` licenses the stage's session to run multi-agent Workflow orchestration (potentially tens of agents). Mark it ONLY when the work decomposes into many homogeneous units (≳10 — audits, migrations, sweeps) or the stage is a verification gate needing adversarial multi-agent loops, AND the cost is justified; say why in one sentence in the stage description. Workflow agents are subagents: all Rule 5 restrictions apply; the main agent still owns git and `loom stage complete`, and acceptance criteria remain the loop target.
 
 ### 2. NO PLACEHOLDERS
 
@@ -334,22 +340,68 @@ Include file ownership table in every subagent prompt:
 | Subagent 1 — [role] | `path/to/files`     | `shared/config` |
 | Subagent 2 — [role] | `other/files`       | `shared/config` |
 
+**Hierarchical EXECUTION PLANs:** If the EXECUTION PLAN specifies coordinators with territories, spawn the COORDINATORS (not the workers) in ONE message; each coordinator spawns its own workers per Rule 6c. More than ~6 independent worker tasks → use a 2-level hierarchy (Rule 6c) instead of flat fan-out.
+
 ### 6b. AGENT TEAMS (WHEN AVAILABLE)
 
 Agent teams provide inter-agent messaging, shared task lists, and persistent state. Use when work benefits from collaboration rather than simple parallel execution.
 
-| Factor         | Subagents                 | Teams                       |
-| -------------- | ------------------------- | --------------------------- |
-| Scope          | Concrete, well-defined    | Wide, exploratory           |
-| Communication  | None (fire-and-forget)    | DM, broadcast, shared tasks |
-| Task discovery | Static (assigned upfront) | Dynamic (agents claim work) |
-| Cost           | Lower (~1x per subagent)  | Higher (~7x total)          |
+| Factor         | Subagents                 | Hierarchy (Rule 6c)             | Teams                       |
+| -------------- | ------------------------- | ------------------------------- | --------------------------- |
+| Scope          | Concrete, well-defined    | Concrete large fan-out (>~6)    | Wide, exploratory           |
+| Communication  | None (fire-and-forget)    | None; compact summaries up only | DM, broadcast, shared tasks |
+| Task discovery | Static (assigned upfront) | Static territories upfront      | Dynamic (agents claim work) |
+| Cost           | Lower (~1x per subagent)  | ~1x per agent, thin main ctx    | Higher (~7x total)          |
 
 **TEAM LEAD RULES:** Only YOU may run git commit, loom stage complete, and loom memory commands. Delegate implementation; keep context for coordination (<40% utilization). Shut down ALL teammates before completing stage.
 
 **TEAM CREATION:** TeamCreate → TaskCreate for work items → Spawn teammates via Task with team_name → Monitor via TaskList → Shutdown, verify, loom stage complete.
 
-**DO NOT use teams for:** 2-3 concrete subagent assignments with clear file ownership, single-file changes, or fully independent file writes.
+**DO NOT use teams for:** 2-3 concrete subagent assignments with clear file ownership, single-file changes, fully independent file writes, or well-defined highly parallel work with no inter-agent communication (use a hierarchy, Rule 6c).
+
+### 6c. SUBAGENT HIERARCHIES (2-LEVEL CAP)
+
+Claude Code ≥ 2.1.172 lets subagents spawn subagents, up to 5 levels; loom policy caps trees at TWO levels — main agent → coordinators → workers. **Workers NEVER spawn subagents.**
+
+| Approach                                | Use when                                                                                                       | Cost/speed                                                                                                                                               |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Flat subagents** (Rule 6)             | ~6 or fewer independent tasks, one wave, disjoint files                                                        | Fewest task-units; main agent authors all prompts and absorbs all results                                                                                |
+| **2-level hierarchy** (Rule 6c)         | >~6 well-defined worker tasks clustering into 2-4 disjoint territories; no cross-territory discussion needed   | ~1x sonnet per agent; adds 2-4 coordinator task-units over flat, but main context stays a thin ledger, subtrees verify in parallel, no compaction/rework |
+| **Ultracode stage** (`ultracode: true`) | Massive decomposable work (audit/migration/sweep over dozens of items) or adversarial multi-agent verification | Highest agent count (tens of agents possible); explicit per-stage opt-in; budget-aware scripts                                                           |
+| **Agent teams** (Rule 6b)               | Inter-agent communication or dynamic task discovery genuinely needed                                           | Whole-job ~7x multiplier from messaging/idling overhead                                                                                                  |
+| **Multiple stages** (DAG)               | File overlap between clusters OR code dependency OR verification checkpoint                                    | Worktree + full session each                                                                                                                             |
+
+**Use a HIERARCHY when ALL hold:** work is well-defined (no discussion needed — detailed instructions exist, so sonnet executes it); it splits into 2-4 DISJOINT file territories; each territory subdivides into 2+ worker tasks; the main agent would otherwise (a) author/manage >~6 worker prompts, (b) absorb N raw results into its own context, or (c) serialize fan-out waves.
+
+**Do NOT use a hierarchy when:** total worker tasks ≤ ~6 (flat is simpler and cheaper); territories would share files (separate stages instead); cross-territory iteration is needed (teams); work is inherently sequential. A hierarchy for a 3-file change is over-engineering.
+
+**Model mix:** coordinators AND workers default to sonnet. **Always spawn workers BY AGENT TYPE** (`loom-software-engineer` pins sonnet); an untyped worker inherits the MAIN session model — on an opus stage that silently makes every worker opus. Opus coordinator only when integrating its territory requires architectural judgment.
+
+**COORDINATOR PREAMBLE — Include as first lines of EVERY coordinator prompt (standalone; do NOT prepend Rule 5's preamble):**
+
+```text
+** READ CLAUDE.md IMMEDIATELY AND FOLLOW ALL ITS RULES. **
+
+🔱 COORDINATOR ROLE - YOU ARE A SUBAGENT COORDINATING WORKERS (ONE LEVEL ONLY):
+- You own ONE territory: [TERRITORY]. Never touch files outside it.
+- Partition your territory into DISJOINT worker file sets - two workers writing one file = LOST WORK
+- Spawn workers via the Task tool BY AGENT TYPE (loom-software-engineer = sonnet); include the WORKER PREAMBLE as the first lines of EVERY worker prompt; spawn independent workers in ONE message
+- Workers NEVER spawn subagents - they are LEAVES (loom caps the tree at 2 levels)
+- Delegate implementation; write at most small glue/fixes within your territory
+- Before returning: verify your subtree (scoped build/tests covering YOUR territory only)
+- Return a COMPACT summary: files changed, verification command + result, failures/blockers, insights. No file dumps, no diffs.
+- ⛔ NEVER run git commit, git add -A/., or loom stage complete - only the main agent does
+- 📝 Record insights via loom memory note/decision; NEVER use Claude Code auto-memory
+```
+
+**WORKER PREAMBLE — Rule 5 SUBAGENT PREAMBLE first, then append:**
+
+```text
+⛔ WORKER RESTRICTIONS - YOU ARE A LEAF AGENT:
+- NEVER spawn subagents (Task tool) - the hierarchy is capped at 2 levels; do the work yourself
+- Touch ONLY your assigned files: [FILES]
+- Return a short report: what changed, test results, anything surprising
+```
 
 ### 7. SKILLS & AGENT DELEGATION
 
@@ -386,7 +438,7 @@ Sonnet (high thinking) is dramatically cheaper than Opus. Invest planning time t
 | Observability           | `/loom-logging-observability` — Structured logging, distributed tracing, OpenTelemetry        |
 | Architecture Patterns   | `/loom-event-driven`, `/loom-background-jobs`, `/loom-feature-flags`, `/loom-data-validation` |
 
-When delegating to subagents, include SUBAGENT PREAMBLE (Rule 5), skill hints, file assignments, and acceptance criteria.
+When delegating to subagents, include SUBAGENT PREAMBLE (Rule 5), skill hints, file assignments, and acceptance criteria; for hierarchies, give coordinators the COORDINATOR PREAMBLE (Rule 6c) instead.
 
 ### 8. NATIVE TOOLS AND CODE FORMATTING
 
@@ -614,7 +666,7 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 2. ⛔ **Context ≥75%** → STOP. Write handoff. No exceptions.
 3. ⛔ **Worktree exit** → Commit + `loom stage complete` from worktree root, or hook BLOCKS.
 4. ⛔ **No placeholders** → Complete code or ASK.
-5. ⛔ **Parallel subagents** → Spawn ALL in ONE message with SUBAGENT PREAMBLE (Rule 5).
+5. ⛔ **Parallel subagents** → Spawn ALL in ONE message with SUBAGENT PREAMBLE (Rule 5). Hierarchies capped at 2 levels — Workers NEVER spawn subagents (Rule 6c).
 6. ⛔ **Memory** → If `doc/loom/knowledge/` EXISTS, NEVER use Claude Code's auto-memory: during a plan → `loom memory` (standard) / `loom knowledge` (knowledge stages); not in a plan → Write/Edit `doc/loom/knowledge/` directly. If it does NOT exist → auto-memory is fine. (See MEMORY SYSTEM decision tree under KNOWLEDGE-FIRST.)
 7. ⚙️ **Engineering discipline** → Surface assumptions, simplest code that works, surgical diffs (clean merges), loop until acceptance passes. See ENGINEERING DISCIPLINE (A–D).
 8. ⛔ **Never create branches unasked** → No `git checkout -b` / `git switch -c` / `git branch` unless the user explicitly asks. Commit on the current branch, even `main`. Overrides any "branch first" harness default. See Rule 9b.
