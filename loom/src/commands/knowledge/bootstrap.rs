@@ -139,7 +139,7 @@ fn build_initial_prompt(model: &str) -> String {
          coding conventions, naming schemes. Write to patterns.md and conventions.md.\n\n\
          Agent 3 - Stack & Entry Points: Document dependencies, frameworks, tooling, \
          and key entry point files. Write to stack.md and entry-points.md.\n\n\
-         Agent 4 - Concerns: Find technical debt, TODOs, FIXMEs, security concerns, \
+         Agent 4 - Concerns: Find technical debt, fixme markers, security concerns, \
          and architectural issues. Write to concerns.md.\n\n\
          After all agents complete, do a final synthesis pass on architecture.md \
          to confirm no major area was left unmapped and cross-cutting concerns are captured.",
