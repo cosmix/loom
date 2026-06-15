@@ -462,3 +462,207 @@ If a native session crashes within 15 seconds of creation while `resolve()` is t
 **Auth disqualifying env vars (Remote Control requires claude.ai login):**
 
 `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, `CLAUDE_CODE_USE_FOUNDRY`
+
+## Signal Generation Pipeline (orchestrator/signals/) [DETAILED]
+
+The signal system assembles agent prompt files in a **4-section Manus KV-cache pattern** for token efficiency.
+
+### Call Hierarchy
+
+```text
+generate_signal_with_skills() [generate.rs]
+  └─ build_signal_context()           # assembles EmbeddedContext
+       └─ build_embedded_context_with_stage_and_session()
+            ├─ reads handoff (V1 prose / V2 structured)
+            ├─ read_plan_overview()
+            ├─ KnowledgeDir::has_content()
+            └─ format_memory_for_signal(last 10 entries only)
+  └─ format_signal_content() [format/mod.rs]
+       └─ format_signal_with_metrics()
+            ├─ select stable prefix from cache.rs (by stage type)
+            ├─ format_semi_stable_section() [sections.rs:15]
+            ├─ format_dynamic_section() [sections.rs:382]
+            ├─ format_recitation_section() [sections.rs:665]
+            └─ SignalMetrics::from_sections() → SHA-256 hash first 16 hex chars
+```
+
+Knowledge stages use a SEPARATE path: `generate_knowledge_signal()` [knowledge.rs:23].
+
+### Four Stable-Prefix Generators (cache.rs)
+
+All generators are composed from shared `append_*` helpers and produce immutable KV-cached text.
+
+| Generator | Function | Line | Stage Type |
+|-----------|----------|------|------------|
+| Standard | `generate_stable_prefix()` | 174 | `StageType::Standard` |
+| Integration-Verify | `generate_integration_verify_stable_prefix()` | 313 | `StageType::IntegrationVerify` |
+| Knowledge-Distill | `generate_knowledge_distill_stable_prefix()` | 447 | `StageType::KnowledgeDistill` |
+| Knowledge | `generate_knowledge_stable_prefix()` | 527 | `StageType::Knowledge` |
+
+**Standard prefix section order (approx lines 174-310):**
+1. Worktree Context header
+2. Isolation Boundaries (3 bullets)
+3. `append_path_boundaries()` — ALLOWED/FORBIDDEN paths table
+4. working_dir reminder
+5. Execution Rules header
+6. Worktree Isolation detail
+7. Delegation & Efficiency (subagents + hierarchies + agent teams)
+8. `append_subagent_restrictions()` — NO commit/complete/add-A rules
+9. `append_completion_rules()`
+10. Self-Review Before Completion
+11. Stage Memory guidance
+12. `append_git_staging_full()` (Standard ONLY; IV/KnowledgeDistill use `append_git_staging_rules()`)
+13. `append_common_footer()`
+
+**Integration-Verify key differences:** ZERO TOLERANCE box at top; no full git-staging box; now requires agent teams (MUST).
+
+**Knowledge-Distill:** Mission = curate memories → knowledge; includes documentation update reminder.
+
+**Knowledge prefix key differences:** No worktree; COMMITS REQUIRED; "Your Mission = build briefing document"; 6-step workflow; agent teams for bootstrap.
+
+### Shared append_* Helpers (cache.rs:51-169)
+
+| Helper | Lines | Content | Used By |
+|--------|-------|---------|---------|
+| `append_path_boundaries()` | 54-63 | ALLOWED/FORBIDDEN paths table | Standard, IV, KnowledgeDistill |
+| `append_subagent_restrictions()` | 66-93 | NO git/loom/add-A rules; memory recording guide | Standard (233), IV (424) |
+| `append_completion_rules()` | 96-102 | Acceptance, handoff, no retry rules | Standard (254), IV (433), KnowledgeDistill (515) |
+| `append_isolation_boundaries_simple()` | 108-113 | 2-bullet version | IV (408), KnowledgeDistill (508) |
+| `append_execution_rules_intro()` | 119-124 | "Follow CLAUDE.md" short header | IV (412), KnowledgeDistill (512), Knowledge (594) |
+| `append_common_footer()` | 127-142 | Binary usage, state files, context recovery | ALL 4 prefixes |
+| `append_git_staging_full()` | 145-160 | Full staging rules + danger box | Standard only |
+| `append_git_staging_rules()` | 162-169 | Shorter version | IV, KnowledgeDistill |
+
+**Adding a new helper:** Follow same `fn append_xxx(content: &mut String)` pattern. Place in the "Shared content blocks" cluster (lines 51-169). Call it explicitly from each generator where wanted — it's NOT auto-injected.
+
+### Semi-Stable Section (format/sections.rs:15-378)
+
+Changes per **stage type**, not per session. Key sub-sections:
+
+- **Knowledge reference box** (lines 22-32): `loom knowledge show` commands if knowledge exists
+- **Stage-type-aware reminder box** (lines 35-140): Knowledge/IV/KnowledgeDistill → "KNOWLEDGE UPDATES REQUIRED"; Standard → "SESSION MEMORY REQUIRED"
+- **Knowledge management section** (lines 142-290): If knowledge empty → 4-step exploration order; if present → "Extend as you work"
+- **Delegation Choices** (lines 319-345): Subagents vs. Hierarchy vs. Agent Teams decision
+- **Ultracode License** (lines 347-362): Gated on `embedded_context.ultracode`
+- **Sandbox Restrictions** (lines 365-368): Sandbox summary if present
+- **Skill Recommendations** (lines 370-374): Skill index matches
+
+### Dynamic Section (format/sections.rs:382-661)
+
+Per-session content. Includes Target (session/stage/plan IDs, working_dir, execution path), Plan Overview, Assignment, Dependency Status + Outputs, Handoff Content, Acceptance Criteria, Goal-Backward Verification (artifacts, wiring, wiring_tests, dead_code).
+
+### Recitation Section (format/sections.rs:665-765)
+
+End of signal for maximum attention. Includes: Compaction Imminent warning (≥75% usage), Context Budget Warning, Immediate Tasks, Stage Memory (with PROMINENT WARNING if empty).
+
+### EmbeddedContext Struct (types.rs:24-50)
+
+Single container flowing through all 4 sections:
+
+```rust
+pub struct EmbeddedContext {
+    pub handoff_content: Option<String>,      // V1 prose handoff
+    pub parsed_handoff: Option<HandoffV2>,    // V2 structured handoff
+    pub plan_overview: Option<String>,
+    pub knowledge_has_content: bool,
+    pub memory_content: Option<String>,       // Last 10 entries
+    pub skill_recommendations: Vec<SkillMatch>,
+    pub context_budget: Option<f32>,
+    pub context_usage: Option<f32>,
+    pub sandbox_summary: Option<SandboxSummary>,
+    pub cross_stage_summary: Option<String>,  // IV/KnowledgeDistill only
+    pub wiring_checklist: Option<String>,     // IV/KnowledgeDistill only
+    pub ultracode: bool,
+}
+```
+
+### Caching
+
+SHA-256 of stable prefix text → first 16 hex chars → `SignalMetrics::stable_prefix_hash`. Cache invalidated whenever the stable prefix Rust code changes. Semi-stable, dynamic, recitation sections are always regenerated.
+
+## before_stage / after_stage / code_review Schema Fields — Execution Status
+
+**Status as of 2026-06-15 (verified against stage_executor.rs:219-256 and plan/schema/types.rs:261):**
+
+| Field | Schema Type | Stored on Stage | Executed | Where |
+|-------|-------------|-----------------|----------|-------|
+| `before_stage` | `Vec<TruthCheck>` | ✅ Yes (plan_setup.rs:280) | ✅ Yes | stage_executor.rs:220-256 (pre-spawn) |
+| `after_stage` | `Vec<TruthCheck>` | ✅ Yes (plan_setup.rs:281) | ✅ Yes | commands/stage/complete.rs:847-866 |
+| `code_review` | `Option<CodeReviewConfig>` | ❌ NOT copied | ❌ Never | — |
+
+**`before_stage` execution (stage_executor.rs:219-256):**
+- Runs after worktree creation, BEFORE session spawn
+- Calls `crate::verify::before_after::run_before_stage_checks(&stage.before_stage, &check_dir)`
+- On failure gaps: stage → `Blocked` (FailureType::TestFailure), session NOT spawned
+- On errors (infrastructure): prints warning, continues anyway (advisory)
+- TruthCheck timeout: 30 seconds (hardcoded in truths.rs:13)
+
+**`after_stage` execution (commands/stage/complete.rs:847-866):**
+- Runs during `loom stage complete`, AFTER acceptance criteria pass
+- On failure: stage stays Executing, no merge, agent must fix and re-run
+
+**`code_review` — TRULY DORMANT:**
+- Parsed by serde at schema level (`plan/schema/types.rs:261`)
+- NOT copied in `create_stage_from_definition()` (plan_setup.rs:225-297) — Stage struct has no `code_review` field
+- ONLY appears as `code_review: None` in 8 test fixture files
+- NOT surfaced to signal generation, acceptance, or completion phases
+- Implementing requires: (1) add `code_review: Option<CodeReviewConfig>` to Stage struct, (2) copy in plan_setup.rs, (3) thread through signal generation in generate.rs
+
+**⚠️ Plan PLAN-anti-slop-thoroughness notes:** The plan describes before_stage as "dormant" — this is INCORRECT as of current code. before_stage is fully wired. The plan's Stage 3 Subagent 1 task to "wire before_stage" should be treated as a no-op (it's already done). Only code_review is genuinely dormant and needs wiring.
+
+## Hook System — Session-Start Behavior and hookSpecificOutput Pattern
+
+### session-start.sh Behavior
+
+- Drains stdin unconditionally (cross-platform: gtimeout/timeout/cat, 1s timeout)
+- Validates LOOM_STAGE_ID, LOOM_SESSION_ID, LOOM_WORK_DIR — silently exits if missing
+- Writes initial heartbeat: `.work/heartbeat/<LOOM_STAGE_ID>.json`
+- Logs SessionStart event to `.work/hooks/events.jsonl`
+- **Current version does NOT parse stdin source field** — it writes the same heartbeat for all session sources (startup/clear/compact/resume)
+- The plan (PLAN-anti-slop-thoroughness) adds source-based branching: when `.source == "compact"` or `"resume"`, emit a `hookSpecificOutput.additionalContext` re-anchor pointer
+
+### post-tool-use.sh Compaction Recovery (lines 128-144)
+
+- After pre-compact.sh allows compaction, it creates `.work/compaction-recovery/<LOOM_SESSION_ID>` marker
+- post-tool-use.sh checks for this marker on every tool use; if found, removes it and prints re-anchor guidance to **stderr**
+- This is the EXISTING mechanism the plan intends to REPLACE with a proper hookSpecificOutput on session-start
+
+### hookSpecificOutput JSON Pattern
+
+Used by hooks to inject context into Claude's next turn:
+
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "<EventType>",
+    "additionalContext": "<string content>"
+  }
+}
+```
+
+**Examples:**
+- `prefer-modern-tools.sh` (lines 100-101): PreToolUse warning about grep usage
+- `skill-trigger.sh` (lines 286-291): UserPromptSubmit skill suggestions
+
+**Why JSON over plain text:** Claude Code has reliability issues with plain-text stdout from certain hook types (see issue claude-code#13912); JSON additionalContext is more reliable for context injection.
+
+**Construction:** Always use `jq -nc --arg ctx "..."  '{hookSpecificOutput: {hookEventName: "...", additionalContext: $ctx}}'` — never manually escape JSON strings.
+
+### LOOM_* Env Vars Available to All Hooks
+
+Set by wrapper script (pid_tracking.rs:463-479) before `exec claude`:
+
+| Variable | Purpose |
+|----------|---------|
+| `LOOM_SESSION_ID` | Current session ID |
+| `LOOM_STAGE_ID` | Current stage ID |
+| `LOOM_WORK_DIR` | Absolute path to `.work/` |
+| `LOOM_MAIN_AGENT_PID` | Process PID (set dynamically, NOT in settings.json) |
+| `LOOM_WORKTREE_PATH` | Absolute worktree path (worktree sessions only) |
+| `LOOM_MERGE_SESSION=1` | Set for merge resolution sessions only |
+
+**LOOM_MAIN_AGENT_PID gotcha:** Must NOT be in settings.json env block (generator.rs explicitly removes it). Must be set by wrapper script as `export LOOM_MAIN_AGENT_PID=$$` so it reflects the actual Claude process PID. Stale value → commit-filter.sh misidentifies main agent as subagent.
+
+### Hook Embedding (constants.rs)
+
+All 15 hooks embedded via `include_str!()` at compile time. `install_loom_hooks()` writes them to `~/.claude/hooks/loom/` with mode 0o755. Hooks are NOT read from disk by loom at runtime.

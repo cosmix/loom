@@ -256,3 +256,25 @@ First dated log line is `2026-05-13T16:13:18.544430Z` — within 1s of the lock 
 `loom plan verify` does not call `sandbox::config::validate_config`, so a plan with `sandbox.permission_mode=bypass-permissions` reports 0 errors from `plan verify` but fails at `loom init`. The validation exists in `commands/init/plan_setup.rs` and at spawn time, but not in the verify path (`commands/plan/verify.rs`).
 
 **Recommended fix:** Thread `validate_config` into `commands/plan/verify.rs` so the same validation that blocks `loom init` is surfaced early at plan-authoring time.
+
+## code_review Schema Field — TRULY DORMANT (2026-06-15)
+
+`StageDefinition.code_review` (`plan/schema/types.rs:261`) is parsed by serde but **never stored on the Stage struct and never surfaced to any agent**.
+
+**Evidence:** `rg "code_review" loom/src/` returns 14 results — ALL are either test fixture declarations (`code_review: None`) or the schema field definition itself. Zero execution paths consume it.
+
+**Root cause:** `create_stage_from_definition()` (`commands/init/plan_setup.rs:225-297`) copies before_stage and after_stage (lines 280-281) but has no corresponding line for code_review. The Stage struct has no `code_review` field.
+
+**What's needed to wire it:**
+1. Add `code_review: Option<CodeReviewConfig>` to Stage struct (`models/stage/types.rs`)
+2. Copy field in `create_stage_from_definition()` (`plan_setup.rs`)
+3. Thread into signal generation in `orchestrator/signals/generate.rs` (stage-specific, NOT cacheable → belongs in dynamic section or generate.rs directly)
+4. Render a "## Review Dimensions" section into integration-verify signals, respecting `require_all` (checkboxes if true)
+
+**Plan reference:** PLAN-anti-slop-thoroughness Stage 3 Subagent 2 is tasked with this wiring.
+
+## PLAN-anti-slop-thoroughness: before_stage Wired vs. Plan Description
+
+The plan describes before_stage as "dormant / parsed-but-never-run". This is **INCORRECT** as of current code. `before_stage` is fully wired at `orchestrator/core/stage_executor.rs:219-256` — it runs after worktree creation, before session spawn, and blocks spawn if checks fail.
+
+**Impact on Stage 3:** Subagent 1's task to "wire before_stage" is a no-op — the mechanism is already in place. The real work is only Subagent 2 (code_review wiring). Implementation agents should verify the current code state before attempting to add before_stage execution that already exists.

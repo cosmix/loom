@@ -530,3 +530,55 @@ All four call `pid_tracking::create_wrapper_script()` before `spawn_in_terminal(
 6. `/opt/homebrew/bin/claude`
 
 Used by all four NativeBackend spawn methods before building the claude command string.
+
+## Signal Generation — Key Files and Line References
+
+| File | Purpose | Key Lines |
+|------|---------|-----------|
+| `orchestrator/signals/generate.rs` | Entry point: `generate_signal_with_skills()`, `build_signal_context()`, `build_embedded_context_with_stage_and_session()` | 137-536 |
+| `orchestrator/signals/cache.rs` | 4 stable-prefix generators + 8 `append_*` helpers + SignalMetrics SHA-256 | helpers:51-169, standard:174-310, IV:313-444, KnowledgeDistill:447-524, Knowledge:527-633 |
+| `orchestrator/signals/format/mod.rs` | `format_signal_with_metrics()` — selects stable prefix by stage type, assembles 4 sections | 62-78 |
+| `orchestrator/signals/format/sections.rs` | Semi-stable (15-378), Dynamic (382-661), Recitation (665-765) | see per-section notes |
+| `orchestrator/signals/types.rs` | `EmbeddedContext` struct (24-50), `DependencyStatus`, `SandboxSummary` | 24-50 |
+| `orchestrator/signals/knowledge.rs` | Knowledge-stage signal path: `generate_knowledge_signal()`, `format_knowledge_signal_content()` | 23-135 |
+| `orchestrator/signals/recovery.rs` | Recovery signal: recovery context header, last known state, recovery actions | — |
+| `orchestrator/signals/recovery_format.rs` | `format_recovery_signal()` if exists as separate file | — |
+| `orchestrator/signals/helpers.rs` | `write_signal_file()` disk I/O | 17+ |
+| `orchestrator/signals/crud.rs` | Signal file CRUD | — |
+
+**Insertion point for new shared helper:** `cache.rs` lines 51-169 (the "Shared content blocks" cluster). Call it from each of the 4 generator functions.
+
+## Hook Scripts — What Each Does
+
+| Script | Hook Type | Key Behavior |
+|--------|-----------|-------------|
+| `session-start.sh` | SessionStart | Writes initial heartbeat `.work/heartbeat/<LOOM_STAGE_ID>.json`; currently does NOT branch on source type |
+| `post-tool-use.sh` | PostToolUse | Updates heartbeat; logs to `.work/tool-events.jsonl`; checks `.work/compaction-recovery/<session>` marker for one-time re-anchor message on stderr |
+| `pre-compact.sh` | PreCompact | Block-then-allow: first call exits 2 (blocks) + creates pending flag + calls `loom handoff`; second call exits 0 (allows) + creates recovery marker |
+| `session-end.sh` | SessionEnd | Creates handoff if stage not completed |
+| `learning-validator.sh` | Stop | Advisory check for session memory usage |
+| `commit-guard.sh` | Stop (global) | Blocks exit if uncommitted changes or stage still Executing |
+| `prefer-modern-tools.sh` | PreToolUse:Bash | Emits `hookSpecificOutput.additionalContext` JSON warning to use Grep/Glob tools instead |
+| `commit-filter.sh` | PreToolUse:Bash | Blocks subagent git commits via LOOM_MAIN_AGENT_PID process tree check; blocks Claude attribution |
+| `git-add-guard.sh` | PreToolUse:Bash | Blocks `git add -A`, `git add .`, `git add .work` |
+| `worktree-isolation.sh` | PreToolUse:Bash/Edit/Write | Blocks cross-worktree ops and path traversal |
+| `worktree-file-guard.sh` | PreToolUse:Read/Glob/Grep | Blocks file tool paths outside worktree |
+| `skill-trigger.sh` | UserPromptSubmit | Scores keywords, emits skill suggestions as `hookSpecificOutput.additionalContext` |
+| `ask-user-pre.sh` | PreToolUse:AskUserQuestion | Marks stage WaitingForInput |
+| `ask-user-post.sh` | PostToolUse:AskUserQuestion | Resumes stage |
+| `_common.sh` | Utility | `strip_embedded_content()` (prevents false-positive matches in commit messages), `loom_current_worktree()` (worktree detection by directory, NOT just env var) |
+
+**Worktree detection gotcha:** `_common.sh:loom_current_worktree()` checks TWO conditions — current directory contains `.worktrees/` AND `LOOM_WORKTREE_PATH` points into `.worktrees/` with the directory existing. LOOM_STAGE_ID alone is insufficient (it leaks into plain sessions from prior runs).
+
+## TruthCheck / before_stage / after_stage / code_review
+
+| Location | Purpose |
+|----------|---------|
+| `models/stage/types.rs:280-303` | `TruthCheck` struct: `command`, `stdout_contains`, `stdout_not_contains`, `stderr_empty`, `exit_code`, `description` |
+| `plan/schema/types.rs:100-261` | `StageDefinition`: `before_stage: Vec<TruthCheck>` (221), `after_stage: Vec<TruthCheck>` (226), `code_review: Option<CodeReviewConfig>` (261) |
+| `plan/schema/types.rs:100-111` | `CodeReviewConfig`: `dimensions: Vec<String>`, `require_all: bool` |
+| `commands/init/plan_setup.rs:280-281` | Copies before_stage + after_stage to Stage; does NOT copy code_review |
+| `orchestrator/core/stage_executor.rs:219-256` | Executes before_stage checks BEFORE session spawn; failure → stage Blocked |
+| `commands/stage/complete.rs:847-866` | Executes after_stage checks AFTER acceptance criteria; failure → stage stays Executing |
+| `verify/before_after.rs` | `run_before_stage_checks()` + `run_after_stage_checks()` — both delegate to `verify_truth_checks()` |
+| `verify/goal_backward/truths.rs:16-134` | `verify_truth_checks(checks, working_dir)` → `Vec<VerificationGap>`, 30s timeout per check |
