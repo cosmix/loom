@@ -123,6 +123,24 @@ fn append_execution_rules_intro(content: &mut String) {
     );
 }
 
+/// Append anti-slop forcing-function (understand-first ladder + banned list)
+fn append_anti_slop_guidance(content: &mut String) {
+    content.push_str("**UNDERSTAND-FIRST LADDER (before writing code):**\n\n");
+    content.push_str("1. Read `doc/loom/knowledge/` fully; if absent or sparse for your area, build it (`loom knowledge bootstrap`) BEFORE implementing.\n");
+    content.push_str(
+        "2. Map the area: call paths, data flow, every caller/consumer; know the blast radius.\n",
+    );
+    content.push_str("3. Search for existing functions/utilities/patterns to REUSE first.\n");
+    content.push_str("4. Only then implement — minimal and surgical.\n");
+    content.push_str("5. Cannot verify a fact you rely on? Do NOT guess. Check it. If you genuinely cannot (autonomous stage), record via `loom memory decision`/`note` and proceed against the most defensible reading of acceptance — never silently.\n\n");
+    content.push_str("**BANNED — self-reject and redo before reporting done:**\n\n");
+    content.push_str("- \"areas left untouched\"\n");
+    content.push_str("- \"I guessed / should have checked\"\n");
+    content.push_str("- \"that is on me, I should have checked\"\n");
+    content.push_str("- \"reporting unverified work as done\"\n\n");
+    content.push_str("Understand before acting; do not guess.\n\n");
+}
+
 /// Append binary usage, state files, and context recovery (shared by all prefix types)
 fn append_common_footer(content: &mut String) {
     content.push_str("**Binary Usage (CRITICAL when working on loom):**\n");
@@ -213,6 +231,7 @@ pub fn generate_stable_prefix() -> String {
         "- **All context is embedded above** - you have everything you need in this signal\n",
     );
     content.push_str("- **No path escaping** - do not use `../..`, `cd` to parent directories, or absolute paths outside worktree\n\n");
+    append_anti_slop_guidance(&mut content);
     content.push_str("**Delegation & Efficiency (CRITICAL):**\n\n");
     content.push_str("**USE THE TASK TOOL** to spawn parallel subagents for multi-part work:\n");
     content.push_str("- Independent file changes, multiple components, tests + implementation → spawn parallel subagents\n");
@@ -410,6 +429,7 @@ pub fn generate_integration_verify_stable_prefix() -> String {
 
     // Execution rules
     append_execution_rules_intro(&mut content);
+    append_anti_slop_guidance(&mut content);
 
     content.push_str("**Delegation & Efficiency (CRITICAL):**\n\n");
     content.push_str("**USE THE TASK TOOL** to spawn parallel subagents for verification:\n");
@@ -510,6 +530,7 @@ pub fn generate_knowledge_distill_stable_prefix() -> String {
 
     // Execution rules
     append_execution_rules_intro(&mut content);
+    append_anti_slop_guidance(&mut content);
 
     content.push_str("**Completion:**\n");
     append_completion_rules(&mut content);
@@ -550,7 +571,7 @@ pub fn generate_knowledge_stable_prefix() -> String {
         "write should help an agent who has never seen this codebase avoid mistakes and\n",
     );
     content.push_str("find their way quickly. Implementation stages build on this foundation.\n\n");
-    content.push_str("1. **Explore** the codebase hierarchically (entry points → modules → patterns → conventions)\n");
+    content.push_str("1. **Exhaustively map** the codebase (hierarchically) — entry points, every module, data flow, patterns, conventions; leave no major area unmapped.\n");
     content.push_str(
         "2. **Document** findings using `loom knowledge update <file> <content>` commands\n",
     );
@@ -592,6 +613,7 @@ pub fn generate_knowledge_stable_prefix() -> String {
 
     // Execution rules
     append_execution_rules_intro(&mut content);
+    append_anti_slop_guidance(&mut content);
     content.push_str("**Delegation & Efficiency (CRITICAL):**\n\n");
     content.push_str("**USE THE TASK TOOL** to spawn parallel subagents for exploration:\n");
     content.push_str("- Different codebase areas, multiple knowledge files, independent research → spawn parallel Explore agents\n");
@@ -724,6 +746,10 @@ mod tests {
         assert!(prefix.contains("Workers NEVER spawn subagents"));
         assert!(prefix.contains("DISJOINT file territory"));
         assert!(prefix.contains("BY AGENT TYPE"));
+        // Anti-slop forcing-function
+        assert!(prefix.contains("Understand before acting; do not guess."));
+        assert!(prefix.contains("UNDERSTAND-FIRST LADDER"));
+        assert!(prefix.contains("BANNED — self-reject"));
     }
 
     #[test]
@@ -761,6 +787,12 @@ mod tests {
         assert!(prefix.contains("Architecture explorer"));
         // Context recovery instructions
         assert!(prefix.contains("Context Recovery"));
+        // Anti-slop forcing-function
+        assert!(prefix.contains("Understand before acting; do not guess."));
+        assert!(prefix.contains("UNDERSTAND-FIRST LADDER"));
+        // Exhaustive mapping requirement
+        assert!(prefix.contains("Exhaustively map"));
+        assert!(prefix.contains("leave no major area unmapped"));
     }
 
     #[test]
@@ -832,6 +864,9 @@ mod tests {
         // File exclusivity guidance (must match standard prefix)
         assert!(prefix.contains("FILE EXCLUSIVITY"));
         assert!(prefix.contains("exclusive"));
+        // Anti-slop forcing-function
+        assert!(prefix.contains("Understand before acting; do not guess."));
+        assert!(prefix.contains("UNDERSTAND-FIRST LADDER"));
     }
 
     #[test]
@@ -867,6 +902,9 @@ mod tests {
         assert!(!prefix.contains("ZERO TOLERANCE"));
         assert!(!prefix.contains("CODE REVIEW + VERIFICATION"));
         assert!(!prefix.contains("FINAL QUALITY GATE"));
+        // Anti-slop forcing-function
+        assert!(prefix.contains("Understand before acting; do not guess."));
+        assert!(prefix.contains("UNDERSTAND-FIRST LADDER"));
     }
 
     #[test]

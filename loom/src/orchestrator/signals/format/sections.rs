@@ -216,8 +216,9 @@ pub(super) fn format_semi_stable_section(
                     "3. **Patterns** - Document error handling, logging, config approaches\n",
                 );
                 content.push_str(
-                    "4. **Conventions** - Note naming, file organization, test patterns\n\n",
+                    "4. **Conventions** - Note naming, file organization, test patterns\n",
                 );
+                content.push_str("5. **Coverage** - Cover ALL areas you touch — no sampling.\n\n");
             } else {
                 // Standard instructions for established knowledge base
                 content.push_str("**Extend the knowledge base** as you work:\n\n");
