@@ -26,6 +26,7 @@ run_test "prefer-modern-tools: rg has no warning" "$SCRIPT_DIR/prefer-modern-too
 run_test "prefer-modern-tools: quoted grep no warning" "$SCRIPT_DIR/prefer-modern-tools-quoted.sh"
 run_test "post-tool-use: tool event written" "$SCRIPT_DIR/post-tool-use-tool-event.sh"
 run_test "post-tool-use: empty output records output_bytes=0" "$SCRIPT_DIR/post-tool-use-empty-output.sh"
+run_test "session-start: compact source emits re-anchor" "$SCRIPT_DIR/session-start-compact.sh"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

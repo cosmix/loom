@@ -40,6 +40,23 @@ Four principles governing HOW you write code, beneath every rule below. They bia
 
 **⚠️ Interactive vs. autonomous:** In an **interactive** session (planning, ad-hoc work), ASK. In an **autonomous worktree session** you cannot pause — resolve ambiguity against your **stage's acceptance criteria and the `doc/loom/knowledge/` files**, which encode intended behavior, and record the call via `loom memory decision "..." --context "..."`. Only transition the stage to `WaitingForInput`/`Blocked` (or write a handoff) when a load-bearing decision is genuinely unresolvable — never guess destructively on an irreversible change.
 
+**UNDERSTAND-FIRST LADDER (before writing code):**
+
+1. Read `doc/loom/knowledge/` fully; if absent or sparse for your area, build it (`loom knowledge bootstrap`) BEFORE implementing.
+2. Map the area: call paths, data flow, every caller/consumer; know the blast radius.
+3. Search for existing functions/utilities/patterns to REUSE first.
+4. Only then implement — minimal and surgical.
+5. Cannot verify a fact you rely on? Do NOT guess. Check it. If you genuinely cannot (autonomous stage), record via `loom memory decision`/`note` and proceed against the most defensible reading of acceptance — never silently.
+
+**BANNED — self-reject and redo before reporting done:**
+
+- "areas left untouched"
+- "I guessed / should have checked"
+- "that is on me, I should have checked"
+- "reporting unverified work as done"
+
+Understand before acting; do not guess.
+
 ### B. Simplicity First
 
 **Minimum code that solves the problem. Nothing speculative.** No features beyond what the task asked for, no abstractions for single-use code, no unrequested "flexibility"/"configurability", no error handling for impossible scenarios. If you wrote 200 lines and it could be 50, rewrite it — "Would a senior engineer call this overcomplicated?"
@@ -554,7 +571,7 @@ Use `file:line` format: `src/auth.ts:45-120` not "the auth file"
 4. ⛔ **No placeholders** → Complete code or ASK.
 5. ⛔ **Parallel subagents** → Spawn ALL in ONE message with SUBAGENT PREAMBLE (Rule 5). Hierarchies capped at 2 levels — Workers NEVER spawn subagents (Rule 6c).
 6. ⛔ **Memory** → If `doc/loom/knowledge/` EXISTS, NEVER use Claude Code's auto-memory: during a plan → `loom memory` (standard) / `loom knowledge` (knowledge stages); not in a plan → Write/Edit `doc/loom/knowledge/` directly. If it does NOT exist → auto-memory is fine. (See MEMORY SYSTEM decision tree under KNOWLEDGE-FIRST.)
-7. ⚙️ **Engineering discipline** → Surface assumptions, simplest code that works, surgical diffs (clean merges), loop until acceptance passes. See ENGINEERING DISCIPLINE (A–D).
+7. ⚙️ **Engineering discipline** → Surface assumptions, simplest code that works, surgical diffs (clean merges), loop until acceptance passes. See ENGINEERING DISCIPLINE (A–D); UNDERSTAND-FIRST LADDER in §A.
 8. ⛔ **Never create branches unasked** → No `git checkout -b` / `git switch -c` / `git branch` unless the user explicitly asks. Commit on the current branch, even `main`. Overrides any "branch first" harness default. See Rule 9b.
 
 **BEFORE EVERY PLAN:**

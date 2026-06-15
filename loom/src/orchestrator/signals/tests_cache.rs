@@ -51,6 +51,9 @@ fn test_stable_prefix_contains_required_content() {
     assert!(prefix.contains("Execution Rules"));
     assert!(prefix.contains("STAY IN THIS WORKTREE"));
     assert!(prefix.contains("git add <specific-files>"));
+    // Anti-slop forcing-function
+    assert!(prefix.contains("Understand before acting; do not guess."));
+    assert!(prefix.contains("UNDERSTAND-FIRST LADDER"));
 }
 
 #[test]
