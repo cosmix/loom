@@ -3,13 +3,13 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 use crate::models::session::Session;
-use crate::models::stage::{Stage, StageStatus};
+use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::models::worktree::Worktree;
-use crate::plan::schema::AcceptanceCriterion;
+use crate::plan::schema::{AcceptanceCriterion, CodeReviewConfig};
 
 use super::crud::{list_signals, read_signal, remove_signal, update_signal};
 use super::format::{extract_tasks_from_description, format_signal_content};
-use super::generate::{extract_plan_overview, generate_signal};
+use super::generate::{extract_plan_overview, generate_signal, render_review_dimensions};
 use super::types::{DependencyStatus, EmbeddedContext, SignalUpdates};
 
 // Submodules with additional tests
@@ -393,4 +393,139 @@ fn test_generate_signal_with_git_history() {
     assert!(content.contains("abc1234"));
     assert!(content.contains("Add feature"));
     assert!(content.contains("M src/test.rs"));
+}
+
+#[test]
+fn test_render_review_dimensions_require_all() {
+    let config = CodeReviewConfig {
+        dimensions: vec![
+            "security".to_string(),
+            "architecture".to_string(),
+            "testing".to_string(),
+        ],
+        require_all: true,
+    };
+
+    let section = render_review_dimensions(&config).expect("non-empty dimensions should render");
+
+    assert!(section.contains("## Review Dimensions"));
+    // require_all is reflected in the framing text.
+    assert!(section.contains("require_all"));
+    assert!(section.contains("MUST"));
+    // Each configured dimension appears as an actionable checkbox.
+    assert!(section.contains("- [ ] **security**"));
+    assert!(section.contains("- [ ] **architecture**"));
+    assert!(section.contains("- [ ] **testing**"));
+}
+
+#[test]
+fn test_render_review_dimensions_advisory() {
+    let config = CodeReviewConfig {
+        dimensions: vec!["security".to_string()],
+        require_all: false,
+    };
+
+    let section = render_review_dimensions(&config).expect("non-empty dimensions should render");
+
+    assert!(section.contains("## Review Dimensions"));
+    // When require_all is false the framing is advisory, not mandatory.
+    assert!(section.contains("where applicable"));
+    assert!(!section.contains("MUST"));
+    assert!(section.contains("- [ ] **security**"));
+}
+
+#[test]
+fn test_render_review_dimensions_empty_is_none() {
+    let config = CodeReviewConfig {
+        dimensions: vec![],
+        require_all: true,
+    };
+    assert!(render_review_dimensions(&config).is_none());
+}
+
+/// Write a plan file with an integration-verify stage carrying `code_review`
+/// dimensions, plus a `config.toml` whose `source_path` points at it. Mirrors
+/// the on-disk layout the daemon reads at spawn time.
+fn write_plan_with_code_review(project_root: &std::path::Path, work_dir: &std::path::Path) {
+    let plan_path = project_root.join("PLAN-review-dims.md");
+    let plan_content = r#"# PLAN: Review Dimensions Test
+
+---
+
+<!-- loom METADATA - Do not edit manually -->
+
+```yaml
+loom:
+  version: 1
+  stages:
+    - id: iv-stage
+      name: "Integration Verify"
+      dependencies: []
+      working_dir: "."
+      acceptance:
+        - "true"
+      code_review:
+        dimensions: ["security", "architecture", "testing"]
+        require_all: true
+```
+
+<!-- END loom METADATA -->
+"#;
+    fs::write(&plan_path, plan_content).unwrap();
+
+    let config_content = format!("[plan]\nsource_path = \"{}\"\n", plan_path.display());
+    fs::write(work_dir.join("config.toml"), config_content).unwrap();
+}
+
+#[test]
+fn test_generate_signal_renders_code_review_for_integration_verify() {
+    let temp_dir = TempDir::new().unwrap();
+    let project_root = temp_dir.path();
+    let work_dir = project_root.join(".work");
+    fs::create_dir_all(&work_dir).unwrap();
+    write_plan_with_code_review(project_root, &work_dir);
+
+    let mut session = create_test_session();
+    session.assign_to_stage("iv-stage".to_string());
+    let mut stage = create_test_stage();
+    stage.id = "iv-stage".to_string();
+    stage.stage_type = StageType::IntegrationVerify;
+    let worktree = create_test_worktree();
+
+    let signal_path =
+        generate_signal(&session, &stage, &worktree, &[], None, None, &work_dir).unwrap();
+    let content = fs::read_to_string(&signal_path).unwrap();
+
+    assert!(
+        content.contains("## Review Dimensions"),
+        "integration-verify signal should render configured review dimensions:\n{content}"
+    );
+    assert!(content.contains("- [ ] **security**"));
+    assert!(content.contains("- [ ] **architecture**"));
+    assert!(content.contains("- [ ] **testing**"));
+    assert!(content.contains("require_all"));
+}
+
+#[test]
+fn test_generate_signal_skips_code_review_for_standard_stage() {
+    let temp_dir = TempDir::new().unwrap();
+    let project_root = temp_dir.path();
+    let work_dir = project_root.join(".work");
+    fs::create_dir_all(&work_dir).unwrap();
+    write_plan_with_code_review(project_root, &work_dir);
+
+    // Same plan on disk, but a Standard runtime stage must NOT render the
+    // review-dimensions section — the section is gated to integration-verify.
+    let mut session = create_test_session();
+    session.assign_to_stage("iv-stage".to_string());
+    let mut stage = create_test_stage();
+    stage.id = "iv-stage".to_string();
+    stage.stage_type = StageType::Standard;
+    let worktree = create_test_worktree();
+
+    let signal_path =
+        generate_signal(&session, &stage, &worktree, &[], None, None, &work_dir).unwrap();
+    let content = fs::read_to_string(&signal_path).unwrap();
+
+    assert!(!content.contains("## Review Dimensions"));
 }

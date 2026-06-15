@@ -10,6 +10,7 @@ use crate::language::DetectedLanguage;
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageType};
 use crate::models::worktree::Worktree;
+use crate::plan::schema::CodeReviewConfig;
 use crate::skills::{SkillIndex, SkillMatch};
 use crate::verify::transitions::load_stage;
 
@@ -115,7 +116,71 @@ pub fn generate_signal_with_skills(
         }
     }
 
+    // Surface the plan's structured code-review dimensions to integration-verify
+    // agents as an actionable checklist. `code_review` lives only on the plan's
+    // `StageDefinition` (not the runtime `Stage`), so we read it back from the
+    // plan here — the same source the after-stage checks use at completion time.
+    // Gated to integration-verify so the plan is only re-parsed for the (rare)
+    // review-gate spawns, never on every stage spawn.
+    if matches!(stage.stage_type, StageType::IntegrationVerify) {
+        if let Some(section) = load_code_review_for_stage(work_dir, &stage.id)
+            .and_then(|c| render_review_dimensions(&c))
+        {
+            content.push_str(&section);
+            if !content.ends_with('\n') {
+                content.push('\n');
+            }
+        }
+    }
+
     super::helpers::write_signal_file(&session.id, &content, work_dir)
+}
+
+/// Load the `code_review` configuration for `stage_id` from the active plan.
+///
+/// The runtime [`Stage`] model does not carry `code_review` — it lives only on
+/// the plan's `StageDefinition`. Mirroring how after-stage checks are recovered
+/// at completion time (`commands::stage::complete`), we resolve and parse the
+/// plan file to read it back. Returns `None` on any failure (no plan configured,
+/// parse error, stage not found, or no `code_review` set); a missing review
+/// config is never fatal to signal generation.
+fn load_code_review_for_stage(work_dir: &Path, stage_id: &str) -> Option<CodeReviewConfig> {
+    let plan_path = crate::fs::resolve_source_path(work_dir).ok().flatten()?;
+    let parsed = crate::plan::parser::parse_plan(&plan_path).ok()?;
+    parsed
+        .stages
+        .into_iter()
+        .find(|s| s.id == stage_id)
+        .and_then(|s| s.code_review)
+}
+
+/// Render the "## Review Dimensions" section for an integration-verify signal.
+///
+/// Surfaces the plan's `code_review` configuration to the agent as an actionable
+/// checklist — one checkbox per dimension. `require_all` controls the framing:
+/// when `true` every dimension MUST be explicitly addressed before completion;
+/// when `false` the dimensions are advisory ("where applicable").
+///
+/// Returns `None` when no dimensions are configured, so the caller appends
+/// nothing rather than an empty heading.
+pub(super) fn render_review_dimensions(config: &CodeReviewConfig) -> Option<String> {
+    if config.dimensions.is_empty() {
+        return None;
+    }
+
+    let mut section = String::from("\n## Review Dimensions\n\n");
+    if config.require_all {
+        section.push_str(
+            "Your review MUST explicitly address **every** dimension below before completing \
+             this stage (`require_all`). State your findings for each:\n\n",
+        );
+    } else {
+        section.push_str("Address the following review dimensions where applicable:\n\n");
+    }
+    for dimension in &config.dimensions {
+        section.push_str(&format!("- [ ] **{dimension}**\n"));
+    }
+    Some(section)
 }
 
 /// Build text for skill matching from stage metadata
