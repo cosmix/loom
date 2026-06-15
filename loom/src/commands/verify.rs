@@ -12,7 +12,6 @@ use crate::commands::stage::acceptance_runner::{
     resolve_stage_execution_paths, run_acceptance_with_display, AcceptanceDisplayOptions,
 };
 use crate::plan::parser::parse_plan;
-use crate::plan::schema::StageDefinition;
 use crate::verify::goal_backward::{run_goal_backward_verification, GoalBackwardResult};
 use crate::verify::transitions::load_stage;
 
@@ -161,23 +160,4 @@ pub fn run_and_verify_stage_goal(
 
     // Run goal-backward verification
     run_goal_backward_verification(stage_def, verification_dir)
-}
-
-/// Load stage definition from the active plan
-///
-/// Used by callers that need the stage definition for other purposes
-/// (e.g., checking has_any_goal_checks() before calling verification).
-pub fn load_stage_definition_from_plan(
-    stage_id: &str,
-    work_dir: &Path,
-) -> Result<Option<StageDefinition>> {
-    let plan_path = match crate::fs::resolve_source_path(work_dir)? {
-        Some(path) => path,
-        None => return Ok(None),
-    };
-
-    let plan = parse_plan(&plan_path)
-        .with_context(|| format!("Failed to parse plan: {}", plan_path.display()))?;
-
-    Ok(plan.stages.into_iter().find(|s| s.id == stage_id))
 }

@@ -19,5 +19,5 @@ pub use amendment::{
     AmendmentRequest, AmendmentResult,
 };
 pub use graph::{ExecutionGraph, StageNode};
-pub use parser::{parse_plan, parse_plan_content, ParsedPlan};
+pub use parser::{load_stage_definition_from_plan, parse_plan, parse_plan_content, ParsedPlan};
 pub use schema::{validate, LoomConfig, LoomMetadata, StageDefinition, ValidationError};

@@ -81,8 +81,7 @@ pub fn verify(stage_id: String, no_reload: bool) -> Result<()> {
     // Run goal-backward verification if defined
     {
         // Load stage definition to check if verification is needed
-        let stage_def =
-            crate::commands::verify::load_stage_definition_from_plan(&stage_id, work_dir)?;
+        let stage_def = crate::plan::load_stage_definition_from_plan(&stage_id, work_dir)?;
 
         if let Some(ref stage_def) = stage_def {
             if stage_def.has_any_goal_checks() {

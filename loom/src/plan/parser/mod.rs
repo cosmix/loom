@@ -58,6 +58,29 @@ pub fn parse_plan_content(content: &str, source_path: &Path) -> Result<ParsedPla
     })
 }
 
+/// Load a stage definition by id from the active plan.
+///
+/// Resolves the active plan path from `work_dir` (the `.work` directory), parses
+/// it, and returns the matching [`StageDefinition`](crate::plan::schema::StageDefinition).
+/// Returns `Ok(None)` when no plan source is configured or the stage id is not
+/// present. This is the single canonical "read a stage back from the plan"
+/// helper — callers that need only one field (e.g. `code_review`, `after_stage`)
+/// project off the returned definition.
+pub fn load_stage_definition_from_plan(
+    stage_id: &str,
+    work_dir: &Path,
+) -> Result<Option<crate::plan::schema::StageDefinition>> {
+    let plan_path = match crate::fs::resolve_source_path(work_dir)? {
+        Some(path) => path,
+        None => return Ok(None),
+    };
+
+    let plan = parse_plan(&plan_path)
+        .with_context(|| format!("Failed to parse plan: {}", plan_path.display()))?;
+
+    Ok(plan.stages.into_iter().find(|s| s.id == stage_id))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
