@@ -3,7 +3,6 @@
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
-use crate::commands::verify::load_stage_definition_from_plan;
 use crate::daemon::DaemonServer;
 use crate::fs::permissions::sync_worktree_permissions_with_working_dir;
 use crate::fs::session_files::find_session_for_stage;
@@ -15,7 +14,7 @@ use crate::git::worktree::find_repo_root_from_cwd;
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::orchestrator::merge_attribution::{attribute_main_repo_merge, MergeAttribution};
-use crate::plan::parser::{parse_plan, ParsedPlan};
+use crate::plan::parser::{load_stage_definition_from_plan, parse_plan, ParsedPlan};
 use crate::plan::schema::{ChangeImpactConfig, ChangeImpactPolicy};
 use crate::verify::baseline::compare_to_baseline;
 use crate::verify::duplicate_detection::detect_duplicate_symbols;

@@ -139,18 +139,15 @@ pub fn generate_signal_with_skills(
 /// Load the `code_review` configuration for `stage_id` from the active plan.
 ///
 /// The runtime [`Stage`] model does not carry `code_review` — it lives only on
-/// the plan's `StageDefinition`. Mirroring how after-stage checks are recovered
-/// at completion time (`commands::stage::complete`), we resolve and parse the
-/// plan file to read it back. Returns `None` on any failure (no plan configured,
-/// parse error, stage not found, or no `code_review` set); a missing review
-/// config is never fatal to signal generation.
+/// the plan's `StageDefinition`. We read it back via the canonical plan loader
+/// ([`load_stage_definition_from_plan`](crate::plan::load_stage_definition_from_plan)),
+/// the same helper after-stage checks use at completion time. Returns `None` on
+/// any failure (no plan configured, parse error, stage not found, or no
+/// `code_review` set); a missing review config is never fatal to signal generation.
 fn load_code_review_for_stage(work_dir: &Path, stage_id: &str) -> Option<CodeReviewConfig> {
-    let plan_path = crate::fs::resolve_source_path(work_dir).ok().flatten()?;
-    let parsed = crate::plan::parser::parse_plan(&plan_path).ok()?;
-    parsed
-        .stages
-        .into_iter()
-        .find(|s| s.id == stage_id)
+    crate::plan::load_stage_definition_from_plan(stage_id, work_dir)
+        .ok()
+        .flatten()
         .and_then(|s| s.code_review)
 }
 
