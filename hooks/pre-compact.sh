@@ -54,7 +54,6 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 # Check for compaction-pending flag file
 PENDING_DIR="${LOOM_WORK_DIR}/compaction-pending"
 PENDING_FLAG="${PENDING_DIR}/${LOOM_SESSION_ID}"
-RECOVERY_DIR="${LOOM_WORK_DIR}/compaction-recovery"
 
 if [[ -f "$PENDING_FLAG" ]]; then
 	# SECOND compaction attempt - flag exists, allow compaction
@@ -68,9 +67,8 @@ if [[ -f "$PENDING_FLAG" ]]; then
 		fi
 	fi
 
-	# Create recovery marker for post-tool-use hook
-	mkdir -p "$RECOVERY_DIR" 2>/dev/null || true
-	touch "${RECOVERY_DIR}/${LOOM_SESSION_ID}" 2>/dev/null || true
+	# Re-anchoring after compaction is handled by session-start.sh on the
+	# SessionStart(source=compact) event — no recovery marker is needed here.
 
 	# Build payload JSON
 	if [[ -n "$HANDOFF_FILE" ]]; then
