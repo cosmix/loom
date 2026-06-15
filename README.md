@@ -255,6 +255,9 @@ loom:
 | `stage_type`                       | No                     | `standard` (default), `knowledge`, `integration-verify`                                                       |
 | `artifacts` / `wiring`             | Conditionally required | Required for `standard` and `integration-verify` (acceptance OR goal-backward)                                |
 | `wiring_tests` / `dead_code_check` | No                     | Extended verification                                                                                         |
+| `before_stage`                     | No                     | Pre-spawn checks (TruthCheck list); stage → Blocked if any fail                                               |
+| `after_stage`                      | No                     | Post-acceptance checks (TruthCheck list); completion fails if any fail                                        |
+| `code_review`                      | No                     | `integration-verify` only: `dimensions` (string list) and `require_all` (bool); rendered as checklist in agent signal |
 | `context_budget`                   | No                     | Context threshold (%) for handoff                                                                             |
 | `sandbox`                          | No                     | Per-stage sandbox override                                                                                    |
 | `sandbox.permission_mode`          | No                     | `auto`, `accept-edits`, `bypass-permissions`, `plan`, `default` (resolves: stage > plan > stage-type default) |
@@ -264,7 +267,7 @@ loom:
 
 - `knowledge`: knowledge/bootstrap work, different verification expectations
 - `standard`: implementation stage; must define goal-backward checks
-- `integration-verify`: final quality gate combining code review and functional verification; must define goal-backward checks
+- `integration-verify`: final quality gate combining code review and functional verification; must define goal-backward checks. Define `code_review.dimensions` to render a checklist of review dimensions in the agent's signal.
 - `knowledge-distill`: final stage; curates stage memories into permanent knowledge files
 
 ## Verification Model

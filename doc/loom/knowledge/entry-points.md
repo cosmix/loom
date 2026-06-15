@@ -232,10 +232,13 @@ Key public functions for `loom plan verify` to call:
 
 ## Plan Parser Module (plan/parser/mod.rs)
 
+## Plan Parser Module (plan/parser/mod.rs)
+
 **Note:** `plan/parser` is a **subdirectory**, not a single file. Entry point is `plan/parser/mod.rs`.
 
 - `parse_plan(path: &Path) -> Result<ParsedPlan>` — reads file + validates
 - `parse_plan_content(content: &str, source_path: &Path) -> Result<ParsedPlan>` — for tests without I/O
+- `load_stage_definition_from_plan(work_dir, stage_id) -> Result<StageDefinition>` — reads config.toml for plan path, resolves path, parses plan, finds stage by ID. Centralized here after PLAN-anti-slop-thoroughness; was previously inlined in commands/verify.rs and re-inlined in generate.rs.
 
 `ParsedPlan` fields: `id` (from filename stem), `name` (first H1), `source_path`, `stages: Vec<StageDefinition>`, `metadata: LoomMetadata`.
 
@@ -550,11 +553,13 @@ Used by all four NativeBackend spawn methods before building the claude command 
 
 ## Hook Scripts — What Each Does
 
+## Hook Scripts — What Each Does
+
 | Script | Hook Type | Key Behavior |
 |--------|-----------|-------------|
-| `session-start.sh` | SessionStart | Writes initial heartbeat `.work/heartbeat/<LOOM_STAGE_ID>.json`; currently does NOT branch on source type |
-| `post-tool-use.sh` | PostToolUse | Updates heartbeat; logs to `.work/tool-events.jsonl`; checks `.work/compaction-recovery/<session>` marker for one-time re-anchor message on stderr |
-| `pre-compact.sh` | PreCompact | Block-then-allow: first call exits 2 (blocks) + creates pending flag + calls `loom handoff`; second call exits 0 (allows) + creates recovery marker |
+| `session-start.sh` | SessionStart | Writes initial heartbeat; captures stdin and parses `.source` field; on `source == "compact"` or `"resume"` emits `hookSpecificOutput.additionalContext` JSON re-anchor pointer |
+| `post-tool-use.sh` | PostToolUse | Updates heartbeat; logs to `.work/tool-events.jsonl`; no longer checks compaction-recovery markers (removed) |
+| `pre-compact.sh` | PreCompact | Block-then-allow: first call exits 2 (blocks) + creates pending flag + calls `loom handoff`; second call exits 0 (allows); does NOT create a recovery marker file |
 | `session-end.sh` | SessionEnd | Creates handoff if stage not completed |
 | `learning-validator.sh` | Stop | Advisory check for session memory usage |
 | `commit-guard.sh` | Stop (global) | Blocks exit if uncommitted changes or stage still Executing |
