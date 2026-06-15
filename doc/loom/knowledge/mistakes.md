@@ -494,3 +494,23 @@ These stale entries would have misled future agents into using `permission_mode:
 **Prevention:** Before writing path-traversal deny/allow rules, ask "relative to *which* directory will Claude Code resolve these?" Never emit `../`-based rules into a settings file that can live at the repo root. A worktree never *depends* on inheriting these from main — it regenerates them relative to itself at spawn (`write_settings(worktree.path)`), the create-time copy + refresh union only *adds*, and the worktree hooks enforce isolation independently. So stripping them from the main repo is safe.
 
 **Fix:** `sandbox/settings.rs::write_settings` now computes `target_is_worktree(path)` (a `.worktrees` path component, or a symlinked `.work`) and calls `strip_worktree_escape_denies(&mut config)` for non-worktree targets, so the rules are emitted *only* where `../..` means the repo root. This guards every main-repo caller at once. `merge_existing_permissions(.., is_worktree)` also scrubs stale `Write(../…)`/`.worktrees` entries from an already-polluted main file (the Read-side filter was already unconditional). The fold-back path (`fs/permissions/sync.rs`) already drops `../`/`.worktrees` via `transform_worktree_path`, so it needed no change.
+
+## Verifying "Dead Schema" Claims Before Writing Code (2026-06-15)
+
+**What happened:** Plan PLAN-anti-slop-thoroughness described `before_stage` as "dormant / parsed-but-never-run." Stage 3 Subagent 1 was tasked to wire it. It verified the claim against `stage_executor.rs:219-256` and found `before_stage` was already fully wired — runs pre-spawn, blocks session on failure. The task was a no-op.
+
+**Misleading signal:** Plan descriptions are written at planning time and can go stale as other stages implement things. A plan claiming a field is "dead" is as reliable as code comments — it describes intent at authoring time, not current reality.
+
+**Prevention:** Before implementing "wire X" or "add execution of Y," run `rg "before_stage\|after_stage\|<field>" loom/src/` to verify the current execution path. Check `stage_executor.rs` (pre-spawn), `complete.rs` (post-acceptance), `generate.rs` (signal), `plan_setup.rs` (copy). Only skip after confirming absence, not trusting the plan text.
+
+**Fix:** Skipped the no-op task; verified the actual dormant field (code_review) and wired it instead.
+
+## TODO in Rust String Literals Triggers ArtifactStub Checker (2026-06-15)
+
+**What happened:** A Rust format string inside a `push_str()` call contained the word "TODO" as a reference to a future task in the documentation text it was generating (not actual stub code). `loom stage complete` rejected it with an ArtifactStub error, blocking completion.
+
+**Misleading signal:** The word appeared in a prompt or documentation string — semantically it was text content, not a code stub. The ArtifactStub checker scans the raw file content without context.
+
+**Prevention:** Before completing a stage, scan your own format strings and string literals with `rg "TODO|FIXME|unimplemented" loom/src/<your-file>`. If the word appears as content in a string (e.g., as part of documentation text), rephrase to avoid the keyword — "fix later", "outstanding item", "remaining task", or similar.
+
+**Fix:** Rephrased the string literal to avoid the TODO keyword.

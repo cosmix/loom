@@ -195,13 +195,15 @@ Automated codebase analysis that populates knowledge files. Detectors: project t
 
 ## Handoff System
 
+## Handoff System
+
 Fully functional handoff chain:
 
 1. **loom handoff create** -- CLI command accepting --stage, --session, --trigger, --message flags
-2. **pre-compact.sh** -- Two-phase block-then-allow pattern. Phase 1 blocks compaction (exit 2), creates handoff. Phase 2 allows compaction, creates recovery marker.
+2. **pre-compact.sh** -- Two-phase block-then-allow pattern. Phase 1 blocks compaction (exit 2), creates handoff. Phase 2 allows compaction (exits 0). No longer creates a recovery marker file.
 3. **session-end.sh** -- Uses glob `*-${LOOM_STAGE_ID}.md` for stage file lookup (handles depth prefixes)
 4. **Signals** -- cache.rs append_common_footer() adds compaction recovery instructions to ALL signal types
-5. **post-tool-use.sh** -- Detects compaction recovery marker, prints instructions, removes marker
+5. **session-start.sh** -- On SessionStart with `.source == "compact"` or `"resume"`, emits hookSpecificOutput additionalContext re-anchor pointer so the agent finds its signal file after compaction
 
 ## macOS Terminal Detection Priority
 
@@ -582,13 +584,15 @@ SHA-256 of stable prefix text → first 16 hex chars → `SignalMetrics::stable_
 
 ## before_stage / after_stage / code_review Schema Fields — Execution Status
 
-**Status as of 2026-06-15 (verified against stage_executor.rs:219-256 and plan/schema/types.rs:261):**
+## before_stage / after_stage / code_review Schema Fields — Execution Status
+
+**Status as of 2026-06-15 (verified against stage_executor.rs:219-256, plan/schema/types.rs:261, and orchestrator/signals/generate.rs):**
 
 | Field | Schema Type | Stored on Stage | Executed | Where |
 |-------|-------------|-----------------|----------|-------|
 | `before_stage` | `Vec<TruthCheck>` | ✅ Yes (plan_setup.rs:280) | ✅ Yes | stage_executor.rs:220-256 (pre-spawn) |
 | `after_stage` | `Vec<TruthCheck>` | ✅ Yes (plan_setup.rs:281) | ✅ Yes | commands/stage/complete.rs:847-866 |
-| `code_review` | `Option<CodeReviewConfig>` | ❌ NOT copied | ❌ Never | — |
+| `code_review` | `Option<CodeReviewConfig>` | ❌ NOT on Stage struct | ✅ Partial | signals/generate.rs reads from plan for IV signal |
 
 **`before_stage` execution (stage_executor.rs:219-256):**
 - Runs after worktree creation, BEFORE session spawn
@@ -601,31 +605,34 @@ SHA-256 of stable prefix text → first 16 hex chars → `SignalMetrics::stable_
 - Runs during `loom stage complete`, AFTER acceptance criteria pass
 - On failure: stage stays Executing, no merge, agent must fix and re-run
 
-**`code_review` — TRULY DORMANT:**
+**`code_review` — WIRED FOR SIGNAL GENERATION ONLY (as of PLAN-anti-slop-thoroughness):**
 - Parsed by serde at schema level (`plan/schema/types.rs:261`)
-- NOT copied in `create_stage_from_definition()` (plan_setup.rs:225-297) — Stage struct has no `code_review` field
-- ONLY appears as `code_review: None` in 8 test fixture files
-- NOT surfaced to signal generation, acceptance, or completion phases
-- Implementing requires: (1) add `code_review: Option<CodeReviewConfig>` to Stage struct, (2) copy in plan_setup.rs, (3) thread through signal generation in generate.rs
-
-**⚠️ Plan PLAN-anti-slop-thoroughness notes:** The plan describes before_stage as "dormant" — this is INCORRECT as of current code. before_stage is fully wired. The plan's Stage 3 Subagent 1 task to "wire before_stage" should be treated as a no-op (it's already done). Only code_review is genuinely dormant and needs wiring.
+- NOT copied in `create_stage_from_definition()` — Stage struct has NO `code_review` field
+- `load_code_review_for_stage(stage_id, plan_path)` in `orchestrator/signals/generate.rs` reads it directly from the plan file via `parse_plan()` — used ONLY for IntegrationVerify signal generation
+- `render_review_dimensions()` emits a `## Review Dimensions` checkbox section in IV signals, honoring `require_all`
+- Still NOT consumed during acceptance, completion, or goal-backward verification
+- `plan/schema/mod.rs` re-exports `CodeReviewConfig` for use in generate.rs
 
 ## Hook System — Session-Start Behavior and hookSpecificOutput Pattern
 
-### session-start.sh Behavior
+## Hook System — Session-Start Behavior and hookSpecificOutput Pattern
 
-- Drains stdin unconditionally (cross-platform: gtimeout/timeout/cat, 1s timeout)
+### session-start.sh Behavior (Updated 2026-06-15)
+
+- Captures stdin into a variable (not drained) using cross-platform gtimeout/timeout/cat, 1s timeout
 - Validates LOOM_STAGE_ID, LOOM_SESSION_ID, LOOM_WORK_DIR — silently exits if missing
 - Writes initial heartbeat: `.work/heartbeat/<LOOM_STAGE_ID>.json`
 - Logs SessionStart event to `.work/hooks/events.jsonl`
-- **Current version does NOT parse stdin source field** — it writes the same heartbeat for all session sources (startup/clear/compact/resume)
-- The plan (PLAN-anti-slop-thoroughness) adds source-based branching: when `.source == "compact"` or `"resume"`, emit a `hookSpecificOutput.additionalContext` re-anchor pointer
+- **Parses `.source` field from stdin JSON**: when `.source == "compact"` or `"resume"`, emits `hookSpecificOutput.additionalContext` JSON with a re-anchor pointer (signal file path), redirecting the agent back to its signal after context compaction or resume
+- Stdin must be captured (not drained with `>/dev/null`) so the source field can be parsed — same pattern as `post-tool-use.sh`
 
-### post-tool-use.sh Compaction Recovery (lines 128-144)
-
-- After pre-compact.sh allows compaction, it creates `.work/compaction-recovery/<LOOM_SESSION_ID>` marker
-- post-tool-use.sh checks for this marker on every tool use; if found, removes it and prints re-anchor guidance to **stderr**
-- This is the EXISTING mechanism the plan intends to REPLACE with a proper hookSpecificOutput on session-start
+**Compaction recovery flow (current):**
+```
+pre-compact.sh phase 1 → blocks compaction + creates handoff
+pre-compact.sh phase 2 → allows compaction
+Claude Code emits SessionStart with source="compact"
+session-start.sh → parses source → emits hookSpecificOutput additionalContext re-anchor
+```
 
 ### hookSpecificOutput JSON Pattern
 
@@ -643,6 +650,7 @@ Used by hooks to inject context into Claude's next turn:
 **Examples:**
 - `prefer-modern-tools.sh` (lines 100-101): PreToolUse warning about grep usage
 - `skill-trigger.sh` (lines 286-291): UserPromptSubmit skill suggestions
+- `session-start.sh`: SessionStart re-anchor pointer on compact/resume source
 
 **Why JSON over plain text:** Claude Code has reliability issues with plain-text stdout from certain hook types (see issue claude-code#13912); JSON additionalContext is more reliable for context injection.
 
@@ -666,3 +674,34 @@ Set by wrapper script (pid_tracking.rs:463-479) before `exec claude`:
 ### Hook Embedding (constants.rs)
 
 All 15 hooks embedded via `include_str!()` at compile time. `install_loom_hooks()` writes them to `~/.claude/hooks/loom/` with mode 0o755. Hooks are NOT read from disk by loom at runtime.
+
+## Shared append_* Helpers (cache.rs:51-169)
+
+### Shared append_* Helpers (cache.rs:51-~180)
+
+| Helper | Lines | Content | Used By |
+|--------|-------|---------|---------|
+| `append_path_boundaries()` | 54-63 | ALLOWED/FORBIDDEN paths table | Standard, IV, KnowledgeDistill |
+| `append_subagent_restrictions()` | 66-93 | NO git/loom/add-A rules; memory recording guide | Standard (233), IV (424) |
+| `append_completion_rules()` | 96-102 | Acceptance, handoff, no retry rules | Standard (254), IV (433), KnowledgeDistill (515) |
+| `append_isolation_boundaries_simple()` | 108-113 | 2-bullet version | IV (408), KnowledgeDistill (508) |
+| `append_execution_rules_intro()` | 119-124 | "Follow CLAUDE.md" short header | IV (412), KnowledgeDistill (512), Knowledge (594) |
+| `append_common_footer()` | 127-142 | Binary usage, state files, context recovery | ALL 4 prefixes |
+| `append_git_staging_full()` | 145-160 | Full staging rules + danger box | Standard only |
+| `append_git_staging_rules()` | 162-169 | Shorter version | IV, KnowledgeDistill |
+| `append_anti_slop_guidance()` | ~171+ | ZERO TOLERANCE anti-slop rules box | ALL 4 prefixes (after exec-rules intro, before Delegation) |
+
+**Adding a new helper:** Follow same `fn append_xxx(content: &mut String)` pattern. Place in the "Shared content blocks" cluster (lines 51-~180). Call it explicitly from each generator where wanted — it's NOT auto-injected.
+
+## load_stage_definition_from_plan — Centralized Plan Lookup
+
+Centralized in `plan/parser/mod.rs` (re-exported via `plan/mod.rs`). Previously lived in `commands/verify.rs`.
+
+**Signature:** `load_stage_definition_from_plan(work_dir, stage_id) -> Result<StageDefinition>`
+
+Reads `.work/config.toml` for plan path, calls `resolve_source_path()`, calls `parse_plan()`, finds stage by ID. Used by:
+- `commands/stage/complete.rs` — after_stage execution
+- `commands/stage/verify.rs` — goal-backward verification
+- `orchestrator/signals/generate.rs` — code_review lookup for IV signal generation
+
+**Why plan/ layer:** both commands/ and orchestrator/ already depend on plan/; moving here eliminated a code_review re-inline in generate.rs without adding any new dependency edge. orchestrator/ -> commands/ would have been a layering violation.

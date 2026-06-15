@@ -259,22 +259,27 @@ First dated log line is `2026-05-13T16:13:18.544430Z` — within 1s of the lock 
 
 ## code_review Schema Field — TRULY DORMANT (2026-06-15)
 
-`StageDefinition.code_review` (`plan/schema/types.rs:261`) is parsed by serde but **never stored on the Stage struct and never surfaced to any agent**.
+## code_review Schema Field — Wired for Signal Generation Only (updated 2026-06-15)
 
-**Evidence:** `rg "code_review" loom/src/` returns 14 results — ALL are either test fixture declarations (`code_review: None`) or the schema field definition itself. Zero execution paths consume it.
+`StageDefinition.code_review` (`plan/schema/types.rs:261`) is parsed by serde and now surfaced to integration-verify agent signals, but **still not stored on the Stage struct and not consumed by acceptance, completion, or goal-backward verification**.
 
-**Root cause:** `create_stage_from_definition()` (`commands/init/plan_setup.rs:225-297`) copies before_stage and after_stage (lines 280-281) but has no corresponding line for code_review. The Stage struct has no `code_review` field.
+**Current state (after PLAN-anti-slop-thoroughness):**
+- `load_code_review_for_stage(stage_id, plan_path)` in `orchestrator/signals/generate.rs` reads `code_review` directly from the plan file (via `parse_plan()`) for IntegrationVerify spawns
+- `render_review_dimensions()` emits a `## Review Dimensions` checkbox section in IV signals, honoring `require_all` (all-checkboxes vs any-checkbox framing)
+- `plan/schema/mod.rs` re-exports `CodeReviewConfig` so generate.rs can import it
+- `create_stage_from_definition()` (`commands/init/plan_setup.rs`) still does NOT copy code_review to Stage — Stage struct has no `code_review` field
 
-**What's needed to wire it:**
+**What's still needed to fully wire it:**
 1. Add `code_review: Option<CodeReviewConfig>` to Stage struct (`models/stage/types.rs`)
 2. Copy field in `create_stage_from_definition()` (`plan_setup.rs`)
-3. Thread into signal generation in `orchestrator/signals/generate.rs` (stage-specific, NOT cacheable → belongs in dynamic section or generate.rs directly)
-4. Render a "## Review Dimensions" section into integration-verify signals, respecting `require_all` (checkboxes if true)
-
-**Plan reference:** PLAN-anti-slop-thoroughness Stage 3 Subagent 2 is tasked with this wiring.
+3. Consider consuming during acceptance or completion (currently not enforced)
 
 ## PLAN-anti-slop-thoroughness: before_stage Wired vs. Plan Description
 
-The plan describes before_stage as "dormant / parsed-but-never-run". This is **INCORRECT** as of current code. `before_stage` is fully wired at `orchestrator/core/stage_executor.rs:219-256` — it runs after worktree creation, before session spawn, and blocks spawn if checks fail.
+## before_stage Already Wired — Plan PLAN-anti-slop-thoroughness Was Wrong
 
-**Impact on Stage 3:** Subagent 1's task to "wire before_stage" is a no-op — the mechanism is already in place. The real work is only Subagent 2 (code_review wiring). Implementation agents should verify the current code state before attempting to add before_stage execution that already exists.
+The plan described before_stage as "dormant / parsed-but-never-run". This was **INCORRECT** — `before_stage` was fully wired at `orchestrator/core/stage_executor.rs:219-256` BEFORE this plan ran.
+
+**Impact:** Stage 3 Subagent 1's task to "wire before_stage" was a confirmed no-op. The wire-dormant-gates implementation agent verified this against the code before writing any code and skipped the task.
+
+**Lesson (see mistakes.md):** Always verify "dead schema" or "dormant" claims against the actual execution paths (`rg "before_stage" loom/src/`) before accepting the plan description as authoritative. Plan descriptions can become stale relative to implementation.
