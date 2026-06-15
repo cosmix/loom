@@ -16,14 +16,14 @@
 
 set -euo pipefail
 
-# Drain stdin to prevent blocking
-# Cross-platform: gtimeout (macOS+coreutils), timeout (Linux), or cat
+# Read stdin JSON (SessionStart may pass {"source": "compact"/"resume"/"startup"/"clear"})
+# Cross-platform timeout: gtimeout (macOS+coreutils), timeout (Linux), or plain cat
 if command -v gtimeout &>/dev/null; then
-	gtimeout 1 cat >/dev/null 2>&1 || true
+	INPUT_JSON=$(gtimeout 1 cat 2>/dev/null || true)
 elif command -v timeout &>/dev/null; then
-	timeout 1 cat >/dev/null 2>&1 || true
+	INPUT_JSON=$(timeout 1 cat 2>/dev/null || true)
 else
-	cat >/dev/null 2>&1 || true
+	INPUT_JSON=$(cat 2>/dev/null || true)
 fi
 
 # Validate required environment variables
@@ -69,5 +69,16 @@ cat >"$HEARTBEAT_FILE" <<EOF
   "activity": "Session started"
 }
 EOF
+
+# Emit re-anchor context on compaction/resume starts
+if command -v jq &>/dev/null; then
+	SOURCE=$(echo "$INPUT_JSON" | jq -r '.source // empty' 2>/dev/null || true)
+	if [[ "$SOURCE" == "compact" ]] || [[ "$SOURCE" == "resume" ]]; then
+		SIGNAL_PATH="${LOOM_WORK_DIR}/signals/${LOOM_SESSION_ID}.md"
+		jq -nc \
+			--arg ctx "Context was compacted. Re-anchor: re-read ${SIGNAL_PATH}, run 'loom memory list', read the latest .work/handoffs/ file. Understand before acting; do not guess." \
+			'{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $ctx}}'
+	fi
+fi
 
 exit 0
