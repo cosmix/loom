@@ -111,19 +111,20 @@ fn build_system_prompt(model: &str) -> String {
          3. Valid files: architecture, entry-points, patterns, conventions, mistakes, stack, concerns\n\
          4. Be specific: include file paths with line numbers (e.g., `src/auth.ts:45-80`)\n\
          5. Focus on PATTERNS and RELATIONSHIPS, not just listing files\n\
-         6. Each knowledge update should add a complete section with a ## heading\n\
-         7. When spawning Agent subagents, ALWAYS set model: \"{model}\" so they use the same model\n\n\
+         6. Go BEYOND the auto loom map — exhaustively map ALL components and their relationships, not just what `loom map` surfaces automatically\n\
+         7. Each knowledge update should add a complete section with a ## heading\n\
+         8. When spawning Agent subagents, ALWAYS set model: \"{model}\" so they use the same model\n\n\
          ## Existing Knowledge\n\n\
          The knowledge files already exist at doc/loom/knowledge/ and may contain prior \
          findings. BEFORE writing, Read the file you intend to update so you do NOT \
          duplicate existing content — only add NEW discoveries.\n\n\
          ## Strategy\n\n\
          Use parallel Agent calls (with model: \"{model}\") to explore 4 dimensions simultaneously:\n\
-         - Architecture and data flow -> architecture.md\n\
+         - Architecture and data flow -> architecture.md (exhaustively map ALL components and their relationships)\n\
          - Patterns and conventions -> patterns.md, conventions.md\n\
          - Stack and entry points -> stack.md, entry-points.md\n\
          - Concerns and tech debt -> concerns.md\n\n\
-         After agents complete, do a final synthesis pass on architecture.md.\n",
+         After agents complete, do a final synthesis pass on architecture.md to confirm no major area was left unmapped — if gaps exist, spawn additional exploration before completing.\n",
     )
 }
 
@@ -132,7 +133,7 @@ fn build_initial_prompt(model: &str) -> String {
     format!(
         "Explore this codebase and populate the knowledge files. \
          Spawn 4 parallel agents (set model: \"{model}\" on each) to explore different dimensions:\n\n\
-         Agent 1 - Architecture: Map component relationships, data flow, module dependencies. \
+         Agent 1 - Architecture: Exhaustively map ALL components and their relationships — entry points, every module, data flow, cross-cutting concerns, blast radius of areas the plan will change. \
          Write findings to architecture.md.\n\n\
          Agent 2 - Patterns & Conventions: Identify error handling patterns, state management, \
          coding conventions, naming schemes. Write to patterns.md and conventions.md.\n\n\
@@ -141,7 +142,7 @@ fn build_initial_prompt(model: &str) -> String {
          Agent 4 - Concerns: Find technical debt, TODOs, FIXMEs, security concerns, \
          and architectural issues. Write to concerns.md.\n\n\
          After all agents complete, do a final synthesis pass on architecture.md \
-         to ensure cross-cutting concerns are captured.",
+         to confirm no major area was left unmapped and cross-cutting concerns are captured.",
     )
 }
 
