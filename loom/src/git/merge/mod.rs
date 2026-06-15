@@ -401,6 +401,38 @@ pub fn verify_merge_succeeded(
 mod tests {
     use super::*;
 
+    /// Run `git` in `root` with ambient global/system config neutralized.
+    ///
+    /// CI runners (and dev machines) may carry global git config that breaks a
+    /// fresh-repo commit or merge — `commit.gpgsign=true` with no key being the
+    /// classic case. Pinning `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM` to
+    /// nonexistent paths and disabling system config makes these tests depend
+    /// only on the repo's own local config, so they behave identically
+    /// everywhere. Returns the raw output; callers decide whether non-zero is
+    /// expected (a conflicting merge exits non-zero by design).
+    fn isolated_git(root: &Path, args: &[&str]) -> std::process::Output {
+        std::process::Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
+            .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .output()
+            .unwrap()
+    }
+
+    /// Run a setup `git` command and assert it succeeded, surfacing stderr on
+    /// failure. Without this, a failed setup step is swallowed and only
+    /// manifests later as a confusing `MERGE_HEAD` assertion several lines down.
+    fn git_ok(root: &Path, args: &[&str]) {
+        let out = isolated_git(root, args);
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
     #[test]
     fn test_parse_merge_stats() {
         let output = " 3 files changed, 10 insertions(+), 5 deletions(-)\n";
@@ -421,44 +453,39 @@ mod tests {
 
     #[test]
     fn merge_stage_refuses_when_merge_head_set() {
-        use std::process::Command;
         use tempfile::TempDir;
 
         // Build a repo with two diverging branches and an in-progress merge.
         let tmp = TempDir::new().unwrap();
         let root = tmp.path();
 
-        let run = |args: &[&str]| {
-            Command::new("git")
-                .args(args)
-                .current_dir(root)
-                .output()
-                .unwrap();
-        };
-        run(&["init", "-b", "main"]);
-        run(&["config", "user.email", "t@t.com"]);
-        run(&["config", "user.name", "t"]);
+        git_ok(root, &["init", "-b", "main"]);
+        git_ok(root, &["config", "user.email", "t@t.com"]);
+        git_ok(root, &["config", "user.name", "t"]);
         std::fs::write(root.join("a.txt"), "seed").unwrap();
-        run(&["add", "a.txt"]);
-        run(&["commit", "-m", "seed"]);
+        git_ok(root, &["add", "a.txt"]);
+        git_ok(root, &["commit", "-m", "seed"]);
 
-        run(&["checkout", "-b", "loom/blockee"]);
+        git_ok(root, &["checkout", "-b", "loom/blockee"]);
         std::fs::write(root.join("a.txt"), "branch").unwrap();
-        run(&["add", "a.txt"]);
-        run(&["commit", "-m", "branch"]);
+        git_ok(root, &["add", "a.txt"]);
+        git_ok(root, &["commit", "-m", "branch"]);
 
-        run(&["checkout", "main"]);
+        git_ok(root, &["checkout", "main"]);
         std::fs::write(root.join("a.txt"), "main").unwrap();
-        run(&["add", "a.txt"]);
-        run(&["commit", "-m", "main"]);
+        git_ok(root, &["add", "a.txt"]);
+        git_ok(root, &["commit", "-m", "main"]);
 
-        // Manually start a merge to populate MERGE_HEAD.
-        let _ = Command::new("git")
-            .args(["merge", "--no-ff", "loom/blockee"])
-            .current_dir(root)
-            .output()
-            .unwrap();
-        assert!(merge_head_exists(root).unwrap(), "MERGE_HEAD must be set");
+        // Manually start a merge to populate MERGE_HEAD. The conflicting merge
+        // exits non-zero by design, so don't assert success — assert the
+        // observable outcome (MERGE_HEAD) and dump merge output if it's absent.
+        let merge = isolated_git(root, &["merge", "--no-ff", "loom/blockee"]);
+        assert!(
+            merge_head_exists(root).unwrap(),
+            "MERGE_HEAD must be set after conflicting merge; stdout={}, stderr={}",
+            String::from_utf8_lossy(&merge.stdout),
+            String::from_utf8_lossy(&merge.stderr),
+        );
 
         // Now merge_stage MUST refuse — and crucially must NOT abort the
         // existing merge.
@@ -475,41 +502,35 @@ mod tests {
 
     #[test]
     fn get_conflicting_files_from_status_refuses_when_merge_head_set() {
-        use std::process::Command;
         use tempfile::TempDir;
 
         let tmp = TempDir::new().unwrap();
         let root = tmp.path();
-        let run = |args: &[&str]| {
-            Command::new("git")
-                .args(args)
-                .current_dir(root)
-                .output()
-                .unwrap();
-        };
-        run(&["init", "-b", "main"]);
-        run(&["config", "user.email", "t@t.com"]);
-        run(&["config", "user.name", "t"]);
+
+        git_ok(root, &["init", "-b", "main"]);
+        git_ok(root, &["config", "user.email", "t@t.com"]);
+        git_ok(root, &["config", "user.name", "t"]);
         std::fs::write(root.join("a.txt"), "seed").unwrap();
-        run(&["add", "a.txt"]);
-        run(&["commit", "-m", "seed"]);
+        git_ok(root, &["add", "a.txt"]);
+        git_ok(root, &["commit", "-m", "seed"]);
 
-        run(&["checkout", "-b", "loom/x"]);
+        git_ok(root, &["checkout", "-b", "loom/x"]);
         std::fs::write(root.join("a.txt"), "x").unwrap();
-        run(&["add", "a.txt"]);
-        run(&["commit", "-m", "x"]);
+        git_ok(root, &["add", "a.txt"]);
+        git_ok(root, &["commit", "-m", "x"]);
 
-        run(&["checkout", "main"]);
+        git_ok(root, &["checkout", "main"]);
         std::fs::write(root.join("a.txt"), "y").unwrap();
-        run(&["add", "a.txt"]);
-        run(&["commit", "-m", "y"]);
+        git_ok(root, &["add", "a.txt"]);
+        git_ok(root, &["commit", "-m", "y"]);
 
-        let _ = Command::new("git")
-            .args(["merge", "--no-ff", "loom/x"])
-            .current_dir(root)
-            .output()
-            .unwrap();
-        assert!(merge_head_exists(root).unwrap());
+        let merge = isolated_git(root, &["merge", "--no-ff", "loom/x"]);
+        assert!(
+            merge_head_exists(root).unwrap(),
+            "MERGE_HEAD must be set after conflicting merge; stdout={}, stderr={}",
+            String::from_utf8_lossy(&merge.stdout),
+            String::from_utf8_lossy(&merge.stderr),
+        );
 
         let work_dir = root.join(".work");
         std::fs::create_dir_all(&work_dir).unwrap();
