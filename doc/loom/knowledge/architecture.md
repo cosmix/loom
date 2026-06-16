@@ -195,8 +195,6 @@ Automated codebase analysis that populates knowledge files. Detectors: project t
 
 ## Handoff System
 
-## Handoff System
-
 Fully functional handoff chain:
 
 1. **loom handoff create** -- CLI command accepting --stage, --session, --trigger, --message flags
@@ -502,6 +500,7 @@ All generators are composed from shared `append_*` helpers and produce immutable
 | Knowledge | `generate_knowledge_stable_prefix()` | 527 | `StageType::Knowledge` |
 
 **Standard prefix section order (approx lines 174-310):**
+
 1. Worktree Context header
 2. Isolation Boundaries (3 bullets)
 3. `append_path_boundaries()` — ALLOWED/FORBIDDEN paths table
@@ -584,8 +583,6 @@ SHA-256 of stable prefix text → first 16 hex chars → `SignalMetrics::stable_
 
 ## before_stage / after_stage / code_review Schema Fields — Execution Status
 
-## before_stage / after_stage / code_review Schema Fields — Execution Status
-
 **Status as of 2026-06-15 (verified against stage_executor.rs:219-256, plan/schema/types.rs:261, and orchestrator/signals/generate.rs):**
 
 | Field | Schema Type | Stored on Stage | Executed | Where |
@@ -595,6 +592,7 @@ SHA-256 of stable prefix text → first 16 hex chars → `SignalMetrics::stable_
 | `code_review` | `Option<CodeReviewConfig>` | ❌ NOT on Stage struct | ✅ Partial | signals/generate.rs reads from plan for IV signal |
 
 **`before_stage` execution (stage_executor.rs:219-256):**
+
 - Runs after worktree creation, BEFORE session spawn
 - Calls `crate::verify::before_after::run_before_stage_checks(&stage.before_stage, &check_dir)`
 - On failure gaps: stage → `Blocked` (FailureType::TestFailure), session NOT spawned
@@ -602,18 +600,18 @@ SHA-256 of stable prefix text → first 16 hex chars → `SignalMetrics::stable_
 - TruthCheck timeout: 30 seconds (hardcoded in truths.rs:13)
 
 **`after_stage` execution (commands/stage/complete.rs:847-866):**
+
 - Runs during `loom stage complete`, AFTER acceptance criteria pass
 - On failure: stage stays Executing, no merge, agent must fix and re-run
 
 **`code_review` — WIRED FOR SIGNAL GENERATION ONLY (as of PLAN-anti-slop-thoroughness):**
+
 - Parsed by serde at schema level (`plan/schema/types.rs:261`)
 - NOT copied in `create_stage_from_definition()` — Stage struct has NO `code_review` field
 - `load_code_review_for_stage(stage_id, plan_path)` in `orchestrator/signals/generate.rs` reads it directly from the plan file via `parse_plan()` — used ONLY for IntegrationVerify signal generation
 - `render_review_dimensions()` emits a `## Review Dimensions` checkbox section in IV signals, honoring `require_all`
 - Still NOT consumed during acceptance, completion, or goal-backward verification
 - `plan/schema/mod.rs` re-exports `CodeReviewConfig` for use in generate.rs
-
-## Hook System — Session-Start Behavior and hookSpecificOutput Pattern
 
 ## Hook System — Session-Start Behavior and hookSpecificOutput Pattern
 
@@ -627,7 +625,8 @@ SHA-256 of stable prefix text → first 16 hex chars → `SignalMetrics::stable_
 - Stdin must be captured (not drained with `>/dev/null`) so the source field can be parsed — same pattern as `post-tool-use.sh`
 
 **Compaction recovery flow (current):**
-```
+
+```text
 pre-compact.sh phase 1 → blocks compaction + creates handoff
 pre-compact.sh phase 2 → allows compaction
 Claude Code emits SessionStart with source="compact"
@@ -648,6 +647,7 @@ Used by hooks to inject context into Claude's next turn:
 ```
 
 **Examples:**
+
 - `prefer-modern-tools.sh` (lines 100-101): PreToolUse warning about grep usage
 - `skill-trigger.sh` (lines 286-291): UserPromptSubmit skill suggestions
 - `session-start.sh`: SessionStart re-anchor pointer on compact/resume source
@@ -700,6 +700,7 @@ Centralized in `plan/parser/mod.rs` (re-exported via `plan/mod.rs`). Previously 
 **Signature:** `load_stage_definition_from_plan(work_dir, stage_id) -> Result<StageDefinition>`
 
 Reads `.work/config.toml` for plan path, calls `resolve_source_path()`, calls `parse_plan()`, finds stage by ID. Used by:
+
 - `commands/stage/complete.rs` — after_stage execution
 - `commands/stage/verify.rs` — goal-backward verification
 - `orchestrator/signals/generate.rs` — code_review lookup for IV signal generation

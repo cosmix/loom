@@ -264,12 +264,14 @@ First dated log line is `2026-05-13T16:13:18.544430Z` — within 1s of the lock 
 `StageDefinition.code_review` (`plan/schema/types.rs:261`) is parsed by serde and now surfaced to integration-verify agent signals, but **still not stored on the Stage struct and not consumed by acceptance, completion, or goal-backward verification**.
 
 **Current state (after PLAN-anti-slop-thoroughness):**
+
 - `load_code_review_for_stage(stage_id, plan_path)` in `orchestrator/signals/generate.rs` reads `code_review` directly from the plan file (via `parse_plan()`) for IntegrationVerify spawns
 - `render_review_dimensions()` emits a `## Review Dimensions` checkbox section in IV signals, honoring `require_all` (all-checkboxes vs any-checkbox framing)
 - `plan/schema/mod.rs` re-exports `CodeReviewConfig` so generate.rs can import it
 - `create_stage_from_definition()` (`commands/init/plan_setup.rs`) still does NOT copy code_review to Stage — Stage struct has no `code_review` field
 
 **What's still needed to fully wire it:**
+
 1. Add `code_review: Option<CodeReviewConfig>` to Stage struct (`models/stage/types.rs`)
 2. Copy field in `create_stage_from_definition()` (`plan_setup.rs`)
 3. Consider consuming during acceptance or completion (currently not enforced)
