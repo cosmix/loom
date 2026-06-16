@@ -77,7 +77,7 @@ Use this skill when the user requests:
 - Data clumps (same group of parameters)
 - Primitive obsession (using primitives instead of objects)
 
-**Use Grep/Glob to find patterns:**
+**Use `rg`/`fd` to find patterns:**
 
 ```bash
 # Find long functions (rough heuristic)
@@ -98,7 +98,7 @@ rg "\b\d{2,}\b" --type=py --type=js --type=rs
 2. **List all changes** - Document sequence of refactorings
 3. **Identify dependencies** - What code depends on what you're changing?
 4. **Plan rollback points** - Where can you safely commit?
-5. **Check for impact** - Grep for references to functions/classes being changed
+5. **Check for impact** - `rg` for references to functions/classes being changed
 
 **Red flags that require escalation:**
 

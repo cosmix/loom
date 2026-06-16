@@ -49,7 +49,7 @@ For specialized reviews, use relevant skills such as `/loom-security-audit` for 
 
 ### 1. Gather Context
 
-- Identify the files to review using Glob patterns
+- Identify the files to review (use `fd`/`rg` to enumerate them)
 - Understand the project structure and conventions
 - Check for existing linting/formatting rules
 

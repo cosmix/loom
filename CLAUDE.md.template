@@ -386,12 +386,12 @@ When delegating to subagents, include SUBAGENT PREAMBLE (Rule 5), skill hints, f
 | Banned                | Use Instead |
 | --------------------- | ----------- |
 | `cat`, `head`, `tail` | Read tool   |
-| `grep`, `ag`          | Grep tool   |
-| `find`, `ls`          | Glob tool   |
+| `grep`, `ag`          | `rg`        |
+| `find`, `ls`          | `fd`        |
 | `sed`, `awk`          | Edit tool   |
 | `echo >`, `tee`       | Write tool  |
 
-CLI search exceptions: `rg` or `fd` only. Package managers: `uv`, `bun`/`bunx` — never `npm`, `pip`.
+Search with `rg` (text) and `fd` (files) — never `grep` or `find`. Package managers: `uv`, `bun`/`bunx` — never `npm`, `pip`.
 
 **⚠️ FENCED CODE BLOCKS MUST ALWAYS SPECIFY A LANGUAGE.** Never write bare ` ``` ` — always include the identifier (e.g., ` ```rust `, ` ```yaml `, ` ```text `). This applies to ALL markdown output: plans, knowledge files, handoffs, and code comments.
 
@@ -442,7 +442,7 @@ Location `.worktrees/<stage-id>/` | Branch `loom/<stage-id>`. **STAY IN YOUR WOR
 
 **Response discipline:** Never repeat the request back. Never narrate between tool calls ("Let me check...", "Now I'll...", "Looking at...") — call tools silently. Don't explain standard operations (reads, searches, tests); DO explain non-obvious decisions, tradeoffs, assumptions. One-line summaries after changes unless complex. State reasoning once before a tool sequence, not between each call.
 
-**File operations:** Prefer Edit over Write; make surgical, targeted edits, not large-block replacements for small changes. Read specific line ranges when you know what you need; read the full file only when surrounding context is required. Don't re-read files already in context — check earlier Reads, Grep `-A`/`-B`, and prior Edits first; Edit/Write report failures explicitly, so success needs no re-read. Re-read only if the file changed externally, you need lines outside the range you saw, or earlier content may have been compacted out.
+**File operations:** Prefer Edit over Write; make surgical, targeted edits, not large-block replacements for small changes. Read specific line ranges when you know what you need; read the full file only when surrounding context is required. Don't re-read files already in context — check earlier Reads, `rg -A`/`-B` output, and prior Edits first; Edit/Write report failures explicitly, so success needs no re-read. Re-read only if the file changed externally, you need lines outside the range you saw, or earlier content may have been compacted out.
 
 **Command output:** Pipe verbose tests through `tail -50` or `rg -A 5 'FAIL'` (single failure) / `rg -B 2 -A 5 'FAIL|ERROR'` (multi). Redirect builds to a file, show output only on failure. Pipe linters/formatters through `head -30`.
 
