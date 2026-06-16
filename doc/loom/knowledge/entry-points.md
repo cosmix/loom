@@ -232,8 +232,6 @@ Key public functions for `loom plan verify` to call:
 
 ## Plan Parser Module (plan/parser/mod.rs)
 
-## Plan Parser Module (plan/parser/mod.rs)
-
 **Note:** `plan/parser` is a **subdirectory**, not a single file. Entry point is `plan/parser/mod.rs`.
 
 - `parse_plan(path: &Path) -> Result<ParsedPlan>` — reads file + validates
@@ -553,8 +551,6 @@ Used by all four NativeBackend spawn methods before building the claude command 
 
 ## Hook Scripts — What Each Does
 
-## Hook Scripts — What Each Does
-
 | Script | Hook Type | Key Behavior |
 |--------|-----------|-------------|
 | `session-start.sh` | SessionStart | Writes initial heartbeat; captures stdin and parses `.source` field; on `source == "compact"` or `"resume"` emits `hookSpecificOutput.additionalContext` JSON re-anchor pointer |
@@ -563,7 +559,7 @@ Used by all four NativeBackend spawn methods before building the claude command 
 | `session-end.sh` | SessionEnd | Creates handoff if stage not completed |
 | `learning-validator.sh` | Stop | Advisory check for session memory usage |
 | `commit-guard.sh` | Stop (global) | Blocks exit if uncommitted changes or stage still Executing |
-| `prefer-modern-tools.sh` | PreToolUse:Bash | Emits `hookSpecificOutput.additionalContext` JSON warning to use Grep/Glob tools instead |
+| `prefer-modern-tools.sh` | PreToolUse:Bash | Emits `hookSpecificOutput.additionalContext` JSON warning to use `rg`/`fd` instead |
 | `commit-filter.sh` | PreToolUse:Bash | Blocks subagent git commits via LOOM_MAIN_AGENT_PID process tree check; blocks Claude attribution |
 | `git-add-guard.sh` | PreToolUse:Bash | Blocks `git add -A`, `git add .`, `git add .work` |
 | `worktree-isolation.sh` | PreToolUse:Bash/Edit/Write | Blocks cross-worktree ops and path traversal |

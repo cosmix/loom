@@ -28,7 +28,7 @@ pub const HOOK_ASK_USER_PRE: &str = include_str!("../../../../hooks/ask-user-pre
 /// AskUserQuestion post hook - resumes stage after user input
 pub const HOOK_ASK_USER_POST: &str = include_str!("../../../../hooks/ask-user-post.sh");
 
-/// PreferModernTools hook - suggests Grep/Glob tools or fd/rg instead of grep/find
+/// PreferModernTools hook - suggests rg/fd instead of grep/find
 pub const HOOK_PREFER_MODERN_TOOLS: &str = include_str!("../../../../hooks/prefer-modern-tools.sh");
 
 /// CommitFilter hook - blocks forbidden patterns in git commits (e.g., Claude attribution)
