@@ -570,7 +570,7 @@ Loom teaches a 2-level subagent hierarchy (main agent → coordinator subagents 
 - Nested subagents are supported since Claude Code 2.1.172 (changelog: "Sub-agents can now spawn their own sub-agents (up to 5 levels deep)"); empirically confirmed 2026-06-12 on 2.1.175 (a subagent spawned a nested Explore agent, no flags needed). On older versions the Task tool is simply absent one level down; the coordinator does the work itself.
 - The platform allows 5 levels; **loom caps trees at 2 by policy** (auditable file-exclusivity, bounded cost/failure blast radius), enforced via the WORKER PREAMBLE prose, not code.
 - The `tools:` frontmatter in `agents/*.md` governs capability: `loom-software-engineer` and `loom-senior-software-engineer` list `Task` (can coordinate); `loom-code-reviewer` does not (always a leaf).
-- **Model-inheritance trap:** a nested worker spawned WITHOUT an agent type defaults to the MAIN session model — on an `opus[1m]` stage that silently makes every worker opus. Hence "spawn workers BY AGENT TYPE" on every surface.
+- **Model-inheritance trap:** a nested worker spawned WITHOUT an agent type defaults to the MAIN session model — on an `opus` stage that silently makes every worker opus. Hence "spawn workers BY AGENT TYPE" on every surface.
 - **Ultracode licensing:** Claude Code's Workflow tool requires explicit opt-in; the documented trigger is the literal keyword `ultracode` in the session's prompt. Loom controls every spawned session's initial prompt, so `stage.ultracode` injects the keyword at spawn (`orchestrator/terminal/native/mod.rs`, `SessionType::Stage` prompt arm).
 
 **Canonical keyword table (wording changes must update ALL listed surfaces):**

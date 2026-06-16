@@ -174,7 +174,7 @@ loom:
 
 | Category          | Model               | Reasoning                   | When                                                                        |
 | ----------------- | ------------------- | --------------------------- | --------------------------------------------------------------------------- |
-| **Architectural** | `model: "opus[1m]"` | `reasoning_effort: "xhigh"` | Stage requires design decisions, novel patterns, cross-cutting judgment     |
+| **Architectural** | `model: "opus"` | `reasoning_effort: "xhigh"` | Stage requires design decisions, novel patterns, cross-cutting judgment     |
 | **Execution**     | `model: "sonnet"`   | `reasoning_effort: "high"`  | Stage follows detailed instructions, applies existing patterns, well-scoped |
 
 **Architectural stages** (use opus) — the agent must make judgment calls:
@@ -198,7 +198,7 @@ loom:
 ```yaml
 # Architectural stage — opus for design decisions
 - id: design-auth-system
-  model: "opus[1m]"
+  model: "opus"
   reasoning_effort: "xhigh"
   description: |
     Design and implement the authentication module. Must decide:
@@ -268,7 +268,7 @@ Opus stage descriptions can be higher-level since the agent has the judgment to 
 │                                                                    │
 │  A sonnet stage hits loom's default 65% context budget at ~130k   │
 │  tokens and the 75% hard stop at ~150k. The SAME stage on          │
-│  opus[1m] has ~650k of headroom before the budget warning.         │
+│  opus has ~650k of headroom before the budget warning.         │
 │                                                                    │
 │  When a sonnet stage's main agent does the bulky work itself, it   │
 │  compacts — and compaction forces a full uncached context re-read, │
@@ -282,10 +282,10 @@ The structural fix: **subagents run in their own context windows, and only their
 When you assign `model: "sonnet"` to a stage, design it so the main agent is a **coordinator, not an implementer**:
 
 - Decompose the stage into subagent assignments that each own a slice of the work — not just for parallelism, but to keep file-reading and code-iteration out of the main context.
-- Avoid sonnet stages where the main agent must itself read many large files, run long test loops, or iterate extensively before delegating. If the stage cannot be decomposed that way, it is an **architectural stage** — use `opus[1m]` instead.
-- A sonnet stage with no subagent assignments is a red flag: it will likely do all the work in the main context and compact. Either add a `SUBAGENT FILE ASSIGNMENTS` block or switch the stage to `opus[1m]`.
+- Avoid sonnet stages where the main agent must itself read many large files, run long test loops, or iterate extensively before delegating. If the stage cannot be decomposed that way, it is an **architectural stage** — use `opus` instead.
+- A sonnet stage with no subagent assignments is a red flag: it will likely do all the work in the main context and compact. Either add a `SUBAGENT FILE ASSIGNMENTS` block or switch the stage to `opus`.
 
-This is *why* CLAUDE.md Rule 6 says "prefer subagents" — not only token cost, but context-window survival. On opus[1m] the 1M window absorbs a heavier main-agent role; on sonnet it does not. When fan-out exceeds ~6 workers, use a 2-level hierarchy (see Section 4): the sonnet main agent manages 2-4 coordinators and absorbs 2-4 compact summaries instead of 12 raw results.
+This is *why* CLAUDE.md Rule 6 says "prefer subagents" — not only token cost, but context-window survival. On opus the 1M window absorbs a heavier main-agent role; on sonnet it does not. When fan-out exceeds ~6 workers, use a 2-level hierarchy (see Section 4): the sonnet main agent manages 2-4 coordinators and absorbs 2-4 compact summaries instead of 12 raw results.
 
 **integration-verify stages:** Always use opus (set automatically if not specified).
 
@@ -634,8 +634,8 @@ loom:
   stages:
     - id: stage-id # Required: unique kebab-case identifier
       name: "Stage Name" # Required: human-readable display name
-      model: "sonnet" # Required: "sonnet" for execution, "opus[1m]" for architectural work
-      reasoning_effort: "high" # Required: "high" for sonnet stages, "xhigh" for opus[1m] stages
+      model: "sonnet" # Required: "sonnet" for execution, "opus" for architectural work
+      reasoning_effort: "high" # Required: "high" for sonnet stages, "xhigh" for opus stages
       description: | # Required: full task description for agent
         What this stage must accomplish.
 

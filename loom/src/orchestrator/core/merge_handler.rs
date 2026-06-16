@@ -24,7 +24,7 @@ use super::{clear_status_line, Orchestrator};
 /// Without this cap a resolver that fails fast and deterministically would be
 /// respawned on every ~5s poll cycle (the kept signal file is NOT a guard —
 /// `find_live_merge_session_for_stage` deletes it once the PID is dead), each
-/// spawn on `opus[1m]`/`xhigh` → unbounded token + window burn (O-3).
+/// spawn on `opus`/`xhigh` → unbounded token + window burn (O-3).
 const MAX_MERGE_RESOLVER_ATTEMPTS: u32 = 3;
 
 impl Orchestrator {

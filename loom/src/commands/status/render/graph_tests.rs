@@ -26,7 +26,7 @@ fn make_stage_summary(id: &str, deps: Vec<&str>, status: StageStatus) -> StageSu
         max_retries: None,
         pid: None,
         session_alive: false,
-        model: "opus[1m]".to_string(),
+        model: "opus".to_string(),
         is_possibly_stuck: false,
     }
 }

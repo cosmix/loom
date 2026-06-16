@@ -357,7 +357,7 @@ Claude Code ≥ 2.1.172 lets subagents spawn subagents, up to 5 levels; loom pol
 
 **⚠️ CHECK SKILLS & AGENTS BEFORE IMPLEMENTING**
 
-`loom-senior-software-engineer` = Opus (xhigh effort on `opus[1m]`); `loom-software-engineer` = Sonnet (high effort). **The plan author sets each stage's `model`** by whether work is architectural (judgment → opus) or execution (detailed instructions → sonnet). Every stage MUST set `model`; default `reasoning_effort` is `xhigh` for `opus[1m]`, `high` otherwise.
+`loom-senior-software-engineer` = Opus (xhigh effort on `opus`); `loom-software-engineer` = Sonnet (high effort). **The plan author sets each stage's `model`** by whether work is architectural (judgment → opus) or execution (detailed instructions → sonnet). Every stage MUST set `model`; default `reasoning_effort` is `xhigh` for `opus`, `high` otherwise.
 
 | Agent                           | When to Use                                                                                                                                                     |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -367,7 +367,7 @@ Claude Code ≥ 2.1.172 lets subagents spawn subagents, up to 5 levels; loom pol
 | `Explore` agent                 | Codebase exploration                                                                                                                                            |
 | Domain skills                   | See Skills by Domain table below                                                                                                                                |
 
-**Token-efficient strategy:** Sonnet (high) is far cheaper than Opus. Invest planning effort in detailed stage descriptions so more stages run on Sonnet — exact file paths, function signatures, and patterns to match; explicit steps, not high-level goals; acceptance criteria that verify each step, not just the final result. **Escalate to Opus** if a Sonnet agent fails twice on the same task or produces incorrect architectural decisions (retry with `model: "opus[1m]"`).
+**Token-efficient strategy:** Sonnet (high) is far cheaper than Opus. Invest planning effort in detailed stage descriptions so more stages run on Sonnet — exact file paths, function signatures, and patterns to match; explicit steps, not high-level goals; acceptance criteria that verify each step, not just the final result. **Escalate to Opus** if a Sonnet agent fails twice on the same task or produces incorrect architectural decisions (retry with `model: "opus"`).
 
 #### Skills by Domain
 

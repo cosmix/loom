@@ -41,7 +41,7 @@ pub fn gc(model: Option<String>, dry_run: bool, quick: bool) -> Result<()> {
     let claude_path = find_claude_path()?;
     // GC is judgement-heavy: deciding what is stale vs. precious requires
     // architectural taste, so default to Opus with the 1M context window.
-    let effective_model = model.unwrap_or_else(|| "opus[1m]".to_string());
+    let effective_model = model.unwrap_or_else(|| "opus".to_string());
 
     // NOTE: knowledge file contents are deliberately NOT embedded in the prompt.
     // The session Reads and Edits those files directly — embedding them would be
@@ -322,8 +322,8 @@ mod tests {
 
     #[test]
     fn test_gc_initial_prompt_embeds_model() {
-        let prompt = build_gc_initial_prompt("opus[1m]", false);
-        assert!(prompt.contains("model \"opus[1m]\""));
+        let prompt = build_gc_initial_prompt("opus", false);
+        assert!(prompt.contains("model \"opus\""));
         assert!(prompt.contains("Compact the files via Edit/Write"));
     }
 
@@ -335,14 +335,14 @@ mod tests {
 
     #[test]
     fn test_gc_initial_prompt_uses_agent_team() {
-        let prompt = build_gc_initial_prompt("opus[1m]", false);
+        let prompt = build_gc_initial_prompt("opus", false);
         assert!(prompt.contains("agent team"));
     }
 
     #[test]
     fn test_gc_system_prompt_uses_agent_team() {
         let metrics = fake_metrics_recommended();
-        let prompt = build_gc_system_prompt("opus[1m]", false, &metrics);
+        let prompt = build_gc_system_prompt("opus", false, &metrics);
         assert!(prompt.contains("agent team"));
         assert!(prompt.contains("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"));
     }
@@ -352,7 +352,7 @@ mod tests {
         // Recorded mistakes / gotchas / prevention rules are the highest-value
         // content — GC must condense but never drop them.
         let metrics = fake_metrics_recommended();
-        let prompt = build_gc_system_prompt("opus[1m]", false, &metrics);
+        let prompt = build_gc_system_prompt("opus", false, &metrics);
         assert!(prompt.contains("self-improve"));
         assert!(prompt.contains("prevention rules"));
     }

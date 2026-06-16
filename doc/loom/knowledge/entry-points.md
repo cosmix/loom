@@ -463,8 +463,8 @@ All four are in `loom/src/orchestrator/terminal/native/mod.rs`:
 | Method | Lines | Notes |
 |--------|-------|-------|
 | `spawn_session` | 91–165 (cmd: 121–129) | Uses `stage.effective_model()` + `stage.effective_reasoning_effort()` |
-| `spawn_merge_session` | 167–239 (cmd: 199–204) | Hardcoded `opus[1m]` / `xhigh` |
-| `spawn_base_conflict_session` | 241–314 (cmd: 275–280) | Hardcoded `opus[1m]` / `xhigh` |
+| `spawn_merge_session` | 167–239 (cmd: 199–204) | Hardcoded `opus` / `xhigh` |
+| `spawn_base_conflict_session` | 241–314 (cmd: 275–280) | Hardcoded `opus` / `xhigh` |
 | `spawn_knowledge_session` | 316–389 (cmd: 346–353) | Uses `stage.effective_model()` + `stage.effective_reasoning_effort()` |
 
 All four call `pid_tracking::create_wrapper_script()` before `spawn_in_terminal()`.

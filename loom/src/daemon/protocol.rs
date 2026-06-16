@@ -302,7 +302,7 @@ mod tests {
                 status: StageStatus::Executing,
                 merged: false,
                 dependencies: vec!["stage-0".to_string()],
-                model: "opus[1m]".to_string(),
+                model: "opus".to_string(),
                 is_possibly_stuck: false,
             }],
             stages_pending: vec![StageInfo {
@@ -328,7 +328,7 @@ mod tests {
                 status: StageStatus::Completed,
                 merged: true,
                 dependencies: vec![],
-                model: "opus[1m]".to_string(),
+                model: "opus".to_string(),
                 is_possibly_stuck: false,
             }],
             stages_blocked: vec![],

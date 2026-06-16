@@ -40,16 +40,16 @@ impl StageType {
             // KnowledgeDistill is mechanical curation work — sonnet suffices
             StageType::KnowledgeDistill => "sonnet",
             // Standard and integration-verify stages default to opus
-            StageType::Standard | StageType::IntegrationVerify => "opus[1m]",
+            StageType::Standard | StageType::IntegrationVerify => "opus",
         }
     }
 
     /// Default reasoning effort for this stage type, given the effective model.
     /// Sonnet stages need high effort to compensate for the capability gap.
-    /// Opus 4.7 1M-context stages use xhigh for thoroughness on architectural work.
+    /// Opus stages use xhigh for thoroughness on architectural work.
     /// Any other model defaults to high.
     pub fn default_reasoning_effort(&self, effective_model: &str) -> &'static str {
-        if effective_model == "opus[1m]" {
+        if effective_model == "opus" {
             "xhigh"
         } else {
             "high"

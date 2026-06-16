@@ -359,7 +359,7 @@ mod tests {
             status: StageStatus::Executing,
             merged: true,
             dependencies: vec!["dep1".to_string(), "dep2".to_string()],
-            model: "opus[1m]".to_string(),
+            model: "opus".to_string(),
             is_possibly_stuck: false,
         };
 
