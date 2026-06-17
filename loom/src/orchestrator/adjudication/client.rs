@@ -26,7 +26,7 @@ use super::prompt::Prompt;
 
 /// Default model used to adjudicate disputes. Overridable via
 /// `.work/config.toml::[adjudication].model`.
-pub const ADJUDICATOR_MODEL: &str = "claude-opus-4-5-20250929";
+pub const ADJUDICATOR_MODEL: &str = "claude-opus-4-8";
 
 /// API endpoint. Public so tests in `tests.rs` can assert it.
 pub const ANTHROPIC_MESSAGES_URL: &str = "https://api.anthropic.com/v1/messages";
