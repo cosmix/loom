@@ -88,9 +88,9 @@ This skill focuses on analyzing and optimizing SQL queries for improved performa
 3. **Use EXPLAIN ANALYZE**: Always analyze execution plans with actual timing
 4. **Limit Results**: Use pagination for large datasets
 5. **Avoid N+1**: Use JOINs or batch queries
-6. **Prefer EXISTS over IN**: For subqueries with large result sets
+6. **Use `NOT EXISTS`, not `NOT IN`, on nullable subqueries**: `NOT IN` returns zero rows — silently — if any NULL appears in the subquery result, because SQL three-valued logic makes the predicate UNKNOWN for every row. `NOT EXISTS` is NULL-safe and the planner can execute it as an efficient hash anti-join; `NOT IN` with nullable input cannot be turned into an anti-join. (For positive/inclusion tests, `IN`, `ANY`, and `EXISTS` produce identical plans in modern PostgreSQL — pick the most readable; there is no performance reason to rewrite `IN` as `EXISTS`.)
 7. **Update Statistics**: Run ANALYZE after bulk operations
-8. **Use CTEs for Readability**: But watch for optimization fences
+8. **CTEs are not optimization fences by default (PG12+)**: A non-recursive, side-effect-free CTE referenced once is inlined (predicates push down, indexes are used); a CTE referenced more than once is materialized. Force behavior with `AS MATERIALIZED` (fence/single evaluation) or `AS NOT MATERIALIZED` (force inlining). The old `OFFSET 0` fence trick is obsolete — verify with EXPLAIN.
 9. **Avoid Functions on Indexed Columns**: Prevents index usage
 10. **Monitor Continuously**: Track query performance over time
 
@@ -101,7 +101,7 @@ This skill focuses on analyzing and optimizing SQL queries for improved performa
 **Scan Types:**
 
 - **Sequential Scan**: Full table scan (slow for large tables)
-- **Index Scan**: Uses index + table lookups (good for low selectivity)
+- **Index Scan**: Walks the index then fetches matching heap rows — best when the predicate matches only a SMALL fraction of the table. When many rows match, the planner switches to a Sequential Scan (or Bitmap Heap Scan for a middling fraction) because the random heap I/O of many index lookups costs more than reading the table sequentially.
 - **Index Only Scan**: Uses covering index (fastest)
 - **Bitmap Index Scan**: Multiple index scans combined (good for OR conditions)
 
@@ -142,9 +142,11 @@ VACUUM ANALYZE table_name;
 -- Key parameters to check
 SHOW shared_buffers;        -- Should be 25% of RAM
 SHOW effective_cache_size;  -- Should be 50-75% of RAM
-SHOW work_mem;              -- Per-operation memory
+SHOW work_mem;              -- Per sort/hash operation AND per parallel worker
 SHOW random_page_cost;      -- Lower for SSDs (1.1-2.0)
 ```
+
+`work_mem` is the limit for each sort/hash operation and each parallel worker — a single query with several such nodes can use N × `work_mem` simultaneously, and concurrent sessions multiply that further. Since PG14, hash operations use up to `hash_mem_multiplier` × `work_mem` (default 2.0). A large global `work_mem` on a high-concurrency server is an OOM risk: keep the global value modest and raise it per-session with `SET LOCAL work_mem` for known heavy reports. Set `log_temp_files = 0` and watch for `Batches > 1` on Hash nodes in `EXPLAIN ANALYZE` to detect spills.
 
 ## Common Anti-Patterns
 
@@ -174,9 +176,11 @@ SELECT * FROM users WHERE id = 123;
 -- BAD: May not use indexes efficiently
 SELECT * FROM orders WHERE status = 'pending' OR status = 'processing';
 
--- GOOD: Use IN or create partial index
+-- GOOD: Rewrite same-column OR as IN
 SELECT * FROM orders WHERE status IN ('pending', 'processing');
 ```
+
+PostgreSQL generally rewrites OR conditions on the SAME column into `IN`/`ANY` and can use a plain B-tree index on that column directly. For OR conditions across DIFFERENT columns it combines separate index scans via a BitmapOr (or you can rewrite as `UNION ALL`). Verify the chosen path with EXPLAIN rather than assuming a partial index helps — a partial index only restricts which rows are indexed; it does not provide an access path for searching by those status values.
 
 ### 4. Correlated Subqueries
 
@@ -286,7 +290,9 @@ AND o.created_at > '2024-01-01'
 ORDER BY o.created_at DESC;
 
 -- Step 1: Analyze with EXPLAIN ANALYZE
-EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
+-- SETTINGS (PG12) surfaces non-default GUCs so the plan reproduces across environments.
+-- For a prepared statement's plan without executing, use EXPLAIN (GENERIC_PLAN) (PG16+).
+EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT TEXT)
 SELECT o.*, c.name, c.email
 FROM orders o, customers c
 WHERE o.customer_id = c.id
@@ -304,6 +310,10 @@ ORDER BY o.created_at DESC;
 CREATE INDEX idx_orders_status_created
 ON orders(status, created_at DESC)
 WHERE status IN ('pending', 'processing');
+-- NOTE: partial-index predicates are matched at PLAN time by literal implication.
+-- A parameterized query (WHERE status = $1) will NEVER use this partial index,
+-- because the planner cannot prove $1 satisfies the predicate at plan time.
+-- When the column must be bound, use a plain composite index (status, created_at).
 
 -- Step 3: Rewrite with explicit JOIN
 SELECT o.id, o.total, o.created_at, c.name, c.email
@@ -359,6 +369,11 @@ CREATE INDEX idx_users_email ON users(email);
 -- Order columns: equality first, then range, then sort
 CREATE INDEX idx_orders_user_status_date
 ON orders(user_id, status, created_at DESC);
+-- The trailing sort column eliminates a Sort node only when every PRECEDING column
+-- is bound by an equality predicate AND the index ASC/DESC (and NULLS) direction
+-- matches the ORDER BY exactly. If a preceding column uses IN(...) or a range, the
+-- sort column degrades to a filter predicate and a Sort node reappears.
+-- Confirm the Sort node is actually gone in EXPLAIN before relying on this.
 
 -- Partial index for filtered queries
 CREATE INDEX idx_orders_pending
@@ -450,4 +465,104 @@ UPDATE products p
 SET price = pu.new_price
 FROM price_updates pu
 WHERE p.id = pu.id;
+```
+
+## Expert Practices: Idioms, Anti-Patterns & Gotchas
+
+High-signal guidance for thinking like a query-tuning expert. Defaults and version notes assume PostgreSQL.
+
+### Reading EXPLAIN
+
+**`Index Cond` is an access predicate; `Filter` is not.** On an Index Scan, `Index Cond` decides which index leaf entries are traversed; a `Filter` line is applied to every row those entries return, discarding non-matching rows afterward. A `Filter` on an Index Scan plus a high `Rows Removed by Filter` means the index is doing more work than the query needs — usually because a filtering column is not in the access predicate. Fix by reordering/extending the composite index so that column joins the `Index Cond`. (A `Filter` after a Seq Scan instead means no usable index at all.)
+
+**Diagnose bad plans by estimated-vs-actual row divergence, not cost-vs-time.** Cost units (arbitrary) and actual time (ms) are not numerically comparable. The signal that matters is whether estimated `rows=N` tracks `actual rows=M`. A divergence of ~10× or more means the planner chose its architecture (nested loop vs hash join, index vs seq scan) on wrong cardinality — the usual root cause of a slow plan. Fixes in order: (1) `ANALYZE` to refresh stats; (2) raise per-column statistics target for skewed columns (`ALTER TABLE t ALTER COLUMN c SET STATISTICS 500`); (3) `CREATE STATISTICS` for correlated column groups. The `enable_*` GUCs (e.g. `SET enable_nestloop = off`) are diagnostic probes only — never a permanent fix, since they affect every query in the session.
+
+**Looped-node times/rows are per-loop averages — multiply by `loops`.** For a node inside a loop (e.g. the inner side of a Nested Loop), `EXPLAIN ANALYZE` reports actual time and rows as averages PER execution, with `loops=N` the count. A node showing `actual time=0.003..0.005 rows=1 loops=10000` is ~30 ms total, not 0.003 ms. Related trap: under `LIMIT`, child nodes report only the rows delivered before the limit stopped them, not what they would have produced.
+
+**Use the modern EXPLAIN options.** `SETTINGS` (PG12, non-default GUCs influencing the plan — essential for cross-environment reproduction); `WAL` (PG13, WAL generated by DML, needs `ANALYZE`); `GENERIC_PLAN` (PG16, the plan a prepared statement would use with `$1` placeholders, WITHOUT executing — cannot be combined with `ANALYZE`); `SERIALIZE` (PG17, cost of serializing output); `MEMORY` (PG18, planner memory). In PG18 `BUFFERS` is auto-included with `ANALYZE`. Recommended PG16+ form:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT TEXT)
+SELECT * FROM orders WHERE status = 'pending';
+-- Inspect a prepared statement's generic plan without executing it (PG16+):
+EXPLAIN (GENERIC_PLAN) SELECT * FROM orders WHERE customer_id = $1 AND status = $2;
+```
+
+### Index Design
+
+**Equality columns must precede the range/sort column in a composite index.** In a B-tree, leading equality columns plus a single range column set the start/stop of the index scan (access predicates). Once a column is used for a range, every subsequent column can only filter row-by-row — narrowing nothing. So an index `(a, range_col, b)` with `WHERE a=? AND range_col>? AND b=?` scans the whole `range_col` span and merely filters on `b`. Rule: index for equality first, then for a single range, with the `ORDER BY` column last so it can also serve the sort.
+
+```sql
+-- GOOD: equality first, single range/sort column last → all are access predicates
+CREATE INDEX idx_orders_user_status_date ON orders(user_id, status, created_at);
+-- BAD: created_at (range) in the MIDDLE makes status a filter, not an access predicate
+CREATE INDEX idx_bad ON orders(user_id, created_at, status);
+```
+
+**Sort direction (ASC/DESC, NULLS) must match `ORDER BY` exactly, or a Sort is forced.** A B-tree on `(x ASC, y ASC)` satisfies `ORDER BY x ASC, y ASC` (forward scan) or `x DESC, y DESC` (backward scan), but NOT mixed `x ASC, y DESC` — that needs an index declared `(x ASC, y DESC)`. NULLS placement is a second axis: default is `ASC NULLS LAST` / `DESC NULLS FIRST`, so `ORDER BY x ASC NULLS FIRST` won't match a default index. The mismatch is silent (correct results, but an explicit Sort node) and worst with `LIMIT`, which otherwise stops after N rows. Confirm by the presence/absence of a `Sort` node in EXPLAIN.
+
+**Partial indexes need a literal predicate match — parameterized queries can't use them.** A partial index is used only if the planner can prove at PLAN time that the query's `WHERE` implies the index predicate (it recognizes only simple inequality implications like `x<1 ⇒ x<2`). A prepared statement `WHERE status = $1` will NEVER use a `WHERE status='pending'` partial index because the value is unknown at plan time — use a composite index `(status, created_at)` when the column must be bound. Many non-overlapping partial indexes as poor-man's partitioning is explicitly "a bad idea" per the docs; use real partitioning or a composite index.
+
+**`INCLUDE` builds covering indexes; Index-Only Scans depend on the visibility map.** `INCLUDE (cols)` stores payload columns only in leaf pages (keeping the B-tree key compact, not affecting uniqueness). But an Index-Only Scan avoids the heap only for pages whose visibility-map bit is set; on high-UPDATE/DELETE tables the bit is often unset, so the scan silently degrades to heap fetches. Watch `Heap Fetches: N` in EXPLAIN; check churn via `n_dead_tup` in `pg_stat_user_tables` and `VACUUM` to restore VM coverage.
+
+**HOT updates are lost when any indexed column changes — driving index bloat.** Heap-Only Tuple updates skip all indexes when only non-indexed columns change and the new tuple fits the same heap page. But updating even one INDEXED column (even to the same value) bypasses HOT and inserts an entry into EVERY index, leaving one dead entry per index per update for VACUUM to reclaim. Common trap: adding a frequently-updated column like `updated_at` to many indexes "for completeness" destroys HOT. Index only columns used in WHERE/JOIN, and set `fillfactor < 100` on hot tables so in-page HOT updates have room.
+
+**BRIN indexes only help when values correlate with physical row order.** A BRIN stores only per-block-range summaries (min/max), making it 2–3 orders of magnitude smaller than a B-tree — ideal for append-only time-series/audit tables where timestamps or sequential IDs grow monotonically with insert order. It is useless for randomly-distributed columns (UUIDs, churned status): no block range can be eliminated, so the planner ignores it. Check `SELECT correlation FROM pg_stats WHERE tablename='t' AND attname='col'` (near ±1.0 is good) before creating. BRIN serves large range scans, not point lookups (still need a B-tree).
+
+```sql
+CREATE INDEX idx_events_ts_brin ON events USING BRIN (occurred_at);
+```
+
+**PG18 B-tree skip scan relaxes the leading-column rule for low-cardinality prefixes.** As of PG18 (2025-09-25), a composite B-tree on `(a, b)` can serve a query constraining only `b` if `a` has FEW distinct values — the planner issues one index search per distinct `a` value. It fires only when distinct leading values are few enough to skip most of the index; with many, it scans the whole index and the planner usually prefers a seq scan. On PG18 you may no longer need a redundant single-column index behind a low-cardinality leading column. It is automatic and cost-based — verify with EXPLAIN.
+
+### Query Rewrites & Anti-Patterns
+
+**`NOT IN` with a nullable subquery silently returns zero rows — use `NOT EXISTS`.** One NULL in the subquery makes `x NOT IN (..., NULL)` evaluate to UNKNOWN (never TRUE) for every row, so the `WHERE` filters out ALL rows with no error. This is a correctness bug, triggered whenever the subquery column lacks a `NOT NULL` constraint or an outer join feeds NULLs in. `NOT EXISTS` tests existence, is NULL-safe, and lets the planner use a hash anti-join; `NOT IN` with nullable input degrades to an expensive correlated subplan.
+
+```sql
+-- GOOD: NULL-safe, hash anti-join
+SELECT * FROM products p
+WHERE NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.product_id = p.id);
+-- BAD: returns ZERO rows if order_items.product_id has ANY NULL
+SELECT * FROM products WHERE id NOT IN (SELECT product_id FROM order_items);
+```
+
+**Keyset (seek) pagination eliminates cumulative OFFSET cost.** `OFFSET N` fetches and discards N rows, so latency grows linearly with page depth. Keyset pagination anchors a `WHERE` to the last-seen sort-key value, letting an index seek jump straight to position — constant time regardless of page. The sort key must be unique (add an `id` tiebreaker); use a row-value comparison so it maps to a composite index.
+
+```sql
+SELECT id, created_at, title FROM posts
+WHERE (created_at, id) < ($last_created_at, $last_id)
+ORDER BY created_at DESC, id DESC LIMIT 20;
+```
+
+**Prefer `timestamptz` over `timestamp`; use half-open ranges (`>=`, `<`) not `BETWEEN`.** `timestamp` (without zone) has no zone context, so arithmetic across DST or between servers is silently wrong; `timestamptz` stores an absolute UTC instant. Separately, `BETWEEN` is inclusive on BOTH ends: `created_at BETWEEN '2024-01-01' AND '2024-01-31'` includes only midnight Jan 31, excluding the rest of that day. The idiomatic range `>= lower AND < upper_exclusive` is unambiguous, microsecond-correct, and index-friendly.
+
+### Planner Statistics
+
+**Correlated columns need `CREATE STATISTICS` — per-column stats assume independence.** PostgreSQL multiplies individual column selectivities, badly underestimating result rows for correlated columns (zip→city, status→substatus), which pushes the planner into a nested loop sized for a tiny result — catastrophic on the real large result. Adding indexes does NOT fix a misestimate; `CREATE STATISTICS` (PG10+) does. Pick the kind: `dependencies` (functional deps on equality), `ndistinct` (GROUP BY combination counts), `mcv` (skewed multi-column value pairs). Always `ANALYZE` after and confirm with EXPLAIN.
+
+```sql
+CREATE STATISTICS order_stats (mcv) ON status, region FROM orders;
+ANALYZE orders;
+```
+
+### Prepared Statements & Concurrency
+
+**Prepared statements switch from custom to generic plans after 5 executions.** The first five executions use custom plans (planned with actual values); PostgreSQL then builds a generic plan (planned without knowing values, on average stats) and uses it if its cost is "not so much higher" than the custom average (`plan_cache_mode='auto'`). For skewed columns a generic plan optimized for one value can be disastrous for another. Inspect it directly with `EXPLAIN (GENERIC_PLAN)` (PG16+) — the often-repeated "read `$1` vs literals in EXPLAIN EXECUTE" trick is unreliable. Force per-execution plans with `SET plan_cache_mode = 'force_custom_plan'`.
+
+**User-defined functions are `PARALLEL UNSAFE` by default, silently disabling parallel query.** Any `PARALLEL UNSAFE` object anywhere in a query (WHERE, SELECT, JOIN) disables parallelism for the whole query — no `Gather` node appears, no warning. Mark a function `PARALLEL SAFE` only if it has no side effects, does not write, and touches no connection-local state; functions reading temp tables or session state must be `PARALLEL RESTRICTED` (leader-only). Mislabeling a writing function as SAFE is silently incorrect.
+
+```sql
+CREATE FUNCTION score_record(val int) RETURNS int
+  AS $$ SELECT val * 2; $$ LANGUAGE SQL PARALLEL SAFE IMMUTABLE;
+```
+
+**`READ COMMITTED` allows mid-statement inconsistency; `REPEATABLE READ` needs retry logic.** `READ COMMITTED` (default) takes a new snapshot per statement, so one `UPDATE`/`DELETE` can see a mix of pre- and post-commit data and silently skip rows whose qualifying columns changed mid-scan. `REPEATABLE READ` uses one snapshot per transaction but raises `could not serialize access due to concurrent update` errors the application MUST catch and retry from the beginning. Orthogonal trap: sequences (`nextval`) are non-transactional — values consumed are never returned on `ROLLBACK`, so gaps are permanent and expected.
+
+### Maintenance
+
+**Transaction ID wraparound silently approaches, then forces read-only — monitor `relfrozenxid` age.** With 32-bit XIDs (~4 billion circular), a table's `relfrozenxid` aging past `autovacuum_freeze_max_age` (default 200M) triggers a forced freeze. If autovacuum is disabled/starved/blocked, age climbs: warnings begin at 40M transactions from wraparound, and below 3M remaining the server refuses new XIDs — writes fail until VACUUM runs. Long-running/idle-in-transaction sessions, forgotten prepared transactions (`pg_prepared_xacts`), and replication slots all hold back the oldest XID. Alert well before 150M; in a crisis run plain `VACUUM` (`VACUUM FULL`/`FREEZE` consume more XIDs and worsen it).
+
+```sql
+SELECT datname, age(datfrozenxid) FROM pg_database ORDER BY 2 DESC;
 ```

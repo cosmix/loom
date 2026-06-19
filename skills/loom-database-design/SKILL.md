@@ -101,12 +101,13 @@ This skill incorporates data modeling expertise for both operational and analyti
 ### 3. Optimize for Performance
 
 - Design indexes for query patterns (WHERE, JOIN, ORDER BY, GROUP BY)
-- Consider covering indexes to avoid table lookups
-- Use partial indexes for filtered queries
-- Plan denormalization for read-heavy workloads
-- Design partitioning strategy for large tables (range, hash, list)
+- **Index every foreign key column on the child (referencing) side** — PostgreSQL auto-indexes the parent primary key but NOT the child FK column, so unindexed FKs force a sequential scan of the child table on every parent `DELETE`/`UPDATE` (referential-integrity check) and on `ON DELETE CASCADE` (see Expert Practices)
+- Consider covering indexes to avoid table lookups (use `INCLUDE` for payload columns)
+- Use partial indexes for filtered queries — but the planner only uses one when it can prove at PLAN time the query `WHERE` implies the index predicate; parameterized/prepared statements (`$1`) defeat them (see Expert Practices)
+- Plan denormalization for read-heavy workloads — model it as *derived data* refreshed from a single system of record, not duplicated app-side writes (see Expert Practices)
+- Design partitioning strategy for large tables — use declarative `PARTITION BY RANGE/LIST/HASH` (PG10+), never inheritance + trigger routing
 - Add materialized views for expensive aggregations
-- Design for concurrent access (optimistic vs pessimistic locking)
+- Design for concurrent access: the default `READ COMMITTED` gives a fresh snapshot per *statement* (not per transaction) and allows lost updates, vanishing `DELETE`s, and write skew. For cross-row invariants or financial logic use `SERIALIZABLE` and retry on `SQLSTATE 40001` (see Expert Practices)
 
 ### 4. Plan Migrations
 
@@ -116,6 +117,15 @@ This skill incorporates data modeling expertise for both operational and analyti
 - Version control all schema changes
 - Test migrations on production-like data volumes
 - Document breaking changes and migration dependencies
+
+**Lock-aware DDL (large tables):** most `ALTER TABLE` forms take `ACCESS EXCLUSIVE`, and the lock *queues* — a slow open transaction makes the DDL wait, and all subsequent traffic queues behind it. Always:
+
+- Set a low `lock_timeout` (e.g. `200ms`) before any `ALTER TABLE` so it fails fast instead of stalling all traffic, and retry with exponential backoff + jitter.
+- Add FK/CHECK/NOT NULL with the two-phase **`NOT VALID` + `VALIDATE CONSTRAINT`** pattern: `ADD CONSTRAINT ... NOT VALID` enforces on new writes with a brief lock and no scan; `VALIDATE CONSTRAINT` then scans existing rows under `SHARE UPDATE EXCLUSIVE`, which does NOT block concurrent DML.
+- Add unique constraints via `CREATE UNIQUE INDEX CONCURRENTLY` then `ADD CONSTRAINT ... USING INDEX`.
+- Know what rewrites: a *constant* `DEFAULT` on `ADD COLUMN` is metadata-only on PG11+; a *volatile* default (`gen_random_uuid()`, `now()`) and almost any column type change rewrite the whole table — use expand/contract for type changes.
+
+(See Expert Practices for the full mechanism and example SQL.)
 
 ### 5. Consider ETL/Data Pipeline Impact
 
@@ -128,10 +138,10 @@ This skill incorporates data modeling expertise for both operational and analyti
 
 ## Best Practices
 
-1. **Choose Appropriate Types**: Use correct data types for storage efficiency (INT vs BIGINT, VARCHAR vs TEXT, DECIMAL vs FLOAT)
-2. **Index Wisely**: Index columns used in WHERE, JOIN, ORDER BY, GROUP BY, but avoid over-indexing (write cost)
-3. **Normalize First**: Start normalized (3NF) for OLTP, denormalize strategically for OLAP or read-heavy workloads
-4. **Use Constraints**: Enforce data integrity at database level (PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK, NOT NULL)
+1. **Choose Appropriate Types**: Use correct data types for storage efficiency (`VARCHAR`/`TEXT` over `char(n)`, `DECIMAL` over `FLOAT` for money). For auto-incremented surrogate PKs default to `BIGINT GENERATED ALWAYS AS IDENTITY` — `INT4` caps at ~2.1B and fails *hard* on insert at the limit, and `SERIAL` is a legacy pseudo-type with sequence-ownership/permission/`pg_dump` pitfalls. Use `TIMESTAMPTZ` (never bare `TIMESTAMP`) for real-world instants. (See Expert Practices.)
+2. **Index Wisely**: Index columns used in WHERE, JOIN, ORDER BY, GROUP BY, but avoid over-indexing — every index is a write tax (a separate B-tree updated on every write). Audit `pg_stat_user_indexes` for `idx_scan = 0` and drop unused indexes.
+3. **Normalize First**: Start normalized (3NF) for OLTP, denormalize strategically for OLAP or read-heavy workloads. Frame it as system-of-record (normalized, one home per fact) vs *derived* read models (materialized views, projections) refreshed from it.
+4. **Use Constraints**: Enforce data integrity at database level (PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK, NOT NULL). Avoid `NOT IN (subquery)` when the subquery column is nullable — a single NULL silently returns zero rows; use `NOT EXISTS`. (See Expert Practices.)
 5. **Plan for Scale**: Consider sharding, partitioning, and replication early for high-volume tables
 6. **Document Schemas**: Maintain ERD, data dictionary, and relationship diagrams
 7. **Test Migrations**: Always test on production-like data volumes and monitor performance
@@ -144,6 +154,8 @@ This skill incorporates data modeling expertise for both operational and analyti
 ## Examples
 
 ### Example 1: E-Commerce Schema (PostgreSQL)
+
+> **PK choice:** `gen_random_uuid()` (UUIDv4) is random and fragments the B-tree (page splits, low fill) on high-volume tables. It is fine for low-volume tables; for write-heavy OLTP prefer `uuidv7()` (PG18+) or `pg_uuidv7`'s `uuid_generate_v7()` (PG14-17) — time-ordered, append-friendly, but embeds an approximate creation timestamp — or `BIGINT GENERATED ALWAYS AS IDENTITY` when an opaque/distributed ID is not required. (See Expert Practices.)
 
 ```sql
 -- Users table with proper constraints
@@ -204,6 +216,13 @@ CREATE TABLE order_items (
 
     UNIQUE(order_id, product_id)
 );
+
+-- FK indexes: UNIQUE(order_id, product_id) leads with order_id so it covers
+-- the FK check on orders deletes, but NOTHING leads with product_id — deleting
+-- a product would seq-scan order_items. Index every child FK column explicitly.
+CREATE INDEX idx_order_items_product_id ON order_items(product_id);
+-- For a pure junction table, PRIMARY KEY (order_id, product_id) (dropping the
+-- surrogate UUID) removes the redundant unique index entirely.
 ```
 
 ### Example 2: Migration Script
@@ -212,17 +231,32 @@ CREATE TABLE order_items (
 -- Migration: Add customer loyalty program
 -- Version: 20240115_001
 
+-- Fail fast instead of queuing behind a long transaction and stalling all
+-- traffic to users; run the whole migration inside a backoff+jitter retry loop.
+SET lock_timeout = '200ms';
+
 BEGIN;
 
--- Add loyalty tier to users
+-- Add loyalty tier to users.
+-- Constant DEFAULTs are metadata-only on PG11+ (no table rewrite). A volatile
+-- default like now()/gen_random_uuid() WOULD rewrite the whole table.
 ALTER TABLE users
 ADD COLUMN loyalty_tier VARCHAR(20) DEFAULT 'bronze',
 ADD COLUMN loyalty_points INTEGER DEFAULT 0;
 
--- Add constraint for valid tiers
+-- Add the CHECK in two phases so it never holds ACCESS EXCLUSIVE for a full scan.
+-- Phase 1: enforce on new writes immediately, brief lock, no scan.
 ALTER TABLE users
 ADD CONSTRAINT valid_loyalty_tier
-CHECK (loyalty_tier IN ('bronze', 'silver', 'gold', 'platinum'));
+CHECK (loyalty_tier IN ('bronze', 'silver', 'gold', 'platinum')) NOT VALID;
+
+COMMIT;
+
+-- Phase 2: validate existing rows under SHARE UPDATE EXCLUSIVE (concurrent DML
+-- is NOT blocked). Run outside the transaction above.
+ALTER TABLE users VALIDATE CONSTRAINT valid_loyalty_tier;
+
+BEGIN;
 
 -- Create points history table
 CREATE TABLE loyalty_points_history (
@@ -304,7 +338,7 @@ CREATE TABLE dim_date (
 
 -- Dimension: Product
 CREATE TABLE dim_product (
-    product_key SERIAL PRIMARY KEY,  -- Surrogate key
+    product_key BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,  -- Surrogate key (SQL-standard, replaces legacy SERIAL)
     product_id VARCHAR(50) NOT NULL,  -- Natural key from source
     product_name VARCHAR(255) NOT NULL,
     category VARCHAR(100),
@@ -324,7 +358,7 @@ CREATE INDEX idx_dim_product_current ON dim_product(product_id) WHERE is_current
 
 -- Dimension: Customer
 CREATE TABLE dim_customer (
-    customer_key SERIAL PRIMARY KEY,
+    customer_key BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     customer_id VARCHAR(50) NOT NULL,
     customer_name VARCHAR(255),
     customer_segment VARCHAR(50),
@@ -340,7 +374,7 @@ CREATE TABLE dim_customer (
 
 -- Fact: Sales (central fact table)
 CREATE TABLE fact_sales (
-    sale_id BIGSERIAL PRIMARY KEY,
+    sale_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     date_key INTEGER NOT NULL REFERENCES dim_date(date_key),
     product_key INTEGER NOT NULL REFERENCES dim_product(product_key),
     customer_key INTEGER NOT NULL REFERENCES dim_customer(customer_key),
@@ -406,7 +440,11 @@ CREATE INDEX idx_metrics_device_time ON metrics(device_id, time DESC);
 CREATE INDEX idx_metrics_name_time ON metrics(metric_name, time DESC);
 CREATE INDEX idx_metrics_tags ON metrics USING gin(tags);
 
--- Compression policy (compress chunks older than 7 days)
+-- Compression policy (compress chunks older than 7 days).
+-- Note: TimescaleDB 2.18+ introduces the "hypercore" storage engine as the
+-- recommended default for new hypertables, unifying hot rowstore and cold
+-- columnstore and automating conversion. The manual policy below is for older
+-- versions or fine-grained control. (Moving target — verify against your version.)
 ALTER TABLE metrics SET (
     timescaledb.compress,
     timescaledb.compress_segmentby = 'device_id, metric_name'
@@ -554,42 +592,219 @@ CREATE TABLE orders (
     version INTEGER DEFAULT 1
 );
 
--- Merge staging into production (idempotent upsert)
+-- Merge staging into production (idempotent upsert).
+-- Use a single MERGE (PG15+): a two-pass INSERT-then-UPDATE has a race window
+-- where a concurrent session can insert the same order_id between the statements.
+-- Each target row must match at most one source row, so de-duplicate staging first.
 CREATE OR REPLACE FUNCTION merge_orders()
-RETURNS INTEGER AS $$
-DECLARE
-    v_rows_affected INTEGER;
+RETURNS VOID AS $$
 BEGIN
-    -- Insert new records
-    INSERT INTO orders (order_id, customer_id, order_date, total_amount, status, source_system, source_hash)
-    SELECT order_id, customer_id, order_date, total_amount, status, source_system, source_hash
-    FROM staging_orders s
-    WHERE NOT EXISTS (SELECT 1 FROM orders o WHERE o.order_id = s.order_id)
-    AND NOT is_processed;
-
-    GET DIAGNOSTICS v_rows_affected = ROW_COUNT;
-
-    -- Update changed records
-    UPDATE orders o
-    SET
-        customer_id = s.customer_id,
-        order_date = s.order_date,
-        total_amount = s.total_amount,
-        status = s.status,
-        updated_at = NOW(),
-        source_hash = s.source_hash,
-        version = o.version + 1
-    FROM staging_orders s
-    WHERE o.order_id = s.order_id
-    AND o.source_hash != s.source_hash
-    AND NOT s.is_processed;
-
-    GET DIAGNOSTICS v_rows_affected = v_rows_affected + ROW_COUNT;
+    MERGE INTO orders o
+    USING (SELECT * FROM staging_orders WHERE NOT is_processed) s
+       ON o.order_id = s.order_id
+    WHEN MATCHED AND o.source_hash <> s.source_hash THEN
+        UPDATE SET
+            customer_id  = s.customer_id,
+            order_date   = s.order_date,
+            total_amount = s.total_amount,
+            status       = s.status,
+            updated_at   = NOW(),
+            source_hash  = s.source_hash,
+            version      = o.version + 1
+    WHEN NOT MATCHED THEN
+        INSERT (order_id, customer_id, order_date, total_amount, status, source_system, source_hash)
+        VALUES (s.order_id, s.customer_id, s.order_date, s.total_amount, s.status, s.source_system, s.source_hash);
 
     -- Mark staging records as processed
     UPDATE staging_orders SET is_processed = TRUE WHERE NOT is_processed;
-
-    RETURN v_rows_affected;
 END;
 $$ LANGUAGE plpgsql;
+-- For a simple upsert against ONE unique constraint, prefer INSERT ... ON CONFLICT
+-- DO UPDATE: it has purpose-built INSERT-race handling that classic MERGE lacks.
 ```
+
+## Expert Practices: Idioms, Anti-Patterns & Gotchas
+
+High-signal, mechanism-level guidance. Most examples are PostgreSQL; the principles generalize. Verify version-specific features against your installed version.
+
+### Keys, Types & Modeling
+
+**Default `BIGINT GENERATED ALWAYS AS IDENTITY` for surrogate keys.** `INT4` (`SERIAL`/`serial`) caps at 2,147,483,647 and fails *hard* on `INSERT` at the limit — high-volume tables hit this in months, and the `BIGINT` sequence behind a `SERIAL` never overflows, so watching `max(id)` understates the risk; migrating `INT`→`BIGINT` forces a full-table rewrite under `ACCESS EXCLUSIVE`. `SERIAL` is also a non-standard pseudo-type with awkward sequence ownership/permissions/`pg_dump`. `IDENTITY` (SQL:2003, PG10+) binds the sequence to the column and blocks accidental manual overrides. Use `BY DEFAULT` only when importing explicit values.
+
+```sql
+CREATE TABLE events (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, name TEXT NOT NULL);
+SELECT max(id)::float / 2147483647 AS pct_used FROM high_volume_table;  -- monitor legacy INT keys
+```
+
+**Prefer UUIDv7 over UUIDv4 when you need UUID keys.** UUIDv4 (`gen_random_uuid()`) is fully random, so every insert lands at an arbitrary B-tree leaf — frequent page splits, ~50-69% page fill vs ~90%+, larger indexes, lower insert throughput as the table grows. UUIDv7 (RFC 9562) puts a 48-bit millisecond timestamp in the high bits, so values append to the right of the index like a `BIGINT` while staying globally unique — the tradeoff is an embedded approximate creation time. PG18 ships built-in `uuidv7()`; PG14-17 use the `pg_uuidv7` extension. `BIGINT IDENTITY` is still fastest and smallest for pure sequential inserts — reach for UUIDv7 specifically when distributed/opaque/client-generated IDs are required.
+
+```sql
+CREATE TABLE orders (id UUID PRIMARY KEY DEFAULT uuidv7());  -- PG18+
+```
+
+**Always use `TIMESTAMPTZ` for real-world instants; never bare `TIMESTAMP`.** `TIMESTAMP` stores a wall-clock picture with no UTC anchor — any offset in the input literal is *silently discarded* (`'2024-01-15 12:00:00+05:30'::timestamp` stores `12:00:00`), so DST arithmetic and cross-client comparisons silently produce wrong answers. `TIMESTAMPTZ` converts to UTC on write and to the session zone on read; both are 8 bytes, so there is no storage reason to prefer `TIMESTAMP`. Related traps: `timestamp(N)` *rounds* fractional seconds — use `date_trunc('second', ...)` to truncate; and store IANA names (`'America/New_York'`), never fixed-offset abbreviations like `'EST'` that ignore DST. Also flag `money` (locale-dependent rounding, no fractional cents) and `char(n)` (space-padding, no perf benefit over `varchar`/`text`) as anti-patterns.
+
+**Avoid EAV; reach for typed columns + a `JSONB` escape hatch.** Entity-Attribute-Value (`entity_id, attr_name TEXT, value TEXT`) looks schemaless but every value is `TEXT` (no numeric/date/enum enforcement), reading all attributes of an entity needs one self-join per attribute (defeating indexes and planner statistics), and a typo in `attr_name` silently creates a new "attribute" no constraint can catch. For dynamic attributes on an otherwise normalized table use a `JSONB` column (GIN indexing, containment operators, type-aware access) while fixed columns keep their relational guarantees. Reserve EAV for the rare case where attribute names themselves are unstructured and user-controlled.
+
+```sql
+CREATE TABLE products (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    price NUMERIC(10,2) NOT NULL CHECK (price >= 0),
+    extra_attributes JSONB                       -- typed escape hatch
+);
+CREATE INDEX idx_products_attrs ON products USING GIN (extra_attributes);
+```
+
+**Normalize the system of record; derive denormalized read models.** *Designing Data-Intensive Applications* (Kleppmann) distinguishes the system of record (source of truth, each fact written once, normalized) from derived data (caches, indexes, materialized views, read models computed *from* it). This dissolves the false "normalize or denormalize" dilemma: normalize so each fact has one home, then DERIVE hot read models via materialized views, event-driven projections, or continuous aggregates — and let the derivation pipeline keep them consistent, not duplicated app-side writes. Storing a pre-computed total on `orders` *and* recomputing it in a view creates two sources of truth that drift.
+
+### Indexing
+
+**Index every foreign key column on the child side — PostgreSQL never does it automatically.** It auto-indexes the parent primary key but NOT the referencing child column. Two consequences: (1) joins from child to parent fall back to a sequential scan of the child; (2) every parent `DELETE`/`UPDATE` triggers a referential-integrity check that scans the child for referencing rows — once per affected parent row, so deleting N parents is O(N) seq scans (the same cliff hits `ON DELETE CASCADE`). Documented cases show 50k parent deletes dropping from ~30 minutes to ~100ms after adding the child index. (The RI check uses row-level `FOR KEY SHARE` locks on referenced rows, *not* a table-level lock on the child.) Exception: very small child tables where a seq scan beats an index scan.
+
+```sql
+CREATE INDEX idx_order_items_order_id   ON order_items(order_id);
+CREATE INDEX idx_order_items_product_id ON order_items(product_id);
+-- Find unindexed FKs / never-scanned indexes:
+SELECT schemaname, relname AS table, indexrelname AS index, idx_scan
+FROM pg_stat_user_indexes WHERE idx_scan = 0
+ORDER BY pg_relation_size(indexrelid) DESC;
+```
+
+**Every index is a write tax; don't over-index write-heavy OLTP tables.** Each index is a separate B-tree updated on every `INSERT`/`UPDATE`/`DELETE`. Under MVCC an `UPDATE` writes a new row version and needs new index entries in every index covering the changed columns (HOT updates avoid this only when no indexed column changes and the page has room). Five indexes mean ~5x index write I/O, more WAL, faster bloat, and more autovacuum pressure — a loop where bloat slows scans and tempts yet more indexes. Before adding an index, ask whether a query can be restructured or an existing index extended; the planner usually uses only one index per scan anyway.
+
+**Use `INCLUDE` for covering indexes; index-only scans depend on the visibility map.** An index-only scan answers a query entirely from the index when every referenced column (SELECT/WHERE/ORDER BY/GROUP BY) is present. `INCLUDE` (PG11+) stores payload columns only in leaf pages — they don't widen the tree, don't affect ordering, and don't participate in uniqueness, so `UNIQUE INDEX (user_id) INCLUDE (email)` enforces uniqueness on `user_id` alone. Critical dependency: index-only scans require the heap page's visibility-map bit to be set; on write-heavy tables with stale visibility maps the planner falls back to heap fetches. Verify the plan shows `Index Only Scan`, not `Index Scan`.
+
+```sql
+CREATE INDEX idx_users_lookup ON users(user_id) INCLUDE (email, status);
+```
+
+**Partial-index predicates match by simple implication at plan time — parameterized queries never use them.** A partial index indexes only rows satisfying a predicate (smaller, faster, cheaper to maintain). But the planner uses it only when it can prove *at plan time* that the query `WHERE` implies the index predicate — there is no theorem prover; it recognizes only simple inequality implications (`x < 1` ⇒ `x < 2`), otherwise the query predicate must *exactly* match part of the index predicate. Because matching is at plan time, a prepared `x < $1` can never be proven to imply `x < 2`, so partial indexes intended for hot subsets are *silently unused* under most ORMs — verify with `EXPLAIN (ANALYZE)` on the actual parameterized statement. Anti-pattern: many per-value partial indexes (one per status) instead of one composite `(status, ...)`. Useful idiom: partial `UNIQUE` for soft-delete uniqueness.
+
+```sql
+-- Usable only with a literal predicate:
+CREATE INDEX idx_orders_pending ON orders(user_id, created_at) WHERE status = 'pending';
+-- Soft-delete uniqueness: unique only among non-deleted rows
+CREATE UNIQUE INDEX idx_users_email_active ON users(email) WHERE deleted_at IS NULL;
+-- For parameterized ($1) access use a regular composite index instead.
+```
+
+**Mark functions `IMMUTABLE` only if truly immutable; config-dependent ones must be `STABLE`.** Expression indexes require `IMMUTABLE`, which promises identical output for identical input forever — no DB access, no config/session dependency. Mislabeling a config-dependent function (depends on `TimeZone`, `lc_collate`, `search_path`, `current_setting()`, or calls `now()`) lets the planner fold it to a constant at plan time and bake a *stale value* into cached/prepared plans, silently returning wrong results. A `timestamptz::date` cast is the classic offender (depends on `TimeZone`). Use `STABLE` for functions constant within one statement but session-dependent — they may appear in `WHERE` but cannot define an index expression.
+
+```sql
+CREATE FUNCTION lower_email(text) RETURNS text LANGUAGE sql IMMUTABLE STRICT AS $$ SELECT lower($1) $$;
+CREATE INDEX idx_users_lower_email ON users(lower_email(email));
+```
+
+**GIN on JSONB: pick `jsonb_path_ops` for containment, disable `fastupdate` for steady latency.** (1) `jsonb_ops` (default) supports `@>`, `?`, `?|`, `?&`, etc.; `jsonb_path_ops` supports only `@>`/`@?`/`@@` but is smaller and faster — use it when queries are containment-only. Either way, expression access like `payload->>'type' = 'login'` is NOT GIN-indexable and silently seq-scans. (2) `fastupdate` (on by default) buffers entries in a pending list; inserts are fast until the list exceeds `gin_pending_list_limit`, then the next insert pays a synchronous cleanup — a P99/P999 latency spike invisible in averages, costly after bulk loads. Set `fastupdate = off` for write-heavy/bulk workloads.
+
+```sql
+CREATE INDEX idx_events_payload ON events USING GIN (payload jsonb_path_ops);
+CREATE INDEX idx_docs_tags ON documents USING GIN (tags) WITH (fastupdate = off);
+```
+
+**BRIN is tiny on physically-correlated columns, useless on random data.** A Block Range INdex stores only a min/max summary per range of consecutive heap pages, so the whole index for a 100M-row table can be kilobytes; the planner skips ranges whose summary can't match. Hard requirement: the column must be well-correlated with physical row order. For append-only tables with a monotonic timestamp/ID (logs, events, metrics) summaries are tight and disjoint — excellent for range scans. For randomly ordered columns (e.g. `last_name` on OLTP) ranges overlap and BRIN degenerates to a full scan. It is not a substitute for B-tree point lookups — combine them (BRIN on time, B-tree on the lookup key).
+
+```sql
+CREATE INDEX idx_events_brin ON events USING BRIN (occurred_at);  -- append-only
+```
+
+**For pgvector in production prefer HNSW over IVFFlat.** IVFFlat must be built on already-populated data (it trains cluster lists) and gives a weaker recall/latency tradeoff. HNSW builds an incremental multi-layer graph, can be created on an empty table, and delivers better recall at a given latency — the recommended default for production/real-time-insert workloads. IVFFlat is fine for batch-rebuild pipelines where build speed beats incrementality. Tune `m`/`ef_construction` at build time and `hnsw.ef_search` at query time.
+
+```sql
+CREATE INDEX ON embeddings USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
+SET hnsw.ef_search = 100;  -- higher = better recall, more latency
+```
+
+### Querying & Concurrency
+
+**`NOT IN` with a nullable subquery silently returns zero rows — use `NOT EXISTS`.** SQL three-valued logic breaks `NOT IN`: `x NOT IN (a, b, NULL)` expands to `x <> a AND x <> b AND x <> NULL`; the last term is `UNKNOWN`, `UNKNOWN AND anything` is `UNKNOWN`, and `WHERE` discards it — so one NULL in the subquery empties the entire result set, with no error or warning. This is standard SQL, listed on the PostgreSQL wiki "Don't Do This" (and `NOT IN` can't be optimized into an anti-join). `NOT EXISTS` checks row existence rather than a comparison, handles NULLs correctly, and optimizes into an anti-join.
+
+```sql
+SELECT id FROM products p
+WHERE NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.product_id = p.id);
+```
+
+**`READ COMMITTED` (the default) allows lost updates, vanishing `DELETE`s, and write skew.** Each *statement* (not transaction) gets a fresh snapshot. An `UPDATE`/`DELETE` finds rows committed as of statement start, but if a concurrent transaction already modified a target row, the `WHERE` is *re-evaluated against the new row version after locking* — so given `hits ∈ {9,10}`, one session's `UPDATE website SET hits = hits + 1` racing another's `DELETE FROM website WHERE hits = 10` can delete zero rows (the `10` became `11` before the `DELETE` locked it). Cross-row invariants (write skew) are not prevented by `READ COMMITTED` or `REPEATABLE READ`; only `SERIALIZABLE` detects them, aborting one tx with `SQLSTATE 40001` — so the app must retry the whole transaction. (A single `balance = balance + 100` statement is atomic and safe; the danger is read-then-write across statements and multi-row invariants.)
+
+```sql
+BEGIN ISOLATION LEVEL SERIALIZABLE;
+SELECT sum(value) FROM accounts WHERE group_id = 1;
+INSERT INTO accounts (group_id, value) VALUES (1, 50);
+COMMIT;  -- may raise 40001; the app must retry the whole tx
+```
+
+**Use `MERGE` (PG15+) for multi-action sync; keep `ON CONFLICT` for single-constraint upserts.** `MERGE` does `WHEN MATCHED` (UPDATE/DELETE) and `WHEN NOT MATCHED` (INSERT) in one statement — the right tool for syncing a staging set (insert+update+delete in one pass), eliminating the race window of a hand-rolled two-pass function. Important: `INSERT ... ON CONFLICT DO UPDATE` is still better for a simple upsert against a single unique constraint because it has purpose-built INSERT-race handling; classic `MERGE` does NOT detect a concurrent INSERT and under `READ COMMITTED` can still raise a unique violation on its INSERT branch. Cardinality rule: each target row must match at most one source row, or `MERGE` errors; use stable source ordering to reduce deadlocks.
+
+### Migrations & DDL (lock-aware)
+
+**`ALTER TABLE` locks stack — a fast DDL can freeze a table behind one long query.** Most `ALTER TABLE` forms take `ACCESS EXCLUSIVE`; the trap is the lock *queue* — a long query holding even `ACCESS SHARE` makes the DDL wait, and every subsequent SELECT/INSERT/UPDATE/DELETE then queues behind the waiting DDL. So a 3-second DDL can stall all traffic for as long as the slow query runs, then unblock a thundering herd. Mitigate with a low `lock_timeout` (fail fast) plus retry with exponential backoff + jitter. Rewrite rules: a *constant* `DEFAULT` on `ADD COLUMN` is metadata-only on PG11+, but a *volatile* default (`gen_random_uuid()`, `now()`) and almost any column type change rewrite the whole table.
+
+```sql
+SET lock_timeout = '200ms';
+ALTER TABLE orders ADD COLUMN tier VARCHAR(20) DEFAULT 'standard';  -- constant default: metadata-only on PG11+
+```
+
+**Add FK/CHECK/NOT NULL to large tables with `NOT VALID` + `VALIDATE CONSTRAINT`.** A plain `ADD CONSTRAINT` scans the whole table to validate existing rows (CHECK/NOT NULL hold `ACCESS EXCLUSIVE` for the scan). The two-phase pattern: (1) `ADD CONSTRAINT ... NOT VALID` enforces on new writes immediately with a brief lock and no scan; (2) `VALIDATE CONSTRAINT` scans only pre-existing rows under `SHARE UPDATE EXCLUSIVE`, which does NOT block concurrent DML. `NOT VALID` works for FK/CHECK on PG9.6+ and for NOT NULL on PG18+. A validated CHECK proving non-null lets a subsequent `SET NOT NULL` skip its scan. For UNIQUE, build with `CREATE UNIQUE INDEX CONCURRENTLY` then `ADD CONSTRAINT ... USING INDEX`.
+
+```sql
+ALTER TABLE orders ADD CONSTRAINT chk_amount_positive CHECK (total_amount > 0) NOT VALID;
+ALTER TABLE orders VALIDATE CONSTRAINT chk_amount_positive;  -- concurrent DML allowed
+```
+
+**`CREATE INDEX CONCURRENTLY` can leave an INVALID index that still costs writes — and `IF NOT EXISTS` hides it.** On failure (lock timeout, unique violation, deadlock, cancellation) it leaves a `pg_index` row with `indisvalid = false`. The planner ignores an invalid index for reads (no benefit) but it still receives updates on every write (full write cost). `IF NOT EXISTS` makes a retry see the existing invalid name, skip creation, and return success while the dead index lingers. Detect via `pg_index WHERE NOT indisvalid`; recover with `DROP INDEX CONCURRENTLY` then rebuild, or `REINDEX INDEX CONCURRENTLY`.
+
+```sql
+SELECT indexrelid::regclass AS index FROM pg_index WHERE NOT indisvalid;
+DROP INDEX CONCURRENTLY IF EXISTS idx_orders_status;
+CREATE INDEX CONCURRENTLY idx_orders_status ON orders(status);
+```
+
+### Partitioning, Temporal & Generated Columns
+
+**Use declarative partitioning (PG10+), not inheritance + trigger routing.** Pre-10 partitioning meant table inheritance plus hand-written INSERT triggers — slow, error-prone, and the parent silently accumulates unrouted rows if a trigger is missing. Declarative `PARTITION BY RANGE/LIST/HASH` automates routing, models bounds as real constraints (enabling plan-time partition pruning), and supports partition-wise joins/aggregates and `ATTACH`/`DETACH`. New projects should never use inheritance-based partitioning.
+
+```sql
+CREATE TABLE measurements (measured_at TIMESTAMPTZ NOT NULL, device_id UUID NOT NULL, value DOUBLE PRECISION NOT NULL)
+    PARTITION BY RANGE (measured_at);
+CREATE TABLE measurements_2025 PARTITION OF measurements FOR VALUES FROM ('2025-01-01') TO ('2026-01-01');
+```
+
+**PG18 generated columns are VIRTUAL by default — only STORED can be indexed.** Through PG17 generated columns were always STORED (computed on write, persisted). PG18 makes VIRTUAL the default (computed at read time, no storage). VIRTUAL suits write-heavy workloads (no write cost) but cannot be indexed; STORED suits read-heavy/expensive expressions because it can be indexed. Neither may reference other generated columns, subqueries, or non-immutable functions. On PG18, *omitting* `STORED` yields a VIRTUAL column, so any index on it errors — add `STORED` when you intend to index.
+
+```sql
+CREATE TABLE documents (
+    body TEXT NOT NULL,
+    tsv TSVECTOR GENERATED ALWAYS AS (to_tsvector('english', body)) STORED  -- STORED required to index
+);
+CREATE INDEX ON documents USING GIN (tsv);
+```
+
+**PG18 adds native temporal (non-overlapping) constraints — `WITHOUT OVERLAPS` / `PERIOD`.** PG18 adds temporal constraints over range types: `PRIMARY KEY`/`UNIQUE` gain `WITHOUT OVERLAPS`, and `FOREIGN KEY` uses `PERIOD` (not `WITHOUT OVERLAPS`). This is the canonical pattern for SCD Type 2 dimensions, price/rate history, and reservations, replacing the `btree_gist` + `EXCLUDE USING GIST (... WITH &&)` idiom (still required pre-18).
+
+```sql
+CREATE TABLE product_prices (
+    product_id INT NOT NULL REFERENCES products(id),
+    price_cents BIGINT NOT NULL,
+    valid_period daterange NOT NULL,
+    PRIMARY KEY (product_id, valid_period WITHOUT OVERLAPS)  -- PG18+
+);
+```
+
+### Operational Gotchas (design with these in mind)
+
+**Monitor transaction-ID wraparound — unfrozen XIDs eventually hard-stop all writes.** PostgreSQL uses a 32-bit XID with modulo-2^32 comparison; within ~3M XIDs of wraparound it refuses to assign new XIDs, halting all writes and DDL (only VACUUM and read-only queries run). VACUUM prevents this by freezing old rows; the common blockers are long-running transactions, abandoned prepared transactions, and stale replication slots holding `xmin`. Autovacuum handles freezing by default, but on high-churn systems monitor `age(datfrozenxid)` and alert with lead time.
+
+```sql
+SELECT datname, age(datfrozenxid) AS xid_age, 2000000000 - age(datfrozenxid) AS xids_remaining
+FROM pg_database ORDER BY age(datfrozenxid) DESC;
+```
+
+**Bound WAL retention with `max_slot_wal_keep_size` when using logical replication / CDC.** A logical replication slot retains WAL until the subscriber confirms receipt. With the default `-1` (unlimited), a stalled or disconnected CDC consumer (Debezium, pglogical) accumulates WAL until the disk fills and the primary halts all writes. PG13+ lets you cap it (e.g. `50GB`); past the cap PostgreSQL invalidates the slot and reclaims WAL rather than filling the disk — losing that stream but keeping the primary alive. Anyone embedding CDC in a pipeline must set this and monitor `pg_replication_slots` for `active = false` and `wal_status` of `'extended'`/`'lost'`.
+
+```sql
+-- postgresql.conf
+max_slot_wal_keep_size = 50GB
+```
+
+**MongoDB unbounded embedded arrays degrade well before the 16MB document limit.** The performance cliff comes far earlier than 16MB: a growing embedded array (comments, events, log lines) rewrites the entire document on each push, so write cost scales with document size, and a multikey index stores one entry per element (10k elements = 10k index entries to maintain). The result is progressively slower writes with no error. Beyond roughly a few hundred elements on frequently-updated documents, switch to the Subset pattern (embed the most recent N, store the rest in a sibling collection fetched via `$lookup`) or full referencing — trading some read latency for bounded write cost.
