@@ -150,26 +150,28 @@ export function TodoList({ todos }: { todos: Todo[] }) {
 
 ```typescript
 import { use, Suspense } from 'react'
+import { useLoaderData } from 'react-router'
 
 interface User {
   id: string
   name: string
 }
 
-async function fetchUser(userId: string): Promise<User> {
-  const response = await fetch(`/api/users/${userId}`)
-  return response.json()
-}
-
 function UserProfile({ userPromise }: { userPromise: Promise<User> }) {
-  // use() unwraps the promise
+  // use() unwraps the promise. It cannot be wrapped in try/catch —
+  // a rejected promise surfaces at the nearest Error Boundary.
   const user = use(userPromise)
 
   return <div>{user.name}</div>
 }
 
-export function UserContainer({ userId }: { userId: string }) {
-  const userPromise = fetchUser(userId)
+// CRITICAL: the Promise must be created OUTSIDE the render cycle. Promises
+// created in client components are recreated on every render, so passing an
+// inline fetchUser(userId) to use() re-suspends and re-fetches forever.
+// In this React Router v7 SPA stack a route loader is the idiomatic stable
+// source (one promise per navigation).
+export function UserContainer() {
+  const userPromise = useLoaderData() as Promise<User>
 
   return (
     <Suspense fallback={<div>Loading user...</div>}>
@@ -239,7 +241,7 @@ export function Counter() {
 
 ```typescript
 // src/components/ui/Button.tsx
-import { ComponentPropsWithoutRef, forwardRef } from 'react'
+import { ComponentPropsWithoutRef } from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 
 const buttonVariants = cva(
@@ -271,66 +273,70 @@ export interface ButtonProps
   extends ComponentPropsWithoutRef<'button'>,
     VariantProps<typeof buttonVariants> {
   isLoading?: boolean
+  ref?: React.Ref<HTMLButtonElement>
 }
 
-export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, isLoading, children, ...props }, ref) => {
-    return (
-      <button
-        ref={ref}
-        className={buttonVariants({ variant, size, className })}
-        disabled={isLoading || props.disabled}
-        {...props}
-      >
-        {isLoading ? (
-          <>
-            <svg className="animate-spin -ml-1 mr-2 h-4 w-4" />
-            Loading...
-          </>
-        ) : (
-          children
-        )}
-      </button>
-    )
-  }
-)
-
-Button.displayName = 'Button'
+// React 19: ref is a plain prop — no forwardRef wrapper, no displayName needed.
+export function Button({
+  ref,
+  className,
+  variant,
+  size,
+  isLoading,
+  children,
+  ...props
+}: ButtonProps) {
+  return (
+    <button
+      ref={ref}
+      className={buttonVariants({ variant, size, className })}
+      disabled={isLoading || props.disabled}
+      {...props}
+    >
+      {isLoading ? (
+        <>
+          <svg className="animate-spin -ml-1 mr-2 h-4 w-4" />
+          Loading...
+        </>
+      ) : (
+        children
+      )}
+    </button>
+  )
+}
 ```
 
 ### Card Component with Composition
 
 ```typescript
 // src/components/ui/Card.tsx
-import { ComponentPropsWithoutRef, forwardRef } from 'react'
+// React 19: ref is a plain prop, so each primitive is a plain function component.
+import { ComponentPropsWithoutRef } from 'react'
 
-export const Card = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<'div'>>(
-  ({ className, ...props }, ref) => (
+type DivProps = ComponentPropsWithoutRef<'div'> & { ref?: React.Ref<HTMLDivElement> }
+type H3Props = ComponentPropsWithoutRef<'h3'> & { ref?: React.Ref<HTMLHeadingElement> }
+
+export function Card({ ref, className, ...props }: DivProps) {
+  return (
     <div
       ref={ref}
       className={`rounded-lg border bg-white shadow-sm ${className}`}
       {...props}
     />
   )
-)
+}
 
-export const CardHeader = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<'div'>>(
-  ({ className, ...props }, ref) => (
-    <div ref={ref} className={`p-6 ${className}`} {...props} />
-  )
-)
+export function CardHeader({ ref, className, ...props }: DivProps) {
+  return <div ref={ref} className={`p-6 ${className}`} {...props} />
+}
 
-export const CardTitle = forwardRef<HTMLHeadingElement, ComponentPropsWithoutRef<'h3'>>(
-  ({ className, ...props }, ref) => (
-    <h3 ref={ref} className={`text-2xl font-semibold ${className}`} {...props} />
-  )
-)
+export function CardTitle({ ref, className, ...props }: H3Props) {
+  return <h3 ref={ref} className={`text-2xl font-semibold ${className}`} {...props} />
+}
 
-export const CardContent = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<'div'>>(
-  ({ className, ...props }, ref) => (
-    <div ref={ref} className={`p-6 pt-0 ${className}`} {...props} />
-  )
-)
+export function CardContent({ ref, className, ...props }: DivProps) {
+  return <div ref={ref} className={`p-6 pt-0 ${className}`} {...props} />
+}
 
 // Usage
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
@@ -472,12 +478,10 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 
 export default defineConfig({
-  plugins: [
-    react({
-      // Enable React Refresh for fast refresh during development
-      fastRefresh: true,
-    }),
-  ],
+  // Fast Refresh is always on; @vitejs/plugin-react removed the `fastRefresh`
+  // option in v4. Pass the options object only for real settings,
+  // e.g. react({ babel: { plugins: [...] } }).
+  plugins: [react()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -655,9 +659,16 @@ export function RootLayout() {
 
 ### Data Loading with Loaders
 
+React Router v7 framework mode generates a per-route `+types/<route>.d.ts` via
+`react-router typegen`, exposing a `Route` namespace (`LoaderArgs`, `ActionArgs`,
+`ComponentProps`). Consume loader data through the typed `loaderData` prop — NOT
+`useLoaderData() as SomeType`, an unsafe cast that hides divergence between the
+loader's real return and the component's expectation.
+
 ```typescript
 // src/pages/users/UsersPage.tsx
-import { useLoaderData, Link } from 'react-router'
+import { Link } from 'react-router'
+import type { Route } from './+types/UsersPage'
 
 interface User {
   id: string
@@ -665,15 +676,16 @@ interface User {
   email: string
 }
 
-export function UsersPage() {
-  // Type-safe loader data access
-  const users = useLoaderData() as User[]
+export async function loader(): Promise<User[]> {
+  return (await fetch('/api/users')).json()
+}
 
+export default function UsersPage({ loaderData }: Route.ComponentProps) {
   return (
     <div>
       <h1>Users</h1>
       <ul>
-        {users.map((user) => (
+        {loaderData.map((user) => (
           <li key={user.id}>
             <Link to={`/users/${user.id}`}>
               {user.name} ({user.email})
@@ -685,6 +697,10 @@ export function UsersPage() {
   )
 }
 ```
+
+Typegen setup: add `.react-router/` to `.gitignore`, set tsconfig `include` to
+`.react-router/types/**/*`, set `compilerOptions.rootDirs` to
+`[".", "./.react-router/types"]`, and run `react-router typegen && tsc`.
 
 ### Navigation Hooks
 
@@ -1052,30 +1068,35 @@ export const clearCartAtom = atom(null, (get, set) => {
 
 ```typescript
 // src/components/Button.tsx
-import { ComponentPropsWithoutRef, forwardRef } from 'react'
+import { ComponentPropsWithoutRef } from 'react'
 
 interface ButtonProps extends ComponentPropsWithoutRef<'button'> {
   variant?: 'primary' | 'secondary' | 'danger'
   size?: 'sm' | 'md' | 'lg'
   isLoading?: boolean
+  ref?: React.Ref<HTMLButtonElement>
 }
 
-export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ variant = 'primary', size = 'md', isLoading, children, ...props }, ref) => {
-    return (
-      <button
-        ref={ref}
-        className={`btn btn-${variant} btn-${size}`}
-        disabled={isLoading || props.disabled}
-        {...props}
-      >
-        {isLoading ? 'Loading...' : children}
-      </button>
-    )
-  }
-)
-
-Button.displayName = 'Button'
+// React 19: ref arrives as a regular prop — no forwardRef, no displayName.
+export function Button({
+  ref,
+  variant = 'primary',
+  size = 'md',
+  isLoading,
+  children,
+  ...props
+}: ButtonProps) {
+  return (
+    <button
+      ref={ref}
+      className={`btn btn-${variant} btn-${size}`}
+      disabled={isLoading || props.disabled}
+      {...props}
+    >
+      {isLoading ? 'Loading...' : children}
+    </button>
+  )
+}
 ```
 
 ### Custom Hooks
@@ -1243,9 +1264,9 @@ export function Tabs({ defaultTab, children }: TabsProps) {
   const [activeTab, setActiveTab] = useState(defaultTab)
 
   return (
-    <TabsContext.Provider value={{ activeTab, setActiveTab }}>
+    <TabsContext value={{ activeTab, setActiveTab }}>
       <div className="tabs">{children}</div>
-    </TabsContext.Provider>
+    </TabsContext>
   )
 }
 
@@ -1908,17 +1929,22 @@ export function AccessibleForm() {
 
 ```typescript
 // src/components/AccessibleButton.tsx
-import { ComponentPropsWithoutRef, forwardRef } from 'react'
+import { ComponentPropsWithoutRef } from 'react'
 
 interface AccessibleButtonProps extends ComponentPropsWithoutRef<'button'> {
   isLoading?: boolean
   loadingText?: string
+  ref?: React.Ref<HTMLButtonElement>
 }
 
-export const AccessibleButton = forwardRef<
-  HTMLButtonElement,
-  AccessibleButtonProps
->(({ isLoading, loadingText = 'Loading', children, ...props }, ref) => {
+// React 19: ref is a plain prop — no forwardRef, no displayName.
+export function AccessibleButton({
+  ref,
+  isLoading,
+  loadingText = 'Loading',
+  children,
+  ...props
+}: AccessibleButtonProps) {
   return (
     <button
       ref={ref}
@@ -1940,9 +1966,7 @@ export const AccessibleButton = forwardRef<
       )}
     </button>
   )
-})
-
-AccessibleButton.displayName = 'AccessibleButton'
+}
 ```
 
 #### Skip to Content Link
@@ -2412,6 +2436,12 @@ function ChatRoom({ roomId, theme }: { roomId: string; theme: Theme }) {
 }
 
 // GOOD: Use useEffectEvent when Effect-driven callbacks need the latest values
+// useEffectEvent is stable as of React 19.2 (Oct 2025); on 19.0/19.1 importing
+// it from 'react' fails — use a ref to hold the latest value instead. It may
+// ONLY be called from inside Effects or other Effect Events — never call it
+// during render, never pass it to a child component or Hook, and never list it
+// in a dependency array (its identity changes every render by design). Upgrade
+// eslint-plugin-react-hooks to @latest so the linter treats it as a non-dependency.
 function ChatRoom({ roomId, theme }: { roomId: string; theme: Theme }) {
   const onConnected = useEffectEvent(() => {
     showToast("Connected", theme)
@@ -2661,6 +2691,187 @@ describe("counter atoms", () => {
     expect(result.current.count[0]).toBe(1);
   });
 });
+```
+
+## Expert Practices: Idioms, Anti-Patterns & Gotchas
+
+High-signal rules an expert applies reflexively, with the mechanism that makes each one true. Group: **Idioms** (the current way), **Anti-Patterns** (what corrupts React's machinery), **Gotchas** (correct-looking code that fails), **Performance**, **Currency** (React 19.2 / Compiler).
+
+### Idioms
+
+**Render `<Context>` directly as the provider — `.Provider` is no longer needed.** React 19 lets the context object itself be the provider: `<ThemeContext value={...}>`. Behavior is identical; it is pure syntactic simplification. `.Provider` is NOT yet formally deprecated in 19.x (the blog says "in future versions we will deprecate `<Context.Provider>`"), but the direct form is forward-looking and a codemod exists. Use one form consistently — mixing both in a codebase is confusing.
+
+```typescript
+const ThemeContext = createContext<Theme>('light')
+
+function App() {
+  return (
+    <ThemeContext value="dark">
+      <Page />
+    </ThemeContext>
+  )
+}
+```
+
+**Pass `ref` as a regular prop — `forwardRef` is the legacy pattern.** React 19 stopped stripping `ref` out of the props bag, so the `forwardRef` HOC indirection is obsolete and you can drop `.displayName` (a named function declares itself). Precision: in 19.0–19.2 `forwardRef` still works WITHOUT a deprecation warning — the blog only says it "will deprecate and remove forwardRef" in a future version. So writing new `forwardRef` wrappers is legacy (and will break later) but does not currently warn. The `react-19` codemod migrates existing usages.
+
+**Subscribe to external stores with `useSyncExternalStore`, never `useEffect` + `useState`.** The effect approach has a window between subscription start and the first snapshot read where the store can change, producing a *tear* (components in one render see different versions); cleanup is also manual. `useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)` reads the snapshot synchronously during render and resubscribes if `subscribe` changes. **Pitfall:** `getSnapshot` must be referentially stable — returning a fresh object literal each call triggers an infinite re-render loop. Return cached or primitive values.
+
+```typescript
+const subscribe = (cb: () => void) => {
+  window.addEventListener('online', cb)
+  window.addEventListener('offline', cb)
+  return () => {
+    window.removeEventListener('online', cb)
+    window.removeEventListener('offline', cb)
+  }
+}
+const getSnapshot = () => navigator.onLine
+
+export function useOnlineStatus() {
+  return useSyncExternalStore(subscribe, getSnapshot, () => true)
+}
+```
+
+**`useActionState`'s action receives `(previousState, formData)` — state FIRST.** Imported from `'react'` (not `'react-dom'`; `useFormState` is deprecated), it returns `[state, formAction, isPending]` and guarantees ordering, so rapid resubmits resolve to the last completed action. Two real traps: (1) writing `async (formData) => formData.get('name')` silently calls `.get` on the *previous state* and returns null for every field — state is the first arg. (2) Error convention: **RETURN** expected/validation errors (they become the new state); **THROW** unexpected errors (they reach the nearest Error Boundary). The new state is whatever the action returns — it is NOT auto-reset to the initial value on success.
+
+```typescript
+import { useActionState } from 'react' // NOT 'react-dom'
+
+async function updateProfile(prev: { error?: string; message: string }, formData: FormData) {
+  const name = formData.get('name') as string // correct: formData is the 2nd arg
+  if (!name) return { error: 'Name is required', message: '' } // returned validation error
+  await saveProfile(name)
+  return { message: 'Saved' }
+}
+
+const [state, formAction, isPending] = useActionState(updateProfile, { message: '' })
+```
+
+### Anti-Patterns
+
+**Never create the Promise inside the component when using `use()`.** "Promises created in Client Components are recreated on every render." Calling `fetchUser(userId)` inline and passing it to `use()` mints a new Promise identity each render — each new identity re-suspends, re-renders, and re-fetches in a loop. Create the Promise outside the render cycle: a React Router loader (stable per navigation, the SPA idiom here), a Jotai async atom (caches per key), or a `useState` lazy initializer. `use()` cannot be wrapped in try/catch — handle rejection with an Error Boundary.
+
+**Never call a component as a plain function — invoke only via JSX.** `Component()` instead of `<Component />` bypasses React's fiber machinery. React keeps an ordered hook registry per fiber; a direct call binds the called component's hooks to the *caller's* fiber, so they appear to work but corrupt on the next conditional render. Direct calls also break context lookups, StrictMode double-invocation, DevTools, and error boundaries — all of which require React to control invocation. The Rules of React forbid it.
+
+**Memoization silently fails when ANY prop is an unstable reference — including `children`.** `React.memo` skips re-render only when ALL props are shallowly equal. A single inline `style={{...}}`, inline array, or inline arrow crosses the boundary every render, paying the comparison cost with no benefit. `children` is especially treacherous: `<Memo><p>Hi</p></Memo>` always busts memo because `<p>Hi</p>` is a new element object each render. The optimization is also invisible to callers — a later `items ?? []` silently breaks it. `memo` is reliable mainly for components with no props or only primitive props. Prefer architectural fixes (move state down, composition, split components) over pervasive memoization.
+
+```typescript
+// BAD: inline style busts memo every render
+<MemoizedList items={items} style={{ margin: 0 }} />
+
+// GOOD: move state to where it is used; keep memoized children in a hoisted element
+const stableChildren = <p>Static content</p>
+<MemoizedBox>{stableChildren}</MemoizedBox>
+```
+
+### Gotchas
+
+**State lives at position-in-tree + type — never define components inside render; use `key` to reset.** React's reconciler identifies a component by its tree position combined with its type (the function reference). (1) Same type at the same position preserves state across different props — `isFancy ? <Counter isFancy /> : <Counter />` keeps the counter's state, leaking it to the wrong context; force a fresh instance with `key`. (2) Defining a child component INSIDE a parent's render creates a new function reference every render, so React sees a different type and unmounts/remounts the child — the classic "input resets while typing" bug. Always declare components at module top level. `key` is also the correct way to reset subtree state on identity change — far better than `useEffect(() => setState(initial), [id])`, which double-renders with a visible stale frame.
+
+**Multiple `setState` calls in one handler read ONE snapshot — use the updater form.** A state variable is a fixed snapshot for the whole handler, so `setCount(count + 1)` three times increments by 1, not 3. React 18+ batches async callbacks, timeouts, and Promises too, widening the trap. Use `setCount(c => c + 1)` when an update depends on the prior value — updaters are queued and each receives the previous result. Especially important after `await`, where a value captured before the await is stale.
+
+```typescript
+setCount(c => c + 1)
+setCount(c => c + 1)
+setCount(c => c + 1) // increments by 3
+```
+
+**`useRef`: do not read or write `ref.current` during render (one exception: lazy init).** Concurrent React may render a component multiple times before committing; ref mutations persist across those phantom renders while state does not, so render-phase writes violate purity and produce inconsistent results. Reads/writes belong in effects and event handlers. The one documented exception is idempotent lazy init: read `ref.current`, and if null, set it. Related waste: `useRef(new Expensive())` runs the constructor on EVERY render (the result is discarded after the first) — use the null-guard pattern.
+
+```typescript
+const playerRef = useRef<VideoPlayer | null>(null)
+if (playerRef.current === null) {
+  playerRef.current = new VideoPlayer() // idempotent lazy init — the only render-phase exception
+}
+```
+
+**React 19 TypeScript: ref callbacks with implicit returns are now rejected — use a block body.** React 19 added ref cleanup functions (a ref callback may `return () => cleanup()`, called on unmount). As a side effect the types reject ANY non-function return, because `(node) => (instance = node)` is ambiguous against an intentional cleanup. This compiles in JS but is a TS build-breaking change; the fix is mechanical (block-body arrow). The `react-19` codemod includes `no-implicit-ref-callback-return`.
+
+```typescript
+<div ref={(node) => { instance = node }} /> // explicit block body — required
+
+<input ref={(node) => {        // ref-with-cleanup: the reason the change exists
+  if (!node) return
+  subscribe(node)
+  return () => unsubscribe(node)
+}} />
+```
+
+**`useOptimistic` reverts SILENTLY on error — add explicit feedback and group related state.** When the async Action inside `startTransition` rejects, React reverts the optimistic value but shows NO error UI — the interaction looks successful, then snaps back. Always catch and set explicit error state. The optimistic setter must run inside a Transition/Action context (from a plain handler it warns and reverts immediately). Second trap: separate `useOptimistic` calls for related values revert independently, briefly showing an inconsistent UI — group related optimistic state into one `useOptimistic` with a reducer so it reverts atomically.
+
+```typescript
+startTransition(async () => {
+  addOptimisticItem(newItem)
+  try {
+    await saveItem(newItem)
+  } catch (err) {
+    setError((err as Error).message) // explicit feedback — NOT automatic
+  }
+})
+
+const [optimistic, dispatch] = useOptimistic(
+  { isFollowing: false, count: 0 },
+  (state, follow: boolean) => ({ isFollowing: follow, count: state.count + (follow ? 1 : -1) })
+)
+```
+
+**`StrictMode` double-invokes renders, initializers, and effects to surface impurity and missing cleanup.** In development it runs component bodies twice, calls `useState`/`useReducer` initializers twice, and runs each Effect through setup→cleanup→setup. This is intentional and exposes real bugs: impure renders, side-effecting initializers, and Effects missing cleanup (which leak). Production runs effects once, so a missing cleanup "works" until a fast mount/unmount (rapid navigation) triggers the leak — StrictMode forces that cycle in dev. Make every Effect survive setup→cleanup→setup (always return cleanup) and keep initializers idempotent. You cannot opt a subtree out.
+
+**React Router `errorElement`/`ErrorBoundary` catches loader/action/render errors — NOT event-handler or effect errors.** A manual fetch in an `onClick` or inside `useEffect` fails silently unless you try/catch it yourself. Second trap: check `isRouteErrorResponse(error)` FIRST to distinguish intentional HTTP errors (`throw data(..., { status: 404 })` from a loader) from real JS `Error`s — otherwise a deliberate 404 renders as a crash with `error.message` undefined. Throw in loaders for 404/401; RETURN form-validation/control-flow results, do not throw them.
+
+```typescript
+export function ErrorBoundary() {
+  const error = useRouteError()
+  if (isRouteErrorResponse(error)) return <NotFoundPage status={error.status} /> // intentional HTTP error
+  if (error instanceof Error) return <CrashPage message={error.message} />        // unexpected JS error
+  return <p>Unknown error</p>
+}
+```
+
+**Jotai `atomWithStorage` causes a hydration mismatch under SSR/SSG only.** It reads localStorage on the client but has no storage on the server, so the first client render diverges from server HTML, tripping React's hydration warning and a visible flash. This is purely an SSR/SSG/pre-rendering concern — in a pure client-side SPA (this skill's target) there is no server HTML to mismatch, so it does not apply. If SSR is ever introduced, wrap storage-dependent UI in a client-only boundary (render after mount) or use `useHydrateAtoms`. (Avoid relying on a specific `delayInit`-style option — Jotai's storage API has changed across versions; verify current options first.)
+
+### Performance & Currency (React 19.2 / Compiler)
+
+**Wrap navigations in `startTransition` so Suspense does not flash a fallback.** Updating state that re-suspends an already-revealed boundary instantly replaces visible content with the fallback — even if new data is 100ms away. Inside a Transition, React keeps rendering the old tree while preparing the new one and does not replace already-revealed content; `isPending` gives a lightweight indicator (e.g. dimming). **Gotcha:** in React 19 `startTransition` accepts async functions, but because JS lacks AsyncContext, state updates AFTER the first `await` lose the Transition scope and become urgent (can flash) — re-wrap post-await setters in a nested `startTransition`, or use `useActionState` which handles ordering.
+
+```typescript
+const [isPending, startTransition] = useTransition()
+const navigate = (url: string) => startTransition(() => setPage(url))
+// <div style={{ opacity: isPending ? 0.6 : 1 }}> ... <Suspense> ... </Suspense> </div>
+```
+
+**Match Suspense boundaries to the UX loading sequence — not one per data-fetching component.** "Suspense boundaries should not be more granular than the loading sequence that you want the user to experience." Per-component spinners pop in out of order and feel chaotic; a single global boundary is usually wrong too. Two fetches that should appear together belong under ONE boundary; when one section is much slower, NEST a boundary to reveal the fast part first. This is a UX decision driven by the design.
+
+```typescript
+// Bio is much slower: nest to reveal Avatar first
+<Suspense fallback={<BigSpinner />}>
+  <Avatar userId={id} />
+  <Suspense fallback={<BioSkeleton />}>
+    <Bio userId={id} />
+  </Suspense>
+</Suspense>
+```
+
+**React Compiler v1.0 (stable Oct 7, 2025) automates memoization — write plain components in NEW code.** A build-time transform inserts the equivalent of `useMemo`/`useCallback`/`React.memo` via dataflow analysis, and can memoize conditionally and past early returns (which manual memoization cannot). With the compiler enabled, do not pre-emptively scatter memoization in new code. Precision: the React team does NOT say to strip existing manual memoization — `useMemo`/`useCallback` "can continue to be used with React Compiler as an escape hatch" for precise control, and for existing code they recommend leaving it in place or testing carefully before removing, since removal can change compiler output. Supports React 17+ (add `react-compiler-runtime` for pre-19).
+
+**`<Activity>` (React 19.2) hides UI without unmounting — replaces `display:none` and conditional-render hacks.** With `mode="hidden"` it "hides the children, unmounts effects, and defers all updates until React has nothing left to work on" while preserving state and DOM, so revealing it is instant with no re-mount. This beats conditional rendering (`{cond && <X/>}`), which destroys state, and a CSS `display:none` wrapper, which preserves state but does NOT pause effects/free resources. Use it for tab panels that should keep scroll/input state and for pre-rendering routes during navigation.
+
+```typescript
+import { Activity } from 'react' // React 19.2+
+
+function Tabs({ activeTab }: { activeTab: string }) {
+  return (
+    <>
+      <Activity mode={activeTab === 'profile' ? 'visible' : 'hidden'}>
+        <ProfilePanel />
+      </Activity>
+      <Activity mode={activeTab === 'settings' ? 'visible' : 'hidden'}>
+        <SettingsPanel />
+      </Activity>
+    </>
+  )
+}
 ```
 
 This React skill provides comprehensive guidance for building modern SPAs with React Router, Jotai, and Vite, while explicitly avoiding Next.js, Redux, and other tools that don't fit the SPA paradigm.

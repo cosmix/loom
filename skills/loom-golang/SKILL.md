@@ -106,6 +106,21 @@ func workerPool(jobs <-chan Job, results chan<- Result, numWorkers int) {
     close(results)
 }
 
+// Go 1.25+: sync.WaitGroup.Go combines Add(1) + launch + Done, making the
+// "Add inside the goroutine" race (staticcheck SA2000) structurally impossible.
+func workerPoolGo125(jobs <-chan Job, results chan<- Result, numWorkers int) {
+    var wg sync.WaitGroup
+    for i := 0; i < numWorkers; i++ {
+        wg.Go(func() {
+            for job := range jobs {
+                results <- process(job)
+            }
+        })
+    }
+    wg.Wait()
+    close(results)
+}
+
 // Context for cancellation and timeouts
 func fetchWithTimeout(ctx context.Context, url string) ([]byte, error) {
     ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -582,13 +597,15 @@ myproject/
 // go.mod
 module github.com/user/myproject
 
-go 1.22
+go 1.25
 
 require (
     github.com/lib/pq v1.10.9
     golang.org/x/sync v0.5.0
 )
 ```
+
+The `go` directive gates language and runtime semantics, not just the minimum toolchain — bumping it activates behavior changes (e.g. per-iteration loop variables at 1.22, unbuffered timer channels at 1.23), so review the release notes when raising it.
 
 ### Structured Logging with slog
 
@@ -647,7 +664,6 @@ func TestFetch(t *testing.T) {
     }
 
     for _, tt := range tests {
-        tt := tt // capture range variable
         t.Run(tt.name, func(t *testing.T) {
             t.Parallel()
             // test implementation
@@ -656,11 +672,17 @@ func TestFetch(t *testing.T) {
 }
 ```
 
+In modules declaring `go 1.22` or later, range-loop variables are per-iteration, so the old `tt := tt` workaround is unneeded and is removed by `go fix ./...`; it is required only for modules declaring `go < 1.22`. Bumping an existing module to 1.22 can surface latent test bugs (parallel subtests that passed only by accidentally reading the last iteration's value) — run `GOEXPERIMENT=loopvar go test ./...` before the bump to find them.
+
 ### Benchmarks
 
 ```go
+// Go 1.24+: prefer for b.Loop() over the b.N loop. Setup before the loop runs
+// exactly once per -count (not b.N times), and the runtime keeps params/results
+// alive so the compiler cannot elide the body — so a separate b.ResetTimer for
+// that purpose is no longer needed.
 func BenchmarkFibonacci(b *testing.B) {
-    for i := 0; i < b.N; i++ {
+    for b.Loop() {
         Fibonacci(20)
     }
 }
@@ -678,9 +700,8 @@ func BenchmarkSort(b *testing.B) {
     sizes := []int{100, 1000, 10000}
     for _, size := range sizes {
         b.Run(fmt.Sprintf("size-%d", size), func(b *testing.B) {
-            data := generateData(size)
-            b.ResetTimer()
-            for i := 0; i < b.N; i++ {
+            data := generateData(size) // runs once per -count with b.Loop()
+            for b.Loop() {
                 Sort(data)
             }
         })
@@ -701,14 +722,14 @@ func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) {
             http.Error(w, "user not found", http.StatusNotFound)
             return
         }
-        h.logger.Error("failed to get user", slog.String("error", err.Error()))
+        h.logger.Error("failed to get user", slog.Any("err", err))
         http.Error(w, "internal error", http.StatusInternalServerError)
         return
     }
 
     w.Header().Set("Content-Type", "application/json")
     if err := json.NewEncoder(w).Encode(user); err != nil {
-        h.logger.Error("failed to encode response", slog.String("error", err.Error()))
+        h.logger.Error("failed to encode response", slog.Any("err", err))
     }
 }
 ```
@@ -770,6 +791,13 @@ func NewService() ServiceInterface {
 func NewService() *Service {
     return &Service{}
 }
+// Why it's a contract, not style: returning an interface forces the producer's
+// method set onto every consumer (pre-empting the minimal interface each one
+// would otherwise declare) and blocks additive change — a new method on the
+// concrete type can't be used without widening the interface, a breaking change.
+// Return a concrete type and let each consumer declare the small interface it
+// needs. An exported constructor returning an UNEXPORTED concrete type
+// (func New() *myType) is idiomatic.
 
 // BAD: Large interfaces
 type Repository interface {
@@ -848,14 +876,32 @@ func parseConfig(path string) (Config, error) {
     return parseConfigBytes(b)
 }
 
-// BAD: Deferring cleanup inside a long loop
+// BAD: Deferring cleanup inside a long loop. Every defer is queued until the
+// FUNCTION returns, so all the files stay open SIMULTANEOUSLY — the dominant
+// failure is exhausting the OS file-descriptor limit long before the loop ends,
+// not just memory from queued defers.
 for _, path := range files {
     f, _ := os.Open(path)
     defer f.Close()
     process(f)
 }
 
-// GOOD: Scope the defer to one iteration
+// GOOD (preferred): extract a named function so each defer runs per iteration
+func processFile(path string) error {
+    f, err := os.Open(path)
+    if err != nil {
+        return err
+    }
+    defer f.Close()
+    return process(f)
+}
+for _, path := range files {
+    if err := processFile(path); err != nil {
+        return err
+    }
+}
+
+// Also fine: an inline IIFE that scopes the defer to one iteration
 for _, path := range files {
     if err := func() error {
         f, err := os.Open(path)
@@ -869,3 +915,156 @@ for _, path := range files {
     }
 }
 ```
+
+## Expert Practices: Idioms, Anti-Patterns & Gotchas
+
+The patterns above get code working; the ones below are what separates idiomatic, production-grade Go from code that compiles. Each includes the mechanism — the *why* — because that is what lets you apply the rule to cases not shown here.
+
+### Design Patterns
+
+**Define interfaces in the consumer; return concrete types from the producer.** Go interfaces are satisfied implicitly, so a producer never needs to declare the interface its types satisfy. Per Go Code Review Comments: "Go interfaces generally belong in the package that uses values of the interface type, not the package that implements those values," and "do not define interfaces before they are used." A broad producer-side interface (created for mocking) couples every consumer to that shape instead of the minimal method set it actually uses. Idiomatic: the producer returns a concrete type (often `*T`, frequently an unexported struct behind an exported `func New() *myType`) so new methods can be added without breaking callers; each consumer declares the small interface it needs.
+
+```go
+// consumer/service.go — declares exactly what it uses
+type UserGetter interface {
+    GetUser(ctx context.Context, id string) (*User, error)
+}
+func NewService(g UserGetter) *Service { /* ... */ }
+
+// producer/repo.go — returns a concrete type, idiomatic even when unexported
+func NewUserRepository(db *sqlx.DB) *userRepository { /* ... */ }
+```
+
+**Prefer synchronous functions; let callers add concurrency.** Code Review Comments: "Prefer synchronous functions over asynchronous ones." Hiding goroutine creation forces concurrency on every caller — they lose control over lifetime, can't add timeouts, can't call synchronously, and the function is harder to test. The asymmetry is the point: making a sync function async is one line at the call site (`go func(){ errs <- Process(ctx, item) }()`), but un-async-ing an async API requires rewriting every caller (sometimes impossible).
+
+**Design types so the zero value is usable.** Every Go variable is zero-initialized; expert APIs exploit this so a type needs no constructor and resists init-order bugs. The stdlib does this pervasively — `sync.Mutex` (zero = unlocked), `bytes.Buffer`, `sync.WaitGroup` all work at zero value with no `Init()`. Corollaries: name boolean fields so the zero value (`false`) is the safe default (prefer `disabled` over `enabled`); add a constructor only when initialization is genuinely non-trivial, and have it return a concrete type. Anti-patterns: requiring an `Init()` call before use, or panicking on a zero value.
+
+**`%w` makes the wrapped error part of your public API; use `%v` at boundaries.** `fmt.Errorf("...: %w", err)` lets callers `errors.Is`/`errors.As` the wrapped value, making it part of your package's contract. Wrap an internal sentinel like `sql.ErrNoRows` with `%w` and callers can now depend on it — swapping your DB driver becomes a breaking change. This is an API decision, not a verbosity one. Use `%w` within an application or when the wrapped sentinel is genuinely meant to be inspectable; at package/system boundaries (RPC, storage, external services) use `%v` to flatten to a string, or convert to your own exported sentinel first. Caveat: `%v` destroys chain identity — a later `errors.Is` against the original sentinel returns `false` with no compile error.
+
+```go
+var ErrNotFound = errors.New("not found")
+
+func GetUser(id string) (*User, error) {
+    u, err := db.Get(id)
+    if errors.Is(err, sql.ErrNoRows) {
+        return nil, fmt.Errorf("user %s: %w", id, ErrNotFound) // YOUR sentinel, not sql.ErrNoRows
+    }
+    return u, err
+}
+```
+
+**Use generics for type-identical code; use an interface when you only call methods.** Reach for type parameters when you'd otherwise write the same code differing only by concrete type — general-purpose containers and functions over slices/maps/channels of any element type. But (Go team's "When To Use Generics"): "if all you need to do with a value is call a method on it, use an interface type, not a type parameter." `func ReadSome[T io.Reader](r T)` is strictly worse than `func ReadSome(r io.Reader)` — same speed, harder to read, no benefit. Reserve generics for when the type itself is the data being stored or operated on element-wise.
+
+**Expose iteration with range-over-func (Go 1.23), not a full slice or a `ForEach` callback.** A type exposes iteration by returning `iter.Seq[V]` / `iter.Seq2[K,V]`; callers use ordinary `for range`. This beats returning `[]T` (allocates the whole collection even if the caller breaks early) and ad-hoc `ForEach(func(v) bool)` callbacks (non-standard, not composable). The stdlib adopted it (`slices.All`/`Values`, `maps.Keys`/`Values`, composing with `slices.Collect`/`Sorted`). Contract: the iterator must stop producing and return as soon as `yield` returns `false`.
+
+### Concurrency Gotchas
+
+**Goroutine lifetimes must be deterministic; never silently start a background goroutine in a library.** Goroutines are not garbage collected — one blocked on a channel that never receives leaks for the life of the process. Code Review Comments: "make it clear when — or whether — goroutines exit; if that isn't feasible, document when and why." Treat lifetime as a contract: exit on `ctx.Done()` / a closed channel, or bound it to a function scope. The decision to start a background goroutine belongs to the application layer (main), not a library constructor.
+
+```go
+// BAD: a library constructor that silently leaks
+func NewCache(size int) *Cache {
+    c := &Cache{}
+    go c.evictionLoop() // never stops; leaks when the cache is abandoned
+    return c
+}
+```
+
+**The memory model gives no happens-before on goroutine exit or unsynchronized flags.** Sequential consistency holds only for data-race-free programs. Starting a goroutine is synchronized before its first statement (writes before `go f()` are visible inside `f`), but goroutine *exit* carries no happens-before guarantee, and a flag read/written without a channel, mutex, or atomic has none. So `for !done {}` may loop forever (the value can be cached in a register), and a write made just before a goroutine exits is not guaranteed visible elsewhere. The `WaitGroup`/channel you observe completion through is the synchronizer — not goroutine termination. Use `sync.Once`, `sync/atomic`, a channel, or a mutex.
+
+**`WaitGroup.Add` must run before `go`.** Calling `wg.Add(1)` *inside* the goroutine races with `wg.Wait()` — `Wait` can return before the counter is incremented, stopping too early; the race detector does not reliably catch it. Increment in the launching goroutine, before `go`. staticcheck flags this as SA2000. Go 1.25's `wg.Go(func(){...})` does Add(1) + launch + deferred Done atomically, making the race structurally impossible — prefer it for new code.
+
+**Never copy a `sync` type after first use.** Every sync primitive (`Mutex`, `RWMutex`, `WaitGroup`, `Once`, `Cond`, `Map`, `Pool`) holds internal state that a copy silently invalidates. The most common trigger is a **value receiver** on a method of a struct embedding one — each call locks a *copy*, so the lock protects nothing. Always use pointer receivers on such types. `go vet`'s copylock analyzer catches most cases (3-clause `for` loop coverage improved in Go 1.24).
+
+```go
+func (c Cache) Set(k string, v int) { // BAD: value receiver copies the mutex
+    c.mu.Lock()  // locks a copy; the real cache stays unprotected
+    defer c.mu.Unlock()
+    c.data[k] = v
+}
+```
+
+### Context
+
+**`context` keys must be an unexported package-local type, never a built-in.** A `string` or other built-in key lets any package using the same literal read or shadow your value (the `context` docs explicitly forbid built-in key types). Define an unexported named type so the type system guarantees cross-package uniqueness — two packages each declaring `type ctxKey struct{}` produce distinct, non-equal key types. A zero-size `struct{}` key allocates nothing (one key per package); use an unexported int/iota type for several.
+
+```go
+type ctxKey struct{} // unexported; unique to this package
+
+func WithUserID(ctx context.Context, id string) context.Context {
+    return context.WithValue(ctx, ctxKey{}, id)
+}
+```
+
+**Never store `context.Context` in a struct — pass it as the first argument.** A context encodes the lifetime and cancellation scope of one logical operation; a stored context makes it ambiguous which operations it governs, denies callers per-call deadlines, and invites leaks in servers (Go team's "Contexts and structs"). Pass `ctx context.Context` as the first parameter of each call. The one accepted exception is retrofitting an existing API for compatibility (as `net/http.Request` did), and even then duplicate methods (`CallContext` vs `Call`) are preferred over struct storage.
+
+### Language Gotchas
+
+**The typed-nil interface trap: return the `error` interface, not a concrete error pointer.** An interface value is `nil` only when both its type slot and value slot are unset. Assigning a typed nil pointer (`var p *MyError = nil`) to an `error` return makes the interface hold `(T=*MyError, V=nil)`, which is **non-nil** — every `if err != nil` at the call site then fires even on success. Declare the function's return type as the `error` interface and return a bare untyped `nil` on the success path; never return the concrete pointer type. Applies to any interface, not just `error`. staticcheck flags the always-non-nil comparison as SA4023.
+
+```go
+func returnsError() error {
+    if bad() {
+        return ErrBad // concrete value ONLY on the error path
+    }
+    return nil // bare untyped nil
+}
+```
+
+**`defer` evaluates arguments immediately; a named return lets a deferred closure mutate the result.** `defer f(x)` evaluates `x` when the `defer` statement runs, not when `f` executes — so `defer fmt.Println(i)` captures `i`'s current value. A deferred *closure* with no arguments, by contrast, captures by reference and sees later mutations. Combined with a named return value, this is the idiomatic way to augment an error with context after `return` has run:
+
+```go
+func doOp(id string) (err error) { // named return
+    defer func() {
+        if err != nil {
+            err = fmt.Errorf("doOp %s: %w", id, err) // mutates the result after return
+        }
+    }()
+    return riskyOp(id)
+}
+```
+
+**A subslice shares the parent's backing array and spare capacity — cap it or copy.** Reslicing never copies; a subslice inherits capacity extending into the parent's tail, so appending to it while capacity remains writes silently into the parent (no panic — just corruption). Two fixes: (1) the three-index full slice expression `s[low:high:max]` caps capacity to `max-low` so the first append beyond `high` reallocates — use it when returning a slice a caller will append to; (2) when you keep a small excerpt of a large buffer, `copy` into a fresh, exactly-sized slice so the large backing array can be GC'd.
+
+```go
+parent := []int{1, 2, 3, 4, 5}
+child := parent[1:3]      // cap extends to end of parent
+child = append(child, 99) // overwrites parent[3] silently -> [1 2 3 99 5]
+
+func head(s []int) []int { return s[0:1:1] } // first append reallocates, can't reach parent
+```
+
+**Log errors with `slog.Any("err", err)`, not `slog.String("error", err.Error())`.** slog's built-in handlers special-case error-typed Attr values — `JSONHandler` calls `Error()`, `TextHandler` uses `fmt.Sprint` — so pre-stringifying is unnecessary and lossy: it discards the concrete type, which a custom handler or `LogValuer` could otherwise inspect. Use `slog.Any`. On hot paths use `slog.LogAttrs` to avoid allocations. (`"err"` is a common convention, not a documented standard — pick a key and be consistent.)
+
+**HTTP response bodies must be drained AND closed to reuse the connection.** Per `net/http`: "If the Body is not both read to EOF and closed, the Client's underlying RoundTripper ... may not be able to re-use a persistent TCP connection." `Close()` after a partial read does not return a keep-alive connection to the pool, and with the default `DefaultMaxIdleConnsPerHost = 2`, leaking connections under load causes new dials and timeouts. Always `defer resp.Body.Close()` *and* consume the body — `io.ReadAll` when you need it, `io.Copy(io.Discard, resp.Body)` when you don't.
+
+### Currency: Version-Gated Behavior
+
+These are gated by the `go` directive in `go.mod`; older modules keep the old behavior. Review release notes when bumping the directive.
+
+**Go 1.22 scopes for-loop variables per iteration — delete `x := x`.** Before 1.22 a loop's variables were created once and mutated each iteration, so closures/goroutines/parallel subtests captured a shared variable; the standard fix was `tt := tt`. Go 1.22 creates fresh variables each iteration (all loop forms, including 3-clause `for`). In 1.22+ modules `tt := tt` is dead code that `go fix ./...` removes. Migration hazard: bumping to 1.22 can make parallel subtests that passed only by reading the last iteration's value start failing — run `GOEXPERIMENT=loopvar go test ./...` first.
+
+**Go 1.23 made timer/ticker channels unbuffered — the drain-before-Reset idiom can now deadlock.** Pre-1.23, timer channels had capacity 1, so a stale tick could be buffered and the safe `Reset` idiom drained first. In 1.23 they are unbuffered and the runtime guarantees no stale value is sent or received after `Stop`/`Reset`, so call `Reset` directly. An unconditional drain (`<-t.C` with nothing pending) now blocks forever; even `if !t.Stop() { <-t.C }` is no longer needed. Also: unstopped Timers/Tickers are now GC'd once unreferenced. (`GODEBUG=asynctimerchan=1` reverts it.)
+
+**Since Go 1.22 the global `math/rand` is ChaCha8Rand — but still use `crypto/rand` for secrets.** Pre-1.20 the global was a deterministic LFSR seeded from time (observing enough output predicted all future values). Go 1.20 auto-seeds from OS entropy; 1.22 backs it with ChaCha8Rand. Accidental `math/rand` use is now "no longer a security catastrophe" — but it is *not* a substitute for `crypto/rand`. Use `crypto/rand` for any secret (`crypto/rand.Text()` in 1.24+, or read `rand.Reader`); use `math/rand/v2` (1.22+) for non-secret randomness. `math/rand.Seed` is deprecated and, if called, forces the weak Go 1 generator.
+
+```go
+import "crypto/rand"
+token := rand.Text() // Go 1.24+: secret, base32, >=128 bits
+
+import mathrand "math/rand/v2"
+idx := mathrand.IntN(len(items)) // non-secret
+```
+
+**Modernize as part of the upgrade workflow.** Each release supersedes older idioms, and the modernize analyzer applies many mechanically — run it *after* bumping the `go` directive, not as a one-off:
+
+```text
+go fix -diff ./...   # preview
+go fix ./...         # apply
+```
+
+It rewrites `interface{}`→`any`, `sort.Slice`→`slices.SortFunc`, atomic free-functions→typed atomics (`atomic.Int64`/`Bool`/`Pointer[T]`, Go 1.19+, which also fix 32-bit alignment footguns), the `x := x` loop workaround removal, and `context.WithCancel` in tests→`t.Context()`. Other release idioms worth adopting: `testing.T.Context()` (1.24, auto-cancelled at test end), `testing.B.Loop()` (1.24, see Benchmarks above), `runtime.AddCleanup` (1.24 — docs say "new code should prefer AddCleanup over SetFinalizer"), and the `slices`/`maps`/`cmp` packages (1.21).
+
+### Naming
+
+**Package names: no stutter, no `util`/`common`/`helper` grab-bags.** A package name is always visible at the call site, so a symbol repeating it reads redundantly: `http.HTTPError`, `chubby.ChubbyFile`. Pick package + symbol names that form a natural phrase — `http.Error`, `chubby.File`, `io.Reader`. Second smell: packages named `util`/`common`/`helper`/`misc`/`base` say nothing about their contents, force import aliases, and accumulate unrelated code — split by domain instead.

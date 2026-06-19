@@ -240,12 +240,26 @@ impl<T: Clone> Repository<T> for InMemoryRepo<T> {
     }
 }
 
-// Blanket implementations
-impl<T: Display> ToString for T {
-    fn to_string(&self) -> String {
-        format!("{}", self)
+// Blanket implementations are legal only when the trait (or the type) is LOCAL to your crate
+trait Summarize {
+    fn summary(&self) -> String;
+}
+impl<T: Display> Summarize for T {
+    fn summary(&self) -> String {
+        format!("Display: {}", self)
     }
 }
+
+// NEVER implement ToString. std already provides: impl<T: Display + ?Sized> ToString for T
+// (the impl below conflicts with std's + violates the orphan rule -> E0119, will not compile).
+// Implement Display and to_string() comes for free:
+struct MyType(u32);
+impl Display for MyType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+// my_type.to_string() now works
 ```
 
 ### Iterators
@@ -257,7 +271,7 @@ fn process_users(users: Vec<User>) -> Vec<String> {
         .into_iter()
         .filter(|u| u.active)
         .map(|u| u.email)
-        .filter_map(|email| email)  // Remove None values
+        .flatten()  // drop the None values (clippy::filter_map_identity rejects .filter_map(|x| x))
         .collect()
 }
 
@@ -316,8 +330,10 @@ fn examples(numbers: Vec<i32>) {
 [package]
 name = "myproject"
 version = "0.1.0"
-edition = "2021"
-rust-version = "1.75"
+# 2021 remains valid for existing code, but 2024 is the current edition
+# (stable since Rust 1.85.0, 2025-02-20) — use it for new projects.
+edition = "2024"
+rust-version = "1.85"
 
 [dependencies]
 tokio = { version = "1.35", features = ["full"] }
@@ -366,6 +382,19 @@ resolver = "2"
 [workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.35", features = ["full"] }
+
+# Centralize lint policy once (stable since Rust 1.74); member crates opt in below.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+[workspace.lints.clippy]
+pedantic = "warn"
+unwrap_used = "deny"
+```
+
+```toml
+# Each member crate's Cargo.toml inherits the workspace lint + package config
+[lints]
+workspace = true
 ```
 
 ### CLI Applications with Clap
@@ -751,6 +780,13 @@ fn toml_examples() -> Result<()> {
 }
 
 // Working with YAML
+// WARNING: serde_yaml is DEPRECATED (archived by its author in 0.9.34, 2024-03-25; its
+// yaml-rust dep is unmaintained, RUSTSEC-2024-0320). The serde_yml fork carries an
+// unsoundness advisory (RUSTSEC-2025-0068, versions <= 0.0.12). For Rust/Cargo-native
+// config prefer TOML or JSON. If YAML is required, use the maintained yaml-rust2 fork
+// (or serde-saphyr built on it — note it does NOT implement serde's own traits, so it
+// is not a drop-in serde replacement; verify the API before migrating).
+// The serde_yaml calls below are shown only as legacy reference.
 fn yaml_examples() -> Result<()> {
     let config = Config {
         name: "test".to_string(),
@@ -759,7 +795,7 @@ fn yaml_examples() -> Result<()> {
         description: None,
     };
 
-    // Serialize to YAML
+    // Serialize to YAML (legacy serde_yaml; prefer TOML/JSON)
     let yaml = serde_yaml::to_string(&config)?;
 
     // Deserialize from YAML
@@ -793,7 +829,10 @@ async fn fetch_data(url: &str) -> Result<String> {
     Ok(body)
 }
 
-// Concurrent execution with join_all
+// Concurrent execution with join_all (fine for inline, non-spawned futures at small N).
+// For SPAWNED tasks prefer tokio::task::JoinSet: it re-polls only the woken task
+// (join_all re-polls all pending futures on every wakeup — O(N) at large N), yields
+// results in completion order, aborts the rest on drop, and surfaces panics as JoinError.
 async fn fetch_all(urls: Vec<String>) -> Vec<Result<String>> {
     let futures: Vec<_> = urls.iter().map(|url| fetch_data(url)).collect();
     futures::future::join_all(futures).await
@@ -814,20 +853,22 @@ async fn fetch_with_timeout(url: &str) -> Result<String> {
         .context("Request timed out")?
 }
 
-// Shared state with Arc<Mutex<T>>
+// Shared state. Use std::sync::Mutex for state NOT held across an .await
+// (cheaper than tokio's async mutex); reserve tokio::sync::Mutex/RwLock for
+// guards that genuinely must span an await point (e.g. the cache below).
 struct AppState {
-    counter: Arc<Mutex<u64>>,
-    cache: Arc<RwLock<HashMap<String, String>>>,
+    counter: Arc<std::sync::Mutex<u64>>,
+    cache: Arc<RwLock<HashMap<String, String>>>, // tokio::sync::RwLock: held across .await
 }
 
 impl AppState {
-    async fn increment(&self) -> u64 {
-        let mut counter = self.counter.lock().await;
+    fn increment(&self) -> u64 {
+        let mut counter = self.counter.lock().unwrap(); // std Mutex; guard dropped before any .await
         *counter += 1;
         *counter
     }
 
-    // RwLock for read-heavy workloads
+    // tokio RwLock for read-heavy workloads where the guard crosses .await
     async fn get_cached(&self, key: &str) -> Option<String> {
         let cache = self.cache.read().await;
         cache.get(key).cloned()
@@ -1563,3 +1604,187 @@ fn read_config(path: &str) -> Result<String, std::io::Error> {
     Ok(config)
 }
 ```
+
+## Expert Practices: Idioms, Anti-Patterns & Gotchas
+
+High-signal guidance an experienced Rust engineer applies reflexively. Each item states the *why* (mechanism), not just the rule.
+
+### Async & Concurrency Gotchas
+
+**Never hold a `std::sync::Mutex` guard across an `.await`.** `std::sync::MutexGuard` is `!Send`, so a future holding one across an await point is itself `!Send` and `tokio::spawn` on the multi-thread runtime rejects it with a compile error. Worse, when the future is *not* sent (single task / `current_thread`), it compiles but the worker thread blocks on the lock and can never poll the task that would release it — a runtime deadlock the compiler does NOT catch. Default to `std::sync::Mutex` and drop the guard in an explicit `{ }` scope before any `.await`; reach for `tokio::sync::Mutex` (whose guard *is* `Send`, at the cost of async locking) only when the guard genuinely must span an await.
+
+```rust
+use std::sync::Mutex;
+async fn update(state: &Mutex<Vec<u32>>, val: u32) {
+    {
+        let mut guard = state.lock().unwrap();
+        guard.push(val);
+    } // guard dropped HERE, before any await
+    some_async_operation().await;
+}
+```
+
+**`tokio::select!` cancels (drops) losing branches at their `.await` — most async ops are NOT cancel-safe.** When one branch completes, every other branch future is dropped at its suspension point and any state in its local variables is silently lost; in a loop the loser is discarded each iteration, with no warning. NOT cancel-safe: `read_exact`, `read_to_end`, `write_all`, `Mutex::lock`, `RwLock::read/write`, `Semaphore::acquire`. Cancel-safe: `mpsc::Receiver::recv`, `TcpListener::accept`, `AsyncReadExt::read` (returns partial). Put only cancel-safe operations directly in `select!` branches, or store resumable state in a struct field rather than a future-local.
+
+```rust
+// cancel-safe: recv drops cleanly if the other branch fires
+tokio::select! {
+    msg = rx.recv() => { /* handle */ }
+    _ = shutdown.cancelled() => return,
+}
+```
+
+**`tokio::spawn` requires `Send + 'static` — `Rc`, `RefCell`, and borrowed locals silently break it.** The future must own all its data (no borrows of the enclosing scope) and every value live across an `.await` must be `Send`. `Rc`/`RefCell` are `!Send`; use `Arc` (and a `Mutex` for shared mutation). Use `async move { }` to move owned data in. Subtle trap: a non-`Send` value created and dropped within an await-free span can still poison `Send` inference because auto-trait analysis spans the whole async block — force an early drop with an explicit `{ }` scope.
+
+**`spawn_blocking` is for blocking I/O, not CPU-bound work at scale.** It runs on a separate blocking-thread pool (default max 512, via `Builder::max_blocking_threads`), distinct from the async worker pool, meant for short-lived blocking I/O. Using it for CPU computation at scale is a trap: past the limit further calls silently queue, a running blocking task cannot be aborted, and a queued one only *may* be cancelled. For CPU work, use `rayon` and bridge back via a `oneshot` channel.
+
+```rust
+async fn compress_async(data: Vec<u8>) -> Vec<u8> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    rayon::spawn(move || { let _ = tx.send(compress(&data)); });
+    rx.await.expect("rayon task dropped")
+}
+```
+
+**Prefer `tokio::task::JoinSet` over `futures::join_all` for spawned concurrent tasks.** `join_all` polls a collection of inline (non-spawned) futures in one task — fine for small N, but it re-polls *all* pending futures on any wakeup (O(N)) and does not surface panics cleanly. `JoinSet` spawns onto the scheduler (only the woken task re-polls), yields results in completion order via `join_next`, aborts remaining tasks on drop, and reports panics as a `JoinError`.
+
+```rust
+let mut set = tokio::task::JoinSet::new();
+for url in urls { set.spawn(fetch_data(url)); }
+while let Some(res) = set.join_next().await {
+    match res {
+        Ok(Ok(data)) => process(data),
+        Ok(Err(e)) => eprintln!("fetch error: {e}"),
+        Err(e) => eprintln!("task panicked: {e}"),
+    }
+}
+```
+
+### Gotchas (Silent Footguns)
+
+**`let _ = guard` drops immediately and gives zero protection.** `let _ = expr` does NOT bind — it drops the value at end of statement. `let _ = mutex.lock().unwrap();` acquires and instantly releases the lock. Bind a name (`let _guard = ...`) to hold until end of scope, or `drop(guard)` to release explicitly. The near-identical `let _name = ...` behaves completely differently (it binds). Inside `move` closures, `let _ = captured_var` may not even capture the variable.
+
+**Struct fields drop in declaration order; locals drop in reverse.** Drop is deterministic but asymmetric: struct fields drop FORWARD (declaration order), `let` locals drop REVERSE (LIFO); tuples/arrays drop forward; a struct's own `Drop::drop()` runs BEFORE its fields. So the field that must outlive the others (e.g. a pool a handle borrows from) is declared LAST. This matters only when a field's `Drop` actually uses another field.
+
+```rust
+struct Worker {
+    handle: Handle, // declared first -> dropped first (uses pool)
+    pool: Pool,     // declared last  -> dropped last (still alive when handle drops)
+}
+```
+
+**Integer arithmetic panics on overflow in debug but wraps silently in release.** Plain `+ - *` panic in debug builds but perform two's-complement wrapping under `--release`, with no warning about the difference — a reliable debug panic becomes silent corruption in production. Use the explicit families on untrusted/user-controlled sizes: `checked_*` (`Option`), `wrapping_*` (always wraps), `saturating_*` (clamps), `overflowing_*` (returns `(value, bool)`).
+
+**`HashMap` iteration order is randomized per run — never assert on it.** The default `RandomState`/SipHash hasher reseeds per run (HashDoS resistance), so iteration order varies between program runs. Code asserting a stable sequence — tests, snapshots, serialization, logs — fails intermittently (often passing locally, failing in CI). For deterministic order, sort a collected `Vec`, use `BTreeMap` (key-ordered), or `indexmap::IndexMap` (insertion order).
+
+**`std::process::exit` skips all `Drop` impls and does not flush Rust I/O buffers.** It runs C `atexit` handlers but NO Rust destructors — lock-file removal, temp-file cleanup, connection teardown are abandoned, and buffered stdout/stderr may be lost. Return from `main` (`Result` or `ExitCode`) instead, which runs all destructors and flushes. `std::process::abort()` is more aggressive still (skips `atexit` too).
+
+```rust
+use std::process::ExitCode;
+fn main() -> ExitCode {
+    if !setup() { return ExitCode::FAILURE; } // destructors still run
+    ExitCode::SUCCESS
+}
+```
+
+**`#[serde(untagged)]` silently matches the first overlapping variant.** It tries variants in declaration order and returns the FIRST that deserializes, with no ambiguity error; an earlier variant with an overlapping shape silently wins. Errors are unhelpful (`data did not match any variant`), and it is slow in index-based formats like bincode. Prefer externally tagged (the default), internally tagged (`tag = "..."`), or adjacently tagged. If untagged is unavoidable, order variants most-specific first and add per-variant round-trip tests.
+
+### Idioms & API Design
+
+**Library code returns `Result` for expected failures; `panic!` only for violated invariants.** `panic!` removes the caller's ability to recover — appropriate only when a caller-upheld invariant is broken (a bug, like out-of-bounds indexing), when continuing is unsafe, or for a truly impossible branch. All expected failure modes (I/O errors, malformed input, missing resources) return `Result`. Corollary: encode validity in the type system via newtypes/constructors so validation happens once at construction.
+
+**Implement `From`, never `Into` — and accept `Into<T>` in generic bounds.** std's blanket `impl<T, U: From<T>> Into<U> for T` means every `From` impl yields `Into` for free; implementing `Into` manually does NOT grant the reverse `From`. Implement `From` for conversions; accept `Into<T>` in bounds for the widest caller flexibility. (Direct `Into` impls are essentially only for the pre-1.41 orphan-rule edge case.)
+
+**Never implement `ToString` — implement `Display`.** std ships `impl<T: Display + ?Sized> ToString for T`, so `to_string()` routes through `Display` automatically; a user blanket `impl ToString` conflicts with std's and violates the orphan rule (won't compile). (See the corrected Traits and Generics example above.)
+
+**Name conversions by cost and ownership; never prefix getters with `get_`.** Per the API Guidelines (C-CONV, C-GETTER): `as_` is a free borrowed-to-borrowed reinterpret (`str::as_bytes`); `to_` is an expensive, possibly-allocating conversion (`str::to_uppercase`); `into_` is a consuming owned-to-owned conversion (`String::into_bytes`). Getters take the field name with no `get_` prefix (`first()`, not `get_first()`); reserve bare `get()` for a single obvious value (`Cell::get`).
+
+**Use `.flatten()` instead of `.filter_map(|x| x)`.** For an iterator of `Option<T>`, `.flatten()` clearly drops the `None`s; the identity closure form is flagged by `clippy::filter_map_identity` — a build failure under `clippy -- -D warnings`. (`filter_map` with a *non-identity* closure is itself idiomatic.)
+
+### Design Patterns & Performance
+
+**Return `Cow<'_, B>` to borrow in the common case and allocate only when the value must change.** When a function returns its input unchanged on the common path but a freshly-allocated value otherwise (escaping, normalization, validation), `Cow` avoids forcing an allocation on the unchanged path. Read-only callers deref for free; callers needing ownership call `into_owned()` (at most one allocation either way).
+
+```rust
+use std::borrow::Cow;
+fn html_escape(s: &str) -> Cow<'_, str> {
+    if s.contains(['<', '>', '&']) {
+        Cow::Owned(s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;"))
+    } else {
+        Cow::Borrowed(s) // zero allocation in the common case
+    }
+}
+```
+
+**`impl Trait`/generics (static dispatch) vs `dyn Trait` (dynamic dispatch).** `impl Trait` / generics monomorphize — one copy per concrete type, enabling inlining but bloating code if instantiated widely; use on hot paths where types are known at compile time. `dyn Trait` dispatches through a vtable (indirect call, no inlining) but yields one code path and enables heterogeneous collections / runtime plugin dispatch — use for `Vec<Box<dyn Stage>>` and similar. In return position, RPIT (`impl Trait`) avoids boxing but fixes one concrete type; `Box<dyn Trait>` allows runtime variation at an allocation.
+
+**Implement `Deref`/`DerefMut` only for smart pointers.** Deref coercion is implicit and transitive; the std docs say implement it "only for smart pointers to avoid confusion." On a plain wrapper it silently exposes every method of the target (unpredictable API surface, name collisions) and can pass through multiple layers. For wrapper types, write explicit delegation methods instead.
+
+**`PhantomData` carries variance, ownership, and auto-trait propagation for types holding raw pointers.** A struct with raw pointers gives the compiler no info about variance, `Send`/`Sync`, or drop-check (`*const T`/`*mut T` are `!Send + !Sync`, fixed variance). `PhantomData<X>` is a zero-size marker saying "acts as if it stores an `X`": `PhantomData<&'a T>` is covariant + `Send if T: Sync`; `PhantomData<&'a mut T>` is invariant; `PhantomData<fn(T)>` is contravariant. The wrong marker is a subtle unsoundness — consult the Nomicon table.
+
+### Security & `unsafe`
+
+**`unsafe impl Send`/`Sync` is a soundness promise the compiler cannot check.** It asserts you manually verified thread-safety. Two commonly-missed invariants: (1) if `T: Drop`, its destructor must be safe to run on ANY thread (why std `MutexGuard` is `!Send` on POSIX — the mutex must be released on the acquiring thread); (2) raw pointers make a type `!Send + !Sync`, so wrapping them needs an explicit `unsafe impl` plus a proof that all accesses are synchronized.
+
+```rust
+struct SharedPtr(*mut u32);
+unsafe impl Send for SharedPtr {} // UNSOUND: races on the pointer, no synchronization
+```
+
+**Panicking across an FFI boundary is UB — `catch_unwind` at every `extern "C"` entry.** Unwinding into or out of Rust across FFI is undefined behavior. For Rust functions called from C, wrap the body in `std::panic::catch_unwind` and convert the `Result` to an error code. As of Rust 1.71+, a panic escaping an `extern "C"` fn aborts the process (safe but a silent crash) rather than unwinding, so `catch_unwind` is still needed to return control to C. Use the `extern "C-unwind"` ABI only when both sides support unwinding.
+
+```rust
+#[no_mangle]
+pub extern "C" fn rust_process(data: *const u8, len: usize) -> i32 {
+    let result = std::panic::catch_unwind(|| {
+        let slice = unsafe { std::slice::from_raw_parts(data, len) };
+        process(slice)
+    });
+    match result { Ok(v) => v, Err(_) => -1 }
+}
+```
+
+**References to `static mut` are a deny-by-default error in Rust 2024.** Aliasing a `static mut` can violate Rust's aliasing rules with no borrow-site check. Use `std::sync::OnceLock<T>` for lazily-initialized read-after-init globals, `Mutex<T>`/`RwLock<T>` for mutable shared state, and `&raw mut S` / `std::ptr::addr_of_mut!(S)` for low-level/FFI raw access. (`SyncUnsafeCell` is still nightly-only — do not rely on it.)
+
+```rust
+use std::sync::OnceLock;
+static CONFIG: OnceLock<Config> = OnceLock::new();
+fn get_config() -> &'static Config { CONFIG.get_or_init(Config::load) }
+```
+
+### Currency (Modern Rust & Crate Notes)
+
+**`async fn` in traits (AFIT) is stable since 1.75 but NOT dyn-compatible.** You cannot form `dyn MyTrait`. The "Send bound problem": the associated future has no `Send` bound, so `tokio::spawn` consumers hit "future cannot be sent between threads" and cannot add the bound retroactively. Don't bake `+ Send` into the `async fn` (that breaks single-threaded users); use the `#[trait_variant::make(NameSend: Send)]` macro from the rust-lang `trait-variant` crate to generate both a plain and a `Send` variant.
+
+```rust
+#[trait_variant::make(FetcherSend: Send)]
+pub trait Fetcher {
+    async fn fetch(&self, url: &str) -> Result<String, Error>;
+}
+```
+
+**Rust 2024 RPIT captures all in-scope generics (including lifetimes) by default.** In 2021 and earlier, return-position `impl Trait` captured only type parameters, forcing `+ '_`/`+ 'a` workarounds. In 2024 (stable in 1.85.0) the hidden type captures ALL in-scope generics including lifetimes. The `use<..>` precise-capture bound (stabilized 1.82) lets you opt OUT of capturing a lifetime when the return value does not borrow the input.
+
+```rust
+fn first_word(s: &str) -> impl std::fmt::Display + use<'_> { s.split_whitespace().next().unwrap_or("") }
+fn indices<T>(slice: &[T]) -> impl Iterator<Item = usize> + use<T> { 0..slice.len() } // opt out of borrowing slice
+```
+
+**Async closures (`async || {}`) and `AsyncFn`/`AsyncFnMut`/`AsyncFnOnce` are stable since 1.85.** Unlike `|args| async move { ... }`, a true async closure can borrow from its captured environment across await points, removing forced `Arc`/clone/move workarounds; the new traits replace ad-hoc `Box<dyn Fn(..) -> Pin<Box<dyn Future>>>` bounds for accepting async callbacks.
+
+**Let chains (`if let ... && ...`) are stable in edition 2024 since 1.88.** Mix let-pattern bindings and boolean expressions in `if`/`while` with `&&`, flattening nested `if let` and removing intermediate `Option`/`Result` juggling. Requires `edition = "2024"`.
+
+```rust
+if let Some(user) = get_user(id)
+    && user.is_active()
+    && let Some(email) = user.email.as_ref()
+{
+    send_email(email);
+}
+```
+
+**Use `std::pin::pin!` instead of `tokio::pin!` / `pin_utils::pin_mut!`.** Stable since 1.68, `std::pin::pin!` pins a value to its local frame without heap allocation, yielding `Pin<&mut T>`. A value pinned with `pin!()` cannot be returned out of its scope (it borrows a local) — use `Box::pin` for that.
+
+**`thiserror` 2.0 (Nov 2024): must be a direct dependency.** Any crate using `#[derive(Error)]` must declare `thiserror` as a DIRECT dependency (not just transitive); format strings no longer accept raw identifiers (use `{type}`, not `{r#type}`); trait bounds are no longer inferred on fields shadowed by explicit format args. New: `no_std` via `default-features = false`, out-of-line `#[error(fmt = path::to::fn)]`, and per-variant `#[error(transparent)]`. Pin `thiserror = "2"`.
+
+**Centralize lint policy with `[workspace.lints]` (stable since 1.74).** Root `[workspace.lints.{rust,clippy}]` plus `[lints] workspace = true` in each member enforces lint policy across all crates without per-crate `#![deny]` attributes. Combine with `[workspace.package]` (inherit edition/rust-version) and `[workspace.dependencies]` (pin versions). (See the Workspace Structure example above.)

@@ -328,13 +328,15 @@ function processUser(user: User | null) {
 
 ### Strict Mode Configuration
 
+The `module`/`moduleResolution` pair must match where the output runs — there is no single universal template. Use one of the two configs below; do NOT copy a `nodenext` config into a bundler app or vice versa.
+
+**Node app or published npm library** — `module: nodenext` (canonical lowercase). This requires explicit `.js` extensions on relative imports plus `"type": "module"` in `package.json` (or `.mts`/`.cts` files). `nodenext` implies a matching `lib`/`target`, so the explicit `"lib"` is redundant and dropped here.
+
 ```json
 {
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "lib": ["ES2022"],
+    "module": "nodenext",
+    "verbatimModuleSyntax": true,
     "outDir": "./dist",
     "rootDir": "./src",
     "declaration": true,
@@ -343,11 +345,11 @@ function processUser(user: User | null) {
 
     "strict": true,
     "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "exactOptionalPropertyTypes": true,
 
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -359,6 +361,35 @@ function processUser(user: User | null) {
   "exclude": ["node_modules", "dist"]
 }
 ```
+
+**Bundler app (Vite, esbuild, webpack)** — extensionless relative imports work; the bundler does emit, so `tsc` only type-checks. Never use `moduleResolution: bundler` for a published library: it is "infectious" and emits `.d.ts` files with extensionless relative imports that break Node.js ESM consumers.
+
+```json
+{
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true
+  },
+  "include": ["src/**/*"]
+}
+```
+
+> **`noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` are NOT part of `strict: true`** — opt in explicitly (both shown above; TS 5.9 `tsc --init` enables them by default for new projects). `noUncheckedIndexedAccess` adds `| undefined` to every array subscript and index-signature access (`arr[i]` becomes `T | undefined`), but NOT to named properties, NOT to `for...of` loop variables (closed as "working as intended", microsoft/TypeScript#42622), and NOT to `Object.values()` — so it is no safety net when iterating. `exactOptionalPropertyTypes` makes `obj.x = undefined` an error for `x?: 'a' | 'b'` (only deleting the key makes the property absent), which matters for `'x' in obj` checks and serialization. `verbatimModuleSyntax` is the modern module-safety baseline that supersedes the now-no-op `importsNotUsedAsValues`/`preserveValueImports` (see Module Organization).
 
 ### Module Organization
 
@@ -381,6 +412,12 @@ import * as formatters from "./formatters";
 // Type-only imports
 import type { User, Order } from "./models";
 import { createUser, createOrder } from "./models";
+
+// Under verbatimModuleSyntax: true, every type-only specifier mixed into a
+// value import/export MUST carry the inline `type` modifier — otherwise it is
+// emitted as a runtime import even when used only as a type.
+import { type User, createUser } from "./user"; // User erased, createUser kept
+export { Order, type OrderDTO } from "./order"; // OrderDTO erased
 ```
 
 ### Declaration Files
@@ -1275,7 +1312,11 @@ async function fetchUser(id: string): Promise<Result<User>> {
     const user = await response.json();
     return { ok: true, value: user };
   } catch (error) {
-    return { ok: false, error: error as Error };
+    // `error` is `unknown` (useUnknownInCatchVariables, on via strict since 4.4);
+    // normalize instead of the unsafe `error as Error`, which can yield an object
+    // whose `.message` is undefined when a non-Error is thrown.
+    const err = error instanceof Error ? error : new Error(String(error));
+    return { ok: false, error: err };
   }
 }
 
@@ -1318,14 +1359,16 @@ async function retry<T>(
     backoffFactor: number;
   },
 ): Promise<T> {
-  let lastError: Error;
+  // `unknown` + a sentinel: avoids both the unsafe `error as Error` cast and the
+  // uninitialized-variable hazard if the loop never runs (e.g. maxAttempts <= 0).
+  let lastError: unknown = new Error("retry: no attempts made");
   let delay = options.initialDelay;
 
   for (let attempt = 0; attempt < options.maxAttempts; attempt++) {
     try {
       return await fn();
     } catch (error) {
-      lastError = error as Error;
+      lastError = error instanceof Error ? error : new Error(String(error));
       if (attempt < options.maxAttempts - 1) {
         await new Promise((resolve) => setTimeout(resolve, delay));
         delay = Math.min(delay * options.backoffFactor, options.maxDelay);
@@ -1333,7 +1376,7 @@ async function retry<T>(
     }
   }
 
-  throw lastError!;
+  throw lastError;
 }
 
 // Usage
@@ -1406,14 +1449,20 @@ function merge<T extends object, U extends object>(a: T, b: U): T & U {
   return { ...a, ...b };
 }
 
-// BAD: Using enums (they have runtime overhead and quirks)
+// BAD: numeric enums accept any number (let s: Status = 999 compiles — a
+// type-safety hole); enums also error under --erasableSyntaxOnly and cannot be
+// stripped by Node.js native TypeScript (Node 22.18+).
 enum Status {
   Pending,
   Active,
   Completed,
 }
 
-// GOOD: Use const objects or union types
+function activate(s: Status) {}
+activate(999); // No error — any number is assignable to a numeric enum
+
+// GOOD: Use const objects or union types — zero runtime cost, no assignment
+// hole, strips cleanly.
 const Status = {
   Pending: "pending",
   Active: "active",
@@ -1478,3 +1527,230 @@ type RequestState =
   | { status: "success"; data: User[] }
   | { status: "error"; error: Error };
 ```
+
+## Expert Practices: Idioms, Anti-Patterns & Gotchas
+
+### Idioms
+
+#### `satisfies` — validate without widening
+
+`satisfies` (TS 4.9+) checks that an expression is assignable to a target type **without** replacing the expression's inferred type with that target, so downstream code keeps the narrowest per-property/literal types while still catching wrong shapes and typo'd keys. It resolves the dilemma between a `: Type` annotation (validates but WIDENS, losing literal/tuple precision) and an `as Type` assertion (preserves nothing and SUPPRESSES mismatches, so a misspelled key slips through). Mechanism: TypeScript verifies assignability to the target but records the original expression type for inference. Constraint: it applies only at an expression/initializer site — it is not a statement you can retroactively apply to an already-declared variable.
+
+```typescript
+type Colors = "red" | "green" | "blue";
+type RGB = [number, number, number];
+
+const palette = {
+  red: [255, 0, 0],
+  green: "#00ff00",
+  // bleu: [0, 0, 255]  // ← Error: 'bleu' is not in Record<Colors, ...>
+} satisfies Record<Colors, string | RGB>;
+
+palette.green.toUpperCase(); // OK — still narrowed to string
+palette.red.at(0); // OK — still narrowed to [number, number, number]
+
+// An `as` assertion would suppress everything — a typo'd key compiles silently:
+// const p = { red: [255,0,0], bleu: [0,0,255] } as Record<Colors, string | RGB>;
+```
+
+#### `NoInfer<T>` — mark a parameter validate-only
+
+`NoInfer<T>` (TS 5.4+) tells TypeScript not to use a parameter as an inference candidate for a type variable, while still validating it against the `T` inferred from the principal parameters. Without it, every `T`-typed parameter contributes inference candidates, so a default value or callback can silently expand what `T` resolves to and accept out-of-range values. Use it when one parameter is the authoritative source of truth.
+
+```typescript
+function createStreetLight<C extends string>(
+  colors: C[],
+  defaultColor?: NoInfer<C>, // validated against C, never widens it
+) {}
+
+createStreetLight(["red", "yellow", "green"], "blue");
+// Error: '"blue"' is not assignable to '"red" | "yellow" | "green" | undefined'
+// Without NoInfer, 'blue' would be absorbed into C and accepted.
+```
+
+#### `const` type parameters — keep the `readonly` constraint
+
+The `const` modifier on a type parameter (TS 5.0+) makes inline literal arguments infer const-like (literal/tuple) types, so callers no longer need `as const`. The silent trap: if the constraint is **mutable** (`T extends string[]`), the const-inferred candidate `readonly ['a','b']` is not assignable to it, so inference falls back to the widened mutable type with NO warning. Always use a `readonly` constraint. The modifier also affects only literals written directly at the call site — passing a pre-declared variable (already inferred as `string[]`) sees no benefit.
+
+```typescript
+declare function tags<const T extends readonly string[]>(args: T): T;
+const t = tags(["a", "b"]); // readonly ['a', 'b']
+
+// With `T extends string[]` (mutable), tags(['a','b']) silently widens to string[].
+```
+
+#### `verbatimModuleSyntax` and precise type-only imports
+
+`verbatimModuleSyntax` (TS 5.0+) replaces the deprecated, now-no-op `importsNotUsedAsValues`/`preserveValueImports` with one rule: imports/exports WITHOUT a `type` modifier are emitted verbatim; anything WITH `type` is erased. So every purely-type import must be `import type { ... }` or use an inline `type` specifier — otherwise it is emitted as a runtime import even when unused, defeating tree-shaking, forcing unwanted CJS/ESM `require()` inclusion, and breaking cross-compiler consistency (esbuild/swc/Babel all strip `type`-marked imports reliably). It is in TS 5.9's `tsc --init` defaults. (See Module Organization above.)
+
+#### `using` / `await using` — deterministic cleanup (TS 5.2)
+
+Explicit Resource Management: any object implementing `Symbol.dispose` can be declared with `using`, and TypeScript guarantees `dispose` runs on scope exit — including early returns and exceptions — in last-in-first-out order. `await using` calls and awaits `Symbol.asyncDispose`. This replaces error-prone `try/finally` cleanup for DB connections, file handles, timers, and test fixtures. Requires `lib` to include `esnext.disposable`; some runtimes need a `Symbol.dispose` polyfill.
+
+```typescript
+class DbConnection implements Disposable {
+  constructor(private conn: Connection) {}
+  [Symbol.dispose]() {
+    this.conn.close();
+  }
+}
+async function processRecords() {
+  using db = new DbConnection(openConnection());
+  return await db.conn.query("SELECT * FROM records"); // close() runs on every exit path
+}
+// tsconfig: { "lib": ["es2022", "esnext.disposable"] }
+```
+
+### Anti-Patterns
+
+#### Explicit `x is T` predicates are trusted unconditionally — as unsafe as `as`
+
+When you annotate a guard's return type as `x is T`, TypeScript does NOT verify the body actually narrows `x` to `T` — it trusts the assertion, making an explicit predicate semantically equivalent to a type assertion. A wrong or incomplete predicate compiles silently and causes runtime type confusion. Prefer letting TypeScript INFER the predicate from a simple narrowing body (TS 5.5+), because then the compiler derives it from the implementation. Reserve explicit `is` for cases inference cannot handle (multiple return paths, deep structural validation) — write them thoroughly and unit-test them.
+
+```typescript
+// Inferred & validated by the compiler:
+const isString = (x: unknown) => typeof x === "string"; // inferred: x is string
+
+// Compiles fine but is a lie — TypeScript never checks the body:
+function isPositive(n: number): n is 1 | 2 | 3 {
+  return n > 0; // also true for 4, 5, … → downstream runtime crash
+}
+```
+
+#### Never publish `const enum` in a `.d.ts`
+
+A published `const enum` is inlined into consumers' bundles at compile time. If a later patch changes member values, consumers keep the OLD inlined values while running the NEW library — a silent wrong-branch bug. It is also incompatible with `isolatedModules` and single-file transpilers (Babel, esbuild, swc), which cannot inline cross-file values. For published APIs use a regular `enum`, an `as const` object, or `preserveConstEnums` to strip the `const` from declaration output.
+
+```typescript
+// Safe in a published package — value exists at runtime, no inlining:
+const Direction = { Up: "UP", Down: "DOWN" } as const;
+type Direction = (typeof Direction)[keyof typeof Direction];
+```
+
+### Gotchas
+
+#### TS 5.5 inferred type predicates — but truthiness and `.filter(Boolean)` do NOT narrow
+
+TS 5.5 infers a type predicate for a function with no explicit return annotation, a single return statement, no parameter mutation, and a boolean expression tied to a refinement of the parameter — so `arr.filter(x => x !== undefined)` finally returns `T[]`. The trap: truthiness checks (`x => !!x`, `x => x`) and `.filter(Boolean)` do NOT infer a predicate. Reason — the "if and only if" rule: `!!score` being false could mean `undefined` OR the valid value `0`, so `score is number` would be unsound; `Boolean` is also not itself recognized as a predicate. The result is doubly bad: the type stays `(T | undefined)[]` AND zero/empty-string values are silently dropped at runtime. Use explicit comparisons or a named guard.
+
+```typescript
+// Inferred predicate → Bird[]
+const birds = countries.map((c) => birdMap.get(c)).filter((b) => b !== undefined);
+
+// Reusable named guard for .filter(Boolean) situations:
+function isDefined<T>(x: T | null | undefined): x is NonNullable<T> {
+  return x != null;
+}
+const defined = countries.map((c) => birdMap.get(c)).filter(isDefined); // Bird[]
+
+// BAD: type stays (number | undefined)[] AND zero scores are dropped:
+// students.map(s => scoreMap.get(s)).filter(score => !!score);
+```
+
+#### `useUnknownInCatchVariables` types `catch` as `unknown` (on via `strict` since 4.4)
+
+Catch-clause variables are `unknown`, not `any`, so touching `.message`/`.stack` without a guard fails to compile — and the break rides in silently via `strict` on upgrade. Use an `instanceof Error` guard; `error as Error` restores the old unsafe behavior and is only a temporary migration crutch (see the `fetchUser`/`retry` examples above).
+
+```typescript
+try {
+  await riskyOperation();
+} catch (err) {
+  if (err instanceof Error) console.error(err.message);
+  else console.error("Unknown error:", String(err));
+}
+```
+
+#### Excess-property checking only fires on FRESH object literals
+
+The "may only specify known properties" error fires only when a literal is assigned DIRECTLY to a typed target or passed DIRECTLY as an argument. Assigning the same literal to an intermediate variable first — even one with an explicit type annotation — strips its freshness, and structural typing then allows the extra properties silently. Refactoring a direct literal into a named variable "for readability" can suppress a real bug the compiler was catching.
+
+```typescript
+interface Duck {
+  quack(): void;
+}
+const d: Duck = { quack() {}, woof() {} }; // Error: 'woof' is excess on a fresh literal
+
+const obj = { quack() {}, woof() {} }; // freshness lost
+const d2: Duck = obj; // No error — extra 'woof' silently allowed
+```
+
+#### Control-flow narrowing is discarded inside closures — copy to a `const`
+
+TypeScript drops a variable's narrowing when it is captured by a closure, even if unconditionally assigned beforehand, because the captured binding could be reassigned between narrowing and execution (acknowledged design limitation, microsoft/TypeScript#37802). Copy the narrowed value into a fresh `const` so the closure captures an immutable binding.
+
+```typescript
+function deferred(value?: string): () => string {
+  if (value == null) value = "";
+  const v = value; // const captures the narrowed type
+  return () => v; // v is string — returning () => value would widen to string | undefined
+}
+```
+
+#### Method-shorthand syntax is checked bivariantly — `strictFunctionTypes` does not catch it
+
+`strictFunctionTypes` enforces contravariant parameter checking for function-TYPED properties (`m: (x: T) => void`), but the docs explicitly exempt parameters of methods declared in shorthand syntax (`m(x: T): void`) — these stay BIVARIANT. The exemption lets `Array<T>` relate covariantly, but in user-defined interfaces it is a real soundness hole. The typescript-eslint rule `method-signature-style` can force property syntax to close the gap.
+
+```typescript
+interface Processor {
+  process: (value: string | number) => void; // property syntax → contravariant
+}
+const p: Processor = {
+  process: (value: string) => console.log(value), // Error: string not assignable to string | number
+};
+// With method shorthand `process(value: string | number): void`, the same
+// assignment compiles — and crashes at runtime if called with a number.
+```
+
+#### Template-literal types produce Cartesian products
+
+A template-literal type interpolating multiple unions expands to the full Cartesian product: unions of size N and M yield N*M members, growing multiplicatively and becoming a real compile-time cost for large schemas. The bounded event-name pattern is the canonical good use; for large route maps or i18n keys prefer code generation (`tsc --generateTrace` surfaces the cost). Note the intrinsic `Uppercase`/`Lowercase`/`Capitalize` types use raw JS `toUpperCase`/`toLowerCase` — they are NOT locale-aware.
+
+```typescript
+type PropEventSource<T> = {
+  on<K extends string & keyof T>(event: `${K}Changed`, cb: (v: T[K]) => void): void;
+};
+// AVOID: `${Methods} ${Routes}` over 5 × 50 unions → 250 members; prefer codegen.
+```
+
+### Performance
+
+#### Prefer `interface extends` over type intersection for object types
+
+`interface Foo extends Bar, Baz` produces a single flat object type whose relationships the compiler caches, whereas `type Foo = Bar & Baz` forces a recursive merge of constituents on every comparison at each use site. Effects: faster type-checking / better language-server responsiveness in large codebases; conflicting properties are reported eagerly at the declaration instead of silently collapsing to `never` at use sites; cleaner IDE hover. The TS Performance wiki names this a high-impact optimization. Intersections remain necessary for composing non-object types (unions, primitives, mapped/conditional results).
+
+```typescript
+interface AdminUser extends BaseUser, AdminPermissions {
+  adminLevel: number;
+}
+// type AdminUser = BaseUser & AdminPermissions & { adminLevel: number }; ← recomputed per comparison
+```
+
+#### `isolatedDeclarations` unlocks parallel `.d.ts` emit
+
+`isolatedDeclarations` (TS 5.5+) requires explicit type annotations on all exported symbols so each file's `.d.ts` can be generated independently, without a whole-program type-checker pass — letting tools (Oxc, esbuild, swc) emit declarations in parallel and removing the monorepo serialization bottleneck. Requires `declaration` or `composite`. Tradeoff: explicit return types on exported functions become mandatory; it pays off most when you already enforce explicit-return-types via ESLint.
+
+```typescript
+// isolatedDeclarations: true (with declaration: true)
+export function computeTotal(items: Item[]): number {
+  return items.reduce((sum, i) => sum + i.price, 0);
+}
+```
+
+### Currency
+
+#### Import attributes: `with { type: 'json' }`, not `assert`
+
+Import assertions using the withdrawn `assert` keyword were superseded by import attributes using `with` (ES2025). Under `--module nodenext`, TS 5.8 makes `assert` a hard error (matching Node.js 22+), and TS 5.7 already required `with` for validated JSON imports under nodenext. Migrate all `assert { type: 'json' }` to `with { type: 'json' }`.
+
+```typescript
+import config from "./config.json" with { type: "json" };
+```
+
+#### TS 6.0 deprecates / TS 7.0 (Go compiler) removes `es5` target, `baseUrl`, node10 resolution
+
+TS 6.0 is the LAST JavaScript-based release; it DEPRECATES, and the Go-rewritten TS 7.0 REMOVES: `--target es3`/`es5` (ES2015 becomes the minimum), `--baseUrl` (migrate path aliases to the Node-native `package.json#imports` map, supported by both Node and TS without a build step), and `moduleResolution: node10`/classic. Down-leveling for ancient targets belongs in Babel/esbuild, not `tsc`. The deprecations land in 6.0; the removals in 7.0 — do not conflate the two.
+
+```json
+{ "imports": { "#utils/*": "./src/utils/*.js", "#models/*": "./src/models/*.js" } }
+```
+
