@@ -3,8 +3,6 @@ name: loom-argocd
 description: GitOps continuous delivery with Argo CD for Kubernetes. Use when implementing declarative GitOps workflows, application sync/rollback, multi-cluster deployments, progressive delivery, or CD automation.
 allowed-tools:
   - Read
-  - Grep
-  - Glob
   - Edit
   - Write
   - Bash
@@ -844,14 +842,9 @@ spec:
     # Manual sync for production
     syncOptions:
       - CreateNamespace=true
-
-    # Use sync waves for blue-green
-    syncWaves:
-      - wave: 0 # Deploy new version (green)
-      - wave: 1 # Run smoke tests
-      - wave: 2 # Switch traffic
-      - wave: 3 # Remove old version (blue)
 ```
+
+> **Important:** there is **no `syncWaves` field** in the Argo CD `Application` CRD (neither under `syncPolicy` nor at the spec top level). Argo CD tolerates unknown fields, so such a block is silently ignored. Sync-wave ordering is configured **only** via the `argocd.argoproj.io/sync-wave` annotation on individual resource manifests — see "Sync Waves for Ordering" below. For a true blue-green strategy with traffic switching and automated promotion/abort, use **Argo Rollouts** (a separate `Rollout` CRD), not the `Application` spec.
 
 ## Rollback Procedures
 
@@ -1022,27 +1015,35 @@ argocd app history myapp
 # 2. Identify last known good revision
 argocd app history myapp | grep Succeeded
 
-# 3. Quick rollback to previous revision
+# 3. Disable automated sync FIRST — rollback cannot run on an app with
+#    automated sync enabled (the CLI errors out otherwise)
+argocd app set myapp --sync-policy none
+
+# 4. Quick rollback to previous revision
 argocd app rollback myapp
 
-# 4. If rollback fails, force sync with replace
+# 4b. Re-enable automated sync once the rollback is confirmed healthy
+#     (only after the target revision is also reflected in Git):
+#     argocd app set myapp --sync-policy automated --self-heal
+
+# 5. If rollback fails, force sync with replace
 argocd app sync myapp --force --replace --prune
 
-# 5. If still failing, revert Git and force sync
+# 6. If still failing, revert Git and force sync
 cd gitops-repo
 git revert HEAD --no-commit
 git commit -m "Emergency rollback"
 git push origin main
 argocd app sync myapp --force
 
-# 6. Manual resource cleanup if needed
+# 7. Manual resource cleanup if needed
 kubectl delete deployment myapp -n myapp
 argocd app sync myapp --force
 
-# 7. Verify health and sync status
+# 8. Verify health and sync status
 argocd app wait myapp --health --timeout 300
 
-# 8. Document incident
+# 9. Document incident
 echo "Rollback completed at $(date)" >> /var/log/incidents/myapp-rollback.log
 ```
 
@@ -1094,13 +1095,18 @@ spec:
               # Test application health
               argocd app wait rollback-test --health --timeout 60
 
+              # Rollback CANNOT run while automated sync is enabled — disable it
+              # first (the app above declares automated+selfHeal), or the CLI errors.
+              argocd app set rollback-test --sync-policy none
+
               # Perform rollback test
               argocd app rollback rollback-test
 
               # Verify rollback succeeded
               argocd app wait rollback-test --health --timeout 60
 
-              # Re-sync to latest
+              # Re-enable automated sync and re-sync to latest
+              argocd app set rollback-test --sync-policy automated --self-heal
               argocd app sync rollback-test
       restartPolicy: Never
 ```
@@ -1115,8 +1121,11 @@ kind: Application
 metadata:
   name: root-app
   namespace: argocd
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
+  # NOTE: the resources-finalizer is intentionally OMITTED on a production
+  # app-of-apps root. With it present, a single `kubectl delete application
+  # root-app` cascades through every child Application and wipes the whole
+  # environment. Add the finalizer only on deliberately ephemeral roots
+  # (e.g. PR-preview environments). See "Cascading deletion" under Expert Practices.
 spec:
   project: default
 
@@ -1183,6 +1192,8 @@ root-app
     ├── app2
     └── app3
 ```
+
+> **Prerequisite — restore the Application health check, or this ordering is a lie.** The built-in health assessment for the `argoproj.io/Application` CRD was **removed in Argo CD 1.8**. Without it, the parent treats a child Application as "done" the instant the Application *object* is applied — not when its workloads are actually Healthy — so each wave advances before the previous layer's pods (and any CRDs they install) are Ready. Restore it in `argocd-cm` (see "Restore the Application CRD health check" under Expert Practices). Even then, sync-wave annotations on **child Application objects** are reliable only at **initial bootstrap**; for ongoing ordered multi-app rollouts use **ApplicationSet Progressive Syncs (RollingSync)**, which sequences sibling Applications by design.
 
 ## Sync Waves and Hooks
 
@@ -1350,7 +1361,13 @@ metadata:
   name: argocd-cm
   namespace: argocd
 data:
-  # Resource tracking method
+  # Resource tracking method.
+  # Argo CD 3.0 changed the DEFAULT from `label` to `annotation`. On a 2.x->3.x
+  # upgrade this silently re-tracks every existing resource. If the FIRST
+  # post-upgrade sync also deletes/prunes a resource, the tracking-method change
+  # can orphan it. Force a full sync (WITHOUT ApplyOutOfSyncOnly) on all apps
+  # right after upgrade, BEFORE any prune/delete, to re-stamp the new tracking
+  # identifier. `annotation+label` writes both for compatibility during migration.
   application.resourceTrackingMethod: annotation+label
 
   # Exclude resources from sync
@@ -1639,6 +1656,8 @@ spec:
     namespace: myapp
 ```
 
+> **The `source.plugin` block only resolves if a matching CMP sidecar exists.** Config Management Plugins are **no longer registered via the `configManagementPlugins` key in `argocd-cm`** — that was deprecated in v2.4 and **completely removed in v2.8**. A plugin now runs as a **sidecar container on `argocd-repo-server`** (plugin config at `/home/argocd/cmp-server/config/plugin.yaml`, entrypoint `/var/run/argocd/argocd-cmp-server`). The Application's `source.plugin.name` selects that sidecar by name; **omit `name` to use auto-discovery** (the sidecar's `discover` rules decide whether it handles the source). See "Config Management Plugins moved to repo-server sidecars" under Expert Practices for the sidecar definition.
+
 ### Secrets in Helm Values (Encrypted)
 
 ```yaml
@@ -1831,14 +1850,23 @@ spec:
 
 ### Prometheus Metrics
 
+Each Argo CD component exposes its own metrics on a **different port** — getting the selector/port pairing wrong (a common mistake) scrapes the wrong pod or nothing at all:
+
+| Component                    | Pod label (`app.kubernetes.io/name`) | Metrics port |
+| ---------------------------- | ------------------------------------- | ------------ |
+| `argocd-application-controller` | `argocd-application-controller`    | `8082`       |
+| `argocd-server`              | `argocd-server`                       | `8083`       |
+| `argocd-repo-server`         | `argocd-repo-server`                  | `8084`       |
+
 ```yaml
+# Application-controller metrics (the app sync/health metrics live here on 8082)
 apiVersion: v1
 kind: Service
 metadata:
-  name: argocd-metrics
+  name: argocd-application-controller-metrics
   namespace: argocd
   labels:
-    app.kubernetes.io/name: argocd-metrics
+    app.kubernetes.io/name: argocd-application-controller-metrics
 spec:
   ports:
     - name: metrics
@@ -1846,21 +1874,51 @@ spec:
       protocol: TCP
       targetPort: 8082
   selector:
-    app.kubernetes.io/name: argocd-server
+    app.kubernetes.io/name: argocd-application-controller   # NOT argocd-server
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: argocd-metrics
+  name: argocd-application-controller-metrics
   namespace: argocd
 spec:
   selector:
     matchLabels:
-      app.kubernetes.io/name: argocd-metrics
+      app.kubernetes.io/name: argocd-application-controller-metrics
   endpoints:
     - port: metrics
       interval: 30s
+---
+# Server metrics on 8083 (API/UI request metrics)
+apiVersion: v1
+kind: Service
+metadata:
+  name: argocd-server-metrics
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-server-metrics
+spec:
+  ports:
+    - { name: metrics, port: 8083, protocol: TCP, targetPort: 8083 }
+  selector:
+    app.kubernetes.io/name: argocd-server
+---
+# Repo-server metrics on 8084 (manifest generation metrics)
+apiVersion: v1
+kind: Service
+metadata:
+  name: argocd-repo-server-metrics
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-repo-server-metrics
+spec:
+  ports:
+    - { name: metrics, port: 8084, protocol: TCP, targetPort: 8084 }
+  selector:
+    app.kubernetes.io/name: argocd-repo-server
 ```
+
+> **PromQL on Argo CD 3.0:** the per-app `argocd_app_sync_status`, `argocd_app_health_status`, and `argocd_app_created_time` metrics were **removed**. Use the labels on `argocd_app_info` instead — e.g. `argocd_app_info{sync_status="OutOfSync"}` or `argocd_app_info{health_status="Degraded"}`. Per-resource health is also no longer persisted by default (see `controller.resource.health.persist`).
 
 ### Notification Templates
 
@@ -2183,6 +2241,259 @@ kubectl logs -n argocd deployment/argocd-server
 
 # Get resource details
 argocd app resources myapp
+```
+
+## Expert Practices: Idioms, Anti-Patterns & Gotchas
+
+Hard-won, mechanism-level guidance. Each item explains *why*, not just *what* — that is what separates a working manifest from one that silently misbehaves in production.
+
+### Sync & Diffing Gotchas
+
+**`ignoreDifferences` alone is cosmetic during sync — pair it with `RespectIgnoreDifferences=true`.** By default `ignoreDifferences` only affects **drift detection** (what shows as OutOfSync); it does **not** affect the sync patch, so on the next sync Argo CD resets the ignored fields back to the Git values. `RespectIgnoreDifferences=true` makes Argo CD "consider the configurations made in the `spec.ignoreDifferences` attribute also during the sync stage." Critical limitation: it only works when the resource **already exists** — on initial creation with no live state, the desired state is applied as-is. Essential for HPA-managed replicas, sidecar-injecting mutating webhooks, and cert-manager-injected `caBundle` fields.
+
+```yaml
+spec:
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas                       # HPA manages this
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[].clientConfig.caBundle     # cert-manager injects this
+  syncPolicy:
+    syncOptions:
+      - RespectIgnoreDifferences=true           # else ignored fields get overwritten on sync
+```
+
+**Mutating webhooks/controllers cause perpetual OutOfSync.** Sidecar injection, HPA/VPA changing replicas/requests, cloud controllers populating `status.loadBalancer`, and Kubernetes normalizing quantities (`1000m`->`1`, `3072Mi`->`3Gi`) all mutate resources *after* apply: each sync succeeds, then live state diverges immediately, looping forever. Fix by targeting the mutated fields with `ignoreDifferences` (use `jqPathExpressions` or `managedFieldsManagers`) **and** adding `RespectIgnoreDifferences=true`, ideally with `ServerSideApply=true` for explicit field-ownership tracking.
+
+```yaml
+ignoreDifferences:
+  - group: apps
+    kind: Deployment
+    jsonPointers:
+      - /spec/replicas                                # HPA
+    jqPathExpressions:
+      - .spec.template.spec.containers[].resources    # VPA
+syncPolicy:
+  syncOptions:
+    - RespectIgnoreDifferences=true
+    - ServerSideApply=true
+```
+
+**Automated sync does not retry a failed commit-SHA — `selfHeal` is what re-triggers it.** Automated sync attempts exactly one synchronization per unique (commit-SHA + parameters): "Automatic sync will not reattempt a sync if the previous sync attempt against the same commit-SHA and parameters had failed." A failed SHA effectively "sticks" until a new commit arrives or `selfHeal` detects live-state drift (re-attempts after the self-heal timeout, 5s by default). This silently breaks pipelines that push one commit and expect Argo CD to keep trying. Enable `selfHeal` for drift-based re-triggering and set `syncPolicy.retry` for transient in-attempt errors.
+
+```yaml
+syncPolicy:
+  automated:
+    prune: true
+    selfHeal: true        # re-triggers on live-state drift, bypassing the SHA dedup
+  retry:
+    limit: 5
+    backoff: { duration: 5s, factor: 2, maxDuration: 3m }
+```
+
+**Self-managed Argo CD requires `ServerSideApply=true`; never combine it with `Replace=true`.** Client-side apply stores prior desired state in the `kubectl.kubernetes.io/last-applied-configuration` annotation (~262KB cap); large CRDs (the ApplicationSet CRD now exceeds this) overflow it, and managing Argo CD with itself hits field-ownership conflicts when fields were originally set by Helm/kubectl. Use `ServerSideApply=true` so the Argo CD field manager owns fields (`kubectl apply --server-side --force-conflicts` during manual migration; `ClientSideApplyMigration` assists transferring `managedFields`). Do **not** also set `Replace=true` — "Replace=true takes precedence over ServerSideApply=true", so SSA is silently skipped.
+
+```yaml
+spec:
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true
+      # do NOT also add Replace=true — it overrides SSA
+```
+
+### Hooks & Ordering Gotchas
+
+**Resource hooks are skipped during a selective sync; failed `PreDelete` hooks block Application deletion.** All hooks (PreSync/Sync/PostSync/SyncFail) are entirely skipped during `argocd app sync myapp --resource ...` — "hooks do not run during a selective sync operation." So a `PreSync` db-migration silently does **not** run when someone selectively syncs only the Deployment, risking schema/data mismatch. Separately, a failed `PreDelete` hook blocks the *whole* Application deletion until it succeeds or is manually removed — give delete-time hook Jobs a `backoffLimit` and `activeDeadlineSeconds` so a failing hook cannot block deletion forever, and keep failed `PreSync` Jobs (`HookFailed` delete policy) for diagnosis.
+
+```yaml
+metadata:
+  annotations:
+    argocd.argoproj.io/hook: PreDelete
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 120   # bounded so a failing hook can't block delete forever
+```
+
+**Sync waves order resources within ONE Application; for cross-Application ordering use Progressive Syncs.** `argocd.argoproj.io/sync-wave` orders resources within a single Application's sync (Argo applies a wave, waits for Healthy, advances). It does **not** reliably sequence sibling Applications in an app-of-apps on ongoing syncs — wave annotations on child Application objects only help during the parent's *initial* creation. The root cause: the built-in health check for the `argoproj.io/Application` CRD was removed in 1.8, so a wave advances as soon as the child Application *object* is applied, not when its workloads are Healthy. For reliable cross-Application sequencing use ApplicationSet Progressive Syncs (RollingSync).
+
+**Restore the Application CRD health check in `argocd-cm` for app-of-apps wave ordering.** Because the `argoproj.io/Application` health assessment was removed in 1.8, restore it with a Lua customization that surfaces `obj.status.health.status`. This is invisible in the UI — the wave appears to progress correctly while pods are still initializing.
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+data:
+  resource.customizations.health.argoproj.io_Application: |
+    hs = {}
+    hs.status = "Progressing"
+    hs.message = ""
+    if obj.status ~= nil then
+      if obj.status.health ~= nil then
+        hs.status = obj.status.health.status
+        if obj.status.health.message ~= nil then
+          hs.message = obj.status.health.message
+        end
+      end
+    end
+    return hs
+```
+
+### Deletion & Finalizer Gotchas
+
+**Cascading deletion of managed resources requires the `resources-finalizer` — never add it reflexively to app-of-apps roots.** Deleting an Application does **not** delete the Kubernetes resources it manages unless `resources-finalizer.argocd.argoproj.io` is present; without it, deleting the Application *orphans* its Deployments/Services. The inverse footgun: adding the finalizer to an app-of-apps **root** means a single `kubectl delete` of the root cascades through every child Application and wipes the whole environment. Add it deliberately (e.g. ephemeral PR previews), not reflexively on production roots.
+
+```yaml
+# Intentional cascade for an ephemeral environment ONLY:
+metadata:
+  name: pr-preview-123
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+```
+
+### Helm Idioms & Gotchas
+
+**Argo CD runs `helm template`, not `helm install` — and any Argo hook in a chart disables ALL Helm hooks.** Argo CD uses Helm only to inflate manifests; "the lifecycle of the application is handled by Argo CD instead of Helm." Consequences: `helm ls`/`history` show nothing, `helm rollback` is unavailable, `helm test` is not run. Helm hooks map to Argo CD phases, but: "If you define any Argo CD hooks, all Helm hooks will be ignored." Never mix the two hook systems in one chart — pick Argo CD hooks for Argo-managed charts. Also, overriding `releaseName` breaks the `app.kubernetes.io/instance` label (Argo injects it with the Application name), which can break label selectors.
+
+```yaml
+# Argo CD hooks for Argo-managed charts (do NOT also use helm.sh/hook):
+metadata:
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+```
+
+**Helm `valueFiles` precedence is last-wins.** "When multiple valueFiles are specified, the last file listed has the highest precedence" — the *opposite* of first-match-wins systems, so put base values first and environment overrides last. Full documented precedence (lowest to highest): chart `values.yaml` < `valueFiles` (last wins) < `values` (inline string) < `valuesObject` < `parameters`. Glob-matched `valueFiles` expand in lexical order, so use numeric filename prefixes when override order matters.
+
+```yaml
+helm:
+  valueFiles:
+    - values.yaml             # base defaults (lowest)
+    - values-production.yaml  # overrides win because listed last
+```
+
+### ApplicationSet Gotchas
+
+**`applicationsSync` policies do NOT stop cascade deletion — add a finalizer (and beware the global `--policy` override).** `create-only`/`create-update` only govern the controller's *modify* operations; they do not stop child Applications being deleted when the ApplicationSet is deleted — "It doesn't prevent Application controller from deleting Applications according to ownerReferences." To prevent that, add the `resources-finalizer.argocd.argoproj.io` finalizer to the ApplicationSet (plus `preserveResourcesOnDeletion: true` to keep the children's cluster resources). Also, the controller-level `--policy` flag **overrides** per-ApplicationSet `applicationsSync` unless per-set override is enabled (`ARGOCD_APPLICATIONSET_CONTROLLER_ENABLE_POLICY_OVERRIDE` / `--enable-policy-override`, default false) — so per-set settings can be silently ignored.
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io   # stops cascade-delete of child Applications
+spec:
+  syncPolicy:
+    applicationsSync: create-update
+    preserveResourcesOnDeletion: true
+```
+
+**Progressive Syncs (RollingSync) force-disable autosync on every generated Application.** With `strategy: RollingSync`, "RollingSync will force all generated Applications to have autosync disabled" (warnings are logged for any app that still declares automated sync). The controller sequences syncs itself, so trigger at the step level, not per app. Applications not selected by any step expression are **excluded** and must be synced manually. Progressive Syncs reached Beta in v3.3.0 but is still **behind a feature flag** — enable it explicitly (controller arg/env/configmap). Ensure step `matchExpressions` align with the labels your template actually sets.
+
+```yaml
+spec:
+  strategy:
+    type: RollingSync
+    rollingSync:
+      steps:
+        - matchExpressions: [{ key: env, operator: In, values: [staging] }]
+        - matchExpressions: [{ key: env, operator: In, values: [production] }]
+          maxUpdate: 25%
+  template:
+    metadata:
+      labels:
+        env: '{{env}}'   # must match the step selectors
+```
+
+**Use `ignoreApplicationDifferences` so the controller stops reverting per-app overrides.** By default the ApplicationSet controller reverts any field on a generated Application that diverges from the template (including `syncPolicy`) within seconds — so you cannot disable auto-sync on one app during an incident. `spec.ignoreApplicationDifferences` lets you list `jsonPointers`/`jqPathExpressions` the controller leaves alone (commonly `/spec/syncPolicy`). Limitation: it uses MergePatch, so "existing lists will be completely replaced by new lists" — ignoring a field inside a list breaks if any other element changes; target the specific element with a JQ path. (Distinct from per-resource `ignoreDifferences`, which controls drift detection against the cluster.)
+
+```yaml
+spec:
+  ignoreApplicationDifferences:
+    - jsonPointers:
+        - /spec/syncPolicy   # allow per-app auto-sync toggles during incidents
+    - name: prod-app
+      jsonPointers:
+        - /spec/source/targetRevision
+```
+
+**Go-template ApplicationSets produce empty strings for missing keys unless `goTemplateOptions: missingkey=error`.** In Go-template mode an undefined generator key (e.g. a typo `{{.server}}`->`{{.srevr}}`) renders as an empty string, silently producing Applications with blank destinations/namespaces and deploying to the wrong place. Set `goTemplateOptions: ['missingkey=error']` so undefined-key access fails the render. Applies only to `goTemplate: true`; the legacy fasttemplate mode uses `{{value}}` without a dot.
+
+```yaml
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error    # typos fail loudly instead of deploying to blank/wrong targets
+  template:
+    spec:
+      destination:
+        server: '{{.server}}'
+```
+
+### Security
+
+**`policy.default` grants ALL authenticated users a baseline that deny rules cannot revoke.** Every authenticated user gets at least the permissions in `policy.default`, and the docs are explicit: "All authenticated users get at least the permissions granted by the default policies. This access cannot be blocked by a deny rule." So `policy.default: role:readonly` plus per-user deny rules to claw it back is silently ineffective. Safe baseline: leave `policy.default` **empty/unset** (no default grant) and explicitly grant least-privilege roles per group. Note `deny` otherwise wins over `allow` at equal scope, but it cannot override the default grant.
+
+```yaml
+# argocd-rbac-cm: no default permissions; grant explicitly per group
+data:
+  policy.default: ''        # empty: no baseline grant for authenticated users
+  scopes: '[groups, email]'
+  policy.csv: |
+    g, platform-team, role:readonly
+    g, deployers, role:app-deployer
+```
+
+**Never template the ApplicationSet `project` field; SCM/PR generators are admin-only.** If `spec.template.spec.project` is templated from generator output (e.g. `{{path.basename}}`), anyone who can write to the generator's source of truth can steer generated Applications into a privileged project (even `default`) and escalate: "If the project field is not hard-coded in an ApplicationSet's template, then admins must control all sources of truth for the ApplicationSet's generators." SCM Provider and Pull Request generators are admin-only — "Only admins may create ApplicationSets to avoid leaking Secrets." Safe pattern: hard-code `project`, restrict generator sources, restrict ApplicationSet creation to admins.
+
+```yaml
+spec:
+  generators:
+    - git:
+        directories:
+          - path: teams/*
+  template:
+    spec:
+      project: platform-team   # hard-coded — cannot be influenced by repo content
+      # NOT: project: '{{path.basename}}'  # attacker creates a 'default' dir to escape
+```
+
+### Currency: Version-Breaking Changes
+
+**Config Management Plugins in `argocd-cm` were removed in v2.8 — use repo-server sidecars.** The legacy `configManagementPlugins` key was deprecated in v2.4 and "completely removed starting in v2.8." Plugins now run as **sidecar containers on `argocd-repo-server`** (config at `/home/argocd/cmp-server/config/plugin.yaml`, entrypoint `/var/run/argocd/argocd-cmp-server`). Auto-discovery works when the Application's `plugin` block omits `name`. This is more secure (isolated container, separate image).
+
+```yaml
+# argocd-repo-server: add a CMP sidecar
+containers:
+  - name: avp
+    image: my-avp-image:latest
+    command: [/var/run/argocd/argocd-cmp-server]
+    volumeMounts:
+      - { name: var-files, mountPath: /var/run/argocd }
+      - { name: plugins, mountPath: /home/argocd/cmp-server/plugins }
+      - { name: plugin-config, mountPath: /home/argocd/cmp-server/config/plugin.yaml, subPath: plugin.yaml }
+```
+
+**Argo CD 3.0 changed many defaults — it is a high-blast-radius upgrade.** From the 2.14->3.0 upgrade notes:
+
+1. **Resource tracking** changed from label to **annotation** ("changed to use annotation-based tracking"); opt out with `application.resourceTrackingMethod: label`. Switching tracking mid-lifecycle risks orphaning a resource if the first post-upgrade sync also deletes one — force a full sync before any prune.
+2. **RBAC sub-resource inheritance removed**: "update or delete actions only apply to the application itself; new policies must be defined to allow `update/*` or `delete/*`", and `logs, get` is now enforced by default.
+3. **`repositories`/`repository.credentials` in `argocd-cm` removed** ("no longer available in Argo CD 3.0") — migrate to Secrets labeled `argocd.argoproj.io/secret-type: repository`.
+4. **Metrics removed**: `argocd_app_sync_status`, `argocd_app_health_status`, `argocd_app_created_time` — use labels on `argocd_app_info`; per-resource health is no longer persisted by default (`controller.resource.health.persist`).
+
+```yaml
+# RBAC after 3.0 — sub-resource and logs grants are now EXPLICIT:
+p, role:app-deployer, applications, sync, */*, allow
+p, role:app-deployer, applications, update/*, */*, allow
+p, role:app-deployer, applications, delete/*, */*, allow
+p, role:app-deployer, logs, get, */*, allow
+# PromQL: argocd_app_info{sync_status="OutOfSync"}  (not argocd_app_sync_status)
 ```
 
 ## References

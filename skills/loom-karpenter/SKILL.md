@@ -19,7 +19,7 @@ triggers:
   - instance selection
   - graviton
   - arm64
-allowed-tools: Read, Grep, Glob, Edit, Write, Bash
+allowed-tools: Read, Edit, Write, Bash
 ---
 
 # Karpenter
@@ -34,7 +34,7 @@ Karpenter is a Kubernetes node autoscaler that provisions right-sized compute re
 - **Fast scaling**: Provisions nodes in seconds vs minutes
 - **Flexible instance selection**: Chooses from all available instance types automatically
 - **Consolidation**: Actively replaces nodes with cheaper alternatives
-- **Spot instance optimization**: First-class support with automatic fallback
+- **Spot instance optimization**: First-class support (on-demand fallback is opt-in, not automatic — see Spot Instance Management)
 
 ### When to Use Karpenter
 
@@ -86,14 +86,14 @@ Karpenter is a Kubernetes node autoscaler that provisions right-sized compute re
 
 - **Spot instances**: Configure 70-90% spot mix for fault-tolerant workloads
 - **Graviton (ARM64)**: Use c7g, m7g, r7g families for lower costs
-- **Consolidation**: Enable WhenUnderutilized policy to replace expensive nodes
+- **Consolidation**: Enable WhenEmptyOrUnderutilized policy to replace expensive nodes
 - **Instance diversity**: Wide instance family selection improves spot availability
 - **Right-sizing**: Let Karpenter bin-pack efficiently instead of over-provisioning
 
 ### 6. Spot Instance Management
 
 - Use wide instance type selection (10+ families) for better spot availability
-- Configure automatic fallback to on-demand when spot unavailable
+- Fallback to on-demand is NOT automatic: include both `spot` and `on-demand` in one NodePool's `capacity-type` (or run a lower-weight on-demand NodePool) — a spot-only NodePool leaves pods Pending when spot is exhausted
 - Implement Pod Disruption Budgets to control blast radius
 - Set graceful termination handlers in applications (preStop hooks)
 - Monitor spot interruption rates and adjust instance selection
@@ -101,7 +101,7 @@ Karpenter is a Kubernetes node autoscaler that provisions right-sized compute re
 
 ### 7. Node Consolidation
 
-- **WhenUnderutilized**: Replaces nodes with cheaper/smaller alternatives actively
+- **WhenEmptyOrUnderutilized**: Replaces nodes with cheaper/smaller alternatives actively (v1 name; the old `WhenUnderutilized` is rejected)
 - **WhenEmpty**: Only consolidates completely empty nodes (conservative)
 - Configure consolidateAfter delay to prevent churn (30s-600s typical)
 - Use disruption budgets to limit consolidation rate (5-20% per window)
@@ -124,7 +124,7 @@ Karpenter is a Kubernetes node autoscaler that provisions right-sized compute re
 ### Example 1: Basic NodePool with Multiple Instance Types
 
 ```yaml
-apiVersion: karpenter.sh/v1beta1
+apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
   name: default
@@ -132,8 +132,11 @@ spec:
   # Template for nodes created by this NodePool
   template:
     spec:
-      # Reference to EC2NodeClass (AWS-specific configuration)
+      # Reference to EC2NodeClass (AWS-specific configuration).
+      # In v1, group AND kind are required alongside name (see Gotchas).
       nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
         name: default
 
       # Requirements that constrain instance selection
@@ -143,18 +146,21 @@ spec:
           operator: In
           values: ["amd64", "arm64"]
 
-        # Allow multiple instance families
-        - key: karpenter.k8s.aws/instance-family
+        # Prefer instance-category + generation over a fixed family list
+        # (broader spot pool, auto-adopts new generations — see Idioms).
+        - key: karpenter.k8s.aws/instance-category
           operator: In
-          values:
-            ["c6a", "c6i", "c7i", "m6a", "m6i", "m7i", "r6a", "r6i", "r7i"]
+          values: ["c", "m", "r"]
+        - key: karpenter.k8s.aws/instance-generation
+          operator: Gt
+          values: ["2"]
 
         # Allow a range of instance sizes
         - key: karpenter.k8s.aws/instance-size
           operator: In
           values: ["large", "xlarge", "2xlarge", "4xlarge"]
 
-        # Use 80% spot, 20% on-demand
+        # Use spot, falling back to on-demand (both types required for fallback)
         - key: karpenter.sh/capacity-type
           operator: In
           values: ["spot", "on-demand"]
@@ -164,22 +170,10 @@ spec:
           operator: In
           values: ["us-west-2a", "us-west-2b", "us-west-2c"]
 
-      # Kubelet configuration
-      kubelet:
-        # Set max pods based on instance size
-        maxPods: 110
-        # Memory reservation for system components
-        systemReserved:
-          cpu: 100m
-          memory: 100Mi
-          ephemeral-storage: 1Gi
-        # Eviction thresholds
-        evictionHard:
-          memory.available: 5%
-          nodefs.available: 10%
-        # Image garbage collection
-        imageGCHighThresholdPercent: 85
-        imageGCLowThresholdPercent: 80
+      # NOTE: kubelet config lives on EC2NodeClass.spec.kubelet in v1,
+      # NOT here on the NodePool (see Corrections). expireAfter is also
+      # a template field in v1 and is drift-able.
+      expireAfter: 720h
 
       # Taints and labels
       taints:
@@ -200,15 +194,15 @@ spec:
 
   # Disruption controls
   disruption:
-    # Consolidation policy
-    consolidationPolicy: WhenUnderutilized
+    # Consolidation policy (v1: WhenEmpty or WhenEmptyOrUnderutilized)
+    consolidationPolicy: WhenEmptyOrUnderutilized
 
     # Time window for when disruptions are allowed
     consolidateAfter: 30s
 
-    # Budgets control the rate of disruptions
+    # Budgets control the rate of (voluntary) disruptions
     budgets:
-      - nodes: 10%
+      - nodes: "10%"
         duration: 5m
 
   # Node weight for scheduling decisions (higher = preferred)
@@ -218,19 +212,39 @@ spec:
 ### Example 2: EC2NodeClass for AWS-Specific Configuration
 
 ```yaml
-apiVersion: karpenter.k8s.aws/v1beta1
+apiVersion: karpenter.k8s.aws/v1
 kind: EC2NodeClass
 metadata:
   name: default
 spec:
-  # AMI selection
-  amiFamily: AL2
+  # AMI selection is REQUIRED in v1 (unless amiFamily is Custom).
+  # Pin alias family@version in production so AMI rollouts are controlled
+  # via drift, not triggered automatically on every AWS release. Use al2023
+  # (or bottlerocket): EKS stopped publishing AL2 AMIs on 2025-11-26 (k8s
+  # 1.32 was the last version with them).
+  amiSelectorTerms:
+    - alias: al2023@v20240807
 
-  # Alternative: Use specific AMI selector
+  # Alternative: select by id/tags instead of an alias (cannot combine
+  # an alias term with other term types):
   # amiSelectorTerms:
   #   - id: ami-0123456789abcdef0
   #   - tags:
   #       karpenter.sh/discovery: my-cluster
+
+  # Kubelet configuration lives on EC2NodeClass in v1 (moved from NodePool).
+  # NodePools needing distinct kubelet config each need their own EC2NodeClass.
+  kubelet:
+    maxPods: 110
+    systemReserved:
+      cpu: 100m
+      memory: 100Mi
+      ephemeral-storage: 1Gi
+    evictionHard:
+      memory.available: 5%
+      nodefs.available: 10%
+    imageGCHighThresholdPercent: 85
+    imageGCLowThresholdPercent: 80
 
   # IAM role for nodes (instance profile)
   role: KarpenterNodeRole-my-cluster
@@ -247,13 +261,14 @@ spec:
         karpenter.sh/discovery: my-cluster
     - name: my-cluster-node-security-group
 
-  # User data for node initialization
+  # User data for node initialization.
+  # Do NOT call /etc/eks/bootstrap.sh — Karpenter already injects it (AL2),
+  # and on AL2023 Karpenter-owned fields (maxPods, labels, taints) override
+  # userData regardless. Use this only for extra OS-level tuning.
   userData: |
     #!/bin/bash
-    echo "Custom node initialization"
-    # Configure container runtime
-    # Set up logging
-    # Install monitoring agents
+    echo 'fs.inotify.max_user_watches=524288' >> /etc/sysctl.d/99-custom.conf
+    sysctl -p /etc/sysctl.d/99-custom.conf
 
   # Block device mappings for EBS volumes
   blockDeviceMappings:
@@ -266,11 +281,13 @@ spec:
         encrypted: true
         deleteOnTermination: true
 
-  # Metadata options for IMDS
+  # Metadata options for IMDS. v1 default hopLimit is 1, which blocks
+  # non-hostNetwork pods from reaching IMDS — give such pods IRSA/Pod
+  # Identity instead of raising this to 2 (see Security).
   metadataOptions:
     httpEndpoint: enabled
     httpProtocolIPv6: disabled
-    httpPutResponseHopLimit: 2
+    httpPutResponseHopLimit: 1
     httpTokens: required
 
   # Detailed monitoring
@@ -289,7 +306,7 @@ spec:
 ```yaml
 ---
 # GPU workload NodePool
-apiVersion: karpenter.sh/v1beta1
+apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
   name: gpu-workloads
@@ -297,6 +314,8 @@ spec:
   template:
     spec:
       nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
         name: gpu-nodes
 
       requirements:
@@ -333,7 +352,7 @@ spec:
 
 ---
 # Batch/Spot-heavy NodePool
-apiVersion: karpenter.sh/v1beta1
+apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
   name: batch-workloads
@@ -341,12 +360,16 @@ spec:
   template:
     spec:
       nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
         name: default
 
       requirements:
+        # Spot-only: NO automatic on-demand fallback — pods stay Pending
+        # if spot is exhausted. Add "on-demand" here for fallback.
         - key: karpenter.sh/capacity-type
           operator: In
-          values: ["spot"] # Only spot instances
+          values: ["spot"]
 
         - key: karpenter.k8s.aws/instance-family
           operator: In
@@ -370,11 +393,11 @@ spec:
     consolidationPolicy: WhenEmpty
     consolidateAfter: 60s
     budgets:
-      - nodes: 20% # Allow more aggressive disruption for batch
+      - nodes: "20%" # Allow more aggressive disruption for batch
 
 ---
 # Stateful workload NodePool (on-demand only)
-apiVersion: karpenter.sh/v1beta1
+apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
   name: stateful-workloads
@@ -382,6 +405,8 @@ spec:
   template:
     spec:
       nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
         name: stateful-nodes
 
       requirements:
@@ -401,8 +426,8 @@ spec:
           operator: In
           values: ["us-west-2a", "us-west-2b"]
 
-      kubelet:
-        maxPods: 50 # Lower density for stateful workloads
+      # kubelet config (e.g. maxPods: 50 for lower density) belongs on the
+      # referenced EC2NodeClass "stateful-nodes" in v1, not here.
 
       taints:
         - key: workload-type
@@ -422,14 +447,14 @@ spec:
     consolidationPolicy: WhenEmpty # Only consolidate when completely empty
     consolidateAfter: 600s # Wait 10 minutes
     budgets:
-      - nodes: 1 # Very conservative disruption
+      - nodes: "1" # Very conservative disruption
         duration: 30m
 ```
 
 ### Example 4: Disruption Budgets and Consolidation Policies
 
 ```yaml
-apiVersion: karpenter.sh/v1beta1
+apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
   name: production-apps
@@ -437,6 +462,8 @@ spec:
   template:
     spec:
       nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
         name: default
 
       requirements:
@@ -448,38 +475,43 @@ spec:
           operator: In
           values: ["c6i", "m6i", "r6i"]
 
+      # Expiration is a template field in v1 and is drift-able: changing it
+      # rolls existing nodes. Expiration is forceful and NOT budget-limited,
+      # so cap drain time with terminationGracePeriod.
+      expireAfter: 720h # 30 days
+      terminationGracePeriod: 1h
+
   # Advanced disruption configuration
   disruption:
-    # Consolidation policy options:
-    # - WhenUnderutilized: Replace nodes with cheaper/smaller nodes
-    # - WhenEmpty: Only replace completely empty nodes
-    consolidationPolicy: WhenUnderutilized
+    # Consolidation policy options (v1):
+    # - WhenEmptyOrUnderutilized: replace under-used nodes with cheaper/smaller
+    # - WhenEmpty: only replace completely empty nodes
+    consolidationPolicy: WhenEmptyOrUnderutilized
 
     # How soon after a node becomes eligible for consolidation
     consolidateAfter: 30s
 
-    # Expiration settings - force node replacement after time period
-    expireAfter: 720h # 30 days
-
-    # Multiple budget windows for different times/scenarios
+    # Multiple budget windows. SCHEDULES ARE UTC-ONLY (no timezone support),
+    # and when windows overlap Karpenter takes the MINIMUM. NotReady nodes
+    # also consume budget — see Gotchas.
     budgets:
-      # During business hours: conservative disruption
-      - nodes: 5%
+      # During business hours: conservative disruption (08:00 UTC)
+      - nodes: "5%"
         duration: 8h
         schedule: "0 8 * * MON-FRI"
 
       # During off-hours: more aggressive consolidation
-      - nodes: 20%
+      - nodes: "20%"
         duration: 16h
         schedule: "0 18 * * MON-FRI"
 
       # Weekends: most aggressive
-      - nodes: 30%
+      - nodes: "30%"
         duration: 48h
         schedule: "0 0 * * SAT"
 
       # Default budget (always active)
-      - nodes: 10%
+      - nodes: "10%"
 ```
 
 ### Example 5: Pod Scheduling with Karpenter
@@ -589,7 +621,7 @@ spec:
 ### Example 6: Spot Instance Handling and Fallback
 
 ```yaml
-apiVersion: karpenter.sh/v1beta1
+apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
   name: spot-with-fallback
@@ -597,10 +629,13 @@ spec:
   template:
     spec:
       nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
         name: default
 
       requirements:
-        # Prioritize spot, but allow on-demand as fallback
+        # Both capacity types in ONE NodePool gives on-demand fallback when
+        # spot is exhausted (spot-only would leave pods Pending).
         - key: karpenter.sh/capacity-type
           operator: In
           values: ["spot", "on-demand"]
@@ -631,20 +666,21 @@ spec:
           operator: In
           values: ["amd64", "arm64"]
 
-      # Metadata to track spot usage
+      # Metadata to track spot usage.
+      # NOTE: spot-to-spot consolidation is a CONTROLLER feature gate
+      # (settings.featureGates.spotToSpotConsolidation=true via Helm), NOT a
+      # NodePool annotation — there is no such annotation (see Gotchas).
       metadata:
         labels:
           spot-enabled: "true"
-        annotations:
-          karpenter.sh/spot-to-spot-consolidation: "true"
 
   disruption:
-    consolidationPolicy: WhenUnderutilized
+    consolidationPolicy: WhenEmptyOrUnderutilized
     consolidateAfter: 30s
 
     # More aggressive for spot since they can be interrupted anyway
     budgets:
-      - nodes: 25%
+      - nodes: "25%"
 
   # Weight influences Karpenter's NodePool selection
   # Higher weight = more preferred
@@ -705,7 +741,7 @@ spec:
 ### Example 8: Multi-Architecture NodePool
 
 ```yaml
-apiVersion: karpenter.sh/v1beta1
+apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
   name: multi-arch
@@ -713,6 +749,8 @@ spec:
   template:
     spec:
       nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
         name: default
 
       requirements:
@@ -747,27 +785,20 @@ spec:
           multi-arch: "true"
 
   disruption:
-    consolidationPolicy: WhenUnderutilized
+    consolidationPolicy: WhenEmptyOrUnderutilized
     consolidateAfter: 60s
 
 ---
 # EC2NodeClass with multi-architecture AMI support
-apiVersion: karpenter.k8s.aws/v1beta1
+apiVersion: karpenter.k8s.aws/v1
 kind: EC2NodeClass
 metadata:
   name: default
 spec:
-  # AL2 automatically selects the right AMI for architecture
-  amiFamily: AL2
-
-  # Alternative: Explicit AMI selection by architecture
-  # amiSelectorTerms:
-  #   - tags:
-  #       karpenter.sh/discovery: my-cluster
-  #       kubernetes.io/arch: amd64
-  #   - tags:
-  #       karpenter.sh/discovery: my-cluster
-  #       kubernetes.io/arch: arm64
+  # amiSelectorTerms is required in v1. The al2023 alias resolves the right
+  # AMI per architecture automatically; pin @version in production.
+  amiSelectorTerms:
+    - alias: al2023@v20240807
 
   role: KarpenterNodeRole-my-cluster
 
@@ -780,27 +811,108 @@ spec:
         karpenter.sh/discovery: my-cluster
 ```
 
+## Expert Practices: Idioms, Anti-Patterns & Gotchas
+
+### Currency (v1 API — Karpenter 1.0+)
+
+- **Use the v1 APIs exclusively.** Karpenter 1.0 graduated `NodePool` to `karpenter.sh/v1` and `EC2NodeClass` to `karpenter.k8s.aws/v1`; **1.1 dropped `v1beta1` entirely** (the conversion webhooks are gone). A `v1beta1` manifest is **rejected** on Karpenter >= 1.1 — this is a hard break, not a deprecation warning. The v1 APIs carry a compatibility guarantee across the 1.x line.
+
+- **`nodeClassRef` requires `group` + `kind` + `name`.** v1 renamed the old `apiVersion` key to `group`, and as of v1.1.0 `group` and `kind` are strictly required alongside `name`. A ref with only `name` leaves the NodePool **NotReady** — there is no default fallback.
+
+  ```yaml
+  nodeClassRef:
+    group: karpenter.k8s.aws
+    kind: EC2NodeClass
+    name: default
+  ```
+
+- **`kubelet` config moved from NodePool to `EC2NodeClass.spec.kubelet`** (maxPods, podsPerCore, systemReserved, evictionHard, imageGC thresholds). A `kubelet` block left on a NodePool is invalid. Because many NodePools share one EC2NodeClass, **NodePools that need distinct kubelet config each need their own EC2NodeClass.** The `compatibility.karpenter.sh/v1beta1-kubelet-conversion` migration annotation was dropped in 1.1, so anything relying on it **silently loses kubelet config** after the upgrade.
+
+- **`consolidationPolicy: WhenUnderutilized` was renamed to `WhenEmptyOrUnderutilized`** (old value rejected). And **`expireAfter` moved** from `spec.disruption` to `spec.template.spec.expireAfter` and is now **drift-able**: changing it triggers Drift and rolling replacement of running nodes (in v1beta1 it was a no-op on existing nodes). Pair it with `spec.template.spec.terminationGracePeriod` — v1 expiration is **forceful and NOT rate-limited by disruption budgets.**
+
+### Anti-Patterns
+
+- **`amiSelectorTerms` is required in v1** (unless `amiFamily: Custom`); omitting it leaves the EC2NodeClass and every referencing NodePool **NotReady**. An `alias` term cannot be combined with other term types and must match the `amiFamily`. **Pin `alias: family@version` in production** — `family@latest` rolls every node whenever AWS publishes a new EKS-optimized AMI, so an untested AMI can break workloads with no operator action. Use **al2023** or **bottlerocket** for new clusters: k8s 1.32 was the last version with EKS AL2 AMIs, and EKS stopped publishing them on 2025-11-26. (The AL2 base OS itself is supported until 2026-06-30 — it has not reached EOL.)
+
+- **Never run the Karpenter controller on a Karpenter-managed node.** A spot interruption, consolidation, or expiry can terminate the controller before it provisions its replacement — a circular dependency where no controller is up to launch a node and no node exists to host the controller. Run it on **EKS Fargate** (a Fargate profile for the `karpenter` namespace) or a **static managed node group Karpenter does not manage**, pinned via `nodeSelector`/tolerations.
+
+- **Make NodePools mutually exclusive or weighted.** AWS: "if multiple NodePools are matched, Karpenter will randomly choose which to use, causing unexpected results." Enforce routing with **taints on the NodePool + matching tolerations** (hard isolation, e.g. GPU pools) or distinct **`weight`** values (preference ordering with fallback).
+
+- **Do not call `/etc/eks/bootstrap.sh` in custom `userData` (AL2)** — Karpenter already injects it, so a second call reconfigures an already-running kubelet, init fails, and **the node never joins** despite appearing to start. On **AL2023**, userData is merged as NodeConfig and Karpenter-owned fields (maxPods, labels, taints) override userData — set those via native spec fields, not userData.
+
+### Gotchas
+
+- **`httpPutResponseHopLimit` defaults to 1 in v1** (was 2). This deliberately prevents non-`hostNetwork` pods from reaching IMDS (169.254.169.254) — the response TTL expires crossing the container netns. Any pod calling IMDS directly (SDK credential chaining, region/AZ detection) then **silently fails**. **Fix with IRSA or EKS Pod Identity**, not by raising the hop limit to 2 (that re-exposes IMDS to all containers — a credential-theft surface). Raise to 2 only as a deliberate, scoped exception.
+
+- **Set memory `requests` = `limits` when consolidation is enabled.** Karpenter bin-packs against requests; limits are ignored. After `WhenEmptyOrUnderutilized` packs pods tightly, pods whose memory limit exceeds their request can all burst at once and **OOM-kill neighbors**. Incompressible resources (memory, ephemeral-storage, GPU/hugepages) want requests ≈ working set / equal to limits; CPU is compressible (throttled, not killed), so `requests != limits` is fine there.
+
+- **`karpenter.sh/do-not-disrupt` only blocks *voluntary* disruption** (consolidation, voluntary drift). It does **NOT** block Expiration, Interruption, Node Repair, or manual deletion. Since v1 made expiration forceful, a long-running pod relying solely on this annotation is still terminated when the node's TTL fires — use `terminationGracePeriod` + SIGTERM handling for lifetime guarantees. The value must be empty/`"true"` or a valid Go duration; an invalid value (e.g. `"30 minutes"`) is **silently ignored** with only a Kubernetes event.
+
+- **Disruption budget math subtracts deleting AND NotReady nodes:** `allowed = roundup(total * pct) - deleting - notready`. A cluster under resource pressure can resolve to **0 allowed disruptions** and block all consolidation with nothing intentional in flight. With multiple active budget windows Karpenter takes the **minimum**. **Schedules are UTC-only** (no timezone) — `0 8 * * MON-FRI` fires at 08:00 UTC. Forceful methods (expiration, interruption) are never budget-limited.
+
+- **Spot-to-spot consolidation needs the feature gate AND >= 15 instance types.** Enable via Helm `settings.featureGates.spotToSpotConsolidation=true` (controller-level — **there is no `karpenter.sh/spot-to-spot-consolidation` NodePool annotation; it is fabricated and does nothing**). Even enabled, single-node spot-to-spot consolidation requires >= 15 cheaper qualifying instance types or Karpenter logs `requires 15 cheaper instance type options ... got N` and skips. Over-constraining instance families silently disables the optimization.
+
+- **`spec.limits` is a soft, eventually-consistent cap** — during a burst, parallel provisioning decisions can each see room and all launch, transiently overshooting it. Limits are **per NodePool only** (no cluster-wide limit). When hit, Karpenter writes `resource usage of X exceeds limit of Y` to **controller logs only** (no Kubernetes event) — detect overrun with a CloudWatch Logs metric filter + a billing alarm. Treat limits + billing alarms as the cost guardrail, not a hard spend cap.
+
+- **Karpenter treats *preferred* affinity as *required* on the first scheduling pass**, relaxing preferences one at a time only if requirements can't be met (unlike kube-scheduler, which treats them as soft against existing nodes). A pod with `preferredDuringScheduling` pod-anti-affinity can therefore make Karpenter **provision a NEW node** instead of using an underutilized one — costly for overprovisioning/headroom placeholders. (This does NOT apply to topology spread.) If spreading is required for correctness, use `requiredDuringScheduling` affinity or `topologySpreadConstraints` with `DoNotSchedule`.
+
+### Idioms
+
+- **Prefer `instance-category` + `instance-generation` over fixed `instance-family` lists.** The official default NodePool selects `instance-category In [c, m, r]` and `instance-generation Gt 2`. This keeps the spot pool broad (Price-Capacity-Optimized draws from the deepest pools → lower interruption risk) and auto-adopts new generations without editing the manifest. A short family list is rigid and narrows the spot pool.
+
+  ```yaml
+  requirements:
+    - key: karpenter.k8s.aws/instance-category
+      operator: In
+      values: ["c", "m", "r"]
+    - key: karpenter.k8s.aws/instance-generation
+      operator: Gt
+      values: ["2"]
+  ```
+
+- **Enable native interruption handling via SQS; do not also run Node Termination Handler.** Point the controller at an SQS queue fed by EventBridge rules (`--interruption-queue` / Helm `settings.interruptionQueue`). It proactively taints/drains/replaces nodes on spot notices, scheduled maintenance, and stop/terminate events, launching a replacement in parallel with the drain on the 2-minute spot notice. Running **aws-node-termination-handler alongside it drains the same node twice** (conflicting taints, excessive churn) — use one or the other.
+
+- **Scope disruption budgets by `reasons`** (`Drifted`, `Underutilized`, `Empty`; omitted = all voluntary reasons). Rate-limit causes independently — e.g. freeze drift-driven AMI rollouts during business hours while still allowing empty-node cleanup:
+
+  ```yaml
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 30s
+    budgets:
+      - nodes: "0"
+        schedule: "0 9 * * mon-fri" # UTC
+        duration: 8h
+      - nodes: "20%"
+        reasons: ["Empty"] # always allow idle-node removal
+  ```
+
+### Private / Air-Gapped Clusters
+
+- A private cluster needs a regional **STS VPC endpoint** (Karpenter uses IRSA; missing → `WebIdentityErr: failed to retrieve credentials`) and an **SSM VPC endpoint** (queries SSM for EKS-optimized AMI IDs and to hydrate the launch-template cache; missing → `Unable to hydrate the AWS launch template cache`). There is **no VPC endpoint for the Price List API** — Karpenter ships on-demand pricing in its binary and only refreshes it on upgrade (logs `retreiving on-demand pricing data ... i/o timeout`), so plan upgrade cadence to refresh pricing in air-gapped environments. Only **two** endpoints are required; pricing degrades gracefully to stale data.
+
 ## Monitoring and Troubleshooting
 
 ### Key Metrics to Monitor
 
 ```text
-# Provisioning metrics
+# Scheduling / provisioning metrics (v1 — "provisioner" metrics were removed)
 karpenter_nodes_created_total
 karpenter_nodes_terminated_total
-karpenter_provisioner_scheduling_duration_seconds
+karpenter_scheduler_scheduling_duration_seconds
 
 # Disruption metrics
-karpenter_disruption_replacement_node_initialized_seconds
-karpenter_disruption_consolidation_actions_performed_total
-karpenter_disruption_budgets_allowed_disruptions
+karpenter_nodepools_allowed_disruptions
+karpenter_voluntary_disruption_eligible_nodes
+karpenter_voluntary_disruption_decisions_total
 
 # Cost metrics
-karpenter_provisioner_instance_type_price_estimate
 karpenter_cloudprovider_instance_type_offering_price_estimate
 
 # Pod metrics
 karpenter_pods_state (pending, running, etc.)
+
+# Cross-check names against the live /metrics endpoint and
+# https://karpenter.sh/docs/reference/metrics/ — they change between releases.
 ```
 
 ### Common Issues and Solutions
@@ -817,7 +929,7 @@ karpenter_pods_state (pending, running, etc.)
 - Adjust consolidation delay (consolidateAfter)
 - Review disruption budgets
 - Check if pod resource requests are accurate
-- Consider using WhenEmpty instead of WhenUnderutilized
+- Consider using WhenEmpty instead of WhenEmptyOrUnderutilized
 
 #### Issue: High costs despite using Karpenter
 
@@ -843,14 +955,19 @@ resource "helm_release" "karpenter" {
   name             = "karpenter"
   repository       = "oci://public.ecr.aws/karpenter"
   chart            = "karpenter"
-  version          = "v0.33.0"
+  version          = "1.1.1" # pin a current 1.x release (v1 APIs)
 
   values = [
     <<-EOT
     settings:
       clusterName: ${var.cluster_name}
       clusterEndpoint: ${var.cluster_endpoint}
+      # Native interruption handling — feed this SQS queue from EventBridge.
+      # Do NOT also run aws-node-termination-handler (double-drain churn).
       interruptionQueue: ${var.interruption_queue_name}
+      # Spot-to-spot consolidation is controller-level (not per-NodePool):
+      featureGates:
+        spotToSpotConsolidation: true
 
     serviceAccount:
       annotations:
@@ -875,7 +992,7 @@ resource "helm_release" "karpenter" {
 # Deploy default NodePool
 resource "kubectl_manifest" "karpenter_nodepool_default" {
   yaml_body = <<-YAML
-    apiVersion: karpenter.sh/v1beta1
+    apiVersion: karpenter.sh/v1
     kind: NodePool
     metadata:
       name: default
@@ -883,19 +1000,25 @@ resource "kubectl_manifest" "karpenter_nodepool_default" {
       template:
         spec:
           nodeClassRef:
+            group: karpenter.k8s.aws
+            kind: EC2NodeClass
             name: default
           requirements:
             - key: karpenter.sh/capacity-type
               operator: In
               values: ["spot", "on-demand"]
-            - key: karpenter.k8s.aws/instance-family
+            - key: karpenter.k8s.aws/instance-category
               operator: In
-              values: ["c6i", "m6i", "r6i"]
+              values: ["c", "m", "r"]
+            - key: karpenter.k8s.aws/instance-generation
+              operator: Gt
+              values: ["2"]
+          expireAfter: 720h
       limits:
         cpu: 1000
         memory: 1000Gi
       disruption:
-        consolidationPolicy: WhenUnderutilized
+        consolidationPolicy: WhenEmptyOrUnderutilized
         consolidateAfter: 30s
   YAML
 

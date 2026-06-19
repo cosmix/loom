@@ -210,31 +210,28 @@ module "internal" {
 
 **Remote State Backend Configuration:**
 
-**AWS S3 + DynamoDB:**
+**AWS S3 with native locking:**
 
 ```hcl
 # backend.tf
 terraform {
   backend "s3" {
-    bucket         = "myorg-terraform-state"
-    key            = "prod/eks/terraform.tfstate"
-    region         = "us-west-2"
-    encrypt        = true
-    kms_key_id     = "arn:aws:kms:us-west-2:123456789012:key/..."
-    dynamodb_table = "terraform-state-locks"
-
-    # Prevent accidental deletion
-    lifecycle {
-      prevent_destroy = true
-    }
+    bucket       = "myorg-terraform-state"
+    key          = "prod/eks/terraform.tfstate"
+    region       = "us-west-2"
+    encrypt      = true
+    kms_key_id   = "arn:aws:kms:us-west-2:123456789012:key/..."
+    use_lockfile = true   # native S3 conditional-write locking; no DynamoDB
   }
 }
 ```
 
+`use_lockfile = true` acquires the lock via an S3 conditional `PutObject` of a `<key>.tflock` object — no separate table and no DynamoDB IAM permissions. In Terraform, `dynamodb_table`-based locking is deprecated and will be removed in a future minor version. To migrate, set `use_lockfile = true` AND keep `dynamodb_table` simultaneously until all operators/CI have transitioned, then drop `dynamodb_table`. Note: OpenTofu's S3 backend supports both native and DynamoDB locking and has NOT deprecated DynamoDB — this deprecation is Terraform-specific.
+
 **Setup Commands:**
 
 ```bash
-# Create state bucket and lock table
+# Create the state bucket (native locking needs no DynamoDB table)
 aws s3api create-bucket \
   --bucket myorg-terraform-state \
   --region us-west-2 \
@@ -254,12 +251,15 @@ aws s3api put-bucket-encryption \
       }
     }]
   }'
+```
 
-aws dynamodb create-table \
-  --table-name terraform-state-locks \
-  --attribute-definitions AttributeName=LockID,AttributeType=S \
-  --key-schema AttributeName=LockID,KeyType=HASH \
-  --billing-mode PAY_PER_REQUEST
+To protect the state bucket itself, put `lifecycle { prevent_destroy = true }` on the `aws_s3_bucket` resource that provisions it (and enable versioning/object-lock) — `lifecycle` is a resource meta-argument and is invalid inside a `backend` block.
+
+**Backend blocks cannot reference variables** — backend config is evaluated before variables/locals/data sources, so any `var.*`/`local.*` there errors at init. Use *partial configuration*: leave dynamic args out of the block and supply them at init via `-backend-config=KEY=VALUE` or a `.tfbackend` file. NEVER pass credentials via `-backend-config` (Terraform persists them into `.terraform/` and plan files) or hardcode them — supply backend credentials only through environment variables (e.g. `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`).
+
+```bash
+# tofu init -backend-config="bucket=$TF_STATE_BUCKET" \
+#           -backend-config="key=prod/app.tfstate"
 ```
 
 **State Operations:**
@@ -272,12 +272,15 @@ tofu state list
 tofu state show aws_vpc.main
 
 # Move resource to different address
+# Prefer a version-controlled `moved` block over this imperative command
 tofu state mv aws_instance.old aws_instance.new
 
 # Remove resource from state (doesn't destroy)
+# Prefer a `removed { ... lifecycle { destroy = false } }` block over this
 tofu state rm aws_instance.temp
 
 # Import existing resource
+# Prefer a declarative `import` block (reviewable plan) over this imperative command
 tofu import aws_instance.example i-1234567890abcdef0
 
 # Pull remote state for inspection
@@ -294,7 +297,7 @@ tofu state replace-provider registry.terraform.io/hashicorp/aws \
 **State Locking:**
 
 - Always use state locking to prevent concurrent modifications
-- DynamoDB for AWS, GCS for Google Cloud, Azure Storage for Azure
+- S3 native (`use_lockfile = true`) for AWS, GCS for Google Cloud, Azure Storage for Azure
 - If lock is stuck, verify no operations running before forcing: `tofu force-unlock LOCK_ID`
 
 **State Migration:**
@@ -313,16 +316,31 @@ tofu init -migrate-state -backend-config="bucket=new-bucket"
 
 ### 5. Multi-Environment Management
 
-#### Strategy 1: Workspaces (Simple, Same Backend)
+#### Strategy 1 (RECOMMENDED): Directory Structure — Isolated Backends & Credentials
+
+This is the right choice for dev/staging/prod separation. Each environment is a separate root module with its OWN backend bucket and IAM role, so switching environments requires a deliberate directory change — there is no way to mis-target prod from a dev shell.
+
+```text
+terraform/
+├── modules/          # Shared modules
+├── environments/
+│   ├── dev/
+│   │   ├── main.tf
+│   │   ├── backend.tf      # bucket=myorg-dev-state, dev IAM role (no prod access)
+│   │   ├── terraform.tfvars
+│   │   └── .terraform.lock.hcl
+│   ├── staging/
+│   └── prod/              # backend.tf -> bucket=myorg-prod-state, prod IAM role
+```
+
+#### Strategy 2: Workspaces — ONLY for ephemeral variants within ONE access boundary
+
+> ⚠️ **Workspaces are NOT an environment-isolation mechanism.** The official docs state they "are not appropriate for system decomposition or deployments requiring separate credentials and access controls." All workspaces in a directory share ONE backend, ONE authentication context, and ONE provider config — there is no prod/dev boundary, and a mistyped `tofu workspace select prod && tofu apply` hits production with no config-level guard. Use workspaces only for short-lived variants of the SAME infrastructure within a single access boundary (PR preview / ephemeral test environments).
 
 ```bash
-# Create and switch workspaces
-tofu workspace new dev
-tofu workspace new staging
-tofu workspace new prod
-
-tofu workspace list
-tofu workspace select prod
+# Acceptable use: ephemeral PR-preview environments, one access boundary
+tofu workspace new pr-1234
+tofu workspace select pr-1234
 
 # Use workspace in configuration
 locals {
@@ -336,21 +354,6 @@ locals {
 
   count = local.instance_count[local.environment]
 }
-```
-
-#### Strategy 2: Directory Structure (Complex, Isolated)
-
-```text
-terraform/
-├── modules/          # Shared modules
-├── environments/
-│   ├── dev/
-│   │   ├── main.tf
-│   │   ├── backend.tf
-│   │   ├── terraform.tfvars
-│   │   └── .terraform.lock.hcl
-│   ├── staging/
-│   └── prod/
 ```
 
 #### Strategy 3: tfvars Files (Flexible)
@@ -591,7 +594,11 @@ resource "aws_network_acl" "private" {
 ```hcl
 # versions.tf
 terraform {
-  required_version = ">= 1.6.0"
+  # Floor chosen for the primitives this config relies on:
+  #   1.9  cross-object variable validation, check/import blocks (1.5)
+  # Raise to >= 1.10.0 if using ephemeral values, >= 1.11.0 for write-only args /
+  # native S3 locking. For OpenTofu: >= 1.7.0 (state encryption), >= 1.10.0 (S3 locking).
+  required_version = ">= 1.9.0"
 
   required_providers {
     aws = {
@@ -791,10 +798,15 @@ tofu force-unlock <LOCK_ID>
 
 ```bash
 # Problem: Corrupted provider cache
-# Solution: Clear cache and re-initialize
+# Solution: Clear ONLY the plugin cache and re-initialize
 rm -rf .terraform/
-rm .terraform.lock.hcl
 tofu init
+
+# Do NOT delete .terraform.lock.hcl — that discards validated checksum pins and
+# can pull a different provider version on the next init. If the lock file is
+# genuinely corrupt, regenerate (don't just delete) it across all target platforms:
+tofu providers lock \
+  -platform=linux_amd64 -platform=darwin_arm64 -platform=windows_amd64
 ```
 
 #### Issue: Resource Already Exists
@@ -829,9 +841,23 @@ resource "aws_security_group_rule" "app_to_db" {
 
 ```bash
 # Problem: Passwords/keys visible in state file
-# Solution: Always use remote state with encryption
-# Never commit state files to version control
-# Use AWS Secrets Manager / Vault for secrets
+# `sensitive = true` only REDACTS UI output — the value is still plaintext in state.
+# Real fixes (see "Expert Practices > Security"):
+#   - write-only args (Terraform >= 1.11) + ephemeral resources (>= 1.10): never persisted
+#   - OpenTofu >= 1.7 `encryption` block: client-side state+plan encryption at rest
+#   - external store (Secrets Manager/Vault): pass only ARNs/references through Terraform
+# Always use remote state with encryption; never commit state files to version control.
+```
+
+#### Issue: Forcing Resource Replacement (`taint` is deprecated)
+
+```bash
+# `terraform/tofu taint` is DEPRECATED (since Terraform v0.15.2): it mutates state
+# immediately with no plan preview, so other operators can plan against a tainted
+# resource before the impact is reviewed.
+# Use -replace instead — it produces a reviewable plan preview before replacing:
+tofu plan -replace="aws_instance.example"
+tofu apply -replace="aws_instance.example"
 ```
 
 #### Issue: Resource Drift
@@ -921,6 +947,148 @@ terraform-compliance -f compliance/ -p .
 - IAM policies follow least privilege
 - Network security groups are restrictive
 
+## Expert Practices: Idioms, Anti-Patterns & Gotchas
+
+High-signal guidance from the official docs. The *why* matters as much as the rule.
+
+### Anti-Patterns
+
+**Never put a `provider` block in a reusable child module.** The docs are explicit: "A module intended to be called by one or more other modules must not contain any provider blocks," and "a module with its own provider configurations is not compatible with for_each, count, or depends_on" on the module call. The mechanism: a provider config and the resources it manages must be destroyed together, but the graph cannot guarantee that ordering once the call is multiplied/ordered. Declare `provider` blocks only in root modules; pass non-default (aliased) providers explicitly via the `providers` argument. **Aliased providers are NEVER inherited** — forgetting to pass one silently falls back to the default provider (wrong region/account). Child modules declare `required_providers` for version constraints only — no provider block, and no `backend` block (only one backend per configuration).
+
+```hcl
+# root/main.tf
+provider "aws" { alias = "usw2", region = "us-west-2" }
+
+module "app" {
+  source    = "./modules/app"
+  providers = { aws = aws.usw2 }
+  for_each  = var.environments   # works only because the module has no provider block
+}
+# modules/app/versions.tf -> required_providers ONLY, no provider/backend block
+```
+
+**Keep module composition flat (single level of child modules).** Modules accept inputs, emit outputs, and know nothing about where state lives or how callers are structured. Compose flat modules at the root and wire them via input/output rather than nesting deep hierarchies (root → A → B → C), which obscure dependency flow, complicate provider passing, and make refactoring hazardous.
+
+```hcl
+module "vpc" { source = "./modules/vpc", cidr = var.vpc_cidr }
+module "rds" {
+  source     = "./modules/rds"
+  vpc_id     = module.vpc.vpc_id            # dependency expressed via inputs
+  subnet_ids = module.vpc.private_subnet_ids
+}
+```
+
+### Idioms
+
+**Don't repeat the resource type in the name label.** The address `aws_security_group.app` already carries the type, so `aws_security_group.app_security_group` says the noun twice. Use a short, role-descriptive noun; separate words with underscores, not dashes (`aws_instance.web`, not `aws_instance.ec2-web-server`). The `this`/`main` singleton convention is a *community* idiom (terraform-best-practices.com), NOT in the official style guide.
+
+**Use `moved`/`removed`/`import` blocks, not the imperative CLI.** `terraform state mv`/`import`/`taint` are imperative: each operator must run them, they are not version-controlled, and they are not reproducible across environments. The block forms are validated, reviewable in PRs, and run in CI with no manual steps.
+
+- `moved` (≥ 1.1) encodes renames. **Never delete a published `moved` block** — doing so makes configs referencing the old address plan a *delete* instead of a move. Chain renames across successive moves; retain all historical blocks.
+- `removed` (≥ 1.7) with `lifecycle { destroy = false }` drops a resource from management WITHOUT destroying the real infrastructure.
+- `import` (≥ 1.5) blocks make import plannable; pair with `-generate-config-out=FILE` to auto-generate matching HCL for brownfield adoption. OpenTofu 1.7+ adds `for_each` for bulk imports. Unlike `moved`, import blocks may be deleted after they succeed.
+
+```hcl
+moved   { from = aws_instance.server,    to = aws_instance.app_server }            # chain, never prune
+removed { from = aws_db_instance.legacy, lifecycle { destroy = false } }           # keep real infra
+import  { to   = aws_instance.app,       id = "i-1234567890abcdef0" }               # then -generate-config-out
+```
+
+**Commit `.terraform.lock.hcl`, and pre-populate multi-platform checksums.** `terraform init` records checksums only for the platform it ran on, so a teammate/CI on another OS/arch hits "no matching checksum". Lock all needed platforms before committing. The lock pins PROVIDERS only — module pinning lives in the module `version` constraint. A CI `init -upgrade` re-resolves from constraints and overwrites lock selections, silently unpinning providers.
+
+```bash
+tofu providers lock -platform=linux_amd64 -platform=darwin_amd64 \
+                    -platform=darwin_arm64 -platform=windows_amd64
+```
+
+### Gotchas
+
+**`count` index shift silently recreates the WRONG resources — prefer `for_each`.** Removing a non-tail element of a `count` list reindexes everything after it: removing `[1]` of three makes old-`[2]` become `[1]`, so Terraform destroys & recreates the resource you never touched — a data-loss footgun for RDS/EBS/subnets. Key `for_each` over a map/set by a STABLE identity instead. Caveats: `toset()` on a list silently dedupes duplicates (dropping instances), and a `moved` block migrates existing count-indexed state to for_each keys without recreation.
+
+**`for_each` keys must be known at plan time and non-sensitive.** Keys appear in plan UI, so (1) sensitive values are categorically forbidden as `for_each` args (leaking a key leaks the secret), and (2) a computed/"known after apply" attribute (generated ID/ARN/endpoint) as a key is a plan-time error. Impure functions (`uuid()`, `timestamp()`, `bcrypt()`) are also disallowed — identity must be stable across runs. Derive a non-sensitive, statically-known key set with a `for` expression first.
+
+**Data sources are read at plan time and return last-known values.** A `data` lookup reflects state as of the plan, not the live moment of apply. If any argument (or an added `depends_on`) references a "known after apply" value, the read is DEFERRED to apply and the plan shows "(known after apply)", making downstream plan review meaningless. Keep data-source args static; to use an attribute of a resource you are creating, **reference that resource's attribute directly** rather than re-looking it up through a data source.
+
+**`create_before_destroy` is graph-wide and irreversible.** Terraform "propagates and applies create_before_destroy behavior to all resource dependencies" and stores it in state; you cannot override it to `false` on a dependency (that would imply a cycle). So one leaf change can silently alter replacement ordering of upstream infra. Two more traps: with CBD true, `destroy`-time provisioners do NOT run (drain/deregister logic is skipped); and unique-name resources (security groups, RDS, IAM, S3) collide during the create-then-destroy overlap — use `name_prefix` or a `random_id`/`random_pet` suffix.
+
+```hcl
+resource "aws_security_group" "app" {
+  name_prefix = "${var.name}-app-"   # unique per replacement; avoids overlap collision
+  lifecycle { create_before_destroy = true }
+}
+```
+
+**`prevent_destroy` is bypassed when you delete the resource block.** It blocks destroy plans only WHILE the block exists; Terraform does not store the rule in state (unlike `create_before_destroy`). Deleting the block makes the next apply plan destruction of the live infra, with no guard to stop it. To stop managing a resource without destroying it, use a `removed` block with `destroy = false`.
+
+### Performance
+
+**Prefer implicit attribute references over `depends_on`.** Referencing an attribute (`aws_iam_instance_profile.app.name`) gives Terraform the exact dependency scope and full parallelism. `depends_on` is a blunt instrument: Terraform plans conservatively, marks more values "(known after apply)", and "can cause Terraform to create more conservative plans that replace more resources than necessary." Worst on a `module` call — it serializes ALL resources inside the module, even ones that need not wait. Reserve `depends_on` for hidden side effects with no referenceable attribute (e.g. an IAM policy that must propagate before bootstrap).
+
+### Security
+
+**`sensitive = true` does NOT protect state.** Docs: "Terraform stores values with the sensitive argument in both state and plan files, and anyone who can access those files can access your sensitive values." `terraform output -json`/`-raw` print them in plaintext regardless. The only mechanisms that keep a secret out of state are:
+
+- **Write-only arguments** (Terraform ≥ 1.11, provider-specific, e.g. `password_wo` + `password_wo_version`) — the provider consumes them, Terraform never persists them.
+- **Ephemeral resources/values** (≥ 1.10) — fetched per-phase and discarded before state/plan are written.
+
+For older versions/providers, keep the secret in an external store and pass only ARNs/references.
+
+```hcl
+ephemeral "aws_secretsmanager_secret_version" "db" { secret_id = aws_secretsmanager_secret.db.id }
+resource "aws_db_instance" "main" {
+  password_wo         = ephemeral.aws_secretsmanager_secret_version.db.secret_string
+  password_wo_version = 1   # increment to rotate
+}
+```
+
+**Avoid `terraform_remote_state` across team boundaries.** It exposes only outputs, but the consumer must have read access to the ENTIRE state snapshot to get them — "any user or server which has enough access to read the root module output values will also always have access to the full state snapshot data," which often includes secrets. Renaming an output also breaks every consumer. Publish data explicitly to a neutral store (SSM Parameter Store, Consul, S3, DNS) so access controls on shared data and on state differ; HCP Terraform's `tfe_outputs` avoids full-state access. Within one team's own repo, `terraform_remote_state` is fine.
+
+```hcl
+resource "aws_ssm_parameter" "vpc_id" { name = "/shared/networking/vpc-id", type = "String", value = aws_vpc.main.id }
+data "aws_ssm_parameter" "vpc_id"     { name = "/shared/networking/vpc-id" }   # consumer needs no state access
+```
+
+### Validation (Design Pattern)
+
+Layered validation, each tier with a distinct scope and failure behavior:
+
+- **Variable `validation`** — checks raw input shape/range. Since 1.9 it may reference other objects, but it CANNOT reach a `data` source / provider-returned attribute. Halts.
+- **`precondition`/`postcondition`** (≥ 1.2, inside `lifecycle`) — run with resolved values: preconditions assert cross-resource invariants before create; postconditions validate provider-returned attributes after create. Both HALT on failure.
+- **`check` blocks** (≥ 1.5) — run at the END of plan/apply and report failures as WARNINGS without halting. Use for health probes, cert-expiry, and compliance/drift that should surface but not gate a deploy; they can embed a scoped `data` source.
+
+```hcl
+data "aws_ami" "app" {
+  lifecycle {
+    postcondition {                                  # blocking invariant
+      condition     = self.architecture == "x86_64"
+      error_message = "AMI ${self.id} is ${self.architecture}; only x86_64 supported."
+    }
+  }
+}
+check "api_health" {                                 # non-blocking observation
+  data "http" "endpoint" { url = "https://${aws_lb.app.dns_name}/health" }
+  assert {
+    condition     = data.http.endpoint.status_code == 200
+    error_message = "Health endpoint returned ${data.http.endpoint.status_code}"
+  }
+}
+```
+
+### Currency
+
+**OpenTofu offers client-side state encryption; OSS Terraform does not.** OpenTofu 1.7+ adds an `encryption` block inside `terraform {}` that encrypts state and plan files (AES-GCM, PBKDF2 passphrase or KMS key provider) before they leave the process — protecting secrets at rest independent of backend encryption (S3 SSE still leaves state readable to anyone with bucket access). Tradeoff/gotcha: tools that parse raw state (remote-state data sources, drift comparison, some third-party tooling) do not work against encrypted state, so plan for key distribution. Use a KMS key provider (not a static passphrase) in production for rotation and audit; never hardcode a passphrase.
+
+```hcl
+terraform {
+  encryption {
+    key_provider "aws_kms" "main" { kms_key_id = var.kms_key_id, region = var.region }
+    method "aes_gcm" "default"    { keys = key_provider.aws_kms.main }
+    state { method = method.aes_gcm.default }
+    plan  { method = method.aes_gcm.default }
+  }
+}
+```
+
 ## Best Practices Summary
 
 1. **Module Design**: Create reusable, versioned modules with clear interfaces
@@ -960,7 +1128,7 @@ terraform-compliance -f compliance/ -p .
 ```hcl
 # modules/vpc/main.tf
 terraform {
-  required_version = ">= 1.0"
+  required_version = ">= 1.9.0"  # cross-object validation; raise for ephemeral/write-only
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -1016,50 +1184,57 @@ resource "aws_internet_gateway" "main" {
   })
 }
 
+# for_each keyed by AZ name -> stable addresses. Removing an AZ destroys only that
+# subnet, never reindexing the survivors (which count would). The CIDR index is
+# derived from a sorted-list lookup so it stays stable per AZ.
+locals {
+  az_index = { for i, az in sort(var.availability_zones) : az => i }
+}
+
 resource "aws_subnet" "public" {
-  count = length(var.availability_zones)
+  for_each = toset(var.availability_zones)
 
   vpc_id                  = aws_vpc.main.id
-  cidr_block              = cidrsubnet(var.cidr_block, 4, count.index)
-  availability_zone       = var.availability_zones[count.index]
+  cidr_block              = cidrsubnet(var.cidr_block, 4, local.az_index[each.key])
+  availability_zone       = each.key
   map_public_ip_on_launch = true
 
   tags = merge(local.common_tags, {
-    Name = "${var.name}-public-${var.availability_zones[count.index]}"
+    Name = "${var.name}-public-${each.key}"
     Tier = "public"
   })
 }
 
 resource "aws_subnet" "private" {
-  count = length(var.availability_zones)
+  for_each = toset(var.availability_zones)
 
   vpc_id            = aws_vpc.main.id
-  cidr_block        = cidrsubnet(var.cidr_block, 4, count.index + length(var.availability_zones))
-  availability_zone = var.availability_zones[count.index]
+  cidr_block        = cidrsubnet(var.cidr_block, 4, local.az_index[each.key] + length(var.availability_zones))
+  availability_zone = each.key
 
   tags = merge(local.common_tags, {
-    Name = "${var.name}-private-${var.availability_zones[count.index]}"
+    Name = "${var.name}-private-${each.key}"
     Tier = "private"
   })
 }
 
 resource "aws_eip" "nat" {
-  count  = length(var.availability_zones)
-  domain = "vpc"
+  for_each = toset(var.availability_zones)
+  domain   = "vpc"
 
   tags = merge(local.common_tags, {
-    Name = "${var.name}-nat-eip-${count.index}"
+    Name = "${var.name}-nat-eip-${each.key}"
   })
 }
 
 resource "aws_nat_gateway" "main" {
-  count = length(var.availability_zones)
+  for_each = toset(var.availability_zones)
 
-  allocation_id = aws_eip.nat[count.index].id
-  subnet_id     = aws_subnet.public[count.index].id
+  allocation_id = aws_eip.nat[each.key].id
+  subnet_id     = aws_subnet.public[each.key].id
 
   tags = merge(local.common_tags, {
-    Name = "${var.name}-nat-${count.index}"
+    Name = "${var.name}-nat-${each.key}"
   })
 
   depends_on = [aws_internet_gateway.main]
@@ -1072,12 +1247,12 @@ output "vpc_id" {
 
 output "public_subnet_ids" {
   description = "Public subnet IDs"
-  value       = aws_subnet.public[*].id
+  value       = [for s in aws_subnet.public : s.id]   # for_each map -> list
 }
 
 output "private_subnet_ids" {
   description = "Private subnet IDs"
-  value       = aws_subnet.private[*].id
+  value       = [for s in aws_subnet.private : s.id]
 }
 ```
 
@@ -1086,14 +1261,14 @@ output "private_subnet_ids" {
 ```hcl
 # main.tf
 terraform {
-  required_version = ">= 1.0"
+  required_version = ">= 1.9.0"
 
   backend "s3" {
-    bucket         = "my-terraform-state"
-    key            = "eks/terraform.tfstate"
-    region         = "us-west-2"
-    encrypt        = true
-    dynamodb_table = "terraform-locks"
+    bucket       = "my-terraform-state"
+    key          = "eks/terraform.tfstate"
+    region       = "us-west-2"
+    encrypt      = true
+    use_lockfile = true   # native S3 locking; replaces deprecated dynamodb_table
   }
 }
 

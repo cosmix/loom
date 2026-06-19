@@ -337,6 +337,9 @@ metadata:
   name: team-a-reconciler
   namespace: team-a
 ---
+# Namespace-scoped RoleBinding to the built-in `admin` ClusterRole.
+# This grants full rights WITHIN team-a only — never use a ClusterRoleBinding
+# and never bind a tenant reconciler to cluster-admin (see Tenant RBAC Restrictions).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -345,7 +348,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: cluster-admin
+  name: admin
 subjects:
   - kind: ServiceAccount
     name: team-a-reconciler
@@ -375,7 +378,6 @@ spec:
     name: team-a-repo
   path: ./apps
   prune: true
-  validation: client
 ```
 
 ### Tenant RBAC Restrictions
@@ -407,6 +409,50 @@ subjects:
     name: team-a-reconciler
     namespace: team-a
 ```
+
+### Multi-Tenancy Lockdown Flags (mandatory)
+
+RBAC alone does NOT make a Flux install multi-tenant. A default install lets a
+tenant reference Sources/Secrets in other namespaces, pull arbitrary remote
+Kustomize bases, and (if it omits `serviceAccountName`) reconcile with the
+controller's cluster-wide identity. Three controller flags close these vectors
+and MUST be set via bootstrap kustomize patches in
+`clusters/<env>/flux-system/`:
+
+- `--no-cross-namespace-refs=true` on kustomize/helm/notification/image-reflector/image-automation controllers — blocks cross-namespace references to Sources, Secrets, and events.
+- `--no-remote-bases=true` on kustomize-controller — blocks fetching arbitrary Kustomize bases over HTTPS (which bypass Flux source verification and caching).
+- `--default-service-account=default` on kustomize/helm controllers — any resource lacking `spec.serviceAccountName` falls back to the namespace `default` SA (which should have no RBAC) instead of the controller identity.
+
+```yaml
+# clusters/<env>/flux-system/kustomization.yaml — patches the bootstrapped components
+patches:
+  - patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --no-cross-namespace-refs=true
+    target:
+      kind: Deployment
+      name: "(kustomize-controller|helm-controller|notification-controller|image-reflector-controller|image-automation-controller)"
+  - patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --no-remote-bases=true
+    target:
+      kind: Deployment
+      name: kustomize-controller
+  - patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --default-service-account=default
+    target:
+      kind: Deployment
+      name: "(kustomize-controller|helm-controller)"
+```
+
+With these set, every tenant Kustomization/HelmRelease MUST declare
+`spec.serviceAccountName` (bound to a namespace-scoped Role or the built-in
+`admin` ClusterRole via RoleBinding); a resource that forgets it inherits the
+powerless `default` SA rather than escalating.
 
 ### Cross-Tenant Dependencies
 
@@ -441,7 +487,7 @@ Flux provides deep integration with Helm for chart-based deployments.
 ### HelmRepository
 
 ```yaml
-apiVersion: source.toolkit.fluxcd.io/v1beta2
+apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
   name: bitnami
@@ -454,7 +500,7 @@ spec:
 ### HelmRepository with Authentication
 
 ```yaml
-apiVersion: source.toolkit.fluxcd.io/v1beta2
+apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
   name: private-charts
@@ -479,7 +525,7 @@ stringData:
 ### Basic HelmRelease
 
 ```yaml
-apiVersion: helm.toolkit.fluxcd.io/v2beta2
+apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: nginx-ingress
@@ -504,7 +550,7 @@ spec:
 ### HelmRelease with ValuesFrom
 
 ```yaml
-apiVersion: helm.toolkit.fluxcd.io/v2beta2
+apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: my-app
@@ -533,7 +579,7 @@ spec:
 ### HelmRelease with Testing and Rollback
 
 ```yaml
-apiVersion: helm.toolkit.fluxcd.io/v2beta2
+apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: my-app
@@ -569,7 +615,7 @@ spec:
 ### HelmRelease with Dependencies
 
 ```yaml
-apiVersion: helm.toolkit.fluxcd.io/v2beta2
+apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: my-app
@@ -738,7 +784,7 @@ ImageUpdateAutomation
 ### ImageRepository
 
 ```yaml
-apiVersion: image.toolkit.fluxcd.io/v1beta2
+apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
   name: my-app
@@ -751,7 +797,7 @@ spec:
 ### ImageRepository with Authentication
 
 ```yaml
-apiVersion: image.toolkit.fluxcd.io/v1beta2
+apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
   name: my-app
@@ -775,7 +821,7 @@ data:
 ### ImagePolicy - Semantic Versioning
 
 ```yaml
-apiVersion: image.toolkit.fluxcd.io/v1beta2
+apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImagePolicy
 metadata:
   name: my-app
@@ -791,7 +837,7 @@ spec:
 ### ImagePolicy - Alphabetical
 
 ```yaml
-apiVersion: image.toolkit.fluxcd.io/v1beta2
+apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImagePolicy
 metadata:
   name: my-app-develop
@@ -810,7 +856,7 @@ spec:
 ### ImagePolicy - Numerical
 
 ```yaml
-apiVersion: image.toolkit.fluxcd.io/v1beta2
+apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImagePolicy
 metadata:
   name: my-app-build
@@ -829,7 +875,7 @@ spec:
 ### ImageUpdateAutomation
 
 ```yaml
-apiVersion: image.toolkit.fluxcd.io/v1beta1
+apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageUpdateAutomation
 metadata:
   name: my-app
@@ -912,7 +958,7 @@ spec:
 For PR-based workflows:
 
 ```yaml
-apiVersion: image.toolkit.fluxcd.io/v1beta1
+apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageUpdateAutomation
 metadata:
   name: my-app
@@ -1381,7 +1427,7 @@ kubectl apply -f helmreleases.yaml
 ### Progressive Delivery with Flagger
 
 ```yaml
-apiVersion: helm.toolkit.fluxcd.io/v2beta2
+apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: flagger
@@ -1573,14 +1619,345 @@ spec:
 
 ### Parallel Reconciliation
 
-Enable parallel reconciliation in controllers:
+Controller concurrency is tuned with the `--concurrent` arg on each controller
+Deployment, not via `flux install` flags (there is no `--kustomize-concurrency`
+or `--helm-concurrency`). Apply it as a Kustomize patch in
+`clusters/<env>/flux-system/` so the change is stored in Git and self-managed by
+the bootstrap kustomization — prefer `flux bootstrap` over `flux install` for
+exactly this reason (the components become version-controlled).
+
+```yaml
+# clusters/<env>/flux-system/kustomization.yaml
+patches:
+  - patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --concurrent=10
+    target:
+      kind: Deployment
+      name: "(kustomize-controller|helm-controller)"
+```
+
+## Expert Practices: Idioms, Anti-Patterns & Gotchas
+
+The patterns above get a cluster running; this section captures the
+non-obvious behavior that separates a working install from a correct one. Most
+of these are silent failures — no error, just wrong behavior.
+
+### Currency: stable API versions
+
+**Use stable APIs; beta versions are removed in Flux 2.7+.** Flux promoted its
+core APIs to stable and removed the betas, so any manifest on a beta
+`apiVersion` is rejected after a CRD upgrade — there is no compatibility
+shim. The mapping:
+
+- `HelmRelease` → `helm.toolkit.fluxcd.io/v2` (stable since Flux 2.3, May 2024).
+- `HelmRepository` / `HelmChart` / `OCIRepository` → `source.toolkit.fluxcd.io/v1`.
+- `ImageRepository` / `ImagePolicy` / `ImageUpdateAutomation` → `image.toolkit.fluxcd.io/v1` (promoted in Flux 2.7, Sep 2025, which removed the older betas).
+
+The v2 `HelmRelease` API also dropped three fields with no in-place equivalent:
+`.spec.chart.spec.valuesFile` (use `valuesFiles`, plural) and
+`postRenderers.kustomize.patchesJson6902` / `patchesStrategicMerge` (both
+unified into `patches`). Before upgrading the controllers, mechanically rewrite
+manifests with `flux migrate -f <path> -v <target-version>`.
+
+### Design patterns (idioms)
+
+**Prefer `chartRef` + `OCIRepository` over `chart.spec` for shared, pinned,
+signed charts.** `chart.spec` creates a hidden managed `HelmChart` per
+`HelmRelease`, pinnable only by version/semver. `chartRef` points at an existing
+`OCIRepository` (or `HelmChart`) so multiple releases share one source, supports
+digest pinning for immutable deploys, and enables Cosign/notation verification
+on the source. The two fields are mutually exclusive; `HelmRepository type: oci`
+is now in maintenance mode. Switching an existing release from `chart.spec` to
+`chartRef` performs a Helm **upgrade** (not uninstall+reinstall) and garbage-collects the old `HelmChart`.
+
+```yaml
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: podinfo-chart
+  namespace: flux-system
+spec:
+  interval: 12h
+  url: oci://ghcr.io/stefanprodan/charts/podinfo
+  ref:
+    digest: sha256:a0d3...   # immutable pin
+  verify:
+    provider: cosign
+    secretRef:
+      name: cosign-pub
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: podinfo
+  namespace: apps
+spec:
+  interval: 10m
+  chartRef:
+    kind: OCIRepository
+    name: podinfo-chart
+    namespace: flux-system
+```
+
+**Set `retryInterval` independently from `interval`.** They are orthogonal
+timers: `interval` is the steady-state drift-detection cadence (minimum 60s),
+`retryInterval` is the failure-recovery cadence and defaults to `interval` when
+unset. An infrastructure resource at `interval: 1h` therefore waits a full hour
+to retry a transient failure unless you lower `retryInterval`.
+
+```yaml
+spec:
+  interval: 1h        # hourly drift detection — low API load
+  retryInterval: 2m   # fast recovery from transient failures
+  prune: true
+```
+
+**Label referenced ConfigMaps/Secrets `reconcile.fluxcd.io/watch: Enabled`.**
+By default Flux only re-reconciles on the interval tick, so editing a ConfigMap
+used by `postBuild.substituteFrom` or a Secret used by `valuesFrom` is not
+picked up until the next scheduled reconcile (possibly hours away). The label
+(added in Flux 2.7) makes the controller watch the object and reconcile
+immediately on change; the HelmRelease docs recommend it for every Secret/ConfigMap in `valuesFrom`.
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-vars
+  namespace: flux-system
+  labels:
+    reconcile.fluxcd.io/watch: Enabled
+data:
+  cluster_name: production
+```
+
+### Gotchas (silent failures)
+
+**`wait: true` silently ignores `healthChecks` — they are mutually exclusive.**
+When `wait` is true the Kustomization health-checks *all* reconciled resources
+and `.spec.healthChecks` is ignored entirely. Setting both gives a false sense
+of targeted gating while actually checking everything. To gate on a named
+subset, leave `wait` unset/false and use `healthChecks` alone.
+
+**`postBuild` substitution has several silent traps.** (a) Substitution only
+runs if at least one `substitute` var or `substituteFrom` source is defined —
+with both empty the feature is off and `${var:=default}` passes through
+literally. (b) Variable names must match `^[_[:alpha:]][_[:alpha:][:digit:]]*$`
+— a hyphen or dot means the var is silently not substituted. (c) An undefined
+`${VAR}` with no default is replaced with an empty string, so a typo like
+`${cluster_rgion}` silently corrupts a URL with no error. (d) Quote numbers and
+booleans to avoid YAML coercion of type-sensitive fields. Fix (c) with the
+controller flag `--feature-gates=StrictPostBuildSubstitutions=true` (fail-fasts
+on undefined vars) and validate locally with
+`flux build kustomization --strict-substitute`.
+
+```yaml
+spec:
+  postBuild:
+    substitute:
+      cluster_name: production
+      replicas: "3"        # quoted — avoids YAML int coercion
+      tls_enabled: "true"  # quoted — avoids YAML bool coercion
+    substituteFrom:
+      - kind: ConfigMap
+        name: cluster-vars
+        optional: true
+```
+
+**Renaming a Kustomization (or moving resources between two) with `prune: true`
+deletes its managed workloads.** Flux tracks owned resources in
+`.status.inventory` keyed by the object's name+namespace. Rename the object and
+its entire inventory is garbage-collected, then recreated — a momentary outage.
+Safe procedure: set `prune: false`, reconcile, verify the renamed object is
+Ready and owns the resources, then re-enable pruning. The per-resource
+annotation `kustomize.toolkit.fluxcd.io/prune: disabled` opts a resource out of
+GC during the transition.
 
 ```bash
-flux install \
+kubectl patch kustomization my-app -n flux-system --type=merge -p '{"spec":{"prune":false}}'
+flux reconcile kustomization my-app
+# rename in Git, push, let Flux adopt under the new name, THEN re-enable prune
+```
+
+**HelmRelease drift detection is `Disabled` by default.** The helm-controller
+does NOT detect or correct out-of-band changes unless you set
+`spec.driftDetection.mode`; `kubectl` edits diverge silently until the next Helm
+action. `mode: warn` logs drift via events without correcting; `mode: enabled`
+corrects via server-side dry-run apply. Companion trap: once enabled, any
+controller that legitimately mutates Helm-managed resources (HPA on
+`/spec/replicas`, VPA on resources, cert-manager CA injection) gets reverted
+every cycle — add `driftDetection.ignore` JSON-pointer paths for those. Start
+with `mode: warn` to discover them.
+
+```yaml
+spec:
+  driftDetection:
+    mode: enabled
+    ignore:
+      - paths: ["/spec/replicas"]   # managed by HPA
+        target:
+          kind: Deployment
+```
+
+**HelmRelease `valuesFrom` with `targetPath` has the HIGHEST precedence — above
+inline `spec.values`.** `valuesFrom` entries merge left-to-right, then inline
+`values` overwrites those — BUT a `valuesFrom` entry that sets `targetPath`
+overwrites everything before it, including inline values. Teams assuming inline
+values always win get silently overridden. (Separately: deleting a
+ConfigMap/Secret referenced in `valuesFrom` changes the release inputs and
+triggers a Helm upgrade, not just a reload.)
+
+**HelmRelease `upgrade.remediation` defaults are asymmetric.**
+`install.remediation.remediateLastFailure` defaults to `false`.
+`upgrade.remediation.remediateLastFailure` also defaults to `false` UNLESS
+`.retries > 0`, in which case it defaults to `true` — so merely adding an
+upgrade retry count silently enables last-failure rollback to the previous
+release, which can surprise operators. Be explicit, pair with `cleanupOnFail`,
+and avoid `retries: -1` (unlimited) on a broken chart.
+
+```yaml
+spec:
+  install:
+    remediation:
+      retries: 3
+      remediateLastFailure: true   # explicit
+  upgrade:
+    remediation:
+      retries: 3
+      remediateLastFailure: true   # explicit — not relying on the implicit default
+    cleanupOnFail: true
+```
+
+**HelmRelease release name is silently SHA-256-truncated past 53 chars.** Flux
+composes the Helm release name as `[<targetNamespace>-]<HelmRelease.name>`. When
+that exceeds Helm's 53-character DNS-label limit, Flux shortens it to the first
+40 characters of the name, a dash, then the first 12 characters of a SHA-256
+hash of the full composed name. `helm list`/`helm history` then will not show
+the expected name. Set `spec.releaseName` explicitly whenever the composed name
+could approach 53 chars (especially with long namespaces).
+
+**`kubectl rollout restart` on a Flux-managed resource churns.** It adds a
+`kubectl.kubernetes.io/restartedAt` annotation; the next reconcile removes it
+(it is not in Git) and redeploys the pods — a loop during active reconciliation.
+Use the `flux-client-side-apply` field manager so Flux respects the annotation.
+(Likewise any `kubectl edit` to a managed resource is reverted next interval —
+intentional drift correction.)
+
+```bash
+kubectl rollout restart deployment/my-app -n apps --field-manager=flux-client-side-apply
+```
+
+**`filterTags.extract` drops non-matching tags entirely — there is no
+fallback.** In `ImagePolicy.filterTags`, `pattern` selects which tags are
+considered and `extract` supplies a derived value (e.g. a captured timestamp) to
+the sorting policy in place of the tag — it does not rename, alias, or fall
+back. Tags failing the pattern are dropped from consideration; a wrong regex
+yields zero candidates and "no latest image" rather than reverting to all tags.
+Companion rule: `digestReflectionPolicy: Always` requires an `interval` field,
+while `IfNotPresent`/`Never` forbid it.
+
+```yaml
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+spec:
+  policy:
+    alphabetical:
+      order: asc
+  filterTags:
+    pattern: "^main-[a-f0-9]+-(?P<ts>[0-9]{10})$"  # named capture group
+    extract: "$ts"   # only the timestamp is passed to the comparator
+```
+
+**Image automation needs a read-write deploy key; re-bootstrapping does NOT
+rotate it.** `flux bootstrap` creates a read-only deploy key by default, so
+image-automation-controller (which must push commits) silently fails without
+`--read-write-key`. Re-running bootstrap with `--read-write-key` after an
+earlier read-only bootstrap does NOT overwrite the existing `flux-system`
+Secret — delete that Secret first, then re-bootstrap, to actually rotate to a
+write-capable key. Also, `ImageUpdateAutomation` evaluates only `ImagePolicy`
+objects in its own namespace — cross-namespace policy references are not
+supported.
+
+```bash
+flux bootstrap github \
   --components-extra=image-reflector-controller,image-automation-controller \
-  --reconcile-interval=1h \
-  --kustomize-concurrency=10 \
-  --helm-concurrency=10
+  --read-write-key \
+  --owner=$GITHUB_USER --repository=fleet-infra --branch=main --path=clusters/production
+
+# To rotate an existing read-only bootstrap:
+kubectl delete secret flux-system -n flux-system
+flux bootstrap github --read-write-key ...   # secret recreated with write key
+```
+
+**The two `Kustomization` kinds are different objects.**
+`kustomization.kustomize.toolkit.fluxcd.io` is the Flux custom resource (a
+reconciliation unit sourcing from a GitRepository/OCIRepository and optionally
+applying an overlay); `kustomization.kustomize.config.k8s.io` is the native
+kustomize file format. The Flux CR's `spec.path` points at a directory
+containing a `kustomization.yaml` of the config kind — it orchestrates, it does
+not replace it. Native fields (`resources`, `patches`, `configMapGenerator`)
+belong in the file, never in the Flux CR `spec`.
+
+### Anti-patterns
+
+**Never bind a tenant reconciler to `cluster-admin`** (or any
+`ClusterRoleBinding`) — it defeats namespace isolation. Use a namespace-scoped
+`RoleBinding` to a custom `Role` or to the built-in `admin` ClusterRole, and
+combine with the lockdown flags above. (Fixed in the Multi-Tenancy section.)
+
+**`force: true` is a temporary escape hatch, not a setting.** It makes the
+controller replace resources in-cluster when patching fails on an immutable-field
+change (delete-then-recreate), bypassing Kubernetes immutability guards for
+EVERY managed resource. Left on permanently it removes the protection against
+accidental data loss on stateful workloads. Prefer the per-resource annotation
+`kustomize.toolkit.fluxcd.io/force: enabled` on the one object that needs it,
+then remove it.
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migration
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: enabled   # remove after the spec change merges
+```
+
+### Security
+
+**Multi-tenancy is not enforced by default.** See the
+[Multi-Tenancy Lockdown Flags](#multi-tenancy-lockdown-flags-mandatory)
+subsection — `--no-cross-namespace-refs`, `--no-remote-bases`, and
+`--default-service-account` are mandatory; omitting any one leaves a
+privilege-escalation path that RBAC alone does not close.
+
+**Ban Kustomize remote bases in production.** Bases pointing at external URLs
+(e.g. `github.com/org/repo/path?ref=main`) are fetched at reconcile time over
+HTTPS, outside Flux's GitRepository/OCIRepository artifact pipeline: no
+cryptographic verification, no caching (refetched every cycle), no immutability,
+and absent from source history. In a multi-tenant cluster this is a supply-chain
+risk. Disable with `--no-remote-bases=true` and replace remote bases with a Flux
+`OCIRepository`/`GitRepository` source pinned by digest.
+
+**Use workload identity instead of static credential Secrets.** Flux 2.7
+completed object-level Kubernetes Workload Identity for all Flux APIs that
+authenticate to cloud providers (GitRepository, OCIRepository, ImageRepository,
+Bucket, Kustomization, HelmRelease, Provider) on AWS (EKS IRSA), Azure (AKS
+Workload Identity), and GCP (GKE Workload Identity). Set `.spec.provider:
+aws|azure|gcp` so the controller fetches short-lived OIDC tokens instead of
+reading a static Secret — no rotation burden, smaller blast radius on leak.
+
+```yaml
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: my-app
+  namespace: flux-system
+spec:
+  image: 012345678901.dkr.ecr.us-east-1.amazonaws.com/my-app
+  interval: 5m
+  provider: aws   # IRSA — no secretRef
 ```
 
 ## Summary

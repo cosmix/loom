@@ -72,7 +72,7 @@ Before creating container configurations:
 #### Layer Optimization
 
 - **Order Matters**: Place least-changing instructions first (base image, system deps)
-- **Combine Commands**: Use && to chain related RUN commands into single layers
+- **Combine Commands**: Use && to chain related RUN commands into single layers. Always keep `apt-get update` and `apt-get install` in the **same** RUN — in separate layers Docker reuses a stale cached `update` index when only the install list changes, silently installing outdated/vulnerable packages with no error (the docs call combining them "cache busting").
 - **Clear Caches**: Clean package manager caches in same RUN command
 - **Copy Strategically**: Copy dependency files before source code for better caching
 
@@ -89,6 +89,7 @@ Before creating container configurations:
 - **Read-Only Filesystems**: Use read-only root filesystem where possible
 - **No Secrets in Layers**: Use build secrets, not ENV or COPY for credentials
 - **Scan Images**: Run vulnerability scanners (trivy, grype) in CI
+- **Exec Form for CMD/ENTRYPOINT**: Always use the JSON-array (exec) form. Shell form runs your process under `/bin/sh -c`, which does not forward signals — so `docker stop` waits the full timeout (default 10s) then SIGKILLs, with no graceful shutdown. A shell-form `ENTRYPOINT` also silently ignores any `CMD`. If you need shell features, end a wrapper script with `exec yourapp` so it replaces the shell as PID 1.
 
 ### 3. Configure Docker Compose Files
 
@@ -143,6 +144,8 @@ Before creating container configurations:
 - **Build Secrets**: Use --mount=type=secret for build-time secrets
 - **Runtime Secrets**: Use docker secrets, vault, or k8s secrets
 - **Environment Variables**: Only for non-sensitive configuration
+
+> **Why ARG/ENV are unsafe for secrets:** `ARG` (including `--build-arg`) and `ENV` values are recorded in image metadata and visible via `docker history --no-trunc`, `docker inspect`, and max-mode provenance attestations to anyone who can pull the image; `ENV` is additionally readable at runtime via `/proc/self/environ` and is logged by many runtimes. Unsetting in a later `RUN` does **not** scrub the value — it is already committed in the earlier layer's metadata. Use `RUN --mount=type=secret` for any credential or token. `ARG`/`ENV` are safe only for non-sensitive values such as version numbers and build flags.
 
 ### 5. Image Optimization Techniques
 
@@ -220,7 +223,7 @@ Before creating container configurations:
 
 - Copy package\*.json before source for better caching
 - Use npm ci instead of npm install for reproducible builds
-- Remove devDependencies in production builds
+- Ship production-only deps with `npm ci --omit=dev` (`--only=production` is deprecated since npm 7); `--omit=dev` also sets `NODE_ENV=production` for lifecycle scripts. Do NOT use it in a builder stage that runs `npm run build` — bundlers/TypeScript live in devDependencies; install all deps, build, then `npm prune --omit=dev`.
 - Consider node:alpine for minimal size
 
 #### Rust
@@ -290,8 +293,8 @@ RUN pip install --no-cache-dir /wheels/* && rm -rf /wheels
 # Copy application code
 COPY --chown=appuser:appgroup . .
 
-# Switch to non-root user
-USER appuser
+# Switch to non-root user (numeric UID:GID for Kubernetes runAsNonRoot compatibility)
+USER 1000:1000
 
 # Expose port
 EXPOSE 8000
@@ -314,14 +317,17 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install ALL dependencies — the build needs devDependencies (bundler/TS compiler)
+RUN npm ci
 
 # Copy source code
 COPY . .
 
 # Build application
 RUN npm run build
+
+# Strip to production-only modules before they ship to the runtime stage
+RUN npm prune --omit=dev
 
 # Production stage
 FROM node:20-alpine AS production
@@ -340,7 +346,8 @@ COPY --from=builder --chown=nextjs:nodejs /app/dist ./dist
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./
 
-USER nextjs
+# Numeric UID:GID for Kubernetes runAsNonRoot compatibility
+USER 1001:1001
 
 EXPOSE 3000
 
@@ -352,8 +359,6 @@ CMD ["node", "dist/server.js"]
 ### Example 3: Docker Compose for Development
 
 ```yaml
-version: "3.8"
-
 services:
   app:
     build:
@@ -456,8 +461,9 @@ FROM gcr.io/distroless/cc-debian12
 # Copy only the binary
 COPY --from=builder /app/target/release/myapp /usr/local/bin/myapp
 
-# Run as non-root (distroless provides nonroot user)
-USER nonroot:nonroot
+# Run as non-root — numeric UID:GID so Kubernetes runAsNonRoot can verify it
+# (the distroless "nonroot" user is UID 65532; a string user is rejected at admission)
+USER 65532:65532
 
 EXPOSE 8080
 
@@ -511,8 +517,6 @@ ENTRYPOINT ["/server"]
 ### Example 6: Docker Compose with Secrets
 
 ```yaml
-version: "3.8"
-
 services:
   app:
     build:
@@ -585,7 +589,7 @@ networks:
 ### Example 7: Build Cache Optimization with BuildKit
 
 ```dockerfile
-# syntax=docker/dockerfile:1.4
+# syntax=docker/dockerfile:1
 
 FROM node:20-alpine AS base
 
@@ -596,7 +600,7 @@ WORKDIR /app
 FROM base AS deps
 COPY package*.json ./
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --only=production
+    npm ci --omit=dev
 
 # Build stage with separate dev dependencies
 FROM base AS builder
@@ -620,7 +624,7 @@ COPY --from=builder /app/package.json ./
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nextjs -u 1001
 
-USER nextjs
+USER 1001:1001
 
 EXPOSE 3000
 
@@ -690,7 +694,7 @@ FROM node:20-alpine
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci --omit=dev
 
 COPY . .
 
@@ -744,7 +748,8 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -o /app/bin/server ./cmd/server
 
-FROM alpine:latest
+# Pin the runtime base (never `latest`); the static binary could also use FROM scratch
+FROM alpine:3.21
 COPY --from=builder /app/bin/server /server
 ENTRYPOINT ["/server"]
 ```
@@ -753,8 +758,6 @@ ENTRYPOINT ["/server"]
 
 ```yaml
 # docker-compose with migration service
-version: "3.8"
-
 services:
   migrate:
     image: myapp:latest
@@ -805,7 +808,7 @@ networks:
 ### Pattern: Build-time Secrets
 
 ```dockerfile
-# syntax=docker/dockerfile:1.4
+# syntax=docker/dockerfile:1
 
 FROM node:20-alpine AS builder
 
@@ -853,6 +856,170 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 
 CMD ["gunicorn", "--bind", "0.0.0.0:8000", "app:app"]
 ```
+
+## Expert Practices: Idioms, Anti-Patterns & Gotchas
+
+High-signal guidance that separates correct-but-naive Dockerfiles from production-grade ones. Each item states the mechanism, not just the rule.
+
+### Anti-Patterns
+
+**Shell form silently breaks signals and drops CMD.** `CMD gunicorn ...` is wrapped as `/bin/sh -c '<string>'`, so `/bin/sh` becomes PID 1 and the docs note it "does not pass signals" — your app never gets the SIGTERM from `docker stop`, which then waits the full timeout and SIGKILLs (no graceful shutdown, no error). A shell-form `ENTRYPOINT` additionally "ignores any CMD or docker run command line arguments", so a `CMD` beneath it is silently dropped. Use exec form; if you need a setup wrapper, hand off PID 1 with `exec "$@"` so `execve` replaces the shell.
+
+```dockerfile
+# Good — the process IS PID 1 and receives SIGTERM directly
+ENTRYPOINT ["gunicorn", "--bind", "0.0.0.0:8000", "app:create_app()"]
+```
+
+```sh
+# Good — wrapper that needs setup hands off PID 1 with exec
+#!/bin/sh
+set -e
+do_setup
+exec "$@"
+```
+
+**Separate `apt-get update` / `install` layers install stale packages.** Docker caches a RUN by its literal command string, so a standalone `RUN apt-get update` is reused even after the upstream index moves on; editing only the install line rebuilds against the stale index and silently reintroduces outdated/CVE-laden packages. Keep them in one RUN, pin versions as an extra cache-bust trigger, and clean lists in the same layer.
+
+```dockerfile
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl=7.88.* \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+```
+
+### Gotchas
+
+**`set -o pipefail` is needed for piped RUNs — but the default `/bin/sh` may lack it.** POSIX `sh` reports only the last command's exit code, so `RUN wget -O- url/install.sh | sh` exits 0 even when `wget` fails, committing a broken layer. The docs warn that dash (Debian) and ash (Alpine) don't support `-o pipefail`; use an exec-form bash invocation or set it Dockerfile-wide via `SHELL`.
+
+```dockerfile
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN wget -qO- https://example.com/install.sh | sh
+```
+
+**Use a numeric `USER` (uid:gid), not a username.** A username must resolve against `/etc/passwd`, which `scratch` and some distroless images lack — the container fails to start. It also breaks Kubernetes `runAsNonRoot: true`: the kubelet parses the image's User field **as a number** and never reads `/etc/passwd`, rejecting a string user with "container has runAsNonRoot and image has non-numeric user". Always `USER <uid>:<gid>` matching the uid/gid you created. Canonical numbers: `65534` = traditional `nobody`; distroless `nonroot` = `65532`.
+
+**`COPY --link --chown` requires numeric UID:GID.** `--link` copies into an isolated layer rebased on an implicit `scratch` with no `/etc/passwd`, so a named user fails with the cryptic `invalid user index: -1` (docker/docs #20660). Worse, behavior varies by builder driver — the BuildKit `docker-container` driver errors while the legacy `docker` driver may silently fall back to UID 0. Use numeric `--chown` with `--link`.
+
+```dockerfile
+COPY --link --chown=1001:1001 ./dist /app/dist
+```
+
+**Re-declare `ARG` inside each stage — values reset at every `FROM`.** An `ARG` before the first `FROM` is global scope, usable only by `FROM` lines, NOT inside any stage; an in-stage `ARG` is inherited only by stages built `FROM` it. A reference to an undeclared `ARG` expands to an empty string with no error, so builds succeed with a blank value.
+
+```dockerfile
+ARG VERSION=3.12
+FROM python:${VERSION}-slim AS builder
+ARG VERSION            # re-declare to use it inside the stage
+RUN echo "Building with Python ${VERSION}"
+```
+
+**Rotating a build secret does NOT bust the cache.** BuildKit deliberately excludes secret contents from the cache key — the docs state "Changing the value of a secret doesn't result in cache invalidation." After rotating a credential, the `RUN --mount=type=secret` step reuses its layer built with the OLD secret. Since ARG values DO participate in the cache key, pair the secret RUN with an `ARG` you bump on rotation.
+
+```dockerfile
+ARG CACHE_BUST=1
+RUN --mount=type=secret,id=npmrc,target=/root/.npmrc \
+    npm ci
+# docker build --secret id=npmrc,src=.npmrc --build-arg CACHE_BUST=2 .
+```
+
+**Alpine uses musl, not glibc.** Pre-compiled glibc-linked binaries (some Python C-extension wheels, certain Node native addons, some JVM tools) fail at runtime on Alpine with misleading "not found" / "no such file or directory" errors even though the file exists — musl's loader provides no `libc.so.6`. The common surprise: `pip install` succeeds but the package crashes at import. Use `debian:slim`/`ubuntu` when glibc is needed; for Go build static with `CGO_ENABLED=0`; for Rust target musl.
+
+### Idioms
+
+**`RUN --mount=type=bind` for build-time-only inputs instead of COPY + rm.** When a file is needed only during one RUN (manifests, `.npmrc`, `requirements.txt`), `COPY` commits it to a layer permanently and a later `rm` cannot remove it from the earlier layer. A bind mount exposes the file read-only for that RUN and is never committed. Requires `# syntax=docker/dockerfile:1`.
+
+```dockerfile
+# syntax=docker/dockerfile:1
+RUN --mount=type=bind,source=requirements.txt,target=/tmp/requirements.txt \
+    pip install --no-cache-dir -r /tmp/requirements.txt
+```
+
+**`RUN --mount=type=cache` for package-manager caches.** A persistent on-host cache survives across builds regardless of which layers were invalidated, and never enters image layers. Two sharp edges: the cache dir defaults to `uid=0,gid=0`, so a cache mount after `USER <nonroot>` is unwritable and silently falls back to a cold install — pass matching `uid`/`gid`; and `apt` needs `sharing=locked` since its DB can't tolerate concurrent writers. Especially high-value for Go (module + build cache) and Rust (registry + target).
+
+```dockerfile
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -o /bin/server ./cmd/server
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends curl
+
+USER appuser
+RUN --mount=type=cache,target=/home/appuser/.cache/pip,uid=1000,gid=1000 \
+    pip install -r requirements.txt
+```
+
+**`ADD --checksum` to fetch+verify remote artifacts atomically** (stable since Dockerfile syntax 1.6). Replaces the verbose `RUN wget ... && sha256sum -c` (which also adds a layer); verification is atomic with the fetch and fails the build on mismatch. HTTP sources use `sha256:<hash>`; Git URL sources use the commit SHA.
+
+```dockerfile
+ADD --checksum=sha256:24454f830cdb571e2c4ad15481119c43b3cafd48dd869a9b2945d1036d1dc68d \
+    https://example.com/artifact.tar.gz /tmp/artifact.tar.gz
+```
+
+**Enable built-in lint with the `# check=` directive** (Dockerfile 1.8+). `docker build --check` runs build-time lint rules (JSONArgsRecommended, SecretsUsedInArgOrEnv, UndefinedVar, deprecated MAINTAINER, …) without building; `# check=error=true` fails the build on violations. When you use `error=true`, pin the syntax to a specific minor so future rule additions can't unexpectedly break the build — the one case where minor pinning beats the floating tag.
+
+```dockerfile
+# syntax=docker/dockerfile:1.8
+# check=error=true
+FROM python:3.12-slim
+```
+
+### Design Patterns
+
+**Add an init (`tini` / `docker --init`) when your app forks children.** PID 1 must forward signals and reap orphaned children via `waitpid()`. An app run directly as PID 1 that spawns subprocesses leaves their exited children as zombies, which accumulate and can exhaust the PID table, eventually causing fork failures. This complements exec-form ENTRYPOINT: exec form fixes signal delivery, but only an init reaps zombies. Bake `tini` in for portability, or use `docker run --init` with no image change.
+
+```dockerfile
+FROM debian:12-slim
+RUN apt-get update && apt-get install -y --no-install-recommends tini \
+    && rm -rf /var/lib/apt/lists/*
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["/usr/bin/myapp"]
+```
+
+### Performance
+
+**`COPY --link` avoids cache-invalidation cascades in multi-stage builds.** Without `--link`, any change to a prior layer invalidates a COPY and everything after it; with `COPY --from=<stage>`, rebuilding the source stage invalidates the runtime copy. `--link` places the result in its own layer rebased on top of prior state, so it survives changes to earlier layers. Caveat: the isolated layer has no access to the prior filesystem, so destination symlinks aren't followed and `--chown` must be numeric. Apply it where symlink-following into the destination isn't needed.
+
+```dockerfile
+FROM gcr.io/distroless/cc-debian12
+COPY --link --from=builder /app/target/release/myapp /usr/local/bin/myapp
+```
+
+### Security
+
+**Drop all capabilities, add back only what's needed; pair with `no-new-privileges`.** OWASP's Docker Security Cheat Sheet: "The most secure setup is to drop all capabilities `--cap-drop all` and then add only required ones." Pair with `--security-opt=no-new-privileges`, which sets the kernel `NO_NEW_PRIVS` flag so no process can escalate via setuid/setgid binaries. The two are orthogonal — capabilities bound existing privileges; no-new-privileges blocks gaining new ones. Combine with non-root and `--read-only` for defense in depth.
+
+```bash
+docker run \
+  --cap-drop all \
+  --cap-add NET_BIND_SERVICE \
+  --security-opt=no-new-privileges \
+  --read-only \
+  myapp:latest
+```
+
+**Attach SBOM and provenance attestations to production images via buildx.** `docker buildx build` generates SLSA provenance and SPDX SBOM attestations, attached to the image manifest in the OCI index as in-toto JSON. Min-level provenance is added by default; opt into `mode=max` for the full build definition and Dockerfile content. Attestations can be inspected without pulling the whole image (`docker buildx imagetools inspect`), Docker Scout policies can enforce their presence, and an SBOM attestation lets Scout reuse the precomputed SBOM instead of re-scanning.
+
+```bash
+docker buildx build \
+  --sbom=true \
+  --provenance=mode=max \
+  --push \
+  -t registry.example.com/myapp:1.0.0 .
+```
+
+### Currency
+
+**Pin base images by digest (`@sha256:`), and automate the updates.** Image tags are mutable: a publisher — or an attacker with registry credentials — can overwrite what a tag points to, so even `python:3.12-slim` can silently change between builds. Tag hijacking is a real supply-chain attack class (e.g. the March 2025 `tj-actions/changed-files` compromise overwrote tags to point at malicious code). Digest-pinning guarantees byte-identical bytes; the "but I'll miss security updates" objection is answered by Dependabot/Renovate/Docker Scout opening PRs on new digests — an audit trail instead of silent upgrades. Keep the tag alongside the digest for readability.
+
+```dockerfile
+FROM alpine:3.21@sha256:a8560b36e8b8210634f77d9f7f9efd7ffa463e380b75e2e74aff4511df3ef88c AS base
+```
+
+**Prefer the floating syntax tag `# syntax=docker/dockerfile:1`.** Pinning the frontend to a stale minor like `1.4` freezes the Dockerfile at a 2022-era feature set and blocks automatic bug fixes and new stable features (cache-mount improvements, `ADD --checksum` in 1.6, build checks in 1.8). BuildKit resolves `:1` to the latest 1.x.x at build time. The sole exception is `# check=error=true`, where you pin a specific minor so a new lint rule can't unexpectedly fail the build.
+
+**`npm ci --omit=dev`, not `--only=production`.** `--only=production` was deprecated when npm 7 introduced the `--omit`/`--include` family and no longer appears in the official `npm ci` reference; it lingers because it still works as a silent alias. `--omit=dev` also sets `NODE_ENV=production` for lifecycle scripts. Never use it in a builder stage that runs `npm run build` — bundlers and TypeScript live in devDependencies.
 
 ## Troubleshooting Guide
 

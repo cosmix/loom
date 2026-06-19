@@ -164,21 +164,24 @@ route:
   receiver: "default"
 
   routes:
+    # matchers/source_matchers/target_matchers (Alertmanager 0.27+, UTF-8 aware) replace
+    # the DEPRECATED match/match_re/source_match/target_match fields, which are slated for
+    # removal once UTF-8 strict mode becomes the default.
     # Critical alerts go to PagerDuty
-    - match:
-        severity: critical
+    - matchers:
+        - severity = critical
       receiver: "pagerduty"
       continue: true
 
     # Database alerts to DBA team
-    - match:
-        team: database
+    - matchers:
+        - team = database
       receiver: "dba-team"
       group_by: ["alertname", "instance"]
 
     # Development environment alerts
-    - match:
-        env: development
+    - matchers:
+        - env = development
       receiver: "slack-dev"
       group_wait: 5m
       repeat_interval: 4h
@@ -186,17 +189,17 @@ route:
 # Inhibition rules (suppress alerts)
 inhibit_rules:
   # Suppress warning alerts if critical alert is firing
-  - source_match:
-      severity: "critical"
-    target_match:
-      severity: "warning"
+  - source_matchers:
+      - severity = critical
+    target_matchers:
+      - severity = warning
     equal: ["alertname", "instance"]
 
   # Suppress instance alerts if entire service is down
-  - source_match:
-      alertname: "ServiceDown"
-    target_match_re:
-      alertname: ".*"
+  - source_matchers:
+      - alertname = ServiceDown
+    target_matchers:
+      - alertname =~ ".*"
     equal: ["service"]
 
 receivers:
@@ -208,7 +211,10 @@ receivers:
 
   - name: "pagerduty"
     pagerduty_configs:
-      - service_key: "YOUR_PAGERDUTY_SERVICE_KEY"
+      # routing_key = Events API v2 (current, richer payload: dedup keys, links, images).
+      # service_key = legacy Events API v1; the two are mutually exclusive. The *_file
+      # variants read the secret from a mounted file instead of embedding plaintext YAML.
+      - routing_key_file: /etc/alertmanager/secrets/pagerduty-routing-key
         description: "{{ .GroupLabels.alertname }}"
 
   - name: "dba-team"
@@ -289,7 +295,10 @@ http_requests_total{client_ip="192.168.1.100"}
 
 ### Recording Rules for Performance
 
-Use recording rules to pre-compute expensive queries:
+Use recording rules to pre-compute expensive queries. Prefer `without (instance)` over
+`by (job)`: `without` names only the label being aggregated away and automatically
+preserves `job` and any future labels, whereas `by` silently drops labels added to the
+metric later. Keep `le` explicitly where `histogram_quantile()` consumes the rule.
 
 ```yaml
 # rules/recording_rules.yml
@@ -297,27 +306,30 @@ groups:
   - name: performance_rules
     interval: 30s
     rules:
-      # Pre-calculate request rates
-      - record: job:http_requests:rate5m
-        expr: sum(rate(http_requests_total[5m])) by (job)
+      # Pre-calculate request rates (without preserves job + future labels)
+      - record: instance_removed:http_requests:rate5m
+        expr: sum without (instance) (rate(http_requests_total[5m]))
 
       # Pre-calculate error rates
-      - record: job:http_request_errors:rate5m
-        expr: sum(rate(http_request_errors_total[5m])) by (job)
+      - record: instance_removed:http_request_errors:rate5m
+        expr: sum without (instance) (rate(http_request_errors_total[5m]))
 
-      # Pre-calculate error ratio
+      # Pre-calculate error ratio: aggregate numerator and denominator SEPARATELY,
+      # then divide. NEVER avg()/sum() this ratio rule downstream - averaging a ratio
+      # (or an average of an average) is statistically invalid; re-aggregate the
+      # underlying counts instead.
       - record: job:http_request_error_ratio:rate5m
         expr: |
-          job:http_request_errors:rate5m
+          sum without (instance) (rate(http_requests_total{status=~"5.."}[5m]))
           /
-          job:http_requests:rate5m
+          sum without (instance) (rate(http_requests_total[5m]))
 
-      # Pre-aggregate latency percentiles
+      # Pre-aggregate latency percentiles (le kept for histogram_quantile)
       - record: job:http_request_duration_seconds:p95
-        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (job, le))
+        expr: histogram_quantile(0.95, sum without (instance) (rate(http_request_duration_seconds_bucket[5m])))
 
       - record: job:http_request_duration_seconds:p99
-        expr: histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (job, le))
+        expr: histogram_quantile(0.99, sum without (instance) (rate(http_request_duration_seconds_bucket[5m])))
 
   - name: aggregation_rules
     interval: 1m
@@ -380,23 +392,41 @@ groups:
           description: "P95 latency is {{ $value }}s (threshold: 1s)"
           impact: "Users experiencing slow page loads"
 
-      # GOOD: SLO-based alerting
-      - alert: SLOBudgetBurnRate
+      # GOOD: multi-window multi-burn-rate SLO alerting (Google SRE Workbook).
+      # NO for: clause - duration does not scale with severity and resets on data gaps.
+      # Each tier ANDs a long detection window with a short (~1/12) confirmation window;
+      # tiers are ORed. Numerator/denominator are aggregated separately, then divided.
+      - alert: SLOBudgetBurnRateFast
         expr: |
           (
-            1 - (
-              sum(rate(http_requests_total{status!~"5.."}[1h]))
-              /
-              sum(rate(http_requests_total[1h]))
-            )
-          ) > (14.4 * (1 - 0.999))  # 14.4x burn rate for 99.9% SLO
-        for: 5m
+            sum(rate(http_requests_total{status=~"5.."}[1h]))
+            / sum(rate(http_requests_total[1h])) > (14.4 * 0.001)
+            and
+            sum(rate(http_requests_total{status=~"5.."}[5m]))
+            / sum(rate(http_requests_total[5m])) > (14.4 * 0.001)
+          )
         labels:
-          severity: critical
+          severity: critical  # page: ~2% of monthly budget burned in 1h
           team: sre
         annotations:
-          summary: "SLO budget burning too fast"
-          description: "At current rate, monthly error budget will be exhausted in {{ $value | humanizeDuration }}"
+          summary: "SLO budget burning fast (14.4x)"
+          description: "Error budget for the 99.9% SLO is burning at 14.4x over 1h"
+
+      - alert: SLOBudgetBurnRateSlow
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[6h]))
+            / sum(rate(http_requests_total[6h])) > (6 * 0.001)
+            and
+            sum(rate(http_requests_total{status=~"5.."}[30m]))
+            / sum(rate(http_requests_total[30m])) > (6 * 0.001)
+          )
+        labels:
+          severity: warning  # ticket: gradual burn over hours
+          team: sre
+        annotations:
+          summary: "SLO budget burning steadily (6x)"
+          description: "Error budget for the 99.9% SLO is burning at 6x over 6h"
 ```
 
 #### Cause-based alerts (use for debugging, not paging)
@@ -479,10 +509,13 @@ rate(http_requests_total[5m])
 # Sum by service
 sum(rate(http_requests_total[5m])) by (service)
 
-# Increase over time window (total count) - for alerts/dashboards showing total
+# Approximate increase over the window - extrapolated, returns a float (e.g. 99.7),
+# NOT an exact integer count. Use for trend visualization, not exact counting or integer thresholds.
 increase(http_requests_total[1h])
 
-# irate() for volatile, fast-moving counters (more sensitive to spikes)
+# irate() - ONLY for high-resolution dashboard graphs of fast-moving counters.
+# NEVER use in alert rules: it reads just the last 2 samples, so a brief dip resets
+# the for: timer and a sustained breach may never fire. Use rate() in all alerts.
 irate(http_requests_total[5m])
 ```
 
@@ -575,19 +608,18 @@ absent(up{job="critical-service"})
 /
 sum(rate(http_request_duration_seconds_count[5m]))
 
-# Multi-window multi-burn-rate SLO
+# Multi-window multi-burn-rate SLO (99.9% target): fast-burn tier OR slow-burn tier.
+# Each tier ANDs a long window with a short (~1/12) confirmation window. No for: clause.
 (
-  sum(rate(http_requests_total{status=~"5.."}[1h]))
-  /
-  sum(rate(http_requests_total[1h]))
-  > 0.001 * 14.4
+  sum(rate(http_requests_total{status=~"5.."}[1h])) / sum(rate(http_requests_total[1h])) > 0.001 * 14.4
+  and
+  sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) > 0.001 * 14.4
 )
-and
+or
 (
-  sum(rate(http_requests_total{status=~"5.."}[5m]))
-  /
-  sum(rate(http_requests_total[5m]))
-  > 0.001 * 14.4
+  sum(rate(http_requests_total{status=~"5.."}[6h])) / sum(rate(http_requests_total[6h])) > 0.001 * 6
+  and
+  sum(rate(http_requests_total{status=~"5.."}[30m])) / sum(rate(http_requests_total[30m])) > 0.001 * 6
 )
 ```
 
@@ -1126,8 +1158,9 @@ spec:
             runbook: "https://wiki.example.com/runbooks/high-error-rate"
 
         - alert: PodCrashLooping
+          # Use a floor over the window so normal single pod recycles do not page.
           expr: |
-            rate(kube_pod_container_status_restarts_total[15m]) > 0
+            increase(kube_pod_container_status_restarts_total[15m]) > 3
           for: 5m
           labels:
             severity: warning
@@ -1159,7 +1192,10 @@ metadata:
   namespace: monitoring
 spec:
   replicas: 2
-  version: v2.45.0
+  # Pin a current 3.x release. Upgrading 2.x -> 3.0 requires reading the migration guide:
+  # scrape Content-Type is now strict (set fallback_scrape_protocol for non-compliant
+  # exporters) and le/quantile labels are normalized (le="1" becomes le="1.0", so
+  # expressions matching integer le/quantile values must be updated to the float form).
 
   # Service account for Kubernetes API access
   serviceAccountName: prometheus
@@ -1276,12 +1312,16 @@ var (
         },
     )
 
-    // Summary for response sizes
-    responseSizeBytes = promauto.NewSummaryVec(
-        prometheus.SummaryOpts{
-            Name:       "http_response_size_bytes",
-            Help:       "HTTP response size in bytes",
-            Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
+    // Histogram for response sizes. Use a HistogramVec (not a SummaryVec) for anything
+    // aggregated across instances: summary quantiles are pre-computed per process and are
+    // NOT aggregatable. NativeHistogramBucketFactor enables a native histogram (no upfront
+    // bucket guessing). Reserve summaries for single-process quantiles that are never aggregated.
+    responseSizeBytes = promauto.NewHistogramVec(
+        prometheus.HistogramOpts{
+            Name:                        "http_response_size_bytes",
+            Help:                        "HTTP response size in bytes",
+            NativeHistogramBucketFactor: 1.1,
+            Buckets:                     prometheus.ExponentialBuckets(64, 4, 8), // classic fallback
         },
         []string{"endpoint"},
     )
@@ -1524,9 +1564,9 @@ for: 10m
 labels:
   severity: warning
 
-# Pod crash looping
+# Pod crash looping (floor avoids paging on normal single restarts)
 alert: PodCrashLooping
-expr: rate(kube_pod_container_status_restarts_total[15m]) > 0
+expr: increase(kube_pod_container_status_restarts_total[15m]) > 3
 for: 5m
 labels:
   severity: warning
@@ -1547,15 +1587,15 @@ groups:
       - record: instance:node_cpu_utilization:ratio
         expr: 1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) by (instance)
 
-      # Job-level aggregation
-      - record: job:http_requests:rate5m
-        expr: sum(rate(http_requests_total[5m])) by (job)
+      # Job-level aggregation (without preserves job + any future labels)
+      - record: instance_removed:http_requests:rate5m
+        expr: sum without (instance) (rate(http_requests_total[5m]))
 
-      # Job-level error ratio
+      # Job-level error ratio: numerator/denominator aggregated separately, then divided
       - record: job:http_request_errors:ratio
         expr: |
-          sum(rate(http_requests_total{status=~"5.."}[5m])) by (job)
-          / sum(rate(http_requests_total[5m])) by (job)
+          sum without (instance) (rate(http_requests_total{status=~"5.."}[5m]))
+          / sum without (instance) (rate(http_requests_total[5m]))
 
       # Cluster-level aggregation
       - record: cluster:cpu_utilization:ratio
@@ -1643,6 +1683,200 @@ time_intervals:
             end_time: "17:00"
         weekdays: ["monday:friday"]
 ```
+
+## Expert Practices: Idioms, Anti-Patterns & Gotchas
+
+High-signal practices from the official docs, the Google SRE Book/Workbook, and recognized
+experts. Each entry states the mechanism (the *why*), not just the rule.
+
+### Anti-Patterns (statistically or operationally wrong)
+
+**Always `rate()` before `sum()`, never `sum()` before `rate()`.** Counters reset to 0 on
+process restart. If you sum counters first and one target restarts, the aggregate drops and
+`rate()` reads that drop as a reset, emitting a huge spurious spike. Applying `rate()`
+per-series handles each reset in isolation before aggregation. This is a mathematical
+requirement, not a performance one, and applies to all counter arithmetic: compute
+`rate(a[5m]) + rate(b[5m])`, never `rate(a[5m] + b[5m])`. The only functions safe on a raw
+counter are `rate()`, `irate()`, `increase()`, and `resets()`.
+
+```promql
+# Good                                    # Bad (reset of one target spikes the whole sum)
+sum by (job) (rate(http_requests_total[5m]))   # rate(sum by (job) (http_requests_total)[5m])
+```
+
+**Never use `irate()` in alerting rules.** `irate()` uses only the two most recent samples,
+making it maximally volatile. In an alert with `for:`, a single brief dip below the threshold
+moves the alert out of pending and resets the timer to zero, so a genuinely sustained breach
+may never fire. The official functions docs say verbatim: *"Use rate for alerts and slow-moving
+counters, as brief changes in the rate can reset the FOR clause."* Reserve `irate()` for
+high-resolution dashboard graphs only.
+
+**Never aggregate a ratio.** Averaging or summing pre-computed ratios is invalid (Jensen's
+inequality / average-of-averages). If instance A serves 1000 req at 10% errors and B serves 10
+req at 90%, `avg(10%, 90%) = 50%` but the true combined rate is ~18%. Aggregate the numerator
+and denominator separately, then divide. This applies to recording-rule chains too: downstream
+consumers must re-aggregate the underlying counts, never `avg()`/`sum()` a ratio rule.
+
+**Summaries cannot be aggregated across instances — use histograms for cross-instance
+percentiles.** Summaries pre-compute quantiles client-side per process; those values are not
+additive, so `avg(...{quantile="0.95"})` across pods is statistically meaningless (the docs
+call it "statistically nonsensical"). Histograms store raw per-bucket counts, which *are*
+additive: sum buckets across any dimension, then compute the quantile. Any metric that may be
+aggregated across instances/pods/jobs must be a histogram. Use summaries only for single-process
+quantiles that are never aggregated.
+
+```promql
+# Good: aggregate bucket counts first, then estimate
+histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))
+# Bad: averaging pre-computed summary quantiles
+avg(http_request_duration_seconds{quantile="0.95"})
+```
+
+**Pushgateway never expires metrics and has no `up` signal.** The docs: *"The Pushgateway never
+forgets series pushed to it."* A batch job that succeeded Monday and never ran Tuesday still
+serves Monday's success metric, so monitoring looks healthy when it is not, and you lose the
+automatic `up` health signal. Push a `*_last_success_timestamp_seconds` gauge and alert on
+staleness, and/or DELETE the group via the Pushgateway API on completion. Use the Pushgateway
+only for genuinely ephemeral service-level batch jobs, never long-running services.
+
+```yaml
+- alert: BatchJobStale
+  expr: time() - batch_job_last_success_timestamp_seconds > 3600
+  for: 5m
+```
+
+### Design Patterns
+
+**Multi-window multi-burn-rate SLO alerts (no `for:`).** The Google SRE Workbook advises against
+a `for:`/duration clause in SLO alerts: duration does not scale with severity (a total outage
+and a 0.1% degradation wait the same fixed time) and a metric gap resets the timer. Instead each
+tier ANDs a long detection window with a short confirmation window sized ~1/12 of the long one
+(the short window proves the budget is burning *now*, giving fast reset on recovery); tiers are
+ORed. For a 99.9% SLO the Workbook tiers are: page at 14.4x over 1h AND 5m; page at 6x over 6h
+AND 30m; ticket at 1x over 3d AND 6h. (See the corrected `SLOBudgetBurnRate*` alerts above.)
+
+**Page on the Four Golden Signals at the user-facing boundary, not on component causes.** The
+golden signals (latency, traffic, errors, saturation) say *what* to monitor; the expert nuance
+is *where* to page — at the outermost user-visible boundary. In a layered system one layer's
+symptom is another's cause (slow DB queries are the API's latency symptom). Vet every page: is it
+urgent and user-visible; will you ever ignore it; is action required; is that action
+non-automatable; is someone else already paged? Conditions failing these (pool near-full, high
+memory) are warnings/tickets, not criticals.
+
+```yaml
+# Good: user-facing symptom            # Bad: cause-based page without confirmed user impact
+alert: HighUserFacingErrorRate         # alert: DatabaseConnectionPoolExhausted
+expr: |                                #   expr: db_connection_pool_used / db_connection_pool_max > 0.9
+  sum(rate(http_requests_total{status=~"5..", job="frontend"}[5m]))
+  / sum(rate(http_requests_total{job="frontend"}[5m])) > 0.05
+```
+
+### Idioms
+
+**Prefer `without` over `by` in recording/aggregation rules.** `by (l1, l2)` forces you to
+enumerate every label to keep; any label added later silently vanishes from the result. The docs:
+*"Always specify a without clause with the labels you are aggregating away. This is to preserve
+all the other labels such as job."* `without (instance)` future-proofs rules and preserves the
+labels Alertmanager routes on. (Applied throughout the recording-rule sections above.)
+
+**Prefer native histograms for new instrumentation — now a stable feature.** The docs: *"If you
+can, use native histograms and prefer them over both classic histograms and summaries."* They use
+dynamic exponential bucket schemas (no upfront bucket guessing), store all buckets+sum+count in
+ONE composite series (vs N+2 classic `_bucket` series), and are inherently cross-instance
+aggregatable. They were experimental through Prometheus 3.0 and became **stable** in the 3.x
+line; the old `--enable-feature=native-histograms` server flag is a no-op as of v3.9. Enable
+scraping via the scrape-config option, not the old flag; convert classic histograms on ingest
+without re-instrumenting. Client side, set `NativeHistogramBucketFactor` (e.g. 1.1 ≈ ~10%
+resolution).
+
+```yaml
+scrape_configs:
+  - job_name: "myapp"
+    scrape_native_histograms: true
+    convert_classic_histograms_to_nhcb: true   # convert existing classic histograms to NHCB
+    static_configs:
+      - targets: ["myapp:8080"]
+```
+
+**Add resolution hysteresis with `keep_firing_for` (Prometheus 2.42+).** `for:` delays *firing*;
+`keep_firing_for:` delays *resolution* — it keeps the alert firing for the given duration after
+the condition was last met. Without it, an alert deactivates on the first evaluation where the
+condition is not met, so a value oscillating around the threshold (or a brief data gap) produces
+firing/resolved/firing flapping. `keep_firing_for` stops this without weakening the firing
+threshold.
+
+```yaml
+- alert: HighErrorRate
+  expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) > 0.05
+  for: 5m
+  keep_firing_for: 10m   # stays firing 10m after the condition clears
+```
+
+### Gotchas (silent failures)
+
+**Keep `le` when aggregating classic histograms.** `histogram_quantile()` reconstructs buckets
+from the `le` label. If `sum()` drops `le` (not listed in `by()`, or stripped via labeldrop),
+all buckets collapse and the function returns NaN or a meaningless value with NO error — one of
+the most common silent histogram failures. Always include `le` in the `by()` of any aggregation
+feeding `histogram_quantile()`. Two more NaN sources: the highest bucket must have `le="+Inf"`
+(hand-built exporters sometimes omit it); and a window with zero observations divides by zero.
+Aggregate only across instances with identical bucket boundaries.
+
+**`rate()` range window should be ≥ 4x the scrape interval.** `rate()` needs ≥2 samples in the
+window. At a 15s scrape interval, `[15s]`/`[20s]` holds only ~2 samples under ideal timing, so
+jitter or one missed scrape yields empty results and gappy graphs/alerts. Rule of thumb:
+`window >= 4 * scrape_interval` (1m minimum at 15s; 2m at 30s); 5m is a common smoothing choice.
+Grafana's `$__rate_interval` encodes this. Standardize on one window rather than maintaining
+`rate1m`/`rate5m`/`rate1h` variants; use `avg_over_time()` when a different window is needed.
+
+**`increase()` extrapolates and returns fractional values — never use it for exact counts.**
+`increase(v[d])` is `rate(v[d]) * d`, which extrapolates to the window edges, so
+`increase(errors_total[1h])` can read 99.7 or 100.2 even for integer-only counters. This makes
+integer thresholds (`> 100`) fire/miss off-by-one. Use it for approximate "total over window"
+visualization, never for exact event counting, auditing, billing, or precise thresholds.
+
+**`absent()` only fires on total absence.** `absent(v)` returns 1 only when the selector matches
+zero series, so it cannot detect that ONE instance stopped exporting while others still do. It
+also can't be stabilized with `for:` (it only returns a vector while missing, so the timer resets
+when the series reappears). For a per-target missing metric, join `up`; for flaky scrapes, use
+`absent_over_time()` so it fires only after the series has been gone the whole window.
+
+```promql
+# Per-instance missing metric on a healthy target
+up{job="foo"} == 1 unless on(instance) my_metric{job="foo"}
+# Transient-resilient total absence
+absent_over_time(up{job="critical"}[5m])
+```
+
+**Bare `sum()` drops all labels and breaks Alertmanager routing.** `sum()` with no
+`by()`/`without()` collapses to a single label-less series, so an alert built on it carries no
+`job`/`service`/`team`/`env` labels and Alertmanager routes/groupings matching on them silently
+fail. Prefer `sum without (instance) (...)` to keep everything routable, or `sum by (job, ...)`
+listing exactly the labels Alertmanager routes/groups on.
+
+**Metrics with explicit timestamps bypass staleness markers and linger ~5 minutes.** Prometheus
+inserts staleness markers when a series stops being scraped — but this is disabled for metrics
+that embed their own timestamps in the exposition format (cAdvisor, some OTel collectors). Such a
+vanished series keeps its last value for up to `query.lookback-delta` (5m default) and still looks
+live to queries and alert evaluation. Enable proper handling with `track_timestamps_staleness:
+true` in the scrape config (off by default).
+
+### Security & Currency
+
+**`honor_labels: true` on the Pushgateway lets anyone write any time series.** The security model:
+*"As the Pushgateway is usually scraped with honor_labels enabled, this means anyone with access
+to the Pushgateway can create any time series in Prometheus."* `honor_labels` lets the target's
+own labels (including `job`/`instance`) override the server-assigned ones, so any client that can
+POST can impersonate any service and inject arbitrary series. Treat the Pushgateway (and any
+`honor_labels: true` federation of untrusted Prometheis) as a privileged write endpoint and
+restrict network access accordingly.
+
+**Prometheus 3.0 upgrade breaking changes.** (1) **Strict Content-Type:** where 2.x silently fell
+back to the text 0.0.4 format, 3.0 fails the scrape on a missing/invalid Content-Type — set
+`fallback_scrape_protocol: PrometheusText0.0.4` per job for non-compliant exporters. (2) **Label
+normalization:** the `le` of classic histograms and the `quantile` of summaries are normalized on
+ingest (`le="1"` becomes `le="1.0"`), so expressions matching integer values silently stop
+matching and must use the float form. Read the official migration guide before upgrading.
 
 ## Additional Resources
 

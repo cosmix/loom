@@ -239,6 +239,8 @@ Strategic merge is the default patch strategy. It uses Kubernetes-aware merging 
 - Uses `$patch: delete` and `$patch: replace` directives
 - More intuitive for Kubernetes resources
 
+> **`$patch: replace` for entire-list replacement has been inconsistent across versions** (regressed in 3.8.x — issue #2980, where the directive was ignored and lists merged instead). For reliable whole-list replacement use a JSON 6902 patch with `op: replace` instead.
+
 #### Strategic Merge Use Cases
 
 - Simple field updates (replicas, image, env vars)
@@ -298,6 +300,8 @@ labels:
       prometheus.io/scrape: "true"
 ```
 
+> **Always reference a Component under the `components:` field, never `resources:`.** A Component placed under `resources:` is silently misapplied as a plain manifest instead of composing as a feature bundle (kustomize even enforces that Components are not added to `resources:` and Kustomizations not added to `components:`).
+
 ### Including Components
 
 ```yaml
@@ -353,8 +357,8 @@ Need both? → Component for features + Overlay patches for values
 1. **Use generators for dynamic data**: ConfigMaps and Secrets should use generators
 2. **Enable name suffixes**: Add content hash to ConfigMap/Secret names for immutability
 3. **Reference by resource**: Use `nameReference` for automatic name updates
-4. **Common labels**: Apply consistent labels across all resources
-5. **Namespace management**: Set namespace in kustomization, not individual resources
+4. **Common labels**: Apply consistent labels with the `labels` transformer (`includeSelectors: false`), not the deprecated `commonLabels`
+5. **Namespace management**: Set namespace in kustomization, not individual resources. **Exception:** the namespace transformer runs in `DefaultSubjectsOnly` mode and only namespaces `RoleBinding`/`ClusterRoleBinding` subjects whose `name` is `default`. ServiceAccount subjects with any other name get no namespace — silently breaking RBAC — unless you configure a custom `NamespaceTransformer` with `setRoleBindingSubjects: allServiceAccounts`. Verify RBAC subjects explicitly after setting a namespace.
 
 ### Version Control
 
@@ -382,9 +386,17 @@ kind: Kustomization
 
 namespace: myapp
 
-commonLabels:
-  app: myapp
-  managed-by: kustomize
+# Use the labels transformer, NOT the deprecated commonLabels (which also
+# mutates the immutable spec.selector.matchLabels). includeSelectors defaults
+# to false, which is safe on live resources; includeTemplates reaches pod
+# templates. Define genuine selector labels directly in deployment.yaml so the
+# selector contract is explicit rather than silently injected.
+labels:
+  - pairs:
+      app: myapp
+      managed-by: kustomize
+    includeSelectors: false
+    includeTemplates: true
 
 commonAnnotations:
   contact: team@example.com
@@ -494,9 +506,14 @@ namespace: myapp-dev
 namePrefix: dev-
 nameSuffix: -v1
 
-commonLabels:
-  environment: dev
-  version: v1
+# Environment labels via the labels transformer with includeSelectors: false —
+# commonLabels would inject these into immutable selectors and break rollouts.
+labels:
+  - pairs:
+      environment: dev
+      version: v1
+    includeSelectors: false
+    includeTemplates: true
 
 resources:
   - ../../base
@@ -649,16 +666,24 @@ kind: Kustomization
 
 namespace: myapp-prod
 
-commonLabels:
-  environment: prod
-  criticality: high
+labels:
+  - pairs:
+      environment: prod
+      criticality: high
+    includeSelectors: false
+    includeTemplates: true
 
 commonAnnotations:
   oncall: sre-team@example.com
   runbook: https://wiki.example.com/myapp-runbook
 
+# Single resources: block. A second resources: key later in the same document
+# would silently win (duplicate YAML map keys), dropping ../../base entirely.
 resources:
   - ../../base
+  - poddisruptionbudget.yaml
+  - horizontalpodautoscaler.yaml
+  - networkpolicy.yaml
 
 patches:
   - path: patch-replicas.yaml
@@ -690,11 +715,6 @@ replicas:
 components:
   - ../../components/monitoring
   - ../../components/ingress
-
-resources:
-  - poddisruptionbudget.yaml
-  - horizontalpodautoscaler.yaml
-  - networkpolicy.yaml
 ```
 
 #### k8s/overlays/prod/patch-resources.yaml
@@ -889,13 +909,16 @@ spec:
 #### k8s/overlays/prod/kustomization.yaml (excerpt)
 
 ```yaml
-patchesJson6902:
-  - target:
+# Use the unified patches field. patchesStrategicMerge AND patchesJson6902 are
+# both deprecated (v5.0.0) and absent from the v1 API; kustomize auto-detects
+# the patch type from the file content (a list of {op, path, value} is JSON 6902).
+patches:
+  - path: json-patch-containers.yaml
+    target:
       group: apps
       version: v1
       kind: Deployment
       name: myapp
-    path: json-patch-containers.yaml
 ```
 
 #### k8s/overlays/prod/json-patch-containers.yaml
@@ -1506,8 +1529,8 @@ OUTPUT_DIR="manifests/${OVERLAY}"
 # Build manifests
 kustomize build "k8s/overlays/${OVERLAY}" > "${OUTPUT_DIR}/all.yaml"
 
-# Validate with kubeval
-kubeval --strict "${OUTPUT_DIR}/all.yaml"
+# Validate with kubeconform (kubeval is unmaintained, stale schemas)
+kubeconform -strict -summary -kubernetes-version 1.29.0 "${OUTPUT_DIR}/all.yaml"
 
 # Validate with kube-score
 kube-score score "${OUTPUT_DIR}/all.yaml"
@@ -1521,8 +1544,11 @@ git add "${OUTPUT_DIR}/all.yaml"
 
 ### Helm Integration
 
+> **`helmCharts` requires `kustomize build --enable-helm`.** Without the flag the entire `helmCharts` section is silently skipped — no error, no warning — so CI can emit manifests missing whole components yet still "pass". `kubectl apply -k` CANNOT pass `--enable-helm` (returns `unknown flag: --enable-helm`), so `helmCharts` is effectively dead there — use `kustomize build --enable-helm | kubectl apply -f -` (or `kubectl kustomize --enable-helm`). The feature is also a deliberately limited subset: private-registry auth and post-renderers are explicitly unsupported. For anything beyond simple inflation, render with `helm template` and apply kustomize patches on top.
+
 ```yaml
-# Use kustomize to customize Helm output
+# Use kustomize to customize Helm output. Build with:
+#   kustomize build --enable-helm k8s/overlays/prod | kubectl apply -f -
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -1589,8 +1615,8 @@ base 'overlays/dev' refers to base '../../base' which refers back to 'overlays/d
 ### Debugging Techniques
 
 ```bash
-# Enable verbose output
-kustomize build k8s/overlays/prod --enable-alpha-plugins --load-restrictor=LoadRestrictionsNone
+# Build with the default (safe) load restrictor
+kustomize build k8s/overlays/prod
 
 # Show resources before and after transformation
 kustomize build k8s/base > base.yaml
@@ -1620,12 +1646,14 @@ kustomize build k8s/overlays/prod | grep -A 10 "kind: ConfigMap"
 ### Build Time Optimization
 
 ```bash
-# Use --load-restrictor=LoadRestrictionsNone to allow loading files outside kustomization root
-kustomize build --load-restrictor=LoadRestrictionsNone k8s/overlays/prod
+# Build with the default (safe) root-only load restrictor
+kustomize build k8s/overlays/prod
 
 # Build multiple environments in parallel
 parallel kustomize build k8s/overlays/{} ::: dev staging prod
 ```
+
+> **Do not reach for `--load-restrictor=LoadRestrictionsNone` to "fix" cross-directory file loading.** It disables Kustomize's file-access sandbox (see Security Considerations). The correct fix for genuine shared-file needs is to create a base with its own `kustomization.yaml` and reference it.
 
 ## Security Considerations
 
@@ -1655,6 +1683,100 @@ parallel kustomize build k8s/overlays/{} ::: dev staging prod
    - Git commit history
    - CI/CD logs
    - Kubernetes audit logs
+
+## Expert Practices: Idioms, Anti-Patterns & Gotchas
+
+High-signal guidance for production Kustomize. Most of these failure modes are **silent** — wrong output with exit code 0 — so always diff `kustomize build` output before and after any structural change.
+
+### Anti-Patterns (deprecated fields removed from the v1 API)
+
+**`commonLabels` → `labels` transformer.** `commonLabels` (deprecated v5.0.0) injects every label into `spec.selector.matchLabels` in addition to `metadata.labels` and pod templates. Because a Deployment/StatefulSet/Service selector is **immutable after first apply**, adding or changing any `commonLabel` later forces a delete-and-recreate. The `labels` transformer defaults `includeSelectors: false` (safe on live resources); add `includeTemplates: true` so pod labels still propagate (Prometheus scraping, log aggregation). Reserve `includeSelectors: true` for stable identity labels set only at creation time — and prefer defining those directly in base manifests so the selector contract is explicit. The docs warn that changing selectors on live resources "could result in failures."
+
+```yaml
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: myplatform
+      environment: prod
+    includeSelectors: false   # safe on live resources — does NOT touch matchLabels
+    includeTemplates: true    # still reaches pod template labels
+```
+
+**`patchesStrategicMerge` / `patchesJson6902` → unified `patches`.** Both deprecated in v5.0.0. The `patches` field auto-detects the type from content (resource-shaped doc = strategic merge; list of `{op, path, value}` = JSON 6902), and its `target` supports `group/version/kind/name/namespace` plus `labelSelector` and `annotationSelector`, so one patch can hit many resources. **Migration is not behavior-neutral:** `patches` runs *after* the label transformers while `patchesJson6902` ran *before* them, so a patch that touched `/metadata/labels` can produce different output post-migration. Always diff.
+
+**`vars` → `replacements`.** `vars` (`$(VAR)` substitution, deprecated v5.0.0) is replaced by `replacements`, a structured source/target model that propagates any field value (including hashed ConfigMap/Secret names). **Migration is NOT 1:1:** `replacements` works on field pointers and cannot do free-form mid-string concatenation like `path: $(ROOT)/cluster/$(REVISION)`. It *can* do single-segment replacement within a string via the `delimiter` + `index` options, but for true composite strings, restructure (compose in an init container/env var) before migrating.
+
+```yaml
+replacements:
+  - source: {kind: ConfigMap, name: app-config, fieldPath: metadata.name}
+    targets:
+      - select: {kind: Deployment}
+        fieldPaths:
+          - spec.template.spec.volumes.[name=config].configMap.name
+```
+
+### Idioms
+
+**`kustomize edit fix` is the canonical, idempotent migration tool.** It migrates deprecated fields in place — `bases`→`resources`, `commonLabels`→`labels`, `patchesStrategicMerge`/`patchesJson6902`→`patches`, and (experimentally, `--vars`) `vars`→`replacements`. Run it per kustomization directory; use it as a CI lint to surface remaining deprecated fields. Two things it can't guarantee semantically: the patch apply-order shift and `vars` mid-string interpolation — so wrap it in a build diff:
+
+```bash
+kustomize build . > before.yaml
+kustomize edit fix
+kustomize build . > after.yaml
+diff before.yaml after.yaml   # confirm semantic equivalence
+```
+
+**Components apply against the accumulated resource set.** Components use `apiVersion: kustomize.config.k8s.io/v1alpha1`, `kind: Component` (alpha — the API may change without a deprecation window). Unlike a base, a Component runs its patches/generators against the resource set the *parent* has accumulated so far, enabling additive opt-in feature bundles. They must be referenced under `components:`, never `resources:`, and **can be nested** (a Component may itself reference other Components via `components:`).
+
+**Design with Kustomize's deliberate constraints.** The maintainers commit to NOT supporting: (1) removal directives (you cannot delete a label/patch/resource from a base — restructure/fork the base, or use a JSON 6902 `op: remove` for a specific path); (2) `${VAR}` templating; (3) build-time side effects from CLI args or shell env vars (output must be fully determined by version-controlled files); (4) globs. The sanctioned pattern for env-driven output is to mutate the kustomization, commit, then build:
+
+```bash
+kustomize edit set image myapp=registry.example.com/myapp:${GIT_SHA}
+kustomize build overlays/prod
+```
+
+### Gotchas (silent failures)
+
+**Strategic merge patches silently REPLACE entire list fields on CRDs.** For built-in types, strategic merge knows array merge keys from the embedded OpenAPI schema (e.g. `containers` merges on `name`). Custom Resources have no such schema, so kustomize falls back to JSON merge semantics: a patched list field **replaces the whole array** with no error — dropping every element not in the patch. Fix with either an `openapi` field carrying `x-kubernetes-patch-merge-key`/`x-kubernetes-patch-strategy`, or a JSON 6902 patch (which behaves identically for built-in and custom resources):
+
+```yaml
+patches:
+  - target: {group: argoproj.io, version: v1alpha1, kind: Application, name: my-app}
+    patch: |-
+      - op: add
+        path: /spec/sources/-
+        value:
+          repoURL: https://github.com/org/repo
+```
+
+**`disableNameSuffixHash: true` defeats config-driven rolling updates — and a global `true` cannot be overridden.** The content-hash suffix (`app-config-k8bgk8h4t6`) is what triggers a rollout on config change: the new name changes the pod spec, so pods are replaced. Disabling it gives a stable name but silently breaks this — config changes apply to the ConfigMap, but Deployments do not roll. Worse, the boolean follows "global true wins": setting it in top-level `generatorOptions` strips the hash from **every** generator, and a per-generator `disableNameSuffixHash: false` is **ignored**. Only ever disable per-generator, and only for resources referenced by a fixed external name; if you need a stable name *and* rolling updates, keep the hash and propagate the hashed name via `replacements`.
+
+**`replacements` list filters like `[name=nginx]` are unanchored regex.** Since v4.5.3, `spec.template.spec.containers.[name=nginx].image` matches *any* element whose name *contains* `nginx` — `my-nginx`, `nginx-sidecar` — and all matches are targeted, silently overwriting several containers. Anchor explicitly with `[name=^nginx$]`, or use index-based paths. (This differs from a `patches` `target`'s `name`/`namespace`, which ARE auto-anchored.)
+
+**`configMapGenerator` `behavior: merge` matches by logical name AND namespace.** An overlay generator with `behavior: merge` matches the base by pre-hash name — but if one side specifies `namespace` and the other omits it, kustomize treats them as different generators and creates a **second** ConfigMap instead of merging (no error). `merge` also only merges discrete keys; if both reference the same filename, the overlay file replaces the base file entirely. Keep `namespace` consistent (or absent) on both sides, and verify the build emits one ConfigMap, not two.
+
+**`sortOptions` only applies to the top-level (build-target) kustomization.** `sortOptions` (`order: legacy | fifo`; v5.0.0+, replaces `--reorder`) controls output ordering — `legacy` (default) places Namespaces/ServiceAccounts/RBAC first, which is why `kubectl apply -k` usually works without explicit ordering. Instances in bases/components reached via `resources` are **ignored**, so set it in the overlay that is the actual build target (what ArgoCD/Flux points to), never in a shared base.
+
+**Pin a standalone kustomize version.** kubectl embeds an older kustomize that does not track standalone releases (the lag has spanned major versions). Features added after the embedded version — unified `patches`, `sortOptions`, Components, newer `replacements` behaviors — may error or be silently ignored under `kubectl apply -k` while a dev's standalone v5 produces correct output. ArgoCD/Flux also bundle their own versions. Standardize on a pinned `kustomize build | kubectl apply -f -` in CI and match the GitOps controller's version. Check with `kustomize version` and `kubectl version --client -o json` (`kustomizeVersion`).
+
+### Security
+
+**Never use `--load-restrictor=LoadRestrictionsNone` with untrusted input.** The default `LoadRestrictionsRootOnly` (v2.0) prevents file references (`resources`, `configMapGenerator` files) from reading outside the kustomization root — a real security boundary. With it off, a kustomization you don't fully control (e.g. a compromised remote base) can use a `configMapGenerator` file reference to read arbitrary host files (credentials, TLS keys, `/etc/passwd`). It also breaks relocatability. Only use it in fully trusted, audited build environments; the legitimate alternative for cross-directory file needs is a proper base with its own `kustomization.yaml`.
+
+**Pin remote bases to a full commit SHA or tag.** Kustomize fetches remote bases over the network at build time. `?ref=main` (or no ref, which uses default-branch HEAD) means a force-push or compromised upstream flows straight into your cluster on the next reconcile with no change to your repo. Short SHAs are unsupported — use a full fetchable SHA (strongest; tags can be force-pushed) or a versioned tag. Remote fetches also add latency and a rate-limit/availability dependency, so mirror critical bases locally. In GitOps, prefer the controller's own authenticated `GitRepository`/`OCIRepository` source.
+
+```yaml
+resources:
+  - https://github.com/org/platform-base//k8s/base?ref=a3f8c2d1e4b5f6a7b8c9d0e1f2a3b4c5d6e7f8a9   # full SHA
+  - https://github.com/org/platform-base//k8s/base?ref=v2.3.1                                       # or versioned tag
+```
+
+### Currency
+
+**Validate with `kubeconform`, not `kubeval`.** `kubeval` is unmaintained and its schema registry is stale, so it cannot validate recent Kubernetes API versions and silently passes manifests using newer/renamed fields. `kubeconform` is the maintained successor on the same JSON-schema approach, with a current registry and CRD support via `-schema-location`:
+
+```bash
+kustomize build k8s/overlays/prod | kubeconform -strict -summary -kubernetes-version 1.29.0
+```
 
 ## Summary
 

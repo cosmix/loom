@@ -57,11 +57,11 @@ helm repo add crossplane-stable https://charts.crossplane.io/stable
 helm repo update
 
 # Install Crossplane
+# Composition functions are enabled by default since v1.14 — no feature-gate flag needed.
 helm install crossplane \
   crossplane-stable/crossplane \
   --namespace crossplane-system \
   --create-namespace \
-  --set args='{"--enable-composition-functions"}' \
   --wait
 
 # Verify installation
@@ -83,6 +83,8 @@ crossplane --version
 
 ### AWS Provider
 
+> **v2 note:** `ControllerConfig` (`pkg.crossplane.io/v1alpha1`) was deprecated in v1.11 and **removed in Crossplane v2**. Configure provider runtime with `DeploymentRuntimeConfig` (`pkg.crossplane.io/v1beta1`, beta-enabled by default since v1.14) referenced via `runtimeConfigRef`. Migrate any existing config with `crossplane beta convert deployment-runtime controller-config.yaml -o deployment-runtime-config.yaml` before upgrading.
+
 ```yaml
 # providers/aws-provider.yaml
 apiVersion: pkg.crossplane.io/v1
@@ -91,8 +93,8 @@ metadata:
   name: provider-aws-s3
 spec:
   package: xpkg.upbound.io/upbound/provider-aws-s3:v1.1.0
-  controllerConfigRef:
-    name: aws-config
+  runtimeConfigRef:
+    name: aws-runtime
 ---
 apiVersion: pkg.crossplane.io/v1
 kind: Provider
@@ -100,19 +102,26 @@ metadata:
   name: provider-aws-rds
 spec:
   package: xpkg.upbound.io/upbound/provider-aws-rds:v1.1.0
-  controllerConfigRef:
-    name: aws-config
+  runtimeConfigRef:
+    name: aws-runtime
 ---
-apiVersion: pkg.crossplane.io/v1alpha1
-kind: ControllerConfig
+apiVersion: pkg.crossplane.io/v1beta1
+kind: DeploymentRuntimeConfig
 metadata:
-  name: aws-config
+  name: aws-runtime
 spec:
-  podSecurityContext:
-    fsGroup: 2000
-  args:
-    - --poll=1m
-    - --max-reconcile-rate=100
+  deploymentTemplate:
+    spec:
+      selector: {}
+      template:
+        spec:
+          securityContext:
+            fsGroup: 2000
+          containers:
+            - name: package-runtime
+              args:
+                - --poll=1m
+                - --max-reconcile-rate=100
 ```
 
 ### Provider Authentication
@@ -224,6 +233,8 @@ spec:
 ## Composite Resource Definitions (XRDs)
 
 ### Database XRD
+
+> **v1 vs v2:** This XRD uses `apiextensions.crossplane.io/v1` with `claimNames` — the legacy cluster-scoped model. New XRDs should use `apiextensions.crossplane.io/v2`, which is **namespaced by default** (`scope: Namespaced`) and **drops claims** (no `claimNames`). `connectionSecretKeys` is a claims-era field that **does not apply to v2 XRDs**; on v2 aggregate connection details via `function-patch-and-transform`'s `writeConnectionSecretToRef.patches`. `spec.group` and `spec.names` are **immutable** — choose them carefully, since changing them requires deleting and recreating the XRD (which cascades to all its XRs).
 
 ```yaml
 # xrds/database-xrd.yaml
@@ -372,8 +383,10 @@ spec:
 
 ### Database Composition with Size Mapping
 
+> **v2 note — this is the v1-only `mode: Resources` layout, removed in Crossplane v2.** Native patch-and-transform (`spec.resources`/`spec.patchSets`) was deprecated in v1.17 and removed in v2; the only supported mode is `mode: Pipeline` with `function-patch-and-transform` (see the Pipeline-mode example under "Composition Functions" and the migration command `crossplane beta convert pipeline-composition old.yaml -o new.yaml`). Also, Composition-level `writeConnectionSecretsToNamespace` no longer functions for XRs in v2 (native XR connection details were removed) — aggregate via the function's `writeConnectionSecretToRef.patches` instead. To run on v2, move `resources`/`patchSets` verbatim into the `function-patch-and-transform` input.
+
 ```yaml
-# compositions/postgres-composition.yaml
+# compositions/postgres-composition.yaml  (v1-only mode: Resources — see v2 note above)
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
 metadata:
@@ -537,8 +550,10 @@ spec:
 
 ### Multi-Resource Application Platform Composition
 
+> **v2 note — v1-only `mode: Resources` layout, removed in Crossplane v2** (same as above). Migrate to `mode: Pipeline` + `function-patch-and-transform` and replace `writeConnectionSecretsToNamespace` with the function's `writeConnectionSecretToRef.patches`.
+
 ```yaml
-# compositions/app-platform-composition.yaml
+# compositions/app-platform-composition.yaml  (v1-only mode: Resources — see v2 note above)
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
 metadata:
@@ -776,41 +791,11 @@ spec:
 
   mode: Pipeline
   pipeline:
-    # Step 1: Use function to generate password
-    - step: generate-password
-      functionRef:
-        name: function-auto-ready
-      input:
-        apiVersion: pt.fn.crossplane.io/v1beta1
-        kind: Resources
-        resources:
-          - name: db-password-secret
-            base:
-              apiVersion: v1
-              kind: Secret
-              metadata:
-                namespace: crossplane-system
-              type: Opaque
-              stringData:
-                password: ""
-            patches:
-              - type: FromCompositeFieldPath
-                fromFieldPath: metadata.uid
-                toFieldPath: metadata.name
-                transforms:
-                  - type: string
-                    string:
-                      fmt: "%s-password"
-              - type: CombineFromComposite
-                combine:
-                  variables:
-                    - fromFieldPath: metadata.uid
-                  strategy: string
-                  string:
-                    fmt: "GENERATE_PASSWORD_32"
-                toFieldPath: stringData.password
-
-    # Step 2: Patch and transform resources
+    # Step 1: Patch and transform resources
+    # Note: function-auto-ready only marks resources Ready — it does NOT generate
+    # passwords or accept a Resources input. For secret/password generation use
+    # function-kcl (random string) or External Secrets Operator; never write a
+    # literal placeholder into a Secret.
     - step: patch-and-transform
       functionRef:
         name: function-patch-and-transform
@@ -850,7 +835,7 @@ spec:
                       medium: db.t3.medium
                       large: db.m5.large
 
-    # Step 3: Mark as ready
+    # Step 2: Mark as ready
     - step: auto-ready
       functionRef:
         name: function-auto-ready
@@ -858,25 +843,29 @@ spec:
 
 ### Installing Composition Functions
 
+# Community functions live on the neutral registry xpkg.crossplane.io (the default
+# for crossplane-contrib since v1.20). Upbound's own providers stay on xpkg.upbound.io.
+# Crossplane v2 has no default registry — always use a fully qualified URL.
+
 ```bash
 # Install function-patch-and-transform
 kubectl apply -f - <<EOF
-apiVersion: pkg.crossplane.io/v1beta1
+apiVersion: pkg.crossplane.io/v1
 kind: Function
 metadata:
   name: function-patch-and-transform
 spec:
-  package: xpkg.upbound.io/crossplane-contrib/function-patch-and-transform:v0.2.1
+  package: xpkg.crossplane.io/crossplane-contrib/function-patch-and-transform:v0.8.2
 EOF
 
 # Install function-auto-ready
 kubectl apply -f - <<EOF
-apiVersion: pkg.crossplane.io/v1beta1
+apiVersion: pkg.crossplane.io/v1
 kind: Function
 metadata:
   name: function-auto-ready
 spec:
-  package: xpkg.upbound.io/crossplane-contrib/function-auto-ready:v0.2.1
+  package: xpkg.crossplane.io/crossplane-contrib/function-auto-ready:v0.4.1
 EOF
 ```
 
@@ -1058,7 +1047,7 @@ Configure provider controllers for production scale:
 
 - Use map transforms to vary resources by environment
 - Example: small instances for dev, large for prod
-- Conditional resources based on boolean flags
+- Map transforms can only vary field **values** on resources that are always created — conditional resource **inclusion** (create a cache only if `enableCache=true`) requires `mode: Pipeline` with a templating function (`function-go-templating` or `function-kcl`); patch-and-transform intentionally has no loops/conditionals
 
 #### Connection Secret Propagation
 
@@ -1110,8 +1099,9 @@ Configure provider controllers for production scale:
 
 #### Deletion Policies
 
-- Use `deletionPolicy: Delete` for dev environments
-- Use `deletionPolicy: Orphan` for production databases
+- **`deletionPolicy` defaults to `Delete`** — deleting the Kubernetes object destroys the real cloud resource. Set `deletionPolicy: Orphan` **from day one** on ANY resource whose accidental deletion causes data loss or an outage (databases, buckets, volumes), not only production databases.
+- Use `deletionPolicy: Delete` only for genuinely disposable dev/test resources
+- In newer Crossplane, deletion is increasingly expressed via `managementPolicies` (omitting `Delete` prevents external deletion), but `deletionPolicy: Delete` remains the default disposition
 - Document deletion behavior for platform users
 
 #### Resource Tagging
@@ -1203,11 +1193,17 @@ kubectl apply -f xrd.yaml --dry-run=server
 ### Updating Resources
 
 ```bash
-# Update a composition (changes apply to new composites only)
+# Update a composition: with the default Automatic update policy this IMMEDIATELY
+# reconciles ALL existing composites (not just new ones). Set
+# compositionUpdatePolicy: Manual on XRs, or defaultCompositionUpdatePolicy: Manual
+# on the XRD, to gate the rollout and promote tested revisions deliberately.
 kubectl apply -f composition.yaml
 
-# Force reconciliation by adding annotation
-kubectl annotate claim my-app-db crossplane.io/paused=false --overwrite
+# Pause / unpause reconciliation. WARNING: a paused resource
+# (crossplane.io/paused: "true") cannot be deleted with kubectl delete until the
+# annotation is removed — always unpause before deleting. Only the exact string
+# "true" pauses; "false" does NOT force a reconcile, it just clears the pause.
+kubectl annotate managed my-rds-instance crossplane.io/paused-   # remove pause
 
 # Update XRD (be careful with breaking changes)
 kubectl apply -f xrd.yaml
@@ -1399,9 +1395,127 @@ spec:
 4. Gradually build compositions around managed resources
 5. Migrate teams to claims
 
+## Expert Practices: Idioms, Anti-Patterns & Gotchas
+
+High-signal guidance distilled from production Crossplane and the official docs. Each item states the mechanism, not just the rule.
+
+### Currency (Crossplane v2)
+
+**v2 removed `mode: Resources` — all Compositions must use `mode: Pipeline`.** In v1 the patch-and-transform engine was embedded in the core binary; v2 extracted it into `function-patch-and-transform`, decoupling it from the core release cycle. A Composition that omits `mode:` (implicitly `Resources`) or sets `mode: Resources` is rejected on v2. Convert with `crossplane beta convert pipeline-composition old.yaml -o new.yaml` (v1.20 CLI) before upgrading.
+
+**`ControllerConfig` removed — use `DeploymentRuntimeConfig` + `runtimeConfigRef`.** A provider still referencing `controllerConfigRef` has its runtime config (poll interval, security context, reconcile rate) **silently ignored** on v2. `DeploymentRuntimeConfig` exposes the full pod template (args, env, limits, security context, ServiceAccount) and is strictly more capable. See the AWS provider example above.
+
+**v2 XRDs are namespaced-by-default and drop claims (`apiextensions.crossplane.io/v2`).** The new `scope` field defaults to `Namespaced`; namespaced/cluster XRs don't support claims (`claimNames` is gone), and `connectionSecretKeys` no longer applies. v1 XRDs default to `LegacyCluster` and keep working with claims for backward compatibility. Prefer v2 + `scope: Namespaced` for new XRDs — it aligns with standard Kubernetes RBAC/multi-tenancy.
+
+**v2 universal composition: an XR can compose ANY Kubernetes resource.** Not just managed resources — a single XR can bundle infrastructure (RDS) with application-layer resources (Deployments, ServiceAccounts, NetworkPolicies, operator CRs). Requires `mode: Pipeline` and v2 namespaced XRDs, where the namespace boundary co-locates composed resources.
+
+```yaml
+resources:
+  - name: rds-instance
+    base:
+      apiVersion: rds.aws.m.upbound.io/v1beta1
+      kind: Instance
+  - name: app-service-account
+    base:
+      apiVersion: v1
+      kind: ServiceAccount   # plain Kubernetes resource, composed by the XR
+```
+
+**Registry defaults changed twice.** v1.20 moved the crossplane-contrib default registry from `xpkg.upbound.io` to the neutral `xpkg.crossplane.io`. Crossplane v2 then **dropped the `--registry` default entirely** — bare image names fail; always use a fully qualified URL. Upbound's own providers (`provider-aws`, etc.) remain on `xpkg.upbound.io`.
+
+### Migration
+
+**Run `crossplane beta upgrade check` (v1.20 CLI) before any v1.x → v2 migration.** This read-only scan names every deprecated/removed feature that would break the upgrade (Resources-mode compositions, `ControllerConfig`s, bare package names) and the exact `crossplane beta convert` sub-command to fix each. Supports `-o json` for CI and exits non-zero on blockers. The upgrade path is stepwise — reach v1.20 first, then advance one minor at a time. (`beta upgrade`/`beta convert` are v1.20 pre-upgrade tooling, absent from the v2 CLI.)
+
+```bash
+crossplane --version            # confirm 1.20.x
+crossplane beta upgrade check    # read-only scan for v2 blockers
+crossplane beta convert pipeline-composition composition.yaml -o composition-v2.yaml
+```
+
+### Anti-Patterns
+
+**Never rebuild the desired-resource map from scratch in a pipeline function.** Each function receives the accumulated desired state from all prior steps, and Crossplane applies the desired state returned by the **last** function. The contract is **get → update → set**: get existing desired resources, add/modify your own, set the complete map back. Initializing an empty map and setting only your own resources drops everything prior steps added — Crossplane then garbage-collects (deletes) the corresponding cloud resources.
+
+```go
+// CORRECT: get -> update -> set preserves prior steps' resources
+desired, err := request.GetDesiredComposedResources(req)
+desired["my-bucket"] = &resource.DesiredComposed{Resource: cd}
+response.SetDesiredComposedResources(rsp, desired)
+// WRONG: desired := map[...]{} then set -> deletes everything else
+```
+
+### Design Patterns
+
+**Import existing cloud resources with `managementPolicies: [Observe]` + `external-name` first.** Full management treats `spec.forProvider` as authoritative and drift-corrects on the next reconcile — mutable fields are changed on the live resource with no confirmation (e.g. silently resizing a `db.m5.large` to `db.t3.micro`), immutable fields cause a reconcile error loop. Safe sequence: (1) set `crossplane.io/external-name: <cloud-id>` and `managementPolicies: [Observe]`; (2) apply and let `status.atProvider` populate; (3) copy discovered values into `spec.forProvider`; (4) switch to `managementPolicies: ["*"]`. Management policies (`Create`/`Delete`/`Update`/`Observe`/`LateInitialize`/`*`) are finer-grained than the blunt `crossplane.io/paused` annotation; an empty array `[]` behaves like paused.
+
+**Hard-lock the composition with `enforcedCompositionRef` in multi-tenant platforms.** Consumers can set `compositionRef`/`compositionSelector` to bypass the intended composition. `enforcedCompositionRef` in the XRD binds **all** XRs of that type to one named Composition regardless of consumer choice — the governance control for platform teams. This differs from `defaultCompositionRef`, which is merely an overridable fallback.
+
+**Use `function-extra-resources` for cross-resource lookups, not nested XRs.** To read another cluster resource (an `EnvironmentConfig`, a VPC config, another XR's status), `function-extra-resources` fetches matches by name/label selector into the pipeline context under `apiextensions.crossplane.io/extra-resources`; downstream functions (`function-go-templating`, `function-kcl`) read that key. Nesting an XR to access shared config creates ownership coupling and deletion-ordering complexity.
+
+**`patch-and-transform` has no loops/conditionals — chain `function-kcl` or `function-go-templating`.** P&T is intentionally limited to straightforward field mapping. For conditional resource creation, iteration over lists, or complex string logic, add a templating-function step in the same pipeline (run P&T for field mapping, then the templating function for dynamic logic).
+
+### Gotchas
+
+**`compositionUpdatePolicy` defaults to `Automatic` — editing a Composition immediately reconciles ALL live XRs.** Applying a changed Composition pushes the new template to every referencing XR at once (uncontrolled blast radius). Even label/annotation edits create a new `CompositionRevision`, so cosmetic changes can trigger a rolling reconcile. Production-safe: set `defaultCompositionUpdatePolicy: Manual` on the XRD (or `compositionUpdatePolicy: Manual` per XR), pin tested revisions via `compositionRevisionRef.name`, and promote deliberately (canary/per-env). Note `compositeTypeRef.apiVersion` is immutable on a Composition, so version migrations require new Composition objects.
+
+**Delete claims/XRs before the Provider — never the reverse.** Deleting a Provider while its managed resources still exist leaves them **permanently stuck**: `finalizer.managedresource.crossplane.io` blocks Kubernetes garbage collection, but the controller that would process deletion is gone. Recovery needs manual finalizer surgery (`kubectl patch <mr> -p '{"metadata":{"finalizers":[]}}' --type=merge`) plus manual cloud-side cleanup. Safe teardown: `kubectl delete <claim/xr>`, `kubectl wait --for=delete managed --all`, then delete the Provider.
+
+**A paused managed resource cannot be deleted.** `crossplane.io/paused: "true"` halts all provider reconciliation including deletion — `kubectl delete` hangs in `Terminating` forever. Only the exact string `"true"` pauses; `"false"` does not force a reconcile, it just clears the pause. Always `kubectl annotate ... crossplane.io/paused-` before deleting.
+
+**`FromCompositeFieldPath` patches default to `Optional` — a typo'd source path is silently skipped.** Crossplane ignores a patch whose `fromFieldPath` doesn't exist, so a mistyped field or a not-yet-populated status field silently provisions the resource with the composition's base value, no error or event. For any load-bearing patch, set `policy.fromFieldPath: Required` to surface the misconfiguration.
+
+```yaml
+patches:
+  - type: FromCompositeFieldPath
+    fromFieldPath: spec.parameters.size
+    toFieldPath: spec.forProvider.instanceClass
+    policy:
+      fromFieldPath: Required   # error if absent instead of silent skip
+```
+
+**`function-auto-ready` can mark an XR Ready before conditional resources exist.** It marks the composite Ready when all resources **currently in the desired state** report `Ready=True`. If a later pipeline step conditionally adds resources (e.g. a cache created only after another resource's status appears), auto-ready sees only the current output and can mark the XR Ready in the interim, letting dependents proceed too early. For compositions with conditional resources, add explicit `readinessChecks` on the relevant composed resources rather than relying solely on auto-ready.
+
+### Idioms
+
+**Composition functions must produce deterministic resource names.** A function runs on every reconcile, and Crossplane matches composed resources by their name key. A name derived from a random/time value changes between reconciles — Crossplane sees the old name as deleted and the new as created, causing delete+create churn of real infrastructure. Derive names from stable XR fields (`GetName()`/UID or a stable hash of stable inputs).
+
+**Use `Fatal` vs `Warning` vs `Normal` correctly — wrong severity blocks or hides errors.** `Fatal` stops the pipeline and surfaces an error on the XR (reserve for unrecoverable input/programming errors); `Warning` emits a Kubernetes event but reconciliation continues (use for recoverable external state, e.g. a referenced resource not yet ready); `Normal` is informational. Using `Fatal` for a transient condition halts ALL reconciliation.
+
+**Prefer the `match` transform with `fallbackTo` over `map` for enum mapping.** `map` has no implicit fallback — `Crossplane throws an error if the value isn't found`, so adding a new enum value to the XRD before updating the map breaks the composition. `match` supports `fallbackTo: Value` (with `fallbackValue`) or `fallbackTo: Input`, giving an explicit default. Use `match` for any mapping whose input set may grow.
+
+```yaml
+transforms:
+  - type: match
+    match:
+      patterns:
+        - { type: literal, literal: small, result: db.t3.micro }
+        - { type: literal, literal: large, result: db.m5.large }
+      fallbackTo: Value
+      fallbackValue: db.t3.micro   # safe default instead of an error
+```
+
+**Test pipelines locally with `crossplane composition render`.** `crossplane composition render xr.yaml composition.yaml functions.yaml` renders composed resources with no cluster; `--observed-resources` mocks existing state to test idempotency. For active function development, annotate the Function with `render.crossplane.io/runtime: Development` and run the function locally (listening on `localhost:9443` with `--insecure`) to eliminate the build/push/install loop.
+
+### Performance
+
+**Use `ManagedResourceActivationPolicy` (MRAP) to selectively activate provider CRDs in v2.** Large family providers ship hundreds of CRDs that inflate API-server load even when few are used. v2 introduces ManagedResourceDefinitions for selective activation: only activated MRDs get CRDs installed and controllers started, selected via an MRAP (exact names or wildcards). This supersedes the v1 workaround of installing many individually-scoped providers. (MRAP/MRD are new and evolving — verify the exact `apiVersion` and the namespaced `.m.` MRD naming against your installed version.)
+
+```yaml
+apiVersion: pkg.crossplane.io/v1alpha1
+kind: ManagedResourceActivationPolicy
+metadata:
+  name: activate-aws-essentials
+spec:
+  activate:
+    - buckets.s3.aws.m.upbound.io
+    - "*.rds.aws.m.upbound.io"
+```
+
 ## References
 
 - [Crossplane Documentation](https://docs.crossplane.io)
+- [Upgrade to Crossplane v2](https://docs.crossplane.io/latest/guides/upgrade-to-crossplane-v2/)
 - [Upbound Providers](https://marketplace.upbound.io)
 - [Composition Functions](https://docs.crossplane.io/latest/concepts/composition-functions)
 - [AWS Provider](https://marketplace.upbound.io/providers/upbound/provider-aws)
