@@ -1087,12 +1087,12 @@ mismatch is a safe 403, never a bypass. `notPaths` belongs with DENY, not ALLOW.
 > TCP port denies everything on that port. (ALLOW is the inverse: the field never
 > matches, allowing everything.) Always scope DENY policies to an explicitly
 > HTTP-named port: `to: [{ operation: { ports: ["8080"], methods: ["DELETE"] } }]`.
-
+>
 > **`operation.hosts` is effective on gateways only, not workload sidecars.** A
 > server-side sidecar ignores the Host header when redirecting to the app, so a
 > `hosts:` rule on a workload selector is bypassable by hitting the pod IP directly
 > with any Host header. Put host-based access control on the ingress gateway.
-
+>
 > **PERMISSIVE mTLS makes `source.principals` unreliable.** Plaintext requests
 > carry an empty SPIFFE principal; any ALLOW rule that does **not** check the
 > principal (e.g. method/path only) still admits unauthenticated plaintext, giving

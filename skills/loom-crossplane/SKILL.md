@@ -843,9 +843,9 @@ spec:
 
 ### Installing Composition Functions
 
-# Community functions live on the neutral registry xpkg.crossplane.io (the default
-# for crossplane-contrib since v1.20). Upbound's own providers stay on xpkg.upbound.io.
-# Crossplane v2 has no default registry — always use a fully qualified URL.
+Community functions live on the neutral registry `xpkg.crossplane.io` (the default
+for crossplane-contrib since v1.20). Upbound's own providers stay on `xpkg.upbound.io`.
+Crossplane v2 has no default registry — always use a fully qualified URL.
 
 ```bash
 # Install function-patch-and-transform
