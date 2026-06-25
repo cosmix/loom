@@ -37,8 +37,11 @@ impl StageType {
         match self {
             // Knowledge stages are lightweight exploration — sonnet suffices
             StageType::Knowledge => "sonnet",
-            // KnowledgeDistill is mechanical curation work — sonnet suffices
-            StageType::KnowledgeDistill => "sonnet",
+            // KnowledgeDistill curates ALL stage memories into permanent knowledge:
+            // a context-heavy, judgment-laden reduce step. Opus (1M window) absorbs the
+            // accumulated memory volume and synthesizes/dedupes better than sonnet. The
+            // agent may delegate information-gathering to cheaper sonnet subagents.
+            StageType::KnowledgeDistill => "opus",
             // Standard and integration-verify stages default to opus
             StageType::Standard | StageType::IntegrationVerify => "opus",
         }

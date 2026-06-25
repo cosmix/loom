@@ -529,6 +529,54 @@ pub fn generate_knowledge_distill_stable_prefix() -> String {
     content.push_str("6. Remove or update stale knowledge entries — if a mistake has been fixed, a pattern replaced, or an entry-point renamed, update or delete the old entry. Stale entries mislead future agents\n");
     content.push_str("7. Generate review document: `loom review`\n\n");
 
+    // Self-directed subagent delegation to protect the curator's context window
+    content
+        .push_str("**Managing your context — delegate gathering, do the curation yourself:**\n\n");
+    content.push_str(
+        "Distillation is a reduce step: it must read ALL stage memories AND review the code\n",
+    );
+    content.push_str(
+        "changes across every stage. On a large plan that raw volume can fill your context\n",
+    );
+    content.push_str("before you finish writing knowledge. YOU decide whether to fan out:\n\n");
+    content.push_str(
+        "- **Small plan** (few stages, modest memories/diff) — gather and curate directly in\n",
+    );
+    content.push_str(
+        "  this session. Do NOT spawn subagents for trivial volume; that is over-engineering.\n",
+    );
+    content.push_str(
+        "- **Large plan** (many stages, large `loom memory show --all`, wide diff) — spawn\n",
+    );
+    content.push_str(
+        "  **information-gathering subagents** to read slices and return COMPACT summaries,\n",
+    );
+    content.push_str(
+        "  keeping the raw bulk out of your context. Split by knowledge category (architecture,\n",
+    );
+    content.push_str(
+        "  patterns, mistakes, …) or by group of stages — whichever yields disjoint reading.\n\n",
+    );
+    content.push_str("**If you fan out:**\n\n");
+    content.push_str(
+        "- Gathering/summarizing subagents are read-only and can be **sonnet** (`Explore` or\n",
+    );
+    content.push_str(
+        "  `loom-software-engineer`) — they read memories/diffs and report; cheap and sufficient.\n",
+    );
+    content.push_str(
+        "- YOU (the curator) remain the only writer: synthesize the summaries, dedupe across\n",
+    );
+    content.push_str(
+        "  categories, and write every `loom knowledge update` yourself. Coherence is your job.\n",
+    );
+    content.push_str(
+        "- Subagents MUST NOT run `loom knowledge`/`loom memory`/`git` or `loom stage complete`,\n",
+    );
+    content.push_str(
+        "  and MUST NOT write knowledge files — they only gather and report (see Rule 5).\n\n",
+    );
+
     // Do NOT modify CLAUDE.md
     content.push_str("**IMPORTANT — Do NOT modify the project's CLAUDE.md:**\n\n");
     content.push_str("- CLAUDE.md is the user's file — loom agents must not write to it\n");
