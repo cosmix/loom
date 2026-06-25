@@ -838,61 +838,129 @@ pub fn format_skill_recommendations(skills: &[SkillMatch]) -> String {
     let mut content = String::new();
 
     content.push_str("## Recommended Skills\n\n");
-    content.push_str("Based on your task, these skills may be helpful:\n\n");
 
-    content.push_str("| Skill | Description | Invoke |\n");
-    content.push_str("|-------|-------------|--------|\n");
-
-    for skill in skills {
-        // Truncate description if too long for table (UTF-8 safe)
-        let desc = if skill.description.chars().count() > 60 {
-            format!(
-                "{}...",
-                skill.description.chars().take(57).collect::<String>()
-            )
-        } else {
-            skill.description.clone()
-        };
-        // Escape pipe characters in description
-        let desc = desc.replace('|', "\\|");
-
-        // Escape pipe characters in name
-        let name = skill.name.replace('|', "\\|");
-
-        // Annotate language-detected skills
-        let is_language_detected = skill
-            .matched_triggers
-            .iter()
-            .any(|t| t == "project-language");
-        let name_display = if is_language_detected {
-            format!("{name} (detected)")
-        } else {
-            name.clone()
-        };
-
-        content.push_str(&format!("| {} | {} | `/{}`|\n", name_display, desc, name));
-    }
-    content.push('\n');
-
-    // Show which triggers matched for transparency
-    content.push_str("**Matched triggers:**\n");
-    for skill in skills {
-        if !skill.matched_triggers.is_empty() {
-            let triggers = skill.matched_triggers.join(", ");
-            content.push_str(&format!("- `{}`: {}\n", skill.name, triggers));
-        }
-    }
-
-    // Add legend for project-language detected skills
-    if skills
+    // Partition skills into two classes with different framing:
+    // - `detected`: language skills inferred from the files this stage edits.
+    //   These are a DIRECTIVE — load them before writing code.
+    // - `advisory`: skills matched from the task description. Invoke if relevant.
+    let (detected, advisory): (Vec<&SkillMatch>, Vec<&SkillMatch>) = skills
         .iter()
-        .any(|s| s.matched_triggers.iter().any(|t| t == "project-language"))
-    {
+        .partition(|s| s.matched_triggers.iter().any(|t| t == "project-language"));
+
+    if !detected.is_empty() {
         content.push_str(
-            "\n*Skills marked (detected) were recommended based on project language detection.*\n",
+            "**Load these now — before editing any files.** Based on the file types this \
+             stage will edit, invoke the Skill tool for each so your code follows the \
+             project's language conventions:\n\n",
         );
+        for skill in &detected {
+            content.push_str(&format!("- `Skill(skill=\"{}\")`\n", skill.name));
+        }
+        content.push('\n');
     }
-    content.push('\n');
+
+    if !advisory.is_empty() {
+        content.push_str("These skills may also help with your task — invoke any that apply:\n\n");
+        content.push_str("| Skill | Description | Invoke |\n");
+        content.push_str("|-------|-------------|--------|\n");
+
+        for skill in &advisory {
+            // Truncate description if too long for table (UTF-8 safe)
+            let desc = if skill.description.chars().count() > 60 {
+                format!(
+                    "{}...",
+                    skill.description.chars().take(57).collect::<String>()
+                )
+            } else {
+                skill.description.clone()
+            };
+            // Escape pipe characters in description and name
+            let desc = desc.replace('|', "\\|");
+            let name = skill.name.replace('|', "\\|");
+
+            content.push_str(&format!(
+                "| {} | {} | `Skill(skill=\"{}\")` |\n",
+                name, desc, name
+            ));
+        }
+        content.push('\n');
+
+        // Show which triggers matched for transparency
+        content.push_str("**Matched triggers:**\n");
+        for skill in &advisory {
+            if !skill.matched_triggers.is_empty() {
+                let triggers = skill.matched_triggers.join(", ");
+                content.push_str(&format!("- `{}`: {}\n", skill.name, triggers));
+            }
+        }
+        content.push('\n');
+    }
 
     content
+}
+
+#[cfg(test)]
+mod skill_recommendation_tests {
+    use super::format_skill_recommendations;
+    use crate::skills::SkillMatch;
+
+    fn detected(name: &str) -> SkillMatch {
+        SkillMatch::new(
+            name.to_string(),
+            "Language expertise".to_string(),
+            10.0,
+            vec!["project-language".to_string()],
+        )
+    }
+
+    fn advisory(name: &str, trigger: &str) -> SkillMatch {
+        SkillMatch::new(
+            name.to_string(),
+            "Some advisory skill".to_string(),
+            2.0,
+            vec![trigger.to_string()],
+        )
+    }
+
+    #[test]
+    fn detected_skills_render_as_skill_tool_directive() {
+        let out = format_skill_recommendations(&[detected("loom-rust")]);
+        // Directive framing + an explicit Skill tool invocation the agent can run.
+        assert!(out.contains("Load these now"), "missing directive: {out}");
+        assert!(
+            out.contains("Skill(skill=\"loom-rust\")"),
+            "missing Skill tool call: {out}"
+        );
+    }
+
+    #[test]
+    fn advisory_skills_render_as_table_not_directive() {
+        let out = format_skill_recommendations(&[advisory("loom-auth", "jwt")]);
+        assert!(
+            !out.contains("Load these now"),
+            "should not be directive: {out}"
+        );
+        assert!(
+            out.contains("may also help"),
+            "missing advisory framing: {out}"
+        );
+        assert!(
+            out.contains("Skill(skill=\"loom-auth\")"),
+            "missing invoke column: {out}"
+        );
+        assert!(out.contains("jwt"), "missing matched trigger: {out}");
+    }
+
+    #[test]
+    fn detected_and_advisory_are_partitioned() {
+        let out =
+            format_skill_recommendations(&[detected("loom-rust"), advisory("loom-auth", "jwt")]);
+        // Detected directive comes before the advisory table.
+        let load_pos = out.find("Load these now").expect("directive present");
+        let advisory_pos = out.find("may also help").expect("advisory present");
+        assert!(
+            load_pos < advisory_pos,
+            "directive should precede advisory: {out}"
+        );
+    }
 }

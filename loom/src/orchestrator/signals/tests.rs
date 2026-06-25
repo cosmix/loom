@@ -75,6 +75,59 @@ fn test_generate_signal_basic() {
     assert!(content.contains("Implement signals module"));
 }
 
+/// End-to-end: a stage whose files are Rust sources must produce a signal that
+/// directs the agent to load `loom-rust` via the Skill tool. This is the path
+/// that was silently broken — `get_by_name("rust")` never matched `loom-rust`.
+#[test]
+fn test_signal_directs_agent_to_load_language_skill_from_files() {
+    use crate::skills::SkillIndex;
+    use std::io::Write;
+
+    let temp_dir = TempDir::new().unwrap();
+    let work_dir = temp_dir.path().join(".work");
+    fs::create_dir_all(&work_dir).unwrap();
+
+    // Mirror how skills are installed: ~/.claude/skills/loom-rust/SKILL.md.
+    let skills_dir = temp_dir.path().join("skills");
+    let rust_dir = skills_dir.join("loom-rust");
+    fs::create_dir_all(&rust_dir).unwrap();
+    let mut f = fs::File::create(rust_dir.join("SKILL.md")).unwrap();
+    writeln!(f, "---").unwrap();
+    writeln!(f, "name: loom-rust").unwrap();
+    writeln!(f, "description: Rust language expertise for idiomatic code").unwrap();
+    writeln!(f, "---").unwrap();
+    let index = SkillIndex::load_from_directory(&skills_dir).unwrap();
+
+    let session = create_test_session();
+    let mut stage = create_test_stage();
+    stage.files = vec!["loom/src/**/*.rs".to_string()];
+    let worktree = create_test_worktree();
+
+    // No project-level languages passed: detection must come from stage.files.
+    let signal_path = super::generate::generate_signal_with_skills(
+        &session,
+        &stage,
+        &worktree,
+        &[],
+        None,
+        None,
+        &work_dir,
+        Some(&index),
+        &[],
+    )
+    .unwrap();
+
+    let content = fs::read_to_string(&signal_path).unwrap();
+    assert!(
+        content.contains("Load these now"),
+        "signal should carry a load-now directive:\n{content}"
+    );
+    assert!(
+        content.contains("Skill(skill=\"loom-rust\")"),
+        "signal should instruct invoking the loom-rust Skill:\n{content}"
+    );
+}
+
 #[test]
 fn test_generate_signal_with_dependencies() {
     let temp_dir = TempDir::new().unwrap();

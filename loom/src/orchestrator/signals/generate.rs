@@ -6,12 +6,12 @@ use crate::fs::knowledge::KnowledgeDir;
 use crate::fs::memory::format_memory_for_signal;
 use crate::handoff::git_handoff::GitHistory;
 use crate::handoff::schema::ParsedHandoff;
-use crate::language::DetectedLanguage;
+use crate::language::{detect_languages_from_files, DetectedLanguage};
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageType};
 use crate::models::worktree::Worktree;
 use crate::plan::schema::CodeReviewConfig;
-use crate::skills::{SkillIndex, SkillMatch};
+use crate::skills::{SkillIndex, SkillMatch, SkillMetadata};
 use crate::verify::transitions::load_stage;
 
 use super::cache::SignalMetrics;
@@ -70,15 +70,25 @@ pub fn generate_signal_with_skills(
         embedded_context.skill_recommendations =
             index.match_skills(&text_to_match, DEFAULT_MAX_SKILL_RECOMMENDATIONS);
 
-        // Inject skills for detected project languages
-        for lang in detected_languages {
-            let skill_name = lang.skill_name();
-            if let Some(metadata) = index.get_by_name(skill_name) {
+        // Inject language skills for the files THIS stage will edit, so the agent
+        // loads the matching `loom-<lang>` skill before writing code. Detection is
+        // file-scoped (so a monorepo's frontend stage gets loom-typescript while a
+        // backend stage gets loom-rust); we fall back to the project-wide languages
+        // only when the stage declares no files.
+        let stage_languages = detect_languages_from_files(&stage.files);
+        let languages: &[DetectedLanguage] = if stage_languages.is_empty() {
+            detected_languages
+        } else {
+            &stage_languages
+        };
+
+        for lang in languages {
+            if let Some(metadata) = resolve_language_skill(index, lang.skill_name()) {
                 // Only add if not already in recommendations (dedup by name)
                 if !embedded_context
                     .skill_recommendations
                     .iter()
-                    .any(|s| s.name == skill_name)
+                    .any(|s| s.name == metadata.name)
                 {
                     embedded_context.skill_recommendations.push(SkillMatch::new(
                         metadata.name.clone(),
@@ -178,6 +188,21 @@ pub(super) fn render_review_dimensions(config: &CodeReviewConfig) -> Option<Stri
         section.push_str(&format!("- [ ] **{dimension}**\n"));
     }
     Some(section)
+}
+
+/// Resolve a detected language to its skill metadata in the index.
+///
+/// Installed skills follow the `loom-<topic>` naming convention (`loom-rust`,
+/// `loom-typescript`, ...), but [`DetectedLanguage::skill_name`](crate::language::DetectedLanguage::skill_name)
+/// returns the bare topic (`rust`). We try the prefixed name first, then the bare
+/// name, so the lookup works whether or not skills carry the `loom-` prefix.
+///
+/// This guards against a silent failure mode: a plain `get_by_name("rust")` never
+/// matches a skill named `loom-rust`, so language skills would never be injected.
+fn resolve_language_skill<'a>(index: &'a SkillIndex, base: &str) -> Option<&'a SkillMetadata> {
+    index
+        .get_by_name(&format!("loom-{base}"))
+        .or_else(|| index.get_by_name(base))
 }
 
 /// Build text for skill matching from stage metadata
@@ -632,5 +657,54 @@ fn build_sandbox_summary(stage: &Stage) -> SandboxSummary {
             })
             .unwrap_or_default(),
         excluded_commands: stage.sandbox.excluded_commands.clone(),
+    }
+}
+
+#[cfg(test)]
+mod resolve_skill_tests {
+    use super::resolve_language_skill;
+    use crate::language::DetectedLanguage;
+    use crate::skills::SkillIndex;
+    use std::fs;
+    use std::io::Write;
+    use tempfile::TempDir;
+
+    /// Build a skill index from a temp dir containing one skill named `name`.
+    fn index_with_skill(name: &str) -> (TempDir, SkillIndex) {
+        let temp = TempDir::new().unwrap();
+        let skill_dir = temp.path().join(name);
+        fs::create_dir_all(&skill_dir).unwrap();
+        let mut f = fs::File::create(skill_dir.join("SKILL.md")).unwrap();
+        writeln!(f, "---").unwrap();
+        writeln!(f, "name: {name}").unwrap();
+        writeln!(f, "description: Test skill").unwrap();
+        writeln!(f, "---").unwrap();
+        let index = SkillIndex::load_from_directory(temp.path()).unwrap();
+        (temp, index)
+    }
+
+    #[test]
+    fn resolves_loom_prefixed_skill_from_bare_language_name() {
+        // The real failure mode: skills are installed as `loom-rust` but the
+        // language reports the bare name `rust`. The resolver must bridge that.
+        let (_temp, index) = index_with_skill("loom-rust");
+        let base = DetectedLanguage::Rust.skill_name();
+        assert_eq!(base, "rust");
+        let resolved = resolve_language_skill(&index, base).expect("loom-rust must resolve");
+        assert_eq!(resolved.name, "loom-rust");
+    }
+
+    #[test]
+    fn resolves_bare_skill_when_unprefixed() {
+        let (_temp, index) = index_with_skill("python");
+        let resolved = resolve_language_skill(&index, DetectedLanguage::Python.skill_name())
+            .expect("bare python must resolve");
+        assert_eq!(resolved.name, "python");
+    }
+
+    #[test]
+    fn returns_none_when_absent() {
+        let (_temp, index) = index_with_skill("loom-rust");
+        assert!(resolve_language_skill(&index, "golang").is_none());
     }
 }
