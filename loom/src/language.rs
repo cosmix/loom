@@ -88,6 +88,46 @@ pub fn detect_project_languages(root: &Path) -> Vec<DetectedLanguage> {
     languages
 }
 
+/// Detect programming languages from a list of file paths or glob patterns.
+///
+/// Inspects each entry's file extension — handling globs like `src/**/*.rs`,
+/// `frontend/**/*.tsx`, or bare `*.py` by matching on the trailing extension.
+/// Returns the distinct languages in first-seen order.
+///
+/// Unlike [`detect_project_languages`] (which inspects manifest files at a single
+/// root), this looks at the specific files a stage will edit. That makes it work
+/// for monorepos and subdirectory layouts: a stage editing `frontend/**/*.tsx`
+/// resolves to TypeScript even when the repo root has a `Cargo.toml`.
+pub fn detect_languages_from_files(files: &[String]) -> Vec<DetectedLanguage> {
+    let mut languages = Vec::new();
+    for file in files {
+        if let Some(lang) = language_for_path(file) {
+            if !languages.contains(&lang) {
+                languages.push(lang);
+            }
+        }
+    }
+    languages
+}
+
+/// Map a single file path or glob to a language by its extension.
+///
+/// Returns `None` for paths with no recognized extension (directories,
+/// `Makefile`, dotfiles like `.gitignore`, or unknown extensions).
+fn language_for_path(path: &str) -> Option<DetectedLanguage> {
+    // Isolate the filename component so a dot in a directory name
+    // (e.g. `my.dir/Makefile`) is never mistaken for an extension.
+    let file = path.rsplit(['/', '\\']).next().unwrap_or(path);
+    let ext = file.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase())?;
+    match ext.as_str() {
+        "rs" => Some(DetectedLanguage::Rust),
+        "ts" | "tsx" | "mts" | "cts" => Some(DetectedLanguage::TypeScript),
+        "py" | "pyi" => Some(DetectedLanguage::Python),
+        "go" => Some(DetectedLanguage::Go),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,5 +246,68 @@ mod tests {
         assert_eq!(DetectedLanguage::Python.canonical_name(), "python");
         // Critical: Go must return "go", NOT "golang" (finding #18).
         assert_eq!(DetectedLanguage::Go.canonical_name(), "go");
+    }
+
+    #[test]
+    fn test_detect_from_files_globs() {
+        let files = vec![
+            "loom/src/**/*.rs".to_string(),
+            "frontend/**/*.tsx".to_string(),
+        ];
+        let langs = detect_languages_from_files(&files);
+        assert_eq!(
+            langs,
+            vec![DetectedLanguage::Rust, DetectedLanguage::TypeScript]
+        );
+    }
+
+    #[test]
+    fn test_detect_from_files_extensions() {
+        assert_eq!(
+            detect_languages_from_files(&["a.rs".to_string()]),
+            vec![DetectedLanguage::Rust]
+        );
+        // All TypeScript extension variants resolve.
+        for ext in ["ts", "tsx", "mts", "cts"] {
+            assert_eq!(
+                detect_languages_from_files(&[format!("a.{ext}")]),
+                vec![DetectedLanguage::TypeScript],
+                "extension .{ext} should map to TypeScript"
+            );
+        }
+        assert_eq!(
+            detect_languages_from_files(&["pkg/main.go".to_string()]),
+            vec![DetectedLanguage::Go]
+        );
+        assert_eq!(
+            detect_languages_from_files(&["app/models.py".to_string()]),
+            vec![DetectedLanguage::Python]
+        );
+    }
+
+    #[test]
+    fn test_detect_from_files_dedup_preserves_order() {
+        let files = vec![
+            "src/a.rs".to_string(),
+            "src/b.rs".to_string(),
+            "scripts/x.py".to_string(),
+        ];
+        let langs = detect_languages_from_files(&files);
+        assert_eq!(
+            langs,
+            vec![DetectedLanguage::Rust, DetectedLanguage::Python]
+        );
+    }
+
+    #[test]
+    fn test_detect_from_files_ignores_unknown_and_extensionless() {
+        let files = vec![
+            "Makefile".to_string(),
+            ".gitignore".to_string(),
+            "docs/readme.md".to_string(),
+            "my.dir/Makefile".to_string(),
+            "src/".to_string(),
+        ];
+        assert!(detect_languages_from_files(&files).is_empty());
     }
 }
