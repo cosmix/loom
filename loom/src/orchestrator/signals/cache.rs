@@ -504,6 +504,35 @@ pub fn generate_knowledge_distill_stable_prefix() -> String {
     // Knowledge distillation workflow
     content.push_str("**Knowledge Distillation Workflow:**\n\n");
     content.push_str("**CRITICAL ORDERING — Record your OWN memories FIRST, then distill:**\n\n");
+    content.push_str(
+        "**⛔ MEMORY IS A ONE-WAY DOOR — recording to `loom memory` AFTER you distill is ZERO-VALUE WASTE.**\n",
+    );
+    content.push_str(
+        "This is the LAST stage of the plan. The moment distillation finishes the plan completes and the\n",
+    );
+    content.push_str(
+        "ENTIRE `.work/` directory — including EVERY `loom memory` entry — is cleaned up and DELETED. Nothing\n",
+    );
+    content.push_str(
+        "reads memory after this stage; there is no next stage and no next plan. A memory recorded once you\n",
+    );
+    content.push_str(
+        "have started distilling is seen by NO ONE and discarded minutes later — pure wasted time, tokens, and\n",
+    );
+    content.push_str("energy. Therefore:\n\n");
+    content.push_str(
+        "- Record ALL of your own findings to `loom memory` in step 1, BEFORE you begin step 4.\n",
+    );
+    content.push_str(
+        "- Once you start distilling, STOP using `loom memory` entirely — do not \"capture\" anything else there.\n",
+    );
+    content.push_str(
+        "- Discover something new mid- or post-distillation? Write it DIRECTLY into `loom knowledge update`\n",
+    );
+    content.push_str("  (the permanent files that survive) — NEVER back into `loom memory`.\n");
+    content.push_str(
+        "- At completion, do NOT run a \"record outstanding memories\" pass. There is nothing left to record.\n\n",
+    );
     content
         .push_str("1. **RECORD your findings** — As you review code and verify, record your own\n");
     content
@@ -512,7 +541,19 @@ pub fn generate_knowledge_distill_stable_prefix() -> String {
         "   insights, test gaps). These are just as valuable as implementation memories.\n",
     );
     content.push_str("2. Read ALL stage memories (including yours): `loom memory show --all`\n");
-    content.push_str("3. Review the code changes to understand what was actually built\n");
+    content.push_str(
+        "3. The recorded memories are your PRIMARY evidence — every stage was instructed to record its\n",
+    );
+    content.push_str(
+        "   insights, so treat `loom memory show --all` as the source of truth for what was built. Only\n",
+    );
+    content.push_str(
+        "   SPOT-READ code when a memory is ambiguous, conflicting, or clearly incomplete — do NOT re-read\n",
+    );
+    content.push_str(
+        "   the whole diff; that is what fills your context. (On large plans, delegate any code spot-reads\n",
+    );
+    content.push_str("   to sonnet subagents — see context management below.)\n");
     content
         .push_str("4. **DISTILL** all memories into `loom knowledge` — synthesize insights from\n");
     content.push_str("   ALL stages (implementation AND your own verification findings):\n");
