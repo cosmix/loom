@@ -101,6 +101,31 @@ fn append_completion_rules(content: &mut String) {
     content.push_str("- **NEVER use `loom stage retry` from an active session** — it creates a parallel session\n\n");
 }
 
+/// Append the mandatory mini adversarial code review block.
+///
+/// Shared by the two code-producing prefixes (standard, integration-verify).
+/// The documentation stages — knowledge/bootstrap and knowledge-distill — do NOT
+/// call this: both emit only markdown (`doc/loom/knowledge/*.md` and the review
+/// doc), so there is no code to review. Covers the six required review dimensions.
+///
+/// `pub(crate)` so the recovery-signal path (`recovery_format.rs`, which does not
+/// embed the stable prefix) can reuse the exact same block for resumed code stages.
+pub(crate) fn append_adversarial_review(content: &mut String) {
+    content
+        .push_str("**Mini Adversarial Code Review (MANDATORY before `loom stage complete`):**\n\n");
+    content.push_str("Before completing, run an ADVERSARIAL review of EVERY line you wrote or changed this stage. Assume a defect EXISTS and hunt for it — do not rubber-stamp your own work. For non-trivial changes, spawn an independent `loom-code-reviewer` subagent (read-only) so the review is not biased by the author. Fix every issue you find BEFORE completing.\n\n");
+    content.push_str("Review across ALL of these dimensions:\n\n");
+    content.push_str("1. **Code quality & architecture** — SOLID, high cohesion, low coupling; the right level of abstraction (not over- or under-engineered); clear, honest naming; error and edge paths handled.\n");
+    content.push_str("2. **Idiomatic code** — matches the language's idioms AND this project's established patterns/conventions (see `doc/loom/knowledge/patterns.md` and `conventions.md`).\n");
+    content.push_str("3. **Security** — inputs validated at boundaries; no hardcoded secrets; no injection / OWASP exposure; error messages leak nothing sensitive.\n");
+    content.push_str("4. **Wiring** — every new/edited unit is imported, registered/mounted, and reachable by a real caller or user — not merely compiling.\n");
+    content.push_str("5. **Dead & unnecessary code** — no stubs, no unused imports/variables/functions, no unreachable branches, no leftover scaffolding from your changes.\n");
+    content.push_str("6. **No duplication (DRY)** — search the WHOLE codebase (`rg`/`fd`) for existing functions, utilities, or patterns that already do this; REUSE them instead of re-implementing, and extract any duplication you introduced.\n\n");
+    content.push_str(
+        "Finally, confirm your tests actually exercise the change — not just that it compiles.\n\n",
+    );
+}
+
 /// Append the two-bullet "Isolation Boundaries (STRICT)" block used by IV and knowledge-distill.
 ///
 /// The standard prefix uses a three-bullet version (with the "embedded below" bullet)
@@ -272,14 +297,10 @@ pub fn generate_stable_prefix() -> String {
     content.push_str("**Completion:**\n");
     append_completion_rules(&mut content);
 
-    content.push_str("**Self-Review Before Completion (MANDATORY):**\n\n");
-    content.push_str("Before running `loom stage complete`, perform these checks:\n\n");
-    content.push_str("- **Wiring Check**: Is the module imported? Is the command/endpoint/component registered? Can the user reach it?\n");
-    content.push_str("- **Silent Failure Check**: Review ALL command output. Did stderr contain warnings despite exit 0?\n");
-    content.push_str("  Look for: \"connection refused\", \"permission denied\", \"failed to download\", \"blocked\", \"sandbox\"\n");
-    content.push_str("  If sandbox blocked something you need — STOP and report as blocker, do NOT work around silently\n");
-    content.push_str("- **Code Correctness**: Error paths handled? No incomplete stubs or placeholders? Tests actually test the feature?\n");
-    content.push_str("- **Integration Points**: Callbacks connected? Events published? Dependencies available?\n\n");
+    append_adversarial_review(&mut content);
+
+    content.push_str("**Silent Failure Check (exit 0 ≠ success):**\n\n");
+    content.push_str("Re-read ALL command stderr even when the exit code is 0. If you see \"connection refused\", \"permission denied\", \"failed to download\", \"blocked\", or \"sandbox\", investigate it. If the sandbox blocked something you needed, STOP and report it as a blocker — do NOT work around it silently.\n\n");
 
     content.push_str("**Stage Memory - MEMORY ONLY (MANDATORY):**\n\n");
     content.push_str("```text\n");
@@ -354,6 +375,9 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("2. **FIX** every warning, error, and issue you encounter\n");
     content.push_str("3. **VERIFY** all acceptance criteria pass\n");
     content.push_str("4. **TEST** that the feature actually works end-to-end\n\n");
+
+    // Mini adversarial code review — the six required dimensions, stated up front
+    append_adversarial_review(&mut content);
 
     // Code review execution strategy - detailed instructions
     content.push_str("```text\n");
@@ -654,6 +678,22 @@ pub fn generate_knowledge_stable_prefix() -> String {
     content
 }
 
+/// Select the stable prefix for a stage type.
+///
+/// Single source of truth shared by the regular signal path (`format/mod.rs`)
+/// and the recovery signal path (`recovery_format.rs`), so a stage resumed via
+/// `loom stage recover` / `loom stage retry` gets exactly the same execution
+/// rules — including the mini adversarial code review — as a fresh spawn.
+pub(crate) fn stable_prefix_for(stage_type: crate::models::stage::StageType) -> String {
+    use crate::models::stage::StageType;
+    match stage_type {
+        StageType::IntegrationVerify => generate_integration_verify_stable_prefix(),
+        StageType::KnowledgeDistill => generate_knowledge_distill_stable_prefix(),
+        StageType::Knowledge => generate_knowledge_stable_prefix(),
+        StageType::Standard => generate_stable_prefix(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -734,10 +774,21 @@ mod tests {
         assert!(prefix.contains("WHEN to record"));
         assert!(prefix.contains("What NOT to record"));
         assert!(prefix.contains("Procedural narration"));
-        // Self-review before completion
-        assert!(prefix.contains("Self-Review Before Completion"));
-        assert!(prefix.contains("Wiring Check"));
-        assert!(prefix.contains("Silent Failure Check"));
+        // Mini adversarial code review before completion (all six dimensions)
+        assert!(prefix.contains("Mini Adversarial Code Review"));
+        assert!(prefix.contains("ADVERSARIAL review"));
+        assert!(prefix.contains("loom-code-reviewer"));
+        assert!(prefix.contains("**Code quality & architecture**"));
+        assert!(prefix.contains("**Idiomatic code**"));
+        assert!(prefix.contains("**Security**"));
+        assert!(prefix.contains("**Wiring**"));
+        assert!(prefix.contains("**Dead & unnecessary code**"));
+        assert!(prefix.contains("**No duplication (DRY)**"));
+        assert!(prefix.contains("search the WHOLE codebase"));
+        assert!(prefix.contains("tests actually exercise the change"));
+        // Standard prefix carries its own dedicated silent-failure check
+        assert!(prefix.contains("Silent Failure Check (exit 0"));
+        assert!(prefix.contains("Re-read ALL command stderr"));
         // File exclusivity guidance
         assert!(prefix.contains("FILE EXCLUSIVITY"));
         assert!(prefix.contains("exclusive"));
@@ -793,6 +844,8 @@ mod tests {
         // Exhaustive mapping requirement
         assert!(prefix.contains("Exhaustively map"));
         assert!(prefix.contains("leave no major area unmapped"));
+        // Documentation stage: emits only markdown, so NO code-review block
+        assert!(!prefix.contains("Mini Adversarial Code Review"));
     }
 
     #[test]
@@ -859,6 +912,11 @@ mod tests {
         // Review dimension details
         assert!(prefix.contains("Review Dimension Details"));
         assert!(prefix.contains("OWASP Top 10"));
+        // Mini adversarial code review block (six dimensions stated explicitly)
+        assert!(prefix.contains("Mini Adversarial Code Review"));
+        assert!(prefix.contains("**Idiomatic code**"));
+        assert!(prefix.contains("**No duplication (DRY)**"));
+        assert!(prefix.contains("search the WHOLE codebase"));
         // Context recovery instructions
         assert!(prefix.contains("Context Recovery"));
         // File exclusivity guidance (must match standard prefix)
@@ -902,6 +960,8 @@ mod tests {
         assert!(!prefix.contains("ZERO TOLERANCE"));
         assert!(!prefix.contains("CODE REVIEW + VERIFICATION"));
         assert!(!prefix.contains("FINAL QUALITY GATE"));
+        // Documentation stage: emits only markdown, so NO code-review block
+        assert!(!prefix.contains("Mini Adversarial Code Review"));
         // Anti-slop forcing-function
         assert!(prefix.contains("Understand before acting; do not guess."));
         assert!(prefix.contains("UNDERSTAND-FIRST LADDER"));

@@ -3,12 +3,7 @@ use crate::models::session::Session;
 use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
 
-use crate::models::stage::StageType;
-
-use super::cache::{
-    generate_integration_verify_stable_prefix, generate_knowledge_distill_stable_prefix,
-    generate_stable_prefix, SignalMetrics,
-};
+use super::cache::{stable_prefix_for, SignalMetrics};
 use super::types::{DependencyStatus, EmbeddedContext};
 
 mod helpers;
@@ -70,12 +65,8 @@ pub fn format_signal_with_metrics(
 ) -> FormattedSignal {
     // Build each section separately for metrics
     let header = format!("# Signal: {}\n\n", &session.id);
-    // Select stable prefix based on stage type
-    let stable_prefix = match stage.stage_type {
-        StageType::IntegrationVerify => generate_integration_verify_stable_prefix(),
-        StageType::KnowledgeDistill => generate_knowledge_distill_stable_prefix(),
-        _ => generate_stable_prefix(),
-    };
+    // Select stable prefix based on stage type (shared with the recovery path)
+    let stable_prefix = stable_prefix_for(stage.stage_type);
     let semi_stable = sections::format_semi_stable_section(embedded_context, stage.stage_type);
     let dynamic = sections::format_dynamic_section(
         session,

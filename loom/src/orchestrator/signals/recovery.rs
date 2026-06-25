@@ -132,6 +132,39 @@ mod tests {
         assert!(signal_content.contains("## Recovery Context"));
         assert!(signal_content.contains("Session crashed"));
         assert!(signal_content.contains("session-crashed"));
+        // Code stage (Standard, the default): the recovery signal embeds the full
+        // stable prefix, so a resumed stage gets the same execution guidance as a
+        // fresh spawn — the mini adversarial code review AND the rest of the rules.
+        assert!(signal_content.contains("Mini Adversarial Code Review"));
+        assert!(signal_content.contains("**No duplication (DRY)**"));
+        assert!(signal_content.contains("Subagent Restrictions"));
+        assert!(signal_content.contains("git add <specific-files>"));
+        assert!(signal_content.contains("## Execution Rules"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_recovery_signal_omits_review_for_documentation_stage() -> Result<()> {
+        use crate::orchestrator::signals::recovery_types::RecoverySignalContent;
+        let tmp = TempDir::new()?;
+        let work_dir = tmp.path();
+        fs::create_dir_all(work_dir.join("signals"))?;
+
+        // KnowledgeDistill is a documentation stage — no code, so no review.
+        let mut stage = create_test_stage();
+        stage.stage_type = crate::models::stage::StageType::KnowledgeDistill;
+        let content = RecoverySignalContent::for_crash(
+            "session-recovery".to_string(),
+            "test-stage".to_string(),
+            "session-crashed".to_string(),
+            None,
+            1,
+        );
+
+        let path = generate_recovery_signal(&content, &stage, work_dir)?;
+        let signal_content = fs::read_to_string(&path)?;
+        assert!(!signal_content.contains("Mini Adversarial Code Review"));
 
         Ok(())
     }

@@ -2,6 +2,7 @@
 
 use crate::models::stage::Stage;
 
+use super::cache::stable_prefix_for;
 use super::recovery_types::RecoverySignalContent;
 use super::types::EmbeddedContext;
 
@@ -66,16 +67,12 @@ pub fn format_recovery_signal(
     }
     signal.push('\n');
 
-    // Worktree context
-    signal.push_str("## Worktree Context\n\n");
-    signal.push_str(
-        "You are in an **isolated git worktree**. This signal contains everything you need:\n\n",
-    );
-    signal.push_str("- **Your stage assignment and acceptance criteria are below** - this file is self-contained\n");
-    signal.push_str("- **All context (plan overview, handoff, knowledge) is embedded below** - reading main repo files is **FORBIDDEN**\n");
-    signal.push_str(
-        "- **Commit to your worktree branch** - it will be merged after verification\n\n",
-    );
+    // Full stable prefix for this stage type: worktree context, isolation, execution
+    // rules, subagent restrictions, git-staging, anti-slop, completion rules, and —
+    // for code stages (Standard / IntegrationVerify) — the mini adversarial code
+    // review. The recovery signal is built outside the KV-cache path, so without
+    // this a resumed stage would miss ALL of that guidance, not just the review.
+    signal.push_str(&stable_prefix_for(stage.stage_type));
 
     // Target information
     signal.push_str("## Target\n\n");
