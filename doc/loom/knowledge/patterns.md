@@ -175,6 +175,20 @@ Three-level: **Project Root**, **Worktree** (`.worktrees/<stage-id>/`), **workin
 
 New agent guidance should be reinforced at: (1) Skill file (depth), (2) CLAUDE.md.template (authority), (3) cache.rs signals (runtime enforcement). Ensures guidance reaches agents regardless of entry point. Agent definitions (`agents/*.md`) serve as a supplementary fourth surface for role-specific guidance (e.g., coordinator/worker roles in subagent hierarchies).
 
+### Mini Adversarial Code Review (multi-surface, 2026-06-25)
+
+Every code-producing stage must end with a MANDATORY mini adversarial code review across six fixed dimensions: **code quality & architecture (SOLID), idiomatic code, security, wiring, dead & unnecessary code, no duplication (DRY across the whole codebase)**. The doctrine is reinforced across six surfaces that MUST stay consistent when the dimensions change:
+
+| Surface | Where |
+| --- | --- |
+| Runtime signal (canonical) | `orchestrator/signals/cache.rs::append_adversarial_review()` — injected into Standard + IntegrationVerify stable prefixes (via `stable_prefix_for`, so the recovery path gets it too) |
+| Authority | `CLAUDE.md.template` — Stage Completion Checklist "MINI ADVERSARIAL CODE REVIEW" block |
+| Implementer agents | `agents/loom-software-engineer.md`, `agents/loom-senior-software-engineer.md` — "Self-Review Before Returning" |
+| Reviewer agent | `agents/loom-code-reviewer.md` — Capabilities aligned to the six dimensions |
+| Plan authoring | `skills/loom-plan-writer/SKILL.md` — note under stage_type table (auto-injected; don't restate in descriptions) |
+
+Scope rule: code stages ONLY. Documentation stages (`knowledge`, `knowledge-distill`) emit only markdown and deliberately omit it; cache + recovery tests negative-assert its absence there. Silent-failure detection is a SEPARATE concern (Standard has its own block; IV has `SILENT FAILURE DETECTION`) — not part of the six dimensions.
+
 ## Stage Necessity Test
 
 Before creating stages: Q1: Does it create code another imports? Q2: Does it write files another writes? Q3: Does it need a verification checkpoint? If ALL NO -> merge into one stage with parallel subagents.

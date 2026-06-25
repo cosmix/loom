@@ -510,10 +510,11 @@ All generators are composed from shared `append_*` helpers and produce immutable
 7. Delegation & Efficiency (subagents + hierarchies + agent teams)
 8. `append_subagent_restrictions()` — NO commit/complete/add-A rules
 9. `append_completion_rules()`
-10. Self-Review Before Completion
-11. Stage Memory guidance
-12. `append_git_staging_full()` (Standard ONLY; IV/KnowledgeDistill use `append_git_staging_rules()`)
-13. `append_common_footer()`
+10. `append_adversarial_review()` — Mini Adversarial Code Review (6 dimensions)
+11. Dedicated Silent Failure Check block (Standard only; IV has its own section)
+12. Stage Memory guidance
+13. `append_git_staging_full()` (Standard ONLY; IV/KnowledgeDistill use `append_git_staging_rules()`)
+14. `append_common_footer()`
 
 **Integration-Verify key differences:** ZERO TOLERANCE box at top; no full git-staging box; now requires agent teams (MUST).
 
@@ -690,8 +691,15 @@ All 15 hooks embedded via `include_str!()` at compile time. `install_loom_hooks(
 | `append_git_staging_full()` | 145-160 | Full staging rules + danger box | Standard only |
 | `append_git_staging_rules()` | 162-169 | Shorter version | IV, KnowledgeDistill |
 | `append_anti_slop_guidance()` | ~171+ | ZERO TOLERANCE anti-slop rules box | ALL 4 prefixes (after exec-rules intro, before Delegation) |
+| `append_adversarial_review()` | ~104-122 | Mini adversarial code review — 6 dimensions (quality/architecture·SOLID, idiomatic, security, wiring, dead code, DRY across whole codebase) + a closing "tests actually exercise the change" check | Standard (replaces old "Self-Review" block), IV (after Mission). **Code-producing prefixes ONLY** — NOT knowledge or knowledge-distill (both emit only markdown). NOTE: silent-failure detection is NOT in this helper — Standard has its own dedicated block right after the call; IV has its own `SILENT FAILURE DETECTION` section |
 
 **Adding a new helper:** Follow same `fn append_xxx(content: &mut String)` pattern. Place in the "Shared content blocks" cluster (lines 51-~180). Call it explicitly from each generator where wanted — it's NOT auto-injected.
+
+**Per-stage code review:** The mandatory mini adversarial code review lives in `append_adversarial_review()` (`pub(crate)`) and is injected into the two code-producing stable prefixes (Standard, IntegrationVerify). It supersedes the older standard-prefix "Self-Review Before Completion" block. Documentation stages (Knowledge, KnowledgeDistill) deliberately omit it — they produce only markdown, so there is no code to review; the cache tests negative-assert its absence there.
+
+**Stable prefix selection — single source of truth:** `cache::stable_prefix_for(stage_type)` is the ONE place that maps stage type → prefix generator (explicit 4-arm match). Both the regular path (`format/mod.rs::format_signal_with_metrics`) and the recovery path (`recovery_format.rs`) call it, so they can never drift.
+
+**Resume-path coverage (important):** The review (and all execution guidance) must reach a stage no matter which signal spawns it. Three paths: (1) regular spawn + automatic crash retry → `format_signal_with_metrics()` → `stable_prefix_for()`; (2) continuation/handoff → `generate_signal()` → same path; (3) **manual recovery** (`loom stage recover`, `loom stage retry`) → `recovery_format.rs::format_recovery_signal()`. The recovery signal is built outside the KV-cache path; it now embeds the FULL stable prefix via `stable_prefix_for(stage.stage_type)` (replacing its old hand-rolled "## Worktree Context" stub), so a resumed stage gets the same rules — review, subagent restrictions, git-staging, anti-slop, completion — as a fresh spawn, correctly gated by stage type (Knowledge/KnowledgeDistill prefixes carry no review). Tests: `recovery.rs::test_generate_recovery_signal` (Standard → review + subagent restrictions + execution rules present) and `test_recovery_signal_omits_review_for_documentation_stage` (KnowledgeDistill → no review).
 
 ## load_stage_definition_from_plan — Centralized Plan Lookup
 
