@@ -291,7 +291,7 @@ This is *why* CLAUDE.md Rule 6 says "prefer subagents" — not only token cost, 
 
 **knowledge stages:** Typically sonnet (exploration is well-scoped), but use opus if the codebase is large/unfamiliar and the agent must make strategic decisions about what to explore.
 
-**knowledge-distill stages:** Always sonnet (mechanical curation work — reading memories and writing knowledge updates is well-scoped with no architectural judgment needed).
+**knowledge-distill stages:** Always opus (set automatically if not specified). Curating ALL stage memories into permanent knowledge is a context-heavy, judgment-laden reduce step — opus's larger window absorbs the accumulated memory/diff volume and synthesizes/dedupes better than sonnet. The distill agent decides at runtime whether to fan out: on a large plan it delegates information-gathering to cheaper **sonnet** read-only subagents (`Explore`/`loom-software-engineer`) that return compact summaries, while the opus curator stays the sole writer of knowledge files.
 
 **Subagent Selection in Descriptions:**
 
@@ -439,7 +439,7 @@ Workflow agents remain subagents: all Rule 5 restrictions apply (no git commit, 
 - knowledge-bootstrap: Default to TEAM (coordinated exploration, researchers share discoveries that inform each other)
 - standard (implementation): Default to SUBAGENTS (concrete file assignments, fire-and-forget). Use a 2-level HIERARCHY for >~6 well-defined worker tasks; `ultracode: true` for ≳10 homogeneous units or adversarial verification; team only for wide/exploratory scope
 - integration-verify: Default to TEAM (build + functional + code review tasks that may require iterative fixes)
-- knowledge-distill: Default to SINGLE or SUBAGENTS (memory reading + knowledge writing is sequential, not parallel)
+- knowledge-distill: Default to SINGLE; the opus curator self-selects SUBAGENTS at runtime on large plans (read-only sonnet gatherers summarize memories/diffs; the curator writes all knowledge). Knowledge writing itself is sequential, not parallel.
 
 ### 4b. Stage Necessity Test (MANDATORY)
 
@@ -822,7 +822,7 @@ Loom runs on both Linux and macOS. Shell commands in acceptance criteria MUST wo
 | `knowledge`          | knowledge-bootstrap stage | Can write to doc/loom/knowledge/\*\*          |
 | `standard`           | All implementation stages | Cannot write to knowledge files               |
 | `integration-verify` | Second-to-last stage      | Can write to doc/loom/knowledge/\*\*, reviews |
-| `knowledge-distill`  | Final knowledge curation  | Can write to knowledge, sonnet default        |
+| `knowledge-distill`  | Final knowledge curation  | Can write to knowledge, opus default          |
 
 **NEVER use PascalCase** (Knowledge, Standard, IntegrationVerify) - the parser rejects these.
 
@@ -1222,8 +1222,8 @@ Curates all stage memories into permanent knowledge. Runs AFTER integration-veri
 - id: knowledge-distill
   name: "Knowledge Distillation"
   stage_type: knowledge-distill
-  model: "sonnet"
-  reasoning_effort: "high"
+  model: "opus"
+  reasoning_effort: "xhigh"
   description: |
     Knowledge distillation — runs after integration-verify to curate all stage
     memories into permanent knowledge files.
@@ -1775,8 +1775,8 @@ loom:
     - id: knowledge-distill
       name: "Knowledge Distillation"
       stage_type: knowledge-distill
-      model: "sonnet"
-      reasoning_effort: "high"
+      model: "opus"
+      reasoning_effort: "xhigh"
       description: |
         Knowledge distillation — curate all stage memories into permanent knowledge.
 
