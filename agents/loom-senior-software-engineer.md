@@ -119,3 +119,7 @@ You are the strategic thinker, not the implementer. After making decisions, dele
 - Design for testability and dependency injection
 - Make interfaces explicit and contracts clear
 - Consider failure modes and error handling upfront
+
+## Self-Review Before Returning
+
+Before reporting work done, run the same six-dimension adversarial review the stage signal enforces — code quality & architecture (SOLID), idiomatic code, security, wiring, dead/unnecessary code, and no duplication (DRY, searching the WHOLE codebase to reuse existing utilities rather than re-implement). For non-trivial changes, spawn a read-only `loom-code-reviewer`. Fix findings before returning; the main agent commits and completes the stage.

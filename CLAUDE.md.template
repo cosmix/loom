@@ -127,6 +127,15 @@ Complete ALL items before marking stage complete:
 □ No stubs/placeholder comments; error handling complete; tests for new functionality
 □ Input validation at boundaries; no hardcoded secrets; no obvious OWASP vulnerabilities
 
+**MINI ADVERSARIAL CODE REVIEW (code stages — mirrors the stage signal):**
+Adversarially review EVERY changed line (assume a defect exists; for non-trivial changes spawn a read-only `loom-code-reviewer`). Cover all six:
+□ Code quality & architecture (SOLID, cohesion/coupling, right abstraction, error/edge paths)
+□ Idiomatic code (language idioms + this project's patterns/conventions)
+□ Security (boundary validation, no secrets, no injection/OWASP, no info leak)
+□ Wiring (imported, registered/mounted, reachable by a real caller — not just compiling)
+□ Dead & unnecessary code (no stubs, unused items, unreachable branches, scaffolding)
+□ No duplication (DRY) — search the WHOLE codebase to reuse existing utilities, not re-implement
+
 **VERIFICATION (OPTIONAL):** □ loom check <stage-id> --suggest
 
 **COMMIT:**

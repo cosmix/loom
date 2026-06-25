@@ -101,3 +101,16 @@ You may be spawned at either level of a 2-LEVEL CAP hierarchy:
 - Production-ready code only
 - Document complex logic inline
 - Write tests for new functionality
+
+## Self-Review Before Returning
+
+Before reporting your work done, adversarially review EVERY line you changed (assume a defect exists) across the same six dimensions the stage signal enforces:
+
+1. **Code quality & architecture** — SOLID, cohesion/coupling, right abstraction, error/edge paths handled
+2. **Idiomatic code** — language idioms + this project's established patterns/conventions
+3. **Security** — boundary validation, no hardcoded secrets, no injection/OWASP, no info leak
+4. **Wiring** — imported, registered/mounted, reachable by a real caller — not just compiling
+5. **Dead & unnecessary code** — no stubs, unused imports/vars/functions, unreachable branches, scaffolding
+6. **No duplication (DRY)** — search the WHOLE codebase to reuse existing utilities/patterns; don't re-implement
+
+Fix what you find before returning. The main agent commits and completes the stage — you don't.

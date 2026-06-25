@@ -826,6 +826,8 @@ Loom runs on both Linux and macOS. Shell commands in acceptance criteria MUST wo
 
 **NEVER use PascalCase** (Knowledge, Standard, IntegrationVerify) - the parser rejects these.
 
+**Automatic mini adversarial code review:** Every `standard` and `integration-verify` stage signal already includes a MANDATORY 6-dimension adversarial code review before completion (code quality/architecture·SOLID, idiomatic code, security, wiring, dead code, DRY across the whole codebase). You do NOT need to restate it in stage descriptions — it is injected at the signal layer. The documentation stages (`knowledge`, `knowledge-distill`) emit only markdown, so they omit it. To require specific review dimensions on the IV gate, use the plan-level `code_review` config (renders an extra "## Review Dimensions" checklist) rather than prose in the description.
+
 **Example — CORRECT way to show code in descriptions:**
 
 ```yaml
