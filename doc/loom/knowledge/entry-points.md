@@ -583,3 +583,12 @@ Used by all four NativeBackend spawn methods before building the claude command 
 | `commands/stage/complete.rs:847-866` | Executes after_stage checks AFTER acceptance criteria; failure → stage stays Executing |
 | `verify/before_after.rs` | `run_before_stage_checks()` + `run_after_stage_checks()` — both delegate to `verify_truth_checks()` |
 | `verify/goal_backward/truths.rs:16-134` | `verify_truth_checks(checks, working_dir)` → `Vec<VerificationGap>`, 30s timeout per check |
+
+## `loom pressure` — Plan Pressure-Testing Files
+
+- `loom/src/commands/pressure/mod.rs` — the driver. Key fns: `resolve_plan_path` (raw→`doc/plans/` fallback, `is_file()` check, repo-relative `invocation`), `codex_report_path` (`codex-<basename>` sibling), `plan_steps` (ordered pipeline), `claude_args`/`codex_args` (single-source argv builders), `render_dry_run`, `classify_exit`/`classify_code`, `spawn_claude`/`spawn_codex`, `execute`. Unit tests in `loom/src/commands/pressure/tests.rs`.
+- `loom/src/codex.rs` — `find_codex_path()` codex binary resolver (exported via lib.rs).
+- `loom/src/cli/types.rs:195` — `Commands::Pressure { plan, rounds (default 2, ≥1), dry_run }`; dispatched at `loom/src/cli/dispatch.rs:178`.
+- `commands/{pressure,address,distill}.md` — vendored Claude slash commands (source for `~/.claude/commands/`).
+- `codex/skills/pressure/SKILL.md` — vendored Codex pressure skill (source for `~/.codex/skills/pressure/`).
+- `install.sh` — `install_commands()` (~line 336) and `install_codex_skill()` (~line 356), called only in the LOCAL (non-curl-pipe) branch of `main()` (~line 619).

@@ -79,9 +79,13 @@ loom stop
 | ---------------------------- | ---------------------------------------------------- |
 | `~/.claude/agents/loom-*.md` | Specialized subagents (per-item, non-destructive)    |
 | `~/.claude/skills/loom-*/`   | Domain knowledge modules (per-item, non-destructive) |
+| `~/.claude/commands/*.md`    | Loom slash commands (`/pressure`, `/address`, `/distill`) |
 | `~/.claude/hooks/loom/`      | Session lifecycle hooks                              |
 | `~/.claude/CLAUDE.md`        | Orchestration rules                                  |
+| `~/.codex/skills/pressure/`  | Codex pressure-testing skill (`$pressure`)           |
 | `~/.local/bin/loom`          | Loom CLI                                             |
+
+> The `~/.claude/commands/` and `~/.codex/skills/pressure/` entries are installed only by the local `install.sh` (cloned repo); the `curl | bash` install does not ship them yet.
 
 ## Core Workflow
 
@@ -103,7 +107,10 @@ loom stop
 loom resume <stage-id>
 loom check <stage-id> [--suggest]
 loom diagnose <stage-id>
+loom pressure <plan-path> [--rounds N] [--dry-run]
 ```
+
+`loom pressure` hardens a plan before you run it by alternating two external agents over `--rounds` rounds (default 2): Claude `/pressure` edits the plan in place, Codex `$pressure` writes an independent review next to it (`codex-<plan>.md`), then Claude `/address` folds the review back in. It runs the agents synchronously in the foreground (you watch them live) from the repo root, and requires both the `claude` and `codex` CLIs on PATH. `--dry-run` prints the exact commands without spawning anything.
 
 ### Plan Commands
 

@@ -173,7 +173,7 @@ Stages define context_budget (1-100%, default 65%, max 75%). Monitor tracks Gree
 - **ID validation**: Alphanumeric + dash/underscore, max 128 chars, no path traversal (validation.rs)
 - **Acceptance criteria**: Runs arbitrary shell commands (trusted model)
 - **Socket**: Mode 0o600 (owner only), max 100 connections, 10MB message limit, Unix only
-- **Self-update**: minisign signature verification. Gap: non-binary release assets lack verification
+- **Self-update**: minisign signature verification for binaries; `agents.zip`, `skills.zip`, and `CLAUDE.md.template` ARE SHA256-verified against the release checksums asset (self-update refuses to install an asset with no checksum entry). Real gap: the verifier fetches an asset literally named `checksums.txt` but the release workflow publishes `SHA256SUMS.txt` — an asset-name mismatch, not a missing-verification gap (see [concerns.md](concerns.md))
 - **Shell escaping**: escape_shell_single_quote(), escape_applescript_string() in emulator.rs
 - **permission_mode field** (`SandboxConfig` / `StageSandboxConfig`): Resolves as stage > plan > stage-type default. Default by stage type: ALL four stage types → `acceptEdits` (Knowledge, KnowledgeDistill, Standard, IntegrationVerify). Override to `auto` at plan or stage level if needed.
 
@@ -714,3 +714,17 @@ Reads `.work/config.toml` for plan path, calls `resolve_source_path()`, calls `p
 - `orchestrator/signals/generate.rs` — code_review lookup for IV signal generation
 
 **Why plan/ layer:** both commands/ and orchestrator/ already depend on plan/; moving here eliminated a code_review re-inline in generate.rs without adding any new dependency edge. orchestrator/ -> commands/ would have been a layering violation.
+
+## `loom pressure` Command (Plan Pressure-Testing Driver)
+
+`loom pressure <plan> [--rounds N=2] [--dry-run]` (loom/src/commands/pressure/mod.rs) is a standalone, **synchronous foreground** driver that hardens a plan by alternating two external agents. It is a second execution model distinct from the daemon/worktree orchestrator: it runs in the user's repo — NOT a worktree, NOT a background daemon, NOT a terminal-spawn — blocking on each child via `Command::status()` with inherited stdio so the user watches the agents live.
+
+Per round (default 2): delete the codex report → spawn Claude `/pressure <plan>` (edits the plan in place) → spawn Codex `$pressure <plan>` (writes an independent review to the plan's sibling) → spawn Claude `/address <plan>` (folds the review back into the plan). One final report deletion after all rounds.
+
+Children run with `current_dir(repo_root)` (resolved via `git rev-parse --show-toplevel`), so the plan argument handed to them is **repo-relative** (e.g. `doc/plans/PLAN-foo.md`), never cwd-relative. Claude argv: `--permission-mode acceptEdits --model opus <slash>` with `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`. Codex argv: `exec --sandbox workspace-write -C <repo_root> <skill>`.
+
+Supporting pieces:
+
+- `loom/src/codex.rs` — `find_codex_path()` binary resolver, mirrors `claude::find_claude_path` (which::which, then candidate install paths favoring ~/.bun/bin; spawned children may not inherit PATH so resolve eagerly).
+- Vendored agent assets (installed LOCALLY by install.sh): `commands/{pressure,address,distill}.md` → `~/.claude/commands/`; `codex/skills/pressure/SKILL.md` → `~/.codex/skills/pressure/`.
+- Wiring: `Commands::Pressure` in cli/types.rs:195, dispatched in cli/dispatch.rs:178; `pressure` registered in dynamic completions with `--rounds`/`--dry-run`.

@@ -256,3 +256,12 @@ For any operation where agent data must be persisted to `.work/` with authority 
 - Daemon process: reads from `std::env::var("ANTHROPIC_API_KEY")` directly (host env)
 - Absent key at daemon startup: adjudication disabled for that daemon run; disputed stages go directly to `NeedsHumanReview`
 - Never pass the key to spawned sessions — it flows only to the daemon's adjudicator worker thread
+
+## Vendored Agent Assets Live at Repo Root
+
+Claude slash commands and Codex skills shipped by loom live in source at the repo root, NOT under `loom/`:
+
+- `commands/*.md` — Claude slash commands (installed to `~/.claude/commands/`)
+- `codex/skills/<name>/SKILL.md` — Codex skills (installed to `~/.codex/skills/<name>/`)
+
+`install.sh` asserts the required source files exist before copying and fails the install if any are missing.
