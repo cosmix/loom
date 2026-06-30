@@ -209,6 +209,30 @@ fn test_complete_flags_plan_verify() {
 }
 
 #[test]
+fn test_complete_commands_includes_pressure() {
+    let results = complete_commands("").unwrap();
+    assert!(results.contains(&"pressure".to_string()));
+}
+
+#[test]
+fn test_complete_commands_pressure_prefix() {
+    let results = complete_commands("pr").unwrap();
+    assert!(results.contains(&"pressure".to_string()));
+}
+
+#[test]
+fn test_complete_flags_pressure() {
+    let results = complete_flags(&["pressure"], "--").unwrap();
+    assert!(results.contains(&"--rounds".to_string()));
+    assert!(results.contains(&"--dry-run".to_string()));
+}
+
+#[test]
+fn test_pressure_has_no_subcommands() {
+    assert!(!has_subcommands("pressure"));
+}
+
+#[test]
 fn test_plan_verify_positional_completes_plan_files() {
     use crate::completions::dynamic::complete_plan_files;
     use std::fs;

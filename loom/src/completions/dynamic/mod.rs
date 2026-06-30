@@ -169,9 +169,9 @@ fn complete_after_command(cwd: &Path, prefix: &str, cmd: &str) -> Result<Vec<Str
     }
 
     match cmd {
-        // init takes any file path — return empty so the shell falls back
-        // to native path completion
-        "init" => Ok(Vec::new()),
+        // init and pressure take a file path — return empty so the shell
+        // falls back to native path completion
+        "init" | "pressure" => Ok(Vec::new()),
         "completions" => complete_shell_types(prefix),
         "check" | "diagnose" | "resume" => complete_stage_ids(cwd, prefix),
         _ => Ok(Vec::new()),
