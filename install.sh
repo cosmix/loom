@@ -12,6 +12,7 @@ N='\033[0m'    # reset
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_DIR="$HOME/.claude"
+CODEX_DIR="$HOME/.codex"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 GITHUB_REPO="cosmix/loom"
@@ -21,6 +22,7 @@ GITHUB_RELEASES="https://github.com/${GITHUB_REPO}/releases/latest/download"
 COUNT_AGENTS=0
 COUNT_SKILLS=0
 COUNT_HOOKS=0
+COUNT_COMMANDS=0
 
 print_banner() {
 	cat <<'EOF'
@@ -251,6 +253,10 @@ check_requirements() {
 	[[ -d "$SCRIPT_DIR/agents" ]] || { err "agents/ not found"; exit 1; }
 	[[ -d "$SCRIPT_DIR/skills" ]] || { err "skills/ not found"; exit 1; }
 	[[ -f "$SCRIPT_DIR/CLAUDE.md.template" ]] || { err "CLAUDE.md.template not found"; exit 1; }
+	[[ -f "$SCRIPT_DIR/commands/pressure.md" ]] || { err "commands/pressure.md not found"; exit 1; }
+	[[ -f "$SCRIPT_DIR/commands/address.md" ]] || { err "commands/address.md not found"; exit 1; }
+	[[ -f "$SCRIPT_DIR/commands/distill.md" ]] || { err "commands/distill.md not found"; exit 1; }
+	[[ -f "$SCRIPT_DIR/codex/skills/pressure/SKILL.md" ]] || { err "codex/skills/pressure/SKILL.md not found"; exit 1; }
 }
 
 confirm_overwrites() {
@@ -259,8 +265,12 @@ confirm_overwrites() {
 	[[ -d "$CLAUDE_DIR/agents" ]] && found+=("agents/ (loom-* only)")
 	[[ -d "$CLAUDE_DIR/skills" ]] && found+=("skills/ (loom-* only)")
 	[[ -f "$CLAUDE_DIR/CLAUDE.md" ]] && found+=("CLAUDE.md")
+	[[ -d "$CLAUDE_DIR/commands" ]] && found+=("commands/ (loom-owned commands)")
 
-	if [[ ${#found[@]} -eq 0 ]]; then
+	local found_other=()
+	[[ -d "$CODEX_DIR/skills/pressure" ]] && found_other+=("~/.codex/skills/pressure")
+
+	if [[ ${#found[@]} -eq 0 ]] && [[ ${#found_other[@]} -eq 0 ]]; then
 		return 0
 	fi
 
@@ -268,6 +278,9 @@ confirm_overwrites() {
 	warn "existing loom files may be updated:"
 	for item in "${found[@]}"; do
 		echo -e "     ${D}~/.claude/$item${N}"
+	done
+	for item in "${found_other[@]}"; do
+		echo -e "     ${D}$item${N}"
 	done
 	echo ""
 	echo -en "   ${B}proceed? [y/N]${N} "
@@ -318,6 +331,41 @@ install_skills() {
 
 	COUNT_SKILLS=$(find "$CLAUDE_DIR/skills"/loom-* -name "SKILL.md" 2>/dev/null | wc -l | tr -d ' ')
 	ok "$COUNT_SKILLS skills"
+}
+
+install_commands() {
+	step "commands"
+
+	mkdir -p "$CLAUDE_DIR/commands"
+	for cmd_file in "$SCRIPT_DIR/commands"/*.md; do
+		[ -f "$cmd_file" ] || continue
+		cp "$cmd_file" "$CLAUDE_DIR/commands/"
+		((++COUNT_COMMANDS))
+	done
+
+	# Assert required command files were present in source and thus copied
+	local missing=0
+	for required in commands/pressure.md commands/address.md commands/distill.md; do
+		[[ -f "$SCRIPT_DIR/$required" ]] || { err "$required not found in source"; missing=1; }
+	done
+	[[ $missing -eq 0 ]] || exit 1
+
+	ok "$COUNT_COMMANDS commands"
+}
+
+install_codex_skill() {
+	step "codex skill"
+
+	# Assert source exists before touching the destination
+	[[ -f "$SCRIPT_DIR/codex/skills/pressure/SKILL.md" ]] || {
+		err "codex/skills/pressure/SKILL.md not found"
+		exit 1
+	}
+
+	mkdir -p "$CODEX_DIR/skills/pressure"
+	cp "$SCRIPT_DIR/codex/skills/pressure/SKILL.md" "$CODEX_DIR/skills/pressure/"
+
+	ok "pressure skill"
 }
 
 install_claude_md() {
@@ -530,7 +578,11 @@ print_summary() {
 	echo -e "     agents/     ${D}$COUNT_AGENTS specialized subagents${N}"
 	echo -e "     skills/     ${D}$COUNT_SKILLS domain knowledge modules${N}"
 	echo -e "     hooks/      ${D}$COUNT_HOOKS lifecycle event handlers${N}"
+	echo -e "     commands/   ${D}$COUNT_COMMANDS slash commands${N}"
 	echo -e "     CLAUDE.md   ${D}orchestration rules${N}"
+	echo ""
+	echo -e "   ${D}~/.codex/${N}"
+	echo -e "     skills/     ${D}pressure skill${N}"
 	echo ""
 	echo -e "   ${D}~/.local/bin/${N}"
 	echo -e "     loom        ${D}parallel work orchestrator${N}"
@@ -564,6 +616,8 @@ main() {
 		install_skills
 		install_hooks
 		install_claude_md
+		install_commands
+		install_codex_skill
 		cleanup_backups
 	fi
 
