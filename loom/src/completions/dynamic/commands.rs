@@ -15,6 +15,7 @@ const TOP_LEVEL_COMMANDS: &[&str] = &[
     "map",
     "memory",
     "plan",
+    "pressure",
     "repair",
     "resume",
     "review",
@@ -91,6 +92,7 @@ pub fn complete_flags(command_path: &[&str], prefix: &str) -> Result<Vec<String>
         ["clean"] => &["--all", "--sessions", "--state", "--worktrees"],
         ["repair"] => &["--fix"],
         ["map"] => &["--deep", "--focus", "--overwrite"],
+        ["pressure"] => &["--dry-run", "--rounds"],
         ["check"] => &["--suggest"],
         ["handoff"] => &["--message", "--session", "--stage", "--trigger"],
         ["stage", "complete"] => &[
