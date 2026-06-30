@@ -2,8 +2,9 @@
 //!
 //! Each round spawns Claude to pressure-test and update the plan, then Codex to
 //! write an independent review next to the plan, then Claude again to address
-//! the review. The Codex report is deleted before every `/pressure` so a round
-//! never reads a stale report, and once more after all rounds as cleanup.
+//! the review. The Codex report is deleted at the start of every round so that
+//! if Codex fails to write a fresh review, `/address` never reads the previous
+//! round's report, plus once more after all rounds as cleanup.
 
 use anyhow::{bail, Context, Result};
 use colored::Colorize;
@@ -138,9 +139,9 @@ pub fn codex_report_path(fs_path: &Path) -> PathBuf {
 
 /// Build the ordered list of steps for `rounds` rounds.
 ///
-/// Each round: delete the report (so `/pressure` never reads a stale one) →
-/// Claude `/pressure` → Codex `$pressure` → Claude `/address`. After all rounds,
-/// one final report deletion as cleanup.
+/// Each round: delete the report (so a failed Codex write can't leave `/address`
+/// reading the previous round's report) → Claude `/pressure` → Codex `$pressure`
+/// → Claude `/address`. After all rounds, one final report deletion as cleanup.
 pub fn plan_steps(rounds: u32, invocation: &str, report: &Path) -> Vec<Step> {
     let mut steps = Vec::new();
     for _ in 0..rounds {
