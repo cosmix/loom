@@ -526,3 +526,27 @@ These stale entries would have misled future agents into using `permission_mode:
 **Prevention:** Any test that shells out to `git` must (a) assert each setup command's exit status and surface stderr — never `output().unwrap()` and drop the status; and (b) neutralize ambient config by setting `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM` to nonexistent paths and `GIT_CONFIG_NOSYSTEM=1` on the `Command` (so it survives a polluted process env too). Set identity via local config. ~10 test files here use the same `init_repo`/`run_git` shape (`in_progress.rs`, `merge_attribution.rs`, `recovery.rs`, `merge_verify.rs`, …); the asserting ones at least fail loudly, but none isolate ambient config — port the `isolated_git`/`git_ok` helpers from `git/merge/mod.rs` if they ever flake.
 
 **Fix:** Added `isolated_git`/`git_ok` helpers in `git/merge/mod.rs` tests: every setup step asserts success, the conflicting merge dumps stdout/stderr if MERGE_HEAD is absent, and all invocations run with global/system config disabled. Verified green under a forced-`gpgsign` global config that previously reproduced the failure.
+
+## Vendored slash-command / Codex skill must consume the plan arg verbatim (no `doc/plans/` prefix)
+
+**What happened:** Originally-installed `pressure.md` / codex `SKILL.md` used `doc/plans/$1`, which double-prefixed into `doc/plans/doc/plans/PLAN-foo.md`.
+**Why:** The `loom pressure` driver hands children the FULL repo-relative invocation (e.g. `doc/plans/PLAN-foo.md`) because they run with `current_dir(repo_root)`. The template then re-prefixed `doc/plans/`.
+**Prevention:** When a Rust driver passes a repo-relative path to a slash command or Codex skill, the template MUST use `$1`/`<PLAN>` directly. The driver owns path resolution (`resolve_plan_path`); the template owns none.
+**Fix:** vendored `commands/{pressure,address}.md` and `codex/skills/pressure/SKILL.md` use the arg verbatim.
+
+## Gate path resolution on `is_file()`, not `exists()`, before spawning agents
+
+**What happened:** Plan resolution risked accepting a directory argument.
+**Why:** `Path::exists()` is true for directories; canonicalizing one and handing it to claude/codex fails confusingly downstream.
+**Fix:** `resolve_plan_path` gates on `is_file()` so a directory arg fails cleanly at resolution.
+
+## A `--dry-run` that hand-builds its command string drifts from the real spawn
+
+**What happened:** An early dry-run printed simplified commands missing `--permission-mode`/`--model`/`-C`.
+**Why:** Preview re-derived argv independently of the spawn path.
+**Prevention/Fix:** share ONE argv builder between preview and spawn (`claude_args`/`codex_args` feed both `render_dry_run` and `spawn_*`). Any preview that re-derives argv is a silent-divergence hazard.
+
+## Stage signal did not embed the plan's inline command/skill bodies
+
+**What happened:** The implement-pressure signal omitted the plan's inline slash-command and codex-skill bodies. Canonical sources had to be recovered from `~/.claude/commands/*.md` (Read tool) and `~/.codex/skills/pressure/SKILL.md` (Bash `cat` — `worktree-file-guard.sh` ALLOWS the Read tool on `~/.claude/` but BLOCKS it on `~/.codex/`). The installed copies were also STALE.
+**Prevention:** When a stage depends on file bodies that live outside the worktree, do not trust the signal to inline them or the installed copies to be current — recover from the authoritative source and treat installed versions as suspect.

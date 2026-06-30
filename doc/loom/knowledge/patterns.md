@@ -631,3 +631,13 @@ rg -n "HIERARCHY SECOND" skills/   # must be ZERO hits (criteria-keyed, not rank
 ```
 
 **Watch item:** whether Claude Code hooks (PreToolUse etc.) fire identically for depth-2 subagents is undocumented upstream. Loom's `commit-filter.sh` detection walks the process tree (nearest claude ancestor vs `LOOM_MAIN_AGENT_PID`) and is depth-agnostic by construction, but re-verify on major Claude Code upgrades.
+
+## Synchronous Foreground Agent Driver (`loom pressure`)
+
+A second execution model distinct from the daemon/worktree orchestrator: `loom pressure` (commands/pressure/mod.rs) spawns external agents synchronously in the foreground. The reusable sub-patterns:
+
+- **Foreground spawn, inherited stdio:** children run via `Command::status()` (blocking) with `Stdio::inherit()` for stdin/stdout/stderr, in `current_dir(repo_root)`. No terminal backend, no session tracking, no `.work/`. Use this shape when a command orchestrates interactive tools the user must watch live, rather than background stages.
+- **Single-source argv builders:** `claude_args()`/`codex_args()` are the ONLY place argv is assembled, consumed by BOTH the real spawn (`spawn_*`) and `render_dry_run`. `--dry-run` can therefore never drift from what actually runs. Apply whenever a command has a preview/plan mode.
+- **Sibling-report naming + pre-delete guard:** the Codex review is written to `codex-<basename>` next to the plan. The report is deleted at the START of every round so that if Codex fails to write a fresh review, the following `/address` cannot silently read the previous round's stale report; a final delete cleans up after the last round.
+- **Repo-relative invocation, not cwd-relative:** `resolve_plan_path` derives the agent argument via `fs_path.strip_prefix(repo_root)` (repo-relative when under the repo, else absolute) because children run with `current_dir(repo_root)`, not the user's shell cwd. It gates on `is_file()` (not `exists()`, which is true for dirs) and falls back to `doc/plans/<arg>` only when the raw path is absent AND does not already start with `doc/plans/` (double-prefix guard).
+- **Visible exit classification:** `classify_code` maps `0`→continue, `130`/`2`/`None`→abort, other→warn — but the abort/warn handlers PRINT the child label + exit code, so a headless failure (e.g. a codex clap usage error exiting 2) is surfaced rather than mistaken for a clean Ctrl+C interrupt.
