@@ -342,6 +342,16 @@ Adding any new top-level command (e.g. `loom plan`) requires touching exactly **
 
 **Nested subcommands**: define a second `#[derive(Subcommand)]` enum in `cli/types.rs` (e.g. `PlanCommands`), mirror the outer pattern. See `types_stage.rs` / `types_memory.rs` for examples of extracted sub-enum files.
 
+### ⚠️ Gotcha: Clap is only HALF the registration — dynamic completions are a separate site
+
+The three files above make a command **compile, dispatch, and show in `--help`**, but loom ships a **second, hand-maintained completion engine** that does NOT read Clap's metadata. A command registered only via the three-file pattern is **invisible to shell tab-completion** (and its flags won't complete). The completion tables are hardcoded string lists in `loom/src/completions/dynamic/`:
+
+- `commands.rs` — `TOP_LEVEL_COMMANDS` (the top-level name list; keep it alphabetical), `complete_flags` (per-command-path flag arms, e.g. `["pressure"] => &["--rounds", "--dry-run"]`), `complete_subcommands` + `has_subcommands` (only for commands with nested sub-enums).
+- `mod.rs` — `complete_after_command` routes the positional arg of a single-level command. A command whose positional is a **file path** (like `init`) returns `Ok(Vec::new())` so the shell falls back to native path completion; a command taking a stage ID calls `complete_stage_ids`.
+- `tests/tests_commands.rs` — add a test asserting the new command appears in top-level completion and that its flags complete.
+
+**Rule:** "register a CLI command" in this repo = Clap (3 files) **AND** the dynamic-completion tables + their tests. Before assuming Clap is the whole story, `rg TOP_LEVEL_COMMANDS loom/src/completions`. This is easy to miss because the command works end-to-end in manual testing and `--help` — only tab-completion silently lacks it.
+
 ## AcceptanceCriterion Untagged Enum
 
 `AcceptanceCriterion` in `plan/schema/types.rs` is a `#[serde(untagged)]` enum:
