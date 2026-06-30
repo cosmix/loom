@@ -1,7 +1,7 @@
 use anyhow::Result;
 use loom::commands::{
-    clean, diagnose, graph, handoff, init, knowledge, map, memory, plan, repair, resume, review,
-    run, self_update, sessions, skill_index, stage, status, stop, verify, worktree_cmd,
+    clean, diagnose, graph, handoff, init, knowledge, map, memory, plan, pressure, repair, resume,
+    review, run, self_update, sessions, skill_index, stage, status, stop, verify, worktree_cmd,
 };
 use loom::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use std::path::PathBuf;
@@ -175,6 +175,11 @@ pub fn dispatch(command: Commands) -> Result<()> {
             focus,
             overwrite,
         } => map::execute(deep, focus, overwrite),
+        Commands::Pressure {
+            plan,
+            rounds,
+            dry_run,
+        } => pressure::execute(plan, rounds, dry_run),
         Commands::Stop => stop::execute(),
         Commands::Diagnose { stage_id } => diagnose::execute(&stage_id),
         Commands::Plan { command } => match command {

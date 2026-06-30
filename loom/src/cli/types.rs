@@ -192,6 +192,21 @@ pub enum Commands {
         overwrite: bool,
     },
 
+    /// Pressure-test a plan with alternating Claude and Codex review rounds
+    Pressure {
+        /// Path to the plan file (repo-relative or absolute; a bare filename
+        /// resolves under doc/plans/)
+        plan: String,
+
+        /// Number of pressure/address rounds to run (must be >= 1)
+        #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u32).range(1..))]
+        rounds: u32,
+
+        /// Print the planned steps without spawning Claude or Codex
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Stop the running daemon
     Stop,
 
