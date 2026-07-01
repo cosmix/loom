@@ -1,6 +1,6 @@
 ---
 name: loom-debugging
-description: Systematic diagnosis and resolution of software bugs, test failures, data quality issues, and performance problems. Use for root-cause analysis, stack trace investigation, flaky/intermittent tests, regressions, and crash triage.
+description: Systematic diagnosis and resolution of software bugs, test failures, data quality issues, and performance problems. Use for root-cause analysis, stack trace investigation, flaky/intermittent tests, regressions, crash triage, and "passes locally, fails in CI".
 allowed-tools:
   - Read
   - Grep
@@ -28,6 +28,9 @@ triggers:
   - unexpected
   - flaky
   - intermittent
+  - heisenbug
+  - passes locally fails in CI
+  - git bisect
   - regression
   - performance degradation
 ---
@@ -36,446 +39,193 @@ triggers:
 
 ## Overview
 
-This skill provides systematic approaches to finding and fixing bugs across all domains: application code, tests, data pipelines, ML models, and infrastructure. It covers debugging strategies, tool usage, and techniques for various types of issues including crashes, flaky tests, data quality problems, and model performance degradation.
+Find the true cause of a defect and prevent its recurrence — across app code, tests, data pipelines, ML, and infra. The failure mode to avoid is *symptom-patching*: changing code until the symptom disappears without understanding why, which moves the bug rather than fixing it.
 
-## Instructions
+## The Root-Cause Loop
 
-### 1. Understand the Problem
+Run this loop; don't skip steps. Most wasted time comes from hypothesizing before reproducing, or fixing before localizing.
 
-- Reproduce the issue consistently
-- Gather error messages and stack traces
-- Identify when the bug was introduced
-- Determine the expected vs actual behavior
+1. **Reproduce** — deterministically. If you can't reproduce it, you can't verify a fix. Capture exact inputs, env, versions, and the full error/stack. For intermittent bugs, first make it *more* frequent (loop it, add load, shrink timeouts) before anything else.
+2. **Minimize** — shrink to the smallest input/code that still fails. Delete half, re-run, repeat (delta-debugging). A 5-line repro localizes faster than a 5000-line one and often reveals the cause outright.
+3. **Localize** — bound *where* it happens before asking *why*. Bisect in space (comment out / binary-search modules) and in time (`git bisect`). Read the stack trace top frame first, then the first frame in *your* code.
+4. **Hypothesize** — state a specific, falsifiable cause ("X is null because Y returns None when Z"). Vague hypotheses ("something with async") aren't testable.
+5. **Test the hypothesis** — one variable at a time; change something that should confirm/refute it. If the experiment can't distinguish two causes, design a better one.
+6. **Fix** — the root cause, minimally. Verify the repro now passes AND that you understand *why* the fix works (else you may have masked it).
+7. **Prevent** — add a regression test that fails without the fix. No regression test = the bug is not done. Then generalize: are there sibling instances of the same class elsewhere?
 
-### 2. Isolate the Issue
+## Core Discipline
 
-- Create minimal reproduction case
-- Use binary search to narrow down cause
-- Check recent changes (git bisect)
-- Verify environment and dependencies
+- **Reproduce before fixing.** Never "fix" what you can't observe failing.
+- **Read the error fully** — message, type, and every stack frame. The answer is often literally in it (wrong frame, unexpected value, swallowed cause).
+- **Check recent changes.** Most new failures are recently introduced → `git log`, `git bisect`.
+- **Question your assumptions.** The bug lives in what you're *sure* is correct. Verify it (print it, assert it) rather than believing it.
+- **Preserve evidence.** Save the failing input, logs, core dump, and seed before you start mutating code.
 
-### 3. Diagnose Root Cause
+## Bisection Discipline
 
-- Add strategic logging
-- Use debugger to step through code
-- Analyze stack traces
-- Check for common patterns
-
-### 4. Fix and Verify
-
-- Implement targeted fix
-- Add regression test
-- Verify fix doesn't introduce new issues
-- Document the root cause
-
-## Best Practices
-
-1. **Reproduce First**: Never fix what you can't reproduce
-2. **Read Error Messages**: They often contain the answer
-3. **Check Recent Changes**: Most bugs are recently introduced
-4. **Question Assumptions**: Verify what you think you know
-5. **Isolate Variables**: Change one thing at a time
-6. **Use Source Control**: Git bisect is powerful
-7. **Write Tests**: Prove the bug exists, then prove it's fixed
-
-## Specialized Debugging Domains
-
-### Debugging Flaky Tests
-
-Flaky tests pass/fail non-deterministically. Common root causes:
-
-**Timing Issues:**
-
-- Race conditions in async code
-- Insufficient wait times for UI elements
-- Network request timeouts
-- Background jobs not completing
-
-**Non-Deterministic State:**
-
-- Random data generation without seeds
-- Unordered collections (sets, map iteration)
-- Floating-point precision issues
-- Timestamp-based logic in tests
-
-**Test Isolation Failures:**
-
-- Shared global state between tests
-- Database not cleaned between runs
-- Files/resources not properly cleaned up
-- Test execution order dependencies
-
-**Debugging Techniques:**
+`git bisect run` automates finding the introducing commit — far faster than manual marking.
 
 ```bash
-# Run test multiple times to reproduce flakiness
-for i in {1..100}; do cargo test test_name || break; done
-
-# Run with verbose logging to expose timing
-RUST_LOG=debug cargo test test_name
-
-# Check for shared state issues
-cargo test -- --test-threads=1  # Force serial execution
-
-# Identify timing-dependent tests
-cargo test -- --nocapture | grep -i "timeout\|sleep\|wait"
-```
-
-**Fixes:**
-
-- Add explicit waits instead of arbitrary sleeps
-- Seed random generators: `rand::thread_rng().seed(42)`
-- Clean up state in test fixtures/teardown
-- Use test isolation patterns (transactions, temp directories)
-- Mock time-dependent code
-
-### Debugging Data Pipelines
-
-Data pipeline bugs manifest as incorrect results, crashes on specific data, or performance issues.
-
-**Common Issues:**
-
-- Schema mismatches between stages
-- Null/missing value handling
-- Data type conversions (precision loss, overflow)
-- Encoding issues (UTF-8, special characters)
-- Memory issues with large datasets
-
-**Debugging Techniques:**
-
-```python
-# Sample problematic data for local debugging
-df_sample = df.filter("problematic_condition").limit(1000)
-df_sample.write.parquet("debug_sample.parquet")
-
-# Add data quality assertions
-assert df.filter(col("user_id").isNull()).count() == 0, "Null user_ids found"
-assert df.filter(col("amount") < 0).count() == 0, "Negative amounts found"
-
-# Profile memory and performance
-df.explain()  # Show execution plan
-df.cache()    # Materialize for profiling
-
-# Check schema evolution issues
-df.printSchema()
-df.dtypes  # Verify expected types
-```
-
-**Root Cause Analysis:**
-
-- Check upstream data sources for schema changes
-- Validate data at pipeline stage boundaries
-- Log sample records at each transformation
-- Use data profiling tools to find anomalies
-- Test with edge cases: nulls, empty strings, extreme values
-
-### Debugging ML Models
-
-ML debugging involves both code bugs and model behavior issues.
-
-**Training Issues:**
-
-- Loss not decreasing (learning rate, gradient flow)
-- Loss exploding (gradient explosion, numerical instability)
-- Overfitting (model memorizes training data)
-- Underfitting (model too simple for data)
-
-**Inference Issues:**
-
-- Prediction distribution shift
-- Performance degradation over time
-- Inconsistent results between training/inference
-- Memory leaks in model serving
-
-**Debugging Techniques:**
-
-```python
-# Check gradient flow
-for name, param in model.named_parameters():
-    if param.grad is not None:
-        print(f"{name}: grad norm = {param.grad.norm()}")
-    else:
-        print(f"{name}: NO GRADIENT")  # Dead layer!
-
-# Detect numerical issues
-torch.autograd.set_detect_anomaly(True)  # Catch NaN/Inf
-
-# Validate data preprocessing
-print("Training data stats:", train_data.mean(), train_data.std())
-print("Inference data stats:", inference_data.mean(), inference_data.std())
-# If stats differ significantly, preprocessing mismatch!
-
-# Profile model performance
-import torch.autograd.profiler as profiler
-with profiler.profile(use_cuda=True) as prof:
-    model(input_data)
-print(prof.key_averages().table())
-
-# Test on single example
-model.eval()
-with torch.no_grad():
-    output = model(single_input)
-    print(f"Input: {single_input}, Output: {output}")
-```
-
-**Root Cause Analysis:**
-
-- Verify data preprocessing matches training
-- Check for label leakage or data contamination
-- Validate feature distributions (training vs production)
-- Test model on known examples with expected outputs
-- Use explainability tools (SHAP, attention weights)
-
-## Examples
-
-### Example 1: Systematic Debugging Process
-
-```python
-# Step 1: Understand the error
-"""
-Error: TypeError: Cannot read property 'name' of undefined
-at processUser (src/users.py:45)
-at handleRequest (src/server.py:123)
-"""
-
-# Step 2: Add diagnostic logging
-def process_user(user_id: str) -> dict:
-    logger.debug(f"Processing user_id: {user_id}")
-
-    user = get_user(user_id)
-    logger.debug(f"Retrieved user: {user}")  # <-- User is None!
-
-    # Bug: No null check before accessing properties
-    return {"name": user.name}  # Crashes here
-
-# Step 3: Fix with proper null handling
-def process_user(user_id: str) -> dict:
-    logger.debug(f"Processing user_id: {user_id}")
-
-    user = get_user(user_id)
-    if user is None:
-        logger.warning(f"User not found: {user_id}")
-        raise UserNotFoundError(f"User {user_id} not found")
-
-    return {"name": user.name}
-
-# Step 4: Add regression test
-def test_process_user_not_found():
-    with pytest.raises(UserNotFoundError):
-        process_user("nonexistent-id")
-```
-
-### Example 2: Git Bisect for Finding Bug Introduction
-
-```bash
-# Start bisect session
 git bisect start
-
-# Mark current commit as bad (has the bug)
-git bisect bad
-
-# Mark known good commit (before bug existed)
-git bisect good v1.2.0
-
-# Git checks out middle commit, test it
-# Run your test
-npm test
-
-# Mark result
-git bisect good  # or git bisect bad
-
-# Repeat until git identifies the first bad commit
-# Git will output: "abc123 is the first bad commit"
-
-# View the problematic commit
-git show abc123
-
-# End bisect session
+git bisect bad                 # current commit fails
+git bisect good v1.2.0         # last known-good ref
+git bisect run ./repro.sh      # script: exit 0 = good, 1..124 = bad, 125 = skip (can't test)
+# ...git converges to "abc123 is the first bad commit"
 git bisect reset
 ```
 
-### Example 3: Common Bug Patterns
+- The **repro script must be reliable** — a flaky script sends bisect down the wrong branch. Make the repro deterministic first (see flaky section), or bisect will lie.
+- Exit codes: `0` good, `1–124` bad, **`125` = untestable** (skip — e.g. commit doesn't build), `>127` aborts.
+- Bisect the *behavior*, not the test file — if the test itself changed, `git bisect run` a script that applies today's test to the old code, or pin the test.
+- Works on any monotonic property: performance regressions (`exit 1 if bench > threshold`), binary-size, output diffs — not just pass/fail.
 
-```python
-# Pattern 1: Off-by-one errors
-# Bug: Missing last element
-for i in range(len(items) - 1):  # Wrong!
-    process(items[i])
-# Fix:
-for i in range(len(items)):
-    process(items[i])
+## Differential Debugging
 
-# Pattern 2: Race conditions
-# Bug: Check-then-act without synchronization
-if not file.exists():
-    file.create()  # Another thread might create between check and create
-# Fix: Use atomic operations
-file.create_if_not_exists()
+When it works *here* but fails *there* (or worked yesterday), **diff the two worlds** instead of reading code blind. Enumerate and compare, one axis at a time:
 
-# Pattern 3: Floating point comparison
-# Bug: Direct equality comparison
-if 0.1 + 0.2 == 0.3:  # This is False!
-    do_something()
-# Fix: Use approximate comparison
-if abs((0.1 + 0.2) - 0.3) < 1e-9:
-    do_something()
+- **Code/version:** `git diff good..bad`, dependency lockfile diff (transitive upgrades!), runtime/compiler version, OS/arch.
+- **Input/data:** exact request, dataset, encoding, ordering, size, null/edge presence.
+- **Environment:** env vars, config files, feature flags, secrets, locale/timezone, `PATH`, working dir.
+- **State:** DB contents, cache, filesystem, clock, warm vs cold, concurrency level.
 
-# Pattern 4: Mutable default arguments
-# Bug: Shared mutable default
-def add_item(item, items=[]):  # Same list instance reused!
-    items.append(item)
-    return items
-# Fix: Use None default
-def add_item(item, items=None):
-    if items is None:
-        items = []
-    items.append(item)
-    return items
+The first axis that, when copied from the working world to the broken one, flips the result is your root cause. `diff <(working_env) <(broken_env)` beats speculation.
 
-# Pattern 5: Silent failures
-# Bug: Swallowing exceptions
-try:
-    risky_operation()
-except Exception:
-    pass  # Bug hidden!
-# Fix: Handle or re-raise appropriately
-try:
-    risky_operation()
-except SpecificException as e:
-    logger.error(f"Operation failed: {e}")
-    raise
-```
+### "Passes locally, fails in CI" playbook
 
-### Example 4: Debugging Tools Usage
+Almost always an *environment or isolation* difference, not logic. Check in order:
+
+- **Test ordering / parallelism:** CI runs a different order or in parallel → shared-state leak. Repro locally: run the full suite (not just the one test), randomize order, and force the CI thread count (`cargo test -- --test-threads=N`, `pytest -p xdist -n N`, `jest --runInBand`).
+- **Ambient config leakage:** an env var / config file / global you have set locally but CI doesn't (or vice versa). Diff `env`. Your local DB has seed data CI lacks.
+- **Wall-clock / timezone / locale:** CI in UTC exposes tests that assume your local TZ; date formatting, `LANG`/`LC_*`, number/decimal separators.
+- **Filesystem:** case-sensitivity (macOS/Windows case-insensitive → Linux CI case-sensitive: `import Foo` vs `foo`), path separators, missing fixture files not committed, permissions, `/tmp` cleanup.
+- **Resources/timing:** CI is slower/loaded → tight timeouts and `sleep`-based waits fail; less memory → OOM.
+- **Hidden network:** a test hits a real service that's reachable locally but blocked/rate-limited in CI.
+- **Uncommitted state:** the fix works locally because of an uncommitted file or a dirty DB. Reproduce in a clean checkout / fresh container.
+
+## Flaky Tests — Root-Cause Classes
+
+Flaky = non-deterministic pass/fail with no code change. Classify the cause, then fix the *class* (retrying is not a fix — it hides the defect, often a real production race):
+
+| Class                     | Tell                                          | Fix                                                        |
+| ------------------------- | --------------------------------------------- | --------------------------------------------------------- |
+| **Shared mutable state**  | fails only with siblings / in a given order   | isolate: fresh fixtures, txn rollback, temp dirs; no globals |
+| **Test-ordering dependence** | passes alone, fails in suite (or vice versa) | randomize order to expose; remove inter-test coupling     |
+| **Time/clock**            | fails near midnight/DST/month-end, or in UTC  | inject a fake clock; freeze time; never assert on `now()` |
+| **Randomness**            | fails ~1/N runs                               | seed the RNG; log the seed so failures are reproducible   |
+| **Insufficient waits**    | fails under load / on slow CI                 | wait for a *condition* (poll/await), never `sleep(n)`     |
+| **Async races**           | order of callbacks/promises varies            | await completion; deterministic scheduling; barriers      |
+| **Network/external**      | fails when a service is slow/down             | mock/stub the boundary; hermetic tests                    |
+| **Resource leaks**        | fails after many tests (FDs, ports, memory)   | close/cleanup in teardown; fresh port per test            |
+| **Unordered collections** | assertion on set/map/dict iteration order     | sort before asserting; use ordered structures             |
 
 ```bash
-# Python debugging
-python -m pdb script.py  # Interactive debugger
-python -m trace --trace script.py  # Trace execution
+# Reproduce flakiness: loop until it fails, capture the run
+for i in $(seq 1 200); do cargo test flaky_name -- --nocapture 2>&1 | tee /tmp/run || break; done
 
-# Node.js debugging
-node --inspect script.js  # Chrome DevTools
-node --inspect-brk script.js  # Break on first line
-
-# Rust debugging
-RUST_BACKTRACE=1 cargo run  # Full stack trace
-RUST_LOG=debug cargo run    # Verbose logging
-
-# Memory profiling (Python)
-python -m memory_profiler script.py
-
-# CPU profiling (Python)
-python -m cProfile -o output.prof script.py
-python -m pstats output.prof
-
-# Strace for system calls (Linux)
-strace -f -e trace=file python script.py
-
-# Network debugging
-tcpdump -i any port 8080
-curl -v http://localhost:8080/api/health
+cargo test -- --test-threads=1     # if this fixes it → shared-state/ordering isolation bug
+RUST_LOG=debug cargo test flaky    # expose timing/ordering
+pytest -p no:randomly / -p randomly --randomly-seed=N   # pin/vary order to bisect ordering deps
 ```
 
-### Example 5: Debugging Flaky Test
+## Heisenbugs — when observation changes the outcome
+
+The bug vanishes under a debugger or with a print added. This is diagnostic, not magic: **the observer changed timing or memory layout.**
+
+- **Timing shift:** a `print`/breakpoint adds latency that hides a race or reorders async events. → The real bug is a race; use logging that doesn't alter timing (ring buffer, `perf`/tracepoints, post-mortem logs), or `ThreadSanitizer`/`--race`.
+- **Optimization/UB:** works in debug, breaks in release (or vice versa) → undefined behavior, uninitialized memory, aliasing, or a compiler optimization exposing a latent bug. Reach for ASan/UBSan/Valgrind, `-Werror`, MIRI (Rust).
+- **Memory/aliasing:** printing a variable forces it to memory (not a register), masking a corruption. → memory tooling, not more prints.
+- **Rule:** if adding observation *fixes* it, you have a concurrency/UB bug — attack the timing/memory cause, don't ship the print.
+
+## printf vs. debugger — pick deliberately
+
+| Use **logging/print**                                   | Use a **debugger** (pdb/gdb/lldb/inspector)             |
+| ------------------------------------------------------- | ------------------------------------------------------- |
+| Concurrency/timing bugs (breakpoints alter timing)      | Single-threaded, deterministic control flow            |
+| Distributed / remote / CI / prod (no interactive shell) | Reproducible locally, need to inspect rich live state   |
+| Intermittent — need many runs' data                     | Complex object graphs, call stacks, conditional breaks  |
+| Fast inner loops where stepping is impractical          | You don't yet know *where* to look (step to find it)    |
+
+Structured logging beats scattered prints: include the value's *identity* (`user_id=%s got=%r expected=%r`), not just "here". Remove or gate debug logging before committing.
+
+## Domain Notes
+
+### Data pipelines
+
+Bugs: schema drift between stages, null/missing handling, type coercion (precision loss/overflow), encoding (UTF-8), OOM on large data. Techniques:
 
 ```python
-# Flaky test - fails intermittently
-def test_user_registration():
-    user = create_user(email="test@example.com")
-    # Sometimes fails: "User already exists"
-    assert user.id is not None
-
-# Diagnosis: Test isolation failure - database not cleaned between runs
-
-# Fix: Add proper teardown
-@pytest.fixture(autouse=True)
-def clean_database():
-    yield
-    # Clean up after each test
-    User.query.delete()
-    db.session.commit()
-
-def test_user_registration():
-    user = create_user(email="test@example.com")
-    assert user.id is not None
-
-# Alternative fix: Use unique data per test run
-def test_user_registration():
-    email = f"test-{uuid.uuid4()}@example.com"
-    user = create_user(email=email)
-    assert user.id is not None
+sample = df.filter("problematic_condition").limit(1000); sample.write.parquet("dbg.parquet")  # local repro set
+assert df.filter(col("user_id").isNull()).count() == 0, "null user_ids"   # assert assumptions at boundaries
+df.explain(); df.printSchema()   # execution plan + schema drift
 ```
 
-### Example 6: Debugging Data Pipeline
+Validate at every stage boundary; log sample rows per transform; test edge data (nulls, empty strings, extremes). Check upstream source for schema changes first.
+
+### ML models
+
+Distinguish code bugs from model-behavior issues. Training: loss not decreasing (LR/gradient flow), exploding loss (instability), over/underfit. Inference: distribution shift, train/serve skew.
 
 ```python
-# Data pipeline crashes on production data but works on test data
-def transform_orders(df):
-    # Bug: Crashes when discount column has nulls
-    df["final_price"] = df["price"] * (1 - df["discount"])
-    return df
-
-# Diagnosis: Add assertions to catch bad data early
-def transform_orders(df):
-    # Check assumptions about input data
-    assert "price" in df.columns, "Missing price column"
-    assert "discount" in df.columns, "Missing discount column"
-
-    # Expose the bug
-    null_discounts = df[df["discount"].isnull()]
-    if len(null_discounts) > 0:
-        print(f"Found {len(null_discounts)} orders with null discounts")
-        print(null_discounts.head())
-
-    # Fix: Handle nulls explicitly
-    df["discount"] = df["discount"].fillna(0.0)
-    df["final_price"] = df["price"] * (1 - df["discount"])
-    return df
-
-# Add data validation test
-def test_transform_orders_handles_nulls():
-    df = pd.DataFrame({
-        "price": [100, 200],
-        "discount": [0.1, None]  # Null discount
-    })
-    result = transform_orders(df)
-    assert result["final_price"].tolist() == [90.0, 200.0]
+for n, p in model.named_parameters():             # dead layers / vanishing grads
+    print(n, None if p.grad is None else p.grad.norm().item())
+torch.autograd.set_detect_anomaly(True)           # locate NaN/Inf source
+# Train/serve skew is the #1 silent accuracy killer:
+print(train.mean(), train.std(), prod.mean(), prod.std())  # differ ⇒ preprocessing mismatch
 ```
 
-### Example 7: Debugging ML Model Performance
+⚠ **Train/serve skew:** most "accuracy dropped in prod" bugs are a preprocessing/scaler mismatch — the scaler/encoder fit at train time wasn't persisted and reused at serving. Save and load transforms *with* the model. Also check: feature drift, label leakage, and that eval data matches training preprocessing exactly.
+
+## Worked Example — the full loop
 
 ```python
-# Model accuracy dropped from 95% to 75% in production
+# SYMPTOM: TypeError: 'NoneType' object has no attribute 'name' at process_user (users.py:45), intermittent.
 
-# Step 1: Compare training vs production data distributions
-train_stats = train_df.describe()
-prod_stats = production_df.describe()
-print("Feature drift detected:")
-for col in train_stats.columns:
-    train_mean = train_stats.loc["mean", col]
-    prod_mean = prod_stats.loc["mean", col]
-    drift = abs(prod_mean - train_mean) / train_mean
-    if drift > 0.1:
-        print(f"{col}: {drift*100:.1f}% drift")
+# 1 Reproduce: which user_ids? Loop the failing endpoint; log inputs → fails only for deleted users.
+# 3 Localize: stack points at users.py:45 → user is None.
+def process_user(user_id: str) -> dict:
+    user = get_user(user_id)          # 4 Hypothesis: get_user returns None for deleted users
+    return {"name": user.name}        # crash
 
-# Step 2: Test on individual examples to find pattern
-test_cases = [
-    {"input": [...], "expected": 1, "predicted": model.predict([...])},
-    {"input": [...], "expected": 0, "predicted": model.predict([...])},
-]
-for case in test_cases:
-    if case["expected"] != case["predicted"]:
-        print(f"Misprediction: {case}")
+# 6 Fix root cause (explicit contract), not `user.name if user else ""` (which hides the deletion)
+def process_user(user_id: str) -> dict:
+    user = get_user(user_id)
+    if user is None:
+        raise UserNotFoundError(user_id)   # caller decides 404 vs skip
+    return {"name": user.name}
 
-# Step 3: Root cause - feature preprocessing changed
-# Training: features normalized with StandardScaler fit on training data
-# Production: features normalized with different scaler parameters!
-
-# Fix: Save and load scaler with model
-import joblib
-joblib.dump(scaler, "scaler.pkl")
-# In production:
-scaler = joblib.load("scaler.pkl")
-features_scaled = scaler.transform(features)
-predictions = model.predict(features_scaled)
+# 7 Prevent: regression test that fails without the guard
+def test_process_user_missing():
+    with pytest.raises(UserNotFoundError):
+        process_user("deleted-id")
 ```
+
+## Tooling quick reference
+
+```bash
+# Python
+python -m pdb script.py                 # interactive; python -m cProfile -o out.prof for CPU
+py-spy top --pid PID                     # sampling profiler, no code change, prod-safe
+
+# Node
+node --inspect-brk script.js            # break on first line → chrome://inspect
+node --stack-trace-limit=100 ...        # deeper async traces
+
+# Rust
+RUST_BACKTRACE=full cargo run           # full trace; RUST_LOG=debug for logs
+cargo test -- --test-threads=1          # serialize to expose shared-state flakes
+
+# Systems
+strace -f -e trace=file,network CMD     # syscalls (Linux) — find missing files, blocked I/O
+gdb -p PID  / lldb -p PID               # attach to a live/hung process; `bt` all threads for deadlocks
+tcpdump -i any port 8080                # wire-level; curl -v for HTTP
+```
+
+## Verification checklist
+
+- [ ] Reproduced the failure deterministically before changing code
+- [ ] Localized (stack + bisect) — you know the exact line and *why*, not just where the symptom shows
+- [ ] Root cause identified and stated; fix addresses it, not the symptom
+- [ ] Regression test added that **fails without** the fix and passes with it
+- [ ] Checked for sibling instances of the same bug class elsewhere
+- [ ] For flaky/CI-only: class identified (isolation/time/order/async/resource) and fixed — not retried away
+- [ ] No debug prints / temporary logging / `set_detect_anomaly` left in the committed code

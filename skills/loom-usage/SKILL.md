@@ -117,12 +117,15 @@ loom init doc/plans/PLAN-my-feature.md
 
 | Error | Cause | Fix |
 | --- | --- | --- |
-| "stage X missing truths/artifacts/wiring" | Standard stage without goal-backward verification | Add at least one of truths, artifacts, or wiring |
+| "must define acceptance criteria or ... artifact, wiring check, or wiring_test" | Standard/IV stage has no `acceptance` AND no goal-backward check | Add non-empty `acceptance` OR one of `artifacts`/`wiring`/`wiring_tests`/`dead_code_check` |
 | "cycle detected" | Circular dependencies between stages | Remove the cycle in the dependency graph |
-| "invalid stage_type" | PascalCase like "Standard" | Use lowercase: "standard", "knowledge", "integration-verify" |
+| "invalid stage_type" | PascalCase like "Standard" | Use lowercase: `standard`, `knowledge`, `integration-verify`, `knowledge-distill` |
 | "working_dir required" | Stage missing working_dir field | Add `working_dir: "."` or appropriate subdirectory |
 | "path traversal" | `../` in any path field | Use paths relative to working_dir, no `../` |
 | "triple backticks in YAML" | Code fences inside description | Use plain indented text instead of fences |
+| "bypass-permissions is not allowed" | `permission_mode: bypass-permissions` | Use `auto` (default), `accept-edits`, `plan`, or `default`. Note: `loom plan verify` misses this; only `loom init` catches it |
+
+> ⚠️ **`truths` was removed as a standalone field.** Behavioral checks now go in `acceptance` (Simple string / Extended object); the goal-backward layers are `artifacts`, `wiring`, `wiring_tests`, `dead_code_check`. A leftover top-level `truths:` in an old plan is silently ignored (no error, no check) — migrate it.
 
 ### Re-Initialization
 
@@ -435,16 +438,26 @@ loom memory change "src/foo.rs - Added bar() function"
 loom memory list
 ```
 
-### During Integration-Verify
+### Memory & knowledge routing by stage type
+
+| Stage type | `loom memory` | `loom knowledge` |
+| ---------- | ------------- | ---------------- |
+| knowledge (bootstrap) | YES | YES |
+| standard (implementation) | YES (ONLY) | FORBIDDEN |
+| integration-verify | YES (record findings for distill) | NO |
+| knowledge-distill | YES | YES (curate from memory) |
+
+Knowledge **curation** happens in the LAST stage (`knowledge-distill`), not in integration-verify. IV records discoveries to memory; distill reads them and writes knowledge.
 
 ```bash
-# Read ALL stage memories for curation
-loom memory show --all
+# integration-verify: record findings to memory only
+loom memory note "IV: feature X reachable via CLI dispatch arm, confirmed end-to-end"
 
-# Curate valuable insights to permanent knowledge
+# knowledge-distill (last stage): read all memories, curate to permanent knowledge
+loom memory show --all
 loom knowledge update mistakes "## Lesson learned about X"
 loom knowledge update patterns "## New pattern discovered"
-loom knowledge update architecture "## Updated component relationships"
+loom review   # prune stale/duplicate knowledge entries
 ```
 
 ---
@@ -641,6 +654,15 @@ loom run                                 # Git branches preserve prior work
 ```
 
 ---
+
+## Operator Gotchas
+
+- **The daemon loads the plan ONCE at startup.** Editing the plan file (or a `.work/stages/*.md`) while `loom run` is live has NO effect on the running graph — no reload mechanism exists. To apply plan changes, `loom stop` → edit → `loom init --clean` (or `loom clean --state && loom init`) → `loom run`. (Exception: the adjudicator may amend only a single stage's `acceptance`/`wiring` in place.)
+- **Exit code 0 ≠ success.** Sandbox blocks, dep-fetch failures, and write denials all exit 0. Read stderr; "blocked / denied / connection refused / failed to download" means investigate, not proceed.
+- **`fix_attempts` caps at 3 by default.** After repeated acceptance failures a stage stops auto-retrying and escalates (Blocked / NeedsHumanReview). Don't loop `loom stage retry` blindly — read the block reason and fix root cause, or `loom stage dispute-criteria` if the criteria themselves are wrong.
+- **All four stage types default to `permission_mode: auto`** (resolves stage > plan > stage-type default). Loom stages run unattended, so the agent auto-accepts actions its heuristics deem safe; the sandbox deny/allow rules are the real boundary. Override to `accept-edits`/`plan` at plan or stage level to tighten.
+- **`loom plan verify` checks STRUCTURE only** — valid YAML/DAG/bookends. It does NOT run acceptance, prove claims, or (currently) catch `bypass-permissions`. A plan can pass `plan verify` yet fail `loom init` or produce a non-working feature.
+- **`loom check` runs goal-backward layers** (`artifacts`, `wiring`, `wiring_tests`, `dead_code_check`) — NOT `acceptance`. Use `loom stage verify <id> --dry-run` to test acceptance without changing state.
 
 ## Anti-Patterns
 

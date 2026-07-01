@@ -35,136 +35,102 @@ triggers:
 
 ## Overview
 
-This skill creates clear, comprehensive, and maintainable documentation across all levels: code documentation (docstrings, inline comments), API references, architectural documentation, README files, ADRs, changelogs, and user guides. Absorbs technical writing expertise for clarity and accessibility.
+Create and maintain documentation *artifacts* and their required structure: docstrings, inline comments, API references, READMEs, ADRs, changelogs, and architecture docs. This skill owns WHAT each artifact must contain. For prose mechanics (voice, clarity, sentence craft) and the Diátaxis mode framework, see `loom-technical-writing`. For visuals, see `loom-diagramming`; for API-spec files (OpenAPI), see `loom-api-documentation`.
 
-## Instructions
+## Artifact → structure map
 
-### 1. Assess Documentation Needs
+Pick the artifact by audience and Diátaxis mode, then fill its required structure. Never mix modes in one document (a reference is not a tutorial).
 
-- Identify target audience (developers, users, operators, contributors)
-- Determine documentation types needed
-- Review existing documentation for gaps and inconsistencies
-- Understand the codebase structure and patterns
+| Artifact                   | Diátaxis mode      | Must contain                                                     |
+| -------------------------- | ------------------ | --------------------------------------------------------------- |
+| README                     | how-to + reference | one-line pitch, install, quick-start, links out                 |
+| Tutorial / getting-started | tutorial           | ordered steps, a path guaranteed to work, expected output       |
+| How-to guide               | how-to             | goal-titled, prerequisites, numbered steps, verification        |
+| API reference              | reference          | every public symbol: params, returns, errors, ≥1 example        |
+| ADR                        | explanation        | context, decision, consequences, alternatives, status           |
+| Changelog                  | reference          | changes grouped per version, dates, breaking changes flagged    |
+| Docstring                  | reference          | purpose, params, returns, raises/panics, example                |
+| Inline comment             | explanation        | WHY only — never restate the code                               |
 
-### 2. Code Documentation
+First step on any task: identify the audience (developer / end-user / operator / contributor), then read the code so docs match real behavior — never document from assumption.
 
-**Docstrings/Doc Comments:**
+## Code documentation
 
-- Add language-appropriate documentation (JSDoc, rustdoc, pydoc, etc.)
-- Document purpose, parameters, return values, and exceptions
-- Include type information when language supports it
-- Provide usage examples for complex functions
-- Explain non-obvious behavior and edge cases
+**Docstrings** (rustdoc / JSDoc / pydoc / godoc): document the *contract*, not the implementation. Cover purpose, each param with type and constraints, return, errors/panics/raises, side effects, and a runnable example for any non-trivial API. Public symbols get docs; private ones only when non-obvious.
 
-**Inline Comments:**
+**Inline comments:** explain WHY, not WHAT. Reserve for non-obvious business rules, workarounds (link the issue/ticket), invariants, and hazards. Delete comments that restate code — they rot and mislead. `TODO`/`FIXME` must reference a tracking issue.
 
-- Explain WHY, not WHAT (code shows what)
-- Document complex algorithms or business logic
-- Flag known limitations or TODOs with issue references
-- Keep comments up-to-date with code changes
+```rust
+// BAD — restates the code; rots silently
+counter += 1; // increment counter
 
-### 3. API Documentation
+// GOOD — encodes a non-obvious rule the code can't express
+counter += 1; // skip row 0: it is always the CSV header
 
-- Document all public endpoints/methods
-- Include request/response formats with examples
-- Provide authentication and authorization details
-- Show error responses with status codes
-- Document rate limits and pagination
-- Include versioning information
+// GOOD — flags a business rule a future reader would violate
+if user.is_valid() { // users created before 2020 have no email verification
+```
 
-### 4. README Files
+### Python docstring (Google style)
 
-**Essential Sections:**
+```python
+def calculate_shipping_cost(weight: float, destination: str, express: bool = False) -> Decimal:
+    """Calculate shipping cost from package weight and destination.
 
-- Project name and one-line description
-- Installation/setup instructions
-- Quick start example
-- Core features overview
-- Development setup
-- Testing instructions
-- Contributing guidelines
-- License information
+    Applies tiered pricing by weight bracket; surcharges for international
+    and express delivery.
 
-**README Best Practices:**
+    Args:
+        weight: Package weight in kg. Must be positive.
+        destination: ISO 3166-1 alpha-2 country code (e.g., 'US', 'GB').
+        express: Express delivery (2-3 days) vs standard (5-7). Default False.
 
-- Put most important information first
-- Use clear headings for scannability
-- Include badges for build status, version, license
-- Provide working code examples
-- Link to detailed docs when needed
+    Returns:
+        Shipping cost in USD as a Decimal.
 
-### 5. Architecture Decision Records (ADRs)
+    Raises:
+        ValueError: If weight is not positive.
+        InvalidDestinationError: If country code is unrecognized.
 
-Document significant architectural decisions with:
+    Example:
+        >>> calculate_shipping_cost(2.5, 'US')
+        Decimal('12.50')
+    """
+```
 
-- Context: What problem are we solving?
-- Decision: What did we choose?
-- Consequences: Trade-offs and implications
-- Alternatives considered: What we rejected and why
-- Status: Proposed, accepted, deprecated, superseded
+### Rust doc comment (with doctest)
 
-### 6. Changelogs
+Doctests in rustdoc are compiled and run by `cargo test` — keep them correct and current.
 
-Follow semantic versioning and conventional commits:
+````rust
+/// Manages authentication and session handling. Tokens are JWTs with a
+/// 24-hour expiration.
+///
+/// # Examples
+///
+/// ```
+/// let auth = AuthService::new(config);
+/// let token = auth.login("user@example.com", "password").await?;
+/// let user = auth.validate_token(&token)?;
+/// ```
+///
+/// # Errors
+///
+/// - `AuthError::InvalidCredentials` — login failed.
+/// - `AuthError::TokenExpired` — token past expiry.
+pub struct AuthService { /* fields */ }
+````
 
-- Group changes by type (Added, Changed, Fixed, Removed, Security)
-- Link to relevant issues/PRs
-- Include breaking changes prominently
-- Date each release
-- Use present tense ("Add feature" not "Added feature")
+## README
 
-### 7. Technical Writing Principles
-
-**Clarity:**
-
-- Use simple, direct language
-- Define technical terms on first use
-- Write short sentences (aim for 15-20 words)
-- One idea per paragraph
-
-**Structure:**
-
-- Use consistent heading hierarchy
-- Break up long sections with subheadings
-- Use lists for sequential steps or related items
-- Add tables for structured comparisons
-
-**Accessibility:**
-
-- Avoid jargon unless necessary
-- Provide examples for abstract concepts
-- Use active voice ("Run the command" not "The command should be run")
-- Include visual aids (diagrams, code blocks) where helpful
-
-## Best Practices
-
-1. **Write for Your Audience**: Match complexity to reader expertise
-2. **Keep It Current**: Update docs when code changes
-3. **Show, Don't Just Tell**: Include working examples
-4. **Be Concise**: Remove unnecessary words
-5. **Structure Consistently**: Use templates and patterns
-6. **Explain the Why**: Document decisions, not just facts
-7. **Make It Searchable**: Use clear headings and keywords
-8. **Test Your Examples**: Ensure code examples actually work
-9. **Version Your Docs**: Match documentation to code versions
-10. **Link Liberally**: Connect related documentation
-
-## Templates
-
-### README Template
+Order by decreasing importance — most readers scan the top and leave. Required: project name + one-line description, install, quick-start (working snippet), then links out to deeper docs. Add contributing/license and status badges as needed. Keep the README a launchpad, not a manual; move depth into linked docs.
 
 ```markdown
 # Project Name
 
-One-line description of what this project does.
+One-line description of what this does and for whom.
 
-## Features
-
-- Key feature 1
-- Key feature 2
-- Key feature 3
-
-## Installation
+## Install
 
     npm install project-name
 
@@ -175,275 +141,100 @@ One-line description of what this project does.
 
 ## Documentation
 
-See [full documentation](link) for detailed usage.
-
-## Development
-
-    npm install
-    npm test
-    npm run build
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+See [full docs](link).
 
 ## License
 
 MIT
 ```
 
-### ADR Template
+## API reference
+
+Document every public endpoint: method + path, auth requirement, request schema, a concrete request/response example, and *all* error responses with codes. Tables for params/errors keep it scannable.
+
+```markdown
+## Create User — `POST /api/v1/users`
+
+**Auth:** Required (Admin role)
+
+**Request body:**
+
+| Field | Type   | Required | Description                  |
+| ----- | ------ | -------- | ---------------------------- |
+| email | string | Yes      | Valid email address          |
+| name  | string | Yes      | Full name (2-100 characters) |
+| role  | string | No       | User role. Default: "member" |
+
+**Success (201):** returns the created user object with `id` and `createdAt`.
+
+**Errors:**
+
+| Status | Code          | Description               |
+| ------ | ------------- | ------------------------- |
+| 400    | INVALID_EMAIL | Email format is invalid   |
+| 409    | EMAIL_EXISTS  | Email already registered  |
+| 403    | FORBIDDEN     | Insufficient permissions  |
+```
+
+## ADR
+
+Record *significant, hard-to-reverse* decisions — the ones a future maintainer will ask "why on earth did they…". One decision per file, numbered, immutable once accepted (supersede with a new ADR rather than editing).
 
 ```markdown
 # ADR-001: Use Event Sourcing for Audit Trail
 
-**Status:** Accepted
+**Status:** Accepted · **Date:** 2024-01-15
 
-**Date:** 2024-01-15
+**Context:** Regulatory compliance requires a complete audit trail of financial
+records. Update-in-place loses historical state.
 
-**Context:**
-We need to maintain a complete audit trail of all changes to financial records
-for regulatory compliance. The current update-in-place approach loses historical
-state.
-
-**Decision:**
-Implement event sourcing pattern where all state changes are stored as immutable
-events. Current state is derived by replaying events.
+**Decision:** Store all state changes as immutable events; derive current state
+by replaying them.
 
 **Consequences:**
+- (+) Complete audit trail by design; time-travel debugging.
+- (-) More storage; querying current state is more complex; team learning curve.
 
-Positive:
-
-- Complete audit trail by design
-- Time-travel debugging capabilities
-- Natural fit for regulatory reporting
-
-Negative:
-
-- Increased storage requirements
-- Query complexity for current state
-- Team learning curve
-
-**Alternatives Considered:**
-
-1. Database triggers + audit table: Rejected due to trigger maintenance burden
-2. Change data capture: Rejected due to coupling to database technology
-3. Manual audit logging: Rejected due to error-prone implementation
+**Alternatives considered:**
+- DB triggers + audit table — rejected: trigger maintenance burden.
+- CDC — rejected: couples to database technology.
 ```
 
-### Changelog Template
+## Changelog
+
+Follow [Keep a Changelog](https://keepachangelog.com/) + [SemVer](https://semver.org/). Group by type (Added / Changed / Deprecated / Removed / Fixed / Security); keep an `[Unreleased]` section at top; date each release; call out breaking changes prominently; use imperative mood consistent with commit style. Prefer generating from conventional commits.
 
 ```markdown
 # Changelog
 
-All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
 ## [Unreleased]
-
-### Added
-
-- New feature description
-
-### Changed
-
-- Changes in existing functionality
-
-### Fixed
-
-- Bug fix description
 
 ## [1.2.0] - 2024-01-15
 
 ### Added
-
 - User profile management (#123)
-- Export to CSV functionality (#145)
 
 ### Changed
-
-- Updated dependencies to latest versions
-- Improved error messages for validation failures
+- Improve validation error messages
 
 ### Fixed
-
-- Fixed race condition in payment processing (#156)
-- Corrected timezone handling in reports (#162)
+- Race condition in payment processing (#156)
 ```
 
-## Examples
+## Anti-patterns
 
-### Example 1: Python Docstring (Google Style)
+- Documenting private implementation details that should stay internal.
+- Docs that duplicate what the code already states (comments restating code, docstrings echoing signatures).
+- Vague hedging ("might", "usually", "sometimes") instead of stating actual behavior.
+- Orphaned docs with no inbound/outbound links; untested examples that no longer compile.
+- Skipping error cases and edge conditions.
+- Letting docs drift from code — update docs in the same PR as the code change.
 
-```python
-def calculate_shipping_cost(
-    weight: float,
-    destination: str,
-    express: bool = False
-) -> Decimal:
-    """Calculate shipping cost based on package weight and destination.
+## Verify before done
 
-    Applies tiered pricing based on weight brackets and adds surcharges
-    for international destinations and express delivery.
-
-    Args:
-        weight: Package weight in kilograms. Must be positive.
-        destination: ISO 3166-1 alpha-2 country code (e.g., 'US', 'GB').
-        express: If True, uses express delivery (2-3 days).
-                 Default is standard delivery (5-7 days).
-
-    Returns:
-        The calculated shipping cost in USD as a Decimal.
-
-    Raises:
-        ValueError: If weight is not positive.
-        InvalidDestinationError: If country code is not recognized.
-
-    Example:
-        >>> calculate_shipping_cost(2.5, 'US')
-        Decimal('12.50')
-        >>> calculate_shipping_cost(2.5, 'GB', express=True)
-        Decimal('45.00')
-    """
-```
-
-### Example 2: Rust Documentation
-
-````rust
-/// Manages user authentication and session handling.
-///
-/// This service handles the complete authentication lifecycle including
-/// login, token validation, and session management. Tokens are JWTs
-/// with a 24-hour expiration.
-///
-/// # Examples
-///
-/// ```
-/// use auth::AuthService;
-///
-/// let auth = AuthService::new(config);
-/// let token = auth.login("user@example.com", "password").await?;
-/// let user = auth.validate_token(&token)?;
-/// ```
-///
-/// # Errors
-///
-/// Returns `AuthError::InvalidCredentials` if login fails.
-/// Returns `AuthError::TokenExpired` if token validation fails.
-pub struct AuthService {
-    // fields
-}
-
-impl AuthService {
-    /// Authenticates a user with email and password.
-    ///
-    /// # Arguments
-    ///
-    /// * `email` - User's email address
-    /// * `password` - User's password (will be hashed before comparison)
-    ///
-    /// # Returns
-    ///
-    /// JWT access token valid for 24 hours
-    ///
-    /// # Errors
-    ///
-    /// Returns error if credentials are invalid or account is locked
-    pub async fn login(&self, email: &str, password: &str) -> Result<String, AuthError> {
-        // Implementation
-    }
-}
-````
-
-### Example 3: API Endpoint Documentation
-
-```markdown
-## Create User
-
-Creates a new user account.
-
-**Endpoint:** `POST /api/v1/users`
-
-**Authentication:** Required (Admin role)
-
-**Request Body:**
-| Field | Type | Required | Description |
-|-----------|--------|----------|--------------------------------|
-| email | string | Yes | Valid email address |
-| name | string | Yes | Full name (2-100 characters) |
-| role | string | No | User role. Default: "member" |
-
-**Example Request:**
-
-    POST /api/v1/users
-    Authorization: Bearer eyJhbGc...
-    Content-Type: application/json
-
-    {
-      "email": "jane@example.com",
-      "name": "Jane Smith",
-      "role": "admin"
-    }
-
-**Success Response (201 Created):**
-
-    {
-      "id": "usr_abc123",
-      "email": "jane@example.com",
-      "name": "Jane Smith",
-      "role": "admin",
-      "createdAt": "2024-01-15T10:30:00Z"
-    }
-
-**Error Responses:**
-| Status | Code | Description |
-|--------|-------------------|---------------------------------|
-| 400 | INVALID_EMAIL | Email format is invalid |
-| 400 | NAME_TOO_SHORT | Name must be at least 2 chars |
-| 409 | EMAIL_EXISTS | Email already registered |
-| 403 | FORBIDDEN | Insufficient permissions |
-```
-
-### Example 4: Inline Comments (Good vs Bad)
-
-```rust
-// BAD: States the obvious
-// Increment counter by 1
-counter += 1;
-
-// GOOD: Explains why
-// Skip the first record as it's always the CSV header
-counter += 1;
-
-// BAD: Doesn't add value
-// Check if user is valid
-if user.is_valid() {
-
-// GOOD: Explains non-obvious business rule
-// Users created before 2020 don't have email verification enabled
-if user.is_valid() {
-```
-
-## Deliverables
-
-When creating documentation, deliver:
-
-1. **Complete Coverage**: All public APIs, configuration options, and workflows documented
-2. **Working Examples**: Code examples that compile and run successfully
-3. **Clear Structure**: Logical organization with table of contents for long docs
-4. **Up-to-date**: Documentation matches current code behavior
-5. **Accessible**: Written at appropriate level for target audience
-6. **Discoverable**: Proper file names, clear headings, good SEO keywords
-
-## Common Pitfalls to Avoid
-
-- Documenting implementation details that should be private
-- Writing docs that duplicate what code already expresses
-- Using vague language ("might", "usually", "sometimes")
-- Forgetting to update docs when code changes
-- Assuming reader knowledge without defining terms
-- Writing documentation in passive voice
-- Creating orphaned docs with no links to or from them
-- Skipping error cases and edge conditions
+- [ ] Every public API / endpoint / config option is documented.
+- [ ] Code examples actually compile and run (rustdoc doctests pass; snippets tested).
+- [ ] Errors, edge cases, and side effects are covered — not just the happy path.
+- [ ] Correct artifact + single Diátaxis mode; audience-appropriate depth.
+- [ ] No orphaned pages; new docs are linked from an index/README.
+- [ ] Docs match current code behavior (updated in the same change).

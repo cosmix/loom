@@ -35,656 +35,267 @@ triggers:
   - permissions
   - roles
   - access control
+  - IDOR
+  - BOLA
+  - object-level authorization
   - identity
   - MFA
   - 2FA
   - two-factor
   - multi-factor
   - TOTP
+  - WebAuthn
+  - passkey
   - API key
   - auth flow
   - PKCE
   - client credentials
+  - timing-safe
+  - argon2
 ---
 
 # Authentication & Authorization
 
-## Overview
-
-This skill covers comprehensive authentication and authorization strategies for modern applications. It includes identity verification (authentication), access control (authorization), and secure credential management across web, mobile, and API contexts.
+Authentication proves *who* you are; authorization decides *what* you may touch. **Authorization is where real bugs cluster** — broken object-level authorization (IDOR/BOLA) is the #1 API risk (OWASP API Security Top 10). Get object-ownership checks right before polishing token plumbing.
 
 ## When to Use
 
-**senior-software-engineer (Opus)** - DEFAULT for all auth work:
+Auth is security-critical; default to Opus (`loom-senior-software-engineer`) for design, token/session lifecycle, access-control model choice, and anything touching production credentials. Delegate to Sonnet only for well-scoped execution against an existing pattern: unit tests for auth code, boilerplate middleware, scaffolding from a concrete plan. Never ship auth code that a senior hasn't adversarially reviewed against the checklist below.
 
-- Designing auth architecture from scratch
-- Choosing between authentication strategies (JWT vs sessions, OAuth flows)
-- Evaluating trade-offs between different access control models
-- Planning token rotation, refresh strategies, or session lifecycle
-- Making cross-cutting security decisions
-- Implementing auth flows (login, logout, password reset)
-- Adding JWT or session handling to existing applications
-- Implementing RBAC/ABAC patterns
-- Integrating with OAuth2 providers
-- Adding MFA or API key authentication
-- Implementing password hashing or credential storage
-- Handling sensitive tokens (refresh tokens, API keys)
-- Implementing rate limiting or brute force protection
+Scope boundary: this skill is *mechanisms*. For vuln scanning use `loom-security-scan`; deep audit `loom-security-audit`; architecture threats `loom-threat-model`.
 
-**software-engineer (Sonnet)** - ONLY for:
+## Authorization: IDOR / BOLA (read this first)
 
-- Writing unit tests for existing auth code
-- Boilerplate auth middleware following established patterns
-- Scaffolding from a concrete, detailed plan
-- Adding MFA or step-up authentication
-- Dealing with PII, compliance, or regulatory requirements
-- ANY authentication/authorization implementation before production
-- Setting up identity providers (Keycloak, Auth0, Cognito)
-- Configuring SSO, SAML, or OIDC integrations
-- Scaling session storage (Redis clusters, distributed sessions)
-- Managing secrets, key rotation infrastructure
-- Setting up certificate management for JWT signing
-
-## Key Concepts
-
-### OAuth2 Flows
-
-**Authorization Code Flow** - Best for server-side applications:
+Every request that names an object (`/orders/123`, `?user_id=…`, a foreign key in a body) must verify the caller **owns or is granted** that specific object — authentication ("is logged in") is not authorization. The bug is invisible in tests that only use one account.
 
 ```typescript
-// 1. Redirect user to authorization server
-const authUrl = new URL("https://auth.example.com/authorize");
+// ❌ BOLA: any authenticated user reads any order by guessing the id
+app.get("/orders/:id", requireAuth, async (req, res) => {
+  const order = await db.orders.findUnique({ where: { id: req.params.id } });
+  res.json(order);
+});
+
+// ✅ Scope the query by the authenticated principal (and tenant)
+app.get("/orders/:id", requireAuth, async (req, res) => {
+  const order = await db.orders.findFirst({
+    where: { id: req.params.id, userId: req.user.id }, // ownership in the WHERE
+  });
+  if (!order) return res.status(404).end(); // 404 not 403: don't confirm existence
+  res.json(order);
+});
+```
+
+Rules: enforce ownership/tenant in the **query filter**, not a post-fetch `if`; check on writes and nested/batch operations too; never trust an `id`/`role`/`tenant` from the client body (mass-assignment → privilege escalation); default-deny. In multi-tenant systems scope every query by `tenant_id` — a missing tenant filter is cross-tenant data leakage.
+
+## OAuth2 Flows
+
+| Flow | Use for | Notes |
+| ---- | ------- | ----- |
+| Authorization Code + PKCE | Server apps AND SPAs/mobile | PKCE now recommended for **all** clients, not just public ones |
+| Client Credentials | Service-to-service | No user context; scope tightly |
+| Device Code | TVs/CLI with no browser | — |
+| ~~Implicit~~, ~~Password (ROPC)~~ | — | Deprecated by OAuth 2.1; do not use |
+
+```typescript
+// Authorization Code + PKCE
 authUrl.searchParams.set("response_type", "code");
 authUrl.searchParams.set("client_id", CLIENT_ID);
-authUrl.searchParams.set("redirect_uri", REDIRECT_URI);
+authUrl.searchParams.set("redirect_uri", REDIRECT_URI); // MUST match a registered exact URI
 authUrl.searchParams.set("scope", "openid profile email");
-authUrl.searchParams.set("state", generateSecureState());
+authUrl.searchParams.set("state", generateSecureState());     // CSRF: verify on callback
+authUrl.searchParams.set("code_challenge", challenge);        // SHA-256(verifier), base64url
+authUrl.searchParams.set("code_challenge_method", "S256");    // never "plain"
+// token exchange (server-side) includes: grant_type=authorization_code, code, code_verifier
+```
 
-// 2. Exchange code for tokens (server-side)
-async function exchangeCode(code: string): Promise<TokenResponse> {
-  const response = await fetch("https://auth.example.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "authorization_code",
-      code,
-      client_id: CLIENT_ID,
-      client_secret: CLIENT_SECRET,
-      redirect_uri: REDIRECT_URI,
-    }),
+⚠ Gotchas: validate `state` on the callback (CSRF); validate `redirect_uri` against an exact allowlist (open-redirect / code interception); `code_challenge_method=S256` only; keep `client_secret` server-side; for OIDC validate the ID token's `nonce`.
+
+## JWT
+
+```typescript
+function signToken(payload) {
+  return jwt.sign({ ...payload, iat: now() }, PRIVATE_KEY, {
+    algorithm: "RS256", expiresIn: "15m",
+    issuer: "https://api.example.com", audience: "https://app.example.com",
   });
-  return response.json();
 }
-```
-
-**PKCE Flow** - Required for public clients (SPAs, mobile apps):
-
-```typescript
-// Generate code verifier and challenge
-function generatePKCE(): { verifier: string; challenge: string } {
-  const verifier = base64UrlEncode(crypto.getRandomValues(new Uint8Array(32)));
-  const challenge = base64UrlEncode(
-    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)),
-  );
-  return { verifier, challenge };
-}
-
-// Include in authorization request
-authUrl.searchParams.set("code_challenge", challenge);
-authUrl.searchParams.set("code_challenge_method", "S256");
-
-// Include verifier in token exchange
-body.set("code_verifier", verifier);
-```
-
-**Client Credentials Flow** - For service-to-service communication:
-
-```typescript
-async function getServiceToken(): Promise<string> {
-  const response = await fetch("https://auth.example.com/token", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: `Basic ${btoa(`${CLIENT_ID}:${CLIENT_SECRET}`)}`,
-    },
-    body: new URLSearchParams({
-      grant_type: "client_credentials",
-      scope: "api:read api:write",
-    }),
-  });
-  return (await response.json()).access_token;
-}
-```
-
-### JWT Handling
-
-**Token Structure and Signing**:
-
-```typescript
-import jwt from "jsonwebtoken";
-
-interface TokenPayload {
-  sub: string; // Subject (user ID)
-  iss: string; // Issuer
-  aud: string; // Audience
-  exp: number; // Expiration
-  iat: number; // Issued at
-  roles: string[]; // Custom claims
-}
-
-// Sign with RS256 (asymmetric - recommended for production)
-function signToken(payload: Omit<TokenPayload, "iat" | "exp">): string {
-  return jwt.sign(
-    { ...payload, iat: Math.floor(Date.now() / 1000) },
-    PRIVATE_KEY,
-    {
-      algorithm: "RS256",
-      expiresIn: "15m",
-      issuer: "https://api.example.com",
-      audience: "https://app.example.com",
-    },
-  );
-}
-
-// Verify token
-function verifyToken(token: string): TokenPayload {
+function verifyToken(token) {
   return jwt.verify(token, PUBLIC_KEY, {
-    algorithms: ["RS256"],
+    algorithms: ["RS256"],            // PIN the algorithm — never read alg from the token
     issuer: "https://api.example.com",
     audience: "https://app.example.com",
-  }) as TokenPayload;
+  });
 }
 ```
 
-**Refresh Token Pattern**:
+### JWT footguns (each is a real CVE class)
+
+- **`alg: none`** — a token with no signature. Mitigation: pass an explicit `algorithms` allowlist to verify; never let the library pick from the header.
+- **RS256 → HS256 key confusion** — attacker flips `alg` to HS256 and signs with your *public* key (which HS256 treats as the HMAC secret). Mitigation: pin `algorithms: ["RS256"]`; never accept the token's declared alg.
+- **Missing claim validation** — always verify `exp`, `nbf`, `iss`, and `aud`. A valid signature only proves *who issued it*, not *for whom* — without `aud` a token minted for service A is replayable at service B.
+- **No revocation** — JWTs are valid until `exp`. For logout/ban, keep access tokens short (≤15 min) and gate refresh through a server-side allowlist (below), or maintain a denylist of `jti`.
+- **Sensitive data in payload** — JWT is signed, not encrypted; base64 is readable. No PII/secrets in claims.
+- **HS256 in distributed systems** — every verifier needs the shared secret, so any one service can mint tokens. Prefer RS256/ES256 (asymmetric) so verifiers hold only the public key.
+
+### Refresh token rotation (enables revocation)
 
 ```typescript
-interface TokenPair {
-  accessToken: string; // Short-lived (15 min)
-  refreshToken: string; // Long-lived (7 days), stored securely
-}
-
-async function refreshTokens(refreshToken: string): Promise<TokenPair> {
-  // Validate refresh token exists in database (allows revocation)
-  const storedToken = await db.refreshTokens.findUnique({
-    where: { token: hashToken(refreshToken) },
-  });
-
-  if (!storedToken || storedToken.expiresAt < new Date()) {
-    throw new UnauthorizedError("Invalid refresh token");
-  }
-
-  // Rotate refresh token (one-time use)
-  await db.refreshTokens.delete({ where: { id: storedToken.id } });
-
-  const newRefreshToken = generateSecureToken();
-  await db.refreshTokens.create({
-    data: {
-      token: hashToken(newRefreshToken),
-      userId: storedToken.userId,
-      expiresAt: addDays(new Date(), 7),
-    },
-  });
-
-  return {
-    accessToken: signToken({ sub: storedToken.userId, roles: [] }),
-    refreshToken: newRefreshToken,
-  };
+async function refreshTokens(refreshToken) {
+  const stored = await db.refreshTokens.findUnique({ where: { token: hashToken(refreshToken) } });
+  if (!stored || stored.expiresAt < new Date()) throw new UnauthorizedError();
+  // Reuse detection: if a rotated (deleted) token is presented again, treat as theft →
+  // revoke the whole token family for that user.
+  await db.refreshTokens.delete({ where: { id: stored.id } }); // one-time use
+  const next = generateSecureToken();
+  await db.refreshTokens.create({ data: { token: hashToken(next), userId: stored.userId, expiresAt: addDays(new Date(), 7) } });
+  return { accessToken: signToken({ sub: stored.userId }), refreshToken: next };
 }
 ```
 
-### RBAC (Role-Based Access Control)
+Store refresh tokens **hashed** (they are password-equivalent); short access (≤15 min), refresh ≤7 days; deliver refresh tokens in `httpOnly; Secure; SameSite` cookies, never in JS-readable storage.
+
+## RBAC / ABAC
+
+RBAC = permissions grouped into roles (simple, coarse). ABAC = policy functions over subject/resource/action/environment attributes (fine-grained, dynamic — needed for ownership, department, time-of-day, tenant).
 
 ```typescript
-// Define roles and permissions
-const ROLES = {
-  admin: [
-    "users:read",
-    "users:write",
-    "users:delete",
-    "reports:read",
-    "settings:write",
-  ],
-  manager: ["users:read", "users:write", "reports:read"],
-  user: ["users:read:own", "reports:read:own"],
-} as const;
-
-type Role = keyof typeof ROLES;
-type Permission = (typeof ROLES)[Role][number];
-
-// Middleware for permission checking
-function requirePermission(permission: Permission) {
-  return (req: Request, res: Response, next: NextFunction) => {
-    const userRoles: Role[] = req.user.roles;
-    const userPermissions = userRoles.flatMap((role) => ROLES[role]);
-
-    // Handle :own suffix for resource-level permissions
+// RBAC middleware — expand roles to permissions, honor ":own" resource scope
+function requirePermission(permission) {
+  return (req, res, next) => {
+    const perms = req.user.roles.flatMap((r) => ROLES[r]);
     const [resource, action, scope] = permission.split(":");
-    const basePermission = `${resource}:${action}`;
-
-    const hasPermission =
-      userPermissions.includes(permission) ||
-      (scope === "own" && userPermissions.includes(basePermission));
-
-    if (!hasPermission) {
-      return res.status(403).json({ error: "Forbidden" });
-    }
-    next();
+    const ok = perms.includes(permission) ||
+      (scope === "own" && perms.includes(`${resource}:${action}`));
+    if (!ok) return res.status(403).json({ error: "Forbidden" });
+    next(); // NOTE: ":own" still requires a per-object ownership check (see IDOR/BOLA)
   };
 }
-
-// Usage
-app.delete("/users/:id", requirePermission("users:delete"), deleteUser);
 ```
 
-### ABAC (Attribute-Based Access Control)
-
 ```typescript
-interface PolicyContext {
-  subject: { id: string; roles: string[]; department: string };
-  resource: { type: string; owner: string; classification: string };
-  action: string;
-  environment: { time: Date; ip: string };
-}
-
-type Policy = (ctx: PolicyContext) => boolean;
-
-const policies: Policy[] = [
-  // Users can access their own resources
+// ABAC — every policy must pass (default-deny)
+const policies = [
   (ctx) => ctx.resource.owner === ctx.subject.id,
-
-  // Managers can access resources in their department
-  (ctx) =>
-    ctx.subject.roles.includes("manager") &&
-    ctx.resource.department === ctx.subject.department,
-
-  // No access to confidential resources outside business hours
-  (ctx) => {
-    if (ctx.resource.classification === "confidential") {
-      const hour = ctx.environment.time.getHours();
-      return hour >= 9 && hour < 17;
-    }
-    return true;
-  },
+  (ctx) => ctx.subject.roles.includes("manager") && ctx.resource.department === ctx.subject.department,
 ];
-
-function checkAccess(ctx: PolicyContext): boolean {
-  return policies.every((policy) => policy(ctx));
-}
+const allow = (ctx) => policies.every((p) => p(ctx));
 ```
 
-### Session Management
+⚠ Middleware-level RBAC checks the *endpoint*; it does not prove the caller owns the *specific object* the route resolves to. Function-level auth without object-level auth is still BOLA.
+
+## Sessions
 
 ```typescript
-import { Redis } from "ioredis";
-
-const redis = new Redis();
-const SESSION_TTL = 24 * 60 * 60; // 24 hours
-
-interface Session {
-  userId: string;
-  createdAt: number;
-  lastActivity: number;
-  userAgent: string;
-  ip: string;
-}
-
-async function createSession(userId: string, req: Request): Promise<string> {
-  const sessionId = crypto.randomUUID();
-  const session: Session = {
-    userId,
-    createdAt: Date.now(),
-    lastActivity: Date.now(),
-    userAgent: req.headers["user-agent"] || "",
-    ip: req.ip,
-  };
-
-  await redis.setex(
-    `session:${sessionId}`,
-    SESSION_TTL,
-    JSON.stringify(session),
-  );
-  await redis.sadd(`user-sessions:${userId}`, sessionId);
-
+async function createSession(userId, req) {
+  const sessionId = crypto.randomUUID();          // ≥128 bits entropy from a CSPRNG
+  await redis.setex(`session:${sessionId}`, SESSION_TTL,
+    JSON.stringify({ userId, createdAt: Date.now(), ip: req.ip, ua: req.headers["user-agent"] }));
+  await redis.sadd(`user-sessions:${userId}`, sessionId); // index for bulk invalidation
   return sessionId;
 }
-
-async function validateSession(sessionId: string): Promise<Session | null> {
-  const data = await redis.get(`session:${sessionId}`);
-  if (!data) return null;
-
-  const session: Session = JSON.parse(data);
-
-  // Update last activity
-  session.lastActivity = Date.now();
-  await redis.setex(
-    `session:${sessionId}`,
-    SESSION_TTL,
-    JSON.stringify(session),
-  );
-
-  return session;
-}
-
-async function invalidateAllUserSessions(userId: string): Promise<void> {
-  const sessionIds = await redis.smembers(`user-sessions:${userId}`);
-  if (sessionIds.length > 0) {
-    await redis.del(...sessionIds.map((id) => `session:${id}`));
-    await redis.del(`user-sessions:${userId}`);
-  }
-}
 ```
 
-### API Key Strategies
+Cookie flags: `httpOnly; Secure; SameSite=Lax|Strict; Path=/`. **Regenerate the session ID on privilege change (login, step-up)** to kill session fixation. Absolute (24h) + idle (30m) timeouts. Clear ALL sessions on password change/reset. Store session IDs server-side hashed if they double as bearer tokens.
+
+## API Keys
 
 ```typescript
-interface ApiKey {
-  id: string;
-  prefix: string; // First 8 chars (for identification)
-  hash: string; // Hashed key
-  name: string;
-  scopes: string[];
-  rateLimit: number;
-  expiresAt: Date | null;
-  lastUsedAt: Date | null;
-}
-
-// Generate API key with prefix for easy identification
-function generateApiKey(): { key: string; prefix: string; hash: string } {
+function generateApiKey() {
   const key = `sk_live_${crypto.randomBytes(32).toString("base64url")}`;
-  return {
-    key,
-    prefix: key.substring(0, 16),
-    hash: crypto.createHash("sha256").update(key).digest("hex"),
-  };
-}
-
-// Validate and rate limit
-async function validateApiKey(key: string): Promise<ApiKey> {
-  const hash = crypto.createHash("sha256").update(key).digest("hex");
-  const apiKey = await db.apiKeys.findUnique({ where: { hash } });
-
-  if (!apiKey) throw new UnauthorizedError("Invalid API key");
-  if (apiKey.expiresAt && apiKey.expiresAt < new Date()) {
-    throw new UnauthorizedError("API key expired");
-  }
-
-  // Check rate limit
-  const rateLimitKey = `ratelimit:${apiKey.id}`;
-  const requests = await redis.incr(rateLimitKey);
-  if (requests === 1) await redis.expire(rateLimitKey, 60);
-  if (requests > apiKey.rateLimit) {
-    throw new TooManyRequestsError("Rate limit exceeded");
-  }
-
-  // Update last used (async, don't wait)
-  db.apiKeys.update({
-    where: { id: apiKey.id },
-    data: { lastUsedAt: new Date() },
-  });
-
-  return apiKey;
+  return { key, prefix: key.slice(0, 16), hash: sha256(key) }; // show key ONCE; store only the hash
 }
 ```
 
-### Password Hashing
+Store only the **hash** (fast SHA-256 is fine here — keys are high-entropy, unlike passwords). Prefix (`sk_live_…`) enables identification, log redaction, and secret-scanner detection. Attach scopes + per-key rate limit + expiry. Rotate without downtime by allowing N active keys per principal.
+
+## Password Hashing
 
 ```typescript
-import argon2 from "argon2";
-import bcrypt from "bcrypt";
+// argon2id — DEFAULT for new systems (memory-hard → resists GPU/ASIC cracking)
+await argon2.hash(password, {
+  type: argon2.argon2id,
+  memoryCost: 65536,  // 64 MiB (OWASP floor 19 MiB; raise until ~0.5–1s/hash on your hardware)
+  timeCost: 3,        // iterations
+  parallelism: 4,
+});
+// bcrypt — acceptable legacy; cost ≥ 12
+await bcrypt.hash(password, 12);
+```
 
-// Argon2 (recommended for new implementations)
-async function hashPasswordArgon2(password: string): Promise<string> {
-  return argon2.hash(password, {
-    type: argon2.argon2id, // Hybrid mode
-    memoryCost: 65536, // 64 MB
-    timeCost: 3, // 3 iterations
-    parallelism: 4, // 4 threads
-  });
-}
+⚠ Why these and not others:
 
-async function verifyPasswordArgon2(
-  hash: string,
-  password: string,
-): Promise<boolean> {
-  return argon2.verify(hash, password);
-}
+- **argon2id** blends argon2i (side-channel resistance) + argon2d (GPU resistance) — the recommended default. Tune params to your box, not blindly copy.
+- **bcrypt silently truncates input at 72 bytes** — long passwords / a pepper appended past 72 bytes are ignored. Pre-hash (`base64(sha256(pw))`) before bcrypt if you must exceed 72 bytes.
+- **Never** MD5/SHA-1/SHA-256/unsalted for passwords — GPUs do billions/sec; fast hashes are the wrong tool. Salt is built into argon2/bcrypt output; don't roll your own.
+- Verify with the library's `verify`/`compare` (constant-time). Never `hash(input) == stored`.
+- Peppers (an app-side secret added before hashing) belong in a KMS/HSM, not the DB.
 
-// bcrypt (widely supported)
-const BCRYPT_ROUNDS = 12;
+## MFA
 
-async function hashPasswordBcrypt(password: string): Promise<string> {
-  return bcrypt.hash(password, BCRYPT_ROUNDS);
-}
+```typescript
+// TOTP: verify with a ±1 step window for clock skew; store the secret encrypted at rest
+authenticator.verify({ token, secret }); // otplib default window handles skew
+```
 
-async function verifyPasswordBcrypt(
-  hash: string,
-  password: string,
-): Promise<boolean> {
-  return bcrypt.compare(password, hash);
-}
+Prefer **WebAuthn/passkeys** (phishing-resistant, bound to origin) > TOTP > SMS (SIM-swap/interceptable — backup only). Issue 10 single-use backup codes, stored hashed. Require MFA **re-verification** (step-up) for sensitive actions (password/email change, payouts). Rate-limit TOTP attempts (brute-force is 10⁶ codes).
 
-// Password validation
-function validatePasswordStrength(password: string): {
-  valid: boolean;
-  errors: string[];
-} {
-  const errors: string[] = [];
+## Timing-Safe Comparison
 
-  if (password.length < 12)
-    errors.push("Password must be at least 12 characters");
-  if (!/[A-Z]/.test(password))
-    errors.push("Password must contain uppercase letter");
-  if (!/[a-z]/.test(password))
-    errors.push("Password must contain lowercase letter");
-  if (!/[0-9]/.test(password)) errors.push("Password must contain number");
-  if (!/[^A-Za-z0-9]/.test(password))
-    errors.push("Password must contain special character");
+Comparing secrets with `==`/`===`/`strcmp` leaks length and prefix via early-exit timing — an attacker measures response time to recover a token/HMAC byte-by-byte. Use constant-time compare for **any** secret equality: session tokens, API keys, password-reset tokens, HMAC/webhook signatures, MFA codes.
 
-  return { valid: errors.length === 0, errors };
+```typescript
+import { timingSafeEqual } from "crypto";
+function safeEqual(a: string, b: string): boolean {
+  const ba = Buffer.from(a), bb = Buffer.from(b);
+  if (ba.length !== bb.length) return false; // length is not secret here; lengths already differ
+  return timingSafeEqual(ba, bb);
 }
 ```
 
-### MFA Implementation
+Equivalents: Python `hmac.compare_digest`, Go `crypto/subtle.ConstantTimeCompare`, Rust `subtle`/`ring`. For hashed values (argon2/bcrypt) the library's verify already handles this.
+
+## Security Checklist (verify before done)
+
+Credentials & tokens:
+
+- [ ] Passwords hashed with argon2id (or bcrypt cost ≥12); no fast/unsalted hashes; input ≤72 bytes for bcrypt or pre-hashed
+- [ ] Refresh tokens, API keys, MFA secrets, reset tokens stored **hashed/encrypted**, never plaintext
+- [ ] JWT verify pins `algorithms`; validates `exp`, `nbf`, `iss`, `aud`; RS256/ES256 (no `alg:none`, no HS256 in distributed systems)
+- [ ] No secrets in JWT claims, logs, URLs, or error messages
+- [ ] All secret/token/HMAC comparisons are constant-time
+
+Access control:
+
+- [ ] Every object access checks ownership/tenant in the query filter (no IDOR/BOLA); default-deny
+- [ ] Write/batch/nested operations authorized, not just reads
+- [ ] Client cannot set `id`/`role`/`tenant`/`isAdmin` via mass assignment
+- [ ] `:own`-scoped permissions still perform per-object checks
+
+Flows & sessions:
+
+- [ ] OAuth: `state` verified, `redirect_uri` allowlisted (exact), PKCE `S256`
+- [ ] Session ID regenerated on login/step-up; `httpOnly; Secure; SameSite` cookies; absolute + idle timeouts; all sessions cleared on password change
+- [ ] Rate limiting + lockout on auth endpoints; identical error for bad-user vs bad-password (no user enumeration); timing between the two paths comparable
+- [ ] MFA re-verified for sensitive actions; backup codes hashed & single-use
+- [ ] HTTPS/HSTS enforced on all auth endpoints; auth events logged for audit (without secrets)
+
+## Complete Login Flow (reference)
 
 ```typescript
-import { authenticator } from "otplib";
-import QRCode from "qrcode";
-
-// TOTP Setup
-async function setupTOTP(
-  userId: string,
-  email: string,
-): Promise<{ secret: string; qrCode: string }> {
-  const secret = authenticator.generateSecret();
-  const otpauth = authenticator.keyuri(email, "MyApp", secret);
-  const qrCode = await QRCode.toDataURL(otpauth);
-
-  // Store encrypted secret temporarily until verified
-  await redis.setex(`mfa-setup:${userId}`, 600, encrypt(secret));
-
-  return { secret, qrCode };
-}
-
-// Verify TOTP
-function verifyTOTP(secret: string, token: string): boolean {
-  return authenticator.verify({ token, secret });
-}
-
-// Backup codes generation
-function generateBackupCodes(): { codes: string[]; hashes: string[] } {
-  const codes = Array.from({ length: 10 }, () =>
-    crypto.randomBytes(4).toString("hex").toUpperCase(),
-  );
-  const hashes = codes.map((code) =>
-    crypto.createHash("sha256").update(code).digest("hex"),
-  );
-  return { codes, hashes };
-}
-
-// Complete MFA verification flow
-async function verifyMFA(userId: string, code: string): Promise<boolean> {
-  const user = await db.users.findUnique({
-    where: { id: userId },
-    include: { mfaSettings: true },
-  });
-
-  if (!user?.mfaSettings?.enabled) return true;
-
-  // Try TOTP first
-  if (verifyTOTP(decrypt(user.mfaSettings.totpSecret), code)) {
-    return true;
-  }
-
-  // Try backup code
-  const codeHash = crypto.createHash("sha256").update(code).digest("hex");
-  const backupCode = user.mfaSettings.backupCodes.find(
-    (bc) => bc.hash === codeHash && !bc.usedAt,
-  );
-
-  if (backupCode) {
-    await db.backupCodes.update({
-      where: { id: backupCode.id },
-      data: { usedAt: new Date() },
-    });
-    return true;
-  }
-
-  return false;
-}
-```
-
-## Security Considerations
-
-**Critical Security Checklist** (for senior-software-engineer review):
-
-1. **Credential Storage**
-   - Never log passwords, tokens, or API keys
-   - Hash passwords with Argon2id or bcrypt (12+ rounds)
-   - Hash API keys before database storage
-   - Encrypt refresh tokens and MFA secrets at rest
-   - Never return sensitive data in error messages
-
-2. **Token Security**
-   - Validate ALL token claims (signature, exp, iss, aud, nbf)
-   - Use RS256 or ES256 for JWT signatures (never HS256 in distributed systems)
-   - Set minimum token expiration (access: 15 min, refresh: 7 days max)
-   - Implement token revocation lists for logout
-   - Use PKCE for all public clients (SPAs, mobile)
-
-3. **Attack Prevention**
-   - Implement rate limiting on auth endpoints (5 attempts per 15 min)
-   - Account lockout after failed login attempts (10 failures = 30 min lockout)
-   - Use timing-safe comparison for password/token validation
-   - Prevent user enumeration (same error for invalid user/password)
-   - Validate redirect URIs against allowlist (prevent open redirects)
-
-4. **Session Security**
-   - Set httpOnly, secure, sameSite=strict on cookies
-   - Regenerate session ID after privilege escalation
-   - Implement absolute timeout (24h) and idle timeout (30min)
-   - Clear all sessions on password change
-   - Detect and alert on concurrent sessions from different IPs
-
-5. **Transport Security**
-   - Require HTTPS for all auth endpoints (HSTS header)
-   - Use secure WebSocket (wss://) for real-time auth
-   - Validate Content-Type headers (prevent CSRF)
-   - Set CORS policies restrictively
-
-6. **Compliance & Privacy**
-   - Log authentication events (login, logout, failures) for audit
-   - Implement PII data retention policies
-   - Support account deletion (GDPR right to erasure)
-   - Provide data export (GDPR right to portability)
-   - Consider SOC2, HIPAA, PCI-DSS requirements if applicable
-
-**Common Vulnerabilities to Avoid**:
-
-- Timing attacks (use crypto.timingSafeEqual)
-- JWT algorithm confusion (always specify allowed algorithms)
-- Session fixation (regenerate ID on login)
-- Insecure direct object references (verify resource ownership)
-- Mass assignment (validate all input fields)
-- Broken access control (default deny, explicit allow)
-
-## Best Practices
-
-1. **Token Security**
-   - Use short-lived access tokens (15 minutes or less)
-   - Store refresh tokens securely (httpOnly cookies, encrypted storage)
-   - Implement token rotation for refresh tokens
-   - Always validate token signature, expiration, issuer, and audience
-
-2. **Password Security**
-   - Use Argon2id for new implementations
-   - Never store plaintext passwords
-   - Implement account lockout after failed attempts
-   - Use secure password reset flows with time-limited tokens
-
-3. **Session Security**
-   - Regenerate session ID after authentication
-   - Implement absolute and idle timeouts
-   - Bind sessions to user agent/IP when appropriate
-   - Provide session management UI for users
-
-4. **API Key Security**
-   - Hash API keys before storage
-   - Use prefixes for key identification
-   - Implement scopes and rate limiting
-   - Allow key rotation without downtime
-
-5. **MFA Best Practices**
-   - Offer multiple MFA methods (TOTP, WebAuthn, SMS backup)
-   - Provide backup codes during setup
-   - Allow trusted device remembering
-   - Require MFA re-verification for sensitive actions
-
-## Examples
-
-### Complete Login Flow with MFA
-
-```typescript
-async function login(
-  email: string,
-  password: string,
-  mfaCode?: string,
-): Promise<AuthResponse> {
-  // Find user
+async function login(email, password, mfaCode) {
   const user = await db.users.findUnique({ where: { email } });
-  if (!user) throw new UnauthorizedError("Invalid credentials");
-
-  // Check account lockout
-  if (user.lockedUntil && user.lockedUntil > new Date()) {
-    throw new UnauthorizedError("Account temporarily locked");
+  // Run a dummy verify even when user is null so timing doesn't reveal account existence.
+  const ok = await verifyPasswordArgon2(user?.passwordHash ?? DUMMY_HASH, password);
+  if (!user || !ok) {
+    if (user) await incrementFailedAttempts(user.id);
+    throw new UnauthorizedError("Invalid credentials"); // same message either branch
   }
-
-  // Verify password
-  const validPassword = await verifyPasswordArgon2(user.passwordHash, password);
-  if (!validPassword) {
-    await incrementFailedAttempts(user.id);
-    throw new UnauthorizedError("Invalid credentials");
-  }
-
-  // Check MFA
+  if (user.lockedUntil && user.lockedUntil > new Date()) throw new UnauthorizedError("Account locked");
   if (user.mfaEnabled) {
-    if (!mfaCode) {
-      return { requiresMfa: true, mfaToken: generateMfaToken(user.id) };
-    }
-    const validMfa = await verifyMFA(user.id, mfaCode);
-    if (!validMfa) throw new UnauthorizedError("Invalid MFA code");
+    if (!mfaCode) return { requiresMfa: true, mfaToken: generateMfaToken(user.id) };
+    if (!(await verifyMFA(user.id, mfaCode))) throw new UnauthorizedError("Invalid MFA code");
   }
-
-  // Reset failed attempts
-  await db.users.update({
-    where: { id: user.id },
-    data: { failedAttempts: 0, lockedUntil: null },
-  });
-
-  // Generate tokens
-  const accessToken = signToken({ sub: user.id, roles: user.roles });
-  const refreshToken = await createRefreshToken(user.id);
-
-  return { accessToken, refreshToken };
+  await db.users.update({ where: { id: user.id }, data: { failedAttempts: 0, lockedUntil: null } });
+  return { accessToken: signToken({ sub: user.id, roles: user.roles }), refreshToken: await createRefreshToken(user.id) };
 }
 ```

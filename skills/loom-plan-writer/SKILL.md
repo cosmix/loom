@@ -44,7 +44,7 @@ This skill assumes CLAUDE.md is in context (it always is under loom). Where CLAU
 
 > ⚠️ A plan is a set of CLAIMS about code: "this function does X," "this enum's consumers are Y," "this field is safe to add," "this command type-checks." **Every claim is WRONG until the code confirms it.** The design spine is usually sound — defects hide in UNREAD seams. A file the plan NAMES is a promise to read; a described file is an unread file.
 
-Before any stage description, `acceptance`, `truths`, `artifacts`, or `wiring` asserts anything about a seam, OPEN that seam and read it to the bottom. Never assert from memory, a sibling repo, a plausible filename, or "it usually works this way." The repo's own incident/runbook docs are PRIMARY — read the one the user has open before encoding an external system's behavior from memory.
+Before any stage description, `acceptance`, `artifacts`, `wiring`, or `wiring_tests` asserts anything about a seam, OPEN that seam and read it to the bottom. Never assert from memory, a sibling repo, a plausible filename, or "it usually works this way." The repo's own incident/runbook docs are PRIMARY — read the one the user has open before encoding an external system's behavior from memory.
 
 **VERIFY-BEFORE-WRITE CHECKLIST — run for every stage:**
 
@@ -293,17 +293,19 @@ Every stage description MUST include the line **`Use parallel subagents and skil
 
 ## 6. Verification Fields (loom's core value)
 
-> ⛔ Every `standard` and `integration-verify` stage MUST define at least ONE of `truths`, `artifacts`, `wiring`. `loom plan verify` and `loom init` REJECT plans that don't. Knowledge stages are exempt.
+> ⛔ Every `standard` and `integration-verify` stage MUST define `acceptance` OR at least ONE goal-backward check (`artifacts`, `wiring`, `wiring_tests`, `dead_code_check`). `loom plan verify` and `loom init` REJECT plans with neither. Knowledge stages are exempt. (`truths` was REMOVED as a standalone field — behavioral commands now live in `acceptance`; a leftover `truths:` block is silently ignored.)
 
 These catch the "tests pass but the feature is never wired up" failure loom exists to prevent.
 
 | Field | Proves | Example |
 | ----- | ------ | ------- |
-| `truths` | Observable behavior works | `"myapp new-cmd --help"`, `"curl -f localhost:8080/health"` |
-| `artifacts` | Files exist with real implementation | `"src/feature.rs"`, `"tests/feature_test.rs"` |
-| `wiring` | Integration pattern present | `source` + `pattern` + `description` |
+| `acceptance` | Build/test/lint AND observable behavior | `"cargo test"`, `"myapp new-cmd --help"`, `"curl -f localhost:8080/health"` |
+| `artifacts` | Files exist with real implementation (non-empty, no stub text) | `"src/feature.rs"`, `"tests/feature_test.rs"` |
+| `wiring` | Static integration point present (regex in a file) | `source` + `pattern` + `description` |
+| `wiring_tests` | Runtime integration: command output matches criteria | `name` + `command` + `success_criteria` |
+| `dead_code_check` | No orphaned code | `command` + `fail_patterns` + `ignore_patterns` (see `/loom-dead-code-check`) |
 
-(`acceptance` runs build/test/lint commands; `truths`/`artifacts`/`wiring` are the goal-backward proof. A stage typically has both.)
+(`acceptance` runs build/test/lint + behavioral smoke commands; `artifacts`/`wiring`/`wiring_tests`/`dead_code_check` are the goal-backward proof that `loom check` runs. A stage typically has both.)
 
 **⛔ `wiring` MUST target the CONSUMER, not the PRODUCER.** A pattern that greps where a symbol is DECLARED / EXPORTED / IMPORTED passes while the feature is still unwired — the exact trap loom catches, committed inside the verification field. Grep the call / mount / render / dispatch site that proves the symbol is USED.
 
@@ -312,9 +314,9 @@ These catch the "tests pass but the feature is never wired up" failure loom exis
 | `pattern: "mod new_command"` | `source: "src/cli.rs", pattern: "NewCommand =>"` (dispatch arm) |
 | `pattern: "export function foo"` | the render / mount / route-registration site |
 
-Pair every `wiring` entry with a behavioral `truths` command where one exists — observable behavior is the strongest wiring proof.
+Pair every `wiring` entry with a behavioral `acceptance` command (or a `wiring_tests` entry) where one exists — observable behavior is the strongest wiring proof.
 
-**Realizability — a prescribed check must be able to PROVE what it claims.** Grounding claims about code (Section 1) is half the job; the tests/acceptance the plan PRESCRIBES must themselves be grounded. A green check that verifies nothing is worse than none — it reads as "covered." Every `acceptance`/`truths` command, and every test a stage description prescribes, must clear four gates:
+**Realizability — a prescribed check must be able to PROVE what it claims.** Grounding claims about code (Section 1) is half the job; the tests/acceptance the plan PRESCRIBES must themselves be grounded. A green check that verifies nothing is worse than none — it reads as "covered." Every `acceptance`/`wiring_tests` command, and every test a stage description prescribes, must clear four gates:
 
 1. **Expressible** — the existing harness can already do this. "Stub the response," "intercept the request," "seed this store" are NOT free — confirm the suite already has that mechanism, or the plan must add it as explicit work.
 2. **Executes the code under test** — the runtime that runs the check actually loads the code being asserted. A value baked only by the prod bundler is undefined under the unit runner; an inline script the module graph never imports is never executed; a symbol defined for one package is absent in another that also runs the file. If the code lives outside the harness's normal load path, the "test" is a grep — say so and add a real one.
@@ -343,29 +345,29 @@ loom:
         What this stage accomplishes.
         Use parallel subagents and skills to maximize performance.
       dependencies: []             # array of stage IDs
-      acceptance:                  # build/test/lint commands (exit 0)
+      acceptance:                  # build/test/lint + behavioral (exit 0)
         - "cargo test"
+        - "myapp --help"           # behavioral smoke (was `truths`)
       files: ["src/**/*.rs"]       # optional scope
       working_dir: "."             # REQUIRED
-      # REQUIRED: at least ONE of truths / artifacts / wiring (standard + IV)
-      truths: ["myapp --help"]
+      # REQUIRED: acceptance OR ≥1 goal-backward check (artifacts/wiring/wiring_tests/dead_code_check) — standard + IV
       artifacts: ["src/feature.rs"]
       wiring:
         - source: "src/cli.rs"
-          pattern: "NewCommand =>"
+          pattern: "NewCommand =>"   # CONSUMER (dispatch arm), not `mod new_command`
           description: "Command registered in CLI dispatch"
 ```
 
 <!-- END loom METADATA -->
 ````
 
-> ⛔ **NEVER put triple backticks inside a YAML `description`** — breaks the parser and causes confusing errors ("missing truths/artifacts" when they exist). Show code in descriptions as plain indented text.
+> ⛔ **NEVER put triple backticks inside a YAML `description`** — breaks the parser and causes confusing errors ("missing acceptance/artifacts" when they exist). Show code in descriptions as plain indented text.
 
 ### Shell escaping (most acceptance failures are quoting, not bad commands)
 
 The command may be valid shell, but YAML consumes characters before the shell sees them. Rules:
 
-1. **Always quote** acceptance/truths values.
+1. **Always quote** acceptance values.
 2. **Default to YAML single quotes** for anything with double quotes, backslashes, or regex — inside YAML single quotes NOTHING is special (only `''` = one `'`).
 3. **Never nest `sh -c`** — loom already wraps commands.
 4. **Prefer simple, robust commands** — `rg -q`/`rg -qF` over pipes; `-F`/`-qF` for fixed strings.
@@ -383,17 +385,18 @@ The command may be valid shell, but YAML consumes characters before the shell se
 
 ### working_dir (REQUIRED on every stage)
 
-`EXECUTION_PATH = WORKTREE_ROOT / working_dir`. ALL paths — `acceptance`, `truths`, `artifacts`, `wiring.source` — resolve relative to it. Imagine you `cd`-ed into `EXECUTION_PATH` first.
+`EXECUTION_PATH = WORKTREE_ROOT / working_dir`. ALL paths — `acceptance`, `artifacts`, `wiring.source` — resolve relative to it. Imagine you `cd`-ed into `EXECUTION_PATH` first.
 
 **Pre-flight (answer before writing any acceptance criterion):** (Q1) what is `working_dir`? (Q2) do the build files exist at that path — if `working_dir: "loom"`, `Cargo.toml` must be at `loom/`? (Q3) are all my paths relative to `working_dir`, not repo root?
 
 ```yaml
 - id: build-check
   working_dir: "loom"          # Cargo.toml lives in loom/
-  acceptance: ["cargo test"]
+  acceptance:
+    - "cargo test"
+    - "./target/debug/myapp --help"    # ✅  (or bare "myapp --help" if on PATH)
   artifacts: ["src/feature.rs"]        # ✅ resolves to loom/src/feature.rs
   # ❌ "loom/src/feature.rs" would become loom/loom/src/feature.rs
-  truths: ["./target/debug/myapp --help"]   # ✅  (or bare "myapp --help" if on PATH)
 ```
 
 Common symptoms: `could not find Cargo.toml` → `working_dir` wrong; double-path `loom/loom/...` → drop the redundant prefix; `rg` finds nothing → searching from the wrong dir. **Mixed directories? Separate stages — one working_dir each.**
@@ -560,14 +563,19 @@ loom:
         - "cargo test"
         - "cargo clippy -- -D warnings"
         - "cargo build"
+        - "myapp --help"           # functional smoke (was `truths`)
         # ADD functional acceptance for YOUR feature, e.g.:
         # - 'myapp --help | rg -q "new-command"'
       working_dir: "."
-      truths: ["myapp --help"]
       wiring:
         - source: "src/main.rs"
-          pattern: "feature_a"
-          description: "Feature A wired into main"
+          pattern: "feature_a::run"        # CONSUMER (call site), not just `mod feature_a`
+          description: "Feature A invoked from main"
+      wiring_tests:
+        - name: "feature A reachable"
+          command: "myapp feature-a --help"
+          success_criteria:
+            exit_code: 0
 
     - id: knowledge-distill
       name: "Knowledge Distillation"
@@ -643,7 +651,7 @@ description: |
 □ Every seam the plan asserts about is READ (Section 1 checklist passed)
 □ knowledge-bootstrap first · integration-verify second-to-last · knowledge-distill last
 □ Every stage: model + reasoning_effort: xhigh + stage_type + working_dir set
-□ Standard/IV stages: ≥1 of truths/artifacts/wiring; wiring targets the CONSUMER
+□ Standard/IV stages: acceptance OR ≥1 goal-backward check (artifacts/wiring/wiring_tests/dead_code_check); wiring targets the CONSUMER; no leftover `truths:` block
 □ Every prescribed check is realizable (expressible · executes the code · right strength · selected)
 □ Sonnet stages are SMALL + detailed (paths/signatures/patterns/wiring) or decomposed
 □ No file overlap between subagents; shared types in a foundation step

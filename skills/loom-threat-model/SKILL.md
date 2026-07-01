@@ -13,6 +13,7 @@ triggers:
   - STRIDE
   - DREAD
   - PASTA
+  - LINDDUN
   - attack tree
   - attack surface
   - trust boundary
@@ -26,426 +27,147 @@ triggers:
   - mitigation
   - security architecture
   - attack scenario
-  - vulnerability assessment
-  - security posture
   - defense in depth
 ---
 
 # Threat Modeling
 
-## Overview
+Structured identification of what can go wrong in a *design*, before code exists. Answers four questions (Shostack): **What are we building? What can go wrong? What are we doing about it? Did we do a good job?** This skill is architecture-time analysis — for finding vulns in existing code use `loom-security-scan`/`loom-security-audit`; for auth mechanism details use `loom-auth`.
 
-This skill provides structured methodologies for identifying, analyzing, and mitigating security threats in system designs. Use it when designing new systems, reviewing existing architectures, or assessing security posture.
+## When
 
-## When to Use Threat Modeling
-
-- **New system design**: Before implementation, identify security requirements
-- **Architecture review**: Evaluate existing systems for security gaps
-- **Feature additions**: Assess security impact of new functionality
-- **Third-party integrations**: Evaluate risks of external dependencies
-- **Compliance requirements**: Document security controls for audits
+New system design, architecture review, significant feature or trust-boundary change, third-party integration, or compliance evidence. Re-run when the architecture changes — a threat model is a living document, not a one-time deliverable.
 
 ## Methodologies
 
-### STRIDE
+### STRIDE — the default; apply *per element* of the DFD
 
-Categorize threats by type:
+The core technique isn't "brainstorm STRIDE" — it's walking each DFD element and each data flow crossing a trust boundary, asking which STRIDE categories apply to *that* element.
 
-| Threat                     | Description                           | Security Property |
-| -------------------------- | ------------------------------------- | ----------------- |
-| **S**poofing               | Impersonating users or systems        | Authentication    |
-| **T**ampering              | Modifying data or code                | Integrity         |
-| **R**epudiation            | Denying actions occurred              | Non-repudiation   |
-| **I**nformation Disclosure | Exposing data to unauthorized parties | Confidentiality   |
-| **D**enial of Service      | Making system unavailable             | Availability      |
-| **E**levation of Privilege | Gaining unauthorized access           | Authorization     |
+| Threat | Violates | Typical control |
+| ------ | -------- | --------------- |
+| **S**poofing | Authentication | Strong authn, mTLS, signed tokens |
+| **T**ampering | Integrity | Signatures, HMAC, input validation, WORM logs |
+| **R**epudiation | Non-repudiation | Audit logs, signed receipts |
+| **I**nformation disclosure | Confidentiality | Encryption, least-privilege, error hygiene |
+| **D**enial of service | Availability | Rate limits, quotas, timeouts, autoscale |
+| **E**levation of privilege | Authorization | AuthZ checks, sandboxing, least privilege |
 
-### DREAD (Risk Scoring)
+Element→likely-STRIDE heuristic: external entities → S, R; processes → all six; data flows → T, I, D; data stores → T, I, D (and R if logs).
 
-Score each threat (1-10) across five dimensions:
+### DREAD — risk scoring (use with caution)
 
-| Factor              | Question                            |
-| ------------------- | ----------------------------------- |
-| **D**amage          | How severe is the impact?           |
-| **R**eproducibility | How easily can it be reproduced?    |
-| **E**xploitability  | How much skill/resources needed?    |
-| **A**ffected Users  | How many users impacted?            |
-| **D**iscoverability | How easy to find the vulnerability? |
+Score Damage, Reproducibility, Exploitability, Affected users, Discoverability (1–10); risk = mean. ⚠ DREAD is widely criticized as **subjective and inconsistent** across raters (Microsoft dropped it). Prefer a simple **Likelihood × Impact** matrix, or **CVSS** for concrete vulns, when you need defensible numbers. Whatever the scale, rank threats to drive mitigation order.
 
-**Risk Score** = (D + R + E + A + D) / 5
+### PASTA / LINDDUN
 
-- **High Risk**: 7-10 (immediate action)
-- **Medium Risk**: 4-6 (planned remediation)
-- **Low Risk**: 1-3 (accept or monitor)
+- **PASTA** — 7-stage, risk-centric, business-objective-driven (objectives → tech scope → decomposition → threat analysis → vuln analysis → attack modeling → risk & mitigation). Use for high-stakes systems needing business alignment.
+- **LINDDUN** — the STRIDE-equivalent for **privacy** threats (Linkability, Identifiability, Non-repudiation, Detectability, Disclosure, Unawareness, Non-compliance). Reach for it on GDPR/PII-heavy systems.
 
-### PASTA (Process for Attack Simulation and Threat Analysis)
+## Process
 
-Seven-stage process:
+### 1. Scope & assets
 
-1. **Define Objectives**: Business goals, compliance requirements
-2. **Define Technical Scope**: Architecture, technologies, data flows
-3. **Application Decomposition**: Components, trust boundaries, entry points
-4. **Threat Analysis**: Threat intelligence, attack patterns
-5. **Vulnerability Analysis**: Weaknesses, existing controls
-6. **Attack Modeling**: Attack trees, likely scenarios
-7. **Risk & Impact Analysis**: Prioritized mitigations
+List assets and *why an attacker wants them* — this drives everything.
 
-## Threat Modeling Process
+| Asset | Classification | Impact if compromised |
+| ----- | -------------- | --------------------- |
+| Credentials/secrets | Confidential | Account/system takeover |
+| Payment data | PCI-DSS | Financial + compliance loss |
+| PII | GDPR | Privacy breach, fines |
 
-### Step 1: Define Scope and Assets
+### 2. DFD with trust boundaries (the load-bearing step)
 
-```markdown
-## System Overview
-
-- **Name**: [System name]
-- **Purpose**: [What it does]
-- **Sensitivity**: [Data classification]
-
-## Assets to Protect
-
-| Asset            | Classification | Impact if Compromised      |
-| ---------------- | -------------- | -------------------------- |
-| User credentials | Confidential   | Account takeover           |
-| Payment data     | PCI-DSS        | Financial loss, compliance |
-| Personal data    | PII/GDPR       | Privacy breach, fines      |
-```
-
-### Step 2: Create Data Flow Diagram
-
-Identify:
-
-- **External entities**: Users, third-party services
-- **Processes**: Application components, services
-- **Data stores**: Databases, caches, file systems
-- **Data flows**: How data moves between components
-- **Trust boundaries**: Where privilege levels change
+**Threats concentrate at trust boundaries** — every arrow crossing one is where authn/authz/validation must live. Mark: external entities, processes, data stores, data flows, and boundaries (internet↔DMZ, DMZ↔internal, tenant↔tenant, host↔container, user↔kernel).
 
 ```text
-┌─────────────────────────────────────────────────────────────┐
-│                     TRUST BOUNDARY: Internet                │
-│  ┌──────────┐                                               │
-│  │  User    │                                               │
-│  │ Browser  │                                               │
-│  └────┬─────┘                                               │
-│       │ HTTPS                                               │
-├───────┼─────────────────────────────────────────────────────┤
-│       │            TRUST BOUNDARY: DMZ                      │
-│       ▼                                                     │
-│  ┌──────────┐     ┌──────────┐     ┌──────────┐            │
-│  │   Load   │────▶│   API    │────▶│  Auth    │            │
-│  │ Balancer │     │ Gateway  │     │ Service  │            │
-│  └──────────┘     └────┬─────┘     └──────────┘            │
-│                        │                                    │
-├────────────────────────┼────────────────────────────────────┤
-│                        │   TRUST BOUNDARY: Internal         │
-│                        ▼                                    │
-│  ┌──────────┐     ┌──────────┐     ┌──────────┐            │
-│  │ App      │────▶│ Database │     │ Cache    │            │
-│  │ Server   │     │ (PG)     │     │ (Redis)  │            │
-│  └──────────┘     └──────────┘     └──────────┘            │
-└─────────────────────────────────────────────────────────────┘
+[User] --HTTPS--> ║ DMZ ║ [API Gateway] --> ║ Internal ║ [App] --> [DB]
+                  ↑ boundary: authn, TLS       ↑ boundary: authz, network policy, mTLS
 ```
 
-### Step 3: Identify Threats (STRIDE per Element)
+A boundary you didn't draw is a check you won't add. Enumerate every flow: source, destination, protocol, data classification, boundary crossed.
+
+### 3. Enumerate threats (STRIDE per element)
 
 ```markdown
-## Threat Analysis
-
 ### API Gateway
-
-| STRIDE | Threat                     | Likelihood | Impact   |
-| ------ | -------------------------- | ---------- | -------- |
-| S      | Forged JWT tokens          | Medium     | High     |
-| T      | Request body manipulation  | Low        | Medium   |
-| R      | Missing audit logs         | Medium     | Medium   |
-| I      | Verbose error messages     | High       | Medium   |
-| D      | Rate limiting bypass       | Medium     | High     |
-| E      | IDOR to access other users | Medium     | Critical |
-
-### Database
-
-| STRIDE | Threat                        | Likelihood | Impact   |
-| ------ | ----------------------------- | ---------- | -------- |
-| S      | Connection impersonation      | Low        | Critical |
-| T      | SQL injection                 | Medium     | Critical |
-| I      | Unencrypted backups           | Medium     | High     |
-| D      | Resource exhaustion           | Low        | High     |
-| E      | Privilege escalation via SQLi | Medium     | Critical |
+| STRIDE | Threat | Likelihood | Impact |
+| ------ | ------ | ---------- | ------ |
+| S | Forged/`alg:none` JWT | Med | High |
+| I | Verbose error leaks stack/version | High | Med |
+| D | Rate-limit bypass | Med | High |
+| E | BOLA/IDOR → other users' objects | High | Critical |
 ```
 
-### Step 4: Build Attack Trees
+### 4. Attack trees (for high-value goals)
+
+Decompose a goal into OR/AND paths; the cheapest leaf is the likely attack and shows where to spend defense.
 
 ```text
-                    ┌─────────────────────┐
-                    │ Steal User Data     │
-                    │ (Root Goal)         │
-                    └─────────┬───────────┘
-                              │
-            ┌─────────────────┼─────────────────┐
-            │                 │                 │
-            ▼                 ▼                 ▼
-    ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
-    │ Compromise    │ │ Exploit App   │ │ Social        │
-    │ Credentials   │ │ Vulnerability │ │ Engineering   │
-    └───────┬───────┘ └───────┬───────┘ └───────┬───────┘
-            │                 │                 │
-    ┌───────┴───────┐ ┌───────┴───────┐ ┌───────┴───────┐
-    │               │ │               │ │               │
-    ▼               ▼ ▼               ▼ ▼               ▼
-┌────────┐   ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐
-│Phishing│   │Brute   │ │SQL     │ │IDOR    │ │Pretexting│
-│        │   │Force   │ │Inject  │ │        │ │Support  │
-└────────┘   └────────┘ └────────┘ └────────┘ └────────┘
-[L:H,I:H]    [L:M,I:H]  [L:M,I:C]  [L:H,I:H]  [L:M,I:H]
+             Steal User Data (goal)
+        ┌──────────┼──────────┐        (OR)
+   Compromise    Exploit App   Social
+   Credentials   Vulnerability Engineering
+    ┌───┴───┐     ┌───┴───┐
+ Phishing Brute  SQLi   BOLA
+[L:H I:H][L:M]  [L:M I:C][L:H I:H]
 ```
 
-### Step 5: Define Mitigations
+### 5. Mitigations — track to closure
 
 ```markdown
-## Mitigation Plan
-
-| Threat         | Mitigation                              | Priority | Status      |
-| -------------- | --------------------------------------- | -------- | ----------- |
-| SQL Injection  | Parameterized queries, input validation | P0       | In Progress |
-| IDOR           | Authorization checks on all endpoints   | P0       | Not Started |
-| JWT Forgery    | RS256 signing, short expiry, rotation   | P1       | Done        |
-| Brute Force    | Rate limiting, account lockout, MFA     | P1       | Partial     |
-| Verbose Errors | Generic error messages in prod          | P2       | Not Started |
+| Threat | Mitigation | Priority | Status |
+| ------ | ---------- | -------- | ------ |
+| BOLA/IDOR | Object-level ownership checks (loom-auth) | P0 | Not started |
+| SQLi | Parameterized queries | P0 | In progress |
+| JWT forgery | Pin alg, validate aud/iss/exp (loom-auth) | P1 | Done |
 ```
+
+Every high/critical threat needs a mitigation, an accepted-risk decision (with owner + justification), or a transfer. Silence = unmanaged risk.
+
+## High-Signal Threats & Their Real Controls
+
+- **BOLA / IDOR (broken object-level authz)** — #1 API threat: any object accessed by id must verify caller ownership/tenant, not just "logged in". Details + wrong-vs-right in `loom-auth`.
+- **SSRF** — attacker makes your server fetch an internal URL (cloud metadata `169.254.169.254`, `localhost`, internal services). **Defense is an allowlist of permitted hosts/schemes — never a blocklist.** Blocklists are bypassed by DNS-rebinding, HTTP redirects, IPv6 (`[::1]`), and decimal/octal/hex-encoded IPs (`http://2130706433/`). Also disable unused URL schemes and block redirects to non-allowlisted hosts.
+- **Injection (SQL/NoSQL/command/LDAP/XXE)** — parameterize/allowlist; treat every trust-boundary input as hostile.
+- **Mass assignment** — client sets fields it shouldn't (`role`, `isAdmin`, `tenant_id`); bind explicit allowlists.
+- **Cloud metadata & IAM escalation** — SSRF-to-credentials via the metadata endpoint; enforce IMDSv2, least-privilege roles.
+- **Supply chain** — dependency confusion, typosquat, unsigned artifacts (see `loom-dependency-scan`).
+
+## Component Quick-Reference
+
+| Component | Watch for |
+| --------- | --------- |
+| Web app | XSS, CSRF, clickjacking, open redirect, session fixation |
+| API | Broken authn/authz (BOLA/BFLA), mass assignment, rate-limit bypass, injection |
+| Database | SQLi, privilege escalation, unencrypted data/backups |
+| Auth | Credential stuffing, session fixation, token leakage, MFA bypass |
+| File upload | Malware, path traversal, RCE via content, storage exhaustion |
+| Cloud/infra | Public buckets, IAM escalation, SSRF→metadata, exposed control plane |
+| Containers/K8s | Vulnerable base images, secrets in env/layers, privileged pods, RBAC gaps, container escape |
+| 3rd-party/webhooks | API-key exposure, webhook spoofing (verify HMAC), supply-chain |
+| ML systems | Data poisoning, evasion/adversarial input, model inversion/extraction, PII leakage in outputs |
 
 ## Threat Model Document Template
 
 ```markdown
-# Threat Model: [System Name]
-
-**Version**: 1.0
-**Date**: YYYY-MM-DD
-**Author**: [Name]
-**Reviewers**: [Names]
-
-## 1. Executive Summary
-
-[High-level findings and recommendations]
-
-## 2. System Description
-
-### 2.1 Purpose
-
-### 2.2 Architecture Overview
-
-### 2.3 Data Classification
-
-### 2.4 Trust Boundaries
-
-## 3. Assets
-
-| Asset | Classification | Owner |
-| ----- | -------------- | ----- |
-
-## 4. Threat Analysis
-
-### 4.1 Data Flow Diagram
-
-### 4.2 STRIDE Analysis by Component
-
-### 4.3 Attack Trees
-
-## 5. Risk Assessment
-
-| Threat | DREAD Score | Risk Level |
-| ------ | ----------- | ---------- |
-
-## 6. Mitigations
-
-| Threat | Mitigation | Owner | Timeline |
-| ------ | ---------- | ----- | -------- |
-
-## 7. Residual Risks
-
-[Accepted risks and justification]
-
-## 8. Review Schedule
-
-[When to revisit this threat model]
+# Threat Model: <System>   (v1.0, YYYY-MM-DD, author, reviewers)
+1. Executive summary — key risks & recommendations
+2. System description — purpose, architecture, data classification, trust boundaries
+3. Assets — table (asset, classification, owner)
+4. Analysis — DFD, STRIDE-per-component, attack trees
+5. Risk assessment — table (threat, likelihood×impact or CVSS, level)
+6. Mitigations — table (threat, mitigation, owner, timeline, status)
+7. Residual risks — accepted risks + justification
+8. Review schedule — trigger conditions to revisit
 ```
 
-## Domain-Specific Threat Modeling
+## Verification Checklist
 
-### API Threat Modeling
-
-Focus areas for REST, GraphQL, and gRPC APIs:
-
-#### Authentication & Authorization
-
-- Token-based auth vulnerabilities (JWT, OAuth 2.0)
-- Broken object-level authorization (BOLA/IDOR)
-- Broken function-level authorization
-- API key leakage and rotation issues
-
-#### Data Exposure
-
-- Excessive data exposure in responses
-- Mass assignment vulnerabilities
-- GraphQL introspection in production
-- Verbose error messages leaking architecture
-
-#### Rate Limiting & Abuse
-
-- Missing or bypassable rate limits
-- Resource exhaustion (large payloads, deep queries)
-- Batch request abuse
-- Pagination vulnerabilities
-
-#### Input Validation
-
-- Injection attacks (SQL, NoSQL, command, LDAP)
-- XML external entity (XXE) attacks
-- Server-side request forgery (SSRF)
-- GraphQL query complexity attacks
-
-#### API-Specific Mitigations
-
-- Schema validation (OpenAPI, GraphQL schema)
-- Query depth/complexity limiting
-- Field-level authorization
-- API gateway security policies
-- Request signing and replay protection
-
-### Infrastructure Threat Modeling
-
-Focus areas for cloud, containers, and orchestration:
-
-#### Cloud Services
-
-- Misconfigured S3 buckets/blob storage (public access)
-- IAM privilege escalation paths
-- Metadata service abuse (SSRF to credentials)
-- Unencrypted storage/transit
-- Network security group misconfigurations
-
-#### Container Security
-
-- Vulnerable base images
-- Secrets in environment variables/layers
-- Privileged containers
-- Container escape vulnerabilities
-- Registry security (image signing, scanning)
-
-#### Orchestration (Kubernetes, Docker Swarm)
-
-- Exposed API servers (unauthenticated kubelet)
-- RBAC misconfigurations
-- Pod security policies/standards violations
-- Network policy gaps
-- Secrets management (etcd encryption, external vaults)
-
-#### CI/CD Pipeline
-
-- Compromised build agents
-- Dependency confusion/substitution
-- Secrets in version control
-- Unsigned artifacts
-- Pipeline injection attacks
-
-#### Infrastructure Mitigations
-
-- Infrastructure as Code security scanning
-- Least privilege IAM policies
-- Network segmentation (VPCs, subnets, security groups)
-- Immutable infrastructure patterns
-- Runtime security monitoring (Falco, OSSEC)
-
-### ML Model Threat Modeling
-
-Focus areas for machine learning systems:
-
-#### Adversarial Attacks
-
-- Evasion attacks (adversarial examples at inference)
-- Poisoning attacks (training data manipulation)
-- Model inversion (extracting training data)
-- Membership inference (detecting if data was in training set)
-
-#### Model Theft
-
-- Model extraction via API queries
-- Intellectual property leakage
-- Hyperparameter discovery
-- Architecture reverse engineering
-
-#### Data Privacy
-
-- Training data exposure
-- PII leakage in model outputs
-- Differential privacy violations
-- GDPR right-to-explanation challenges
-
-#### Deployment Risks
-
-- Model serving API vulnerabilities
-- Feature store poisoning
-- Model registry security
-- A/B testing exploitation
-
-#### ML-Specific Mitigations
-
-- Adversarial training and robustness testing
-- Input sanitization and anomaly detection
-- Model watermarking
-- Differential privacy techniques
-- Explainability constraints
-- Rate limiting on prediction APIs
-- Model versioning and rollback capabilities
-
-## Quick Reference: Common Threats by Component
-
-### Web Application
-
-- XSS, CSRF, clickjacking
-- Session hijacking
-- Insecure direct object references
-- Open redirects
-
-### API
-
-- Broken authentication/authorization
-- Mass assignment
-- Rate limiting bypass
-- Injection attacks
-
-### Database
-
-- SQL injection
-- Privilege escalation
-- Unencrypted data
-- Backup exposure
-
-### Authentication
-
-- Credential stuffing
-- Session fixation
-- Token leakage
-- MFA bypass
-
-### File Upload
-
-- Malware upload
-- Path traversal
-- Remote code execution
-- Storage exhaustion
-
-### Third-Party Integrations
-
-- API key exposure
-- Webhook spoofing
-- Supply chain attacks
-- Data leakage
-
-## Best Practices
-
-1. **Iterate**: Update threat models as systems evolve
-2. **Collaborate**: Include developers, ops, and security
-3. **Prioritize**: Focus on high-impact, likely threats first
-4. **Document**: Maintain living threat model documents
-5. **Validate**: Test mitigations through security testing
-6. **Automate**: Integrate threat modeling into SDLC
+- [ ] DFD drawn with **every trust boundary** marked; each boundary-crossing flow enumerated
+- [ ] STRIDE applied **per element**, not brainstormed globally
+- [ ] Assets tied to attacker motivation and classification
+- [ ] Every high/critical threat has a mitigation, accepted-risk, or transfer with an owner
+- [ ] BOLA/IDOR checked on every object-addressing endpoint; SSRF defenses are allowlist-based
+- [ ] Risk ranking uses a defensible scale (Likelihood×Impact or CVSS, not raw DREAD gut-feel)
+- [ ] Model versioned and has a re-review trigger; privacy threats covered (LINDDUN) if PII-heavy

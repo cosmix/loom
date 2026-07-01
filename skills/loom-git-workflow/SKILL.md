@@ -36,345 +36,138 @@ triggers:
   - pull
   - fetch
   - clone
+  - rerere
+  - reflog
+  - bisect
 ---
 
 # Git Workflow
 
 ## Overview
 
-This skill provides guidance on Git best practices, branching strategies, commit conventions, and collaborative workflows. It helps maintain a clean and navigable version control history.
+Git operations with an eye to a clean, bisectable history and safe collaboration. Canonical home for **commit hygiene and conventional commits** (referenced by `/loom-code-review` and `/loom-refactoring`).
 
-## Instructions
+## The golden rule
 
-### 1. Branch Management
+**Never rewrite history that others have based work on.** `rebase`, `commit --amend`, `reset --hard`, and `push --force` on a shared/public branch orphan collaborators' commits and force painful recovery. Rewrite freely on your *own* un-pushed / unshared branch; treat anything pushed to a shared branch as immutable.
 
-- Follow consistent naming conventions (feature/, fix/, hotfix/, release/)
-- Create branches from appropriate base (main, develop, release branch)
-- Keep branches focused and short-lived
-- Delete merged branches promptly
-- Use descriptive names with issue references
+- Force-push only your own feature branch, and prefer `--force-with-lease` (aborts if someone else pushed since your last fetch) over `--force`.
+- Never force-push `main`/`master`/`release/*` — protect them server-side.
 
-### 2. Commit Practices
+## Commit hygiene (conventional commits)
 
-- Write meaningful commit messages (conventional commits: feat, fix, docs, refactor, test, chore)
-- Make atomic commits (one logical change per commit)
-- Use conventional commit format with optional scope and breaking changes
-- Include issue references and context in commit body
-- Amend commits carefully (only for unpushed commits)
+Format: `type(scope): description` — `feat`, `fix`, `docs`, `refactor`, `test`, `chore` (+ `perf`, `build`, `ci`, `style`). `!` or a `BREAKING CHANGE:` footer marks an incompatible change.
 
-### 3. Merge Strategies
-
-- Choose appropriate strategy: merge commit, squash, or rebase
-- Review changes before merging (use pull requests)
-- Resolve conflicts carefully with context awareness
-- Maintain clean history (interactive rebase before merge)
-- Never force push to protected branches
-
-### 4. Worktree Management
-
-- Use worktrees for parallel work without branch switching
-- Create worktrees for isolated feature development or hotfixes
-- List active worktrees and clean up when done
-- Share .git directory while maintaining separate working directories
-- Ideal for testing, reviewing PRs, or working on multiple features simultaneously
-
-### 5. Conflict Resolution
-
-- Understand conflict markers (<<<<<<, ======, >>>>>>)
-- Check full context before resolving (git diff, git log)
-- Use merge tools for complex conflicts (git mergetool)
-- Test after resolution (run tests, verify functionality)
-- Document non-obvious resolutions in commit message
-
-### 6. Collaboration
-
-- Keep branches up to date with base branch
-- Use pull requests for code review
-- Squash commits when appropriate (clean up WIP commits)
-- Protect important branches (main, master, production)
-- Communicate breaking changes clearly
-
-## Best Practices
-
-1. **Atomic Commits**: Each commit should represent one logical change
-2. **Meaningful Messages**: Describe what and why, not how (conventional commit format)
-3. **Branch Often**: Use feature branches for all changes
-4. **Pull Before Push**: Stay synchronized with remote (fetch + rebase or merge)
-5. **Review Before Merge**: All changes should be reviewed (pull requests)
-6. **Protect Main**: Never force push to main/master/production
-7. **Clean History**: Squash WIP commits before merging (interactive rebase)
-8. **Worktrees for Parallel Work**: Use worktrees instead of stashing when working on multiple features
-9. **Test After Conflicts**: Always run tests after resolving merge conflicts
-10. **Document Breaking Changes**: Use BREAKING CHANGE footer in commit messages
-
-## Examples
-
-### Example 1: Conventional Commit Messages
+- **Atomic:** one logical change per commit. It should build and pass tests on its own — a green history is a bisectable history.
+- **Separate refactor from behavior change** (see `/loom-refactoring`): a `refactor:` commit is a runtime no-op; a `fix:` commit changes behavior. Mixing them hides the fix from reviewers and poisons `git bisect`.
+- **Message = what + why, not how.** The diff shows how. Body explains motivation, tradeoffs, and links issues.
+- **Group by concern:** 5 files across 3 concerns → 3 commits (module / its tests / wiring), not 1 monolith or 5 fragments.
 
 ```bash
-# Format: <type>(<scope>): <description>
-# Types: feat, fix, docs, style, refactor, test, chore
+git commit -m "fix(cart): resolve race in quantity update
 
-# Feature addition
-git commit -m "feat(auth): add OAuth2 login with Google provider"
-
-# Bug fix with issue reference
-git commit -m "fix(cart): resolve race condition in quantity update
-
-When rapidly clicking add/remove, the cart count could become negative
-due to unsynchronized state updates.
+Rapid add/remove let the count go negative via unsynchronized state.
+Guard with an atomic compare-and-swap.
 
 Fixes #234"
-
-# Breaking change
-git commit -m "feat(api)!: change user endpoint response format
-
-BREAKING CHANGE: The /users endpoint now returns paginated results
-instead of an array. Clients must update to handle the new format.
-
-Migration guide: https://docs.example.com/migration/v2"
-
-# Documentation
-git commit -m "docs(readme): add installation instructions for Windows"
-
-# Refactoring
-git commit -m "refactor(db): extract query builder into separate module"
 ```
 
-### Example 2: Branch Naming Conventions
+⚠ Loom stages: never `git add -A` / `git add .` — that stages the `.work/` symlink. Stage specific files only.
+
+## Rebase vs. merge — pick deliberately
+
+| Situation                                          | Use                              | Why                                                        |
+| -------------------------------------------------- | -------------------------------- | ---------------------------------------------------------- |
+| Update your local feature branch with `main`       | `rebase`                         | Linear history; your commits replay on top, no merge noise |
+| Integrate a reviewed feature into `main`           | `merge` (often `--no-ff`)        | Preserves the branch as a reviewable unit; never rewrites shared history |
+| Branch already pushed & others pulled it           | `merge` (NOT rebase)             | Golden rule — rebasing rewrites shared commits             |
+| Clean up messy local WIP commits before a PR       | `rebase -i` (before pushing)     | Squash/reorder/reword while still private                  |
+| Long-lived branch, want to record integration points | `merge`                        | Merge commits document when integration happened           |
+
+Rule of thumb: **rebase to keep *your private* branch current; merge to *share*.** Rebasing public branches is the most common way teams lose work.
+
+### Interactive rebase hygiene
+
+`git rebase -i origin/main` — `pick`/`reword`/`squash`/`fixup`/`edit`/`drop`. Squash WIP noise, keep meaningful commits distinct (don't collapse a real feature into one opaque blob — you lose bisect granularity). `git commit --fixup=<sha>` + `git rebase -i --autosquash` targets fixups automatically. Abort anytime with `git rebase --abort`.
+
+## Conflict resolution
 
 ```bash
-# Feature branches
-git checkout -b feature/user-authentication
-git checkout -b feature/JIRA-123-shopping-cart
-
-# Bug fix branches
-git checkout -b fix/login-redirect-loop
-git checkout -b fix/JIRA-456-null-pointer
-
-# Hotfix branches (production issues)
-git checkout -b hotfix/security-patch-xss
-
-# Release branches
-git checkout -b release/v2.1.0
-
-# Experiment branches
-git checkout -b experiment/new-caching-strategy
-```
-
-### Example 3: Git Workflow Commands
-
-```bash
-# Start new feature
-git checkout main
-git pull origin main
-git checkout -b feature/new-feature
-
-# Regular development cycle
-git add -A
-git commit -m "feat: implement feature part 1"
-git push -u origin feature/new-feature
-
-# Keep branch updated with main
-git fetch origin
-git rebase origin/main
-# Or merge if preferred
-git merge origin/main
-
-# Interactive rebase to clean up commits before PR
-git rebase -i origin/main
-# In editor: squash, reword, or reorder commits
-
-# After PR approval, merge and cleanup
-git checkout main
-git pull origin main
-git branch -d feature/new-feature
-git push origin --delete feature/new-feature
-
-# Handling merge conflicts
-git merge feature-branch
-# If conflicts occur:
-git status  # See conflicted files
-# Edit files to resolve conflicts
-git add <resolved-files>
+git merge feature/new-api          # CONFLICT in src/api.rs
+git status                         # list conflicted files
+git diff src/api.rs                # see both sides in context (<<<<<<< ======= >>>>>>>)
+# resolve by understanding BOTH intents — not blindly picking a side:
+git checkout --ours   path         # keep current-branch version wholesale
+git checkout --theirs path         # take incoming version wholesale
+git add src/api.rs                 # mark resolved
+cargo test                         # ALWAYS re-test: a clean textual merge can be a semantic conflict
 git merge --continue
-
-# Undo last commit (keep changes)
-git reset --soft HEAD~1
-
-# Undo last commit (discard changes)
-git reset --hard HEAD~1
-
-# Cherry-pick specific commit
-git cherry-pick abc123
-
-# Create annotated tag for release
-git tag -a v1.0.0 -m "Release version 1.0.0"
-git push origin v1.0.0
+git merge --abort                  # bail out if it's the wrong approach
 ```
 
-### Example 4: Worktree Workflows
+- ⚠ **A conflict-free merge is not a correct merge.** Two branches editing different lines can still break each other's assumptions. Run tests after every resolution.
+- Document non-obvious resolutions in the merge commit body.
+- ⚠ `--ours`/`--theirs` mean *opposite things* under `rebase` vs `merge` (during rebase, "ours" is the branch you're rebasing *onto*). Check which operation you're in.
+
+### `git rerere` — resolve once, reuse forever
+
+`git config --global rerere.enabled true`. Git records how you resolved a conflict and **replays the same resolution automatically** next time the identical conflict appears — invaluable for long-lived branches repeatedly rebased/merged, and for loom's progressive merges where the same worktree conflict can recur. Combine with periodic `git rerere diff` to sanity-check recorded resolutions.
+
+## Worktrees
+
+Multiple working directories sharing one `.git` — parallel branches without stashing/switching. This is the mechanism loom uses for parallel stages.
 
 ```bash
-# List existing worktrees
 git worktree list
+git worktree add ../feat-auth feature/user-auth   # new dir on a branch
+git worktree add --detach ../test-v1.2 v1.2.0     # detached, for testing a tag
+git worktree remove ../feat-auth                  # clean removal (must be clean, on another branch)
+git worktree prune                                # after a dir was deleted by hand
 
-# Create worktree for new feature (creates branch and worktree)
-git worktree add ../feature-auth feature/user-auth
-
-# Create worktree from existing branch
-git worktree add ../hotfix-123 hotfix/critical-bug
-
-# Create worktree with detached HEAD for testing
-git worktree add --detach ../testing-v1.2.0 v1.2.0
-
-# Work in the worktree
-cd ../feature-auth
-git status
-# Make changes, commit normally
-git add .
-git commit -m "feat(auth): implement OAuth2 flow"
-
-# Remove worktree when done (must be on different branch first)
-cd /original/repo
-git worktree remove ../feature-auth
-# Or if worktree directory was manually deleted
-git worktree prune
-
-# Loom-specific: Stages execute in isolated worktrees
-# Each stage gets .worktrees/<stage-id>/ with branch loom/<stage-id>
-# This enables true parallel execution without file conflicts
+# Loom: each stage runs in .worktrees/<stage-id>/ on branch loom/<stage-id>
 ls .worktrees/
-# knowledge-bootstrap/
-# implement-auth/
-# add-tests/
 ```
 
-### Example 5: Conflict Resolution Workflow
+⚠ You cannot check out the same branch in two worktrees. ⚠ A `worktree remove` on a dirty tree fails — commit or discard first.
+
+## Recovery (nothing is truly lost for ~90 days)
+
+`git reflog` is the undo history for `HEAD` movements — the escape hatch for "I `reset --hard`'d / rebased / deleted a branch and lost commits."
 
 ```bash
-# Attempt merge that results in conflicts
-git merge feature/new-api
-# Auto-merging src/api.rs
-# CONFLICT (content): Merge conflict in src/api.rs
-# Automatic merge failed; fix conflicts and then commit the result.
-
-# Check which files have conflicts
-git status
-# both modified: src/api.rs
-# both modified: src/config.rs
-
-# View the conflict in context
-git diff src/api.rs
-
-# Conflict markers in file:
-# <<<<<<< HEAD
-# fn handle_request() {
-#     // Current implementation
-# }
-# =======
-# async fn handle_request() {
-#     // New async implementation
-# }
-# >>>>>>> feature/new-api
-
-# Option 1: Manually resolve in editor
-# Edit src/api.rs, remove markers, keep desired code
-vim src/api.rs
-
-# Option 2: Use merge tool
-git mergetool
-
-# Option 3: Choose one side completely
-git checkout --ours src/config.rs    # Keep current branch version
-git checkout --theirs src/config.rs  # Take incoming branch version
-
-# After resolving conflicts, stage resolved files
-git add src/api.rs src/config.rs
-
-# Verify resolution
-cargo test  # Run tests to ensure nothing broke
-git diff --staged
-
-# Complete the merge
-git commit -m "Merge feature/new-api
-
-Resolved conflicts in api.rs by combining sync and async patterns.
-Kept current config.rs authentication settings."
-
-# If merge gets too complex, abort and try different approach
-git merge --abort
-git rebase feature/new-api  # Try rebase instead
+git reflog                         # find the sha you were at before the mistake
+git reset --hard HEAD@{2}          # jump back to that state
+git branch recovered <sha>         # or resurrect a lost branch/commit
+git cherry-pick <sha>              # pull back a single lost commit
 ```
 
-### Example 6: Advanced Git Operations
+`reset` variants: `--soft` (keep changes staged) · `--mixed`/default (keep unstaged) · `--hard` (discard — the only destructive one). `git revert <sha>` undoes a commit *with a new commit* — the safe choice on shared history (no rewrite).
+
+## Bisect (find the commit that introduced a bug)
 
 ```bash
-# Stash work in progress
-git stash push -m "WIP: half-done feature"
-git stash list
-git stash pop  # Apply and remove from stash
-git stash apply stash@{1}  # Apply specific stash without removing
-
-# Cherry-pick range of commits
-git cherry-pick abc123..def456
-git cherry-pick abc123 def456 ghi789  # Pick specific commits
-
-# Revert commit (creates new commit that undoes changes)
-git revert abc123
-git revert --no-commit abc123..def456  # Revert range without committing
-
-# Reset to earlier state
-git reset --soft HEAD~3   # Keep changes staged
-git reset --mixed HEAD~3  # Keep changes unstaged (default)
-git reset --hard HEAD~3   # Discard changes completely
-
-# Reflog: recover "lost" commits
-git reflog
-git checkout abc123  # Restore to commit that was reset away
-
-# Clean untracked files
-git clean -n  # Dry run (show what would be deleted)
-git clean -fd  # Force delete untracked files and directories
-
-# Bisect to find bug introduction
-git bisect start
-git bisect bad  # Current commit is bad
-git bisect good v1.2.0  # This version was good
-# Git checks out middle commit, test it
-git bisect good  # or git bisect bad
-# Repeat until git finds the problematic commit
-git bisect reset  # Exit bisect mode
+git bisect start && git bisect bad && git bisect good v1.2.0
+# git checks out the midpoint; test it, then:
+git bisect good   # or: git bisect bad
+git bisect run ./test.sh   # fully automated: script exits 0=good, non-0=bad
+git bisect reset
 ```
 
-### Example 7: Git Aliases for Productivity
+Bisect is only reliable if history is bisectable — every commit builds/tests. See `/loom-debugging` for using bisect within a root-cause investigation.
 
-```bash
-# Add to ~/.gitconfig
-[alias]
-    co = checkout
-    br = branch
-    ci = commit
-    st = status
-    lg = log --oneline --graph --decorate
-    unstage = reset HEAD --
-    last = log -1 HEAD
-    amend = commit --amend --no-edit
-    wip = commit -am "WIP"
-    undo = reset --soft HEAD~1
-    branches = branch -a
-    tags = tag -l
-    stashes = stash list
+## Gotchas
 
-    # Show branches sorted by last commit date
-    recent = for-each-ref --sort=-committerdate refs/heads/ --format='%(refname:short) %(committerdate:relative)'
+- ⚠ `reset --hard` and `checkout -- <file>` discard uncommitted work with **no reflog entry** — it's gone. `git stash` first if unsure.
+- ⚠ `git clean -fd` deletes untracked files irreversibly; always `git clean -n` (dry run) first.
+- ⚠ `pull` defaults to merge, creating noise commits on feature branches. `git pull --rebase` (or set `pull.rebase = true`) keeps them linear — but only on unshared branches.
+- ⚠ `cherry-pick` duplicates a commit under a new sha; cherry-picking across branches you'll later merge causes "already applied" conflicts.
+- ⚠ `commit --amend` rewrites the last commit — safe only if unpushed.
 
-    # Delete all merged branches
-    cleanup = "!git branch --merged | grep -v '\\*\\|main\\|master' | xargs -n 1 git branch -d"
+## Verify before done
 
-    # Worktree shortcuts
-    wt = worktree
-    wtls = worktree list
-    wtadd = worktree add
-    wtrm = worktree remove
-```
+- [ ] No history rewrite (`rebase`/`amend`/`force`) on a shared/public branch
+- [ ] Force-push, if any, is `--force-with-lease` on your own branch only
+- [ ] Commits atomic, conventional-format, refactor separated from behavior change
+- [ ] Tests run after every conflict resolution (textual merge ≠ semantic correctness)
+- [ ] Loom: staged specific files (never `git add -A`/`.`); stayed within the worktree
+- [ ] `rerere` enabled for repeated/long-lived merge work

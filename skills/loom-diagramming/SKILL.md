@@ -37,508 +37,196 @@ triggers:
 
 ## Overview
 
-Create clear, maintainable technical diagrams using Mermaid syntax. This skill covers architecture diagrams, sequence diagrams, entity-relationship diagrams, flowcharts, and state diagrams for documenting software systems.
+Create maintainable technical diagrams in Mermaid (renders in GitHub, GitLab, and most doc tools). Diagrams live in version control next to code — they must stay in sync or they mislead. This skill covers type selection, syntax, and the parsing footguns that waste the most time.
 
-## Instructions
+## Choose the diagram type
 
-### 1. Choose the Right Diagram Type
+| Type            | Use when                                        | Not when                                 |
+| --------------- | ----------------------------------------------- | ---------------------------------------- |
+| Sequence        | Interactions **over time** across participants  | Showing static structure                 |
+| Flowchart       | Decision logic, process/pipeline steps          | Timing between services (use sequence)   |
+| State           | An entity's lifecycle + transitions/guards      | Data flow or call order                  |
+| ERD             | Data model, tables, cardinality                 | Runtime behavior                         |
+| Class           | OO structure, interfaces, inheritance           | Deployment or infra                      |
+| C4 (Context)    | System boundary + external actors/systems       | Internal code detail                     |
+| C4 (Container)  | Deployable units + their tech + data stores     | Class-level detail                       |
 
-| Diagram Type    | Use When                                |
-| --------------- | --------------------------------------- |
-| Architecture/C4 | Showing system structure and components |
-| Sequence        | Showing interactions over time          |
-| ERD             | Showing data models and relationships   |
-| Flowchart       | Showing decision logic and processes    |
-| State           | Showing state transitions               |
+Rule of thumb: **structure → flowchart/C4/class/ERD; behavior over time → sequence; lifecycle → state.** For architecture, prefer C4's layered zoom (Context → Container → Component) over one sprawling diagram.
 
-### 2. Mermaid Syntax Patterns
+## Gotchas (Mermaid parsing footguns)
 
-**Direction Control:**
+These cause silent render failures or garbled output far more often than logic errors.
 
-- `flowchart TB` - Top to bottom
-- `flowchart LR` - Left to right
-- `sequenceDiagram` - Automatic top-down layout
+- **`end` is reserved in flowcharts.** A lowercase node id `end` breaks the parser. Use `End`, `END`, or quote it: `id["end"]`. Same care with `subgraph`/`click`/`class` as bare ids.
+- **Quote labels with special characters.** Parentheses `()`, `{}`, `[]`, `#`, `:`, `;`, and quotes inside a label break parsing — wrap the text: `A["fetch(url)"]`, `B["step: parse"]`. For literal special chars inside a quoted label, use HTML entities: `#quot;` won't work — use `&quot;`, `&amp;`, `&#35;` (for `#`).
+- **Line breaks:** `<br/>` inside a label, not `\n`: `A["Line one<br/>Line two"]`.
+- **Edge labels** with special chars must be quoted: `A -->|"retry (max 3)"| B`.
+- **Leading `o`/`x` on an edge become arrowheads.** `A---oB` renders a circle end, `A---xB` a cross. Add a space (`A --- oB` is still risky) or rename the node so an edge doesn't touch a bare `o`/`x`.
+- **Subgraph direction:** set `direction LR` *inside* the subgraph; note that edges crossing subgraph boundaries can override a subgraph's internal direction.
+- **Comments** are `%%` on their own line. **Semicolons** are optional line terminators.
+- **C4 diagrams** (`C4Context`/`C4Container`) have limited, sometimes experimental layout control and lag other Mermaid features — verify they render in your target tool before committing to them; a plain `flowchart` with subgraphs is a robust fallback.
+- **Don't build the giant diagram.** Past ~15-20 nodes it's unreadable and un-reviewable. Split by concern or zoom level. One diagram, one idea.
 
-**Node Shapes:**
+## Keep diagrams in sync
 
-- `[Rectangle]` - Process
-- `(Rounded)` - Start/end
-- `{Diamond}` - Decision
-- `[(Database)]` - Storage
-- `((Circle))` - Connection point
+Diagrams are code artifacts: update the diagram in the same PR as the code it depicts, review it in the diff, and prefer a diagram that's easy to regenerate over a pixel-perfect one that rots. A wrong diagram is worse than none.
 
-**Arrow Types:**
+## Syntax quick reference
 
-- `-->` Solid line (flow)
-- `-.->` Dotted line (optional)
-- `->>` Thick line (message)
-- `-->>` Dotted message
-- `==>` Extra thick (emphasis)
-
-**Subgraphs for Grouping:**
-
-```mermaid
-flowchart TB
-    subgraph "Subsystem Name"
-        A --> B
-    end
-```
-
-### 3. General Principles
-
-- Keep diagrams focused on one concept
-- Use consistent naming conventions
-- Add descriptive labels to relationships
-- Limit complexity (split large diagrams)
-- Use comments for documentation
-
-## Best Practices
-
-- **Simplicity**: One diagram, one concept
-- **Consistency**: Same naming across related diagrams
-- **Readability**: Left-to-right or top-to-bottom flow
-- **Labels**: Always label relationships and transitions
-- **Context**: Include a title and brief description
+- **Direction:** `flowchart TB` (top-bottom), `LR` (left-right). Sequence diagrams auto-layout.
+- **Node shapes:** `[Rect]` process · `(Rounded)` start/end · `{Diamond}` decision · `[(DB)]` store · `((Circle))` connector.
+- **Edges:** `-->` solid · `-.->` dotted/optional · `==>` emphasis · `->>` (sequence) sync message · `-->>` async/return.
+- **Sequence keywords:** `participant`, `autonumber`, `alt/else/end`, `loop/end`, `par/and/end`, `Note over A,B`.
 
 ## Examples
 
-### Architecture Diagrams (C4 Model)
-
-The C4 model provides hierarchical system visualization:
-
-- **Level 1 (Context)**: System in its environment, external dependencies
-- **Level 2 (Container)**: High-level technical building blocks (apps, databases, services)
-- **Level 3 (Component)**: Internal structure of containers (classes, modules)
-
-Use C4 for architecture documentation, onboarding new developers, and stakeholder communication.
-
-#### Context Diagram (Level 1)
+### C4 Context (Level 1)
 
 ```mermaid
 C4Context
-    title System Context Diagram for E-Commerce Platform
-
-    Person(customer, "Customer", "A user who purchases products")
-    Person(admin, "Admin", "Manages products and orders")
-
-    System(ecommerce, "E-Commerce Platform", "Allows customers to browse and purchase products")
-
-    System_Ext(payment, "Payment Gateway", "Handles payment processing")
-    System_Ext(shipping, "Shipping Provider", "Handles order fulfillment")
-    System_Ext(email, "Email Service", "Sends notifications")
-
-    Rel(customer, ecommerce, "Browses, purchases")
-    Rel(admin, ecommerce, "Manages")
-    Rel(ecommerce, payment, "Processes payments")
-    Rel(ecommerce, shipping, "Creates shipments")
-    Rel(ecommerce, email, "Sends emails")
+    title System Context — E-Commerce Platform
+    Person(customer, "Customer", "Browses and purchases")
+    System(ecommerce, "E-Commerce Platform", "Core system")
+    System_Ext(payment, "Payment Gateway", "Processes payments")
+    Rel(customer, ecommerce, "Uses")
+    Rel(ecommerce, payment, "Charges", "HTTPS")
 ```
 
-#### Container Diagram (Level 2)
+### C4 Container (Level 2)
 
 ```mermaid
 C4Container
-    title Container Diagram for E-Commerce Platform
-
+    title Containers — E-Commerce Platform
     Person(customer, "Customer")
-
-    Container_Boundary(ecommerce, "E-Commerce Platform") {
-        Container(web, "Web Application", "React", "Customer-facing UI")
+    Container_Boundary(ec, "E-Commerce Platform") {
+        Container(web, "Web App", "React", "Customer UI")
         Container(api, "API Gateway", "Node.js", "REST API")
-        Container(cart, "Cart Service", "Node.js", "Shopping cart management")
-        Container(catalog, "Catalog Service", "Python", "Product catalog")
-        Container(order, "Order Service", "Java", "Order processing")
-        ContainerDb(db, "Database", "PostgreSQL", "Stores all data")
-        ContainerQueue(queue, "Message Queue", "RabbitMQ", "Async messaging")
+        ContainerDb(db, "Database", "PostgreSQL", "Stores data")
+        ContainerQueue(queue, "Queue", "RabbitMQ", "Async events")
     }
-
     Rel(customer, web, "Uses", "HTTPS")
     Rel(web, api, "Calls", "JSON/HTTPS")
-    Rel(api, cart, "Routes to")
-    Rel(api, catalog, "Routes to")
-    Rel(api, order, "Routes to")
-    Rel(cart, db, "Reads/writes")
-    Rel(catalog, db, "Reads")
-    Rel(order, db, "Reads/writes")
-    Rel(order, queue, "Publishes events")
+    Rel(api, db, "Reads/writes")
+    Rel(api, queue, "Publishes")
 ```
 
-#### Component Diagram (Level 3)
-
-```mermaid
-flowchart TB
-    subgraph "Order Service"
-        controller[Order Controller]
-        service[Order Service]
-        repo[Order Repository]
-        validator[Order Validator]
-        publisher[Event Publisher]
-    end
-
-    subgraph "External"
-        db[(PostgreSQL)]
-        queue[RabbitMQ]
-    end
-
-    controller --> service
-    service --> validator
-    service --> repo
-    service --> publisher
-    repo --> db
-    publisher --> queue
-```
-
-### Sequence Diagrams
-
-Use for API flows, request/response cycles, distributed system interactions, and multi-service communication.
-
-**Key Patterns:**
-
-- `participant` - Define actors upfront
-- `autonumber` - Add step numbers
-- `alt/else/end` - Conditional flows
-- `loop/end` - Repeated operations
-- `par/end` - Parallel operations
-- `Note over A,B` - Add explanatory notes
-
-#### Basic Request Flow
+### Sequence — request flow with conditionals
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant C as Client
-    participant G as API Gateway
-    participant A as Auth Service
     participant S as Service
     participant D as Database
-
-    C->>G: POST /api/resource
-    G->>A: Validate token
-    A-->>G: Token valid
-
-    G->>S: Forward request
-    S->>D: Query data
-    D-->>S: Return results
-
-    S-->>G: Response (200 OK)
-    G-->>C: Response with data
-```
-
-#### Error Handling Flow
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant S as Service
-    participant D as Database
-
     C->>S: POST /api/users
     S->>S: Validate input
-
     alt Validation fails
         S-->>C: 400 Bad Request
-    else Validation passes
+    else Valid
         S->>D: INSERT user
-        alt Database error
-            D-->>S: Constraint violation
+        alt Constraint violation
+            D-->>S: Duplicate key
             S-->>C: 409 Conflict
         else Success
-            D-->>S: User created
+            D-->>S: Created
             S-->>C: 201 Created
         end
     end
 ```
 
-#### Async Processing
+### Sequence — parallel work
 
 ```mermaid
 sequenceDiagram
-    participant C as Client
-    participant API as API
-    participant Q as Queue
-    participant W as Worker
-    participant N as Notification
-
-    C->>API: Submit job
-    API->>Q: Enqueue job
-    API-->>C: 202 Accepted (job ID)
-
-    Note over Q,W: Async processing
-
-    Q->>W: Dequeue job
-    W->>W: Process job
-    W->>N: Send notification
-    N-->>C: Job complete notification
-```
-
-#### API Authentication Flow
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant API as API Gateway
-    participant Auth as Auth Service
-    participant Cache as Redis Cache
-    participant DB as User DB
-
-    C->>API: POST /login (credentials)
-    API->>Auth: Validate credentials
-    Auth->>DB: Query user
-    DB-->>Auth: User record
-
-    alt Valid credentials
-        Auth->>Auth: Generate JWT
-        Auth->>Cache: Store session
-        Cache-->>Auth: OK
-        Auth-->>API: Token + refresh token
-        API-->>C: 200 OK (tokens)
-    else Invalid credentials
-        Auth-->>API: Invalid credentials
-        API-->>C: 401 Unauthorized
-    end
-```
-
-#### Microservices Communication
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant API as API Gateway
     participant O as Order Service
-    participant I as Inventory Service
-    participant P as Payment Service
-    participant Q as Message Queue
-
-    U->>API: POST /orders
-    API->>O: Create order
-
-    par Check inventory and process payment
+    participant I as Inventory
+    participant P as Payment
+    par Check inventory and authorize payment
         O->>I: Check stock
-        I-->>O: Stock available
+        I-->>O: Available
     and
-        O->>P: Authorize payment
-        P-->>O: Payment authorized
+        O->>P: Authorize
+        P-->>O: Authorized
     end
-
-    O->>I: Reserve items
     O->>P: Capture payment
-
-    alt Success
-        P-->>O: Payment captured
-        O->>Q: Publish OrderCreated event
-        O-->>API: Order created
-        API-->>U: 201 Created
-    else Payment failed
-        P-->>O: Payment failed
-        O->>I: Release reservation
-        O-->>API: Payment failed
-        API-->>U: 402 Payment Required
-    end
 ```
 
-### Entity-Relationship Diagrams
+### Flowchart — decision logic
 
-Use for database schema design, data model documentation, and relationship mapping.
+```mermaid
+flowchart TD
+    A[User Login] --> B{Valid credentials?}
+    B -->|No| D[Show error]
+    D --> A
+    B -->|Yes| C{2FA enabled?}
+    C -->|No| G[Create session]
+    C -->|Yes| E[Send 2FA code]
+    E --> F{Code valid?}
+    F -->|Yes| G
+    F -->|No| H{Attempts < 3?}
+    H -->|Yes| E
+    H -->|No| I[Lock account]
+    G --> J[Dashboard]
+```
 
-#### Basic ERD
+### ERD
+
+Cardinality: `||` exactly one · `o|` zero-or-one · `}|` one-or-more · `}o` zero-or-more (left char = min, right char = max, read toward the entity).
 
 ```mermaid
 erDiagram
     USER ||--o{ ORDER : places
+    ORDER ||--|{ ORDER_ITEM : contains
+    ORDER_ITEM }|--|| PRODUCT : references
     USER {
         uuid id PK
         string email UK
-        string name
         timestamp created_at
     }
-
-    ORDER ||--|{ ORDER_ITEM : contains
     ORDER {
         uuid id PK
         uuid user_id FK
-        decimal total
         string status
-        timestamp created_at
-    }
-
-    ORDER_ITEM }|--|| PRODUCT : references
-    ORDER_ITEM {
-        uuid id PK
-        uuid order_id FK
-        uuid product_id FK
-        int quantity
-        decimal price
-    }
-
-    PRODUCT ||--o{ PRODUCT_CATEGORY : "belongs to"
-    PRODUCT {
-        uuid id PK
-        string name
-        text description
-        decimal price
-        int stock
-    }
-
-    CATEGORY ||--o{ PRODUCT_CATEGORY : contains
-    CATEGORY {
-        uuid id PK
-        string name
-        uuid parent_id FK
-    }
-
-    PRODUCT_CATEGORY {
-        uuid product_id PK,FK
-        uuid category_id PK,FK
     }
 ```
 
-#### ERD with Relationships Explained
-
-```mermaid
-erDiagram
-    CUSTOMER ||--o{ ORDER : "places (1:N)"
-    ORDER ||--|{ LINE_ITEM : "contains (1:N, required)"
-    PRODUCT ||--o{ LINE_ITEM : "appears in (1:N)"
-    CUSTOMER }|--|| ADDRESS : "has billing (N:1, required)"
-    CUSTOMER }o--o{ ADDRESS : "has shipping (N:N)"
-```
-
-Relationship notation:
-
-- `||` exactly one
-- `o|` zero or one
-- `}|` one or more
-- `}o` zero or more
-
-### Flowcharts
-
-#### Decision Logic
-
-```mermaid
-flowchart TD
-    A[Start: User Login] --> B{Valid credentials?}
-    B -->|Yes| C{2FA enabled?}
-    B -->|No| D[Show error message]
-    D --> A
-
-    C -->|Yes| E[Send 2FA code]
-    E --> F{Code valid?}
-    F -->|Yes| G[Create session]
-    F -->|No| H{Attempts < 3?}
-    H -->|Yes| E
-    H -->|No| I[Lock account]
-
-    C -->|No| G
-    G --> J[Redirect to dashboard]
-    J --> K[End]
-    I --> K
-```
-
-#### Process Flow
-
-```mermaid
-flowchart LR
-    subgraph "CI Pipeline"
-        A[Push Code] --> B[Run Tests]
-        B --> C{Tests Pass?}
-        C -->|Yes| D[Build Image]
-        C -->|No| E[Notify Developer]
-        D --> F[Push to Registry]
-    end
-
-    subgraph "CD Pipeline"
-        F --> G[Deploy to Staging]
-        G --> H[Run E2E Tests]
-        H --> I{Tests Pass?}
-        I -->|Yes| J[Deploy to Production]
-        I -->|No| K[Rollback]
-    end
-```
-
-### State Diagrams
-
-#### Order State Machine
+### State machine
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Draft: Create order
-
-    Draft --> Pending: Submit
-    Draft --> Cancelled: Cancel
-
-    Pending --> Confirmed: Payment received
-    Pending --> Cancelled: Payment failed
-    Pending --> Cancelled: Timeout (24h)
-
-    Confirmed --> Processing: Begin fulfillment
-    Confirmed --> Cancelled: Customer cancel
-
-    Processing --> Shipped: Ship order
-    Processing --> Cancelled: Out of stock
-
-    Shipped --> Delivered: Delivery confirmed
-    Shipped --> Returned: Return initiated
-
-    Delivered --> Returned: Return requested
-    Delivered --> [*]: Complete
-
-    Returned --> Refunded: Process refund
-    Refunded --> [*]: Complete
-
-    Cancelled --> [*]: Complete
-```
-
-#### Connection State Machine
-
-```mermaid
-stateDiagram-v2
-    [*] --> Disconnected
-
-    Disconnected --> Connecting: connect()
-    Connecting --> Connected: success
-    Connecting --> Disconnected: failure
-
-    Connected --> Disconnected: disconnect()
-    Connected --> Reconnecting: connection lost
-
-    Reconnecting --> Connected: success
-    Reconnecting --> Disconnected: max retries
-
-    note right of Reconnecting
-        Exponential backoff
-        Max 5 retries
+    [*] --> Draft: create
+    Draft --> Pending: submit
+    Pending --> Confirmed: payment received
+    Pending --> Cancelled: payment failed / timeout
+    Confirmed --> Shipped: fulfill
+    Shipped --> Delivered: confirmed
+    Delivered --> [*]
+    note right of Pending
+        Auto-cancels after 24h
     end note
 ```
 
-### Class Diagrams
+### Class diagram
 
 ```mermaid
 classDiagram
     class Repository~T~ {
         <<interface>>
-        +findById(id: string) T
-        +findAll() List~T~
+        +findById(id) T
         +save(entity: T) T
-        +delete(id: string) void
     }
-
     class UserRepository {
         -db: Database
-        +findById(id: string) User
-        +findAll() List~User~
-        +save(entity: User) User
-        +delete(id: string) void
-        +findByEmail(email: string) User
+        +findByEmail(email) User
     }
-
-    class User {
-        +id: string
-        +email: string
-        +name: string
-        +createdAt: Date
-        +validate() boolean
-    }
-
     Repository~T~ <|.. UserRepository
     UserRepository --> User
 ```
+
+## Verify before done
+
+- [ ] Diagram renders in the target tool (GitHub/GitLab/docs), not just a local previewer — especially for C4.
+- [ ] Labels with `()`, `#`, `:`, `,`, or quotes are wrapped in `"…"`; no bare `end` node id in a flowchart.
+- [ ] Diagram type matches intent (behavior→sequence, structure→flowchart/C4, lifecycle→state).
+- [ ] ≤~20 nodes; split otherwise. One diagram, one concept.
+- [ ] Matches current code; updated in the same PR as the change it depicts.

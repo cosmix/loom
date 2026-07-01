@@ -37,404 +37,142 @@ triggers:
 
 # Security Scan
 
-## Overview
-
-This skill provides quick, routine security checks that should be run frequently during development. These are lightweight scans designed to catch common issues early, not comprehensive audits.
+Fast, automatable checks to run pre-commit / in CI — catch secrets, known-CVE deps, image and IaC misconfig early. This is the *tooling* skill; for methodology and compliance use `loom-security-audit`, for STRIDE use `loom-threat-model`, for deep dependency/SBOM work use `loom-dependency-scan`.
 
 ## Tool Selection Matrix
 
-| Scan Type                 | Best Tool   | Alternative    | Use Case                        |
-| ------------------------- | ----------- | -------------- | ------------------------------- |
-| **Secrets**               | TruffleHog  | Gitleaks       | Hardcoded credentials, API keys |
-| **Dependencies (JS)**     | npm audit   | Snyk, OWASP    | Known CVEs in packages          |
-| **Dependencies (Python)** | pip-audit   | safety         | PyPI vulnerability database     |
-| **Dependencies (Go)**     | govulncheck | nancy          | Official Go vuln DB             |
-| **Dependencies (Rust)**   | cargo audit | -              | RustSec Advisory DB             |
-| **Container Images**      | Trivy       | Grype, Snyk    | Image vulnerabilities, secrets  |
-| **SAST (Multi-lang)**     | Semgrep     | CodeQL         | Security anti-patterns          |
-| **SAST (Python)**         | Bandit      | Semgrep        | Python-specific issues          |
-| **SAST (Go)**             | gosec       | Semgrep        | Go-specific issues              |
-| **Dockerfile**            | hadolint    | Trivy config   | Best practices, misconfig       |
-| **IaC (Terraform)**       | tfsec       | Checkov, Trivy | Terraform misconfigurations     |
-| **IaC (K8s)**             | kubesec     | Trivy, Checkov | Kubernetes YAML security        |
+| Scan type | Tool | Alternative | Notes |
+| --------- | ---- | ----------- | ----- |
+| Secrets | TruffleHog | Gitleaks | TruffleHog *verifies* live creds; Gitleaks is regex-fast |
+| Deps (JS) | npm audit | osv-scanner, Snyk | `--audit-level=high` |
+| Deps (Python) | pip-audit | safety | pip-audit uses OSV/PyPI advisory DB |
+| Deps (Go) | govulncheck | osv-scanner | call-graph aware → fewer false positives |
+| Deps (Rust) | cargo audit | cargo-deny | RustSec DB |
+| Container image | Trivy | Grype | `--scanners vuln,secret,config` |
+| SAST multi-lang | Semgrep | CodeQL | `p/security-audit`, `p/secrets` |
+| SAST Python | Bandit | Semgrep | — |
+| SAST Go | gosec | Semgrep | — |
+| Dockerfile | hadolint | Trivy config | best-practice lint |
+| IaC (Terraform) | tfsec / trivy config | Checkov | — |
+| IaC (K8s) | kubesec / trivy | Checkov | — |
+| Universal (fs+img, vuln+secret+config) | Trivy | osv-scanner | one binary for most CI needs |
 
-## When to Use
+## Priority Order
 
-- **Before commits**: Quick check for secrets and obvious issues
-- **During PR review**: Verify no new vulnerabilities introduced
-- **Regular intervals**: Daily/weekly automated checks
-- **After dependency updates**: Verify no new CVEs
-- **Quick sanity checks**: Fast verification during development
+Run cheapest/highest-signal first; a secret in git history is worse than a medium CVE.
 
-For comprehensive security work, use the `loom-security-audit` skill or escalate to the `senior-software-engineer` agent with `/loom-security-audit` and `/loom-threat-model` skills.
+### 1. Secrets (Critical)
 
-## Quick Scan Checklist
-
-Run these checks in order of priority:
-
-### 1. Secret Detection (Critical)
-
-**Goal**: Find hardcoded credentials, API keys, tokens, and private keys before they reach version control.
+Prefer dedicated tools over grep — they cut false positives and TruffleHog verifies whether a key is *live*.
 
 ```bash
-# Check for hardcoded secrets with grep patterns
-# API keys
-grep -rn --include="*.{js,ts,py,go,java,rb,php}" \
-  -E "(api[_-]?key|apikey)\s*[:=]\s*['\"][a-zA-Z0-9]{16,}" .
-
-# AWS credentials
-grep -rn --include="*.{js,ts,py,go,java,rb,php,env,yaml,yml,json}" \
-  -E "(AKIA|ABIA|ACCA|ASIA)[A-Z0-9]{16}" .
-
-# Private keys
-grep -rn --include="*.{pem,key,env}" \
-  -E "-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----" .
-
-# Generic secrets
-grep -rn --include="*.{js,ts,py,go,java,rb,php}" \
-  -E "(password|secret|token)\s*[:=]\s*['\"][^'\"]{8,}" .
+trufflehog filesystem . --only-verified --no-update   # only credentials confirmed active
+gitleaks detect --source . --redact                   # scans full git HISTORY by default
 ```
 
-#### Better: Use Dedicated Tools
+⚠ Secret-scanning gotchas:
+
+- **Scan history, not just the worktree.** A rotated key still lives in old commits and forks. `gitleaks detect` walks history; `gitleaks detect --no-git` / `trufflehog filesystem` only see current files. A committed-then-deleted secret must be **rotated**, not just removed — deletion doesn't scrub history.
+- `--only-verified` (TruffleHog) suppresses unverifiable/expired hits — great for CI signal, but it will miss a secret whose endpoint it can't reach; run a full pass periodically.
+- Regex fallback for a quick look (dedicated tools are better): AWS keys `(AKIA|ASIA)[A-Z0-9]{16}`, PEM `-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----`, generic `(password|secret|token|api[_-]?key)\s*[:=]\s*['"][^'"]{8,}`.
+
+⚠ Secrets leak at **runtime**, beyond git — scanners won't catch these; flag them in review:
+
+- **Process argv** — a secret passed as a CLI arg (`mytool --token=abc`) is world-visible in `ps`/`/proc/*/cmdline`. Pass via env or stdin/file instead.
+- **Env inheritance** — child processes inherit the parent's env; a spawned subprocess or crash-reporter can exfiltrate `AWS_SECRET_ACCESS_KEY`. Scope/scrub env before spawning untrusted code.
+- **Logs & error/stack traces** — request bodies, `Authorization` headers, DB URLs with passwords, and exception dumps routinely leak secrets. Redact structured fields; never log full request objects.
+- **Client-side & URLs** — secrets in query strings land in access logs, referers, and browser history; `.env`/`NEXT_PUBLIC_*` bundled into frontend builds ship to users.
+
+### 2. Dependency CVEs (High)
 
 ```bash
-# TruffleHog (recommended)
-trufflehog filesystem --directory=. --only-verified --no-update
-
-# GitLeaks
-gitleaks detect --source=. --no-git
-
-# git-secrets (if installed)
-git secrets --scan
+npm audit --audit-level=high        # JS   (yarn audit --level high)
+pip-audit                           # Python
+govulncheck ./...                   # Go   (reachability-aware)
+cargo audit                         # Rust
+osv-scanner -r .                    # multi-ecosystem, lockfile-driven
 ```
 
-### 2. Dependency Vulnerabilities (High)
+For triage, SBOM, license, and supply-chain (typosquat/dependency-confusion) → `loom-dependency-scan`. ⚠ `npm audit` reports advisories against the *lockfile* including transitive/dev-only deps — a "critical" in a build-time devDependency may be unreachable at runtime; confirm reachability before blocking a release.
 
-**Goal**: Identify known CVEs in direct and transitive dependencies across package ecosystems.
-
-```bash
-# Node.js
-npm audit --audit-level=high
-# or
-yarn audit --level high
-
-# Python
-pip-audit
-# or
-safety check
-
-# Go
-govulncheck ./...
-
-# Rust
-cargo audit
-
-# Ruby
-bundle audit check --update
-
-# .NET
-dotnet list package --vulnerable --include-transitive
-
-# Multi-ecosystem (Snyk - requires account)
-snyk test --severity-threshold=high
-
-# OWASP Dependency-Check (slow but comprehensive)
-dependency-check --scan . --failOnCVSS 7
-```
-
-### 3. Container Image Scanning (High)
-
-**Goal**: Scan Docker images for vulnerabilities, misconfigurations, and embedded secrets.
+### 3. Container Images (High)
 
 ```bash
-# Trivy (recommended - fast, comprehensive)
-trivy image --severity HIGH,CRITICAL myimage:latest
-trivy image --scanners vuln,secret,config myimage:latest
-
-# Grype (Anchore)
-grype myimage:latest --only-fixed
-
-# Snyk Container
-snyk container test myimage:latest --severity-threshold=high
-
-# Docker Scout (Docker Desktop)
-docker scout cves myimage:latest --only-severity critical,high
-
-# Clair (requires server)
-clairctl analyze myimage:latest
-
-# Scan Dockerfile before building
+trivy image --severity HIGH,CRITICAL --scanners vuln,secret,config myimage:tag
 hadolint Dockerfile
-trivy config --severity HIGH,CRITICAL Dockerfile
+trivy config --severity HIGH,CRITICAL Dockerfile   # pre-build misconfig lint
 ```
 
-### 4. Quick Static Analysis (Medium)
+⚠ Scan the exact **immutable digest** (`myimage@sha256:…`) you'll deploy, not a floating `:latest` (mutable → scan/deploy drift). Rebuild on base-image CVEs; a passing scan goes stale as new CVEs land.
 
-**Goal**: Detect security anti-patterns and common vulnerability classes with SAST tools.
+### 4. SAST (Medium)
 
 ```bash
-# Multi-language with Semgrep (fast defaults)
-semgrep --config=p/security-audit --config=p/secrets .
-
-# Python only
-bandit -r . -ll  # Only high severity
-
-# JavaScript/TypeScript
-npx eslint . --ext .js,.ts --no-eslintrc \
-  --plugin security --rule 'security/detect-object-injection: error'
-
-# Go
-gosec -severity high ./...
-
-# CodeQL (requires GitHub setup)
-codeql database create codeql-db --language=javascript
-codeql database analyze codeql-db --format=sarif-latest --output=results.sarif
-
-# SonarQube (requires server)
-sonar-scanner -Dsonar.projectKey=myproject
+semgrep --config=p/security-audit --config=p/secrets .   # fast, low-FP defaults
+bandit -r . -ll                                          # Python, high-severity only
+gosec -severity high ./...                               # Go
 ```
 
-### 5. Configuration Checks (Medium)
-
-**Goal**: Validate infrastructure-as-code and configuration files for security misconfigurations.
+### 5. IaC / Config (Medium)
 
 ```bash
-# Docker
-hadolint Dockerfile
-
-# Terraform
 tfsec . --minimum-severity HIGH
-
-# Kubernetes
 kubesec scan deployment.yaml
-
-# General config
-checkov -f config.yaml --check HIGH
+checkov -d . --compact
 ```
 
-## Pre-Commit Hook Setup
+## CI Integration
 
-Add to `.pre-commit-config.yaml`:
+Set nonzero exit → fail the job. ⚠ `npm audit ... || true` never fails CI (swallows exit code) — only use `|| true` for advisory-only steps you deliberately don't gate on.
 
 ```yaml
-repos:
-  - repo: https://github.com/trufflesecurity/trufflehog
-    rev: v3.63.0
-    hooks:
-      - id: trufflehog
-        entry: trufflehog filesystem --no-update --fail --only-verified
-        args: ["--directory=."]
-
-  - repo: https://github.com/zricethezav/gitleaks
-    rev: v8.18.0
-    hooks:
-      - id: gitleaks
-
-  - repo: https://github.com/returntocorp/semgrep
-    rev: v1.52.0
-    hooks:
-      - id: semgrep
-        args: ["--config=p/secrets", "--error"]
-```
-
-## Tool Installation Quick Reference
-
-```bash
-# Secret scanning
-brew install trufflesecurity/trufflehog/trufflehog
-brew install gitleaks
-
-# Dependency scanning
-npm install -g npm-audit
-pip install pip-audit safety
-go install golang.org/x/vuln/cmd/govulncheck@latest
-cargo install cargo-audit
-
-# Container scanning
-brew install trivy
-brew install anchore/grype/grype
-
-# SAST
-brew install semgrep
-pip install bandit
-go install github.com/securego/gosec/v2/cmd/gosec@latest
-
-# Infrastructure scanning
-brew install hadolint tfsec
-```
-
-## CI/CD Integration
-
-### GitHub Actions (Recommended)
-
-```yaml
-name: Security Scan
-
-on:
-  push:
-    branches: [main]
-  pull_request:
-
+# GitHub Actions
 jobs:
-  security-scan:
+  security:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Secret Scan
-        uses: trufflesecurity/trufflehog@main
-        with:
-          extra_args: --only-verified
-
-      - name: Dependency Scan
-        run: |
-          npm audit --audit-level=high || true
-          # Add other package managers as needed
-
-      - name: SAST
-        uses: returntocorp/semgrep-action@v1
-        with:
-          config: p/security-audit p/secrets
-
-      - name: Container Scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: myimage:${{ github.sha }}
-          severity: HIGH,CRITICAL
-          exit-code: 1
+        with: { fetch-depth: 0 }          # full history for secret scan
+      - uses: trufflesecurity/trufflehog@main
+        with: { extra_args: --only-verified }
+      - uses: returntocorp/semgrep-action@v1
+        with: { config: p/security-audit p/secrets }
+      - uses: aquasecurity/trivy-action@master
+        with: { scan-type: fs, severity: HIGH,CRITICAL, exit-code: 1 }
 ```
-
-### GitLab CI
 
 ```yaml
-security-scan:
-  stage: test
-  image: returntocorp/semgrep:latest
-  script:
-    - semgrep --config=p/security-audit --config=p/secrets .
-  allow_failure: false
-
-dependency-scan:
-  stage: test
-  image: node:latest
-  script:
-    - npm audit --audit-level=high
-  allow_failure: false
-
-container-scan:
-  stage: test
-  image: aquasec/trivy:latest
-  script:
-    - trivy image --severity HIGH,CRITICAL $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+# Pre-commit (.pre-commit-config.yaml) — block secrets before they're committed
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.0
+    hooks: [{ id: gitleaks }]
+  - repo: https://github.com/returntocorp/semgrep
+    rev: v1.52.0
+    hooks: [{ id: semgrep, args: ["--config=p/secrets", "--error"] }]
 ```
 
-### CircleCI
+## Interpreting Results
 
-```yaml
-version: 2.1
+| Severity | Action | Timeline |
+| -------- | ------ | -------- |
+| Critical | Block merge, fix now | Hours |
+| High | Fix before merge | Days |
+| Medium | Plan a fix | Sprint |
+| Low | Track | Backlog |
 
-orbs:
-  security: circleci/security@1.0
+Common false positives — triage, don't blindly suppress: test fixtures / example creds (add to `.gitleaksignore` with a note), unreachable/dev-only dep CVEs (document acceptance), base64/UUIDs mistaken for secrets. Record accepted risks with a justification and reviewer so the next scan doesn't re-litigate them.
 
-workflows:
-  security-checks:
-    jobs:
-      - security/scan:
-          severity: high
-      - trivy/scan:
-          image: myimage:latest
-```
+## Verification Checklist
 
-## Scan Result Interpretation
+- [ ] Secret scan covers **git history** (not just worktree); any historical hit → key rotated, not just deleted
+- [ ] Dependency scan run for **every** ecosystem in the repo (a Python service with a JS build tool needs both)
+- [ ] Container scan targets the deployed **digest**; Dockerfile linted (hadolint + trivy config)
+- [ ] SAST run with a security ruleset (not just style)
+- [ ] CI steps **fail** on Critical/High (no stray `|| true`); pre-commit blocks secrets locally
+- [ ] Findings triaged: confirmed / false-positive / accepted-risk, each with owner + justification
+- [ ] Critical/complex/architecture findings escalated → `loom-security-audit`
 
-### Severity Levels
+## Escalate to `loom-security-audit`
 
-| Level        | Action                       | Timeline |
-| ------------ | ---------------------------- | -------- |
-| **Critical** | Block merge, fix immediately | Hours    |
-| **High**     | Should fix before merge      | Days     |
-| **Medium**   | Plan to fix                  | Sprint   |
-| **Low**      | Track, fix opportunistically | Backlog  |
-
-### Common False Positives
-
-**Secret Detection**:
-
-- Test fixtures with fake keys
-- Documentation examples
-- Base64-encoded non-secrets
-- UUIDs and random IDs
-
-**Dependency Scans**:
-
-- Dev-only dependencies
-- Unused code paths
-- Already-mitigated issues
-
-### Triaging Results
-
-```markdown
-## Scan Results Triage
-
-### Confirmed Issues
-
-| Finding           | Severity | File         | Action             |
-| ----------------- | -------- | ------------ | ------------------ |
-| Hardcoded API key | Critical | config.js:42 | Remove, rotate key |
-| lodash CVE        | High     | package.json | Update to 4.17.21  |
-
-### False Positives
-
-| Finding            | Reason       | Action                 |
-| ------------------ | ------------ | ---------------------- |
-| test_api_key       | Test fixture | Add to .gitleaksignore |
-| dev dependency CVE | Not in prod  | Document acceptance    |
-
-### Accepted Risks
-
-| Finding             | Justification     | Reviewer  |
-| ------------------- | ----------------- | --------- |
-| Low CVE in CLI tool | Internal use only | @security |
-```
-
-## Quick Commands Reference
-
-```bash
-# One-liner: Quick secret + dependency check
-npm audit --audit-level=high && gitleaks detect --no-git
-
-# Python projects
-pip-audit && bandit -r src/ -ll
-
-# Go projects
-govulncheck ./... && gosec -severity high ./...
-
-# Rust projects
-cargo audit && cargo clippy -- -W clippy::security
-
-# Container security stack
-trivy image --severity HIGH,CRITICAL myimage:latest && \
-hadolint Dockerfile && \
-trivy config --severity HIGH,CRITICAL .
-
-# Full quick scan (all tools installed)
-trufflehog filesystem . --only-verified && \
-npm audit --audit-level=high && \
-semgrep --config=p/security-audit --config=p/secrets . && \
-trivy fs --severity HIGH,CRITICAL .
-
-# Comprehensive multi-ecosystem scan
-snyk test --all-projects --severity-threshold=high
-```
-
-## Escalation
-
-Escalate to full `loom-security-audit` skill or `senior-software-engineer` agent (with `/loom-security-audit` and `/loom-threat-model` skills) when:
-
-- Critical findings discovered
-- Unusual or complex vulnerabilities
-- Architecture-level security concerns
-- Compliance-related questions
-- Incident response needed
+Critical or novel findings, architecture-level concerns, compliance questions (SOC2/PCI/HIPAA/GDPR), or incident response — scanners find known patterns; humans/audits find logic and authorization flaws.

@@ -22,6 +22,8 @@ triggers:
   - software bill of materials
   - license compliance
   - supply chain
+  - dependency confusion
+  - typosquat
   - security advisory
   - transitive dependency
   - lock file
@@ -29,325 +31,95 @@ triggers:
 
 # Dependency Scan
 
-## Overview
+CVEs, outdated packages, license compliance, and supply-chain risk across ecosystems. Deep-dependency companion to `loom-security-scan` (fast pre-commit/CI scanning) and `loom-security-audit` (methodology/compliance).
 
-This skill focuses on identifying security vulnerabilities, outdated packages, and license compliance issues in project dependencies. It covers multiple package ecosystems (JavaScript/Node.js, Python, Rust, Go, Ruby, Java, .NET, PHP) and provides remediation guidance, SBOM generation, and supply chain security analysis.
+## Workflow
 
-## When to Use
+1. **Enumerate** — parse manifests + lockfiles; separate direct vs transitive. No lockfile → builds aren't reproducible (fix first).
+2. **Scan** — CVEs against advisory DBs (below); note severity, affected/fixed versions, and the dependency *path*.
+3. **Assess reachability** — a CVE in an unimported/dev-only path is lower priority than one on a hot code path. `govulncheck` and Snyk reason about reachability; `npm audit` does not.
+4. **Remediate** — minimal safe bump to the fixed version; prefer patch/minor; verify tests. Pin the result in the lockfile.
 
-- Scanning dependencies for CVEs and security advisories
-- Checking for outdated or unmaintained packages
-- Generating Software Bill of Materials (SBOM)
-- Verifying license compliance and compatibility
-- Analyzing supply chain risks and transitive dependencies
-- Setting up automated dependency updates (Dependabot, Renovate, Snyk)
-- Investigating security alerts from GitHub/GitLab
-- Auditing dependencies before production deployment
-
-## Instructions
-
-### 1. Identify Dependencies
-
-- Parse manifest files (package.json, requirements.txt, etc.)
-- Build complete dependency tree
-- Identify direct vs transitive dependencies
-- Check for phantom dependencies
-
-### 2. Vulnerability Scanning
-
-- Check against CVE databases
-- Identify severity levels
-- Find affected versions
-- Check for available patches
-
-### 3. Assess Risks
-
-- Evaluate exploitability
-- Check for active exploitation
-- Assess impact on application
-- Prioritize remediations
-
-### 4. Report and Remediate
-
-- Document all findings
-- Provide upgrade paths
-- Suggest alternatives
-- Create remediation plan
-
-### 5. Language-Specific Scanning
-
-**JavaScript/Node.js:**
-
-- Use `npm audit` or `yarn audit` for vulnerability scanning
-- Check `package-lock.json` or `yarn.lock` for reproducibility
-- Consider `npm-check-updates` for upgrade analysis
-- Use `license-checker` for license compliance
-
-**Python:**
-
-- Use `pip-audit` or `safety` for CVE scanning
-- Check `requirements.txt` and `Pipfile.lock`
-- Use `pip-compile` with `--generate-hashes` for integrity
-- Consider `pipdeptree` for dependency visualization
-
-**Rust:**
-
-- Use `cargo audit` for RustSec advisories
-- Check `Cargo.lock` for reproducible builds
-- Use `cargo outdated` for version analysis
-- Consider `cargo deny` for policy enforcement
-
-**Go:**
-
-- Use `govulncheck` for vulnerability scanning
-- Check `go.sum` for module integrity
-- Use `go list -m all` to enumerate dependencies
-- Consider `nancy` for OSS Index checking
-
-### 6. SBOM Generation
-
-Generate Software Bill of Materials for supply chain transparency:
-
-**CycloneDX:**
-
-- `npm install -g @cyclonedx/cyclonedx-npm && cyclonedx-npm --output-file sbom.json`
-- `cargo install cargo-cyclonedx && cargo cyclonedx`
-- `pip install cyclonedx-bom && cyclonedx-py`
-
-**SPDX:**
-
-- Use `syft` (universal tool): `syft . -o spdx-json > sbom.spdx.json`
-- Use `trivy` for container images: `trivy image --format spdx-json myimage:tag`
-
-**Purpose:** Track all components for vulnerability management, license compliance, and incident response.
-
-### 7. License Compliance Checking
-
-Ensure all dependencies have compatible licenses:
-
-**Automated Tools:**
-
-- Node.js: `npx license-checker --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC'`
-- Rust: `cargo deny check licenses`
-- Python: `pip-licenses`
-- Universal: `fossology`, `scancode-toolkit`
-
-**License Categories:**
-
-- Permissive: MIT, Apache-2.0, BSD (generally safe)
-- Weak Copyleft: MPL, LGPL (check linking requirements)
-- Strong Copyleft: GPL, AGPL (may require source disclosure)
-- Unknown/Missing: Investigate before use
-
-## Best Practices
-
-1. **Regular Scanning**: Automate daily/weekly scans
-2. **Lock Files**: Use lockfiles for reproducibility
-3. **Minimal Dependencies**: Only include what's needed
-4. **Verify Sources**: Use trusted registries
-5. **Review Updates**: Don't blindly update
-6. **License Compliance**: Ensure compatible licenses
-7. **SBOM**: Maintain software bill of materials
-
-## Examples
-
-### Example 1: Scanning Commands by Ecosystem
+## Scanning Commands
 
 ```bash
-# JavaScript/Node.js
-npm audit
-npm audit --json > audit-report.json
-npm outdated
-npx npm-check-updates
-
-# Python
-pip-audit
-safety check
-pip list --outdated
-pip-compile --generate-hashes
-
-# Rust
-cargo audit
-cargo outdated
-cargo deny check
-
-# Go
-go list -m all | nancy sleuth
-govulncheck ./...
-
-# Ruby
-bundle audit
-bundle outdated
-
-# Java/Maven
-mvn dependency-check:check
-mvn versions:display-dependency-updates
-
-# .NET
-dotnet list package --vulnerable
-dotnet list package --outdated
-
-# PHP
-composer audit
-composer outdated
+# JS      npm audit --audit-level=high   |  osv-scanner -r .
+# Python  pip-audit                       |  safety check
+# Rust    cargo audit                     |  cargo deny check advisories
+# Go      govulncheck ./...               |  go list -m all | nancy sleuth
+# Ruby    bundle audit --update
+# Java    mvn org.owasp:dependency-check-maven:check
+# .NET    dotnet list package --vulnerable --include-transitive
+# PHP     composer audit
+# Any     osv-scanner -r .   (lockfile-driven, OSV DB, all major ecosystems in one)
 ```
 
-### Example 2: GitHub Actions Dependency Scanning
+⚠ `--vulnerable`/audit tools only see what the **lockfile** pins — an unpinned range (`^1.2.0`) may resolve differently in CI. Scan the committed lockfile, and regenerate it before scanning if manifests changed.
 
-```yaml
-name: Dependency Scanning
+## Supply-Chain Attacks (the high-signal risks)
 
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  schedule:
-    - cron: "0 6 * * *" # Daily at 6 AM
+Registry malware now outpaces classic CVEs. Defenses are structural, not just "run audit":
 
-jobs:
-  dependency-scan:
-    runs-on: ubuntu-latest
+- **Dependency confusion** — you have an internal package `@acme/utils`; an attacker publishes `@acme/utils` to the *public* registry with a higher version. A misconfigured resolver prefers the public one and runs attacker code at install. Defend: scope internal packages to your private registry, configure the client to **never** fall back to public for those scopes (npm `.npmrc` `@acme:registry=…`, pip `--index-url` not `--extra-index-url`), and claim/reserve your names on the public registry.
+- **Typosquatting** — `reqeusts`, `lodahs`, `python-dateutil` vs `dateutil`. Review every *new* dependency name character-by-character; watch install-time scripts. Prefer well-known packages with history and many maintainers.
+- **Namespace / maintainer hijack** — a legit package gets a malicious release after an account takeover or a maintainer handoff. Defend: pin exact versions + lockfile hash integrity; delay auto-adopting brand-new releases (Renovate `stabilityDays`); watch for sudden maintainer changes.
+- **Malicious install scripts** — npm `postinstall`, pip `setup.py` run arbitrary code at install. Use `npm ci --ignore-scripts` where feasible; audit scripts of new deps.
+- **Integrity** — commit lockfiles with hashes (`package-lock.json`, `Cargo.lock`, `poetry.lock`, `pip-compile --generate-hashes`). Hashes turn a hijacked re-publish of an existing version into a hard install failure.
 
-    steps:
-      - uses: actions/checkout@v4
+## SBOM
 
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: "fs"
-          scan-ref: "."
-          format: "sarif"
-          output: "trivy-results.sarif"
-          severity: "CRITICAL,HIGH"
+Machine-readable inventory of every component — the prerequisite for "are we affected by CVE-X?" incident response and license tracking.
 
-      - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@v2
-        with:
-          sarif_file: "trivy-results.sarif"
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Run npm audit
-        run: |
-          npm ci
-          npm audit --audit-level=high
-
-      - name: Check for outdated packages
-        run: npm outdated || true
-
-      - name: License check
-        run: npx license-checker --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC'
-
-  snyk-scan:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Run Snyk to check for vulnerabilities
-        uses: snyk/actions/node@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: --severity-threshold=high
+```bash
+syft . -o spdx-json > sbom.spdx.json                 # universal (files + many ecosystems)
+syft . -o cyclonedx-json > sbom.cdx.json             # CycloneDX flavor
+trivy image --format spdx-json myimage:tag           # container image contents
+cargo cyclonedx  |  cyclonedx-npm  |  cyclonedx-py   # ecosystem-native generators
 ```
 
-### Example 3: Dependency Analysis Report Template
-
-```markdown
-# Dependency Security Report
-
-**Generated:** 2024-01-15
-**Project:** my-application
-**Total Dependencies:** 245 (42 direct, 203 transitive)
-
-## Summary
-
-| Severity | Count | Status             |
-| -------- | ----- | ------------------ |
-| Critical | 2     | Action Required    |
-| High     | 5     | Action Required    |
-| Medium   | 12    | Review Recommended |
-| Low      | 8     | Monitor            |
-
-## Critical Vulnerabilities
-
-### CVE-2024-1234 - Remote Code Execution in lodash
-
-- **Package:** lodash@4.17.20
-- **Severity:** Critical (CVSS 9.8)
-- **Affected Versions:** < 4.17.21
-- **Fixed Version:** 4.17.21
-- **Path:** my-app > express > lodash
-- **Description:** Prototype pollution vulnerability allowing RCE
-- **Remediation:** `npm update lodash`
-
-### CVE-2024-5678 - SQL Injection in sequelize
-
-- **Package:** sequelize@6.28.0
-- **Severity:** Critical (CVSS 9.1)
-- **Affected Versions:** < 6.29.0
-- **Fixed Version:** 6.29.0
-- **Path:** my-app > sequelize
-- **Description:** SQL injection via raw query methods
-- **Remediation:** `npm update sequelize`
+Generate in CI per release and store it; then `grype sbom:./sbom.cdx.json` re-checks an existing SBOM against today's advisory DB without rebuilding.
 
 ## License Compliance
 
-| License      | Count | Compliance           |
-| ------------ | ----- | -------------------- |
-| MIT          | 180   | Approved             |
-| Apache-2.0   | 45    | Approved             |
-| BSD-3-Clause | 15    | Approved             |
-| GPL-3.0      | 3     | Review Required      |
-| Unknown      | 2     | Investigation Needed |
-
-## Recommendations
-
-1. **Immediate:** Update lodash and sequelize to fix critical vulnerabilities
-2. **Short-term:** Review GPL-licensed dependencies for compatibility
-3. **Ongoing:** Enable Dependabot/Renovate for automated updates
+```bash
+npx license-checker --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC'
+cargo deny check licenses      #  pip-licenses  |  scancode-toolkit (deep)
 ```
 
-### Example 4: Renovate Configuration
+| Category | Examples | Risk |
+| -------- | -------- | ---- |
+| Permissive | MIT, Apache-2.0, BSD, ISC | Safe; Apache-2.0 adds patent grant |
+| Weak copyleft | MPL-2.0, LGPL | OK if dynamically linked / file-level; check linking |
+| Strong copyleft | GPL, **AGPL** | May force source disclosure — AGPL triggers on network use (SaaS) |
+| Unknown / missing | — | Block until resolved; unlicensed = all-rights-reserved |
+
+## Automated Updates (Renovate)
 
 ```json
 {
-  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:base", ":semanticCommits", ":preserveSemverRanges"],
-  "schedule": ["before 6am on Monday"],
-  "vulnerabilityAlerts": {
-    "enabled": true,
-    "labels": ["security"]
-  },
+  "extends": ["config:recommended", ":semanticCommits"],
+  "vulnerabilityAlerts": { "labels": ["security"], "enabled": true },
   "packageRules": [
-    {
-      "matchUpdateTypes": ["major"],
-      "labels": ["major-update"],
-      "automerge": false
-    },
-    {
-      "matchUpdateTypes": ["minor", "patch"],
-      "matchCurrentVersion": "!/^0/",
-      "automerge": true,
-      "automergeType": "pr",
-      "platformAutomerge": true
-    },
-    {
-      "matchPackagePatterns": ["^@types/"],
-      "automerge": true,
-      "groupName": "type definitions"
-    },
-    {
-      "matchDepTypes": ["devDependencies"],
-      "automerge": true,
-      "groupName": "dev dependencies"
-    }
+    { "matchUpdateTypes": ["major"], "automerge": false },
+    { "matchUpdateTypes": ["minor", "patch"], "matchCurrentVersion": "!/^0/", "automerge": true },
+    { "matchDepTypes": ["devDependencies"], "automerge": true, "groupName": "dev deps" }
   ],
-  "prConcurrentLimit": 5,
-  "prHourlyLimit": 2
+  "minimumReleaseAge": "3 days",
+  "prConcurrentLimit": 5
 }
 ```
+
+⚠ `minimumReleaseAge`/`stabilityDays` deliberately delays adopting fresh releases — the window in which hijacked/malicious versions are typically caught and yanked. Never auto-merge majors; `^0.x` is pre-1.0 where minors can break.
+
+## Verification Checklist
+
+- [ ] Lockfile present, committed, with integrity hashes; scan targets the lockfile (not just manifest ranges)
+- [ ] Every ecosystem in the repo scanned; transitive deps included
+- [ ] Findings ranked by **reachability + severity**, not raw CVSS; each has a fixed-version upgrade path
+- [ ] Internal packages scoped to a private registry with **no public fallback** (dependency-confusion closed)
+- [ ] New dependencies eyeballed for typosquats and reviewed for install scripts
+- [ ] SBOM generated for the release and stored
+- [ ] Licenses checked against an allowlist; no AGPL/GPL surprises for a proprietary/SaaS product
+- [ ] Auto-update bot enabled with a release-age delay and no major auto-merge
+
+For pre-commit/CI wiring see `loom-security-scan`; for exploit-context risk rating and compliance framing see `loom-security-audit`.

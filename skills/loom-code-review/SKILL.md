@@ -33,368 +33,128 @@ triggers:
 
 ## Overview
 
-This skill provides thorough code review capabilities across multiple domains, analyzing code for bugs, design issues, performance problems, security vulnerabilities, and adherence to best practices. It helps identify potential issues before they reach production.
+Review a change for correctness, security, performance, and maintainability, then produce prioritized, actionable feedback. Optimize signal: gate on what breaks users; comment (don't gate) on the rest.
 
-## Agent Assignment
+## Review vs. adversarial security audit
 
-When performing code reviews, consider using specialized skills for domain-specific expertise:
+Different jobs — don't conflate:
 
-- **code-reviewer** - Architecture, design patterns, complex logic review, security review (use `/loom-security-audit` skill), infrastructure review
-- **senior-software-engineer** (Opus) - Responds to review feedback, implements fixes requiring judgment
-- **software-engineer** (Sonnet) - ONLY for mechanical fixes (unit tests, boilerplate) identified during review
+- **Code review (this skill):** holistic, author-empathetic. Reviews the *diff and its blast radius* against stated intent across four lenses. Assumes good faith; catches the bugs a careful peer catches.
+- **Security audit (`/loom-security-audit`, `/loom-threat-model`):** attacker mindset, threat model, whole-attack-surface. Assumes hostile input everywhere.
 
-For specialized reviews, use relevant skills such as `/loom-security-audit` for security concerns, `/loom-concurrency` for thread safety, `/loom-data-validation` for input validation, etc.
+For auth, crypto, payments, deserialization, or anything touching a trust boundary: do the code review AND trigger a security audit. A passing code review is not a security sign-off.
 
-## Instructions
+## Severity taxonomy
 
-### 1. Gather Context
+Label every comment. Only the first two gate the merge.
 
-- Identify the files to review (use `fd`/`rg` to enumerate them)
-- Understand the project structure and conventions
-- Check for existing linting/formatting rules
+| Severity           | Gate? | Meaning                                                                            |
+| ------------------ | ----- | --------------------------------------------------------------------------------- |
+| **BLOCKER**        | ✅     | Security hole, data loss, crash, corruption. Merge is unsafe.                      |
+| **SILENT_FAILURE** | ✅     | Exit 0 but the operation actually failed (sandbox-blocked download, partial fetch, stale cache, swallowed error). Always investigate before merge. |
+| **CRITICAL**       | ✅     | Logic error / real bug that will bite in normal use.                              |
+| **MAJOR**          | ❌     | Maintainability, tech debt, missing test for a real path. Fix soon.               |
+| **MINOR / nit**    | ❌     | Style, naming, micro-optimization. Prefix with `nit:` so the author can skip it.  |
 
-### 2. Analyze Code Structure
+**Approve-with-comments discipline:** if nothing is BLOCKER/CRITICAL, approve and leave the MAJOR/MINOR notes as non-blocking. Don't hold a PR hostage over nits or personal style. Blocking on taste is the top reviewer anti-pattern — it trains authors to ignore you.
 
-- Review file organization and module structure
-- Check for proper separation of concerns
-- Verify naming conventions are consistent
+## Method
 
-### 3. Check for Common Issues
+1. **Read intent first.** PR description, linked issue, commit messages. Review against what the change *claims* to do; flag scope creep separately from bugs.
+2. **Review the diff AND its blast radius.** A hunk is not self-contained. For every changed symbol, `rg` its callers and callees — a signature change, a new early-return, a changed default, or a widened type ripples outward. Bugs hide at the seams the diff doesn't show.
+3. **Four lenses per hunk:** correctness → security → performance → maintainability (below).
+4. **Missing-tests / missing-error-path pass** (separate sweep — easy to skip).
+5. **Verdict:** approve / approve-with-comments / request-changes, each comment severity-tagged.
 
-- Logic errors and edge cases
-- Error handling completeness
-- Resource management (memory leaks, unclosed handles)
-- Thread safety issues in concurrent code
-- Input validation gaps
+### Blast-radius checklist
 
-### 4. Evaluate Code Quality
+- [ ] Callers of every changed function/signature updated (search, don't assume)
+- [ ] Callees: are new preconditions actually guaranteed by callers?
+- [ ] Changed default value / enum variant / error type — who relied on the old one?
+- [ ] Concurrency: new shared state, lock ordering, `await` points holding a guard?
+- [ ] Public API / serialized format / DB schema change — back-compat and consumers?
+- [ ] Tests, docs, and types updated alongside behavior?
 
-- Readability and clarity
-- DRY principle adherence
-- SOLID principles compliance
-- Appropriate abstraction levels
-- Test coverage adequacy
+### Four lenses
 
-### 5. Performance Review
+- **Correctness:** edge cases (empty, null, zero, negative, overflow, unicode, TZ/DST), off-by-one, error paths, resource cleanup (files/locks/connections on *every* return incl. early ones), idempotency/retry safety, race conditions. Trace the unhappy path, not just the happy one.
+- **Security:** input validation at the boundary, injection (SQL/command/path/SSRF/XSS), authz on every sensitive op, secrets not logged, crypto-grade randomness. (Deep dive → security audit.)
+- **Performance:** algorithmic complexity, N+1 queries, unnecessary allocation/clone in hot paths, missing pagination/streaming for unbounded data, `O(n)`-in-a-loop membership checks (want a set/map). Don't nitpick micro-perf off the hot path.
+- **Maintainability:** does the abstraction fit the problem? single responsibility, honest naming, no copy-paste of logic that will drift, no dead/speculative code, comments explain *why* not *what*.
 
-- Algorithm complexity analysis
-- Database query efficiency
-- Memory usage patterns
-- Caching opportunities
+### Missing tests & error paths
 
-## Review Severity Levels
+The most common real defect in a passing PR: an untested error path. Ask:
 
-- **BLOCKER**: Must fix before merge - security issues, data loss, crashes
-- **SILENT_FAILURE**: A command or operation appeared to succeed (exit 0) but actually failed. This includes sandbox-blocked downloads, partial fetches, and stale cached data. Always a BLOCKER — must investigate before merge.
-- **CRITICAL**: Should fix before merge - logic errors, major bugs, performance issues
-- **MAJOR**: Fix soon - code quality, maintainability, tech debt
-- **MINOR**: Nice to have - style preferences, suggestions, nits
+- [ ] New branch / early-return / `catch` with no test exercising it?
+- [ ] External call (network/db/fs) — what happens on timeout, 500, empty result?
+- [ ] Does a returned `Result`/`Err`/rejected promise get handled, or silently dropped?
+- [ ] New public function without a test for its failure mode, not just success?
 
-## Domain-Specific Checklists
+## Loom orchestration review
 
-### Security Review Checklist
+For code produced by loom stages, add these (they catch the "compiles + tests pass but doesn't work" class):
 
-- **Authentication/Authorization**
-  - Proper credential storage (hashed, salted passwords)
-  - Session management (expiry, secure cookies, CSRF tokens)
-  - Access control checks on all sensitive operations
-  - OAuth/JWT token validation and expiry
+- **Silent failure (BLOCKER):** exit 0 with error/warning on stderr; sandbox blocked a download but stage completed; external dep referenced but not installed/reachable.
+- **Wiring (CRITICAL):** feature compiles and tests pass but is never imported / registered / mounted / reachable by a real user. Verify: is the module imported at the entry point? command/route registered? event handler connected? DI binding present? Can a user actually invoke it? (See `/loom-wiring-test`.)
+- **Dependency reality:** package actually installed (not just in manifest); data file actually downloaded (not just referenced); endpoint actually reachable (not just configured).
 
-- **Input Validation**
-  - SQL injection prevention (parameterized queries)
-  - XSS prevention (output encoding)
-  - Command injection prevention (no shell execution with user input)
-  - Path traversal prevention (sanitize file paths)
-  - SSRF prevention (validate URLs)
+## Domain quick-checklists
 
-- **Data Protection**
-  - Sensitive data encryption at rest and in transit
-  - PII handling compliance (GDPR, CCPA)
-  - Secrets not in code or logs
-  - Rate limiting on APIs
-  - Secure random number generation (crypto-grade)
+Compressed — expand the relevant one only when the diff touches that domain.
 
-- **Dependencies**
-  - No known vulnerable dependencies
-  - Supply chain security (verify checksums)
-  - Minimal attack surface
+- **Infra/IaC:** no hardcoded secrets; least-privilege IAM; state backend secured; resource limits/requests (k8s); non-root, minimal base image, no secrets in layers (Docker); rollback path (CI/CD).
+- **Data pipeline:** schema validation; null/dup handling; idempotent + exactly-once where claimed; dead-letter queue; partitioning/batching; storage lifecycle for cost.
+- **ML:** seed set for reproducibility; train/val/test split has no leakage; data + model versioned; drift monitoring and rollback in prod; bias/fairness on training data.
 
-### Infrastructure Code Review Checklist
+## Reviewer output format
 
-- **Terraform/IaC**
-  - No hardcoded credentials or secrets
-  - State file backend configured securely
-  - Resource tagging for cost tracking
-  - Proper IAM roles (principle of least privilege)
-  - Network security (VPC, security groups, firewall rules)
-  - Disaster recovery configuration (backups, multi-region)
-
-- **Kubernetes**
-  - Resource limits and requests defined
-  - Pod security policies/admission controllers
-  - Network policies for isolation
-  - Secrets management (external secrets operator)
-  - Health checks (liveness, readiness probes)
-  - RBAC configured properly
-
-- **Docker**
-  - Minimal base images (distroless, alpine)
-  - No secrets in layers
-  - Multi-stage builds for size
-  - Non-root user execution
-  - Vulnerability scanning enabled
-
-- **CI/CD**
-  - Pipeline security (secrets injection, not in logs)
-  - Build reproducibility
-  - Deployment rollback capability
-  - Testing in staging before production
-
-### Data Pipeline Review Checklist
-
-- **Data Quality**
-  - Schema validation
-  - Null handling strategy
-  - Duplicate detection
-  - Data type enforcement
-
-- **Reliability**
-  - Idempotent operations
-  - Exactly-once processing guarantees
-  - Dead letter queues for failures
-  - Monitoring and alerting
-
-- **Performance**
-  - Batch processing where appropriate
-  - Partitioning strategy
-  - Compression usage
-  - Query optimization
-
-- **Cost**
-  - Storage lifecycle policies
-  - Compute resource right-sizing
-  - Data transfer minimization
-
-### ML Code Review Checklist
-
-- **Model Development**
-  - Reproducible experiments (seed setting)
-  - Data versioning
-  - Model versioning
-  - Feature engineering documentation
-
-- **Training**
-  - Training/validation/test split correctness
-  - Overfitting checks
-  - Hyperparameter tracking
-  - Gradient explosion/vanishing checks
-
-- **Production**
-  - Model serving latency requirements
-  - Model monitoring (drift detection)
-  - A/B testing capability
-  - Rollback strategy
-
-- **Ethics**
-  - Bias detection in training data
-  - Fairness metrics
-  - Explainability/interpretability
-  - Privacy preservation (differential privacy)
-
-### Loom Orchestration Review
-
-When reviewing code produced by loom orchestration stages, apply these additional checks:
-
-- **Silent Failure Patterns**
-  - BLOCKER: Command exited 0 but stderr contains error/warning patterns
-  - BLOCKER: Sandbox blocked a download but stage marked complete
-  - BLOCKER: External dependency referenced but not actually available
-  - CRITICAL: Feature compiles and tests pass but is never wired up
-  - CRITICAL: Acceptance criteria pass but feature is not callable by user
-
-- **Wiring Verification Checklist**
-  - Is the module/component imported in the entry point?
-  - Is the command/endpoint/route registered?
-  - Can a user invoke the feature through the normal interface?
-  - Are event handlers connected?
-  - Are dependency injection bindings configured?
-
-- **Sandbox Awareness**
-  - Check if network restrictions may have blocked needed downloads
-  - Verify filesystem restrictions didn't prevent needed file operations
-  - Look for signs of stale cached data being used instead of fresh downloads
-
-- **Dependency Verification**
-  - Are external packages actually installed (not just in manifest)?
-  - Are data files actually downloaded (not just referenced)?
-  - Are API endpoints actually reachable (not just configured)?
-
-## Best Practices
-
-1. **Be Specific**: Point to exact lines and provide concrete suggestions
-2. **Prioritize Issues**: Use severity levels (BLOCKER, CRITICAL, MAJOR, MINOR)
-3. **Explain Why**: Don't just say what's wrong, explain the reasoning
-4. **Suggest Solutions**: Provide alternative implementations when possible
-5. **Acknowledge Good Code**: Recognize well-written sections
-6. **Consider Context**: Understand the constraints and trade-offs
-7. **Be Constructive**: Frame feedback positively and professionally
-8. **Focus on Impact**: Prioritize issues by user/business impact
-9. **Reference Standards**: Link to style guides, security benchmarks, RFCs
-
-## Examples
-
-### Example 1: Reviewing a Python Function
-
-```python
-# Before Review
-def process(data):
-    result = []
-    for item in data:
-        if item['status'] == 'active':
-            result.append(item['value'] * 2)
-    return result
-
-# Review Comments:
-# 1. Function name is too generic - consider 'double_active_values'
-# 2. No type hints - add typing for better maintainability
-# 3. No docstring explaining purpose and parameters
-# 4. No null/empty check on input data
-# 5. Could use list comprehension for cleaner code
-
-# After Review
-def double_active_values(data: list[dict]) -> list[int]:
-    """
-    Doubles the values of all active items in the dataset.
-
-    Args:
-        data: List of dictionaries with 'status' and 'value' keys
-
-    Returns:
-        List of doubled values for active items
-    """
-    if not data:
-        return []
-    return [item['value'] * 2 for item in data if item.get('status') == 'active']
-```
-
-### Example 2: Security Review Flag
-
-```javascript
-// CRITICAL: SQL Injection vulnerability
-const query = `SELECT * FROM users WHERE id = ${userId}`;
-
-// Recommendation: Use parameterized queries
-const query = "SELECT * FROM users WHERE id = ?";
-db.query(query, [userId]);
-```
-
-### Example 3: Performance Review
-
-```python
-# Issue: O(n*m) complexity due to nested loops with list membership check
-for user in users:
-    if user.id in active_ids:  # O(n) lookup each time
-        process(user)
-
-# Recommendation: Convert to set for O(1) lookups
-active_ids_set = set(active_ids)
-for user in users:
-    if user.id in active_ids_set:
-        process(user)
-```
-
-### Example 4: Structured Review with Severity Levels
+Group by severity, cite `file:line`, state issue → impact → fix. Keep it scannable.
 
 ```markdown
-# Code Review: auth/login.py
+# Review: auth/login.py
 
-## BLOCKER Issues
+## BLOCKER
+- **L45 SQL injection** — `f"... WHERE email = '{email}'"` interpolates user input.
+  Impact: arbitrary SQL. Fix: `cursor.execute("... WHERE email = %s", (email,))`.
 
-### Line 45: SQL Injection Vulnerability
+## MAJOR
+- **L112 unchecked None** — `send_email(user.email, ...)` after `.first()` can `None`-deref
+  when the user doesn't exist. Add a guard returning 404.
 
-sql = f"SELECT \* FROM users WHERE email = '{email}'"
-cursor.execute(sql)
+## nit
+- **L23** `GetUser` → `get_user` (snake_case).
 
-**Issue**: User input directly interpolated into SQL query.
-**Impact**: Attacker can execute arbitrary SQL commands.
-**Fix**: Use parameterized queries:
-cursor.execute("SELECT \* FROM users WHERE email = ?", (email,))
-
-## CRITICAL Issues
-
-### Line 78: Password Stored in Plain Text
-
-user.password = request.form['password']
-
-**Issue**: Password stored without hashing.
-**Impact**: Database breach exposes all user passwords.
-**Fix**: Use bcrypt or argon2:
-from bcrypt import hashpw, gensalt
-user.password = hashpw(password.encode('utf-8'), gensalt())
-
-## MAJOR Issues
-
-### Line 112: Missing Error Handling
-
-user = User.query.filter_by(email=email).first()
-send_email(user.email, token)
-
-**Issue**: No check if user exists before accessing attributes.
-**Impact**: AttributeError crash if user not found.
-**Fix**: Add null check:
-if user is None:
-return {"error": "User not found"}, 404
-
-## MINOR Issues
-
-### Line 23: Inconsistent Naming
-
-def GetUser(id): # PascalCase for function
-
-**Issue**: Python convention is snake_case for functions.
-**Fix**: Rename to `get_user(id)` for consistency.
-
-## Positive Notes
-
-- Good separation of validation logic (lines 30-40)
-- Comprehensive unit test coverage
-- Clear documentation on authentication flow
+## Good
+- Clean validation split (L30-40); solid test coverage on the happy path.
 ```
 
-### Example 5: Infrastructure Review (Terraform)
+Two tiny wrong→right patterns worth internalizing:
 
-```hcl
-# BLOCKER: Line 12 - Hardcoded AWS Credentials
-provider "aws" {
-  access_key = "AKIAIOSFODNN7EXAMPLE"  # NEVER commit credentials
-  secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-}
-
-# Fix: Use AWS credential profiles or environment variables
-provider "aws" {
-  profile = var.aws_profile
-  region  = var.aws_region
-}
-
-# CRITICAL: Line 45 - S3 Bucket Publicly Accessible
-resource "aws_s3_bucket" "data" {
-  bucket = "company-data"
-  acl    = "public-read"  # Exposes all data publicly
-}
-
-# Fix: Make private and use bucket policies for controlled access
-resource "aws_s3_bucket" "data" {
-  bucket = "company-data"
-  acl    = "private"
-}
-
-# MAJOR: Line 78 - Missing Backup Configuration
-resource "aws_db_instance" "main" {
-  # ... other config ...
-  backup_retention_period = 0  # No backups
-}
-
-# Fix: Enable automated backups
-backup_retention_period = 7
-backup_window           = "03:00-04:00"
+```python
+# perf: O(n·m) — membership check rebuilds nothing but scans a list each pass
+if user.id in active_ids:      # list → O(n) per lookup
+# → hoist once:
+active = set(active_ids)       # O(1) per lookup
+if user.id in active:
 ```
+
+## Author-empathy phrasing
+
+Same fact, better delivery — critique the code, ask don't command, give the reason:
+
+- ❌ "This is wrong." → ✅ "This deref crashes when `user` is None (L112) — guard it?"
+- ❌ "Why didn't you use a set?" → ✅ "A `set` here makes this O(1) per lookup; worth it on the hot path."
+- ❌ "Bad naming." → ✅ "nit: `data` is vague — `active_orders`?"
+
+Acknowledge good work explicitly; it makes the blocking comments land.
+
+## Verify before done
+
+- [ ] Read the PR intent; scope creep flagged separately from bugs
+- [ ] Every changed symbol's callers/callees checked (blast radius, not just the hunk)
+- [ ] All four lenses applied; unhappy paths traced
+- [ ] Missing-test / error-path sweep done
+- [ ] Loom: wiring + silent-failure + dependency-reality checks (if orchestrated code)
+- [ ] Every comment severity-tagged; nits marked `nit:`; verdict matches (only BLOCKER/CRITICAL gate)
+- [ ] Security-sensitive surface → security audit triggered, not just reviewed

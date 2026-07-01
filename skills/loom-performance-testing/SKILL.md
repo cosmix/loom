@@ -29,6 +29,7 @@ triggers:
   - median latency
   - saturation
   - bottleneck
+  - coordinated omission
   - performance budget
   - API load testing
   - database performance
@@ -45,1874 +46,471 @@ triggers:
 
 ## Overview
 
-Performance testing validates that applications meet speed, scalability, and stability requirements under various load conditions. This skill provides comprehensive expertise in load testing tools (k6, locust, JMeter, Gatling), API and database performance testing, benchmarking strategies, profiling techniques, and systematic approaches to identifying and resolving performance bottlenecks.
+Validate that a system meets latency, throughput, and stability targets under load, and locate the bottleneck when it doesn't. This file assumes you can write the test code; it focuses on the measurement traps that make load-test numbers lie and the decision criteria for tool/shape selection.
 
-## When to Use This Skill
+## Core Concepts (read first — these are where numbers go wrong)
 
-Use this skill when you need to:
+### Open vs. closed workload models
 
-- Implement load tests, stress tests, spike tests, or soak tests
-- Measure API endpoint performance under concurrent users
-- Optimize database queries and identify slow queries
-- Analyze latency percentiles (p50, p95, p99) and throughput (RPS)
-- Set up performance monitoring and alerting
-- Identify system saturation points and bottlenecks
-- Establish performance budgets and SLOs
-- Conduct capacity planning and scalability analysis
+The single most consequential choice. It determines what your numbers mean.
 
-## Test Types and Patterns
+| Model      | Load driver                          | Throughput is…           | Overload behavior                                | Use for                          |
+| ---------- | ------------------------------------ | ------------------------ | ------------------------------------------------ | -------------------------------- |
+| **Closed** | Fixed VUs, each loops request→wait   | *Emergent* (backpressure) | Self-throttles: slow server → fewer requests sent | Modeling a fixed client pool     |
+| **Open**   | Fixed *arrival rate* (req/s)         | *Controlled* (you set it) | Queue grows unbounded; latency explodes           | Web traffic, finding breaking pt |
 
-### Load Test Types
+⚠ **Closed models hide overload.** With fixed VUs, when the server slows down each VU sends *fewer* requests, so offered load silently drops. You can't overwhelm the server past what its own latency allows — you measure a moving target, not capacity. Real internet traffic is open (users arrive independently of server health), so **use an arrival-rate executor to find true breaking points.**
 
-| Test Type           | Purpose                                  | Pattern                                 | When to Use                    |
-| ------------------- | ---------------------------------------- | --------------------------------------- | ------------------------------ |
-| **Load Test**       | Validate performance under expected load | Constant VUs over time                  | Establish baseline performance |
-| **Stress Test**     | Find breaking point                      | Gradual ramp-up until failure           | Determine system limits        |
-| **Spike Test**      | Test sudden traffic bursts               | Rapid increase to high load             | Validate autoscaling, caching  |
-| **Soak Test**       | Detect memory leaks, degradation         | Moderate load for extended time (hours) | Production readiness           |
-| **Breakpoint Test** | Find maximum capacity                    | Incremental load increases              | Capacity planning              |
+- k6: closed = `constant-vus`/`ramping-vus`; open = `constant-arrival-rate`/`ramping-arrival-rate`.
+- Locust is closed-model (users); JMeter thread groups are closed; Gatling `injectOpen`/`injectClosed`; artillery `arrivalRate` is open.
+- Open executors need `preAllocatedVUs`/`maxVUs` headroom; if k6 warns "insufficient VUs," it *dropped* iterations and your rate was never achieved.
 
-### k6 Test Patterns
+### Coordinated omission — why naive latency numbers lie
 
-#### Pattern: Baseline Load Test
+A closed-model generator that waits for each response before sending the next **stops the clock during a stall.** One 10s stall that should have blocked 10,000 scheduled 1ms requests gets recorded as *one* 10s sample instead of 10,000 samples ≥ their overdue time. Result: p99 looks great while users are timing out.
+
+- **Detect:** suspiciously clean tail (p99 ≈ p50) under load that clearly stuttered; throughput dips that don't show in latency percentiles.
+- **Fix:** measure against an *intended schedule*, not send-time. Use tools that correct it:
+  - `wrk2 -R<rate> --latency` (constant throughput + HdrHistogram correction) — the reference implementation.
+  - k6 arrival-rate executors record each iteration against its scheduled start, so `iteration_duration` is corrected; still prefer open model for tail truth.
+  - HdrHistogram `recordValueWithExpectedInterval(v, interval)` back-fills omitted samples.
+- **Never** report tail latency from a closed-loop `ab`/single-thread `wrk` run at saturation.
+
+### Percentiles, not averages
+
+- Report **p50 / p95 / p99 / max** — never mean alone. Averages hide the tail; the mean can be 40ms while p99 is 3s.
+- Latency distributions are right-skewed and multi-modal (cache hit vs miss, GC pause). Mean sits in an empty valley between modes.
+- **p99 is a per-request user probability, not a rare edge case:** a page issuing 100 requests hits its p99 latency on ~63% of loads (1−0.99¹⁰⁰). Tail latency *is* the typical experience for fan-out.
+- Percentiles **don't average across shards** — never mean the p99s of two load-gen workers. Merge the raw histograms (HdrHistogram) or you get garbage.
+
+### Little's Law — sanity-check every run
+
+`L = λ × W` → concurrency = throughput × latency.
+
+- Required VUs ≈ target_RPS × avg_response_time_s. Wanting 1000 RPS at 200ms needs ≥200 concurrent in flight.
+- If achieved `RPS ≈ VUs / (latency + think_time)` doesn't hold, your generator is the limit, not the server.
+
+### Saturation: knee vs. collapse
+
+As load rises: throughput climbs, then **plateaus (the knee)** while latency turns hockey-stick. Past the knee, more load buys only more latency and eventually errors/collapse.
+
+- **Report the knee** (max sustainable throughput at acceptable latency), not the collapse point.
+- USE method for the SUT: **U**tilization, **S**aturation (queue depth/run-queue), **E**rrors — per resource (CPU, mem, disk, net, connection pool).
+
+### Warm-up, JIT, GC — discard the transient
+
+- **Always discard a warm-up window.** Cold caches, empty connection pools, unfilled DB buffer pool, and JIT (JVM/V8) compilation make the first seconds meaningless. In k6 use a ramp stage; in JMH warm-up iterations; in Gatling a `nothingFor`/ramp.
+- **GC/JIT cause tail latency**, not throughput loss — stop-the-world pauses show up as p99/max spikes. A soak test surfaces them; a 30s run won't.
+- JVM needs thousands of iterations to reach steady state (C2 compiler). Benchmark JVM services *after* warm-up or numbers are 2–10× pessimistic.
+
+### Measure the server, not the client
+
+- **Run the generator on a separate host** from the SUT — co-located, they fight for CPU/net and you measure interference.
+- **Load-generator-is-the-bottleneck** is the most common false result. Detect: latency rises but *server* CPU is low while *generator* CPU pegs, or you hit ephemeral-port/FD exhaustion. Symptoms:
+  - Single-threaded generators (`ab`, artillery/Node, locust single-worker) cap ~1 core.
+  - Ephemeral port exhaustion (`netstat` full of TIME_WAIT) → looks like server refusing connections.
+  - FD limit (`ulimit -n`) caps concurrent connections.
+- **Fix:** multi-core generators (k6, Gatling, wrk, JMeter), distributed mode (locust master/worker, k6 cloud/operator), raise `ulimit -n`, reuse connections. **Always correlate client numbers with server-side metrics** (APM/Prometheus) — divergence means you're measuring the wrong thing.
+
+### Connection reuse & think time
+
+- **Keep-alive dominates:** new-connection-per-request adds TCP + TLS handshake (often > the request itself). Most tools reuse per VU by default (k6 does). Test *both* if clients differ (mobile cold-start vs. pooled service). k6: `noConnectionReuse: true` / `noVUConnectionReuse`.
+- **Think time** models real users (pauses between actions) and, in closed models, sets effective concurrency (Little's Law). Zero think time in a closed model = an unrealistic hammer that mostly measures your keep-alive path. Use randomized think time (not fixed — fixed sleeps create synchronized request waves).
+
+### Realistic data & cardinality
+
+- **Hitting one key lies:** repeating `GET /users/1` measures a cache/DB-buffer hit path nobody experiences. Use realistic key distribution — **Zipfian/Pareto** (80/20), not uniform, not constant.
+- Dataset must exceed cache size, or you benchmark RAM.
+- Unique-per-request params defeat query-plan/result caches (good for worst case); constant params inflate results.
+- Match production **payload sizes, cardinality, and content** (unicode, large records).
+
+---
+
+## Load Shapes
+
+One canonical k6 config per shape. Swap `constant-vus`→`constant-arrival-rate` (and `ramping-vus`→`ramping-arrival-rate`, `target` = req/s) for the open model when finding limits.
+
+| Shape          | Goal                       | Pattern                         |
+| -------------- | -------------------------- | ------------------------------- |
+| **Smoke**      | Validate script works      | 1–5 VUs, 1 min                  |
+| **Load**       | Baseline at expected load  | Ramp → hold steady → ramp down  |
+| **Stress**     | Find breaking point        | Step up past expected until fail |
+| **Spike**      | Sudden burst recovery      | Jump to N×, hold, drop, recover |
+| **Soak**       | Leaks/degradation          | Moderate load for hours         |
+| **Breakpoint** | Max capacity               | Linear ramp with no cap         |
 
 ```javascript
-export const options = {
-  vus: 50,
-  duration: "5m",
-  thresholds: {
-    http_req_duration: ["p(95)<500"],
-  },
-};
-```
-
-#### Pattern: Stress Test (Find Breaking Point)
-
-```javascript
+// Load: warm-up ramp is mandatory; thresholds abort/mark-fail the run.
 export const options = {
   stages: [
-    { duration: "2m", target: 100 },
-    { duration: "5m", target: 100 },
-    { duration: "2m", target: 200 },
-    { duration: "5m", target: 200 },
-    { duration: "2m", target: 300 },
-    { duration: "5m", target: 300 },
-    { duration: "5m", target: 0 },
+    { duration: "2m", target: 100 }, // ramp (discard for analysis)
+    { duration: "10m", target: 100 }, // steady state = the measurement
+    { duration: "2m", target: 0 }, // ramp down
   ],
-};
-```
-
-#### Pattern: Spike Test
-
-```javascript
-export const options = {
-  stages: [
-    { duration: "30s", target: 50 }, // Normal load
-    { duration: "10s", target: 500 }, // Spike!
-    { duration: "1m", target: 500 }, // Hold spike
-    { duration: "10s", target: 50 }, // Drop
-    { duration: "1m", target: 50 }, // Recovery
-  ],
-};
-```
-
-#### Pattern: Soak Test (Memory Leaks)
-
-```javascript
-export const options = {
-  vus: 100,
-  duration: "4h", // Extended duration
   thresholds: {
-    http_req_duration: ["p(95)<500"],
+    http_req_duration: ["p(95)<500", "p(99)<1000"],
     http_req_failed: ["rate<0.01"],
   },
 };
 ```
 
-## Instructions
-
-### 1. Load Testing with Modern Tools
-
-**k6 (Recommended for API Load Testing):**
-
-```bash
-# Installation
-brew install k6
-# or
-npm install -g k6
+```javascript
+// Stress (open model — reveals true limit): step arrival rate until errors/latency break.
+export const options = {
+  scenarios: {
+    stress: {
+      executor: "ramping-arrival-rate",
+      startRate: 50, timeUnit: "1s",
+      preAllocatedVUs: 100, maxVUs: 2000, // headroom or iterations drop silently
+      stages: [
+        { duration: "2m", target: 200 },
+        { duration: "2m", target: 400 },
+        { duration: "2m", target: 800 }, // watch for the knee here
+        { duration: "2m", target: 1600 },
+      ],
+    },
+  },
+};
 ```
 
 ```javascript
-// load-test.js
+// Spike: validate autoscaling/cache/recovery, not steady throughput.
+export const options = {
+  stages: [
+    { duration: "1m", target: 50 }, // baseline
+    { duration: "10s", target: 1000 }, // spike
+    { duration: "3m", target: 1000 }, // hold — does it shed load or fall over?
+    { duration: "10s", target: 50 }, // drop
+    { duration: "3m", target: 50 }, // recovery — latency must return to baseline
+  ],
+};
+```
+
+```javascript
+// Soak: surfaces leaks, FD/connection exhaustion, GC creep, disk fill. Hours, not minutes.
+export const options = {
+  vus: 100, duration: "4h",
+  thresholds: { http_req_duration: ["p(99)<1000"], http_req_failed: ["rate<0.01"] },
+};
+// Watch: RSS growth, GC frequency, pool saturation, p99 drift over time (not the average).
+```
+
+---
+
+## Tools
+
+### k6 (default for API/protocol load testing)
+
+Go-based, multi-core, JS scripting, open+closed executors, built-in thresholds. Best default.
+
+```javascript
 import http from "k6/http";
 import { check, sleep } from "k6";
 import { Rate, Trend } from "k6/metrics";
 
-// Custom metrics
 const errorRate = new Rate("errors");
-const latencyTrend = new Trend("latency");
 
 export const options = {
-  stages: [
-    { duration: "2m", target: 100 }, // Ramp up
-    { duration: "5m", target: 100 }, // Steady state
-    { duration: "2m", target: 200 }, // Spike
-    { duration: "5m", target: 200 }, // Sustained spike
-    { duration: "2m", target: 0 }, // Ramp down
-  ],
+  scenarios: {
+    // open model: request rate is what you control, independent of server health
+    api: {
+      executor: "ramping-arrival-rate",
+      startRate: 100, timeUnit: "1s",
+      preAllocatedVUs: 200, maxVUs: 1000,
+      stages: [{ duration: "2m", target: 500 }, { duration: "5m", target: 500 }],
+    },
+  },
   thresholds: {
-    http_req_duration: ["p(95)<500", "p(99)<1000"],
-    errors: ["rate<0.01"],
+    "http_req_duration{expected_response:true}": ["p(95)<500", "p(99)<1000"],
     http_req_failed: ["rate<0.01"],
   },
 };
 
-export default function () {
-  const payload = JSON.stringify({
-    username: `user_${__VU}_${__ITER}`,
-    action: "test",
-  });
-
-  const params = {
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${__ENV.API_TOKEN}`,
-    },
-  };
-
-  const response = http.post(
-    "https://api.example.com/endpoint",
-    payload,
-    params,
-  );
-
-  latencyTrend.add(response.timings.duration);
-  errorRate.add(response.status !== 200);
-
-  check(response, {
-    "status is 200": (r) => r.status === 200,
-    "response time < 500ms": (r) => r.timings.duration < 500,
-    "has required fields": (r) => {
-      const body = JSON.parse(r.body);
-      return body.id && body.status;
-    },
-  });
-
-  sleep(1);
-}
-
-export function handleSummary(data) {
-  return {
-    "summary.json": JSON.stringify(data),
-    stdout: textSummary(data, { indent: " ", enableColors: true }),
-  };
-}
-```
-
-**Run k6 Tests:**
-
-```bash
-# Basic run
-k6 run load-test.js
-
-# With environment variables
-k6 run -e API_TOKEN=xxx load-test.js
-
-# Cloud execution
-k6 cloud load-test.js
-
-# Output to InfluxDB for Grafana
-k6 run --out influxdb=http://localhost:8086/k6 load-test.js
-```
-
-**Locust (Python-based Load Testing):**
-
-```python
-# locustfile.py
-from locust import HttpUser, task, between
-from locust import events
-import time
-
-class WebsiteUser(HttpUser):
-    wait_time = between(1, 3)
-
-    def on_start(self):
-        """Login on start"""
-        response = self.client.post("/login", json={
-            "username": "testuser",
-            "password": "testpass"
-        })
-        self.token = response.json().get("token")
-
-    @task(3)
-    def view_products(self):
-        """Most common action"""
-        self.client.get("/api/products", headers={
-            "Authorization": f"Bearer {self.token}"
-        })
-
-    @task(2)
-    def view_product_detail(self):
-        """View individual product"""
-        self.client.get("/api/products/1", headers={
-            "Authorization": f"Bearer {self.token}"
-        })
-
-    @task(1)
-    def add_to_cart(self):
-        """Less common action"""
-        self.client.post("/api/cart", json={
-            "product_id": 1,
-            "quantity": 1
-        }, headers={
-            "Authorization": f"Bearer {self.token}"
-        })
-
-class AdminUser(HttpUser):
-    wait_time = between(2, 5)
-    weight = 1  # 1 admin per 10 regular users
-
-    @task
-    def view_dashboard(self):
-        self.client.get("/admin/dashboard")
-
-# Custom metrics
-@events.request.add_listener
-def on_request(request_type, name, response_time, response_length, exception, **kwargs):
-    if exception:
-        print(f"Request failed: {name} - {exception}")
-```
-
-**Run Locust:**
-
-```bash
-# Web UI mode
-locust -f locustfile.py --host=https://api.example.com
-
-# Headless mode
-locust -f locustfile.py --headless -u 100 -r 10 --run-time 5m --host=https://api.example.com
-
-# Distributed mode
-locust -f locustfile.py --master
-locust -f locustfile.py --worker --master-host=192.168.1.1
-```
-
-**Artillery (YAML-based Load Testing):**
-
-```yaml
-# artillery-config.yml
-config:
-  target: "https://api.example.com"
-  phases:
-    - duration: 60
-      arrivalRate: 5
-      name: "Warm up"
-    - duration: 120
-      arrivalRate: 20
-      rampTo: 50
-      name: "Ramp up"
-    - duration: 300
-      arrivalRate: 50
-      name: "Sustained load"
-  defaults:
-    headers:
-      Content-Type: "application/json"
-  plugins:
-    expect: {}
-  ensure:
-    p95: 500
-    maxErrorRate: 1
-
-scenarios:
-  - name: "User journey"
-    flow:
-      - post:
-          url: "/auth/login"
-          json:
-            username: "{{ $randomString() }}"
-            password: "password123"
-          capture:
-            - json: "$.token"
-              as: "authToken"
-          expect:
-            - statusCode: 200
-            - hasProperty: "token"
-
-      - get:
-          url: "/api/products"
-          headers:
-            Authorization: "Bearer {{ authToken }}"
-          expect:
-            - statusCode: 200
-            - contentType: "application/json"
-
-      - think: 2
-
-      - post:
-          url: "/api/cart"
-          headers:
-            Authorization: "Bearer {{ authToken }}"
-          json:
-            productId: "{{ $randomNumber(1, 100) }}"
-            quantity: 1
-          expect:
-            - statusCode: 201
-```
-
-**Run Artillery:**
-
-```bash
-# Run test
-artillery run artillery-config.yml
-
-# Generate report
-artillery run artillery-config.yml --output report.json
-artillery report report.json --output report.html
-```
-
-### 2. API Load Testing Patterns
-
-**REST API Load Testing:**
-
-```javascript
-// k6 API load test with authentication and data variation
-import http from "k6/http";
-import { check, sleep } from "k6";
-import { SharedArray } from "k6/data";
-import { randomIntBetween } from "k6/x/util";
-
-// Load test data from CSV
-const testData = new SharedArray("users", function () {
-  return JSON.parse(open("./test-data.json"));
-});
-
-export const options = {
-  scenarios: {
-    // Read-heavy workload (70% reads)
-    reads: {
-      executor: "constant-arrival-rate",
-      rate: 700,
-      timeUnit: "1s",
-      duration: "5m",
-      preAllocatedVUs: 50,
-      maxVUs: 200,
-      exec: "readScenario",
-    },
-    // Write workload (30% writes)
-    writes: {
-      executor: "constant-arrival-rate",
-      rate: 300,
-      timeUnit: "1s",
-      duration: "5m",
-      preAllocatedVUs: 30,
-      maxVUs: 100,
-      exec: "writeScenario",
-    },
-  },
-  thresholds: {
-    "http_req_duration{scenario:reads}": ["p(95)<200", "p(99)<500"],
-    "http_req_duration{scenario:writes}": ["p(95)<500", "p(99)<1000"],
-    http_req_failed: ["rate<0.01"],
-  },
-};
-
-let authToken;
-
 export function setup() {
-  const loginRes = http.post(
-    `${__ENV.API_URL}/auth/login`,
-    JSON.stringify({
-      email: "loadtest@example.com",
-      password: "test123",
-    }),
-    {
-      headers: { "Content-Type": "application/json" },
-    },
-  );
-
-  return { token: loginRes.json("token") };
-}
-
-export function readScenario(data) {
-  const headers = {
-    Authorization: `Bearer ${data.token}`,
-    "Content-Type": "application/json",
-  };
-
-  // GET request with query parameters
-  const userId = randomIntBetween(1, 10000);
-  const res = http.get(`${__ENV.API_URL}/api/users/${userId}`, {
-    headers,
-    tags: { name: "GetUser" },
-  });
-
-  check(res, {
-    "status is 200": (r) => r.status === 200,
-    "has user data": (r) => r.json("id") === userId,
-    "response time OK": (r) => r.timings.duration < 200,
-  });
-
-  sleep(0.5);
-}
-
-export function writeScenario(data) {
-  const headers = {
-    Authorization: `Bearer ${data.token}`,
-    "Content-Type": "application/json",
-  };
-
-  // POST request with dynamic payload
-  const user = testData[Math.floor(Math.random() * testData.length)];
-  const res = http.post(
-    `${__ENV.API_URL}/api/orders`,
-    JSON.stringify({
-      userId: user.id,
-      items: [{ productId: randomIntBetween(1, 100), quantity: 1 }],
-      timestamp: new Date().toISOString(),
-    }),
-    { headers, tags: { name: "CreateOrder" } },
-  );
-
-  check(res, {
-    "status is 201": (r) => r.status === 201,
-    "order created": (r) => r.json("id") !== undefined,
-  });
-
-  sleep(1);
-}
-```
-
-**GraphQL API Load Testing:**
-
-```javascript
-import http from "k6/http";
-import { check } from "k6";
-
-export default function () {
-  const query = `
-    query GetUserWithOrders($userId: ID!) {
-      user(id: $userId) {
-        id
-        name
-        orders(limit: 10) {
-          id
-          total
-          items {
-            productId
-            quantity
-          }
-        }
-      }
-    }
-  `;
-
-  const variables = {
-    userId: `${__VU}`,
-  };
-
-  const res = http.post(
-    "https://api.example.com/graphql",
-    JSON.stringify({
-      query,
-      variables,
-    }),
-    {
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${__ENV.TOKEN}`,
-      },
-    },
-  );
-
-  check(res, {
-    "no GraphQL errors": (r) => !r.json("errors"),
-    "user data present": (r) => r.json("data.user.id") === variables.userId,
-  });
-}
-```
-
-**WebSocket Load Testing:**
-
-```javascript
-import ws from "k6/ws";
-import { check } from "k6";
-
-export default function () {
-  const url = "wss://api.example.com/ws";
-  const params = { tags: { my_tag: "websocket" } };
-
-  const res = ws.connect(url, params, function (socket) {
-    socket.on("open", () => {
-      console.log("Connected");
-      socket.send(JSON.stringify({ type: "subscribe", channel: "updates" }));
-    });
-
-    socket.on("message", (data) => {
-      const msg = JSON.parse(data);
-      check(msg, {
-        "valid message": (m) => m.type !== undefined,
-      });
-    });
-
-    socket.on("error", (e) => {
-      console.log("Error:", e.error());
-    });
-
-    socket.setTimeout(() => {
-      socket.close();
-    }, 60000);
-  });
-
-  check(res, { "status is 101": (r) => r && r.status === 101 });
-}
-```
-
-### 3. Database Performance Testing
-
-**Query Performance Testing:**
-
-```typescript
-// database-perf-test.ts
-import { performance } from "perf_hooks";
-import { Pool } from "pg";
-
-interface QueryBenchmark {
-  query: string;
-  params?: any[];
-  iterations: number;
-  results: {
-    min: number;
-    max: number;
-    avg: number;
-    p50: number;
-    p95: number;
-    p99: number;
-  };
-}
-
-async function benchmarkQuery(
-  pool: Pool,
-  query: string,
-  params: any[] = [],
-  iterations: number = 100,
-): Promise<QueryBenchmark> {
-  const timings: number[] = [];
-
-  // Warmup
-  for (let i = 0; i < 10; i++) {
-    await pool.query(query, params);
-  }
-
-  // Benchmark
-  for (let i = 0; i < iterations; i++) {
-    const start = performance.now();
-    await pool.query(query, params);
-    timings.push(performance.now() - start);
-  }
-
-  timings.sort((a, b) => a - b);
-
-  return {
-    query: query.substring(0, 100),
-    params,
-    iterations,
-    results: {
-      min: timings[0],
-      max: timings[timings.length - 1],
-      avg: timings.reduce((a, b) => a + b, 0) / timings.length,
-      p50: timings[Math.floor(timings.length * 0.5)],
-      p95: timings[Math.floor(timings.length * 0.95)],
-      p99: timings[Math.floor(timings.length * 0.99)],
-    },
-  };
-}
-
-// Compare query performance
-async function compareQueries() {
-  const pool = new Pool({
-    /* config */
-  });
-
-  const queries = [
-    {
-      name: "Without Index",
-      sql: "SELECT * FROM users WHERE email = $1",
-      params: ["test@example.com"],
-    },
-    {
-      name: "With Index",
-      sql: "SELECT * FROM users WHERE id = $1",
-      params: [1],
-    },
-    {
-      name: "Complex Join",
-      sql: `
-        SELECT u.*, COUNT(o.id) as order_count
-        FROM users u
-        LEFT JOIN orders o ON u.id = o.user_id
-        WHERE u.created_at > $1
-        GROUP BY u.id
-        LIMIT 100
-      `,
-      params: ["2024-01-01"],
-    },
-  ];
-
-  for (const { name, sql, params } of queries) {
-    const result = await benchmarkQuery(pool, sql, params);
-    console.log(`\n${name}:`);
-    console.table(result.results);
-  }
-
-  await pool.end();
-}
-```
-
-**Connection Pool Load Testing:**
-
-```typescript
-// connection-pool-test.ts
-import { Pool } from "pg";
-import { performance } from "perf_hooks";
-
-async function testConnectionPool(
-  poolSize: number,
-  concurrentQueries: number,
-  duration: number,
-) {
-  const pool = new Pool({
-    max: poolSize,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000,
-  });
-
-  const stats = {
-    totalQueries: 0,
-    successfulQueries: 0,
-    failedQueries: 0,
-    timeouts: 0,
-    queryTimes: [] as number[],
-  };
-
-  const startTime = Date.now();
-  const workers: Promise<void>[] = [];
-
-  for (let i = 0; i < concurrentQueries; i++) {
-    workers.push(
-      (async () => {
-        while (Date.now() - startTime < duration) {
-          try {
-            const start = performance.now();
-            await pool.query("SELECT 1");
-            const elapsed = performance.now() - start;
-
-            stats.queryTimes.push(elapsed);
-            stats.successfulQueries++;
-          } catch (err) {
-            stats.failedQueries++;
-            if (err.message.includes("timeout")) {
-              stats.timeouts++;
-            }
-          }
-          stats.totalQueries++;
-        }
-      })(),
-    );
-  }
-
-  await Promise.all(workers);
-  await pool.end();
-
-  stats.queryTimes.sort((a, b) => a - b);
-
-  return {
-    poolSize,
-    concurrentQueries,
-    duration,
-    ...stats,
-    avgQueryTime:
-      stats.queryTimes.reduce((a, b) => a + b, 0) / stats.queryTimes.length,
-    p95QueryTime: stats.queryTimes[Math.floor(stats.queryTimes.length * 0.95)],
-    qps: stats.successfulQueries / (duration / 1000),
-  };
-}
-
-// Test different pool sizes
-async function findOptimalPoolSize() {
-  const results = [];
-
-  for (const poolSize of [5, 10, 20, 50, 100]) {
-    console.log(`Testing pool size: ${poolSize}`);
-    const result = await testConnectionPool(poolSize, 100, 30000);
-    results.push(result);
-  }
-
-  console.table(results);
-}
-```
-
-**N+1 Query Detection:**
-
-```typescript
-// n-plus-one-detector.ts
-class QueryTracker {
-  private queries: Map<string, number> = new Map();
-  private startTime: number = 0;
-
-  start() {
-    this.queries.clear();
-    this.startTime = Date.now();
-  }
-
-  track(sql: string) {
-    const normalized = this.normalizeSql(sql);
-    this.queries.set(normalized, (this.queries.get(normalized) || 0) + 1);
-  }
-
-  detectNPlusOne(
-    threshold: number = 10,
-  ): Array<{ query: string; count: number }> {
-    const suspicious: Array<{ query: string; count: number }> = [];
-
-    for (const [query, count] of this.queries.entries()) {
-      if (count > threshold) {
-        suspicious.push({ query, count });
-      }
-    }
-
-    return suspicious.sort((a, b) => b.count - a.count);
-  }
-
-  private normalizeSql(sql: string): string {
-    // Replace literals with placeholders for comparison
-    return sql
-      .replace(/\d+/g, "?")
-      .replace(/'[^']*'/g, "?")
-      .replace(/\s+/g, " ")
-      .trim();
-  }
-
-  report() {
-    const duration = Date.now() - this.startTime;
-    const nPlusOne = this.detectNPlusOne();
-
-    console.log(`\nQuery Analysis (${duration}ms):`);
-    console.log(`Total unique queries: ${this.queries.size}`);
-    console.log(
-      `Total query executions: ${Array.from(this.queries.values()).reduce((a, b) => a + b, 0)}`,
-    );
-
-    if (nPlusOne.length > 0) {
-      console.log("\nPotential N+1 Queries:");
-      console.table(nPlusOne);
-    }
-  }
-}
-```
-
-### 4. Benchmarking Strategies
-
-**Micro-benchmarking (Function Level):**
-
-```typescript
-// Node.js with benchmark.js
-import Benchmark from "benchmark";
-
-const suite = new Benchmark.Suite();
-
-const data = Array.from({ length: 10000 }, (_, i) => i);
-
-suite
-  .add("for loop", function () {
-    let sum = 0;
-    for (let i = 0; i < data.length; i++) {
-      sum += data[i];
-    }
-    return sum;
-  })
-  .add("forEach", function () {
-    let sum = 0;
-    data.forEach((n) => {
-      sum += n;
-    });
-    return sum;
-  })
-  .add("reduce", function () {
-    return data.reduce((sum, n) => sum + n, 0);
-  })
-  .on("cycle", function (event: Benchmark.Event) {
-    console.log(String(event.target));
-  })
-  .on("complete", function (this: Benchmark.Suite) {
-    console.log("Fastest is " + this.filter("fastest").map("name"));
-  })
-  .run({ async: true });
-```
-
-**Database Query Benchmarking:**
-
-```typescript
-// benchmark-queries.ts
-import { performance } from "perf_hooks";
-
-interface BenchmarkResult {
-  query: string;
-  avgTime: number;
-  minTime: number;
-  maxTime: number;
-  p95: number;
-  iterations: number;
-}
-
-async function benchmarkQuery(
-  name: string,
-  queryFn: () => Promise<any>,
-  iterations: number = 100,
-): Promise<BenchmarkResult> {
-  const times: number[] = [];
-
-  // Warm up
-  for (let i = 0; i < 10; i++) {
-    await queryFn();
-  }
-
-  // Actual benchmark
-  for (let i = 0; i < iterations; i++) {
-    const start = performance.now();
-    await queryFn();
-    times.push(performance.now() - start);
-  }
-
-  times.sort((a, b) => a - b);
-
-  return {
-    query: name,
-    avgTime: times.reduce((a, b) => a + b) / times.length,
-    minTime: times[0],
-    maxTime: times[times.length - 1],
-    p95: times[Math.floor(times.length * 0.95)],
-    iterations,
-  };
-}
-
-// Usage
-const results = await Promise.all([
-  benchmarkQuery("findUserById", () => db.users.findById(1)),
-  benchmarkQuery("findUserWithJoin", () =>
-    db.users.findById(1).include("orders"),
-  ),
-  benchmarkQuery("complexAggregation", () =>
-    db.orders.aggregate([
-      /* pipeline */
-    ]),
-  ),
-]);
-
-console.table(results);
-```
-
-**HTTP Endpoint Benchmarking:**
-
-```bash
-# Using wrk
-wrk -t12 -c400 -d30s --latency https://api.example.com/endpoint
-
-# Using autocannon (Node.js)
-npx autocannon -c 100 -d 30 -p 10 https://api.example.com/endpoint
-
-# Using hey
-hey -n 10000 -c 100 https://api.example.com/endpoint
-```
-
-### 5. Profiling Techniques
-
-**Node.js CPU Profiling:**
-
-```typescript
-// Enable built-in profiler
-// node --prof app.js
-// node --prof-process isolate-*.log > processed.txt
-
-// Programmatic profiling
-import { Session } from "inspector";
-import { writeFileSync } from "fs";
-
-async function profileFunction(fn: () => Promise<any>) {
-  const session = new Session();
-  session.connect();
-
-  session.post("Profiler.enable");
-  session.post("Profiler.start");
-
-  await fn();
-
-  return new Promise<void>((resolve) => {
-    session.post("Profiler.stop", (err, { profile }) => {
-      writeFileSync("profile.cpuprofile", JSON.stringify(profile));
-      session.disconnect();
-      resolve();
-    });
-  });
-}
-
-// Usage
-await profileFunction(async () => {
-  // Code to profile
-  await heavyComputation();
-});
-// Open profile.cpuprofile in Chrome DevTools
-```
-
-**Memory Profiling:**
-
-```typescript
-// Memory snapshot
-import v8 from "v8";
-import { writeFileSync } from "fs";
-
-function takeHeapSnapshot(filename: string) {
-  const snapshotStream = v8.writeHeapSnapshot(filename);
-  console.log(`Heap snapshot written to ${snapshotStream}`);
-}
-
-// Track memory usage
-function logMemoryUsage(label: string) {
-  const usage = process.memoryUsage();
-  console.log(`Memory [${label}]:`, {
-    heapUsed: `${Math.round(usage.heapUsed / 1024 / 1024)}MB`,
-    heapTotal: `${Math.round(usage.heapTotal / 1024 / 1024)}MB`,
-    external: `${Math.round(usage.external / 1024 / 1024)}MB`,
-    rss: `${Math.round(usage.rss / 1024 / 1024)}MB`,
-  });
-}
-
-// Detect memory leaks
-class MemoryLeakDetector {
-  private samples: number[] = [];
-  private interval: NodeJS.Timer | null = null;
-
-  start(sampleInterval: number = 1000) {
-    this.interval = setInterval(() => {
-      this.samples.push(process.memoryUsage().heapUsed);
-
-      if (this.samples.length > 60) {
-        const trend = this.calculateTrend();
-        if (trend > 0.1) {
-          // 10% growth per minute
-          console.warn("Potential memory leak detected!");
-        }
-        this.samples.shift();
-      }
-    }, sampleInterval);
-  }
-
-  private calculateTrend(): number {
-    if (this.samples.length < 2) return 0;
-    const first = this.samples[0];
-    const last = this.samples[this.samples.length - 1];
-    return (last - first) / first;
-  }
-
-  stop() {
-    if (this.interval) clearInterval(this.interval);
-  }
-}
-```
-
-**Database Query Profiling:**
-
-```sql
--- PostgreSQL: Enable query logging
-SET log_statement = 'all';
-SET log_duration = on;
-
--- Analyze query plan
-EXPLAIN ANALYZE SELECT * FROM users
-WHERE created_at > '2024-01-01'
-ORDER BY created_at DESC
-LIMIT 100;
-
--- Find slow queries
-SELECT
-  query,
-  calls,
-  total_time / 1000 as total_seconds,
-  mean_time / 1000 as mean_seconds,
-  rows
-FROM pg_stat_statements
-ORDER BY total_time DESC
-LIMIT 20;
-```
-
-```typescript
-// Application-level query profiling
-import { performance } from "perf_hooks";
-
-const queryLogger = {
-  queries: [] as Array<{ sql: string; duration: number; timestamp: Date }>,
-
-  log(sql: string, duration: number) {
-    this.queries.push({ sql, duration, timestamp: new Date() });
-    if (duration > 100) {
-      console.warn(`Slow query (${duration}ms): ${sql.substring(0, 100)}...`);
-    }
-  },
-
-  getSlowQueries(threshold: number = 100) {
-    return this.queries.filter((q) => q.duration > threshold);
-  },
-
-  getStats() {
-    const durations = this.queries.map((q) => q.duration);
-    return {
-      count: durations.length,
-      avg: durations.reduce((a, b) => a + b, 0) / durations.length,
-      max: Math.max(...durations),
-      p95: durations.sort((a, b) => a - b)[Math.floor(durations.length * 0.95)],
-    };
-  },
-};
-```
-
-### 6. Track Key Metrics
-
-**Essential Performance Metrics:**
-
-| Metric        | Description             | Target    | Alert Threshold |
-| ------------- | ----------------------- | --------- | --------------- |
-| Latency (p50) | Median response time    | <100ms    | >200ms          |
-| Latency (p95) | 95th percentile         | <500ms    | >1000ms         |
-| Latency (p99) | 99th percentile         | <1000ms   | >2000ms         |
-| Throughput    | Requests per second     | >1000 RPS | <500 RPS        |
-| Error Rate    | Failed requests %       | <0.1%     | >1%             |
-| Saturation    | Resource utilization    | <70%      | >85%            |
-| Apdex         | User satisfaction score | >0.9      | <0.7            |
-
-**Implementing Metrics Collection:**
-
-```typescript
-// metrics.ts
-import { Counter, Histogram, Gauge, Registry } from "prom-client";
-
-const register = new Registry();
-
-// Request metrics
-const httpRequestDuration = new Histogram({
-  name: "http_request_duration_seconds",
-  help: "Duration of HTTP requests in seconds",
-  labelNames: ["method", "route", "status_code"],
-  buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
-  registers: [register],
-});
-
-const httpRequestTotal = new Counter({
-  name: "http_requests_total",
-  help: "Total number of HTTP requests",
-  labelNames: ["method", "route", "status_code"],
-  registers: [register],
-});
-
-const activeConnections = new Gauge({
-  name: "active_connections",
-  help: "Number of active connections",
-  registers: [register],
-});
-
-// Middleware for Express
-export function metricsMiddleware(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) {
-  const start = process.hrtime.bigint();
-
-  activeConnections.inc();
-
-  res.on("finish", () => {
-    const duration = Number(process.hrtime.bigint() - start) / 1e9;
-    const route = req.route?.path || req.path;
-
-    httpRequestDuration.observe(
-      { method: req.method, route, status_code: res.statusCode },
-      duration,
-    );
-
-    httpRequestTotal.inc({
-      method: req.method,
-      route,
-      status_code: res.statusCode,
-    });
-
-    activeConnections.dec();
-  });
-
-  next();
-}
-
-// Metrics endpoint
-app.get("/metrics", async (req, res) => {
-  res.set("Content-Type", register.contentType);
-  res.end(await register.metrics());
-});
-```
-
-**Custom Business Metrics:**
-
-```typescript
-// business-metrics.ts
-const orderProcessingTime = new Histogram({
-  name: "order_processing_duration_seconds",
-  help: "Time to process an order",
-  labelNames: ["payment_method", "status"],
-  buckets: [0.5, 1, 2, 5, 10, 30, 60],
-});
-
-const cartValue = new Histogram({
-  name: "cart_value_dollars",
-  help: "Shopping cart value at checkout",
-  buckets: [10, 25, 50, 100, 250, 500, 1000],
-});
-
-const concurrentUsers = new Gauge({
-  name: "concurrent_authenticated_users",
-  help: "Number of currently authenticated users",
-});
-```
-
-### 7. Define Performance Budgets
-
-**Web Performance Budgets:**
-
-```typescript
-// performance-budget.ts
-interface PerformanceBudget {
-  metric: string;
-  budget: number;
-  unit: string;
-}
-
-const webBudgets: PerformanceBudget[] = [
-  // Timing metrics
-  { metric: "First Contentful Paint", budget: 1800, unit: "ms" },
-  { metric: "Largest Contentful Paint", budget: 2500, unit: "ms" },
-  { metric: "Time to Interactive", budget: 3800, unit: "ms" },
-  { metric: "Total Blocking Time", budget: 300, unit: "ms" },
-  { metric: "Cumulative Layout Shift", budget: 0.1, unit: "" },
-
-  // Resource budgets
-  { metric: "JavaScript bundle size", budget: 300, unit: "KB" },
-  { metric: "CSS bundle size", budget: 100, unit: "KB" },
-  { metric: "Total page weight", budget: 1500, unit: "KB" },
-  { metric: "Image weight", budget: 500, unit: "KB" },
-
-  // Request budgets
-  { metric: "Total requests", budget: 50, unit: "requests" },
-  { metric: "Third-party requests", budget: 10, unit: "requests" },
-];
-```
-
-**Lighthouse CI Configuration:**
-
-```javascript
-// lighthouserc.js
-module.exports = {
-  ci: {
-    collect: {
-      url: ["http://localhost:3000/", "http://localhost:3000/products"],
-      numberOfRuns: 3,
-    },
-    assert: {
-      assertions: {
-        "first-contentful-paint": ["error", { maxNumericValue: 1800 }],
-        "largest-contentful-paint": ["error", { maxNumericValue: 2500 }],
-        interactive: ["error", { maxNumericValue: 3800 }],
-        "total-blocking-time": ["error", { maxNumericValue: 300 }],
-        "cumulative-layout-shift": ["error", { maxNumericValue: 0.1 }],
-        "resource-summary:script:size": ["error", { maxNumericValue: 300000 }],
-        "resource-summary:total:size": ["error", { maxNumericValue: 1500000 }],
-      },
-    },
-    upload: {
-      target: "temporary-public-storage",
-    },
-  },
-};
-```
-
-**API Performance Budgets:**
-
-```yaml
-# api-budgets.yml
-endpoints:
-  GET /api/products:
-    p50_latency_ms: 50
-    p95_latency_ms: 200
-    p99_latency_ms: 500
-    error_rate_percent: 0.1
-    throughput_rps: 1000
-
-  POST /api/orders:
-    p50_latency_ms: 200
-    p95_latency_ms: 800
-    p99_latency_ms: 2000
-    error_rate_percent: 0.01
-    throughput_rps: 100
-
-  GET /api/search:
-    p50_latency_ms: 100
-    p95_latency_ms: 500
-    p99_latency_ms: 1500
-    error_rate_percent: 0.5
-    throughput_rps: 500
-```
-
-### 8. Identify and Resolve Bottlenecks
-
-**Systematic Bottleneck Analysis:**
-
-```typescript
-// bottleneck-analyzer.ts
-interface BottleneckReport {
-  category: "cpu" | "memory" | "io" | "network" | "database";
-  severity: "low" | "medium" | "high" | "critical";
-  description: string;
-  recommendation: string;
-  metrics: Record<string, number>;
-}
-
-async function analyzeBottlenecks(): Promise<BottleneckReport[]> {
-  const reports: BottleneckReport[] = [];
-
-  // CPU analysis
-  const cpuUsage = process.cpuUsage();
-  if (cpuUsage.user / 1000000 > 80) {
-    reports.push({
-      category: "cpu",
-      severity: "high",
-      description: "High CPU utilization detected",
-      recommendation: "Profile CPU usage, optimize hot paths, consider caching",
-      metrics: { userCpuPercent: cpuUsage.user / 1000000 },
-    });
-  }
-
-  // Memory analysis
-  const memUsage = process.memoryUsage();
-  const heapUsedPercent = (memUsage.heapUsed / memUsage.heapTotal) * 100;
-  if (heapUsedPercent > 85) {
-    reports.push({
-      category: "memory",
-      severity: "high",
-      description: "High memory pressure detected",
-      recommendation: "Check for memory leaks, reduce object retention",
-      metrics: { heapUsedPercent, heapUsedMB: memUsage.heapUsed / 1024 / 1024 },
-    });
-  }
-
-  // Event loop lag
-  const lagStart = Date.now();
-  await new Promise((resolve) => setImmediate(resolve));
-  const eventLoopLag = Date.now() - lagStart;
-  if (eventLoopLag > 100) {
-    reports.push({
-      category: "cpu",
-      severity: "medium",
-      description: "Event loop blocking detected",
-      recommendation: "Move CPU-intensive work to worker threads",
-      metrics: { eventLoopLagMs: eventLoopLag },
-    });
-  }
-
-  return reports;
-}
-```
-
-**Common Bottlenecks and Solutions:**
-
-| Bottleneck       | Symptoms                     | Diagnosis                | Solution                          |
-| ---------------- | ---------------------------- | ------------------------ | --------------------------------- |
-| N+1 Queries      | Linear latency increase      | Query logging            | Eager loading, batching           |
-| Missing Index    | Slow queries on large tables | EXPLAIN ANALYZE          | Add appropriate indexes           |
-| Connection Pool  | Timeouts under load          | Pool metrics             | Increase pool size, add queueing  |
-| Synchronous I/O  | High event loop lag          | Profiling                | Use async operations              |
-| Memory Leak      | Growing heap over time       | Heap snapshots           | Fix object retention              |
-| Unoptimized JSON | High CPU on serialization    | CPU profiling            | Stream parsing, schema validation |
-| Large Payloads   | High network latency         | Response size monitoring | Pagination, compression           |
-
-**Database Optimization Checklist:**
-
-```sql
--- Check for missing indexes
-SELECT
-  schemaname, tablename,
-  seq_scan, seq_tup_read,
-  idx_scan, idx_tup_fetch
-FROM pg_stat_user_tables
-WHERE seq_scan > idx_scan
-ORDER BY seq_tup_read DESC;
-
--- Check for slow queries
-SELECT query, calls, total_time, mean_time, rows
-FROM pg_stat_statements
-ORDER BY mean_time DESC
-LIMIT 20;
-
--- Check for lock contention
-SELECT blocked_locks.pid AS blocked_pid,
-       blocking_locks.pid AS blocking_pid,
-       blocked_activity.query AS blocked_query
-FROM pg_catalog.pg_locks blocked_locks
-JOIN pg_catalog.pg_locks blocking_locks
-  ON blocking_locks.locktype = blocked_locks.locktype
-WHERE NOT blocked_locks.granted;
-```
-
-### 9. Test Data Generation and Realistic Load Patterns
-
-**Generate Realistic Test Data:**
-
-```typescript
-// test-data-generator.ts
-import { faker } from "@faker-js/faker";
-
-interface TestUser {
-  id: number;
-  email: string;
-  name: string;
-  createdAt: Date;
-  preferences: Record<string, any>;
-}
-
-function generateUsers(count: number): TestUser[] {
-  return Array.from({ length: count }, (_, i) => ({
-    id: i + 1,
-    email: faker.internet.email(),
-    name: faker.person.fullName(),
-    createdAt: faker.date.past({ years: 2 }),
-    preferences: {
-      theme: faker.helpers.arrayElement(["light", "dark"]),
-      notifications: faker.datatype.boolean(),
-      language: faker.helpers.arrayElement(["en", "es", "fr", "de"]),
-    },
-  }));
-}
-
-// Generate data with realistic distributions
-function generateOrdersWithDistribution(userCount: number, orderCount: number) {
-  const users = generateUsers(userCount);
-  const orders = [];
-
-  // 80/20 rule: 20% of users make 80% of orders
-  const powerUsers = users.slice(0, Math.floor(userCount * 0.2));
-  const regularUsers = users.slice(Math.floor(userCount * 0.2));
-
-  const powerUserOrders = Math.floor(orderCount * 0.8);
-  const regularUserOrders = orderCount - powerUserOrders;
-
-  // Power users
-  for (let i = 0; i < powerUserOrders; i++) {
-    const user = faker.helpers.arrayElement(powerUsers);
-    orders.push(generateOrder(user.id, i + 1));
-  }
-
-  // Regular users
-  for (let i = 0; i < regularUserOrders; i++) {
-    const user = faker.helpers.arrayElement(regularUsers);
-    orders.push(generateOrder(user.id, powerUserOrders + i + 1));
-  }
-
-  return { users, orders };
-}
-
-function generateOrder(userId: number, orderId: number) {
-  const itemCount = faker.number.int({ min: 1, max: 10 });
-
-  return {
-    id: orderId,
-    userId,
-    items: Array.from({ length: itemCount }, () => ({
-      productId: faker.number.int({ min: 1, max: 1000 }),
-      quantity: faker.number.int({ min: 1, max: 5 }),
-      price: parseFloat(faker.commerce.price()),
-    })),
-    status: faker.helpers.arrayElement([
-      "pending",
-      "processing",
-      "shipped",
-      "delivered",
-    ]),
-    createdAt: faker.date.recent({ days: 90 }),
-  };
-}
-```
-
-**Realistic Traffic Patterns:**
-
-```javascript
-// k6 realistic traffic patterns
-import http from "k6/http";
-import { sleep } from "k6";
-
-export const options = {
-  scenarios: {
-    // Morning traffic spike (9am)
-    morning_spike: {
-      executor: "ramping-arrival-rate",
-      startRate: 10,
-      timeUnit: "1s",
-      preAllocatedVUs: 50,
-      maxVUs: 200,
-      stages: [
-        { duration: "5m", target: 50 }, // Ramp up
-        { duration: "10m", target: 50 }, // Sustained
-        { duration: "5m", target: 10 }, // Ramp down
-      ],
-      startTime: "0s",
-    },
-    // Lunch traffic (12pm)
-    lunch_traffic: {
-      executor: "constant-arrival-rate",
-      rate: 30,
-      timeUnit: "1s",
-      duration: "30m",
-      preAllocatedVUs: 100,
-      maxVUs: 150,
-      startTime: "20m",
-    },
-    // Evening spike (6pm)
-    evening_spike: {
-      executor: "ramping-arrival-rate",
-      startRate: 10,
-      timeUnit: "1s",
-      preAllocatedVUs: 50,
-      maxVUs: 300,
-      stages: [
-        { duration: "5m", target: 100 },
-        { duration: "15m", target: 100 },
-        { duration: "5m", target: 10 },
-      ],
-      startTime: "50m",
-    },
-    // Background jobs (constant low load)
-    background_jobs: {
-      executor: "constant-vus",
-      vus: 5,
-      duration: "2h",
-      exec: "backgroundJob",
-    },
-  },
-};
-
-export default function () {
-  // Simulate different user behaviors
-  const userType = Math.random();
-
-  if (userType < 0.6) {
-    // 60% - Browsers (fast, many requests)
-    http.get(`${__ENV.API_URL}/api/products`);
-    sleep(0.5);
-    http.get(
-      `${__ENV.API_URL}/api/products/${Math.floor(Math.random() * 100)}`,
-    );
-    sleep(0.5);
-  } else if (userType < 0.9) {
-    // 30% - Regular users (moderate pace)
-    http.get(`${__ENV.API_URL}/api/products`);
-    sleep(2);
-    http.get(`${__ENV.API_URL}/api/cart`);
-    sleep(3);
-  } else {
-    // 10% - Power users (complex operations)
-    http.post(
-      `${__ENV.API_URL}/api/orders`,
-      JSON.stringify({
-        items: [{ productId: 1, quantity: 1 }],
-      }),
-      {
-        headers: { "Content-Type": "application/json" },
-      },
-    );
-    sleep(5);
-  }
-}
-
-export function backgroundJob() {
-  // Simulate cron jobs, workers
-  http.post(
-    `${__ENV.API_URL}/internal/process-batch`,
-    JSON.stringify({
-      batchId: Math.floor(Math.random() * 1000),
-    }),
-    {
-      headers: { "Content-Type": "application/json" },
-    },
-  );
-  sleep(60); // Every minute
-}
-```
-
-**Think Time and User Behavior:**
-
-```javascript
-import { sleep } from "k6";
-import { randomIntBetween } from "https://jslib.k6.io/k6-utils/1.2.0/index.js";
-
-// Human-like think time
-function thinkTime() {
-  // Normal distribution around 2 seconds
-  const mean = 2;
-  const stdDev = 0.5;
-  const time =
-    mean + stdDev * (Math.random() + Math.random() + Math.random() - 1.5);
-  sleep(Math.max(0.5, time));
-}
-
-// Simulate user session
-export default function () {
-  // Login
-  http.post(`${__ENV.API_URL}/auth/login` /* ... */);
-  thinkTime();
-
-  // Browse products (3-7 pages)
-  const pageViews = randomIntBetween(3, 7);
-  for (let i = 0; i < pageViews; i++) {
-    http.get(`${__ENV.API_URL}/api/products?page=${i}`);
-    thinkTime();
-  }
-
-  // 30% add to cart
-  if (Math.random() < 0.3) {
-    http.post(`${__ENV.API_URL}/api/cart` /* ... */);
-    thinkTime();
-
-    // 50% of those who add to cart complete checkout
-    if (Math.random() < 0.5) {
-      http.post(`${__ENV.API_URL}/api/orders` /* ... */);
-      sleep(3); // Checkout takes longer
-    }
-  }
-
-  // Logout (20% of users explicitly logout)
-  if (Math.random() < 0.2) {
-    http.post(`${__ENV.API_URL}/auth/logout`);
-  }
-}
-```
-
-**Edge Cases and Error Scenarios:**
-
-```javascript
-import http from "k6/http";
-import { check } from "k6";
-
-export default function () {
-  const scenarios = [
-    // Happy path (70%)
-    () => {
-      const res = http.get(`${__ENV.API_URL}/api/products`);
-      check(res, { "status is 200": (r) => r.status === 200 });
-    },
-    // Large payload (10%)
-    () => {
-      const res = http.get(`${__ENV.API_URL}/api/products?limit=1000`);
-      check(res, { "handles large response": (r) => r.status === 200 });
-    },
-    // Invalid input (10%)
-    () => {
-      const res = http.get(`${__ENV.API_URL}/api/products/-1`);
-      check(res, { "handles invalid ID": (r) => r.status === 400 });
-    },
-    // Not found (5%)
-    () => {
-      const res = http.get(`${__ENV.API_URL}/api/products/999999`);
-      check(res, { "handles not found": (r) => r.status === 404 });
-    },
-    // Timeout scenario (3%)
-    () => {
-      const res = http.get(`${__ENV.API_URL}/api/slow-endpoint`, {
-        timeout: "5s",
-      });
-      check(res, { "handles timeout": (r) => r.status === 200 || r.error });
-    },
-    // Unauthorized (2%)
-    () => {
-      const res = http.get(`${__ENV.API_URL}/api/admin/users`);
-      check(res, {
-        "enforces auth": (r) => r.status === 401 || r.status === 403,
-      });
-    },
-  ];
-
-  // Weighted random scenario selection
-  const weights = [0.7, 0.8, 0.9, 0.95, 0.98, 1.0];
-  const random = Math.random();
-
-  for (let i = 0; i < weights.length; i++) {
-    if (random < weights[i]) {
-      scenarios[i]();
-      break;
-    }
-  }
-}
-```
-
-## Best Practices
-
-### Test Environment and Setup
-
-1. **Test in Production-like Environments**
-   - Match hardware specifications (CPU, RAM, disk I/O)
-   - Use realistic data volumes (production-scale databases)
-   - Simulate actual traffic patterns and user distributions
-   - Include network latency if testing distributed systems
-   - Test with production-like configuration (caching, CDN, load balancers)
-
-2. **Establish Baselines First**
-   - Measure current performance before any optimization
-   - Document baseline metrics for all critical endpoints
-   - Track changes over time to detect regressions
-   - Create performance baseline reports for stakeholder communication
-
-3. **Use Realistic Test Data**
-   - Volume should match production scale (not just small samples)
-   - Include edge cases (large records, unicode, special characters, malformed data)
-   - Test with cold and warm caches to measure both scenarios
-   - Apply realistic data distributions (80/20 rule, Pareto principle)
-   - Include timezone, locale, and internationalization variations
-
-### Test Execution Strategy
-
-1. **Test Early and Often**
-   - Include performance tests in CI/CD pipeline
-   - Run smoke tests on every commit (quick baseline check)
-   - Run full load tests nightly or on pull requests
-   - Catch regressions before deployment, not in production
-   - Monitor trends, not just pass/fail thresholds
-
-2. **Implement Progressive Load Testing**
-   - Start with smoke tests (minimal load, validate functionality)
-   - Progress to load tests (expected normal load)
-   - Execute stress tests (find breaking points)
-   - Run spike tests (validate autoscaling and recovery)
-   - Finish with soak tests (detect memory leaks and degradation over time)
-
-3. **Test Critical User Journeys**
-   - Identify top 3-5 most important user flows
-   - Prioritize testing revenue-generating paths
-   - Include authentication, payment, and checkout flows
-   - Test admin and privileged operations separately
-   - Validate graceful degradation under partial failures
-
-### Analysis and Reporting
-
-1. **Analyze Percentiles, Not Averages**
-   - Always report p50, p95, p99 latencies (not just average)
-   - Use p95/p99 for SLOs and alerting thresholds
-   - Understand that outliers matter for user experience
-   - Track maximum latency to identify worst-case scenarios
-
-2. **Monitor in Production**
-   - Performance testing complements, not replaces production monitoring
-   - Use APM tools (Datadog, New Relic, etc.) for real user metrics
-   - Implement synthetic monitoring for critical paths
-   - Alert on performance degradation before users complain
-   - Correlate load test results with production behavior
-
-3. **Document and Share Results**
-   - Keep performance test reports in version control
-   - Create visual dashboards for trend analysis
-   - Share findings with team in regular reviews
-   - Track optimization improvements with before/after metrics
-   - Document infrastructure changes and their performance impact
-
-### Optimization and Iteration
-
-1. **Follow Scientific Method**
-   - Form hypothesis before optimization ("I think X is slow because Y")
-   - Change one variable at a time
-   - Measure impact with load tests before and after
-   - Document failed attempts (what didn't work and why)
-   - Validate optimizations don't break functionality
-
-2. **Set and Enforce Performance Budgets**
-   - Define acceptable latency targets per endpoint
-   - Set throughput requirements (RPS, concurrent users)
-   - Establish error rate thresholds
-   - Block deployments that violate budgets
-   - Review and adjust budgets quarterly based on business needs
-
-3. **Test Database Performance Separately**
-   - Isolate database bottlenecks from application issues
-   - Benchmark queries under load (not just in dev)
-   - Test connection pool exhaustion scenarios
-   - Validate index effectiveness with production data volumes
-   - Monitor slow query logs during load tests
-
-## Examples
-
-### Example: Complete k6 Load Test Suite
-
-```javascript
-// k6/scenarios/api-load-test.js
-import http from "k6/http";
-import { check, group, sleep } from "k6";
-import { Rate, Trend, Counter } from "k6/metrics";
-
-// Custom metrics
-const errorRate = new Rate("errors");
-const orderLatency = new Trend("order_latency");
-const ordersCreated = new Counter("orders_created");
-
-// Test configuration
-export const options = {
-  scenarios: {
-    // Constant load for baseline
-    baseline: {
-      executor: "constant-vus",
-      vus: 10,
-      duration: "5m",
-      tags: { scenario: "baseline" },
-    },
-    // Ramping load for stress test
-    stress: {
-      executor: "ramping-vus",
-      startVUs: 0,
-      stages: [
-        { duration: "2m", target: 50 },
-        { duration: "5m", target: 50 },
-        { duration: "2m", target: 100 },
-        { duration: "5m", target: 100 },
-        { duration: "2m", target: 0 },
-      ],
-      startTime: "5m",
-      tags: { scenario: "stress" },
-    },
-    // Spike test
-    spike: {
-      executor: "ramping-vus",
-      startVUs: 0,
-      stages: [
-        { duration: "10s", target: 200 },
-        { duration: "1m", target: 200 },
-        { duration: "10s", target: 0 },
-      ],
-      startTime: "20m",
-      tags: { scenario: "spike" },
-    },
-  },
-  thresholds: {
-    http_req_duration: ["p(95)<500", "p(99)<1500"],
-    errors: ["rate<0.01"],
-    order_latency: ["p(95)<2000"],
-  },
-};
-
-const BASE_URL = __ENV.BASE_URL || "http://localhost:3000";
-
-export function setup() {
-  // Login and get auth token
-  const loginRes = http.post(
-    `${BASE_URL}/api/auth/login`,
-    JSON.stringify({
-      email: "loadtest@example.com",
-      password: "loadtest123",
-    }),
-    {
-      headers: { "Content-Type": "application/json" },
-    },
-  );
-
-  return { token: loginRes.json("token") };
+  const r = http.post(`${__ENV.API_URL}/auth/login`,
+    JSON.stringify({ email: "load@test.com", password: "x" }),
+    { headers: { "Content-Type": "application/json" } });
+  return { token: r.json("token") }; // runs once; returned data passed to default fn
 }
 
 export default function (data) {
-  const headers = {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${data.token}`,
-  };
-
-  group("Browse Products", () => {
-    const productsRes = http.get(`${BASE_URL}/api/products`, { headers });
-    check(productsRes, {
-      "products status 200": (r) => r.status === 200,
-      "products returned": (r) => r.json("data").length > 0,
-    });
-    errorRate.add(productsRes.status !== 200);
-    sleep(1);
+  const res = http.get(`${__ENV.API_URL}/api/users/${__VU}`, {
+    headers: { Authorization: `Bearer ${data.token}` },
+    tags: { name: "GetUser" }, // aggregate by name, NOT by dynamic URL (avoids metric cardinality blowup)
   });
-
-  group("View Product Detail", () => {
-    const productRes = http.get(`${BASE_URL}/api/products/1`, { headers });
-    check(productRes, {
-      "product status 200": (r) => r.status === 200,
-    });
-    errorRate.add(productRes.status !== 200);
-    sleep(0.5);
-  });
-
-  group("Create Order", () => {
-    const start = Date.now();
-    const orderRes = http.post(
-      `${BASE_URL}/api/orders`,
-      JSON.stringify({
-        items: [{ productId: 1, quantity: 1 }],
-      }),
-      { headers },
-    );
-
-    orderLatency.add(Date.now() - start);
-
-    const success = check(orderRes, {
-      "order status 201": (r) => r.status === 201,
-      "order has id": (r) => r.json("id") !== undefined,
-    });
-
-    if (success) ordersCreated.add(1);
-    errorRate.add(!success);
-    sleep(2);
-  });
-}
-
-export function teardown(data) {
-  // Cleanup test data if needed
-  console.log("Test completed");
+  errorRate.add(res.status !== 200);
+  check(res, { "200": (r) => r.status === 200 });
+  sleep(1);
 }
 ```
 
-### Example: Performance Monitoring Dashboard Config
+k6 gotchas:
+
+- **Tag dynamic URLs** with a static `tags.name`, or per-URL metrics explode and dashboards choke.
+- `discardResponseBodies: true` cuts generator memory/CPU when you don't inspect bodies — raises max achievable load.
+- `check()` failures do **not** fail the run; only `thresholds` do (and `--fail-on-check` / `abortOnFail` on a threshold aborts early).
+- CLI: `k6 run -e API_URL=... script.js`; `--out experimental-prometheus-rw` or `--out influxdb=...` for Grafana; `k6 run --vus 50 --duration 30s` overrides options.
+- Extensions (xk6) add gRPC, SQL, browser, Kafka — not in the core binary.
+
+### Locust (Python, closed-model, distributed)
+
+Use when scenarios need Python logic/libraries or complex stateful user journeys.
+
+```python
+from locust import HttpUser, task, between
+
+class WebsiteUser(HttpUser):
+    wait_time = between(1, 3)  # think time → sets effective concurrency (closed model)
+
+    def on_start(self):
+        r = self.client.post("/login", json={"username": "u", "password": "p"})
+        self.token = r.json()["token"]
+
+    @task(3)  # weight: runs 3× as often as weight-1 tasks
+    def browse(self):
+        # name= groups metrics for parameterized URLs (same role as k6 tags.name)
+        self.client.get(f"/api/products/{randint(1,1000)}", name="/api/products/[id]",
+                        headers={"Authorization": f"Bearer {self.token}"})
+```
+
+```bash
+locust -f lf.py --host=https://api.example.com                       # web UI
+locust -f lf.py --headless -u 500 -r 50 -t 5m --host=...             # -u users, -r spawn/s
+locust -f lf.py --master   &   locust -f lf.py --worker --master-host=IP  # distributed: 1 worker/core
+```
+
+⚠ Single Locust process is **one core** — it *is* the bottleneck past a few hundred RPS. Always run master + workers (≥1 worker per CPU) for real load. `FastHttpUser` (geventhttpclient) is ~5–6× faster than the default `HttpUser` (requests-based) — use it for high RPS.
+
+### JMeter (Java, GUI + CLI, protocol breadth)
+
+Mature, huge protocol/plugin ecosystem (JDBC, JMS, LDAP). Verbose XML `.jmx`.
+
+- **Author in GUI, run headless:** `jmeter -n -t plan.jmx -l results.jtl -e -o report/` (`-n` non-GUI, `-e -o` HTML report). GUI mode adds huge overhead — never load-test in it.
+- Thread Group = closed model (threads, ramp-up, loops). "Concurrency Thread Group" / "Throughput Shaping Timer" plugins add open-model + arbitrary shapes.
+- Distributed: `jmeter -n -t plan.jmx -R host1,host2` (remote servers).
+- Disable "View Results Tree" listeners under load (memory hog); write JTL and post-process.
+- ⚠ JMeter's default aggregate report can suffer coordinated omission; prefer the "Response Times Percentiles" / backend-listener → InfluxDB path and treat timers correctly.
+
+### Gatling (Scala/Java/Kotlin DSL, efficient, code-as-test)
+
+Async (Netty), high load per core, versioned code, good HTML reports. `injectOpen`/`injectClosed` make the model explicit.
+
+```scala
+setUp(
+  scn.injectOpen(                       // open model: arrivals independent of responses
+    rampUsersPerSec(10).to(200).during(5.minutes),
+    constantUsersPerSec(200).during(10.minutes)
+  )
+).protocols(http.baseUrl("https://api.example.com"))
+ .assertions(global.responseTime.percentile4.lt(1000)) // percentile4 = p99 by default
+```
+
+### artillery (YAML, quick, Node)
+
+Fast to author; good for smoke/CI and moderate load. ⚠ Node = effectively single-core → limited generator throughput; distribute (AWS Lambda/Fargate mode) or switch to k6/Gatling for heavy load.
 
 ```yaml
-# grafana/dashboards/performance.json (simplified)
-panels:
-  - title: "Request Latency (p95)"
-    type: graph
-    targets:
-      - expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))
-
-  - title: "Throughput (RPS)"
-    type: graph
-    targets:
-      - expr: rate(http_requests_total[1m])
-
-  - title: "Error Rate"
-    type: graph
-    targets:
-      - expr: rate(http_requests_total{status_code=~"5.."}[5m]) / rate(http_requests_total[5m])
-
-  - title: "Active Connections"
-    type: gauge
-    targets:
-      - expr: active_connections
-
-alerts:
-  - name: HighLatency
-    expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 0.5
-    for: 5m
-    labels:
-      severity: warning
-
-  - name: HighErrorRate
-    expr: rate(http_requests_total{status_code=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.01
-    for: 2m
-    labels:
-      severity: critical
+config:
+  target: "https://api.example.com"
+  phases:
+    - { duration: 60, arrivalRate: 5, name: warmup }      # open model
+    - { duration: 300, arrivalRate: 20, rampTo: 50, name: ramp }
+  ensure: { p95: 500, maxErrorRate: 1 }                    # fails CI on breach
+scenarios:
+  - flow:
+      - post: { url: /auth/login, json: { u: "{{ $randomString() }}" }, capture: { json: "$.token", as: token } }
+      - think: 2
+      - get: { url: /api/products, headers: { Authorization: "Bearer {{ token }}" } }
 ```
+
+### HTTP micro-benchmark one-liners
+
+Fast single-endpoint checks — not user journeys:
+
+```bash
+wrk2 -t4 -c400 -R2000 --latency http://host/ep   # PREFER: constant 2000 RPS, corrects coordinated omission
+wrk  -t12 -c400 -d30s --latency http://host/ep    # high throughput but closed-loop → CO at saturation
+oha  -z 30s -c 100 http://host/ep                 # Rust, live TUI, HdrHistogram
+hey  -n 100000 -c 100 http://host/ep              # simple; single generator core-bound
+```
+
+⚠ `ab` (ApacheBench) is single-threaded, no keep-alive by default (`-k` to enable), and severely subject to coordinated omission — avoid for anything but a trivial reachability check.
+
+---
+
+## API Scenario Patterns (k6)
+
+**Mixed read/write with per-scenario thresholds** — model real traffic ratios:
+
+```javascript
+export const options = {
+  scenarios: {
+    reads:  { executor: "constant-arrival-rate", rate: 700, timeUnit: "1s",
+              preAllocatedVUs: 50, maxVUs: 200, exec: "read" },
+    writes: { executor: "constant-arrival-rate", rate: 300, timeUnit: "1s",
+              preAllocatedVUs: 30, maxVUs: 100, exec: "write" },
+  },
+  thresholds: {
+    "http_req_duration{scenario:reads}":  ["p(95)<200"],
+    "http_req_duration{scenario:writes}": ["p(95)<500"],
+    http_req_failed: ["rate<0.01"],
+  },
+};
+export function read()  { /* GET with Zipfian id, not id=1 */ }
+export function write() { /* POST unique payload */ }
+```
+
+**GraphQL:** POST the query, and assert on the body — a GraphQL error returns **HTTP 200**, so `http_req_failed` won't catch it:
+
+```javascript
+const res = http.post(url, JSON.stringify({ query, variables }), { headers });
+check(res, { "no gql errors": (r) => !r.json("errors") }); // 200 ≠ success here
+```
+
+**WebSocket:** `import ws from "k6/ws"`; open a socket, subscribe, assert on messages, `socket.setTimeout(() => socket.close(), 60000)`; check `res.status === 101`. For long-lived connections, concurrency ≠ RPS — measure connections held + message latency.
+
+---
+
+## Database Performance
+
+**Single benchmark harness** (percentiles, warm-up, sorted) — reuse for any async op, don't re-implement per query:
+
+```typescript
+import { performance } from "perf_hooks";
+
+async function bench(name: string, fn: () => Promise<unknown>, iterations = 100) {
+  for (let i = 0; i < 10; i++) await fn(); // WARM-UP: JIT, pool fill, buffer cache (discard)
+  const t: number[] = [];
+  for (let i = 0; i < iterations; i++) {
+    const s = performance.now();
+    await fn();
+    t.push(performance.now() - s);
+  }
+  t.sort((a, b) => a - b);
+  const at = (p: number) => t[Math.min(t.length - 1, Math.floor(t.length * p))];
+  return { name, min: t[0], p50: at(0.5), p95: at(0.95), p99: at(0.99), max: t.at(-1) };
+}
+// Usage: await bench("findById", () => db.users.findById(zipfianId()));
+```
+
+⚠ Serial-loop benchmarks measure **single-connection latency**, not concurrent throughput — they miss lock contention, pool exhaustion, and buffer thrash. For throughput, drive N concurrent workers for a fixed duration and report QPS + p95 together (increase N until QPS plateaus = pool/DB knee).
+
+**EXPLAIN / slow-query hunting (Postgres):**
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS) SELECT ...;   -- ANALYZE = real timings; BUFFERS = cache hits vs disk reads
+
+-- pg_stat_statements: rank by TOTAL time (calls × mean) — the real load driver, not slowest single query
+SELECT query, calls, mean_exec_time, total_exec_time, rows
+FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 20;
+
+-- Seq scans that should be index scans (large seq_tup_read on hot tables)
+SELECT relname, seq_scan, seq_tup_read, idx_scan
+FROM pg_stat_user_tables WHERE seq_scan > idx_scan ORDER BY seq_tup_read DESC;
+```
+
+- Read EXPLAIN bottom-up; watch for `Seq Scan` on big tables, row-estimate vs `actual rows` divergence (stale stats → `ANALYZE`), and `Nested Loop` over large sets (want Hash/Merge join).
+- **N+1 detection:** normalize SQL (strip literals) and count executions of each shape per request; >~10 identical shapes = N+1 → batch/eager-load. ORMs hide these behind lazy relations.
+- Benchmark with **production-scale rows** and realistic key distribution — a query that's instant on 10k rows table-scans on 10M.
+
+---
+
+## Profiling
+
+Profile *after* a load test localizes the hot endpoint — don't profile blind.
+
+| Target        | Tool / command                                          | Reads as                          |
+| ------------- | ------------------------------------------------------- | --------------------------------- |
+| Node CPU      | `node --prof app.js` → `--prof-process`; or `--cpu-prof` (`.cpuprofile` → Chrome DevTools) | flame graph of self time |
+| Node heap     | `v8.writeHeapSnapshot()`; compare 2 snapshots for growth | retained objects → leak source    |
+| Node loop lag | measure delay of `setImmediate`; >100ms = blocked loop  | sync work starving the event loop |
+| Python CPU    | `python -m cProfile -o out.prof`; view with `snakeviz`; `py-spy top --pid` (no code change, prod-safe) | cumulative time |
+| Rust          | `cargo flamegraph`; `perf record`/`perf report`         | flame graph                       |
+| JVM           | async-profiler (`-agentpath`), JFR                      | flame graph, alloc profiling      |
+| Any/prod      | `perf`, `bpftrace`, continuous profiling (Pyroscope/Parca) | on-CPU/off-CPU                  |
+
+- **On-CPU vs off-CPU:** high latency + low CPU = you're blocked on I/O/locks; profile off-CPU (wall-clock), not just on-CPU, or you'll stare at an idle flame graph.
+- **Memory leak signal:** RSS/heap grows monotonically across a soak and never returns after load stops. Two heap snapshots under steady load → diff retained set. GC frequency climbing is an early tell.
+
+---
+
+## Metrics, Budgets, Bottlenecks
+
+### Target metrics
+
+| Metric        | Meaning              | Typical target | Alert  |
+| ------------- | -------------------- | -------------- | ------ |
+| Latency p50   | median              | <100ms         | >200ms |
+| Latency p95   | tail                | <500ms         | >1s    |
+| Latency p99   | far tail (fan-out!) | <1s            | >2s    |
+| Throughput    | req/s at the knee   | per SLO        | —      |
+| Error rate    | failed %            | <0.1%          | >1%    |
+| Saturation    | resource util       | <70%           | >85%   |
+
+Define budgets **per endpoint** (not global) and **enforce in CI** — k6 `thresholds`, artillery `ensure`, Gatling `assertions`, Lighthouse CI `assert` all fail the build on breach. Web budgets: LCP <2.5s, INP <200ms, CLS <0.1, JS bundle <300KB.
+
+Instrument the server with a **Histogram** (Prometheus `histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))`), not a gauge/summary you can't aggregate across instances. Pick buckets around your SLO (e.g. `[0.01,0.05,0.1,0.25,0.5,1,2.5,5]`) — percentiles are only as precise as bucket edges.
+
+### Common bottlenecks → fix
+
+| Bottleneck         | Symptom                        | Diagnose               | Fix                              |
+| ------------------ | ------------------------------ | ---------------------- | -------------------------------- |
+| N+1 queries        | latency ∝ result count         | query count/request    | batch / eager load               |
+| Missing index      | seq scan on big table          | EXPLAIN ANALYZE        | add index; check selectivity     |
+| Connection pool    | timeouts at load, low CPU      | pool saturation metric | size pool (≈ cores×2..4 for DB), queue |
+| Sync I/O on loop   | high event-loop lag            | loop-lag probe         | async / worker threads           |
+| Memory leak        | heap grows over soak           | heap snapshot diff     | fix retention (caches, listeners) |
+| Chatty serialization | high CPU in JSON             | CPU profile            | stream / faster codec / smaller payload |
+| Large payloads     | network-bound, high TTFB       | response-size metric   | pagination, compression, fields  |
+| Lock contention    | throughput plateaus, cores idle | mutex/off-CPU profile | shard locks, reduce critical section |
+
+---
+
+## Realistic Load Modeling
+
+- **Weighted user mix, not one journey:** e.g. 60% browsers, 30% shoppers, 10% power users; pick per-VU and follow a session (login → browse N pages → maybe cart → maybe checkout) with think time between steps.
+- **Key distribution:** draw IDs Zipfian/Pareto (hot keys + long tail), never constant, never pure-uniform over a tiny range.
+- **Randomized think time** (jittered), not fixed — fixed sleeps synchronize VUs into artificial request waves.
+- **Include error/edge scenarios** in the mix (invalid input→400, not-found→404, large payloads, timeouts) so you measure error-path cost, which is often worse than the happy path.
+- **Data generation:** `@faker-js/faker` / Python `faker`; apply 80/20 (20% of users generate 80% of activity) so cache/index behavior matches production.
+
+---
+
+## Best Practices (condensed)
+
+- **Environment:** production-like hardware, data volume, and config (cache/CDN/LB). Generator on a **separate host** from the SUT.
+- **Baseline first:** record current p50/p95/p99 + throughput before optimizing; track over time to catch regressions. Nightly full loads, smoke on every commit.
+- **Change one variable at a time**, measure before/after with the same script, keep results in version control.
+- **Correlate** load-gen output with server-side APM/Prometheus every run — divergence = you're measuring the generator or the network, not the service.
+- **Analyze percentiles + max, over the steady-state window only** (drop warm-up).
+- **Load tests complement, never replace, production monitoring** (real user cardinality/geography).
+
+---
+
+## Verification checklists
+
+**Before trusting a load-test result:**
+
+- [ ] Generator ran on a **separate host**; generator CPU/net/FDs were **not** the limit (server-side metrics corroborate)
+- [ ] **Open model** (arrival rate) used for any breaking-point/capacity claim; VU headroom sufficient (no dropped-iteration warnings)
+- [ ] **Coordinated omission** ruled out (open executor or wrk2/HdrHistogram); tail isn't suspiciously flat
+- [ ] **Warm-up window discarded**; steady-state window is what's reported
+- [ ] Reported **p50/p95/p99/max**, not just mean; percentiles merged from raw histograms, not averaged
+- [ ] Realistic **key distribution** (not id=1) and **dataset > cache**; payload sizes production-like
+- [ ] Keep-alive setting matches the real client; think time randomized
+- [ ] The **knee** (max sustainable throughput at acceptable latency) identified, not just the collapse point
+- [ ] Little's Law sanity check passes (achieved RPS ≈ concurrency / (latency+think))
+
+**Before shipping a perf test into CI:**
+
+- [ ] Thresholds/assertions defined **per endpoint** and fail the build on breach
+- [ ] Smoke variant (1–5 VUs) runs on every commit; full load nightly/on-PR
+- [ ] Dynamic URLs tagged with static names (no metric-cardinality blowup)
+- [ ] Secrets/tokens injected via env, not hardcoded; test data cleaned up in teardown
+
+**Before calling a bottleneck fixed:**
+
+- [ ] Root cause identified via profile/EXPLAIN, not guessed
+- [ ] Re-ran the **same** script; before/after deltas on p95/p99 + throughput
+- [ ] Fix didn't just move the bottleneck (next resource now saturates at a higher load)
+- [ ] Regression guard in CI (budget threshold) so it can't silently return
