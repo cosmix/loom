@@ -110,7 +110,7 @@ loom diagnose <stage-id>
 loom pressure <plan-path> [--rounds N] [--dry-run]
 ```
 
-`loom pressure` hardens a plan before you run it by alternating two external agents over `--rounds` rounds (default 2): Claude `/pressure` edits the plan in place, Codex `$pressure` writes an independent review next to it (`codex-<plan>.md`), then Claude `/address` folds the review back in. It runs the agents synchronously in the foreground (you watch them live) from the repo root, and requires both the `claude` and `codex` CLIs on PATH. `--dry-run` prints the exact commands without spawning anything.
+`loom pressure` hardens a plan before you run it by combining two external agents over `--rounds` rounds (default 2). Each round runs both pressure-tests in parallel: Claude `/pressure` edits the plan in place in the foreground (you watch it live), while Codex `$pressure` writes an independent review next to it (`codex-<plan>.md`) in the background (its output is captured to a temp log to keep the terminal clean). Once both finish, Claude `/address` folds the review back in. Claude stays interactive (subscription billing) and auto-closes when done; Codex runs from the repo root. Requires both the `claude` and `codex` CLIs on PATH. `--dry-run` prints the exact commands without spawning anything.
 
 ### Plan Commands
 
