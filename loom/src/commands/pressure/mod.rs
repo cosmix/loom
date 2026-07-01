@@ -1,15 +1,32 @@
 //! `loom pressure` — alternating Claude/Codex plan pressure-testing driver.
 //!
-//! Each round spawns Claude to pressure-test and update the plan, then Codex to
-//! write an independent review next to the plan, then Claude again to address
-//! the review. The Codex report is deleted at the start of every round so that
-//! if Codex fails to write a fresh review, `/address` never reads the previous
-//! round's report, plus once more after all rounds as cleanup.
+//! Each round runs two independent pressure-tests **concurrently**: Claude
+//! `/pressure` in the foreground (interactive → subscription billing, the user
+//! watches it) and Codex `$pressure` in the background (its noisy event stream
+//! captured to a log file). Once both finish, Claude `/address` folds Codex's
+//! written review back into the plan. The Codex report is deleted at the start
+//! of every round so a failed Codex write can never leave `/address` reading a
+//! stale review, plus once more after all rounds as cleanup.
+//!
+//! ## Why Claude runs in the foreground (and how it auto-exits)
+//!
+//! Claude Code enters its non-interactive (`-p`) path — which can bill against
+//! pay-per-token API credits instead of the subscription — whenever stdout is
+//! not a TTY. So Claude's stdout MUST stay the real terminal; it cannot be
+//! captured or backgrounded. Interactive Claude also never exits on its own
+//! after a slash command. We therefore mirror how the loom daemon terminates a
+//! session: the agent signals completion (here, by creating a marker file as
+//! its final action, injected via `--append-system-prompt`), the driver watches
+//! for that marker, and then SIGTERMs the now-idle session. If the marker never
+//! appears the user can still exit manually, exactly as before.
 
 use anyhow::{bail, Context, Result};
 use colored::Colorize;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::thread;
+use std::time::Duration;
 
 use crate::claude::find_claude_path;
 use crate::codex::find_codex_path;
@@ -31,12 +48,18 @@ pub struct ResolvedPlan {
 /// One step in the pressure pipeline.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Step {
-    /// Spawn Claude with a single positional slash invocation (e.g. `/pressure <plan>`).
-    Claude(String),
     /// Delete the codex report file if it exists.
     DeleteReport(PathBuf),
-    /// Spawn codex with a `$pressure <plan>` skill invocation.
-    Codex(String),
+    /// Run the two independent pressure-tests concurrently: Claude `/pressure`
+    /// in the foreground and Codex `$pressure` in the background.
+    Pressure {
+        /// Full positional slash invocation, e.g. `/pressure doc/plans/PLAN-foo.md`.
+        claude: String,
+        /// Full positional skill invocation, e.g. `$pressure doc/plans/PLAN-foo.md`.
+        codex: String,
+    },
+    /// Run Claude `/address` in the foreground to fold the review into the plan.
+    Address(String),
 }
 
 /// What to do after a child process exits.
@@ -48,6 +71,17 @@ pub enum ExitAction {
     Abort,
     /// Other non-zero — warn and continue.
     Warn,
+}
+
+/// Outcome of a foreground Claude step.
+#[derive(Debug)]
+enum ClaudeOutcome {
+    /// The agent signalled completion (the marker appeared) and the driver
+    /// terminated the idle session. Always treated as success.
+    Completed,
+    /// The process exited on its own — the user exited manually (typically
+    /// code 0) or Claude crashed/was interrupted. Classified via [`ExitAction`].
+    Exited(ExitStatus),
 }
 
 /// Resolve the repository root: `git rev-parse --show-toplevel`, else cwd.
@@ -137,18 +171,32 @@ pub fn codex_report_path(fs_path: &Path) -> PathBuf {
     }
 }
 
+/// Temp path Codex's captured output is written to (per driver process).
+fn codex_log_path() -> PathBuf {
+    std::env::temp_dir().join(format!("loom-pressure-codex-{}.log", std::process::id()))
+}
+
+/// Temp marker path the foreground Claude agent creates as its final action to
+/// signal completion (per driver process).
+fn claude_marker_path() -> PathBuf {
+    std::env::temp_dir().join(format!("loom-pressure-claude-{}.done", std::process::id()))
+}
+
 /// Build the ordered list of steps for `rounds` rounds.
 ///
-/// Each round: delete the report (so a failed Codex write can't leave `/address`
-/// reading the previous round's report) → Claude `/pressure` → Codex `$pressure`
-/// → Claude `/address`. After all rounds, one final report deletion as cleanup.
+/// Each round: delete the report (so a failed Codex write can't leave
+/// `/address` reading the previous round's report) → run Claude `/pressure` and
+/// Codex `$pressure` concurrently → Claude `/address`. After all rounds, one
+/// final report deletion as cleanup.
 pub fn plan_steps(rounds: u32, invocation: &str, report: &Path) -> Vec<Step> {
     let mut steps = Vec::new();
     for _ in 0..rounds {
         steps.push(Step::DeleteReport(report.to_path_buf()));
-        steps.push(Step::Claude(format!("/pressure {invocation}")));
-        steps.push(Step::Codex(format!("$pressure {invocation}")));
-        steps.push(Step::Claude(format!("/address {invocation}")));
+        steps.push(Step::Pressure {
+            claude: format!("/pressure {invocation}"),
+            codex: format!("$pressure {invocation}"),
+        });
+        steps.push(Step::Address(format!("/address {invocation}")));
     }
     steps.push(Step::DeleteReport(report.to_path_buf()));
     steps
@@ -157,14 +205,37 @@ pub fn plan_steps(rounds: u32, invocation: &str, report: &Path) -> Vec<Step> {
 /// Environment variable enabling Claude Code's agent-teams feature.
 const AGENT_TEAMS_ENV: &str = "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS";
 
+/// How often to poll for the completion marker / child exit.
+const POLL_INTERVAL_MS: u64 = 300;
+/// Grace period after SIGTERM before escalating to SIGKILL.
+const TERM_GRACE_MS: u64 = 4000;
+/// Bytes of the codex log tailed to the terminal when codex fails.
+const TAIL_BYTES: usize = 2000;
+
+/// Single-line instruction appended to Claude's system prompt so an interactive
+/// (subscription-billed) session can be closed by the driver: the agent creates
+/// `marker` as its final action, which the driver watches for.
+fn completion_instruction(marker: &Path) -> String {
+    format!(
+        "AUTONOMOUS RUN: this Claude session was launched by `loom pressure`; no human will end it for you. \
+         When the task is FULLY complete and the plan file is fully updated (after every subagent has finished), \
+         your FINAL action MUST be to run exactly this shell command and nothing after it: touch {}. \
+         Do not run it earlier. Once that file exists the driver closes this session.",
+        marker.display()
+    )
+}
+
 /// argv (after the binary) for a Claude spawn. `slash` is the full positional
-/// slash invocation, e.g. `/pressure doc/plans/PLAN-foo.md`.
-fn claude_args(slash: &str) -> Vec<String> {
+/// slash invocation; `marker` is injected into the appended system prompt so
+/// the agent can signal completion.
+fn claude_args(slash: &str, marker: &Path) -> Vec<String> {
     vec![
         "--permission-mode".to_string(),
-        "acceptEdits".to_string(),
+        "auto".to_string(),
         "--model".to_string(),
         "opus".to_string(),
+        "--append-system-prompt".to_string(),
+        completion_instruction(marker),
         slash.to_string(),
     ]
 }
@@ -186,23 +257,52 @@ fn codex_args(repo_root: &Path, skill: &str) -> Vec<String> {
 ///
 /// Uses the same [`claude_args`]/[`codex_args`] builders as the real spawns, so
 /// the preview can never diverge from what actually runs.
-pub fn render_dry_run(rounds: u32, invocation: &str, report: &Path, repo_root: &Path) -> String {
+pub fn render_dry_run(
+    rounds: u32,
+    invocation: &str,
+    report: &Path,
+    repo_root: &Path,
+    marker: &Path,
+    codex_log: &Path,
+) -> String {
     let mut out = format!(
-        "Dry run: {rounds} round(s) of pressure-testing for {invocation}\nCodex report: {}\n\n",
-        report.display()
+        "Dry run: {rounds} round(s) of pressure-testing for {invocation}\n\
+         Codex report:            {}\n\
+         Codex log (captured):    {}\n\
+         Claude auto-close marker: {}\n\n",
+        report.display(),
+        codex_log.display(),
+        marker.display()
     );
-    for (i, step) in plan_steps(rounds, invocation, report).iter().enumerate() {
-        let line = match step {
-            Step::DeleteReport(p) => format!("delete report {}", p.display()),
-            Step::Claude(slash) => {
-                format!(
-                    "{AGENT_TEAMS_ENV}=1 claude {}",
-                    claude_args(slash).join(" ")
-                )
+    let mut n = 1;
+    for step in plan_steps(rounds, invocation, report) {
+        match step {
+            Step::DeleteReport(p) => {
+                out.push_str(&format!("  {n}. delete report {}\n", p.display()));
+                n += 1;
             }
-            Step::Codex(skill) => format!("codex {}", codex_args(repo_root, skill).join(" ")),
-        };
-        out.push_str(&format!("  {}. {line}\n", i + 1));
+            Step::Pressure { claude, codex } => {
+                out.push_str(&format!(
+                    "  {n}. [parallel] Claude (foreground) + Codex (background → log):\n"
+                ));
+                out.push_str(&format!(
+                    "       {AGENT_TEAMS_ENV}=1 claude {}\n",
+                    claude_args(&claude, marker).join(" ")
+                ));
+                out.push_str(&format!(
+                    "       codex {}\n",
+                    codex_args(repo_root, &codex).join(" ")
+                ));
+                n += 1;
+            }
+            Step::Address(slash) => {
+                out.push_str(&format!(
+                    "  {n}. {AGENT_TEAMS_ENV}=1 claude {}\n",
+                    claude_args(&slash, marker).join(" ")
+                ));
+                n += 1;
+            }
+        }
     }
     out
 }
@@ -222,46 +322,136 @@ pub fn classify_code(code: Option<i32>) -> ExitAction {
     }
 }
 
-/// Delete the codex report, treating "not found" as success.
-fn delete_report(path: &Path) -> Result<()> {
+/// Delete a file, treating "not found" as success.
+fn delete_file(path: &Path) -> Result<()> {
     match std::fs::remove_file(path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => {
-            Err(e).with_context(|| format!("failed to delete codex report {}", path.display()))
-        }
+        Err(e) => Err(e).with_context(|| format!("failed to delete {}", path.display())),
     }
 }
 
-/// Spawn an interactive Claude session with a single positional slash invocation.
-fn spawn_claude(claude_path: &Path, repo_root: &Path, slash: &str) -> Result<ExitStatus> {
+/// Send SIGTERM to a process, ignoring "already gone".
+fn send_sigterm(pid: u32) {
+    use nix::sys::signal::{kill, Signal};
+    use nix::unistd::Pid;
+    let _ = kill(Pid::from_raw(pid as i32), Signal::SIGTERM);
+}
+
+/// Print the last `max_bytes` of a log file to stderr (for surfacing failures).
+fn print_log_tail(log_path: &Path, max_bytes: usize) {
+    if let Ok(bytes) = std::fs::read(log_path) {
+        let start = bytes.len().saturating_sub(max_bytes);
+        eprintln!("{}", String::from_utf8_lossy(&bytes[start..]));
+    }
+}
+
+/// Spawn Claude in the foreground (inherited TTY → interactive/subscription
+/// billing) and return once the agent signals completion by creating `marker`
+/// — at which point the now-idle session is SIGTERMed (mirroring how the loom
+/// daemon terminates a session whose stage has completed). If the process exits
+/// on its own first (e.g. the user exited manually) that status is returned.
+fn run_claude_foreground(
+    claude_path: &Path,
+    repo_root: &Path,
+    slash: &str,
+    marker: &Path,
+) -> Result<ClaudeOutcome> {
+    // Clear any stale marker from a previous step before spawning.
+    delete_file(marker)?;
+
     let mut cmd = Command::new(claude_path);
-    cmd.args(claude_args(slash));
+    cmd.args(claude_args(slash, marker));
     cmd.env(AGENT_TEAMS_ENV, "1");
     cmd.current_dir(repo_root);
     cmd.stdin(Stdio::inherit());
     cmd.stdout(Stdio::inherit());
     cmd.stderr(Stdio::inherit());
-    cmd.status().context("failed to spawn claude")
+    let mut child = cmd.spawn().context("failed to spawn claude")?;
+
+    let outcome = loop {
+        // The agent exited on its own (manual exit, crash, or Ctrl-C).
+        if let Some(status) = child.try_wait().context("failed to poll claude")? {
+            break ClaudeOutcome::Exited(status);
+        }
+        // The agent signalled completion → terminate the idle session.
+        if marker.exists() {
+            send_sigterm(child.id());
+            let grace_polls = TERM_GRACE_MS / POLL_INTERVAL_MS;
+            let mut reaped = false;
+            for _ in 0..grace_polls {
+                thread::sleep(Duration::from_millis(POLL_INTERVAL_MS));
+                if child.try_wait().context("failed to poll claude")?.is_some() {
+                    reaped = true;
+                    break;
+                }
+            }
+            if !reaped {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            break ClaudeOutcome::Completed;
+        }
+        thread::sleep(Duration::from_millis(POLL_INTERVAL_MS));
+    };
+
+    delete_file(marker)?;
+    Ok(outcome)
 }
 
-/// Spawn `codex exec` with the `$pressure` skill invocation.
-fn spawn_codex(codex_path: &Path, repo_root: &Path, skill: &str) -> Result<ExitStatus> {
+/// Spawn `codex exec` in the background with its (noisy) output captured to
+/// `log_path`, so it runs concurrently with the foreground Claude session
+/// without flooding the terminal.
+fn spawn_codex_background(
+    codex_path: &Path,
+    repo_root: &Path,
+    skill: &str,
+    log_path: &Path,
+) -> Result<Child> {
+    let log = std::fs::File::create(log_path)
+        .with_context(|| format!("failed to create codex log {}", log_path.display()))?;
+    let log_err = log
+        .try_clone()
+        .context("failed to clone codex log handle")?;
     let mut cmd = Command::new(codex_path);
     cmd.args(codex_args(repo_root, skill));
     cmd.current_dir(repo_root);
-    cmd.stdin(Stdio::inherit());
-    cmd.stdout(Stdio::inherit());
-    cmd.stderr(Stdio::inherit());
-    cmd.status().context("failed to spawn codex")
+    cmd.stdin(Stdio::null());
+    cmd.stdout(Stdio::from(log));
+    cmd.stderr(Stdio::from(log_err));
+    cmd.spawn().context("failed to spawn codex")
+}
+
+/// Wait for the background Codex child, showing a small spinner while it is
+/// still running after the foreground Claude session has ended.
+fn wait_codex(mut child: Child, log_path: &Path) -> Result<ExitStatus> {
+    const FRAMES: [&str; 4] = ["⠋", "⠙", "⠹", "⠸"];
+    let mut i = 0usize;
+    loop {
+        if let Some(status) = child.try_wait().context("failed to poll codex")? {
+            // Clear the spinner line.
+            print!("\r\x1b[K");
+            let _ = std::io::stdout().flush();
+            return Ok(status);
+        }
+        print!(
+            "\r{} waiting for codex review… (output → {})",
+            FRAMES[i % FRAMES.len()],
+            log_path.display()
+        );
+        let _ = std::io::stdout().flush();
+        i += 1;
+        thread::sleep(Duration::from_millis(200));
+    }
 }
 
 /// React to a finished child. Returns `true` when the pipeline should stop.
 ///
 /// On abort the child label and exit code (or signal) are printed, so a
 /// headless failure — e.g. a codex usage error exiting with clap's code 2 — is
-/// surfaced rather than silently mistaken for a clean Ctrl+C interrupt.
-fn should_stop(label: &str, status: ExitStatus) -> bool {
+/// surfaced rather than silently mistaken for a clean Ctrl+C interrupt. When a
+/// `log` is provided (codex), its tail is printed on any non-clean exit.
+fn should_stop(label: &str, status: ExitStatus, log: Option<&Path>) -> bool {
     match classify_exit(status) {
         ExitAction::Continue => false,
         ExitAction::Warn => {
@@ -270,6 +460,9 @@ fn should_stop(label: &str, status: ExitStatus) -> bool {
                 "!".yellow().bold(),
                 status.code().unwrap_or(-1)
             );
+            if let Some(p) = log {
+                print_log_tail(p, TAIL_BYTES);
+            }
             false
         }
         ExitAction::Abort => {
@@ -283,8 +476,20 @@ fn should_stop(label: &str, status: ExitStatus) -> bool {
                     "─".dimmed()
                 ),
             }
+            if let Some(p) = log {
+                print_log_tail(p, TAIL_BYTES);
+            }
             true
         }
+    }
+}
+
+/// Map a foreground Claude outcome to a stop decision. A driver-initiated
+/// completion is always success; a self-exit is classified normally.
+fn claude_should_stop(outcome: ClaudeOutcome) -> bool {
+    match outcome {
+        ClaudeOutcome::Completed => false,
+        ClaudeOutcome::Exited(status) => should_stop("claude", status, None),
     }
 }
 
@@ -294,11 +499,20 @@ pub fn execute(plan: String, rounds: u32, dry_run: bool) -> Result<()> {
     let repo_root = repo_root.canonicalize().unwrap_or(repo_root);
     let resolved = resolve_plan_path(&plan, &repo_root)?;
     let report = codex_report_path(&resolved.fs_path);
+    let marker = claude_marker_path();
+    let codex_log = codex_log_path();
 
     if dry_run {
         print!(
             "{}",
-            render_dry_run(rounds, &resolved.invocation, &report, &repo_root)
+            render_dry_run(
+                rounds,
+                &resolved.invocation,
+                &report,
+                &repo_root,
+                &marker,
+                &codex_log
+            )
         );
         return Ok(());
     }
@@ -317,16 +531,25 @@ pub fn execute(plan: String, rounds: u32, dry_run: bool) -> Result<()> {
     for step in plan_steps(rounds, &resolved.invocation, &report) {
         let stop = match step {
             Step::DeleteReport(path) => {
-                delete_report(&path)?;
+                delete_file(&path)?;
                 false
             }
-            Step::Claude(invocation) => {
-                let status = spawn_claude(&claude_path, &repo_root, &invocation)?;
-                should_stop("claude", status)
+            Step::Pressure { claude, codex } => {
+                // Codex reviews the plan independently in the background (quiet,
+                // captured to a log) while Claude pressure-tests in the
+                // foreground (interactive → subscription billing).
+                let codex_child =
+                    spawn_codex_background(&codex_path, &repo_root, &codex, &codex_log)?;
+                let claude_outcome =
+                    run_claude_foreground(&claude_path, &repo_root, &claude, &marker)?;
+                let claude_stop = claude_should_stop(claude_outcome);
+                let codex_status = wait_codex(codex_child, &codex_log)?;
+                let codex_stop = should_stop("codex", codex_status, Some(&codex_log));
+                claude_stop || codex_stop
             }
-            Step::Codex(invocation) => {
-                let status = spawn_codex(&codex_path, &repo_root, &invocation)?;
-                should_stop("codex", status)
+            Step::Address(slash) => {
+                let outcome = run_claude_foreground(&claude_path, &repo_root, &slash, &marker)?;
+                claude_should_stop(outcome)
             }
         };
         if stop {
