@@ -43,56 +43,26 @@ triggers:
 
 ## Overview
 
-This skill focuses on analyzing and optimizing SQL queries for improved performance. It covers query analysis, index optimization, execution plan interpretation, query rewriting strategies, PostgreSQL-specific optimizations, and common anti-patterns. Use this skill for slow queries, N+1 problems, join optimization, index design, and database performance tuning.
+Analyzing and tuning SQL for performance: reading execution plans, index design, query rewriting, and PostgreSQL-specific behavior. Most notes assume PostgreSQL. The mechanism-level material — reading EXPLAIN, composite-index column order, partial-index limits, statistics, concurrency — is in **Expert Practices** below; this section is the workflow and the anti-pattern catalogue.
 
-## Instructions
+## Workflow
 
-### 1. Analyze Query Performance
-
-- Identify slow queries from logs
-- Run EXPLAIN/EXPLAIN ANALYZE
-- Measure query execution time
-- Check resource utilization
-
-### 2. Understand Execution Plans
-
-- Identify scan types (Sequential Scan, Index Scan, Bitmap Scan)
-- Check join algorithms (Nested Loop, Hash Join, Merge Join)
-- Analyze index usage and selectivity
-- Find bottleneck operations (sorts, filters, aggregations)
-- Understand cost estimates vs actual rows
-- Check buffer usage and I/O patterns
-
-### 3. Apply Optimizations
-
-- Design appropriate indexes (B-tree, Hash, GiST, GIN)
-- Rewrite inefficient queries (subqueries to JOINs, CTEs)
-- Optimize join order and algorithms
-- Use window functions for complex aggregations
-- Leverage partial indexes and covering indexes
-- Consider denormalization for read-heavy workloads
-- Update table statistics (ANALYZE)
-- Tune PostgreSQL configuration parameters
-
-### 4. Validate Improvements
-
-- Compare before/after metrics
-- Test with production-like data
-- Verify correctness
-- Monitor after deployment
+1. **Find** the slow query (logs, `pg_stat_statements` by total time, not just per-call).
+2. **Explain** it: `EXPLAIN (ANALYZE, BUFFERS, SETTINGS)`. Read plans by **estimated-vs-actual row divergence** (bad stats → wrong join/scan choice), scan type, join algorithm, and `Rows Removed by Filter`. See Expert Practices → Reading EXPLAIN.
+3. **Fix** in priority order: refresh/extend statistics → add/reshape an index → rewrite the query → denormalize/derive → tune config. Change one thing at a time.
+4. **Validate**: re-EXPLAIN on production-like data, confirm the target node changed (Sort gone / Index Scan chosen / Heap Fetches low), verify correctness, monitor post-deploy.
 
 ## Best Practices
 
-1. **Index Strategically**: Index columns in WHERE, JOIN, ORDER BY
-2. **Avoid SELECT \***: Select only needed columns
-3. **Use EXPLAIN ANALYZE**: Always analyze execution plans with actual timing
-4. **Limit Results**: Use pagination for large datasets
-5. **Avoid N+1**: Use JOINs or batch queries
-6. **Use `NOT EXISTS`, not `NOT IN`, on nullable subqueries**: `NOT IN` returns zero rows — silently — if any NULL appears in the subquery result, because SQL three-valued logic makes the predicate UNKNOWN for every row. `NOT EXISTS` is NULL-safe and the planner can execute it as an efficient hash anti-join; `NOT IN` with nullable input cannot be turned into an anti-join. (For positive/inclusion tests, `IN`, `ANY`, and `EXISTS` produce identical plans in modern PostgreSQL — pick the most readable; there is no performance reason to rewrite `IN` as `EXISTS`.)
-7. **Update Statistics**: Run ANALYZE after bulk operations
-8. **CTEs are not optimization fences by default (PG12+)**: A non-recursive, side-effect-free CTE referenced once is inlined (predicates push down, indexes are used); a CTE referenced more than once is materialized. Force behavior with `AS MATERIALIZED` (fence/single evaluation) or `AS NOT MATERIALIZED` (force inlining). The old `OFFSET 0` fence trick is obsolete — verify with EXPLAIN.
-9. **Avoid Functions on Indexed Columns**: Prevents index usage
-10. **Monitor Continuously**: Track query performance over time
+- **`EXPLAIN (ANALYZE, BUFFERS)` is the source of truth** — never optimize by guessing; actual rows and buffers reveal the real cost.
+- **Select only needed columns** (enables index-only scans; avoids TOAST/wide-row I/O).
+- **Index for WHERE/JOIN/ORDER BY**, but mind column order and the write tax (Expert Practices → Index Design).
+- **Avoid N+1**: one JOIN or a batched `WHERE id = ANY($1)`, not a query per row.
+- **`NOT EXISTS`, never `NOT IN (nullable subquery)`** — one NULL silently returns zero rows; `NOT EXISTS` is NULL-safe and hash-anti-join-able. (Inclusion `IN`/`ANY`/`EXISTS` plan identically in modern PG — pick readability.)
+- **No functions/implicit casts on indexed columns** (`WHERE lower(x)=` needs an expression index; `WHERE int_col = '1'` may cast and skip the index).
+- **Keyset pagination**, not deep `OFFSET` (Expert Practices).
+- **CTEs are not fences (PG12+)**: a non-recursive, side-effect-free CTE used once is inlined; used >1× it materializes. Force with `AS MATERIALIZED` / `AS NOT MATERIALIZED`; the `OFFSET 0` trick is obsolete.
+- **`ANALYZE` after bulk loads**; monitor query performance over time.
 
 ## PostgreSQL-Specific Optimizations
 
@@ -306,14 +276,10 @@ ORDER BY o.created_at DESC;
 --   Rows Removed by Filter: 450000
 -- Problem: Sequential scan on large table!
 
--- Step 2: Create composite index
-CREATE INDEX idx_orders_status_created
-ON orders(status, created_at DESC)
-WHERE status IN ('pending', 'processing');
--- NOTE: partial-index predicates are matched at PLAN time by literal implication.
--- A parameterized query (WHERE status = $1) will NEVER use this partial index,
--- because the planner cannot prove $1 satisfies the predicate at plan time.
--- When the column must be bound, use a plain composite index (status, created_at).
+-- Step 2: Composite index (equality col first, sort col last).
+-- Use a plain composite, not a partial index, when status is bound by a parameter
+-- ($1) — see Expert Practices → Index Design for why partial indexes go unused.
+CREATE INDEX idx_orders_status_created ON orders(status, created_at DESC);
 
 -- Step 3: Rewrite with explicit JOIN
 SELECT o.id, o.total, o.created_at, c.name, c.email
@@ -365,15 +331,11 @@ SELECT * FROM order_items WHERE order_id IN (1, 2, 3, 4, 5);
 -- Single column index for equality checks
 CREATE INDEX idx_users_email ON users(email);
 
--- Composite index for multiple conditions
--- Order columns: equality first, then range, then sort
+-- Composite index: equality cols first, single range/sort col last.
+-- The trailing sort col skips a Sort node only if every preceding col is bound by
+-- equality AND the ASC/DESC/NULLS direction matches ORDER BY exactly (Expert Practices).
 CREATE INDEX idx_orders_user_status_date
 ON orders(user_id, status, created_at DESC);
--- The trailing sort column eliminates a Sort node only when every PRECEDING column
--- is bound by an equality predicate AND the index ASC/DESC (and NULLS) direction
--- matches the ORDER BY exactly. If a preceding column uses IN(...) or a range, the
--- sort column degrades to a filter predicate and a Sort node reappears.
--- Confirm the Sort node is actually gone in EXPLAIN before relying on this.
 
 -- Partial index for filtered queries
 CREATE INDEX idx_orders_pending
@@ -566,3 +528,17 @@ CREATE FUNCTION score_record(val int) RETURNS int
 ```sql
 SELECT datname, age(datfrozenxid) FROM pg_database ORDER BY 2 DESC;
 ```
+
+## Verification Checklist
+
+Before declaring a query "optimized":
+
+- [ ] Judged by `EXPLAIN (ANALYZE, BUFFERS)` on production-like data — not row-free dev tables
+- [ ] Estimated rows track actual rows within ~10× (else `ANALYZE` / raise statistics target / `CREATE STATISTICS`)
+- [ ] Looped-node costs multiplied by `loops` before concluding what's slow
+- [ ] Target improvement confirmed in the plan: Seq Scan → Index Scan, `Sort` node gone, `Heap Fetches` low, `Rows Removed by Filter` low
+- [ ] Composite index column order = equality → single range → sort; direction matches `ORDER BY`
+- [ ] Partial index isn't silently unused under parameterized ($1) queries
+- [ ] No `NOT IN (nullable)`, no function/implicit-cast on an indexed column
+- [ ] For parameterized statements, generic-plan risk checked with `EXPLAIN (GENERIC_PLAN)`
+- [ ] New index's write cost weighed (HOT breakage, per-write B-tree maintenance)

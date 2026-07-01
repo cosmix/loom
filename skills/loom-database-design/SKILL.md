@@ -42,114 +42,29 @@ triggers:
 
 ## Overview
 
-This skill focuses on designing efficient, scalable, and maintainable database schemas and data models. It covers:
+Designing schemas and data models across workloads: **OLTP** (normalized relational, transactional integrity), **OLAP** (star/snowflake warehouses), **NoSQL** (document/KV/wide-column), **time-series** (TimescaleDB/InfluxDB), **event sourcing** (append-only stores), and **ETL/pipeline** staging. Most examples are PostgreSQL; principles generalize. The mechanism-level rules — keys, indexing, concurrency, lock-aware DDL, partitioning — live in **Expert Practices** below; this section is the design method.
 
-- **OLTP Systems**: Relational databases (PostgreSQL, MySQL) with normalization and transactional integrity
-- **OLAP Systems**: Data warehouses with star/snowflake schemas for analytics
-- **NoSQL**: Document stores (MongoDB), key-value (Redis), wide-column (Cassandra)
-- **Time-Series**: Specialized databases for metrics and events (TimescaleDB, InfluxDB)
-- **Event Sourcing**: Append-only event stores for audit and temporal queries
-- **Data Pipelines**: Schema design considerations for ETL/ELT workflows
+## Design Method
 
-This skill incorporates data modeling expertise for both operational and analytical workloads.
+**1. Requirements → model.** Entities, attributes, relationships (1:1 / 1:N / M:N); access patterns (read vs write heavy, hot queries); volume, growth, retention; OLTP vs OLAP. The access pattern, not the entities, drives the physical design.
 
-## Instructions
+**2. Schema per workload:**
 
-### 1. Understand Data Requirements
+- **OLTP:** normalize to 3NF (one home per fact), then derive read models. Surrogate vs natural PK (see Keys). FK cascade rules. Correct types + `CHECK` constraints. Deliberate NULL semantics.
+- **OLAP:** star schema (fact + denormalized dimensions); snowflake only when a dimension's cardinality/reuse justifies normalizing it. Surrogate dimension keys. SCD Type 1 (overwrite) / Type 2 (row-versioned history) / Type 3 (prior-value column). Fact tables = FKs + additive measures + degenerate dims.
+- **Time-series:** time as leading PK component; partition by time range; append-only writes; downsample into rollup/continuous-aggregate tables; retention policy that drops old partitions.
+- **Event sourcing:** immutable append-only events (`aggregate_id`, `event_type`, `sequence_number`, `payload`, `occurred_at`); optimistic concurrency via `UNIQUE(aggregate_id, sequence_number)`; projections as derived read models; version the payload for schema evolution; snapshots to bound replay cost.
 
-- Identify entities and their attributes
-- Map relationships between entities (one-to-one, one-to-many, many-to-many)
-- Determine data access patterns (read vs write heavy, query patterns)
-- Estimate data volumes, growth rate, and retention requirements
-- Distinguish OLTP (transactional) vs OLAP (analytical) needs
+**3. Performance & concurrency, migrations, ETL:** these are the highest-defect areas — apply the mechanism rules from **Expert Practices**: index every child FK column; `INCLUDE` covering indexes; partial-index literal-match limits; declarative partitioning (never inheritance+triggers); `READ COMMITTED` anomalies vs `SERIALIZABLE`+40001 retry; lock-aware DDL (`lock_timeout`, `NOT VALID`+`VALIDATE`, `CREATE INDEX CONCURRENTLY`); idempotent `MERGE`/`ON CONFLICT` upserts with staging tables and audit columns.
 
-### 2. Design Schema
+## Best Practices (rules of thumb — mechanisms in Expert Practices)
 
-**For OLTP (Transactional Systems)**:
-
-- Normalize to 3NF to eliminate redundancy
-- Define primary keys (surrogate vs natural)
-- Establish foreign key relationships with appropriate cascade rules
-- Choose appropriate data types for storage efficiency
-- Plan for NULL handling and default values
-- Add CHECK constraints for data integrity
-
-**For OLAP (Data Warehouses)**:
-
-- Design star schema (central fact table with dimension tables)
-- Or snowflake schema (normalized dimensions) if cardinality is high
-- Create slowly changing dimensions (SCD Type 1, 2, or 3)
-- Denormalize for query performance
-- Add surrogate keys for dimension tables
-- Design fact tables with foreign keys to dimensions and measure columns
-
-**For Time-Series**:
-
-- Use timestamp as primary key component
-- Partition by time ranges (day, week, month)
-- Design for append-only writes
-- Consider downsampling and aggregation tables
-- Use appropriate retention policies
-
-**For Event Sourcing**:
-
-- Store events as immutable append-only records
-- Include event type, aggregate ID, timestamp, payload
-- Design projections for read models
-- Plan for event versioning and schema evolution
-
-### 3. Optimize for Performance
-
-- Design indexes for query patterns (WHERE, JOIN, ORDER BY, GROUP BY)
-- **Index every foreign key column on the child (referencing) side** — PostgreSQL auto-indexes the parent primary key but NOT the child FK column, so unindexed FKs force a sequential scan of the child table on every parent `DELETE`/`UPDATE` (referential-integrity check) and on `ON DELETE CASCADE` (see Expert Practices)
-- Consider covering indexes to avoid table lookups (use `INCLUDE` for payload columns)
-- Use partial indexes for filtered queries — but the planner only uses one when it can prove at PLAN time the query `WHERE` implies the index predicate; parameterized/prepared statements (`$1`) defeat them (see Expert Practices)
-- Plan denormalization for read-heavy workloads — model it as *derived data* refreshed from a single system of record, not duplicated app-side writes (see Expert Practices)
-- Design partitioning strategy for large tables — use declarative `PARTITION BY RANGE/LIST/HASH` (PG10+), never inheritance + trigger routing
-- Add materialized views for expensive aggregations
-- Design for concurrent access: the default `READ COMMITTED` gives a fresh snapshot per *statement* (not per transaction) and allows lost updates, vanishing `DELETE`s, and write skew. For cross-row invariants or financial logic use `SERIALIZABLE` and retry on `SQLSTATE 40001` (see Expert Practices)
-
-### 4. Plan Migrations
-
-- Create reversible migrations with UP and DOWN scripts
-- Handle data transformations safely (backfill, defaults)
-- Plan for zero-downtime deployments (expand/contract pattern)
-- Version control all schema changes
-- Test migrations on production-like data volumes
-- Document breaking changes and migration dependencies
-
-**Lock-aware DDL (large tables):** most `ALTER TABLE` forms take `ACCESS EXCLUSIVE`, and the lock *queues* — a slow open transaction makes the DDL wait, and all subsequent traffic queues behind it. Always:
-
-- Set a low `lock_timeout` (e.g. `200ms`) before any `ALTER TABLE` so it fails fast instead of stalling all traffic, and retry with exponential backoff + jitter.
-- Add FK/CHECK/NOT NULL with the two-phase **`NOT VALID` + `VALIDATE CONSTRAINT`** pattern: `ADD CONSTRAINT ... NOT VALID` enforces on new writes with a brief lock and no scan; `VALIDATE CONSTRAINT` then scans existing rows under `SHARE UPDATE EXCLUSIVE`, which does NOT block concurrent DML.
-- Add unique constraints via `CREATE UNIQUE INDEX CONCURRENTLY` then `ADD CONSTRAINT ... USING INDEX`.
-- Know what rewrites: a *constant* `DEFAULT` on `ADD COLUMN` is metadata-only on PG11+; a *volatile* default (`gen_random_uuid()`, `now()`) and almost any column type change rewrite the whole table — use expand/contract for type changes.
-
-(See Expert Practices for the full mechanism and example SQL.)
-
-### 5. Consider ETL/Data Pipeline Impact
-
-- Design schemas that support efficient bulk loading
-- Add staging tables for incremental updates
-- Include audit columns (created_at, updated_at, loaded_at)
-- Plan for change data capture (CDC) if needed
-- Design idempotent upsert operations
-- Consider schema evolution and backward compatibility
-
-## Best Practices
-
-1. **Choose Appropriate Types**: Use correct data types for storage efficiency (`VARCHAR`/`TEXT` over `char(n)`, `DECIMAL` over `FLOAT` for money). For auto-incremented surrogate PKs default to `BIGINT GENERATED ALWAYS AS IDENTITY` — `INT4` caps at ~2.1B and fails *hard* on insert at the limit, and `SERIAL` is a legacy pseudo-type with sequence-ownership/permission/`pg_dump` pitfalls. Use `TIMESTAMPTZ` (never bare `TIMESTAMP`) for real-world instants. (See Expert Practices.)
-2. **Index Wisely**: Index columns used in WHERE, JOIN, ORDER BY, GROUP BY, but avoid over-indexing — every index is a write tax (a separate B-tree updated on every write). Audit `pg_stat_user_indexes` for `idx_scan = 0` and drop unused indexes.
-3. **Normalize First**: Start normalized (3NF) for OLTP, denormalize strategically for OLAP or read-heavy workloads. Frame it as system-of-record (normalized, one home per fact) vs *derived* read models (materialized views, projections) refreshed from it.
-4. **Use Constraints**: Enforce data integrity at database level (PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK, NOT NULL). Avoid `NOT IN (subquery)` when the subquery column is nullable — a single NULL silently returns zero rows; use `NOT EXISTS`. (See Expert Practices.)
-5. **Plan for Scale**: Consider sharding, partitioning, and replication early for high-volume tables
-6. **Document Schemas**: Maintain ERD, data dictionary, and relationship diagrams
-7. **Test Migrations**: Always test on production-like data volumes and monitor performance
-8. **Audit Everything**: Add created_at, updated_at, created_by for accountability
-9. **Version Events**: For event sourcing, include schema version in event payload
-10. **Optimize for Cardinality**: High-cardinality columns benefit from indexes, low-cardinality may not
-11. **Separate Reads from Writes**: For high-scale systems, consider CQRS pattern with separate read/write models
-12. **Design for Idempotency**: Ensure ETL operations can safely retry without duplicates
+- **Types:** `BIGINT GENERATED ALWAYS AS IDENTITY` for surrogate PKs (not `SERIAL`/`INT4`); `TIMESTAMPTZ` never bare `TIMESTAMP`; `NUMERIC`/`DECIMAL` (not `FLOAT`/`money`) for currency; `TEXT`/`VARCHAR` (not `char(n)`).
+- **Index wisely:** cover WHERE/JOIN/ORDER BY/GROUP BY, but every index is a write tax — audit `pg_stat_user_indexes` for `idx_scan = 0` and drop dead ones.
+- **Normalize first, derive later:** normalized system-of-record; denormalize only as materialized views / projections refreshed from it, not duplicated app-side writes.
+- **Constrain at the DB:** PK/FK/UNIQUE/CHECK/NOT NULL. `NOT EXISTS`, never `NOT IN (nullable subquery)`.
+- **Plan for scale early:** partition/shard/replicate high-volume tables; CQRS (separate read/write models) at high scale.
+- **Operational hygiene:** audit columns (`created_at`/`updated_at`/`created_by`); idempotent ETL; version event payloads; test migrations on production-like volumes; maintain an ERD/data dictionary.
 
 ## Examples
 
@@ -808,3 +723,22 @@ max_slot_wal_keep_size = 50GB
 ```
 
 **MongoDB unbounded embedded arrays degrade well before the 16MB document limit.** The performance cliff comes far earlier than 16MB: a growing embedded array (comments, events, log lines) rewrites the entire document on each push, so write cost scales with document size, and a multikey index stores one entry per element (10k elements = 10k index entries to maintain). The result is progressively slower writes with no error. Beyond roughly a few hundred elements on frequently-updated documents, switch to the Subset pattern (embed the most recent N, store the rest in a sibling collection fetched via `$lookup`) or full referencing — trading some read latency for bounded write cost.
+
+## Verification Checklist
+
+Schema design:
+
+- [ ] Every child-side FK column is explicitly indexed (PG does not auto-index it)
+- [ ] Surrogate PKs are `BIGINT IDENTITY` or UUIDv7 — not `SERIAL`, not random UUIDv4 on write-heavy tables
+- [ ] Real-world instants are `TIMESTAMPTZ`; money is `NUMERIC`/integer minor units
+- [ ] Cross-row/financial invariants run under `SERIALIZABLE` with a 40001 retry loop (not `READ COMMITTED`)
+- [ ] Constraints (`CHECK`/`FK`/`UNIQUE`/`NOT NULL`) enforced in the DB, not just the app
+- [ ] No `NOT IN (nullable subquery)`; no EAV where typed columns + `JSONB` would serve
+
+Migration (large tables):
+
+- [ ] `lock_timeout` set + backoff retry around every `ALTER TABLE`
+- [ ] FK/CHECK/NOT NULL added via `NOT VALID` then `VALIDATE CONSTRAINT`; uniques via `CREATE UNIQUE INDEX CONCURRENTLY`
+- [ ] No accidental full-table rewrite (volatile `DEFAULT` on `ADD COLUMN`, type change) — type changes use expand/contract
+- [ ] Reversible (DOWN script) and tested on production-like volume
+- [ ] `CREATE INDEX CONCURRENTLY` results checked for leftover `indisvalid = false` indexes

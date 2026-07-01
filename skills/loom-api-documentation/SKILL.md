@@ -25,1103 +25,309 @@ triggers:
   - swagger ui
   - authentication flows
   - rate limits
+  - contract testing
+  - spec-first
 ---
 
 # API Documentation
 
 ## Overview
 
-Comprehensive API documentation skill covering OpenAPI/Swagger specifications, endpoint documentation, authentication flows, error handling, versioning strategies, and SDK/client documentation. Combines technical precision with clear, user-friendly writing to create documentation that developers can actually use.
+Produce API docs developers can actually use: an accurate OpenAPI spec as the source of truth, plus reference/auth/error/versioning guides generated or kept in sync with it. Correctness and drift-prevention matter more than prose.
 
-## Instructions
+## What every API must document
 
-### 1. Understand the API First
+Auth · base URLs per environment · every endpoint + operation · request/response schemas · **all** response codes (incl. errors) · rate limits (with headers) · pagination · versioning/deprecation policy.
 
-- Review all endpoints and their purposes
-- Identify authentication mechanisms
-- Understand request/response schemas
-- Note error conditions and edge cases
-- Check existing API patterns for consistency
+## Spec-first vs code-first (choose deliberately)
 
-### 2. Documentation Components
+| Approach | How | Drift risk | Use when |
+| -------- | --- | ---------- | -------- |
+| **Spec-first** | Hand-write OpenAPI, generate server stubs + clients + mocks | Runtime can diverge from spec unless validated | New APIs, contract negotiated across teams, mock-driven frontend |
+| **Code-first** | Annotate handlers; framework emits spec (FastAPI, springdoc, drf-spectacular, tsoa) | Spec stays close to code, but annotations can lie | Existing codebase, small team, code is the truth |
 
-Every API should document:
+Either way, **enforce the contract in CI** (lint + validate examples + breaking-change diff). Docs that aren't tested against the running API are fiction.
 
-1. **Authentication**: How to authenticate
-2. **Base URL**: Environment-specific URLs
-3. **Endpoints**: All available operations
-4. **Schemas**: Request/response models
-5. **Errors**: Error codes and handling
-6. **Rate limits**: Throttling policies
-7. **Versioning**: How versions work
+## OpenAPI 3.1 — what changed from 3.0 (get these right)
 
-## Best Practices
+- **Fully aligned with JSON Schema 2020-12.** A schema is now a valid JSON Schema; you can set `jsonSchemaDialect` and use `$schema` per-schema.
+- **`nullable: true` is GONE.** Use a type array: `type: [string, "null"]`.
+- **Type can be an array**: `type: [string, integer]`.
+- **`exclusiveMinimum`/`exclusiveMaximum` are numbers**, not booleans (draft-4 behavior removed).
+- **Top-level `webhooks`** describe events the API *sends* (see below).
+- **Examples split by object**: Schema Objects use JSON Schema's `examples` (an **array**); Media Type / Parameter Objects use `example` (singular) or `examples` (a **map of named Example Objects** with `summary`/`value`). Don't confuse the two.
+- `info.license.identifier` accepts an **SPDX** id (e.g., `MIT`) instead of a URL.
+- `$ref` may now sit alongside sibling keywords (e.g., `description`).
 
-### Technical Accuracy
+⚠ Tooling lag: Swagger UI / some generators still have partial 3.1 support. Verify your renderer and codegen handle 3.1 before committing to `type: [..., "null"]` everywhere.
 
-- Use consistent terminology throughout
-- Keep schemas DRY with $ref
-- Document all possible response codes
-- Validate examples against schema
-- Include proper JSON Schema constraints
+## Documentation quality rules
 
-### Clarity and Usability (from technical-writer expertise)
-
-- Write for the developer audience: assume technical competence, skip patronizing explanations
-- Lead with practical examples: show before explaining
-- Use active voice and direct language
-- Provide working curl examples for every endpoint
-- Explain authentication with complete, copy-paste examples
-- Document rate limits with concrete numbers and headers
-- Surface common error scenarios prominently
-- Include troubleshooting tips for frequent issues
-
-### Interactive Documentation
-
-- Design for auto-generated docs (Redoc, Swagger UI, Stoplight)
-- Use operationId for stable client generation
-- Tag endpoints logically for navigation
-- Write descriptions that render well in both markdown and UI tools
-- Include multiple request/response examples for different scenarios
-
-## OpenAPI 3.1 Key Features
-
-### Full JSON Schema Support
-
-- Use JSON Schema 2020-12 vocabulary
-- Support const, if/then/else, dependentSchemas
-- Native oneOf/anyOf/allOf with discriminators
-
-### Example Handling
-
-- Single example: use `example` property
-- Multiple examples: use `examples` object with named scenarios
-- Examples in both schema definitions AND operation level
-
-### Webhooks Documentation
-
-```yaml
-webhooks:
-  userCreated:
-    post:
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UserEvent"
-```
-
-### Content Negotiation
-
-```yaml
-content:
-  application/json:
-    schema: { ... }
-  application/xml:
-    schema: { ... }
-  text/csv:
-    schema:
-      type: string
-```
-
-### Security Schemes
-
-- OAuth2 with multiple flows
-- OpenID Connect Discovery
-- Mutual TLS
-- Custom security schemes with extensions
+- Write for competent developers: skip patronizing basics; lead with a working example, then explain.
+- Keep schemas DRY with `$ref`; reuse `parameters`, `responses`, `securitySchemes` from `components`.
+- **Every operation needs a unique `operationId`** — it becomes the generated client's method name. Renaming it is a breaking change for SDK users.
+- Tag endpoints for navigation; realistic example data (not `foo`/`bar`); document rate limits with concrete numbers **and** the exact headers.
+- Validate every example against its schema (Redocly/Spectral catch this).
 
 ## Examples
 
-### OpenAPI/Swagger Specification
+### OpenAPI 3.1 spec (trimmed to the load-bearing shapes)
 
 ```yaml
 openapi: 3.1.0
 info:
   title: User Management API
-  description: |
-    API for managing users and their profiles.
-
-    ## Authentication
-    All endpoints require Bearer token authentication.
-    Obtain a token via POST /auth/login.
-
-    ## Rate Limits
-    - Standard: 100 requests/minute
-    - Authenticated: 1000 requests/minute
   version: 2.0.0
-  contact:
-    name: API Support
-    email: api-support@example.com
-    url: https://developer.example.com
-  license:
-    name: MIT
-    url: https://opensource.org/licenses/MIT
-
+  license: { name: MIT, identifier: MIT }   # 3.1 SPDX identifier
 servers:
-  - url: https://api.example.com/v2
-    description: Production
-  - url: https://api.staging.example.com/v2
-    description: Staging
-  - url: http://localhost:3000/v2
-    description: Local development
-
-tags:
-  - name: Users
-    description: User management operations
-  - name: Authentication
-    description: Authentication and authorization
-
+  - { url: https://api.example.com/v2, description: Production }
+  - { url: https://api.staging.example.com/v2, description: Staging }
 security:
   - BearerAuth: []
+tags:
+  - { name: Users, description: User management }
 
 paths:
   /users:
     get:
-      summary: List all users
-      description: |
-        Retrieve a paginated list of users.
-        Results are sorted by creation date (newest first).
-      operationId: listUsers
-      tags:
-        - Users
+      summary: List users
+      operationId: listUsers          # stable → SDK method name
+      tags: [Users]
       parameters:
-        - $ref: "#/components/parameters/PageParam"
         - $ref: "#/components/parameters/LimitParam"
         - name: status
           in: query
-          description: Filter by user status
-          schema:
-            type: string
-            enum: [active, inactive, pending]
-        - name: search
-          in: query
-          description: Search by name or email
-          schema:
-            type: string
-            minLength: 2
+          schema: { type: string, enum: [active, inactive, pending] }
       responses:
         "200":
-          description: Successful response
+          description: OK
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/UserListResponse"
-              example:
-                data:
-                  - id: "usr_123"
-                    email: "john@example.com"
-                    name: "John Doe"
-                    status: "active"
-                    createdAt: "2024-01-15T10:30:00Z"
-                pagination:
-                  page: 1
-                  limit: 20
-                  total: 150
-                  hasMore: true
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-
+              schema: { $ref: "#/components/schemas/UserListResponse" }
+              examples:              # media-type: MAP of named Example Objects
+                page1:
+                  summary: First page
+                  value:
+                    data: [{ id: usr_123, email: john@example.com, status: active }]
+                    pagination: { limit: 20, next_cursor: "eyJpZCI6MTIzfQ", has_more: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
     post:
-      summary: Create a new user
-      description: Create a new user account
+      summary: Create user
       operationId: createUser
-      tags:
-        - Users
+      tags: [Users]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          schema: { type: string }
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: "#/components/schemas/CreateUserRequest"
-            examples:
-              basic:
-                summary: Basic user creation
-                value:
-                  email: "jane@example.com"
-                  name: "Jane Smith"
-                  password: "secureP@ssw0rd"
-              withRole:
-                summary: User with admin role
-                value:
-                  email: "admin@example.com"
-                  name: "Admin User"
-                  password: "secureP@ssw0rd"
-                  role: "admin"
+            schema: { $ref: "#/components/schemas/CreateUserRequest" }
       responses:
-        "201":
-          description: User created successfully
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UserResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
         "409":
-          description: User with this email already exists
+          description: Email already exists
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-              example:
-                error:
-                  code: "USER_EXISTS"
-                  message: "A user with this email already exists"
+              schema: { $ref: "#/components/schemas/Problem" }
 
-  /users/{userId}:
-    get:
-      summary: Get user by ID
-      description: Retrieve a specific user by their unique identifier
-      operationId: getUserById
-      tags:
-        - Users
-      parameters:
-        - $ref: "#/components/parameters/UserIdParam"
-      responses:
-        "200":
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UserResponse"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-    patch:
-      summary: Update user
-      description: Update user properties. Only provided fields are updated.
-      operationId: updateUser
-      tags:
-        - Users
-      parameters:
-        - $ref: "#/components/parameters/UserIdParam"
+webhooks:                            # 3.1: events the API SENDS
+  userCreated:
+    post:
       requestBody:
-        required: true
         content:
           application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateUserRequest"
+            schema: { $ref: "#/components/schemas/User" }
       responses:
-        "200":
-          description: User updated successfully
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UserResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-    delete:
-      summary: Delete user
-      description: Permanently delete a user account
-      operationId: deleteUser
-      tags:
-        - Users
-      parameters:
-        - $ref: "#/components/parameters/UserIdParam"
-      responses:
-        "204":
-          description: User deleted successfully
-        "404":
-          $ref: "#/components/responses/NotFound"
+        "200": { description: Receiver acknowledged }
 
 components:
   securitySchemes:
-    BearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: |
-        JWT token obtained from POST /auth/login.
-        Include in header: `Authorization: Bearer <token>`
-
-    ApiKeyAuth:
-      type: apiKey
-      in: header
-      name: X-API-Key
-      description: API key for server-to-server authentication
-
+    BearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+    ApiKeyAuth: { type: apiKey, in: header, name: X-API-Key }
+    OAuth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://auth.example.com/authorize
+          tokenUrl: https://auth.example.com/token
+          scopes: { "users:read": Read users, "users:write": Manage users }
   parameters:
-    UserIdParam:
-      name: userId
-      in: path
-      required: true
-      description: Unique user identifier
-      schema:
-        type: string
-        pattern: "^usr_[a-zA-Z0-9]+$"
-      example: usr_123abc
-
-    PageParam:
-      name: page
-      in: query
-      description: Page number (1-indexed)
-      schema:
-        type: integer
-        minimum: 1
-        default: 1
-
     LimitParam:
       name: limit
       in: query
-      description: Number of items per page
-      schema:
-        type: integer
-        minimum: 1
-        maximum: 100
-        default: 20
-
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
   schemas:
     User:
       type: object
-      required:
-        - id
-        - email
-        - name
-        - status
-        - createdAt
+      required: [id, email, status]
       properties:
-        id:
-          type: string
-          description: Unique identifier
-          example: usr_123abc
-        email:
-          type: string
-          format: email
-          description: User's email address
-          example: john@example.com
-        name:
-          type: string
-          description: User's full name
-          example: John Doe
-        status:
-          type: string
-          enum: [active, inactive, pending]
-          description: Account status
-        role:
-          type: string
-          enum: [user, admin, moderator]
-          default: user
-        createdAt:
-          type: string
-          format: date-time
-          description: Account creation timestamp
-        updatedAt:
-          type: string
-          format: date-time
-          description: Last update timestamp
-
+        id: { type: string, example: usr_123 }
+        email: { type: string, format: email }
+        status: { type: string, enum: [active, inactive, pending] }
+        deletedAt: { type: [string, "null"], format: date-time }   # 3.1 nullable
     CreateUserRequest:
       type: object
-      required:
-        - email
-        - name
-        - password
+      required: [email, name, password]
       properties:
-        email:
-          type: string
-          format: email
-        name:
-          type: string
-          minLength: 2
-          maxLength: 100
-        password:
-          type: string
-          format: password
-          minLength: 8
-          description: Must contain uppercase, lowercase, number, and special character
-        role:
-          type: string
-          enum: [user, admin, moderator]
-          default: user
-
-    UpdateUserRequest:
-      type: object
-      minProperties: 1
-      properties:
-        name:
-          type: string
-          minLength: 2
-          maxLength: 100
-        status:
-          type: string
-          enum: [active, inactive]
-
-    UserResponse:
-      type: object
-      properties:
-        data:
-          $ref: "#/components/schemas/User"
-
+        email: { type: string, format: email }
+        name: { type: string, minLength: 2, maxLength: 100 }
+        password: { type: string, format: password, minLength: 8 }
     UserListResponse:
       type: object
       properties:
-        data:
-          type: array
-          items:
-            $ref: "#/components/schemas/User"
+        data: { type: array, items: { $ref: "#/components/schemas/User" } }
         pagination:
-          $ref: "#/components/schemas/Pagination"
-
-    Pagination:
-      type: object
-      properties:
-        page:
-          type: integer
-        limit:
-          type: integer
-        total:
-          type: integer
-        hasMore:
-          type: boolean
-
-    Error:
-      type: object
-      properties:
-        error:
           type: object
           properties:
-            code:
-              type: string
-              description: Machine-readable error code
-            message:
-              type: string
-              description: Human-readable error message
-            details:
-              type: array
-              items:
-                type: object
-                properties:
-                  field:
-                    type: string
-                  message:
-                    type: string
-
+            limit: { type: integer }
+            next_cursor: { type: [string, "null"] }
+            has_more: { type: boolean }
+    Problem:                          # RFC 9457 application/problem+json
+      type: object
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              code: { type: string }
+              message: { type: string }
   responses:
-    BadRequest:
-      description: Invalid request parameters
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
-          example:
-            error:
-              code: "VALIDATION_ERROR"
-              message: "Request validation failed"
-              details:
-                - field: "email"
-                  message: "Must be a valid email address"
-
     Unauthorized:
       description: Authentication required
       content:
         application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
-          example:
-            error:
-              code: "UNAUTHORIZED"
-              message: "Invalid or missing authentication token"
-
-    NotFound:
-      description: Resource not found
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
-          example:
-            error:
-              code: "NOT_FOUND"
-              message: "The requested resource was not found"
-
+          schema: { $ref: "#/components/schemas/Problem" }
     RateLimited:
       description: Rate limit exceeded
       headers:
-        X-RateLimit-Limit:
-          schema:
-            type: integer
-          description: Request limit per minute
-        X-RateLimit-Remaining:
-          schema:
-            type: integer
-          description: Remaining requests
-        X-RateLimit-Reset:
-          schema:
-            type: integer
-          description: Unix timestamp when limit resets
+        X-RateLimit-Limit: { schema: { type: integer }, description: Requests per window }
+        X-RateLimit-Remaining: { schema: { type: integer } }
+        X-RateLimit-Reset: { schema: { type: integer }, description: Unix epoch when window resets }
+        Retry-After: { schema: { type: integer }, description: Seconds to wait }
       content:
         application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
-          example:
-            error:
-              code: "RATE_LIMITED"
-              message: "Too many requests. Please retry after 60 seconds."
+          schema: { $ref: "#/components/schemas/Problem" }
 ```
 
-### Endpoint Documentation (Markdown)
+### Endpoint reference (Markdown template)
 
-```markdown
-## Create User
+````markdown
+## Create User — `POST /users`
 
-Create a new user account in the system.
+Auth: Bearer token. Idempotent via `Idempotency-Key` header.
 
-**Endpoint:** `POST /users`
+**Body**
 
-**Authentication:** Required (Bearer token)
+| Field    | Type   | Req | Notes                                             |
+| -------- | ------ | --- | ------------------------------------------------- |
+| email    | string | yes | Valid email                                       |
+| name     | string | yes | 2–100 chars                                        |
+| password | string | yes | ≥8 chars; upper+lower+digit+symbol                |
 
-### Request
-
-#### Headers
-
-| Header        | Required | Description                           |
-| ------------- | -------- | ------------------------------------- |
-| Authorization | Yes      | Bearer token                          |
-| Content-Type  | Yes      | `application/json`                    |
-| X-Request-Id  | No       | Unique request identifier for tracing |
-
-#### Body Parameters
-
-| Parameter | Type   | Required | Description                                                                     |
-| --------- | ------ | -------- | ------------------------------------------------------------------------------- |
-| email     | string | Yes      | Valid email address                                                             |
-| name      | string | Yes      | Full name (2-100 characters)                                                    |
-| password  | string | Yes      | Password (min 8 chars, must include uppercase, lowercase, number, special char) |
-| role      | string | No       | User role: `user`, `admin`, `moderator`. Default: `user`                        |
-
-#### Example Request
-
-\`\`\`bash
+```bash
 curl -X POST https://api.example.com/v2/users \
- -H "Authorization: Bearer eyJhbG..." \
- -H "Content-Type: application/json" \
- -d '{
-"email": "jane@example.com",
-"name": "Jane Smith",
-"password": "SecureP@ss123"
-}'
-\`\`\`
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 9f1c...-once" \
+  -d '{"email":"jane@example.com","name":"Jane Smith","password":"SecureP@ss123"}'
+```
 
-### Response
+**201 Created** → `{ "id": "usr_abc123", "email": "jane@example.com", "status": "pending" }`
 
-#### Success Response (201 Created)
-
-\`\`\`json
-{
-"data": {
-"id": "usr_abc123",
-"email": "jane@example.com",
-"name": "Jane Smith",
-"status": "pending",
-"role": "user",
-"createdAt": "2024-01-15T10:30:00Z"
-}
-}
-\`\`\`
-
-#### Error Responses
-
-| Status | Code             | Description              |
+| Status | Code             | Meaning                  |
 | ------ | ---------------- | ------------------------ |
-| 400    | VALIDATION_ERROR | Invalid request body     |
-| 401    | UNAUTHORIZED     | Missing or invalid token |
+| 401    | UNAUTHORIZED     | Missing/invalid token    |
 | 409    | USER_EXISTS      | Email already registered |
-| 429    | RATE_LIMITED     | Too many requests        |
+| 422    | VALIDATION_ERROR | See `errors[]` per field |
+| 429    | RATE_LIMITED     | Honor `Retry-After`      |
+````
 
-**400 Bad Request:**
-\`\`\`json
-{
-"error": {
-"code": "VALIDATION_ERROR",
-"message": "Request validation failed",
-"details": [
-{
-"field": "password",
-"message": "Password must be at least 8 characters"
-}
-]
-}
-}
-\`\`\`
-```
+### Auth flows (document the full lifecycle, not just the header)
 
-### Authentication Documentation
+````markdown
+## Bearer (JWT)
 
-```markdown
-# Authentication
+`POST /auth/login` → `{ "accessToken": "...", "refreshToken": "...", "expiresIn": 3600 }`
+Send `Authorization: Bearer <accessToken>`. Access token 1h, refresh 30d; `POST /auth/refresh` to renew.
 
-## Overview
+## API key (server-to-server)
 
-The API supports two authentication methods:
+`X-API-Key: sk_live_...`. Never ship keys client-side; scope minimally; rotate ≤90 days; one key per environment.
+````
 
-1. **Bearer Token (JWT)** - For user-facing applications
-2. **API Key** - For server-to-server integrations
+### Documenting errors, rate limits, versioning consistently
 
-## Bearer Token Authentication
+Reference the RFC 9457 `Problem` schema for **every** error response; maintain one canonical error-code table:
 
-### Obtaining a Token
+| Code | HTTP | Meaning | Client action |
+| ---- | ---- | ------- | ------------- |
+| UNAUTHORIZED | 401 | No/invalid token | Re-auth |
+| INSUFFICIENT_SCOPE | 403 | Token lacks scope | Request scopes |
+| VALIDATION_ERROR | 422 | Field validation failed | Inspect `errors[]` |
+| NOT_FOUND | 404 | Missing resource | Verify id |
+| ALREADY_EXISTS | 409 | Duplicate/conflict | Use unique key |
+| RATE_LIMITED | 429 | Throttled | Wait `Retry-After` |
 
-\`\`\`bash
-POST /auth/login
-Content-Type: application/json
+Rate limits: always document the window, the limit, and the `X-RateLimit-*` + `Retry-After` headers. Versioning: publish supported versions + sunset dates, classify breaking vs non-breaking, and give side-by-side migration examples plus `Deprecation`/`Sunset` response headers.
 
-{
-"email": "user@example.com",
-"password": "your-password"
-}
-\`\`\`
-
-**Response:**
-\`\`\`json
-{
-"accessToken": "eyJhbGciOiJIUzI1NiIs...",
-"refreshToken": "dGhpcyBpcyBhIHJlZnJl...",
-"expiresIn": 3600,
-"tokenType": "Bearer"
-}
-\`\`\`
-
-### Using the Token
-
-Include the token in the Authorization header:
-
-\`\`\`
-Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
-\`\`\`
-
-### Token Lifecycle
-
-| Token         | Lifetime | Usage                   |
-| ------------- | -------- | ----------------------- |
-| Access Token  | 1 hour   | API requests            |
-| Refresh Token | 30 days  | Obtain new access token |
-
-### Refreshing Tokens
-
-\`\`\`bash
-POST /auth/refresh
-Content-Type: application/json
-
-{
-"refreshToken": "dGhpcyBpcyBhIHJlZnJl..."
-}
-\`\`\`
+## Tooling
 
-## API Key Authentication
-
-For server-to-server integrations, use API key authentication.
-
-### Creating an API Key
-
-1. Go to Dashboard > Settings > API Keys
-2. Click "Create New Key"
-3. Select permissions and expiration
-4. Copy and securely store the key
-
-### Using the API Key
-
-Include in the `X-API-Key` header:
-
-\`\`\`
-X-API-Key: sk_live_abc123...
-\`\`\`
-
-### API Key Best Practices
-
-- Never expose keys in client-side code
-- Rotate keys regularly (every 90 days)
-- Use separate keys for each environment
-- Apply minimum required permissions
-```
-
-### Error Response Documentation
-
-```markdown
-# Error Handling
-
-## Error Response Format
-
-All errors follow a consistent format:
-
-\`\`\`json
-{
-"error": {
-"code": "ERROR_CODE",
-"message": "Human-readable description",
-"details": [
-{
-"field": "fieldName",
-"message": "Field-specific error"
-}
-],
-"requestId": "req_abc123"
-}
-}
-\`\`\`
-
-## HTTP Status Codes
-
-| Status | Meaning           | When Used                               |
-| ------ | ----------------- | --------------------------------------- |
-| 200    | OK                | Successful GET, PUT, PATCH              |
-| 201    | Created           | Successful POST creating resource       |
-| 204    | No Content        | Successful DELETE                       |
-| 400    | Bad Request       | Invalid request syntax or parameters    |
-| 401    | Unauthorized      | Missing or invalid authentication       |
-| 403    | Forbidden         | Valid auth but insufficient permissions |
-| 404    | Not Found         | Resource doesn't exist                  |
-| 409    | Conflict          | Resource state conflict                 |
-| 422    | Unprocessable     | Valid syntax but semantic errors        |
-| 429    | Too Many Requests | Rate limit exceeded                     |
-| 500    | Internal Error    | Server-side error                       |
-
-## Common Error Codes
-
-### Authentication Errors
-
-| Code               | HTTP Status | Description            | Resolution                   |
-| ------------------ | ----------- | ---------------------- | ---------------------------- |
-| UNAUTHORIZED       | 401         | No token provided      | Include Authorization header |
-| TOKEN_EXPIRED      | 401         | Token has expired      | Refresh your access token    |
-| TOKEN_INVALID      | 401         | Token is malformed     | Obtain a new token           |
-| INSUFFICIENT_SCOPE | 403         | Token lacks permission | Request with proper scopes   |
-
-### Validation Errors
-
-| Code             | HTTP Status | Description               | Resolution                          |
-| ---------------- | ----------- | ------------------------- | ----------------------------------- |
-| VALIDATION_ERROR | 400         | Request failed validation | Check `details` for specific fields |
-| INVALID_JSON     | 400         | Malformed JSON body       | Verify JSON syntax                  |
-| MISSING_FIELD    | 400         | Required field missing    | Include all required fields         |
-
-### Resource Errors
-
-| Code            | HTTP Status | Description            | Resolution             |
-| --------------- | ----------- | ---------------------- | ---------------------- |
-| NOT_FOUND       | 404         | Resource doesn't exist | Verify resource ID     |
-| ALREADY_EXISTS  | 409         | Duplicate resource     | Use unique identifiers |
-| RESOURCE_LOCKED | 423         | Resource is locked     | Wait and retry         |
-
-## Handling Errors in Code
-
-### JavaScript/TypeScript
-
-\`\`\`typescript
-try {
-const response = await api.createUser(userData);
-} catch (error) {
-if (error.status === 401) {
-await refreshToken();
-return retry();
-}
-
-if (error.status === 429) {
-const retryAfter = error.headers['retry-after'];
-await sleep(retryAfter \* 1000);
-return retry();
-}
-
-if (error.body?.error?.code === 'VALIDATION_ERROR') {
-const fieldErrors = error.body.error.details;
-displayFieldErrors(fieldErrors);
-}
-}
-\`\`\`
-```
-
-### Versioning Documentation
-
-```markdown
-# API Versioning
-
-## Version Format
-
-The API uses URL path versioning:
-
-\`\`\`
-https://api.example.com/v{major}/resource
-\`\`\`
-
-Current version: **v2**
-
-## Supported Versions
-
-| Version | Status     | Sunset Date |
-| ------- | ---------- | ----------- |
-| v2      | Current    | -           |
-| v1      | Deprecated | 2024-12-31  |
-
-## Version Lifecycle
-
-1. **Current**: Actively developed and supported
-2. **Deprecated**: Supported but no new features
-3. **Sunset**: Read-only access for 90 days
-4. **Retired**: No longer accessible
-
-## Breaking vs Non-Breaking Changes
-
-### Non-Breaking (No version bump)
-
-- Adding new endpoints
-- Adding optional parameters
-- Adding new response fields
-- Adding new enum values
-
-### Breaking (Major version bump)
-
-- Removing endpoints
-- Removing or renaming fields
-- Changing field types
-- Changing authentication method
-- Changing error format
-
-## Migration Guide: v1 to v2
-
-### Authentication Change
-
-**v1:** API Key in query parameter
-\`\`\`
-GET /v1/users?api_key=abc123
-\`\`\`
-
-**v2:** Bearer token in header
-\`\`\`
-GET /v2/users
-Authorization: Bearer eyJhbG...
-\`\`\`
-
-### Response Format Change
-
-**v1:** Flat response
-\`\`\`json
-{
-"id": "123",
-"name": "John"
-}
-\`\`\`
-
-**v2:** Wrapped response
-\`\`\`json
-{
-"data": {
-"id": "usr_123",
-"name": "John"
-}
-}
-\`\`\`
-```
-
-### SDK Documentation
-
-```markdown
-# JavaScript SDK
-
-## Installation
-
-\`\`\`bash
-npm install @example/api-client
-\`\`\`
-
-## Quick Start
-
-\`\`\`javascript
-import { ApiClient } from '@example/api-client';
-
-const client = new ApiClient({
-apiKey: process.env.API_KEY,
-environment: 'production' // or 'sandbox'
-});
-
-// Create a user
-const user = await client.users.create({
-email: 'jane@example.com',
-name: 'Jane Smith'
-});
-
-console.log(user.id); // usr_abc123
-\`\`\`
-
-## Configuration
-
-\`\`\`javascript
-const client = new ApiClient({
-// Required
-apiKey: 'sk*live*...',
-
-// Optional
-environment: 'production', // 'production' | 'sandbox'
-timeout: 30000, // Request timeout in ms
-retries: 3, // Auto-retry failed requests
-logger: console, // Custom logger
-});
-\`\`\`
-
-## Resources
-
-### Users
-
-\`\`\`javascript
-// List users with pagination
-const { data, pagination } = await client.users.list({
-page: 1,
-limit: 20,
-status: 'active'
-});
+| Job | Tool | Command |
+| --- | ---- | ------- |
+| Render (3-panel) | Redoc | `npx @redocly/cli build-docs openapi.yaml -o docs.html` |
+| Render (try-it) | Swagger UI | `docker run -p 80:8080 -e SWAGGER_JSON=/api/openapi.yaml -v $(pwd):/api swaggerapi/swagger-ui` |
+| Embed | Stoplight Elements | `<elements-api apiDescriptionUrl="./openapi.yaml" router="hash" />` |
+| Lint | Spectral / Redocly | `spectral lint openapi.yaml` · `npx @redocly/cli lint openapi.yaml` |
+| Bundle | Redocly | `npx @redocly/cli bundle openapi.yaml -o bundled.yaml` |
+| Client gen | OpenAPI Generator | `openapi-generator-cli generate -i openapi.yaml -g typescript-fetch -o ./client` |
+| Postman | openapi-to-postmanv2 | `openapi2postmanv2 -s openapi.yaml -o collection.json` |
+| Mock | Prism | `prism mock openapi.yaml` |
+| Contract test | Dredd / Schemathesis | `dredd openapi.yaml http://localhost:3000` · `schemathesis run openapi.yaml` |
+| Breaking-change diff | oasdiff | `oasdiff breaking old.yaml new.yaml` |
 
-// Get single user
-const user = await client.users.get('usr_123');
+## Keeping docs in sync with code (the real problem)
 
-// Create user
-const newUser = await client.users.create({
-email: 'new@example.com',
-name: 'New User'
-});
+Docs rot the moment they're decoupled from the running service. Enforce sync mechanically:
 
-// Update user
-const updated = await client.users.update('usr_123', {
-name: 'Updated Name'
-});
+- **Runtime validation** — proxy requests/responses through the spec (`express-openapi-validator`, Prism proxy) in dev/staging; a mismatch fails the build.
+- **Contract tests in CI** — Dredd (example-driven) or Schemathesis (property-based fuzzing derived from the schema) run against the real API; Schemathesis catches undocumented 500s and schema violations you'd never write by hand.
+- **Breaking-change gate** — `oasdiff breaking` (or openapi-diff) on every PR blocks silent contract breaks.
+- **Lint gate** — Spectral ruleset enforces house style (descriptions present, `operationId` unique, examples valid, error responses documented).
+- **Single source** — generate SDKs and mocks from the spec so they can't disagree; never hand-maintain a second copy of the contract.
 
-// Delete user
-await client.users.delete('usr_123');
-\`\`\`
+## Anti-patterns
 
-## Error Handling
+- Documenting only happy-path 200s — clients need the 4xx/5xx bodies and codes to handle failure.
+- Prose clients must parse (switching on `message` text). Give stable machine-readable `code`/`type`.
+- `example` vs `examples` mixups (schema=array, media-type=map) — renders empty or errors in tooling.
+- Reusing/renaming `operationId` — silently breaks generated SDKs.
+- Fake data (`foo`/`bar`) and fragment-only snippets — show complete, copy-pasteable, realistic requests.
+- Screenshots of JSON instead of copyable code blocks.
 
-\`\`\`javascript
-import { ApiError, ValidationError, RateLimitError } from '@example/api-client';
+## Checklists
 
-try {
-await client.users.create({ email: 'invalid' });
-} catch (error) {
-if (error instanceof ValidationError) {
-console.log(error.details); // Field-level errors
-} else if (error instanceof RateLimitError) {
-console.log(`Retry after ${error.retryAfter} seconds`);
-} else if (error instanceof ApiError) {
-console.log(error.code, error.message);
-}
-}
-\`\`\`
+**Spec quality — before publish:**
 
-## TypeScript Support
+- [ ] `openapi: 3.1.x`; nullable via `type: [..., "null"]` (no `nullable:`)
+- [ ] Every operation has a unique, stable `operationId` and is tagged
+- [ ] All response codes documented incl. every 4xx/5xx, each referencing the shared `Problem` (RFC 9457) schema
+- [ ] Rate-limit responses document `X-RateLimit-*` + `Retry-After`; pagination shape documented consistently
+- [ ] Security schemes defined and applied (global `security` + per-op overrides); OAuth2 flows/scopes listed
+- [ ] `example`/`examples` used correctly per object type; every example validates against its schema
+- [ ] Schemas DRY via `$ref` from `components`
 
-The SDK includes full TypeScript definitions:
+**Sync & release — in CI:**
 
-\`\`\`typescript
-import { ApiClient, User, CreateUserParams } from '@example/api-client';
-
-const params: CreateUserParams = {
-email: 'typed@example.com',
-name: 'Typed User'
-};
-
-const user: User = await client.users.create(params);
-\`\`\`
-```
-
-## Documentation Tooling
-
-### Interactive Documentation Generators
-
-**Redoc** - Clean, three-panel layout with search
-
-```bash
-npx @redocly/cli build-docs openapi.yaml --output docs.html
-```
-
-**Swagger UI** - Try-it-out functionality, widely recognized
-
-```bash
-docker run -p 80:8080 -e SWAGGER_JSON=/api/openapi.yaml -v $(pwd):/api swaggerapi/swagger-ui
-```
-
-**Stoplight Elements** - Embeddable web components
-
-```html
-<script src="https://unpkg.com/@stoplight/elements/web-components.min.js"></script>
-<elements-api apiDescriptionUrl="./openapi.yaml" router="hash" />
-```
-
-### Validation and Linting
-
-**Redocly CLI** - Lint OpenAPI specs
-
-```bash
-npx @redocly/cli lint openapi.yaml
-npx @redocly/cli bundle openapi.yaml --output bundled.yaml
-```
-
-**Spectral** - Flexible linting with custom rules
-
-```bash
-spectral lint openapi.yaml --ruleset .spectral.yaml
-```
-
-### Client Generation
-
-**OpenAPI Generator** - Multi-language client/server generation
-
-```bash
-openapi-generator-cli generate -i openapi.yaml -g typescript-fetch -o ./client
-```
-
-### Postman Collection Export
-
-```bash
-npm install -g openapi-to-postmanv2
-openapi2postmanv2 -s openapi.yaml -o collection.json
-```
-
-### Testing and Mocking
-
-**Prism** - Mock server from OpenAPI spec
-
-```bash
-prism mock openapi.yaml
-# Returns example responses from your spec
-```
-
-**Dredd** - Test API against OpenAPI contract
-
-```bash
-dredd openapi.yaml http://localhost:3000
-```
-
-## Documentation Patterns
-
-### Progressive Disclosure
-
-Structure docs from quick start to advanced topics:
-
-1. Authentication quick start (single example)
-2. Common use cases (recipes)
-3. Complete endpoint reference
-4. Advanced topics (webhooks, pagination strategies)
-
-### Code Examples Strategy
-
-- Provide examples in multiple languages (curl, JavaScript, Python, Go)
-- Use realistic data (not foo/bar)
-- Show complete working examples, not fragments
-- Include error handling in examples
-
-### API Explorer Integration
-
-Include "Try It" functionality:
-
-- Pre-fill authentication from environment
-- Provide example payloads
-- Show actual requests/responses
-- Support environment switching (sandbox/production)
-
-### Versioning Communication
-
-- Announce deprecations 6+ months in advance
-- Provide migration guides with side-by-side comparisons
-- Include deprecation headers in API responses
-- Maintain changelog with breaking/non-breaking labels
+- [ ] Spectral/Redocly lint passes
+- [ ] Contract test (Dredd/Schemathesis) runs against the real API and passes
+- [ ] `oasdiff breaking` shows no unintended breaking changes (or version bumped + migration guide written)
+- [ ] SDKs/mocks regenerated from the spec; `Deprecation`/`Sunset` headers set for retiring versions

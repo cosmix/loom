@@ -7,6 +7,7 @@ triggers:
   - feature gate
   - LaunchDarkly
   - Unleash
+  - OpenFeature
   - split
   - canary
   - gradual rollout
@@ -25,1291 +26,305 @@ triggers:
 
 ## Overview
 
-Feature flags (also called feature toggles or feature gates) enable runtime control over feature availability without code deployments. They support gradual rollouts, A/B testing, user targeting, emergency kill switches, ML model switching, and infrastructure configuration. This skill covers implementation patterns, best practices, integration with LaunchDarkly/Unleash, and flag lifecycle management.
+Runtime control over feature availability without redeploying. The hard parts are not the `if` check — they are: **bucketing correctness** (stickiness, monotonicity, cross-service consistency), **fail-safe evaluation** (an outage of the flag service must not take down the app), **experiment validity** (exposure logging), and **lifecycle/technical-debt** (stale flags are the #1 real-world feature-flag problem). Optimize for those.
 
-## Agents
+## Flag Taxonomy — Type Drives Lifetime and Ownership
 
-- **senior-software-engineer** - Feature flag strategy, architecture decisions, rollout planning
-- **senior-software-engineer** - Implements feature flags, integrations, and flag evaluation logic
-- **senior-software-engineer** - Feature flag security, access controls, audit logging
-- **senior-software-engineer** - Feature flag infrastructure, distributed systems, caching strategies
-- **software-engineer** - ONLY for unit tests, boilerplate flag checks, or scaffolding from a concrete plan
+The single most useful classification (from Pete Hodgson / Martin Fowler). Type determines expected lifetime, who owns it, and dynamism. Mixing types under one abstraction is a common mistake.
 
-## Key Concepts
+| Type                | Purpose                                   | Lifetime          | Changes at runtime? | Owner              |
+| ------------------- | ----------------------------------------- | ----------------- | ------------------- | ------------------ |
+| **Release toggle**  | Ship incomplete/unproven code dark, ramp  | Days–weeks (SHORT)| Per deploy/ramp     | Dev team           |
+| **Experiment**      | A/B/multivariate measurement              | Length of test    | Sticky per user     | PM / data science  |
+| **Ops / kill-switch**| Disable a subsystem under load/incident  | Long-lived        | On demand (fast)    | Ops / SRE          |
+| **Permission**      | Entitlements: plan tier, beta cohort      | Very long / permanent | Per user/segment | Product / billing  |
 
-### Flag Types
+Consequences:
 
-**Boolean Flags** - Simple on/off toggles:
+- **Release toggles must be removed** once the feature is stable — they are debt with a deadline. Track `createdAt + owner + removal ticket`.
+- **Ops toggles are permanent** and must be evaluated with *zero* external calls in the hot path (see Kill Switches).
+- **Permission toggles** are effectively long-lived config; don't route them through the "delete after rollout" cleanup process.
+- Don't overload one flag to do two jobs (a release toggle that also gates a paid tier). Split them; they have different lifetimes.
 
-```typescript
-interface BooleanFlag {
-  key: string;
-  enabled: boolean;
-  description: string;
-}
+## Deterministic Bucketing (Correctness Core)
 
-// Usage
-if (featureFlags.isEnabled("new-checkout-flow")) {
-  return <NewCheckoutFlow />;
-}
-return <LegacyCheckout />;
-```
-
-**Percentage Rollout Flags** - Gradual exposure:
+Every percentage rollout, canary, and experiment reduces to: map a stable unit (usually `userId`) to a number in `[0,100)` and compare against a threshold. Get this wrong and users **flicker** in/out of the feature, or increasing the rollout % **reshuffles** everyone.
 
 ```typescript
-interface PercentageFlag {
-  key: string;
-  percentage: number; // 0-100
-  salt: string; // For consistent hashing
-}
-
-function isEnabledForUser(flag: PercentageFlag, userId: string): boolean {
-  // Consistent hashing ensures same user always gets same result
-  const hash = createHash("md5").update(`${flag.salt}:${userId}`).digest("hex");
-  const bucket = parseInt(hash.substring(0, 8), 16) % 100;
-  return bucket < flag.percentage;
-}
-```
-
-**User-Targeted Flags** - Specific user segments:
-
-```typescript
-interface TargetedFlag {
-  key: string;
-  defaultValue: boolean;
-  rules: TargetingRule[];
-}
-
-interface TargetingRule {
-  attribute: string; // 'userId', 'email', 'country', 'plan'
-  operator: "in" | "notIn" | "equals" | "contains" | "startsWith" | "matches";
-  values: string[];
-  value: boolean;
-}
-
-// Example: Enable for beta users and premium plans
-const flag: TargetedFlag = {
-  key: "advanced-analytics",
-  defaultValue: false,
-  rules: [
-    {
-      attribute: "email",
-      operator: "in",
-      values: ["beta@example.com"],
-      value: true,
-    },
-    {
-      attribute: "plan",
-      operator: "in",
-      values: ["premium", "enterprise"],
-      value: true,
-    },
-    { attribute: "country", operator: "in", values: ["US", "CA"], value: true },
-  ],
-};
-```
-
-**Multivariate Flags** - Multiple variants for A/B testing:
-
-```typescript
-interface MultivariateFlag<T> {
-  key: string;
-  variants: Variant<T>[];
-  defaultVariant: string;
-}
-
-interface Variant<T> {
-  name: string;
-  value: T;
-  weight: number; // Percentage allocation
-}
-
-// Example: Button color A/B test
-const buttonColorFlag: MultivariateFlag<string> = {
-  key: "checkout-button-color",
-  defaultVariant: "control",
-  variants: [
-    { name: "control", value: "#007bff", weight: 34 },
-    { name: "green", value: "#28a745", weight: 33 },
-    { name: "orange", value: "#fd7e14", weight: 33 },
-  ],
-};
-```
-
-### Custom Implementation
-
-```typescript
-import { Redis } from "ioredis";
 import { createHash } from "crypto";
 
-interface FeatureFlag {
-  key: string;
-  type: "boolean" | "percentage" | "targeted" | "multivariate";
-  enabled: boolean;
-  percentage?: number;
-  rules?: TargetingRule[];
-  variants?: Variant<unknown>[];
-  salt: string;
-  description: string;
-  createdAt: Date;
-  updatedAt: Date;
+// Stable, sticky, side-effect-free. Same (unit, flagKey) -> same bucket, forever.
+export function bucket(unitId: string, flagKey: string): number {
+  // Salt with the FLAG KEY (not a single global salt) so flags are INDEPENDENT:
+  // a user unlucky at bucket 2 isn't automatically in every low-% rollout.
+  const h = createHash("sha1").update(`${flagKey}:${unitId}`).digest();
+  // 32 bits -> [0,1). Prefer this over `int % 100`, which has modulo bias.
+  const n = h.readUInt32BE(0) / 0x1_0000_0000;
+  return n * 100; // 0.0 .. 100.0
 }
 
-interface EvaluationContext {
-  userId?: string;
-  email?: string;
-  country?: string;
-  plan?: string;
-  [key: string]: string | number | boolean | undefined;
-}
-
-class FeatureFlagService {
-  private redis: Redis;
-  private cache: Map<string, { flag: FeatureFlag; expiresAt: number }> =
-    new Map();
-  private cacheTTL = 60000; // 1 minute
-
-  constructor(redis: Redis) {
-    this.redis = redis;
-  }
-
-  async getFlag(key: string): Promise<FeatureFlag | null> {
-    // Check local cache
-    const cached = this.cache.get(key);
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.flag;
-    }
-
-    // Fetch from Redis
-    const data = await this.redis.get(`flag:${key}`);
-    if (!data) return null;
-
-    const flag: FeatureFlag = JSON.parse(data);
-    this.cache.set(key, { flag, expiresAt: Date.now() + this.cacheTTL });
-    return flag;
-  }
-
-  async evaluate(
-    key: string,
-    context: EvaluationContext = {},
-  ): Promise<boolean> {
-    const flag = await this.getFlag(key);
-    if (!flag) return false;
-    if (!flag.enabled) return false;
-
-    switch (flag.type) {
-      case "boolean":
-        return true;
-
-      case "percentage":
-        return this.evaluatePercentage(flag, context.userId || "anonymous");
-
-      case "targeted":
-        return this.evaluateTargeting(flag, context);
-
-      default:
-        return false;
-    }
-  }
-
-  async evaluateVariant<T>(
-    key: string,
-    context: EvaluationContext = {},
-  ): Promise<T | null> {
-    const flag = await this.getFlag(key);
-    if (!flag || !flag.enabled || !flag.variants) return null;
-
-    const userId = context.userId || "anonymous";
-    const hash = createHash("md5")
-      .update(`${flag.salt}:${userId}`)
-      .digest("hex");
-    const bucket = parseInt(hash.substring(0, 8), 16) % 100;
-
-    let cumulative = 0;
-    for (const variant of flag.variants) {
-      cumulative += variant.weight;
-      if (bucket < cumulative) {
-        return variant.value as T;
-      }
-    }
-
-    return (flag.variants[0]?.value as T) ?? null;
-  }
-
-  private evaluatePercentage(flag: FeatureFlag, userId: string): boolean {
-    const hash = createHash("md5")
-      .update(`${flag.salt}:${userId}`)
-      .digest("hex");
-    const bucket = parseInt(hash.substring(0, 8), 16) % 100;
-    return bucket < (flag.percentage ?? 0);
-  }
-
-  private evaluateTargeting(
-    flag: FeatureFlag,
-    context: EvaluationContext,
-  ): boolean {
-    if (!flag.rules || flag.rules.length === 0) return true;
-
-    for (const rule of flag.rules) {
-      const attributeValue = String(context[rule.attribute] ?? "");
-
-      let matches = false;
-      switch (rule.operator) {
-        case "in":
-          matches = rule.values.includes(attributeValue);
-          break;
-        case "notIn":
-          matches = !rule.values.includes(attributeValue);
-          break;
-        case "equals":
-          matches = attributeValue === rule.values[0];
-          break;
-        case "contains":
-          matches = rule.values.some((v) => attributeValue.includes(v));
-          break;
-        case "startsWith":
-          matches = rule.values.some((v) => attributeValue.startsWith(v));
-          break;
-        case "matches":
-          matches = rule.values.some((v) => new RegExp(v).test(attributeValue));
-          break;
-      }
-
-      if (matches) return rule.value;
-    }
-
-    return false;
-  }
-
-  // Admin methods
-  async setFlag(flag: FeatureFlag): Promise<void> {
-    await this.redis.set(`flag:${flag.key}`, JSON.stringify(flag));
-    this.cache.delete(flag.key);
-
-    // Publish change for other instances
-    await this.redis.publish("flag-updates", JSON.stringify({ key: flag.key }));
-  }
-
-  async deleteFlag(key: string): Promise<void> {
-    await this.redis.del(`flag:${key}`);
-    this.cache.delete(key);
-    await this.redis.publish(
-      "flag-updates",
-      JSON.stringify({ key, deleted: true }),
-    );
-  }
+// Percentage rollout: enabled iff bucket below the threshold.
+export function enabledFor(unitId: string, flag: { key: string; percentage: number }): boolean {
+  return bucket(unitId, flag.key) < flag.percentage;
 }
 ```
 
-### Gradual Rollouts and Canary Releases
+Rules (violating any of these is a bug, not a style choice):
+
+- **Deterministic, never random per call.** `Math.random() < 0.1` re-rolls on every evaluation → the same user sees the feature appear and vanish across page loads/requests. Always hash a stable unit.
+- **Monotonic on ramp-up.** Because the bucket is fixed per `(unit, flag)`, raising `percentage` from 5→10 only *adds* users whose bucket lands in `[5,10)`; nobody already in loses access. **Never change the salt/seed to bump the percentage** — that reshuffles all buckets and yanks the feature from current users (and invalidates any running experiment).
+- **Consistent across services.** For a user to see the same variant in web, mobile, and backend, every service must use the **same hash algorithm, same salt convention (flag key), and same unit id.** Pin these; a "harmless" swap of MD5→SHA1 or `userId`→`email` silently re-buckets everyone. (Vendor SDKs like LaunchDarkly guarantee cross-SDK consistency for you — one reason to use them.)
+- **Pick the right bucketing unit.** Logged-in → `userId`. Anonymous → a persisted cookie/device id (not the session, or it flickers). Org-level features → `orgId` (so a whole team flips together). Document the unit per flag.
+- **MD5/SHA1 are fine here** — this is bucketing, not security, so collision resistance is irrelevant; you only need uniform distribution. Don't reach for bcrypt.
+
+Multivariate uses the same bucket against contiguous ranges:
 
 ```typescript
-interface RolloutStrategy {
-  type: "linear" | "exponential" | "manual";
-  startPercentage: number;
-  targetPercentage: number;
-  incrementPercentage: number;
-  intervalMinutes: number;
-  currentPercentage: number;
-  startedAt: Date;
-  pausedAt?: Date;
-}
-
-class RolloutManager {
-  private flags: FeatureFlagService;
-
-  async startRollout(
-    flagKey: string,
-    strategy: RolloutStrategy,
-  ): Promise<void> {
-    const flag = await this.flags.getFlag(flagKey);
-    if (!flag) throw new Error("Flag not found");
-
-    flag.percentage = strategy.startPercentage;
-    flag.rolloutStrategy = strategy;
-    await this.flags.setFlag(flag);
-
-    // Schedule automatic increments
-    if (strategy.type !== "manual") {
-      this.scheduleIncrement(flagKey, strategy);
-    }
+// variants: [{name,value,weight}], weights sum to 100
+export function pickVariant<T>(unitId: string, flagKey: string, variants: Variant<T>[]): Variant<T> {
+  const b = bucket(unitId, flagKey);
+  let acc = 0;
+  for (const v of variants) {
+    acc += v.weight;
+    if (b < acc) return v;
   }
-
-  private async scheduleIncrement(
-    flagKey: string,
-    strategy: RolloutStrategy,
-  ): Promise<void> {
-    const incrementJob = async () => {
-      const flag = await this.flags.getFlag(flagKey);
-      if (!flag || flag.rolloutStrategy?.pausedAt) return;
-
-      const current = flag.percentage ?? 0;
-      let newPercentage: number;
-
-      if (strategy.type === "linear") {
-        newPercentage = Math.min(
-          current + strategy.incrementPercentage,
-          strategy.targetPercentage,
-        );
-      } else {
-        // Exponential: double each time
-        newPercentage = Math.min(current * 2, strategy.targetPercentage);
-      }
-
-      flag.percentage = newPercentage;
-      await this.flags.setFlag(flag);
-
-      // Continue if not at target
-      if (newPercentage < strategy.targetPercentage) {
-        setTimeout(incrementJob, strategy.intervalMinutes * 60 * 1000);
-      }
-    };
-
-    setTimeout(incrementJob, strategy.intervalMinutes * 60 * 1000);
-  }
-
-  async pauseRollout(flagKey: string): Promise<void> {
-    const flag = await this.flags.getFlag(flagKey);
-    if (flag?.rolloutStrategy) {
-      flag.rolloutStrategy.pausedAt = new Date();
-      await this.flags.setFlag(flag);
-    }
-  }
-
-  async rollback(flagKey: string): Promise<void> {
-    const flag = await this.flags.getFlag(flagKey);
-    if (flag) {
-      flag.percentage = 0;
-      flag.enabled = false;
-      await this.flags.setFlag(flag);
-    }
-  }
+  return variants[variants.length - 1]; // guard float rounding at the top edge
 }
 ```
 
-### A/B Testing Integration
+⚠ Changing a variant's weight re-slices the `[0,100)` line and moves users between variants. To grow one variant without disturbing others, **append** its new share at the top of the range rather than re-slicing from the start.
+
+## Percentage Rollouts and Canary
+
+Ramp `1% → 5% → 25% → 50% → 100%`, watching error rate / latency / business metrics at each step; pause or roll to 0 on regression. Automate the increments but keep a manual gate for the first steps.
 
 ```typescript
-interface Experiment {
-  id: string;
-  flagKey: string;
-  name: string;
-  hypothesis: string;
-  metrics: string[]; // Metrics to track
-  variants: ExperimentVariant[];
-  status: "draft" | "running" | "paused" | "completed";
-  startDate?: Date;
-  endDate?: Date;
-  sampleSize: number;
-  confidenceLevel: number; // e.g., 0.95
-}
+type Rollout = { flagKey: string; target: number; step: number; intervalMin: number; paused?: boolean };
 
-interface ExperimentVariant {
-  name: string;
-  weight: number;
-  conversions: number;
-  impressions: number;
-}
-
-class ABTestingService {
-  async trackExposure(
-    experimentId: string,
-    variantName: string,
-    userId: string,
-  ): Promise<void> {
-    // Record that user was exposed to variant
-    await this.analytics.track({
-      event: "experiment_exposure",
-      userId,
-      properties: {
-        experimentId,
-        variant: variantName,
-        timestamp: new Date(),
-      },
-    });
-
-    // Increment impression count
-    await this.redis.hincrby(
-      `experiment:${experimentId}:${variantName}`,
-      "impressions",
-      1,
-    );
-  }
-
-  async trackConversion(
-    experimentId: string,
-    userId: string,
-    metric: string,
-  ): Promise<void> {
-    // Get user's assigned variant
-    const variant = await this.redis.hget(
-      `experiment:${experimentId}:assignments`,
-      userId,
-    );
-    if (!variant) return;
-
-    await this.analytics.track({
-      event: "experiment_conversion",
-      userId,
-      properties: {
-        experimentId,
-        variant,
-        metric,
-        timestamp: new Date(),
-      },
-    });
-
-    await this.redis.hincrby(
-      `experiment:${experimentId}:${variant}`,
-      "conversions",
-      1,
-    );
-  }
-
-  async getResults(experimentId: string): Promise<ExperimentResults> {
-    const experiment = await this.getExperiment(experimentId);
-
-    const results = await Promise.all(
-      experiment.variants.map(async (variant) => {
-        const data = await this.redis.hgetall(
-          `experiment:${experimentId}:${variant.name}`,
-        );
-        return {
-          name: variant.name,
-          impressions: parseInt(data.impressions || "0"),
-          conversions: parseInt(data.conversions || "0"),
-          conversionRate:
-            parseInt(data.conversions || "0") /
-            parseInt(data.impressions || "1"),
-        };
-      }),
-    );
-
-    // Calculate statistical significance
-    const control = results.find((r) => r.name === "control");
-    const treatments = results.filter((r) => r.name !== "control");
-
-    return {
-      experimentId,
-      results,
-      winners: treatments.filter((t) =>
-        this.isStatisticallySignificant(
-          control!,
-          t,
-          experiment.confidenceLevel,
-        ),
-      ),
-    };
-  }
-
-  private isStatisticallySignificant(
-    control: VariantResult,
-    treatment: VariantResult,
-    confidenceLevel: number,
-  ): boolean {
-    // Z-test for proportions
-    const p1 = control.conversionRate;
-    const p2 = treatment.conversionRate;
-    const n1 = control.impressions;
-    const n2 = treatment.impressions;
-
-    const pooledP = (p1 * n1 + p2 * n2) / (n1 + n2);
-    const se = Math.sqrt(pooledP * (1 - pooledP) * (1 / n1 + 1 / n2));
-    const z = (p2 - p1) / se;
-
-    // Z-score for 95% confidence is 1.96
-    const zThreshold = confidenceLevel === 0.95 ? 1.96 : 2.58; // 99%
-    return Math.abs(z) > zThreshold;
-  }
+async function advance(store: FlagStore, r: Rollout): Promise<void> {
+  const flag = await store.get(r.flagKey);
+  if (!flag || r.paused) return;
+  flag.percentage = Math.min((flag.percentage ?? 0) + r.step, r.target); // additive => monotonic
+  await store.set(flag);                                                 // same salt: no reshuffle
+  if (flag.percentage < r.target) setTimeout(() => advance(store, r), r.intervalMin * 60_000);
 }
 ```
 
-### Kill Switches
+- **Rollback = set percentage 0 (or flip `enabled=false`)**, not a code deploy. That is the entire point of the flag; a rollout without a fast rollback path is theater.
+- **Guardrail metrics, not vanity metrics.** Ramp against error rate and latency, plus one business KPI; a 5% cohort with a broken checkout is easy to miss on aggregate dashboards.
+- Ring/canary rollout = target internal users → beta cohort → % of general population, expressed as ordered targeting rules over `percentage`.
+
+## Targeting and Evaluation Context
+
+Evaluation is a pure function of `(flag rules, context)`. Rules are ordered; first match wins; fall through to the flag default.
 
 ```typescript
-interface KillSwitch {
-  key: string;
-  description: string;
-  affectedServices: string[];
-  activatedAt?: Date;
-  activatedBy?: string;
-  reason?: string;
-  autoRecoveryMinutes?: number;
-}
+type Op = "in" | "notIn" | "equals" | "contains" | "startsWith" | "matches";
+type Rule = { attribute: string; operator: Op; values: string[]; value: boolean };
 
-class KillSwitchService {
-  private redis: Redis;
-  private alerting: AlertingService;
-
-  async activate(
-    key: string,
-    reason: string,
-    activatedBy: string,
-  ): Promise<void> {
-    const killSwitch = await this.getKillSwitch(key);
-    if (!killSwitch) throw new Error("Kill switch not found");
-
-    killSwitch.activatedAt = new Date();
-    killSwitch.activatedBy = activatedBy;
-    killSwitch.reason = reason;
-
-    await this.redis.set(`killswitch:${key}`, JSON.stringify(killSwitch));
-
-    // Broadcast to all instances immediately
-    await this.redis.publish(
-      "killswitch-activated",
-      JSON.stringify(killSwitch),
-    );
-
-    // Alert on-call
-    await this.alerting.sendCritical({
-      title: `Kill Switch Activated: ${key}`,
-      message: `Reason: ${reason}\nActivated by: ${activatedBy}\nAffected: ${killSwitch.affectedServices.join(
-        ", ",
-      )}`,
-    });
-
-    // Schedule auto-recovery if configured
-    if (killSwitch.autoRecoveryMinutes) {
-      setTimeout(
-        () => this.deactivate(key, "Auto-recovery"),
-        killSwitch.autoRecoveryMinutes * 60 * 1000,
-      );
-    }
+function evaluateTargeting(rules: Rule[], ctx: Record<string, unknown>, def: boolean): boolean {
+  for (const r of rules) {
+    const attr = String(ctx[r.attribute] ?? "");
+    const hit =
+      r.operator === "in"         ? r.values.includes(attr)
+    : r.operator === "notIn"      ? !r.values.includes(attr)
+    : r.operator === "equals"     ? attr === r.values[0]
+    : r.operator === "contains"   ? r.values.some((v) => attr.includes(v))
+    : r.operator === "startsWith" ? r.values.some((v) => attr.startsWith(v))
+    : r.operator === "matches"    ? r.values.some((v) => new RegExp(v).test(attr))
+    :                               false;
+    if (hit) return r.value;
   }
-
-  async deactivate(key: string, reason: string): Promise<void> {
-    const killSwitch = await this.getKillSwitch(key);
-    if (!killSwitch) return;
-
-    killSwitch.activatedAt = undefined;
-    killSwitch.activatedBy = undefined;
-    killSwitch.reason = undefined;
-
-    await this.redis.set(`killswitch:${key}`, JSON.stringify(killSwitch));
-    await this.redis.publish(
-      "killswitch-deactivated",
-      JSON.stringify({ key, reason }),
-    );
-
-    await this.alerting.sendInfo({
-      title: `Kill Switch Deactivated: ${key}`,
-      message: `Reason: ${reason}`,
-    });
-  }
-
-  async isActive(key: string): Promise<boolean> {
-    const data = await this.redis.get(`killswitch:${key}`);
-    if (!data) return false;
-    const killSwitch: KillSwitch = JSON.parse(data);
-    return !!killSwitch.activatedAt;
-  }
-}
-
-// Usage in application code
-async function processPayment(payment: Payment): Promise<PaymentResult> {
-  // Check kill switch first
-  if (await killSwitches.isActive("payments-disabled")) {
-    throw new ServiceUnavailableError(
-      "Payment processing temporarily disabled",
-    );
-  }
-
-  // Normal processing
-  return paymentProcessor.process(payment);
+  return def;
 }
 ```
 
-### Flag Lifecycle Management
+- **Evaluation must be side-effect-free and cheap** — no DB/network call per flag check. It runs on hot paths, sometimes many flags per request. Load the ruleset once (SDK/cache) and evaluate in memory.
+- **`matches` (regex) is a footgun:** rules are often admin-editable → treat as untrusted input. Cap pattern length and beware catastrophic backtracking (ReDoS); prefer `in`/`startsWith` where possible.
+- Keep the context minimal and consistent across services (same attribute names). Don't ship secrets/PII into a hosted flag service inside evaluation context.
+
+## Kill Switches (Fail-Safe, No External Calls)
+
+An ops kill switch exists precisely for when things are on fire — including when the flag service itself is degraded. So it must be evaluable **locally**.
 
 ```typescript
-interface FlagLifecycle {
-  key: string;
-  status:
-    | "planning"
-    | "development"
-    | "testing"
-    | "rollout"
-    | "stable"
-    | "deprecated"
-    | "removed";
-  owner: string;
-  team: string;
-  createdAt: Date;
-  plannedRemovalDate?: Date;
-  jiraTicket?: string;
-  staleAfterDays: number;
+// Hot path: NO await on a remote store. Read a locally-cached value with a safe default.
+function paymentsKilled(cache: FlagCache): boolean {
+  // On cache miss / stale / service down -> return the KNOWN-SAFE default,
+  // never throw and never block on the network.
+  return cache.getBool("kill.payments", /* default */ false);
 }
 
-class FlagLifecycleManager {
-  async checkStaleFlags(): Promise<StaleFlag[]> {
-    const flags = await this.getAllFlags();
-    const now = new Date();
-
-    return flags.filter((flag) => {
-      const lifecycle = flag.lifecycle;
-      if (!lifecycle) return false;
-
-      const ageInDays =
-        (now.getTime() - lifecycle.createdAt.getTime()) / (1000 * 60 * 60 * 24);
-
-      // Flag is stale if:
-      // 1. It's older than staleAfterDays and still in development/testing
-      // 2. It's past its planned removal date
-      // 3. It's been stable for > 30 days (should be permanent or removed)
-
-      if (lifecycle.status === "stable" && ageInDays > 30) return true;
-      if (lifecycle.plannedRemovalDate && lifecycle.plannedRemovalDate < now)
-        return true;
-      if (
-        ["development", "testing"].includes(lifecycle.status) &&
-        ageInDays > lifecycle.staleAfterDays
-      )
-        return true;
-
-      return false;
-    });
-  }
-
-  async generateCleanupReport(): Promise<CleanupReport> {
-    const staleFlags = await this.checkStaleFlags();
-
-    return {
-      generatedAt: new Date(),
-      staleFlags: staleFlags.map((flag) => ({
-        key: flag.key,
-        status: flag.lifecycle.status,
-        owner: flag.lifecycle.owner,
-        age: this.calculateAge(flag.lifecycle.createdAt),
-        recommendation: this.getRecommendation(flag),
-      })),
-      summary: {
-        total: staleFlags.length,
-        byStatus: this.groupBy(staleFlags, (f) => f.lifecycle.status),
-        byTeam: this.groupBy(staleFlags, (f) => f.lifecycle.team),
-      },
-    };
-  }
-
-  private getRecommendation(flag: FlagWithLifecycle): string {
-    const { status, plannedRemovalDate } = flag.lifecycle;
-
-    if (plannedRemovalDate && plannedRemovalDate < new Date()) {
-      return "URGENT: Past planned removal date. Remove flag and clean up code.";
-    }
-    if (status === "stable") {
-      return "Flag is stable. Either make permanent (remove flag, keep feature) or deprecate.";
-    }
-    if (status === "development" || status === "testing") {
-      return "Flag stuck in development. Complete rollout or remove if abandoned.";
-    }
-    return "Review flag status and update lifecycle.";
-  }
+async function processPayment(p: Payment): Promise<PaymentResult> {
+  if (paymentsKilled(cache)) throw new ServiceUnavailableError("Payments temporarily disabled");
+  return processor.process(p);
 }
 ```
 
-### LaunchDarkly Integration
+- **Fail to a safe, known state.** Decide per switch what "safe" means and hardcode it as the default: for most *new/risky* features safe = off (fall back to the proven path); for a load-shed switch safe = "not shedding" unless you'd rather shed. The default is a deliberate design decision, documented in code.
+- **Never make the availability of a feature depend on the availability of the flag service.** If evaluating the switch requires a network round-trip and that call fails/hangs, you've coupled your app's uptime to the flag provider — the opposite of resilience. Cache aggressively (in-memory + local file/Redis), refresh in the background, tolerate staleness.
+- **Propagate activation fast** (pub/sub / streaming), but the hot-path *read* is always local.
+- Alert on-call and write an audit record on activate/deactivate; optionally support timed auto-recovery.
+
+## Experiments / A/B Testing
+
+Bucketing is the easy half; **valid measurement** is the hard half.
+
+- **Randomize by hashing a per-experiment salt** so overlapping experiments are statistically independent (orthogonal). Reusing one salt across experiments correlates cohorts and confounds results.
+- **Log exposure at evaluation time, only when the flag actually affects the user, exactly once per unit.** This is the crux of A/B validity: your analysis must compare *users who were actually exposed to each variant*, not "everyone we pre-assigned." Pre-assigning all users and counting them as exposed dilutes effects and biases results. Dedup exposures per `(user, experiment)` within the analysis window.
+- Log **conversions** keyed to the *same* assigned variant. Compute significance with a two-proportion z-test (or your stats stack); don't eyeball rates — a 3% vs 3.2% gap on small N is noise.
 
 ```typescript
-import * as LaunchDarkly from "launchdarkly-node-server-sdk";
-
-const ldClient = LaunchDarkly.init(process.env.LAUNCHDARKLY_SDK_KEY!);
-
-interface LDUser {
-  key: string;
-  email?: string;
-  name?: string;
-  custom?: Record<string, string | number | boolean>;
-}
-
-async function evaluateFlag(
-  flagKey: string,
-  user: LDUser,
-  defaultValue: boolean,
-): Promise<boolean> {
-  await ldClient.waitForInitialization();
-  return ldClient.variation(flagKey, user, defaultValue);
-}
-
-async function evaluateFlagWithReason(
-  flagKey: string,
-  user: LDUser,
-  defaultValue: boolean,
-) {
-  await ldClient.waitForInitialization();
-  const detail = await ldClient.variationDetail(flagKey, user, defaultValue);
-
-  return {
-    value: detail.value,
-    reason: detail.reason,
-    variationIndex: detail.variationIndex,
-  };
-}
-
-// Track custom events for experiments
-function trackConversion(
-  user: LDUser,
-  eventKey: string,
-  data?: Record<string, unknown>,
-): void {
-  ldClient.track(eventKey, user, data);
-}
-
-// React hook for client-side
-function useFeatureFlag(
-  flagKey: string,
-  defaultValue: boolean = false,
-): boolean {
-  const ldClient = useLDClient();
-  const [value, setValue] = useState(defaultValue);
-
-  useEffect(() => {
-    if (!ldClient) return;
-
-    setValue(ldClient.variation(flagKey, defaultValue));
-
-    const handler = (newValue: boolean) => setValue(newValue);
-    ldClient.on(`change:${flagKey}`, handler);
-
-    return () => ldClient.off(`change:${flagKey}`, handler);
-  }, [ldClient, flagKey, defaultValue]);
-
-  return value;
+function assignAndExpose(exp: Experiment, userId: string, log: ExposureLog): string {
+  const v = pickVariant(userId, exp.salt, exp.variants).name; // per-exp salt => orthogonal
+  log.once(exp.id, userId, v); // exposure recorded HERE, at the code path that changes behavior
+  return v;
 }
 ```
 
-### ML Model Feature Flags
+- Don't stop an experiment the moment it crosses significance (peeking inflates false positives) — fix sample size / duration up front, or use a sequential-testing method.
+- Guard against sample-ratio mismatch (observed split ≠ configured weights) — it signals a bucketing or logging bug and invalidates the test.
+
+## Flag Lifecycle and Technical Debt
+
+**Stale flags are the #1 feature-flag problem.** Every flag is a live branch in your code; N boolean flags imply up to 2^N reachable states. Untended, they rot into unremovable spaghetti.
+
+- **Attach metadata at creation:** `createdAt`, `owner`, `type`, and — for short-lived types — a **removal ticket** and target date. A release toggle with no removal plan is a bug at birth.
+- **Set expiry by type:** release/experiment toggles are short-lived (days–weeks); ops/permission toggles are long-lived. Alert when a *short-lived* flag outlives its expected life or its removal date passes.
+- **When done, remove the flag AND the dead branch.** "Make permanent" = delete the flag and the losing code path, keep the winner. Leaving `if (true)` scaffolding is not cleanup.
+- **Automate detection:** scan the codebase for flag references, flag stale ones, and file cleanup tickets. Code with no references to a still-"active" flag (or vice-versa) indicates drift.
 
 ```typescript
-interface ModelFlag {
-  key: string;
-  modelVariants: ModelVariant[];
-  routingStrategy: "percentage" | "performance" | "custom";
-  fallbackModel: string;
-  performanceThresholds?: {
-    latencyMs: number;
-    errorRate: number;
-  };
-}
-
-interface ModelVariant {
-  name: string;
-  modelId: string;
-  version: string;
-  weight?: number; // For percentage routing
-  endpoint: string;
-}
-
-class ModelFlagService {
-  async evaluateModel(
-    flagKey: string,
-    context: { userId?: string; inputSize?: number },
-  ): Promise<ModelVariant> {
-    const flag = await this.getModelFlag(flagKey);
-
-    switch (flag.routingStrategy) {
-      case "percentage":
-        return this.percentageRouting(flag, context.userId || "anonymous");
-
-      case "performance":
-        return this.performanceRouting(flag);
-
-      case "custom":
-        return this.customRouting(flag, context);
-
-      default:
-        return flag.modelVariants.find((v) => v.name === flag.fallbackModel)!;
-    }
-  }
-
-  private async performanceRouting(flag: ModelFlag): Promise<ModelVariant> {
-    // Get real-time performance metrics for each model
-    const metrics = await Promise.all(
-      flag.modelVariants.map(async (variant) => ({
-        variant,
-        latency: await this.getAverageLatency(variant.modelId),
-        errorRate: await this.getErrorRate(variant.modelId),
-      })),
-    );
-
-    // Filter models meeting performance thresholds
-    const eligible = metrics.filter(
-      (m) =>
-        m.latency < flag.performanceThresholds!.latencyMs &&
-        m.errorRate < flag.performanceThresholds!.errorRate,
-    );
-
-    // Return best performing model or fallback
-    if (eligible.length === 0) {
-      return flag.modelVariants.find((v) => v.name === flag.fallbackModel)!;
-    }
-
-    return eligible.sort((a, b) => a.latency - b.latency)[0].variant;
-  }
-
-  async trackModelInference(
-    flagKey: string,
-    modelVariant: ModelVariant,
-    metrics: {
-      latencyMs: number;
-      success: boolean;
-      inputTokens: number;
-      outputTokens: number;
-    },
-  ): Promise<void> {
-    // Track metrics for performance-based routing
-    await this.redis.zadd(
-      `model:${modelVariant.modelId}:latency`,
-      Date.now(),
-      metrics.latencyMs,
-    );
-
-    await this.redis.hincrby(
-      `model:${modelVariant.modelId}:stats`,
-      metrics.success ? "success" : "failure",
-      1,
-    );
-
-    // Track costs
-    await this.redis.hincrby(
-      `model:${modelVariant.modelId}:tokens`,
-      "input",
-      metrics.inputTokens,
-    );
-    await this.redis.hincrby(
-      `model:${modelVariant.modelId}:tokens`,
-      "output",
-      metrics.outputTokens,
-    );
-  }
-}
-
-// Usage example
-async function generateResponse(
-  prompt: string,
-  userId: string,
-): Promise<string> {
-  const modelVariant = await modelFlags.evaluateModel("chat-model", { userId });
-
-  const startTime = Date.now();
-  try {
-    const response = await fetch(modelVariant.endpoint, {
-      method: "POST",
-      body: JSON.stringify({ prompt, model: modelVariant.modelId }),
-    });
-
-    const data = await response.json();
-
-    await modelFlags.trackModelInference("chat-model", modelVariant, {
-      latencyMs: Date.now() - startTime,
-      success: true,
-      inputTokens: data.usage.input_tokens,
-      outputTokens: data.usage.output_tokens,
-    });
-
-    return data.response;
-  } catch (error) {
-    await modelFlags.trackModelInference("chat-model", modelVariant, {
-      latencyMs: Date.now() - startTime,
-      success: false,
-      inputTokens: 0,
-      outputTokens: 0,
-    });
-    throw error;
-  }
+function isStale(f: FlagWithLifecycle, now = new Date()): boolean {
+  const ageDays = (now.getTime() - f.createdAt.getTime()) / 86_400_000;
+  if (f.plannedRemovalDate && f.plannedRemovalDate < now) return true;       // past removal date
+  if (f.type === "release" && ageDays > 60) return true;                     // release toggle overstayed
+  if (f.type === "experiment" && f.status === "completed") return true;      // decided, not cleaned up
+  if (f.percentage === 100 || f.percentage === 0) return ageDays > 30;       // settled at a terminal %
+  return false;
 }
 ```
 
-### Infrastructure Feature Flags
+- **Avoid dependent/nested flags.** Flag B whose meaning depends on flag A creates implicit ordering, hidden coupling, and a combinatorial test space. Keep flags independent; if two must interact, encode it as one multivariate flag, not two coupled booleans.
+
+## Delivery Modes: Local-Eval vs Streaming vs Polling
+
+How the SDK gets flag state governs latency, staleness, load, and privacy. Know the trade-offs:
+
+| Mode                  | Update latency         | Per-eval cost      | Staleness window     | Notes                                                        |
+| --------------------- | ---------------------- | ------------------ | -------------------- | ----------------------------------------------------------- |
+| **Streaming (SSE)**   | Seconds                | In-memory (0 net)  | ~Real-time           | Best for kill switches; needs a persistent connection       |
+| **Polling**           | = poll interval        | In-memory (0 net)  | Up to poll interval  | Simplest; tune interval vs load; can be slow for incidents  |
+| **Local evaluation**  | = ruleset refresh      | In-memory (0 net)  | Ruleset age          | SDK holds full ruleset; **no PII leaves your infra**        |
+| **Remote per-eval**   | Real-time              | 1 network call/flag| None                 | ⚠ Anti-pattern for hot paths — couples uptime + adds latency|
+
+- **Server SDKs → prefer local evaluation** (or streaming): the SDK downloads targeting rules and evaluates in-process, so no per-flag network call and no user attributes sent to the vendor. **Client/mobile SDKs → the server evaluates** and returns the user's flag set (never ship the full ruleset / other users' targeting to a browser).
+- At scale, run a relay/daemon (LaunchDarkly Relay, Unleash Edge/Proxy) so thousands of instances don't each hit the vendor.
+- **Every SDK read is against cache** — that's why the default value you pass to `variation(...)` matters: it's what you get during init, on error, or when the flag is missing. Make it the safe fallback.
+
+## OpenFeature and Vendor SDKs
+
+**OpenFeature** (CNCF) is the vendor-neutral standard: one evaluation API + a swappable **Provider** (LaunchDarkly, Flagsmith, Unleash, Split, or your own) + **hooks** for logging/telemetry. Prefer coding against OpenFeature so you can change vendors without touching call sites.
 
 ```typescript
-interface InfrastructureFlag {
-  key: string;
-  type: "database" | "cache" | "queue" | "storage" | "cdn";
-  variants: InfraVariant[];
-  healthCheckInterval: number;
-  autoFailover: boolean;
-}
+import { OpenFeature } from "@openfeature/server-sdk";
 
-interface InfraVariant {
-  name: string;
-  config: {
-    host?: string;
-    port?: number;
-    url?: string;
-    region?: string;
-    [key: string]: string | number | boolean | undefined;
-  };
-  healthEndpoint?: string;
-  healthy: boolean;
-  priority: number; // Lower = higher priority
-}
+OpenFeature.setProvider(new YourProvider());            // swap vendor here only
+const client = OpenFeature.getClient();
 
-class InfrastructureFlagService {
-  private healthChecks: Map<string, NodeJS.Timer> = new Map();
-
-  async startHealthChecks(flagKey: string): Promise<void> {
-    const flag = await this.getInfraFlag(flagKey);
-
-    const interval = setInterval(async () => {
-      for (const variant of flag.variants) {
-        if (!variant.healthEndpoint) continue;
-
-        try {
-          const response = await fetch(variant.healthEndpoint, {
-            timeout: 5000,
-          });
-          variant.healthy = response.ok;
-        } catch {
-          variant.healthy = false;
-        }
-      }
-
-      await this.updateInfraFlag(flag);
-    }, flag.healthCheckInterval);
-
-    this.healthChecks.set(flagKey, interval);
-  }
-
-  async getActiveVariant(flagKey: string): Promise<InfraVariant> {
-    const flag = await this.getInfraFlag(flagKey);
-
-    // Get healthy variants sorted by priority
-    const healthyVariants = flag.variants
-      .filter((v) => v.healthy)
-      .sort((a, b) => a.priority - b.priority);
-
-    if (healthyVariants.length === 0) {
-      if (flag.autoFailover) {
-        // Use unhealthy variant as last resort
-        console.error(`No healthy variants for ${flagKey}, using fallback`);
-        return flag.variants.sort((a, b) => a.priority - b.priority)[0];
-      } else {
-        throw new Error(`No healthy variants available for ${flagKey}`);
-      }
-    }
-
-    return healthyVariants[0];
-  }
-}
-
-// Database migration example
-class DatabaseConnection {
-  private infraFlags: InfrastructureFlagService;
-  private currentConnection?: Connection;
-
-  async getConnection(): Promise<Connection> {
-    const variant = await this.infraFlags.getActiveVariant("primary-database");
-
-    // Reuse connection if config hasn't changed
-    if (this.currentConnection?.config.host === variant.config.host) {
-      return this.currentConnection;
-    }
-
-    // Create new connection to migrated database
-    this.currentConnection = await createConnection({
-      host: variant.config.host as string,
-      port: variant.config.port as number,
-      database: variant.config.database as string,
-    });
-
-    return this.currentConnection;
-  }
-}
-
-// CDN migration example
-class AssetService {
-  async getAssetUrl(assetPath: string): Promise<string> {
-    const cdnVariant = await infraFlags.getActiveVariant("cdn-provider");
-
-    return `${cdnVariant.config.url}/${assetPath}`;
-  }
-}
+// Always pass a SAFE default (used on init/error/missing flag) + evaluation context.
+const showV2 = await client.getBooleanValue("checkout-v2", false, { targetingKey: userId, plan });
 ```
 
-### Flag Cleanup and Technical Debt Management
+LaunchDarkly server SDK specifics worth remembering:
 
 ```typescript
-interface FlagCleanupTask {
-  flagKey: string;
-  status: "pending" | "in-progress" | "completed" | "blocked";
-  type: "remove-flag" | "make-permanent" | "deprecate";
-  estimatedEffort: "small" | "medium" | "large";
-  affectedCodePaths: string[];
-  dependencies: string[];
-  assignee?: string;
-  dueDate?: Date;
-}
-
-class FlagCleanupService {
-  async analyzeCodeImpact(flagKey: string): Promise<CodeImpactReport> {
-    // Scan codebase for flag references
-    const references = await this.findFlagReferences(flagKey);
-
-    return {
-      flagKey,
-      totalReferences: references.length,
-      fileCount: new Set(references.map((r) => r.file)).size,
-      byFileType: this.groupBy(references, (r) => r.fileExtension),
-      complexityScore: this.calculateComplexity(references),
-      recommendations: this.generateRecommendations(references),
-    };
-  }
-
-  private calculateComplexity(references: CodeReference[]): number {
-    let score = 0;
-
-    for (const ref of references) {
-      // Nested conditions increase complexity
-      if (ref.context.includes("if") && ref.context.includes("else")) {
-        score += 2;
-      }
-
-      // Multiple flags in same file
-      const otherFlags = this.countOtherFlags(ref.file);
-      score += otherFlags * 0.5;
-
-      // Presence in critical paths
-      if (ref.file.includes("payment") || ref.file.includes("auth")) {
-        score += 3;
-      }
-    }
-
-    return score;
-  }
-
-  async generateCleanupPlan(staleFlags: string[]): Promise<FlagCleanupTask[]> {
-    const tasks: FlagCleanupTask[] = [];
-
-    for (const flagKey of staleFlags) {
-      const flag = await this.getFlag(flagKey);
-      const impact = await this.analyzeCodeImpact(flagKey);
-
-      // Determine cleanup type
-      let type: FlagCleanupTask["type"];
-      if (flag.percentage === 100 && flag.lifecycle.status === "stable") {
-        type = "make-permanent"; // Remove flag, keep new code path
-      } else if (flag.percentage === 0) {
-        type = "remove-flag"; // Remove flag and new code path
-      } else {
-        type = "deprecate"; // Mark for future removal
-      }
-
-      tasks.push({
-        flagKey,
-        status: "pending",
-        type,
-        estimatedEffort:
-          impact.complexityScore < 5
-            ? "small"
-            : impact.complexityScore < 15
-              ? "medium"
-              : "large",
-        affectedCodePaths:
-          impact.fileCount > 0
-            ? Array.from(new Set(impact.references.map((r) => r.file)))
-            : [],
-        dependencies: await this.findDependentFlags(flagKey),
-      });
-    }
-
-    // Sort by effort (easiest first for quick wins)
-    return tasks.sort((a, b) => {
-      const effortMap = { small: 1, medium: 2, large: 3 };
-      return effortMap[a.estimatedEffort] - effortMap[b.estimatedEffort];
-    });
-  }
-
-  async trackCleanupProgress(): Promise<CleanupMetrics> {
-    const allFlags = await this.getAllFlags();
-    const tasks = await this.getAllCleanupTasks();
-
-    return {
-      totalFlags: allFlags.length,
-      staleFlags: allFlags.filter((f) => this.isStale(f)).length,
-      flagsWithCleanupTasks: tasks.length,
-      completedCleanups: tasks.filter((t) => t.status === "completed").length,
-      averageAgeOfStaleFlags: this.calculateAverageAge(
-        allFlags.filter((f) => this.isStale(f)),
-      ),
-      projectedCleanupDate: this.estimateCompletionDate(tasks),
-    };
-  }
-}
-
-// Automated cleanup detection
-class FlagCleanupMonitor {
-  async runDailyCleanupCheck(): Promise<void> {
-    const staleFlags = await this.flagLifecycle.checkStaleFlags();
-
-    if (staleFlags.length === 0) return;
-
-    // Create Jira tickets for cleanup
-    for (const flag of staleFlags) {
-      const impact = await this.cleanup.analyzeCodeImpact(flag.key);
-
-      await this.ticketingSystem.createTicket({
-        title: `Clean up feature flag: ${flag.key}`,
-        description: `
-          Flag Status: ${flag.lifecycle.status}
-          Age: ${this.calculateAge(flag.lifecycle.createdAt)} days
-          References: ${impact.totalReferences} in ${impact.fileCount} files
-          Complexity: ${impact.complexityScore}
-
-          Recommendations:
-          ${impact.recommendations.join("\n")}
-        `,
-        priority:
-          impact.complexityScore < 5
-            ? "low"
-            : impact.complexityScore < 15
-              ? "medium"
-              : "high",
-        labels: ["technical-debt", "feature-flags", "cleanup"],
-        assignee: flag.lifecycle.owner,
-      });
-    }
-
-    // Send weekly digest to engineering team
-    if (new Date().getDay() === 1) {
-      // Monday
-      await this.sendCleanupDigest(staleFlags);
-    }
-  }
-}
+import * as LD from "launchdarkly-node-server-sdk";
+const ld = LD.init(process.env.LAUNCHDARKLY_SDK_KEY!);
+await ld.waitForInitialization();                        // else first evals return defaults
+const on = await ld.variation("flag-key", { key: userId }, /* default */ false);
+const detail = await ld.variationDetail("flag-key", { key: userId }, false); // .value/.reason for debugging
 ```
 
-## Best Practices
+- `targetingKey`/user `key` is the **bucketing unit** — pass a stable id, not a per-request value.
+- `variationDetail().reason` tells you *why* a value was served (rule match, fallthrough, prerequisite failed) — essential for debugging "why is this user not seeing the feature."
 
-1. **Flag Naming Conventions**
-   - Use descriptive, consistent names: `feature-checkout-v2`, `experiment-button-color`
-   - Include type prefix: `release-*`, `experiment-*`, `ops-*`, `kill-*`
-   - Avoid abbreviations and ensure team-wide understanding
+## ML Model and Infrastructure Flags
 
-2. **Flag Hygiene**
-   - Set expiration dates for temporary flags
-   - Remove flags after features are fully rolled out
-   - Track flag ownership and associated tickets
-   - Regular cleanup audits (monthly)
+Same flag machinery, different payload: route to a **model variant** or an **infra endpoint** instead of on/off. Two extra requirements:
 
-3. **Testing**
-   - Test all flag states (on, off, each variant)
-   - Include flag states in integration tests
-   - Test rollback scenarios
-
-4. **Monitoring**
-   - Track flag evaluation counts and latency
-   - Alert on unusual patterns (sudden spikes, failures)
-   - Log flag decisions for debugging
-
-5. **Documentation**
-   - Document what each flag controls
-   - Include rollback instructions
-   - Link to related PRs and tickets
-
-## Examples
-
-### React Feature Flag Provider
+- **Performance/health-based routing with fallback.** Beyond static percentage, route by live latency/error-rate and **always define a fallback** variant when nothing meets thresholds. Health checks run out-of-band; the request path reads the cached healthy set (same fail-safe rule as kill switches).
+- **Log an inference/exposure record per call** (latency, success, tokens/cost) to feed routing decisions and cost tracking.
 
 ```typescript
-import React, { createContext, useContext, useEffect, useState } from "react";
-
-interface FeatureFlagContextType {
-  isEnabled: (key: string) => boolean;
-  getVariant: <T>(key: string) => T | null;
-  loading: boolean;
-}
-
-const FeatureFlagContext = createContext<FeatureFlagContextType | null>(null);
-
-export function FeatureFlagProvider({
-  children,
-  userId,
-}: {
-  children: React.ReactNode;
-  userId: string;
-}) {
-  const [flags, setFlags] = useState<Record<string, unknown>>({});
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    async function loadFlags() {
-      const response = await fetch(`/api/flags?userId=${userId}`);
-      const data = await response.json();
-      setFlags(data);
-      setLoading(false);
-    }
-    loadFlags();
-
-    // Subscribe to real-time updates
-    const ws = new WebSocket(
-      `wss://api.example.com/flags/stream?userId=${userId}`
-    );
-    ws.onmessage = (event) => {
-      const update = JSON.parse(event.data);
-      setFlags((prev) => ({ ...prev, [update.key]: update.value }));
-    };
-
-    return () => ws.close();
-  }, [userId]);
-
-  const value: FeatureFlagContextType = {
-    isEnabled: (key) => Boolean(flags[key]),
-    getVariant: (key) => (flags[key] as T) ?? null,
-    loading,
-  };
-
-  return (
-    <FeatureFlagContext.Provider value={value}>
-      {children}
-    </FeatureFlagContext.Provider>
-  );
-}
-
-export function useFeatureFlag(key: string): boolean {
-  const context = useContext(FeatureFlagContext);
-  if (!context)
-    throw new Error("useFeatureFlag must be used within FeatureFlagProvider");
-  return context.isEnabled(key);
-}
-
-// Usage
-function CheckoutPage() {
-  const newCheckout = useFeatureFlag("new-checkout-flow");
-
-  if (newCheckout) {
-    return <NewCheckoutFlow />;
-  }
-  return <LegacyCheckout />;
+function pickModel(flag: ModelFlag, userId: string): ModelVariant {
+  const eligible = flag.variants.filter((v) => v.healthy &&
+    v.latencyMs < flag.thresholds.latencyMs && v.errorRate < flag.thresholds.errorRate);
+  if (eligible.length === 0) return flag.variants.find((v) => v.name === flag.fallback)!; // fail-safe
+  return flag.routing === "performance"
+    ? eligible.sort((a, b) => a.latencyMs - b.latencyMs)[0]
+    : pickVariant(userId, flag.key, eligible);           // sticky percentage routing
 }
 ```
 
-## When to Use This Skill
+Infra flags (DB/cache/CDN failover) follow the same shape: pick the highest-priority **healthy** variant, fall back deliberately when none are healthy, and reuse existing connections when the selected config is unchanged (don't reconnect every call).
 
-Use the feature-flags skill for:
+## Gotchas
 
-- **Feature Toggles** - Runtime on/off switches for features
-- **Gradual Rollouts** - Percentage-based or canary releases (1% -> 5% -> 25% -> 100%)
-- **Dark Launches** - Deploy code disabled, enable when ready
-- **A/B Testing** - Compare variants to measure impact
-- **User Targeting** - Enable features for specific users, regions, or plans
-- **Kill Switches** - Emergency disable for broken features
-- **Circuit Breakers** - Auto-disable when error thresholds exceeded
-- **ML Model Flags** - Switch between model versions or providers
-- **Infrastructure Flags** - Migrate databases, caches, CDNs without downtime
-- **Configuration** - Runtime config changes without redeployment
-- **Cleanup** - Managing technical debt from old flags
+- ⚠ **`Math.random()` bucketing** → per-call flicker. Hash a stable unit instead.
+- ⚠ **One global salt for all flags** → correlated cohorts; a user is in *every* low-% rollout. Salt with the flag key.
+- ⚠ **Re-salting to bump a rollout %** → reshuffles all users, evicting current ones and breaking experiments. Only ever *raise the threshold*.
+- ⚠ **`int % 100` from a hash** → modulo bias. Scale bytes to `[0,1)` instead.
+- ⚠ **Remote call per flag evaluation** → adds latency and couples your uptime to the vendor. Evaluate against cache/local ruleset.
+- ⚠ **Kill switch that needs the network to say "kill"** → useless during the outage it's meant to handle. Local read + safe default.
+- ⚠ **Pre-assigning/exposure-logging all users** → biased A/B results. Log exposure only at the code path that actually affects the user, once per unit.
+- ⚠ **Bucketing by session/request id** for anonymous users → flicker across requests. Use a persisted device/cookie id.
+- ⚠ **Dependent/nested flags** → combinatorial state explosion and hidden coupling. Keep flags independent; collapse interactions into one multivariate flag.
+- ⚠ **No default on SDK read** → undefined behavior on init/error/missing flag. Always pass the safe fallback.
+- ⚠ **Flags that never get removed** → permanent branching debt. Attach owner + removal ticket at creation; automate stale detection.
 
-## Agent Selection Guide
+## Testing With Flags
 
-| Task                           | Agent                    | Why                                                 |
-| ------------------------------ | ------------------------ | --------------------------------------------------- |
-| Design flag architecture       | senior-software-engineer | Strategic decisions on flag types, rollout strategy |
-| Implement flag service         | senior-software-engineer | Build evaluation logic, integrations                |
-| Review flag security           | code-reviewer            | Access controls, audit logging, sensitive data      |
-| Scale flag infrastructure      | senior-software-engineer | Distributed caching, performance, failover          |
-| Integrate LaunchDarkly/Unleash | senior-software-engineer | SDK integration, webhook setup                      |
-| Plan ML model rollout          | senior-software-engineer | Performance routing, fallback strategy              |
-| Implement cleanup automation   | senior-software-engineer | Code scanning, impact analysis                      |
-| Design flag lifecycle policy   | senior-software-engineer | Governance, technical debt prevention               |
+Flags multiply the reachable state space (2^N for N booleans) — test deliberately, not exhaustively:
+
+- **Test both states of the flag under change** (on/off, and each variant that alters behavior). A flag you can't turn off safely isn't a safe rollout.
+- **Pin all other flags to defaults** in most tests via a fake/in-memory provider; don't let the matrix explode. OpenFeature's in-memory provider or a test double makes this trivial and hermetic (no network).
+- **Test the fallback path**: flag service unreachable / returns default → app still behaves safely.
+- Test bucketing **stickiness** (same unit → same result across calls) and **monotonicity** (raising % never drops an already-enabled unit).
+- Keep tests deterministic: inject the bucketing seed/unit; never call the real random source or real vendor in unit tests.
+
+## Verification Checklists
+
+Evaluation logic — verify before done:
+
+- [ ] Bucketing hashes a **stable unit** + flag-key salt; no `Math.random` in the path
+- [ ] Increasing rollout % is **additive/monotonic**; salt/seed is never changed to ramp
+- [ ] Same hash algo + salt convention + unit across all services that must agree
+- [ ] Evaluation is side-effect-free and reads from cache/local ruleset (no per-flag network call)
+- [ ] Every SDK/lookup call passes a **safe default** for init/error/missing-flag
+- [ ] Regex/targeting input is bounded (no ReDoS); no secrets/PII in evaluation context
+
+Kill switch / ops toggle:
+
+- [ ] Hot-path read is **local** (cached), never a blocking remote call
+- [ ] Default on cache-miss/service-down is the documented **known-safe** state
+- [ ] Activation broadcasts fast (streaming/pub-sub) and writes an audit record + on-call alert
+
+Experiment:
+
+- [ ] Per-experiment salt (orthogonal cohorts)
+- [ ] Exposure logged **at evaluation, only when it affects the user, once per unit**
+- [ ] Conversions keyed to the same assigned variant; significance computed, not eyeballed
+- [ ] Sample-ratio checked; fixed sample size/duration (no peeking)
+
+Lifecycle / debt:
+
+- [ ] Flag created with `type`, `owner`, `createdAt`, and (short-lived types) a **removal ticket**
+- [ ] Stale-flag detection automated; short-lived flags alert past expiry
+- [ ] "Done" means flag **and** dead branch removed (no `if (true)` scaffolding)
+- [ ] No dependent/nested flags introducing hidden coupling
+
+Change management:
+
+- [ ] Every flag change is audit-logged (who / when / old→new / why)
+- [ ] Rollback = flip the flag (percentage→0 / enabled→false), no deploy required

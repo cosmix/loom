@@ -26,1116 +26,249 @@ triggers:
   - replay attack
   - dead letter queue
   - webhook monitoring
+  - SSRF
+  - thin events
 ---
 
 # Webhooks
 
 ## Overview
 
-Webhooks are HTTP callbacks that notify external systems when events occur. They enable real-time communication between services without polling. This skill covers webhook design patterns, security, reliability, and implementation best practices.
+HTTP callbacks that push events to external systems instead of polling. The hard parts are all correctness/security: signing over the right bytes, timing-safe verification, replay protection, at-least-once delivery + idempotent consumers, and SSRF on the sender. This skill is organized sender-side vs receiver-side, with the traps called out.
 
-## Key Concepts
+## The non-negotiables (read first)
 
-### Webhook Design Patterns
+- **Sign/verify over the RAW request body**, not re-serialized JSON. `JSON.parse` → `JSON.stringify` reorders keys and changes whitespace, breaking the HMAC. Receiver must read raw bytes *before* any JSON body parser runs.
+- **Timing-safe compare** for signatures — never `===`. And guard length first: `crypto.timingSafeEqual` **throws** on unequal-length buffers.
+- **Timestamped signatures + a tolerance window** to blunt replay; dedup by event id for the rest.
+- **At-least-once delivery is the only realistic guarantee** ⇒ duplicates *will* arrive ⇒ **consumers must be idempotent.**
+- **Verify before you trust or parse.** For security-critical actions, treat the payload as a *hint* and refetch canonical state from your API.
+- **Sender makes outbound requests to user-supplied URLs ⇒ SSRF surface.** Validate destinations; block internal ranges.
 
-**Event-Driven Architecture:**
+## Event & subscription model
 
 ```typescript
 interface WebhookEvent {
-  id: string; // Unique event ID
-  type: string; // Event type (e.g., 'order.created')
-  created: number; // Unix timestamp
-  apiVersion: string; // API version for payload format
+  id: string;            // stable, unique → idempotency + replay key
+  type: string;          // "order.created" — resource.action
+  created: number;       // Unix seconds
+  apiVersion: string;    // payload schema version
   data: {
-    object: Record<string, any>; // The resource that triggered the event
-    previousAttributes?: Record<string, any>; // For update events
+    object: Record<string, unknown>;
+    previousAttributes?: Record<string, unknown>; // deltas on updates
   };
 }
 
-// Example events
-const orderCreatedEvent: WebhookEvent = {
-  id: "evt_1234567890",
-  type: "order.created",
-  created: 1702987200,
-  apiVersion: "2024-01-01",
-  data: {
-    object: {
-      id: "ord_abc123",
-      status: "pending",
-      total: 9999,
-      currency: "usd",
-      customer: "cus_xyz789",
-    },
-  },
-};
-
-const orderUpdatedEvent: WebhookEvent = {
-  id: "evt_1234567891",
-  type: "order.updated",
-  created: 1702987260,
-  apiVersion: "2024-01-01",
-  data: {
-    object: {
-      id: "ord_abc123",
-      status: "shipped",
-      total: 9999,
-      currency: "usd",
-    },
-    previousAttributes: {
-      status: "pending",
-    },
-  },
-};
-```
-
-**Webhook Subscription Model:**
-
-```typescript
 interface WebhookEndpoint {
   id: string;
   url: string;
-  secret: string;
-  events: string[]; // Event types to receive
+  secret: string;        // per-endpoint, rotatable
+  events: string[];      // ["order.*", "payment.completed", "*"]
   status: "active" | "disabled";
-  metadata?: Record<string, string>;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-interface WebhookDelivery {
-  id: string;
-  endpointId: string;
-  eventId: string;
-  url: string;
-  requestHeaders: Record<string, string>;
-  requestBody: string;
-  responseStatus?: number;
-  responseHeaders?: Record<string, string>;
-  responseBody?: string;
-  duration?: number;
-  attempts: number;
-  nextRetryAt?: Date;
-  status: "pending" | "success" | "failed" | "retrying";
-  createdAt: Date;
-  completedAt?: Date;
 }
 ```
 
-### Signature Verification (HMAC)
+Naming: `resource.action` (`order.created`, `payment.failed`). Support wildcards (`order.*`, `*`).
 
-**Generating Signatures:**
+### Thin vs fat events (design decision)
+
+| | Fat (embed full object) | Thin (id + type only) |
+| --- | --- | --- |
+| Extra fetch | none | receiver GETs canonical state |
+| Freshness | can be **stale/out-of-order** at delivery | always current (fetch at process time) |
+| Ordering | receiver must handle reordering via `created`/version | naturally tolerant — fetch reflects latest |
+| PII/size | more data in transit/logs; size caps (<256KB) | minimal exposure |
+| Reliability | works if your API is down | needs your API up to process |
+
+⚠ **Don't trust a fat payload for security/authorization decisions** — an attacker who forges or replays a delivery controls its contents. Verify signature, then for money/permissions **refetch** by id. Thin events sidestep this and out-of-order delivery, at the cost of a round-trip.
+
+## Sender side
+
+### HMAC signing (over raw payload + timestamp)
 
 ```typescript
 import crypto from "crypto";
 
-class WebhookSigner {
-  constructor(private secret: string) {}
+function sign(secret: string, payload: string, ts: number): string {
+  return crypto.createHmac("sha256", secret).update(`${ts}.${payload}`).digest("hex");
+}
 
-  sign(payload: string, timestamp: number): string {
-    const signedPayload = `${timestamp}.${payload}`;
-    return crypto
-      .createHmac("sha256", this.secret)
-      .update(signedPayload)
-      .digest("hex");
-  }
-
-  generateHeaders(payload: string): Record<string, string> {
-    const timestamp = Math.floor(Date.now() / 1000);
-    const signature = this.sign(payload, timestamp);
-
-    return {
-      "X-Webhook-Timestamp": timestamp.toString(),
-      "X-Webhook-Signature": `v1=${signature}`,
-      "Content-Type": "application/json",
-    };
-  }
+function signedHeaders(secret: string, payload: string): Record<string, string> {
+  const ts = Math.floor(Date.now() / 1000);
+  return {
+    "Content-Type": "application/json",
+    "X-Webhook-Timestamp": String(ts),
+    "X-Webhook-Signature": `v1=${sign(secret, payload, ts)}`, // scheme-versioned for rotation
+  };
 }
 ```
 
-**Verifying Signatures:**
+Signing the timestamp *inside* the HMAC (Stripe-style `t=...,v1=...`) prevents an attacker from replaying a captured body with a fresh timestamp. Version the scheme (`v1=`) so you can add `v2=` and support both during rotation.
+
+### Retry with exponential backoff + jitter
 
 ```typescript
-class WebhookVerifier {
-  constructor(
-    private secret: string,
-    private tolerance: number = 300, // 5 minutes
-  ) {}
+const retry = { maxAttempts: 5, initialDelay: 1000, maxDelay: 3_600_000, factor: 2,
+                retryable: [408, 429, 500, 502, 503, 504] };
 
-  verify(payload: string, signature: string, timestamp: string): boolean {
-    // Check timestamp to prevent replay attacks
-    const ts = parseInt(timestamp, 10);
-    const now = Math.floor(Date.now() / 1000);
-
-    if (Math.abs(now - ts) > this.tolerance) {
-      throw new WebhookError(
-        "Timestamp outside tolerance",
-        "TIMESTAMP_EXPIRED",
-      );
-    }
-
-    // Extract signature value
-    const sigParts = signature.split(",");
-    const v1Sig = sigParts
-      .find((part) => part.startsWith("v1="))
-      ?.replace("v1=", "");
-
-    if (!v1Sig) {
-      throw new WebhookError("No valid signature found", "INVALID_SIGNATURE");
-    }
-
-    // Compute expected signature
-    const signedPayload = `${timestamp}.${payload}`;
-    const expectedSig = crypto
-      .createHmac("sha256", this.secret)
-      .update(signedPayload)
-      .digest("hex");
-
-    // Constant-time comparison
-    const isValid = crypto.timingSafeEqual(
-      Buffer.from(v1Sig),
-      Buffer.from(expectedSig),
-    );
-
-    if (!isValid) {
-      throw new WebhookError("Signature mismatch", "INVALID_SIGNATURE");
-    }
-
-    return true;
-  }
-}
-
-class WebhookError extends Error {
-  constructor(
-    message: string,
-    public code: string,
-  ) {
-    super(message);
-    this.name = "WebhookError";
-  }
+function nextDelay(attempt: number): number {           // attempt starts at 0
+  const base = Math.min(retry.initialDelay * retry.factor ** attempt, retry.maxDelay);
+  return base + base * Math.random() * 0.25;            // 0–25% jitter → no thundering herd
 }
 ```
 
-**Express Middleware for Verification:**
+- Retry only network errors + `retryable` statuses. **Don't retry 4xx** (400/401/422) — the request is broken; retrying just hammers the receiver.
+- Honor the receiver's `Retry-After` on 429/503 over your computed backoff.
+- 30s delivery timeout. Deliver **asynchronously via a queue** — never block the event-producing transaction on HTTP to a third party.
+
+### At-least-once delivery
+
+```typescript
+async function dispatch(event: WebhookEvent, endpoints: WebhookEndpoint[]) {
+  await db.events.create(event);                         // persist FIRST (durability)
+  for (const ep of endpoints) {
+    if (ep.status !== "active" || !matches(event.type, ep.events)) continue;
+    await queue.add("deliver", { eventId: event.id, endpointId: ep.id },
+      { attempts: 5, backoff: { type: "exponential", delay: 1000 }, removeOnFail: false });
+  }
+}
+function matches(type: string, filters: string[]): boolean {
+  return filters.some(f => f === "*" || (f.endsWith(".*") ? type.startsWith(f.slice(0, -2)) : f === type));
+}
+```
+
+Persist the event before enqueuing so a crash can't lose it. Keep failed jobs (`removeOnFail: false`) for inspection/replay. Include the immutable `event.id` in every delivery so receivers can dedup.
+
+### SSRF: webhook URLs are attacker-controlled
+
+Users register the destination URL, so your sender becomes an SSRF vector into your own network.
+
+- Reject non-HTTPS and non-standard ports at registration.
+- Resolve the hostname and **block private/loopback/link-local/metadata ranges**: `127.0.0.0/8`, `10/8`, `172.16/12`, `192.168/16`, `169.254.0.0/16` (incl. `169.254.169.254` cloud metadata), `::1`, `fc00::/7`, `fe80::/10`.
+- ⚠ **DNS rebinding**: validate the IP you actually connect to, not just the one resolved at registration — resolve again at request time and pin, or use an egress proxy / allowlist.
+- Disable HTTP redirects (or re-validate each hop) — a redirect to `http://169.254.169.254/` bypasses the initial check.
+- Cap response body size and timeout; you don't need the receiver's response body.
+
+### DLQ + auto-disable
+
+```typescript
+async function onExhausted(delivery: WebhookDelivery) {
+  await db.deadLetter.create({ ...delivery, movedAt: new Date() });
+  const failures1h = await db.deadLetter.count({ endpointId: delivery.endpointId, since: hoursAgo(1) });
+  if (failures1h >= 10) await alerts.warn("Webhook endpoint failing", delivery.endpointId);
+  const failures24h = await db.deadLetter.count({ endpointId: delivery.endpointId, since: hoursAgo(24) });
+  if (failures24h >= 100) await db.endpoints.disable(delivery.endpointId, "too many failures");
+}
+```
+
+After max attempts, move to a DLQ (never silently drop). Alert on rising failure rates; auto-disable chronically dead endpoints to stop wasting deliveries, and expose a manual replay path.
+
+## Receiver side
+
+### Verification middleware (raw body first!)
 
 ```typescript
 import express from "express";
 
-function webhookVerificationMiddleware(secret: string) {
-  const verifier = new WebhookVerifier(secret);
+function verify(secret: string, rawBody: Buffer, sigHeader: string, tsHeader: string,
+                toleranceSec = 300): void {
+  const ts = parseInt(tsHeader, 10);
+  if (!ts || Math.abs(Math.floor(Date.now() / 1000) - ts) > toleranceSec)
+    throw new WebhookError("timestamp outside tolerance", "TIMESTAMP_EXPIRED"); // replay guard
 
-  return (
-    req: express.Request,
-    res: express.Response,
-    next: express.NextFunction,
-  ) => {
-    const signature = req.headers["x-webhook-signature"] as string;
-    const timestamp = req.headers["x-webhook-timestamp"] as string;
+  const provided = sigHeader.split(",").find(p => p.startsWith("v1="))?.slice(3);
+  if (!provided) throw new WebhookError("no v1 signature", "INVALID_SIGNATURE");
 
-    if (!signature || !timestamp) {
-      return res.status(401).json({ error: "Missing signature headers" });
-    }
-
-    // Need raw body for signature verification
-    let rawBody = "";
-    req.setEncoding("utf8");
-
-    req.on("data", (chunk) => {
-      rawBody += chunk;
-    });
-
-    req.on("end", () => {
-      try {
-        verifier.verify(rawBody, signature, timestamp);
-        req.body = JSON.parse(rawBody);
-        next();
-      } catch (error) {
-        if (error instanceof WebhookError) {
-          return res
-            .status(401)
-            .json({ error: error.message, code: error.code });
-        }
-        return res.status(400).json({ error: "Invalid request" });
-      }
-    });
-  };
+  const expected = sign(secret, rawBody.toString("utf8"), ts);
+  const a = Buffer.from(provided), b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b))  // length guard: timingSafeEqual throws otherwise
+    throw new WebhookError("signature mismatch", "INVALID_SIGNATURE");
 }
 
-// Usage with raw body parser
-app.post(
-  "/webhooks",
-  express.raw({ type: "application/json" }),
-  (req, res, next) => {
-    const verifier = new WebhookVerifier(process.env.WEBHOOK_SECRET!);
-    try {
-      verifier.verify(
-        req.body.toString(),
-        req.headers["x-webhook-signature"] as string,
-        req.headers["x-webhook-timestamp"] as string,
-      );
-      req.body = JSON.parse(req.body.toString());
-      next();
-    } catch (error) {
-      res.status(401).json({ error: "Invalid signature" });
-    }
-  },
-);
-```
-
-### Retry Logic with Exponential Backoff
-
-**Retry Configuration:**
-
-```typescript
-interface RetryConfig {
-  maxAttempts: number;
-  initialDelay: number; // milliseconds
-  maxDelay: number; // milliseconds
-  backoffMultiplier: number;
-  retryableStatuses: number[];
-}
-
-const defaultRetryConfig: RetryConfig = {
-  maxAttempts: 5,
-  initialDelay: 1000, // 1 second
-  maxDelay: 3600000, // 1 hour
-  backoffMultiplier: 2,
-  retryableStatuses: [408, 429, 500, 502, 503, 504],
-};
-
-function calculateNextRetry(attempt: number, config: RetryConfig): number {
-  // Exponential backoff with jitter
-  const delay = Math.min(
-    config.initialDelay * Math.pow(config.backoffMultiplier, attempt),
-    config.maxDelay,
-  );
-
-  // Add random jitter (0-25% of delay)
-  const jitter = delay * Math.random() * 0.25;
-
-  return delay + jitter;
-}
-```
-
-**Webhook Delivery Service:**
-
-```typescript
-import fetch from "node-fetch";
-
-class WebhookDeliveryService {
-  constructor(
-    private db: Database,
-    private retryConfig: RetryConfig = defaultRetryConfig,
-  ) {}
-
-  async deliver(endpoint: WebhookEndpoint, event: WebhookEvent): Promise<void> {
-    const delivery = await this.createDelivery(endpoint, event);
-    await this.attemptDelivery(delivery);
-  }
-
-  private async createDelivery(
-    endpoint: WebhookEndpoint,
-    event: WebhookEvent,
-  ): Promise<WebhookDelivery> {
-    const payload = JSON.stringify(event);
-    const signer = new WebhookSigner(endpoint.secret);
-    const headers = signer.generateHeaders(payload);
-
-    return this.db.deliveries.create({
-      id: generateId(),
-      endpointId: endpoint.id,
-      eventId: event.id,
-      url: endpoint.url,
-      requestHeaders: headers,
-      requestBody: payload,
-      attempts: 0,
-      status: "pending",
-      createdAt: new Date(),
-    });
-  }
-
-  async attemptDelivery(delivery: WebhookDelivery): Promise<void> {
-    delivery.attempts++;
-
-    const startTime = Date.now();
-
-    try {
-      const response = await fetch(delivery.url, {
-        method: "POST",
-        headers: delivery.requestHeaders,
-        body: delivery.requestBody,
-        timeout: 30000, // 30 second timeout
-      });
-
-      delivery.responseStatus = response.status;
-      delivery.responseHeaders = Object.fromEntries(response.headers);
-      delivery.responseBody = await response.text();
-      delivery.duration = Date.now() - startTime;
-
-      if (response.ok) {
-        delivery.status = "success";
-        delivery.completedAt = new Date();
-      } else if (this.shouldRetry(delivery)) {
-        await this.scheduleRetry(delivery);
-      } else {
-        delivery.status = "failed";
-        delivery.completedAt = new Date();
-      }
-    } catch (error) {
-      delivery.duration = Date.now() - startTime;
-
-      if (this.shouldRetry(delivery)) {
-        await this.scheduleRetry(delivery);
-      } else {
-        delivery.status = "failed";
-        delivery.completedAt = new Date();
-      }
-    }
-
-    await this.db.deliveries.update(delivery);
-  }
-
-  private shouldRetry(delivery: WebhookDelivery): boolean {
-    if (delivery.attempts >= this.retryConfig.maxAttempts) {
-      return false;
-    }
-
-    // Retry on network errors or retryable status codes
-    if (!delivery.responseStatus) {
-      return true;
-    }
-
-    return this.retryConfig.retryableStatuses.includes(delivery.responseStatus);
-  }
-
-  private async scheduleRetry(delivery: WebhookDelivery): Promise<void> {
-    const delay = calculateNextRetry(delivery.attempts, this.retryConfig);
-    delivery.nextRetryAt = new Date(Date.now() + delay);
-    delivery.status = "retrying";
-
-    // Queue for later processing
-    await this.queue.add(
-      "webhook-retry",
-      {
-        deliveryId: delivery.id,
-      },
-      {
-        delay,
-      },
-    );
-  }
-}
-```
-
-### Idempotency Keys
-
-**Idempotency Implementation:**
-
-```typescript
-class IdempotencyManager {
-  constructor(private redis: Redis) {}
-
-  async checkAndStore(
-    key: string,
-    ttl: number = 86400, // 24 hours
-  ): Promise<{ isNew: boolean; existingResult?: any }> {
-    const existing = await this.redis.get(`idempotency:${key}`);
-
-    if (existing) {
-      return {
-        isNew: false,
-        existingResult: JSON.parse(existing),
-      };
-    }
-
-    // Mark as processing
-    const acquired = await this.redis.set(
-      `idempotency:${key}`,
-      JSON.stringify({ status: "processing" }),
-      "EX",
-      ttl,
-      "NX",
-    );
-
-    return { isNew: acquired === "OK" };
-  }
-
-  async storeResult(
-    key: string,
-    result: any,
-    ttl: number = 86400,
-  ): Promise<void> {
-    await this.redis.set(
-      `idempotency:${key}`,
-      JSON.stringify({ status: "completed", result }),
-      "EX",
-      ttl,
-    );
-  }
-
-  async markFailed(key: string): Promise<void> {
-    await this.redis.del(`idempotency:${key}`);
-  }
-}
-```
-
-**Webhook Handler with Idempotency:**
-
-```typescript
-class WebhookHandler {
-  constructor(
-    private idempotency: IdempotencyManager,
-    private handlers: Map<string, (data: any) => Promise<any>>,
-  ) {}
-
-  async handleEvent(event: WebhookEvent): Promise<any> {
-    // Use event ID as idempotency key
-    const check = await this.idempotency.checkAndStore(event.id);
-
-    if (!check.isNew) {
-      console.log(`Event ${event.id} already processed`);
-      return check.existingResult?.result;
-    }
-
-    try {
-      const handler = this.handlers.get(event.type);
-
-      if (!handler) {
-        console.log(`No handler for event type: ${event.type}`);
-        return null;
-      }
-
-      const result = await handler(event.data);
-      await this.idempotency.storeResult(event.id, result);
-
-      return result;
-    } catch (error) {
-      await this.idempotency.markFailed(event.id);
-      throw error;
-    }
-  }
-}
-```
-
-### Webhook Payload Design
-
-**Payload Structure Best Practices:**
-
-```typescript
-// Good: Self-contained payload with all needed data
-interface GoodWebhookPayload {
-  id: string;
-  type: "invoice.paid";
-  apiVersion: string;
-  created: number;
-  data: {
-    object: {
-      id: string;
-      customerId: string;
-      customerEmail: string;
-      amount: number;
-      currency: string;
-      status: string;
-      lineItems: Array<{
-        description: string;
-        amount: number;
-        quantity: number;
-      }>;
-      paidAt: string;
-    };
-  };
-  // Include related data to avoid extra API calls
-  relatedObjects?: {
-    customer: {
-      id: string;
-      name: string;
-      email: string;
-    };
-  };
-}
-
-// Bad: Requires additional API calls
-interface BadWebhookPayload {
-  type: "invoice.paid";
-  invoiceId: string; // Only ID, no data - receiver must fetch
-}
-```
-
-**Versioning Strategy:**
-
-```typescript
-class WebhookPayloadTransformer {
-  private transformers: Map<string, (data: any) => any> = new Map();
-
-  constructor() {
-    // Register version transformers
-    this.transformers.set("2023-01-01", this.transformV20230101);
-    this.transformers.set("2024-01-01", this.transformV20240101);
-  }
-
-  transform(event: WebhookEvent, targetVersion: string): WebhookEvent {
-    const transformer = this.transformers.get(targetVersion);
-
-    if (!transformer) {
-      throw new Error(`Unknown API version: ${targetVersion}`);
-    }
-
-    return {
-      ...event,
-      apiVersion: targetVersion,
-      data: {
-        ...event.data,
-        object: transformer(event.data.object),
-      },
-    };
-  }
-
-  private transformV20230101(data: any): any {
-    // Legacy format
-    return {
-      ...data,
-      amount_cents: data.amount, // Old field name
-    };
-  }
-
-  private transformV20240101(data: any): any {
-    // Current format
-    return data;
-  }
-}
-```
-
-### Delivery Guarantees
-
-**At-Least-Once Delivery:**
-
-```typescript
-class WebhookDispatcher {
-  private queue: Queue;
-  private deliveryService: WebhookDeliveryService;
-
-  async dispatch(
-    event: WebhookEvent,
-    endpoints: WebhookEndpoint[],
-  ): Promise<void> {
-    // Persist event first
-    await this.db.events.create(event);
-
-    // Queue deliveries for each endpoint
-    for (const endpoint of endpoints) {
-      if (endpoint.status !== "active") continue;
-      if (!this.matchesEventFilter(event.type, endpoint.events)) continue;
-
-      await this.queue.add(
-        "webhook-delivery",
-        {
-          eventId: event.id,
-          endpointId: endpoint.id,
-        },
-        {
-          attempts: 5,
-          backoff: {
-            type: "exponential",
-            delay: 1000,
-          },
-          removeOnComplete: true,
-          removeOnFail: false, // Keep failed jobs for inspection
-        },
-      );
-    }
-  }
-
-  private matchesEventFilter(eventType: string, filters: string[]): boolean {
-    return filters.some((filter) => {
-      if (filter === "*") return true;
-      if (filter.endsWith(".*")) {
-        const prefix = filter.slice(0, -2);
-        return eventType.startsWith(prefix);
-      }
-      return eventType === filter;
-    });
-  }
-}
-```
-
-**Dead Letter Queue:**
-
-```typescript
-class DeadLetterHandler {
-  constructor(
-    private db: Database,
-    private alertService: AlertService,
-  ) {}
-
-  async handleFailedDelivery(delivery: WebhookDelivery): Promise<void> {
-    // Move to dead letter queue
-    await this.db.deadLetterQueue.create({
-      id: generateId(),
-      deliveryId: delivery.id,
-      eventId: delivery.eventId,
-      endpointId: delivery.endpointId,
-      lastAttempt: new Date(),
-      totalAttempts: delivery.attempts,
-      lastError: delivery.responseBody,
-      lastStatus: delivery.responseStatus,
-      createdAt: new Date(),
-    });
-
-    // Alert on repeated failures
-    const recentFailures = await this.db.deadLetterQueue.count({
-      endpointId: delivery.endpointId,
-      createdAt: { $gte: new Date(Date.now() - 3600000) }, // Last hour
-    });
-
-    if (recentFailures >= 10) {
-      await this.alertService.send({
-        severity: "warning",
-        title: "Webhook Endpoint Failing",
-        message: `Endpoint ${delivery.endpointId} has ${recentFailures} failures in the last hour`,
-        metadata: {
-          endpointId: delivery.endpointId,
-          url: delivery.url,
-        },
-      });
-
-      // Optionally disable the endpoint
-      await this.disableEndpointIfNeeded(delivery.endpointId);
-    }
-  }
-
-  private async disableEndpointIfNeeded(endpointId: string): Promise<void> {
-    const failures24h = await this.db.deadLetterQueue.count({
-      endpointId,
-      createdAt: { $gte: new Date(Date.now() - 86400000) },
-    });
-
-    if (failures24h >= 100) {
-      await this.db.webhookEndpoints.update(endpointId, {
-        status: "disabled",
-        disabledReason: "Too many consecutive failures",
-      });
-    }
-  }
-}
-```
-
-### Webhook Monitoring and Debugging
-
-**Delivery Dashboard Data:**
-
-```typescript
-interface WebhookMetrics {
-  endpointId: string;
-  period: "hour" | "day" | "week";
-  totalDeliveries: number;
-  successfulDeliveries: number;
-  failedDeliveries: number;
-  avgResponseTime: number;
-  p95ResponseTime: number;
-  successRate: number;
-  errorBreakdown: Record<number, number>; // status code -> count
-}
-
-class WebhookMetricsService {
-  constructor(private db: Database) {}
-
-  async getMetrics(
-    endpointId: string,
-    period: "hour" | "day" | "week",
-  ): Promise<WebhookMetrics> {
-    const since = this.getPeriodStart(period);
-
-    const deliveries = await this.db.deliveries.aggregate([
-      {
-        $match: {
-          endpointId,
-          createdAt: { $gte: since },
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: 1 },
-          successful: {
-            $sum: { $cond: [{ $eq: ["$status", "success"] }, 1, 0] },
-          },
-          failed: {
-            $sum: { $cond: [{ $eq: ["$status", "failed"] }, 1, 0] },
-          },
-          avgDuration: { $avg: "$duration" },
-          durations: { $push: "$duration" },
-        },
-      },
-    ]);
-
-    const errorBreakdown = await this.db.deliveries.aggregate([
-      {
-        $match: {
-          endpointId,
-          createdAt: { $gte: since },
-          status: "failed",
-        },
-      },
-      {
-        $group: {
-          _id: "$responseStatus",
-          count: { $sum: 1 },
-        },
-      },
-    ]);
-
-    const data = deliveries[0] || { total: 0, successful: 0, failed: 0 };
-
-    return {
-      endpointId,
-      period,
-      totalDeliveries: data.total,
-      successfulDeliveries: data.successful,
-      failedDeliveries: data.failed,
-      avgResponseTime: data.avgDuration || 0,
-      p95ResponseTime: this.calculateP95(data.durations || []),
-      successRate: data.total > 0 ? data.successful / data.total : 0,
-      errorBreakdown: Object.fromEntries(
-        errorBreakdown.map((e) => [e._id, e.count]),
-      ),
-    };
-  }
-
-  private getPeriodStart(period: string): Date {
-    const now = new Date();
-    switch (period) {
-      case "hour":
-        return new Date(now.getTime() - 3600000);
-      case "day":
-        return new Date(now.getTime() - 86400000);
-      case "week":
-        return new Date(now.getTime() - 604800000);
-      default:
-        return now;
-    }
-  }
-
-  private calculateP95(values: number[]): number {
-    if (values.length === 0) return 0;
-    const sorted = values.sort((a, b) => a - b);
-    const index = Math.ceil(sorted.length * 0.95) - 1;
-    return sorted[index];
-  }
-}
-```
-
-**Event Replay:**
-
-```typescript
-class WebhookReplayService {
-  constructor(
-    private db: Database,
-    private deliveryService: WebhookDeliveryService,
-  ) {}
-
-  async replayEvent(eventId: string, endpointId?: string): Promise<void> {
-    const event = await this.db.events.findById(eventId);
-    if (!event) {
-      throw new Error(`Event not found: ${eventId}`);
-    }
-
-    let endpoints: WebhookEndpoint[];
-
-    if (endpointId) {
-      const endpoint = await this.db.webhookEndpoints.findById(endpointId);
-      if (!endpoint) {
-        throw new Error(`Endpoint not found: ${endpointId}`);
-      }
-      endpoints = [endpoint];
-    } else {
-      endpoints = await this.db.webhookEndpoints.findByEventType(event.type);
-    }
-
-    for (const endpoint of endpoints) {
-      await this.deliveryService.deliver(endpoint, event);
-    }
-  }
-
-  async replayFailedDeliveries(
-    endpointId: string,
-    since: Date,
-  ): Promise<number> {
-    const failedDeliveries = await this.db.deliveries.find({
-      endpointId,
-      status: "failed",
-      createdAt: { $gte: since },
-    });
-
-    for (const delivery of failedDeliveries) {
-      const event = await this.db.events.findById(delivery.eventId);
-      const endpoint = await this.db.webhookEndpoints.findById(endpointId);
-
-      if (event && endpoint) {
-        await this.deliveryService.deliver(endpoint, event);
-      }
-    }
-
-    return failedDeliveries.length;
-  }
-}
-```
-
-## Best Practices
-
-### Security (Signature Verification, Authentication)
-
-**Core Principles:**
-
-- Always use HTTPS for webhook URLs
-- Implement HMAC signature verification for authentication
-- Include timestamp in signatures to prevent replay attacks
-- Use constant-time comparison for signatures (timing-safe)
-- Rotate webhook secrets periodically
-- Validate payload structure before processing
-- Rate limit webhook endpoints to prevent abuse
-
-**When to Use:**
-
-- Any webhook receiver that handles sensitive data
-- Systems requiring proof of origin
-- Preventing man-in-the-middle attacks
-- Ensuring message integrity
-
-### Reliability (Retry Strategies, Delivery Guarantees)
-
-**Core Principles:**
-
-- Implement exponential backoff with jitter for retries
-- Use idempotency keys to handle duplicates safely
-- Provide at-least-once delivery guarantees
-- Queue webhook deliveries asynchronously
-- Implement dead letter queues for persistent failures
-- Set reasonable timeout limits (30s recommended)
-- Track delivery attempts and final status
-
-**Retry Configuration:**
-
-- Max attempts: 5 (configurable)
-- Initial delay: 1 second
-- Max delay: 1 hour
-- Retryable status codes: 408, 429, 500, 502, 503, 504
-- Add 0-25% random jitter to prevent thundering herd
-
-**When to Use:**
-
-- Systems requiring guaranteed event delivery
-- Distributed architectures with network unreliability
-- Customer-facing webhook integrations
-- Any async event notification system
-
-### Idempotency (Duplicate Prevention)
-
-**Core Principles:**
-
-- Use event ID as idempotency key
-- Store processing status in Redis/cache (24h TTL)
-- Return cached result for duplicate requests
-- Mark as processing to prevent race conditions
-- Clean up failed processing attempts
-
-**When to Use:**
-
-- Payment processing webhooks
-- Order creation/updates
-- Any state-changing operation
-- Systems with retry logic (prevents double-processing)
-
-### Payload Design (Event Structure)
-
-**Core Principles:**
-
-- Include all necessary data in the payload (avoid extra API calls)
-- Version your webhook payloads (`apiVersion` field)
-- Keep payloads reasonably sized (< 256KB)
-- Use consistent event naming conventions (`resource.action`)
-- Include event IDs for deduplication
-- Provide `previousAttributes` for update events
-- Add timestamps (Unix epoch) for event timing
-
-**Event Naming Patterns:**
-
-- `order.created`, `order.updated`, `order.cancelled`
-- `payment.completed`, `payment.failed`
-- `user.registered`, `user.deleted`
-- Support wildcard subscriptions: `order.*`, `*`
-
-**When to Use:**
-
-- Designing new webhook systems
-- Improving webhook consumer experience
-- Version migrations for breaking changes
-
-### Receiver Implementation (Webhook Endpoints)
-
-**Core Principles:**
-
-- Respond quickly (< 5 seconds, ideally < 1 second)
-- Process webhooks asynchronously (acknowledge first, process later)
-- Store raw payloads before processing (for replay/debugging)
-- Implement proper error handling
-- Return appropriate status codes (200 for success, 4xx for permanent errors, 5xx for retries)
-- Use request ID for tracing
-
-**Status Code Guidelines:**
-
-- 200: Successfully received and queued
-- 400: Bad request (malformed payload, will not retry)
-- 401: Invalid signature (authentication failure, will not retry)
-- 500: Internal error (sender will retry)
-- 503: Service temporarily unavailable (sender will retry)
-
-**When to Use:**
-
-- Building webhook receiver endpoints
-- Integrating with third-party webhooks (Stripe, GitHub, etc.)
-- Ensuring webhook endpoint reliability
-
-### Monitoring (Observability, Debugging)
-
-**Core Principles:**
-
-- Track delivery success rates per endpoint
-- Alert on endpoint failures (disable after threshold)
-- Log all delivery attempts with full context
-- Provide webhook event logs to customers
-- Implement replay functionality for failed events
-- Monitor response times (avg, p95, p99)
-- Dashboard showing delivery metrics
-
-**Key Metrics:**
-
-- Total deliveries (hour/day/week)
-- Success rate percentage
-- Average response time
-- P95 response time
-- Error breakdown by status code
-- Dead letter queue size
-
-**When to Use:**
-
-- Operating production webhook systems
-- Debugging customer integration issues
-- SLA monitoring and alerting
-- Capacity planning
-
-## Examples
-
-### Complete Webhook System
-
-```typescript
-// Webhook sender service
-import express from "express";
-import { Queue, Worker } from "bullmq";
-import Redis from "ioredis";
-
-const redis = new Redis(process.env.REDIS_URL);
-const webhookQueue = new Queue("webhooks", { connection: redis });
-
-// Event emitter
-async function emitEvent(type: string, data: any): Promise<void> {
-  const event: WebhookEvent = {
-    id: `evt_${generateId()}`,
-    type,
-    created: Math.floor(Date.now() / 1000),
-    apiVersion: "2024-01-01",
-    data: { object: data },
-  };
-
-  // Persist event
-  await db.events.create(event);
-
-  // Find subscribed endpoints
-  const endpoints = await db.webhookEndpoints.find({
-    status: "active",
-    events: { $in: [type, "*", `${type.split(".")[0]}.*`] },
-  });
-
-  // Queue deliveries
-  for (const endpoint of endpoints) {
-    await webhookQueue.add("deliver", {
-      eventId: event.id,
-      endpointId: endpoint.id,
-    });
-  }
-}
-
-// Delivery worker
-const worker = new Worker(
-  "webhooks",
-  async (job) => {
-    const { eventId, endpointId } = job.data;
-
-    const event = await db.events.findById(eventId);
-    const endpoint = await db.webhookEndpoints.findById(endpointId);
-
-    if (!event || !endpoint) return;
-
-    const payload = JSON.stringify(event);
-    const signer = new WebhookSigner(endpoint.secret);
-    const headers = signer.generateHeaders(payload);
-
-    const response = await fetch(endpoint.url, {
-      method: "POST",
-      headers,
-      body: payload,
-      timeout: 30000,
-    });
-
-    if (!response.ok) {
-      throw new Error(`Webhook delivery failed: ${response.status}`);
-    }
-  },
-  {
-    connection: redis,
-    limiter: { max: 100, duration: 1000 },
-  },
-);
-
-// Webhook receiver
-const app = express();
-
+// express.raw keeps the body as bytes — a global express.json() would corrupt the HMAC
 app.post("/webhooks", express.raw({ type: "application/json" }), (req, res) => {
-  const verifier = new WebhookVerifier(process.env.WEBHOOK_SECRET!);
-
   try {
-    verifier.verify(
-      req.body.toString(),
-      req.headers["x-webhook-signature"] as string,
-      req.headers["x-webhook-timestamp"] as string,
-    );
-  } catch (error) {
-    return res.status(401).json({ error: "Invalid signature" });
-  }
+    verify(process.env.WEBHOOK_SECRET!, req.body,
+           req.header("x-webhook-signature")!, req.header("x-webhook-timestamp")!);
+  } catch { return res.status(401).json({ error: "invalid signature" }); }
 
   const event = JSON.parse(req.body.toString()) as WebhookEvent;
-
-  // Acknowledge quickly
-  res.status(200).json({ received: true });
-
-  // Process asynchronously
-  processEventAsync(event).catch(console.error);
+  res.status(200).json({ received: true });   // ACK fast (<1s)…
+  enqueueForProcessing(event).catch(logger.error); // …then process out of band
 });
+```
 
-async function processEventAsync(event: WebhookEvent): Promise<void> {
-  // Check idempotency
-  const processed = await redis.get(`processed:${event.id}`);
-  if (processed) return;
+Traps: (1) any body parser that runs before this handler replaces `req.body` and the raw bytes are gone — mount `express.raw` on this route only, or capture raw via a `verify` hook. (2) `timingSafeEqual` throws `RangeError` on length mismatch — compare lengths first (also prevents a length-based side channel). (3) verify **before** `JSON.parse`.
 
-  // Handle event by type
-  switch (event.type) {
-    case "order.created":
-      await handleOrderCreated(event.data.object);
-      break;
-    case "payment.completed":
-      await handlePaymentCompleted(event.data.object);
-      break;
+### Idempotent processing (dedup by event id)
+
+```typescript
+async function process(event: WebhookEvent) {
+  // NX set → true only for the first arrival of this id
+  const first = await redis.set(`wh:${event.id}`, "1", "EX", 86400, "NX");
+  if (!first) return;                          // duplicate delivery → no-op
+  try {
+    await handlers[event.type]?.(event.data.object);
+  } catch (e) {
+    await redis.del(`wh:${event.id}`);         // allow retry to reprocess
+    throw e;                                    // 5xx → sender retries
   }
-
-  // Mark as processed
-  await redis.set(`processed:${event.id}`, "1", "EX", 86400);
 }
 ```
+
+Redis `SET key val EX ttl NX` is the atomic dedup primitive (no read-then-write race). ⚠ Redis dedup is best-effort — for money-movement use a DB unique constraint on `event_id` (or an inbox table) so dedup is transactional with the side effect. Delete the key on failure so a legitimate retry can reprocess.
+
+### Ordering & staleness
+
+Delivery is **not ordered**. `order.updated` can arrive before `order.created`, or a stale update after a newer one. Defend with the event `created`/a monotonically increasing version: ignore an update whose version ≤ the version you already applied. Thin events dodge this by always fetching current state.
+
+### Receiver status-code contract
+
+| Status | Meaning to sender |
+| ------ | ----------------- |
+| 2xx | Received (and durably queued) — do not retry |
+| 400 | Malformed payload — permanent, do not retry |
+| 401 | Bad/missing signature — permanent, do not retry |
+| 409 | Duplicate (optional) — do not retry |
+| 5xx / timeout | Transient — sender retries |
+
+Return 2xx **only after** you've durably stored/queued the event — a 2xx before persistence means a crash loses it and the sender won't retry. Store the raw payload before processing for replay/debugging.
+
+## Monitoring
+
+Track per endpoint: total deliveries, success rate, avg/p95/p99 latency, error breakdown by status, DLQ depth, retry backlog. Alert on success-rate drop and DLQ growth; auto-disable after a threshold. Give customers a delivery log + self-serve replay for failed events.
+
+```typescript
+function p95(values: number[]): number {
+  if (!values.length) return 0;
+  const s = [...values].sort((a, b) => a - b);
+  return s[Math.ceil(s.length * 0.95) - 1];
+}
+```
+
+## Reference values
+
+- Retries: 5 attempts, 1s initial, 1h max, factor 2, 0–25% jitter; retryable `408, 429, 500, 502, 503, 504`.
+- Delivery timeout 30s; receiver should ACK <1s and process async.
+- Signature tolerance ~300s; idempotency/dedup TTL ~24h; payload cap <256KB.
+- Rotate secrets periodically; support two active secrets during rotation (accept either).
+
+## Checklists
+
+**Sender — verify before shipping:**
+
+- [ ] Event persisted before enqueue; delivery async via durable queue
+- [ ] HMAC over raw payload with timestamp inside the signed string; scheme versioned (`v1=`)
+- [ ] Backoff + jitter; retries limited to network errors + retryable 5xx/429/408; `Retry-After` honored; 4xx not retried
+- [ ] SSRF guard: HTTPS-only, private/link-local/metadata IPs blocked, redirects disabled/re-validated, DNS-rebinding handled at connect time
+- [ ] DLQ on exhaustion (nothing silently dropped); failure alerting + auto-disable + manual replay
+- [ ] Per-endpoint rotatable secrets; monitoring (success rate, p95, DLQ depth)
+
+**Receiver — verify before shipping:**
+
+- [ ] Raw body captured before any JSON parser; signature verified before `JSON.parse`
+- [ ] Timing-safe compare **with length guard**; timestamp tolerance enforced (replay window)
+- [ ] Consumer idempotent — dedup by `event.id` (DB unique constraint for state-changing/financial ops)
+- [ ] ACK 2xx only after durable persist/enqueue; then process out of band
+- [ ] Out-of-order tolerated via `created`/version; security-critical actions refetch canonical state, don't trust payload
+- [ ] Correct status codes: 2xx received, 400/401 permanent, 5xx retryable

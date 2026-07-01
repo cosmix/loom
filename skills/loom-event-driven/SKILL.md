@@ -1,6 +1,6 @@
 ---
 name: loom-event-driven
-description: Event-driven architecture patterns including message queues, pub/sub, event sourcing, CQRS, and sagas. Use for async messaging, distributed transactions, event stores, domain/integration events, data streaming, choreography/orchestration, or integrating with Kafka, RabbitMQ, Pulsar, SQS/SNS, or NATS.
+description: Event-driven architecture patterns including message queues, pub/sub, event sourcing, CQRS, and sagas. Use for async messaging, distributed transactions, event stores, domain/integration events, data streaming, choreography/orchestration, delivery guarantees, or integrating with Kafka, RabbitMQ, Pulsar, SQS/SNS, or NATS.
 triggers:
   - event
   - message
@@ -19,6 +19,7 @@ triggers:
   - saga
   - choreography
   - orchestration
+  - outbox
   - event store
   - domain event
   - integration event
@@ -28,1814 +29,508 @@ triggers:
   - data streaming
   - stream processing
   - event-driven
+  - exactly-once
+  - idempotent consumer
 ---
 
 # Event-Driven Architecture
 
 ## Overview
 
-Event-driven architecture (EDA) enables loosely coupled, scalable systems by communicating through events rather than direct calls. This skill covers message queues, pub/sub patterns, event sourcing, CQRS, distributed transaction management with sagas, and data streaming with Kafka.
+Patterns for decoupling services via events instead of synchronous calls: message queues, pub/sub, event sourcing, CQRS, sagas, and streaming. Scope of THIS skill = the architecture and its distributed-systems traps (delivery semantics, ordering, outbox, schema evolution). For job-queue *mechanics* — worker pools, scheduling/cron, retry/backoff internals, generic DLQ plumbing — see `loom-background-jobs`; cross-reference rather than duplicate.
 
-## Available Agents
+**The one law that governs everything below:** networked delivery is *at-least-once*; therefore **every consumer must be idempotent.** Read the Delivery Semantics section first — most EDA bugs are a violation of it.
 
-- **senior-software-engineer** (Opus) - Architecture design, pattern selection, distributed system design
-- **senior-software-engineer** (Opus) - Event handler implementation, consumer/producer code
-- **senior-software-engineer** (Opus) - Event security, authorization patterns, message encryption
-- **senior-software-engineer** (Opus) - Message broker setup, Kafka clusters, queue configuration
-- **software-engineer** (Sonnet) - ONLY for unit tests, boilerplate event handlers following established patterns, or scaffolding from a concrete plan
+Code samples are TypeScript for concreteness; the patterns are language-agnostic. Assume `crypto.randomUUID()`, a broker client, and a datastore are in scope.
 
-## Key Concepts
+---
 
-### Message Queues
+## Delivery Semantics — "Exactly-once" Is (Mostly) a Lie
 
-**RabbitMQ Implementation**:
+Two-Generals: across an unreliable network you cannot guarantee a message is delivered *exactly* once. You get to pick a *failure mode*:
+
+| Semantic | Mechanism | Failure mode | Use when |
+| --- | --- | --- | --- |
+| At-most-once | fire-and-forget, ack before processing | **loses** messages on crash | metrics/telemetry where loss is OK |
+| At-least-once | ack *after* processing, redeliver on no-ack | **duplicates** on retry/redelivery | **default for everything that matters** |
+| "Exactly-once" | at-least-once transport **+ idempotent consumer + dedup** | none observable | any state-changing handler |
+
+**Exactly-once is an *effect* you engineer at the consumer, not a transport guarantee you buy.** The real recipe:
+
+1. At-least-once delivery (durable broker, ack after commit).
+2. Idempotent consumer: processing the same message twice == processing it once.
+3. A dedup/idempotency store keyed by a stable message id or business key.
+
+⚠️ **Kafka "exactly-once semantics (EOS)" is real but scoped to Kafka.** Idempotent producer + transactions give exactly-once for **read-topic → process → write-topic-and-offsets** *inside Kafka*. It does **not** cover external side effects — a DB write, an email, a charge. The moment a handler touches the outside world, you are back to at-least-once and must be idempotent. Never tell a stakeholder Kafka gives you exactly-once for a payment.
+
+### Idempotent consumer (the load-bearing pattern)
 
 ```typescript
-import amqp, { Channel, Connection } from "amqplib";
+// Dedup by stable id (producer-assigned messageId or a business key).
+// Store the result so a duplicate returns the SAME answer, not a re-execution.
+async function handleIdempotent<T>(messageId: string, work: () => Promise<T>): Promise<T> {
+  const key = `dedup:${messageId}`;
+  const cached = await redis.get(key);
+  if (cached) return JSON.parse(cached) as T; // already processed → no-op replay
 
-interface QueueConfig {
-  name: string;
-  durable: boolean;
-  deadLetterExchange?: string;
-  messageTtl?: number;
-  maxRetries?: number;
-}
-
-class RabbitMQClient {
-  private connection: Connection | null = null;
-  private channel: Channel | null = null;
-
-  async connect(url: string): Promise<void> {
-    this.connection = await amqp.connect(url);
-    this.channel = await this.connection.createChannel();
-
-    // Handle connection errors
-    this.connection.on("error", (err) => {
-      console.error("RabbitMQ connection error:", err);
-      this.reconnect(url);
-    });
-  }
-
-  async setupQueue(config: QueueConfig): Promise<void> {
-    if (!this.channel) throw new Error("Not connected");
-
-    const options: amqp.Options.AssertQueue = {
-      durable: config.durable,
-      arguments: {},
-    };
-
-    if (config.deadLetterExchange) {
-      options.arguments!["x-dead-letter-exchange"] = config.deadLetterExchange;
-    }
-    if (config.messageTtl) {
-      options.arguments!["x-message-ttl"] = config.messageTtl;
-    }
-
-    await this.channel.assertQueue(config.name, options);
-  }
-
-  async publish(
-    queue: string,
-    message: unknown,
-    options?: PublishOptions,
-  ): Promise<void> {
-    if (!this.channel) throw new Error("Not connected");
-
-    const content = Buffer.from(JSON.stringify(message));
-    const publishOptions: amqp.Options.Publish = {
-      persistent: true,
-      messageId: options?.messageId || crypto.randomUUID(),
-      timestamp: Date.now(),
-      headers: options?.headers,
-    };
-
-    this.channel.sendToQueue(queue, content, publishOptions);
-  }
-
-  async consume<T>(
-    queue: string,
-    handler: (
-      message: T,
-      ack: () => void,
-      nack: (requeue?: boolean) => void,
-    ) => Promise<void>,
-    options?: ConsumeOptions,
-  ): Promise<void> {
-    if (!this.channel) throw new Error("Not connected");
-
-    await this.channel.prefetch(options?.prefetch || 10);
-
-    await this.channel.consume(queue, async (msg) => {
-      if (!msg) return;
-
-      try {
-        const content: T = JSON.parse(msg.content.toString());
-        const retryCount =
-          (msg.properties.headers?.["x-retry-count"] as number) || 0;
-
-        await handler(
-          content,
-          () => this.channel!.ack(msg),
-          (requeue = false) => {
-            if (requeue && retryCount < (options?.maxRetries || 3)) {
-              // Requeue with incremented retry count
-              this.channel!.nack(msg, false, false);
-              this.publish(queue, content, {
-                headers: { "x-retry-count": retryCount + 1 },
-              });
-            } else {
-              this.channel!.nack(msg, false, false); // Send to DLQ
-            }
-          },
-        );
-      } catch (error) {
-        console.error("Message processing error:", error);
-        this.channel!.nack(msg, false, false);
-      }
-    });
-  }
+  const result = await work();                 // side effects happen here
+  // SETNX + TTL: window must exceed max redelivery lag (broker retention + retry horizon)
+  await redis.set(key, JSON.stringify(result), "EX", 24 * 3600, "NX");
+  return result;
 }
 ```
 
-**AWS SQS Implementation**:
+**Gotchas.**
+
+- ⚠ **Dedup window vs. redelivery horizon.** If the TTL expires before the broker could still redeliver (retention + max retry delay + DLQ replay), a late duplicate re-executes. Size the window to the *worst-case* redelivery age, not the happy path.
+- ⚠ **The "check then act" race.** Two workers both miss the key and both execute. Either make the side effect itself idempotent (DB `INSERT ... ON CONFLICT DO NOTHING` on a unique business key — the strongest option, atomic with the write), or gate with a lock. A Redis dedup key is best-effort unless it shares the transaction with the side effect.
+- ⚠ **Prefer a natural idempotency key** (orderId, paymentIntentId) over the broker's message id. Redelivery may carry a *new* transport id for the same business fact, and a producer retry can emit two transport messages for one intent.
+
+---
+
+## The Dual-Write Problem & the Transactional Outbox
+
+The single most common EDA correctness bug: **updating the database and publishing an event as two separate operations.**
 
 ```typescript
-import {
-  SQSClient,
-  SendMessageCommand,
-  ReceiveMessageCommand,
-  DeleteMessageCommand,
-} from "@aws-sdk/client-sqs";
-
-interface SQSMessage<T> {
-  id: string;
-  body: T;
-  receiptHandle: string;
-  approximateReceiveCount: number;
-}
-
-class SQSQueue<T> {
-  private client: SQSClient;
-  private queueUrl: string;
-
-  constructor(queueUrl: string, region: string = "us-east-1") {
-    this.client = new SQSClient({ region });
-    this.queueUrl = queueUrl;
-  }
-
-  async send(
-    message: T,
-    options?: { delaySeconds?: number; deduplicationId?: string },
-  ): Promise<string> {
-    const command = new SendMessageCommand({
-      QueueUrl: this.queueUrl,
-      MessageBody: JSON.stringify(message),
-      DelaySeconds: options?.delaySeconds,
-      MessageDeduplicationId: options?.deduplicationId,
-      MessageGroupId: options?.deduplicationId ? "default" : undefined,
-    });
-
-    const response = await this.client.send(command);
-    return response.MessageId!;
-  }
-
-  async receive(
-    maxMessages: number = 10,
-    waitTimeSeconds: number = 20,
-  ): Promise<SQSMessage<T>[]> {
-    const command = new ReceiveMessageCommand({
-      QueueUrl: this.queueUrl,
-      MaxNumberOfMessages: maxMessages,
-      WaitTimeSeconds: waitTimeSeconds,
-      AttributeNames: ["ApproximateReceiveCount"],
-    });
-
-    const response = await this.client.send(command);
-
-    return (response.Messages || []).map((msg) => ({
-      id: msg.MessageId!,
-      body: JSON.parse(msg.Body!) as T,
-      receiptHandle: msg.ReceiptHandle!,
-      approximateReceiveCount: parseInt(
-        msg.Attributes?.ApproximateReceiveCount || "1",
-      ),
-    }));
-  }
-
-  async delete(receiptHandle: string): Promise<void> {
-    const command = new DeleteMessageCommand({
-      QueueUrl: this.queueUrl,
-      ReceiptHandle: receiptHandle,
-    });
-    await this.client.send(command);
-  }
-
-  async processMessages(
-    handler: (message: T) => Promise<void>,
-    options?: { maxRetries?: number; pollInterval?: number },
-  ): Promise<void> {
-    const maxRetries = options?.maxRetries || 3;
-
-    while (true) {
-      const messages = await this.receive();
-
-      await Promise.all(
-        messages.map(async (msg) => {
-          try {
-            await handler(msg.body);
-            await this.delete(msg.receiptHandle);
-          } catch (error) {
-            console.error(`Error processing message ${msg.id}:`, error);
-
-            if (msg.approximateReceiveCount >= maxRetries) {
-              // Message will go to DLQ after visibility timeout
-              console.warn(`Message ${msg.id} exceeded max retries`);
-            }
-            // Don't delete - will be reprocessed after visibility timeout
-          }
-        }),
-      );
-
-      if (messages.length === 0 && options?.pollInterval) {
-        await new Promise((r) => setTimeout(r, options.pollInterval));
-      }
-    }
-  }
-}
+// ❌ BROKEN: two systems, no atomicity
+await db.orders.insert(order);         // commits
+await broker.publish("order.created"); // crash here → DB has order, world never hears about it
 ```
 
-### Pub/Sub Patterns
+Reorder it and you get the opposite: publish succeeds, DB write fails, phantom event for an order that doesn't exist. There is **no ordering of these two lines that is safe** — you cannot atomically commit across a DB and a broker without distributed transactions (which brokers don't support and you don't want; see 2PC below).
 
-**Kafka Implementation**:
+**Fix: Transactional Outbox.** Write the event into an `outbox` table **in the same local DB transaction** as the state change. A separate *relay* reads the outbox and publishes, marking rows sent. One atomic commit; publishing becomes at-least-once (relay may crash after publish, before marking) → consumers idempotent.
 
 ```typescript
-import { Kafka, Producer, Consumer, EachMessagePayload } from "kafkajs";
+// Producer: one transaction, two writes to the SAME db
+await db.tx(async (t) => {
+  await t.orders.insert(order);
+  await t.outbox.insert({
+    id: crypto.randomUUID(),
+    aggregate_id: order.id,
+    type: "order.created",
+    payload: JSON.stringify(order),
+    created_at: new Date(),
+    published_at: null,           // relay flips this
+  });
+});
+```
 
-interface Event<T = unknown> {
-  id: string;
-  type: string;
-  timestamp: Date;
-  source: string;
-  data: T;
-  metadata?: Record<string, string>;
-}
+**Two ways to run the relay:**
 
-class KafkaEventBus {
-  private kafka: Kafka;
-  private producer: Producer | null = null;
-  private consumers: Map<string, Consumer> = new Map();
+- **Polling publisher** — `SELECT ... WHERE published_at IS NULL ORDER BY created_at` (add `FOR UPDATE SKIP LOCKED` so multiple relays don't double-publish), publish, set `published_at`. Simple, portable; adds latency and DB load.
+- **CDC / log-tailing (Debezium, etc.)** — a connector tails the DB WAL/binlog and streams outbox inserts to the broker. No polling, near-real-time, no query load — but operational weight (Kafka Connect) and DB-specific. Debezium has a dedicated **Outbox Event Router**.
 
-  constructor(config: { brokers: string[]; clientId: string }) {
-    this.kafka = new Kafka({
-      clientId: config.clientId,
-      brokers: config.brokers,
-    });
-  }
+**Gotchas.**
 
-  async connect(): Promise<void> {
-    this.producer = this.kafka.producer({
-      idempotent: true,
-      maxInFlightRequests: 5,
-    });
-    await this.producer.connect();
-  }
+- ⚠ Outbox is **at-least-once**, never exactly-once — relay can publish then die before marking sent. Non-negotiable: idempotent consumers.
+- ⚠ **Ordering:** to preserve per-aggregate order, publish with the aggregate id as the partition key and have the relay process a given aggregate's rows in `created_at`/sequence order.
+- ⚠ **Outbox bloat:** prune `published_at IS NOT NULL` rows on a schedule; an unbounded outbox degrades the polling query.
+- **Inbox pattern** is the mirror on the consumer: record processed message ids in an inbox table inside the same transaction as the write — atomic dedup without an external store.
 
-  async publish<T>(
-    topic: string,
-    event: Omit<Event<T>, "id" | "timestamp">,
-  ): Promise<void> {
-    if (!this.producer) throw new Error("Producer not connected");
+---
 
-    const fullEvent: Event<T> = {
-      ...event,
-      id: crypto.randomUUID(),
-      timestamp: new Date(),
-    };
+## Ordering — Only Per-Partition/Per-Key, Never Global
 
-    await this.producer.send({
-      topic,
-      messages: [
-        {
-          key:
-            event.data && typeof event.data === "object" && "id" in event.data
-              ? String((event.data as { id: unknown }).id)
-              : fullEvent.id,
-          value: JSON.stringify(fullEvent),
-          headers: {
-            "event-type": event.type,
-            "event-source": event.source,
-          },
-        },
-      ],
-    });
-  }
+**Global total order across a topic does not scale and is not offered.** Kafka guarantees order **only within a single partition**; RabbitMQ only within a single queue with a single consumer; SQS FIFO only within a `MessageGroupId`.
 
-  async subscribe<T>(
-    topics: string[],
-    groupId: string,
-    handler: (event: Event<T>) => Promise<void>,
-    options?: { fromBeginning?: boolean },
-  ): Promise<void> {
-    const consumer = this.kafka.consumer({ groupId });
-    await consumer.connect();
+**Consequences you must design around:**
 
-    for (const topic of topics) {
-      await consumer.subscribe({
-        topic,
-        fromBeginning: options?.fromBeginning,
-      });
-    }
+- **Choose the partition key = the entity whose events must stay ordered** (orderId, userId, accountId). All events for one entity land on one partition → ordered. Cross-entity order is *not* guaranteed and you must not depend on it.
+- **Hot-partition skew.** A skewed key ("region=US", or one whale tenant) piles most traffic on one partition → that consumer lags while others idle. Pick a high-cardinality, evenly-distributed key; composite keys or salting for known-hot entities.
+- **Consumer parallelism is capped by partition count** per consumer group. 6 partitions → at most 6 useful consumers. Repartitioning later is disruptive (rehashes keys, breaks in-flight order). Over-provision partitions modestly up front.
+- **Retries reorder.** Reprocessing message N after N+1 already went breaks order. Kafka's idempotent producer preserves send order with up to `max.in.flight.requests.per.connection=5`; *without* idempotence, `>1` in-flight can reorder on retry — set it to 1 or enable idempotence.
+- ⚠ If handlers must be ordered per key, **do not fan a single partition out to a worker pool** — that reintroduces reordering. Parallelize across partitions/keys, serialize within a key.
 
-    this.consumers.set(groupId, consumer);
+---
 
-    await consumer.run({
-      eachMessage: async ({
-        topic,
-        partition,
-        message,
-      }: EachMessagePayload) => {
-        try {
-          const event: Event<T> = JSON.parse(message.value!.toString());
-          await handler(event);
-        } catch (error) {
-          console.error(
-            `Error processing message from ${topic}:${partition}:`,
-            error,
-          );
-          throw error; // Will trigger retry based on consumer config
-        }
-      },
-    });
-  }
+## Fat vs. Thin Events (the coupling / staleness trade-off)
 
-  async disconnect(): Promise<void> {
-    await this.producer?.disconnect();
-    for (const consumer of this.consumers.values()) {
-      await consumer.disconnect();
-    }
-  }
-}
+How much state does an event carry? Two poles:
 
-// Usage
-const eventBus = new KafkaEventBus({
-  brokers: ["localhost:9092"],
-  clientId: "order-service",
+| | Thin / notification | Fat / event-carried state transfer |
+| --- | --- | --- |
+| Payload | ids only (`{orderId}`) | full snapshot (`{orderId, items, total, status,...}`) |
+| Consumer action | **call back / refetch** source | read straight from the event |
+| Coupling | temporal (source must be up *now*) + API coupling | schema coupling to the event shape |
+| Autonomy | low | high (consumer needs nothing else) |
+| PII/size | small | larger; **spreads PII** to every subscriber |
+
+⚠ **The thin-event stale-read race:** consumer gets `order.updated {id}`, refetches the order — but events are delivered async and can arrive *before* the source's own read replica is consistent, or after a *newer* update. You can read a **stale or wrong version**. Mitigations: include a **version/sequence number** in the thin event and refetch-then-check `version >=`, or make the source's read strongly consistent for this path, or just send a fat event.
+
+**Default to event-carried state transfer** (fat) for integration events between services — it removes temporal coupling and the refetch storm. Use thin events when payloads are huge, PII-sensitive, or consumers legitimately need the freshest value at handling time. Always version either way.
+
+---
+
+## Broker Selection
+
+| Broker | Model | Ordering | Delivery | Retention/replay | Reach for it when |
+| --- | --- | --- | --- | --- | --- |
+| **Kafka** | partitioned log, pull | per-partition | at-least-once; EOS *within Kafka* | long, offset-based replay | high-throughput streaming, event sourcing, replayable log, many independent consumer groups |
+| **RabbitMQ** | queues + exchanges, push | per-queue (single consumer) | at-least-once | consumed msgs gone (no replay) | complex routing (topic/headers/fanout), per-message TTL, RPC, priority queues |
+| **Pulsar** | log, segmented storage | per-partition/key-shared | at-least-once; effectively-once dedup | tiered (offload to S3), long | Kafka-like + multi-tenancy, geo-replication, unified queue+stream, decoupled compute/storage |
+| **SQS + SNS** | managed queue (+ fanout) | FIFO: per-MessageGroupId; Standard: none | at-least-once (Std); FIFO exactly-once *in-queue* | up to 14 days; no arbitrary replay | AWS-native, zero-ops, native DLQ redrive; SNS/EventBridge fan-out |
+| **NATS JetStream** | log/stream, pull | per-subject-sequence | at-least-once (+ msg-id dedup window) | limits/interest/workqueue, replay | low-latency, lightweight ops, edge/IoT, request-reply + streams |
+| **Redis Streams** | log | per-stream | at-least-once (consumer groups + PEL) | capped (MAXLEN) | already-have-Redis, modest scale, simple durable queue |
+
+**Selection heuristics.**
+
+- Need **replay / rebuild projections / event sourcing** → log-based (Kafka/Pulsar). Queue brokers discard consumed messages.
+- Need **rich routing / per-message priority / TTL** → RabbitMQ.
+- **On AWS and don't want to run brokers** → SQS/SNS/EventBridge; native DLQ redrive is a real ergonomics win.
+- Extreme throughput or multi-consumer-group replay → Kafka. Kafka is overkill (and heavy ops) for a simple work queue — don't Kafka a to-do list.
+- ⚠ Don't conflate SNS (fanout pub/sub, no per-subscriber durability by itself) with SQS (durable queue). The durable fanout pattern is **SNS → SQS per consumer**.
+
+---
+
+## Pub/Sub — Kafka (canonical producer/consumer)
+
+```typescript
+import { Kafka, logLevel } from "kafkajs";
+
+const kafka = new Kafka({ clientId: "order-service", brokers: ["localhost:9092"] });
+
+// Producer: idempotent → no duplicates from producer-side retries, preserves order.
+const producer = kafka.producer({ idempotent: true, maxInFlightRequests: 5 });
+await producer.connect();
+
+await producer.send({
+  topic: "orders",
+  messages: [{
+    key: order.id,                                    // partition key = ordering key
+    value: JSON.stringify({ type: "order.created", data: order, v: 1 }),
+    headers: { "event-type": "order.created", "correlation-id": corrId },
+  }],
 });
 
-await eventBus.connect();
-
-// Publish
-await eventBus.publish<OrderCreatedData>("orders", {
-  type: "order.created",
-  source: "order-service",
-  data: { orderId: "123", items: [], total: 99.99 },
-});
-
-// Subscribe
-await eventBus.subscribe<OrderCreatedData>(
-  ["orders"],
-  "inventory-service",
-  async (event) => {
-    if (event.type === "order.created") {
-      await reserveInventory(event.data);
-    }
+// Consumer: one group per logically-distinct subscriber; each group gets all messages.
+const consumer = kafka.consumer({ groupId: "inventory-service" });
+await consumer.subscribe({ topic: "orders", fromBeginning: false });
+await consumer.run({
+  eachMessage: async ({ message }) => {
+    const evt = JSON.parse(message.value!.toString());
+    await handleIdempotent(message.key!.toString() + ":" + evt.v, () => react(evt));
+    // throwing here does NOT auto-DLQ in Kafka — offset isn't committed, msg redelivers.
+    // Bound retries yourself, then produce to an error topic (see Poison Pills).
   },
-);
+});
 ```
 
-**NATS Implementation**:
+**Kafka gotchas.**
+
+- ⚠ **A crashing handler blocks the partition.** No auto-DLQ: the offset isn't committed, so the same message redelivers forever (poison pill) and everything behind it stalls. You must implement bounded-retry-then-error-topic.
+- **Consumer group == subscription.** Two services that both need every event use two *different* group ids. Two instances that should *share* the load use the *same* group id (partitions split among them).
+- **`fromBeginning`** only matters the first time a group has no committed offset; afterwards it resumes from the committed offset.
+- Manual offset commit after successful processing = at-least-once. Auto-commit before processing = at-most-once (silent loss on crash).
+
+**RabbitMQ** (routing-first): declare queue with `x-dead-letter-exchange` + `x-message-ttl`, publish `persistent: true`, `prefetch(n)` for backpressure, `ack` after success / `nack(requeue=false)` to route to the DLX. `nack(requeue=true)` in a tight loop is a poison-pill amplifier — track a retry-count header and DLX after N.
+
+**NATS JetStream** (lightweight, durable): create a stream (`subjects: ["events.*"]`, retention `limits`), a **durable** pull consumer with `ack_policy: explicit` and `max_deliver: N` (built-in redelivery cap), publish with `Nats-Msg-Id` for the server-side dedup window. `msg.ack()` / `msg.nak()` / `msg.term()` (term = don't redeliver, straight to poison handling).
+
+---
+
+## Poison Pills & Dead-Letter Policy
+
+A **poison pill** is a message that *always* fails — malformed payload, unparseable schema, a referenced entity that will never exist. In-band infinite retry blocks the partition/queue behind it and can pin CPU. Policy:
+
+1. **Bounded retries with backoff** (exponential + jitter), retry count carried in a header/attribute.
+2. On exhaustion, **park it in a DLQ** (never drop silently) with metadata: original topic/queue, error, stack, retry count, first-seen time, correlation id.
+3. **Alert** on DLQ arrivals and on DLQ size/age crossing a threshold — a growing DLQ is an incident, not a metric.
+4. **Replay tooling**: inspect, edit/fix, selectively redrive, and purge. A DLQ you can't replay from is a graveyard.
+
+**Broker specifics.**
+
+- **SQS:** native `RedrivePolicy` (`maxReceiveCount` → DLQ) and console/SDK **redrive back** to source. Prefer it over hand-rolling.
+- **Kafka:** no native DLQ. Kafka Connect sinks have `errors.deadletterqueue.topic.name`; app consumers publish failures to an `<topic>.DLT` error topic yourself.
+- **RabbitMQ:** DLX + a retry queue with per-message TTL that dead-letters *back* to the work queue implements delayed retry.
+
+⚠ **Retry vs. DLQ classification:** only retry *transient* failures (timeouts, 5xx, lock contention). A deserialization error or a 4xx/validation failure is deterministic — retrying wastes time and delays the DLQ; fast-fail those straight to the DLQ. Distinguish retryable from non-retryable in the handler.
+
+See `loom-background-jobs` for generic retry/backoff and worker-pool mechanics.
+
+---
+
+## Message Queues (work distribution)
+
+Competing-consumers: N workers pull from one queue, each message handled once (per successful ack). Contrast with pub/sub (every subscriber group gets every message).
 
 ```typescript
-import {
-  connect,
-  NatsConnection,
-  StringCodec,
-  JetStreamManager,
-  JetStreamClient,
-} from "nats";
-
-class NATSEventBus {
-  private nc: NatsConnection | null = null;
-  private js: JetStreamClient | null = null;
-  private sc = StringCodec();
-
-  async connect(servers: string[]): Promise<void> {
-    this.nc = await connect({ servers });
-
-    // Setup JetStream for persistence
-    const jsm = await this.nc.jetstreamManager();
-    this.js = this.nc.jetstream();
-
-    // Create stream if not exists
+// SQS competing-consumers loop. Delete = ack; not-deleting = redelivery after visibility timeout.
+while (running) {
+  const { Messages = [] } = await sqs.receiveMessage({
+    QueueUrl: url, MaxNumberOfMessages: 10, WaitTimeSeconds: 20,        // long-poll
+    AttributeNames: ["ApproximateReceiveCount"],
+  });
+  await Promise.all(Messages.map(async (m) => {
     try {
-      await jsm.streams.add({
-        name: "EVENTS",
-        subjects: ["events.*"],
-        retention: "limits",
-        max_msgs: 1000000,
-        max_age: 7 * 24 * 60 * 60 * 1000000000, // 7 days in nanoseconds
-      });
+      await handleIdempotent(m.MessageId!, () => process(JSON.parse(m.Body!)));
+      await sqs.deleteMessage({ QueueUrl: url, ReceiptHandle: m.ReceiptHandle! });
     } catch (e) {
-      // Stream might already exist
+      // Do NOT delete → SQS redelivers after visibility timeout; RedrivePolicy routes to DLQ
+      // once ApproximateReceiveCount > maxReceiveCount. No manual DLQ code needed.
     }
-  }
-
-  async publish(subject: string, data: unknown): Promise<void> {
-    if (!this.js) throw new Error("Not connected");
-
-    await this.js.publish(
-      `events.${subject}`,
-      this.sc.encode(JSON.stringify(data)),
-    );
-  }
-
-  async subscribe(
-    subject: string,
-    durableName: string,
-    handler: (data: unknown) => Promise<void>,
-  ): Promise<void> {
-    if (!this.js) throw new Error("Not connected");
-
-    const consumer = await this.js.consumers
-      .get("EVENTS", durableName)
-      .catch(async () => {
-        // Create consumer if not exists
-        const jsm = await this.nc!.jetstreamManager();
-        await jsm.consumers.add("EVENTS", {
-          durable_name: durableName,
-          filter_subject: `events.${subject}`,
-          ack_policy: "explicit",
-          max_deliver: 3,
-        });
-        return this.js!.consumers.get("EVENTS", durableName);
-      });
-
-    const messages = await consumer.consume();
-
-    for await (const msg of messages) {
-      try {
-        const data = JSON.parse(this.sc.decode(msg.data));
-        await handler(data);
-        msg.ack();
-      } catch (error) {
-        console.error("Error processing message:", error);
-        msg.nak();
-      }
-    }
-  }
+  }));
 }
 ```
 
-### Event Sourcing
+**Gotchas.**
+
+- ⚠ **Visibility timeout must exceed worst-case processing time**, or SQS redelivers a message you're still working on → duplicate processing. For long jobs, extend visibility with `ChangeMessageVisibility` heartbeats.
+- ⚠ **SQS Standard is at-least-once AND unordered.** `ApproximateReceiveCount` is *approximate*. FIFO gives ordering per `MessageGroupId` + in-queue dedup via `MessageDeduplicationId`, at lower throughput.
+- **Long polling (`WaitTimeSeconds=20`)** — always set it; short polling burns API calls and money and returns empty on sparsely-populated queues.
+- **`prefetch`/batch size** is your backpressure knob: too high and a slow consumer hoards messages it can't process before the visibility timeout.
+
+---
+
+## Event Sourcing
+
+Store **the sequence of state-changing events** as the source of truth; derive current state by replaying them. Not for every domain — reach for it when you need a full audit trail, temporal ("what did it look like at T?") queries, or event-driven integration by construction. It's overkill for CRUD.
 
 ```typescript
-interface DomainEvent {
-  id: string;
-  aggregateId: string;
-  aggregateType: string;
-  type: string;
-  version: number;
-  timestamp: Date;
-  data: unknown;
-  metadata: {
-    userId?: string;
-    correlationId?: string;
-    causationId?: string;
-  };
-}
-
-interface EventStore {
-  append(events: DomainEvent[]): Promise<void>;
-  getEvents(aggregateId: string, fromVersion?: number): Promise<DomainEvent[]>;
-  getEventsByType(type: string, fromTimestamp?: Date): Promise<DomainEvent[]>;
-}
-
-// PostgreSQL Event Store
-class PostgresEventStore implements EventStore {
-  constructor(private pool: Pool) {}
-
-  async append(events: DomainEvent[]): Promise<void> {
-    const client = await this.pool.connect();
-
-    try {
-      await client.query("BEGIN");
-
-      for (const event of events) {
-        // Optimistic concurrency check
-        const { rows } = await client.query(
-          "SELECT MAX(version) as max_version FROM events WHERE aggregate_id = $1",
-          [event.aggregateId],
-        );
-
-        const currentVersion = rows[0]?.max_version || 0;
-        if (event.version !== currentVersion + 1) {
-          throw new ConcurrencyError(
-            `Expected version ${currentVersion + 1}, got ${event.version}`,
-          );
-        }
-
-        await client.query(
-          `INSERT INTO events (id, aggregate_id, aggregate_type, type, version, timestamp, data, metadata)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [
-            event.id,
-            event.aggregateId,
-            event.aggregateType,
-            event.type,
-            event.version,
-            event.timestamp,
-            JSON.stringify(event.data),
-            JSON.stringify(event.metadata),
-          ],
-        );
-      }
-
-      await client.query("COMMIT");
-
-      // Publish to event bus for projections
-      for (const event of events) {
-        await this.eventBus.publish(event);
-      }
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
+// Append with OPTIMISTIC CONCURRENCY: expected version guards against lost updates.
+// A UNIQUE(aggregate_id, version) constraint is the real enforcement — the SELECT is advisory.
+async function append(events: DomainEvent[]): Promise<void> {
+  await db.tx(async (t) => {
+    for (const e of events) {
+      const { max } = await t.one(
+        "SELECT COALESCE(MAX(version),0) AS max FROM events WHERE aggregate_id=$1", [e.aggregateId]);
+      if (e.version !== max + 1) throw new ConcurrencyError(`expected ${max + 1}, got ${e.version}`);
+      await t.none(
+        `INSERT INTO events(id,aggregate_id,type,version,data,metadata,ts)
+         VALUES($1,$2,$3,$4,$5,$6,$7)`,                 // UNIQUE(aggregate_id,version) catches races
+        [e.id, e.aggregateId, e.type, e.version, e.data, e.metadata, e.ts]);
     }
-  }
-
-  async getEvents(
-    aggregateId: string,
-    fromVersion: number = 0,
-  ): Promise<DomainEvent[]> {
-    const { rows } = await this.pool.query(
-      `SELECT * FROM events
-       WHERE aggregate_id = $1 AND version > $2
-       ORDER BY version ASC`,
-      [aggregateId, fromVersion],
-    );
-
-    return rows.map(this.rowToEvent);
-  }
-}
-
-// Aggregate base class
-abstract class Aggregate {
-  private _id: string;
-  private _version: number = 0;
-  private _uncommittedEvents: DomainEvent[] = [];
-
-  get id(): string {
-    return this._id;
-  }
-  get version(): number {
-    return this._version;
-  }
-
-  constructor(id: string) {
-    this._id = id;
-  }
-
-  protected apply(
-    event: Omit<
-      DomainEvent,
-      "id" | "aggregateId" | "aggregateType" | "version" | "timestamp"
-    >,
-  ): void {
-    const domainEvent: DomainEvent = {
-      ...event,
-      id: crypto.randomUUID(),
-      aggregateId: this._id,
-      aggregateType: this.constructor.name,
-      version: this._version + 1,
-      timestamp: new Date(),
-    };
-
-    this.when(domainEvent);
-    this._version = domainEvent.version;
-    this._uncommittedEvents.push(domainEvent);
-  }
-
-  protected abstract when(event: DomainEvent): void;
-
-  loadFromHistory(events: DomainEvent[]): void {
-    for (const event of events) {
-      this.when(event);
-      this._version = event.version;
-    }
-  }
-
-  getUncommittedEvents(): DomainEvent[] {
-    return [...this._uncommittedEvents];
-  }
-
-  clearUncommittedEvents(): void {
-    this._uncommittedEvents = [];
-  }
-}
-
-// Example: Order Aggregate
-class Order extends Aggregate {
-  private status:
-    | "pending"
-    | "confirmed"
-    | "shipped"
-    | "delivered"
-    | "cancelled" = "pending";
-  private items: OrderItem[] = [];
-  private total: number = 0;
-
-  static create(id: string, customerId: string, items: OrderItem[]): Order {
-    const order = new Order(id);
-    order.apply({
-      type: "OrderCreated",
-      data: { customerId, items },
-      metadata: {},
-    });
-    return order;
-  }
-
-  confirm(): void {
-    if (this.status !== "pending") {
-      throw new Error("Can only confirm pending orders");
-    }
-    this.apply({
-      type: "OrderConfirmed",
-      data: { confirmedAt: new Date() },
-      metadata: {},
-    });
-  }
-
-  cancel(reason: string): void {
-    if (["shipped", "delivered", "cancelled"].includes(this.status)) {
-      throw new Error("Cannot cancel order in current status");
-    }
-    this.apply({
-      type: "OrderCancelled",
-      data: { reason, cancelledAt: new Date() },
-      metadata: {},
-    });
-  }
-
-  protected when(event: DomainEvent): void {
-    switch (event.type) {
-      case "OrderCreated":
-        const data = event.data as { items: OrderItem[] };
-        this.items = data.items;
-        this.total = data.items.reduce(
-          (sum, item) => sum + item.price * item.quantity,
-          0,
-        );
-        this.status = "pending";
-        break;
-      case "OrderConfirmed":
-        this.status = "confirmed";
-        break;
-      case "OrderCancelled":
-        this.status = "cancelled";
-        break;
-    }
-  }
+    // ⚠ Do NOT publish to the broker here (dual-write). Write to an OUTBOX in this same tx,
+    // OR let a projector/relay tail the events table (which IS your outbox in ES).
+  });
 }
 ```
 
-### CQRS (Command Query Responsibility Segregation)
+Aggregate replay is a fold: `apply(command)` validates invariants and emits an event; `when(event)` mutates in-memory state; `loadFromHistory(events)` replays `when` over the stream to rebuild. Uncommitted events are appended, then cleared after a successful `append`.
+
+### Event sourcing traps
+
+- ⚠ **Events are immutable facts. Never edit or delete an event.** A mistake is corrected by appending a *compensating* event (`OrderCorrected`), not by mutating history. Editing history silently corrupts every projection that already consumed it.
+- **Rebuild cost is O(stream length).** Long-lived aggregates get slow to load → **snapshots**: persist state every N events, load latest snapshot + events after it. Snapshots are a cache, never the source of truth (you must be able to delete all snapshots and rebuild).
+- **Schema evolution via upcasting**, never rewriting stored events. On read, transform old event versions forward to the current shape (`v1 → v2 → v3`). Old versions live in the log forever, so upcasters live forever too.
+- **Projections are eventually consistent.** The write side commits before read models catch up — **don't read-your-own-write from a projection** right after a command. Return the new version/state from the command, or subscribe/poll for the version to appear.
+- ⚠ **Immutable log vs. GDPR / right-to-erasure.** You can't delete a person's events without breaking the chain. **Crypto-shredding:** encrypt PII with a per-subject key held outside the log; to "erase", delete the *key* — the ciphertext in the events becomes permanently unreadable while the log stays intact. Design this in from day one; retrofitting is brutal.
+- **Not everything is an aggregate.** Cross-aggregate invariants can't be enforced in one atomic append — use a saga/process manager and accept eventual consistency, or reconsider the boundaries.
+
+---
+
+## CQRS (Command Query Responsibility Segregation)
+
+Split the **write model** (commands → validate invariants → emit events) from the **read model** (denormalized projections optimized for queries). A command bus routes commands to handlers; projections subscribe to events and maintain query-shaped views.
 
 ```typescript
-// Commands
-interface Command {
-  type: string;
-  payload: unknown;
-  metadata: {
-    userId: string;
-    correlationId: string;
-    timestamp: Date;
-  };
-}
-
-interface CommandHandler<T extends Command> {
-  handle(command: T): Promise<void>;
-}
-
-// Command Bus
-class CommandBus {
-  private handlers: Map<string, CommandHandler<Command>> = new Map();
-
-  register<T extends Command>(type: string, handler: CommandHandler<T>): void {
-    this.handlers.set(type, handler as CommandHandler<Command>);
-  }
-
-  async dispatch(command: Command): Promise<void> {
-    const handler = this.handlers.get(command.type);
-    if (!handler) {
-      throw new Error(`No handler registered for command: ${command.type}`);
-    }
-    await handler.handle(command);
-  }
-}
-
-// Queries
-interface Query<TResult> {
-  type: string;
-  params: unknown;
-}
-
-interface QueryHandler<TQuery extends Query<TResult>, TResult> {
-  handle(query: TQuery): Promise<TResult>;
-}
-
-// Query Bus
-class QueryBus {
-  private handlers: Map<string, QueryHandler<Query<unknown>, unknown>> =
-    new Map();
-
-  register<TQuery extends Query<TResult>, TResult>(
-    type: string,
-    handler: QueryHandler<TQuery, TResult>,
-  ): void {
-    this.handlers.set(type, handler as QueryHandler<Query<unknown>, unknown>);
-  }
-
-  async execute<TResult>(query: Query<TResult>): Promise<TResult> {
-    const handler = this.handlers.get(query.type);
-    if (!handler) {
-      throw new Error(`No handler registered for query: ${query.type}`);
-    }
-    return handler.handle(query) as Promise<TResult>;
-  }
-}
-
-// Read Model (Projection)
-interface OrderReadModel {
-  id: string;
-  customerId: string;
-  customerName: string;
-  status: string;
-  items: Array<{
-    productId: string;
-    productName: string;
-    quantity: number;
-    price: number;
-  }>;
-  total: number;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
+// Projection: subscribe to domain events, maintain a denormalized read row.
+// Enrichment (join in customer/product names) happens HERE, so reads are single-fetch.
 class OrderProjection {
-  constructor(
-    private db: Database,
-    private eventBus: EventBus,
-  ) {
-    this.setupSubscriptions();
-  }
-
-  private setupSubscriptions(): void {
-    this.eventBus.subscribe("OrderCreated", this.onOrderCreated.bind(this));
-    this.eventBus.subscribe("OrderConfirmed", this.onOrderConfirmed.bind(this));
-    this.eventBus.subscribe("OrderCancelled", this.onOrderCancelled.bind(this));
-  }
-
-  private async onOrderCreated(event: DomainEvent): Promise<void> {
-    const data = event.data as OrderCreatedData;
-
-    // Enrich with customer data
-    const customer = await this.db.customers.findById(data.customerId);
-
-    // Enrich with product data
-    const items = await Promise.all(
-      data.items.map(async (item) => {
-        const product = await this.db.products.findById(item.productId);
-        return {
-          ...item,
-          productName: product.name,
-        };
-      }),
-    );
-
-    await this.db.orderReadModels.create({
-      id: event.aggregateId,
-      customerId: data.customerId,
-      customerName: customer.name,
-      status: "pending",
-      items,
-      total: items.reduce((sum, i) => sum + i.price * i.quantity, 0),
-      createdAt: event.timestamp,
-      updatedAt: event.timestamp,
+  async onOrderCreated(e: DomainEvent) {
+    const d = e.data as OrderCreated;
+    await this.read.orders.upsert({
+      id: e.aggregateId, status: "pending", total: d.total,
+      customerName: (await this.customers.get(d.customerId)).name,   // denormalize at write-time
+      version: e.version, updatedAt: e.ts,
     });
   }
-
-  private async onOrderConfirmed(event: DomainEvent): Promise<void> {
-    await this.db.orderReadModels.update(event.aggregateId, {
-      status: "confirmed",
-      updatedAt: event.timestamp,
-    });
-  }
-
-  private async onOrderCancelled(event: DomainEvent): Promise<void> {
-    await this.db.orderReadModels.update(event.aggregateId, {
-      status: "cancelled",
-      updatedAt: event.timestamp,
-    });
+  async onOrderConfirmed(e: DomainEvent) {
+    // ⚠ Idempotent + ordered: guard with version so a replayed/out-of-order event can't regress state.
+    await this.read.orders.updateIf(e.aggregateId, { version_lt: e.version },
+      { status: "confirmed", version: e.version, updatedAt: e.ts });
   }
 }
 ```
 
-### Saga Pattern for Distributed Transactions
+**Gotchas.**
+
+- ⚠ **Read-model lag is inherent** — the write commits, the projection updates milliseconds-to-seconds later. Design UX for it: optimistic UI, return the new state from the command, or expose "processing". Never assume a query immediately reflects a just-issued command.
+- **CQRS ≠ event sourcing.** You can do CQRS with plain read replicas or maintained materialized views; ES is one way to feed projections, not a prerequisite.
+- **Projections are disposable and rebuildable** — that's the point. Version the projection code; to change a read model's shape, rebuild it from the event log rather than migrating in place.
+- ⚠ **Idempotent, order-tolerant projection updates.** At-least-once + possible reordering means a projection handler must be safe to run twice and must not regress on a stale event — guard writes by `version`/sequence.
+- Don't apply CQRS to simple CRUD; the operational cost (two models, sync, eventual consistency) only pays off for read/write asymmetry or complex domains.
+
+---
+
+## Sagas — Distributed Transactions Without 2PC
+
+A business transaction spanning services can't hold one ACID transaction. A **saga** is a sequence of local transactions; if step *k* fails, run **compensating** transactions for steps *k-1…1* in reverse.
+
+### Why not two-phase commit (2PC/XA)
+
+- **Blocking + locks held across services** for the whole transaction → terrible availability and throughput.
+- **Coordinator is a SPOF**; if it dies mid-commit, participants are stuck holding locks (in-doubt).
+- Poor fit for the modern stack — most brokers and many datastores don't support XA; it doesn't scale.
+- Sagas trade **atomicity for availability**: you accept a window of visible intermediate state, and converge via compensation. That trade is almost always correct for microservices.
+
+### Choreography vs. orchestration
+
+| | Choreography (events) | Orchestration (central coordinator) |
+| --- | --- | --- |
+| Control | each service reacts to events, no central brain | orchestrator issues commands, awaits replies |
+| Coupling | decentralized; new step = new subscriber | coordinator knows all steps |
+| Visibility | ⚠ emergent — hard to see the whole flow | explicit, easy to monitor/trace |
+| Failure logic | compensation is distributed across services | compensation centralized in coordinator |
+| Best for | 2–4 steps, simple flows | many steps, complex branching, need auditability |
+| Risk | cyclic event dependencies, "who does what?" at scale | coordinator is another service to run |
 
 ```typescript
-interface SagaStep<TData> {
-  name: string;
-  execute: (data: TData) => Promise<void>;
-  compensate: (data: TData) => Promise<void>;
-}
-
-interface SagaDefinition<TData> {
-  name: string;
-  steps: SagaStep<TData>[];
-}
-
-interface SagaInstance {
-  id: string;
-  sagaName: string;
-  data: unknown;
-  currentStep: number;
-  status: "running" | "completed" | "compensating" | "failed";
-  completedSteps: string[];
-  error?: string;
-  startedAt: Date;
-  updatedAt: Date;
-}
-
-class SagaOrchestrator {
-  private sagas: Map<string, SagaDefinition<unknown>> = new Map();
-  private store: SagaStore;
-
-  register<TData>(saga: SagaDefinition<TData>): void {
-    this.sagas.set(saga.name, saga as SagaDefinition<unknown>);
-  }
-
-  async start<TData>(sagaName: string, data: TData): Promise<string> {
-    const saga = this.sagas.get(sagaName);
-    if (!saga) throw new Error(`Saga not found: ${sagaName}`);
-
-    const instance: SagaInstance = {
-      id: crypto.randomUUID(),
-      sagaName,
-      data,
-      currentStep: 0,
-      status: "running",
-      completedSteps: [],
-      startedAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    await this.store.save(instance);
-    await this.executeNextStep(instance, saga);
-
-    return instance.id;
-  }
-
-  private async executeNextStep(
-    instance: SagaInstance,
-    saga: SagaDefinition<unknown>,
-  ): Promise<void> {
-    if (instance.currentStep >= saga.steps.length) {
-      instance.status = "completed";
-      await this.store.save(instance);
+// Orchestrated saga: linear steps, reverse-order compensation. Persist state after EVERY step
+// so a crash resumes/compensates instead of losing the transaction.
+async function runSaga(steps: SagaStep[], data: SagaData, store: SagaStore) {
+  const done: SagaStep[] = [];
+  const inst = await store.start(data);
+  for (const step of steps) {
+    try {
+      await step.execute(data);                 // must be idempotent (may re-run after crash)
+      done.push(step);
+      await store.advance(inst, step.name, data);
+    } catch (err) {
+      for (const s of done.reverse()) {         // compensate in reverse
+        try { await s.compensate(data); }       // compensations MUST be idempotent + retryable
+        catch (ce) { await store.flagCompensationFailure(inst, s.name, ce); /* alert; keep going */ }
+      }
+      await store.fail(inst, err);
       return;
     }
-
-    const step = saga.steps[instance.currentStep];
-
-    try {
-      await step.execute(instance.data);
-
-      instance.completedSteps.push(step.name);
-      instance.currentStep++;
-      instance.updatedAt = new Date();
-      await this.store.save(instance);
-
-      await this.executeNextStep(instance, saga);
-    } catch (error) {
-      instance.status = "compensating";
-      instance.error = error instanceof Error ? error.message : String(error);
-      await this.store.save(instance);
-
-      await this.compensate(instance, saga);
-    }
   }
-
-  private async compensate(
-    instance: SagaInstance,
-    saga: SagaDefinition<unknown>,
-  ): Promise<void> {
-    // Execute compensations in reverse order
-    for (let i = instance.completedSteps.length - 1; i >= 0; i--) {
-      const stepName = instance.completedSteps[i];
-      const step = saga.steps.find((s) => s.name === stepName);
-
-      if (step) {
-        try {
-          await step.compensate(instance.data);
-        } catch (error) {
-          console.error(`Compensation failed for step ${stepName}:`, error);
-          // Continue with other compensations
-        }
-      }
-    }
-
-    instance.status = "failed";
-    instance.updatedAt = new Date();
-    await this.store.save(instance);
-  }
-}
-
-// Example: Order Fulfillment Saga
-interface OrderFulfillmentData {
-  orderId: string;
-  customerId: string;
-  items: Array<{ productId: string; quantity: number; price: number }>;
-  paymentId?: string;
-  shipmentId?: string;
-}
-
-const orderFulfillmentSaga: SagaDefinition<OrderFulfillmentData> = {
-  name: "order-fulfillment",
-  steps: [
-    {
-      name: "reserve-inventory",
-      execute: async (data) => {
-        await inventoryService.reserve(data.items);
-      },
-      compensate: async (data) => {
-        await inventoryService.release(data.items);
-      },
-    },
-    {
-      name: "process-payment",
-      execute: async (data) => {
-        const total = data.items.reduce(
-          (sum, i) => sum + i.price * i.quantity,
-          0,
-        );
-        const payment = await paymentService.charge(data.customerId, total);
-        data.paymentId = payment.id;
-      },
-      compensate: async (data) => {
-        if (data.paymentId) {
-          await paymentService.refund(data.paymentId);
-        }
-      },
-    },
-    {
-      name: "create-shipment",
-      execute: async (data) => {
-        const shipment = await shippingService.createShipment(
-          data.orderId,
-          data.items,
-        );
-        data.shipmentId = shipment.id;
-      },
-      compensate: async (data) => {
-        if (data.shipmentId) {
-          await shippingService.cancelShipment(data.shipmentId);
-        }
-      },
-    },
-    {
-      name: "confirm-order",
-      execute: async (data) => {
-        await orderService.confirm(data.orderId);
-      },
-      compensate: async (data) => {
-        await orderService.cancel(data.orderId, "Saga compensation");
-      },
-    },
-  ],
-};
-```
-
-### Idempotency and Exactly-Once Delivery
-
-```typescript
-interface IdempotencyKey {
-  key: string;
-  response?: unknown;
-  createdAt: Date;
-  expiresAt: Date;
-}
-
-class IdempotencyService {
-  constructor(private redis: Redis) {}
-
-  async process<T>(
-    key: string,
-    operation: () => Promise<T>,
-    ttlSeconds: number = 86400, // 24 hours
-  ): Promise<T> {
-    const lockKey = `idempotency:lock:${key}`;
-    const dataKey = `idempotency:data:${key}`;
-
-    // Try to acquire lock
-    const locked = await this.redis.set(lockKey, "1", "EX", 30, "NX");
-
-    if (!locked) {
-      // Another process is handling this request, wait for result
-      return this.waitForResult<T>(dataKey);
-    }
-
-    try {
-      // Check if already processed
-      const existing = await this.redis.get(dataKey);
-      if (existing) {
-        return JSON.parse(existing) as T;
-      }
-
-      // Execute operation
-      const result = await operation();
-
-      // Store result
-      await this.redis.setex(dataKey, ttlSeconds, JSON.stringify(result));
-
-      return result;
-    } finally {
-      await this.redis.del(lockKey);
-    }
-  }
-
-  private async waitForResult<T>(
-    dataKey: string,
-    maxWaitMs: number = 30000,
-  ): Promise<T> {
-    const startTime = Date.now();
-
-    while (Date.now() - startTime < maxWaitMs) {
-      const data = await this.redis.get(dataKey);
-      if (data) {
-        return JSON.parse(data) as T;
-      }
-      await new Promise((r) => setTimeout(r, 100));
-    }
-
-    throw new Error("Timeout waiting for idempotent operation result");
-  }
-}
-
-// Message deduplication for consumers
-class DeduplicatingConsumer<T> {
-  constructor(
-    private redis: Redis,
-    private windowSeconds: number = 3600, // 1 hour dedup window
-  ) {}
-
-  async process(
-    messageId: string,
-    handler: () => Promise<T>,
-  ): Promise<{ result: T; duplicate: boolean }> {
-    const dedupKey = `dedup:${messageId}`;
-
-    // Check if already processed
-    const existing = await this.redis.get(dedupKey);
-    if (existing) {
-      return { result: JSON.parse(existing) as T, duplicate: true };
-    }
-
-    // Process message
-    const result = await handler();
-
-    // Mark as processed
-    await this.redis.setex(
-      dedupKey,
-      this.windowSeconds,
-      JSON.stringify(result),
-    );
-
-    return { result, duplicate: false };
-  }
+  await store.complete(inst);
 }
 ```
 
-### Dead Letter Queues
+**Saga gotchas.**
+
+- ⚠ **Compensation is semantic undo, not rollback.** You can't un-charge a card — you *refund*. Un-send an email — you send a correction. Design compensations as forward business actions.
+- **Some steps aren't compensatable** (email sent, physical shipment). Order steps so **retriable-only** actions come *after* the last **compensatable** one — the "pivot transaction". Everything before the pivot can be undone; everything after must be driven forward with retries.
+- **Compensations must be idempotent and retryable** — they run during failure handling, exactly when the network is flaky. A failed compensation is a manual-intervention incident; alert, don't swallow.
+- **Persist saga state after each step.** A saga is a state machine; on crash it must resume forward or resume compensating. In-memory-only sagas lose transactions on restart.
+- **Counter-compensation / semantic locks:** during a saga, a resource is in a provisional state (`PENDING`). Concurrent readers must know not to treat it as final; use a status flag rather than assuming isolation you don't have.
+
+---
+
+## Streaming (aggregations, joins, windows)
+
+For stateful stream processing — windowed aggregations, stream-stream/stream-table joins — **prefer a real stream-processing engine (Kafka Streams, ksqlDB, Flink, Spark Structured Streaming) over hand-rolling in a consumer.** Hand-rolled windowing with `setTimeout` + in-memory `Map` (as older versions of this skill showed) has fatal gaps: state is lost on restart (not checkpointed), doesn't survive rebalance, no watermarks/late-data handling, and doesn't scale past one process. Roll your own only for trivial, loss-tolerant cases.
+
+What the engines give you that a raw consumer doesn't:
+
+- **State stores** backed by changelog topics → survive crashes/rebalances.
+- **Event-time windows + watermarks** → correct results with out-of-order/late data (tumbling/hopping/session windows).
+- **Repartitioning (`groupByKey`)** so aggregation keys land co-partitioned.
+- **Exactly-once processing** *within the Kafka boundary* (`processing.guarantee=exactly_once_v2`).
+
+⚠ **Event-time vs. processing-time.** Windowing on wall-clock (processing time) miscounts when events are delayed or replayed. Window on the **embedded event timestamp** and configure allowed lateness; otherwise a backfill or a lagging consumer silently corrupts aggregates.
+
+---
+
+## Schema Evolution & Versioning
+
+Events, once published, are consumed by code you don't control and (in event sourcing) stored forever. Schema is a permanent contract.
+
+- **Use a schema registry** (Confluent Schema Registry with Avro/Protobuf/JSON Schema) to enforce compatibility at publish time. Compatibility modes: **BACKWARD** (new consumer reads old events — the usual default), **FORWARD** (old consumer reads new events), **FULL** (both).
+- **Only make additive, optional changes**: add fields with defaults. **Never** remove/rename a field, change a type, or repurpose semantics in place — that breaks existing consumers and stored history.
+- **Tolerant reader:** consumers ignore unknown fields and tolerate missing optional ones, so producers can evolve without lock-step deploys.
+- **Version explicitly** — carry a schema version in the event (`v`/`schemaVersion`). In event sourcing, **upcast** old versions on read (see traps). For breaking changes, publish a *new event type* (`OrderCreatedV2`) and run both until consumers migrate.
+- ⚠ **Deploy order matters:** with BACKWARD compat, roll out **consumers before producers**; with FORWARD, producers first. Ship the wrong order and you break in prod during the deploy window.
+
+---
+
+## End-to-End Reference Flow (outbox + CQRS + saga)
 
 ```typescript
-interface DeadLetterMessage {
-  id: string;
-  originalQueue: string;
-  originalMessage: unknown;
-  error: string;
-  failedAt: Date;
-  retryCount: number;
-  lastRetryAt?: Date;
-}
-
-class DeadLetterQueueManager {
-  constructor(
-    private dlqStore: DLQStore,
-    private originalQueue: MessageQueue,
-  ) {}
-
-  async moveToDeadLetter(
-    message: unknown,
-    originalQueue: string,
-    error: Error,
-    retryCount: number,
-  ): Promise<void> {
-    const dlqMessage: DeadLetterMessage = {
-      id: crypto.randomUUID(),
-      originalQueue,
-      originalMessage: message,
-      error: error.message,
-      failedAt: new Date(),
-      retryCount,
-    };
-
-    await this.dlqStore.save(dlqMessage);
-
-    // Alert on DLQ growth
-    const dlqSize = await this.dlqStore.count(originalQueue);
-    if (dlqSize > 100) {
-      await this.alerting.warn({
-        title: "DLQ Size Warning",
-        message: `Dead letter queue for ${originalQueue} has ${dlqSize} messages`,
-      });
-    }
-  }
-
-  async retry(messageId: string): Promise<void> {
-    const dlqMessage = await this.dlqStore.get(messageId);
-    if (!dlqMessage) throw new Error("Message not found in DLQ");
-
-    try {
-      await this.originalQueue.publish(
-        dlqMessage.originalQueue,
-        dlqMessage.originalMessage,
-      );
-      await this.dlqStore.delete(messageId);
-    } catch (error) {
-      dlqMessage.lastRetryAt = new Date();
-      dlqMessage.retryCount++;
-      await this.dlqStore.save(dlqMessage);
-      throw error;
-    }
-  }
-
-  async retryAll(queue: string): Promise<{ success: number; failed: number }> {
-    const messages = await this.dlqStore.getByQueue(queue);
-    let success = 0;
-    let failed = 0;
-
-    for (const message of messages) {
-      try {
-        await this.retry(message.id);
-        success++;
-      } catch {
-        failed++;
-      }
-    }
-
-    return { success, failed };
-  }
-
-  async purge(queue: string, olderThan?: Date): Promise<number> {
-    return this.dlqStore.deleteByQueue(queue, olderThan);
-  }
-}
-```
-
-### Data Streaming with Kafka
-
-**Stream Processing**:
-
-```typescript
-import { Kafka, CompressionTypes } from "kafkajs";
-
-interface StreamRecord<T> {
-  key: string;
-  value: T;
-  timestamp: number;
-  partition: number;
-  offset: string;
-}
-
-class KafkaStreamProcessor {
-  private kafka: Kafka;
-
-  constructor(brokers: string[]) {
-    this.kafka = new Kafka({
-      clientId: "stream-processor",
-      brokers,
-    });
-  }
-
-  // Stateful stream aggregation
-  async aggregateStream<TInput, TState>(
-    inputTopic: string,
-    outputTopic: string,
-    groupId: string,
-    initialState: TState,
-    aggregator: (state: TState, record: TInput) => TState,
-    windowMs: number = 60000,
-  ): Promise<void> {
-    const consumer = this.kafka.consumer({ groupId });
-    const producer = this.kafka.producer({
-      compression: CompressionTypes.GZIP,
-    });
-
-    await consumer.connect();
-    await producer.connect();
-    await consumer.subscribe({ topic: inputTopic });
-
-    const stateByKey = new Map<string, TState>();
-    const windowTimers = new Map<string, NodeJS.Timeout>();
-
-    await consumer.run({
-      eachMessage: async ({ message }) => {
-        const key = message.key?.toString() || "default";
-        const value: TInput = JSON.parse(message.value!.toString());
-
-        // Get or initialize state
-        const currentState = stateByKey.get(key) || initialState;
-        const newState = aggregator(currentState, value);
-        stateByKey.set(key, newState);
-
-        // Clear existing window timer
-        const existingTimer = windowTimers.get(key);
-        if (existingTimer) clearTimeout(existingTimer);
-
-        // Set new window timer to emit aggregated state
-        const timer = setTimeout(async () => {
-          const finalState = stateByKey.get(key);
-          await producer.send({
-            topic: outputTopic,
-            messages: [
-              {
-                key,
-                value: JSON.stringify(finalState),
-                timestamp: Date.now().toString(),
-              },
-            ],
-          });
-          stateByKey.delete(key);
-          windowTimers.delete(key);
-        }, windowMs);
-
-        windowTimers.set(key, timer);
-      },
-    });
-  }
-
-  // Stream joins
-  async joinStreams<TLeft, TRight, TResult>(
-    leftTopic: string,
-    rightTopic: string,
-    outputTopic: string,
-    groupId: string,
-    joiner: (left: TLeft, right: TRight) => TResult,
-    windowMs: number = 30000,
-  ): Promise<void> {
-    const consumer = this.kafka.consumer({ groupId });
-    const producer = this.kafka.producer();
-
-    await consumer.connect();
-    await producer.connect();
-    await consumer.subscribe({ topics: [leftTopic, rightTopic] });
-
-    const leftCache = new Map<string, { data: TLeft; timestamp: number }>();
-    const rightCache = new Map<string, { data: TRight; timestamp: number }>();
-
-    await consumer.run({
-      eachMessage: async ({ topic, message }) => {
-        const key = message.key?.toString() || "default";
-        const timestamp = parseInt(message.timestamp);
-        const now = Date.now();
-
-        // Clean old entries
-        this.cleanOldEntries(leftCache, now, windowMs);
-        this.cleanOldEntries(rightCache, now, windowMs);
-
-        if (topic === leftTopic) {
-          const leftData: TLeft = JSON.parse(message.value!.toString());
-          leftCache.set(key, { data: leftData, timestamp });
-
-          // Try to join with right
-          const rightEntry = rightCache.get(key);
-          if (
-            rightEntry &&
-            Math.abs(timestamp - rightEntry.timestamp) <= windowMs
-          ) {
-            const result = joiner(leftData, rightEntry.data);
-            await producer.send({
-              topic: outputTopic,
-              messages: [{ key, value: JSON.stringify(result) }],
-            });
-          }
-        } else {
-          const rightData: TRight = JSON.parse(message.value!.toString());
-          rightCache.set(key, { data: rightData, timestamp });
-
-          // Try to join with left
-          const leftEntry = leftCache.get(key);
-          if (
-            leftEntry &&
-            Math.abs(timestamp - leftEntry.timestamp) <= windowMs
-          ) {
-            const result = joiner(leftEntry.data, rightData);
-            await producer.send({
-              topic: outputTopic,
-              messages: [{ key, value: JSON.stringify(result) }],
-            });
-          }
-        }
-      },
-    });
-  }
-
-  private cleanOldEntries<T>(
-    cache: Map<string, { data: T; timestamp: number }>,
-    now: number,
-    windowMs: number,
-  ): void {
-    for (const [key, entry] of cache.entries()) {
-      if (now - entry.timestamp > windowMs) {
-        cache.delete(key);
-      }
-    }
-  }
-}
-
-// Kafka Streams-style operations
-class KafkaStream<T> {
-  constructor(
-    private kafka: Kafka,
-    private topic: string,
-  ) {}
-
-  // Map transformation
-  map<R>(mapper: (value: T) => R): KafkaStream<R> {
-    const outputTopic = `${this.topic}-mapped`;
-    this.processStream(outputTopic, async (record) => ({
-      key: record.key,
-      value: mapper(record.value),
-    }));
-    return new KafkaStream<R>(this.kafka, outputTopic);
-  }
-
-  // Filter transformation
-  filter(predicate: (value: T) => boolean): KafkaStream<T> {
-    const outputTopic = `${this.topic}-filtered`;
-    this.processStream(outputTopic, async (record) =>
-      predicate(record.value) ? record : null,
-    );
-    return new KafkaStream<T>(this.kafka, outputTopic);
-  }
-
-  // Group by key and aggregate
-  groupBy<K, V>(
-    keyExtractor: (value: T) => K,
-    aggregator: (key: K, values: T[]) => V,
-    windowMs: number = 60000,
-  ): KafkaStream<V> {
-    const outputTopic = `${this.topic}-grouped`;
-    const groups = new Map<string, T[]>();
-    const timers = new Map<string, NodeJS.Timeout>();
-
-    this.processStream(outputTopic, async (record, producer) => {
-      const key = String(keyExtractor(record.value));
-      const values = groups.get(key) || [];
-      values.push(record.value);
-      groups.set(key, values);
-
-      const existingTimer = timers.get(key);
-      if (existingTimer) clearTimeout(existingTimer);
-
-      const timer = setTimeout(async () => {
-        const groupValues = groups.get(key) || [];
-        const result = aggregator(keyExtractor(record.value), groupValues);
-        await producer.send({
-          topic: outputTopic,
-          messages: [{ key, value: JSON.stringify(result) }],
-        });
-        groups.delete(key);
-        timers.delete(key);
-      }, windowMs);
-
-      timers.set(key, timer);
-
-      return null; // Don't emit immediately
-    });
-
-    return new KafkaStream<V>(this.kafka, outputTopic);
-  }
-
-  private async processStream(
-    outputTopic: string,
-    processor: (
-      record: StreamRecord<T>,
-      producer: any,
-    ) => Promise<{ key: string; value: any } | null>,
-  ): Promise<void> {
-    const consumer = this.kafka.consumer({
-      groupId: `${this.topic}-processor`,
-    });
-    const producer = this.kafka.producer();
-
-    await consumer.connect();
-    await producer.connect();
-    await consumer.subscribe({ topic: this.topic });
-
-    await consumer.run({
-      eachMessage: async ({ message, partition }) => {
-        const record: StreamRecord<T> = {
-          key: message.key?.toString() || "default",
-          value: JSON.parse(message.value!.toString()),
-          timestamp: parseInt(message.timestamp),
-          partition,
-          offset: message.offset,
-        };
-
-        const result = await processor(record, producer);
-        if (result) {
-          await producer.send({
-            topic: outputTopic,
-            messages: [
-              {
-                key: result.key,
-                value: JSON.stringify(result.value),
-              },
-            ],
-          });
-        }
-      },
-    });
-  }
-}
-```
-
-### Event Sourcing Patterns
-
-**Snapshots for Performance**:
-
-```typescript
-interface Snapshot {
-  aggregateId: string;
-  version: number;
-  state: unknown;
-  timestamp: Date;
-}
-
-class SnapshotStore {
-  constructor(private db: Database) {}
-
-  async save(snapshot: Snapshot): Promise<void> {
-    await this.db.snapshots.upsert({
-      aggregateId: snapshot.aggregateId,
-      version: snapshot.version,
-      state: JSON.stringify(snapshot.state),
-      timestamp: snapshot.timestamp,
-    });
-  }
-
-  async getLatest(aggregateId: string): Promise<Snapshot | null> {
-    const row = await this.db.snapshots.findOne(
-      { aggregateId },
-      { orderBy: { version: "desc" } },
-    );
-    return row
-      ? {
-          aggregateId: row.aggregateId,
-          version: row.version,
-          state: JSON.parse(row.state),
-          timestamp: row.timestamp,
-        }
-      : null;
-  }
-}
-
-// Enhanced aggregate with snapshots
-abstract class SnapshotAggregate extends Aggregate {
-  private static SNAPSHOT_FREQUENCY = 100; // Snapshot every 100 events
-
-  async load(
-    eventStore: EventStore,
-    snapshotStore: SnapshotStore,
-  ): Promise<void> {
-    // Try to load from snapshot first
-    const snapshot = await snapshotStore.getLatest(this.id);
-    if (snapshot) {
-      this.applySnapshot(snapshot.state);
-      this._version = snapshot.version;
-
-      // Load events since snapshot
-      const events = await eventStore.getEvents(this.id, snapshot.version);
-      this.loadFromHistory(events);
-    } else {
-      // No snapshot, load all events
-      const events = await eventStore.getEvents(this.id);
-      this.loadFromHistory(events);
-    }
-  }
-
-  async save(
-    eventStore: EventStore,
-    snapshotStore: SnapshotStore,
-  ): Promise<void> {
-    const events = this.getUncommittedEvents();
-    await eventStore.append(events);
-    this.clearUncommittedEvents();
-
-    // Create snapshot if needed
-    if (this.version % SnapshotAggregate.SNAPSHOT_FREQUENCY === 0) {
-      await snapshotStore.save({
-        aggregateId: this.id,
-        version: this.version,
-        state: this.createSnapshot(),
-        timestamp: new Date(),
-      });
-    }
-  }
-
-  protected abstract createSnapshot(): unknown;
-  protected abstract applySnapshot(state: unknown): void;
-}
-```
-
-**Event Upcasting (Schema Migration)**:
-
-```typescript
-interface EventUpcaster {
-  eventType: string;
-  fromVersion: number;
-  toVersion: number;
-  upcast: (event: DomainEvent) => DomainEvent;
-}
-
-class EventStoreWithUpcasting implements EventStore {
-  private upcasters: Map<string, EventUpcaster[]> = new Map();
-
-  registerUpcaster(upcaster: EventUpcaster): void {
-    const existing = this.upcasters.get(upcaster.eventType) || [];
-    existing.push(upcaster);
-    existing.sort((a, b) => a.fromVersion - b.fromVersion);
-    this.upcasters.set(upcaster.eventType, existing);
-  }
-
-  async getEvents(
-    aggregateId: string,
-    fromVersion: number = 0,
-  ): Promise<DomainEvent[]> {
-    const rawEvents = await this.rawEventStore.getEvents(
-      aggregateId,
-      fromVersion,
-    );
-
-    return rawEvents.map((event) => this.upcastEvent(event));
-  }
-
-  private upcastEvent(event: DomainEvent): DomainEvent {
-    const upcasters = this.upcasters.get(event.type) || [];
-    let currentEvent = event;
-
-    for (const upcaster of upcasters) {
-      const eventVersion = (currentEvent.data as any)?.schemaVersion || 1;
-      if (eventVersion === upcaster.fromVersion) {
-        currentEvent = upcaster.upcast(currentEvent);
-      }
-    }
-
-    return currentEvent;
-  }
-}
-
-// Example upcaster
-const orderCreatedV1toV2: EventUpcaster = {
-  eventType: "OrderCreated",
-  fromVersion: 1,
-  toVersion: 2,
-  upcast: (event) => ({
-    ...event,
-    data: {
-      ...(event.data as any),
-      // V2 added shipping address separate from billing
-      shippingAddress: (event.data as any).address,
-      billingAddress: (event.data as any).address,
-      schemaVersion: 2,
-    },
-  }),
-};
-```
-
-### Saga Patterns
-
-**Choreography vs Orchestration**:
-
-```typescript
-// CHOREOGRAPHY: Services react to events independently
-class OrderService {
-  async onOrderCreated(event: OrderCreatedEvent): Promise<void> {
-    // Publish event, other services react
-    await this.eventBus.publish("order.created", {
-      orderId: event.orderId,
-      customerId: event.customerId,
-      items: event.items,
-    });
-  }
-}
-
-class InventoryService {
-  constructor(private eventBus: EventBus) {
-    // Listen and react to order events
-    this.eventBus.subscribe("order.created", this.reserveInventory.bind(this));
-  }
-
-  private async reserveInventory(event: OrderCreatedEvent): Promise<void> {
-    try {
-      await this.reserve(event.items);
-      // Publish success event
-      await this.eventBus.publish("inventory.reserved", {
-        orderId: event.orderId,
-      });
-    } catch (error) {
-      // Publish failure event
-      await this.eventBus.publish("inventory.reservation-failed", {
-        orderId: event.orderId,
-        reason: error.message,
-      });
-    }
-  }
-}
-
-class PaymentService {
-  constructor(private eventBus: EventBus) {
-    // Wait for inventory before processing payment
-    this.eventBus.subscribe(
-      "inventory.reserved",
-      this.processPayment.bind(this),
-    );
-  }
-
-  private async processPayment(event: InventoryReservedEvent): Promise<void> {
-    // Process payment and publish result...
-  }
-}
-
-// ORCHESTRATION: Central coordinator controls flow
-class OrderFulfillmentOrchestrator {
-  async fulfillOrder(orderId: string): Promise<void> {
-    try {
-      // Step 1: Reserve inventory
-      await this.inventoryService.reserve(orderId);
-
-      // Step 2: Process payment
-      await this.paymentService.charge(orderId);
-
-      // Step 3: Create shipment
-      await this.shippingService.createShipment(orderId);
-
-      // Step 4: Confirm order
-      await this.orderService.confirm(orderId);
-    } catch (error) {
-      // Explicit compensation
-      await this.compensate(orderId);
-    }
-  }
-
-  private async compensate(orderId: string): Promise<void> {
-    // Undo in reverse order
-    await this.shippingService.cancelShipment(orderId);
-    await this.paymentService.refund(orderId);
-    await this.inventoryService.release(orderId);
-    await this.orderService.cancel(orderId);
-  }
-}
-```
-
-**Saga State Machine**:
-
-```typescript
-type SagaState =
-  | "STARTED"
-  | "INVENTORY_RESERVED"
-  | "PAYMENT_PROCESSED"
-  | "SHIPPED"
-  | "COMPLETED"
-  | "COMPENSATING"
-  | "FAILED";
-
-interface SagaStateMachine<TData> {
-  state: SagaState;
-  data: TData;
-  transitions: Map<SagaState, SagaTransition<TData>>;
-}
-
-interface SagaTransition<TData> {
-  onEnter: (data: TData) => Promise<void>;
-  onSuccess: SagaState;
-  onFailure: SagaState;
-  compensate?: (data: TData) => Promise<void>;
-}
-
-class StatefulSagaOrchestrator<TData> {
-  async execute(saga: SagaStateMachine<TData>): Promise<void> {
-    let currentState = saga.state;
-
-    while (currentState !== "COMPLETED" && currentState !== "FAILED") {
-      const transition = saga.transitions.get(currentState);
-      if (!transition)
-        throw new Error(`No transition for state: ${currentState}`);
-
-      try {
-        await transition.onEnter(saga.data);
-        currentState = transition.onSuccess;
-        saga.state = currentState;
-        await this.persistSaga(saga); // Save state
-      } catch (error) {
-        // Compensation
-        if (transition.compensate) {
-          await transition.compensate(saga.data);
-        }
-        currentState = transition.onFailure;
-        saga.state = currentState;
-        await this.persistSaga(saga);
-      }
-    }
-  }
-
-  private async persistSaga(saga: SagaStateMachine<TData>): Promise<void> {
-    // Save saga state for recovery
-    await this.sagaStore.save({
-      id: (saga.data as any).orderId,
-      state: saga.state,
-      data: saga.data,
-      updatedAt: new Date(),
-    });
-  }
-}
-```
-
-## Best Practices
-
-1. **Event Design**
-   - Events should be immutable and represent facts
-   - Use past tense naming (OrderCreated, not CreateOrder)
-   - Include all necessary data; avoid references to mutable state
-   - Version your events for schema evolution
-
-2. **Idempotency**
-   - Always design consumers to be idempotent
-   - Use unique message IDs for deduplication
-   - Store processing state to handle retries
-
-3. **Error Handling**
-   - Implement dead letter queues for failed messages
-   - Set reasonable retry limits with exponential backoff
-   - Monitor DLQ size and alert on growth
-
-4. **Ordering**
-   - Use partition keys for ordering guarantees in Kafka
-   - Understand at-least-once vs exactly-once semantics
-   - Design for out-of-order message handling when needed
-
-5. **Monitoring**
-   - Track message lag, processing time, and error rates
-   - Set up alerts for consumer lag
-   - Monitor event store growth and query performance
-
-## Examples
-
-### Complete Order Processing Flow
-
-```typescript
-// 1. API receives order request
+// 1) HTTP → command. Return 202: this is async; the resource isn't queryable yet (read-model lag).
 app.post("/orders", async (req, res) => {
-  const command: CreateOrderCommand = {
-    type: "CreateOrder",
-    payload: req.body,
-    metadata: {
-      userId: req.user.id,
-      correlationId: req.headers["x-correlation-id"] as string,
-      timestamp: new Date(),
-    },
-  };
-
-  await commandBus.dispatch(command);
-  res.status(202).json({ message: "Order creation initiated" });
+  await commandBus.dispatch({ type: "CreateOrder", payload: req.body,
+    metadata: { userId: req.user.id, correlationId: req.headers["x-correlation-id"] } });
+  res.status(202).json({ status: "accepted" });        // NOT 200 with the order body
 });
 
-// 2. Command handler creates aggregate and persists events
-class CreateOrderHandler implements CommandHandler<CreateOrderCommand> {
-  async handle(command: CreateOrderCommand): Promise<void> {
-    const order = Order.create(
-      crypto.randomUUID(),
-      command.payload.customerId,
-      command.payload.items,
-    );
-
-    await this.eventStore.append(order.getUncommittedEvents());
+// 2) Handler: aggregate emits events; events + state committed in ONE tx via outbox (no dual write).
+class CreateOrderHandler {
+  async handle(cmd: CreateOrderCommand) {
+    const order = Order.create(crypto.randomUUID(), cmd.payload.customerId, cmd.payload.items);
+    await this.store.appendWithOutbox(order.getUncommittedEvents()); // events table + outbox, atomic
   }
 }
-
-// 3. Event published to Kafka, projections update read models
-// 4. Saga orchestrator starts fulfillment process
-// 5. Each saga step publishes events that update projections
+// 3) Relay/CDC publishes outbox → Kafka (at-least-once).
+// 4) Projections (idempotent, version-guarded) build read models; queries hit those.
+// 5) Orchestrated saga runs reserve-inventory → charge → ship → confirm, compensating on failure.
+//    Every consumer above is idempotent because delivery is at-least-once.
 ```
+
+---
+
+## Best Practices (dense)
+
+**Events**
+
+- Past-tense facts (`OrderCreated`, not `CreateOrder`); immutable; one event = one business fact.
+- Include `id`, `type`, `version`/schema-version, `timestamp` (event-time), `correlationId`, `causationId`, aggregate id/type.
+- Prefer event-carried state transfer (fat) for integration events; version everything (see Fat vs. Thin).
+
+**Correctness**
+
+- At-least-once is the floor → **every handler idempotent** (dedup key or naturally idempotent side effect).
+- Never dual-write DB + broker → **transactional outbox** (relay or CDC).
+- Ordering only per partition/key → choose the key deliberately; watch hot partitions.
+
+**Reliability**
+
+- Bounded retries + backoff/jitter → DLQ; alert on DLQ arrivals and size/age; build replay tooling.
+- Classify transient (retry) vs. deterministic (fast-fail to DLQ) failures.
+- Visibility timeout / ack deadline > worst-case processing time; heartbeat-extend long jobs.
+
+**Observability**
+
+- Track **consumer lag** (Kafka offset lag, SQS `ApproximateAgeOfOldestMessage`) — the single most important EDA health metric; alert on sustained growth.
+- Propagate `correlationId`/trace context through every hop (distributed tracing); it's the only way to reconstruct an async flow.
+- Monitor processing latency, error rate, DLQ depth, redelivery counts, event-store/topic growth.
+
+**Architecture**
+
+- Sagas over 2PC; pick choreography (few steps) vs. orchestration (complex/auditable) deliberately.
+- Event sourcing/CQRS only where audit/temporal/read-write-asymmetry justify the cost; not for CRUD.
+- Don't over-broker: Kafka for streaming/replay, queue brokers for work distribution, managed (SQS/SNS) to avoid ops.
+
+---
+
+## Verification Checklists
+
+**Before shipping any consumer:**
+
+- [ ] Handler is **idempotent** — reprocessing the same message twice yields the same state (dedup key or `ON CONFLICT`/naturally-idempotent write).
+- [ ] Dedup/idempotency window ≥ worst-case redelivery age (retention + retry horizon + DLQ replay).
+- [ ] Failures are **classified**: transient → bounded retry+backoff; deterministic → straight to DLQ.
+- [ ] There **is** a DLQ, it alerts on arrival + size/age, and you can replay from it.
+- [ ] Poison pills can't block the partition/queue forever (retry cap enforced).
+- [ ] Ack/delete happens **after** successful processing (at-least-once), not before.
+- [ ] Visibility/ack timeout exceeds max processing time (or heartbeat-extended).
+- [ ] Correlation/trace id is read from and propagated onward.
+
+**Before shipping any producer / write path:**
+
+- [ ] **No dual write** — DB change and event publish are atomic (outbox in same tx, or CDC).
+- [ ] Partition/message key chosen so per-entity order holds; hot-partition risk assessed.
+- [ ] Kafka producer `idempotent: true` (or equivalent) to avoid producer-retry duplicates.
+- [ ] Event includes version/schema-version, correlation id, event-time timestamp.
+- [ ] Schema change is additive + registry-compatible; deploy order (consumer-vs-producer-first) is correct.
+
+**Event sourcing / CQRS specific:**
+
+- [ ] Optimistic concurrency enforced by a `UNIQUE(aggregate_id, version)` constraint, not just a SELECT.
+- [ ] No code path edits or deletes stored events; corrections are compensating events.
+- [ ] Snapshot strategy exists for long streams; system still correct with all snapshots deleted.
+- [ ] Old event versions are upcast on read; upcasters covered by tests.
+- [ ] PII erasure strategy (crypto-shredding) designed in, not retrofitted.
+- [ ] Projections are idempotent + version-guarded and rebuildable from the log.
+- [ ] Callers don't read-your-own-write from a lagging projection.
+
+**Saga specific:**
+
+- [ ] Saga state persisted after every step; crash resumes forward or compensating.
+- [ ] Every compensation is a semantic forward action, idempotent, and retryable.
+- [ ] Non-compensatable steps ordered after the pivot (retriable-only) transaction.
+- [ ] Compensation failures alert for manual intervention (not swallowed).
+- [ ] Provisional resource states are visible to concurrent readers (status flags / semantic locks).

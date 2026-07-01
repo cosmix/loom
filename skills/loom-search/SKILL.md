@@ -34,857 +34,229 @@ triggers:
 
 ## Overview
 
-Search functionality is a critical component of modern applications, enabling users to find relevant content quickly. This skill covers Elasticsearch fundamentals, full-text search patterns, indexing strategies, and advanced features like faceted search and autocomplete.
+Full-text search on Lucene-based engines (Elasticsearch/OpenSearch) plus the leaner alternatives (Meilisearch/Typesense). The engine is easy to stand up and easy to get subtly wrong: **analyzer mismatches**, **facet counts that fight their own filters**, **deep pagination that falls over at 10k**, and **relevance that looks fine on your three test queries and terrible in production.** This skill targets those.
 
-## Key Concepts
+`text` (analyzed, full-text, scored) vs `keyword` (exact, aggregatable, sortable, filterable) is the decision under most of these. Get the mapping right first.
 
-### Elasticsearch Fundamentals
+## Analysis: the root of most bugs
 
-Elasticsearch is a distributed search and analytics engine built on Apache Lucene.
+An **analyzer** = optional char filters → one tokenizer → token filters. It runs at **index time** (on the stored field) and at **query time** (on the search string). The inverted index only ever contains *analyzed* tokens.
 
-**Core Components:**
-
-- **Index**: A collection of documents with similar characteristics
-- **Document**: A JSON object that is indexed and searchable
-- **Mapping**: Schema definition for documents in an index
-- **Shard**: A subdivision of an index for horizontal scaling
-- **Replica**: Copy of a shard for redundancy and read scaling
-
-**Basic Index Operations:**
+⚠ **Index-time / query-time analyzer mismatch is the #1 silent search bug.** If you index with an `edge_ngram` analyzer and *also* analyze the query with it, searching "cat" expands to `c, ca, cat` and matches "category", "catalog", "cathedral" — garbage relevance. The fix is almost always: aggressive analyzer at index time, plain analyzer at search time.
 
 ```json
-// Create an index with settings
+"name": {
+  "type": "text",
+  "analyzer": "autocomplete",          // edge_ngram — index time only
+  "search_analyzer": "autocomplete_search"  // just lowercase — query time
+}
+```
+
+- **Reindex required to change the index-time analyzer** (existing tokens are already committed). `search_analyzer` can change without reindex.
+- **normalizer** = the `keyword` equivalent of an analyzer (lowercase/asciifold only, no tokenizer) so exact-match/aggregation fields can be case-insensitive.
+- Verify what a field actually produces with `GET /index/_analyze` — don't guess.
+
+```json
+POST /products/_analyze
+{ "field": "name", "text": "Wireless Headphones" }   // shows the exact tokens indexed
+```
+
+**Common token filters:** `lowercase`, `asciifolding` (café→cafe), `stop` (drop the/a/is — omit for short-field/name search), `stemmer`/`snowball` (running→run), `synonym`/`synonym_graph`.
+
+## Mapping
+
+```json
 PUT /products
 {
-  "settings": {
-    "number_of_shards": 3,
-    "number_of_replicas": 2,
-    "analysis": {
-      "analyzer": {
-        "custom_analyzer": {
-          "type": "custom",
-          "tokenizer": "standard",
-          "filter": ["lowercase", "snowball"]
-        }
-      }
-    }
+  "settings": { "number_of_shards": 1, "number_of_replicas": 1 },
+  "mappings": { "properties": {
+    "name":        { "type": "text", "analyzer": "english",
+                     "fields": { "raw": { "type": "keyword" } } },   // multi-field: search AND aggregate
+    "category":    { "type": "keyword" },
+    "price":       { "type": "float" },
+    "created_at":  { "type": "date" }
+  }}
+}
+```
+
+- **Multi-fields** (`name` + `name.raw`) index one source field two ways — full-text on `name`, exact/sort/agg on `name.raw`. The standard pattern for "searchable and facetable."
+- Use **explicit mappings in production.** Dynamic mapping infers types from the first doc seen — one stray `"12"` string makes a numeric field `text` forever (reindex to fix).
+- **Shard sizing:** aim 10–50 GB/shard. Over-sharding (default was once 5) wastes heap and slows queries on small indices; start with 1 and scale by data size, not habit.
+
+## Query vs Filter Context (performance)
+
+- **`filter`** — yes/no, **no scoring, cached** (bitset). Use for exact terms, ranges, booleans. Fast and reused.
+- **`must`/`should`** — contribute to `_score`, not cached. Use only when relevance ranking matters.
+
+```json
+{ "query": { "bool": {
+  "must":   [ { "match": { "name": "headphones" } } ],          // scored
+  "filter": [ { "range": { "price": { "gte": 50, "lte": 200 } } },
+              { "term":  { "category": "electronics" } } ],       // cached, unscored
+  "must_not": [ { "term": { "status": "discontinued" } } ]
+}}}
+```
+
+⚠ Putting exact filters in `must` bloats scoring work and forfeits the filter cache for no relevance benefit. Ranges, terms, and boolean gates belong in `filter`.
+
+## Relevance
+
+Default similarity is **BM25** (replaced TF-IDF in ES 5+). Two knobs on the field's similarity:
+
+- **`k1`** (default 1.2) — term-frequency saturation. Higher = repeated terms keep helping; lower = TF saturates fast.
+- **`b`** (default 0.75) — length normalization. Higher penalizes long fields more. For short fields (titles/names) a *lower* `b` often helps; `b=0` ignores length entirely.
+
+Tune via a custom similarity in settings only after boosting/field-weighting is exhausted — most "bad relevance" is a query/mapping problem, not a BM25 problem.
+
+**Field boosting** (`^`) — cheap first lever: `"fields": ["name^5", "brand^3", "description", "tags"]`.
+
+**`multi_match` types (pick deliberately):**
+
+| Type | Behavior | Use for |
+| --- | --- | --- |
+| `best_fields` (default) | Score = single best-matching field | Terms expected together in one field |
+| `most_fields` | Sum across fields | Same text analyzed multiple ways (stem + exact) |
+| `cross_fields` | Treats fields as one big field, term-centric | "first last" across `first_name`/`last_name` |
+| `phrase` | Phrase match per field | Exact phrase |
+
+**`function_score`** — inject business signal (popularity, recency) into `_score`:
+
+```json
+{ "function_score": {
+  "query": { "match": { "name": "laptop" } },
+  "functions": [
+    { "field_value_factor": { "field": "sales_count", "modifier": "log1p", "factor": 0.1 } },
+    { "gauss": { "created_at": { "origin": "now", "scale": "30d", "decay": 0.5 } } }   // recency decay
+  ],
+  "score_mode": "sum", "boost_mode": "multiply"
+}}
+```
+
+⚠ `field_value_factor` on a doc where the field is **missing** throws unless you set `"missing": <default>`. And an unbounded factor (raw `sales_count`) can swamp text relevance — always dampen with `log1p`/`sqrt`. Prefer `gauss`/`exp` decay for recency over hand-rolled math.
+
+Tip: `_search?explain=true` (or `_explain`) shows the full score breakdown — use it instead of guessing why a doc ranks where it does. Newer ES also supports learning-to-rank / vector `knn` for hybrid semantic + lexical search.
+
+## Faceted Search — the post_filter gotcha
+
+The classic faceted-UI requirement: when a user checks **Category: Electronics**, the result list filters to electronics, but the **Category facet still shows counts for all categories** (so they can switch). If you put the category filter in the main `query`, your category aggregation only counts electronics — the other options vanish and the UI breaks.
+
+**Correct pattern:** filter the *results* with `post_filter` (applied after aggs are computed), and scope each *aggregation* with a `filter` agg that excludes its own facet's filter.
+
+```json
+{
+  "query": { "bool": { "filter": [ { "range": { "price": { "gte": 50 } } } ] } },  // filters that affect ALL facets
+  "aggs": {
+    "categories": { "terms": { "field": "category" } }   // NOT filtered by category → shows all options
   },
-  "mappings": {
-    "properties": {
-      "name": { "type": "text", "analyzer": "custom_analyzer" },
-      "description": { "type": "text" },
-      "price": { "type": "float" },
-      "category": { "type": "keyword" },
-      "created_at": { "type": "date" }
-    }
-  }
+  "post_filter": { "term": { "category": "electronics" } } // narrows hits only, after aggs
 }
 ```
 
-### Full-Text Search Patterns
+- Rule of thumb: a filter that should affect a facet's own counts goes in the main `query`; a filter driven *by that facet* goes in `post_filter` (single facet) or per-agg `filter` (multiple interacting facets).
+- `size: 0` when you only need aggregation counts (skip fetching hits).
+- ⚠ `terms` aggregation `doc_count` can be **approximate** on sharded indices (each shard returns its top-N, then merges). Raise `shard_size` or accept the small error; don't build billing on facet counts.
 
-**Match Query** - Standard full-text search:
+## Pagination — deep-paging cliff
 
-```json
-GET /products/_search
-{
-  "query": {
-    "match": {
-      "description": {
-        "query": "wireless bluetooth headphones",
-        "operator": "and",
-        "fuzziness": "AUTO"
-      }
-    }
-  }
-}
+⚠ `from`/`size` is **capped at 10,000** (`index.max_result_window`) and gets quadratically expensive before then: every shard must collect `from + size` hits and the coordinator sorts them all. Fine for page 1–20 of a UI; fatal for scrolling/export.
+
+| Method | Use | Notes |
+| --- | --- | --- |
+| `from`/`size` | Shallow UI paging (< a few thousand) | Simple; hard 10k wall; no stable ordering under writes |
+| **`search_after`** | Deep paging, infinite scroll | Stateless cursor on a **unique tiebreaker sort** (e.g. `[score, _id]`); no offset cost |
+| **PIT + `search_after`** | Consistent deep paging / export | Point-in-time snapshot freezes the index view across pages |
+| `scroll` | Legacy bulk export | Deprecated for paging; holds a snapshot/context — heavy. Prefer PIT+search_after |
+
+`search_after` requires a **deterministic total sort** including a unique field (usually `_id` or a tiebreaker) — otherwise pages overlap or skip.
+
+## Autocomplete — pick the right mechanism
+
+| Mechanism | Matches | Cost | Use when |
+| --- | --- | --- | --- |
+| **Completion suggester** | Prefix only, in-memory FST | Fastest, low latency | Pure typeahead over a curated field; supports contexts (category/geo filtering) |
+| **`search_as_you_type` field** | Prefix + infix (shingles) | Moderate | Mid-word matching without hand-built n-grams |
+| **`edge_ngram` analyzer** | Prefix, fully queryable | Higher index size | Prefix match combined with normal bool/filter queries and scoring |
+| **`match_phrase_prefix`** | Last-term prefix on a normal field | No extra mapping | Quick-and-dirty; ⚠ slow, expands last term to many; not for high QPS |
+
+- **Completion suggester** rebuilds from a dedicated `completion` field and doesn't reflect deletes until reindex/rebuild — it's a *suggestion* structure, not your live index.
+- **`edge_ngram`:** set `min_gram`/`max_gram` and **only at index time** (query analyzer = lowercase), or you hit the mismatch bug above.
+- Add **fuzziness** for typos: completion suggester `fuzzy.fuzziness: 1`, or `match` `fuzziness: AUTO` (0 edits for ≤2 chars, 1 for 3–5, 2 for >5 — Levenshtein/Damerau distance). Fuzziness is expensive; cap `max_expansions` and avoid `fuzziness: 2` on long high-QPS queries.
+- Client: **debounce 200–300 ms**, require ≥2 chars, cancel stale in-flight requests.
+
+## Zero-Downtime Reindex (alias pattern)
+
+Never point your app at a concrete index name — always at an **alias.** Reindexing (new analyzer, mapping change, shard count) then becomes atomic and reversible.
+
+```text
+1. Create products_v2 with the new mapping/settings.
+2. POST /_reindex  { source: products_v1, dest: products_v2 }   (optionally with a transform script)
+3. Atomically swap the alias:
 ```
 
-**Multi-Match Query** - Search across multiple fields:
-
 ```json
-GET /products/_search
-{
-  "query": {
-    "multi_match": {
-      "query": "wireless headphones",
-      "fields": ["name^3", "description", "category^2"],
-      "type": "best_fields",
-      "tie_breaker": 0.3
-    }
-  }
-}
-```
-
-**Bool Query** - Combine multiple conditions:
-
-```json
-GET /products/_search
-{
-  "query": {
-    "bool": {
-      "must": [
-        { "match": { "name": "headphones" } }
-      ],
-      "filter": [
-        { "range": { "price": { "gte": 50, "lte": 200 } } },
-        { "term": { "category": "electronics" } }
-      ],
-      "should": [
-        { "match": { "description": "noise cancelling" } }
-      ],
-      "must_not": [
-        { "term": { "status": "discontinued" } }
-      ]
-    }
-  }
-}
-```
-
-### Indexing Strategies
-
-**Bulk Indexing:**
-
-```json
-POST /_bulk
-{ "index": { "_index": "products", "_id": "1" } }
-{ "name": "Wireless Headphones", "price": 99.99 }
-{ "index": { "_index": "products", "_id": "2" } }
-{ "name": "Bluetooth Speaker", "price": 49.99 }
-```
-
-**Index Aliases** - Zero-downtime reindexing:
-
-```json
-// Create alias
 POST /_aliases
-{
-  "actions": [
-    { "add": { "index": "products_v2", "alias": "products" } },
-    { "remove": { "index": "products_v1", "alias": "products" } }
-  ]
-}
+{ "actions": [
+  { "remove": { "index": "products_v1", "alias": "products" } },
+  { "add":    { "index": "products_v2", "alias": "products" } }
+]}
 ```
 
-### Relevance Tuning and Boosting
+- The alias swap is a single atomic step — no window where `products` points at nothing.
+- ⚠ Writes arriving *during* the reindex land only in v1. For live indexing, dual-write to both (or the alias) during the migration, or reindex a quiesced/append-only snapshot then catch up by `_reindex` with a `range` on `updated_at`.
+- Roll back by swapping the alias back — v1 is untouched.
+- Use **index templates** so time-series indices (`logs-*`) get consistent mappings automatically on rollover.
 
-**Field Boosting:**
+## Indexing Throughput
 
-```json
-GET /products/_search
-{
-  "query": {
-    "multi_match": {
-      "query": "headphones",
-      "fields": ["name^5", "description^2", "tags"]
-    }
-  }
-}
-```
+- **Bulk API** (`_bulk`, or `helpers.bulk` in Python) for imports — never one doc per request. Tune batch size to ~5–15 MB per bulk.
+- During heavy bulk load: set `number_of_replicas: 0` and `refresh_interval: -1`, then restore afterward — refresh-per-doc is a major throughput killer.
+- Provide explicit `_id`s only if you need upserts/dedup; letting ES auto-generate is faster (skips a get-before-write).
+- `refresh_interval` (default 1s) is why new docs aren't searchable instantly — that's *near*-real-time, not real-time. Force with `?refresh=wait_for` only in tests.
 
-**Function Score** - Custom scoring:
+## Engine Choice
 
-```json
-GET /products/_search
-{
-  "query": {
-    "function_score": {
-      "query": { "match": { "name": "headphones" } },
-      "functions": [
-        {
-          "filter": { "term": { "featured": true } },
-          "weight": 2
-        },
-        {
-          "field_value_factor": {
-            "field": "popularity",
-            "factor": 1.2,
-            "modifier": "sqrt"
-          }
-        },
-        {
-          "gauss": {
-            "created_at": {
-              "origin": "now",
-              "scale": "30d",
-              "decay": 0.5
-            }
-          }
-        }
-      ],
-      "score_mode": "multiply",
-      "boost_mode": "multiply"
-    }
-  }
-}
-```
+- **Elasticsearch/OpenSearch** — max flexibility, aggregations, scale, vector search; operationally heavy. OpenSearch is the Apache-2.0 fork after ES's license change; APIs largely overlap but have diverged — check version docs.
+- **Meilisearch / Typesense** — typo-tolerant, instant-search-first, sane defaults, tiny ops footprint; far less flexible aggregation/relevance control. Excellent for product/site search and autocomplete where you don't need ES's analytics.
 
-### Faceted Search and Aggregations
-
-**Terms Aggregation** - Category facets:
-
-```json
-GET /products/_search
-{
-  "size": 0,
-  "aggs": {
-    "categories": {
-      "terms": { "field": "category", "size": 10 }
-    },
-    "price_ranges": {
-      "range": {
-        "field": "price",
-        "ranges": [
-          { "to": 50, "key": "budget" },
-          { "from": 50, "to": 100, "key": "mid-range" },
-          { "from": 100, "key": "premium" }
-        ]
-      }
-    },
-    "avg_price": {
-      "avg": { "field": "price" }
-    }
-  }
-}
-```
-
-**Nested Aggregations:**
-
-```json
-GET /products/_search
-{
-  "aggs": {
-    "categories": {
-      "terms": { "field": "category" },
-      "aggs": {
-        "avg_price": { "avg": { "field": "price" } },
-        "top_products": {
-          "top_hits": { "size": 3, "_source": ["name", "price"] }
-        }
-      }
-    }
-  }
-}
-```
-
-### Search-as-You-Type and Autocomplete
-
-**Completion Suggester Setup:**
-
-```json
-PUT /products
-{
-  "mappings": {
-    "properties": {
-      "name_suggest": {
-        "type": "completion",
-        "contexts": [
-          { "name": "category", "type": "category" }
-        ]
-      }
-    }
-  }
-}
-```
-
-**Autocomplete Query:**
-
-```json
-GET /products/_search
-{
-  "suggest": {
-    "product_suggest": {
-      "prefix": "wire",
-      "completion": {
-        "field": "name_suggest",
-        "size": 5,
-        "fuzzy": { "fuzziness": 1 },
-        "contexts": {
-          "category": ["electronics"]
-        }
-      }
-    }
-  }
-}
-```
-
-**Edge N-gram Analyzer** - Alternative approach:
-
-```json
-PUT /products
-{
-  "settings": {
-    "analysis": {
-      "filter": {
-        "edge_ngram_filter": {
-          "type": "edge_ngram",
-          "min_gram": 2,
-          "max_gram": 20
-        }
-      },
-      "analyzer": {
-        "autocomplete": {
-          "type": "custom",
-          "tokenizer": "standard",
-          "filter": ["lowercase", "edge_ngram_filter"]
-        },
-        "autocomplete_search": {
-          "type": "custom",
-          "tokenizer": "standard",
-          "filter": ["lowercase"]
-        }
-      }
-    }
-  },
-  "mappings": {
-    "properties": {
-      "name": {
-        "type": "text",
-        "analyzer": "autocomplete",
-        "search_analyzer": "autocomplete_search"
-      }
-    }
-  }
-}
-```
-
-### Synonyms and Analyzers
-
-**Synonym Configuration:**
-
-```json
-PUT /products
-{
-  "settings": {
-    "analysis": {
-      "filter": {
-        "synonym_filter": {
-          "type": "synonym",
-          "synonyms": [
-            "laptop, notebook, portable computer",
-            "phone, mobile, cellphone, smartphone",
-            "tv, television, telly"
-          ]
-        },
-        "synonym_graph_filter": {
-          "type": "synonym_graph",
-          "synonyms_path": "synonyms.txt"
-        }
-      },
-      "analyzer": {
-        "synonym_analyzer": {
-          "tokenizer": "standard",
-          "filter": ["lowercase", "synonym_filter"]
-        }
-      }
-    }
-  }
-}
-```
-
-**Custom Analyzer with Multiple Filters:**
-
-```json
-PUT /products
-{
-  "settings": {
-    "analysis": {
-      "char_filter": {
-        "html_strip": { "type": "html_strip" }
-      },
-      "filter": {
-        "english_stop": { "type": "stop", "stopwords": "_english_" },
-        "english_stemmer": { "type": "stemmer", "language": "english" }
-      },
-      "analyzer": {
-        "english_analyzer": {
-          "type": "custom",
-          "char_filter": ["html_strip"],
-          "tokenizer": "standard",
-          "filter": ["lowercase", "english_stop", "english_stemmer"]
-        }
-      }
-    }
-  }
-}
-```
-
-### Elasticsearch Patterns
-
-**Connection Management:**
+## Reference Implementation (Node, bool + facets + highlight)
 
 ```javascript
-// Singleton client pattern
-class ElasticsearchClient {
-  static instance = null;
+async search(query, filters = {}, page = 1, pageSize = 20) {
+  const must = query ? [{ multi_match: {
+    query, fields: ["name^3", "description", "tags^2"], type: "best_fields", fuzziness: "AUTO" } }]
+    : [{ match_all: {} }];
+  const filter = [];
+  if (filters.category) filter.push({ term: { category: filters.category } });
+  if (filters.priceMin || filters.priceMax) filter.push({ range: { price: {
+    ...(filters.priceMin && { gte: filters.priceMin }),
+    ...(filters.priceMax && { lte: filters.priceMax }) } } });
 
-  static getInstance() {
-    if (!this.instance) {
-      this.instance = new Client({
-        node: process.env.ES_URL,
-        auth: {
-          apiKey: process.env.ES_API_KEY,
-        },
-        maxRetries: 3,
-        requestTimeout: 30000,
-      });
-    }
-    return this.instance;
-  }
-}
-```
-
-**Index Templates** - Consistent mappings across time-series indices:
-
-```json
-PUT /_index_template/logs_template
-{
-  "index_patterns": ["logs-*"],
-  "template": {
-    "settings": {
-      "number_of_shards": 1,
-      "number_of_replicas": 1
-    },
-    "mappings": {
-      "properties": {
-        "@timestamp": { "type": "date" },
-        "message": { "type": "text" },
-        "level": { "type": "keyword" }
-      }
-    }
-  }
-}
-```
-
-**Reindexing Pattern** - Schema migrations:
-
-```json
-POST /_reindex
-{
-  "source": { "index": "products_v1" },
-  "dest": { "index": "products_v2" },
-  "script": {
-    "source": "ctx._source.category = ctx._source.category.toLowerCase()"
-  }
-}
-```
-
-### Search UI Patterns
-
-**Debounced Search Input:**
-
-```javascript
-import { useState, useEffect } from "react";
-
-function SearchBar({ onSearch }) {
-  const [query, setQuery] = useState("");
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (query.length >= 2) {
-        onSearch(query);
-      }
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [query, onSearch]);
-
-  return (
-    <input
-      type="text"
-      value={query}
-      onChange={(e) => setQuery(e.target.value)}
-      placeholder="Search..."
-    />
-  );
-}
-```
-
-**Faceted Search Component:**
-
-```javascript
-function FacetedSearch({ aggregations, selectedFilters, onFilterChange }) {
-  return (
-    <div className="facets">
-      <div className="facet-group">
-        <h3>Category</h3>
-        {aggregations.categories.buckets.map((bucket) => (
-          <label key={bucket.key}>
-            <input
-              type="checkbox"
-              checked={selectedFilters.category?.includes(bucket.key)}
-              onChange={() => onFilterChange("category", bucket.key)}
-            />
-            {bucket.key} ({bucket.doc_count})
-          </label>
-        ))}
-      </div>
-
-      <div className="facet-group">
-        <h3>Price Range</h3>
-        {aggregations.price_ranges.buckets.map((bucket) => (
-          <label key={bucket.key}>
-            <input
-              type="radio"
-              name="price_range"
-              checked={selectedFilters.priceRange === bucket.key}
-              onChange={() => onFilterChange("priceRange", bucket.key)}
-            />
-            {bucket.key} ({bucket.doc_count})
-          </label>
-        ))}
-      </div>
-    </div>
-  );
-}
-```
-
-**Search Results with Highlighting:**
-
-```javascript
-function SearchResult({ hit }) {
-  const getHighlightedText = (text, highlights) => {
-    if (!highlights) return text;
-    return { __html: highlights.join("...") };
+  const res = await this.client.search({ index: "products", body: {
+    from: (page - 1) * pageSize, size: pageSize,      // ⚠ shallow paging only (<10k)
+    query: { bool: { must, filter } },
+    aggs: { categories: { terms: { field: "category", size: 20 } },
+            price_stats: { stats: { field: "price" } } },
+    highlight: { fields: { name: {}, description: { fragment_size: 150 } } },
+  }});
+  return {
+    hits: res.hits.hits.map(h => ({ ...h._source, _score: h._score, highlight: h.highlight })),
+    total: res.hits.total.value, aggregations: res.aggregations,
   };
-
-  return (
-    <div className="search-result">
-      <h3
-        dangerouslySetInnerHTML={getHighlightedText(
-          hit.name,
-          hit.highlight?.name,
-        )}
-      />
-      <p
-        dangerouslySetInnerHTML={getHighlightedText(
-          hit.description,
-          hit.highlight?.description,
-        )}
-      />
-      <span className="score">Score: {hit._score.toFixed(2)}</span>
-    </div>
-  );
 }
 ```
 
-### Relevance Tuning Strategies
+⚠ Highlight fragments go straight into `dangerouslySetInnerHTML` in most UIs — ES escapes the surrounding text, but confirm you're not concatenating unescaped user content around it (XSS).
 
-**Testing Relevance:**
+## Verification Checklist
 
-```javascript
-class RelevanceTest {
-  async testQuery(query, expectedTopResults) {
-    const results = await this.search(query);
-    const topIds = results.hits.slice(0, 3).map((h) => h._id);
-
-    console.log(`Query: "${query}"`);
-    console.log(`Expected: ${expectedTopResults.join(", ")}`);
-    console.log(`Actual: ${topIds.join(", ")}`);
-
-    const precision =
-      topIds.filter((id) => expectedTopResults.includes(id)).length /
-      topIds.length;
-
-    return { precision, topIds };
-  }
-}
-
-// Test cases
-const tests = [
-  { query: "wireless headphones", expected: ["prod-123", "prod-456"] },
-  { query: "bluetooth speaker", expected: ["prod-789", "prod-012"] },
-];
-```
-
-**Multi-Field Scoring Strategy:**
-
-```json
-GET /products/_search
-{
-  "query": {
-    "multi_match": {
-      "query": "wireless headphones",
-      "fields": [
-        "exact_name^10",
-        "name^5",
-        "brand^3",
-        "description^2",
-        "tags"
-      ],
-      "type": "cross_fields",
-      "operator": "and"
-    }
-  }
-}
-```
-
-**Recency Boosting Pattern:**
-
-```json
-GET /articles/_search
-{
-  "query": {
-    "function_score": {
-      "query": { "match": { "content": "elasticsearch" } },
-      "functions": [
-        {
-          "exp": {
-            "published_at": {
-              "origin": "now",
-              "scale": "7d",
-              "offset": "1d",
-              "decay": 0.5
-            }
-          }
-        }
-      ]
-    }
-  }
-}
-```
-
-**Popularity + Relevance Combination:**
-
-```json
-GET /products/_search
-{
-  "query": {
-    "function_score": {
-      "query": { "match": { "name": "laptop" } },
-      "functions": [
-        {
-          "field_value_factor": {
-            "field": "sales_count",
-            "modifier": "log1p",
-            "factor": 0.1
-          }
-        },
-        {
-          "field_value_factor": {
-            "field": "rating",
-            "modifier": "none",
-            "factor": 2
-          }
-        }
-      ],
-      "score_mode": "sum",
-      "boost_mode": "multiply"
-    }
-  }
-}
-```
-
-## Best Practices
-
-### Indexing
-
-- Use bulk operations for large data imports
-- Implement index aliases for zero-downtime reindexing
-- Choose appropriate shard count based on data size
-- Use explicit mappings instead of dynamic mapping in production
-
-### Query Performance
-
-- Use `filter` context for exact matches (cached, faster)
-- Use `must` context only when scoring matters
-- Limit result size and use pagination
-- Avoid leading wildcards in queries
-
-### Relevance
-
-- Test relevance with representative queries
-- Use field boosting to prioritize important fields
-- Implement function_score for business logic (popularity, recency)
-- Consider using `dis_max` for OR-style queries
-
-### Autocomplete
-
-- Use completion suggester for simple prefix matching
-- Use edge n-grams for more flexible matching
-- Implement debouncing on the client side (200-300ms)
-- Return suggestions with highlighting
-
-### Schema Design
-
-- Use `keyword` type for exact matches and aggregations
-- Use `text` type for full-text search
-- Consider multi-fields for both use cases
-- Use nested objects sparingly (performance impact)
-
-## Examples
-
-### Complete Search Implementation (Node.js)
-
-```javascript
-const { Client } = require("@elastic/elasticsearch");
-
-class SearchService {
-  constructor() {
-    this.client = new Client({ node: "http://localhost:9200" });
-  }
-
-  async search(query, filters = {}, page = 1, pageSize = 20) {
-    const must = [];
-    const filter = [];
-
-    if (query) {
-      must.push({
-        multi_match: {
-          query,
-          fields: ["name^3", "description", "tags^2"],
-          type: "best_fields",
-          fuzziness: "AUTO",
-        },
-      });
-    }
-
-    if (filters.category) {
-      filter.push({ term: { category: filters.category } });
-    }
-
-    if (filters.priceMin || filters.priceMax) {
-      filter.push({
-        range: {
-          price: {
-            ...(filters.priceMin && { gte: filters.priceMin }),
-            ...(filters.priceMax && { lte: filters.priceMax }),
-          },
-        },
-      });
-    }
-
-    const response = await this.client.search({
-      index: "products",
-      body: {
-        from: (page - 1) * pageSize,
-        size: pageSize,
-        query: {
-          bool: {
-            must: must.length ? must : [{ match_all: {} }],
-            filter,
-          },
-        },
-        aggs: {
-          categories: { terms: { field: "category", size: 20 } },
-          price_stats: { stats: { field: "price" } },
-        },
-        highlight: {
-          fields: {
-            name: {},
-            description: { fragment_size: 150 },
-          },
-        },
-      },
-    });
-
-    return {
-      hits: response.hits.hits.map((hit) => ({
-        ...hit._source,
-        _score: hit._score,
-        highlight: hit.highlight,
-      })),
-      total: response.hits.total.value,
-      aggregations: response.aggregations,
-    };
-  }
-
-  async autocomplete(prefix, limit = 5) {
-    const response = await this.client.search({
-      index: "products",
-      body: {
-        suggest: {
-          suggestions: {
-            prefix,
-            completion: {
-              field: "name_suggest",
-              size: limit,
-              fuzzy: { fuzziness: 1 },
-            },
-          },
-        },
-      },
-    });
-
-    return response.suggest.suggestions[0].options.map((opt) => ({
-      text: opt.text,
-      score: opt._score,
-    }));
-  }
-}
-```
-
-### Python Implementation
-
-```python
-from elasticsearch import Elasticsearch, helpers
-from typing import Dict, List, Optional
-
-class SearchService:
-    def __init__(self, hosts: List[str] = ['localhost:9200']):
-        self.es = Elasticsearch(hosts)
-
-    def bulk_index(self, index: str, documents: List[Dict]):
-        actions = [
-            {
-                '_index': index,
-                '_id': doc.get('id'),
-                '_source': doc
-            }
-            for doc in documents
-        ]
-        helpers.bulk(self.es, actions)
-
-    def search(
-        self,
-        index: str,
-        query: str,
-        filters: Optional[Dict] = None,
-        page: int = 1,
-        size: int = 20
-    ) -> Dict:
-        body = {
-            'from': (page - 1) * size,
-            'size': size,
-            'query': {
-                'bool': {
-                    'must': [{
-                        'multi_match': {
-                            'query': query,
-                            'fields': ['name^3', 'description'],
-                            'fuzziness': 'AUTO'
-                        }
-                    }] if query else [{'match_all': {}}],
-                    'filter': self._build_filters(filters or {})
-                }
-            },
-            'aggs': {
-                'categories': {'terms': {'field': 'category'}},
-                'price_ranges': {
-                    'range': {
-                        'field': 'price',
-                        'ranges': [
-                            {'to': 50},
-                            {'from': 50, 'to': 100},
-                            {'from': 100}
-                        ]
-                    }
-                }
-            }
-        }
-
-        return self.es.search(index=index, body=body)
-
-    def _build_filters(self, filters: Dict) -> List[Dict]:
-        result = []
-        if 'category' in filters:
-            result.append({'term': {'category': filters['category']}})
-        if 'price_min' in filters or 'price_max' in filters:
-            price_range = {}
-            if 'price_min' in filters:
-                price_range['gte'] = filters['price_min']
-            if 'price_max' in filters:
-                price_range['lte'] = filters['price_max']
-            result.append({'range': {'price': price_range}})
-        return result
-```
+- [ ] `text` vs `keyword` chosen per field; facet/sort fields are `keyword` (or `.raw` multi-field)
+- [ ] Explicit mapping in prod; no dynamic-mapping type drift
+- [ ] Index-time vs query-time analyzers deliberate (autocomplete/ngram analyzed at index time *only*); verified with `_analyze`
+- [ ] Exact/range/boolean predicates in `filter` context (cached), not `must`
+- [ ] Facets show all options while results narrow — `post_filter`/per-agg filter, not everything in the main query
+- [ ] Pagination beyond a few thousand uses `search_after` (+PIT for consistency), not `from`/`size`
+- [ ] Autocomplete mechanism matches the need; edge_ngram not applied at query time; debounced client
+- [ ] Reindex goes through an **alias** with an atomic swap; in-flight writes handled
+- [ ] Bulk indexing with replicas/refresh tuned; not one-doc-per-request
+- [ ] `function_score` fields handle `missing` and dampen magnitude (`log1p`/decay); relevance tested on representative queries, not 3 happy-path ones
+- [ ] `terms` agg count approximation understood; not used where exact counts are load-bearing

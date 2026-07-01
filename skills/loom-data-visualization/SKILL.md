@@ -16,586 +16,163 @@ triggers:
   - report
   - visualization
   - matplotlib
+  - seaborn
   - plotly
   - d3
-  - seaborn
+  - vega-lite
+  - echarts
   - grafana
   - tableau
   - superset
   - metabase
   - KPI
-  - metric
   - analytics
   - histogram
   - heatmap
   - time-series
   - scatter
   - bar-chart
+  - colorblind
+  - accessibility
 ---
 
 # Data Visualization
 
 ## Overview
 
-This skill creates effective data visualizations that communicate insights clearly across multiple domains: analytics dashboards, infrastructure monitoring, and ML model performance tracking. It combines data analysis expertise, dashboard architecture patterns, UX design principles, and accessibility considerations.
+Match the chart to the data relationship, encode quantities in perceptually accurate channels, avoid distortion, and make it accessible. This skill is the design layer above the plotting library.
 
-## Instructions
+## Chart selection by data relationship
 
-### 1. Understand the Data and Context
+| Goal | Prefer | Avoid |
+| --- | --- | --- |
+| Compare across categories | horizontal bar (sorted), dot plot | pie with >~5 slices |
+| Part-to-whole | stacked bar, treemap; pie only ≤5 slices | many pies / donuts for precise comparison |
+| Distribution | histogram, box, violin, ECDF | bar of means (hides spread) |
+| Two-variable relationship | scatter (+ trend), 2D density/hexbin when dense | scatter with 100k overplotted points |
+| Correlation matrix | heatmap (diverging scale) | 3D surface |
+| Trend over time | line; area for cumulative | connecting unordered categories with lines |
+| Ranking | ordered bar / lollipop | pie |
+| Performance vs target | bullet chart | gauge cluster |
+| Geographic | choropleth (normalized), point/flow map | raw-count choropleth (just shows population) |
 
-- Analyze data structure, types, and granularity
-- Identify key metrics, dimensions, and relationships
-- Determine the analytical question or story to tell
-- Consider the target audience and their technical level
-- Assess update frequency and real-time requirements
-- Identify domain-specific needs (analytics, monitoring, ML)
+## Perceptual accuracy (why bars beat pies)
 
-### 2. Select Visualization Domain
+Cleveland–McGill ranking of how accurately humans decode a quantity:
 
-**Analytics Dashboards**: Business metrics, KPIs, trends, comparisons
+**position on common scale > position on non-aligned scale > length > angle/slope > area > volume > color hue/saturation.**
 
-- Tools: Tableau, Superset, Metabase, Plotly Dash, Streamlit
-- Focus: Executive summaries, drill-down exploration, report generation
+- Encode the *most important* quantity in position/length (bar, dot, line), not area or color.
+- Pie/donut = angle+area (weak); bubble = area (people underestimate large circles — area scales as r², so double the value ≠ double the radius). Reserve area/color for secondary dimensions.
+- Sort categorical bars by value (not alphabetically) unless order is semantic — sorting *is* the insight.
 
-**Infrastructure Monitoring**: System health, resource usage, alerts
+## Avoiding distortion (the "lie factor")
 
-- Tools: Grafana, Prometheus, Datadog, CloudWatch
-- Focus: Real-time metrics, alerting thresholds, SLA tracking
+- **Truncated y-axis** exaggerates change. Bar charts **must** start at 0 (bar length encodes the value). Line/time-series *may* zoom the axis to show variation — but label it clearly; don't imply a 2% change is a cliff.
+- **Dual y-axes** manufacture spurious correlation and let you slide two series' scales arbitrarily. Replace with indexed series (all = 100 at t0), two small multiples, or a ratio.
+- **Aim for lie factor ≈ 1** (graphic effect size / data effect size). Don't use 3D, shadows, or area to represent 1D quantities.
+- **Chartjunk:** maximize data-ink ratio (Tufte) — drop gridline clutter, heavy borders, redundant legends, background gradients. Direct-label lines instead of a legend when few series.
 
-**ML Model Performance**: Training metrics, predictions, model diagnostics
+## Color and accessibility
 
-- Tools: TensorBoard, Weights & Biases, MLflow, matplotlib
-- Focus: Loss curves, confusion matrices, feature importance
+- **Sequential:** `viridis`/`cividis` — perceptually uniform *and* colorblind-safe. Avoid `jet`/rainbow (non-uniform; invents false boundaries; not CVD-safe).
+- **Diverging** (signed around a midpoint): `RdBu`, `coolwarm` — set the neutral point at the meaningful zero.
+- **Qualitative** (categories, ≤~8): Okabe–Ito or ColorBrewer `Set2`. Beyond ~8 colors, hue stops being distinguishable — use small multiples, top-N+Other, or direct labels instead.
+- **Never rely on hue alone** (~8% of men have CVD): add redundant encoding — shape/linestyle, direct labels, or patterns. Red/green is the worst offender.
+- WCAG AA: 4.5:1 contrast for text, 3:1 for meaningful graphics. Provide alt text and a data-table fallback for interactive charts; support keyboard nav.
 
-### 3. Choose Chart Type and Layout
+## Handling data volume
 
-- Match chart type to data relationship (see Chart Selection Guide)
-- Consider data volume and complexity
-- Plan for interactivity needs (tooltips, filters, zoom)
-- Design information hierarchy (KPIs first, details below)
-- Account for accessibility (color, contrast, screen readers)
+- **Overplotting:** for dense scatter use hexbin / 2D density / alpha-blending / sampling — not 100k opaque points. For many time series use small multiples or highlight-one-fade-rest, not a spaghetti chart.
+- **High-cardinality categoricals:** top-N by value + an "Other" bucket; horizontal sorted bars; never a 30-slice pie or 30-color legend.
+- **Time-series downsampling:** don't push 1M points into 800px. Aggregate to the display resolution (LTTB — largest-triangle-three-buckets — preserves visual shape) or roll up to buckets. Show `p50/p95/p99`, not just the mean, for latency; show gaps for missing data rather than interpolating across them.
+- **Log scale** for data spanning orders of magnitude or multiplicative/growth relationships — label it explicitly (readers assume linear). ⚠ Log can't show zero/negative values.
 
-### 4. Design for Clarity and Usability
+## Library selection
 
-**Visual Design**:
+| Library | Sweet spot | Trade-off |
+| --- | --- | --- |
+| **Vega-Lite** | Declarative grammar-of-graphics; standard statistical charts fast; JSON spec = embeddable/serializable | Limited for bespoke/novel viz |
+| **D3** | Maximal control; custom/novel visualizations; SVG+canvas | Steep; high build effort — overkill for standard charts |
+| **Observable Plot** | Concise grammar-of-graphics in JS; lighter middle ground vs D3 | Younger ecosystem |
+| **Plotly / Dash** | Interactive out-of-the-box across Py/JS/R; notebooks + web apps | Heavy JS bundle |
+| **ECharts** | High-perf canvas; large datasets; rich chart variety; web dashboards | Config-heavy |
+| **Matplotlib / Seaborn** | Static publication figures; Python analysis/ML | Not interactive; verbose |
+| **Grafana** | Ops/time-series dashboards over live data sources; alerting | Not for ad-hoc exploratory analytics |
 
-- Choose accessible color schemes (colorblind-safe palettes)
-- Label axes and data clearly with units
-- Remove chart junk and unnecessary decorations
-- Highlight key insights with annotations
-- Use consistent styling across dashboard
+Rule of thumb: **standard statistical chart → Vega-Lite/Plotly/Seaborn; bespoke/interactive-novel → D3/Observable Plot; ops time-series → Grafana.** Reach for D3 only when a grammar-of-graphics tool genuinely can't express the design.
 
-**UX Considerations**:
+## Dashboard design
 
-- Provide context (baselines, targets, historical comparisons)
-- Enable progressive disclosure (summary → details)
-- Add clear legends and tooltips
-- Include data freshness indicators
-- Design for both desktop and mobile views
+- **Most-important-top-left** (F/Z reading pattern); lead with 4–6 KPIs (value + trend/delta + context/target), details below, progressive disclosure via drill-down.
+- Consistent axes, color meaning, and units across panels — the same color must mean the same thing everywhere.
+- Provide context on every number: baseline, target, or prior period. A lone "1,240" is noise.
+- **Analytics:** date-range + filters; export (CSV/PNG); cache expensive queries.
+- **Monitoring:** time-series lines; threshold bands; current status prominent; percentiles not averages; auto-refresh 30–60s.
+- **ML:** train+val curves on one axis (gap = overfit); normalized confusion matrix; horizontal feature-importance bars; per-experiment comparison.
 
-**Accessibility**:
+## Reference examples
 
-- WCAG AA color contrast ratios (4.5:1 text, 3:1 graphics)
-- Use patterns/textures in addition to color
-- Provide alt text for static visualizations
-- Support keyboard navigation for interactive charts
-- Include data tables as fallback
-
-### 5. Implement and Validate
-
-- Build visualization with chosen tool
-- Test with real data at production scale
-- Validate calculations and aggregations
-- Verify performance (load time < 3s for dashboards)
-- Gather feedback from end users
-- Iterate based on usage patterns and analytics
-
-## Best Practices
-
-### General Principles
-
-1. **Right Chart for Data**: Match visualization to data relationship and question
-2. **Less is More**: Remove unnecessary elements, maximize data-ink ratio
-3. **Consistent Styling**: Use coherent color schemes and typography
-4. **Accessible Design**: Support colorblind users, screen readers, keyboard navigation
-5. **Clear Labels**: Descriptive titles, axis labels with units, data sources
-6. **Context Matters**: Include baselines, targets, historical comparisons
-7. **Interactive When Helpful**: Add tooltips, filters, zoom for exploration
-8. **Performance First**: Optimize for < 3s dashboard load times
-9. **Mobile-Responsive**: Design for both desktop and mobile viewports
-
-### Domain-Specific Guidelines
-
-**Analytics Dashboards**:
-
-- Start with executive summary (4-6 KPIs with trends)
-- Support drill-down from summary to detail
-- Include date range selectors and common filters
-- Provide export options (PDF, CSV, PNG)
-- Cache expensive queries, refresh on schedule
-
-**Infrastructure Monitoring**:
-
-- Use time-series line charts for metrics over time
-- Set alert thresholds with colored bands
-- Show current status prominently (healthy/degraded/down)
-- Include percentile metrics (p50, p95, p99) not just averages
-- Auto-refresh dashboards every 30-60 seconds
-
-**ML Model Performance**:
-
-- Plot training/validation curves together
-- Show confusion matrices with normalized values
-- Visualize feature importance with horizontal bars
-- Include sample predictions for interpretability
-- Track metrics across experiments for comparison
-
-### Accessibility Checklist
-
-- Use colorblind-safe palettes (avoid red/green only)
-- Ensure 4.5:1 contrast ratio for text
-- Provide alt text for static images
-- Support keyboard navigation (tab, arrow keys)
-- Include data tables as alternative representation
-- Test with screen readers (NVDA, JAWS)
-- Use patterns/textures in addition to color
-- Avoid flashing or rapidly changing content
-
-## Examples
-
-### Example 1: Python with Matplotlib/Seaborn
+Matplotlib multi-panel with target band and value labels:
 
 ```python
 import matplotlib.pyplot as plt
-import seaborn as sns
-import pandas as pd
-import numpy as np
-
-# Set style for professional look
-plt.style.use('seaborn-v0_8-whitegrid')
-sns.set_palette("husl")
-
-# Create figure with subplots
-fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-
-# Example 1: Line chart for time series
-df_sales = pd.DataFrame({
-    'date': pd.date_range('2024-01-01', periods=12, freq='M'),
-    'revenue': [100, 120, 115, 140, 155, 170, 165, 180, 195, 210, 225, 250],
-    'target': [110, 115, 120, 130, 145, 160, 175, 185, 200, 215, 230, 245]
-})
-
-ax1 = axes[0, 0]
-ax1.plot(df_sales['date'], df_sales['revenue'], marker='o', linewidth=2, label='Actual')
-ax1.plot(df_sales['date'], df_sales['target'], linestyle='--', linewidth=2, label='Target')
-ax1.fill_between(df_sales['date'], df_sales['revenue'], df_sales['target'],
-                  alpha=0.3, where=(df_sales['revenue'] >= df_sales['target']), color='green')
-ax1.fill_between(df_sales['date'], df_sales['revenue'], df_sales['target'],
-                  alpha=0.3, where=(df_sales['revenue'] < df_sales['target']), color='red')
-ax1.set_title('Monthly Revenue vs Target', fontsize=14, fontweight='bold')
-ax1.set_xlabel('Month')
-ax1.set_ylabel('Revenue ($K)')
-ax1.legend()
-ax1.tick_params(axis='x', rotation=45)
-
-# Example 2: Bar chart for comparison
-df_products = pd.DataFrame({
-    'product': ['Product A', 'Product B', 'Product C', 'Product D', 'Product E'],
-    'sales': [45, 32, 28, 22, 18]
-})
-
-ax2 = axes[0, 1]
-colors = sns.color_palette("Blues_r", len(df_products))
-bars = ax2.barh(df_products['product'], df_products['sales'], color=colors)
-ax2.bar_label(bars, padding=3, fmt='$%.0fK')
-ax2.set_title('Sales by Product', fontsize=14, fontweight='bold')
-ax2.set_xlabel('Sales ($K)')
-ax2.invert_yaxis()
-
-# Example 3: Scatter plot with regression
-np.random.seed(42)
-df_scatter = pd.DataFrame({
-    'ad_spend': np.random.uniform(10, 100, 50),
-    'conversions': lambda x: x['ad_spend'] * 2.5 + np.random.normal(0, 15, 50)
-}.__class__.__call__(pd.DataFrame({'ad_spend': np.random.uniform(10, 100, 50)})))
-df_scatter['conversions'] = df_scatter['ad_spend'] * 2.5 + np.random.normal(0, 15, 50)
-
-ax3 = axes[1, 0]
-sns.regplot(data=df_scatter, x='ad_spend', y='conversions', ax=ax3,
-            scatter_kws={'alpha': 0.6}, line_kws={'color': 'red'})
-ax3.set_title('Ad Spend vs Conversions', fontsize=14, fontweight='bold')
-ax3.set_xlabel('Ad Spend ($K)')
-ax3.set_ylabel('Conversions')
-
-# Example 4: Pie/Donut chart for composition
-df_channels = pd.DataFrame({
-    'channel': ['Organic', 'Paid Search', 'Social', 'Email', 'Direct'],
-    'traffic': [35, 25, 20, 12, 8]
-})
-
-ax4 = axes[1, 1]
-wedges, texts, autotexts = ax4.pie(
-    df_channels['traffic'],
-    labels=df_channels['channel'],
-    autopct='%1.1f%%',
-    pctdistance=0.75,
-    wedgeprops=dict(width=0.5)
-)
-ax4.set_title('Traffic by Channel', fontsize=14, fontweight='bold')
-
-plt.tight_layout()
-plt.savefig('dashboard.png', dpi=150, bbox_inches='tight')
-plt.show()
-```
-
-### Example 2: Interactive Visualization with Plotly
-
-```python
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import pandas as pd
 
-# Create interactive time series
 df = pd.DataFrame({
-    'date': pd.date_range('2024-01-01', periods=365, freq='D'),
-    'value': (pd.Series(range(365)) * 0.1 +
-              np.sin(pd.Series(range(365)) * 0.1) * 20 +
-              np.random.normal(0, 5, 365)).cumsum()
+    "date": pd.date_range("2024-01-01", periods=12, freq="ME"),
+    "revenue": [100,120,115,140,155,170,165,180,195,210,225,250],
+    "target":  [110,115,120,130,145,160,175,185,200,215,230,245],
 })
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.plot(df.date, df.revenue, marker="o", lw=2, label="Actual")
+ax.plot(df.date, df.target, ls="--", lw=2, label="Target")
+ax.fill_between(df.date, df.revenue, df.target,
+                where=df.revenue >= df.target, alpha=0.25, color="#029E73")  # ahead
+ax.fill_between(df.date, df.revenue, df.target,
+                where=df.revenue <  df.target, alpha=0.25, color="#D55E00")  # behind
+ax.set(title="Monthly Revenue vs Target", xlabel="Month", ylabel="Revenue ($K)")
+ax.legend(); ax.margins(x=0.01)
+plt.tight_layout()
+```
 
+Interactive Plotly time series with range selector + moving average:
+
+```python
+import plotly.graph_objects as go
 fig = go.Figure()
-
-fig.add_trace(go.Scatter(
-    x=df['date'],
-    y=df['value'],
-    mode='lines',
-    name='Daily Value',
-    line=dict(color='#1f77b4', width=1.5),
-    hovertemplate='%{x|%B %d, %Y}<br>Value: %{y:.2f}<extra></extra>'
-))
-
-# Add moving average
-df['ma_7'] = df['value'].rolling(7).mean()
-fig.add_trace(go.Scatter(
-    x=df['date'],
-    y=df['ma_7'],
-    mode='lines',
-    name='7-day MA',
-    line=dict(color='#ff7f0e', width=2, dash='dash')
-))
-
-fig.update_layout(
-    title='Daily Performance with Moving Average',
-    xaxis_title='Date',
-    yaxis_title='Value',
-    hovermode='x unified',
-    template='plotly_white',
-    xaxis=dict(
-        rangeselector=dict(
-            buttons=list([
-                dict(count=7, label="1w", step="day", stepmode="backward"),
-                dict(count=1, label="1m", step="month", stepmode="backward"),
-                dict(count=3, label="3m", step="month", stepmode="backward"),
-                dict(step="all")
-            ])
-        ),
-        rangeslider=dict(visible=True)
-    )
-)
-
-fig.write_html('interactive_chart.html')
-fig.show()
+fig.add_scatter(x=df.date, y=df.value, mode="lines", name="Daily",
+                hovertemplate="%{x|%b %d}<br>%{y:.1f}<extra></extra>")
+fig.add_scatter(x=df.date, y=df.value.rolling(7).mean(), mode="lines",
+                name="7d MA", line=dict(dash="dash"))
+fig.update_layout(template="plotly_white", hovermode="x unified",
+                  xaxis=dict(rangeslider=dict(visible=True)))
 ```
 
-### Example 3: Chart Type Selection Guide
-
-```markdown
-## Chart Selection by Data Type
-
-### Comparison
-
-- **Bar Chart**: Compare values across categories
-- **Grouped Bar**: Compare multiple series across categories
-- **Bullet Chart**: Show performance against target
-
-### Distribution
-
-- **Histogram**: Show frequency distribution
-- **Box Plot**: Show distribution summary statistics
-- **Violin Plot**: Show distribution shape
-
-### Composition
-
-- **Pie/Donut Chart**: Show parts of a whole (< 6 categories)
-- **Stacked Bar**: Show composition across categories
-- **Treemap**: Show hierarchical composition
-
-### Relationship
-
-- **Scatter Plot**: Show correlation between two variables
-- **Bubble Chart**: Add third dimension via size
-- **Heatmap**: Show correlation matrix
-
-### Time Series
-
-- **Line Chart**: Show trends over time
-- **Area Chart**: Show cumulative trends
-- **Candlestick**: Show OHLC financial data
-
-### Geographic
-
-- **Choropleth**: Show values by region
-- **Point Map**: Show locations with values
-- **Flow Map**: Show movement between locations
-```
-
-### Example 4: Analytics Dashboard with Streamlit
+Colorblind-safe qualitative palette (Okabe–Ito) with redundant value labels:
 
 ```python
-# Streamlit Dashboard Example
-import streamlit as st
-import pandas as pd
-import plotly.express as px
-
-st.set_page_config(page_title="Sales Dashboard", layout="wide")
-
-# Header
-st.title("Sales Performance Dashboard")
-st.markdown("---")
-
-# KPI Row
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    st.metric("Total Revenue", "$1.2M", "+12%")
-with col2:
-    st.metric("Orders", "8,543", "+8%")
-with col3:
-    st.metric("Avg Order Value", "$140", "+3%")
-with col4:
-    st.metric("Conversion Rate", "3.2%", "-0.5%")
-
-st.markdown("---")
-
-# Filters
-with st.sidebar:
-    st.header("Filters")
-    date_range = st.date_input("Date Range", [])
-    region = st.multiselect("Region", ["North", "South", "East", "West"])
-    category = st.selectbox("Category", ["All", "Electronics", "Clothing", "Home"])
-
-# Main Charts
-left_col, right_col = st.columns([2, 1])
-
-with left_col:
-    st.subheader("Revenue Trend")
-    # Line chart here
-
-with right_col:
-    st.subheader("Sales by Region")
-    # Pie chart here
-
-# Detail Table
-st.subheader("Recent Orders")
-# Data table here
+OKABE_ITO = ["#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7"]
+bars = ax.bar(labels, values, color=OKABE_ITO[:len(values)])
+ax.bar_label(bars)  # direct labels: readable without color perception
 ```
 
-### Example 5: Grafana Dashboard for Infrastructure Monitoring
+## Gotchas
 
-```yaml
-# Grafana dashboard JSON structure
-# Save as dashboard.json and import via Grafana UI
+- `matplotlib` `freq="M"` is deprecated → use `"ME"` (month-end) in pandas ≥2.2.
+- Seaborn style names are versioned: `plt.style.use("seaborn-v0_8-whitegrid")` (the bare `seaborn-*` names were removed in Matplotlib 3.6+).
+- Pie charts of percentages that don't sum to 100, or with negatives, are meaningless — validate the data is a true part-to-whole first.
+- Rainbow/`jet` colormaps create perceptual banding that fabricates structure — banned for quantitative encoding.
+- Averaging percentiles or averaging rates across groups (Simpson's paradox) misleads — aggregate raw counts, then compute the ratio.
 
-apiVersion: 1
-providers:
-  - name: "default"
-    folder: "Infrastructure"
-    type: file
-    options:
-      path: /etc/grafana/provisioning/dashboards
+## Checklist — before shipping a chart/dashboard
 
----
-# Dashboard panels configuration
-{
-  "dashboard":
-    {
-      "title": "Service Health Dashboard",
-      "tags": ["infrastructure", "monitoring"],
-      "timezone": "browser",
-      "panels":
-        [
-          {
-            "id": 1,
-            "title": "Request Rate",
-            "type": "graph",
-            "targets":
-              [
-                {
-                  "expr": "rate(http_requests_total[5m])",
-                  "legendFormat": "{{service}}",
-                },
-              ],
-            "yaxes": [{ "format": "reqps", "label": "Requests/sec" }],
-            "alert":
-              {
-                "conditions":
-                  [
-                    {
-                      "evaluator": { "params": [100], "type": "gt" },
-                      "query": { "params": ["A", "5m", "now"] },
-                    },
-                  ],
-              },
-          },
-          {
-            "id": 2,
-            "title": "Error Rate",
-            "type": "graph",
-            "targets":
-              [
-                {
-                  "expr": "rate(http_errors_total[5m]) / rate(http_requests_total[5m])",
-                  "legendFormat": "Error %",
-                },
-              ],
-            "fieldConfig":
-              {
-                "defaults":
-                  {
-                    "thresholds":
-                      {
-                        "steps":
-                          [
-                            { "value": 0, "color": "green" },
-                            { "value": 0.01, "color": "yellow" },
-                            { "value": 0.05, "color": "red" },
-                          ],
-                      },
-                  },
-              },
-          },
-          {
-            "id": 3,
-            "title": "Response Time (p95)",
-            "type": "graph",
-            "targets":
-              [
-                {
-                  "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
-                  "legendFormat": "p95",
-                },
-              ],
-          },
-        ],
-      "refresh": "30s",
-      "time": { "from": "now-1h", "to": "now" },
-    },
-}
-```
-
-### Example 6: ML Model Performance Visualization
-
-```python
-# TensorBoard-style training visualization
-import matplotlib.pyplot as plt
-import numpy as np
-from sklearn.metrics import confusion_matrix, classification_report
-import seaborn as sns
-
-# Training history visualization
-fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-
-# Loss curves
-ax1 = axes[0, 0]
-epochs = range(1, 51)
-train_loss = np.exp(-np.array(epochs) / 10) + np.random.normal(0, 0.05, 50)
-val_loss = np.exp(-np.array(epochs) / 10) + np.random.normal(0, 0.08, 50) + 0.1
-
-ax1.plot(epochs, train_loss, label='Training Loss', linewidth=2)
-ax1.plot(epochs, val_loss, label='Validation Loss', linewidth=2)
-ax1.axvline(x=30, color='red', linestyle='--', alpha=0.5, label='Best Model')
-ax1.set_xlabel('Epoch')
-ax1.set_ylabel('Loss')
-ax1.set_title('Training and Validation Loss', fontsize=14, fontweight='bold')
-ax1.legend()
-ax1.grid(alpha=0.3)
-
-# Accuracy curves
-ax2 = axes[0, 1]
-train_acc = 1 - train_loss
-val_acc = 1 - val_loss
-
-ax2.plot(epochs, train_acc, label='Training Accuracy', linewidth=2)
-ax2.plot(epochs, val_acc, label='Validation Accuracy', linewidth=2)
-ax2.axvline(x=30, color='red', linestyle='--', alpha=0.5)
-ax2.set_xlabel('Epoch')
-ax2.set_ylabel('Accuracy')
-ax2.set_title('Training and Validation Accuracy', fontsize=14, fontweight='bold')
-ax2.legend()
-ax2.grid(alpha=0.3)
-
-# Confusion Matrix
-ax3 = axes[1, 0]
-y_true = np.random.randint(0, 3, 500)
-y_pred = y_true.copy()
-y_pred[np.random.random(500) < 0.15] = np.random.randint(0, 3, (y_pred.shape[0]))
-
-cm = confusion_matrix(y_true, y_pred)
-sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax3,
-            xticklabels=['Class A', 'Class B', 'Class C'],
-            yticklabels=['Class A', 'Class B', 'Class C'])
-ax3.set_xlabel('Predicted')
-ax3.set_ylabel('Actual')
-ax3.set_title('Confusion Matrix', fontsize=14, fontweight='bold')
-
-# Feature Importance
-ax4 = axes[1, 1]
-features = ['Feature A', 'Feature B', 'Feature C', 'Feature D', 'Feature E']
-importance = np.array([0.35, 0.28, 0.18, 0.12, 0.07])
-
-colors = plt.cm.viridis(importance / importance.max())
-bars = ax4.barh(features, importance, color=colors)
-ax4.set_xlabel('Importance')
-ax4.set_title('Feature Importance', fontsize=14, fontweight='bold')
-ax4.invert_yaxis()
-
-for i, (bar, val) in enumerate(zip(bars, importance)):
-    ax4.text(val + 0.01, i, f'{val:.2f}', va='center')
-
-plt.tight_layout()
-plt.savefig('ml_performance_dashboard.png', dpi=150, bbox_inches='tight')
-plt.show()
-```
-
-### Example 7: Accessible Color Palettes
-
-```python
-# Colorblind-safe palettes for data visualization
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-# Define accessible color schemes
-palettes = {
-    'colorblind_safe': ['#0173B2', '#DE8F05', '#029E73', '#CC78BC', '#CA9161'],
-    'high_contrast': ['#000000', '#E69F00', '#56B4E9', '#009E73', '#F0E442'],
-    'okabe_ito': ['#E69F00', '#56B4E9', '#009E73', '#F0E442', '#0072B2', '#D55E00', '#CC79A7']
-}
-
-# Test visualization with accessible palette
-data = [25, 20, 18, 15, 12, 10]
-labels = ['A', 'B', 'C', 'D', 'E', 'F']
-
-fig, axes = plt.subplots(1, 3, figsize=(15, 4))
-
-for ax, (name, colors) in zip(axes, palettes.items()):
-    ax.bar(labels, data, color=colors[:len(data)])
-    ax.set_title(f'{name.replace("_", " ").title()}', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Value')
-
-    # Add value labels for accessibility
-    for i, (label, value) in enumerate(zip(labels, data)):
-        ax.text(i, value + 0.5, str(value), ha='center', va='bottom')
-
-plt.tight_layout()
-plt.savefig('accessible_palettes.png', dpi=150, bbox_inches='tight')
-```
+- [ ] Chart type matches the data relationship (not just what's easy)
+- [ ] Key quantity encoded in position/length, not area/color alone
+- [ ] Bars start at 0; no deceptive dual axes; lie factor ≈ 1
+- [ ] Colorblind-safe palette; meaning not conveyed by hue alone; 4.5:1 text contrast
+- [ ] Axes labeled with units; log scale (if used) labeled; legend or direct labels present
+- [ ] Dense data downsampled/aggregated; high-cardinality categories bucketed (top-N + Other)
+- [ ] Context shown (baseline/target/prior); percentiles not just means for latency
+- [ ] Alt text / data-table fallback for accessibility; consistent color meaning across panels
+- [ ] Validated against real production-scale data; dashboard loads < 3s

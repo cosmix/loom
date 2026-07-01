@@ -17,14 +17,17 @@ triggers:
   - ML training jobs
   - Celery
   - Bull
+  - BullMQ
   - Sidekiq
   - Resque
+  - SQS
   - cron jobs
   - retry logic
   - dead letter queues
   - DLQ
   - at-least-once delivery
   - exactly-once delivery
+  - visibility timeout
   - job monitoring
   - worker management
 ---
@@ -33,1803 +36,301 @@ triggers:
 
 ## Overview
 
-Background jobs enable asynchronous processing of tasks outside the request-response cycle. This skill covers job queue patterns, scheduling, worker management, retry strategies, and monitoring for reliable task execution across different frameworks and languages.
+Reliable async task execution: enqueue work, process it in workers decoupled from the request cycle, and survive crashes/retries without corrupting state. This file covers job queues, retries/backoff, DLQs, scheduling, worker pools, and delivery guarantees.
 
-## Key Concepts
+For pub/sub, event sourcing, CQRS, sagas, and streaming brokers (Kafka/Pulsar), see **loom-event-driven** — don't reimplement those here.
 
-### Job Queue Patterns
+## The two invariants everything hangs off
 
-**Bull Queue (Node.js/Redis)**:
+1. **At-least-once is the default. Design every handler to be idempotent.** Redis-backed queues (Sidekiq, BullMQ, Celery+Redis), SQS standard, and any queue that retries on crash *will* deliver a job more than once. "Exactly-once delivery" does not exist over an unreliable network; the achievable goal is exactly-once *effect* = at-least-once delivery + idempotent handler.
+2. **Ack after success, never before.** The job must stay owned by the worker until the side effect is durably committed. Ack-then-process = at-most-once = silent data loss on crash. Process-then-ack = at-least-once = duplicates you dedup away. Always choose the latter.
 
-```typescript
-import Queue, { Job, JobOptions } from "bull";
-import { Redis } from "ioredis";
+### Idempotency: the non-negotiable pattern
 
-// Queue configuration
-interface QueueConfig {
-  name: string;
-  redis: Redis;
-  defaultJobOptions?: JobOptions;
-}
-
-// Job data interfaces
-interface EmailJobData {
-  to: string;
-  subject: string;
-  template: string;
-  context: Record<string, unknown>;
-}
-
-interface ImageProcessingJobData {
-  imageId: string;
-  operations: Array<{
-    type: "resize" | "crop" | "compress";
-    params: Record<string, unknown>;
-  }>;
-}
-
-// Queue factory
-function createQueue<T>(config: QueueConfig): Queue.Queue<T> {
-  const queue = new Queue<T>(config.name, {
-    createClient: (type) => {
-      switch (type) {
-        case "client":
-          return config.redis.duplicate();
-        case "subscriber":
-          return config.redis.duplicate();
-        case "bclient":
-          return config.redis.duplicate();
-        default:
-          return config.redis.duplicate();
-      }
-    },
-    defaultJobOptions: {
-      removeOnComplete: 100, // Keep last 100 completed jobs
-      removeOnFail: 1000, // Keep last 1000 failed jobs
-      attempts: 3,
-      backoff: {
-        type: "exponential",
-        delay: 2000,
-      },
-      ...config.defaultJobOptions,
-    },
-  });
-
-  // Global error handler
-  queue.on("error", (error) => {
-    console.error(`Queue ${config.name} error:`, error);
-  });
-
-  return queue;
-}
-
-// Email queue with typed processor
-const emailQueue = createQueue<EmailJobData>({
-  name: "email",
-  redis: new Redis(process.env.REDIS_URL),
-});
-
-// Define processor
-emailQueue.process(async (job: Job<EmailJobData>) => {
-  const { to, subject, template, context } = job.data;
-
-  // Update progress
-  await job.progress(10);
-
-  // Render template
-  const html = await renderTemplate(template, context);
-  await job.progress(50);
-
-  // Send email
-  await emailService.send({ to, subject, html });
-  await job.progress(100);
-
-  return { sent: true, messageId: `msg_${Date.now()}` };
-});
-
-// Add job with options
-async function sendEmail(
-  data: EmailJobData,
-  options?: JobOptions,
-): Promise<Job<EmailJobData>> {
-  return emailQueue.add(data, {
-    priority: options?.priority || 0,
-    delay: options?.delay || 0,
-    jobId: options?.jobId, // For deduplication
-    ...options,
-  });
-}
-
-// Bulk job addition
-async function sendBulkEmails(
-  emails: EmailJobData[],
-): Promise<Job<EmailJobData>[]> {
-  const jobs = emails.map((data, index) => ({
-    data,
-    opts: {
-      jobId: `bulk_${Date.now()}_${index}`,
-    },
-  }));
-
-  return emailQueue.addBulk(jobs);
-}
-```
-
-**Celery (Python)**:
+Derive a stable key from the job's *business identity* (not a random UUID per enqueue), and gate the side effect on it.
 
 ```python
-from celery import Celery, Task
-from celery.exceptions import MaxRetriesExceededError
-from typing import Any, Dict, Optional
-import logging
-
-# Celery configuration
-app = Celery('tasks')
-app.config_from_object({
-    'broker_url': 'redis://localhost:6379/0',
-    'result_backend': 'redis://localhost:6379/1',
-    'task_serializer': 'json',
-    'result_serializer': 'json',
-    'accept_content': ['json'],
-    'timezone': 'UTC',
-    'task_track_started': True,
-    'task_time_limit': 300,  # 5 minutes hard limit
-    'task_soft_time_limit': 240,  # 4 minutes soft limit
-    'worker_prefetch_multiplier': 4,
-    'task_acks_late': True,  # Acknowledge after task completes
-    'task_reject_on_worker_lost': True,
-})
-
-logger = logging.getLogger(__name__)
-
-# Base task with retry logic
-class BaseTask(Task):
-    autoretry_for = (Exception,)
-    retry_kwargs = {'max_retries': 3}
-    retry_backoff = True
-    retry_backoff_max = 600  # 10 minutes max
-    retry_jitter = True
-
-    def on_failure(self, exc, task_id, args, kwargs, einfo):
-        logger.error(f'Task {self.name}[{task_id}] failed: {exc}')
-
-    def on_retry(self, exc, task_id, args, kwargs, einfo):
-        logger.warning(f'Task {self.name}[{task_id}] retrying: {exc}')
-
-    def on_success(self, retval, task_id, args, kwargs):
-        logger.info(f'Task {self.name}[{task_id}] succeeded')
-
-# Email task
-@app.task(base=BaseTask, bind=True, name='send_email')
-def send_email(
-    self,
-    to: str,
-    subject: str,
-    template: str,
-    context: Dict[str, Any]
-) -> Dict[str, Any]:
-    try:
-        # Update state
-        self.update_state(state='PROGRESS', meta={'progress': 10})
-
-        # Render template
-        html = render_template(template, context)
-        self.update_state(state='PROGRESS', meta={'progress': 50})
-
-        # Send email
-        message_id = email_service.send(to=to, subject=subject, html=html)
-        self.update_state(state='PROGRESS', meta={'progress': 100})
-
-        return {'sent': True, 'message_id': message_id}
-
-    except ConnectionError as exc:
-        raise self.retry(exc=exc, countdown=60)
-
-# Image processing with chaining
-@app.task(base=BaseTask, bind=True, name='process_image')
-def process_image(self, image_id: str, operations: list) -> Dict[str, Any]:
-    image = load_image(image_id)
-
-    for i, op in enumerate(operations):
-        progress = int((i + 1) / len(operations) * 100)
-        self.update_state(state='PROGRESS', meta={'progress': progress, 'operation': op['type']})
-
-        if op['type'] == 'resize':
-            image = resize_image(image, **op['params'])
-        elif op['type'] == 'crop':
-            image = crop_image(image, **op['params'])
-        elif op['type'] == 'compress':
-            image = compress_image(image, **op['params'])
-
-    url = save_image(image, image_id)
-    return {'url': url, 'operations_count': len(operations)}
-
-# Task chaining example
-from celery import chain, group, chord
-
-def process_order(order_id: str):
-    """Process order with chained tasks."""
-    workflow = chain(
-        validate_order.s(order_id),
-        reserve_inventory.s(),
-        process_payment.s(),
-        send_confirmation.s(),
-    )
-    return workflow.apply_async()
-
-def process_bulk_images(image_ids: list):
-    """Process multiple images in parallel, then aggregate results."""
-    workflow = chord(
-        group(process_image.s(img_id, [{'type': 'resize', 'params': {'width': 800}}])
-              for img_id in image_ids),
-        aggregate_results.s()
-    )
-    return workflow.apply_async()
+def handle(job):
+    key = job["idempotency_key"]          # e.g. f"charge:{order_id}"
+    if store.setnx(f"done:{key}", "1", ex=7*86400):   # first time → claim
+        do_side_effect(job)               # charge card, send email, insert row
+    # else: already done → no-op, safe to return success
 ```
 
-**Sidekiq (Ruby)**:
+- ⚠ **Claim *before* the effect, but only mark "done" after it commits** — if you set the flag first and then crash, the retry sees "done" and skips a side effect that never happened. Best: idempotent write at the sink (unique constraint / upsert / conditional put) rather than a separate flag. The DB unique index is the most reliable dedup store.
+- The processed-marker TTL must exceed max retry window + queue retention, or a late redelivery re-runs the job.
+- Idempotency covers **duplicate delivery**; it does not cover **concurrent** duplicate execution (two workers at once). For that you need a lock or an atomic conditional write — see visibility-timeout races below.
+
+## Delivery guarantees & broker selection
+
+| Broker / lib | Model | Reliability caveat | Use when |
+| --- | --- | --- | --- |
+| **SQS standard** | at-least-once, unordered | Visibility timeout only; no ordering | Cloud-native, want managed durability + native DLQ (redrive) |
+| **SQS FIFO** | exactly-once *delivery* within 5-min dedup window, ordered per group | 300 msg/s (3000 batched) cap; ordering serializes a group | Ordering/dedup matters more than throughput |
+| **Sidekiq (OSS)** | at-least-once | Basic fetch (`BRPOP`) **loses in-flight jobs if the worker is killed** — job left Redis when fetched. Pro `super_fetch` (RPOPLPUSH) recovers them | Ruby, Redis already present, jobs are idempotent |
+| **BullMQ (Node)** | at-least-once | Uses a `lockDuration`; a stalled job (lock expired) is re-added — long jobs get double-run unless they renew the lock | Node, Redis, need rate limiting/flows |
+| **Celery + Redis** | at-least-once | **`visibility_timeout` (default 3600s)**: a task running longer than it is redelivered to another worker → concurrent double-run. No true broker ack | Python, small/medium scale |
+| **Celery + RabbitMQ** | at-least-once | Real broker acks; `task_acks_late` needed for crash-safety | Python, want a durable AMQP broker |
+| **Kafka / Pulsar** | at-least-once (log) | Consumer-group rebalance re-delivers; offset commit = ack | High-throughput streaming → see loom-event-driven |
+
+**Rule of thumb:** for durability without running infra, prefer a managed broker (SQS) or a real AMQP/log broker. Redis-list queues are fast and simple but the queue lives in one Redis instance — plan for `AOF`/replication and accept the crash-window caveats above.
+
+## Visibility timeout / lock races (the #1 duplicate-execution bug)
+
+A worker leases a job for `T` (SQS visibility timeout / Celery `visibility_timeout` / BullMQ `lockDuration`). If processing exceeds `T`, the queue assumes the worker died and hands the *same job to a second worker* — now it runs twice **concurrently**, and idempotency-by-marker won't save a non-atomic side effect.
+
+Mitigations, in order of preference:
+
+1. **Keep handlers well under `T`.** Size the timeout to p99 duration × safety factor.
+2. **Heartbeat / extend the lease** for legitimately long jobs: SQS `ChangeMessageVisibility`, BullMQ auto-renews while the processor runs (older Bull needs care), Celery — split the work or raise `visibility_timeout` (but that also delays recovery of genuinely-dead jobs).
+3. **Make the sink atomic** (conditional put / `UPDATE ... WHERE status='pending'`) so a concurrent second run is a no-op.
+
+```text
+❌ visibility_timeout = 60s, job takes 90s  → guaranteed double-processing
+✅ heartbeat every 30s, or checkpoint & keep each unit < timeout
+```
+
+## Retries, backoff, and retry storms
+
+**Exponential backoff with FULL JITTER.** Fixed or un-jittered backoff synchronizes all failed jobs to retry at the same instant → a thundering herd that re-topples a recovering dependency.
+
+```text
+delay = random_between(0, min(cap, base * 2 ** attempt))   # full jitter (AWS)
+```
+
+- **Full jitter** `rand(0, backoff)` beats "equal jitter" and beats no jitter for spreading load — use it by default.
+- **Cap the delay** (e.g. 10 min) and **cap attempts**. Unbounded retries = zombie jobs clogging the queue forever.
+- **Classify errors before retrying.** Retry only *transient* faults (timeouts, 429, 503, connection reset). Do **not** retry deterministic failures (validation error, 400, `NotFound`) — they'll fail identically N times, waste capacity, and delay the DLQ. Fail fast to DLQ instead.
+- **Circuit breaker** in front of a flapping dependency: after M consecutive failures, open the breaker and fast-fail (or pause the queue) for a cooldown so you stop hammering it and stop burning retry budget. See loom-error-handling for breaker internals.
+- **Retry budget:** total attempts × concurrency must not exceed the downstream's capacity, or retries themselves become the outage.
+
+### Framework retry config (canonical)
+
+```python
+# Celery — autoretry with jittered backoff + late acks
+class Base(Task):
+    autoretry_for = (ConnectionError, TimeoutError)   # transient ONLY
+    retry_backoff = True        # exponential
+    retry_backoff_max = 600     # cap 10 min
+    retry_jitter = True         # ON (default) — keep it
+    retry_kwargs = {"max_retries": 5}
+
+app.conf.update(task_acks_late=True, task_reject_on_worker_lost=True)
+```
+
+```typescript
+// BullMQ — exponential backoff, bounded attempts, retention
+new Queue("email", { defaultJobOptions: {
+  attempts: 5,
+  backoff: { type: "exponential", delay: 2000 }, // BullMQ jitters internally
+  removeOnComplete: 1000,     // cap completed set or Redis grows unbounded
+  removeOnFail: 5000,
+}});
+```
 
 ```ruby
-# config/initializers/sidekiq.rb
-Sidekiq.configure_server do |config|
-  config.redis = { url: ENV['REDIS_URL'], network_timeout: 5 }
-  config.death_handlers << ->(job, ex) do
-    # Handle job failure
-    ErrorReporter.report(ex, job: job)
-  end
-end
-
-Sidekiq.configure_client do |config|
-  config.redis = { url: ENV['REDIS_URL'], network_timeout: 5 }
-end
-
-# app/workers/email_worker.rb
-class EmailWorker
-  include Sidekiq::Worker
-
-  sidekiq_options queue: :default,
-                  retry: 5,
-                  backtrace: true,
-                  dead: true
-
-  sidekiq_retry_in do |count, exception|
-    # Exponential backoff: 1, 8, 27, 64, 125 seconds
-    (count + 1) ** 3
-  end
-
-  sidekiq_retries_exhausted do |msg, exception|
-    Rails.logger.error "Job #{msg['jid']} exhausted retries: #{exception.message}"
-    DeadJobNotifier.notify(msg, exception)
-  end
-
-  def perform(to, subject, template, context)
-    html = ApplicationController.render(
-      template: template,
-      locals: context.symbolize_keys
-    )
-
-    EmailService.send(to: to, subject: subject, html: html)
-  end
-end
-
-# app/workers/batch_worker.rb
-class BatchWorker
-  include Sidekiq::Worker
-
-  def perform(batch_id)
-    batch = Batch.find(batch_id)
-
-    batch.items.find_each do |item|
-      ItemProcessor.perform_async(item.id)
-    end
-  end
-end
-
-# Using Sidekiq Batches (Pro feature)
-class ImportWorker
-  include Sidekiq::Worker
-
-  def perform(import_id)
-    import = Import.find(import_id)
-
-    batch = Sidekiq::Batch.new
-    batch.description = "Import #{import_id}"
-    batch.on(:complete, ImportCallbacks, import_id: import_id)
-
-    batch.jobs do
-      import.rows.each_with_index do |row, index|
-        ImportRowWorker.perform_async(import_id, index, row)
-      end
-    end
-  end
-end
-
-class ImportCallbacks
-  def on_complete(status, options)
-    import = Import.find(options['import_id'])
-
-    if status.failures.zero?
-      import.update!(status: 'completed')
-    else
-      import.update!(status: 'completed_with_errors', error_count: status.failures)
-    end
-  end
-end
+# Sidekiq — default 25 retries (~21 days) w/ built-in jittered backoff
+sidekiq_options queue: :default, retry: 10, dead: true
+sidekiq_retries_exhausted { |msg, ex| DeadJobNotifier.notify(msg, ex) }
 ```
 
-### Scheduled Jobs and Cron Patterns
+## Dead letter queues & poison pills
+
+A **poison pill** is a job that fails every attempt (bad data, unhandled shape). Without a ceiling it retries forever and can head-of-line-block the queue.
+
+**Policy:** max attempts → move to DLQ → **alert** → keep the payload + error + attempt count → provide **redrive** tooling to replay after a fix.
+
+- SQS: set `RedrivePolicy` with `maxReceiveCount`; DLQ is a normal queue you can redrive from (console "start DLQ redrive" or re-enqueue).
+- Give the **DLQ its own retention and monitoring** — a silently-filling DLQ is an outage you haven't noticed. Alert on `DLQ depth > 0`.
+- **Redrive after the fix, not blindly** — replaying poison into the same broken handler just refills the DLQ. Fix root cause, then redrive in controlled batches.
+- Store enough context to reproduce: original payload, failing worker version, stack, first/last-failed timestamps.
 
 ```typescript
-// Bull scheduler
-import Queue from "bull";
-
-const scheduledQueue = new Queue("scheduled-tasks", process.env.REDIS_URL);
-
-// Repeatable jobs
-async function setupScheduledJobs(): Promise<void> {
-  // Clean up every hour
-  await scheduledQueue.add(
-    "cleanup",
-    {},
-    {
-      repeat: { cron: "0 * * * *" }, // Every hour
-      jobId: "cleanup-hourly",
-    },
-  );
-
-  // Daily report at 9 AM
-  await scheduledQueue.add(
-    "daily-report",
-    {},
-    {
-      repeat: { cron: "0 9 * * *" },
-      jobId: "daily-report",
-    },
-  );
-
-  // Every 5 minutes
-  await scheduledQueue.add(
-    "health-check",
-    {},
-    {
-      repeat: { every: 5 * 60 * 1000 }, // 5 minutes in ms
-      jobId: "health-check",
-    },
-  );
-
-  // Weekly on Sunday at midnight
-  await scheduledQueue.add(
-    "weekly-cleanup",
-    {},
-    {
-      repeat: { cron: "0 0 * * 0" },
-      jobId: "weekly-cleanup",
-    },
-  );
-}
-
-// Process scheduled jobs
-scheduledQueue.process("cleanup", async (job) => {
-  await cleanupOldRecords();
-  return { cleaned: true };
-});
-
-scheduledQueue.process("daily-report", async (job) => {
-  const report = await generateDailyReport();
-  await sendReportEmail(report);
-  return { reportId: report.id };
-});
-
-// List scheduled jobs
-async function getScheduledJobs(): Promise<
-  Array<{ name: string; next: Date; cron: string }>
-> {
-  const repeatableJobs = await scheduledQueue.getRepeatableJobs();
-
-  return repeatableJobs.map((job) => ({
-    name: job.name,
-    next: new Date(job.next),
-    cron: job.cron || `Every ${job.every}ms`,
-  }));
-}
-
-// Remove scheduled job
-async function removeScheduledJob(jobId: string): Promise<void> {
-  const jobs = await scheduledQueue.getRepeatableJobs();
-  const job = jobs.find((j) => j.id === jobId);
-
-  if (job) {
-    await scheduledQueue.removeRepeatableByKey(job.key);
+// Minimal DLQ hand-off (BullMQ): route exhausted jobs, keep forensics
+worker.on("failed", async (job, err) => {
+  if (job.attemptsMade >= job.opts.attempts!) {
+    await dlq.add("dead", {
+      original: job.data, error: err.message,
+      attempts: job.attemptsMade, failedAt: Date.now(),
+    });
+    metrics.increment("dlq.parked", { queue: job.queueName });
   }
-}
+});
 ```
 
+## Idempotent enqueue (producer-side dedup)
+
+Duplicates start at the *producer* too: a retried HTTP request or an at-least-once upstream enqueues the same job twice. Dedup on enqueue with a deterministic job id.
+
+- BullMQ / Bull: pass `jobId` — a job with an existing id is ignored while present.
+- SQS FIFO: `MessageDeduplicationId` (5-minute dedup window) or content-based dedup.
+- Celery: no native enqueue dedup — use a `SETNX` guard or a unique DB row keyed on the business id.
+
+⚠ `jobId` dedup only holds while the job is **still in the queue/known set**. Once completed and evicted (see `removeOnComplete`), the same id can be enqueued again — so producer dedup complements, never replaces, handler idempotency.
+
+## Claim-check: don't put big payloads on the queue
+
+Store the large blob (file, image, dataset row batch) in object storage / DB and enqueue only a **reference + integrity hash**. Queues (SQS 256KB limit, Redis memory) are for coordination, not bulk data.
+
+```json
+{ "job": "transcode", "s3_key": "uploads/abc.mov", "sha256": "…", "size": 734003200 }
+```
+
+Benefits: small fast messages, no broker bloat, payload survives independently of retries, and re-delivery re-reads the source of truth rather than a stale copy.
+
+## Scheduled / cron jobs
+
+Distinct from queues: a **scheduler** decides *when*, then enqueues a normal job. Celery Beat, BullMQ repeatable jobs, Sidekiq-cron, or a DB-backed scheduler.
+
 ```python
-# Celery Beat scheduler
-from celery import Celery
-from celery.schedules import crontab
-
-app = Celery('tasks')
-
 app.conf.beat_schedule = {
-    # Every hour
-    'cleanup-hourly': {
-        'task': 'tasks.cleanup',
-        'schedule': crontab(minute=0),  # Every hour at minute 0
-    },
-
-    # Daily at 9 AM
-    'daily-report': {
-        'task': 'tasks.daily_report',
-        'schedule': crontab(hour=9, minute=0),
-    },
-
-    # Every 5 minutes
-    'health-check': {
-        'task': 'tasks.health_check',
-        'schedule': 300.0,  # 5 minutes in seconds
-    },
-
-    # Weekly on Sunday at midnight
-    'weekly-cleanup': {
-        'task': 'tasks.weekly_cleanup',
-        'schedule': crontab(hour=0, minute=0, day_of_week=0),
-    },
-
-    # First day of month at 6 AM
-    'monthly-report': {
-        'task': 'tasks.monthly_report',
-        'schedule': crontab(hour=6, minute=0, day_of_month=1),
-    },
-
-    # With arguments
-    'check-expiring-subscriptions': {
-        'task': 'tasks.check_subscriptions',
-        'schedule': crontab(hour=8, minute=0),
-        'args': ('expiring',),
-        'kwargs': {'days_ahead': 7},
-    },
+    "nightly-report": {"task": "reports.daily", "schedule": crontab(hour=9, minute=0)},
+    "health": {"task": "ops.health", "schedule": 300.0},  # every 5 min
 }
-
-# Dynamic schedule with database
-from django_celery_beat.models import PeriodicTask, CrontabSchedule
-import json
-
-def create_scheduled_task(name: str, task: str, cron: str, args: list = None, kwargs: dict = None):
-    """Create a scheduled task dynamically."""
-    # Parse cron expression
-    minute, hour, day_of_month, month, day_of_week = cron.split()
-
-    schedule, _ = CrontabSchedule.objects.get_or_create(
-        minute=minute,
-        hour=hour,
-        day_of_month=day_of_month,
-        month_of_year=month,
-        day_of_week=day_of_week,
-    )
-
-    PeriodicTask.objects.update_or_create(
-        name=name,
-        defaults={
-            'task': task,
-            'crontab': schedule,
-            'args': json.dumps(args or []),
-            'kwargs': json.dumps(kwargs or {}),
-            'enabled': True,
-        },
-    )
 ```
-
-### Worker Pool Management
 
 ```typescript
-import Queue, { Job } from "bull";
-import os from "os";
+await queue.add("cleanup", {}, { repeat: { pattern: "0 * * * *" }, jobId: "cleanup-hourly" });
+```
 
-interface WorkerPoolConfig {
-  concurrency: number;
-  limiter?: {
-    max: number;
-    duration: number;
-  };
-}
+### Scheduling gotchas (each has bitten someone in prod)
 
-class WorkerPool {
-  private queues: Map<string, Queue.Queue> = new Map();
-  private isShuttingDown = false;
+- **Overlap / double-fire.** Beat, repeatable jobs, or a cron on *N replicas* will each fire the tick → the same run enqueued N times, or the previous run still executing when the next starts. **Prevent with a leader lock**: `SET lock:job NX PX <ttl>` (SETNX) around the run; only the holder proceeds. Run exactly one Beat process, or use a distributed lock for the scheduler itself.
 
-  constructor(private config: WorkerPoolConfig) {
-    // Graceful shutdown
-    process.on("SIGTERM", () => this.shutdown());
-    process.on("SIGINT", () => this.shutdown());
-  }
+  ```python
+  if redis.set(f"cron:{name}", worker_id, nx=True, px=ttl_ms):
+      try: run()
+      finally: redis.delete(f"cron:{name}")   # or let TTL expire; TTL > max runtime
+  ```
 
-  registerQueue<T>(
-    name: string,
-    processor: (job: Job<T>) => Promise<unknown>,
-  ): Queue.Queue<T> {
-    const queue = new Queue<T>(name, process.env.REDIS_URL!, {
-      limiter: this.config.limiter,
-    });
+- **Always schedule in UTC.** Local-time cron double-runs (fall-back) or skips (spring-forward) an hour on DST transitions; a job at `02:30` local may run twice or never. Store/evaluate schedules in UTC and convert for display only.
+- **Missed runs after downtime.** If the scheduler was down at fire time, the tick is *gone* — most schedulers do **not** back-fill. Decide per job: **catch-up** (run once for the missed window — good for reports/aggregations that must not skip a period) vs **skip** (only run the latest — good for "sync current state" jobs where stale runs are useless). Don't naively replay every missed tick, or a 6-hour outage triggers 72 five-minute jobs at once.
+- **Cron drift & long ticks.** If the job takes longer than the interval, ticks pile up. Guard with overlap prevention (above) or a "skip if previous still running" flag.
+- **Timezone of `crontab(hour=…)`** follows `CELERY_TIMEZONE`/app tz — verify it; a silently-local Beat is a classic 1am/2am incident.
 
-    // Process with concurrency
-    queue.process(this.config.concurrency, async (job: Job<T>) => {
-      if (this.isShuttingDown) {
-        throw new Error("Worker shutting down");
-      }
-      return processor(job);
-    });
+## Worker pools, concurrency & sizing
 
-    // Event handlers
-    queue.on("completed", (job, result) => {
-      console.log(`Job ${job.id} completed:`, result);
-    });
+- **CPU-bound** (image/video, ML): concurrency ≈ number of cores; more than that just thrashes context switches. Use **processes** (Celery `--concurrency`, separate workers), not threads, to sidestep the GIL in Python.
+- **IO-bound** (HTTP calls, DB): concurrency can far exceed cores; use async/greenlets (Celery `-P gevent/eventlet`, Node's single-loop concurrency) and size against the *downstream's* connection/rate limit, not CPU.
+- **Recycle workers** to bound leaks: Celery `worker_max_tasks_per_child`, `worker_max_memory_per_child`.
+- **`prefetch_multiplier`:** high prefetch starves other workers of queued jobs and holds them past a crash. For **long/uneven** tasks set `worker_prefetch_multiplier=1` (fair dispatch); for many **short** tasks a higher prefetch cuts round-trips.
+- **Separate queues per workload class.** One slow bulk queue on the same worker as latency-sensitive jobs = head-of-line blocking. Isolate `email`, `images`, `compute` onto dedicated queues + workers so a backlog in one never starves another. Route with `task_routes` (Celery) / distinct `Queue`s (BullMQ).
 
-    queue.on("failed", (job, err) => {
-      console.error(`Job ${job?.id} failed:`, err);
-    });
+## Priority & fairness (starvation)
 
-    queue.on("stalled", (job) => {
-      console.warn(`Job ${job} stalled`);
-    });
+Priority queues let critical jobs jump ahead — but **strict priority starves low-priority work** if high-priority never drains. Mitigate with weighted/round-robin consumption or **aging** (bump a job's priority the longer it waits). A tenant flooding a shared queue also starves others → **per-tenant queues** or a fair scheduler that caps any one tenant's share of worker capacity.
 
-    this.queues.set(name, queue);
-    return queue;
-  }
+## Graceful shutdown (SIGTERM draining)
 
-  async shutdown(): Promise<void> {
-    console.log("Initiating graceful shutdown...");
-    this.isShuttingDown = true;
+A deploy/scale-down sends `SIGTERM`. If you exit immediately, in-flight jobs are killed mid-run → at-least-once saves you *only if* the job wasn't acked yet. Drain instead:
 
-    // Stop accepting new jobs
-    const closePromises = Array.from(this.queues.values()).map(
-      async (queue) => {
-        await queue.pause(true); // Pause and wait for active jobs
-        await queue.close();
-      },
-    );
-
-    await Promise.all(closePromises);
-    console.log("All queues closed");
-    process.exit(0);
-  }
-
-  async getStats(): Promise<Record<string, QueueStats>> {
-    const stats: Record<string, QueueStats> = {};
-
-    for (const [name, queue] of this.queues) {
-      const [waiting, active, completed, failed, delayed] = await Promise.all([
-        queue.getWaitingCount(),
-        queue.getActiveCount(),
-        queue.getCompletedCount(),
-        queue.getFailedCount(),
-        queue.getDelayedCount(),
-      ]);
-
-      stats[name] = { waiting, active, completed, failed, delayed };
-    }
-
-    return stats;
-  }
-}
-
-interface QueueStats {
-  waiting: number;
-  active: number;
-  completed: number;
-  failed: number;
-  delayed: number;
-}
-
-// Usage
-const pool = new WorkerPool({
-  concurrency: os.cpus().length,
-  limiter: {
-    max: 100, // Max 100 jobs
-    duration: 1000, // Per second
-  },
-});
-
-pool.registerQueue<EmailJobData>("email", async (job) => {
-  await sendEmail(job.data);
-});
-
-pool.registerQueue<ImageProcessingJobData>("images", async (job) => {
-  await processImage(job.data);
+```typescript
+process.on("SIGTERM", async () => {
+  await Promise.all(workers.map(w => w.pause()));      // stop pulling new jobs
+  await Promise.all(workers.map(w => w.close()));      // wait for in-flight to finish
+  process.exit(0);
 });
 ```
 
+- Give the orchestrator a **grace period ≥ longest job** (K8s `terminationGracePeriodSeconds`, else SIGKILL truncates the drain). For jobs longer than any sane grace period, rely on **checkpointing** (below) so a kill just resumes.
+- Celery warm shutdown = one `TERM` (finish current, stop taking new); a second `TERM`/`QUIT` = cold (interrupt). Configure the deployment to send one and wait.
+- With late acks + drain, a killed job is simply redelivered — which again requires an idempotent handler. Everything routes back to invariant #1.
+
+## Long-running jobs: checkpoint & resume
+
+Any job that can exceed the visibility timeout or a deploy grace period must be **resumable**, not restart-from-zero. Checkpoint progress durably; on retry, resume from the last checkpoint.
+
 ```python
-# Celery worker management
-from celery import Celery
-from celery.signals import worker_process_init, worker_shutdown
-import multiprocessing
+@app.task(bind=True, acks_late=True)
+def train(self, run_id, resume_from=None):
+    state = load_ckpt(resume_from) if resume_from else fresh_state()
+    for epoch in range(state.epoch, TOTAL):
+        step(state)
+        if epoch % CKPT_EVERY == 0:
+            save_ckpt(run_id, epoch, state)     # durable → survives crash/redeliver
+            self.update_state(state="PROGRESS", meta={"epoch": epoch})
+    return finalize(state)
+```
 
-app = Celery('tasks')
+- Checkpoint to durable storage (S3/DB), not local disk a rescheduled worker can't see.
+- Make each checkpoint write idempotent/versioned so a duplicated final step doesn't double-commit results.
+- Break a huge job into **many small enqueued units** (per-batch jobs) when possible — smaller units mean cheaper retries, better parallelism, and no visibility-timeout fights. Fan-out then aggregate (see loom-event-driven for saga/chord orchestration).
 
-# Worker configuration
+## Backpressure & queue-depth monitoring
+
+The queue depth is your leading indicator. **Monitor it and act on it** — a queue growing faster than it drains is an unbounded-latency outage in slow motion.
+
+- **Alert on:** queue depth (waiting), **oldest-message age** (the truest "am I keeping up?" signal), processing latency p95/p99, error rate, DLQ depth > 0, active worker count.
+- **Backpressure at the producer:** when depth exceeds a threshold, shed load, reject/429 new work, or slow enqueue — don't let an unbounded queue defer the failure into a memory/retention blowup.
+- **Autoscale workers on depth or age**, not CPU alone (a queue can back up while workers idle on IO).
+- Cap retained completed/failed sets (`removeOnComplete`/`removeOnFail`, SQS retention) so bookkeeping doesn't exhaust the broker.
+
+```text
+Golden signals for a queue:
+  waiting_depth · oldest_age · in_flight · completed/min · failed/min · dlq_depth · p99_latency
+```
+
+## Framework quick reference
+
+**Celery (Python)** — crash-safe defaults:
+
+```python
 app.conf.update(
-    worker_concurrency=multiprocessing.cpu_count(),
-    worker_prefetch_multiplier=2,  # Prefetch 2 tasks per worker
-    worker_max_tasks_per_child=1000,  # Restart worker after 1000 tasks
-    worker_max_memory_per_child=200000,  # 200MB limit
-    task_acks_late=True,
-    task_reject_on_worker_lost=True,
+    task_acks_late=True,               # ack after success (crash-safe)
+    task_reject_on_worker_lost=True,   # requeue if worker dies
+    worker_prefetch_multiplier=1,      # fair dispatch for long tasks
+    task_time_limit=300, task_soft_time_limit=240,   # hard + catchable soft limit
+    broker_transport_options={"visibility_timeout": 3600},  # ⚠ tune to > p99 runtime
 )
-
-# Per-worker initialization
-@worker_process_init.connect
-def init_worker(**kwargs):
-    """Initialize resources for each worker process."""
-    # Initialize database connection pool
-    db.connect()
-    # Warm up caches
-    cache.warm_up()
-
-@worker_shutdown.connect
-def cleanup_worker(**kwargs):
-    """Clean up resources on worker shutdown."""
-    db.close()
-    cache.flush()
-
-# Task routing for specialized workers
-app.conf.task_routes = {
-    'tasks.send_email': {'queue': 'email'},
-    'tasks.process_image': {'queue': 'images'},
-    'tasks.heavy_computation': {'queue': 'compute'},
-    'tasks.*': {'queue': 'default'},
-}
-
-# Queue-specific worker command:
-# celery -A tasks worker -Q email --concurrency=4
-# celery -A tasks worker -Q images --concurrency=2
-# celery -A tasks worker -Q compute --concurrency=1
-
-# Auto-scaling with Celery
-app.conf.worker_autoscaler = 'celery.worker.autoscale:Autoscaler'
-app.conf.worker_autoscale_max = 10
-app.conf.worker_autoscale_min = 2
+# Composition: chain (sequential), group (parallel), chord (parallel + callback)
 ```
 
-### Job Priorities and Fairness
-
-```typescript
-// Priority queues with Bull
-interface PriorityJobData {
-  type: string;
-  payload: unknown;
-  priority: "critical" | "high" | "normal" | "low";
-}
-
-const priorityMap = {
-  critical: 1, // Highest priority (processed first)
-  high: 5,
-  normal: 10,
-  low: 20,
-};
-
-async function addPriorityJob(
-  data: PriorityJobData,
-): Promise<Job<PriorityJobData>> {
-  return queue.add(data, {
-    priority: priorityMap[data.priority],
-    // Critical jobs don't wait
-    delay: data.priority === "critical" ? 0 : undefined,
-  });
-}
-
-// Fair scheduling with multiple queues
-class FairScheduler {
-  private queues: Map<string, Queue.Queue> = new Map();
-  private weights: Map<string, number> = new Map();
-
-  constructor(queueConfigs: Array<{ name: string; weight: number }>) {
-    for (const config of queueConfigs) {
-      const queue = new Queue(config.name, process.env.REDIS_URL!);
-      this.queues.set(config.name, queue);
-      this.weights.set(config.name, config.weight);
-    }
-  }
-
-  // Weighted round-robin processing
-  async process(
-    handler: (queueName: string, job: Job) => Promise<void>,
-  ): Promise<void> {
-    const totalWeight = Array.from(this.weights.values()).reduce(
-      (a, b) => a + b,
-      0,
-    );
-
-    for (const [name, queue] of this.queues) {
-      const weight = this.weights.get(name)!;
-      const concurrency = Math.max(1, Math.floor((weight / totalWeight) * 10));
-
-      queue.process(concurrency, async (job) => {
-        await handler(name, job);
-      });
-    }
-  }
-}
-
-// Usage: Process premium customers first
-const scheduler = new FairScheduler([
-  { name: "premium", weight: 5 }, // 50% of capacity
-  { name: "standard", weight: 3 }, // 30% of capacity
-  { name: "free", weight: 2 }, // 20% of capacity
-]);
-
-await scheduler.process(async (queueName, job) => {
-  console.log(`Processing ${queueName} job:`, job.id);
-  await processJob(job);
-});
-```
-
-### Idempotency and Retry Strategies
-
-```typescript
-import Queue, { Job, JobOptions } from "bull";
-import { createHash } from "crypto";
-
-// Idempotency key generation
-function generateIdempotencyKey(data: unknown): string {
-  const hash = createHash("sha256");
-  hash.update(JSON.stringify(data));
-  return hash.digest("hex");
-}
-
-// Idempotent job processor
-class IdempotentProcessor<T> {
-  private processedKeys: Set<string> = new Set();
-  private redis: Redis;
-
-  constructor(
-    private queue: Queue.Queue<T>,
-    redis: Redis,
-  ) {
-    this.redis = redis;
-  }
-
-  async process(handler: (job: Job<T>) => Promise<unknown>): Promise<void> {
-    this.queue.process(async (job: Job<T>) => {
-      const idempotencyKey = job.opts.jobId || generateIdempotencyKey(job.data);
-
-      // Check if already processed
-      const existing = await this.redis.get(`processed:${idempotencyKey}`);
-      if (existing) {
-        console.log(`Job ${job.id} already processed, skipping`);
-        return JSON.parse(existing);
-      }
-
-      // Process job
-      const result = await handler(job);
-
-      // Mark as processed with TTL
-      await this.redis.setex(
-        `processed:${idempotencyKey}`,
-        86400, // 24 hours
-        JSON.stringify(result),
-      );
-
-      return result;
-    });
-  }
-}
-
-// Custom retry strategies
-interface RetryStrategy {
-  type: "exponential" | "linear" | "fixed" | "custom";
-  baseDelay: number;
-  maxDelay?: number;
-  maxRetries: number;
-  jitter?: boolean;
-  retryOn?: (error: Error) => boolean;
-}
-
-function calculateDelay(strategy: RetryStrategy, attempt: number): number {
-  let delay: number;
-
-  switch (strategy.type) {
-    case "exponential":
-      delay = strategy.baseDelay * Math.pow(2, attempt - 1);
-      break;
-    case "linear":
-      delay = strategy.baseDelay * attempt;
-      break;
-    case "fixed":
-      delay = strategy.baseDelay;
-      break;
-    default:
-      delay = strategy.baseDelay;
-  }
-
-  // Apply max delay cap
-  if (strategy.maxDelay) {
-    delay = Math.min(delay, strategy.maxDelay);
-  }
-
-  // Add jitter (up to 20% variation)
-  if (strategy.jitter) {
-    const jitterFactor = 0.8 + Math.random() * 0.4; // 0.8 to 1.2
-    delay = Math.floor(delay * jitterFactor);
-  }
-
-  return delay;
-}
-
-// Retry with dead letter queue
-class RetryableQueue<T> {
-  private mainQueue: Queue.Queue<T>;
-  private dlq: Queue.Queue<T>;
-  private strategy: RetryStrategy;
-
-  constructor(name: string, strategy: RetryStrategy) {
-    this.mainQueue = new Queue<T>(name, process.env.REDIS_URL!);
-    this.dlq = new Queue<T>(`${name}-dlq`, process.env.REDIS_URL!);
-    this.strategy = strategy;
-  }
-
-  async process(handler: (job: Job<T>) => Promise<unknown>): Promise<void> {
-    this.mainQueue.process(async (job: Job<T>) => {
-      const attempts = job.attemptsMade;
-
-      try {
-        return await handler(job);
-      } catch (error) {
-        const err = error as Error;
-
-        // Check if error is retryable
-        if (this.strategy.retryOn && !this.strategy.retryOn(err)) {
-          await this.moveToDLQ(job, err);
-          throw err;
-        }
-
-        // Check max retries
-        if (attempts >= this.strategy.maxRetries) {
-          await this.moveToDLQ(job, err);
-          throw err;
-        }
-
-        // Retry with calculated delay
-        const delay = calculateDelay(this.strategy, attempts + 1);
-        throw new Error(`Retry in ${delay}ms: ${err.message}`);
-      }
-    });
-  }
-
-  private async moveToDLQ(job: Job<T>, error: Error): Promise<void> {
-    await this.dlq.add({
-      originalJob: job.data,
-      error: error.message,
-      failedAt: new Date().toISOString(),
-      attempts: job.attemptsMade,
-    } as unknown as T);
-  }
-
-  async retryFromDLQ(jobId: string): Promise<void> {
-    const job = await this.dlq.getJob(jobId);
-    if (!job) return;
-
-    const dlqData = job.data as unknown as { originalJob: T };
-    await this.mainQueue.add(dlqData.originalJob);
-    await job.remove();
-  }
-}
-```
-
-### Job Monitoring and Dead Jobs
-
-```typescript
-import Queue, { Job, JobCounts, JobStatus } from "bull";
-import { EventEmitter } from "events";
-
-interface JobMetrics {
-  queue: string;
-  counts: JobCounts;
-  latency: {
-    avg: number;
-    p50: number;
-    p95: number;
-    p99: number;
-  };
-  throughput: number; // jobs per minute
-  errorRate: number;
-}
-
-class JobMonitor extends EventEmitter {
-  private queues: Queue.Queue[] = [];
-  private metricsHistory: Map<string, number[]> = new Map();
-
-  addQueue(queue: Queue.Queue): void {
-    this.queues.push(queue);
-
-    queue.on("completed", (job, result) => {
-      this.recordMetric(queue.name, "completed", job);
-      this.emit("job:completed", { queue: queue.name, job, result });
-    });
-
-    queue.on("failed", (job, err) => {
-      this.recordMetric(queue.name, "failed", job!);
-      this.emit("job:failed", { queue: queue.name, job, error: err });
-
-      // Alert on high failure rate
-      this.checkErrorRate(queue.name);
-    });
-
-    queue.on("stalled", (job) => {
-      this.emit("job:stalled", { queue: queue.name, jobId: job });
-    });
-  }
-
-  private recordMetric(queueName: string, type: string, job: Job): void {
-    const duration = Date.now() - job.timestamp;
-    const key = `${queueName}:${type}:duration`;
-
-    const history = this.metricsHistory.get(key) || [];
-    history.push(duration);
-
-    // Keep last 1000 samples
-    if (history.length > 1000) {
-      history.shift();
-    }
-
-    this.metricsHistory.set(key, history);
-  }
-
-  private checkErrorRate(queueName: string): void {
-    const completed =
-      this.metricsHistory.get(`${queueName}:completed:duration`)?.length || 0;
-    const failed =
-      this.metricsHistory.get(`${queueName}:failed:duration`)?.length || 0;
-
-    if (completed + failed > 10) {
-      const errorRate = failed / (completed + failed);
-      if (errorRate > 0.1) {
-        // > 10% error rate
-        this.emit("alert:high_error_rate", { queue: queueName, errorRate });
-      }
-    }
-  }
-
-  async getMetrics(queueName: string): Promise<JobMetrics> {
-    const queue = this.queues.find((q) => q.name === queueName);
-    if (!queue) throw new Error(`Queue ${queueName} not found`);
-
-    const counts = await queue.getJobCounts();
-    const durations =
-      this.metricsHistory.get(`${queueName}:completed:duration`) || [];
-
-    return {
-      queue: queueName,
-      counts,
-      latency: this.calculateLatencyPercentiles(durations),
-      throughput: this.calculateThroughput(durations),
-      errorRate: this.calculateErrorRate(queueName),
-    };
-  }
-
-  private calculateLatencyPercentiles(
-    durations: number[],
-  ): JobMetrics["latency"] {
-    if (durations.length === 0) {
-      return { avg: 0, p50: 0, p95: 0, p99: 0 };
-    }
-
-    const sorted = [...durations].sort((a, b) => a - b);
-    const avg = sorted.reduce((a, b) => a + b, 0) / sorted.length;
-
-    return {
-      avg: Math.round(avg),
-      p50: sorted[Math.floor(sorted.length * 0.5)],
-      p95: sorted[Math.floor(sorted.length * 0.95)],
-      p99: sorted[Math.floor(sorted.length * 0.99)],
-    };
-  }
-
-  private calculateThroughput(durations: number[]): number {
-    // Jobs completed in last minute
-    const oneMinuteAgo = Date.now() - 60000;
-    const recentJobs = durations.filter((_, i) => i > durations.length - 100);
-    return recentJobs.length;
-  }
-
-  private calculateErrorRate(queueName: string): number {
-    const completed =
-      this.metricsHistory.get(`${queueName}:completed:duration`)?.length || 0;
-    const failed =
-      this.metricsHistory.get(`${queueName}:failed:duration`)?.length || 0;
-    const total = completed + failed;
-    return total > 0 ? failed / total : 0;
-  }
-
-  // Dead job management
-  async getDeadJobs(queueName: string, limit: number = 100): Promise<Job[]> {
-    const queue = this.queues.find((q) => q.name === queueName);
-    if (!queue) throw new Error(`Queue ${queueName} not found`);
-
-    return queue.getFailed(0, limit);
-  }
-
-  async retryDeadJob(queueName: string, jobId: string): Promise<void> {
-    const queue = this.queues.find((q) => q.name === queueName);
-    if (!queue) throw new Error(`Queue ${queueName} not found`);
-
-    const job = await queue.getJob(jobId);
-    if (!job) throw new Error(`Job ${jobId} not found`);
-
-    await job.retry();
-  }
-
-  async retryAllDeadJobs(queueName: string): Promise<number> {
-    const deadJobs = await this.getDeadJobs(queueName);
-    let retried = 0;
-
-    for (const job of deadJobs) {
-      try {
-        await job.retry();
-        retried++;
-      } catch (error) {
-        console.error(`Failed to retry job ${job.id}:`, error);
-      }
-    }
-
-    return retried;
-  }
-
-  async cleanDeadJobs(
-    queueName: string,
-    olderThan: number = 86400000,
-  ): Promise<number> {
-    const queue = this.queues.find((q) => q.name === queueName);
-    if (!queue) throw new Error(`Queue ${queueName} not found`);
-
-    const cleaned = await queue.clean(olderThan, "failed");
-    return cleaned.length;
-  }
-}
-
-// Dashboard API endpoints
-import express from "express";
-
-function createMonitoringRouter(monitor: JobMonitor): express.Router {
-  const router = express.Router();
-
-  router.get("/queues/:name/metrics", async (req, res) => {
-    try {
-      const metrics = await monitor.getMetrics(req.params.name);
-      res.json(metrics);
-    } catch (error) {
-      res.status(404).json({ error: (error as Error).message });
-    }
-  });
-
-  router.get("/queues/:name/dead", async (req, res) => {
-    const limit = parseInt(req.query.limit as string) || 100;
-    const jobs = await monitor.getDeadJobs(req.params.name, limit);
-    res.json(
-      jobs.map((j) => ({
-        id: j.id,
-        data: j.data,
-        failedReason: j.failedReason,
-        attemptsMade: j.attemptsMade,
-        timestamp: j.timestamp,
-      })),
-    );
-  });
-
-  router.post("/queues/:name/dead/:jobId/retry", async (req, res) => {
-    try {
-      await monitor.retryDeadJob(req.params.name, req.params.jobId);
-      res.json({ success: true });
-    } catch (error) {
-      res.status(400).json({ error: (error as Error).message });
-    }
-  });
-
-  router.post("/queues/:name/dead/retry-all", async (req, res) => {
-    const retried = await monitor.retryAllDeadJobs(req.params.name);
-    res.json({ retried });
-  });
-
-  router.delete("/queues/:name/dead", async (req, res) => {
-    const olderThan = parseInt(req.query.olderThan as string) || 86400000;
-    const cleaned = await monitor.cleanDeadJobs(req.params.name, olderThan);
-    res.json({ cleaned });
-  });
-
-  return router;
-}
-```
-
-### Data Pipeline Jobs
-
-**ETL scheduling and orchestration**:
-
-```python
-# Airflow-style task dependencies
-from celery import chain, group
-
-@app.task
-def extract_from_source(source_id: str):
-    """Extract data from source system."""
-    data = fetch_from_api(source_id)
-    return {'source_id': source_id, 'records': data}
-
-@app.task
-def transform_data(extract_result: dict):
-    """Transform extracted data."""
-    records = extract_result['records']
-    transformed = [normalize_record(r) for r in records]
-    return {'source_id': extract_result['source_id'], 'records': transformed}
-
-@app.task
-def load_to_warehouse(transform_result: dict):
-    """Load transformed data to warehouse."""
-    warehouse.bulk_insert(transform_result['records'])
-    return {'loaded': len(transform_result['records'])}
-
-# ETL pipeline with chaining
-def run_etl_pipeline(source_id: str):
-    pipeline = chain(
-        extract_from_source.s(source_id),
-        transform_data.s(),
-        load_to_warehouse.s(),
-    )
-    return pipeline.apply_async()
-
-# Parallel extraction from multiple sources
-def run_multi_source_etl(source_ids: list):
-    pipeline = chain(
-        group(extract_from_source.s(sid) for sid in source_ids),
-        # Fan-in: transform all results
-        group(transform_data.s() for _ in source_ids),
-        # Aggregate and load
-        aggregate_and_load.s(),
-    )
-    return pipeline.apply_async()
-```
-
-```typescript
-// Bull-based data pipeline
-import Queue from "bull";
-
-interface PipelineStage<T, U> {
-  name: string;
-  queue: Queue.Queue<T>;
-  process: (data: T) => Promise<U>;
-  nextStage?: PipelineStage<U, any>;
-}
-
-class DataPipeline {
-  private stages: Map<string, PipelineStage<any, any>> = new Map();
-
-  addStage<T, U>(stage: PipelineStage<T, U>): void {
-    this.stages.set(stage.name, stage);
-
-    // Process and forward to next stage
-    stage.queue.process(async (job) => {
-      const result = await stage.process(job.data);
-
-      if (stage.nextStage) {
-        await stage.nextStage.queue.add(result, {
-          jobId: `${stage.nextStage.name}-${job.id}`,
-        });
-      }
-
-      return result;
-    });
-  }
-
-  async start(initialData: any, startStage: string): Promise<void> {
-    const stage = this.stages.get(startStage);
-    if (!stage) throw new Error(`Stage ${startStage} not found`);
-
-    await stage.queue.add(initialData);
-  }
-}
-
-// Usage
-const extractQueue = new Queue("extract", redisUrl);
-const transformQueue = new Queue("transform", redisUrl);
-const loadQueue = new Queue("load", redisUrl);
-
-const pipeline = new DataPipeline();
-
-pipeline.addStage({
-  name: "extract",
-  queue: extractQueue,
-  process: async (sourceId) => fetchFromSource(sourceId),
-  nextStage: {
-    name: "transform",
-    queue: transformQueue,
-    process: async (data) => transformData(data),
-    nextStage: {
-      name: "load",
-      queue: loadQueue,
-      process: async (data) => loadToWarehouse(data),
-    },
-  },
-});
-
-await pipeline.start("source-123", "extract");
-```
-
-### ML Training Jobs
-
-**Long-running model training with checkpointing**:
-
-```python
-# Distributed ML training job
-from celery import Task
-import torch
-from pathlib import Path
-
-class TrainingTask(Task):
-    autoretry_for = (RuntimeError,)
-    max_retries = 3
-
-    def __init__(self):
-        self.checkpoint_dir = Path('/checkpoints')
-        self.checkpoint_dir.mkdir(exist_ok=True)
-
-    def on_failure(self, exc, task_id, args, kwargs, einfo):
-        """Save checkpoint on failure for recovery."""
-        model = kwargs.get('model_state')
-        if model:
-            checkpoint_path = self.checkpoint_dir / f'{task_id}.pt'
-            torch.save(model, checkpoint_path)
-
-@app.task(base=TrainingTask, bind=True, time_limit=7200)
-def train_model(
-    self,
-    model_id: str,
-    dataset_id: str,
-    config: dict,
-    resume_from: str = None
-):
-    """Train ML model with checkpointing."""
-
-    # Load checkpoint if resuming
-    if resume_from:
-        checkpoint = torch.load(resume_from)
-        model = checkpoint['model']
-        optimizer = checkpoint['optimizer']
-        start_epoch = checkpoint['epoch']
-    else:
-        model = create_model(config)
-        optimizer = create_optimizer(model, config)
-        start_epoch = 0
-
-    dataset = load_dataset(dataset_id)
-
-    for epoch in range(start_epoch, config['epochs']):
-        # Update progress
-        progress = (epoch / config['epochs']) * 100
-        self.update_state(
-            state='PROGRESS',
-            meta={'epoch': epoch, 'progress': progress}
-        )
-
-        # Train one epoch
-        metrics = train_epoch(model, dataset, optimizer)
-
-        # Checkpoint every N epochs
-        if epoch % config.get('checkpoint_interval', 10) == 0:
-            checkpoint_path = self.checkpoint_dir / f'{model_id}_epoch_{epoch}.pt'
-            torch.save({
-                'model': model.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'epoch': epoch,
-                'metrics': metrics,
-            }, checkpoint_path)
-
-    # Save final model
-    model_path = save_model(model, model_id)
-    return {'model_path': model_path, 'final_metrics': metrics}
-
-# Hyperparameter tuning with parallel jobs
-def hyperparameter_search(model_id: str, param_grid: dict):
-    """Run parallel hyperparameter search."""
-    from itertools import product
-
-    # Generate parameter combinations
-    keys = param_grid.keys()
-    values = param_grid.values()
-    combinations = [dict(zip(keys, v)) for v in product(*values)]
-
-    # Launch parallel training jobs
-    jobs = group(
-        train_model.s(
-            model_id=f'{model_id}_trial_{i}',
-            dataset_id='train_dataset',
-            config=params
-        )
-        for i, params in enumerate(combinations)
-    )
-
-    # Aggregate results and select best model
-    workflow = chain(jobs, select_best_model.s())
-    return workflow.apply_async()
-```
-
-```typescript
-// Distributed ML inference pipeline
-import Queue, { Job } from "bull";
-
-interface InferenceJob {
-  modelId: string;
-  batchId: string;
-  inputs: Array<{ id: string; data: any }>;
-}
-
-interface InferenceResult {
-  batchId: string;
-  predictions: Array<{ id: string; prediction: any; confidence: number }>;
-}
-
-const inferenceQueue = new Queue<InferenceJob>("ml-inference", redisUrl, {
-  defaultJobOptions: {
-    attempts: 2,
-    backoff: { type: "fixed", delay: 5000 },
-  },
-  limiter: {
-    max: 10, // Max 10 concurrent inference jobs
-    duration: 1000,
-  },
-});
-
-// Batch inference processor
-inferenceQueue.process(4, async (job: Job<InferenceJob>) => {
-  const { modelId, batchId, inputs } = job.data;
-
-  // Load model (cached)
-  const model = await loadModel(modelId);
-
-  const predictions: InferenceResult["predictions"] = [];
-
-  for (let i = 0; i < inputs.length; i++) {
-    const input = inputs[i];
-
-    // Update progress
-    await job.progress((i / inputs.length) * 100);
-
-    // Run inference
-    const prediction = await model.predict(input.data);
-    predictions.push({
-      id: input.id,
-      prediction: prediction.result,
-      confidence: prediction.confidence,
-    });
-  }
-
-  return { batchId, predictions };
-});
-
-// Batch splitter for large datasets
-async function runBatchInference(
-  modelId: string,
-  dataset: Array<{ id: string; data: any }>,
-  batchSize: number = 100,
-): Promise<string[]> {
-  const batches: InferenceJob[] = [];
-
-  for (let i = 0; i < dataset.length; i += batchSize) {
-    batches.push({
-      modelId,
-      batchId: `batch_${i / batchSize}`,
-      inputs: dataset.slice(i, i + batchSize),
-    });
-  }
-
-  const jobs = await inferenceQueue.addBulk(
-    batches.map((batch, idx) => ({
-      data: batch,
-      opts: { jobId: `inference_${modelId}_${idx}` },
-    })),
-  );
-
-  return jobs.map((j) => j.id!);
-}
-```
-
-### Job Monitoring and Observability
-
-**Metrics, tracing, and alerting**:
-
-```typescript
-import { EventEmitter } from "events";
-import Queue, { Job } from "bull";
-
-interface ObservabilityConfig {
-  metricsInterval: number; // Emit metrics every N ms
-  alertThresholds: {
-    errorRate: number;
-    queueDepth: number;
-    latencyP99: number;
-  };
-}
-
-class JobObserver extends EventEmitter {
-  private queues: Map<string, Queue.Queue> = new Map();
-  private metrics: Map<string, QueueMetrics> = new Map();
-  private metricsInterval: NodeJS.Timeout | null = null;
-
-  constructor(private config: ObservabilityConfig) {
-    super();
-  }
-
-  observe(queue: Queue.Queue): void {
-    this.queues.set(queue.name, queue);
-    this.metrics.set(queue.name, this.emptyMetrics());
-
-    // Instrument queue events
-    queue.on("completed", (job, result) => {
-      this.recordCompletion(queue.name, job, result);
-    });
-
-    queue.on("failed", (job, err) => {
-      this.recordFailure(queue.name, job!, err);
-    });
-
-    queue.on("stalled", (job) => {
-      this.recordStalled(queue.name, job);
-    });
-
-    queue.on("waiting", (jobId) => {
-      this.recordWaiting(queue.name, jobId);
-    });
-
-    // Start metrics emission
-    if (!this.metricsInterval) {
-      this.startMetricsEmission();
-    }
-  }
-
-  private emptyMetrics(): QueueMetrics {
-    return {
-      completed: 0,
-      failed: 0,
-      stalled: 0,
-      waiting: 0,
-      processing: 0,
-      latencies: [],
-      errors: [],
-    };
-  }
-
-  private recordCompletion(queueName: string, job: Job, result: any): void {
-    const metrics = this.metrics.get(queueName)!;
-    metrics.completed++;
-
-    const latency = Date.now() - job.timestamp;
-    metrics.latencies.push(latency);
-
-    // Emit trace span
-    this.emit("trace", {
-      queue: queueName,
-      jobId: job.id,
-      operation: "job.completed",
-      duration: latency,
-      result,
-    });
-  }
-
-  private recordFailure(queueName: string, job: Job, error: Error): void {
-    const metrics = this.metrics.get(queueName)!;
-    metrics.failed++;
-    metrics.errors.push({
-      jobId: job.id!,
-      error: error.message,
-      timestamp: Date.now(),
-    });
-
-    // Alert on error rate threshold
-    const errorRate =
-      metrics.failed / (metrics.completed + metrics.failed || 1);
-    if (errorRate > this.config.alertThresholds.errorRate) {
-      this.emit("alert", {
-        type: "high_error_rate",
-        queue: queueName,
-        errorRate,
-        threshold: this.config.alertThresholds.errorRate,
-      });
-    }
-
-    // Emit error trace
-    this.emit("trace", {
-      queue: queueName,
-      jobId: job.id,
-      operation: "job.failed",
-      error: error.message,
-      stack: error.stack,
-    });
-  }
-
-  private recordStalled(queueName: string, jobId: string): void {
-    const metrics = this.metrics.get(queueName)!;
-    metrics.stalled++;
-
-    this.emit("alert", {
-      type: "job_stalled",
-      queue: queueName,
-      jobId,
-    });
-  }
-
-  private recordWaiting(queueName: string, jobId: string): void {
-    const metrics = this.metrics.get(queueName)!;
-    metrics.waiting++;
-  }
-
-  private startMetricsEmission(): void {
-    this.metricsInterval = setInterval(async () => {
-      for (const [queueName, queue] of this.queues) {
-        const metrics = this.metrics.get(queueName)!;
-
-        // Get current queue state
-        const counts = await queue.getJobCounts();
-
-        // Calculate percentiles
-        const sorted = [...metrics.latencies].sort((a, b) => a - b);
-        const p50 = sorted[Math.floor(sorted.length * 0.5)] || 0;
-        const p95 = sorted[Math.floor(sorted.length * 0.95)] || 0;
-        const p99 = sorted[Math.floor(sorted.length * 0.99)] || 0;
-
-        // Emit metrics
-        this.emit("metrics", {
-          queue: queueName,
-          timestamp: Date.now(),
-          counts,
-          latency: {
-            p50,
-            p95,
-            p99,
-          },
-          throughput: metrics.completed,
-          errorRate: metrics.failed / (metrics.completed + metrics.failed || 1),
-        });
-
-        // Alert on queue depth
-        if (counts.waiting > this.config.alertThresholds.queueDepth) {
-          this.emit("alert", {
-            type: "high_queue_depth",
-            queue: queueName,
-            depth: counts.waiting,
-            threshold: this.config.alertThresholds.queueDepth,
-          });
-        }
-
-        // Alert on latency
-        if (p99 > this.config.alertThresholds.latencyP99) {
-          this.emit("alert", {
-            type: "high_latency",
-            queue: queueName,
-            p99,
-            threshold: this.config.alertThresholds.latencyP99,
-          });
-        }
-
-        // Reset counters
-        this.metrics.set(queueName, this.emptyMetrics());
-      }
-    }, this.config.metricsInterval);
-  }
-
-  stop(): void {
-    if (this.metricsInterval) {
-      clearInterval(this.metricsInterval);
-      this.metricsInterval = null;
-    }
-  }
-}
-
-interface QueueMetrics {
-  completed: number;
-  failed: number;
-  stalled: number;
-  waiting: number;
-  processing: number;
-  latencies: number[];
-  errors: Array<{ jobId: string; error: string; timestamp: number }>;
-}
-
-// Integration with observability backends
-const observer = new JobObserver({
-  metricsInterval: 10000, // 10 seconds
-  alertThresholds: {
-    errorRate: 0.05, // 5%
-    queueDepth: 1000,
-    latencyP99: 5000, // 5 seconds
-  },
-});
-
-// Prometheus metrics export
-observer.on("metrics", (metrics) => {
-  prometheusClient.gauge("queue_depth", metrics.counts.waiting, {
-    queue: metrics.queue,
-  });
-  prometheusClient.histogram("job_latency", metrics.latency.p99, {
-    queue: metrics.queue,
-    percentile: "p99",
-  });
-  prometheusClient.counter("jobs_completed", metrics.throughput, {
-    queue: metrics.queue,
-  });
-});
-
-// Distributed tracing (OpenTelemetry)
-observer.on("trace", (span) => {
-  tracer.startSpan(span.operation, {
-    attributes: {
-      queue: span.queue,
-      jobId: span.jobId,
-      duration: span.duration,
-    },
-  });
-});
-
-// Alerting (PagerDuty, Slack, etc.)
-observer.on("alert", (alert) => {
-  if (alert.type === "high_error_rate") {
-    pagerduty.trigger({
-      severity: "error",
-      summary: `High error rate in ${alert.queue}: ${(
-        alert.errorRate * 100
-      ).toFixed(1)}%`,
-    });
-  }
-});
-```
-
-## Best Practices
-
-1. **Idempotency**
-   - Design jobs to be safely re-executed
-   - Use unique job IDs for deduplication
-   - Store processed state externally
-
-2. **Retry Strategies**
-   - Use exponential backoff with jitter
-   - Set maximum retry limits
-   - Distinguish between retryable and non-retryable errors
-
-3. **Monitoring and Observability**
-   - Track queue depths, processing latency, and throughput
-   - Alert on high error rates or growing queues
-   - Monitor worker health and memory usage
-   - Use distributed tracing for complex pipelines
-   - Export metrics to Prometheus, Datadog, or CloudWatch
-
-4. **Graceful Shutdown**
-   - Complete in-progress jobs before shutdown
-   - Use signals (SIGTERM, SIGINT) properly
-   - Set reasonable timeouts for job completion
-
-5. **Resource Management**
-   - Set appropriate concurrency limits
-   - Use worker pools for CPU-bound tasks
-   - Implement rate limiting for external APIs
-   - Configure memory and time limits per job
-
-6. **Data Pipeline Design**
-   - Break pipelines into stages with clear boundaries
-   - Use fan-out/fan-in patterns for parallel processing
-   - Checkpoint long-running jobs for recovery
-   - Store intermediate results for debugging
-
-7. **ML Training Jobs**
-   - Save checkpoints frequently for crash recovery
-   - Use separate queues for training vs inference
-   - Implement resource quotas to prevent starvation
-   - Track experiment metadata and hyperparameters
-
-## Examples
-
-### Complete Worker Service
-
-```typescript
-import Queue, { Job } from "bull";
-import { Redis } from "ioredis";
-
-interface WorkerConfig {
-  queues: Array<{
-    name: string;
-    concurrency: number;
-    processor: (job: Job) => Promise<unknown>;
-  }>;
-  redis: Redis;
-  shutdownTimeout: number;
-}
-
-class WorkerService {
-  private queues: Map<string, Queue.Queue> = new Map();
-  private isShuttingDown = false;
-  private activeJobs = 0;
-
-  constructor(private config: WorkerConfig) {}
-
-  async start(): Promise<void> {
-    // Setup queues
-    for (const queueConfig of this.config.queues) {
-      const queue = new Queue(queueConfig.name, {
-        createClient: () => this.config.redis.duplicate(),
-      });
-
-      queue.process(queueConfig.concurrency, async (job) => {
-        if (this.isShuttingDown) {
-          throw new Error("Worker shutting down");
-        }
-
-        this.activeJobs++;
-        try {
-          return await queueConfig.processor(job);
-        } finally {
-          this.activeJobs--;
-        }
-      });
-
-      this.queues.set(queueConfig.name, queue);
-    }
-
-    // Setup graceful shutdown
-    process.on("SIGTERM", () => this.shutdown());
-    process.on("SIGINT", () => this.shutdown());
-
-    console.log("Worker service started");
-  }
-
-  private async shutdown(): Promise<void> {
-    if (this.isShuttingDown) return;
-    this.isShuttingDown = true;
-
-    console.log("Shutting down worker service...");
-
-    // Pause all queues
-    await Promise.all(
-      Array.from(this.queues.values()).map((q) => q.pause(true)),
-    );
-
-    // Wait for active jobs to complete
-    const startTime = Date.now();
-    while (
-      this.activeJobs > 0 &&
-      Date.now() - startTime < this.config.shutdownTimeout
-    ) {
-      await new Promise((r) => setTimeout(r, 100));
-    }
-
-    if (this.activeJobs > 0) {
-      console.warn(`Forcing shutdown with ${this.activeJobs} active jobs`);
-    }
-
-    // Close all queues
-    await Promise.all(Array.from(this.queues.values()).map((q) => q.close()));
-
-    console.log("Worker service stopped");
-    process.exit(0);
-  }
-}
-
-// Usage
-const worker = new WorkerService({
-  redis: new Redis(process.env.REDIS_URL),
-  shutdownTimeout: 30000,
-  queues: [
-    {
-      name: "email",
-      concurrency: 5,
-      processor: async (job) => {
-        await sendEmail(job.data);
-      },
-    },
-    {
-      name: "images",
-      concurrency: 2,
-      processor: async (job) => {
-        await processImage(job.data);
-      },
-    },
-  ],
-});
-
-worker.start();
-```
+**BullMQ (Node)** — successor to `bull`; prefer it for new work. `Worker`/`Queue`/`QueueEvents` split; `FlowProducer` for parent/child DAGs; built-in rate `limiter`. Watch `lockDuration` vs job length (stalled-job re-run).
+
+**Sidekiq (Ruby)** — at-least-once, idempotent handlers mandatory. OSS basic fetch loses in-flight jobs on hard kill; **Pro `super_fetch`** recovers them. `sidekiq_options retry:`, `dead:`; `death_handlers` for DLQ hooks.
+
+**SQS** — managed, durable, native DLQ via `RedrivePolicy`. Standard = at-least-once/unordered; FIFO = ordered + dedup. Tune visibility timeout to job length; 256KB payload cap → claim-check.
+
+## Anti-patterns
+
+- **Non-idempotent handler on an at-least-once queue** → duplicate charges/emails/rows. The default and most common prod incident.
+- **Acking before the work is done** → silent job loss on crash.
+- **Fixed / un-jittered backoff** → synchronized retry storms.
+- **Retrying non-transient errors** → wasted capacity, delayed DLQ, masked bugs.
+- **Unbounded retries / no DLQ** → poison pills clog the queue forever.
+- **No overlap lock on cron** → same scheduled run fires on every replica.
+- **Local-time schedules** → DST double/skip.
+- **Big payloads in the queue** → broker bloat, 256KB SQS rejections; use claim-check.
+- **Shared queue for fast + slow work** → head-of-line blocking; separate by workload class.
+- **`git add`-ing the whole `.work`** — n/a here, but analogously: don't retain unbounded completed/failed sets; they exhaust Redis.
+- **Storing job state only in worker memory** → lost on restart; persist checkpoints.
+
+## Checklists
+
+**Before shipping a job handler:**
+
+- [ ] Handler is idempotent — dedup key derived from business identity, side effect gated by a unique constraint or `SETNX`, marker TTL > retry window + retention
+- [ ] Ack/commit happens **after** the side effect (late ack), not before
+- [ ] Errors classified: transient → retry, deterministic → fail fast to DLQ
+- [ ] Backoff is exponential **with full jitter**, capped delay, bounded attempts
+- [ ] Max-attempts → DLQ with payload + error + attempt count; DLQ depth alerts
+- [ ] Job runtime < visibility timeout / lock duration, OR heartbeat/extend, OR checkpoint & resume
+- [ ] Large payloads passed by reference (claim-check), not inline
+- [ ] Producer-side dedup where retries can double-enqueue (`jobId` / FIFO dedup id)
+
+**Before shipping a scheduled job:**
+
+- [ ] Overlap prevention: leader lock / `SET NX PX` so only one runs across replicas
+- [ ] Schedule stored/evaluated in **UTC**; DST verified
+- [ ] Missed-run policy chosen (catch-up vs skip) and implemented — no naive replay of every missed tick
+- [ ] "Skip if previous still running" guard for jobs that can exceed their interval
+
+**Before shipping worker infra:**
+
+- [ ] Concurrency sized to workload (CPU≈cores/processes; IO≫cores/async), against downstream limits
+- [ ] SIGTERM drains in-flight jobs; orchestrator grace period ≥ longest job
+- [ ] Separate queues/workers per workload class; no fast+slow mixing
+- [ ] Priority scheme can't starve low-priority (weighting/aging); per-tenant fairness if multi-tenant
+- [ ] Monitoring: waiting depth, oldest-message age, in-flight, throughput, error rate, DLQ depth, p99 latency
+- [ ] Backpressure/autoscale keyed on depth or age; retained job sets bounded
+- [ ] Workers recycled to bound memory leaks (`max_tasks_per_child` / `max_memory_per_child`)
