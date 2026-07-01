@@ -277,29 +277,34 @@ loom:
 ┌────────────────────────────────────────────────────────────────────┐
 │  ⚠️  EVERY STAGE MUST SET `model` EXPLICITLY                      │
 │                                                                    │
-│  The plan author decides opus vs sonnet for each stage based on   │
-│  whether the work is ARCHITECTURAL (needs judgment) or EXECUTION  │
-│  (follows detailed instructions). This is a planning-time         │
-│  decision, not a runtime default.                                 │
+│  OPUS 4.8 (xhigh) IS THE DEFAULT and strongest — sonnet 5 does    │
+│  NOT match it, so be SELECTIVE. Use sonnet 5 MORE than we used    │
+│  sonnet 4.6, but only for well-scoped execution it can handle.    │
+│  Sonnet's 200k window means every sonnet stage MUST be small or   │
+│  decomposed. Set reasoning_effort: xhigh on BOTH models.          │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-**Two categories of stage work:**
+**Sonnet 5 widened the sonnet lane — but opus 4.8 (xhigh) is still the default.** Sonnet 5 replaced Sonnet 4.6 and is markedly stronger (near-opus on coding and agentic execution), so MORE stages can safely run on sonnet than before. It still does **not** match opus 4.8 at `xhigh`, so opus remains the default and the choice for anything hard or uncertain. Move a stage to sonnet deliberately, when it is well-scoped execution sonnet can handle — don't default to it.
 
-| Category          | Model               | Reasoning                   | When                                                                        |
-| ----------------- | ------------------- | --------------------------- | --------------------------------------------------------------------------- |
-| **Architectural** | `model: "opus"` | `reasoning_effort: "xhigh"` | Stage requires design decisions, novel patterns, cross-cutting judgment     |
-| **Execution**     | `model: "sonnet"`   | `reasoning_effort: "high"`  | Stage follows detailed instructions, applies existing patterns, well-scoped |
+| Category                  | Model             | reasoning_effort | When                                                                                                                                                                                          |
+| ------------------------- | ----------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Default & hard work**   | `model: "opus"`   | `"xhigh"`        | The DEFAULT. Architecture/design, pressure-testing, code review, security review, difficult algorithmic work, complex debugging, ambiguous requirements — and anything not a clear sonnet fit |
+| **Well-scoped execution** | `model: "sonnet"` | `"xhigh"`        | Use MORE than before, but selectively: implementing to a detailed spec, tests, boilerplate, scaffolding, config, applying existing patterns, known-fix bug fixes — kept SMALL or decomposed    |
 
-**Architectural stages** (use opus) — the agent must make judgment calls:
+Set `reasoning_effort: "xhigh"` on BOTH — sonnet 5 supports `xhigh`, and running it there narrows (without closing) the gap to opus.
+
+**Use `opus` (the default) — judgment or depth dominates, or the fit is uncertain:**
 
 - Designing new abstractions, module boundaries, or data models
-- Complex debugging requiring multi-file root cause analysis
+- Adversarial pressure-testing of a plan or design; code review and security review (integration-verify is opus)
+- Difficult algorithmic work, or complex debugging requiring multi-file root-cause analysis
 - Security-sensitive code (auth flows, crypto, input validation)
 - Cross-cutting refactors that touch many modules
-- Ambiguous requirements where the agent must decide the approach
+- Genuinely ambiguous requirements where the agent must decide the approach
+- Anything you are not confident is a clean, well-scoped sonnet fit
 
-**Execution stages** (use sonnet) — the agent follows the plan:
+**Use `sonnet` (selectively, more than before) — well-scoped execution against a detailed spec:**
 
 - Implementing features with explicit file paths, signatures, and patterns
 - Writing tests for existing code
@@ -320,10 +325,10 @@ loom:
     - Token rotation approach
     - Integration with existing middleware...
 
-# Execution stage — sonnet with detailed instructions
+# Execution stage — sonnet 5 with detailed instructions (selective, well-scoped)
 - id: add-config-fields
   model: "sonnet"
-  reasoning_effort: "high"
+  reasoning_effort: "xhigh"
   description: |
     Add three fields to AppConfig in src/config.rs:
     1. `auth_secret: String` — JWT signing key, read from AUTH_SECRET env var
@@ -372,40 +377,47 @@ Opus stage descriptions can be higher-level since the agent has the judgment to 
     4. Use `thiserror` for error types, matching src/http/error.rs style.
 ```
 
-**When in doubt, use opus.** A sonnet stage that fails and needs rework costs more than an opus stage that succeeds the first time.
+**When in doubt, use opus.** Opus 4.8 (xhigh) is the default and the safe choice — sonnet 5 does not match it. Move a stage to sonnet only when you are confident it is well-scoped execution sonnet can handle. Two distinct failure modes to avoid: (1) work too HARD for sonnet — keep it on opus; (2) work too BIG for sonnet's 200k window — shrink or decompose the stage (next section), don't just leave it oversized on sonnet. A sonnet stage that fails and needs rework costs more than an opus stage that succeeds the first time.
 
-#### Sonnet stages MUST delegate aggressively — the 200k context window
+#### Sonnet stages MUST stay small — the 200k context window is the binding constraint
 
 ```text
 ┌────────────────────────────────────────────────────────────────────┐
 │  ⚠️  SONNET HAS A 200k CONTEXT WINDOW — OPUS[1M] HAS 1M            │
 │                                                                    │
-│  A sonnet stage hits loom's default 65% context budget at ~130k   │
-│  tokens and the 75% hard stop at ~150k. The SAME stage on          │
-│  opus has ~650k of headroom before the budget warning.         │
+│  This is the #1 failure mode for sonnet stages, and it is still    │
+│  unsolved. A sonnet stage that takes on too much work runs out of  │
+│  context: it hits loom's default 65% budget at ~130k tokens and    │
+│  the 75% hard stop at ~150k, then COMPACTS — a full uncached       │
+│  re-read that is slow, token-expensive, and degrades quality in    │
+│  every way. The cheap model becomes the expensive, worse one.      │
 │                                                                    │
-│  When a sonnet stage's main agent does the bulky work itself, it   │
-│  compacts — and compaction forces a full uncached context re-read, │
-│  which is slow and token-expensive. The cheap model becomes the    │
-│  expensive one.                                                    │
+│  Using more sonnet (the goal) ONLY works if each sonnet stage is   │
+│  SMALL. Do NOT reach for a 1M sonnet variant to dodge this — it    │
+│  is not an option here.                                            │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-The structural fix: **subagents run in their own context windows, and only their final message returns to the main agent.** A sonnet stage that fans out aggressively keeps the main (sonnet) agent's context as a thin coordination ledger — the signal file, subagent prompts, and returned summaries — while the bulky work (reading files, iterating on code, scanning test output) burns *subagent* context that is discarded on return.
+**So: keep sonnet stages small, and when the work isn't small, decompose it.** Two levers, in order:
 
-When you assign `model: "sonnet"` to a stage, design it so the main agent is a **coordinator, not an implementer**:
+1. **Scope the stage small.** A sonnet stage should own a bounded slice — a handful of files, one subsystem, a clear spec. If a description is growing past what fits comfortably in ~130k tokens of working context, split it into more stages (a DAG) rather than piling it onto one sonnet session.
+2. **Decompose with a subagent hierarchy.** When a stage genuinely has a lot of well-defined work, the main (sonnet) agent MUST stay a **thin coordinator, not an implementer** — subagents run in their own context windows and only their final message returns, so the bulky work (reading files, iterating on code, scanning test output) burns *subagent* context that is discarded on return. Push work DOWN the tree:
+   - **> ~6 worker tasks → use a 2-level hierarchy** (Section 4), NOT flat fan-out. The sonnet main agent manages 2–4 coordinators and absorbs 2–4 compact summaries instead of a dozen raw results; each coordinator's own (also finite) context holds only its territory. This is the primary tool for keeping a sonnet main agent's context small on a large stage.
+   - **The old "just add subagents" guidance was insufficient** — a flat wave of subagents whose results all land back in one sonnet context still bloats it. Prefer the hierarchy, and make every returned summary compact (files changed, verification command + result, blockers — no file dumps, no diffs).
 
-- Decompose the stage into subagent assignments that each own a slice of the work — not just for parallelism, but to keep file-reading and code-iteration out of the main context.
-- Avoid sonnet stages where the main agent must itself read many large files, run long test loops, or iterate extensively before delegating. If the stage cannot be decomposed that way, it is an **architectural stage** — use `opus` instead.
-- A sonnet stage with no subagent assignments is a red flag: it will likely do all the work in the main context and compact. Either add a `SUBAGENT FILE ASSIGNMENTS` block or switch the stage to `opus`.
+**Design rules for `model: "sonnet"` stages:**
 
-This is *why* CLAUDE.md Rule 6 says "prefer subagents" — not only token cost, but context-window survival. On opus the 1M window absorbs a heavier main-agent role; on sonnet it does not. When fan-out exceeds ~6 workers, use a 2-level hierarchy (see Section 4): the sonnet main agent manages 2-4 coordinators and absorbs 2-4 compact summaries instead of 12 raw results.
+- Decompose into subagent assignments (or coordinator territories) that each own a slice of the work — for context survival, not just parallelism. Keep file-reading and code-iteration OUT of the main context.
+- A sonnet stage with no subagent/hierarchy assignments is a red flag: it will do the work in the main context and compact. Add a `SUBAGENT FILE ASSIGNMENTS` or `EXECUTION PLAN - HIERARCHICAL` block, or split the stage into smaller stages.
+- If a stage can be kept neither small NOR cleanly decomposed (the main agent must itself read many large files or iterate extensively before it can delegate), that is a signal — split it into multiple stages, or, if the work is genuinely HARD (not merely big), treat it as opus-worthy. **Do not switch to opus merely to buy context headroom for bulk work** — restructure the work instead. Opus is for hardness, not for size.
 
-**integration-verify stages:** Always use opus (set automatically if not specified).
+This is *why* CLAUDE.md Rule 6 says "prefer subagents" — not only token cost, but context-window survival. On opus the 1M window absorbs a heavier main-agent role; on sonnet it does not.
+
+**integration-verify stages:** Always use opus (set automatically if not specified). This is the review/pressure gate — code review, security review, and functional verification — exactly the judgment-heavy work opus is reserved for.
 
 **knowledge stages:** Typically sonnet (exploration is well-scoped), but use opus if the codebase is large/unfamiliar and the agent must make strategic decisions about what to explore.
 
-**knowledge-distill stages:** Always opus (set automatically if not specified). Curating ALL stage memories into permanent knowledge is a context-heavy, judgment-laden reduce step — opus's larger window absorbs the accumulated memory/diff volume and synthesizes/dedupes better than sonnet. The distill agent decides at runtime whether to fan out: on a large plan it delegates information-gathering to cheaper **sonnet** read-only subagents (`Explore`/`loom-software-engineer`) that return compact summaries, while the opus curator stays the sole writer of knowledge files.
+**knowledge-distill stages:** Default to sonnet (`reasoning_effort: "xhigh"`). Memory curation is well-scoped, mechanical synthesis that sonnet 5 handles. The one real risk is context: distilling a LARGE plan's memories and diffs is a context-heavy reduce step, and the sonnet curator has a 200k window — so the sonnet distill agent MUST delegate information-gathering to read-only subagents (`Explore`/`loom-software-engineer`) that return compact summaries, staying the sole writer of knowledge files itself. Escalate to `opus` only for exceptionally large or cross-cutting plans where even the summarized memory/diff volume plus the synthesis judgment exceeds what a well-decomposed sonnet stage can hold.
 
 **Subagent Selection in Descriptions:**
 
@@ -553,7 +565,7 @@ Workflow agents remain subagents: all Rule 5 restrictions apply (no git commit, 
 - knowledge-bootstrap: Default to TEAM (coordinated exploration, researchers share discoveries that inform each other)
 - standard (implementation): Default to SUBAGENTS (concrete file assignments, fire-and-forget). Use a 2-level HIERARCHY for >~6 well-defined worker tasks; `ultracode: true` for ≳10 homogeneous units or adversarial verification; team only for wide/exploratory scope
 - integration-verify: Default to TEAM (build + functional + code review tasks that may require iterative fixes)
-- knowledge-distill: Default to SINGLE; the opus curator self-selects SUBAGENTS at runtime on large plans (read-only sonnet gatherers summarize memories/diffs; the curator writes all knowledge). Knowledge writing itself is sequential, not parallel.
+- knowledge-distill: Default to SUBAGENTS on any non-trivial plan — the sonnet curator delegates gathering (memories/diffs/knowledge) to read-only subagents that return compact summaries, and remains the sole writer of knowledge files (keeps the 200k main context small). Small plans may run SINGLE. Knowledge writing itself is sequential, not parallel.
 
 ### 4b. Stage Necessity Test (MANDATORY)
 
@@ -748,8 +760,8 @@ loom:
   stages:
     - id: stage-id # Required: unique kebab-case identifier
       name: "Stage Name" # Required: human-readable display name
-      model: "sonnet" # Required: "sonnet" for execution, "opus" for architectural work
-      reasoning_effort: "high" # Required: "high" for sonnet stages, "xhigh" for opus stages
+      model: "sonnet" # Required: default "opus"; "sonnet" only for well-scoped execution (see 3b)
+      reasoning_effort: "xhigh" # Required: "xhigh" for both opus and sonnet stages
       description: | # Required: full task description for agent
         What this stage must accomplish.
 
@@ -936,7 +948,7 @@ Loom runs on both Linux and macOS. Shell commands in acceptance criteria MUST wo
 | `knowledge`          | knowledge-bootstrap stage | Can write to doc/loom/knowledge/\*\*          |
 | `standard`           | All implementation stages | Cannot write to knowledge files               |
 | `integration-verify` | Second-to-last stage      | Can write to doc/loom/knowledge/\*\*, reviews |
-| `knowledge-distill`  | Final knowledge curation  | Can write to knowledge, opus default          |
+| `knowledge-distill`  | Final knowledge curation  | Can write to knowledge, sonnet default        |
 
 **NEVER use PascalCase** (Knowledge, Standard, IntegrationVerify) - the parser rejects these.
 
@@ -1353,7 +1365,7 @@ Curates all stage memories into permanent knowledge. Runs AFTER integration-veri
 - id: knowledge-distill
   name: "Knowledge Distillation"
   stage_type: knowledge-distill
-  model: "opus"
+  model: "sonnet"
   reasoning_effort: "xhigh"
   description: |
     Knowledge distillation — runs after integration-verify to curate all stage
@@ -1361,6 +1373,11 @@ Curates all stage memories into permanent knowledge. Runs AFTER integration-veri
 
     ⛔ NEVER use Claude Code's auto-memory (~/.claude/projects/*/memory/).
     ALL memory/knowledge goes through loom memory and loom knowledge commands.
+
+    CONTEXT DISCIPLINE (sonnet 200k window): on a large plan, do NOT read every
+    memory and diff into your own context. Delegate gathering to read-only
+    subagents (Explore / loom-software-engineer) that return compact summaries;
+    you remain the sole writer of knowledge files.
 
     CONTEXT GATHERING (FIRST):
     1. Read the plan file from doc/plans/ (check .work/config.toml for source_path)
@@ -1412,7 +1429,7 @@ Curates all stage memories into permanent knowledge. Runs AFTER integration-veri
 | Context isolation  | integration-verify runs build, tests, code review — distillation needs a fresh context     |
 | Focus              | integration-verify focuses on build/test/review; distillation focuses on learning curation |
 | Sequential         | Must run after integration-verify to capture its discoveries in memory                     |
-| Sonnet-friendly    | Mechanical curation work is well-scoped, no architectural judgment needed                  |
+| Sonnet default     | Mechanical curation is well-scoped; delegate gathering to subagents on large plans to fit sonnet's 200k window |
 | Permanent learning | Without this stage, all session memories are lost when the plan completes                  |
 
 **Skip ONLY if:** The plan genuinely produces no new knowledge worth preserving (rare). When in doubt, include it.
@@ -1914,7 +1931,7 @@ loom:
     - id: knowledge-distill
       name: "Knowledge Distillation"
       stage_type: knowledge-distill
-      model: "opus"
+      model: "sonnet"
       reasoning_effort: "xhigh"
       description: |
         Knowledge distillation — curate all stage memories into permanent knowledge.
