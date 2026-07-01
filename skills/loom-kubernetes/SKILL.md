@@ -41,109 +41,22 @@ triggers:
 
 ## Overview
 
-This skill covers Kubernetes resource configuration, deployment strategies, cluster architecture, security hardening, Helm chart development, and production operations. It helps create production-ready manifests, troubleshoot cluster issues, and implement security best practices.
+Production Kubernetes resource design, security hardening, Helm, and operations. The annotated examples below and the **Expert Practices** section carry the load-bearing knowledge — most production failures here are silent (no API error, no event), surfacing only under load, node maintenance, or a hardened cluster.
 
-## Agent Delegation
+## Workload & Identity Cheatsheet
 
-**senior-software-engineer** (Opus) - DEFAULT. Application architecture on K8s, multi-service design, cluster architecture AND implementation, operators, CRDs, RBAC, NetworkPolicies, PodSecurityStandards, admission control, manifests, and configs
-**software-engineer** (Sonnet) - ONLY for boilerplate manifests following established patterns or scaffolding from a concrete plan
-**code-reviewer** - Reviews K8s YAML for best practices and security issues
+| Kind            | Identity guarantee                                                              | Use for                                     |
+| --------------- | ------------------------------------------------------------------------------- | ------------------------------------------- |
+| **Deployment**  | Fungible pods, random names, no ordering                                        | Stateless services                          |
+| **StatefulSet** | Stable ordinal identity + DNS + per-pod PVC; ordered rollout (`OrderedReady`)   | Databases, quorum systems, sharded stores   |
+| **DaemonSet**   | One pod per (matching) node                                                     | Node agents: logging, CNI, node-exporter    |
+| **Job/CronJob** | Run-to-completion / scheduled                                                   | Batch, migrations, backups                  |
 
-Note: For cluster architecture and security hardening, use senior-software-engineer with /loom-kubernetes, /loom-security-audit, and /loom-threat-model skills
-
-## Instructions
-
-### 1. Design Resource Architecture
-
-- Plan namespace organization and boundaries
-- Define resource requests/limits based on workload
-- Design service mesh topology (if applicable)
-- Plan for high availability (replicas, affinity, PDBs)
-- Choose workload type (Deployment/StatefulSet/DaemonSet/Job)
-- Design storage strategy (PVCs, StorageClasses, ephemeral volumes)
-
-### 2. Create Resource Manifests
-
-- Write Deployments/StatefulSets/DaemonSets with proper lifecycle
-- Configure Services (ClusterIP/NodePort/LoadBalancer) and Ingress
-- Set up ConfigMaps and Secrets (sealed secrets, external secrets)
-- Define RBAC policies (ServiceAccounts, Roles, RoleBindings)
-- Implement NetworkPolicies for pod-to-pod communication
-- Configure PodDisruptionBudgets for availability guarantees
-
-### 3. Develop Helm Charts
-
-- Structure charts (Chart.yaml, values.yaml, templates/)
-- Use template functions (\_helpers.tpl for common labels)
-- Parameterize configurations (replicas, image tags, resources)
-- Define dependencies (requirements.yaml or Chart.yaml dependencies)
-- Implement hooks (pre-install, post-upgrade, etc.)
-- Test charts locally (helm template, helm lint, helm install --dry-run)
-- Package and publish charts to registries
-
-### 4. Implement Security Best Practices
-
-- Run as non-root user (runAsUser, runAsNonRoot)
-- Drop all capabilities (securityContext.capabilities.drop: [ALL])
-- Use read-only root filesystems (readOnlyRootFilesystem: true)
-- Prevent privilege escalation (allowPrivilegeEscalation: false)
-- Implement PodSecurityStandards (restricted profile)
-- Use NetworkPolicies for zero-trust networking
-- Scan images for vulnerabilities (integrate Trivy, Snyk)
-- Rotate secrets regularly (external secrets operator)
-- Audit RBAC permissions (principle of least privilege)
-
-### 5. Configure Observability
-
-- Add Prometheus annotations for scraping
-- Configure logging (stdout/stderr, fluentd/loki)
-- Implement health probes (liveness, readiness, startup)
-- Export metrics (custom metrics for HPA)
-- Set up distributed tracing (OpenTelemetry)
-- Configure alerting rules
-
-### 6. Troubleshoot Issues
-
-- Pod crashes: `kubectl logs`, `kubectl describe pod`, events
-- Image pull failures: Check ImagePullSecrets, registry auth
-- Networking: Test DNS resolution, check NetworkPolicies
-- Resource constraints: Check node capacity, pod eviction
-- Scheduling failures: Node selectors, taints/tolerations, affinity
-- Performance: Use `kubectl top`, Prometheus metrics
-- CrashLoopBackOff: Check startup probes, init containers
-- Pending pods: Describe pod for scheduling failures
-
-### 7. Production Operations
-
-- Rolling updates with proper rollout strategy
-- Blue-green deployments (multiple services)
-- Canary deployments (traffic splitting via service mesh)
-- Backup and restore (Velero for cluster state)
-- Disaster recovery planning (multi-region, etcd backups)
-- Capacity planning (resource quotas, limit ranges)
-- Cost optimization (right-sizing, spot instances, cluster autoscaler)
-- Upgrade planning (test in staging, rolling node upgrades)
-
-## Best Practices
-
-1. **Use Namespaces**: Organize resources logically, enable RBAC boundaries
-2. **Set Resource Limits**: Prevent resource exhaustion, enable QoS classes
-3. **Health Probes**: Liveness checks only core process health (never external dependencies — that causes cascading restarts); readiness additionally checks dependencies and drains the pod; use a startup probe instead of a large initialDelaySeconds for slow starts
-4. **Rolling Updates**: Zero-downtime deployments with maxSurge/maxUnavailable
-5. **Secrets Management**: Use external secrets, never hardcode credentials
-6. **Label Everything**: Enable filtering, selection, and monitoring
-7. **Use Helm/Kustomize**: Template and manage manifests as code
-8. **Security Contexts**: Always run as non-root with minimal privileges
-9. **NetworkPolicies**: Default deny, explicit allow for zero-trust
-10. **Pod Disruption Budgets**: Protect availability during disruptions
-11. **Resource Quotas**: Prevent runaway resource consumption per namespace
-12. **Admission Control**: Use OPA/Kyverno for policy enforcement
-13. **Immutable Infrastructure**: Never SSH into pods, replace instead
-14. **GitOps**: Use ArgoCD/Flux for declarative deployment
+Rollout knobs: `strategy.rollingUpdate.maxSurge`/`maxUnavailable` (Deployment); `maxUnavailable` + `partition` (StatefulSet). `imagePullPolicy`: `IfNotPresent` for immutable tags/digests; `Always` only for mutable tags (adds a registry round-trip per start).
 
 ## Examples
 
-### Example 1: Production Deployment
+### Production Deployment (annotated)
 
 ```yaml
 apiVersion: apps/v1
@@ -151,27 +64,18 @@ kind: Deployment
 metadata:
   name: api-server
   namespace: production
-  labels:
-    app: api-server
-    version: v1.2.0
+  labels: {app: api-server, version: v1.2.0}
 spec:
   replicas: 3
   strategy:
     type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+    rollingUpdate: {maxSurge: 1, maxUnavailable: 0}
   selector:
-    matchLabels:
-      app: api-server
+    matchLabels: {app: api-server}
   template:
     metadata:
-      labels:
-        app: api-server
-        version: v1.2.0
-      annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "8080"
+      labels: {app: api-server, version: v1.2.0}
+      annotations: {prometheus.io/scrape: "true", prometheus.io/port: "8080"}
     spec:
       serviceAccountName: api-server
       securityContext:
@@ -179,644 +83,281 @@ spec:
         runAsUser: 1000
         fsGroup: 1000
         seccompProfile:
-          type: RuntimeDefault # REQUIRED by Restricted PSS; omitting it = pod rejected
-
+          type: RuntimeDefault          # REQUIRED by Restricted PSS; omitting it = pod rejected
       containers:
         - name: api
           image: myregistry.io/api-server:v1.2.0
           imagePullPolicy: IfNotPresent
-
-          ports:
-            - name: http
-              containerPort: 8080
-              protocol: TCP
-
+          ports: [{name: http, containerPort: 8080}]
           env:
             - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: api-secrets
-                  key: database-url
-            - name: LOG_LEVEL
-              valueFrom:
-                configMapKeyRef:
-                  name: api-config
-                  key: log-level
-
+              valueFrom: {secretKeyRef: {name: api-secrets, key: database-url}}
           resources:
-            requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              cpu: 500m
-              memory: 512Mi
-
-          # startupProbe gates liveness/readiness; prefer it over a large
-          # initialDelaySeconds so liveness can stay tight at runtime.
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {memory: 512Mi}      # memory limit kept; CPU limit omitted (see CFS throttling)
+          # startupProbe gates liveness/readiness — prefer over a large initialDelaySeconds
           startupProbe:
-            httpGet:
-              path: /health/live
-              port: http
-            failureThreshold: 30 # 30 * 10s = 5 min startup budget
+            httpGet: {path: /health/live, port: http}
+            failureThreshold: 30         # 30 * 10s = 5 min startup budget
             periodSeconds: 10
-
           livenessProbe:
-            httpGet:
-              path: /health/live # process health only — no DB/cache/upstream checks
-              port: http
+            httpGet: {path: /health/live, port: http}   # process health ONLY — no DB/cache/upstream
             periodSeconds: 20
-            timeoutSeconds: 5
             failureThreshold: 3
-
           readinessProbe:
-            httpGet:
-              path: /health/ready
-              port: http
-            initialDelaySeconds: 5
+            httpGet: {path: /health/ready, port: http}  # may check dependencies; drains, not restarts
             periodSeconds: 10
-            timeoutSeconds: 3
             failureThreshold: 3
-
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
-
+            capabilities: {drop: [ALL]}
           volumeMounts:
-            - name: tmp
-              mountPath: /tmp
-            - name: cache
-              mountPath: /app/cache
-
+            - {name: tmp, mountPath: /tmp}
       volumes:
-        - name: tmp
-          emptyDir: {}
-        - name: cache
-          emptyDir:
-            sizeLimit: 100Mi
-
+        - {name: tmp, emptyDir: {}}
+      # soft node spread + hard zone spread with per-revision isolation (see Expert Practices)
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
             - weight: 100
               podAffinityTerm:
-                labelSelector:
-                  matchLabels:
-                    app: api-server
+                labelSelector: {matchLabels: {app: api-server}}
                 topologyKey: kubernetes.io/hostname
-
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: topology.kubernetes.io/zone
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app: api-server
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: {matchLabels: {app: api-server}}
+          matchLabelKeys: [pod-template-hash]   # each rollout revision spreads independently (1.27+)
 ```
 
-### Example 2: Service and Ingress
+### Service + Ingress
 
 ```yaml
 apiVersion: v1
 kind: Service
-metadata:
-  name: api-server
-  namespace: production
-  labels:
-    app: api-server
+metadata: {name: api-server, namespace: production}
 spec:
   type: ClusterIP
-  ports:
-    - port: 80
-      targetPort: http
-      protocol: TCP
-      name: http
-  selector:
-    app: api-server
-
+  selector: {app: api-server}
+  ports: [{port: 80, targetPort: http, name: http}]
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: api-server
   namespace: production
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/rate-limit: "100"
-    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+  annotations: {cert-manager.io/cluster-issuer: letsencrypt-prod}
 spec:
-  ingressClassName: nginx # canonical since 1.18; kubernetes.io/ingress.class is deprecated
-  tls:
-    - hosts:
-        - api.example.com
-      secretName: api-tls-cert
+  ingressClassName: nginx     # canonical since 1.18; kubernetes.io/ingress.class is deprecated
+  tls: [{hosts: [api.example.com], secretName: api-tls-cert}]
   rules:
     - host: api.example.com
       http:
         paths:
           - path: /
             pathType: Prefix
-            backend:
-              service:
-                name: api-server
-                port:
-                  number: 80
+            backend: {service: {name: api-server, port: {number: 80}}}
 ```
 
-### Example 3: ConfigMap and Secret
+### ConfigMap + Secret
 
 ```yaml
 apiVersion: v1
 kind: ConfigMap
-metadata:
-  name: api-config
-  namespace: production
+metadata: {name: api-config, namespace: production}
 data:
   log-level: "info"
-  max-connections: "100"
-  cache-ttl: "3600"
   feature-flags: |
-    {
-      "new-checkout": true,
-      "beta-features": false
-    }
-
+    {"new-checkout": true}
 ---
 apiVersion: v1
 kind: Secret
-metadata:
-  name: api-secrets
-  namespace: production
+metadata: {name: api-secrets, namespace: production}
 type: Opaque
 # WARNING: Secrets are only base64-encoded, NOT encrypted at rest in etcd by default.
-# Enable encryption at rest or use External Secrets Operator / a secrets manager.
-# Never commit real credentials — placeholders only.
+# Enable encryption at rest or use External Secrets Operator. Placeholders only — never commit real creds.
 stringData:
   database-url: "postgresql://user:CHANGE_ME@db-host:5432/myapp"
-  api-key: "CHANGE_ME"
 ```
 
-### Example 4: Horizontal Pod Autoscaler
+### HorizontalPodAutoscaler
 
 ```yaml
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
-metadata:
-  name: api-server
-  namespace: production
+metadata: {name: api-server, namespace: production}
 spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: api-server
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: api-server}
   minReplicas: 3
   maxReplicas: 10
   metrics:
     - type: Resource
       resource:
         name: cpu
-        target:
-          type: Utilization
-          averageUtilization: 70
-    # WARNING: memory-based HPA is unreliable for load-driven scaling — memory is
-    # non-compressible and runtimes rarely return heap to the OS, so it scales out
-    # but never scales back in. Prefer CPU or external/custom metrics (RPS, queue
-    # depth via KEDA). Every container must set resources.requests.cpu or the HPA
-    # silently ignores the pod for CPU metrics.
+        target: {type: Utilization, averageUtilization: 70}
+    # WARNING: memory-based HPA scales out but never back in (memory is non-compressible, runtimes
+    # rarely return heap to the OS) — prefer CPU or external/custom metrics (RPS, queue depth via KEDA).
+    # Every container MUST set resources.requests.cpu or the HPA silently ignores the pod.
   behavior:
     scaleDown:
       stabilizationWindowSeconds: 300
-      policies:
-        - type: Percent
-          value: 10
-          periodSeconds: 60
+      policies: [{type: Percent, value: 10, periodSeconds: 60}]
     scaleUp:
       stabilizationWindowSeconds: 0
-      policies:
-        - type: Percent
-          value: 100
-          periodSeconds: 15
-        - type: Pods
-          value: 4
-          periodSeconds: 15
-      selectPolicy: Max
+      policies: [{type: Percent, value: 100, periodSeconds: 15}]
 ```
 
-### Example 5: Helm Chart Structure
-
-```text
-mychart/
-  Chart.yaml          # Chart metadata
-  values.yaml         # Default configuration values
-  templates/
-    _helpers.tpl      # Template helpers
-    deployment.yaml   # Deployment template
-    service.yaml      # Service template
-    ingress.yaml      # Ingress template
-    configmap.yaml    # ConfigMap template
-    secret.yaml       # Secret template
-    NOTES.txt         # Post-install notes
-  charts/             # Chart dependencies
-  .helmignore         # Files to ignore
-```
-
-Chart.yaml:
+### NetworkPolicy (zero-trust) + default-deny
 
 ```yaml
-apiVersion: v2
-name: api-server
-description: Production API server Helm chart
-type: application
-version: 1.2.0
-appVersion: "1.2.0"
-keywords:
-  - api
-  - backend
-maintainers:
-  - name: Platform Team
-    email: platform@example.com
-dependencies:
-  - name: postgresql
-    version: "12.x.x"
-    repository: "https://charts.bitnami.com/bitnami"
-    condition: postgresql.enabled
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: api-server-netpol, namespace: production}
+spec:
+  podSelector: {matchLabels: {app: api-server}}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        # Same list element = namespaceSelector AND podSelector (zero-trust). Separate dashes = OR.
+        - namespaceSelector: {matchLabels: {name: ingress-nginx}}
+      ports: [{protocol: TCP, port: 8080}]
+  egress:
+    - to: [{podSelector: {matchLabels: {app: postgresql}}}]
+      ports: [{protocol: TCP, port: 5432}]
+    - to:
+        - namespaceSelector: {matchLabels: {name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}   # required: DNS falls back to TCP for large responses / DNSSEC
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny-all, namespace: production}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
 ```
 
-values.yaml:
+### RBAC (least privilege)
 
 ```yaml
-replicaCount: 3
-
-image:
-  repository: myregistry.io/api-server
-  tag: "1.2.0"
-  pullPolicy: IfNotPresent
-
-service:
-  type: ClusterIP
-  port: 80
-  targetPort: 8080
-
-ingress:
-  enabled: true
-  className: nginx
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-  hosts:
-    - host: api.example.com
-      paths:
-        - path: /
-          pathType: Prefix
-  tls:
-    - secretName: api-tls-cert
-      hosts:
-        - api.example.com
-
-resources:
-  requests:
-    cpu: 100m
-    memory: 128Mi
-  limits:
-    cpu: 500m
-    memory: 512Mi
-
-autoscaling:
-  enabled: true
-  minReplicas: 3
-  maxReplicas: 10
-  targetCPUUtilizationPercentage: 70
-  # Avoid targetMemoryUtilizationPercentage: memory-based HPA rarely scales back in.
-
-postgresql:
-  enabled: true
-  auth:
-    username: apiuser
-    database: apidb
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: api-server, namespace: production}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: api-server, namespace: production}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["api-secrets"]   # explicit allowlist; grant only `get` (list/watch leak .data)
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: api-server, namespace: production}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: api-server}
+subjects: [{kind: ServiceAccount, name: api-server, namespace: production}]
 ```
 
-templates/\_helpers.tpl:
+### StatefulSet with per-pod storage
 
 ```yaml
-{{- define "api-server.name" -}}
-{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
-{{- end }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: postgresql, namespace: production}
+spec:
+  serviceName: postgresql-headless   # required headless Service for stable pod DNS
+  replicas: 3
+  selector: {matchLabels: {app: postgresql}}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Delete              # reclaim PVCs on teardown (default is Retain)
+    whenScaled: Retain               # keep data on scale-in
+  template:
+    metadata:
+      labels: {app: postgresql}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          ports: [{containerPort: 5432, name: postgres}]
+          env:
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+          volumeMounts: [{name: data, mountPath: /var/lib/postgresql/data}]
+          resources:
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {memory: 2Gi}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: fast-ssd
+        resources: {requests: {storage: 50Gi}}
+```
 
-{{- define "api-server.fullname" -}}
-{{- if .Values.fullnameOverride }}
-{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
-{{- else }}
-{{- $name := default .Chart.Name .Values.nameOverride }}
-{{- if contains $name .Release.Name }}
-{{- .Release.Name | trunc 63 | trimSuffix "-" }}
-{{- else }}
-{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" }}
-{{- end }}
-{{- end }}
-{{- end }}
+### Helm chart essentials
 
-{{- define "api-server.labels" -}}
+Structure: `Chart.yaml` (metadata + `dependencies`), `values.yaml` (defaults), `templates/` (`_helpers.tpl` for shared labels/names, resource templates, `NOTES.txt`), `charts/` (deps), `.helmignore`.
+
+```yaml
+# templates/_helpers.tpl — standard label block reused via {{ include "app.labels" . }}
+{{- define "app.labels" -}}
 helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
-app.kubernetes.io/name: {{ include "api-server.name" . }}
+app.kubernetes.io/name: {{ .Chart.Name }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 ```
 
-### Example 6: NetworkPolicy (Zero-Trust)
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: api-server-netpol
-  namespace: production
-spec:
-  podSelector:
-    matchLabels:
-      app: api-server
-  policyTypes:
-    - Ingress
-    - Egress
-
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              name: ingress-nginx
-        - podSelector:
-            matchLabels:
-              app: frontend
-      ports:
-        - protocol: TCP
-          port: 8080
-
-  egress:
-    - to:
-        - podSelector:
-            matchLabels:
-              app: postgresql
-      ports:
-        - protocol: TCP
-          port: 5432
-
-    - to:
-        # Same list element: namespaceSelector AND podSelector (zero-trust).
-        - namespaceSelector:
-            matchLabels:
-              name: kube-system
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53 # required: DNS falls back to TCP for large responses / DNSSEC
-
-    - to:
-        - namespaceSelector: {}
-      ports:
-        - protocol: TCP
-          port: 443
-
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: default-deny-all
-  namespace: production
-spec:
-  podSelector: {}
-  policyTypes:
-    - Ingress
-    - Egress
-```
-
-### Example 7: RBAC Configuration
-
-```yaml
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: api-server
-  namespace: production
-  labels:
-    app: api-server
-
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: api-server
-  namespace: production
-rules:
-  - apiGroups: [""]
-    resources: ["configmaps"]
-    verbs: ["get", "list", "watch"]
-
-  - apiGroups: [""]
-    resources: ["secrets"]
-    resourceNames: ["api-secrets", "database-creds"]
-    verbs: ["get"]
-
-  - apiGroups: [""]
-    resources: ["pods"]
-    verbs: ["get", "list"]
-
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: api-server
-  namespace: production
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: api-server
-subjects:
-  - kind: ServiceAccount
-    name: api-server
-    namespace: production
-
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: pod-reader
-rules:
-  - apiGroups: [""]
-    resources: ["pods"]
-    verbs: ["get", "list", "watch"]
-
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: read-pods-global
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: pod-reader
-subjects:
-  - kind: ServiceAccount
-    name: monitoring
-    namespace: observability
-```
-
-### Example 8: StatefulSet with Persistent Storage
-
-```yaml
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: postgresql
-  namespace: production
-spec:
-  serviceName: postgresql-headless
-  replicas: 3
-  selector:
-    matchLabels:
-      app: postgresql
-
-  template:
-    metadata:
-      labels:
-        app: postgresql
-    spec:
-      containers:
-        - name: postgres
-          image: postgres:15-alpine
-          ports:
-            - containerPort: 5432
-              name: postgres
-          env:
-            - name: POSTGRES_DB
-              value: myapp
-            - name: POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-creds
-                  key: username
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-creds
-                  key: password
-            - name: PGDATA
-              value: /var/lib/postgresql/data/pgdata
-          volumeMounts:
-            - name: data
-              mountPath: /var/lib/postgresql/data
-          resources:
-            requests:
-              cpu: 250m
-              memory: 512Mi
-            limits:
-              cpu: 1000m
-              memory: 2Gi
-
-  volumeClaimTemplates:
-    - metadata:
-        name: data
-      spec:
-        accessModes: ["ReadWriteOnce"]
-        storageClassName: fast-ssd
-        resources:
-          requests:
-            storage: 50Gi
-
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: postgresql-headless
-  namespace: production
-spec:
-  clusterIP: None
-  selector:
-    app: postgresql
-  ports:
-    - port: 5432
-      targetPort: postgres
-      name: postgres
-```
+Test before install: `helm lint`, `helm template`, `helm install --dry-run`. Roll back with `helm rollback <release> <rev>`. Name templates: `... | trunc 63 | trimSuffix "-"` (K8s name limit).
 
 ## Troubleshooting Commands
 
 ```bash
-# Pod debugging
-kubectl get pods -n production
-kubectl describe pod api-server-abc123 -n production
-kubectl logs api-server-abc123 -n production
-kubectl logs api-server-abc123 -n production --previous
-kubectl logs api-server-abc123 -c container-name -n production
-kubectl exec -it api-server-abc123 -n production -- /bin/sh
+# Pods
+kubectl describe pod <pod> -n <ns>
+kubectl logs <pod> -n <ns> [--previous] [-c <container>]
+kubectl exec -it <pod> -n <ns> -- /bin/sh
+kubectl get events -n <ns> --sort-by='.lastTimestamp'
 
-# Events and status
-kubectl get events -n production --sort-by='.lastTimestamp'
-kubectl get events -n production --field-selector involvedObject.name=api-server-abc123
+# Resource usage / scheduling
+kubectl top nodes; kubectl top pods -n <ns>
+kubectl describe node <node>
 
-# Resource usage
-kubectl top nodes
-kubectl top pods -n production
-kubectl describe node node-1
-
-# Network debugging
+# Network debug (ephemeral toolbox)
 kubectl run -it --rm debug --image=nicolaka/netshoot --restart=Never -- /bin/bash
-kubectl exec -it api-server-abc123 -n production -- nslookup kubernetes.default
-kubectl exec -it api-server-abc123 -n production -- curl -v http://other-service
 
-# Configuration
-kubectl get configmap api-config -n production -o yaml
-kubectl get secret api-secrets -n production -o jsonpath='{.data}'
+# Rollouts
+kubectl rollout status|history|undo|restart deployment/<name> -n <ns>
 
-# Deployments and rollouts
-kubectl rollout status deployment/api-server -n production
-kubectl rollout history deployment/api-server -n production
-kubectl rollout undo deployment/api-server -n production
-kubectl rollout restart deployment/api-server -n production
+# RBAC
+kubectl auth can-i get pods --as=system:serviceaccount:<ns>:<sa> -n <ns>
 
-# RBAC debugging
-kubectl auth can-i get pods --as=system:serviceaccount:production:api-server -n production
-kubectl get rolebindings,clusterrolebindings --all-namespaces -o json | jq '.items[] | select(.subjects[]?.name=="api-server")'
-
-# NetworkPolicy debugging
-kubectl describe networkpolicy api-server-netpol -n production
-
-# Helm operations
-helm list -n production
-helm get values api-server -n production
-helm history api-server -n production
-helm upgrade api-server ./mychart -n production --values values.yaml
-helm rollback api-server 2 -n production
-helm uninstall api-server -n production
-
-# Cluster info
-kubectl cluster-info
-kubectl get nodes -o wide
-kubectl get --raw '/livez?verbose'  # componentstatuses deprecated since 1.19
+# Cluster health (componentstatuses deprecated since 1.19)
+kubectl get --raw '/livez?verbose'
 kubectl get --raw '/readyz?verbose'
-kubectl api-resources
-kubectl api-versions
 ```
 
-## Common Issues and Solutions
+## Common Issues
 
-| Issue                   | Cause                                            | Solution                                           |
+| Issue                   | Cause                                            | Fix                                                |
 | ----------------------- | ------------------------------------------------ | -------------------------------------------------- |
 | ImagePullBackOff        | Registry auth missing or image not found         | Check imagePullSecrets, verify image exists        |
 | CrashLoopBackOff        | App crashes on startup                           | Check logs, verify config, add startup probe       |
-| Pending pod             | Insufficient resources or scheduling constraints | Check node capacity, taints, tolerations, affinity |
-| OOMKilled               | Memory limit exceeded                            | Increase memory limit, fix memory leak             |
+| Pending pod             | Insufficient resources / scheduling constraints  | Check node capacity, taints, tolerations, affinity |
+| OOMKilled (exit 137)    | Memory limit exceeded                            | Raise memory limit or fix leak (memory can't throttle) |
 | Service unreachable     | Wrong selector or port                           | Verify selector matches pod labels, check ports    |
-| DNS resolution fails    | CoreDNS issues or NetworkPolicy blocking         | Check CoreDNS pods, verify NetworkPolicy egress    |
-| PVC pending             | StorageClass missing or no available volumes     | Verify StorageClass, check provisioner             |
-| RBAC permission denied  | ServiceAccount lacks required permissions        | Add Role/RoleBinding with necessary verbs          |
-| Readiness probe failing | App not ready or probe misconfigured             | Adjust initialDelaySeconds, check probe endpoint   |
-| HPA not scaling         | Metrics server missing or no resource requests   | Install metrics-server, set resource requests      |
+| DNS resolution fails    | CoreDNS or NetworkPolicy blocking                | Check CoreDNS pods, verify egress UDP+TCP/53       |
+| PVC pending             | StorageClass missing or no volumes               | Verify StorageClass and provisioner                |
+| HPA not scaling         | metrics-server missing or no resource requests   | Install metrics-server, set requests.cpu           |
 
 ## Expert Practices: Idioms, Anti-Patterns & Gotchas
 
@@ -938,13 +479,6 @@ containers:
 
 **StatefulSet PVCs are retained by default — opt into deletion explicitly.** Deleting or scaling down a StatefulSet does _not_ delete PVCs from `volumeClaimTemplates` (by design, for data safety), so they accumulate cost indefinitely. Kubernetes 1.27 graduated `persistentVolumeClaimRetentionPolicy` to beta with `whenDeleted`/`whenScaled` knobs, but both still default to `Retain`. Use `whenScaled: Retain` / `whenDeleted: Delete` for production. Separately, the default `OrderedReady` podManagementPolicy serializes rollouts: if pod N fails readiness, pods 0..N-1 are not updated — a stuck pod deadlocks the rollout until deleted deliberately.
 
-```yaml
-spec:
-  persistentVolumeClaimRetentionPolicy:
-    whenDeleted: Delete # reclaim PVCs on teardown
-    whenScaled: Retain # keep data on scale-in
-```
-
 **Set `unhealthyPodEvictionPolicy: AlwaysAllow` on PDBs to prevent node-drain deadlocks.** The default `IfHealthyBudget` only evicts unhealthy (e.g. crash-looping) pods if the budget is already satisfied, so a node drain can block indefinitely waiting for a broken app to become healthy — a silent incident during maintenance and upgrades. `AlwaysAllow` evicts already-unhealthy pods regardless of budget while still protecting healthy ones; the docs recommend it. The GA field requires Kubernetes **1.31+** (alpha 1.26, beta 1.27).
 
 **PDB v1 empty selector matches ALL pods — a silent inversion from v1beta1.** `policy/v1beta1` PDB was removed in 1.25; use `policy/v1`. Critical behavior change: in v1beta1 an empty selector (`{}`) matched _zero_ pods, but in v1 it matches _every_ pod in the namespace. A migrated manifest still carrying `selector: {}` silently becomes a namespace-wide constraint blocking all voluntary disruptions. Always set an explicit selector.
@@ -954,3 +488,15 @@ spec:
 - `kubernetes.io/ingress.class` annotation → use `spec.ingressClassName` (deprecated since 1.18).
 - `kubectl get componentstatuses` (`cs`) → use `kubectl get --raw '/livez?verbose'` / `'/readyz?verbose'` (deprecated since 1.19; reports false "Unhealthy" for scheduler/controller-manager).
 - `policy/v1beta1` PodDisruptionBudget and `PodSecurityPolicy` → both removed in 1.25; use `policy/v1` PDB and PodSecurity admission labels.
+
+## Verification Checklist
+
+- [ ] Liveness hits an in-memory endpoint (no deps); readiness carries dependency checks; liveness more tolerant than readiness; startupProbe covers slow starts.
+- [ ] Every container (incl. sidecars/init) sets `requests.cpu`; memory limit present; CPU limit omitted or generous for latency-sensitive services.
+- [ ] HA spread via `topologySpreadConstraints` + `matchLabelKeys: [pod-template-hash]`; not hard hostname anti-affinity.
+- [ ] Hardened pods: `runAsNonRoot`, `seccompProfile: RuntimeDefault`, `drop: [ALL]`, `readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`.
+- [ ] PSS labels include `warn`+`audit` (not just `enforce`); rolled out in `warn` first.
+- [ ] NetworkPolicy default-deny present, enforcing CNI verified, DNS egress allows UDP+TCP/53, AND-vs-OR selector shape checked.
+- [ ] RBAC least-privilege: secrets `get` + `resourceNames` allowlist; no stray `escalate`/`bind`/`impersonate`; ClusterRoleBindings justified.
+- [ ] `preStop` drain + adequate `terminationGracePeriodSeconds`; PDB with explicit selector and `unhealthyPodEvictionPolicy: AlwaysAllow` (1.31+).
+- [ ] No deprecated APIs (`policy/v1beta1`, PSP, `ingress.class` annotation).

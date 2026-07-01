@@ -36,670 +36,264 @@ triggers:
   - monitoring
   - JSON logs
   - telemetry
+  - RED method
+  - USE method
+  - tail sampling
+  - exemplars
+  - cardinality
 ---
 
 # Logging and Observability
 
 ## Overview
 
-Observability enables understanding system behavior through logs, metrics, and traces. This skill provides patterns for:
+Understand system behavior through the three pillars — logs, metrics, traces — correlated by shared IDs. This skill covers structured logging, OpenTelemetry tracing, Prometheus metrics, aggregation backends, and alerting, with emphasis on the cost/cardinality traps and sampling decisions that separate a working setup from an expensive broken one.
 
-- **Structured Logging**: JSON logs with correlation IDs and contextual data
-- **Distributed Tracing**: Span-based request tracking across services (OpenTelemetry, Jaeger, Zipkin)
-- **Metrics Collection**: Counters, gauges, histograms for system health (Prometheus patterns)
-- **Log Aggregation**: Centralized log management (ELK, Loki, Datadog)
-- **Alerting**: Symptom-based alerts with runbooks
+## Three Pillars — what each answers, and its cost model
 
-## Instructions
+| Pillar      | Answers                              | Cost driver                         | Use for                                        |
+| ----------- | ------------------------------------ | ----------------------------------- | ---------------------------------------------- |
+| **Metrics** | "Is it broken? how much?" (aggregate) | Label **cardinality** (# series)    | Dashboards, SLOs, alerting — always-on, cheap  |
+| **Traces**  | "Where in the request path?" (causal) | Span volume → **sampling**          | Latency breakdown, cross-service dependency    |
+| **Logs**    | "What exactly happened?" (event detail) | Volume + **indexing** strategy      | Forensics, audit, the specifics of one request |
 
-### 1. Structured Logging (JSON Logs)
+Reach for metrics first (cheap, aggregate), traces to localize, logs for the detail. Link all three by `trace_id`/`correlation_id` so you can pivot: alert fires on a metric → jump to an exemplar trace → read that trace's logs.
 
-#### Python Implementation
+## Structured Logging
+
+Emit JSON, one object per event — never string-interpolated prose. Structured fields are queryable in any backend; `f"user {id} did {action}"` is not.
 
 ```python
-import json
-import logging
-import sys
-from datetime import datetime
+import json, logging, sys
+from datetime import datetime, timezone
 from contextvars import ContextVar
-from typing import Any
 
-# Context variables for request tracking
-correlation_id: ContextVar[str] = ContextVar('correlation_id', default='')
-span_id: ContextVar[str] = ContextVar('span_id', default='')
+correlation_id: ContextVar[str] = ContextVar("correlation_id", default="")
+trace_id: ContextVar[str] = ContextVar("trace_id", default="")
 
-class StructuredFormatter(logging.Formatter):
-    """JSON formatter for structured logging."""
-
-    def format(self, record: logging.LogRecord) -> str:
-        log_data = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-            "correlation_id": correlation_id.get(),
-            "span_id": span_id.get(),
+class JsonFormatter(logging.Formatter):
+    def format(self, r: logging.LogRecord) -> str:
+        data = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "level": r.levelname, "logger": r.name, "msg": r.getMessage(),
+            "correlation_id": correlation_id.get(), "trace_id": trace_id.get(),
         }
+        if r.exc_info:
+            data["exception"] = self.formatException(r.exc_info)
+        if hasattr(r, "fields"):
+            data.update(r.fields)          # structured extras
+        return json.dumps(data)
 
-        # Add exception info if present
-        if record.exc_info:
-            log_data["exception"] = self.formatException(record.exc_info)
+h = logging.StreamHandler(sys.stdout); h.setFormatter(JsonFormatter())
+logging.getLogger().addHandler(h); logging.getLogger().setLevel(logging.INFO)
 
-        # Add extra fields
-        if hasattr(record, 'structured_data'):
-            log_data.update(record.structured_data)
-
-        return json.dumps(log_data)
-
-def setup_logging():
-    """Configure structured logging."""
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(StructuredFormatter())
-
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
-    root_logger.addHandler(handler)
-
-# Usage
-logger = logging.getLogger(__name__)
-logger.info("User logged in", extra={
-    "structured_data": {
-        "user_id": "123",
-        "ip_address": "192.168.1.1",
-        "action": "login"
-    }
-})
+logging.getLogger(__name__).info("order processed",
+    extra={"fields": {"order_id": order.id, "total": order.total}})
 ```
 
-#### TypeScript Implementation
+TypeScript: use a child-logger pattern so request context is bound once and inherited — `pino`/`winston` do this natively; prefer them over hand-rolling.
 
 ```typescript
-interface LogContext {
-  correlationId?: string;
-  spanId?: string;
-  [key: string]: unknown;
-}
-
-interface LogEntry {
-  timestamp: string;
-  level: string;
-  message: string;
-  context: LogContext;
-}
-
-class StructuredLogger {
-  private context: LogContext = {};
-
-  withContext(context: LogContext): StructuredLogger {
-    const child = new StructuredLogger();
-    child.context = { ...this.context, ...context };
-    return child;
-  }
-
-  private log(
-    level: string,
-    message: string,
-    data?: Record<string, unknown>,
-  ): void {
-    const entry: LogEntry = {
-      timestamp: new Date().toISOString(),
-      level,
-      message,
-      context: { ...this.context, ...data },
-    };
-    console.log(JSON.stringify(entry));
-  }
-
-  debug(message: string, data?: Record<string, unknown>): void {
-    this.log("DEBUG", message, data);
-  }
-
-  info(message: string, data?: Record<string, unknown>): void {
-    this.log("INFO", message, data);
-  }
-
-  warn(message: string, data?: Record<string, unknown>): void {
-    this.log("WARN", message, data);
-  }
-
-  error(message: string, data?: Record<string, unknown>): void {
-    this.log("ERROR", message, data);
-  }
-}
+// pino: bound context + fast JSON. child() inherits parent fields.
+const log = pino();
+const reqLog = log.child({ correlationId, traceId });
+reqLog.info({ orderId, total }, "order processed");  // object first, message second
 ```
 
-### 2. Log Levels and When to Use Each
+### Log levels
 
-| Level     | Usage                        | Examples                                          |
-| --------- | ---------------------------- | ------------------------------------------------- |
-| **TRACE** | Fine-grained debugging       | Loop iterations, variable values                  |
-| **DEBUG** | Diagnostic information       | Function entry/exit, intermediate states          |
-| **INFO**  | Normal operations            | Request started, job completed, user action       |
-| **WARN**  | Potential issues             | Deprecated API usage, retry attempted, slow query |
-| **ERROR** | Failures requiring attention | Exception caught, operation failed                |
-| **FATAL** | Critical failures            | System cannot continue, data corruption           |
+| Level | When | Example |
+| ----- | ---- | ------- |
+| TRACE | Fine-grained, off in prod | Loop iterations, var values |
+| DEBUG | Diagnostics, off in prod | Function entry/exit, intermediate state |
+| INFO  | Normal business events | Request done, job completed, user action |
+| WARN  | Recoverable / degraded | Retry attempted, deprecated API, slow query |
+| ERROR | Failure needing attention | Exception caught, operation failed |
+| FATAL | Cannot continue | Startup config missing, data corruption |
 
-```python
-# Log level usage examples
-logger.debug("Processing item", extra={"structured_data": {"item_id": item.id}})
-logger.info("Order processed successfully", extra={"structured_data": {"order_id": order.id, "total": order.total}})
-logger.warning("Rate limit approaching", extra={"structured_data": {"current": 95, "limit": 100}})
-logger.error("Payment failed", extra={"structured_data": {"order_id": order.id, "error": str(e)}})
-```
+### Logging discipline (the expensive mistakes)
 
-### 3. Distributed Tracing
+- **Never log secrets/PII** — passwords, tokens, full card numbers, emails, request bodies. Redact at the formatter (allowlist fields), not by remembering at each call site. PII in logs is a compliance breach (GDPR/PCI) and log stores are rarely access-controlled like a DB.
+- **Structured over interpolated** — attach IDs as fields, not baked into the message string, or you can't filter/aggregate by them.
+- **Don't log in hot paths synchronously.** A blocking log write per iteration in a tight loop or per-row is a latency cliff. Use async/non-blocking appenders (`QueueHandler` in Python, pino's async transport) and log the summary, not each item.
+- **Sample high-volume logs.** For chatty success paths, emit 1-in-N (keep 100% of WARN/ERROR). Reduces cost without losing the signal.
+- **Consistent field names across services** — always `correlation_id`, never sometimes `request_id`. Cross-service queries depend on it.
+- **Emit to stdout as JSON; let the platform collect it.** Don't manage log files/rotation inside the app in a containerized environment — the agent/sidecar (Promtail, Fluent Bit, Datadog agent) tails stdout.
 
-#### Correlation IDs and Spans
+## Distributed Tracing
 
-```python
-import uuid
-from contextvars import ContextVar
-from dataclasses import dataclass, field
-from typing import Optional
-import time
+**Use OpenTelemetry — the vendor-neutral standard (CNCF).** Don't hand-roll spans/tracers: the OTel SDK gives context propagation, batching, and OTLP export for free, and swaps backends (Jaeger, Tempo, Datadog, any OTLP endpoint) without code change. Maturity as of 2026: **tracing is stable/GA**; **metrics stable**; **logs stable spec** but SDK/collector logs support is newer than traces — verify your language SDK's status before relying on OTel logs vs a mature logging lib.
 
-@dataclass
-class Span:
-    name: str
-    trace_id: str
-    span_id: str = field(default_factory=lambda: str(uuid.uuid4())[:16])
-    parent_span_id: Optional[str] = None
-    start_time: float = field(default_factory=time.time)
-    end_time: Optional[float] = None
-    attributes: dict = field(default_factory=dict)
-
-    def end(self):
-        self.end_time = time.time()
-
-    @property
-    def duration_ms(self) -> float:
-        if self.end_time:
-            return (self.end_time - self.start_time) * 1000
-        return 0
-
-current_span: ContextVar[Optional[Span]] = ContextVar('current_span', default=None)
-
-class Tracer:
-    def __init__(self, service_name: str):
-        self.service_name = service_name
-
-    def start_span(self, name: str, parent: Optional[Span] = None) -> Span:
-        parent = parent or current_span.get()
-        trace_id = parent.trace_id if parent else str(uuid.uuid4())[:32]
-        parent_span_id = parent.span_id if parent else None
-
-        span = Span(
-            name=name,
-            trace_id=trace_id,
-            parent_span_id=parent_span_id,
-            attributes={"service": self.service_name}
-        )
-        current_span.set(span)
-        return span
-
-    def end_span(self, span: Span):
-        span.end()
-        self._export(span)
-        # Restore parent span if exists
-        # In production, use a span stack
-
-    def _export(self, span: Span):
-        """Export span to tracing backend."""
-        logger.info(f"Span completed: {span.name}", extra={
-            "structured_data": {
-                "trace_id": span.trace_id,
-                "span_id": span.span_id,
-                "parent_span_id": span.parent_span_id,
-                "duration_ms": span.duration_ms,
-                "attributes": span.attributes
-            }
-        })
-
-# Context manager for spans
-from contextlib import contextmanager
-
-@contextmanager
-def trace_span(tracer: Tracer, name: str):
-    span = tracer.start_span(name)
-    try:
-        yield span
-    except Exception as e:
-        span.attributes["error"] = True
-        span.attributes["error.message"] = str(e)
-        raise
-    finally:
-        tracer.end_span(span)
-
-# Usage
-tracer = Tracer("order-service")
-
-async def process_order(order_id: str):
-    with trace_span(tracer, "process_order") as span:
-        span.attributes["order_id"] = order_id
-
-        with trace_span(tracer, "validate_order"):
-            await validate(order_id)
-
-        with trace_span(tracer, "charge_payment"):
-            await charge(order_id)
-```
-
-### 4. Metrics Collection
+Architecture: **SDK in-process** (creates spans, propagates context) → **OTel Collector** (receive/process/export; the place to do batching, tail sampling, redaction, fan-out to backends). Run the Collector as a sidecar or gateway; keep exporters/sampling config there so apps stay backend-agnostic.
 
 ```python
-from dataclasses import dataclass
-from typing import Dict, List
-from enum import Enum
-import time
-import threading
-
-class MetricType(Enum):
-    COUNTER = "counter"
-    GAUGE = "gauge"
-    HISTOGRAM = "histogram"
-
-@dataclass
-class Counter:
-    name: str
-    labels: Dict[str, str]
-    value: float = 0
-
-    def inc(self, amount: float = 1):
-        self.value += amount
-
-@dataclass
-class Gauge:
-    name: str
-    labels: Dict[str, str]
-    value: float = 0
-
-    def set(self, value: float):
-        self.value = value
-
-    def inc(self, amount: float = 1):
-        self.value += amount
-
-    def dec(self, amount: float = 1):
-        self.value -= amount
-
-@dataclass
-class Histogram:
-    name: str
-    labels: Dict[str, str]
-    buckets: List[float]
-    values: List[float] = None
-
-    def __post_init__(self):
-        self.values = []
-        self._bucket_counts = {b: 0 for b in self.buckets}
-        self._bucket_counts[float('inf')] = 0
-        self._sum = 0
-        self._count = 0
-
-    def observe(self, value: float):
-        self.values.append(value)
-        self._sum += value
-        self._count += 1
-        for bucket in sorted(self._bucket_counts.keys()):
-            if value <= bucket:
-                self._bucket_counts[bucket] += 1
-
-class MetricsRegistry:
-    def __init__(self):
-        self._metrics: Dict[str, any] = {}
-        self._lock = threading.Lock()
-
-    def counter(self, name: str, labels: Dict[str, str] = None) -> Counter:
-        key = f"{name}:{labels}"
-        with self._lock:
-            if key not in self._metrics:
-                self._metrics[key] = Counter(name, labels or {})
-            return self._metrics[key]
-
-    def gauge(self, name: str, labels: Dict[str, str] = None) -> Gauge:
-        key = f"{name}:{labels}"
-        with self._lock:
-            if key not in self._metrics:
-                self._metrics[key] = Gauge(name, labels or {})
-            return self._metrics[key]
-
-    def histogram(self, name: str, buckets: List[float], labels: Dict[str, str] = None) -> Histogram:
-        key = f"{name}:{labels}"
-        with self._lock:
-            if key not in self._metrics:
-                self._metrics[key] = Histogram(name, labels or {}, buckets)
-            return self._metrics[key]
-
-# Usage
-metrics = MetricsRegistry()
-
-# Counter for requests
-request_counter = metrics.counter("http_requests_total", {"method": "GET", "path": "/api/orders"})
-request_counter.inc()
-
-# Gauge for active connections
-active_connections = metrics.gauge("active_connections")
-active_connections.inc()
-# ... handle connection ...
-active_connections.dec()
-
-# Histogram for request duration
-request_duration = metrics.histogram(
-    "http_request_duration_seconds",
-    buckets=[0.01, 0.05, 0.1, 0.5, 1.0, 5.0]
-)
-
-start = time.time()
-# ... handle request ...
-request_duration.observe(time.time() - start)
-```
-
-### 5. OpenTelemetry Patterns
-
-```python
-from opentelemetry import trace, metrics
+from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
-from opentelemetry.instrumentation.requests import RequestsInstrumentor
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
-def setup_opentelemetry(service_name: str, otlp_endpoint: str):
-    """Initialize OpenTelemetry with OTLP export."""
+provider = TracerProvider(resource=Resource.create({"service.name": "order-service"}))
+provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint="http://otel-collector:4317")))
+trace.set_tracer_provider(provider)
+tracer = trace.get_tracer(__name__)
 
-    # Tracing setup
-    trace_provider = TracerProvider(
-        resource=Resource.create({"service.name": service_name})
-    )
-    trace_provider.add_span_processor(
-        BatchSpanProcessor(OTLPSpanExporter(endpoint=otlp_endpoint))
-    )
-    trace.set_tracer_provider(trace_provider)
+FastAPIInstrumentor.instrument_app(app)   # auto-spans for incoming requests + context extraction
 
-    # Metrics setup
-    metric_provider = MeterProvider(
-        resource=Resource.create({"service.name": service_name})
-    )
-    metrics.set_meter_provider(metric_provider)
-
-    # Auto-instrumentation
-    RequestsInstrumentor().instrument()
-
-    return trace.get_tracer(service_name), metrics.get_meter(service_name)
-
-# Usage with FastAPI
-from fastapi import FastAPI
-
-app = FastAPI()
-FastAPIInstrumentor.instrument_app(app)
-
-tracer, meter = setup_opentelemetry("order-service", "http://otel-collector:4317")
-
-# Custom spans
 @app.get("/orders/{order_id}")
 async def get_order(order_id: str):
     with tracer.start_as_current_span("fetch_order") as span:
-        span.set_attribute("order.id", order_id)
-        order = await order_repository.get(order_id)
-        span.set_attribute("order.status", order.status)
-        return order
+        span.set_attribute("order.id", order_id)      # low-cardinality-ok on spans (unlike metrics labels)
+        return await repo.get(order_id)
 ```
 
-### 6. Log Aggregation Patterns
+### Context propagation — W3C traceparent
 
-#### ELK Stack (Elasticsearch, Logstash, Kibana)
+A trace spans services only if context crosses the wire. The standard is the **W3C `traceparent` header**: `00-<32-hex trace-id>-<16-hex span-id>-<2-hex flags>` (flags bit 0 = sampled). OTel auto-instrumentation injects it on outgoing HTTP/gRPC and extracts it on incoming — so instrument BOTH the client and server side, or the trace breaks at the boundary and you get orphan traces. For non-HTTP hops (queues, Kafka), propagate `traceparent` as a message attribute manually. Legacy backends may use B3 (Zipkin) headers; configure the propagator to match, or run both.
 
-```yaml
-# Logstash pipeline configuration
-input {
-  file {
-    path => "/var/log/app/*.log"
-    codec => json
-  }
-}
+### Sampling — head vs tail
 
-filter {
-  # Parse structured JSON logs
-  json {
-    source => "message"
-  }
+You cannot afford 100% of spans at volume. Two strategies:
 
-  # Add Elasticsearch index based on date
-  mutate {
-    add_field => {
-      "[@metadata][index]" => "app-logs-%{+YYYY.MM.dd}"
-    }
-  }
+- **Head sampling**: decide at trace *start* (in the SDK), e.g. `ParentBased(TraceIdRatioBased(0.1))` keeps 10%. Cheap, no buffering. **Fatal limitation: the decision is made before the outcome is known**, so you cannot "keep all errors" — a 1% error might be dropped.
+- **Tail sampling**: decide *after the whole trace finishes*, in the **Collector's `tailsamplingprocessor`** — keep 100% of error/slow traces + a sample of normal ones. Requires buffering every span of a trace until complete, so **all spans of one trace must reach the same Collector instance**: put a load-balancing exporter (routing by trace-id) in front of the tail-sampling collectors, or they'll each see partial traces and sample wrongly.
 
-  # Enrich with geolocation (if IP present)
-  geoip {
-    source => "ip_address"
-    target => "geo"
-  }
-}
+Rule of thumb: head-sample for cost control at the edge; add tail sampling in the Collector when you need "always keep errors/slow." Propagate the sampled flag so a downstream service doesn't independently drop spans of a kept trace.
 
-output {
-  elasticsearch {
-    hosts => ["elasticsearch:9200"]
-    index => "%{[@metadata][index]}"
-  }
-}
+### Correlation & exemplars
+
+Put `trace_id` into every log line's structured fields (bind it in a middleware/context var) so a trace pivots to its logs. Link metrics → traces with **exemplars**: a sampled trace-id attached to a histogram bucket observation, letting Grafana jump from a latency spike on a graph to the exact slow trace. Prometheus needs `--enable-feature=exemplar-storage` and OpenMetrics exposition; the client library attaches the exemplar at `observe()` time.
+
+## Metrics
+
+**Use a real client (`prometheus_client`, OTel metrics) — don't hand-roll registries.** They handle concurrency, exposition format, and label management correctly.
+
+```python
+from prometheus_client import Counter, Gauge, Histogram, start_http_server
+
+REQS = Counter("http_requests_total", "Requests", ["method", "route", "status"])
+INFLIGHT = Gauge("http_inflight_requests", "In-flight requests")
+LAT = Histogram("http_request_duration_seconds", "Latency", ["method", "route"],
+                buckets=(.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5))
+
+start_http_server(9090)                        # exposes /metrics for scrape
+
+@INFLIGHT.track_inprogress()
+def handle(req):
+    with LAT.labels(req.method, req.route).time():   # times the block
+        resp = process(req)
+    REQS.labels(req.method, req.route, resp.status).inc()
 ```
 
-#### Grafana Loki
+- **Types**: Counter (monotonic totals — `_total`), Gauge (up/down current value — memory, queue depth), Histogram (bucketed distribution — latency; enables `histogram_quantile` percentiles server-side). Prefer Histogram over Summary for latency (Summary quantiles can't be aggregated across instances).
+- **Naming (Prometheus)**: base unit suffix — `_seconds`, `_bytes`, `_total`. `http_request_duration_seconds`, not `_ms`.
+- **⚠ Label cardinality is the #1 killer.** Each unique label-value combination is a **separate time series** stored in memory. Never use unbounded values as labels — user_id, request_id, email, full URL with IDs, raw error message. One high-card label can create millions of series and OOM Prometheus. Keep labels to bounded sets (method, route *template*, status class). Put the high-card identifier in a **trace or log**, not a metric label.
+
+### Dashboards & SLOs — RED and USE
+
+- **RED** (request-driven services): **R**ate (req/s), **E**rrors (failed req/s or ratio), **D**uration (latency distribution, alert on p95/p99). One RED panel set per service tells you if users are hurting.
+- **USE** (resources: CPU, disk, pool, queue): **U**tilization (% busy), **S**aturation (queued/waiting work — the leading indicator), **E**rrors. Saturation usually predicts trouble before utilization saturates.
+- Golden Signals (Google SRE) = latency, traffic, errors, saturation — RED + saturation. Alert on symptom signals (RED), use USE to diagnose the cause.
+
+## Log Aggregation — and the indexing cost trap
+
+**The single biggest cost/architecture decision: index everything vs index labels only.**
+
+- **ELK / Elasticsearch / OpenSearch**: indexes *every field* → fast arbitrary full-text and field queries, but storage and compute scale with total log volume (expensive at scale; index bloat, hot-node pressure).
+- **Grafana Loki**: indexes *only labels* (stream metadata), stores log content compressed and **unindexed** → cheap ingest/storage; content queries are brute-force scans over the time-and-label-narrowed set (`{app="api"} |= "timeout"`). Great when you filter by labels then grep; slow if you need ad-hoc full-text over everything.
+- **Loki cardinality trap (same killer as metrics):** every unique label-value set is a separate *stream*. Putting `trace_id`/`user_id`/`pod_ip` as a Loki **label** explodes stream count and destroys performance. Keep labels low-cardinality (app, env, level, namespace); filter high-card values as *content* in the query, not as labels.
+- **Datadog / hosted**: priced per ingested/indexed GB — use ingestion filters/exclusion rules (e.g. drop health-check logs) and index only what you'll query.
 
 ```yaml
-# Promtail scrape configuration
+# Promtail → Loki: LOW-cardinality labels only; do NOT add trace_id/user_id as labels
 scrape_configs:
-  - job_name: app-logs
-    static_configs:
-      - targets:
-          - localhost
-        labels:
-          job: app-logs
-          __path__: /var/log/app/*.log
-
-    # Extract JSON fields as labels
+  - job_name: app
+    static_configs: [{ targets: [localhost], labels: { job: app, __path__: /var/log/app/*.log } }]
     pipeline_stages:
-      - json:
-          expressions:
-            level: level
-            correlation_id: correlation_id
-            service: service
-      - labels:
-          level:
-          correlation_id:
-          service:
+      - json: { expressions: { level: level, service: service } }
+      - labels: { level:, service: }        # bounded sets only
 ```
 
-#### Datadog Agent Configuration
-
 ```yaml
-# datadog.yaml
-logs_enabled: true
-
+# Datadog agent: exclude noise at ingest to control cost
 logs_config:
   processing_rules:
     - type: exclude_at_match
-      name: exclude_healthcheck
+      name: drop_healthchecks
       pattern: "GET /health"
-
-  # Auto-parse JSON logs
-  auto_multi_line_detection: true
-
-# Log collection from files
-logs:
-  - type: file
-    path: "/var/log/app/*.log"
-    service: "order-service"
-    source: "python"
-    tags:
-      - "env:production"
 ```
 
-### 7. Alert Design
-
-#### Prometheus Alerting Rules
+## Alerting
 
 ```yaml
-# Prometheus alerting rules
 groups:
-  - name: service-alerts
+  - name: service
     rules:
-      # High error rate alert
-      - alert: HighErrorRate
-        expr: |
-          sum(rate(http_requests_total{status=~"5.."}[5m]))
-          / sum(rate(http_requests_total[5m])) > 0.05
+      - alert: HighErrorRate                # symptom, not cause
+        expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) > 0.05
         for: 5m
-        labels:
-          severity: critical
+        labels: { severity: critical }
         annotations:
-          summary: "High error rate detected"
-          description: "Error rate is {{ $value | humanizePercentage }} over the last 5 minutes"
-          runbook_url: "https://wiki.example.com/runbooks/high-error-rate"
-
-      # High latency alert
-      - alert: HighLatency
-        expr: |
-          histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 1
+          summary: "Error rate {{ $value | humanizePercentage }}"
+          runbook_url: "https://wiki/runbooks/high-error-rate"     # every alert links a runbook
+      - alert: HighLatencyP95
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 1
         for: 10m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High latency detected"
-          description: "95th percentile latency is {{ $value }}s"
-
-      # Service down alert
+        labels: { severity: warning }
       - alert: ServiceDown
         expr: up == 0
         for: 1m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Service {{ $labels.instance }} is down"
-          description: "{{ $labels.job }} has been down for more than 1 minute"
+        labels: { severity: critical }
 ```
 
-#### Alert Severity Levels
+| Severity | Response | Examples |
+| -------- | -------- | -------- |
+| Critical | Page now | Service down, error-rate SLO breach, data loss |
+| Warning  | Business hrs | Rising latency, approaching limits, retry spikes |
+| Info     | Log only | Deploy started, config changed |
 
-| Level        | Response Time | Examples                                       |
-| ------------ | ------------- | ---------------------------------------------- |
-| **Critical** | Immediate     | Service down, high error rate, data loss       |
-| **Warning**  | Business hrs  | High latency, approaching limits, retry spikes |
-| **Info**     | Log only      | Deployment started, config changed             |
+Principles:
 
-## Best Practices
+- **Alert on symptoms (user impact), not causes.** Page on error rate/latency (RED); CPU high with healthy latency is not an incident. Symptoms say *what's broken*; use USE/traces to find *why*.
+- **Every alert is actionable and has a runbook.** Non-actionable alerts cause fatigue → ignored pages. Delete or downgrade alerts nobody acts on.
+- **Thresholds from SLOs, not vibes.** Prefer **SLO burn-rate alerts** (fast burn = page, slow burn = ticket) over static thresholds — they alert proportional to error-budget consumption and cut false pages during low traffic.
+- **`for:` avoids flapping** — require the condition to hold before firing.
 
-### Logging
-
-1. **Log at Appropriate Levels**: DEBUG for development, INFO for normal operations, WARN for potential issues, ERROR for failures, FATAL for critical failures.
-
-2. **Include Context**: Always include correlation IDs, trace IDs, user IDs, and relevant business identifiers in structured fields.
-
-3. **Avoid Sensitive Data**: Never log passwords, tokens, credit cards, or PII. Implement automatic redaction when necessary.
-
-4. **Use Structured Logging**: JSON logs enable easy parsing and querying in log aggregation systems (ELK, Loki, Datadog).
-
-5. **Consistent Field Names**: Standardize field names across services (e.g., always use `correlation_id`, not sometimes `request_id`).
-
-### Distributed Tracing
-
-1. **Trace Boundaries**: Create spans at service boundaries, database calls, external API calls, and significant operations.
-
-2. **Propagate Context**: Pass trace IDs and span IDs across service boundaries via HTTP headers (OpenTelemetry standards).
-
-3. **Add Meaningful Attributes**: Include business context (user_id, order_id) and technical context (db_query, cache_hit) in span attributes.
-
-4. **Sample Appropriately**: Use adaptive sampling - trace 100% of errors, sample successful requests based on traffic volume.
-
-### Metrics
-
-1. **Track Golden Signals**: Monitor the Four Golden Signals - latency, traffic, errors, saturation.
-
-2. **Use Correct Metric Types**: Counters for totals (requests), Gauges for current values (memory), Histograms for distributions (latency).
-
-3. **Label Cardinality**: Keep label cardinality low - avoid high-cardinality values like user IDs in metric labels.
-
-4. **Naming Conventions**: Follow Prometheus naming - `http_requests_total` (counter), `process_memory_bytes` (gauge), `http_request_duration_seconds` (histogram).
-
-### Alerting
-
-1. **Alert on Symptoms**: Alert on user-impacting issues (error rate, latency), not causes (CPU usage). Symptoms indicate what is broken, causes explain why.
-
-2. **Include Runbooks**: Every alert must link to a runbook with investigation steps, common causes, and remediation procedures.
-
-3. **Use Appropriate Thresholds**: Set thresholds based on SLOs and historical data, not arbitrary values.
-
-4. **Alert Fatigue**: Ensure alerts are actionable. Non-actionable alerts lead to alert fatigue and ignored critical issues.
-
-### Integration
-
-1. **End-to-End Correlation**: Link logs, traces, and metrics using correlation IDs to enable cross-system debugging.
-
-2. **Centralize**: Use centralized log aggregation (ELK, Loki) and trace collection (Jaeger, Zipkin) for cross-service visibility.
-
-3. **Test Observability**: Verify logging, tracing, and metrics in development - don't discover gaps in production.
-
-## Examples
-
-### Complete Request Logging Middleware
+## Request middleware (correlation + span + metrics in one place)
 
 ```python
-import time
-import uuid
-from fastapi import FastAPI, Request
-from starlette.middleware.base import BaseHTTPMiddleware
-
 class ObservabilityMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, tracer, metrics):
-        super().__init__(app)
-        self.tracer = tracer
-        self.request_counter = metrics.counter("http_requests_total")
-        self.request_duration = metrics.histogram(
-            "http_request_duration_seconds",
-            buckets=[0.01, 0.05, 0.1, 0.5, 1.0, 5.0]
-        )
-
-    async def dispatch(self, request: Request, call_next):
-        # Extract or generate correlation ID
-        corr_id = request.headers.get("X-Correlation-ID", str(uuid.uuid4()))
-        correlation_id.set(corr_id)
-
-        start_time = time.time()
-
-        with self.tracer.start_as_current_span(
-            f"{request.method} {request.url.path}"
-        ) as span:
-            span.set_attribute("http.method", request.method)
-            span.set_attribute("http.url", str(request.url))
-            span.set_attribute("correlation_id", corr_id)
-
-            try:
-                response = await call_next(request)
-
-                span.set_attribute("http.status_code", response.status_code)
-
-                # Record metrics
-                labels = {
-                    "method": request.method,
-                    "path": request.url.path,
-                    "status": str(response.status_code)
-                }
-                self.request_counter.labels(**labels).inc()
-                self.request_duration.labels(**labels).observe(
-                    time.time() - start_time
-                )
-
-                # Add correlation ID to response
-                response.headers["X-Correlation-ID"] = corr_id
-
-                return response
-
-            except Exception as e:
-                span.set_attribute("error", True)
-                span.record_exception(e)
-                raise
+    async def dispatch(self, request, call_next):
+        corr = request.headers.get("X-Correlation-ID", str(uuid.uuid4()))
+        correlation_id.set(corr)
+        span = trace.get_current_span()               # created by FastAPIInstrumentor
+        span.set_attribute("correlation_id", corr)
+        trace_id.set(format(span.get_span_context().trace_id, "032x"))  # into logs
+        start = time.perf_counter()
+        try:
+            resp = await call_next(request)
+            LAT.labels(request.method, request.url.path).observe(time.perf_counter() - start)
+            REQS.labels(request.method, request.url.path, str(resp.status_code)).inc()
+            resp.headers["X-Correlation-ID"] = corr
+            return resp
+        except Exception as e:
+            span.record_exception(e); span.set_attribute("error", True)
+            raise
 ```
+
+Note: use `url.path` *template* (route pattern), not the raw path with IDs, as the metric label — else cardinality explodes.
+
+## Verification Checklist
+
+- [ ] Logs are JSON to stdout with consistent field names; `correlation_id` + `trace_id` on every line
+- [ ] No secrets/PII in logs; redaction is enforced at the formatter, not per-call-site
+- [ ] Hot-path logging is async/sampled; success paths sampled, 100% of WARN/ERROR kept
+- [ ] Tracing uses the OTel SDK; both client and server sides instrumented so `traceparent` propagates (no orphan traces)
+- [ ] Sampling chosen deliberately: head for cost, tail (in Collector, with trace-id load balancing) if "always keep errors"
+- [ ] Metric labels are bounded — no user_id/request_id/raw-path/error-string as labels
+- [ ] Latency uses Histogram with sensible buckets; percentiles computed via `histogram_quantile`
+- [ ] Dashboards follow RED (services) / USE (resources); metric names carry base-unit suffixes
+- [ ] Loki labels are low-cardinality (no trace_id/user_id as labels); backend indexing cost understood (Loki labels-only vs ELK index-all)
+- [ ] Alerts fire on symptoms, have `for:`, link a runbook, and derive thresholds from SLOs (prefer burn-rate)
+- [ ] Logs, metrics, and traces are cross-linkable by shared IDs; exemplars wired if metric→trace pivot is needed

@@ -39,15 +39,10 @@ triggers:
 
 ## Overview
 
-Istio is an open-source service mesh that provides traffic management, security, and observability for microservices architectures. It uses a sidecar proxy pattern with Envoy proxies to intercept and control all network communication between services.
+Istio is a service mesh: Envoy proxies intercept all service traffic to provide traffic management, mTLS, and observability with no app changes. **Two data-plane models — pick deliberately:**
 
-### Core Capabilities
-
-**Traffic Management**: Load balancing, traffic splitting, canary deployments, blue-green deployments, A/B testing, retries, timeouts, circuit breakers, fault injection.
-
-**Security**: mTLS encryption, certificate management, authentication, authorization policies, RBAC, JWT validation, service-to-service security.
-
-**Observability**: Distributed tracing, metrics collection, access logging, service topology visualization, golden signals monitoring.
+- **Sidecar** (classic): one Envoy per pod; full L7 everywhere; higher per-pod CPU/mem and injection restart cost.
+- **Ambient** (GA in 1.24): per-node **ztunnel** does L4 mTLS + L4 auth/telemetry automatically; **waypoint** proxies add L7 only where deployed. Lower overhead, no injection restarts, but L7 features silently no-op without a waypoint. See *Currency*.
 
 ### Quick Reference: Common Tasks
 
@@ -173,91 +168,15 @@ istioctl proxy-config all <pod-name>.<namespace>
 
 ## Best Practices
 
-### Gateway Configuration
+Non-obvious defaults and decision points only; the failure modes behind these live in *Expert Practices*.
 
-#### Guidelines
-
-- Use dedicated Gateway resources per domain or protocol
-- Configure HTTPS with proper TLS certificates
-- Implement health checks and timeouts
-- Use wildcard domains sparingly for security
-- Place gateways in dedicated namespaces (istio-system or istio-ingress)
-
-#### Anti-patterns
-
-- Avoid multiple Gateways binding to the same port/host combination
-- Don't expose internal services directly without authentication
-- Never hardcode credentials in Gateway specs
-
-### Traffic Management Patterns
-
-#### Progressive Delivery
-
-- Use weighted routing for canary deployments
-- Implement blue-green deployments with instant traffic switching
-- Apply header-based routing for testing new versions
-- Monitor metrics before promoting canaries
-
-#### Resilience
-
-- Configure retries with exponential backoff
-- Implement circuit breakers to prevent cascade failures
-- Set connection pool limits to protect services
-- Use outlier detection to remove unhealthy instances
-
-#### Routing Strategy
-
-- Route based on headers, URI paths, or query parameters
-- Use subset-based routing for version management
-- Implement fault injection for chaos testing
-- Apply timeouts at every service boundary
-
-### Security Policies
-
-#### mTLS Configuration
-
-- Enable STRICT mode in production for all services
-- Use PERMISSIVE mode only during migration
-- Scope PeerAuthentication to specific namespaces or workloads
-- Inspect the effective TLS mode with `istioctl proxy-config cluster <pod>.<ns> --fqdn <service-fqdn> -o json` and `istioctl x describe pod <pod>.<ns>` (the old `istioctl authn tls-check` was removed in 1.9)
-
-#### Authorization
-
-- Default deny all traffic, then explicitly allow
-- Use namespace-level policies for broad rules
-- Apply workload-specific policies for fine-grained control
-- Leverage JWT authentication for end-user identity
-- Audit authorization policies regularly
-
-#### Certificate Management
-
-- Rotate certificates automatically (default 90 days)
-- Use external CA for production (cert-manager, Vault)
-- Monitor certificate expiration
-- Test certificate renewal procedures
-
-### Observability Integration
-
-#### Metrics
-
-- Deploy Prometheus for metrics collection
-- Use Grafana dashboards for visualization
-- Monitor golden signals: latency, traffic, errors, saturation
-- Set up alerts for SLO violations
-
-#### Tracing
-
-- Integrate with Jaeger, Zipkin, or Datadog
-- Propagate trace headers in application code
-- Sample traces intelligently (not 100% in production)
-- Use tracing for debugging latency issues
-
-#### Logging
-
-- Enable access logs selectively (performance impact)
-- Structure logs in JSON format
-- Send logs to centralized logging (ELK, Splunk)
-- Include trace IDs in application logs
+- **Gateway:** dedicated Gateway per domain/protocol in `istio-system`/`istio-ingress`; never bind two Gateways to the same port+host (last-writer-wins, non-deterministic); TLS secret must live in the gateway's namespace.
+- **Routing:** exactly one VirtualService should own a given host — a second VS on the same host does **not** merge, it clobbers routes non-deterministically (see *Expert Practices → catch-all VS*). Subsets are declared in the **DestinationRule** and referenced in the **VirtualService** — the classic mismatch bug.
+- **Resilience:** circuit-break via `outlierDetection`; cap `connectionPool`; keep `overall_timeout > attempts × perTryTimeout`; never blindly retry non-idempotent paths.
+- **mTLS:** STRICT in prod, PERMISSIVE only mid-migration, scoped per namespace/workload. Verify effective mode with `istioctl proxy-config cluster <pod>.<ns> --fqdn <svc> -o json` and `istioctl x describe pod <pod>.<ns>` (`istioctl authn tls-check` was removed in 1.9).
+- **AuthZ:** deny-all baseline first, then layer ALLOW (an empty-spec `ALLOW` policy denies all — Istio's default is *allow* when no policy selects the workload). DENY beats ALLOW.
+- **Certs:** workload certs auto-rotate (~24h SDS certs; the intermediate CA cert defaults to 1 year); use an external root CA (cert-manager/Vault) in prod.
+- **Observability:** monitor golden signals; **sample traces** (≪100% in prod); enable access logs selectively (perf cost). Trace context must be propagated by the app (see *Expert Practices → tracing*).
 
 ## Production-Ready Examples
 
@@ -739,13 +658,9 @@ spec:
 
 ### Fault Injection for Testing
 
-> **Incompatibility:** Istio does **not** support fault injection together with
-> retry or timeout policies on the **same** VirtualService HTTP route — when both
-> are present the retry/timeout config is **silently ignored** (the Envoy fault
-> filter runs before the router filter that implements retries). There is no
-> validation error. Workaround: keep retries/timeouts on the client-side
-> VirtualService and inject the fault on the upstream proxy via a separate
-> `EnvoyFilter`, so the two operate on different proxies.
+> ⚠ Fault injection is **silently ignored** on a route that also has retry/timeout
+> (see *Expert Practices → Traffic Management*). Inject the fault on the upstream
+> proxy via a separate `EnvoyFilter`.
 
 ```yaml
 apiVersion: networking.istio.io/v1
@@ -782,38 +697,21 @@ spec:
 
 ### Multi-Cluster Service Mesh
 
-> These `IstioOperator` documents are **config-file inputs** to
-> `istioctl install -f <file>` (or the equivalent Helm `values`). The in-cluster
-> operator was removed in 1.24, so they are **not** applied as live CRs with
-> `kubectl apply`.
+Every cluster shares one `meshID`; each gets a unique `clusterName` and `network`.
+Config-file input to `istioctl install -f` (or Helm `values`) — **not** a live CR
+(`kubectl apply`), since the in-cluster operator was removed in 1.24.
 
 ```yaml
-# Primary cluster configuration — istioctl install -f primary.yaml
+# istioctl install -f <cluster>.yaml — set clusterName/network per cluster
 apiVersion: install.istio.io/v1alpha1
 kind: IstioOperator
-metadata:
-  name: primary-cluster
 spec:
   values:
     global:
       meshID: mesh1
-      multiCluster:
-        clusterName: primary
-      network: network1
----
-# Remote cluster configuration
-apiVersion: install.istio.io/v1alpha1
-kind: IstioOperator
-metadata:
-  name: remote-cluster
-spec:
-  values:
-    global:
-      meshID: mesh1
-      multiCluster:
-        clusterName: remote
-      network: network2
-      remotePilotAddress: istiod.istio-system.svc.cluster.local
+      multiCluster: { clusterName: primary } # or: remote
+      network: network1 # unique per cluster
+      # remote clusters also set: remotePilotAddress: <primary istiod address>
 ```
 
 ### Locality-Based Load Balancing
@@ -979,61 +877,20 @@ spec:
 
 ## Migration Strategy
 
-### Phase 1: Install Istio (No Injection)
+Adopt incrementally; **never jump straight to mesh-wide STRICT** — any un-injected client will break.
 
-```bash
-istioctl install --set profile=default
-# Don't enable automatic injection yet
-```
+1. **Install, no injection:** `istioctl install --set profile=default`.
+2. **Inject per workload:** label the namespace `istio-injection=enabled` (or `istio.io/rev=<rev>` for revision-based), then roll pods. Sidecars attach only on pod restart.
+3. **PERMISSIVE mTLS** mesh-wide (`PeerAuthentication` in `istio-system`, `mtls.mode: PERMISSIVE`) — meshed and un-meshed clients coexist.
+4. **Verify** every workload actually negotiates mTLS before tightening:
 
-### Phase 2: Enable Injection Per Workload
+   ```bash
+   for pod in $(kubectl get pods -n production -o jsonpath='{.items[*].metadata.name}'); do
+     istioctl x describe pod "$pod.production"   # authn tls-check removed in 1.9
+   done
+   ```
 
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: app
-spec:
-  template:
-    metadata:
-      annotations:
-        sidecar.istio.io/inject: "true"
-```
-
-### Phase 3: Enable PERMISSIVE mTLS
-
-```yaml
-apiVersion: security.istio.io/v1
-kind: PeerAuthentication
-metadata:
-  name: default
-  namespace: istio-system
-spec:
-  mtls:
-    mode: PERMISSIVE
-```
-
-### Phase 4: Verify All Services Use mTLS
-
-```bash
-# Inspect the effective TLS mode for each pod (authn tls-check was removed in 1.9)
-for pod in $(kubectl get pods -n production -o jsonpath='{.items[*].metadata.name}'); do
-  istioctl x describe pod "$pod.production"
-done
-```
-
-### Phase 5: Enable STRICT mTLS
-
-```yaml
-apiVersion: security.istio.io/v1
-kind: PeerAuthentication
-metadata:
-  name: default
-  namespace: istio-system
-spec:
-  mtls:
-    mode: STRICT
-```
+5. **STRICT mTLS** once all traffic is verified mutual (flip the same `PeerAuthentication` to `mode: STRICT`).
 
 ## Expert Practices: Idioms, Anti-Patterns & Gotchas
 
@@ -1116,6 +973,15 @@ kubectl apply -f destination-rule-with-v2-subset.yaml
 sleep 5   # allow xDS propagation
 kubectl apply -f virtual-service-routing-to-v2.yaml
 ```
+
+**Two VirtualServices on the same host clobber each other.** Istio does **not**
+merge multiple VS for one host+gateway — behavior is undefined and effectively
+last-writer-wins, and a broad catch-all VS (e.g. `hosts: ["*"]` or a bare service
+host with only a default route) silently swallows the routes of a more specific VS.
+`istioctl analyze` flags this as `conflicting`/`overlapping` but does not block apply.
+One VS per host; express all routes (canary, header match, default) as ordered `http`
+rules **within that single VS** — order matters, first match wins, so put specific
+matches before the default.
 
 **Place a DestinationRule in the SAME namespace as its Service.** Istio resolves a
 DestinationRule by searching exactly three namespaces in order: the **client's**
@@ -1261,6 +1127,15 @@ spec:
 - **The in-cluster IstioOperator controller was removed in 1.24.** Install via Helm
   (recommended) or `istioctl install`; an `IstioOperator` CR is only valid as a
   config file passed to `istioctl install -f`, not a live reconciled resource.
+- **Canary control-plane upgrades use revision labels, not `istio-injection`.** Install
+  the new control plane with `istioctl install --revision=1-24-0` (or
+  `revision=...` in Helm), then migrate namespaces from `istio-injection=enabled` to
+  `istio.io/rev=1-24-0` and roll pods — proxies re-attach to the new revision on
+  restart, so you can canary and roll back per namespace. A namespace carrying **both**
+  `istio-injection` and `istio.io/rev` is ambiguous: `istio-injection` wins and the
+  revision label is ignored, silently pinning pods to the default revision. Tag a
+  revision as default (`istioctl tag set default --revision ...`) so `istio-injection`
+  namespaces follow the intended control plane.
 - **Ambient mode is GA in 1.24.** Two layers: a per-node **ztunnel** (mTLS, L4
   authorization, L4 telemetry — automatic for enrolled pods) and optional
   **waypoint** proxies for L7. ztunnel does **not** parse HTTP, so VirtualService/
@@ -1307,6 +1182,20 @@ spec:
     - matches: [{ path: { type: PathPrefix, value: /v2/ } }]
       backendRefs: [{ name: api-v2, port: 8080 }]
 ```
+
+## Verification Checklist
+
+Before declaring an Istio change done:
+
+- [ ] `istioctl analyze -n <ns>` (or `--all-namespaces`) is clean — no conflicting VS/DR, missing subsets, or unresolved refs
+- [ ] Every DestinationRule subset referenced by a VirtualService exists **and** the DR was applied before the VS (make-before-break)
+- [ ] Exactly one VirtualService owns each host; ordered `http` rules put specific matches before the default
+- [ ] Ports are protocol-named (`name: http-…` or `appProtocol`) so L7 features engage — confirm with `istioctl proxy-config listener`
+- [ ] mTLS mode is what you intend: `istioctl proxy-config cluster <pod> --fqdn <svc> -o json` shows the expected transport socket; STRICT enforced before relying on `source.principals`
+- [ ] AuthorizationPolicy: deny-all baseline present; DENY rules scoped to HTTP-named ports; rule list uses AND-within/OR-across as intended (no stray `-`)
+- [ ] `overall timeout > attempts × perTryTimeout`; `retryOn` excludes non-idempotent paths; `outlierDetection` present wherever failover/circuit-breaking is expected
+- [ ] Ambient only: a waypoint is deployed and the workload/service is labeled `istio.io/use-waypoint` for any L7 rule to take effect
+- [ ] No app container runs as UID 1337; sidecar actually injected (`kubectl get pod -o jsonpath='{.spec.containers[*].name}'` shows `istio-proxy`)
 
 ## Additional Resources
 

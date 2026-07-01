@@ -234,31 +234,25 @@ spec:
 
 ### Database XRD
 
-> **v1 vs v2:** This XRD uses `apiextensions.crossplane.io/v1` with `claimNames` — the legacy cluster-scoped model. New XRDs should use `apiextensions.crossplane.io/v2`, which is **namespaced by default** (`scope: Namespaced`) and **drops claims** (no `claimNames`). `connectionSecretKeys` is a claims-era field that **does not apply to v2 XRDs**; on v2 aggregate connection details via `function-patch-and-transform`'s `writeConnectionSecretToRef.patches`. `spec.group` and `spec.names` are **immutable** — choose them carefully, since changing them requires deleting and recreating the XRD (which cascades to all its XRs).
+The XRD **is your platform API** — the OpenAPI schema is your only guardrail against consumer misconfiguration. Enforce with `enum`, `minimum`/`maximum`, `pattern`, `default`, and `required`. `spec.group` and `spec.names` are **immutable**: changing them requires deleting/recreating the XRD, which cascades to all its XRs.
+
+**v1 (below) vs v2:** the v1 form uses `claimNames` (cluster-scoped XR + namespaced claim) and `connectionSecretKeys`. New XRDs should use `apiextensions.crossplane.io/v2` — **namespaced by default** (`scope: Namespaced`), **no claims** (`claimNames` gone), and `connectionSecretKeys` **does not apply** (aggregate via `function-patch-and-transform`'s `writeConnectionSecretToRef.patches`).
 
 ```yaml
-# xrds/database-xrd.yaml
+# xrds/database-xrd.yaml  (v1 legacy-cluster form with claims)
 apiVersion: apiextensions.crossplane.io/v1
 kind: CompositeResourceDefinition
 metadata:
-  name: xpostgresqlinstances.database.example.com
+  name: xpostgresqlinstances.database.example.com   # must be <plural>.<group>
 spec:
   group: database.example.com
-  names:
-    kind: XPostgreSQLInstance
-    plural: xpostgresqlinstances
-  claimNames:
-    kind: PostgreSQLInstance
-    plural: postgresqlinstances
-  connectionSecretKeys:
-    - username
-    - password
-    - endpoint
-    - port
+  names: { kind: XPostgreSQLInstance, plural: xpostgresqlinstances }
+  claimNames: { kind: PostgreSQLInstance, plural: postgresqlinstances }  # v1 only
+  connectionSecretKeys: [username, password, endpoint, port]             # v1 only
   versions:
     - name: v1alpha1
       served: true
-      referenceable: true
+      referenceable: true          # exactly one version must be referenceable
       schema:
         openAPIV3Schema:
           type: object
@@ -269,457 +263,92 @@ spec:
                 parameters:
                   type: object
                   properties:
-                    storageGB:
-                      type: integer
-                      description: Size of the database in GB
-                      default: 20
-                      minimum: 20
-                      maximum: 1000
-                    size:
-                      type: string
-                      description: Instance size (small, medium, large)
-                      enum: [small, medium, large]
-                      default: small
-                    engineVersion:
-                      type: string
-                      description: PostgreSQL version
-                      default: "14.7"
-                    highAvailability:
-                      type: boolean
-                      description: Enable multi-AZ deployment
-                      default: false
-                    backupRetentionDays:
-                      type: integer
-                      description: Number of days to retain backups
-                      default: 7
-                      minimum: 1
-                      maximum: 35
-                    networkRef:
+                    storageGB: { type: integer, default: 20, minimum: 20, maximum: 1000 }
+                    size: { type: string, enum: [small, medium, large], default: small }
+                    networkRef:      # nested object with its own required field
                       type: object
-                      description: Reference to network configuration
-                      properties:
-                        id:
-                          type: string
-                          description: Network identifier
-                      required:
-                        - id
-                  required:
-                    - size
-                    - networkRef
-              required:
-                - parameters
-            status:
+                      properties: { id: { type: string } }
+                      required: [id]
+                  required: [size, networkRef]
+              required: [parameters]
+            status:                  # ToCompositeFieldPath patches write here
               type: object
               properties:
-                address:
-                  type: string
-                  description: Database endpoint address
+                address: { type: string }
 ```
 
-### Application Platform XRD
+For the **v2** form, drop `claimNames`/`connectionSecretKeys` and add `scope: Namespaced` (XRs then live in a namespace and follow standard Kubernetes RBAC):
 
 ```yaml
-# xrds/app-platform-xrd.yaml
-apiVersion: apiextensions.crossplane.io/v1
+apiVersion: apiextensions.crossplane.io/v2
 kind: CompositeResourceDefinition
-metadata:
-  name: xappplatforms.platform.example.com
 spec:
+  scope: Namespaced        # default in v2; also LegacyCluster (v1 behavior) or Cluster
   group: platform.example.com
-  names:
-    kind: XAppPlatform
-    plural: xappplatforms
-  claimNames:
-    kind: AppPlatform
-    plural: appplatforms
-  connectionSecretKeys:
-    - bucket_name
-    - database_endpoint
-    - database_password
-    - cache_endpoint
-  versions:
-    - name: v1alpha1
-      served: true
-      referenceable: true
-      schema:
-        openAPIV3Schema:
-          type: object
-          properties:
-            spec:
-              type: object
-              properties:
-                parameters:
-                  type: object
-                  properties:
-                    environment:
-                      type: string
-                      description: Environment (dev, staging, prod)
-                      enum: [dev, staging, prod]
-                    appName:
-                      type: string
-                      description: Application name
-                      pattern: "^[a-z0-9-]+$"
-                    region:
-                      type: string
-                      description: AWS region
-                      default: us-west-2
-                    databaseSize:
-                      type: string
-                      description: Database instance size
-                      enum: [small, medium, large]
-                      default: small
-                    enableCache:
-                      type: boolean
-                      description: Enable Redis cache
-                      default: false
-                  required:
-                    - environment
-                    - appName
-              required:
-                - parameters
+  names: { kind: XAppPlatform, plural: xappplatforms }
+  # ... versions/schema as above
 ```
 
 ## Compositions
 
-### Database Composition with Size Mapping
+A Composition implements an XRD's API by templating one or more resources. **On v2, `mode: Pipeline` (with `function-patch-and-transform`) is the ONLY supported form** — native `mode: Resources` (`spec.resources`/`spec.patchSets`) was deprecated in v1.17 and removed in v2. See the full Pipeline example under *Composition Functions*; migrate legacy compositions with `crossplane beta convert pipeline-composition old.yaml -o new.yaml`.
 
-> **v2 note — this is the v1-only `mode: Resources` layout, removed in Crossplane v2.** Native patch-and-transform (`spec.resources`/`spec.patchSets`) was deprecated in v1.17 and removed in v2; the only supported mode is `mode: Pipeline` with `function-patch-and-transform` (see the Pipeline-mode example under "Composition Functions" and the migration command `crossplane beta convert pipeline-composition old.yaml -o new.yaml`). Also, Composition-level `writeConnectionSecretsToNamespace` no longer functions for XRs in v2 (native XR connection details were removed) — aggregate via the function's `writeConnectionSecretToRef.patches` instead. To run on v2, move `resources`/`patchSets` verbatim into the `function-patch-and-transform` input.
+### Patch & Transform vocabulary
 
-```yaml
-# compositions/postgres-composition.yaml  (v1-only mode: Resources — see v2 note above)
-apiVersion: apiextensions.crossplane.io/v1
-kind: Composition
-metadata:
-  name: postgres.aws.database.example.com
-  labels:
-    provider: aws
-    database: postgresql
-spec:
-  writeConnectionSecretsToNamespace: crossplane-system
-  compositeTypeRef:
-    apiVersion: database.example.com/v1alpha1
-    kind: XPostgreSQLInstance
+These patch/transform types are the workhorses of both legacy `mode: Resources` **and** `function-patch-and-transform` input — the syntax is identical, so knowledge transfers verbatim.
 
-  resources:
-    # Security Group for Database
-    - name: database-sg
-      base:
-        apiVersion: ec2.aws.upbound.io/v1beta1
-        kind: SecurityGroup
-        spec:
-          forProvider:
-            description: Security group for PostgreSQL database
-            tags:
-              Name: database-sg
-      patches:
-        - type: FromCompositeFieldPath
-          fromFieldPath: spec.parameters.networkRef.id
-          toFieldPath: spec.forProvider.vpcId
-        - type: FromCompositeFieldPath
-          fromFieldPath: metadata.labels[crossplane.io/claim-namespace]
-          toFieldPath: spec.forProvider.tags.namespace
-        - type: FromCompositeFieldPath
-          fromFieldPath: metadata.labels[crossplane.io/claim-name]
-          toFieldPath: spec.forProvider.tags.claim
+| Patch `type`            | Direction         | Use                                                     |
+| ----------------------- | ----------------- | ------------------------------------------------------ |
+| `FromCompositeFieldPath`| XR → composed MR  | Push a user parameter onto a managed resource field    |
+| `ToCompositeFieldPath`  | composed MR → XR  | Surface `status.atProvider.*` back to the XR status    |
+| `CombineFromComposite`  | many XR → one MR  | Build a value (e.g. name) from multiple fields via `fmt`|
+| `PatchSet` (+`patchSets`)| —                | Reuse a named patch group across resources (e.g. common tags)|
 
-    # Security Group Rule - Postgres Port
-    - name: database-sg-rule
-      base:
-        apiVersion: ec2.aws.upbound.io/v1beta1
-        kind: SecurityGroupRule
-        spec:
-          forProvider:
-            type: ingress
-            fromPort: 5432
-            toPort: 5432
-            protocol: tcp
-            cidrBlocks:
-              - 10.0.0.0/8
-      patches:
-        - type: FromCompositeFieldPath
-          fromFieldPath: spec.parameters.networkRef.id
-          toFieldPath: spec.forProvider.vpcId
-        - type: PatchSet
-          patchSetName: security-group-id
-
-    # RDS Subnet Group
-    - name: subnet-group
-      base:
-        apiVersion: rds.aws.upbound.io/v1beta1
-        kind: SubnetGroup
-        spec:
-          forProvider:
-            description: Subnet group for database
-      patches:
-        - type: FromCompositeFieldPath
-          fromFieldPath: spec.parameters.networkRef.id
-          toFieldPath: metadata.labels[network-id]
-        - type: FromCompositeFieldPath
-          fromFieldPath: metadata.uid
-          toFieldPath: spec.forProvider.subnetIdSelector.matchLabels[subnet-group-id]
-
-    # RDS Instance
-    - name: rds-instance
-      base:
-        apiVersion: rds.aws.upbound.io/v1beta1
-        kind: Instance
-        spec:
-          forProvider:
-            engine: postgres
-            skipFinalSnapshot: true
-            publiclyAccessible: false
-            username: dbadmin
-            passwordSecretRef:
-              namespace: crossplane-system
-              key: password
-            dbSubnetGroupNameSelector:
-              matchControllerRef: true
-            vpcSecurityGroupIdSelector:
-              matchControllerRef: true
-          writeConnectionSecretToRef:
-            namespace: crossplane-system
-      patches:
-        # Instance size mapping
-        - type: FromCompositeFieldPath
-          fromFieldPath: spec.parameters.size
-          toFieldPath: spec.forProvider.instanceClass
-          transforms:
-            - type: map
-              map:
-                small: db.t3.micro
-                medium: db.t3.medium
-                large: db.m5.large
-
-        # Storage configuration
-        - type: FromCompositeFieldPath
-          fromFieldPath: spec.parameters.storageGB
-          toFieldPath: spec.forProvider.allocatedStorage
-
-        # Engine version
-        - type: FromCompositeFieldPath
-          fromFieldPath: spec.parameters.engineVersion
-          toFieldPath: spec.forProvider.engineVersion
-
-        # High availability
-        - type: FromCompositeFieldPath
-          fromFieldPath: spec.parameters.highAvailability
-          toFieldPath: spec.forProvider.multiAz
-
-        # Backup retention
-        - type: FromCompositeFieldPath
-          fromFieldPath: spec.parameters.backupRetentionDays
-          toFieldPath: spec.forProvider.backupRetentionPeriod
-
-        # Generate unique password secret name
-        - type: FromCompositeFieldPath
-          fromFieldPath: metadata.uid
-          toFieldPath: spec.forProvider.passwordSecretRef.name
-          transforms:
-            - type: string
-              string:
-                fmt: "%s-password"
-
-        # Connection secret name
-        - type: FromCompositeFieldPath
-          fromFieldPath: metadata.uid
-          toFieldPath: spec.writeConnectionSecretToRef.name
-          transforms:
-            - type: string
-              string:
-                fmt: "%s-connection"
-
-        # Expose endpoint to status
-        - type: ToCompositeFieldPath
-          fromFieldPath: status.atProvider.endpoint
-          toFieldPath: status.address
-
-        # Copy connection secret to claim namespace
-        - type: FromCompositeFieldPath
-          fromFieldPath: metadata.labels[crossplane.io/claim-namespace]
-          toFieldPath: spec.writeConnectionSecretToRef.namespace
-          policy:
-            fromFieldPath: Optional
-
-  patchSets:
-    - name: security-group-id
-      patches:
-        - type: FromCompositeFieldPath
-          fromFieldPath: metadata.labels[security-group-id]
-          toFieldPath: spec.forProvider.securityGroupIdSelector.matchLabels[security-group-id]
-```
-
-### Multi-Resource Application Platform Composition
-
-> **v2 note — v1-only `mode: Resources` layout, removed in Crossplane v2** (same as above). Migrate to `mode: Pipeline` + `function-patch-and-transform` and replace `writeConnectionSecretsToNamespace` with the function's `writeConnectionSecretToRef.patches`.
+| Transform `type` | Use / gotcha                                                                 |
+| ---------------- | ---------------------------------------------------------------------------- |
+| `map`            | Enum → value (`small`→`db.t3.micro`). **Errors if key absent** — prefer `match` with `fallbackTo` (see *Expert Practices → Idioms*) |
+| `string`         | `fmt: "%s-connection"` for derived names — must stay deterministic across reconciles |
+| `math`           | Scale a numeric field                                                         |
+| `convert`        | Type coercion (string↔int↔bool)                                              |
 
 ```yaml
-# compositions/app-platform-composition.yaml  (v1-only mode: Resources — see v2 note above)
-apiVersion: apiextensions.crossplane.io/v1
-kind: Composition
-metadata:
-  name: appplatform.aws.platform.example.com
-  labels:
-    provider: aws
-spec:
-  writeConnectionSecretsToNamespace: crossplane-system
-  compositeTypeRef:
-    apiVersion: platform.example.com/v1alpha1
-    kind: XAppPlatform
-
-  resources:
-    # S3 Bucket for application data
-    - name: storage-bucket
-      base:
-        apiVersion: s3.aws.upbound.io/v1beta1
-        kind: Bucket
-        spec:
-          forProvider:
-            tags:
-              ManagedBy: crossplane
-          deletionPolicy: Delete
-      patches:
-        - type: FromCompositeFieldPath
-          fromFieldPath: spec.parameters.region
-          toFieldPath: spec.forProvider.region
-        - type: CombineFromComposite
-          combine:
-            variables:
-              - fromFieldPath: spec.parameters.appName
-              - fromFieldPath: spec.parameters.environment
-            strategy: string
-            string:
-              fmt: "%s-%s-data"
-          toFieldPath: metadata.name
-        - type: ToCompositeFieldPath
-          fromFieldPath: metadata.name
-          toFieldPath: status.bucketName
-        - type: FromCompositeFieldPath
-          fromFieldPath: spec.parameters.environment
-          toFieldPath: spec.forProvider.tags.Environment
-
-    # S3 Bucket versioning
-    - name: bucket-versioning
-      base:
-        apiVersion: s3.aws.upbound.io/v1beta1
-        kind: BucketVersioning
-        spec:
-          forProvider:
-            versioningConfiguration:
-              status: Enabled
-            bucketSelector:
-              matchControllerRef: true
-      patches:
-        - type: FromCompositeFieldPath
-          fromFieldPath: spec.parameters.region
-          toFieldPath: spec.forProvider.region
-
-    # S3 Bucket encryption
-    - name: bucket-encryption
-      base:
-        apiVersion: s3.aws.upbound.io/v1beta1
-        kind: BucketServerSideEncryptionConfiguration
-        spec:
-          forProvider:
-            rule:
-              applyServerSideEncryptionByDefault:
-                sseAlgorithm: AES256
-            bucketSelector:
-              matchControllerRef: true
-      patches:
-        - type: FromCompositeFieldPath
-          fromFieldPath: spec.parameters.region
-          toFieldPath: spec.forProvider.region
-
-    # PostgreSQL Database (using our XRD)
-    - name: database
-      base:
-        apiVersion: database.example.com/v1alpha1
-        kind: XPostgreSQLInstance
-        spec:
-          parameters:
-            engineVersion: "14.7"
-            storageGB: 20
-            highAvailability: false
-            backupRetentionDays: 7
-            networkRef:
-              id: vpc-12345
-          compositionSelector:
-            matchLabels:
-              provider: aws
-      patches:
-        - type: FromCompositeFieldPath
-          fromFieldPath: spec.parameters.databaseSize
-          toFieldPath: spec.parameters.size
-        - type: FromCompositeFieldPath
-          fromFieldPath: spec.parameters.environment
-          toFieldPath: spec.parameters.highAvailability
-          transforms:
-            - type: map
-              map:
-                dev: false
-                staging: false
-                prod: true
-        - type: FromCompositeFieldPath
-          fromFieldPath: spec.parameters.environment
-          toFieldPath: spec.parameters.backupRetentionDays
-          transforms:
-            - type: map
-              map:
-                dev: 1
-                staging: 7
-                prod: 30
-        - type: ToCompositeFieldPath
-          fromFieldPath: status.address
-          toFieldPath: status.databaseEndpoint
-
-    # ElastiCache Redis
-    # Note: For truly conditional resources, use Composition Functions with
-    # function-conditional or create separate compositions. This example
-    # always provisions the cache when included in the composition.
-    - name: cache
-      base:
-        apiVersion: elasticache.aws.upbound.io/v1beta1
-        kind: ReplicationGroup
-        spec:
-          forProvider:
-            description: Redis cache cluster
-            engine: redis
-            engineVersion: "7.0"
-            nodeType: cache.t3.micro
-            numCacheClusters: 1
-            automaticFailoverEnabled: false
-            atRestEncryptionEnabled: true
-            transitEncryptionEnabled: true
-            securityGroupIdSelector:
-              matchControllerRef: true
-            subnetGroupNameSelector:
-              matchControllerRef: true
-      patches:
-        - type: FromCompositeFieldPath
-          fromFieldPath: spec.parameters.region
-          toFieldPath: spec.forProvider.region
-        - type: FromCompositeFieldPath
-          fromFieldPath: spec.parameters.environment
-          toFieldPath: spec.forProvider.automaticFailoverEnabled
-          transforms:
-            - type: map
-              map:
-                dev: false
-                staging: false
-                prod: true
-        - type: FromCompositeFieldPath
-          fromFieldPath: spec.parameters.environment
-          toFieldPath: spec.forProvider.numCacheClusters
-          transforms:
-            - type: map
-              map:
-                dev: 1
-                staging: 2
-                prod: 3
-        - type: ToCompositeFieldPath
-          fromFieldPath: status.atProvider.primaryEndpointAddress
-          toFieldPath: status.cacheEndpoint
+# Inside mode: Pipeline -> function-patch-and-transform input (see Composition Functions)
+resources:
+  - name: rds-instance
+    base:
+      apiVersion: rds.aws.upbound.io/v1beta1
+      kind: Instance
+      spec:
+        forProvider:
+          engine: postgres
+          username: dbadmin
+          # Selectors let Crossplane resolve refs & order deps automatically:
+          vpcSecurityGroupIdSelector: { matchControllerRef: true }
+          dbSubnetGroupNameSelector: { matchControllerRef: true }
+        writeConnectionSecretToRef: { namespace: crossplane-system }
+    patches:
+      - type: PatchSet
+        patchSetName: common-tags
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.size
+        toFieldPath: spec.forProvider.instanceClass
+        transforms:
+          - type: map
+            map: { small: db.t3.micro, medium: db.t3.medium, large: db.m5.large }
+      - type: FromCompositeFieldPath          # derive a stable secret name from UID
+        fromFieldPath: metadata.uid
+        toFieldPath: spec.writeConnectionSecretToRef.name
+        transforms: [{ type: string, string: { fmt: "%s-connection" } }]
+      - type: ToCompositeFieldPath            # surface endpoint to XR status
+        fromFieldPath: status.atProvider.endpoint
+        toFieldPath: status.address
+      - type: FromCompositeFieldPath          # LOAD-BEARING patch: fail loud, don't skip
+        fromFieldPath: spec.parameters.networkRef.id
+        toFieldPath: spec.forProvider.vpcId
+        policy: { fromFieldPath: Required }
 ```
+
+**Environment-driven variation** (dev/staging/prod) is just a `map` transform per field (e.g. `environment → multiAz`, `→ numCacheClusters`, `→ backupRetentionDays`). Conditional resource **inclusion** (create a cache only when `enableCache=true`) is NOT expressible in patch-and-transform — it needs a templating function (see *Conditional Resource Creation* and *Expert Practices*).
 
 ## Claims (Self-Service Resources)
 
@@ -871,270 +500,25 @@ EOF
 
 ## Best Practices
 
-### Composition Patterns
+Deep failure-mode guidance lives in *Expert Practices*; these are the high-value design defaults.
 
-#### Layered Abstraction Strategy
+**Abstraction layering.** Foundation (provider MRs) → Resource XRDs (cloud-agnostic Database/ObjectStorage) → Platform XRDs (AppPlatform). Consume at the right level; keep each XRD to one logical resource type.
 
-Build compositions in layers of increasing abstraction:
+**Dependencies & ordering.** Prefer selectors (`matchControllerRef`, `matchLabels`) over explicit refs — Crossplane infers ordering and provisions in parallel when independent. Never add artificial ordering; avoid circular refs.
 
-1. **Foundation Layer**: Provider-specific managed resources (S3, RDS, GCS)
-2. **Resource Layer**: Cloud-agnostic XRDs (Database, ObjectStorage)
-3. **Platform Layer**: Application-focused XRDs (AppPlatform, DataPlatform)
+**XRD as API (guardrails).** The OpenAPI schema is your only misconfiguration guard: `enum` for choices, `minimum`/`maximum`, `pattern` for names, sensible `default`s, explicit `required`, descriptions on every field. Version `v1alpha1 → v1beta1 → v1`, keeping old versions served during migration. Expose only necessary `connectionSecretKeys` (v1) with consistent names.
 
-This enables teams to consume infrastructure at the right abstraction level.
+**Composed-resource naming must be deterministic** (derive from XR `GetName()`/UID) — a random/time-derived name churns real infra every reconcile (see *Idioms*).
 
-#### Parallel Resource Creation
+**Provider scoping & tuning.** Install scoped providers (`provider-aws-s3`) not the monolith — smaller memory/reconcile footprint. Tune per provider via `DeploymentRuntimeConfig` args: `--max-reconcile-rate` (respect cloud API quotas), `--poll` (freshness vs load). In v2 prefer `ManagedResourceActivationPolicy` (see *Performance*).
 
-Crossplane automatically provisions resources in parallel when no dependencies exist. Optimize for this:
+**Credentials.** Prefer workload identity over static keys — IRSA (AWS), Workload Identity (GCP), Managed Identity (Azure). For static secrets use ESO/Vault, least-privilege, never in git. Separate `ProviderConfig` per account/env (`prod-aws`, `dev-aws`) to isolate blast radius.
 
-- Use selectors (matchControllerRef, matchLabels) instead of explicit refs
-- Let Crossplane infer dependencies from resource relationships
-- Avoid artificial ordering constraints
+**Multi-tenancy.** One namespace per team/env + RBAC on claim creation. In multi-tenant platforms, pin the Composition with `enforcedCompositionRef` so consumers can't select a rogue one (see *Design Patterns*).
 
-#### Transform Patterns
+**Deletion safety (critical).** `deletionPolicy` defaults to **`Delete`** — deleting the k8s object destroys the real cloud resource. Set `deletionPolicy: Orphan` (or `managementPolicies` omitting `Delete`) **from day one** on ANYTHING stateful (DBs, buckets, volumes), not just prod. Delete claims/XRs **before** their Provider (see *Gotchas*).
 
-Common transform patterns for patches:
-
-- **Size mapping**: map small/medium/large to instance types
-- **Environment logic**: map dev/staging/prod to different configurations
-- **String formatting**: CombineFromComposite with fmt for naming
-- **Math operations**: multiply storage size by environment factor
-- **Conditional values**: map boolean flags to provider-specific settings
-
-#### Secret Aggregation
-
-Merge connection secrets from multiple managed resources:
-
-- Each managed resource writes to a unique secret
-- Use connectionSecretKeys in XRD to define merged fields
-- Crossplane automatically aggregates into composite secret
-- Copy to claim namespace for application consumption
-
-### Claim Design Patterns
-
-#### Namespace Strategy
-
-Choose a namespace model that fits your organization:
-
-- **Per-team namespaces**: team-alpha, team-beta (good for multi-tenancy)
-- **Per-environment namespaces**: dev, staging, prod (good for env isolation)
-- **Hybrid approach**: team-alpha-prod, team-alpha-dev (maximum isolation)
-
-Use RBAC to control which teams can create claims in which namespaces.
-
-#### Self-Service Guardrails
-
-Build guardrails into XRDs to prevent misconfiguration:
-
-- Use enums to restrict choices (small/medium/large, not arbitrary values)
-- Set min/max constraints on storage, replicas, retention periods
-- Provide sensible defaults for optional parameters
-- Use regex patterns for naming conventions
-- Document expected values in field descriptions
-
-#### Claim Lifecycle Management
-
-Design claims for day-2 operations:
-
-- Enable updates without replacement (use forProvider.applyMethod)
-- Support scaling operations through parameter changes
-- Include backup/restore configuration from day 1
-- Plan for disaster recovery scenarios
-- Document which parameters can be changed post-creation
-
-#### Cost Visibility
-
-Make cost implications visible to claim users:
-
-- Add cost-related metadata to XRD descriptions
-- Use labels for cost allocation (team, project, environment)
-- Document size tiers with approximate costs
-- Implement budget controls through validation webhooks
-- Export cost tags to cloud provider billing
-
-### Provider Configuration Strategies
-
-#### Multi-Account Architecture
-
-Use separate ProviderConfigs for different accounts/environments:
-
-- Isolate prod from non-prod at the cloud account level
-- Use IRSA (IAM Roles for Service Accounts) for AWS authentication
-- Configure Workload Identity for GCP
-- Implement Managed Identities for Azure
-
-Reference the appropriate ProviderConfig in compositions or allow claims to specify it.
-
-#### Credential Rotation
-
-Implement secure credential management:
-
-- Use external secret stores (Vault, AWS Secrets Manager)
-- Configure ESO (External Secrets Operator) integration
-- Rotate credentials on a schedule
-- Use short-lived credentials when possible
-- Avoid storing credentials in git
-
-#### Provider Scoping
-
-Install provider families strategically:
-
-- Use scoped providers (provider-aws-s3) not monolithic (provider-aws)
-- Reduces memory footprint and reconciliation load
-- Install only required provider families
-- Configure separate controller replicas for high-volume families
-- Tune poll intervals per provider (--poll flag)
-
-#### Rate Limiting
-
-Configure provider controllers for production scale:
-
-- Set --max-reconcile-rate based on API quotas
-- Configure --poll interval to balance freshness vs load
-- Use --enable-management-policies for granular control
-- Monitor provider controller CPU/memory usage
-- Scale controller replicas for high resource counts
-
-### XRD Design
-
-#### Keep XRDs Simple and Focused
-
-- Each XRD should represent a single logical resource type
-- Avoid combining unrelated infrastructure into one XRD
-- Use composition to build complex platforms from simple XRDs
-
-#### Version Your APIs
-
-- Start with v1alpha1 and evolve to v1beta1, then v1
-- Use multiple versions to support backwards compatibility
-- Document breaking changes clearly
-
-#### Define Clear Schemas
-
-- Use OpenAPI validation (enums, patterns, min/max)
-- Provide sensible defaults
-- Mark required fields explicitly
-- Add descriptions to all fields
-
-#### Connection Secrets
-
-- Only expose necessary connection details
-- Use consistent key names across XRDs
-- Document expected secret keys
-
-### Composition Guidelines
-
-#### Resource Naming
-
-- Use deterministic names based on composite UID
-- Avoid conflicts with CombineFromComposite patches
-- Consider external name requirements
-
-#### Patch Strategies
-
-- Use PatchSets for common patches
-- Apply FromCompositeFieldPath for user inputs
-- Use ToCompositeFieldPath for status updates
-- Leverage transforms (map, string formatting, math)
-
-#### Resource Dependencies
-
-- Use selectors (matchControllerRef, matchLabels) for references
-- Crossplane handles dependency ordering automatically
-- Avoid circular dependencies
-
-#### Environment-Specific Logic
-
-- Use map transforms to vary resources by environment
-- Example: small instances for dev, large for prod
-- Map transforms can only vary field **values** on resources that are always created — conditional resource **inclusion** (create a cache only if `enableCache=true`) requires `mode: Pipeline` with a templating function (`function-go-templating` or `function-kcl`); patch-and-transform intentionally has no loops/conditionals
-
-#### Connection Secret Propagation
-
-- Write secrets to crossplane-system namespace first
-- Copy to claim namespace using patches
-- Merge secrets from multiple resources
-
-### Claim Organization
-
-#### Namespace Strategy
-
-- One namespace per team or environment
-- Use RBAC to control claim creation
-- Claims are namespace-scoped, XRs are cluster-scoped
-
-#### Naming Conventions
-
-- Use descriptive claim names (app-name-db, not db-1)
-- Include environment in name if not using namespace separation
-- Follow organization naming standards
-
-#### Labels and Annotations
-
-- Add ownership labels (team, cost-center)
-- Use annotations for metadata (jira-ticket, owner-email)
-- Labels can be used in composition patches
-
-### ProviderConfig Best Practices
-
-#### Multiple Provider Configs
-
-- Use different ProviderConfigs for different accounts/projects
-- Name them descriptively (prod-aws, dev-aws)
-- Reference explicitly in compositions or claims
-
-#### Credential Management
-
-- Use IRSA (IAM Roles for Service Accounts) when possible
-- Store credentials in secrets with minimal permissions
-- Rotate credentials regularly
-
-#### Resource Limits
-
-- Configure provider controller resource limits
-- Set appropriate poll intervals (--poll flag)
-- Limit max reconcile rate for large deployments
-
-### Production Readiness
-
-#### Deletion Policies
-
-- **`deletionPolicy` defaults to `Delete`** — deleting the Kubernetes object destroys the real cloud resource. Set `deletionPolicy: Orphan` **from day one** on ANY resource whose accidental deletion causes data loss or an outage (databases, buckets, volumes), not only production databases.
-- Use `deletionPolicy: Delete` only for genuinely disposable dev/test resources
-- In newer Crossplane, deletion is increasingly expressed via `managementPolicies` (omitting `Delete` prevents external deletion), but `deletionPolicy: Delete` remains the default disposition
-- Document deletion behavior for platform users
-
-#### Resource Tagging
-
-- Tag all resources with ManagedBy: crossplane
-- Include environment, team, and cost allocation tags
-- Propagate tags from composite to managed resources
-
-#### Monitoring and Observability
-
-- Monitor Crossplane controller metrics
-- Set up alerts for failed reconciliations
-- Export provider metrics to your monitoring system
-- Check resource sync status regularly
-
-#### Testing
-
-- Test compositions in dev before promoting to prod
-- Validate XRDs with kube-linter or similar tools
-- Use dry-run mode for risky changes
-
-#### Documentation
-
-- Document XRD schemas with examples
-- Provide claim templates for platform users
-- Maintain composition change logs
-
-#### Security
-
-- Use least-privilege IAM policies
-- Enable encryption at rest and in transit
-- Use private endpoints where possible
-- Implement network security groups/firewalls
+**Ops hygiene.** Tag everything `ManagedBy: crossplane` + cost/team labels; monitor controller metrics and failed-reconcile events; test with `crossplane composition render` (no cluster) before promoting; encrypt at rest/in transit; least-privilege IAM.
 
 ## Common Operations
 
@@ -1387,13 +771,19 @@ spec:
   # Crossplane will discover and manage this existing bucket
 ```
 
+> ⚠ Importing with full management (`managementPolicies: ["*"]`) treats `spec.forProvider`
+> as authoritative and **drift-corrects on the next reconcile** — it can silently resize a
+> live DB. Always import with `managementPolicies: [Observe]` first, copy discovered values
+> into `spec.forProvider`, then promote to full management (see *Design Patterns*).
+
 ### Migrating from Terraform
 
-1. Export Terraform state for resources
-2. Create equivalent managed resources with matching external names
-3. Import into Crossplane using external-name annotation
-4. Gradually build compositions around managed resources
-5. Migrate teams to claims
+**Model difference:** Terraform is imperative-ish `plan`/`apply` (drift is detected only when you next run); Crossplane **continuously reconciles** — a control loop drives real infra back to declared state on every sync, with no human `apply` in the loop. This is more self-healing but means an unintended `spec` change (or a bad Composition rollout) propagates immediately to production. Gate that blast radius with `compositionUpdatePolicy: Manual` + pinned revisions (see *Gotchas*).
+
+1. Export Terraform state; note each resource's cloud ID.
+2. Create equivalent MRs with `crossplane.io/external-name: <cloud-id>` and `managementPolicies: [Observe]`.
+3. Let `status.atProvider` populate, reconcile `spec.forProvider` to match, then switch to `["*"]`.
+4. Build Compositions around the imported MRs; migrate teams to claims/XRs last.
 
 ## Expert Practices: Idioms, Anti-Patterns & Gotchas
 
@@ -1511,6 +901,21 @@ spec:
     - buckets.s3.aws.m.upbound.io
     - "*.rds.aws.m.upbound.io"
 ```
+
+## Verification Checklist
+
+Before shipping an XRD/Composition/Provider change:
+
+- [ ] `crossplane composition render xr.yaml composition.yaml functions.yaml` renders the expected resources (add `--observed-resources` to check idempotency)
+- [ ] Composition is `mode: Pipeline` (required on v2); no `mode: Resources`, no `ControllerConfig`, no bare (unqualified) package names
+- [ ] Every load-bearing `FromCompositeFieldPath` sets `policy.fromFieldPath: Required` (defaults to silently-skipped `Optional`)
+- [ ] Enum→value mappings use `match` + `fallbackTo` (not `map`, which errors on unknown keys)
+- [ ] Composed-resource names are deterministic (derived from XR name/UID) — no random/time inputs
+- [ ] `deletionPolicy: Orphan` (or `managementPolicies` without `Delete`) on every stateful resource
+- [ ] `compositionUpdatePolicy: Manual` (or XRD `defaultCompositionUpdatePolicy: Manual`) + pinned revision for prod, so edits don't reconcile all XRs at once
+- [ ] Pipeline functions use get→update→set on desired resources (never rebuild the map from scratch)
+- [ ] XRD schema has enum/min-max/pattern/required guardrails; `group`/`names` are final (immutable)
+- [ ] Provider installed and `Healthy`; `ProviderConfig` credentials resolve; `crossplane beta upgrade check` clean before any v1→v2 move
 
 ## References
 
