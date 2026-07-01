@@ -451,21 +451,17 @@ Stage 2/3 adds alongside: `dispute_count`, `evidence_rounds`, `amendments_applie
 - `loom/src/sandbox/config.rs:461-475` — `test_default_mode_for_stage_type`
 - `loom/src/sandbox/config.rs:478-511` — `test_merge_config_permission_mode_precedence`
 
-### 2. permissions.defaultMode emission
+### 2. permission mode delivery — TWO mechanisms (settings file is NOT enough for `auto`)
 
-- `loom/src/sandbox/settings.rs:15-26` — `apply_default_mode(settings, mode)` is the **single place** that maps loom's kebab-case `PermissionMode` to Claude's camelCase wire format (`"acceptEdits"`, `"bypassPermissions"`, etc.)
-- `loom/src/sandbox/settings.rs:300` — called unconditionally at the end of `generate_settings_json()` so every generated `settings.local.json` carries a `permissions.defaultMode`
+- `loom/src/sandbox/settings.rs:15-26` — `apply_default_mode(settings, mode)` maps loom's kebab-case `PermissionMode` to Claude's camelCase wire format (`"acceptEdits"`, `"bypassPermissions"`, etc.); called at the end of `generate_settings_json()` so every generated `settings.local.json` carries a `permissions.defaultMode`.
+- **⚠️ The settings file is IGNORED for `auto`.** Claude Code v2.1.142+ deliberately ignores `permissions.defaultMode: "auto"` when it comes from **project/local** settings (`.claude/settings.json` / `.claude/settings.local.json`) — a repo cannot grant itself auto mode. Only the `--permission-mode` **CLI startup flag** (or user/managed settings) is honored. So the authoritative delivery is the CLI flag emitted in `build_claude_command` (§3), NOT the settings file. The `defaultMode` in settings.local.json is still emitted (harmless; honored for non-`auto` modes) but is redundant given the flag. See mistakes.md "settings.local.json `defaultMode: auto` is silently ignored".
 
 ### 3. Claude command-build sites (NativeBackend)
 
-All four are in `loom/src/orchestrator/terminal/native/mod.rs`:
+All four public `spawn_*` methods funnel through the single unified `spawn()` in `loom/src/orchestrator/terminal/native/mod.rs`, which calls the shared `build_claude_command()`. Command shape: `{claude} --model {m} --effort {e} --permission-mode {mode} {prompt}[ --remote-control]`.
 
-| Method | Lines | Notes |
-|--------|-------|-------|
-| `spawn_session` | 91–165 (cmd: 121–129) | Uses `stage.effective_model()` + `stage.effective_reasoning_effort()` |
-| `spawn_merge_session` | 167–239 (cmd: 199–204) | Hardcoded `opus` / `xhigh` |
-| `spawn_base_conflict_session` | 241–314 (cmd: 275–280) | Hardcoded `opus` / `xhigh` |
-| `spawn_knowledge_session` | 316–389 (cmd: 346–353) | Uses `stage.effective_model()` + `stage.effective_reasoning_effort()` |
+- **`--permission-mode {mode}`** is resolved inside `spawn()` via `merge_config(read_plan_sandbox(work_dir), stage.sandbox, stage.stage_type).permission_mode` → `.as_settings_value()`. Reads the SAME `[plan_sandbox]` snapshot that `OrchestratorConfig.sandbox_config` loads from, so the CLI flag and the generated settings file never disagree. `validate_config` rejects `bypass-permissions`, so it never reaches the flag.
+- Model/effort policy: `spawn_session` / `spawn_knowledge_session` use `stage.effective_model()` + `stage.effective_reasoning_effort()`; `spawn_merge_session` / `spawn_base_conflict_session` hardcode `opus` / `xhigh`.
 
 All four call `pid_tracking::create_wrapper_script()` before `spawn_in_terminal()`.
 
