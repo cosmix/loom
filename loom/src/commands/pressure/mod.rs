@@ -540,11 +540,31 @@ pub fn execute(plan: String, rounds: u32, dry_run: bool) -> Result<()> {
                 // foreground (interactive → subscription billing).
                 let codex_child =
                     spawn_codex_background(&codex_path, &repo_root, &codex, &codex_log)?;
+                println!(
+                    "{} codex review started in background (log: {})",
+                    "→".cyan().bold(),
+                    codex_log.display()
+                );
                 let claude_outcome =
                     run_claude_foreground(&claude_path, &repo_root, &claude, &marker)?;
                 let claude_stop = claude_should_stop(claude_outcome);
                 let codex_status = wait_codex(codex_child, &codex_log)?;
                 let codex_stop = should_stop("codex", codex_status, Some(&codex_log));
+                if codex_status.success() {
+                    if report.is_file() {
+                        println!(
+                            "{} codex review written → {}",
+                            "✓".green().bold(),
+                            report.display()
+                        );
+                    } else {
+                        println!(
+                            "{} codex exited cleanly but wrote no review at {} — /address will run without it",
+                            "!".yellow().bold(),
+                            report.display()
+                        );
+                    }
+                }
                 claude_stop || codex_stop
             }
             Step::Address(slash) => {
