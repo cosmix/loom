@@ -431,7 +431,7 @@ Use `rg -i "container\|docker\|dispatcher" loom/src/ --include="*.rs"` to catch 
 2. `entry-points.md` — Remote Control §1 table said `Standard / IntegrationVerify → Auto`
 3. `patterns.md` — Sandbox permission_mode Resolution table showed `auto` for both types
 
-These stale entries would have misled future agents into using `permission_mode: auto` when the actual default is already `accept-edits`.
+These stale entries would have misled future agents into using `permission_mode: auto` when the default at the time was `accept-edits`. (Note: the default was later reverted back to `auto` for all four stage types on 2026-07-01 — see architecture.md / patterns.md — so this entry stands only as a staleness lesson, not a statement of the current default.)
 
 **Why:** The implementation stage correctly updated Rust source + tests, but did not search knowledge files for old values. Knowledge files are not compiled, so no tool catches the mismatch.
 

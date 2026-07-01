@@ -322,21 +322,21 @@ Note: knowledge file writes are intentionally protected by sandbox defaults; kno
 
 ### Permission Mode
 
-All stages default to `accept-edits` (agents can edit files without per-file confirmation). Override per-plan or per-stage:
+All stages default to `auto` (agents auto-accept any action their heuristics deem safe, since loom stages run autonomously with no human to answer prompts; the sandbox deny/allow rules are the safety boundary). Override per-plan or per-stage to tighten control:
 
 ```yaml
 loom:
   version: 1
   sandbox:
-    permission_mode: auto # plan-level override
+    permission_mode: accept-edits # plan-level override
 
   stages:
     - id: my-stage
       sandbox:
-        permission_mode: auto # stage-level override (takes precedence)
+        permission_mode: plan # stage-level override (takes precedence)
 ```
 
-Valid values: `accept-edits` (default), `auto`, `plan`, `default`. `bypass-permissions` is rejected at init time.
+Valid values: `auto` (default), `accept-edits`, `plan`, `default`. `bypass-permissions` is rejected at init time.
 
 ### Remote Control
 

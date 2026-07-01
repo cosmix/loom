@@ -445,7 +445,7 @@ Stage 2/3 adds alongside: `dispute_count`, `evidence_rounds`, `amendments_applie
 
 - `loom/src/sandbox/config.rs:1-4` — `use crate::plan::schema::{..., PermissionMode, StageType, ...}` (no `BackendType` in scope anywhere in this file)
 - `loom/src/sandbox/config.rs:49-54` — `default_mode_for(stage_type: StageType) -> PermissionMode`
-  - ALL stage types (Knowledge, KnowledgeDistill, Standard, IntegrationVerify) → `AcceptEdits`
+  - ALL stage types (Knowledge, KnowledgeDistill, Standard, IntegrationVerify) → `Auto`
 - `loom/src/sandbox/config.rs:60-95` — `merge_config(plan, stage, stage_type)` — precedence: stage > plan > `default_mode_for`
 - `loom/src/sandbox/config.rs:102-112` — `validate_config(merged)` — rejects `BypassPermissions` unconditionally
 - `loom/src/sandbox/config.rs:461-475` — `test_default_mode_for_stage_type`

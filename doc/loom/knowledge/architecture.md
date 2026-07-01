@@ -175,7 +175,7 @@ Stages define context_budget (1-100%, default 65%, max 75%). Monitor tracks Gree
 - **Socket**: Mode 0o600 (owner only), max 100 connections, 10MB message limit, Unix only
 - **Self-update**: minisign signature verification for binaries; `agents.zip`, `skills.zip`, and `CLAUDE.md.template` ARE SHA256-verified against the release checksums asset (self-update refuses to install an asset with no checksum entry). Real gap: the verifier fetches an asset literally named `checksums.txt` but the release workflow publishes `SHA256SUMS.txt` — an asset-name mismatch, not a missing-verification gap (see [concerns.md](concerns.md))
 - **Shell escaping**: escape_shell_single_quote(), escape_applescript_string() in emulator.rs
-- **permission_mode field** (`SandboxConfig` / `StageSandboxConfig`): Resolves as stage > plan > stage-type default. Default by stage type: ALL four stage types → `acceptEdits` (Knowledge, KnowledgeDistill, Standard, IntegrationVerify). Override to `auto` at plan or stage level if needed.
+- **permission_mode field** (`SandboxConfig` / `StageSandboxConfig`): Resolves as stage > plan > stage-type default. Default by stage type: ALL four stage types → `auto` (Knowledge, KnowledgeDistill, Standard, IntegrationVerify) — loom stages run autonomously with no human to answer prompts, so the agent auto-accepts actions its heuristics deem safe; the sandbox deny/allow rules are the safety boundary. Override to a stricter mode (`accept-edits`, `plan`) at plan or stage level if needed.
 
 ## Merge Lock (progressive_merge/lock.rs)
 

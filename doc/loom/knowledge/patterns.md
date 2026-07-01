@@ -403,12 +403,12 @@ For tests: `LivenessService::fixed_for_tests(bool)` — returns a fixed value wi
 
 | Stage type | Default permission_mode |
 | --- | --- |
-| Standard | `accept-edits` |
-| IntegrationVerify | `accept-edits` |
-| Knowledge | `accept-edits` |
-| KnowledgeDistill | `accept-edits` |
+| Standard | `auto` |
+| IntegrationVerify | `auto` |
+| Knowledge | `auto` |
+| KnowledgeDistill | `auto` |
 
-All four stage types default to `accept-edits` as of 2026-05-14. Override at plan or stage level with `permission_mode: auto` if needed.
+All four stage types default to `auto` as of 2026-07-01 (previously `accept-edits`). Loom stages execute autonomously with no human at the terminal, so the agent auto-accepts actions its heuristics deem safe; the sandbox filesystem deny/allow rules and hooks are the safety boundary. Override at plan or stage level with a stricter `permission_mode` (e.g. `accept-edits`, `plan`) if needed.
 
 YAML key is `permission_mode` (snake_case), values are kebab-case: `"auto"`, `"accept-edits"`, `"plan"`, `"default"`.
 
