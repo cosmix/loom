@@ -40,17 +40,16 @@ pub struct MergedSandboxConfig {
 /// Resolve the default `PermissionMode` for a stage type when no explicit
 /// override is set at the plan or stage level.
 ///
-/// Defaults:
-/// - Knowledge / KnowledgeDistill → `AcceptEdits` — writes are scoped to
-///   `doc/loom/knowledge/` and friction during knowledge curation hurts more
-///   than it helps.
-/// - Standard / IntegrationVerify → `AcceptEdits` — reduces friction for
-///   implementation stages; the sandbox's filesystem deny/allow rules provide
-///   the safety boundary instead of per-edit prompts.
+/// All stage types default to `Auto`: loom stages execute autonomously with no
+/// human at the terminal to answer permission prompts, so the agent should
+/// auto-accept any action its heuristics deem safe. The sandbox's filesystem
+/// deny/allow rules and the loom hooks provide the safety boundary instead of
+/// per-action prompts. A plan or stage can still override to a more restrictive
+/// mode (e.g. `accept-edits`, `plan`) when tighter control is wanted.
 pub fn default_mode_for(stage_type: StageType) -> PermissionMode {
     match stage_type {
-        StageType::Knowledge | StageType::KnowledgeDistill => PermissionMode::AcceptEdits,
-        StageType::Standard | StageType::IntegrationVerify => PermissionMode::AcceptEdits,
+        StageType::Knowledge | StageType::KnowledgeDistill => PermissionMode::Auto,
+        StageType::Standard | StageType::IntegrationVerify => PermissionMode::Auto,
     }
 }
 
@@ -460,21 +459,15 @@ mod tests {
 
     #[test]
     fn test_default_mode_for_stage_type() {
-        assert_eq!(
-            default_mode_for(StageType::Standard),
-            PermissionMode::AcceptEdits
-        );
+        assert_eq!(default_mode_for(StageType::Standard), PermissionMode::Auto);
         assert_eq!(
             default_mode_for(StageType::IntegrationVerify),
-            PermissionMode::AcceptEdits
+            PermissionMode::Auto
         );
-        assert_eq!(
-            default_mode_for(StageType::Knowledge),
-            PermissionMode::AcceptEdits
-        );
+        assert_eq!(default_mode_for(StageType::Knowledge), PermissionMode::Auto);
         assert_eq!(
             default_mode_for(StageType::KnowledgeDistill),
-            PermissionMode::AcceptEdits
+            PermissionMode::Auto
         );
     }
 
@@ -504,27 +497,27 @@ mod tests {
             &StageSandboxConfig::default(),
             StageType::Standard,
         );
-        assert_eq!(merged.permission_mode, PermissionMode::AcceptEdits);
+        assert_eq!(merged.permission_mode, PermissionMode::Auto);
 
         let merged = merge_config(
             &plan_default,
             &StageSandboxConfig::default(),
             StageType::Knowledge,
         );
-        assert_eq!(merged.permission_mode, PermissionMode::AcceptEdits);
+        assert_eq!(merged.permission_mode, PermissionMode::Auto);
     }
 
     #[test]
-    fn standard_stage_defaults_to_accept_edits() {
+    fn standard_stage_defaults_to_auto() {
         assert_eq!(
             default_mode_for(StageType::Standard),
-            PermissionMode::AcceptEdits,
-            "Standard stages should default to AcceptEdits"
+            PermissionMode::Auto,
+            "Standard stages should default to Auto"
         );
         assert_eq!(
             default_mode_for(StageType::IntegrationVerify),
-            PermissionMode::AcceptEdits,
-            "IntegrationVerify stages should default to AcceptEdits"
+            PermissionMode::Auto,
+            "IntegrationVerify stages should default to Auto"
         );
     }
 
