@@ -85,23 +85,22 @@ fn test_codex_report_path_is_sibling() {
 fn test_plan_steps_order_and_count() {
     let report = PathBuf::from("/repo/doc/plans/codex-PLAN-foo.md");
     let steps = plan_steps(2, "doc/plans/PLAN-foo.md", &report);
-    // 4 steps per round + 1 final cleanup delete.
-    assert_eq!(steps.len(), 2 * 4 + 1);
+    // 3 steps per round (delete, parallel pressure, address) + 1 final delete.
+    assert_eq!(steps.len(), 2 * 3 + 1);
     assert_eq!(steps[0], Step::DeleteReport(report.clone()));
     assert_eq!(
         steps[1],
-        Step::Claude("/pressure doc/plans/PLAN-foo.md".into())
+        Step::Pressure {
+            claude: "/pressure doc/plans/PLAN-foo.md".into(),
+            codex: "$pressure doc/plans/PLAN-foo.md".into(),
+        }
     );
     assert_eq!(
         steps[2],
-        Step::Codex("$pressure doc/plans/PLAN-foo.md".into())
+        Step::Address("/address doc/plans/PLAN-foo.md".into())
     );
-    assert_eq!(
-        steps[3],
-        Step::Claude("/address doc/plans/PLAN-foo.md".into())
-    );
-    // Per-round delete must precede that round's /pressure.
-    assert_eq!(steps[4], Step::DeleteReport(report.clone()));
+    // Per-round delete must precede that round's parallel pressure step.
+    assert_eq!(steps[3], Step::DeleteReport(report.clone()));
     assert_eq!(*steps.last().unwrap(), Step::DeleteReport(report));
 }
 
@@ -109,24 +108,54 @@ fn test_plan_steps_order_and_count() {
 fn test_plan_steps_single_round() {
     let report = PathBuf::from("/r/codex-P.md");
     let steps = plan_steps(1, "P.md", &report);
-    assert_eq!(steps.len(), 5);
+    assert_eq!(steps.len(), 4);
 }
 
 #[test]
 fn test_render_dry_run_shows_real_argv() {
     let report = PathBuf::from("/repo/doc/plans/codex-PLAN-foo.md");
     let repo = Path::new("/repo");
-    let out = render_dry_run(1, "doc/plans/PLAN-foo.md", &report, repo);
+    let marker = PathBuf::from("/tmp/loom-pressure-claude-1.done");
+    let codex_log = PathBuf::from("/tmp/loom-pressure-codex-1.log");
+    let out = render_dry_run(
+        1,
+        "doc/plans/PLAN-foo.md",
+        &report,
+        repo,
+        &marker,
+        &codex_log,
+    );
     assert!(out.contains("Dry run: 1 round"));
     // The preview must show the REAL argv so it matches what spawns.
-    assert!(
-        out.contains("--permission-mode acceptEdits --model opus /pressure doc/plans/PLAN-foo.md")
-    );
+    assert!(out.contains("--permission-mode auto --model opus"));
+    // The auto-close instruction is injected via --append-system-prompt.
+    assert!(out.contains("--append-system-prompt"));
+    assert!(out.contains("/pressure doc/plans/PLAN-foo.md"));
     assert!(out
         .contains("codex exec --sandbox workspace-write -C /repo $pressure doc/plans/PLAN-foo.md"));
     assert!(out.contains("/address doc/plans/PLAN-foo.md"));
     assert!(out.contains("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1"));
     assert!(out.contains("codex-PLAN-foo.md"));
+    // The parallel pressure step is labelled and the codex log path shown.
+    assert!(out.contains("[parallel]"));
+    assert!(out.contains("loom-pressure-codex-1.log"));
+    assert!(out.contains("loom-pressure-claude-1.done"));
+}
+
+#[test]
+fn test_claude_args_shape() {
+    let marker = PathBuf::from("/tmp/loom-pressure-claude-1.done");
+    let args = claude_args("/pressure doc/plans/PLAN-foo.md", &marker);
+    // Interactive (no -p): keeps subscription billing. Auto permission mode.
+    assert!(!args.iter().any(|a| a == "-p" || a == "--print"));
+    assert_eq!(args[0], "--permission-mode");
+    assert_eq!(args[1], "auto");
+    // The slash invocation is the final positional argument.
+    assert_eq!(args.last().unwrap(), "/pressure doc/plans/PLAN-foo.md");
+    // The appended system prompt names the marker so the driver can auto-close.
+    let joined = args.join(" ");
+    assert!(joined.contains("--append-system-prompt"));
+    assert!(joined.contains("/tmp/loom-pressure-claude-1.done"));
 }
 
 #[test]
