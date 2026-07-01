@@ -16,6 +16,7 @@ triggers:
   - deadlock
   - livelock
   - atomic
+  - memory ordering
   - futures
   - promises
   - tokio
@@ -28,1336 +29,268 @@ triggers:
   - mpsc
   - select
   - join
+  - JoinSet
+  - TaskGroup
+  - errgroup
   - worker pool
+  - backpressure
+  - cancellation
+  - structured concurrency
   - queue
   - synchronization
   - critical section
-  - context switch
+  - false sharing
 ---
 
 # Concurrency
 
 ## Overview
 
-Concurrency enables programs to handle multiple tasks efficiently. This skill covers async/await patterns across Rust (tokio), Python (asyncio), TypeScript (Promises), and Go (goroutines). Includes parallelism strategies, race condition prevention, deadlock handling, thread safety patterns, channel-based communication, and work queue implementations.
+Cross-language concurrency reference organized by concept, not by language. Each concept lists the shared principle plus per-language gotcha callouts for Rust (tokio), Python (asyncio), TypeScript (event loop), and Go. The hard part is never the happy-path API; it's the failure modes — data races, deadlocks, latent OOM from unbounded queues, futures dropped mid-flight by cancellation, and memory-ordering bugs that only surface under load on weakly-ordered CPUs.
 
-## Agent Specializations
+## Agent Delegation
 
-When implementing concurrency, delegate to the appropriate specialist:
+- **loom-senior-software-engineer** (Opus) — DEFAULT. Threading models, shared-state vs message-passing, race/TOCTOU analysis, lock ordering, memory ordering, distributed concurrency/consistency, saga patterns.
+- **loom-software-engineer** (Sonnet) — ONLY boilerplate async handlers or unit tests following an established pattern.
 
-1. **senior-software-engineer** (Opus) - DEFAULT. Architectural decisions, threading models, message-passing vs shared-state, implementing concurrent code, async functions, worker pools, rate limiters, identifying race conditions, TOCTOU vulnerabilities, lock ordering, distributed concurrency, consistency models, distributed locks, saga patterns
-2. **software-engineer** (Sonnet) - ONLY for unit tests or boilerplate async handlers following established patterns
+## Mental Model: Pick the Right Executor
 
-## Instructions
+| Workload | Rust | Python | TS/JS | Go |
+| --- | --- | --- | --- | --- |
+| I/O-bound | tokio tasks | asyncio | async/Promises | goroutines |
+| CPU-bound | rayon / `spawn_blocking` | `ProcessPoolExecutor` | Worker threads | goroutines (real parallelism) |
+| Blocking call in async | `spawn_blocking` | `run_in_executor`/`to_thread` | Worker | fine (goroutines block cheaply) |
 
-### 1. Rust Async/Await with Tokio
+**Runtime model determines everything:**
+
+- **Rust/tokio, Go** — genuinely multi-threaded; tasks run on a thread pool → shared mutable state needs real synchronization.
+- **Python asyncio** — single OS thread; the GIL means asyncio gives you *concurrency, not parallelism*. Great for I/O, useless for CPU (one core). CPU work → `ProcessPoolExecutor`. A blocking call (sync DB driver, `time.sleep`, heavy compute) freezes the entire event loop.
+- **JS/TS** — single-threaded event loop. Same rule: a long synchronous loop blocks all timers, I/O callbacks, and rendering. CPU work → Web/Worker threads. There are no data races on shared JS objects (no preemption between awaits within a microtask), but state *can* change across an `await`.
+
+⚠ **The blocking-in-async footgun** (asyncio + JS): `await` only yields at await points. Synchronous CPU work or a blocking syscall between awaits stalls every other task. Never call a sync HTTP/DB client, `time.sleep`, or a tight compute loop directly in an async function — offload it.
+
+## Data Races & Shared State
+
+A data race = two threads touch the same memory, ≥1 writes, no synchronization. Rust makes most compile-errors via `Send`/`Sync`; Go/Python/JS do not.
+
+**Principle: minimize shared mutable state.** Prefer message passing (channels) or immutable snapshots. When you must share:
 
 ```rust
-use tokio::sync::{Mutex, RwLock, Semaphore, mpsc};
-use tokio::time::{sleep, Duration, timeout};
+// Rust: Arc<Mutex<T>> for writes, Arc<RwLock<T>> for read-heavy.
 use std::sync::Arc;
-use futures::future::join_all;
-
-// Basic async function
-async fn fetch_data(url: &str) -> Result<String, reqwest::Error> {
-    let response = reqwest::get(url).await?;
-    response.text().await
-}
-
-// Concurrent execution with join_all
-async fn fetch_all(urls: Vec<String>) -> Vec<Result<String, reqwest::Error>> {
-    let tasks: Vec<_> = urls.into_iter()
-        .map(|url| tokio::spawn(async move { fetch_data(&url).await }))
-        .collect();
-
-    join_all(tasks).await
-        .into_iter()
-        .map(|r| r.unwrap())
-        .collect()
-}
-
-// Timeout handling
-async fn fetch_with_timeout(url: &str) -> Result<String, Box<dyn std::error::Error>> {
-    match timeout(Duration::from_secs(5), fetch_data(url)).await {
-        Ok(result) => Ok(result?),
-        Err(_) => Err(format!("Request to {} timed out", url).into()),
-    }
-}
-
-// Semaphore for rate limiting
-async fn fetch_with_rate_limit(
-    urls: Vec<String>,
-    max_concurrent: usize,
-) -> Vec<Result<String, reqwest::Error>> {
-    let semaphore = Arc::new(Semaphore::new(max_concurrent));
-
-    let tasks: Vec<_> = urls.into_iter()
-        .map(|url| {
-            let sem = semaphore.clone();
-            tokio::spawn(async move {
-                let _permit = sem.acquire().await.unwrap();
-                fetch_data(&url).await
-            })
-        })
-        .collect();
-
-    join_all(tasks).await
-        .into_iter()
-        .map(|r| r.unwrap())
-        .collect()
-}
-
-// Channel-based worker pattern
-async fn worker_pool_example() {
-    let (tx, mut rx) = mpsc::channel::<String>(100);
-
-    // Spawn workers
-    for i in 0..4 {
-        let mut worker_rx = rx.clone();
-        tokio::spawn(async move {
-            while let Some(url) = worker_rx.recv().await {
-                println!("Worker {} processing {}", i, url);
-                let _ = fetch_data(&url).await;
-            }
-        });
-    }
-
-    // Send work
-    for url in vec!["https://example.com"; 20] {
-        tx.send(url.to_string()).await.unwrap();
-    }
-}
-
-// Shared state with Arc<Mutex<T>>
-#[derive(Clone)]
-struct SharedCache {
-    data: Arc<Mutex<std::collections::HashMap<String, String>>>,
-}
-
-impl SharedCache {
-    async fn get_or_insert(&self, key: String, value: String) -> String {
-        let mut cache = self.data.lock().await;
-        cache.entry(key).or_insert(value).clone()
-    }
-}
-
-// Arc<RwLock<T>> for read-heavy workloads
-struct ReadHeavyCache {
-    data: Arc<RwLock<std::collections::HashMap<String, String>>>,
-}
-
-impl ReadHeavyCache {
-    async fn get(&self, key: &str) -> Option<String> {
-        let cache = self.data.read().await;
-        cache.get(key).cloned()
-    }
-
-    async fn insert(&self, key: String, value: String) {
-        let mut cache = self.data.write().await;
-        cache.insert(key, value);
-    }
-}
-
-// Select for racing multiple futures
-use tokio::select;
-
-async fn fetch_from_fastest(urls: Vec<String>) -> Option<String> {
-    let mut tasks = urls.into_iter()
-        .map(|url| Box::pin(fetch_data(&url)))
-        .collect::<Vec<_>>();
-
-    if tasks.is_empty() {
-        return None;
-    }
-
-    loop {
-        select! {
-            result = tasks[0], if !tasks.is_empty() => {
-                if result.is_ok() {
-                    return result.ok();
-                }
-                tasks.remove(0);
-            }
-            else => break,
-        }
-    }
-    None
-}
+use tokio::sync::Mutex;               // async Mutex; std::sync::Mutex for sync-only sections
+let cache = Arc::new(Mutex::new(HashMap::<String, String>::new()));
+let mut g = cache.lock().await;
+g.insert(k, v);                        // guard drops at end of scope → keep scope tiny
 ```
 
-### 2. Python Async Patterns
+Per-language gotchas:
+
+- **Rust** — `RwLock` can starve writers under continuous readers; prefer `Mutex` unless reads vastly dominate. `std::sync::Mutex` is *not* poisoned-safe across await — use `tokio::sync::Mutex` only when the guard must cross `.await` (see below), otherwise the std mutex is faster.
+- **Go** — the race detector (`go test -race`, `go run -race`) is your primary tool; run it in CI. Copying a `sync.Mutex` by value silently breaks it (`go vet` catches most). Map access is not goroutine-safe — a concurrent read+write *panics* ("concurrent map writes"); use `sync.RWMutex` or `sync.Map`.
+- **Python** — even with the GIL, `x += 1` is *not* atomic (LOAD/ADD/STORE bytecodes can interleave on thread switch). Threaded code still needs `threading.Lock`. asyncio code needs `asyncio.Lock` only around state that spans an `await`.
+- **JS** — no locks needed for sync sections, but "read state → await → write state" is a check-then-act race: the awaited gap lets other tasks mutate. Re-read after the await or guard with an async mutex.
+
+## Locks, Lock Ordering & Deadlock
+
+**Deadlock rule #1: acquire locks in a globally consistent order.** Two code paths taking A→B and B→A will eventually deadlock. Assign a total order (by address, id, or name) and always lock ascending.
+
+```text
+Thread 1: lock(A); lock(B)   ┐  both block forever
+Thread 2: lock(B); lock(A)   ┘  → enforce A-before-B everywhere
+```
+
+Defenses, in order of preference:
+
+1. **Don't hold two locks.** Restructure so critical sections don't nest.
+2. **Consistent ordering** when you must nest.
+3. **`try_lock` with timeout + backoff** as a last resort (detects, doesn't prevent).
+4. **Keep critical sections tiny** — never do I/O, call user callbacks, or `.await` unrelated work while holding a lock.
+
+⚠ **Holding a lock across `.await` (the async deadlock/`Send` trap):**
+
+- **Rust** — holding `std::sync::MutexGuard` across `.await` makes the future `!Send`, so `tokio::spawn` won't compile. Fix: drop the guard before `.await`, or use `tokio::sync::Mutex` (designed to be held across await — but then two tasks awaiting the same lock on one thread can deadlock the *logical* flow). Best: copy the data out, drop the guard, then await.
+- **Python/JS** — holding an `asyncio.Lock` / async mutex across an `await` that (transitively) tries to re-acquire the same lock is a self-deadlock. Async locks are not reentrant.
+- **Go** — `sync.Mutex` is not reentrant either; a method holding the lock calling another method that locks the same mutex deadlocks.
+
+**Re-entrancy:** none of these mutexes are reentrant. If a locked method calls another locked method on the same object → deadlock. Split into a public (locks) + private (assumes locked) method pair.
+
+## Channels & Backpressure
+
+Channels decouple producers from consumers. The single most important decision: **bounded vs unbounded.**
+
+⚠ **Unbounded channels are latent OOM.** If producers outpace consumers, an unbounded queue grows without limit until the process is killed. Default to **bounded**; a full bounded channel applies *backpressure* — `send` blocks/awaits, throttling the producer to the consumer's rate. Only use unbounded when you can prove the producer is rate-limited by something else.
+
+| | Bounded | Unbounded |
+| --- | --- | --- |
+| Rust tokio | `mpsc::channel(N)` — `send().await` | `mpsc::unbounded_channel()` — ⚠ OOM risk |
+| Python | `asyncio.Queue(maxsize=N)` | `asyncio.Queue()` (maxsize=0) — ⚠ |
+| Go | `make(chan T, N)` | `make(chan T)` (unbuffered = rendezvous, or `N` too small = stall) |
+
+Per-language gotchas:
+
+- **Rust** — `tokio::sync::mpsc::Receiver` is **not** clonable (single consumer). For fan-out to many workers, share one `Arc<Mutex<Receiver>>` or use `async_channel`/`flume` (MPMC). The old skill's "clone the receiver" pattern does not compile. Dropping all senders closes the channel; `recv()` then returns `None` — the clean shutdown signal.
+- **Go** — **only the sender closes a channel**, and only once; sending on a closed channel panics, closing twice panics. Ranging over a channel (`for v := range ch`) exits when it's closed. Reading from a nil channel blocks forever (useful in `select` to disable a case). Leaked goroutines blocked on a channel nobody closes are a top Go bug.
+- **Python/JS** — bound the queue and handle `QueueFull`/awaiting `put` as backpressure; an unbounded producer feeding a slow consumer is the classic memory leak.
+
+## Structured Concurrency
+
+**Principle: spawned tasks have a bounded lifetime tied to a scope; the scope waits for all children and propagates the first error, cancelling siblings.** This kills orphaned/leaked tasks and lost exceptions.
 
 ```python
-import asyncio
-from typing import List, TypeVar, Coroutine, Any
-
-T = TypeVar('T')
-
-# Basic async function
-async def fetch_data(url: str) -> dict:
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            return await response.json()
-
-# Concurrent execution with gather
-async def fetch_all(urls: List[str]) -> List[dict]:
-    tasks = [fetch_data(url) for url in urls]
-    return await asyncio.gather(*tasks, return_exceptions=True)
-
-# Timeout handling
-async def fetch_with_timeout(url: str, timeout: float = 5.0) -> dict:
-    try:
-        return await asyncio.wait_for(fetch_data(url), timeout=timeout)
-    except asyncio.TimeoutError:
-        raise TimeoutError(f"Request to {url} timed out after {timeout}s")
-
-# Semaphore for rate limiting
-async def fetch_with_rate_limit(urls: List[str], max_concurrent: int = 10) -> List[dict]:
-    semaphore = asyncio.Semaphore(max_concurrent)
-
-    async def limited_fetch(url: str) -> dict:
-        async with semaphore:
-            return await fetch_data(url)
-
-    return await asyncio.gather(*[limited_fetch(url) for url in urls])
-
-# Async context manager
-class AsyncDatabaseConnection:
-    async def __aenter__(self):
-        self.conn = await asyncpg.connect(...)
-        return self.conn
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.conn.close()
-
-# Async iterator
-class AsyncPaginator:
-    def __init__(self, fetch_page):
-        self.fetch_page = fetch_page
-        self.page = 0
-        self.done = False
-
-    def __aiter__(self):
-        return self
-
-    async def __anext__(self):
-        if self.done:
-            raise StopAsyncIteration
-
-        result = await self.fetch_page(self.page)
-        if not result:
-            self.done = True
-            raise StopAsyncIteration
-
-        self.page += 1
-        return result
+# Python 3.11+: TaskGroup — cancels siblings on first exception, raises ExceptionGroup
+async with asyncio.TaskGroup() as tg:
+    tg.create_task(fetch(a))
+    tg.create_task(fetch(b))
+# exits only when all done; any failure cancels the rest
 ```
 
-#### TypeScript Async Patterns
-
-```typescript
-// Promise.all for concurrent execution
-async function fetchAll<T>(urls: string[]): Promise<T[]> {
-  return Promise.all(urls.map((url) => fetch(url).then((r) => r.json())));
-}
-
-// Promise.allSettled for fault tolerance
-async function fetchAllSafe<T>(urls: string[]): Promise<Array<T | Error>> {
-  const results = await Promise.allSettled(
-    urls.map((url) => fetch(url).then((r) => r.json())),
-  );
-
-  return results.map((result) =>
-    result.status === "fulfilled" ? result.value : new Error(result.reason),
-  );
-}
-
-// Rate-limited concurrent execution
-async function fetchWithConcurrencyLimit<T>(
-  items: string[],
-  fn: (item: string) => Promise<T>,
-  limit: number,
-): Promise<T[]> {
-  const results: T[] = [];
-  const executing: Promise<void>[] = [];
-
-  for (const item of items) {
-    const p = fn(item).then((result) => {
-      results.push(result);
-    });
-    executing.push(p);
-
-    if (executing.length >= limit) {
-      await Promise.race(executing);
-      executing.splice(
-        executing.findIndex((e) => e === p),
-        1,
-      );
-    }
-  }
-
-  await Promise.all(executing);
-  return results;
-}
-
-// Async queue
-class AsyncQueue<T> {
-  private queue: T[] = [];
-  private resolvers: Array<(value: T) => void> = [];
-
-  async enqueue(item: T): Promise<void> {
-    if (this.resolvers.length > 0) {
-      const resolve = this.resolvers.shift()!;
-      resolve(item);
-    } else {
-      this.queue.push(item);
-    }
-  }
-
-  async dequeue(): Promise<T> {
-    if (this.queue.length > 0) {
-      return this.queue.shift()!;
-    }
-    return new Promise((resolve) => this.resolvers.push(resolve));
-  }
+```rust
+// Rust tokio: JoinSet — owns tasks, join_next() yields results as they finish;
+// dropping the JoinSet aborts all remaining tasks.
+let mut set = tokio::task::JoinSet::new();
+for url in urls { set.spawn(fetch(url)); }
+while let Some(res) = set.join_next().await {
+    let _ = res?;   // JoinError on panic/abort
 }
 ```
-
-#### Go Concurrency Patterns
 
 ```go
-package main
-
-import (
-    "context"
-    "fmt"
-    "sync"
-    "time"
-)
-
-// Basic goroutine with channel
-func fetchData(url string, ch chan<- string) {
-    // Simulate fetch
-    time.Sleep(100 * time.Millisecond)
-    ch <- fmt.Sprintf("Data from %s", url)
+// Go: errgroup — first non-nil error cancels the derived ctx; Wait returns it.
+g, ctx := errgroup.WithContext(ctx)
+for _, u := range urls {
+    u := u                       // pre-1.22 loop-var capture!
+    g.Go(func() error { return fetch(ctx, u) })
 }
-
-// Fan-out pattern (concurrent workers)
-func fetchAll(urls []string) []string {
-    ch := make(chan string, len(urls))
-
-    for _, url := range urls {
-        go fetchData(url, ch)
-    }
-
-    results := make([]string, 0, len(urls))
-    for i := 0; i < len(urls); i++ {
-        results = append(results, <-ch)
-    }
-
-    return results
-}
-
-// WaitGroup for synchronization
-func fetchAllWithWaitGroup(urls []string) []string {
-    var wg sync.WaitGroup
-    results := make([]string, len(urls))
-
-    for i, url := range urls {
-        wg.Add(1)
-        go func(idx int, u string) {
-            defer wg.Done()
-            results[idx] = fmt.Sprintf("Data from %s", u)
-        }(i, url)
-    }
-
-    wg.Wait()
-    return results
-}
-
-// Context for cancellation
-func fetchWithTimeout(ctx context.Context, url string) (string, error) {
-    ch := make(chan string, 1)
-
-    go func() {
-        time.Sleep(100 * time.Millisecond)
-        ch <- fmt.Sprintf("Data from %s", url)
-    }()
-
-    select {
-    case result := <-ch:
-        return result, nil
-    case <-ctx.Done():
-        return "", ctx.Err()
-    }
-}
-
-// Worker pool with buffered channel
-func workerPool(jobs <-chan string, results chan<- string, numWorkers int) {
-    var wg sync.WaitGroup
-
-    for i := 0; i < numWorkers; i++ {
-        wg.Add(1)
-        go func(id int) {
-            defer wg.Done()
-            for job := range jobs {
-                results <- fmt.Sprintf("Worker %d processed %s", id, job)
-            }
-        }(i)
-    }
-
-    wg.Wait()
-    close(results)
-}
-
-// Rate limiting with ticker
-func rateLimit(urls []string, requestsPerSecond int) {
-    ticker := time.NewTicker(time.Second / time.Duration(requestsPerSecond))
-    defer ticker.Stop()
-
-    for _, url := range urls {
-        <-ticker.C
-        go fetchData(url, nil)
-    }
-}
-
-// Select for multiplexing channels
-func fanIn(ch1, ch2 <-chan string) <-chan string {
-    out := make(chan string)
-
-    go func() {
-        defer close(out)
-        for {
-            select {
-            case val, ok := <-ch1:
-                if !ok {
-                    ch1 = nil
-                } else {
-                    out <- val
-                }
-            case val, ok := <-ch2:
-                if !ok {
-                    ch2 = nil
-                } else {
-                    out <- val
-                }
-            }
-
-            if ch1 == nil && ch2 == nil {
-                return
-            }
-        }
-    }()
-
-    return out
-}
-
-// Mutex for shared state
-type SafeCounter struct {
-    mu    sync.Mutex
-    count int
-}
-
-func (c *SafeCounter) Inc() {
-    c.mu.Lock()
-    defer c.mu.Unlock()
-    c.count++
-}
-
-func (c *SafeCounter) Value() int {
-    c.mu.Lock()
-    defer c.mu.Unlock()
-    return c.count
-}
-
-// RWMutex for read-heavy workloads
-type Cache struct {
-    mu   sync.RWMutex
-    data map[string]string
-}
-
-func (c *Cache) Get(key string) (string, bool) {
-    c.mu.RLock()
-    defer c.mu.RUnlock()
-    val, ok := c.data[key]
-    return val, ok
-}
-
-func (c *Cache) Set(key, value string) {
-    c.mu.Lock()
-    defer c.mu.Unlock()
-    c.data[key] = value
-}
-
-// Once for one-time initialization
-var (
-    instance *Singleton
-    once     sync.Once
-)
-
-type Singleton struct {
-    value string
-}
-
-func GetInstance() *Singleton {
-    once.Do(func() {
-        instance = &Singleton{value: "initialized"}
-    })
-    return instance
-}
+if err := g.Wait(); err != nil { return err }
 ```
 
-### 2. Parallelism vs Concurrency
+Gotchas:
 
-```python
-import asyncio
-import multiprocessing
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+- **Python** — bare `asyncio.gather(*tasks)` does NOT cancel siblings on failure and, without `return_exceptions=True`, leaves other tasks running as it raises. `TaskGroup` (3.11+) is the correct default. A task created with `create_task` and never awaited can have its exception silently swallowed ("Task exception was never retrieved").
+- **Rust** — `tokio::spawn` detaches: the task keeps running even if the handle is dropped, and its panic is isolated (only surfaced via the `JoinHandle`). Prefer `JoinSet` when you need lifetime + error propagation. `join!`/`try_join!` run futures on the *current* task (no parallelism across threads, but concurrent) and `try_join!` short-circuits on first error.
+- **Go** — `sync.WaitGroup` gives you *waiting* but not error propagation or cancellation; `errgroup` adds both. Classic footgun: capturing the loop variable by reference (fixed in Go 1.22, still bites older code) — every goroutine sees the last value.
+- **JS** — `Promise.all` rejects on first failure but does NOT cancel the other in-flight promises (JS promises aren't cancellable); they run to completion, their results discarded. Use `Promise.allSettled` when you need every outcome. `AbortController` is the cancellation mechanism for fetch/streams.
 
-# Concurrency: I/O-bound tasks (use async or threads)
-async def io_bound_concurrent():
-    """Use for network calls, file I/O, database queries."""
-    async with aiohttp.ClientSession() as session:
-        tasks = [session.get(url) for url in urls]
-        return await asyncio.gather(*tasks)
+## Cancellation & Timeouts
 
-def io_bound_threaded(urls: List[str]):
-    """Threads for I/O when async isn't available."""
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        return list(executor.map(requests.get, urls))
-
-# Parallelism: CPU-bound tasks (use processes)
-def cpu_bound_parallel(data: List[int]) -> List[int]:
-    """Use for heavy computation - bypasses GIL."""
-    with ProcessPoolExecutor() as executor:
-        return list(executor.map(heavy_computation, data))
-
-# Hybrid: CPU work with I/O
-async def hybrid_processing(items: List[dict]):
-    """Combine async I/O with parallel CPU processing."""
-    loop = asyncio.get_event_loop()
-
-    # Fetch data concurrently
-    raw_data = await asyncio.gather(*[fetch(item) for item in items])
-
-    # Process CPU-bound work in parallel
-    with ProcessPoolExecutor() as executor:
-        processed = await loop.run_in_executor(
-            executor,
-            process_batch,
-            raw_data
-        )
-
-    return processed
-```
-
-### 3. Race Conditions and Prevention
-
-```python
-import threading
-import asyncio
-from contextlib import contextmanager
-
-# Thread-safe counter with lock
-class ThreadSafeCounter:
-    def __init__(self):
-        self._value = 0
-        self._lock = threading.Lock()
-
-    def increment(self):
-        with self._lock:
-            self._value += 1
-            return self._value
-
-    @property
-    def value(self):
-        with self._lock:
-            return self._value
-
-# Read-write lock for optimized concurrent access
-class ReadWriteLock:
-    def __init__(self):
-        self._read_ready = threading.Condition(threading.Lock())
-        self._readers = 0
-
-    @contextmanager
-    def read_lock(self):
-        with self._read_ready:
-            self._readers += 1
-        try:
-            yield
-        finally:
-            with self._read_ready:
-                self._readers -= 1
-                if self._readers == 0:
-                    self._read_ready.notify_all()
-
-    @contextmanager
-    def write_lock(self):
-        with self._read_ready:
-            while self._readers > 0:
-                self._read_ready.wait()
-            yield
-
-# Async lock for async code
-class AsyncSafeCache:
-    def __init__(self):
-        self._cache = {}
-        self._lock = asyncio.Lock()
-
-    async def get_or_set(self, key: str, factory):
-        async with self._lock:
-            if key not in self._cache:
-                self._cache[key] = await factory()
-            return self._cache[key]
-
-# Compare-and-swap for lock-free operations
-import atomics  # or use threading primitives
-
-class LockFreeCounter:
-    def __init__(self):
-        self._value = atomics.atomic(width=8, atype=atomics.INT)
-
-    def increment(self):
-        while True:
-            current = self._value.load()
-            if self._value.cmpxchg_weak(current, current + 1):
-                return current + 1
-```
-
-### 4. Deadlock Detection and Prevention
-
-```python
-import threading
-from collections import defaultdict
-from typing import Dict, Set
-import time
-
-# Deadlock prevention with lock ordering
-class OrderedLockManager:
-    """Prevents deadlocks by enforcing lock acquisition order."""
-
-    def __init__(self):
-        self._lock_order: Dict[str, int] = {}
-        self._next_order = 0
-        self._thread_locks: Dict[int, Set[str]] = defaultdict(set)
-        self._meta_lock = threading.Lock()
-
-    def register_lock(self, name: str) -> threading.Lock:
-        with self._meta_lock:
-            if name not in self._lock_order:
-                self._lock_order[name] = self._next_order
-                self._next_order += 1
-        return threading.Lock()
-
-    @contextmanager
-    def acquire(self, lock: threading.Lock, name: str):
-        thread_id = threading.current_thread().ident
-
-        # Check lock ordering
-        held_locks = self._thread_locks[thread_id]
-        for held_name in held_locks:
-            if self._lock_order[name] < self._lock_order[held_name]:
-                raise RuntimeError(
-                    f"Lock ordering violation: {name} < {held_name}"
-                )
-
-        lock.acquire()
-        self._thread_locks[thread_id].add(name)
-        try:
-            yield
-        finally:
-            self._thread_locks[thread_id].discard(name)
-            lock.release()
-
-# Timeout-based deadlock detection
-class TimeoutLock:
-    def __init__(self, timeout: float = 5.0):
-        self._lock = threading.Lock()
-        self._timeout = timeout
-
-    def acquire(self):
-        acquired = self._lock.acquire(timeout=self._timeout)
-        if not acquired:
-            raise DeadlockError(
-                f"Failed to acquire lock within {self._timeout}s - possible deadlock"
-            )
-        return True
-
-    def release(self):
-        self._lock.release()
-
-    def __enter__(self):
-        self.acquire()
-        return self
-
-    def __exit__(self, *args):
-        self.release()
-
-# Deadlock detection with wait-for graph
-class DeadlockDetector:
-    def __init__(self):
-        self._wait_for: Dict[int, int] = {}  # thread -> thread it's waiting for
-        self._lock = threading.Lock()
-
-    def register_wait(self, waiting_thread: int, holding_thread: int):
-        with self._lock:
-            self._wait_for[waiting_thread] = holding_thread
-            if self._has_cycle():
-                raise DeadlockError("Deadlock detected in wait-for graph")
-
-    def unregister_wait(self, thread: int):
-        with self._lock:
-            self._wait_for.pop(thread, None)
-
-    def _has_cycle(self) -> bool:
-        visited = set()
-        rec_stack = set()
-
-        def dfs(node):
-            visited.add(node)
-            rec_stack.add(node)
-
-            next_node = self._wait_for.get(node)
-            if next_node:
-                if next_node not in visited:
-                    if dfs(next_node):
-                        return True
-                elif next_node in rec_stack:
-                    return True
-
-            rec_stack.remove(node)
-            return False
-
-        for node in self._wait_for:
-            if node not in visited:
-                if dfs(node):
-                    return True
-        return False
-```
-
-### 5. Thread Safety Patterns
-
-```python
-import threading
-from functools import wraps
-from typing import TypeVar, Generic
-
-T = TypeVar('T')
-
-# Thread-local storage
-class RequestContext:
-    _local = threading.local()
-
-    @classmethod
-    def set_user(cls, user_id: str):
-        cls._local.user_id = user_id
-
-    @classmethod
-    def get_user(cls) -> str:
-        return getattr(cls._local, 'user_id', None)
-
-# Immutable data for thread safety
-from dataclasses import dataclass
-from typing import Tuple
-
-@dataclass(frozen=True)
-class ImmutableConfig:
-    host: str
-    port: int
-    options: Tuple[str, ...]  # Use tuple instead of list
-
-# Copy-on-write pattern
-class CopyOnWriteList(Generic[T]):
-    def __init__(self):
-        self._data: Tuple[T, ...] = ()
-        self._lock = threading.Lock()
-
-    def append(self, item: T):
-        with self._lock:
-            self._data = (*self._data, item)
-
-    def __iter__(self):
-        # Snapshot iteration - safe without lock
-        return iter(self._data)
-
-# Thread-safe singleton
-class Singleton:
-    _instance = None
-    _lock = threading.Lock()
-
-    def __new__(cls):
-        if cls._instance is None:
-            with cls._lock:
-                if cls._instance is None:
-                    cls._instance = super().__new__(cls)
-        return cls._instance
-
-# Synchronized decorator
-def synchronized(lock: threading.Lock = None):
-    def decorator(func):
-        nonlocal lock
-        if lock is None:
-            lock = threading.Lock()
-
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            with lock:
-                return func(*args, **kwargs)
-        return wrapper
-    return decorator
-```
-
-### 6. Work Queues and Worker Pools
-
-```python
-import asyncio
-import queue
-import threading
-from typing import Callable, Any, List
-from dataclasses import dataclass
-from concurrent.futures import Future
-
-@dataclass
-class Job:
-    func: Callable
-    args: tuple
-    kwargs: dict
-    future: Future
-
-# Thread-based worker pool
-class ThreadWorkerPool:
-    def __init__(self, num_workers: int = 4):
-        self._queue = queue.Queue()
-        self._workers: List[threading.Thread] = []
-        self._shutdown = False
-
-        for _ in range(num_workers):
-            worker = threading.Thread(target=self._worker_loop, daemon=True)
-            worker.start()
-            self._workers.append(worker)
-
-    def _worker_loop(self):
-        while not self._shutdown:
-            try:
-                job = self._queue.get(timeout=1)
-                try:
-                    result = job.func(*job.args, **job.kwargs)
-                    job.future.set_result(result)
-                except Exception as e:
-                    job.future.set_exception(e)
-            except queue.Empty:
-                continue
-
-    def submit(self, func: Callable, *args, **kwargs) -> Future:
-        future = Future()
-        job = Job(func, args, kwargs, future)
-        self._queue.put(job)
-        return future
-
-    def shutdown(self, wait: bool = True):
-        self._shutdown = True
-        if wait:
-            for worker in self._workers:
-                worker.join()
-
-# Async worker pool
-class AsyncWorkerPool:
-    def __init__(self, num_workers: int = 10):
-        self._queue: asyncio.Queue = asyncio.Queue()
-        self._num_workers = num_workers
-        self._workers: List[asyncio.Task] = []
-
-    async def start(self):
-        for _ in range(self._num_workers):
-            task = asyncio.create_task(self._worker_loop())
-            self._workers.append(task)
-
-    async def _worker_loop(self):
-        while True:
-            job = await self._queue.get()
-            if job is None:  # Shutdown signal
-                break
-
-            func, args, kwargs, future = job
-            try:
-                if asyncio.iscoroutinefunction(func):
-                    result = await func(*args, **kwargs)
-                else:
-                    result = func(*args, **kwargs)
-                future.set_result(result)
-            except Exception as e:
-                future.set_exception(e)
-            finally:
-                self._queue.task_done()
-
-    async def submit(self, func: Callable, *args, **kwargs) -> Any:
-        future = asyncio.Future()
-        await self._queue.put((func, args, kwargs, future))
-        return await future
-
-    async def shutdown(self):
-        for _ in self._workers:
-            await self._queue.put(None)
-        await asyncio.gather(*self._workers)
-
-# Priority queue worker
-class PriorityWorkerPool:
-    def __init__(self, num_workers: int = 4):
-        self._queue = queue.PriorityQueue()
-        self._workers: List[threading.Thread] = []
-        self._shutdown = False
-
-        for _ in range(num_workers):
-            worker = threading.Thread(target=self._worker_loop, daemon=True)
-            worker.start()
-            self._workers.append(worker)
-
-    def _worker_loop(self):
-        while not self._shutdown:
-            try:
-                priority, job = self._queue.get(timeout=1)
-                try:
-                    result = job.func(*job.args, **job.kwargs)
-                    job.future.set_result(result)
-                except Exception as e:
-                    job.future.set_exception(e)
-            except queue.Empty:
-                continue
-
-    def submit(self, func: Callable, *args, priority: int = 0, **kwargs) -> Future:
-        future = Future()
-        job = Job(func, args, kwargs, future)
-        self._queue.put((priority, job))
-        return future
-```
-
-## Best Practices
-
-1. **Prefer Async for I/O**: Use async/await for network and file I/O operations.
-
-2. **Use Processes for CPU Work**: Bypass GIL with ProcessPoolExecutor for CPU-bound tasks.
-
-3. **Minimize Shared State**: Prefer message passing over shared memory.
-
-4. **Lock Ordering**: Always acquire locks in a consistent order to prevent deadlocks.
-
-5. **Keep Critical Sections Small**: Hold locks for the minimum time necessary.
-
-6. **Use Higher-Level Abstractions**: Prefer queues, futures, and async patterns over raw locks.
-
-7. **Test for Race Conditions**: Use tools like ThreadSanitizer and stress testing.
-
-8. **Document Thread Safety**: Clearly document which methods are thread-safe.
-
-## Examples
-
-### Complete Async Web Scraper with Rate Limiting
-
-```python
-import asyncio
-import aiohttp
-from dataclasses import dataclass
-from typing import List, Optional
-
-@dataclass
-class ScrapeResult:
-    url: str
-    status: int
-    content: Optional[str]
-    error: Optional[str] = None
-
-class AsyncScraper:
-    def __init__(
-        self,
-        max_concurrent: int = 10,
-        requests_per_second: float = 5.0
-    ):
-        self.semaphore = asyncio.Semaphore(max_concurrent)
-        self.rate_limit = 1.0 / requests_per_second
-        self.last_request_time = 0
-        self._lock = asyncio.Lock()
-
-    async def _rate_limit(self):
-        async with self._lock:
-            now = asyncio.get_event_loop().time()
-            wait_time = self.last_request_time + self.rate_limit - now
-            if wait_time > 0:
-                await asyncio.sleep(wait_time)
-            self.last_request_time = asyncio.get_event_loop().time()
-
-    async def scrape_url(
-        self,
-        session: aiohttp.ClientSession,
-        url: str
-    ) -> ScrapeResult:
-        async with self.semaphore:
-            await self._rate_limit()
-            try:
-                async with session.get(url, timeout=10) as response:
-                    content = await response.text()
-                    return ScrapeResult(
-                        url=url,
-                        status=response.status,
-                        content=content
-                    )
-            except Exception as e:
-                return ScrapeResult(
-                    url=url,
-                    status=0,
-                    content=None,
-                    error=str(e)
-                )
-
-    async def scrape_all(self, urls: List[str]) -> List[ScrapeResult]:
-        async with aiohttp.ClientSession() as session:
-            tasks = [self.scrape_url(session, url) for url in urls]
-            return await asyncio.gather(*tasks)
-
-# Usage
-async def main():
-    scraper = AsyncScraper(max_concurrent=5, requests_per_second=2.0)
-    urls = ["https://example.com"] * 20
-    results = await scraper.scrape_all(urls)
-
-    for result in results:
-        if result.error:
-            print(f"Failed: {result.url} - {result.error}")
-        else:
-            print(f"Success: {result.url} - {result.status}")
-
-asyncio.run(main())
-```
-
-### Data Pipeline Parallelism
-
-Patterns for ETL, stream processing, and batch data pipelines with concurrent stages.
-
-```python
-import asyncio
-from typing import AsyncIterator, Callable, TypeVar, List
-from dataclasses import dataclass
-import queue
-import threading
-
-T = TypeVar('T')
-U = TypeVar('U')
-
-# Async pipeline with backpressure
-class AsyncPipeline:
-    """
-    Multi-stage async pipeline with bounded queues for backpressure.
-    Each stage processes items concurrently up to worker limit.
-    """
-    def __init__(self, max_queue_size: int = 100):
-        self.max_queue_size = max_queue_size
-
-    async def stage(
-        self,
-        input_iter: AsyncIterator[T],
-        transform: Callable[[T], U],
-        workers: int = 4
-    ) -> AsyncIterator[U]:
-        """Single pipeline stage with concurrent workers."""
-        queue_in = asyncio.Queue(maxsize=self.max_queue_size)
-        queue_out = asyncio.Queue(maxsize=self.max_queue_size)
-
-        # Producer: feed input queue
-        async def producer():
-            async for item in input_iter:
-                await queue_in.put(item)
-            for _ in range(workers):
-                await queue_in.put(None)  # Sentinel for workers
-
-        # Workers: transform items
-        async def worker():
-            while True:
-                item = await queue_in.get()
-                if item is None:
-                    break
-                try:
-                    if asyncio.iscoroutinefunction(transform):
-                        result = await transform(item)
-                    else:
-                        result = transform(item)
-                    await queue_out.put(result)
-                except Exception as e:
-                    await queue_out.put(e)
-
-        # Consumer: yield results
-        async def consumer():
-            processed = 0
-            while processed < workers:
-                result = await queue_out.get()
-                if result is None:
-                    processed += 1
-                    continue
-                if isinstance(result, Exception):
-                    raise result
-                yield result
-
-        # Start producer and workers
-        asyncio.create_task(producer())
-        worker_tasks = [asyncio.create_task(worker()) for _ in range(workers)]
-
-        # Yield from consumer
-        async for item in consumer():
-            yield item
-
-        # Cleanup
-        await asyncio.gather(*worker_tasks)
-
-# Thread-based pipeline for CPU-bound work
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-
-class ParallelPipeline:
-    """Pipeline using process pools for CPU-bound stages."""
-
-    @staticmethod
-    def map_stage(
-        items: List[T],
-        transform: Callable[[T], U],
-        workers: int = None
-    ) -> List[U]:
-        """Parallel map stage using processes."""
-        with ProcessPoolExecutor(max_workers=workers) as executor:
-            return list(executor.map(transform, items))
-
-    @staticmethod
-    def filter_stage(
-        items: List[T],
-        predicate: Callable[[T], bool],
-        workers: int = None
-    ) -> List[T]:
-        """Parallel filter stage."""
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            results = executor.map(lambda x: (x, predicate(x)), items)
-            return [item for item, keep in results if keep]
-
-    @staticmethod
-    def reduce_stage(
-        items: List[T],
-        reducer: Callable[[U, T], U],
-        initial: U,
-        chunk_size: int = 1000
-    ) -> U:
-        """Parallel reduce with chunking."""
-        def reduce_chunk(chunk):
-            result = initial
-            for item in chunk:
-                result = reducer(result, item)
-            return result
-
-        chunks = [items[i:i+chunk_size] for i in range(0, len(items), chunk_size)]
-
-        with ProcessPoolExecutor() as executor:
-            partial_results = list(executor.map(reduce_chunk, chunks))
-
-        # Final reduce of partial results
-        final = initial
-        for partial in partial_results:
-            final = reducer(final, partial)
-        return final
-
-# Streaming pipeline with batching
-class StreamingPipeline:
-    """Process unbounded streams with batching and timeouts."""
-
-    @staticmethod
-    async def batch_stream(
-        stream: AsyncIterator[T],
-        batch_size: int = 100,
-        timeout: float = 1.0
-    ) -> AsyncIterator[List[T]]:
-        """Collect items into batches by size or timeout."""
-        batch = []
-        deadline = asyncio.get_event_loop().time() + timeout
-
-        async for item in stream:
-            batch.append(item)
-
-            if len(batch) >= batch_size:
-                yield batch
-                batch = []
-                deadline = asyncio.get_event_loop().time() + timeout
-            elif asyncio.get_event_loop().time() >= deadline:
-                if batch:
-                    yield batch
-                    batch = []
-                deadline = asyncio.get_event_loop().time() + timeout
-
-        if batch:
-            yield batch
-
-    @staticmethod
-    async def parallel_batch_process(
-        batched_stream: AsyncIterator[List[T]],
-        process_batch: Callable[[List[T]], List[U]],
-        max_concurrent: int = 4
-    ) -> AsyncIterator[U]:
-        """Process batches in parallel up to concurrency limit."""
-        semaphore = asyncio.Semaphore(max_concurrent)
-
-        async def process_with_limit(batch):
-            async with semaphore:
-                return await asyncio.to_thread(process_batch, batch)
-
-        pending = set()
-
-        async for batch in batched_stream:
-            task = asyncio.create_task(process_with_limit(batch))
-            pending.add(task)
-
-            if len(pending) >= max_concurrent:
-                done, pending = await asyncio.wait(
-                    pending,
-                    return_when=asyncio.FIRST_COMPLETED
-                )
-                for task in done:
-                    results = await task
-                    for result in results:
-                        yield result
-
-        # Drain remaining
-        while pending:
-            done, pending = await asyncio.wait(pending)
-            for task in done:
-                results = await task
-                for result in results:
-                    yield result
-
-# Complete ETL example
-@dataclass
-class Record:
-    id: int
-    value: str
-
-class ETLPipeline:
-    """Complete ETL pipeline with extraction, transformation, loading."""
-
-    async def extract(self) -> AsyncIterator[Record]:
-        """Simulate data extraction from source."""
-        for i in range(1000):
-            await asyncio.sleep(0.001)  # Simulate I/O
-            yield Record(id=i, value=f"raw_{i}")
-
-    def transform(self, record: Record) -> Record:
-        """CPU-bound transformation."""
-        import hashlib
-        transformed = hashlib.sha256(record.value.encode()).hexdigest()
-        return Record(id=record.id, value=transformed)
-
-    async def load_batch(self, records: List[Record]):
-        """Batch load to destination."""
-        await asyncio.sleep(0.1)  # Simulate batch write
-        print(f"Loaded batch of {len(records)} records")
-
-    async def run(self):
-        """Execute full pipeline."""
-        pipeline = AsyncPipeline()
-
-        # Stage 1: Extract
-        extracted = self.extract()
-
-        # Stage 2: Transform (concurrent)
-        transformed = pipeline.stage(extracted, self.transform, workers=8)
-
-        # Stage 3: Batch and load
-        batched = StreamingPipeline.batch_stream(transformed, batch_size=50)
-
-        async for batch in batched:
-            await self.load_batch(batch)
-
-# Usage
-async def main():
-    etl = ETLPipeline()
-    await etl.run()
-
-asyncio.run(main())
-```
-
-#### Rust Data Pipeline with Rayon
+**Cancellation must propagate.** A timeout at the top is useless if inner operations ignore it.
 
 ```rust
-use rayon::prelude::*;
-use std::sync::{Arc, Mutex};
-
-// Parallel map-reduce pipeline
-fn parallel_pipeline(data: Vec<i32>) -> i32 {
-    data.par_iter()
-        .map(|x| x * x)           // Parallel map
-        .filter(|x| x % 2 == 0)   // Parallel filter
-        .sum()                     // Parallel reduce
-}
-
-// Pipeline with intermediate collection
-struct Pipeline<T> {
-    data: Vec<T>,
-}
-
-impl<T: Send + Sync> Pipeline<T> {
-    fn new(data: Vec<T>) -> Self {
-        Self { data }
-    }
-
-    fn map<U, F>(self, f: F) -> Pipeline<U>
-    where
-        U: Send,
-        F: Fn(T) -> U + Send + Sync,
-    {
-        let data = self.data.into_par_iter().map(f).collect();
-        Pipeline { data }
-    }
-
-    fn filter<F>(self, f: F) -> Pipeline<T>
-    where
-        F: Fn(&T) -> bool + Send + Sync,
-    {
-        let data = self.data.into_par_iter().filter(f).collect();
-        Pipeline { data }
-    }
-
-    fn collect(self) -> Vec<T> {
-        self.data
-    }
-}
-
-// Async stream processing
-use tokio::sync::mpsc;
-use tokio_stream::{Stream, StreamExt};
-
-async fn process_stream<T, U, F>(
-    mut stream: impl Stream<Item = T> + Unpin,
-    transform: F,
-    parallelism: usize,
-) -> Vec<U>
-where
-    T: Send + 'static,
-    U: Send + 'static,
-    F: Fn(T) -> U + Send + Sync + Clone + 'static,
-{
-    let (tx, mut rx) = mpsc::channel(100);
-
-    let processor = tokio::spawn(async move {
-        let mut results = Vec::new();
-        while let Some(result) = rx.recv().await {
-            results.push(result);
-        }
-        results
-    });
-
-    stream
-        .for_each_concurrent(parallelism, |item| {
-            let tx = tx.clone();
-            let transform = transform.clone();
-            async move {
-                let result = transform(item);
-                let _ = tx.send(result).await;
-            }
-        })
-        .await;
-
-    drop(tx);
-    processor.await.unwrap()
+// Rust: tokio::time::timeout returns Err(Elapsed) and DROPS the future at the
+// current await point → cancellation. The dropped future must be cancel-safe.
+match tokio::time::timeout(Duration::from_secs(5), op()).await {
+    Ok(v) => v?, Err(_) => return Err("timed out".into()),
 }
 ```
+
+```go
+// Go: context is the cancellation currency. Thread ctx through every call;
+// select on ctx.Done(). ALWAYS defer cancel() to avoid ctx leaks.
+ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+defer cancel()
+select {
+case r := <-ch:   return r, nil
+case <-ctx.Done(): return zero, ctx.Err()
+}
+```
+
+⚠ **Cancellation safety** (Rust `select!`, Go `select`, any timeout): when a future is dropped mid-flight, work already in progress is lost. If that future had *taken* an item from a channel or half-written to a buffer, dropping it loses the item / corrupts state. In `tokio::select!`, only use futures whose partial execution is safe to discard; otherwise use `Semaphore::acquire_owned` / hold the value outside the `select!`, or use cancellation tokens. `mpsc::Receiver::recv` is cancel-safe; a hand-rolled read-modify-write across await usually is not.
+
+- **Python** — cancellation raises `asyncio.CancelledError` inside the task at its next await. **Never swallow it** with a bare `except Exception` (in 3.8+ it derives from `BaseException`, so `except Exception` won't catch it — but `except:` will; don't). Cleanup goes in `finally`; if you must shield critical cleanup from cancellation, use `asyncio.shield`.
+- **JS** — pass an `AbortSignal` to `fetch`/streams; a rejected/aborted promise still lets already-started microtasks finish. There is no forced cancellation of arbitrary async work.
+- **Go** — a goroutine only stops if it *checks* `ctx.Done()`; there is no preemptive kill. Blocking on a channel without a ctx case = uncancellable = leak.
+
+## Atomics & Memory Ordering
+
+For a single counter/flag, an atomic beats a mutex. But **memory ordering is the trap.**
+
+**Ordering, weakest→strongest:** `Relaxed` < `Acquire`/`Release` < `AcqRel` < `SeqCst`.
+
+- **`Relaxed`** — atomicity only, NO ordering guarantee vs other memory. Safe for a standalone counter you only read at the end (e.g. metrics). NOT safe to publish data ("store flag, then reader sees the data") — the flag store can be reordered before the data writes.
+- **`Acquire` (loads) / `Release` (stores)** — the workhorse. A `Release` store *publishes* all prior writes; an `Acquire` load that sees it *observes* those writes. This is what you want for lock-free publish/handoff (the "message passing" pattern). **Most code that isn't a plain counter wants Acquire/Release.**
+- **`SeqCst`** — single global total order; simplest to reason about, slowest. Use only when multiple atomics must agree on one global order (rare). Reaching for `SeqCst` "to be safe" is a performance smell, but it's the correct default if you're unsure and can't prove Acquire/Release suffices.
+
+```rust
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+COUNT.fetch_add(1, Ordering::Relaxed);          // pure counter: Relaxed is fine
+DATA.store(payload, Ordering::Relaxed);
+READY.store(true, Ordering::Release);           // publish: Release
+// reader:
+if READY.load(Ordering::Acquire) { use(DATA.load(Ordering::Relaxed)); }  // Acquire pairs with Release
+```
+
+Per-language:
+
+- **Go** — `sync/atomic` operations are effectively sequentially consistent; you don't pick an ordering, but you still must use atomics (or a mutex) for *any* concurrent access — a plain `int` read/write across goroutines is a race even if "it looks atomic." Prefer `atomic.Int64` (Go 1.19+) typed wrappers over the free functions.
+- **Python/JS** — no user-facing memory-ordering knobs (GIL / single event loop). JS `SharedArrayBuffer` + `Atomics` is the exception (shared memory across Workers) and there ordering matters again.
+
+⚠ **ABA problem** (lock-free CAS): a value reads A, changes to B, back to A; a naive compare-and-swap succeeds though the world moved underneath it. Mitigate with tagged pointers / version counters (`AtomicU64` epoch) or hazard pointers. **When NOT to go lock-free:** unless you've measured lock contention as a real bottleneck, a `Mutex` is simpler, correct, and usually fast enough. Lock-free code is a maintenance and correctness liability — reserve it for proven hot paths.
+
+⚠ **False sharing:** two unrelated atomics/fields on the same 64-byte cache line cause cores to ping-pong ownership, silently tanking throughput. Pad hot per-thread counters to a cache line (`#[repr(align(64))]` in Rust, `//go:align`/padding in Go) when profiling shows it.
+
+## Worker Pools & Rate Limiting
+
+Bounded concurrency = fixed workers draining a bounded channel, OR a semaphore capping in-flight tasks.
+
+```rust
+// Semaphore caps concurrency without spawning a fixed pool.
+let sem = Arc::new(tokio::sync::Semaphore::new(max_concurrent));
+let tasks = urls.into_iter().map(|u| {
+    let permit = sem.clone();
+    tokio::spawn(async move { let _p = permit.acquire_owned().await.unwrap(); fetch(&u).await })
+});
+```
+
+```python
+sem = asyncio.Semaphore(max_concurrent)
+async def limited(u):
+    async with sem:            # acquire/release even on exception
+        return await fetch(u)
+await asyncio.gather(*(limited(u) for u in urls))
+```
+
+```go
+// Worker pool: N goroutines range over a bounded jobs channel; close(jobs) to drain.
+jobs := make(chan Job, 100)
+var wg sync.WaitGroup
+for i := 0; i < numWorkers; i++ {
+    wg.Add(1)
+    go func() { defer wg.Done(); for j := range jobs { process(j) } }()
+}
+// producer: for _, j := range work { jobs <- j }; close(jobs); wg.Wait()
+```
+
+- Fixed pool (channel + N workers) gives strict backpressure and bounded memory. Semaphore-per-task is simpler but each task still allocates until it acquires — bound the *spawn* rate too for huge inputs (spawn inside the semaphore, or chunk the input).
+- Rate limiting (requests/sec) is orthogonal to concurrency (max in-flight): a token bucket / `time.Ticker` throttles *rate*; a semaphore caps *simultaneity*. Real clients usually need both.
+
+## Gotchas Quick Reference
+
+- ⚠ Unbounded channel/queue = latent OOM. Default bounded.
+- ⚠ Blocking call (sync I/O, `sleep`, tight loop) in asyncio/JS freezes the whole loop.
+- ⚠ Lock held across `.await`: Rust `!Send` (won't spawn) or async self-deadlock; copy-out then await.
+- ⚠ Inconsistent lock order between two paths → deadlock. Total-order your locks.
+- ⚠ Mutexes are non-reentrant (Rust/Go/asyncio) — nested same-lock acquire deadlocks.
+- ⚠ `gather`/`Promise.all` don't cancel siblings; use `TaskGroup`/`JoinSet`/`errgroup`.
+- ⚠ Cancelled/timed-out future dropped mid-flight loses in-progress work — verify cancel-safety.
+- ⚠ Go: only sender closes a channel, once; send-on-closed and double-close panic; loop-var capture (<1.22).
+- ⚠ Rust: `tokio::mpsc::Receiver` is single-consumer (not clonable); `spawn` detaches & isolates panics.
+- ⚠ Python: `x += 1` isn't atomic even under the GIL; asyncio never gives CPU parallelism.
+- ⚠ Atomics: `Relaxed` for pure counters; `Acquire`/`Release` to publish data; `SeqCst` only for cross-atomic global order.
+- ⚠ Lock-free before profiling = premature; ABA and false sharing bite silently.
+
+## Verification Checklist
+
+Before declaring concurrent code done:
+
+- [ ] Every channel/queue is bounded, or unboundedness is justified by an upstream rate limit
+- [ ] No lock (sync mutex) is held across an `.await` / blocking call; critical sections are minimal
+- [ ] Locks acquired in one consistent global order everywhere; no reentrant same-lock nesting
+- [ ] Cancellation/timeout propagates to inner ops (ctx threaded / `AbortSignal` passed) and dropped futures are cancel-safe
+- [ ] Spawned tasks are owned by a scope (`JoinSet`/`TaskGroup`/`errgroup`) — no detached, unawaited, or leaked tasks
+- [ ] Errors from tasks propagate and cancel siblings where required (not swallowed by `gather`/`spawn`)
+- [ ] Shared mutable state is guarded; atomic orderings justified (default Acquire/Release, not reflexive SeqCst/Relaxed)
+- [ ] Go: `go test -race` green in CI; only the sender closes channels; every `WithCancel/Timeout` has a `defer cancel()`
+- [ ] Python/JS: no blocking/CPU work on the event loop (offloaded to executor/Worker); `CancelledError` not swallowed
+- [ ] Shutdown path drains queues, joins workers, and closes channels cleanly (no leaked goroutines/tasks)
+- [ ] Stress-tested under load (many iterations / high concurrency), not just a single happy-path run

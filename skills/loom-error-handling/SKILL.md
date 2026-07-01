@@ -1,6 +1,6 @@
 ---
 name: loom-error-handling
-description: Error handling patterns and strategies including Rust Result/Option, API error responses, data pipeline errors, and security-aware handling. Use for exception handling, error recovery, retry logic, circuit breakers, fallbacks, graceful degradation, and designing error hierarchies.
+description: Error handling patterns and strategies including Rust Result/Option, API error responses, data pipeline errors, and security-aware handling. Use for exception handling, error recovery, retry logic, circuit breakers, fallbacks, graceful degradation, error taxonomy, and designing error hierarchies.
 triggers:
   - error
   - exception
@@ -23,7 +23,10 @@ triggers:
   - thiserror
   - anyhow
   - RFC 7807
+  - RFC 9457
+  - problem+json
   - error propagation
+  - error context
   - error messages
   - stack trace
 ---
@@ -32,826 +35,244 @@ triggers:
 
 ## Overview
 
-Error handling is a critical aspect of robust software development. This skill covers error types and hierarchies, recovery strategies, propagation patterns, user-friendly messaging, contextual logging, and language-specific implementations (Rust, Python, TypeScript).
+Cross-language error-handling reference. The recurring mistakes are not syntactic: swallowing errors, retrying non-idempotent operations, losing the cause chain when wrapping, leaking internals in API responses, and log-and-rethrow double logging. This skill leads with the decision rules an expert applies, then shows the minimum code to implement each.
 
 ## Agent Delegation
 
-- **senior-software-engineer** (Opus) - DEFAULT. Error architecture design, choosing error strategies, implementing error handling patterns, secure error handling (no info leakage, sanitization), infrastructure error handling (retry, circuit breakers)
-- **software-engineer** (Sonnet) - ONLY for unit tests or boilerplate error types following established patterns
+- **loom-senior-software-engineer** (Opus) — DEFAULT. Error architecture, strategy choice, secure handling (no info leak), infra resilience (retry/circuit breaker/fallback).
+- **loom-software-engineer** (Sonnet) — ONLY boilerplate error types / unit tests following an established pattern.
 
-## Instructions
+## Error Taxonomy — Classify First
 
-### 1. Design Error Hierarchies
+Every failure is exactly one of three kinds; the kind dictates handling:
 
-Create structured error types that provide clear categorization.
+| Kind | Meaning | Handle by |
+| --- | --- | --- |
+| **Expected / recoverable** | Invalid input, not-found, transient network/rate-limit | Return a typed error (`Result`/checked exception); retry only if transient AND idempotent |
+| **Bug / programmer error** | Broken invariant, unreachable state, index OOB | Fail loud: `panic!`/assert/throw. Do NOT try to recover — it hides the bug |
+| **Fatal / environmental** | OOM, disk full, config missing at startup | Fail fast at the boundary; crash cleanly, let the supervisor restart |
 
-#### Rust: thiserror and anyhow
+⚠ Do not model expected failures as panics/exceptions-for-control-flow, and do not swallow bugs into a recoverable path. Rust encodes this split directly: `Result` = recoverable, `panic!` = bug. In exception languages, keep the split by convention: validation → typed exception you catch; invariant break → let it propagate/crash.
+
+## Rust: Result/Option & the anyhow-vs-thiserror Rule
+
+**Decision rule:**
+
+- **`thiserror`** → **libraries** and any code whose caller must *match on* and react to specific error variants. Gives typed, exhaustive enums with `#[from]` conversions.
+- **`anyhow`** (or `eyre`) → **application/binary** top layers where you only need to *propagate, add context, and report*. One `anyhow::Error` type, cheap `.context()`, backtraces.
+- Mixed is normal: libs export `thiserror` enums; `main`/handlers use `anyhow` and add context as errors bubble up.
 
 ```rust
-// Using thiserror for library errors
 use thiserror::Error;
-
 #[derive(Error, Debug)]
 pub enum AppError {
     #[error("validation failed: {0}")]
     Validation(String),
-
-    #[error("resource not found: {resource_type} with id {id}")]
-    NotFound {
-        resource_type: String,
-        id: String,
-    },
-
+    #[error("resource not found: {resource_type} id={id}")]
+    NotFound { resource_type: String, id: String },
     #[error("database error")]
-    Database(#[from] sqlx::Error),
-
-    #[error("IO error")]
-    Io(#[from] std::io::Error),
-
-    #[error("external service error: {service}")]
-    ExternalService {
-        service: String,
-        #[source]
-        source: Box<dyn std::error::Error + Send + Sync>,
-    },
+    Database(#[from] sqlx::Error),   // free `?` conversion, preserves source
 }
 
-// Using anyhow for application errors
+// anyhow at the app layer: `?` + context to build a cause chain.
 use anyhow::{Context, Result};
-
-fn process_order(order_id: &str) -> Result<Order> {
-    let order = fetch_order(order_id)
-        .context("Failed to fetch order from database")?;
-
-    validate_order(&order)
-        .context(format!("Order {} validation failed", order_id))?;
-
+fn process_order(id: &str) -> Result<Order> {
+    let order = fetch_order(id).with_context(|| format!("fetching order {id}"))?;
+    validate(&order).context("order validation")?;
     Ok(order)
 }
 ```
 
-#### Python
+Combinators over match ladders:
+
+- `?` propagates and auto-converts via `From`/`#[from]`. `map_err` adapts an error type; `.context()`/`.with_context()` (lazy, use for allocating messages) wrap while preserving `source()`.
+- `Option`: `ok_or_else` → `Result`; `?` works on `Option` in `Option`-returning fns. Prefer `.ok_or_else(|| ...)` (lazy) over `.ok_or(expensive())`.
+- ⚠ Never `.unwrap()`/`.expect()` on recoverable errors in library/production paths — that converts a handleable error into a crash. `expect("invariant: X")` is acceptable only for genuine bugs where the message documents the invariant.
+
+## Cause Chains — Wrap, Don't Erase
+
+Wrapping adds context; it must **preserve the original cause** so a reader can trace root cause. Every language has the idiom — use it:
+
+| Language | Wrap-with-cause | Inspect chain |
+| --- | --- | --- |
+| Rust | `.with_context(...)` / `#[source]` / `#[from]` | `err.source()` / `{:?}` |
+| Go | `fmt.Errorf("...: %w", err)` | `errors.Is` / `errors.As` / `Unwrap` |
+| Python | `raise New(...) from err` | `__cause__` / traceback |
+| JS/TS | `new Error(msg, { cause: err })` | `err.cause` |
+
+```go
+// Go: %w preserves the chain so errors.Is/As work up the stack.
+if err != nil {
+    return fmt.Errorf("process order %s: %w", id, err)
+}
+// caller: if errors.Is(err, sql.ErrNoRows) { ... }
+```
 
 ```python
-# Python example
-class AppError(Exception):
-    """Base application error"""
-    def __init__(self, message: str, code: str, details: dict = None):
-        self.message = message
-        self.code = code
-        self.details = details or {}
-        super().__init__(message)
-
-class ValidationError(AppError):
-    """Input validation errors"""
-    pass
-
-class NotFoundError(AppError):
-    """Resource not found errors"""
-    pass
-
-class ServiceError(AppError):
-    """External service errors"""
-    pass
+# Python: `from err` keeps __cause__; bare `raise New(...)` LOSES the original.
+try:
+    order = fetch_order(id)
+except DatabaseError as e:
+    raise ServiceError("failed to process order", code="ORDER_FAILED",
+                       details={"order_id": id}) from e     # ← preserve cause
 ```
 
-#### TypeScript
+⚠ `%v` (Go) or f-string interpolation of an error into a *new* message string does NOT preserve the typed chain — `errors.Is`/`isinstance` checks then break. Use `%w` / `from` / `cause`.
 
-```typescript
-class AppError extends Error {
-  constructor(
-    message: string,
-    public code: string,
-    public details?: Record<string, unknown>,
-  ) {
-    super(message);
-    this.name = this.constructor.name;
-  }
-}
+## Anti-Patterns (the ones that actually bite)
 
-class ValidationError extends AppError {}
-class NotFoundError extends AppError {}
-class ServiceError extends AppError {}
-```
+- **Swallowing** — empty `catch {}`, bare `except:`, `if err != nil { }`, `let _ = op();`. At minimum log; usually handle or propagate. Bare `except:` also eats `KeyboardInterrupt`/`CancelledError` — always `except Exception` or narrower.
+- **Log-and-rethrow** — logging an error then re-throwing it logs the same failure at every frame → noisy duplicate stacks. **Handle OR log-and-swallow OR propagate — pick one.** Rule: log where you *handle* (usually one boundary), propagate everywhere else.
+- **Exceptions for control flow** — using try/except to implement normal branching is slow and hides logic; check the condition instead. (Python's EAFP is fine for genuinely exceptional cases, not for expected branches.)
+- **Catch-all too early** — a broad catch near the leaf hides the specific error and its recovery opportunity. Catch narrow and near, or broad and at the boundary — not broad and deep.
+- **Retrying non-idempotent ops** — see below.
+- **Leaking internals** — stack traces / SQL / paths in API responses; see API section.
 
-### 2. Implement Recovery Strategies
+## Recovery Strategies
 
-#### Retry with Exponential Backoff
+Choose by failure kind:
 
-##### Rust
+| Strategy | Use when | Caution |
+| --- | --- | --- |
+| **Retry + backoff + jitter** | Transient AND **idempotent** | Never retry a non-idempotent write without an idempotency key |
+| **Fallback** | A degraded alternative exists (cache, default, secondary) | Fallback data must be safe to serve; log the degradation |
+| **Circuit breaker** | Repeated failures to a dependency; prevent cascade | Tune threshold/timeout; expose state for observability |
+| **Fail fast** | Bad config, missing dep at startup, unrecoverable | Crash cleanly at the boundary, don't limp on |
+
+⚠ **Retry only idempotent operations.** GET/PUT/DELETE are typically idempotent; a raw POST "create" is not — a retried create makes duplicates. Make writes idempotent with a client-supplied idempotency key, or don't retry them. Also: retry only *transient* errors (timeout, 429, 503) — retrying a 400/permission error just wastes time and amplifies load.
+
+**Backoff must have jitter** to avoid the thundering-herd where all clients retry in lockstep and re-synchronize the overload. `delay = min(base * 2^attempt, cap)`; then randomize (full jitter: `random(0, delay)`).
 
 ```rust
-use std::time::Duration;
-use tokio::time::sleep;
-use rand::Rng;
-
-pub async fn retry_with_backoff<T, E, F, Fut>(
-    mut operation: F,
-    max_retries: u32,
-    base_delay_ms: u64,
-    max_delay_ms: u64,
-) -> Result<T, E>
-where
-    F: FnMut() -> Fut,
-    Fut: std::future::Future<Output = Result<T, E>>,
-    E: std::fmt::Display,
-{
-    let mut attempts = 0;
-
-    loop {
-        match operation().await {
-            Ok(result) => return Ok(result),
-            Err(e) if attempts >= max_retries => return Err(e),
-            Err(e) => {
-                let delay = std::cmp::min(
-                    base_delay_ms * 2_u64.pow(attempts),
-                    max_delay_ms
-                );
-                let jitter = rand::thread_rng().gen_range(0..delay / 10);
-                let total_delay = delay + jitter;
-
-                tracing::warn!(
-                    "Attempt {}/{} failed: {}. Retrying in {}ms",
-                    attempts + 1,
-                    max_retries,
-                    e,
-                    total_delay
-                );
-
-                sleep(Duration::from_millis(total_delay)).await;
-                attempts += 1;
-            }
+// Cap + exponential + jitter; retry only on retryable errors.
+let mut attempt = 0u32;
+loop {
+    match op().await {
+        Ok(v) => break Ok(v),
+        Err(e) if !e.is_retryable() || attempt >= max => break Err(e),
+        Err(_) => {
+            let backoff = (base_ms * 2u64.pow(attempt)).min(cap_ms);
+            let delay = rand::thread_rng().gen_range(0..=backoff);   // full jitter
+            tokio::time::sleep(Duration::from_millis(delay)).await;
+            attempt += 1;
         }
     }
 }
-
-// Usage
-let result = retry_with_backoff(
-    || async { fetch_from_api().await },
-    3,
-    1000,
-    30000,
-).await?;
 ```
 
-##### Python
-
 ```python
-import asyncio
-from typing import TypeVar, Callable
-import random
-
-T = TypeVar('T')
-
-async def retry_with_backoff(
-    operation: Callable[[], T],
-    max_retries: int = 3,
-    base_delay: float = 1.0,
-    max_delay: float = 60.0,
-    retryable_exceptions: tuple = (ServiceError,)
-) -> T:
-    """Retry operation with exponential backoff and jitter."""
-    for attempt in range(max_retries + 1):
-        try:
-            return await operation()
-        except retryable_exceptions as e:
-            if attempt == max_retries:
-                raise
-            delay = min(base_delay * (2 ** attempt), max_delay)
-            jitter = random.uniform(0, delay * 0.1)
-            await asyncio.sleep(delay + jitter)
-```
-
-#### Circuit Breaker
-
-```python
-import time
-from enum import Enum
-from dataclasses import dataclass
-
-class CircuitState(Enum):
-    CLOSED = "closed"
-    OPEN = "open"
-    HALF_OPEN = "half_open"
-
-@dataclass
+# Circuit breaker: CLOSED → (failures ≥ threshold) → OPEN → (after timeout) → HALF_OPEN → CLOSED/OPEN
 class CircuitBreaker:
-    failure_threshold: int = 5
-    recovery_timeout: float = 30.0
-    half_open_max_calls: int = 3
-
-    def __post_init__(self):
-        self.state = CircuitState.CLOSED
-        self.failure_count = 0
-        self.last_failure_time = 0
-        self.half_open_calls = 0
-
-    def call(self, operation):
-        if self.state == CircuitState.OPEN:
-            if time.time() - self.last_failure_time > self.recovery_timeout:
-                self.state = CircuitState.HALF_OPEN
-                self.half_open_calls = 0
+    def __init__(self, threshold=5, recovery_timeout=30.0):
+        self.threshold, self.recovery_timeout = threshold, recovery_timeout
+        self.state, self.failures, self.opened_at = "closed", 0, 0.0
+    def call(self, op):
+        if self.state == "open":
+            if time.time() - self.opened_at > self.recovery_timeout:
+                self.state = "half_open"          # probe with a single call
             else:
-                raise CircuitOpenError("Circuit is open")
-
+                raise CircuitOpenError()
         try:
-            result = operation()
-            self._on_success()
-            return result
-        except Exception as e:
-            self._on_failure()
+            r = op(); self.failures = 0; self.state = "closed"; return r
+        except Exception:
+            self.failures += 1
+            if self.failures >= self.threshold:
+                self.state, self.opened_at = "open", time.time()
             raise
-
-    def _on_success(self):
-        if self.state == CircuitState.HALF_OPEN:
-            self.half_open_calls += 1
-            if self.half_open_calls >= self.half_open_max_calls:
-                self.state = CircuitState.CLOSED
-        self.failure_count = 0
-
-    def _on_failure(self):
-        self.failure_count += 1
-        self.last_failure_time = time.time()
-        if self.failure_count >= self.failure_threshold:
-            self.state = CircuitState.OPEN
 ```
 
-#### Fallback Pattern
+## API Error Responses (RFC 9457 / 7807 problem+json)
 
-```typescript
-async function withFallback<T>(
-  primary: () => Promise<T>,
-  fallback: () => Promise<T>,
-  shouldFallback: (error: Error) => boolean = () => true,
-): Promise<T> {
-  try {
-    return await primary();
-  } catch (error) {
-    if (shouldFallback(error as Error)) {
-      return await fallback();
-    }
-    throw error;
-  }
-}
+Design rules for HTTP APIs:
 
-// Usage
-const data = await withFallback(
-  () => fetchFromPrimaryAPI(),
-  () => fetchFromCache(),
-  (error) => error instanceof ServiceError,
-);
-```
-
-### 3. Error Propagation Patterns
-
-#### Wrap and Enrich Errors
+- **Stable machine-readable code** the client can branch on (`"code": "ORDER_NOT_FOUND"`), independent of the human `detail` message. Never make clients string-match on prose.
+- **Never leak internals** — no stack traces, SQL, file paths, or exception class names in 5xx responses. Show `detail` for 4xx (client can act on it), hide it for 5xx.
+- Content type `application/problem+json`; fields: `type`, `title`, `status`, `detail`, `instance` (+ your `code` and any safe extensions).
+- Map error *kind* → status: validation→400, auth→401, forbidden→403, not-found→404, conflict→409, rate-limit→429, dependency down→503, bug→500.
 
 ```python
-def process_order(order_id: str) -> Order:
-    try:
-        order = fetch_order(order_id)
-        validate_order(order)
-        return process(order)
-    except DatabaseError as e:
-        raise ServiceError(
-            message="Failed to process order",
-            code="ORDER_PROCESSING_FAILED",
-            details={"order_id": order_id, "original_error": str(e)}
-        ) from e
-```
-
-#### Result Types (Rust-style)
-
-```python
-from dataclasses import dataclass
-from typing import Generic, TypeVar, Union
-
-T = TypeVar('T')
-E = TypeVar('E')
-
-@dataclass
-class Ok(Generic[T]):
-    value: T
-
-@dataclass
-class Err(Generic[E]):
-    error: E
-
-Result = Union[Ok[T], Err[E]]
-
-def divide(a: float, b: float) -> Result[float, str]:
-    if b == 0:
-        return Err("Division by zero")
-    return Ok(a / b)
-
-# Usage
-result = divide(10, 0)
-match result:
-    case Ok(value):
-        print(f"Result: {value}")
-    case Err(error):
-        print(f"Error: {error}")
-```
-
-### 4. User-Friendly Error Messages
-
-```python
-ERROR_MESSAGES = {
-    "VALIDATION_FAILED": "Please check your input and try again.",
-    "NOT_FOUND": "The requested item could not be found.",
-    "SERVICE_UNAVAILABLE": "Service is temporarily unavailable. Please try again later.",
-    "UNAUTHORIZED": "Please log in to continue.",
-    "FORBIDDEN": "You don't have permission to perform this action.",
-}
-
-def get_user_message(error: AppError) -> str:
-    """Convert internal error to user-friendly message."""
-    return ERROR_MESSAGES.get(error.code, "An unexpected error occurred. Please try again.")
-
-def format_error_response(error: AppError, include_details: bool = False) -> dict:
-    """Format error for API response."""
-    response = {
-        "error": {
-            "code": error.code,
-            "message": get_user_message(error)
-        }
-    }
-    if include_details and error.details:
-        response["error"]["details"] = error.details
-    return response
-```
-
-### 5. Logging Errors with Context
-
-```python
-import logging
-import traceback
-from contextvars import ContextVar
-
-request_id: ContextVar[str] = ContextVar('request_id', default='unknown')
-
-def log_error(error: Exception, context: dict = None):
-    """Log error with full context."""
-    logger = logging.getLogger(__name__)
-
-    error_context = {
-        "request_id": request_id.get(),
-        "error_type": type(error).__name__,
-        "error_message": str(error),
-        "stack_trace": traceback.format_exc(),
-        **(context or {})
-    }
-
-    if isinstance(error, AppError):
-        error_context["error_code"] = error.code
-        error_context["error_details"] = error.details
-
-    logger.error(
-        f"Error occurred: {error}",
-        extra={"structured_data": error_context}
-    )
-```
-
-## Best Practices
-
-1. **Fail Fast**: Validate inputs early and throw errors immediately rather than continuing with invalid data.
-
-2. **Be Specific**: Create specific error types rather than using generic exceptions. This enables better handling and debugging.
-
-3. **Preserve Context**: When wrapping errors, always preserve the original error chain using mechanisms like `from e` in Python or `cause` in other languages.
-
-4. **Don't Swallow Errors**: Avoid empty catch blocks. At minimum, log the error.
-
-5. **Distinguish Recoverable vs Unrecoverable**: Design your error hierarchy to clearly indicate which errors can be retried.
-
-6. **Use Appropriate Recovery Strategies**:
-   - Retry: For transient failures (network timeouts, rate limits)
-   - Fallback: When alternatives exist (cache, default values)
-   - Circuit Breaker: To prevent cascade failures
-
-7. **Sanitize User-Facing Messages**: Never expose internal error details, stack traces, or sensitive information to users.
-
-8. **Log at Boundaries**: Log errors when they cross system boundaries (API endpoints, service calls).
-
-## Examples
-
-### Complete Error Handling in an API Endpoint
-
-```python
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
-
-app = FastAPI()
-
-@app.exception_handler(AppError)
-async def app_error_handler(request: Request, error: AppError):
-    log_error(error, {"path": request.url.path, "method": request.method})
-
-    status_codes = {
-        ValidationError: 400,
-        NotFoundError: 404,
-        ServiceError: 503,
-    }
-
-    status_code = status_codes.get(type(error), 500)
-    return JSONResponse(
-        status_code=status_code,
-        content=format_error_response(error)
-    )
-
-@app.get("/orders/{order_id}")
-async def get_order(order_id: str):
-    circuit_breaker = get_circuit_breaker("order_service")
-
-    async def fetch():
-        return await order_service.get(order_id)
-
-    try:
-        return await retry_with_backoff(
-            lambda: circuit_breaker.call(fetch),
-            max_retries=3,
-            retryable_exceptions=(ServiceError,)
-        )
-    except CircuitOpenError:
-        # Fallback to cache
-        cached = await cache.get(f"order:{order_id}")
-        if cached:
-            return cached
-        raise ServiceError(
-            message="Order service unavailable",
-            code="SERVICE_UNAVAILABLE"
-        )
-```
-
-### Error Boundary in React
-
-```typescript
-import React, { Component, ErrorInfo, ReactNode } from "react";
-
-interface Props {
-  children: ReactNode;
-  fallback: ReactNode;
-}
-
-interface State {
-  hasError: boolean;
-  error?: Error;
-}
-
-class ErrorBoundary extends Component<Props, State> {
-  state: State = { hasError: false };
-
-  static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("Error boundary caught:", error, errorInfo);
-    // Send to error tracking service
-    errorTracker.captureException(error, { extra: errorInfo });
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return this.props.fallback;
-    }
-    return this.props.children;
-  }
-}
-```
-
-## API Error Responses (RFC 7807)
-
-RFC 7807 defines a standard format for HTTP API problem details.
-
-### Rust Implementation
-
-```rust
-use serde::{Deserialize, Serialize};
-use axum::{
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    Json,
-};
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ProblemDetails {
-    #[serde(rename = "type")]
-    pub type_uri: String,
-    pub title: String,
-    pub status: u16,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub detail: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub instance: Option<String>,
-}
-
-impl ProblemDetails {
-    pub fn new(status: StatusCode, title: impl Into<String>) -> Self {
-        Self {
-            type_uri: format!("about:blank"),
-            title: title.into(),
-            status: status.as_u16(),
-            detail: None,
-            instance: None,
-        }
-    }
-
-    pub fn with_detail(mut self, detail: impl Into<String>) -> Self {
-        self.detail = Some(detail.into());
-        self
-    }
-}
-
-impl IntoResponse for AppError {
-    fn into_response(self) -> Response {
-        let (status, title, detail) = match self {
-            AppError::Validation(msg) => (
-                StatusCode::BAD_REQUEST,
-                "Validation Failed",
-                Some(msg),
-            ),
-            AppError::NotFound { resource_type, id } => (
-                StatusCode::NOT_FOUND,
-                "Resource Not Found",
-                Some(format!("{} with id {} not found", resource_type, id)),
-            ),
-            AppError::Database(_) | AppError::Io(_) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal Server Error",
-                None, // Never expose internal errors
-            ),
-            AppError::ExternalService { service, .. } => (
-                StatusCode::SERVICE_UNAVAILABLE,
-                "Service Unavailable",
-                Some(format!("{} is temporarily unavailable", service)),
-            ),
-        };
-
-        let mut problem = ProblemDetails::new(status, title);
-        if let Some(d) = detail {
-            problem = problem.with_detail(d);
-        }
-
-        (status, Json(problem)).into_response()
-    }
-}
-```
-
-### Python (FastAPI)
-
-```python
-from pydantic import BaseModel
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-
 class ProblemDetails(BaseModel):
     type: str = "about:blank"
     title: str
     status: int
+    code: str | None = None
     detail: str | None = None
     instance: str | None = None
 
 @app.exception_handler(AppError)
-async def app_error_handler(request: Request, error: AppError):
-    status_map = {
-        ValidationError: 400,
-        NotFoundError: 404,
-        ServiceError: 503,
-    }
-
-    status = status_map.get(type(error), 500)
-
+async def handler(request, error: AppError):
+    status = {ValidationError: 400, NotFoundError: 404, ServiceError: 503}.get(type(error), 500)
     problem = ProblemDetails(
-        title=error.__class__.__name__,
-        status=status,
-        detail=str(error) if status < 500 else None,  # Hide internals
+        title=type(error).__name__, status=status, code=error.code,
+        detail=str(error) if status < 500 else None,     # hide internals on 5xx
         instance=str(request.url.path),
     )
-
-    return JSONResponse(
-        status_code=status,
-        content=problem.model_dump(exclude_none=True),
-        headers={"Content-Type": "application/problem+json"},
-    )
+    return JSONResponse(status, problem.model_dump(exclude_none=True),
+                        headers={"Content-Type": "application/problem+json"})
 ```
-
-## Data Pipeline Error Handling
-
-Data pipelines require special error handling for partial failures and data quality issues.
-
-### Rust Pipeline with Error Collection
 
 ```rust
-use std::collections::HashMap;
-
-#[derive(Debug)]
-pub struct ProcessingResult<T> {
-    pub successful: Vec<T>,
-    pub failed: Vec<FailedItem>,
-}
-
-#[derive(Debug)]
-pub struct FailedItem {
-    pub index: usize,
-    pub error: String,
-    pub record: serde_json::Value,
-}
-
-pub async fn process_batch<T, F, Fut>(
-    items: Vec<serde_json::Value>,
-    processor: F,
-) -> ProcessingResult<T>
-where
-    F: Fn(serde_json::Value) -> Fut,
-    Fut: std::future::Future<Output = Result<T, anyhow::Error>>,
-{
-    let mut successful = Vec::new();
-    let mut failed = Vec::new();
-
-    for (index, item) in items.into_iter().enumerate() {
-        match processor(item.clone()).await {
-            Ok(result) => successful.push(result),
-            Err(e) => {
-                tracing::error!("Failed to process item {}: {}", index, e);
-                failed.push(FailedItem {
-                    index,
-                    error: e.to_string(),
-                    record: item,
-                });
-            }
-        }
+// Rust/axum: map variants to status; collapse internal errors to a generic 500.
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        let (status, detail) = match self {
+            AppError::Validation(m)          => (StatusCode::BAD_REQUEST, Some(m)),
+            AppError::NotFound { .. }         => (StatusCode::NOT_FOUND, Some(self.to_string())),
+            AppError::Database(_)             => (StatusCode::INTERNAL_SERVER_ERROR, None), // never expose
+        };
+        (status, Json(json!({ "title": status.canonical_reason(),
+                              "status": status.as_u16(), "detail": detail }))).into_response()
     }
-
-    ProcessingResult { successful, failed }
-}
-
-// Usage with dead letter queue
-let result = process_batch(records, |record| async {
-    validate_and_transform(record).await
-}).await;
-
-if !result.failed.is_empty() {
-    dead_letter_queue.send(result.failed).await?;
 }
 ```
 
-### Python ETL Error Handling
+## Security-Aware Handling
+
+- **Production vs dev detail** — full error type + backtrace only when `ENVIRONMENT != "production"`; production returns a generic message. Gate on env, not on a debug flag a client can flip.
+- **Sanitize before logging** — redact emails, SSNs, card numbers, tokens/passwords from messages *before* they hit logs. An error string built from user input can carry PII or secrets into your log store.
+- **Rate-limit error logs** — a hot failure path can flood logs (cost + DoS); throttle per error-key (log first occurrence + a periodic count).
+- **Uniform auth errors** — return the same 401/403 for "user not found" and "wrong password" to avoid user enumeration.
 
 ```python
-from dataclasses import dataclass
-from typing import TypeVar, Callable, Generic
-import logging
+SENSITIVE = [r'[\w.%+-]+@[\w.-]+\.\w{2,}', r'\b\d{3}-\d{2}-\d{4}\b',
+             r'\b(?:\d{4}[-\s]?){3}\d{4}\b', r'password["\']?\s*[:=]\s*\S+']
+def sanitize(msg: str) -> str:
+    for p in SENSITIVE: msg = re.sub(p, '[REDACTED]', msg, flags=re.IGNORECASE)
+    return msg
+```
 
-T = TypeVar('T')
+## Data Pipeline / Batch Errors
 
+Batch jobs need **partial-failure** handling: don't let one bad record kill 10k good ones. Collect failures with their index + payload, route to a dead-letter queue, and surface an error summary — but fail the whole job if the failure *rate* crosses a threshold (a 40% failure rate is a systemic problem, not bad records).
+
+```python
 @dataclass
-class ProcessingResult(Generic[T]):
-    successful: list[T]
-    failed: list[dict]
-    error_summary: dict[str, int]
+class BatchResult(Generic[T]):
+    ok: list[T]; failed: list[dict]; summary: dict[str, int]
 
-def process_with_error_tracking(
-    items: list[dict],
-    processor: Callable[[dict], T],
-    continue_on_error: bool = True,
-) -> ProcessingResult[T]:
-    successful = []
-    failed = []
-    error_counts = {}
-
-    for index, item in enumerate(items):
+def process_batch(items, fn, *, continue_on_error=True) -> BatchResult:
+    ok, failed, counts = [], [], {}
+    for i, item in enumerate(items):
         try:
-            result = processor(item)
-            successful.append(result)
+            ok.append(fn(item))
         except Exception as e:
-            error_type = type(e).__name__
-            error_counts[error_type] = error_counts.get(error_type, 0) + 1
-
-            logging.error(f"Failed to process item {index}: {e}")
-            failed.append({
-                "index": index,
-                "item": item,
-                "error": str(e),
-                "error_type": error_type,
-            })
-
-            if not continue_on_error:
-                raise
-
-    return ProcessingResult(
-        successful=successful,
-        failed=failed,
-        error_summary=error_counts,
-    )
+            counts[type(e).__name__] = counts.get(type(e).__name__, 0) + 1
+            failed.append({"index": i, "item": item, "error": str(e)})
+            logging.error("item %d failed: %s", i, e)
+            if not continue_on_error: raise
+    return BatchResult(ok, failed, counts)
+# route failed → dead_letter_queue; alert if len(failed)/len(items) > threshold
 ```
 
-## Security-Aware Error Handling
+## Verification Checklist
 
-Prevent information leakage through error messages and stack traces.
-
-### Production vs Development Error Details
-
-```rust
-use std::env;
-
-pub struct ErrorResponse {
-    pub message: String,
-    pub details: Option<serde_json::Value>,
-}
-
-impl From<AppError> for ErrorResponse {
-    fn from(error: AppError) -> Self {
-        let is_production = env::var("ENVIRONMENT")
-            .unwrap_or_default()
-            .to_lowercase() == "production";
-
-        let message = match &error {
-            AppError::Validation(msg) => msg.clone(),
-            AppError::NotFound { .. } => "Resource not found".to_string(),
-            _ => "An error occurred".to_string(),
-        };
-
-        let details = if is_production {
-            None // Never expose stack traces or internal details
-        } else {
-            Some(serde_json::json!({
-                "error_type": format!("{:?}", error),
-                "backtrace": std::backtrace::Backtrace::capture().to_string(),
-            }))
-        };
-
-        ErrorResponse { message, details }
-    }
-}
-```
-
-### Sanitize Errors Before Logging
-
-```python
-import re
-import os
-
-SENSITIVE_PATTERNS = [
-    r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',  # Email
-    r'\b\d{3}-\d{2}-\d{4}\b',  # SSN
-    r'\b(?:\d{4}[-\s]?){3}\d{4}\b',  # Credit card
-    r'password["\']?\s*[:=]\s*["\']?[\w!@#$%^&*]+',  # Passwords
-]
-
-def sanitize_error_message(message: str) -> str:
-    """Remove sensitive data from error messages before logging."""
-    sanitized = message
-    for pattern in SENSITIVE_PATTERNS:
-        sanitized = re.sub(pattern, '[REDACTED]', sanitized, flags=re.IGNORECASE)
-    return sanitized
-
-def log_error_safely(error: Exception, context: dict = None):
-    """Log errors with sanitized messages."""
-    sanitized_message = sanitize_error_message(str(error))
-
-    logger.error(
-        sanitized_message,
-        extra={
-            "error_type": type(error).__name__,
-            "context": context or {},
-            "include_stacktrace": os.getenv("ENVIRONMENT") != "production",
-        }
-    )
-```
-
-### Rate Limiting Error Responses
-
-```rust
-use std::collections::HashMap;
-use std::time::{Duration, Instant};
-use tokio::sync::Mutex;
-
-pub struct RateLimitedErrorLogger {
-    last_logged: Mutex<HashMap<String, Instant>>,
-    min_interval: Duration,
-}
-
-impl RateLimitedErrorLogger {
-    pub fn new(min_interval: Duration) -> Self {
-        Self {
-            last_logged: Mutex::new(HashMap::new()),
-            min_interval,
-        }
-    }
-
-    pub async fn log_if_allowed(&self, error_key: &str, error: &dyn std::error::Error) {
-        let mut last_logged = self.last_logged.lock().await;
-        let now = Instant::now();
-
-        if let Some(last_time) = last_logged.get(error_key) {
-            if now.duration_since(*last_time) < self.min_interval {
-                return; // Skip logging to prevent log flooding
-            }
-        }
-
-        tracing::error!("Error occurred: {}", error);
-        last_logged.insert(error_key.to_string(), now);
-    }
-}
-```
+- [ ] Every failure classified: recoverable (typed error) vs bug (panic/assert) vs fatal (fail-fast) — no expected failures modeled as panics, no bugs swallowed into recoverable paths
+- [ ] Rust: `thiserror` for libs / matchable errors, `anyhow` for app layer; no `.unwrap()`/`.expect()` on recoverable errors
+- [ ] Error wrapping preserves the cause chain (`%w` / `from` / `{ cause }` / `#[source]`) — `errors.Is`/`isinstance`/`source()` still work at the top
+- [ ] No swallowed errors (empty catch, bare `except`, ignored `err`); no log-and-rethrow (log at exactly one boundary)
+- [ ] Retries only on transient AND idempotent ops; non-idempotent writes use an idempotency key; backoff has jitter and a cap
+- [ ] Circuit breaker / fallback where a dependency failure could cascade; breaker state observable
+- [ ] API responses: stable machine `code`, correct status per kind, `application/problem+json`; NO stack traces/SQL/paths in 5xx
+- [ ] Secrets/PII sanitized before logging; error logs rate-limited; auth errors uniform (no enumeration)
+- [ ] Batch/pipeline: partial failures collected + dead-lettered; job fails if failure rate crosses threshold
+- [ ] Exceptions are not used for normal control flow

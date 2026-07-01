@@ -47,15 +47,9 @@ triggers:
 
 ## Overview
 
-This skill provides guidance for building modern React Single Page Applications (SPAs) using:
+Client-side React 19+ SPAs. Stack: **React Router v7** (routing/loaders), **Jotai** (atomic global state), **Vite** (build), **Bun** (package manager/runtime). NOT for SSR frameworks (Next.js/Remix) — those are out of scope.
 
-- **React 19+** for UI components and hooks
-- **React Router v7** for client-side routing and navigation
-- **Jotai** for atomic global state management
-- **Vite** for fast development and optimized builds
-- **Bun** as the package manager and runtime
-
-This skill focuses exclusively on client-side React applications, NOT server-side rendering frameworks like Next.js or Remix.
+The single densest section is **Expert Practices** at the end — read it first if you know React basics. The middle sections are reference implementations.
 
 ## React 19 Features
 
@@ -181,59 +175,11 @@ export function UserContainer() {
 }
 ```
 
-### Document Metadata Components
+### Document Metadata
 
-```typescript
-import { useEffect } from 'react'
+React 19 hoists `<title>`/`<meta>`/`<link>` rendered anywhere in the tree into `<head>` — no helper library needed. Just render them inside the component (e.g. a route page).
 
-// React 19 allows rendering metadata in components
-export function ProductPage({ product }: { product: Product }) {
-  return (
-    <div>
-      <title>{product.name} - My Store</title>
-      <meta name="description" content={product.description} />
-      <meta property="og:title" content={product.name} />
-
-      <h1>{product.name}</h1>
-      <p>{product.description}</p>
-    </div>
-  )
-}
-```
-
-## Server Components vs Client Components
-
-**Important**: This skill focuses on CLIENT-SIDE SPAs. However, when working with frameworks that support React Server Components (RSC):
-
-### When NOT Using Next.js/Remix (This Skill's Focus)
-
-All components are client components by default in SPAs. You have full access to:
-
-- Browser APIs (window, document, localStorage)
-- Event handlers (onClick, onChange, etc.)
-- React hooks (useState, useEffect, etc.)
-- Client-side routing
-
-### When Using Next.js or Remix (Outside This Skill)
-
-Server Components are the default and cannot use:
-
-- Client-side hooks or state
-- Browser APIs
-- Event handlers
-
-Mark components with `'use client'` to make them client components:
-
-```typescript
-'use client'
-
-import { useState } from 'react'
-
-export function Counter() {
-  const [count, setCount] = useState(0)
-  return <button onClick={() => setCount(count + 1)}>{count}</button>
-}
-```
+**Server/Client Components:** N/A here — a pure SPA has no server, so every component is a client component with full access to browser APIs, hooks, and event handlers. `'use client'`/RSC only matter under Next.js/Remix (out of scope).
 
 ## UI Component Patterns
 
@@ -306,54 +252,23 @@ export function Button({
 }
 ```
 
-### Card Component with Composition
+### Composition (Card slots)
+
+Ship a family of thin primitives that forward `ref` (a plain prop in React 19) and `className`. Callers compose them; no prop explosion.
 
 ```typescript
-// src/components/ui/Card.tsx
-// React 19: ref is a plain prop, so each primitive is a plain function component.
-import { ComponentPropsWithoutRef } from 'react'
-
 type DivProps = ComponentPropsWithoutRef<'div'> & { ref?: React.Ref<HTMLDivElement> }
-type H3Props = ComponentPropsWithoutRef<'h3'> & { ref?: React.Ref<HTMLHeadingElement> }
 
 export function Card({ ref, className, ...props }: DivProps) {
-  return (
-    <div
-      ref={ref}
-      className={`rounded-lg border bg-white shadow-sm ${className}`}
-      {...props}
-    />
-  )
+  return <div ref={ref} className={`rounded-lg border bg-white shadow-sm ${className}`} {...props} />
 }
-
 export function CardHeader({ ref, className, ...props }: DivProps) {
   return <div ref={ref} className={`p-6 ${className}`} {...props} />
 }
-
-export function CardTitle({ ref, className, ...props }: H3Props) {
-  return <h3 ref={ref} className={`text-2xl font-semibold ${className}`} {...props} />
-}
-
 export function CardContent({ ref, className, ...props }: DivProps) {
   return <div ref={ref} className={`p-6 pt-0 ${className}`} {...props} />
 }
-
-// Usage
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
-
-export function ProductCard({ product }: { product: Product }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{product.name}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p>{product.description}</p>
-        <p className="text-xl font-bold">${product.price}</p>
-      </CardContent>
-    </Card>
-  )
-}
+// <Card><CardHeader>…</CardHeader><CardContent>…</CardContent></Card>
 ```
 
 ### Polymorphic Components
@@ -397,54 +312,20 @@ export function Text<E extends ElementType = 'p'>({
 <Text as="span" variant="small">Small text in span</Text>
 ```
 
-### Render Props Pattern
+### Render Props / Function-as-Children
+
+Generic state-branching component. `children: (data: T) => ReactNode`. In this stack prefer Suspense + async atoms/loaders for data; render props remain useful for non-Suspense state machines.
 
 ```typescript
-// src/components/DataLoader.tsx
-import { ReactNode } from 'react'
-
-interface DataLoaderProps<T> {
-  data: T | null
-  isLoading: boolean
-  error: Error | null
-  children: (data: T) => ReactNode
-  loadingFallback?: ReactNode
-  errorFallback?: (error: Error) => ReactNode
-}
-
-export function DataLoader<T>({
-  data,
-  isLoading,
-  error,
-  children,
-  loadingFallback = <div>Loading...</div>,
-  errorFallback = (err) => <div>Error: {err.message}</div>,
-}: DataLoaderProps<T>) {
-  if (isLoading) return <>{loadingFallback}</>
-  if (error) return <>{errorFallback(error)}</>
+export function DataLoader<T>({ data, isLoading, error, children }: {
+  data: T | null; isLoading: boolean; error: Error | null; children: (data: T) => ReactNode
+}) {
+  if (isLoading) return <div>Loading…</div>
+  if (error) return <div>Error: {error.message}</div>
   if (!data) return null
-
   return <>{children(data)}</>
 }
-
-// Usage
-import { useFetch } from '@/hooks/useFetch'
-
-export function UsersList() {
-  const { data, isLoading, error } = useFetch<User[]>('/api/users')
-
-  return (
-    <DataLoader data={data} isLoading={isLoading} error={error}>
-      {(users) => (
-        <ul>
-          {users.map((user) => (
-            <li key={user.id}>{user.name}</li>
-          ))}
-        </ul>
-      )}
-    </DataLoader>
-  )
-}
+// <DataLoader {...useFetch<User[]>('/api/users')}>{(u) => …}</DataLoader>
 ```
 
 ## Project Setup
@@ -626,33 +507,16 @@ createRoot(document.getElementById('root')!).render(
 
 ### Root Layout with Outlet
 
+The layout renders shared chrome (`<nav>`) plus `<Outlet />` for the matched child route; `useNavigation().state === 'loading'` drives a global pending indicator.
+
 ```typescript
-// src/layouts/RootLayout.tsx
-import { Outlet, Link, useNavigation } from 'react-router'
-
 export function RootLayout() {
-  const navigation = useNavigation()
-  const isNavigating = navigation.state === 'loading'
-
+  const isNavigating = useNavigation().state === 'loading'
   return (
-    <div className="app">
-      <header>
-        <nav>
-          <Link to="/">Home</Link>
-          <Link to="/about">About</Link>
-          <Link to="/users">Users</Link>
-        </nav>
-      </header>
-
-      <main>
-        {isNavigating && <div className="loading-bar">Loading...</div>}
-        <Outlet />
-      </main>
-
-      <footer>
-        <p>&copy; 2025 My App</p>
-      </footer>
-    </div>
+    <>
+      <nav><Link to="/">Home</Link><Link to="/users">Users</Link></nav>
+      <main>{isNavigating && <div className="loading-bar" />}<Outlet /></main>
+    </>
   )
 }
 ```
@@ -704,55 +568,10 @@ Typegen setup: add `.react-router/` to `.gitignore`, set tsconfig `include` to
 
 ### Navigation Hooks
 
-```typescript
-// src/components/UserForm.tsx
-import { useNavigate, useSearchParams } from 'react-router'
-import { useState } from 'react'
-
-export function UserForm() {
-  const navigate = useNavigate()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const [name, setName] = useState('')
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    // Create user
-    const response = await fetch('/api/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
-    })
-
-    const user = await response.json()
-
-    // Navigate programmatically
-    navigate(`/users/${user.id}`)
-  }
-
-  const filter = searchParams.get('filter') || ''
-
-  return (
-    <form onSubmit={handleSubmit}>
-      <input
-        type="text"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="User name"
-      />
-
-      <input
-        type="text"
-        value={filter}
-        onChange={(e) => setSearchParams({ filter: e.target.value })}
-        placeholder="Filter"
-      />
-
-      <button type="submit">Create User</button>
-    </form>
-  )
-}
-```
+- `useNavigate()` → imperative nav: `navigate('/users/' + id)`, `navigate(-1)`, `navigate(path, { replace: true, state })`.
+- `useSearchParams()` → `[params, setSearchParams]`; `params.get('filter')`, `setSearchParams({ filter })` (updates URL, drives derived state — do NOT mirror URL into `useState`).
+- `useNavigation()` (from the router) → global `state === 'loading'` during transitions; drives loading bars.
+- `useParams()` → typed route params; `useLoaderData()`/typed `loaderData` prop → loader result.
 
 ### Protected Routes Pattern
 
@@ -799,6 +618,10 @@ const router = createBrowserRouter([
 
 ## Jotai State Management
 
+⚠️ **Define every atom at module scope, never inside a component.** An atom is an identity/key, not a value — the store maps atom identity → state. An atom created in render is a brand-new key each render, so state never persists and subscribers thrash. For per-item/per-id atoms use `atomFamily` (memoizes by param at module scope), not `useMemo(() => atom(...))`.
+
+Hooks: `useAtom` (read+write), `useAtomValue` (read), `useSetAtom` (write-only — subscriber does NOT re-render on value change; use for actions).
+
 ### Basic Atoms
 
 ```typescript
@@ -843,58 +666,20 @@ export function Counter() {
 
 ### Async Atoms
 
+An atom whose read fn returns a Promise integrates with Suspense automatically: `useAtomValue` unwraps it, and the nearest `<Suspense>` shows the fallback while pending, the nearest ErrorBoundary catches rejection. Add a "refresh trigger" atom as a dependency to force refetch.
+
 ```typescript
-// src/store/users.ts
-import { atom } from 'jotai'
-import { atomWithStorage } from 'jotai/utils'
-
-interface User {
-  id: string
-  name: string
-  email: string
-}
-
-// Async atom for fetching users
 export const usersAtom = atom(async () => {
-  const response = await fetch('/api/users')
-  if (!response.ok) {
-    throw new Error('Failed to fetch users')
-  }
-  return response.json() as Promise<User[]>
+  const res = await fetch('/api/users')
+  if (!res.ok) throw new Error('Failed to fetch users') // → ErrorBoundary
+  return res.json() as Promise<User[]>
 })
-
-// Atom with refresh capability
-export const refreshUsersAtom = atom(0)
-
+export const refreshUsersAtom = atom(0) // set() to bump; the atom below re-reads
 export const refreshableUsersAtom = atom(async (get) => {
-  get(refreshUsersAtom) // Dependency for refreshing
-  const response = await fetch('/api/users')
-  return response.json() as Promise<User[]>
+  get(refreshUsersAtom)
+  return (await fetch('/api/users')).json() as Promise<User[]>
 })
-
-// Usage in component
-import { useAtomValue, useSetAtom } from 'jotai'
-import { Suspense } from 'react'
-
-function UsersList() {
-  const users = useAtomValue(usersAtom)
-
-  return (
-    <ul>
-      {users.map((user) => (
-        <li key={user.id}>{user.name}</li>
-      ))}
-    </ul>
-  )
-}
-
-export function UsersContainer() {
-  return (
-    <Suspense fallback={<div>Loading users...</div>}>
-      <UsersList />
-    </Suspense>
-  )
-}
+// Consumer: const users = useAtomValue(usersAtom) inside a <Suspense fallback={…}>.
 ```
 
 ### Atom Families
@@ -996,108 +781,25 @@ export const logoutAtom = atom(null, (get, set) => {
 });
 ```
 
-### Complex State with Atom Composition
+### Composition: base + derived + write-only actions
+
+The idiom: one persisted/base atom, read-only derived atoms (`atom((get) => …)`) for computed views, and write-only action atoms (`atom(null, (get, set, arg) => …)`) that encapsulate mutations. Components read derived atoms and call actions — never duplicate derived data into separate state.
 
 ```typescript
-// src/store/cart.ts
-import { atom } from "jotai";
-import { atomWithStorage } from "jotai/utils";
+export const cartItemsAtom = atomWithStorage<CartItem[]>('cart', [])
+export const cartTotalAtom = atom((get) =>
+  get(cartItemsAtom).reduce((s, i) => s + i.price * i.quantity, 0))
 
-interface CartItem {
-  productId: string;
-  quantity: number;
-  price: number;
-}
-
-// Persisted cart items
-export const cartItemsAtom = atomWithStorage<CartItem[]>("cart", []);
-
-// Derived: total items count
-export const cartCountAtom = atom((get) => {
-  const items = get(cartItemsAtom);
-  return items.reduce((sum, item) => sum + item.quantity, 0);
-});
-
-// Derived: total price
-export const cartTotalAtom = atom((get) => {
-  const items = get(cartItemsAtom);
-  return items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-});
-
-// Action: add to cart
-export const addToCartAtom = atom(
-  null,
-  (get, set, item: Omit<CartItem, "quantity"> & { quantity?: number }) => {
-    const items = get(cartItemsAtom);
-    const existingIndex = items.findIndex(
-      (i) => i.productId === item.productId,
-    );
-
-    if (existingIndex !== -1) {
-      const newItems = [...items];
-      const existing = newItems[existingIndex]!;
-      newItems[existingIndex] = {
-        ...existing,
-        quantity: existing.quantity + (item.quantity ?? 1),
-      };
-      set(cartItemsAtom, newItems);
-    } else {
-      set(cartItemsAtom, [...items, { ...item, quantity: item.quantity ?? 1 }]);
-    }
-  },
-);
-
-// Action: remove from cart
-export const removeFromCartAtom = atom(null, (get, set, productId: string) => {
-  const items = get(cartItemsAtom);
-  set(
-    cartItemsAtom,
-    items.filter((item) => item.productId !== productId),
-  );
-});
-
-// Action: clear cart
-export const clearCartAtom = atom(null, (get, set) => {
-  set(cartItemsAtom, []);
-});
+export const addToCartAtom = atom(null, (get, set, item: CartItem) => {
+  const items = get(cartItemsAtom)
+  const i = items.findIndex((x) => x.productId === item.productId)
+  set(cartItemsAtom, i === -1
+    ? [...items, item]
+    : items.map((x, idx) => idx === i ? { ...x, quantity: x.quantity + item.quantity } : x))
+})
 ```
 
 ## Component Patterns
-
-### Functional Components with TypeScript
-
-```typescript
-// src/components/Button.tsx
-import { ComponentPropsWithoutRef } from 'react'
-
-interface ButtonProps extends ComponentPropsWithoutRef<'button'> {
-  variant?: 'primary' | 'secondary' | 'danger'
-  size?: 'sm' | 'md' | 'lg'
-  isLoading?: boolean
-  ref?: React.Ref<HTMLButtonElement>
-}
-
-// React 19: ref arrives as a regular prop — no forwardRef, no displayName.
-export function Button({
-  ref,
-  variant = 'primary',
-  size = 'md',
-  isLoading,
-  children,
-  ...props
-}: ButtonProps) {
-  return (
-    <button
-      ref={ref}
-      className={`btn btn-${variant} btn-${size}`}
-      disabled={isLoading || props.disabled}
-      {...props}
-    >
-      {isLoading ? 'Loading...' : children}
-    </button>
-  )
-}
-```
 
 ### Custom Hooks
 
@@ -1120,64 +822,13 @@ export function useDebounce<T>(value: T, delay: number = 500): T {
 
   return debouncedValue
 }
-
-// Usage
-function SearchInput() {
-  const [search, setSearch] = useState('')
-  const debouncedSearch = useDebounce(search, 300)
-
-  useEffect(() => {
-    if (debouncedSearch) {
-      // Perform search
-      fetchResults(debouncedSearch)
-    }
-  }, [debouncedSearch])
-
-  return (
-    <input
-      type="text"
-      value={search}
-      onChange={(e) => setSearch(e.target.value)}
-    />
-  )
-}
+// const debounced = useDebounce(search, 300) — drive a derived query, not a setState-in-effect
 ```
 
-```typescript
-// src/hooks/useLocalStorage.ts
-import { useState, useEffect } from "react";
-
-export function useLocalStorage<T>(
-  key: string,
-  initialValue: T,
-): [T, (value: T | ((val: T) => T)) => void] {
-  const [storedValue, setStoredValue] = useState<T>(() => {
-    try {
-      const item = window.localStorage.getItem(key);
-      return item ? JSON.parse(item) : initialValue;
-    } catch (error) {
-      console.error(error);
-      return initialValue;
-    }
-  });
-
-  const setValue = (value: T | ((val: T) => T)) => {
-    try {
-      const valueToStore =
-        value instanceof Function ? value(storedValue) : value;
-      setStoredValue(valueToStore);
-      window.localStorage.setItem(key, JSON.stringify(valueToStore));
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  return [storedValue, setValue];
-}
-```
+For `localStorage`-backed state prefer Jotai `atomWithStorage` over a hand-rolled `useLocalStorage` — it handles serialization, cross-tab sync, and shared identity. Roll your own only for truly local, non-shared values.
 
 ```typescript
-// src/hooks/useFetch.ts
+// src/hooks/useFetch.ts — abort on unmount / url change to avoid setState-after-unmount
 import { useState, useEffect } from "react";
 
 interface UseFetchResult<T> {
@@ -1231,228 +882,62 @@ export function useFetch<T>(url: string): UseFetchResult<T> {
 
 ### Compound Components Pattern
 
+Share implicit state via Context between a parent and its named sub-components; hang children off the parent (`Tabs.Tab`). A `useTabs()` guard hook throws if used outside the provider — fail loud, not silently.
+
 ```typescript
-// src/components/Tabs/Tabs.tsx
-import {
-  createContext,
-  useContext,
-  useState,
-  ReactNode,
-} from 'react'
-
-interface TabsContextValue {
-  activeTab: string
-  setActiveTab: (id: string) => void
+const TabsContext = createContext<{ active: string; setActive: (id: string) => void } | undefined>(undefined)
+const useTabs = () => {
+  const c = useContext(TabsContext)
+  if (!c) throw new Error('Tabs.* must be used within <Tabs>')
+  return c
 }
 
-const TabsContext = createContext<TabsContextValue | undefined>(undefined)
-
-function useTabs() {
-  const context = useContext(TabsContext)
-  if (!context) {
-    throw new Error('Tabs components must be used within <Tabs>')
-  }
-  return context
+export function Tabs({ defaultTab, children }: { defaultTab: string; children: ReactNode }) {
+  const [active, setActive] = useState(defaultTab)
+  return <TabsContext value={{ active, setActive }}>{children}</TabsContext> // React 19: context is its own provider
 }
-
-interface TabsProps {
-  defaultTab: string
-  children: ReactNode
+function Tab({ id, children }: { id: string; children: ReactNode }) {
+  const { active, setActive } = useTabs()
+  return <button className={active === id ? 'active' : ''} onClick={() => setActive(id)}>{children}</button>
 }
-
-export function Tabs({ defaultTab, children }: TabsProps) {
-  const [activeTab, setActiveTab] = useState(defaultTab)
-
-  return (
-    <TabsContext value={{ activeTab, setActiveTab }}>
-      <div className="tabs">{children}</div>
-    </TabsContext>
-  )
+function TabPanel({ id, children }: { id: string; children: ReactNode }) {
+  return useTabs().active === id ? <div>{children}</div> : null
 }
-
-interface TabListProps {
-  children: ReactNode
-}
-
-function TabList({ children }: TabListProps) {
-  return <div className="tab-list">{children}</div>
-}
-
-interface TabProps {
-  id: string
-  children: ReactNode
-}
-
-function Tab({ id, children }: TabProps) {
-  const { activeTab, setActiveTab } = useTabs()
-
-  return (
-    <button
-      className={`tab ${activeTab === id ? 'active' : ''}`}
-      onClick={() => setActiveTab(id)}
-    >
-      {children}
-    </button>
-  )
-}
-
-interface TabPanelsProps {
-  children: ReactNode
-}
-
-function TabPanels({ children }: TabPanelsProps) {
-  return <div className="tab-panels">{children}</div>
-}
-
-interface TabPanelProps {
-  id: string
-  children: ReactNode
-}
-
-function TabPanel({ id, children }: TabPanelProps) {
-  const { activeTab } = useTabs()
-
-  if (activeTab !== id) return null
-
-  return <div className="tab-panel">{children}</div>
-}
-
-// Export compound components
-Tabs.TabList = TabList
 Tabs.Tab = Tab
-Tabs.TabPanels = TabPanels
 Tabs.TabPanel = TabPanel
-
-// Usage
-export function Example() {
-  return (
-    <Tabs defaultTab="profile">
-      <Tabs.TabList>
-        <Tabs.Tab id="profile">Profile</Tabs.Tab>
-        <Tabs.Tab id="settings">Settings</Tabs.Tab>
-        <Tabs.Tab id="notifications">Notifications</Tabs.Tab>
-      </Tabs.TabList>
-
-      <Tabs.TabPanels>
-        <Tabs.TabPanel id="profile">
-          <h2>Profile Content</h2>
-        </Tabs.TabPanel>
-        <Tabs.TabPanel id="settings">
-          <h2>Settings Content</h2>
-        </Tabs.TabPanel>
-        <Tabs.TabPanel id="notifications">
-          <h2>Notifications Content</h2>
-        </Tabs.TabPanel>
-      </Tabs.TabPanels>
-    </Tabs>
-  )
-}
+// <Tabs defaultTab="a"><Tabs.Tab id="a">A</Tabs.Tab><Tabs.TabPanel id="a">…</Tabs.TabPanel></Tabs>
 ```
 
 ## Form Handling
 
 ### Controlled Forms with Validation
 
+Controlled inputs (`value` + `onChange`), validate on submit, and wire errors accessibly: `<label htmlFor>`, `aria-invalid`, `aria-describedby` pointing at a `role="alert"` message. Disable the submit while pending. Extract this into `useForm` (below) once you have more than one form.
+
 ```typescript
-// src/components/LoginForm.tsx
-import { FormEvent, useState } from 'react'
-import { useNavigate } from 'react-router'
-import { useSetAtom } from 'jotai'
-import { loginAtom } from '@store/auth'
-
-interface FormErrors {
-  email?: string
-  password?: string
-}
-
 export function LoginForm() {
-  const navigate = useNavigate()
   const login = useSetAtom(loginAtom)
-
+  const navigate = useNavigate()
   const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [errors, setErrors] = useState<FormErrors>({})
-  const [isSubmitting, setIsSubmitting] = useState(false)
-
-  const validate = (): boolean => {
-    const newErrors: FormErrors = {}
-
-    if (!email) {
-      newErrors.email = 'Email is required'
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      newErrors.email = 'Invalid email format'
-    }
-
-    if (!password) {
-      newErrors.password = 'Password is required'
-    } else if (password.length < 8) {
-      newErrors.password = 'Password must be at least 8 characters'
-    }
-
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
-  }
+  const [errors, setErrors] = useState<{ email?: string }>({})
+  const [pending, setPending] = useState(false)
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
-
-    if (!validate()) {
-      return
-    }
-
-    setIsSubmitting(true)
-
-    try {
-      await login({ email, password })
-      navigate('/dashboard')
-    } catch (error) {
-      setErrors({
-        email: 'Invalid credentials',
-      })
-    } finally {
-      setIsSubmitting(false)
-    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setErrors({ email: 'Invalid email' })
+    setPending(true)
+    try { await login({ email }); navigate('/dashboard') }
+    catch { setErrors({ email: 'Invalid credentials' }) }
+    finally { setPending(false) }
   }
 
   return (
     <form onSubmit={handleSubmit}>
-      <div>
-        <label htmlFor="email">Email</label>
-        <input
-          id="email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          aria-invalid={!!errors.email}
-          aria-describedby={errors.email ? 'email-error' : undefined}
-        />
-        {errors.email && (
-          <span id="email-error" role="alert">
-            {errors.email}
-          </span>
-        )}
-      </div>
-
-      <div>
-        <label htmlFor="password">Password</label>
-        <input
-          id="password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          aria-invalid={!!errors.password}
-          aria-describedby={errors.password ? 'password-error' : undefined}
-        />
-        {errors.password && (
-          <span id="password-error" role="alert">
-            {errors.password}
-          </span>
-        )}
-      </div>
-
-      <button type="submit" disabled={isSubmitting}>
-        {isSubmitting ? 'Logging in...' : 'Log In'}
-      </button>
+      <label htmlFor="email">Email</label>
+      <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+        aria-invalid={!!errors.email} aria-describedby={errors.email ? 'email-error' : undefined} />
+      {errors.email && <span id="email-error" role="alert">{errors.email}</span>}
+      <button type="submit" disabled={pending}>{pending ? 'Logging in…' : 'Log In'}</button>
     </form>
   )
 }
@@ -1530,82 +1015,12 @@ export function useForm<T extends Record<string, any>>({
   }
 }
 
-// Usage
-interface ContactFormData {
-  name: string
-  email: string
-  message: string
-}
-
-export function ContactForm() {
-  const { values, errors, isSubmitting, handleChange, handleSubmit } =
-    useForm<ContactFormData>({
-      initialValues: {
-        name: '',
-        email: '',
-        message: '',
-      },
-      validate: (values) => {
-        const errors: Partial<Record<keyof ContactFormData, string>> = {}
-
-        if (!values.name) {
-          errors.name = 'Name is required'
-        }
-
-        if (!values.email) {
-          errors.email = 'Email is required'
-        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) {
-          errors.email = 'Invalid email'
-        }
-
-        if (!values.message) {
-          errors.message = 'Message is required'
-        }
-
-        return errors
-      },
-      onSubmit: async (values) => {
-        await fetch('/api/contact', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(values),
-        })
-      },
-    })
-
-  return (
-    <form onSubmit={handleSubmit}>
-      <input
-        name="name"
-        value={values.name}
-        onChange={handleChange}
-        placeholder="Name"
-      />
-      {errors.name && <span>{errors.name}</span>}
-
-      <input
-        name="email"
-        value={values.email}
-        onChange={handleChange}
-        placeholder="Email"
-      />
-      {errors.email && <span>{errors.email}</span>}
-
-      <textarea
-        name="message"
-        value={values.message}
-        onChange={handleChange}
-        placeholder="Message"
-      />
-      {errors.message && <span>{errors.message}</span>}
-
-      <button type="submit" disabled={isSubmitting}>
-        {isSubmitting ? 'Sending...' : 'Send'}
-      </button>
-    </form>
-  )
-}
+// Usage: const { values, errors, isSubmitting, handleChange, handleSubmit } =
+//   useForm({ initialValues, validate, onSubmit })
+// Inputs use name={key} value={values[key]} onChange={handleChange}.
 ```
+
+For anything beyond trivial forms, consider React 19 Actions (`useActionState`, `<form action={fn}>`) or a schema validator (Zod) instead of hand-rolled validators.
 
 ## Best Practices
 
@@ -1642,58 +1057,13 @@ src/
 
 ### Performance Optimization
 
+Memoization (`memo`/`useMemo`/`useCallback`) is a PERF tool, not a correctness tool, and the React Compiler now automates it — see **Expert Practices** for the mechanism and traps. In new code, prefer architectural fixes (move state down, split components, stable keys) over scattering memoization.
+
+Route-level **code splitting** is the highest-leverage manual win — always split routes with `lazy` + `Suspense`:
+
 ```typescript
-import { memo, useMemo, useCallback, lazy, Suspense } from 'react'
-
-// Memoize expensive components
-export const ExpensiveList = memo(function ExpensiveList({
-  items,
-}: {
-  items: Item[]
-}) {
-  return (
-    <ul>
-      {items.map((item) => (
-        <li key={item.id}>{item.name}</li>
-      ))}
-    </ul>
-  )
-})
-
-// Memoize expensive calculations
-function FilteredList({ items, filter }: { items: Item[]; filter: string }) {
-  const filteredItems = useMemo(() => {
-    return items.filter((item) => item.name.includes(filter))
-  }, [items, filter])
-
-  return <ExpensiveList items={filteredItems} />
-}
-
-// Memoize callbacks when a memoized child depends on function identity
-const Child = memo(function Child({ onClick }: { onClick: () => void }) {
-  return <button onClick={onClick}>Increment</button>
-})
-
-function Parent() {
-  const [count, setCount] = useState(0)
-
-  const handleClick = useCallback(() => {
-    setCount((c) => c + 1)
-  }, [])
-
-  return <Child onClick={handleClick} />
-}
-
-// Code splitting with lazy loading
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
-
-function App() {
-  return (
-    <Suspense fallback={<div>Loading...</div>}>
-      <DashboardPage />
-    </Suspense>
-  )
-}
+// <Suspense fallback={<Spinner />}><DashboardPage /></Suspense>
 ```
 
 ### Error Boundaries
@@ -1767,570 +1137,91 @@ function App() {
 
 ### Accessibility (a11y)
 
+Core rules: prefer semantic elements (`<button>`, `<nav>`, `<main>`) over `<div role>`; every input needs an associated `<label htmlFor>` (or `useId`); errors go in `role="alert"` linked via `aria-describedby`; interactive custom widgets need full keyboard support + `aria-expanded`/`aria-haspopup`/`aria-controls`; announce async results via a live region.
+
 #### Modal Dialog with Focus Management
 
+`role="dialog"` + `aria-modal="true"` + `aria-labelledby`. On open: save `document.activeElement`, focus the dialog, trap Tab, close on Escape, lock body scroll; on cleanup restore focus. Render via `createPortal` to `document.body`.
+
 ```typescript
-// src/components/Modal.tsx
-import { useEffect, useRef } from 'react'
-import { createPortal } from 'react-dom'
-
-interface ModalProps {
-  isOpen: boolean
-  onClose: () => void
-  title: string
-  children: React.ReactNode
-}
-
 export function Modal({ isOpen, onClose, title, children }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null)
-  const previousActiveElement = useRef<HTMLElement | null>(null)
+  const prevFocus = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
-    if (isOpen) {
-      previousActiveElement.current = document.activeElement as HTMLElement
-      dialogRef.current?.focus()
+    if (!isOpen) return
+    prevFocus.current = document.activeElement as HTMLElement
+    dialogRef.current?.focus()
+    const nodes = dialogRef.current?.querySelectorAll<HTMLElement>(
+      'button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])')
+    const first = nodes?.[0], last = nodes?.[nodes.length - 1]
 
-      // Trap focus inside modal
-      const focusableElements = dialogRef.current?.querySelectorAll(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-      )
-      const firstElement = focusableElements?.[0] as HTMLElement
-      const lastElement = focusableElements?.[
-        focusableElements.length - 1
-      ] as HTMLElement
-
-      const handleTab = (e: KeyboardEvent) => {
-        if (e.key === 'Tab') {
-          if (e.shiftKey) {
-            if (document.activeElement === firstElement) {
-              e.preventDefault()
-              lastElement?.focus()
-            }
-          } else {
-            if (document.activeElement === lastElement) {
-              e.preventDefault()
-              firstElement?.focus()
-            }
-          }
-        }
-      }
-
-      const handleEscape = (e: KeyboardEvent) => {
-        if (e.key === 'Escape') {
-          onClose()
-        }
-      }
-
-      document.addEventListener('keydown', handleTab)
-      document.addEventListener('keydown', handleEscape)
-      document.body.style.overflow = 'hidden'
-
-      return () => {
-        document.removeEventListener('keydown', handleTab)
-        document.removeEventListener('keydown', handleEscape)
-        document.body.style.overflow = ''
-        previousActiveElement.current?.focus()
-      }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') return onClose()
+      if (e.key !== 'Tab') return
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus() }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus() }
+    }
+    document.addEventListener('keydown', onKey)
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = ''
+      prevFocus.current?.focus() // restore focus — critical for keyboard users
     }
   }, [isOpen, onClose])
 
   if (!isOpen) return null
-
   return createPortal(
-    <div
-      className="modal-overlay"
-      onClick={onClose}
-      role="presentation"
-    >
-      <div
-        ref={dialogRef}
-        className="modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="modal-title"
-        onClick={(e) => e.stopPropagation()}
-        tabIndex={-1}
-      >
+    <div className="modal-overlay" onClick={onClose} role="presentation">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="modal-title"
+        tabIndex={-1} onClick={(e) => e.stopPropagation()}>
         <h2 id="modal-title">{title}</h2>
         {children}
-        <button onClick={onClose} aria-label="Close modal">
-          Close
-        </button>
       </div>
-    </div>,
-    document.body
-  )
+    </div>, document.body)
 }
 ```
 
-#### Accessible Form with Live Validation
+⚠️ The native `<dialog>` element with `showModal()` gives focus trap + Escape + scroll lock for free — prefer it over a hand-rolled trap unless you need custom overlay behavior.
 
-```typescript
-// src/components/AccessibleForm.tsx
-import { useState, useId } from 'react'
+#### Keyboard Widgets (dropdown/menu essentials)
 
-export function AccessibleForm() {
-  const [email, setEmail] = useState('')
-  const [emailError, setEmailError] = useState('')
-  const emailId = useId()
-  const errorId = useId()
+Trigger: `aria-haspopup`, `aria-expanded={isOpen}`, `aria-controls={menuId}`; open on Enter/Space/ArrowDown. Menu: `role="menu"`, items `role="menuitem"`, focus the first item on open. Keys: Escape closes and returns focus to the trigger; ArrowUp/Down move between items. Same skeleton (roving focus + `aria-*`) applies to comboboxes, listboxes, tabs.
 
-  const validateEmail = (value: string) => {
-    if (!value) {
-      setEmailError('Email is required')
-      return false
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-      setEmailError('Please enter a valid email address')
-      return false
-    }
-    setEmailError('')
-    return true
-  }
+#### Skip Link + Visually-Hidden
 
-  return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault()
-        if (validateEmail(email)) {
-          // Submit form
-        }
-      }}
-      noValidate
-    >
-      <div>
-        <label htmlFor={emailId}>
-          Email Address
-          <span aria-label="required">*</span>
-        </label>
-        <input
-          id={emailId}
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          onBlur={(e) => validateEmail(e.target.value)}
-          aria-invalid={!!emailError}
-          aria-describedby={emailError ? errorId : undefined}
-          aria-required="true"
-        />
-        {emailError && (
-          <span id={errorId} role="alert" className="error">
-            {emailError}
-          </span>
-        )}
-      </div>
-      <button type="submit">Submit</button>
-    </form>
-  )
-}
-```
+Skip link: first focusable element, off-screen until focused, targets `<main id="main-content" tabIndex={-1}>`. Reuse the `.visually-hidden` class for screen-reader-only text and live regions (do NOT use `display:none` — that hides from AT too).
 
-#### Accessible Button with Loading State
-
-```typescript
-// src/components/AccessibleButton.tsx
-import { ComponentPropsWithoutRef } from 'react'
-
-interface AccessibleButtonProps extends ComponentPropsWithoutRef<'button'> {
-  isLoading?: boolean
-  loadingText?: string
-  ref?: React.Ref<HTMLButtonElement>
-}
-
-// React 19: ref is a plain prop — no forwardRef, no displayName.
-export function AccessibleButton({
-  ref,
-  isLoading,
-  loadingText = 'Loading',
-  children,
-  ...props
-}: AccessibleButtonProps) {
-  return (
-    <button
-      ref={ref}
-      disabled={isLoading || props.disabled}
-      aria-busy={isLoading}
-      aria-live="polite"
-      {...props}
-    >
-      {isLoading ? (
-        <>
-          <span className="visually-hidden">{loadingText}</span>
-          <span aria-hidden="true">
-            <svg className="animate-spin" />
-            {loadingText}
-          </span>
-        </>
-      ) : (
-        children
-      )}
-    </button>
-  )
-}
-```
-
-#### Skip to Content Link
-
-```typescript
-// src/components/SkipLink.tsx
-export function SkipLink() {
-  return (
-    <a
-      href="#main-content"
-      className="skip-link"
-      style={{
-        position: 'absolute',
-        left: '-10000px',
-        top: 'auto',
-        width: '1px',
-        height: '1px',
-        overflow: 'hidden',
-      }}
-      onFocus={(e) => {
-        e.currentTarget.style.left = '0'
-        e.currentTarget.style.width = 'auto'
-        e.currentTarget.style.height = 'auto'
-      }}
-      onBlur={(e) => {
-        e.currentTarget.style.left = '-10000px'
-        e.currentTarget.style.width = '1px'
-        e.currentTarget.style.height = '1px'
-      }}
-    >
-      Skip to main content
-    </a>
-  )
-}
-
-// Usage in layout
-export function Layout({ children }: { children: ReactNode }) {
-  return (
-    <div>
-      <SkipLink />
-      <header>
-        <nav>...</nav>
-      </header>
-      <main id="main-content" tabIndex={-1}>
-        {children}
-      </main>
-    </div>
-  )
-}
-```
-
-#### Accessible Dropdown Menu
-
-```typescript
-// src/components/DropdownMenu.tsx
-import { useState, useRef, useEffect, useId } from 'react'
-
-interface DropdownMenuProps {
-  trigger: React.ReactNode
-  items: Array<{ label: string; onClick: () => void }>
-}
-
-export function DropdownMenu({ trigger, items }: DropdownMenuProps) {
-  const [isOpen, setIsOpen] = useState(false)
-  const menuRef = useRef<HTMLUListElement>(null)
-  const buttonRef = useRef<HTMLButtonElement>(null)
-  const menuId = useId()
-
-  useEffect(() => {
-    if (isOpen && menuRef.current) {
-      const firstItem = menuRef.current.querySelector('button') as HTMLButtonElement
-      firstItem?.focus()
-    }
-  }, [isOpen])
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!isOpen) {
-      if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
-        e.preventDefault()
-        setIsOpen(true)
-      }
-      return
-    }
-
-    switch (e.key) {
-      case 'Escape':
-        setIsOpen(false)
-        buttonRef.current?.focus()
-        break
-      case 'ArrowDown':
-        e.preventDefault()
-        const nextItem = (document.activeElement?.nextElementSibling as HTMLElement)
-        nextItem?.querySelector('button')?.focus()
-        break
-      case 'ArrowUp':
-        e.preventDefault()
-        const prevItem = (document.activeElement?.previousElementSibling as HTMLElement)
-        prevItem?.querySelector('button')?.focus()
-        break
-    }
-  }
-
-  return (
-    <div className="dropdown">
-      <button
-        ref={buttonRef}
-        aria-haspopup="true"
-        aria-expanded={isOpen}
-        aria-controls={menuId}
-        onClick={() => setIsOpen(!isOpen)}
-        onKeyDown={handleKeyDown}
-      >
-        {trigger}
-      </button>
-
-      {isOpen && (
-        <ul
-          ref={menuRef}
-          id={menuId}
-          role="menu"
-          className="dropdown-menu"
-        >
-          {items.map((item, index) => (
-            <li key={index} role="none">
-              <button
-                role="menuitem"
-                onClick={() => {
-                  item.onClick()
-                  setIsOpen(false)
-                  buttonRef.current?.focus()
-                }}
-                onKeyDown={handleKeyDown}
-              >
-                {item.label}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
-}
+```css
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border-width: 0; }
+.skip-link { position: absolute; left: -10000px; }
+.skip-link:focus { left: 0; width: auto; height: auto; } /* CSS :focus, not JS onFocus */
 ```
 
 #### Live Region for Announcements
 
+A single app-level `aria-live` region announces async results (saves, errors, route changes). Trap: setting the same text twice is NOT re-announced — clear to `''` then set on the next tick to force it. Use `polite` for status, `assertive` for errors.
+
 ```typescript
-// src/components/LiveRegion.tsx
-import { createContext, useContext, useState, ReactNode } from 'react'
-import { createPortal } from 'react-dom'
-
-interface LiveRegionContextValue {
-  announce: (message: string, priority?: 'polite' | 'assertive') => void
-}
-
-const LiveRegionContext = createContext<LiveRegionContextValue | undefined>(
-  undefined
-)
-
-export function useLiveRegion() {
-  const context = useContext(LiveRegionContext)
-  if (!context) {
-    throw new Error('useLiveRegion must be used within LiveRegionProvider')
-  }
-  return context
-}
-
-export function LiveRegionProvider({ children }: { children: ReactNode }) {
-  const [message, setMessage] = useState('')
-  const [priority, setPriority] = useState<'polite' | 'assertive'>('polite')
-
-  const announce = (
-    newMessage: string,
-    newPriority: 'polite' | 'assertive' = 'polite'
-  ) => {
-    setMessage('')
-    setTimeout(() => {
-      setMessage(newMessage)
-      setPriority(newPriority)
-    }, 100)
-  }
-
-  return (
-    <LiveRegionContext.Provider value={{ announce }}>
-      {children}
-      {createPortal(
-        <div
-          role="status"
-          aria-live={priority}
-          aria-atomic="true"
-          className="visually-hidden"
-        >
-          {message}
-        </div>,
-        document.body
-      )}
-    </LiveRegionContext.Provider>
-  )
-}
-
-// Usage
-function SaveButton() {
-  const { announce } = useLiveRegion()
-
-  const handleSave = async () => {
-    try {
-      await saveData()
-      announce('Data saved successfully', 'polite')
-    } catch (error) {
-      announce('Failed to save data', 'assertive')
-    }
-  }
-
-  return <button onClick={handleSave}>Save</button>
-}
-```
-
-#### Visually Hidden Utility
-
-```css
-/* src/styles/utilities.css */
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border-width: 0;
-}
+<div role="status" aria-live={priority} aria-atomic="true" className="visually-hidden">{message}</div>
+// announce(): setMessage(''); setTimeout(() => setMessage(text), 100)
 ```
 
 ## Anti-Patterns
 
-### FORBIDDEN: Never Use These
+### Forbidden in this stack
 
-```typescript
-// FORBIDDEN: Next.js (this is an SPA skill, not SSR)
-// DO NOT use Next.js, App Router, Server Components from Next.js
-// DO NOT use: next/navigation, next/router, next/link, etc.
+Next.js / Remix (SSR — out of scope), `next/*` imports · create-react-app (deprecated) · webpack configs (use Vite) · Redux/RTK (use Jotai; exception: existing Redux codebases) · Context for hot global state (use Jotai; Context is for ambient subtree values like theme) · class components · default exports (prefer named).
 
-// FORBIDDEN: Remix (this is an SPA skill)
-// DO NOT use Remix framework
+### Common Mistakes
 
-// FORBIDDEN: create-react-app
-// ALWAYS use Vite for new projects
-// CRA is deprecated and unmaintained
-
-// FORBIDDEN: webpack directly
-// ALWAYS use Vite as the bundler
-// DO NOT create custom webpack configs
-
-// FORBIDDEN: Redux (when Jotai can be used)
-// DO NOT use Redux, Redux Toolkit, or React-Redux
-// ONLY use Jotai for global state management
-// Exception: Existing projects already using Redux
-
-// FORBIDDEN: Context API for global state
-// DO NOT use Context + useContext for application state
-// Context is fine for component-level state (themes, etc.)
-// Use Jotai atoms for all global application state
-```
-
-### Common Mistakes to Avoid
-
-```typescript
-// BAD: Mutation instead of immutability
-const [items, setItems] = useState<Item[]>([])
-items.push(newItem) // Direct mutation
-setItems(items) // React won't detect the change
-
-// GOOD: Immutable updates
-setItems([...items, newItem])
-setItems((prev) => [...prev, newItem])
-
-// BAD: Missing dependency in useEffect
-useEffect(() => {
-  fetchData(userId)
-}, []) // userId not in deps
-
-// GOOD: Include all dependencies
-useEffect(() => {
-  fetchData(userId)
-}, [userId])
-
-// BAD: Derived state that should be computed
-const [items, setItems] = useState<Item[]>([])
-const [filteredItems, setFilteredItems] = useState<Item[]>([])
-
-useEffect(() => {
-  setFilteredItems(items.filter(filter))
-}, [items, filter])
-
-// GOOD: Compute during render
-const filteredItems = items.filter(filter)
-
-// BAD: Prop drilling through many levels
-function App() {
-  const [user, setUser] = useState<User>()
-  return <Level1 user={user} setUser={setUser} />
-}
-
-// GOOD: Use Jotai for shared state
-const userAtom = atom<User | null>(null)
-
-function App() {
-  return <Level1 />
-}
-
-function DeepChild() {
-  const [user, setUser] = useAtom(userAtom)
-  // Direct access without prop drilling
-}
-
-// BAD: Adding useCallback when identity does not matter
-function Parent() {
-  const handleClick = useCallback(() => {
-    doSomething()
-  }, [])
-
-  return <button onClick={handleClick}>Save</button>
-}
-
-// GOOD: Inline handlers are fine unless a memoized child or Effect needs stability
-function Parent() {
-  return <button onClick={() => doSomething()}>Save</button>
-}
-
-// BAD: Fetching in components without Suspense
-function UserProfile({ userId }: { userId: string }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    fetchUser(userId).then(setUser).finally(() => setLoading(false))
-  }, [userId])
-
-  if (loading) return <div>Loading...</div>
-  // ...
-}
-
-// GOOD: Use Suspense with async atoms
-const userAtomFamily = atomFamily((userId: string) =>
-  atom(async () => {
-    const response = await fetch(`/api/users/${userId}`)
-    return response.json()
-  })
-)
-
-function UserProfile({ userId }: { userId: string }) {
-  const user = useAtomValue(userAtomFamily(userId))
-  return <div>{user.name}</div>
-}
-
-function UserContainer({ userId }: { userId: string }) {
-  return (
-    <Suspense fallback={<div>Loading...</div>}>
-      <UserProfile userId={userId} />
-    </Suspense>
-  )
-}
-```
+- **Mutation:** `items.push(x); setItems(items)` — React compares by reference, no re-render. Use `setItems([...items, x])` / `setItems(prev => [...prev, x])`.
+- **Derived state in Effect:** `useEffect(() => setFiltered(items.filter(f)), [items,f])` — compute during render instead: `const filtered = items.filter(f)`.
+- **Missing deps:** every value read inside an Effect belongs in its dep array (enable `eslint-plugin-react-hooks`); don't disable the lint — fix the design.
+- **Prop drilling shared state:** lift to a Jotai atom, read via `useAtom` at the leaf.
+- **Fetch-in-effect for render data:** prefer a route loader or async atom + `<Suspense>` over `useState`/`useEffect` fetch triads. If you must fetch in an Effect, use the ignore-flag pattern (see Gotchas) to avoid races and setState-after-unmount.
 
 ### Quick Pattern Swaps
 
@@ -2382,59 +1273,16 @@ function Messenger({ thread }: { thread: Thread }) {
 
 ### Core Hook Pattern Swaps
 
-These pairs are the defaults Loom harnesses should follow when choosing between refs, state, effects, memoization, and shared state.
+Defaults for refs vs state vs effects vs memo vs shared state. Most rationale is in **Expert Practices**; quick rules:
+
+- UI value that affects render → `useState`, not a ref. Refs hold non-render values (DOM nodes, timers, latest-value stashes).
+- Value derivable from props/state → compute during render, never `useEffect` + `setState`.
+- `useCallback`/`useMemo` only to stabilize props for a memoized child/Effect or for genuinely expensive compute — not by default (the Compiler handles the rest).
+- Related fields with coupled transitions → `useReducer`; hot global state → Jotai; ambient subtree value → Context.
+
+**Latest value inside an Effect callback** (a subscription handler that must see fresh `theme` without re-subscribing on every `theme` change) → `useEffectEvent`, not a manually-synced ref:
 
 ```typescript
-// BAD: Using a ref for UI state just to avoid re-renders
-function Tabs() {
-  const selectedTabRef = useRef("settings")
-
-  return <Panel tab={selectedTabRef.current} />
-}
-
-// GOOD: Use state for values that affect rendering
-function Tabs() {
-  const [selectedTab, setSelectedTab] = useState("settings")
-
-  return <Panel tab={selectedTab} onSelect={setSelectedTab} />
-}
-
-// BAD: Deriving render state inside an Effect
-function Profile({ firstName, lastName }: { firstName: string; lastName: string }) {
-  const [fullName, setFullName] = useState("")
-
-  useEffect(() => {
-    setFullName(`${firstName} ${lastName}`)
-  }, [firstName, lastName])
-
-  return <h1>{fullName}</h1>
-}
-
-// GOOD: Derive during render; reserve Effects for external synchronization
-function Profile({ firstName, lastName }: { firstName: string; lastName: string }) {
-  const fullName = `${firstName} ${lastName}`
-  return <h1>{fullName}</h1>
-}
-
-// BAD: Syncing a ref to keep "latest" values inside an Effect callback
-function ChatRoom({ roomId, theme }: { roomId: string; theme: Theme }) {
-  const latestTheme = useRef(theme)
-
-  useEffect(() => {
-    latestTheme.current = theme
-  })
-
-  useEffect(() => {
-    const connection = createConnection(roomId)
-    connection.on("connected", () => {
-      showToast("Connected", latestTheme.current)
-    })
-    connection.connect()
-
-    return () => connection.disconnect()
-  }, [roomId])
-}
-
 // GOOD: Use useEffectEvent when Effect-driven callbacks need the latest values
 // useEffectEvent is stable as of React 19.2 (Oct 2025); on 19.0/19.1 importing
 // it from 'react' fails — use a ref to hold the latest value instead. It may
@@ -2456,242 +1304,52 @@ function ChatRoom({ roomId, theme }: { roomId: string; theme: Theme }) {
   }, [roomId])
 }
 
-// BAD: Wrapping every handler in useCallback by default
-function SaveButton() {
-  const handleClick = useCallback(() => {
-    saveDraft()
-  }, [])
-
-  return <button onClick={handleClick}>Save</button>
-}
-
-// GOOD: Use useCallback when a memoized child or Effect depends on identity
-const ToolbarButton = memo(function ToolbarButton({
-  onClick,
-}: {
-  onClick: () => void
-}) {
-  return <button onClick={onClick}>Save</button>
-})
-
-function SaveButton() {
-  const handleClick = useCallback(() => {
-    saveDraft()
-  }, [])
-
-  return <ToolbarButton onClick={handleClick} />
-}
-
-// BAD: Memoizing cheap values "just in case"
-function Summary({ items }: { items: Item[] }) {
-  const count = useMemo(() => items.length, [items])
-  return <span>{count}</span>
-}
-
-// GOOD: Use useMemo for expensive derived values or stable props for memoized children
-function SearchResults({ items, query }: { items: Item[]; query: string }) {
-  const visibleItems = useMemo(() => {
-    return filterLargeList(items, query)
-  }, [items, query])
-
-  return <ExpensiveList items={visibleItems} />
-}
-
-// BAD: A giant Context for fast-changing application state
-const AppContext = createContext<AppState | null>(null)
-
-function AppProviders({ children }: { children: ReactNode }) {
-  return (
-    <AppContext value={{ theme, session, filters, draft, modals }}>
-      {children}
-    </AppContext>
-  )
-}
-
-// GOOD: Keep Context for ambient subtree values; use Jotai for hot app state
-const ThemeContext = createContext<Theme>("light")
-
-function AppProviders({ children }: { children: ReactNode }) {
-  return <ThemeContext value={theme}>{children}</ThemeContext>
-}
-
-const draftAtom = atom("")
-
-// BAD: Many related useState calls plus sync logic between them
-function Form() {
-  const [status, setStatus] = useState<"idle" | "saving" | "error">("idle")
-  const [data, setData] = useState<FormData>({ name: "" })
-  const [error, setError] = useState<string | null>(null)
-  // More setters and cross-field updates...
-}
-
-// GOOD: Use useReducer when transitions are related and explicit
-type FormState = {
-  status: "idle" | "saving" | "error"
-  data: FormData
-  error: string | null
-}
-
+// useReducer: consolidate related fields with explicit transitions rather than
+// many useState + cross-field sync. Reducer is a pure (state, action) => state.
+type FormState = { status: 'idle' | 'saving' | 'error'; data: { name: string }; error: string | null }
 type FormAction =
-  | { type: "changed_name"; value: string }
-  | { type: "save_started" }
-  | { type: "save_failed"; message: string }
-  | { type: "save_succeeded" }
+  | { type: 'changed_name'; value: string }
+  | { type: 'save_started' } | { type: 'save_failed'; message: string } | { type: 'save_succeeded' }
 
 function formReducer(state: FormState, action: FormAction): FormState {
   switch (action.type) {
-    case "changed_name":
-      return {
-        ...state,
-        data: { ...state.data, name: action.value },
-      }
-    case "save_started":
-      return { ...state, status: "saving", error: null }
-    case "save_failed":
-      return { ...state, status: "error", error: action.message }
-    case "save_succeeded":
-      return { ...state, status: "idle", error: null }
-    default:
-      throw new Error(`Unknown action: ${JSON.stringify(action)}`)
+    case 'changed_name':   return { ...state, data: { ...state.data, name: action.value } }
+    case 'save_started':   return { ...state, status: 'saving', error: null }
+    case 'save_failed':    return { ...state, status: 'error', error: action.message }
+    case 'save_succeeded': return { ...state, status: 'idle', error: null }
   }
 }
+// const [state, dispatch] = useReducer(formReducer, { status: 'idle', data: { name: '' }, error: null })
 
-function Form() {
-  const [state, dispatch] = useReducer(formReducer, {
-    status: "idle",
-    data: { name: "" },
-    error: null,
-  })
-
-  return (
-    <input
-      value={state.data.name}
-      onChange={(e) =>
-        dispatch({ type: "changed_name", value: e.target.value })
-      }
-    />
-  )
-}
-
-// BAD: setInterval-driven animation that ignores reduced-motion preferences
+// Animation: requestAnimationFrame (not setInterval), and bail on reduced-motion.
 useEffect(() => {
-  const id = window.setInterval(() => {
-    advanceSpinnerFrame()
-  }, 16)
-
-  return () => window.clearInterval(id)
-}, [])
-
-// GOOD: Use requestAnimationFrame for visual work and respect prefers-reduced-motion
-useEffect(() => {
-  const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)")
-  if (mediaQuery.matches) return
-
-  let frame = 0
-
-  const tick = (time: number) => {
-    drawFrame(time)
-    frame = window.requestAnimationFrame(tick)
-  }
-
-  frame = window.requestAnimationFrame(tick)
-
-  return () => window.cancelAnimationFrame(frame)
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  let frame = requestAnimationFrame(function tick(t) { drawFrame(t); frame = requestAnimationFrame(tick) })
+  return () => cancelAnimationFrame(frame)
 }, [])
 ```
-
-### DO NOT Use
-
-- **Next.js** - Use for SSR projects, not SPAs
-- **Remix** - Use for full-stack projects, not SPAs
-- **Redux** - Use Jotai instead for simpler, more atomic state
-- **Context API for global state** - Use Jotai atoms instead
-- **create-react-app** - Deprecated, use Vite
-- **webpack** - Use Vite bundler
-- **Class components** - Use function components with hooks
-- **Default exports** - Prefer named exports for better refactoring
 
 ## Testing
 
-### Component Testing with Vitest
+Vitest + React Testing Library (jsdom). Config: `test: { globals: true, environment: 'jsdom', setupFiles: './src/test/setup.ts' }` in `vite.config.ts`; in `setup.ts` extend `expect` with `@testing-library/jest-dom/matchers` and `afterEach(cleanup)`.
+
+Test behavior via accessible roles/text, not implementation. Query with `getByRole`/`getByLabelText` (which also enforce a11y); use `userEvent` over `fireEvent` for realistic interaction; wrap state updates in `act`.
 
 ```typescript
-// vite.config.ts - Add test configuration
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-
-export default defineConfig({
-  plugins: [react()],
-  test: {
-    globals: true,
-    environment: 'jsdom',
-    setupFiles: './src/test/setup.ts',
-  },
+it('is disabled while loading', () => {
+  render(<Button isLoading>Save</Button>)
+  expect(screen.getByRole('button', { name: /save/i })).toBeDisabled()
 })
 
-// src/test/setup.ts
-import { expect, afterEach } from 'vitest'
-import { cleanup } from '@testing-library/react'
-import * as matchers from '@testing-library/jest-dom/matchers'
-
-expect.extend(matchers)
-
-afterEach(() => {
-  cleanup()
-})
-
-// src/components/Button.test.tsx
-import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, it, expect, vi } from 'vitest'
-import { Button } from './Button'
-
-describe('Button', () => {
-  it('renders children correctly', () => {
-    render(<Button>Click me</Button>)
-    expect(screen.getByRole('button', { name: /click me/i })).toBeInTheDocument()
-  })
-
-  it('calls onClick when clicked', () => {
-    const handleClick = vi.fn()
-    render(<Button onClick={handleClick}>Click me</Button>)
-
-    fireEvent.click(screen.getByRole('button'))
-    expect(handleClick).toHaveBeenCalledTimes(1)
-  })
-
-  it('is disabled when isLoading is true', () => {
-    render(<Button isLoading>Click me</Button>)
-    expect(screen.getByRole('button')).toBeDisabled()
-  })
+// Atoms are plain — test via renderHook; act() around writes.
+it('increments', () => {
+  const { result } = renderHook(() => useAtom(countAtom))
+  act(() => result.current[1]((c) => c + 1))
+  expect(result.current[0]).toBe(1)
 })
 ```
 
-### Testing with Jotai
-
-```typescript
-// src/store/counter.test.ts
-import { renderHook, act } from "@testing-library/react";
-import { useAtom } from "jotai";
-import { describe, it, expect } from "vitest";
-import { countAtom, incrementAtom } from "./counter";
-
-describe("counter atoms", () => {
-  it("increments count", () => {
-    const { result } = renderHook(() => ({
-      count: useAtom(countAtom),
-      increment: useAtom(incrementAtom),
-    }));
-
-    expect(result.current.count[0]).toBe(0);
-
-    act(() => {
-      result.current.increment[1]();
-    });
-
-    expect(result.current.count[0]).toBe(1);
-  });
-});
-```
+⚠️ Each Jotai test needs isolation: atoms hold module-level identity but their VALUES live in a `Provider`'s store. Wrap `renderHook`/`render` in a fresh `<Provider>` (or `createStore()`) per test so state does not leak between tests.
 
 ## Expert Practices: Idioms, Anti-Patterns & Gotchas
 
@@ -2775,6 +1433,16 @@ const stableChildren = <p>Static content</p>
 setCount(c => c + 1)
 setCount(c => c + 1)
 setCount(c => c + 1) // increments by 3
+```
+
+**Async Effects race on fast mount/unmount — guard with an ignore flag (or `AbortController`).** When an Effect fetches, a rapid unmount→remount (or changing dep) fires a second fetch before the first resolves; responses can arrive out of order, so the STALE one wins and setState fires after unmount. Cleanup cannot cancel an in-flight `await`, so gate the state write on a per-effect flag. StrictMode's dev double-mount deliberately surfaces this. (In this stack, a route loader or async atom sidesteps it entirely — prefer those for render data.)
+
+```typescript
+useEffect(() => {
+  let ignore = false
+  fetchUser(userId).then((u) => { if (!ignore) setUser(u) }) // ignore the stale response
+  return () => { ignore = true }
+}, [userId])
 ```
 
 **`useRef`: do not read or write `ref.current` during render (one exception: lazy init).** Concurrent React may render a component multiple times before committing; ref mutations persist across those phantom renders while state does not, so render-phase writes violate purity and produce inconsistent results. Reads/writes belong in effects and event handlers. The one documented exception is idempotent lazy init: read `ref.current`, and if null, set it. Related waste: `useRef(new Expensive())` runs the constructor on EVERY render (the result is discarded after the first) — use the null-guard pattern.
@@ -2874,4 +1542,15 @@ function Tabs({ activeTab }: { activeTab: string }) {
 }
 ```
 
-This React skill provides comprehensive guidance for building modern SPAs with React Router, Jotai, and Vite, while explicitly avoiding Next.js, Redux, and other tools that don't fit the SPA paradigm.
+## Verify Before Done
+
+- [ ] No `useEffect`+`setState` that only derives a value from props/state (compute in render)
+- [ ] Effects that touch external systems return cleanup; async effects use an ignore-flag/AbortController; survives StrictMode setup→cleanup→setup
+- [ ] Updates depending on prior state use the updater form (`setX(x => …)`), especially after `await`
+- [ ] Lists use stable data IDs for `key`; subtree resets use `key={id}`, not an Effect
+- [ ] Every Jotai atom is defined at module scope (per-id → `atomFamily`); `use()` promises come from a loader/atom, never created in render
+- [ ] `memo`/`useMemo`/`useCallback` used only for perf (stable props for memoized children or expensive compute), not to fix bugs — no unstable inline props defeating a `memo`
+- [ ] No `forwardRef` in new code (ref is a plain prop); ref callbacks use block bodies
+- [ ] Interactive elements are keyboard-operable with correct roles/`aria-*`; inputs have labels; errors in `role="alert"` via `aria-describedby`
+- [ ] Not using Next.js/Remix/Redux/CRA/webpack/class components
+- [ ] `tsc` and lint clean (`eslint-plugin-react-hooks` enabled, deps not suppressed)

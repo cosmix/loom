@@ -33,160 +33,52 @@ triggers:
 
 ## Overview
 
-This skill provides comprehensive guidance for writing idiomatic, maintainable, and production-quality Python code across all domains: web applications, data processing, machine learning, and general-purpose scripting. It covers modern Python practices including type hints, async programming, testing patterns, proper packaging, data engineering workflows, and ML model development.
+Idiomatic, production-grade Python: modern typing, async, packaging, and the web/data/ML ecosystem. Assumes competence — the value is in what is easy to get wrong (interning, mutable defaults, blocking the event loop, GIL, dataclass/Pydantic boundaries), not syntax tutorials.
 
-## Key Concepts
+## Tooling (uv / ruff / mypy)
 
-### Type Hints (typing module)
+Modern Python has consolidated onto two Rust tools. Reach for them by default.
 
-On 3.9+ use built-in generics (`list[T]`, `dict[K, V]`); on 3.10+ use `X | Y` and `X | None` instead of `Union`/`Optional`; import `Callable`/`Sequence`/`Mapping`/`Iterator` from `collections.abc`, not `typing`.
+**`uv`** — one binary replacing pip + pip-tools + virtualenv + pyenv + pipx + (mostly) poetry; resolves/installs 10–100× faster.
 
-```python
-from collections.abc import Callable, Sequence, Mapping, Iterator, AsyncIterator
-from typing import TypeVar, Generic
+| Task | Command |
+| --- | --- |
+| New project | `uv init` (writes `pyproject.toml`) |
+| Add / remove dep | `uv add httpx` / `uv remove httpx` (updates `pyproject.toml` + `uv.lock`) |
+| Add dev dep | `uv add --dev pytest` |
+| Sync env from lock | `uv sync` (creates `.venv`, exact/reproducible) |
+| Run in project env | `uv run pytest` (auto-syncs first; no manual activate) |
+| Install a Python | `uv python install 3.12` |
+| Ephemeral tool | `uvx ruff check` (= `uv tool run`) |
+| pip shim | `uv pip install ...` (drop-in, no project file) |
 
-T = TypeVar('T')
-K = TypeVar('K')
-V = TypeVar('V')
+- `uv add` edits the manifest for you — never hand-edit `[project.dependencies]`. `uv.lock` is the committed lockfile; `uv sync --frozen` in CI to fail on drift.
 
-def process_items(items: Sequence[T], transform: Callable[[T], T]) -> list[T]:
-    return [transform(item) for item in items]
+**`ruff`** — single linter+formatter replacing flake8, isort, pyupgrade, pydocstyle, autoflake, and much of bandit.
 
-class Repository(Generic[T]):
-    def __init__(self) -> None:
-        self._items: dict[str, T] = {}
+- `ruff check --fix` (lint+autofix), `ruff format` (near-identical to black, replaces it).
+- Config lives under `[tool.ruff.lint]` since 0.1 — top-level `select` is deprecated and warns.
+- Useful rule groups: `E`/`W` pycodestyle, `F` pyflakes, `I` isort, `UP` pyupgrade (keeps typing current), `B` bugbear (catches mutable defaults, `lru_cache` on methods), `SIM`, `S` bandit-security, `ASYNC`, `PL` pylint, `RUF`. Suppress with `# noqa: E501` (never bare `# noqa`).
 
-    def get(self, key: str) -> T | None:
-        return self._items.get(key)
+**`mypy --strict`** for type checking; `pyright`/`basedpyright` (what Pylance runs) is faster and stricter on inference. Always scope ignores: `# type: ignore[arg-type]`, never bare `# type: ignore`.
 
-    def set(self, key: str, value: T) -> None:
-        self._items[key] = value
-```
+## Type Hints
 
-### Async/Await Patterns
-
-Prefer `asyncio.TaskGroup` (3.11+) over `gather()`: on failure it cancels the remaining sibling tasks, awaits them, and re-raises all errors as an `ExceptionGroup` (handled with `except*`). `gather()` does NOT cancel siblings on failure — the docs state they "won't be cancelled and will continue to run" — and `return_exceptions=True` silently mixes return values and exception objects into one list. Reserve `gather()` for genuinely independent fire-and-forget results.
-
-```python
-import asyncio
-from collections.abc import AsyncIterator
-
-async def fetch_data(url: str) -> dict:
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            return await response.json()
-
-async def process_batch(urls: list[str]) -> list[dict]:
-    async with asyncio.TaskGroup() as tg:
-        tasks = [tg.create_task(fetch_data(url)) for url in urls]
-    # any failure cancels siblings; ExceptionGroup raised on exit
-    return [t.result() for t in tasks]
-
-# Handle the ExceptionGroup a TaskGroup raises:
-try:
-    await process_batch(urls)
-except* ConnectionError as eg:
-    for exc in eg.exceptions:
-        logger.error("fetch failed: %s", exc)
-
-async def stream_items(source: AsyncIterator[bytes]) -> AsyncIterator[dict]:
-    async for chunk in source:
-        yield json.loads(chunk)
-```
-
-### Context Managers
+- 3.9+: built-in generics `list[T]`, `dict[K, V]`. 3.10+: `X | Y`, `X | None` (not `Union`/`Optional`).
+- Import `Callable`/`Sequence`/`Mapping`/`Iterator` from `collections.abc`, not `typing`.
+- **Accept abstract, return concrete:** take `Iterable`/`Sequence`/`Mapping` (max caller flexibility); return `list`/`dict` (callers know exactly what they get).
+- `Self` (3.11+) for fluent builders / alternate constructors. `TypedDict` for structured dicts (JSON payloads, `**kwargs`), `Protocol` for structural typing, `ParamSpec` for signature-preserving decorators — see Expert Practices.
 
 ```python
-from contextlib import contextmanager, asynccontextmanager
-from typing import Iterator, AsyncIterator
+from collections.abc import Iterable
+from typing import TypedDict, NotRequired, Self
 
-@contextmanager
-def managed_resource(name: str) -> Iterator[Resource]:
-    resource = Resource(name)
-    try:
-        resource.acquire()
-        yield resource
-    finally:
-        resource.release()
+class MovieRow(TypedDict):            # dict shape checkable by mypy
+    title: str
+    year: NotRequired[int]           # 3.11+: optional key
 
-@asynccontextmanager
-async def async_transaction(db: Database) -> AsyncIterator[Transaction]:
-    tx = await db.begin()
-    try:
-        yield tx
-        await tx.commit()
-    except Exception:
-        await tx.rollback()
-        raise
-```
-
-### Decorators
-
-```python
-from functools import wraps
-from typing import Callable, ParamSpec, TypeVar
-
-P = ParamSpec('P')
-R = TypeVar('R')
-
-def retry(max_attempts: int = 3) -> Callable[[Callable[P, R]], Callable[P, R]]:
-    def decorator(func: Callable[P, R]) -> Callable[P, R]:
-        @wraps(func)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-            last_exception: Exception | None = None
-            for attempt in range(max_attempts):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    last_exception = e
-            raise last_exception
-        return wrapper
-    return decorator
-```
-
-### Generators
-
-```python
-from typing import Generator, Iterator
-
-def paginate(items: Sequence[T], page_size: int) -> Generator[list[T], None, None]:
-    for i in range(0, len(items), page_size):
-        yield list(items[i:i + page_size])
-
-def read_chunks(file_path: str, chunk_size: int = 8192) -> Iterator[bytes]:
-    with open(file_path, 'rb') as f:
-        while chunk := f.read(chunk_size):
-            yield chunk
-```
-
-## Best Practices
-
-### PEP 8 Compliance
-
-- Use 4 spaces for indentation (never tabs)
-- Maximum line length of 88 characters (black default) or 79 (strict PEP 8)
-- Use snake_case for functions and variables, PascalCase for classes
-- Two blank lines before top-level definitions, one blank line between methods
-- Imports at the top: standard library, third-party, local (separated by blank lines)
-
-### Modern Python Features (3.10+)
-
-```python
-# Structural pattern matching
-match command:
-    case {"action": "create", "name": str(name)}:
-        create_resource(name)
-    case {"action": "delete", "id": int(id_)}:
-        delete_resource(id_)
-    case _:
-        raise ValueError("Unknown command")
-
-# Union types with |
-def process(value: int | str | None) -> str:
-    ...
-
-# Self type for fluent interfaces
-from typing import Self
+def deduplicate(items: Iterable[str]) -> list[str]:  # abstract in, concrete out
+    return list(dict.fromkeys(items))
 
 class Builder:
     def with_name(self, name: str) -> Self:
@@ -194,632 +86,277 @@ class Builder:
         return self
 ```
 
-### Packaging with pyproject.toml
+## Async / Await
 
-```toml
-[project]
-name = "mypackage"
-version = "0.1.0"
-description = "A sample package"
-requires-python = ">=3.11"
-dependencies = [
-    "httpx>=0.25.0",
-    "pydantic>=2.0.0",
-]
+Prefer `asyncio.TaskGroup` (3.11+) over `gather()`: on failure it cancels remaining sibling tasks, awaits them, and re-raises all errors as an `ExceptionGroup` (handled with `except*`). `gather()` does NOT cancel siblings on failure (they "won't be cancelled and will continue to run"), and `return_exceptions=True` silently mixes return values and exception objects into one list. Reserve `gather()` for genuinely independent fire-and-forget results.
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0",
-    "pytest-asyncio>=0.21.0",
-    "mypy>=1.0.0",
-    "ruff>=0.1.0",
-]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.ruff]
-line-length = 88
-target-version = "py311"
-
-# Since Ruff 0.1 (formatter), lint settings MUST live under [tool.ruff.lint],
-# not the top level (top-level placement is deprecated and warns).
-[tool.ruff.lint]
-select = ["E4", "E7", "E9", "F", "I", "UP"]  # UP (pyupgrade) enforces typing currency
-
-[tool.ruff.format]
-quote-style = "double"
-
-[tool.mypy]
-strict = true
-python_version = "3.11"
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"  # pytest-asyncio defaults to "strict"; async tests are silently uncollected without this
-```
-
-## Web Framework Patterns
-
-### FastAPI Applications
+⚠ **Never block the event loop.** A coroutine that calls blocking IO (`requests`, sync DB drivers, `open().read()`), `time.sleep()`, or CPU-heavy work freezes *every* task on that loop. Offload: `await asyncio.to_thread(fn, *args)` (3.9+) for blocking IO; `loop.run_in_executor(process_pool, fn)` for CPU work; `await asyncio.sleep()` not `time.sleep()`. See Async Gotchas for the full set.
 
 ```python
-from fastapi import FastAPI, Depends, HTTPException, status
-from pydantic import BaseModel, Field
-from typing import Annotated
+import asyncio
 
-app = FastAPI(title="API Service", version="1.0.0")
+async def process_batch(urls: list[str]) -> list[dict]:
+    async with asyncio.TaskGroup() as tg:
+        tasks = [tg.create_task(fetch_data(url)) for url in urls]
+    return [t.result() for t in tasks]   # ExceptionGroup raised on any failure
 
-class UserCreate(BaseModel):
-    email: str = Field(..., pattern=r'^[\w\.-]+@[\w\.-]+\.\w+$')
-    name: str = Field(..., min_length=1, max_length=100)
+try:
+    await process_batch(urls)
+except* ConnectionError as eg:           # subgroup handling
+    for exc in eg.exceptions:
+        logger.error("fetch failed: %s", exc)
 
-class User(UserCreate):
-    id: int
-
-async def get_db() -> AsyncIterator[AsyncSession]:
-    async with AsyncSession(engine) as session:
-        yield session
-
-@app.post("/users/", response_model=User, status_code=status.HTTP_201_CREATED)
-async def create_user(
-    user: UserCreate,
-    db: Annotated[AsyncSession, Depends(get_db)]
-) -> User:
-    db_user = await UserService(db).create(user)
-    return User(id=db_user.id, email=db_user.email, name=db_user.name)
-
-@app.get("/users/{user_id}", response_model=User)
-async def get_user(
-    user_id: int,
-    db: Annotated[AsyncSession, Depends(get_db)]
-) -> User:
-    user = await UserService(db).get(user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
+rows = await asyncio.to_thread(cursor.execute, sql)   # sync driver off the loop
 ```
 
-### Django Patterns
+## Dataclasses vs Pydantic (the validation boundary)
 
-```python
-from django.db import models, transaction
-from django.core.validators import EmailValidator
-from typing import Self
+**Choose by trust, not habit.**
 
-class TimeStampedModel(models.Model):
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+| | `@dataclass` (stdlib) / `attrs` | Pydantic v2 `BaseModel` |
+| --- | --- | --- |
+| Validation | **None** — type hints are not enforced at runtime | Validates + coerces on construction |
+| Use for | Internal, already-trusted structs; hot paths | Untrusted edges: API bodies, config, external JSON |
+| Cost | Free | Per-instance validation (Rust core, but non-zero) |
 
-    class Meta:
-        abstract = True
-
-class User(TimeStampedModel):
-    email = models.EmailField(unique=True, validators=[EmailValidator()])
-    name = models.CharField(max_length=100)
-    is_active = models.BooleanField(default=True)
-
-    class Meta:
-        db_table = 'users'
-        indexes = [
-            models.Index(fields=['email']),
-            models.Index(fields=['created_at']),
-        ]
-
-    @classmethod
-    def create_with_profile(cls, email: str, name: str) -> Self:
-        with transaction.atomic():
-            user = cls.objects.create(email=email, name=name)
-            Profile.objects.create(user=user)
-            return user
-```
-
-## Data Engineering Patterns
-
-### Pandas Data Processing
-
-```python
-import pandas as pd
-import numpy as np
-from typing import Callable
-
-def load_and_clean(file_path: str) -> pd.DataFrame:
-    df = pd.read_csv(file_path, parse_dates=['timestamp'])
-
-    # Handle missing values
-    df['amount'] = df['amount'].fillna(0)
-    df['category'] = df['category'].fillna('unknown')
-
-    # Type conversions
-    df['user_id'] = df['user_id'].astype('Int64')
-    df['amount'] = df['amount'].astype('float64')
-
-    # Remove duplicates
-    df = df.drop_duplicates(subset=['user_id', 'timestamp'])
-
-    return df
-
-def aggregate_by_window(
-    df: pd.DataFrame,
-    window: str = '1D',
-    agg_funcs: dict[str, str | list[str]] = None
-) -> pd.DataFrame:
-    if agg_funcs is None:
-        agg_funcs = {'amount': ['sum', 'mean', 'count']}
-
-    return (df
-        .set_index('timestamp')
-        .groupby('category')
-        .resample(window)
-        .agg(agg_funcs)
-        .reset_index())
-
-def apply_transformation(
-    df: pd.DataFrame,
-    transform: Callable[[pd.Series], pd.Series],
-    columns: list[str]
-) -> pd.DataFrame:
-    df_copy = df.copy()
-    for col in columns:
-        df_copy[col] = transform(df_copy[col])
-    return df_copy
-
-# Vectorized operations for performance
-def calculate_features(df: pd.DataFrame) -> pd.DataFrame:
-    df['amount_log'] = np.log1p(df['amount'])
-    df['amount_zscore'] = (df['amount'] - df['amount'].mean()) / df['amount'].std()
-    df['is_weekend'] = df['timestamp'].dt.dayofweek.isin([5, 6])
-    return df
-```
-
-### Dask for Large Datasets
-
-```python
-import dask.dataframe as dd
-from dask.diagnostics import ProgressBar
-
-def process_large_dataset(input_path: str, output_path: str) -> None:
-    # Read partitioned data
-    ddf = dd.read_parquet(input_path, engine='pyarrow')
-
-    # Lazy transformations
-    ddf = ddf[ddf['amount'] > 0]
-    ddf['amount_usd'] = ddf['amount'] * ddf['exchange_rate']
-
-    # Aggregation
-    result = ddf.groupby('category').agg({
-        'amount_usd': ['sum', 'mean', 'count'],
-        'user_id': 'nunique'
-    })
-
-    # Execute and save
-    with ProgressBar():
-        result.compute().to_parquet(output_path)
-
-def parallel_apply(
-    ddf: dd.DataFrame,
-    func: Callable[[pd.DataFrame], pd.DataFrame],
-    meta: dict[str, type]
-) -> dd.DataFrame:
-    return ddf.map_partitions(func, meta=meta)
-```
-
-### NumPy Numerical Computing
-
-```python
-import numpy as np
-from numpy.typing import NDArray
-
-def moving_average(
-    data: NDArray[np.float64],
-    window_size: int
-) -> NDArray[np.float64]:
-    return np.convolve(data, np.ones(window_size), 'valid') / window_size
-
-def normalize_features(
-    X: NDArray[np.float64],
-    axis: int = 0
-) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
-    mean = np.mean(X, axis=axis, keepdims=True)
-    std = np.std(X, axis=axis, keepdims=True)
-    X_normalized = (X - mean) / (std + 1e-8)
-    return X_normalized, mean, std
-
-def batch_process(
-    data: NDArray[np.float64],
-    batch_size: int
-) -> list[NDArray[np.float64]]:
-    n_samples = data.shape[0]
-    return [data[i:i+batch_size] for i in range(0, n_samples, batch_size)]
-```
-
-## Machine Learning Patterns
-
-### Scikit-learn Pipelines
-
-```python
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import cross_val_score, GridSearchCV
-from sklearn.base import BaseEstimator, TransformerMixin
-import numpy as np
-
-class CustomFeatureTransformer(BaseEstimator, TransformerMixin):
-    def __init__(self, log_transform: bool = True):
-        self.log_transform = log_transform
-
-    def fit(self, X: NDArray, y: NDArray | None = None) -> Self:
-        return self
-
-    def transform(self, X: NDArray) -> NDArray:
-        X_copy = X.copy()
-        if self.log_transform:
-            X_copy = np.log1p(np.abs(X_copy))
-        return X_copy
-
-def build_pipeline() -> Pipeline:
-    return Pipeline([
-        ('features', CustomFeatureTransformer(log_transform=True)),
-        ('scaler', StandardScaler()),
-        ('classifier', RandomForestClassifier(random_state=42))
-    ])
-
-def train_with_cv(
-    X: NDArray,
-    y: NDArray,
-    pipeline: Pipeline,
-    cv: int = 5
-) -> dict[str, float]:
-    scores = cross_val_score(pipeline, X, y, cv=cv, scoring='f1_macro')
-    return {
-        'mean_score': scores.mean(),
-        'std_score': scores.std(),
-        'scores': scores.tolist()
-    }
-
-def hyperparameter_search(
-    X: NDArray,
-    y: NDArray,
-    pipeline: Pipeline
-) -> tuple[Pipeline, dict]:
-    param_grid = {
-        'classifier__n_estimators': [100, 200, 300],
-        'classifier__max_depth': [10, 20, None],
-        'features__log_transform': [True, False]
-    }
-
-    search = GridSearchCV(
-        pipeline,
-        param_grid,
-        cv=5,
-        scoring='f1_macro',
-        n_jobs=-1,
-        verbose=1
-    )
-
-    search.fit(X, y)
-    return search.best_estimator_, search.best_params_
-```
-
-### PyTorch Model Training
-
-```python
-import torch
-import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
-from typing import Callable
-
-class CustomDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
-    def __init__(self, X: NDArray, y: NDArray, transform: Callable | None = None):
-        self.X = torch.from_numpy(X).float()
-        self.y = torch.from_numpy(y).long()
-        self.transform = transform
-
-    def __len__(self) -> int:
-        return len(self.X)
-
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
-        x, y = self.X[idx], self.y[idx]
-        if self.transform:
-            x = self.transform(x)
-        return x, y
-
-class MLP(nn.Module):
-    def __init__(self, input_dim: int, hidden_dims: list[int], output_dim: int):
-        super().__init__()
-        layers = []
-        prev_dim = input_dim
-
-        for hidden_dim in hidden_dims:
-            layers.extend([
-                nn.Linear(prev_dim, hidden_dim),
-                nn.ReLU(),
-                nn.BatchNorm1d(hidden_dim),
-                nn.Dropout(0.3)
-            ])
-            prev_dim = hidden_dim
-
-        layers.append(nn.Linear(prev_dim, output_dim))
-        self.network = nn.Sequential(*layers)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.network(x)
-
-def train_epoch(
-    model: nn.Module,
-    dataloader: DataLoader,
-    criterion: nn.Module,
-    optimizer: torch.optim.Optimizer,
-    device: torch.device
-) -> float:
-    model.train()
-    total_loss = 0.0
-
-    for X_batch, y_batch in dataloader:
-        X_batch = X_batch.to(device)
-        y_batch = y_batch.to(device)
-
-        optimizer.zero_grad()
-        outputs = model(X_batch)
-        loss = criterion(outputs, y_batch)
-        loss.backward()
-        optimizer.step()
-
-        total_loss += loss.item() * X_batch.size(0)
-
-    return total_loss / len(dataloader.dataset)
-
-@torch.no_grad()
-def evaluate(
-    model: nn.Module,
-    dataloader: DataLoader,
-    device: torch.device
-) -> tuple[float, NDArray]:
-    model.eval()
-    all_preds = []
-    all_labels = []
-
-    for X_batch, y_batch in dataloader:
-        X_batch = X_batch.to(device)
-        outputs = model(X_batch)
-        preds = outputs.argmax(dim=1).cpu().numpy()
-
-        all_preds.extend(preds)
-        all_labels.extend(y_batch.numpy())
-
-    accuracy = np.mean(np.array(all_preds) == np.array(all_labels))
-    return accuracy, np.array(all_preds)
-```
-
-## Common Patterns
-
-### Dataclasses and Pydantic Models
+Don't trust a dataclass with external input (it will happily hold `age="banana"`); don't pay Pydantic's validation cost for internal structs constructed in a tight loop. For perf-critical validated decode, `msgspec` is the fastest option.
 
 ```python
 from dataclasses import dataclass, field
 from pydantic import BaseModel, Field, field_validator
 
-@dataclass
+@dataclass(slots=True)               # internal; slots=True saves memory + blocks typos
 class Config:
     host: str
     port: int = 8080
-    tags: list[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)   # NEVER tags: list = []
 
-# By default @dataclass generates __eq__ and sets __hash__ = None (instances
-# are unhashable — cannot be set members or dict keys). Use @dataclass(frozen=True)
-# for a usable __hash__ on immutable value objects; only mutable dataclasses (like
-# Config above) keep the default. Python 3.10+ also offers slots=True (memory/typo
-# safety) and kw_only=True.
+class UserCreate(BaseModel):         # untrusted edge
+    email: str = Field(min_length=5)
+    name: str = Field(max_length=100)
 
-class UserCreate(BaseModel):
-    email: str = Field(..., min_length=5)
-    name: str = Field(..., max_length=100)
-
-    @field_validator('email')
+    @field_validator("email")
     @classmethod
-    def validate_email(cls, v: str) -> str:
-        if '@' not in v:
-            raise ValueError('Invalid email')
+    def norm_email(cls, v: str) -> str:
+        if "@" not in v:
+            raise ValueError("invalid email")   # NEVER assert (-O strips it)
         return v.lower()
 ```
 
-### Testing with pytest
+⚠ Plain `@dataclass` sets `__hash__ = None` (unhashable — cannot be a set member / dict key). Use `frozen=True` for a hashable value object. `slots=True`/`kw_only=True` are 3.10+.
 
-Async fixtures must use `@pytest_asyncio.fixture`, not `@pytest.fixture` — under the default strict mode a plain `@pytest.fixture` on an `async def` yields a coroutine, not the awaited value. Session/module-scoped async fixtures need `loop_scope=`; the `event_loop` fixture was removed in pytest-asyncio 1.0.
+## Packaging (`pyproject.toml`)
+
+```toml
+[project]
+name = "mypackage"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["httpx>=0.25", "pydantic>=2.0"]
+
+[dependency-groups]                  # PEP 735; `uv add --dev` targets this
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "mypy>=1.9", "ruff>=0.4"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff.lint]                     # MUST be nested since ruff 0.1; top-level is deprecated
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+strict = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"                # else async tests are silently UNCOLLECTED (default "strict")
+```
+
+## Web Frameworks
+
+### FastAPI
+
+Type hints drive validation, serialization, and OpenAPI. Use `Annotated[..., Depends(...)]` for injection; `response_model` to shape/filter output.
 
 ```python
-import pytest
-import pytest_asyncio
-from unittest.mock import AsyncMock, patch
+from typing import Annotated
+from fastapi import FastAPI, Depends, HTTPException, status
 
-@pytest.fixture
-def client() -> TestClient:
-    return TestClient(app)
+app = FastAPI()
+
+async def get_db() -> AsyncIterator[AsyncSession]:   # yield-dependency: cleanup after response
+    async with AsyncSession(engine) as s:
+        yield s
+
+@app.post("/users/", response_model=User, status_code=status.HTTP_201_CREATED)
+async def create_user(user: UserCreate, db: Annotated[AsyncSession, Depends(get_db)]) -> User:
+    return await UserService(db).create(user)
+```
+
+⚠ Gotchas:
+
+- **`def` vs `async def` path ops:** a `def` handler runs in FastAPI's threadpool (blocking libs OK). An `async def` handler runs on the event loop — any blocking call inside stalls *all* requests. Pick `def` for sync ORMs, `async def` only with async libs.
+- `response_model` strips fields not on the model — the primary guard against leaking hashes/tokens; don't return the raw ORM object.
+- `Depends` results are cached per-request; use `BackgroundTasks` for post-response work.
+
+### Django
+
+```python
+from django.db import models, transaction
+
+class User(models.Model):
+    email = models.EmailField(unique=True)
+    class Meta:
+        indexes = [models.Index(fields=["email"])]
+
+with transaction.atomic():                       # rolls back on exception
+    user = User.objects.create(email=e)
+    Profile.objects.create(user=user)
+```
+
+⚠ QuerySets are lazy (evaluated on iteration/`len`/slice). Kill N+1 with `.select_related()` (FK/1:1 join) and `.prefetch_related()` (M2M/reverse). Batch with `bulk_create`/`bulk_update`. `.only()`/`.defer()` to trim columns.
+
+## Data & ML (dense reference)
+
+The APIs are well-known; these are the correctness/perf traps that bite in review.
+
+**pandas**
+
+- **Vectorize.** `df["c"] = df["a"] * df["b"]`, `.map`/`np.where`/masks — never `iterrows`/`itertuples`/row-wise `apply` (Python-level loop, 10–100× slower).
+- **Assign via `.loc`**, never chained (`df[m]["c"] = ...`) — raises `SettingWithCopyWarning` and may no-op. pandas 3.0 makes Copy-on-Write the default, ending the ambiguity.
+- Memory: `read_csv(usecols=, dtype=)`; nullable `Int64`/`boolean` for NA-bearing ints; `category` dtype for low-cardinality strings; chunk with `read_csv(chunksize=)` or move to `polars`/`dask`/`pyarrow` at scale.
+- `merge` silently fans out on non-unique keys (row explosion) — validate with `merge(..., validate="one_to_many")`.
+
+**numpy**
+
+- Slices are **views**, not copies — `b = a[1:3]; b[0] = 9` mutates `a`. `.copy()` to break aliasing.
+- Broadcasting + ufuncs over Python loops; watch silent `int` overflow on fixed-width dtypes.
+- Use `rng = np.random.default_rng(seed)` (Generator API), not legacy global `np.random.seed`/`np.random.rand`.
+
+**scikit-learn**
+
+- Wrap preprocessing + estimator in a `Pipeline` so scalers/encoders fit on the **train fold only** inside CV — fitting a scaler on the full dataset before splitting leaks test statistics and inflates scores. `ColumnTransformer` for heterogeneous columns. Set `random_state` for reproducibility.
+
+**PyTorch**
+
+- Training step order: `optimizer.zero_grad()` → forward → `loss.backward()` → `optimizer.step()`. Forgetting `zero_grad` accumulates gradients.
+- Eval: `model.eval()` (disables dropout, freezes BatchNorm running stats) **and** `torch.inference_mode()` / `torch.no_grad()` (no autograd graph). Both are needed; they do different things.
+- Accumulate metrics as `loss.item()`/`.detach()` — keeping tensors alive retains the whole graph → memory blowup. `DataLoader(num_workers>0, pin_memory=True)` for GPU throughput; move batches with `.to(device, non_blocking=True)`.
+
+## Testing with pytest
+
+Async fixtures must use `@pytest_asyncio.fixture` (a plain `@pytest.fixture` on `async def` yields an un-awaited coroutine under strict mode). Session/module-scoped async fixtures need `loop_scope=`; the `event_loop` fixture was removed in pytest-asyncio 1.0.
+
+Built-in fixtures worth reaching for:
+
+- `tmp_path` (per-test `pathlib.Path` dir), `monkeypatch` (`setattr`/`setenv`/`chdir`/`syspath_prepend`, all auto-undone at teardown — never patch globals by hand), `capsys`/`caplog`, `pytest.raises(ValueError, match="regex")`.
+- `conftest.py` fixtures are auto-discovered by every test in that directory tree — no import. Fixture `scope=` is `function` (default) / `class` / `module` / `session`; `autouse=True` applies without being requested.
+- Run tips: `-x` stop on first fail, `-k EXPR` select, `--lf` last-failed, `-q`, parametrize `ids=` for readable names.
+
+```python
+import pytest, pytest_asyncio
 
 @pytest_asyncio.fixture
 async def db_session() -> AsyncIterator[AsyncSession]:
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    async with AsyncSession(engine) as session:
-        yield session
+    async with AsyncSession(engine) as s:
+        yield s
 
-class TestUserService:
-    @pytest.mark.asyncio
-    async def test_create_user(self, db_session: AsyncSession) -> None:
-        service = UserService(db_session)
-        user = await service.create(name="test", email="test@example.com")
-        assert user.id is not None
+@pytest.mark.parametrize("email,valid", [("a@b.com", True), ("bad", False)])
+def test_email(email: str, valid: bool) -> None:
+    if valid:
+        User(email=email)
+    else:
+        with pytest.raises(ValueError):
+            User(email=email)
 
-    @pytest.mark.parametrize("email,valid", [
-        ("user@example.com", True),
-        ("invalid", False),
-        ("", False),
-    ])
-    def test_email_validation(self, email: str, valid: bool) -> None:
-        if valid:
-            User(email=email, name="test")
-        else:
-            with pytest.raises(ValueError):
-                User(email=email, name="test")
-
-    @patch("mymodule.external_api")
-    async def test_with_mock(self, mock_api: AsyncMock) -> None:
-        mock_api.fetch.return_value = {"status": "ok"}
-        result = await process_with_api()
-        mock_api.fetch.assert_called_once()
+def test_env(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test")   # auto-restored after the test
+    assert load_config().key == "test"
 ```
 
 ## Anti-Patterns
 
-### Avoid These Practices
+The two that survive linting and cause real bugs:
 
 ```python
-# BAD: Mutable default arguments
-def append_to(item, target=[]):  # Bug: shared list across calls
-    target.append(item)
-    return target
+# Mutable default arg — the list is created ONCE and shared across all calls
+def append(item, target=[]):        # BAD
+    target.append(item); return target
+def append(item, target=None):      # GOOD
+    target = [] if target is None else target
+    target.append(item); return target
 
-# GOOD: Use None and create new list
-def append_to(item, target=None):
-    if target is None:
-        target = []
-    target.append(item)
-    return target
-
-# BAD: Bare except clauses
-try:
-    risky_operation()
-except:  # Catches SystemExit, KeyboardInterrupt too
-    pass
-
-# GOOD: Catch specific exceptions
-try:
-    risky_operation()
-except (ValueError, RuntimeError) as e:
-    logger.error(f"Operation failed: {e}")
-
-# BAD: String formatting with + for complex strings
-message = "User " + name + " has " + str(count) + " items"
-
-# GOOD: f-strings
-message = f"User {name} has {count} items"
-
-# BAD: Checking type with type()
-if type(obj) == list:
-    ...
-
-# GOOD: Use isinstance for type checking
-if isinstance(obj, list):
-    ...
-
-# BAD: Not using context managers for resources
-f = open("file.txt")
-data = f.read()
-f.close()
-
-# GOOD: Always use context managers
-with open("file.txt") as f:
-    data = f.read()
-
-# BAD: Global mutable state
-_cache = {}
-
-def get_cached(key):
-    return _cache.get(key)
-
-# GOOD: Encapsulate state in classes or use dependency injection
-class Cache:
-    def __init__(self):
-        self._store: dict[str, Any] = {}
-
-    def get(self, key: str) -> Any | None:
-        return self._store.get(key)
-
-# BAD: Late-binding closures in a loop
-fns = [lambda: i for i in range(3)]
-[f() for f in fns]  # [2, 2, 2] - all closures share the same 'i' cell,
-                    # resolved at call time after the loop has finished
-
-# GOOD: Bind the value eagerly with a default argument (or a factory function)
-fns = [lambda i=i: i for i in range(3)]
-[f() for f in fns]  # [0, 1, 2]
+# Late-binding closure — every lambda shares one 'i' cell, read at call time
+fns = [lambda: i for i in range(3)]        # BAD -> [2, 2, 2]
+fns = [lambda i=i: i for i in range(3)]     # GOOD -> [0, 1, 2] (bind eagerly)
 ```
 
-### Quick Pattern Swaps
+Quick swaps (ruff/mypy catch most): `except:` → `except (ValueError, RuntimeError) as e:` (bare except also traps `KeyboardInterrupt`/`SystemExit`); `type(x) == list` → `isinstance(x, list)`; `x == None` → `x is None`; `"a"+str(n)` → `f"a{n}"`; manual `open`/`close` → `with open(...)`; keep `try:` blocks to the single line that can raise so the wrong exception isn't caught.
 
-```python
-# BAD: Equality checks against None
-if result == None:
-    handle_missing_result()
-
-# GOOD: Use identity checks for singletons
-if result is None:
-    handle_missing_result()
-
-# BAD: A broad try block that hides the failing line
-try:
-    value = payload["count"]
-    return normalize(value)
-except KeyError:
-    return 0
-
-# GOOD: Keep the try block as small as possible
-try:
-    value = payload["count"]
-except KeyError:
-    return 0
-return normalize(value)
-
-# BAD: Treating "empty" and "missing" as the same thing
-if items:
-    process(items)
-
-# GOOD: Check for None explicitly when empties are valid input
-if items is not None:
-    process(items)
-```
+**f-string debug specifier:** `f"{expr=}"` prints `expr=value` (great for logging); combine with format specs: `f"{ratio=:.2%}"`.
 
 ## Expert Practices: Idioms, Anti-Patterns & Gotchas
 
 High-signal guidance for production Python. Each item states the mechanism, not just the rule.
 
+### Concurrency Model & the GIL
+
+Pick the right primitive; the GIL makes the choice non-obvious.
+
+- **CPython has a GIL:** exactly one thread executes Python bytecode at a time. Threads help **IO-bound** work (the GIL is released during blocking IO and in many C extensions), but give **near-zero speedup for CPU-bound** pure-Python work.
+- **CPU-bound → processes:** `ProcessPoolExecutor`/`multiprocessing`, or push the loop into NumPy / a C-extension that releases the GIL.
+- **IO-bound, many connections → `asyncio`** (single thread, cooperative). **IO-bound with only blocking libraries → threads** (`ThreadPoolExecutor`). asyncio gives no parallelism for CPU work.
+- **Free-threaded builds (PEP 703):** 3.13 ships an experimental no-GIL interpreter (`python3.13t`, `--disable-gil`); 3.14 continues it (officially supported but still opt-in, phase II). Not the default, and much of the C-extension ecosystem isn't ready — don't assume it in library code.
+
+```python
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+with ProcessPoolExecutor() as pool:            # CPU-bound: real parallelism
+    results = list(pool.map(cpu_heavy, chunks))
+with ThreadPoolExecutor(max_workers=32) as pool:  # blocking IO: GIL released during waits
+    results = list(pool.map(fetch_url, urls))
+```
+
 ### Typing Idioms
 
-**Use PEP 695 type-parameter syntax for generics and aliases (3.12+).** Square brackets on a class/def declare type parameters in their own scope — no module-level `TypeVar` or `Generic[T]` base needed — and the `type` statement defines lazily-evaluated aliases so forward/recursive references work without quoting. Variance is inferred. Keep `TypeVar`/`Generic`/`ParamSpec` only for libraries supporting < 3.12; do not mix old `TypeVar` and new syntax in one class.
+**Use PEP 695 type-parameter syntax for generics and aliases (3.12+).** Square brackets on a class/def declare type parameters in their own scope — no module-level `TypeVar` or `Generic[T]` base — and the `type` statement defines lazily-evaluated aliases so forward/recursive references work without quoting. Variance is inferred. Keep `TypeVar`/`Generic`/`ParamSpec` only for libraries supporting < 3.12; do not mix old `TypeVar` and new syntax in one class.
 
 ```python
 class Stack[T]:
     def __init__(self) -> None:
         self._items: list[T] = []
 
-def first[T](items: list[T]) -> T:
-    return items[0]
-
 type Vector = list[float]
 def max_item[T: (int, float)](items: list[T]) -> T: ...  # inline constraints
-```
-
-**Annotate arguments with abstract types, return values with concrete types.** Accept `Iterable`/`Sequence`/`Mapping` from `collections.abc` to maximize caller flexibility; return `list`/`dict` so callers know exactly what they get.
-
-```python
-from collections.abc import Iterable
-
-def deduplicate(items: Iterable[str]) -> list[str]:
-    return list(dict.fromkeys(items))
 ```
 
 **Prefer `TypeIs` over `TypeGuard` for narrowing predicates (3.13+, PEP 742).** `TypeGuard` narrows only the `True` branch and permits unsound narrowing to an unrelated type. `TypeIs` narrows in BOTH branches and requires the narrowed type to be compatible with the input — sound for the common `isinstance`-style predicate. Both are in `typing_extensions` for older Pythons.
 
 ```python
-from typing import TypeIs  # or typing_extensions
+from typing import TypeIs
 
 def is_str_list(val: list[object]) -> TypeIs[list[str]]:
     return all(isinstance(x, str) for x in val)
 # narrows to list[str] in the if-branch AND back to list[object] in else
 ```
 
-**Use `ParamSpec` + `Concatenate` to keep decorators signature-transparent (PEP 612).** Without `ParamSpec`, a wrapper typed `(*args: Any, **kwargs: Any) -> Any` erases all parameter info for callers and IDEs. `P.args`/`P.kwargs` capture the full parameter list as a unit so the original signature flows through unchanged; pair with a `TypeVar` for the return. `Concatenate[X, P]` models injecting/removing a leading parameter (e.g. supplying a `Session` first). The skill's `retry` decorator above already follows this.
+**Use `ParamSpec` + `Concatenate` to keep decorators signature-transparent (PEP 612).** A wrapper typed `(*args: Any, **kwargs: Any) -> Any` erases all parameter info for callers and IDEs. `P.args`/`P.kwargs` capture the full parameter list as a unit so the original signature flows through; pair with a `TypeVar` for the return. `Concatenate[X, P]` models injecting/removing a leading parameter (e.g. supplying a `Session` first).
+
+```python
+from functools import wraps
+from typing import Callable, ParamSpec, TypeVar
+P = ParamSpec("P"); R = TypeVar("R")
+
+def retry(n: int = 3) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    def deco(fn: Callable[P, R]) -> Callable[P, R]:
+        @wraps(fn)
+        def wrap(*a: P.args, **k: P.kwargs) -> R:
+            last: Exception | None = None
+            for _ in range(n):
+                try: return fn(*a, **k)
+                except Exception as e: last = e
+            raise last
+        return wrap
+    return deco
+```
 
 **Use `Protocol` for structural subtyping, and know `@runtime_checkable`'s limits.** Any class with matching members satisfies a `Protocol` without inheriting, avoiding coupling third-party types to your ABC hierarchy. But `isinstance()` against a runtime-checkable protocol checks only the *presence* of methods/attributes, not signatures or types; since 3.12 it uses `inspect.getattr_static()`, so dynamic `__getattr__`/descriptor-synthesized attributes are no longer seen. The docs note it is "surprisingly slow" — prefer `hasattr()` in hot paths.
 
@@ -839,7 +376,6 @@ class DBConnection:          # satisfies Closeable with no inheritance
 ```python
 class PluginBase:
     _registry: dict[str, type] = {}
-
     def __init_subclass__(cls, plugin_name: str = "", **kwargs):
         super().__init_subclass__(**kwargs)
         if plugin_name:
@@ -854,7 +390,6 @@ class MyPlugin(PluginBase, plugin_name="my_plugin"): ...
 
 ```python
 background_tasks: set[asyncio.Task] = set()
-
 task = asyncio.create_task(some_coro())
 background_tasks.add(task)                       # strong reference
 task.add_done_callback(background_tasks.discard) # bounded cleanup
@@ -871,9 +406,11 @@ async def cleanup_handler():
         raise  # MUST re-raise so TaskGroup/timeout can complete
 ```
 
+**Never block the event loop (expanded).** One coroutine running blocking IO or CPU work halts every other task on the loop — no error, just latency spikes and stalled health checks. Offload blocking IO with `await asyncio.to_thread(fn, *args)` (3.9+); offload CPU work with `loop.run_in_executor(ProcessPoolExecutor(), fn, *args)`. Use async-native libraries (`httpx`/`aiohttp`, `asyncpg`) rather than sync ones inside coroutines.
+
 **Prefer `asyncio.timeout()` (3.11+) over `wait_for()`.** It participates in cooperative cancellation; `wait_for(gather(...))` cancels the gather but the gathered coroutines keep running.
 
-**Use `contextvars.ContextVar`, not `threading.local()`, for per-task state in async code.** asyncio runs all coroutines on one thread, so every coroutine shares the same `threading.local()` namespace — isolation is silently defeated. Each `asyncio.Task` runs in a shallow copy of the current `Context`, so a `ContextVar` set in one task does not leak to siblings (and, by design, a child's mutation does not propagate back to the parent).
+**Use `contextvars.ContextVar`, not `threading.local()`, for per-task state in async code.** asyncio runs all coroutines on one thread, so every coroutine shares the same `threading.local()` namespace — isolation is silently defeated. Each `asyncio.Task` runs in a shallow copy of the current `Context`, so a `ContextVar` set in one task does not leak to siblings (and a child's mutation does not propagate back to the parent).
 
 ```python
 from contextvars import ContextVar
@@ -894,6 +431,8 @@ async def handle_request(rid: str):
 **A `@contextmanager` that catches an exception without re-raising silently suppresses it.** When a `with` block raises, the exception is thrown into the generator at the `yield`; if the generator catches it and does not re-raise, the `with` statement is told the exception was handled and execution continues — a silent control-flow/data-loss bug. To merely log, you MUST re-raise. (Generators are also single-use: reusing one raises `RuntimeError: generator didn't yield`.)
 
 ```python
+from contextlib import contextmanager
+
 @contextmanager
 def managed_conn(url: str) -> Iterator[Connection]:
     conn = connect(url)
@@ -906,7 +445,7 @@ def managed_conn(url: str) -> Iterator[Connection]:
         conn.close()
 ```
 
-**Use `ExitStack` for dynamic/conditional cleanup.** It handles a variable number of resources, conditional cleanup, and rollback during `__enter__` — cases fixed `with`-nesting cannot. Expert API points: `pop_all()` transfers callbacks to a fresh stack (invoking nothing) for "commit on success" ownership transfer; `push()` registers a context manager's `__exit__` and CAN suppress exceptions; `callback()` registers a plain function that CANNOT suppress (never passed exception details). Reusable but not reentrant; `AsyncExitStack` exposes `aclose()`.
+**Use `ExitStack` for dynamic/conditional cleanup.** It handles a variable number of resources, conditional cleanup, and rollback during `__enter__` — cases fixed `with`-nesting cannot. `pop_all()` transfers callbacks to a fresh stack (invoking nothing) for "commit on success" ownership transfer; `push()` registers a context manager's `__exit__` and CAN suppress exceptions; `callback()` registers a plain function that CANNOT suppress. Reusable but not reentrant; `AsyncExitStack` exposes `aclose()`.
 
 ```python
 from contextlib import ExitStack
@@ -920,7 +459,16 @@ def open_all(filenames: list[str]):
 
 ### Data Model Gotchas
 
-**Return `NotImplemented` (never raise `NotImplementedError`) from arithmetic/comparison dunders.** When an operand type can't be handled, returning the `NotImplemented` singleton lets the interpreter try the reflected operation (`other.__radd__`) or fall back to identity comparison; raising `NotImplementedError` short-circuits that chain and breaks interop. As of Python 3.14, evaluating `NotImplemented` in a boolean context raises `TypeError` (previously `True` + `DeprecationWarning` since 3.9), so returning it from a predicate by mistake now fails loudly.
+**`is` vs `==`, and the interning trap.** Use `is` only for singletons (`None`, `True`, `False`, module-level sentinels) and genuine identity; use `==` for value equality. CPython interns small ints `[-5, 256]` and some short strings, so `a is b` may be `True` for `256` but `False` for `257` — never rely on it for value comparison. Python emits `SyntaxWarning: "is" with a literal` (since 3.8) for `x is 0`. For "absent" markers distinct from `None`, use a unique sentinel object.
+
+```python
+_MISSING = object()                  # unique sentinel, compared with `is`
+def get(d, key, default=_MISSING):
+    v = d.get(key, _MISSING)
+    return default if v is _MISSING else v
+```
+
+**Return `NotImplemented` (never raise `NotImplementedError`) from arithmetic/comparison dunders.** Returning the `NotImplemented` singleton lets the interpreter try the reflected operation (`other.__radd__`) or fall back to identity comparison; raising `NotImplementedError` short-circuits that chain and breaks interop. As of Python 3.14, evaluating `NotImplemented` in a boolean context raises `TypeError` (previously `True` + `DeprecationWarning` since 3.9), so returning it from a predicate by mistake now fails loudly.
 
 ```python
 class Vector:
@@ -935,7 +483,7 @@ class Vector:
         return (self.x, self.y) == (other.x, other.y)
 ```
 
-**Data descriptors shadow the instance `__dict__`; non-data descriptors do not.** Lookup order in `object.__getattribute__` is: data descriptors (define `__set__`/`__delete__`) > instance `__dict__` > non-data descriptors (`__get__` only) and other class vars > `__getattr__`. This is why plain methods can be shadowed by instance attributes, while `property` and `__slots__` (data descriptors) always win. Overriding `__getattribute__` entirely disables the descriptor protocol. Use `__set_name__` so a descriptor learns its own attribute name.
+**Data descriptors shadow the instance `__dict__`; non-data descriptors do not.** Lookup order in `object.__getattribute__`: data descriptors (define `__set__`/`__delete__`) > instance `__dict__` > non-data descriptors (`__get__` only) and other class vars > `__getattr__`. This is why plain methods can be shadowed by instance attributes, while `property` and `__slots__` (data descriptors) always win. Use `__set_name__` so a descriptor learns its own attribute name.
 
 ```python
 class Validated:                 # data descriptor: defines __set__ -> always wins
@@ -949,15 +497,16 @@ class Validated:                 # data descriptor: defines __set__ -> always wi
         setattr(obj, self.private, value)
 ```
 
+**`__slots__` for memory + attribute discipline.** Declaring `__slots__` drops each instance's `__dict__`, cutting per-instance memory (large for millions of objects) and rejecting typo'd attribute assignment. Cost: no dynamic attributes, and every class in the MRO must define `__slots__` or a `__dict__` reappears. `@dataclass(slots=True)` (3.10+) generates it; note it returns a *new* class object.
+
 ### Dataclass Gotchas
 
-Beyond the hashability rule noted under Common Patterns:
+Beyond the hashability rule (above):
 
-- **Field ordering is enforced across inheritance:** a field without a default cannot follow one with a default, even across base/subclass boundaries (`TypeError` at class definition).
+- **Field ordering is enforced across inheritance:** a field without a default cannot follow one with a default, even across base/subclass boundaries (`TypeError` at class definition). `kw_only=True` sidesteps this.
 - **`replace()` does not copy `init=False` fields:** it re-runs `__post_init__`, recomputing them from new values; passing an `init=False` field in the changes is a `ValueError`.
-- **Python 3.13 changed generated `__eq__`** from tuple comparison to field-by-field. This flips NaN behavior: `C(float("nan")) == C(float("nan"))` was `True` (tuple identity short-circuit) but is `False` in 3.13+.
-- **`slots=True` returns a NEW class object;** always enumerate fields with `fields()`, not `__slots__`.
-- **Frozen `__post_init__` must use `object.__setattr__`** to set computed/`init=False` fields — `self.x = ...` raises `FrozenInstanceError`. And `frozen` is not transitive: a frozen subclass of a non-frozen base does not freeze the base's fields.
+- **Python 3.13 changed generated `__eq__`** from tuple comparison to field-by-field, flipping NaN behavior: `C(float("nan")) == C(float("nan"))` was `True` (tuple identity short-circuit) but is `False` in 3.13+.
+- **Frozen `__post_init__` must use `object.__setattr__`** to set computed/`init=False` fields — `self.x = ...` raises `FrozenInstanceError`. `frozen` is not transitive: a frozen subclass of a non-frozen base does not freeze the base's fields.
 
 ```python
 @dataclass(frozen=True)
@@ -965,7 +514,6 @@ class Point:
     x: float
     y: float
     magnitude: float = field(init=False)
-
     def __post_init__(self) -> None:
         object.__setattr__(self, "magnitude", (self.x**2 + self.y**2) ** 0.5)
 ```
@@ -982,6 +530,8 @@ results = [f(x) for x in data]       # plain comprehension to avoid leakage
 
 ### Performance & Caching
 
+**Generators over lists for large/streamed data.** A generator holds one item at a time; a list materializes everything. Prefer `yield`/generator expressions for pipelines and big files; reach for a list only when you need random access, `len`, or multiple passes.
+
 **`functools.cache` for finite-domain pure functions; don't lean on `lru_cache`'s default `maxsize=128`.** `cache` (3.9+) is an unbounded dict-backed memo with no LRU overhead — right for pure functions over a small/finite arg space. `lru_cache`'s default `maxsize=128` is a footgun: callers assume it bounds memory, but 128 may thrash a hot set or mislead. Size it deliberately or use `cache`. Both expose `.cache_info()`/`.cache_clear()`; `__wrapped__` bypasses the cache for testing.
 
 **`lru_cache`/`cache` on an instance method leaks the instance (Ruff B019).** `self` becomes part of the class-level cache key, so the cache keeps a strong reference to every instance forever, defeating GC. Use `functools.cached_property` for zero-arg computed attributes (freed with the instance), or move the computation to a module-level `@lru_cache` function taking only hashable primitives.
@@ -992,7 +542,6 @@ from functools import cached_property, cache
 class Foo:
     def __init__(self, data: list[int]):
         self.data = data
-
     @cached_property            # per-instance; freed with the instance
     def expensive_result(self) -> int:
         return sum(self.data)
@@ -1002,11 +551,10 @@ def fib(n: int) -> int:
     return n if n < 2 else fib(n - 1) + fib(n - 2)
 ```
 
-**`multiprocessing` `fork()` with live threads deadlocks; use `spawn` or `forkserver`.** POSIX `fork()` copies only the calling thread but duplicates all lock state, so the child can inherit locks (logging, NumPy BLAS, connection pools) that are held forever with no thread to release them. Python 3.12 warns on `os.fork()` in a multi-threaded process; 3.14 changed the POSIX default from `fork` to `forkserver`. Set the method explicitly.
+**`multiprocessing` `fork()` with live threads deadlocks; use `spawn` or `forkserver`.** POSIX `fork()` copies only the calling thread but duplicates all lock state, so the child can inherit locks (logging, NumPy BLAS, connection pools) held forever with no thread to release them. Python 3.12 warns on `os.fork()` in a multi-threaded process; 3.14 changed the POSIX default from `fork` to `forkserver`. Set the method explicitly.
 
 ```python
 import multiprocessing as mp
-
 if __name__ == "__main__":
     mp.set_start_method("spawn")   # no thread/lock inheritance
     with mp.Pool(4) as pool:
@@ -1030,13 +578,31 @@ def normalize(cls, data: Any) -> Any:
 
 ### Currency
 
-**`typing.TypeAlias` and `typing.AnyStr` are deprecated.** `TypeAlias` is deprecated since 3.12 in favor of the `type` statement (lazily-evaluated, native forward references). `AnyStr` is deprecated since 3.13 (removed from `typing.__all__` with a `DeprecationWarning` in 3.16, removed entirely in 3.18) — replace with a PEP 695 constrained type parameter `def f[T: (str, bytes)]` on 3.12+, or `TypeVar("S", str, bytes)` on older Pythons.
+**`typing.TypeAlias` and `typing.AnyStr` are deprecated.** `TypeAlias` is deprecated since 3.12 in favor of the `type` statement (lazily-evaluated, native forward references). `AnyStr` is deprecated since 3.13 — replace with a PEP 695 constrained type parameter `def f[T: (str, bytes)]` on 3.12+, or `TypeVar("S", str, bytes)` on older Pythons.
 
 **Avoid `from __future__ import annotations` in runtime-introspective code.** PEP 563 stringifies all annotations, breaking libraries that read `__annotations__` or call `typing.get_type_hints()` at runtime: re-evaluating the strings fails when referenced types live under `TYPE_CHECKING` guards or local scopes (historic source of dataclasses `ClassVar`/`InitVar` bugs). PEP 563 was superseded by PEP 649 (deferred annotations) in 3.14; PEP 749 schedules the future-import for eventual deprecation. Quote only the forward references that genuinely need it.
 
 ```python
-def process(value: int | str | None) -> None: ...
-
 class Node:
     def children(self) -> list["Node"]: ...  # quote only the real forward ref
 ```
+
+## Verification Checklists
+
+**Before marking Python work done:**
+
+- [ ] `ruff check --fix` clean and `ruff format` applied (or project equivalent)
+- [ ] `mypy --strict` (or configured strictness) passes; every `# type: ignore` has a `[code]`
+- [ ] `pytest` green; new behavior has tests (parametrized edge cases, `pytest.raises(match=)`)
+- [ ] No mutable default args; no bare `except:`; no `assert` used for validation
+- [ ] Public functions type-hinted (abstract params in, concrete return); no unused imports/vars
+- [ ] Untrusted input goes through Pydantic/validation, not a bare dataclass
+- [ ] No hardcoded secrets; f-strings not used to build SQL/shell (parameterize / `shlex`)
+- [ ] Deps added via `uv add`/`cargo`-style tool, not hand-edited `pyproject.toml`
+
+**Async / concurrency review:**
+
+- [ ] No blocking IO, `time.sleep`, or CPU work inside `async def` — offloaded via `to_thread`/executor
+- [ ] `create_task` results kept referenced; `CancelledError` re-raised, not swallowed
+- [ ] `TaskGroup` (not `gather`) for fail-fast; callers handle the `ExceptionGroup` with `except*`
+- [ ] CPU-bound parallelism uses processes (GIL); per-task state uses `ContextVar`, not `threading.local`

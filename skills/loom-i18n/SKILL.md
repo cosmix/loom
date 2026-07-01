@@ -59,787 +59,217 @@ triggers:
   - pseudo-localization
   - namespace
   - translation namespace
+  - Intl.Collator
+  - Intl.PluralRules
 ---
 
 # Internationalization (i18n)
 
 ## Overview
 
-Internationalization (i18n) is the process of designing software so it can be adapted to various languages and regions without engineering changes. Localization (l10n) is the actual adaptation for a specific locale. This skill covers architecture patterns, translation formats, locale-specific formatting, and popular libraries.
+Designing software to adapt to languages/regions without code changes (i18n), then adapting it per-locale (l10n). Covers translation architecture, ICU pluralization, `Intl`-based formatting, RTL/bidi, and libraries (i18next, react-intl/FormatJS, gettext).
 
-## Quick Reference
+## The Rules That Prevent Rework
 
-**Common Use Cases:**
+1. **Never concatenate translated fragments.** Word order, gender agreement, and grammar differ per language. Use one full-sentence key with named placeholders; the translator controls order.
 
-- Multi-language web applications (React, Vue, Angular)
-- Locale-specific date, number, and currency formatting
-- RTL (right-to-left) layout support for Arabic, Hebrew, Persian, Urdu
-- Pluralization rules for different languages
-- Translation management and extraction workflows
-- Dynamic language switching without page reload
-- Server-side locale detection from headers/cookies
+   ```javascript
+   // Wrong — impossible to translate; order is baked into code
+   t("You have") + " " + count + " " + t("new messages");
+   // Right — one message, interpolation + plural inside it
+   t("inbox.newMessages", { count }); // "{count, plural, one {# new message} other {# new messages}}"
+   ```
 
-**Popular Libraries:**
+2. **Pluralize with CLDR categories, never `if (count === 1)`.** English has 2 forms; Russian/Polish 3–4; Arabic 6 (`zero one two few many other`). Which categories a language uses is defined by CLDR — use ICU MessageFormat / `Intl.PluralRules`, not hand-rolled logic.
+3. **Format with `Intl`, never by hand.** Decimal/grouping separators, currency placement, date order, and calendars are locale data you will get wrong manually (`1,234.56` en-US vs `1.234,56` de-DE vs `1 234,56` fr-FR).
+4. **A locale is language + region.** `en-US` vs `en-GB`: `12/25/2024` vs `25/12/2024`, `color` vs `colour`, different currency. Store and resolve full BCP-47 tags; fall back language-only → default.
+5. **Store timestamps in UTC, format at display time** in the user's timezone/locale. Never store locale-formatted strings.
+6. **RTL is not just `direction`.** Use CSS logical properties, isolate bidirectional runs, and mirror directional icons.
 
-- React: i18next, react-intl (FormatJS), react-i18next
-- Vue: vue-i18n
-- Node.js: i18next, node-polyglot, format-message
-- Python: gettext, Babel
-- Ruby: i18n gem, Rails I18n
-
-## Key Concepts
-
-### Internationalization Architecture
-
-**Core Principles:**
-
-- Separate translatable content from code
-- Use locale identifiers (e.g., `en-US`, `fr-FR`, `zh-Hans`)
-- Support dynamic locale switching
-- Handle fallback chains (e.g., `de-AT` -> `de` -> `en`)
-
-**Architecture Pattern:**
+## Architecture
 
 ```text
-src/
-  locales/
-    en/
-      common.json
-      products.json
-      errors.json
-    fr/
-      common.json
-      products.json
-      errors.json
-  i18n/
-    config.ts
-    index.ts
+src/locales/{en,de,ar}/{common,products,errors}.json   # one dir per locale, split by namespace
+src/i18n/config.ts
 ```
 
-**Locale Configuration:**
+- Externalize every user-facing string. Hardcoded text is the #1 bug — catch it with pseudolocalization (below) and lint rules.
+- **Namespaces** split catalogs by feature/route so you lazy-load only what a view needs (huge for bundle size on large apps).
+- **Fallback chain**: `de-AT → de → en`. Configure it; missing keys should degrade, not render blank or crash.
+- Keys are **descriptive and hierarchical** (`products.card.addToCart`), never the source English text (brittle: fixing a typo breaks every locale's lookup). Add context when a word is ambiguous (`button.close` vs `proximity.close`).
 
 ```typescript
 interface LocaleConfig {
-  code: string; // e.g., 'en-US'
-  language: string; // e.g., 'en'
-  region?: string; // e.g., 'US'
+  code: string;                 // "en-US" (BCP-47)
   direction: "ltr" | "rtl";
-  dateFormat: string;
-  numberFormat: Intl.NumberFormatOptions;
-  currency: string;
+  currency: string;             // ISO 4217, "USD"
 }
-
-const locales: Record<string, LocaleConfig> = {
-  "en-US": {
-    code: "en-US",
-    language: "en",
-    region: "US",
-    direction: "ltr",
-    dateFormat: "MM/dd/yyyy",
-    numberFormat: { style: "decimal", minimumFractionDigits: 2 },
-    currency: "USD",
-  },
-  "de-DE": {
-    code: "de-DE",
-    language: "de",
-    region: "DE",
-    direction: "ltr",
-    dateFormat: "dd.MM.yyyy",
-    numberFormat: { style: "decimal", minimumFractionDigits: 2 },
-    currency: "EUR",
-  },
-  "ar-SA": {
-    code: "ar-SA",
-    language: "ar",
-    region: "SA",
-    direction: "rtl",
-    dateFormat: "dd/MM/yyyy",
-    numberFormat: { style: "decimal", minimumFractionDigits: 2 },
-    currency: "SAR",
-  },
-};
 ```
 
-### Translation File Formats
+## Translation File Formats
 
-**JSON Format (i18next, react-intl):**
+**JSON (i18next / react-intl)** — most common. i18next plural keys use a suffix per CLDR category:
 
 ```json
 {
-  "common": {
-    "welcome": "Welcome, {{name}}!",
-    "items_count": "{{count}} item",
-    "items_count_plural": "{{count}} items"
-  },
-  "products": {
-    "title": "Products",
-    "addToCart": "Add to Cart",
-    "price": "Price: {{price, currency}}"
-  },
-  "errors": {
-    "required": "This field is required",
-    "minLength": "Must be at least {{min}} characters"
-  }
+  "welcome": "Welcome, {{name}}!",
+  "items_one": "{{count}} item",
+  "items_other": "{{count}} items",
+  "price": "Price: {{price, currency}}"
 }
 ```
 
-**Nested JSON with Namespaces:**
+⚠ i18next v4+ derives the suffix (`_one`, `_other`, `_few`, `_many`, `_zero`, `_two`) from `Intl.PluralRules` for the active language — you must provide every category the language needs (Arabic needs all six), and you must pass `{ count }` for suffix selection to fire.
 
-```json
-{
-  "nav": {
-    "home": "Home",
-    "products": "Products",
-    "about": "About Us"
-  },
-  "footer": {
-    "copyright": "Copyright 2024",
-    "links": {
-      "privacy": "Privacy Policy",
-      "terms": "Terms of Service"
-    }
-  }
-}
+**ICU MessageFormat** (react-intl/FormatJS, and i18next via a plugin) puts logic inside the string:
+
+```text
+{count, plural, =0 {No items} one {# item} other {# items}}
+{gender, select, male {He} female {She} other {They}} liked your post.
+{place, selectordinal, one {#st} two {#nd} few {#rd} other {#th}}
 ```
 
-**YAML Format:**
+- `=0` is an *exact* match (checked before category); `one`/`other`/etc. are CLDR categories; `#` prints the number.
+- Nest plural inside select for gender-correct counts. Don't over-nest — hand it to translators as one message.
 
-```yaml
-common:
-  welcome: "Welcome, {name}!"
-  items_count:
-    one: "{count} item"
-    other: "{count} items"
+**PO/gettext** (Python/PHP/Ruby): source string is the key, plurals via `msgid_plural` + `Plural-Forms` header. `xgettext` extracts, translators use Poedit.
 
-products:
-  title: Products
-  addToCart: Add to Cart
-  outOfStock: Out of Stock
+## Formatting with `Intl`
 
-errors:
-  required: This field is required
-  email: Please enter a valid email
-```
-
-**PO/POT Format (gettext):**
-
-```po
-# English translations
-msgid ""
-msgstr ""
-"Content-Type: text/plain; charset=UTF-8\n"
-"Language: en\n"
-"Plural-Forms: nplurals=2; plural=(n != 1);\n"
-
-#: src/components/Header.js:15
-msgid "Welcome"
-msgstr "Welcome"
-
-#: src/components/Cart.js:42
-msgid "item"
-msgid_plural "items"
-msgstr[0] "item"
-msgstr[1] "items"
-
-#: src/components/Product.js:28
-#, python-format
-msgid "Price: %(price)s"
-msgstr "Price: %(price)s"
-```
-
-### Pluralization Rules
-
-**ICU MessageFormat:**
-
-```javascript
-const messages = {
-  // English
-  en: {
-    items: "{count, plural, =0 {No items} one {# item} other {# items}}",
-    cartItems: `{count, plural,
-      =0 {Your cart is empty}
-      one {You have # item in your cart}
-      other {You have # items in your cart}
-    }`,
-  },
-  // Russian (3 plural forms)
-  ru: {
-    items: `{count, plural,
-      one {# товар}
-      few {# товара}
-      many {# товаров}
-      other {# товаров}
-    }`,
-  },
-  // Arabic (6 plural forms)
-  ar: {
-    items: `{count, plural,
-      zero {لا عناصر}
-      one {عنصر واحد}
-      two {عنصران}
-      few {# عناصر}
-      many {# عنصرًا}
-      other {# عنصر}
-    }`,
-  },
-};
-```
-
-**Select and SelectOrdinal:**
-
-```javascript
-const messages = {
-  gender: `{gender, select,
-    male {He}
-    female {She}
-    other {They}
-  } liked your post.`,
-
-  ordinal: `{position, selectordinal,
-    one {#st}
-    two {#nd}
-    few {#rd}
-    other {#th}
-  } place`,
-};
-```
-
-### Date/Time/Number Formatting
-
-**Using Intl API:**
+One class over the standard `Intl` objects covers most needs. **Cache formatter instances** — constructing `Intl.*Format` is expensive; reuse per (locale, options).
 
 ```typescript
-class LocaleFormatter {
-  private locale: string;
-
-  constructor(locale: string) {
-    this.locale = locale;
-  }
-
-  formatNumber(value: number, options?: Intl.NumberFormatOptions): string {
-    return new Intl.NumberFormat(this.locale, options).format(value);
-  }
-
-  formatCurrency(value: number, currency: string): string {
-    return new Intl.NumberFormat(this.locale, {
-      style: "currency",
-      currency,
-    }).format(value);
-  }
-
-  formatDate(date: Date, options?: Intl.DateTimeFormatOptions): string {
-    return new Intl.DateTimeFormat(this.locale, options).format(date);
-  }
-
-  formatRelativeTime(value: number, unit: Intl.RelativeTimeFormatUnit): string {
-    return new Intl.RelativeTimeFormat(this.locale, {
-      numeric: "auto",
-    }).format(value, unit);
-  }
-
-  formatList(
-    items: string[],
-    type: "conjunction" | "disjunction" = "conjunction",
-  ): string {
-    return new Intl.ListFormat(this.locale, { type }).format(items);
-  }
-}
-
-// Usage
-const formatter = new LocaleFormatter("de-DE");
-formatter.formatNumber(1234567.89); // "1.234.567,89"
-formatter.formatCurrency(99.99, "EUR"); // "99,99 €"
-formatter.formatDate(new Date()); // "19.12.2024"
-formatter.formatRelativeTime(-1, "day"); // "gestern"
-formatter.formatList(["A", "B", "C"]); // "A, B und C"
+const nf = new Intl.NumberFormat("de-DE");
+nf.format(1234567.89);                                              // "1.234.567,89"
+new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(99.9); // "99,90 €"
+new Intl.NumberFormat("en", { notation: "compact" }).format(12000);// "12K"
+new Intl.DateTimeFormat("ja-JP", { dateStyle: "long" }).format(d); // "2024年12月19日"
+new Intl.RelativeTimeFormat("de", { numeric: "auto" }).format(-1, "day"); // "gestern"
+new Intl.ListFormat("en", { type: "conjunction" }).format(["A","B","C"]); // "A, B, and C"
+new Intl.PluralRules("ar").select(3);                              // "few"  → pick the message key
 ```
 
-**Date Format Patterns by Locale:**
+⚠ Gotchas:
 
-```typescript
-const datePatterns: Record<string, Intl.DateTimeFormatOptions> = {
-  short: { dateStyle: "short" },
-  medium: { dateStyle: "medium" },
-  long: { dateStyle: "long" },
-  full: { dateStyle: "full" },
-  custom: {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    weekday: "long",
-  },
-};
+- `dateStyle`/`timeStyle` can't be combined with individual component options (`year`, `month`, …) in one `DateTimeFormat` — pick one style. Pass `timeZone` for server-consistent output; default is the runtime's zone.
+- Currency: pass an explicit ISO 4217 code; the locale controls *placement/symbol*, not *which* currency. `narrowSymbol` for "$" over "US$".
+- Prefer `dateStyle` presets over custom component lists — presets already encode locale order (MDY vs DMY vs YMD); custom lists you assemble often leak English order.
 
-// Results vary by locale:
-// en-US: "Thursday, December 19, 2024"
-// de-DE: "Donnerstag, 19. Dezember 2024"
-// ja-JP: "2024年12月19日木曜日"
-```
+## RTL & Bidirectional Text
 
-### RTL (Right-to-Left) Support
-
-**CSS Logical Properties:**
+**Use logical properties** so one stylesheet serves both directions — no `[dir=rtl]` overrides:
 
 ```css
-/* Instead of physical properties */
 .card {
-  /* Use logical properties for automatic RTL support */
-  margin-inline-start: 1rem; /* margin-left in LTR, margin-right in RTL */
-  margin-inline-end: 2rem;
+  margin-inline-start: 1rem;   /* left in LTR, right in RTL */
   padding-inline: 1rem;
-  padding-block: 0.5rem;
-  border-inline-start: 3px solid blue;
-  text-align: start; /* left in LTR, right in RTL */
+  border-inline-start: 3px solid;
+  text-align: start;
 }
-
-/* Flexbox and Grid automatically adapt */
-.container {
-  display: flex;
-  flex-direction: row; /* Adapts to document direction */
-  gap: 1rem;
-}
+.icon:dir(rtl) { transform: scaleX(-1); } /* mirror only directional icons: arrows, chevrons, back — NOT logos/checkmarks */
 ```
 
-**Direction-Aware Styling:**
+- Set `<html dir="rtl" lang="ar">`; flexbox/grid flow follows `dir` automatically.
+- **Bidi isolation**: user-generated or opposite-direction text embedded in a sentence (an Arabic name in English UI, a phone number) can reorder surrounding punctuation. Wrap it in `<bdi>…</bdi>`, or `unicode-bidi: isolate`, or the Unicode isolates `⁨…⁩` (FSI/PDI) in plain strings. Numbers next to RTL text are the classic breakage.
+- RTL testing must use *real* translated RTL content, not mirrored Lorem Ipsum — bidi bugs only surface with genuine strings.
 
-```css
-/* Set direction at root */
-html[dir="rtl"] {
-  direction: rtl;
-}
+## Locale Detection & Switching
 
-/* Use :dir() pseudo-class */
-.icon:dir(rtl) {
-  transform: scaleX(-1); /* Flip icons */
-}
-
-/* Bidirectional text handling */
-.mixed-content {
-  unicode-bidi: isolate;
-}
-```
-
-**React RTL Implementation:**
-
-```tsx
-import { createContext, useContext, ReactNode } from "react";
-
-interface DirectionContextType {
-  direction: "ltr" | "rtl";
-  isRTL: boolean;
-}
-
-const DirectionContext = createContext<DirectionContextType>({
-  direction: "ltr",
-  isRTL: false,
-});
-
-export function DirectionProvider({
-  locale,
-  children,
-}: {
-  locale: string;
-  children: ReactNode;
-}) {
-  const rtlLocales = ["ar", "he", "fa", "ur"];
-  const language = locale.split("-")[0];
-  const isRTL = rtlLocales.includes(language);
-  const direction = isRTL ? "rtl" : "ltr";
-
-  return (
-    <DirectionContext.Provider value={{ direction, isRTL }}>
-      <div dir={direction}>{children}</div>
-    </DirectionContext.Provider>
-  );
-}
-
-export const useDirection = () => useContext(DirectionContext);
-```
-
-### Content Localization Strategies
-
-**Dynamic Content Loading:**
+Precedence: explicit URL/param → cookie/stored pref → `Accept-Language` (parse `q` weights, match against supported set) → default. Validate against your supported list before use.
 
 ```typescript
-async function loadTranslations(locale: string, namespace: string) {
-  try {
-    const translations = await import(`../locales/${locale}/${namespace}.json`);
-    return translations.default;
-  } catch {
-    // Fallback to default locale
-    const fallback = await import(`../locales/en/${namespace}.json`);
-    return fallback.default;
-  }
-}
-```
-
-**Server-Side Locale Detection:**
-
-```typescript
-function detectLocale(request: Request): string {
-  // 1. Check URL parameter
-  const url = new URL(request.url);
-  const urlLocale = url.searchParams.get("locale");
-  if (urlLocale && isValidLocale(urlLocale)) return urlLocale;
-
-  // 2. Check cookie
-  const cookieLocale = getCookie(request, "locale");
-  if (cookieLocale && isValidLocale(cookieLocale)) return cookieLocale;
-
-  // 3. Check Accept-Language header
-  const acceptLanguage = request.headers.get("Accept-Language");
-  if (acceptLanguage) {
-    const preferred = parseAcceptLanguage(acceptLanguage);
-    const matched = preferred.find((l) => isValidLocale(l));
-    if (matched) return matched;
-  }
-
-  // 4. Default locale
-  return "en-US";
-}
-
 function parseAcceptLanguage(header: string): string[] {
-  return header
-    .split(",")
-    .map((lang) => {
-      const [code, q] = lang.trim().split(";q=");
-      return { code: code.trim(), q: parseFloat(q) || 1 };
-    })
+  return header.split(",")
+    .map(part => { const [code, q] = part.trim().split(";q="); return { code, q: parseFloat(q) || 1 }; })
     .sort((a, b) => b.q - a.q)
-    .map(({ code }) => code);
+    .map(x => x.code);
 }
 ```
 
-### Libraries: i18next, react-intl, gettext
+On switch, update three things: the i18n instance, `document.documentElement.lang`, and `.dir`. Persist the choice. SPA switch should not require a reload.
 
-**i18next Setup:**
+## Sorting & Search
+
+String comparison is locale-dependent — **never `.sort()` raw** for user-visible lists (default sorts by code point: `Z` < `a`, `ä` after `z`). Use `Intl.Collator`:
 
 ```typescript
-import i18n from "i18next";
-import { initReactI18next } from "react-i18next";
-import Backend from "i18next-http-backend";
-import LanguageDetector from "i18next-browser-languagedetector";
-
-i18n
-  .use(Backend)
-  .use(LanguageDetector)
-  .use(initReactI18next)
-  .init({
-    fallbackLng: "en",
-    supportedLngs: ["en", "de", "fr", "es", "ar"],
-    ns: ["common", "products", "errors"],
-    defaultNS: "common",
-    backend: {
-      loadPath: "/locales/{{lng}}/{{ns}}.json",
-    },
-    interpolation: {
-      escapeValue: false,
-      format: (value, format, lng) => {
-        if (format === "currency") {
-          return new Intl.NumberFormat(lng, {
-            style: "currency",
-            currency: "USD",
-          }).format(value);
-        }
-        if (value instanceof Date) {
-          return new Intl.DateTimeFormat(lng).format(value);
-        }
-        return value;
-      },
-    },
-    react: {
-      useSuspense: true,
-    },
-  });
-
-export default i18n;
+const collator = new Intl.Collator("de", { sensitivity: "base", numeric: true });
+list.sort(collator.compare); // locale-correct; numeric:true gives "file2" < "file10"
 ```
 
-**i18next Usage in React:**
+`sensitivity: "base"` ignores case/accents (good for search/dedup); `numeric: true` for natural number ordering. Reuse the collator instance.
+
+## Libraries
+
+**i18next** (framework-agnostic, plugin-rich):
+
+```typescript
+i18n.use(Backend).use(LanguageDetector).use(initReactI18next).init({
+  fallbackLng: "en",
+  supportedLngs: ["en", "de", "fr", "ar"],
+  ns: ["common", "products"], defaultNS: "common",
+  backend: { loadPath: "/locales/{{lng}}/{{ns}}.json" },   // lazy per-namespace
+  detection: { order: ["querystring", "cookie", "navigator"], caches: ["cookie"] },
+  interpolation: { escapeValue: false }, // React already escapes; escapeValue:true double-encodes
+});
+```
 
 ```tsx
-import { useTranslation, Trans } from "react-i18next";
-
-function ProductCard({ product }) {
-  const { t, i18n } = useTranslation(["products", "common"]);
-
-  return (
-    <div>
-      <h2>{product.name}</h2>
-      <p>{t("products:price", { price: product.price })}</p>
-      <p>{t("common:items_count", { count: product.stock })}</p>
-
-      <Trans i18nKey="products:description" values={{ name: product.name }}>
-        Check out <strong>{{ name: product.name }}</strong> today!
-      </Trans>
-
-      <button onClick={() => i18n.changeLanguage("de")}>
-        {t("common:switchLanguage")}
-      </button>
-    </div>
-  );
-}
+const { t, i18n } = useTranslation(["products", "common"]);
+t("products:price", { price });
+t("common:items", { count });                 // plural via count
+// Interpolation inside markup — use <Trans>, do NOT build strings from JSX children
+<Trans i18nKey="products:promo" values={{ name }}>Check out <strong>{{ name }}</strong> today!</Trans>
 ```
 
-**react-intl Setup:**
+⚠ `escapeValue: false` in React is correct (React escapes); leaving it `true` double-encodes. Outside React, keep escaping on to avoid XSS from interpolated values.
+
+**react-intl / FormatJS** (ICU-native, standards-aligned):
 
 ```tsx
-import { IntlProvider, FormattedMessage, useIntl } from "react-intl";
-
-const messages = {
-  en: {
-    "app.greeting": "Hello, {name}!",
-    "app.items": "{count, plural, =0 {No items} one {# item} other {# items}}",
-  },
-  de: {
-    "app.greeting": "Hallo, {name}!",
-    "app.items":
-      "{count, plural, =0 {Keine Artikel} one {# Artikel} other {# Artikel}}",
-  },
-};
-
-function App() {
-  const [locale, setLocale] = useState("en");
-
-  return (
-    <IntlProvider locale={locale} messages={messages[locale]}>
-      <Content />
-    </IntlProvider>
-  );
-}
-
-function Content() {
-  const intl = useIntl();
-
-  return (
-    <div>
-      <FormattedMessage id="app.greeting" values={{ name: "World" }} />
-
-      <p>{intl.formatMessage({ id: "app.items" }, { count: 5 })}</p>
-
-      <p>
-        {intl.formatNumber(1234.56, { style: "currency", currency: "EUR" })}
-      </p>
-      <p>{intl.formatDate(new Date(), { dateStyle: "long" })}</p>
-    </div>
-  );
-}
+<IntlProvider locale={locale} messages={messages[locale]} defaultLocale="en">…</IntlProvider>
+const intl = useIntl();
+intl.formatMessage({ id: "app.items" }, { count: 5 });     // ICU plural in the message
+<FormattedMessage id="app.greeting" values={{ name }} />
+intl.formatNumber(1234.56, { style: "currency", currency: "EUR" });
 ```
+
+Ships `@formatjs/cli` to extract messages and precompile ICU ASTs (faster runtime). Wire `onError` so missing IDs are caught in CI, not shipped blank.
 
 **Python gettext:**
 
 ```python
-import gettext
-from pathlib import Path
-
-# Setup
-localedir = Path(__file__).parent / 'locales'
-translation = gettext.translation(
-    'messages',
-    localedir=localedir,
-    languages=['de'],
-    fallback=True
-)
-_ = translation.gettext
-ngettext = translation.ngettext
-
-# Usage
-print(_("Hello, World!"))
-print(_("Welcome, %(name)s!") % {'name': 'User'})
-
-count = 5
-print(ngettext(
-    "%(count)d item",
-    "%(count)d items",
-    count
-) % {'count': count})
+t = gettext.translation("messages", localedir, languages=["de"], fallback=True)
+_ = t.gettext; ngettext = t.ngettext
+_("Welcome, %(name)s!") % {"name": user}
+ngettext("%(count)d item", "%(count)d items", count) % {"count": count}
 ```
 
-## Best Practices
+## Testing & QA
 
-### Architecture
+**Pseudolocalization** — the highest-ROI check. Transform the default locale into accented, expanded text to catch two bug classes at once:
 
-- Extract all user-facing strings into translation files
-- Use namespaces to organize translations by feature/page
-- Implement locale fallback chains
-- Load translations lazily for better performance
-
-### Translation Keys
-
-- Use descriptive, hierarchical keys (e.g., `products.card.addToCart`)
-- Include context in keys when meaning is ambiguous
-- Never use raw text as keys (brittle, hard to track)
-- Document placeholders and their expected values
-
-### Formatting
-
-- Always use locale-aware formatting for dates, numbers, currencies
-- Use ICU MessageFormat for complex pluralization
-- Handle timezone conversion server-side when possible
-- Consider cultural differences (e.g., name order, address format)
-
-### RTL Support
-
-- Use CSS logical properties exclusively
-- Test with actual RTL content, not just mirrored LTR
-- Handle bidirectional text properly
-- Ensure icons and images are direction-appropriate
-
-### Testing
-
-- Test with pseudo-localization to catch hardcoded strings
-- Test with long translations (German) for UI overflow
-- Test with RTL languages for layout issues
-- Automate extraction of untranslated strings
-
-## Examples
-
-### Complete React i18n Setup
-
-```tsx
-// i18n/config.ts
-import i18n from "i18next";
-import { initReactI18next } from "react-i18next";
-import Backend from "i18next-http-backend";
-import LanguageDetector from "i18next-browser-languagedetector";
-
-export const supportedLocales = [
-  { code: "en-US", name: "English", dir: "ltr" },
-  { code: "de-DE", name: "Deutsch", dir: "ltr" },
-  { code: "ar-SA", name: "العربية", dir: "rtl" },
-] as const;
-
-i18n
-  .use(Backend)
-  .use(LanguageDetector)
-  .use(initReactI18next)
-  .init({
-    fallbackLng: "en-US",
-    supportedLngs: supportedLocales.map((l) => l.code),
-    load: "currentOnly",
-    ns: ["common", "products"],
-    defaultNS: "common",
-    backend: {
-      loadPath: "/locales/{{lng}}/{{ns}}.json",
-    },
-    detection: {
-      order: ["querystring", "cookie", "navigator"],
-      caches: ["cookie"],
-    },
-  });
-
-export default i18n;
-
-// hooks/useLocale.ts
-import { useTranslation } from "react-i18next";
-import { supportedLocales } from "../i18n/config";
-
-export function useLocale() {
-  const { i18n } = useTranslation();
-
-  const currentLocale =
-    supportedLocales.find((l) => l.code === i18n.language) ||
-    supportedLocales[0];
-
-  const changeLocale = async (code: string) => {
-    await i18n.changeLanguage(code);
-    document.documentElement.dir =
-      supportedLocales.find((l) => l.code === code)?.dir || "ltr";
-    document.documentElement.lang = code;
-  };
-
-  return {
-    locale: currentLocale,
-    locales: supportedLocales,
-    changeLocale,
-    isRTL: currentLocale.dir === "rtl",
-  };
-}
-
-// components/LocaleSwitcher.tsx
-import { useLocale } from "../hooks/useLocale";
-
-export function LocaleSwitcher() {
-  const { locale, locales, changeLocale } = useLocale();
-
-  return (
-    <select
-      value={locale.code}
-      onChange={(e) => changeLocale(e.target.value)}
-      aria-label="Select language"
-    >
-      {locales.map((l) => (
-        <option key={l.code} value={l.code}>
-          {l.name}
-        </option>
-      ))}
-    </select>
-  );
-}
+```text
+"Add to Cart"  →  "[!! Àdd tö Çårt ~~~~ ]"
 ```
 
-### Translation Extraction Script
+- Untransformed on screen ⇒ a **hardcoded string** bypassing i18n.
+- Padding (+30–40%, mimicking German/Finnish) ⇒ **truncation/overflow** before real translations exist.
 
-```javascript
-// scripts/extract-translations.js
-const fs = require("fs");
-const path = require("path");
-const parser = require("@babel/parser");
-const traverse = require("@babel/traverse").default;
+Also test: longest language (German/Finnish) for overflow; a real RTL locale for layout+bidi; that number/date/currency render per locale (not just English); missing-key fallback path.
 
-const sourceDir = "./src";
-const outputFile = "./locales/extracted.json";
+**Extraction tooling** (don't hand-roll AST walkers): `i18next-parser` for i18next catalogs, `@formatjs/cli extract` for react-intl, `xgettext`/Babel for gettext. Run in CI to fail on new untranslated keys and prune dead ones.
 
-function extractTranslationKeys(code) {
-  const keys = new Set();
+## Verify Before Done
 
-  const ast = parser.parse(code, {
-    sourceType: "module",
-    plugins: ["jsx", "typescript"],
-  });
-
-  traverse(ast, {
-    CallExpression(path) {
-      if (
-        path.node.callee.name === "t" ||
-        path.node.callee.property?.name === "t"
-      ) {
-        const arg = path.node.arguments[0];
-        if (arg?.type === "StringLiteral") {
-          keys.add(arg.value);
-        }
-      }
-    },
-  });
-
-  return keys;
-}
-
-function walkDir(dir) {
-  const allKeys = new Set();
-
-  const files = fs.readdirSync(dir);
-  for (const file of files) {
-    const filePath = path.join(dir, file);
-    const stat = fs.statSync(filePath);
-
-    if (stat.isDirectory()) {
-      walkDir(filePath).forEach((k) => allKeys.add(k));
-    } else if (/\.(tsx?|jsx?)$/.test(file)) {
-      const code = fs.readFileSync(filePath, "utf8");
-      extractTranslationKeys(code).forEach((k) => allKeys.add(k));
-    }
-  }
-
-  return allKeys;
-}
-
-const keys = walkDir(sourceDir);
-const result = {};
-keys.forEach((key) => {
-  result[key] = "";
-});
-
-fs.writeFileSync(outputFile, JSON.stringify(result, null, 2));
-console.log(`Extracted ${keys.size} translation keys`);
-```
+- [ ] Zero hardcoded user-facing strings (pseudoloc pass is clean)
+- [ ] No concatenated sentence fragments; each message is one key with named placeholders
+- [ ] Plurals use ICU/`PluralRules` categories (every category the language needs), not `count === 1`
+- [ ] All numbers/dates/currencies/lists via `Intl` (formatters cached), not manual formatting
+- [ ] Timestamps stored UTC; formatted at display in user tz/locale
+- [ ] Fallback chain configured; missing keys degrade gracefully (no blanks/crashes)
+- [ ] RTL: logical CSS properties, `dir`+`lang` on `<html>`, bidi isolation on embedded runs, directional icons mirrored
+- [ ] User-visible lists sorted via `Intl.Collator`, not raw `.sort()`
+- [ ] Locales lazy-loaded by namespace; switch updates i18n + `lang` + `dir` without reload
+- [ ] Interpolation escaping correct for the runtime (React: `escapeValue:false`; server: escape on)
+- [ ] Verified in ≥2 locales incl. one long-word and one RTL, with real translated content

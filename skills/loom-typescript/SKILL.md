@@ -16,6 +16,7 @@ triggers:
   - utility types
   - conditional types
   - mapped types
+  - satisfies
   - zod
   - trpc
   - prisma
@@ -38,299 +39,121 @@ triggers:
 
 ## Overview
 
-This skill provides guidance for writing type-safe, maintainable, and production-quality TypeScript code. It covers TypeScript's advanced type system features, strict mode configuration, module systems, and common design patterns.
+Type-safe, production-quality TypeScript: the type system's sharp edges, strict-mode config that actually moves the needle, the type-vs-runtime boundary, and framework patterns (zod/tRPC/Prisma/React/Express). Assumes fluency with JS and basic TS — this is reference for the traps and idioms that bite experienced engineers.
 
-## Key Concepts
+## Type System Essentials
 
 ### Generics
 
 ```typescript
-// Basic generics
-function identity<T>(value: T): T {
-  return value;
+// Constraints + default type param; `this` return for fluent chaining
+interface HasId { id: string }
+class Repo<T extends HasId = HasId> {
+  private items = new Map<string, T>();
+  save(item: T): this { this.items.set(item.id, item); return this; }
+  find(id: string): T | undefined { return this.items.get(id); }
 }
 
-// Multiple type parameters
-function map<T, U>(items: T[], fn: (item: T) => U): U[] {
-  return items.map(fn);
-}
-
-// Generic constraints
-interface HasLength {
-  length: number;
-}
-
-function logLength<T extends HasLength>(item: T): void {
-  console.log(item.length);
-}
-
-// Generic classes
-class Repository<T extends { id: string }> {
-  private items: Map<string, T> = new Map();
-
-  save(item: T): void {
-    this.items.set(item.id, item);
-  }
-
-  findById(id: string): T | undefined {
-    return this.items.get(id);
-  }
-
-  findAll(): T[] {
-    return Array.from(this.items.values());
-  }
-}
-
-// Default type parameters
-interface ApiResponse<T = unknown> {
-  data: T;
-  status: number;
-  message: string;
-}
+// Return `as const` to preserve a tuple/literal shape instead of widening
+function pair<A, B>(a: A, b: B) { return [a, b] as const; } // readonly [A, B]
 ```
 
-### Utility Types
+### Utility types
+
+| Utility                       | Result                                        |
+| ----------------------------- | --------------------------------------------- |
+| `Partial<T>` / `Required<T>`  | all props optional / required                 |
+| `Readonly<T>`                 | all props `readonly` (shallow)                |
+| `Pick<T,K>` / `Omit<T,K>`     | keep / drop keys `K`                          |
+| `Record<K,V>`                 | object with keys `K`, values `V`              |
+| `Extract<U,V>` / `Exclude<U,V>` | keep / drop union members of `U` assignable to `V` |
+| `NonNullable<T>`              | strip `null` / `undefined`                    |
+| `ReturnType<F>` / `Parameters<F>` | function return type / param tuple        |
+| `Awaited<T>`                  | recursively unwrap `Promise` (prefer over a hand-rolled `Unwrap`) |
 
 ```typescript
-// Built-in utility types
-interface User {
-  id: string;
-  email: string;
-  name: string;
-  role: "admin" | "user";
-  createdAt: Date;
-}
-
-// Partial - all properties optional
-type UserUpdate = Partial<User>;
-
-// Required - all properties required
-type RequiredUser = Required<User>;
-
-// Readonly - all properties readonly
-type ImmutableUser = Readonly<User>;
-
-// Pick - select specific properties
-type UserCredentials = Pick<User, "email" | "id">;
-
-// Omit - exclude specific properties
-type UserWithoutDates = Omit<User, "createdAt">;
-
-// Record - create object type with specific keys
-type UserRoles = Record<string, "admin" | "user" | "guest">;
-
-// Extract/Exclude for union types
-type StringOrNumber = string | number | boolean;
-type OnlyStrings = Extract<StringOrNumber, string>; // string
-type NoStrings = Exclude<StringOrNumber, string>; // number | boolean
-
-// ReturnType and Parameters
-function createUser(name: string, email: string): User {
-  return {
-    id: crypto.randomUUID(),
-    name,
-    email,
-    role: "user",
-    createdAt: new Date(),
-  };
-}
-
-type CreateUserReturn = ReturnType<typeof createUser>; // User
-type CreateUserParams = Parameters<typeof createUser>; // [string, string]
-
-// NonNullable
-type MaybeString = string | null | undefined;
-type DefiniteString = NonNullable<MaybeString>; // string
+// Derive types from values so they can't drift:
+function createUser(name: string, email: string): User { /* … */ }
+type NewUser = ReturnType<typeof createUser>;   // User
+type NewUserArgs = Parameters<typeof createUser>; // [string, string]
 ```
 
-### Conditional Types
+### Conditional types & `infer`
 
 ```typescript
-// Basic conditional type
-type IsString<T> = T extends string ? true : false;
+type Elem<T> = T extends (infer U)[] ? U : never;
+type Ret<T>  = T extends (...a: any[]) => infer R ? R : never;
 
-// Infer keyword for type extraction
-type UnwrapPromise<T> = T extends Promise<infer U> ? U : T;
-type UnwrapArray<T> = T extends (infer U)[] ? U : T;
-
-// Nested inference
-type GetReturnType<T> = T extends (...args: any[]) => infer R ? R : never;
-
-// Distributive conditional types
+// Conditionals DISTRIBUTE over naked union type params:
 type ToArray<T> = T extends any ? T[] : never;
-type StringOrNumberArray = ToArray<string | number>; // string[] | number[]
+type A = ToArray<string | number>;   // string[] | number[]
 
-// Non-distributive conditional types
-type ToArrayNonDist<T> = [T] extends [any] ? T[] : never;
-type Combined = ToArrayNonDist<string | number>; // (string | number)[]
-
-// Practical example: Extract function parameters
-type FirstParameter<T> = T extends (first: infer F, ...args: any[]) => any
-  ? F
-  : never;
+// Wrap both sides in a 1-tuple to DISABLE distribution:
+type ToArray1<T> = [T] extends [any] ? T[] : never;
+type B = ToArray1<string | number>;  // (string | number)[]
 ```
 
-### Mapped Types
+### Mapped types
 
 ```typescript
-// Basic mapped type
-type Nullable<T> = {
-  [K in keyof T]: T[K] | null;
-};
+type Mutable<T>  = { -readonly [K in keyof T]: T[K] };
+type Optional<T> = { [K in keyof T]+?: T[K] };
 
-// With modifiers
-type Mutable<T> = {
-  -readonly [K in keyof T]: T[K];
-};
-
-type Optional<T> = {
-  [K in keyof T]+?: T[K];
-};
-
-// Key remapping (TypeScript 4.1+)
-type Getters<T> = {
-  [K in keyof T as `get${Capitalize<string & K>}`]: () => T[K];
-};
-
-type Setters<T> = {
-  [K in keyof T as `set${Capitalize<string & K>}`]: (value: T[K]) => void;
-};
-
-// Filter keys
-type FilterByType<T, U> = {
-  [K in keyof T as T[K] extends U ? K : never]: T[K];
-};
-
-interface Mixed {
-  name: string;
-  age: number;
-  active: boolean;
-  email: string;
-}
-
-type StringProps = FilterByType<Mixed, string>; // { name: string; email: string }
-
-// Practical: API response transformation
-type ApiDTO<T> = {
-  [K in keyof T as `${string & K}DTO`]: T[K] extends Date ? string : T[K];
-};
+// Key remapping via `as` (TS 4.1+): rename or filter keys
+type Getters<T> = { [K in keyof T as `get${Capitalize<string & K>}`]: () => T[K] };
+type PickByValue<T, V> = { [K in keyof T as T[K] extends V ? K : never]: T[K] };
+// PickByValue<{a:string;b:number}, string> → { a: string }
 ```
 
-### Discriminated Unions
+### Discriminated unions & exhaustiveness
+
+Model each valid state as a variant with a shared literal discriminant; `switch` on it narrows each arm, and an `assertNever` default turns "added a variant, forgot a case" into a compile error.
 
 ```typescript
-// Define discriminated union with literal type discriminator
-type Result<T, E = Error> =
-  | { success: true; data: T }
-  | { success: false; error: E };
-
-function handleResult<T>(result: Result<T>): T {
-  if (result.success) {
-    return result.data; // TypeScript knows data exists here
-  }
-  throw result.error; // TypeScript knows error exists here
-}
-
-// More complex example: State machine
-type LoadingState =
+type State =
   | { status: "idle" }
   | { status: "loading" }
   | { status: "success"; data: User[] }
   | { status: "error"; error: Error };
 
-function renderState(state: LoadingState): string {
-  switch (state.status) {
-    case "idle":
-      return "Click to load";
-    case "loading":
-      return "Loading...";
-    case "success":
-      return `Loaded ${state.data.length} users`;
-    case "error":
-      return `Error: ${state.error.message}`;
-  }
-}
+function assertNever(x: never): never { throw new Error(`Unreachable: ${JSON.stringify(x)}`); }
 
-// Action types for Redux-style reducers
-type Action =
-  | { type: "SET_USER"; payload: User }
-  | { type: "CLEAR_USER" }
-  | { type: "SET_ERROR"; payload: string };
-
-function reducer(state: State, action: Action): State {
-  switch (action.type) {
-    case "SET_USER":
-      return { ...state, user: action.payload };
-    case "CLEAR_USER":
-      return { ...state, user: null };
-    case "SET_ERROR":
-      return { ...state, error: action.payload };
+function render(s: State): string {
+  switch (s.status) {
+    case "idle":    return "Click to load";
+    case "loading": return "Loading…";
+    case "success": return `Loaded ${s.data.length}`;   // s narrowed → data exists
+    case "error":   return s.error.message;             // s narrowed → error exists
+    default:        return assertNever(s);              // ← new unhandled variant = type error
   }
 }
 ```
 
-### Type Guards
+⚠ Exhaustiveness relies on a *finite* discriminant. A **numeric enum** discriminant accepts any `number`, so `assertNever` won't catch a missing case — use string-literal unions or `as const` objects (see Anti-Patterns).
+
+### Type guards, assertion functions, `unknown` vs `any`
+
+- `any` disables checking **transitively** — it silently poisons every expression it flows into. `unknown` is the safe top type: assignable *from* anything, assignable *to* nothing until you narrow.
+- Type external inputs (`JSON.parse`, `fetch().json()`, `catch` vars, `process.env` shapes) as `unknown` and narrow with `typeof` / `instanceof` / `in` / a validator before use.
 
 ```typescript
-// typeof guard
-function process(value: string | number): string {
-  if (typeof value === "string") {
-    return value.toUpperCase();
-  }
-  return value.toFixed(2);
-}
+function isCat(a: Cat | Dog): a is Cat { return "meow" in a; }
 
-// instanceof guard
-function handleError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
-}
-
-// Custom type guard
-interface Cat {
-  meow(): void;
-}
-
-interface Dog {
-  bark(): void;
-}
-
-function isCat(animal: Cat | Dog): animal is Cat {
-  return "meow" in animal;
-}
-
-// Type guard with discriminated unions
-function isSuccess<T>(result: Result<T>): result is { success: true; data: T } {
-  return result.success;
-}
-
-// Assertion function
-function assertNonNull<T>(
-  value: T | null | undefined,
-  message?: string,
-): asserts value is T {
-  if (value === null || value === undefined) {
-    throw new Error(message ?? "Value is null or undefined");
-  }
-}
-
-// Usage
-function processUser(user: User | null) {
-  assertNonNull(user, "User must exist");
-  // user is now User (not null)
-  console.log(user.name);
+// Assertion function: narrows for the rest of the scope, throws otherwise
+function assertNonNull<T>(v: T | null | undefined, msg?: string): asserts v is T {
+  if (v == null) throw new Error(msg ?? "value is null/undefined");
 }
 ```
 
-## Best Practices
+⚠ An explicit `x is T` predicate is **trusted, not verified** by the compiler — a wrong body is as unsafe as `as`. Prefer letting TS *infer* the predicate (TS 5.5+, see Gotchas); reserve explicit `is` for what inference can't express, and unit-test those.
 
-### Strict Mode Configuration
+## tsconfig & Strict Mode
 
-The `module`/`moduleResolution` pair must match where the output runs — there is no single universal template. Use one of the two configs below; do NOT copy a `nodenext` config into a bundler app or vice versa.
+`module`/`moduleResolution` must match where the output runs — there is no universal template. Pick ONE of the two below; never copy a `nodenext` config into a bundler app or vice versa.
 
-**Node app or published npm library** — `module: nodenext` (canonical lowercase). This requires explicit `.js` extensions on relative imports plus `"type": "module"` in `package.json` (or `.mts`/`.cts` files). `nodenext` implies a matching `lib`/`target`, so the explicit `"lib"` is redundant and dropped here.
+### Node app or published library — `module: nodenext`
+
+Requires explicit `.js` extensions on relative imports plus `"type": "module"` in `package.json` (or `.mts`/`.cts`). `nodenext` implies a matching `lib`/`target`, so an explicit `"lib"` is redundant here.
 
 ```json
 {
@@ -362,7 +185,9 @@ The `module`/`moduleResolution` pair must match where the output runs — there 
 }
 ```
 
-**Bundler app (Vite, esbuild, webpack)** — extensionless relative imports work; the bundler does emit, so `tsc` only type-checks. Never use `moduleResolution: bundler` for a published library: it is "infectious" and emits `.d.ts` files with extensionless relative imports that break Node.js ESM consumers.
+### Bundler app (Vite, esbuild, webpack)
+
+Extensionless relative imports work; the bundler emits, so `tsc` only type-checks (`noEmit`). ⚠ Never use `moduleResolution: bundler` for a **published library** — it's "infectious": emitted `.d.ts` files carry extensionless relative imports that break Node.js ESM consumers.
 
 ```json
 {
@@ -389,1143 +214,284 @@ The `module`/`moduleResolution` pair must match where the output runs — there 
 }
 ```
 
-> **`noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` are NOT part of `strict: true`** — opt in explicitly (both shown above; TS 5.9 `tsc --init` enables them by default for new projects). `noUncheckedIndexedAccess` adds `| undefined` to every array subscript and index-signature access (`arr[i]` becomes `T | undefined`), but NOT to named properties, NOT to `for...of` loop variables (closed as "working as intended", microsoft/TypeScript#42622), and NOT to `Object.values()` — so it is no safety net when iterating. `exactOptionalPropertyTypes` makes `obj.x = undefined` an error for `x?: 'a' | 'b'` (only deleting the key makes the property absent), which matters for `'x' in obj` checks and serialization. `verbatimModuleSyntax` is the modern module-safety baseline that supersedes the now-no-op `importsNotUsedAsValues`/`preserveValueImports` (see Module Organization).
+### Flags beyond `strict`
 
-### Module Organization
+`strict: true` does NOT include these — opt in explicitly (TS 5.9 `tsc --init` now enables them for new projects):
+
+- **`noUncheckedIndexedAccess`** — adds `| undefined` to array subscripts and index-signature access (`arr[i]: T | undefined`). ⚠ NOT applied to named properties, NOT to `for...of` loop variables (by design, microsoft/TypeScript#42622), NOT to `Object.values()` — so it's no safety net when iterating.
+- **`exactOptionalPropertyTypes`** — `obj.x = undefined` becomes an error for `x?: "a" | "b"`; only *deleting* the key makes the property absent. Matters for `"x" in obj` checks and serialization round-trips.
+- **`useUnknownInCatchVariables`** (on via `strict` since 4.4) — `catch` vars are `unknown`; guard with `instanceof Error`.
+- **`verbatimModuleSyntax`** — modern module-safety baseline; supersedes the now-no-op `importsNotUsedAsValues`/`preserveValueImports` (see Modules).
+- **`isolatedModules`** — forbids constructs single-file transpilers can't handle (re-exporting a type without `type`, `const enum` inlining); required for esbuild/swc/Babel pipelines.
+
+### Checklist: tsconfig
+
+- [ ] Exactly one of `nodenext` / `bundler` chosen to match the runtime — not mixed
+- [ ] `strict: true` PLUS `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes` (they aren't in `strict`)
+- [ ] `verbatimModuleSyntax: true`; type-only imports carry the `type` modifier
+- [ ] Library build: `declaration: true`, NOT `moduleResolution: bundler`, no `const enum` in public `.d.ts`
+- [ ] `isolatedModules: true` if any non-`tsc` transpiler is in the build
+
+## Modules & Declaration Merging
+
+### Type-only imports
+
+Under `verbatimModuleSyntax`, an import/export WITHOUT a `type` modifier is emitted verbatim; anything WITH `type` is erased. A purely-type import missing `type` ships as a runtime `import`/`require` — defeating tree-shaking and dragging CJS/ESM side effects in.
 
 ```typescript
-// Re-export pattern for clean public API
-// src/models/index.ts
-export { User, type UserDTO } from "./user";
-export { Order, type OrderDTO } from "./order";
-export { Product, type ProductDTO } from "./product";
-
-// Barrel exports with explicit types
-// src/index.ts
-export type { Config, ConfigOptions } from "./config";
-export { createConfig, validateConfig } from "./config";
-
-// Namespace imports for related utilities
-import * as validators from "./validators";
-import * as formatters from "./formatters";
-
-// Type-only imports
-import type { User, Order } from "./models";
-import { createUser, createOrder } from "./models";
-
-// Under verbatimModuleSyntax: true, every type-only specifier mixed into a
-// value import/export MUST carry the inline `type` modifier — otherwise it is
-// emitted as a runtime import even when used only as a type.
-import { type User, createUser } from "./user"; // User erased, createUser kept
-export { Order, type OrderDTO } from "./order"; // OrderDTO erased
+import type { User, Order } from "./models";        // fully erased
+import { type UserDTO, createUser } from "./user";   // UserDTO erased, createUser kept
+export { Order, type OrderDTO } from "./order";      // OrderDTO erased
 ```
 
-### Declaration Files
+### Declaration merging
+
+Interfaces (unlike `type` aliases) merge across declarations. Deliberate uses: augmenting third-party/global types; pairing an `interface` with a `namespace` or `class` of the same name.
 
 ```typescript
-// global.d.ts - Extend global types
+// Augment a library type (must be inside its module scope or a `declare module`):
 declare global {
-  interface Window {
-    analytics: AnalyticsAPI;
-  }
-
-  namespace NodeJS {
-    interface ProcessEnv {
-      NODE_ENV: "development" | "production" | "test";
-      DATABASE_URL: string;
-      API_KEY: string;
-    }
-  }
+  namespace Express { interface Request { user?: User; requestId: string } }
 }
-
-// module.d.ts - Declare untyped modules
-declare module "untyped-package" {
-  export function doSomething(value: string): void;
-  export const VERSION: string;
-}
-
-// Augment existing modules
-declare module "express" {
-  interface Request {
-    user?: User;
-    requestId: string;
-  }
-}
-
-export {}; // Makes this a module
+declare module "untyped-pkg" { export function doThing(v: string): void }
+export {}; // makes an ambient file a module
 ```
 
-## Common Patterns
+⚠ The flip side is a footgun: two same-named `interface`s in one scope **merge silently** — often an accidental collision. Use a `type` alias for shapes you don't want merged (a duplicate `type` is a hard error, which is what you want).
 
-### Branded Types
+## Runtime Validation Boundary
 
-```typescript
-// Create nominal types for type safety
-declare const brand: unique symbol;
+Types are **erased at runtime** — they cannot validate data crossing a trust boundary (HTTP body, JSON, env, DB rows). Parse with a schema validator at the edge; inside the boundary, trust the types. Never bridge the boundary with `as`.
 
-type Brand<T, B> = T & { [brand]: B };
-
-type UserId = Brand<string, "UserId">;
-type OrderId = Brand<string, "OrderId">;
-type Email = Brand<string, "Email">;
-
-// Constructor functions with validation
-function createUserId(id: string): UserId {
-  if (!id.match(/^usr_[a-z0-9]+$/)) {
-    throw new Error("Invalid user ID format");
-  }
-  return id as UserId;
-}
-
-function createEmail(email: string): Email {
-  if (!email.includes("@")) {
-    throw new Error("Invalid email format");
-  }
-  return email.toLowerCase() as Email;
-}
-
-// Now these can't be accidentally mixed
-function getUser(id: UserId): Promise<User> {
-  /* ... */
-}
-function getOrder(id: OrderId): Promise<Order> {
-  /* ... */
-}
-
-// const userId = createUserId('usr_123');
-// const orderId = createOrderId('ord_456');
-// getUser(orderId); // Type error!
-```
-
-### Builder Pattern
-
-```typescript
-class QueryBuilder<T extends object> {
-  private filters: Partial<T> = {};
-  private sortField?: keyof T;
-  private sortOrder: "asc" | "desc" = "asc";
-  private limitValue?: number;
-  private offsetValue?: number;
-
-  where<K extends keyof T>(field: K, value: T[K]): this {
-    this.filters[field] = value;
-    return this;
-  }
-
-  orderBy(field: keyof T, order: "asc" | "desc" = "asc"): this {
-    this.sortField = field;
-    this.sortOrder = order;
-    return this;
-  }
-
-  limit(value: number): this {
-    this.limitValue = value;
-    return this;
-  }
-
-  offset(value: number): this {
-    this.offsetValue = value;
-    return this;
-  }
-
-  build(): Query<T> {
-    return {
-      filters: this.filters,
-      sort: this.sortField
-        ? { field: this.sortField, order: this.sortOrder }
-        : undefined,
-      pagination: { limit: this.limitValue, offset: this.offsetValue },
-    };
-  }
-}
-
-// Usage with type inference
-const query = new QueryBuilder<User>()
-  .where("role", "admin")
-  .orderBy("createdAt", "desc")
-  .limit(10)
-  .build();
-```
-
-### Exhaustive Checks
-
-```typescript
-// Ensure all union cases are handled
-function assertNever(value: never): never {
-  throw new Error(`Unexpected value: ${value}`);
-}
-
-type Status = "pending" | "approved" | "rejected" | "cancelled";
-
-function getStatusColor(status: Status): string {
-  switch (status) {
-    case "pending":
-      return "yellow";
-    case "approved":
-      return "green";
-    case "rejected":
-      return "red";
-    case "cancelled":
-      return "gray";
-    default:
-      return assertNever(status); // Compile error if case is missing
-  }
-}
-
-// With discriminated unions
-type Event =
-  | { type: "click"; x: number; y: number }
-  | { type: "keypress"; key: string }
-  | { type: "scroll"; delta: number };
-
-function handleEvent(event: Event): void {
-  switch (event.type) {
-    case "click":
-      console.log(`Clicked at ${event.x}, ${event.y}`);
-      break;
-    case "keypress":
-      console.log(`Key pressed: ${event.key}`);
-      break;
-    case "scroll":
-      console.log(`Scrolled: ${event.delta}`);
-      break;
-    default:
-      assertNever(event);
-  }
-}
-```
-
-### Type-Safe Event Emitter
-
-```typescript
-type EventMap = {
-  userCreated: { user: User };
-  userDeleted: { userId: string };
-  orderPlaced: { order: Order; user: User };
-};
-
-class TypedEventEmitter<T extends Record<string, any>> {
-  private listeners: { [K in keyof T]?: Array<(payload: T[K]) => void> } = {};
-
-  on<K extends keyof T>(
-    event: K,
-    listener: (payload: T[K]) => void,
-  ): () => void {
-    if (!this.listeners[event]) {
-      this.listeners[event] = [];
-    }
-    this.listeners[event]!.push(listener);
-
-    return () => this.off(event, listener);
-  }
-
-  off<K extends keyof T>(event: K, listener: (payload: T[K]) => void): void {
-    const listeners = this.listeners[event];
-    if (listeners) {
-      const index = listeners.indexOf(listener);
-      if (index !== -1) {
-        listeners.splice(index, 1);
-      }
-    }
-  }
-
-  emit<K extends keyof T>(event: K, payload: T[K]): void {
-    this.listeners[event]?.forEach((listener) => listener(payload));
-  }
-}
-
-// Usage
-const emitter = new TypedEventEmitter<EventMap>();
-
-emitter.on("userCreated", ({ user }) => {
-  console.log(`User created: ${user.name}`);
-});
-
-emitter.emit("userCreated", { user: newUser });
-// emitter.emit('userCreated', { wrong: 'payload' }); // Type error!
-```
-
-## Type-Safe API Patterns
-
-### Zod for Runtime Validation
+### Zod
 
 ```typescript
 import { z } from "zod";
 
-// Define schemas that generate both runtime validators and static types
 const UserSchema = z.object({
   id: z.string().uuid(),
   email: z.string().email(),
-  name: z.string().min(1).max(100),
-  age: z.number().int().positive().optional(),
   role: z.enum(["admin", "user", "guest"]).default("user"),
-  createdAt: z.coerce.date(),
-  metadata: z.record(z.string(), z.unknown()),
+  createdAt: z.coerce.date(),          // string → Date at parse time
 });
 
-// Extract TypeScript type from schema
-type User = z.infer<typeof UserSchema>;
+type User = z.infer<typeof UserSchema>;   // OUTPUT type (post default/transform/coerce)
+type UserIn = z.input<typeof UserSchema>; // INPUT type (what .parse ACCEPTS)
 
-// Nested schemas
-const OrderSchema = z.object({
-  id: z.string(),
-  user: UserSchema,
-  items: z.array(
-    z.object({
-      productId: z.string(),
-      quantity: z.number().positive(),
-      price: z.number().positive(),
-    }),
-  ),
-  total: z.number().positive(),
-  status: z.enum(["pending", "paid", "shipped", "delivered"]),
-});
+UserSchema.parse(input);      // throws ZodError
+UserSchema.safeParse(input);  // { success: true; data } | { success: false; error }
 
-type Order = z.infer<typeof OrderSchema>;
+// Compose instead of redefining:
+UserSchema.partial();               // all optional
+UserSchema.pick({ email: true });
+UserSchema.omit({ createdAt: true });
+UserSchema.extend({ age: z.number().int().positive() });
 
-// Parse with error handling
-function createUser(input: unknown): User {
-  return UserSchema.parse(input); // Throws ZodError on validation failure
-}
-
-// Safe parse returns result object
-function createUserSafe(input: unknown): Result<User, z.ZodError> {
-  const result = UserSchema.safeParse(input);
-  if (result.success) {
-    return { success: true, data: result.data };
-  }
-  return { success: false, error: result.error };
-}
-
-// Transform and refine
-const PasswordSchema = z
-  .string()
-  .min(8)
-  .regex(/[A-Z]/, "Must contain uppercase")
-  .regex(/[a-z]/, "Must contain lowercase")
-  .regex(/[0-9]/, "Must contain number");
-
-const SignupSchema = z
-  .object({
-    email: z.string().email(),
-    password: PasswordSchema,
-    confirmPassword: z.string(),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: "Passwords must match",
-    path: ["confirmPassword"],
-  });
-
-// Partial, pick, omit on schemas
-const UserUpdateSchema = UserSchema.partial(); // All fields optional
-const UserCredentialsSchema = UserSchema.pick({ email: true, id: true });
-const UserWithoutDatesSchema = UserSchema.omit({ createdAt: true });
+// Cross-field validation:
+z.object({ pw: z.string().min(8), confirm: z.string() })
+  .refine((d) => d.pw === d.confirm, { message: "mismatch", path: ["confirm"] });
 ```
 
-### tRPC for End-to-End Type Safety
+⚠ `z.infer` is the **output** type. Whenever a schema uses `.default()`, `.transform()`, or `.coerce`, input ≠ output — annotate parse *inputs* with `z.input` and results with `z.infer`. Passing an `z.infer` value where `z.input` is expected is a common, silent shape bug.
+
+### tRPC
 
 ```typescript
-import { initTRPC } from "@trpc/server";
-import { z } from "zod";
-
-// Initialize tRPC
 const t = initTRPC.context<Context>().create();
 
-// Define router with typed procedures
 const appRouter = t.router({
-  // Query with input validation
   getUser: t.procedure
-    .input(z.object({ id: z.string().uuid() }))
-    .query(async ({ input, ctx }) => {
-      const user = await ctx.db.user.findUnique({
-        where: { id: input.id },
-      });
-      if (!user) throw new TRPCError({ code: "NOT_FOUND" });
-      return user;
-    }),
-
-  // Mutation with input validation
-  createUser: t.procedure
-    .input(UserSchema.omit({ id: true, createdAt: true }))
-    .mutation(async ({ input, ctx }) => {
-      return await ctx.db.user.create({ data: input });
-    }),
-
-  // Protected procedure with middleware
-  updateProfile: t.procedure
-    .use(isAuthenticated)
-    .input(UserSchema.partial().required({ id: true }))
-    .mutation(async ({ input, ctx }) => {
-      return await ctx.db.user.update({
-        where: { id: input.id },
-        data: input,
-      });
-    }),
-
-  // Nested routers
-  posts: t.router({
-    list: t.procedure
-      .input(
-        z.object({
-          limit: z.number().min(1).max(100).default(10),
-          cursor: z.string().optional(),
-        })
-      )
-      .query(async ({ input }) => {
-        // Returns typed data
-        return { posts: [], nextCursor: null };
-      }),
-
-    byId: t.procedure.input(z.string()).query(async ({ input }) => {
-      // input is string
-      return { id: input, title: "Post" };
-    }),
-  }),
+    .input(z.object({ id: z.string().uuid() }))          // runtime validation AND static input type
+    .query(({ input, ctx }) => ctx.db.user.find(input.id)),
 });
+export type AppRouter = typeof appRouter;   // the ONLY thing the client imports
 
-// Export type for client
-export type AppRouter = typeof appRouter;
-
-// Client usage (in separate file)
-import { createTRPCClient } from "@trpc/client";
+// Client — I/O types flow across the wire from the exported TYPE, no codegen:
 import type { AppRouter } from "./server";
+const client = createTRPCClient<AppRouter>({ url });
+await client.getUser.query({ id: "…" });    // fully typed, autocompleted
+```
 
-const client = createTRPCClient<AppRouter>({
-  url: "http://localhost:3000/trpc",
-});
+The client imports the type only (`import type`), so no server code ships to the browser; the `.input()` schema doubles as runtime guard and static contract.
 
-// Fully typed, autocomplete works
-const user = await client.getUser.query({ id: "uuid-here" });
-// user is typed as User
+### Prisma
 
-const newUser = await client.createUser.mutate({
-  email: "user@example.com",
-  name: "John",
-  role: "user",
-});
-// newUser is typed based on the mutation return
+```typescript
+const user = await prisma.user.findUnique({
+  where: { id },
+  include: { posts: { where: { published: true }, take: 10 } },
+}); // return type NARROWS to User & { posts: Post[] } from the include
 
-// React hook usage
-import { trpc } from "./trpc";
+// Name a query shape instead of hand-writing the joined type:
+type UserWithPosts = Prisma.UserGetPayload<{ include: { posts: true } }>;
 
-function UserProfile({ userId }: { userId: string }) {
-  const { data, isLoading } = trpc.getUser.useQuery({ id: userId });
-  const updateMutation = trpc.updateProfile.useMutation();
+await prisma.$transaction(async (tx) => { /* all-or-nothing */ });
+```
 
-  if (isLoading) return <div>Loading...</div>;
-  return <div>{data.name}</div>;
+`select`/`include` reshape the *result type*, not just the query — `select` prunes fields from the returned type. Use `Prisma.<Model>GetPayload<…>` to derive a shape rather than duplicating it by hand.
+
+## Patterns
+
+### Branded (nominal) types
+
+TS is structural, so `UserId` and `OrderId` (both `string`) are interchangeable unless you brand them. Validate in the constructor; the brand makes mix-ups a compile error.
+
+```typescript
+declare const brand: unique symbol;
+type Brand<T, B> = T & { readonly [brand]: B };
+
+type UserId = Brand<string, "UserId">;
+type Email  = Brand<string, "Email">;
+
+function toEmail(s: string): Email {
+  if (!s.includes("@")) throw new Error("invalid email");
+  return s.toLowerCase() as Email;   // the ONE sanctioned cast, gated by validation
+}
+// getUser(orderId) // ← type error: OrderId not assignable to UserId
+```
+
+### Result type & async error handling
+
+```typescript
+type Result<T, E = Error> = { ok: true; value: T } | { ok: false; error: E };
+
+async function fetchUser(id: string): Promise<Result<User>> {
+  try {
+    const res = await fetch(`/api/users/${id}`);
+    if (!res.ok) return { ok: false, error: new Error(`HTTP ${res.status}`) };
+    return { ok: true, value: (await res.json()) as User };
+  } catch (error) {
+    // `error` is `unknown` (useUnknownInCatchVariables). Normalize — never `error as Error`,
+    // which yields an object whose `.message` is undefined when a non-Error is thrown.
+    return { ok: false, error: error instanceof Error ? error : new Error(String(error)) };
+  }
+}
+
+async function retry<T>(fn: () => Promise<T>, attempts: number, delayMs: number): Promise<T> {
+  // `unknown` + sentinel: avoids the unsafe cast AND the uninitialized hazard if attempts <= 0
+  let lastError: unknown = new Error("retry: no attempts made");
+  for (let i = 0; i < attempts; i++) {
+    try { return await fn(); }
+    catch (e) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, delayMs * 2 ** i));
+    }
+  }
+  throw lastError;
 }
 ```
 
-### Prisma for Type-Safe Database Access
+## React + TypeScript
 
 ```typescript
-import { PrismaClient } from "@prisma/client";
+import { type ReactNode, type ComponentPropsWithoutRef, createContext, useContext, useState, useRef } from "react";
 
-const prisma = new PrismaClient();
-
-// Generated types from schema.prisma
-// All queries are fully typed
-
-// Basic CRUD operations
-async function createUser(email: string, name: string) {
-  return await prisma.user.create({
-    data: { email, name },
-    // select/include are type-checked
-    select: { id: true, email: true, name: true },
-  });
-}
-
-// Relations are typed
-async function getUserWithPosts(userId: string) {
-  return await prisma.user.findUnique({
-    where: { id: userId },
-    include: {
-      posts: {
-        where: { published: true },
-        orderBy: { createdAt: "desc" },
-        take: 10,
-      },
-    },
-  });
-  // Return type includes User & { posts: Post[] }
-}
-
-// Type-safe where clauses
-async function findUsers(filters: {
-  role?: string;
-  createdAfter?: Date;
-  emailContains?: string;
-}) {
-  return await prisma.user.findMany({
-    where: {
-      role: filters.role,
-      createdAt: { gte: filters.createdAfter },
-      email: { contains: filters.emailContains },
-    },
-  });
-}
-
-// Transactions
-async function transferCredits(fromId: string, toId: string, amount: number) {
-  return await prisma.$transaction(async (tx) => {
-    const from = await tx.user.update({
-      where: { id: fromId },
-      data: { credits: { decrement: amount } },
-    });
-
-    const to = await tx.user.update({
-      where: { id: toId },
-      data: { credits: { increment: amount } },
-    });
-
-    return { from, to };
-  });
-}
-
-// Extending Prisma Client with custom methods
-const xprisma = prisma.$extends({
-  model: {
-    user: {
-      async findByEmail(email: string) {
-        return await prisma.user.findUnique({ where: { email } });
-      },
-    },
-  },
-});
-```
-
-## React TypeScript Patterns
-
-### Component Props and Generic Components
-
-```typescript
-import { ReactNode, ComponentPropsWithoutRef } from "react";
-
-// Basic component with props interface
-interface ButtonProps {
-  variant: "primary" | "secondary" | "danger";
-  size?: "sm" | "md" | "lg";
-  disabled?: boolean;
-  onClick?: () => void;
-  children: ReactNode;
-}
-
-function Button({
-  variant,
-  size = "md",
-  disabled,
-  onClick,
-  children,
-}: ButtonProps) {
-  return (
-    <button
-      className={`btn-${variant} btn-${size}`}
-      disabled={disabled}
-      onClick={onClick}
-    >
-      {children}
-    </button>
-  );
-}
-
-// Extend native HTML element props
+// Extend native element props instead of re-declaring them:
 interface InputProps extends ComponentPropsWithoutRef<"input"> {
   label: string;
   error?: string;
 }
 
-function Input({ label, error, ...inputProps }: InputProps) {
-  return (
-    <div>
-      <label>{label}</label>
-      <input {...inputProps} aria-invalid={!!error} />
-      {error && <span className="error">{error}</span>}
-    </div>
-  );
+// Generic component — T is inferred from `items`:
+function List<T>({ items, render, keyOf }: {
+  items: T[]; render: (t: T) => ReactNode; keyOf: (t: T) => string | number;
+}) {
+  return <ul>{items.map((it) => <li key={keyOf(it)}>{render(it)}</li>)}</ul>;
 }
 
-// Generic component for lists
-interface ListProps<T> {
-  items: T[];
-  renderItem: (item: T, index: number) => ReactNode;
-  keyExtractor: (item: T) => string | number;
-  emptyMessage?: string;
+// Custom hooks: return `as const` so the tuple keeps positional types
+function useToggle(init = false) {
+  const [on, setOn] = useState(init);
+  return [on, () => setOn((v) => !v)] as const; // [boolean, () => void], not (boolean | (() => void))[]
 }
 
-function List<T>({
-  items,
-  renderItem,
-  keyExtractor,
-  emptyMessage,
-}: ListProps<T>) {
-  if (items.length === 0) {
-    return <div>{emptyMessage || "No items"}</div>;
-  }
+const ref = useRef<HTMLVideoElement>(null); // ref.current: HTMLVideoElement | null
 
-  return (
-    <ul>
-      {items.map((item, index) => (
-        <li key={keyExtractor(item)}>{renderItem(item, index)}</li>
-      ))}
-    </ul>
-  );
-}
-
-// Usage with type inference
-<List
-  items={users}
-  renderItem={(user) => <div>{user.name}</div>}
-  keyExtractor={(user) => user.id}
-/>;
-
-// Polymorphic component (as prop pattern)
-type AsProp<C extends React.ElementType> = {
-  as?: C;
-};
-
-type PropsToOmit<C extends React.ElementType, P> = keyof (AsProp<C> & P);
-
-type PolymorphicComponentProp<
-  C extends React.ElementType,
-  Props = {}
-> = React.PropsWithChildren<Props & AsProp<C>> &
-  Omit<React.ComponentPropsWithoutRef<C>, PropsToOmit<C, Props>>;
-
-type TextProps<C extends React.ElementType> = PolymorphicComponentProp<
-  C,
-  {
-    color?: "primary" | "secondary";
-    size?: "sm" | "md" | "lg";
-  }
->;
-
-function Text<C extends React.ElementType = "span">({
-  as,
-  color = "primary",
-  size = "md",
-  children,
-  ...props
-}: TextProps<C>) {
-  const Component = as || "span";
-  return (
-    <Component className={`text-${color} text-${size}`} {...props}>
-      {children}
-    </Component>
-  );
-}
-
-// Usage
-<Text>Default span</Text>;
-<Text as="h1">Heading</Text>;
-<Text as="a" href="/link">
-  Link
-</Text>;
-```
-
-### Hooks and State Management
-
-```typescript
-import { useState, useEffect, useCallback, useRef, useReducer } from "react";
-
-// Typed useState
-function Counter() {
-  const [count, setCount] = useState(0);
-  const [user, setUser] = useState<User | null>(null);
-
-  // Type inference works
-  setCount(count + 1);
-  setUser({ id: "1", name: "John", email: "john@example.com" });
-}
-
-// Custom hooks with generic types
-function useLocalStorage<T>(key: string, initialValue: T) {
-  const [value, setValue] = useState<T>(() => {
-    const stored = localStorage.getItem(key);
-    return stored ? JSON.parse(stored) : initialValue;
-  });
-
-  useEffect(() => {
-    localStorage.setItem(key, JSON.stringify(value));
-  }, [key, value]);
-
-  return [value, setValue] as const;
-}
-
-// Usage with type inference
-const [user, setUser] = useLocalStorage<User | null>("user", null);
-
-// useReducer with discriminated unions
-type State = {
-  status: "idle" | "loading" | "success" | "error";
-  data: User | null;
-  error: string | null;
-};
-
-type Action =
-  | { type: "FETCH_START" }
-  | { type: "FETCH_SUCCESS"; payload: User }
-  | { type: "FETCH_ERROR"; payload: string };
-
-function reducer(state: State, action: Action): State {
-  switch (action.type) {
-    case "FETCH_START":
-      return { status: "loading", data: null, error: null };
-    case "FETCH_SUCCESS":
-      return { status: "success", data: action.payload, error: null };
-    case "FETCH_ERROR":
-      return { status: "error", data: null, error: action.payload };
-  }
-}
-
-function useUser(userId: string) {
-  const [state, dispatch] = useReducer(reducer, {
-    status: "idle",
-    data: null,
-    error: null,
-  });
-
-  useEffect(() => {
-    dispatch({ type: "FETCH_START" });
-    fetchUser(userId)
-      .then((user) => dispatch({ type: "FETCH_SUCCESS", payload: user }))
-      .catch((error) =>
-        dispatch({ type: "FETCH_ERROR", payload: error.message })
-      );
-  }, [userId]);
-
-  return state;
-}
-
-// Ref with typed DOM elements
-function VideoPlayer() {
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  const play = useCallback(() => {
-    videoRef.current?.play();
-  }, []);
-
-  return <video ref={videoRef} />;
+// Context typed `T | undefined`; guard in the hook so consumers get a non-null value
+const Ctx = createContext<AuthValue | undefined>(undefined);
+function useAuth(): AuthValue {
+  const c = useContext(Ctx);
+  if (!c) throw new Error("useAuth must be used within AuthProvider");
+  return c;
 }
 ```
 
-### Context API with TypeScript
+- ⚠ Avoid `React.FC`: it doesn't support generic components and its `children` semantics shifted in React 18 types. Annotate the props object directly; add `children: ReactNode` only when the component renders children.
+- Polymorphic `as` prop — the one genuinely tricky component type:
 
 ```typescript
-import { createContext, useContext, ReactNode } from "react";
+type Poly<C extends React.ElementType, P = {}> =
+  P & { as?: C } & Omit<React.ComponentPropsWithoutRef<C>, keyof P | "as">;
 
-// Define context value type
-interface AuthContextValue {
-  user: User | null;
-  login: (email: string, password: string) => Promise<void>;
-  logout: () => Promise<void>;
-  isLoading: boolean;
-}
-
-// Create context with undefined initial value
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
-
-// Provider component
-interface AuthProviderProps {
-  children: ReactNode;
-}
-
-function AuthProvider({ children }: AuthProviderProps) {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  const login = async (email: string, password: string) => {
-    setIsLoading(true);
-    const user = await api.login(email, password);
-    setUser(user);
-    setIsLoading(false);
-  };
-
-  const logout = async () => {
-    await api.logout();
-    setUser(null);
-  };
-
-  const value = { user, login, logout, isLoading };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
-
-// Custom hook with runtime check
-function useAuth(): AuthContextValue {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error("useAuth must be used within AuthProvider");
-  }
-  return context;
-}
-
-// Usage in components
-function Profile() {
-  const { user, logout } = useAuth(); // Fully typed
-
-  if (!user) return <div>Not logged in</div>;
-
-  return (
-    <div>
-      <h1>{user.name}</h1>
-      <button onClick={logout}>Logout</button>
-    </div>
-  );
+function Text<C extends React.ElementType = "span">({ as, ...rest }: Poly<C, { size?: "sm" | "lg" }>) {
+  const Tag = as ?? "span";
+  return <Tag {...rest} />; // <Text as="a" href="…"/> type-checks href
 }
 ```
 
-## Node.js TypeScript Patterns
-
-### Express with Type Safety
+## Node.js + Express
 
 ```typescript
-import express, { Request, Response, NextFunction } from "express";
+import type { Request, Response, NextFunction } from "express";
 import { z } from "zod";
 
-// Extend Express types
+// Augment Request via declaration merging (see Declaration merging):
 declare global {
-  namespace Express {
-    interface Request {
-      user?: User;
-    }
-  }
+  namespace Express { interface Request { user?: User } }
 }
 
-// Type-safe request handlers
-interface TypedRequest<
-  TBody = unknown,
-  TQuery = unknown,
-  TParams = unknown,
-> extends Request {
-  body: TBody;
-  query: TQuery;
-  params: TParams;
-}
-
-interface TypedResponse<TData = unknown> extends Response {
-  json: (data: TData) => this;
-}
-
-// Validation middleware factory
-function validate<T>(schema: z.ZodSchema<T>) {
-  return (req: Request, res: Response, next: NextFunction) => {
-    try {
-      req.body = schema.parse(req.body);
-      next();
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        res.status(400).json({ errors: error.errors });
-      } else {
-        next(error);
-      }
-    }
+// One validation-middleware factory, reused per route:
+const validate = <T>(schema: z.ZodSchema<T>) =>
+  (req: Request, res: Response, next: NextFunction) => {
+    const r = schema.safeParse(req.body);
+    if (!r.success) return res.status(400).json({ errors: r.error.issues });
+    req.body = r.data;   // now typed T for downstream handlers
+    next();
   };
-}
-
-// Typed route handlers
-type RouteHandler<
-  TBody = unknown,
-  TQuery = unknown,
-  TParams = unknown,
-  TData = unknown,
-> = (
-  req: TypedRequest<TBody, TQuery, TParams>,
-  res: TypedResponse<TData>,
-  next: NextFunction,
-) => void | Promise<void>;
-
-// Example usage
-const CreateUserSchema = z.object({
-  email: z.string().email(),
-  name: z.string(),
-  age: z.number().optional(),
-});
-
-type CreateUserBody = z.infer<typeof CreateUserSchema>;
-type CreateUserResponse = { user: User };
-
-const createUserHandler: RouteHandler<
-  CreateUserBody,
-  {},
-  {},
-  CreateUserResponse
-> = async (req, res) => {
-  const user = await db.createUser(req.body);
-  res.json({ user });
-};
-
-const app = express();
 app.post("/users", validate(CreateUserSchema), createUserHandler);
 
-// Error handling with discriminated unions
+// Model API failures as a discriminated union, mapped to status codes centrally:
 type ApiError =
-  | { type: "validation"; errors: z.ZodError }
+  | { type: "validation"; error: z.ZodError }
   | { type: "not_found"; resource: string }
-  | { type: "unauthorized"; message: string }
-  | { type: "internal"; error: Error };
-
-class AppError extends Error {
-  constructor(public readonly error: ApiError) {
-    super(error.type);
-  }
-}
-
-function errorHandler(
-  err: Error,
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) {
-  if (err instanceof AppError) {
-    switch (err.error.type) {
-      case "validation":
-        return res.status(400).json({ errors: err.error.errors.errors });
-      case "not_found":
-        return res
-          .status(404)
-          .json({ message: `${err.error.resource} not found` });
-      case "unauthorized":
-        return res.status(401).json({ message: err.error.message });
-      case "internal":
-        return res.status(500).json({ message: "Internal server error" });
-    }
-  }
-  res.status(500).json({ message: "Unknown error" });
-}
-
-app.use(errorHandler);
+  | { type: "unauthorized"; message: string };
 ```
 
-### Async Patterns and Error Handling
+## Common Anti-Patterns
 
 ```typescript
-// Result type for error handling without exceptions
-type Result<T, E = Error> = { ok: true; value: T } | { ok: false; error: E };
+// ❌ any bypasses checking      →  ✅ unknown + narrow
+function bad(d: any) { return d.a.b.c; }
+function good(d: unknown): string { if (isValid(d)) return d.a.b.c; throw new Error("invalid"); }
 
-async function fetchUser(id: string): Promise<Result<User>> {
-  try {
-    const response = await fetch(`/api/users/${id}`);
-    if (!response.ok) {
-      return { ok: false, error: new Error(`HTTP ${response.status}`) };
-    }
-    const user = await response.json();
-    return { ok: true, value: user };
-  } catch (error) {
-    // `error` is `unknown` (useUnknownInCatchVariables, on via strict since 4.4);
-    // normalize instead of the unsafe `error as Error`, which can yield an object
-    // whose `.message` is undefined when a non-Error is thrown.
-    const err = error instanceof Error ? error : new Error(String(error));
-    return { ok: false, error: err };
-  }
-}
+// ❌ assert across the runtime boundary  →  ✅ validate (zod), then trust the type
+const u1 = JSON.parse(input) as User;      // lies if the shape is wrong
+const u2 = UserSchema.parse(JSON.parse(input));
 
-// Usage
-const result = await fetchUser("123");
-if (result.ok) {
-  console.log(result.value.name);
-} else {
-  console.error(result.error.message);
-}
+// ❌ non-null assertion abuse    →  ✅ handle / throw explicitly
+const a = users.find((u) => u.id === id)!;               // crashes silently if missing
+const b = users.find((u) => u.id === id) ?? throwMissing(id);
 
-// Type-safe Promise utilities
-async function race<T extends readonly unknown[]>(promises: {
-  [K in keyof T]: Promise<T[K]>;
-}): Promise<T[number]> {
-  return Promise.race(promises);
-}
+// ❌ overly-permissive object    →  ✅ generics preserve the type
+function mergeBad(a: object, b: object): object { return { ...a, ...b }; }
+function mergeGood<T extends object, U extends object>(a: T, b: U): T & U { return { ...a, ...b }; }
 
-async function all<T extends readonly unknown[]>(promises: {
-  [K in keyof T]: Promise<T[K]>;
-}): Promise<T> {
-  return Promise.all(promises) as Promise<T>;
-}
-
-// Usage with type inference
-const [user, posts, comments] = await all([
-  fetchUser("123"),
-  fetchPosts("123"),
-  fetchComments("123"),
-]);
-// Each element is correctly typed
-
-// Retry with exponential backoff
-async function retry<T>(
-  fn: () => Promise<T>,
-  options: {
-    maxAttempts: number;
-    initialDelay: number;
-    maxDelay: number;
-    backoffFactor: number;
-  },
-): Promise<T> {
-  // `unknown` + a sentinel: avoids both the unsafe `error as Error` cast and the
-  // uninitialized-variable hazard if the loop never runs (e.g. maxAttempts <= 0).
-  let lastError: unknown = new Error("retry: no attempts made");
-  let delay = options.initialDelay;
-
-  for (let attempt = 0; attempt < options.maxAttempts; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-      if (attempt < options.maxAttempts - 1) {
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        delay = Math.min(delay * options.backoffFactor, options.maxDelay);
-      }
-    }
-  }
-
-  throw lastError;
-}
-
-// Usage
-const user = await retry(() => fetchUser("123"), {
-  maxAttempts: 3,
-  initialDelay: 1000,
-  maxDelay: 10000,
-  backoffFactor: 2,
-});
-```
-
-## Anti-Patterns
-
-### Avoid These Practices
-
-```typescript
-// BAD: Using `any` to bypass type checking
-function process(data: any): any {
-  return data.foo.bar.baz;
-}
-
-// GOOD: Use unknown and narrow the type
-function process(data: unknown): string {
-  if (isValidData(data)) {
-    return data.foo.bar.baz;
-  }
-  throw new Error("Invalid data");
-}
-
-// BAD: Type assertions without validation
-const user = JSON.parse(input) as User;
-
-// GOOD: Validate at runtime (use zod, io-ts, etc.)
-import { z } from "zod";
-
-const UserSchema = z.object({
-  id: z.string(),
-  email: z.string().email(),
-  name: z.string(),
-});
-
-const user = UserSchema.parse(JSON.parse(input));
-
-// BAD: Non-null assertion operator abuse
-function getUser(id: string): User {
-  return users.find((u) => u.id === id)!; // Crashes if not found
-}
-
-// GOOD: Handle the undefined case
-function getUser(id: string): User | undefined {
-  return users.find((u) => u.id === id);
-}
-
-// Or throw explicitly
-function getUser(id: string): User {
-  const user = users.find((u) => u.id === id);
-  if (!user) {
-    throw new Error(`User not found: ${id}`);
-  }
-  return user;
-}
-
-// BAD: Overly permissive function signatures
-function merge(a: object, b: object): object {
-  return { ...a, ...b };
-}
-
-// GOOD: Use generics to preserve types
-function merge<T extends object, U extends object>(a: T, b: U): T & U {
-  return { ...a, ...b };
-}
-
-// BAD: numeric enums accept any number (let s: Status = 999 compiles — a
-// type-safety hole); enums also error under --erasableSyntaxOnly and cannot be
-// stripped by Node.js native TypeScript (Node 22.18+).
-enum Status {
-  Pending,
-  Active,
-  Completed,
-}
-
-function activate(s: Status) {}
-activate(999); // No error — any number is assignable to a numeric enum
-
-// GOOD: Use const objects or union types — zero runtime cost, no assignment
-// hole, strips cleanly.
-const Status = {
-  Pending: "pending",
-  Active: "active",
-  Completed: "completed",
-} as const;
-
+// ❌ numeric enum — `let s: Status = 999` compiles (assignment hole); also errors under
+//    --erasableSyntaxOnly and can't be stripped by Node's native TS (22.18+).
+enum Status { Pending, Active }
+// ✅ const object + union — zero runtime cost, no hole, strips cleanly, keeps exhaustiveness
+const Status = { Pending: "pending", Active: "active" } as const;
 type Status = (typeof Status)[keyof typeof Status];
 
-// BAD: Interface merging by accident
-interface Config {
-  port: number;
-}
+// ❌ async callback in forEach (fire-and-forget, unhandled rejections)
+items.forEach(async (i) => { await save(i); });
+// ✅ await the whole batch
+await Promise.all(items.map((i) => save(i)));
 
-interface Config {
-  host: string;
-}
-// Now Config has both port and host - often unintentional
-
-// GOOD: Use type aliases when you don't want merging
-type Config = {
-  port: number;
-  host: string;
-};
-
-// BAD: Ignoring strictNullChecks issues
-function getLength(str: string | null): number {
-  return str.length; // Runtime error if null
-}
-
-// GOOD: Proper null handling
-function getLength(str: string | null): number {
-  return str?.length ?? 0;
-}
-```
-
-### Quick Pattern Swaps
-
-```typescript
-// BAD: async callbacks inside forEach
-async function saveAll(items: Item[]) {
-  items.forEach(async (item) => {
-    await save(item);
-  });
-}
-
-// GOOD: Use Promise.all or a for...of loop
-async function saveAll(items: Item[]) {
-  await Promise.all(items.map((item) => save(item)));
-}
-
-// BAD: Boolean flags that allow impossible states
-type RequestState = {
-  isLoading: boolean;
-  data?: User[];
-  error?: Error;
-};
-
-// GOOD: Use a discriminated union for each valid state
-type RequestState =
-  | { status: "idle" }
-  | { status: "loading" }
-  | { status: "success"; data: User[] }
-  | { status: "error"; error: Error };
+// ❌ boolean-flag state permits impossible combos (loading && error && data)
+type S1 = { isLoading: boolean; data?: User[]; error?: Error };
+// ✅ discriminated union: only valid states are representable
+type S2 = { status: "loading" } | { status: "success"; data: User[] } | { status: "error"; error: Error };
 ```
 
 ## Expert Practices: Idioms, Anti-Patterns & Gotchas
@@ -1581,7 +547,7 @@ const t = tags(["a", "b"]); // readonly ['a', 'b']
 
 #### `verbatimModuleSyntax` and precise type-only imports
 
-`verbatimModuleSyntax` (TS 5.0+) replaces the deprecated, now-no-op `importsNotUsedAsValues`/`preserveValueImports` with one rule: imports/exports WITHOUT a `type` modifier are emitted verbatim; anything WITH `type` is erased. So every purely-type import must be `import type { ... }` or use an inline `type` specifier — otherwise it is emitted as a runtime import even when unused, defeating tree-shaking, forcing unwanted CJS/ESM `require()` inclusion, and breaking cross-compiler consistency (esbuild/swc/Babel all strip `type`-marked imports reliably). It is in TS 5.9's `tsc --init` defaults. (See Module Organization above.)
+`verbatimModuleSyntax` (TS 5.0+) replaces the deprecated, now-no-op `importsNotUsedAsValues`/`preserveValueImports` with one rule: imports/exports WITHOUT a `type` modifier are emitted verbatim; anything WITH `type` is erased. So every purely-type import must be `import type { ... }` or use an inline `type` specifier — otherwise it is emitted as a runtime import even when unused, defeating tree-shaking, forcing unwanted CJS/ESM `require()` inclusion, and breaking cross-compiler consistency (esbuild/swc/Babel all strip `type`-marked imports reliably). It is in TS 5.9's `tsc --init` defaults. (See Modules above.)
 
 #### `using` / `await using` — deterministic cleanup (TS 5.2)
 
@@ -1753,3 +719,14 @@ TS 6.0 is the LAST JavaScript-based release; it DEPRECATES, and the Go-rewritten
 ```json
 { "imports": { "#utils/*": "./src/utils/*.js", "#models/*": "./src/models/*.js" } }
 ```
+
+## Checklist: type-safety review before done
+
+- [ ] No `any` in changed code (search it); external inputs typed `unknown` and narrowed
+- [ ] Runtime boundaries (HTTP/JSON/env/DB) validated with a schema, not `as` — parse inputs typed `z.input`, results `z.infer`
+- [ ] Every `switch` over a union ends in `assertNever(x)`; discriminants are string-literal unions, not numeric enums
+- [ ] `catch` variables guarded with `instanceof Error` (not `error as Error`)
+- [ ] No non-null `!` on lookups that can miss; optional chaining / explicit throw instead
+- [ ] Public API types use `interface extends` (not `&`); no `const enum` in shipped `.d.ts`
+- [ ] Type guards prefer inferred predicates; explicit `x is T` guards are unit-tested
+- [ ] `tsc --noEmit` clean under `strict` + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes`
