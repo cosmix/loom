@@ -50,6 +50,10 @@ pub const HOOK_WORKTREE_ISOLATION: &str = include_str!("../../../../hooks/worktr
 /// Validates target paths are within worktree boundary using LOOM_WORKTREE_PATH
 pub const HOOK_WORKTREE_FILE_GUARD: &str = include_str!("../../../../hooks/worktree-file-guard.sh");
 
+/// PlansPathGuard hook - blocks Write/Edit of plan files under .claude/plans paths
+/// Fires in ALL sessions (plan mode runs interactively); redirects to doc/plans/
+pub const HOOK_PLANS_PATH_GUARD: &str = include_str!("../../../../hooks/plans-path-guard.sh");
+
 /// All loom hook scripts with their filenames (installed to ~/.claude/hooks/loom/)
 /// All hooks are installed to the loom/ subdirectory to keep them separate from user hooks.
 pub const LOOM_HOOKS: &[(&str, &str)] = &[
@@ -70,6 +74,7 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("git-add-guard.sh", HOOK_GIT_ADD_GUARD),
     ("worktree-isolation.sh", HOOK_WORKTREE_ISOLATION),
     ("worktree-file-guard.sh", HOOK_WORKTREE_FILE_GUARD),
+    ("plans-path-guard.sh", HOOK_PLANS_PATH_GUARD),
     // Skill suggestion hooks
     ("skill-trigger.sh", HOOK_SKILL_TRIGGER),
 ];

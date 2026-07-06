@@ -43,6 +43,14 @@ fn loom_hooks_config_for_dir(hooks_dir: &str) -> Value {
                 "hooks": [{"type": "command", "command": format!("{hooks_dir}/worktree-isolation.sh")}]
             },
             {
+                "matcher": "Edit",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/plans-path-guard.sh")}]
+            },
+            {
+                "matcher": "Write",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/plans-path-guard.sh")}]
+            },
+            {
                 "matcher": "Read",
                 "hooks": [{"type": "command", "command": format!("{hooks_dir}/worktree-file-guard.sh")}]
             },
@@ -450,6 +458,33 @@ mod tests {
             assert!(
                 found,
                 "worktree-file-guard.sh not registered as PreToolUse hook for matcher '{tool}'"
+            );
+        }
+    }
+
+    #[test]
+    fn test_plans_path_guard_registered_for_write_edit() {
+        let config = loom_hooks_config();
+        let pre_tool_use = config
+            .get("PreToolUse")
+            .expect("PreToolUse must exist")
+            .as_array()
+            .expect("PreToolUse must be an array");
+
+        for tool in ["Write", "Edit"] {
+            let found = pre_tool_use.iter().any(|entry| {
+                let matcher = entry.get("matcher").and_then(|m| m.as_str());
+                let command = entry
+                    .get("hooks")
+                    .and_then(|h| h.as_array())
+                    .and_then(|arr| arr.first())
+                    .and_then(|h| h.get("command"))
+                    .and_then(|c| c.as_str());
+                matcher == Some(tool) && command.is_some_and(|c| c.contains("plans-path-guard.sh"))
+            });
+            assert!(
+                found,
+                "plans-path-guard.sh not registered as PreToolUse hook for matcher '{tool}'"
             );
         }
     }

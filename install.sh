@@ -226,6 +226,7 @@ install_hooks_remote() {
 		"git-add-guard.sh"
 		"worktree-isolation.sh"
 		"worktree-file-guard.sh"
+		"plans-path-guard.sh"
 	)
 
 	for hook in "${all_hooks[@]}"; do
@@ -410,6 +411,7 @@ install_hooks() {
 		"git-add-guard.sh"
 		"worktree-isolation.sh"
 		"worktree-file-guard.sh"
+		"plans-path-guard.sh"
 	)
 
 	if [[ -d "$SCRIPT_DIR/hooks" ]]; then
