@@ -583,3 +583,17 @@ These stale entries would have misled future agents into using `permission_mode:
 **Misleading signals:** (1) The driver printed NOTHING when codex spawned; the only codex UI was the wait-spinner, shown only when codex outlived the foreground Claude session — codex finishing first left zero terminal trace. (2) The codex report is deleted as final cleanup after all rounds, so no artifact survives a full run. (3) Every log contains a scary `ERROR rmcp::transport::worker … AuthorizationRequired` line even on successful runs — it is codex-side and non-fatal.
 **Prevention:** Before diagnosing a `loom pressure` codex failure, read `/tmp/loom-pressure-codex-*.log` (one per driver invocation, overwritten per round) and check for `Wrote the pressure review to …` near the tail. Also note codex shares the driver's foreground process group: a Ctrl+C aimed at Claude SIGINTs codex too (`turn interrupted` in the log).
 **Fix:** The driver now prints status lines — `→ codex review started in background (log: …)` at spawn, and after exit either `✓ codex review written → <report>` or a warning when codex exited cleanly without writing the report.
+
+## Plans-location rule was prose-only — the one hard rule with no hook enforcement (2026-07-06)
+
+**What happened:** Opus repeatedly wrote plans to `~/.claude/plans/` despite CLAUDE.md.template stating the ban three times (Rule 1, a HARD STOP banner, and the end-of-file reminders).
+**Why:** Plan mode injects its save-location suggestion at the moment of the Write call; a prohibition stated mid-file thousands of tokens earlier reliably loses to an instruction present at the decision point. Every other hard rule (commit/complete, git add -A, worktree isolation) had a hook backstop — plans did not: `worktree-file-guard.sh` exits early outside loom worktrees and explicitly whitelists all `~/.claude/**` paths, so interactive sessions (where plan mode runs) had zero deterministic coverage.
+**Prevention:** A rule that must never be violated needs a deterministic channel, not more prose. Prose emphasis is also zero-sum — when ~20 rules carry ⛔/NEVER banners, the salience gradient is flat and the load-bearing rules don't stand out.
+**Fix:** Added `hooks/plans-path-guard.sh` (PreToolUse on Write|Edit, blocks `.claude/plans` and `.claude/projects/*/plans` path segments, exit-2 message redirects to `doc/plans/`), wired via `fs/permissions/constants.rs`, `fs/permissions/hooks.rs`, and `install.sh`. Restructured CLAUDE.md.template to a 5-item hard-stop tier stated verbatim at top and bottom.
+
+## Repo hook scripts do not need the executable bit (2026-07-06)
+
+**What happened:** After creating a new hook script, attempted `chmod +x` in the repo (blocked by the sandbox on `hooks/`).
+**Why:** The repo copies are sources, not the installed artifacts — `install.sh` and `fs/permissions/hooks.rs::install_hook_script` both chmod 755 at install time.
+**Prevention:** Skip chmod for files under `hooks/`; run tests via `bash hooks/tests/run-all.sh` (invokes each script with `bash`, no exec bit needed).
+**Fix:** None needed — dropped the chmod.
