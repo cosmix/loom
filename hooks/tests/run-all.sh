@@ -27,6 +27,9 @@ run_test "prefer-modern-tools: quoted grep no warning" "$SCRIPT_DIR/prefer-moder
 run_test "post-tool-use: tool event written" "$SCRIPT_DIR/post-tool-use-tool-event.sh"
 run_test "post-tool-use: empty output records output_bytes=0" "$SCRIPT_DIR/post-tool-use-empty-output.sh"
 run_test "session-start: compact source emits re-anchor" "$SCRIPT_DIR/session-start-compact.sh"
+run_test "plans-path-guard: blocks ~/.claude/plans write" "$SCRIPT_DIR/plans-path-guard-blocks-claude-plans.sh"
+run_test "plans-path-guard: blocks ~/.claude/projects/*/plans edit" "$SCRIPT_DIR/plans-path-guard-blocks-project-plans.sh"
+run_test "plans-path-guard: allows doc/plans and other .claude paths" "$SCRIPT_DIR/plans-path-guard-allows-doc-plans.sh"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

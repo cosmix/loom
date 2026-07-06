@@ -15,11 +15,13 @@ fn test_hooks_config_structure() {
     // 5. Bash: worktree-isolation.sh
     // 6. Edit: worktree-isolation.sh
     // 7. Write: worktree-isolation.sh
-    // 8. Read: worktree-file-guard.sh
-    // 9. Glob: worktree-file-guard.sh
-    // 10. Grep: worktree-file-guard.sh
+    // 8. Edit: plans-path-guard.sh
+    // 9. Write: plans-path-guard.sh
+    // 10. Read: worktree-file-guard.sh
+    // 11. Glob: worktree-file-guard.sh
+    // 12. Grep: worktree-file-guard.sh
     let pre_tool = hooks_obj.get("PreToolUse").unwrap().as_array().unwrap();
-    assert_eq!(pre_tool.len(), 10);
+    assert_eq!(pre_tool.len(), 12);
     // First hook: AskUserQuestion matcher with ask-user-pre.sh
     assert_eq!(pre_tool[0]["matcher"], "AskUserQuestion");
     assert!(pre_tool[0]["hooks"][0]["command"]
@@ -62,21 +64,33 @@ fn test_hooks_config_structure() {
         .as_str()
         .unwrap()
         .contains("worktree-isolation.sh"));
-    // Eighth hook: Read matcher with worktree-file-guard.sh
-    assert_eq!(pre_tool[7]["matcher"], "Read");
+    // Eighth hook: Edit matcher with plans-path-guard.sh
+    assert_eq!(pre_tool[7]["matcher"], "Edit");
     assert!(pre_tool[7]["hooks"][0]["command"]
         .as_str()
         .unwrap()
-        .contains("worktree-file-guard.sh"));
-    // Ninth hook: Glob matcher with worktree-file-guard.sh
-    assert_eq!(pre_tool[8]["matcher"], "Glob");
+        .contains("plans-path-guard.sh"));
+    // Ninth hook: Write matcher with plans-path-guard.sh
+    assert_eq!(pre_tool[8]["matcher"], "Write");
     assert!(pre_tool[8]["hooks"][0]["command"]
         .as_str()
         .unwrap()
-        .contains("worktree-file-guard.sh"));
-    // Tenth hook: Grep matcher with worktree-file-guard.sh
-    assert_eq!(pre_tool[9]["matcher"], "Grep");
+        .contains("plans-path-guard.sh"));
+    // Tenth hook: Read matcher with worktree-file-guard.sh
+    assert_eq!(pre_tool[9]["matcher"], "Read");
     assert!(pre_tool[9]["hooks"][0]["command"]
+        .as_str()
+        .unwrap()
+        .contains("worktree-file-guard.sh"));
+    // Eleventh hook: Glob matcher with worktree-file-guard.sh
+    assert_eq!(pre_tool[10]["matcher"], "Glob");
+    assert!(pre_tool[10]["hooks"][0]["command"]
+        .as_str()
+        .unwrap()
+        .contains("worktree-file-guard.sh"));
+    // Twelfth hook: Grep matcher with worktree-file-guard.sh
+    assert_eq!(pre_tool[11]["matcher"], "Grep");
+    assert!(pre_tool[11]["hooks"][0]["command"]
         .as_str()
         .unwrap()
         .contains("worktree-file-guard.sh"));
