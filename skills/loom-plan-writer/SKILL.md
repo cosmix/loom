@@ -195,12 +195,14 @@ Full YAML for all three bookends is in the canonical template (Section 10).
 
 ## 4. Model Selection Per Stage (REQUIRED)
 
-> ⚠️ **EVERY stage MUST set `model` and `reasoning_effort: "xhigh"`.** Opus 4.8 (xhigh) is the DEFAULT and strongest — sonnet 5 does NOT match it. Use sonnet MORE than sonnet 4.6 (it's markedly stronger), but only for well-scoped execution, and keep every sonnet stage SMALL (its 200k window is the binding constraint).
+> ⚠️ **EVERY stage MUST set `model` and `reasoning_effort: "xhigh"`.** Pick the model by the KIND of work — do not reach for opus every time. Sonnet 5 is faster, far cheaper, and near-equal on well-scoped development; opus earns its cost on judgment-heavy work. The planner's job is to convert as much of the plan as possible into detailed sonnet-executable stages and concentrate opus where it changes the outcome. Keep every sonnet stage SMALL (its 200k window is the binding constraint).
 
 | Model | When |
 | ----- | ---- |
-| **`opus`** (default) | Architecture/design, new abstractions/data models, adversarial pressure-testing, code/security review (integration-verify), difficult algorithms, complex multi-file debugging, cross-cutting refactors, ambiguous requirements — **and anything not a clear, well-scoped sonnet fit.** |
-| **`sonnet`** (selective) | Well-scoped execution against a DETAILED spec: implementing to explicit paths/signatures, tests for existing code, boilerplate/scaffolding/config, applying an existing pattern, known-root-cause bug fixes — kept SMALL or decomposed. |
+| **`sonnet`** (default for development) | Development against a DETAILED spec: implementing to explicit paths/signatures, tests, refactors applying an existing pattern, boilerplate/scaffolding/config, migrations/sweeps — kept SMALL or decomposed. |
+| **`opus`** (judgment-heavy work) | Architecture and design (multi-file/multi-module work, new abstractions/data models), bug hunting and fixes, optimization/improvement passes, heavy engineering/algorithmic work, adversarial pressure-testing, code/security review (integration-verify), ambiguous requirements — and anything you cannot spec to sonnet-level detail. |
+
+**Larger stages: opus orchestrates, sonnet executes.** When a stage is too big for one sonnet session but the work itself is development (not a hard category above), do NOT flip the whole stage to opus-does-everything. Set `model: "opus"` and write the stage as a THIN ORCHESTRATOR: the opus session decomposes, spawns `loom-software-engineer` (sonnet) workers — flat, or 2-level with coordinators for >~6 tasks (CLAUDE.md Rule 6c) — then integrates and verifies. Opus does decomposition, integration, and judgment; sonnet does the development. A stage where opus itself writes the bulk of the code should be a hard-category stage.
 
 **Sonnet follows what you write literally — it does not infer intent, resolve ambiguity, or discover integration points.** A vague sonnet stage guesses wrong, picks the wrong pattern, or leaves stubs, costing more in rework than the token savings. Every `sonnet` stage description MUST include:
 
@@ -211,7 +213,7 @@ Full YAML for all three bookends is in the canonical template (Section 10).
 5. Integration wiring — which `mod.rs`/registry/route/test to update.
 6. Error-handling approach — which error type, how to propagate, what to log.
 
-**If you cannot write that level of detail, use opus.** When in doubt, use opus.
+**If you cannot write that level of detail, that is usually a planning gap — go back and ground the seam (Section 1), then write it.** Use opus when the detail genuinely cannot be known in advance (novel area, unclear blast radius, exploratory work) — not as a substitute for planning effort.
 
 ```yaml
 # GOOD sonnet stage — everything needed to implement correctly
@@ -230,7 +232,7 @@ Full YAML for all three bookends is in the canonical template (Section 10).
     4. Use thiserror for errors, matching src/http/error.rs.
 ```
 
-**Keep sonnet stages small — decompose, don't up-model for headroom.** A sonnet stage that takes on too much hits loom's 65% budget (~130k) and compacts — an uncached re-read that is slow, expensive, and degrades quality (the cheap model becomes the expensive, worse one). There is NO 1M sonnet escape hatch here. Two levers, in order: (1) scope the stage to a bounded slice — if a description grows past ~130k of working context, split into more stages; (2) decompose with a subagent hierarchy (Section 5) so the sonnet main agent stays a THIN COORDINATOR — subagents burn their own (discarded) context and return compact summaries. A sonnet stage with no subagent/hierarchy assignments is a red flag: it will do the work in the main context and compact. **Do NOT switch to opus merely to buy context for bulk work — restructure it. Opus is for hardness, not size.**
+**Keep sonnet stages small — decompose, don't up-model for headroom.** A sonnet stage that takes on too much hits loom's 65% budget (~130k) and compacts — an uncached re-read that is slow, expensive, and degrades quality (the cheap model becomes the expensive, worse one). There is NO 1M sonnet escape hatch here. Two levers, in order: (1) scope the stage to a bounded slice — if a description grows past ~130k of working context, split into more stages; (2) decompose with a subagent hierarchy (Section 5) so the sonnet main agent stays a THIN COORDINATOR — subagents burn their own (discarded) context and return compact summaries. A sonnet stage with no subagent/hierarchy assignments is a red flag: it will do the work in the main context and compact. **Do NOT switch to opus merely to buy context for bulk work — restructure it (sonnet thin-coordinator, or the opus-orchestrator pattern above where sonnet workers still do the development). Opus is for hardness and orchestration judgment, not for doing bulk work itself.**
 
 **Bookend defaults:** integration-verify → opus (auto). knowledge-bootstrap → sonnet, opus if the codebase is large/unfamiliar and strategic. knowledge-distill → sonnet (delegate gathering on large plans).
 
@@ -283,7 +285,7 @@ Match agent type to work: execution → `loom-software-engineer` (pins sonnet); 
 
 ### Hierarchies, teams, ultracode
 
-- **2-level hierarchy** (main → coordinators → workers; workers NEVER spawn subagents) — for >~6 well-defined tasks in 2–4 DISJOINT file territories. Use an `EXECUTION PLAN - HIERARCHICAL` block: coordinator territories, nested worker file lists, a per-coordinator `Verify:` command, and the statements "Territories are DISJOINT" and "Workers NEVER spawn subagents." Coordinators AND workers default to sonnet — spawn workers BY AGENT TYPE or an untyped worker inherits the (possibly opus) main model. Mechanics/preambles: CLAUDE.md Rule 6c.
+- **2-level hierarchy** (main → coordinators → workers; workers NEVER spawn subagents) — for >~6 well-defined tasks in 2–4 DISJOINT file territories. Use an `EXECUTION PLAN - HIERARCHICAL` block: coordinator territories, nested worker file lists, a per-coordinator `Verify:` command, and the statements "Territories are DISJOINT" and "Workers NEVER spawn subagents." Coordinators AND workers default to sonnet — spawn workers BY AGENT TYPE or an untyped worker inherits the (possibly opus) main model. On a larger or harder territory, an opus coordinator orchestrating sonnet workers is the right shape (judgment at the seam, cheap execution at the leaves) — workers stay sonnet either way. Mechanics/preambles: CLAUDE.md Rule 6c.
 - **Ultracode** (`ultracode: true`) — licenses the stage's session for Workflow orchestration (scripted fan-out/verify over tens of agents). Only for ≳10 homogeneous units OR a high-stakes multi-perspective verification gate; the plan author MUST justify it in one sentence in the description. Not for ordinary implementation.
 - **Agent teams** — wide, exploratory scope needing inter-agent comms or dynamic task discovery (~7× whole-job cost; CLAUDE.md Rule 6b). Don't use for concrete file-partitioned work.
 
@@ -339,7 +341,7 @@ loom:
     - id: stage-id                 # unique kebab-case
       name: "Stage Name"
       stage_type: standard         # knowledge | standard | integration-verify | knowledge-distill (lowercase)
-      model: "sonnet"              # REQUIRED (default opus; sonnet only for well-scoped execution)
+      model: "sonnet"              # REQUIRED — sonnet for development to a detailed spec; opus for architecture/bugs/optimization/algorithms (Section 4)
       reasoning_effort: "xhigh"    # REQUIRED on both models
       description: |               # full task spec; NO triple backticks inside
         What this stage accomplishes.
