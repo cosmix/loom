@@ -131,8 +131,10 @@ fn test_render_dry_run_shows_real_argv() {
     // The auto-close instruction is injected via --append-system-prompt.
     assert!(out.contains("--append-system-prompt"));
     assert!(out.contains("/pressure doc/plans/PLAN-foo.md"));
-    assert!(out
-        .contains("codex exec --sandbox workspace-write -C /repo $pressure doc/plans/PLAN-foo.md"));
+    assert!(out.contains(
+        "codex exec --sandbox workspace-write -m gpt-5.6-sol -c model_reasoning_effort=xhigh \
+         -C /repo $pressure doc/plans/PLAN-foo.md"
+    ));
     assert!(out.contains("/address doc/plans/PLAN-foo.md"));
     assert!(out.contains("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1"));
     assert!(out.contains("codex-PLAN-foo.md"));

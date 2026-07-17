@@ -240,6 +240,13 @@ fn claude_args(slash: &str, marker: &Path) -> Vec<String> {
     ]
 }
 
+/// Model pinned for Codex pressure-test runs, independent of the user's
+/// `~/.codex/config.toml` defaults.
+const CODEX_MODEL: &str = "gpt-5.6-sol";
+/// Reasoning effort for Codex pressure-test runs. No dedicated CLI flag
+/// exists, so it is delivered via `-c model_reasoning_effort=<value>`.
+const CODEX_REASONING_EFFORT: &str = "xhigh";
+
 /// argv (after the binary) for a Codex spawn. `skill` is the full positional
 /// skill invocation, e.g. `$pressure doc/plans/PLAN-foo.md`.
 fn codex_args(repo_root: &Path, skill: &str) -> Vec<String> {
@@ -247,6 +254,10 @@ fn codex_args(repo_root: &Path, skill: &str) -> Vec<String> {
         "exec".to_string(),
         "--sandbox".to_string(),
         "workspace-write".to_string(),
+        "-m".to_string(),
+        CODEX_MODEL.to_string(),
+        "-c".to_string(),
+        format!("model_reasoning_effort={CODEX_REASONING_EFFORT}"),
         "-C".to_string(),
         repo_root.display().to_string(),
         skill.to_string(),
