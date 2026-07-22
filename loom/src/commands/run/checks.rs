@@ -12,6 +12,19 @@ use crate::git::{get_uncommitted_changes_summary, has_uncommitted_changes};
 pub fn prepare_repo_for_run(repo_root: &Path) -> Result<()> {
     let repo_bootstrap = crate::git::ensure_repo_ready_for_worktrees(repo_root)?;
     print_repo_bootstrap(repo_bootstrap);
+
+    // Stale per-session identity in the MAIN repo's settings env shadows the
+    // wrapper exports of every session this run will spawn (Claude Code
+    // applies main-repo settings env to worktree sessions too) — heal before
+    // spawning anything.
+    for path in crate::fs::permissions::scrub_main_repo_settings_identity(repo_root) {
+        println!(
+            "{} Removed stale session identity env from {}",
+            "✓".green().bold(),
+            path.display()
+        );
+    }
+
     check_for_uncommitted_changes(repo_root)
 }
 

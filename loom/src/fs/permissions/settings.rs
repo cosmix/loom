@@ -55,6 +55,40 @@ pub fn scrub_session_identity_env(settings: &mut Value) -> bool {
     removed
 }
 
+/// Heal the MAIN repo's settings files of stale per-session identity env.
+///
+/// Claude Code applies the main repository's settings env to sessions running
+/// in linked worktrees, so stale identity in either main-repo settings file
+/// shadows the wrapper script's fresh exports in EVERY session of this repo —
+/// worktree stages included. Scrubbing the worktree-side copies is therefore
+/// not enough; the main files must be healed in the run path, not only on
+/// `loom init`/`loom repair` (which polluted repos may never re-run).
+///
+/// Best-effort: missing or unparseable files are skipped. Returns the paths
+/// that were healed.
+pub fn scrub_main_repo_settings_identity(repo_root: &Path) -> Vec<std::path::PathBuf> {
+    let mut healed = Vec::new();
+    for name in ["settings.json", "settings.local.json"] {
+        let path = repo_root.join(".claude").join(name);
+        let Ok(content) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(mut settings) = serde_json::from_str::<Value>(&content) else {
+            continue;
+        };
+        if !scrub_session_identity_env(&mut settings) {
+            continue;
+        }
+        let Ok(updated) = serde_json::to_string_pretty(&settings) else {
+            continue;
+        };
+        if fs::write(&path, updated).is_ok() {
+            healed.push(path);
+        }
+    }
+    healed
+}
+
 /// Ensure `.claude/settings.json` has loom permissions configured
 ///
 /// This function:
@@ -293,10 +327,17 @@ fn migrate_hooks_to_local(settings_obj: &mut serde_json::Map<String, Value>) -> 
         migrated = true;
     }
 
-    // Remove CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS from env in settings.json
+    // Remove CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS and stale per-session
+    // identity from env in settings.json (very old loom versions persisted
+    // identity here; it shadows the wrapper's exports in every session)
     if let Some(env) = settings_obj.get_mut("env").and_then(|v| v.as_object_mut()) {
         if env.remove("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS").is_some() {
             migrated = true;
+        }
+        for key in SESSION_IDENTITY_ENV_KEYS {
+            if env.remove(*key).is_some() {
+                migrated = true;
+            }
         }
         // If env is now empty, remove it entirely
         if env.is_empty() {
@@ -517,6 +558,106 @@ mod tests {
             local_settings["env"]["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"],
             "1"
         );
+    }
+
+    #[test]
+    fn test_migrate_removes_session_identity_from_settings_json() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path();
+        let claude_dir = repo_root.join(".claude");
+        fs::create_dir_all(&claude_dir).unwrap();
+
+        // Very old loom versions persisted session identity in settings.json
+        let old_settings = json!({
+            "permissions": { "allow": ["Bash(loom *)"] },
+            "env": {
+                "LOOM_STAGE_ID": "knowledge-bootstrap",
+                "LOOM_SESSION_ID": "session-stale",
+                "LOOM_WORK_DIR": "/repo/.work"
+            }
+        });
+        fs::write(
+            claude_dir.join("settings.json"),
+            serde_json::to_string_pretty(&old_settings).unwrap(),
+        )
+        .unwrap();
+
+        ensure_loom_permissions_to(repo_root, Some(&temp_dir.path().join("hooks"))).unwrap();
+
+        let content = fs::read_to_string(claude_dir.join("settings.json")).unwrap();
+        let settings: Value = serde_json::from_str(&content).unwrap();
+        let env = settings["env"].as_object().unwrap();
+        assert!(!env.contains_key("LOOM_STAGE_ID"));
+        assert!(!env.contains_key("LOOM_SESSION_ID"));
+        // Stable, repo-scoped value survives
+        assert_eq!(env["LOOM_WORK_DIR"], "/repo/.work");
+    }
+
+    #[test]
+    fn test_scrub_main_repo_settings_identity_heals_both_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path();
+        let claude_dir = repo_root.join(".claude");
+        fs::create_dir_all(&claude_dir).unwrap();
+
+        let polluted = json!({
+            "env": {
+                "LOOM_STAGE_ID": "knowledge-bootstrap",
+                "LOOM_SESSION_ID": "session-stale",
+                "LOOM_MAIN_AGENT_PID": "12345",
+                "LOOM_WORK_DIR": "/repo/.work"
+            },
+            "permissions": { "allow": ["Bash(loom *)"] }
+        });
+        for name in ["settings.json", "settings.local.json"] {
+            fs::write(
+                claude_dir.join(name),
+                serde_json::to_string_pretty(&polluted).unwrap(),
+            )
+            .unwrap();
+        }
+
+        let healed = scrub_main_repo_settings_identity(repo_root);
+        assert_eq!(healed.len(), 2);
+
+        for name in ["settings.json", "settings.local.json"] {
+            let content = fs::read_to_string(claude_dir.join(name)).unwrap();
+            let settings: Value = serde_json::from_str(&content).unwrap();
+            let env = settings["env"].as_object().unwrap();
+            assert!(!env.contains_key("LOOM_STAGE_ID"), "{name}");
+            assert!(!env.contains_key("LOOM_SESSION_ID"), "{name}");
+            assert!(!env.contains_key("LOOM_MAIN_AGENT_PID"), "{name}");
+            assert_eq!(env["LOOM_WORK_DIR"], "/repo/.work", "{name}");
+            // Unrelated sections untouched
+            let allow = settings["permissions"]["allow"].as_array().unwrap();
+            assert!(allow.iter().any(|v| v == "Bash(loom *)"), "{name}");
+        }
+    }
+
+    #[test]
+    fn test_scrub_main_repo_settings_identity_noop_cases() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path();
+
+        // No .claude directory at all
+        assert!(scrub_main_repo_settings_identity(repo_root).is_empty());
+
+        // Clean file → nothing healed, file byte-identical
+        let claude_dir = repo_root.join(".claude");
+        fs::create_dir_all(&claude_dir).unwrap();
+        let clean =
+            serde_json::to_string_pretty(&json!({ "env": { "LOOM_WORK_DIR": "/repo/.work" } }))
+                .unwrap();
+        fs::write(claude_dir.join("settings.local.json"), &clean).unwrap();
+        assert!(scrub_main_repo_settings_identity(repo_root).is_empty());
+        assert_eq!(
+            fs::read_to_string(claude_dir.join("settings.local.json")).unwrap(),
+            clean
+        );
+
+        // Unparseable file is skipped without error
+        fs::write(claude_dir.join("settings.json"), "{not json").unwrap();
+        assert!(scrub_main_repo_settings_identity(repo_root).is_empty());
     }
 
     #[test]
