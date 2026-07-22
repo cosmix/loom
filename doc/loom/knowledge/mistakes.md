@@ -611,3 +611,10 @@ These stale entries would have misled future agents into using `permission_mode:
 **Why:** The command resolved its output root via `WorkDir::main_project_root()`, which follows the worktree's `.work` symlink back to the main repo. The success message then printed the path relative to that root, making it look local.
 **Prevention:** Commands that WRITE user-visible files must anchor on the current checkout (worktree root when `cwd` is inside `.worktrees/`), not on `main_project_root()` — that helper is for reaching shared `.work` state, not for output placement. Exit 0 + "written to <relative path>" is not proof the file is where the reader thinks; check which root the path was relativized against.
 **Fix:** `commands/review/generate.rs::resolve_output_root()` — writes to `find_worktree_root_from_cwd(cwd)` when inside a worktree, else the main project root.
+
+## CI Clippy Failures That Don't Reproduce Locally = Toolchain Drift (2026-07-22)
+
+**What happened:** CI's Clippy job failed on main while `cargo clippy --all-targets -- -D warnings` passed locally with zero warnings. Local toolchain was 1.95.0; CI installs latest stable via `dtolnay/rust-toolchain@stable`, which had moved to 1.97.1 and shipped new lints (`useless_borrows_in_formatting`, broader `question_mark`) that fired on 21 existing sites.
+**Why:** The workflow floats on `@stable` while local toolchains only move on explicit `rustup update`. Every ~6-week Rust release can introduce lints that break CI with `-D warnings` even though no code changed.
+**Prevention:** When a CI clippy failure doesn't reproduce locally, check `rustup check` FIRST — if stable has moved, `rustup update stable` and re-run before hunting for any other cause. Most new-lint fallout is machine-applicable: `cargo clippy --fix --all-targets --allow-dirty`, then review the diff (non-trivial rewrites like `question_mark` can leave awkward leftover blocks worth hand-cleaning).
+**Fix:** Updated local stable to 1.97.1, applied `cargo clippy --fix`, hand-simplified the `?`-operator rewrite in `fs/work_dir.rs`, verified clippy + fmt + full test suite green.
