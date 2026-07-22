@@ -78,26 +78,34 @@ pub fn generate_hooks_settings(
         }
     }
 
-    // Add environment variables for hooks to access
+    // Add environment variables for hooks to access.
+    //
+    // LOOM_WORK_DIR is the only loom var persisted here: it is stable for the
+    // lifetime of the repo, so it can never go stale.
     let env = obj
         .entry("env")
         .or_insert_with(|| json!({}))
         .as_object_mut()
         .ok_or_else(|| anyhow::anyhow!("env must be a JSON object"))?;
 
-    env.insert("LOOM_STAGE_ID".to_string(), json!(config.stage_id));
-    env.insert("LOOM_SESSION_ID".to_string(), json!(config.session_id));
     env.insert(
         "LOOM_WORK_DIR".to_string(),
         json!(config.work_dir.display().to_string()),
     );
 
-    // IMPORTANT: Remove any stale LOOM_MAIN_AGENT_PID from settings.json
-    // This variable must be set dynamically by the wrapper script (export LOOM_MAIN_AGENT_PID=$$)
-    // so it reflects the actual Claude process PID. A stale value from a previous session
-    // in settings.json would cause the commit-filter hook to incorrectly detect the main
-    // agent as a subagent.
-    env.remove("LOOM_MAIN_AGENT_PID");
+    // IMPORTANT: Never persist per-session identity (LOOM_MAIN_AGENT_PID,
+    // LOOM_STAGE_ID, LOOM_SESSION_ID) in settings files. These are exported
+    // by the session wrapper script so they always match the running process;
+    // a settings `env` block overrides the process environment, so a persisted
+    // value from an earlier session would shadow the wrapper's fresh exports
+    // (wrong-stage `loom memory` entries, heartbeats for dead sessions,
+    // commit-filter misidentifying the main agent). Also scrub any stale
+    // values written by older loom versions.
+    crate::fs::permissions::scrub_session_identity_env(&mut settings);
+
+    let obj = settings
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("settings must be a JSON object"))?;
 
     // Add narrow Read permissions for resolved absolute paths of shared state.
     // In worktrees, .work/ is a symlink to ../../.work. Claude Code resolves symlinks
@@ -220,8 +228,6 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = HooksConfig::new(
             temp_dir.path().to_path_buf(),
-            "test-stage".to_string(),
-            "test-session".to_string(),
             temp_dir.path().to_path_buf(),
             PermissionMode::Default,
         );

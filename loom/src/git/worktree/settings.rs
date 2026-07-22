@@ -79,6 +79,10 @@ pub fn setup_claude_directory(worktree_path: &Path, repo_root: &Path) -> Result<
         if main_settings_local.exists() {
             copy_file_with_shared_lock(&main_settings_local, &worktree_settings_local)
                 .with_context(|| "Failed to copy settings.local.json to worktree")?;
+            // The main repo's copy may carry per-session identity env vars from a
+            // previous main-repo session (older loom versions persisted them);
+            // they must not leak into this worktree's settings.
+            scrub_copied_settings_env(&worktree_settings_local);
         }
     }
 
@@ -107,6 +111,22 @@ pub fn setup_root_claude_md(worktree_path: &Path, repo_root: &Path) -> Result<()
     }
 
     Ok(())
+}
+
+/// Best-effort removal of per-session identity env vars from a copied
+/// settings file. Leaves the file untouched if it cannot be parsed.
+fn scrub_copied_settings_env(path: &Path) {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return;
+    };
+    let Ok(mut settings) = serde_json::from_str::<Value>(&content) else {
+        return;
+    };
+    if crate::fs::permissions::scrub_session_identity_env(&mut settings) {
+        if let Ok(updated) = serde_json::to_string_pretty(&settings) {
+            let _ = std::fs::write(path, updated);
+        }
+    }
 }
 
 /// Copy a file with a shared (read) lock on the source.
@@ -186,8 +206,20 @@ pub fn refresh_worktree_settings_local(worktree_path: &Path, repo_root: &Path) -
     let merged_allow = merge_permission_vecs(main_allow, wt_allow);
     let merged_deny = merge_permission_vecs(main_deny, wt_deny);
 
-    // Build merged settings (start with main settings as base)
-    let mut merged = main_settings.clone();
+    // Build merged settings. The base MUST be the worktree's own settings when
+    // they exist: they carry session-specific hooks and the stage-resolved
+    // permission mode. Using the main repo's settings as base (as this
+    // function once did) clobbered all of that mid-session with whatever the
+    // last main-repo session left behind. Only permissions are refreshed from
+    // the main repo. When the worktree has no settings yet, fall back to the
+    // main copy, scrubbed of per-session identity env vars.
+    let mut merged = if worktree_settings_local.exists() {
+        worktree_settings
+    } else {
+        let mut base = main_settings.clone();
+        crate::fs::permissions::scrub_session_identity_env(&mut base);
+        base
+    };
     set_permissions(&mut merged, merged_allow, merged_deny)?;
 
     // Write merged result
@@ -298,7 +330,8 @@ fn set_permissions(settings: &mut Value, allow: Vec<String>, deny: Vec<String>) 
 /// This function:
 /// 1. Reads the main repo's settings.json (if it exists)
 /// 2. Sets `hasTrustDialogAccepted: true` to skip the trust prompt
-/// 3. Strips the stale `LOOM_MAIN_AGENT_PID` from the inherited `env` block
+/// 3. Strips stale per-session identity vars (`LOOM_MAIN_AGENT_PID`,
+///    `LOOM_STAGE_ID`, `LOOM_SESSION_ID`) from the inherited `env` block
 /// 4. Writes the merged result to the worktree
 ///
 /// Note: We deliberately do NOT write `permissions.defaultMode` here. The
@@ -336,11 +369,10 @@ fn create_worktree_settings(
     // here — that's the sandbox-resolved value's job (see fn-level docs).
     obj.entry("permissions").or_insert_with(|| json!({}));
 
-    // Scrub the copied env block: LOOM_MAIN_AGENT_PID is set dynamically
-    // per-session by the wrapper script, so any inherited value is stale.
-    if let Some(env) = obj.get_mut("env").and_then(|v| v.as_object_mut()) {
-        env.remove("LOOM_MAIN_AGENT_PID");
-    }
+    // Scrub the copied env block: per-session identity (LOOM_MAIN_AGENT_PID,
+    // LOOM_STAGE_ID, LOOM_SESSION_ID) is set dynamically by the wrapper
+    // script, so any inherited value is stale.
+    crate::fs::permissions::scrub_session_identity_env(&mut settings);
 
     // Resolve the .work symlink to its absolute target path and add permissions.
     // In worktrees, .work is a symlink to ../../.work (the main repo's .work/).
@@ -412,11 +444,10 @@ fn create_worktree_settings(
 /// - Learning protection via Stop hook
 /// - Session lifecycle tracking
 ///
-/// This should be called after worktree creation when session ID is known.
+/// Session identity (stage/session IDs) is NOT written here: hooks read it
+/// from the process environment exported by the session wrapper script.
 pub fn setup_worktree_hooks(
     worktree_path: &Path,
-    stage_id: &str,
-    session_id: &str,
     work_dir: &Path,
     hooks_dir: &Path,
     permission_mode: PermissionMode,
@@ -428,13 +459,7 @@ pub fn setup_worktree_hooks(
         .canonicalize()
         .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default().join(work_dir));
 
-    let config = HooksConfig::new(
-        hooks_dir.to_path_buf(),
-        stage_id.to_string(),
-        session_id.to_string(),
-        absolute_work_dir,
-        permission_mode,
-    );
+    let config = HooksConfig::new(hooks_dir.to_path_buf(), absolute_work_dir, permission_mode);
 
     setup_hooks_for_worktree(worktree_path, &config).with_context(|| {
         format!(
@@ -892,7 +917,9 @@ mod tests {
             "env": {
                 "AWS_ACCESS_KEY_ID": "keep-on-native",
                 "GH_TOKEN": "keep-on-native",
-                "LOOM_MAIN_AGENT_PID": "stale"
+                "LOOM_MAIN_AGENT_PID": "stale",
+                "LOOM_STAGE_ID": "stale-stage",
+                "LOOM_SESSION_ID": "stale-session"
             }
         });
         let main_settings_path = main_claude.join("settings.json");
@@ -915,5 +942,105 @@ mod tests {
             !env.contains_key("LOOM_MAIN_AGENT_PID"),
             "LOOM_MAIN_AGENT_PID is always stripped, even on native"
         );
+        assert!(
+            !env.contains_key("LOOM_STAGE_ID") && !env.contains_key("LOOM_SESSION_ID"),
+            "per-session identity env vars must be stripped from inherited settings"
+        );
+    }
+
+    #[test]
+    fn test_refresh_preserves_worktree_env_hooks_and_mode() {
+        // Regression test: refresh_worktree_settings_local used the MAIN
+        // repo's settings as the merge base, clobbering the worktree's
+        // session-specific env, hooks, and resolved defaultMode with whatever
+        // the last main-repo session left behind (stale LOOM_STAGE_ID etc.).
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        let worktree = temp_dir.path().join("worktree");
+
+        let main_claude = repo_root.join(".claude");
+        std::fs::create_dir_all(&main_claude).unwrap();
+        let main_settings = json!({
+            "permissions": { "allow": ["Read(main_perm)"], "defaultMode": "default" },
+            "env": {
+                "LOOM_STAGE_ID": "stale-knowledge-stage",
+                "LOOM_SESSION_ID": "stale-session"
+            },
+            "hooks": { "Stop": [{ "matcher": "*", "hooks": [] }] }
+        });
+        std::fs::write(
+            main_claude.join("settings.local.json"),
+            serde_json::to_string_pretty(&main_settings).unwrap(),
+        )
+        .unwrap();
+
+        let wt_claude = worktree.join(".claude");
+        std::fs::create_dir_all(&wt_claude).unwrap();
+        let wt_settings = json!({
+            "permissions": { "allow": ["Write(worktree_perm)"], "defaultMode": "auto" },
+            "env": { "LOOM_WORK_DIR": "/repo/.work" },
+            "hooks": { "SessionStart": [{ "matcher": "*", "hooks": [] }] }
+        });
+        std::fs::write(
+            wt_claude.join("settings.local.json"),
+            serde_json::to_string_pretty(&wt_settings).unwrap(),
+        )
+        .unwrap();
+
+        assert!(refresh_worktree_settings_local(&worktree, &repo_root).unwrap());
+
+        let merged: Value = serde_json::from_str(
+            &std::fs::read_to_string(wt_claude.join("settings.local.json")).unwrap(),
+        )
+        .unwrap();
+
+        // Permissions are unioned
+        let (allow, _) = extract_permissions(&merged);
+        assert!(allow.contains(&"Read(main_perm)".to_string()));
+        assert!(allow.contains(&"Write(worktree_perm)".to_string()));
+
+        // Worktree-specific settings survive; main's stale env does not leak in
+        assert_eq!(merged["permissions"]["defaultMode"], json!("auto"));
+        assert_eq!(merged["env"]["LOOM_WORK_DIR"], json!("/repo/.work"));
+        let env = merged["env"].as_object().unwrap();
+        assert!(!env.contains_key("LOOM_STAGE_ID"));
+        assert!(!env.contains_key("LOOM_SESSION_ID"));
+        assert!(merged["hooks"]["SessionStart"].is_array());
+        assert!(merged["hooks"].get("Stop").is_none());
+    }
+
+    #[test]
+    fn test_refresh_without_worktree_settings_scrubs_identity_env() {
+        // When the worktree has no settings yet, the main copy is used as
+        // base — minus any per-session identity env vars.
+        let temp_dir = TempDir::new().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        let worktree = temp_dir.path().join("worktree");
+
+        let main_claude = repo_root.join(".claude");
+        std::fs::create_dir_all(&main_claude).unwrap();
+        let main_settings = json!({
+            "permissions": { "allow": ["Read(main_perm)"] },
+            "env": { "LOOM_STAGE_ID": "stale", "LOOM_SESSION_ID": "stale", "FOO": "keep" }
+        });
+        std::fs::write(
+            main_claude.join("settings.local.json"),
+            serde_json::to_string_pretty(&main_settings).unwrap(),
+        )
+        .unwrap();
+
+        std::fs::create_dir_all(&worktree).unwrap();
+
+        assert!(refresh_worktree_settings_local(&worktree, &repo_root).unwrap());
+
+        let merged: Value = serde_json::from_str(
+            &std::fs::read_to_string(worktree.join(".claude/settings.local.json")).unwrap(),
+        )
+        .unwrap();
+
+        let env = merged["env"].as_object().unwrap();
+        assert!(!env.contains_key("LOOM_STAGE_ID"));
+        assert!(!env.contains_key("LOOM_SESSION_ID"));
+        assert_eq!(env["FOO"], json!("keep"));
     }
 }

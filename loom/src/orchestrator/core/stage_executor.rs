@@ -314,8 +314,6 @@ impl StageExecutor for Orchestrator {
         if let Some(hooks_dir) = find_hooks_dir() {
             if let Err(e) = setup_worktree_hooks(
                 &worktree.path,
-                stage_id,
-                &session.id,
                 &self.config.work_dir,
                 &hooks_dir,
                 merged_sandbox.permission_mode,
@@ -412,9 +410,20 @@ impl StageExecutor for Orchestrator {
             println!("Manual mode: Session setup for stage '{stage_id}'");
             println!("  Worktree: {}", worktree.path.display());
             println!("  Signal: {}", signal_path.display());
+            // Identity env vars are normally exported by the wrapper script;
+            // in manual mode the user must provide them so hooks and
+            // `loom memory` attribute work to the right stage/session.
+            let absolute_work_dir = self
+                .config
+                .work_dir
+                .canonicalize()
+                .unwrap_or_else(|_| self.config.work_dir.clone());
             println!(
-                "  To start: cd {} && claude \"Read the signal file at {} and execute the assigned stage work.\"",
+                "  To start: cd {} && LOOM_STAGE_ID={} LOOM_SESSION_ID={} LOOM_WORK_DIR={} claude \"Read the signal file at {} and execute the assigned stage work.\"",
                 worktree.path.display(),
+                stage_id,
+                session.id,
+                absolute_work_dir.display(),
                 signal_path.display()
             );
             session
@@ -500,7 +509,10 @@ impl StageExecutor for Orchestrator {
 
         // Set up Claude Code hooks for this session by writing into the main
         // repo's `.claude/settings.local.json` (the host's agent reads this
-        // file directly).
+        // file directly). Session identity is deliberately NOT written: this
+        // file is shared by every main-repo session (later knowledge stages,
+        // interactive user sessions), so persisted stage/session IDs would go
+        // stale and shadow the wrapper script's fresh exports.
         if let Some(hooks_dir) = find_hooks_dir() {
             // Canonicalize work_dir to absolute path
             let absolute_work_dir = self
@@ -509,13 +521,8 @@ impl StageExecutor for Orchestrator {
                 .canonicalize()
                 .unwrap_or_else(|_| self.config.work_dir.clone());
 
-            let config = HooksConfig::new(
-                hooks_dir,
-                stage_id.to_string(),
-                session.id.clone(),
-                absolute_work_dir,
-                merged_sandbox.permission_mode,
-            );
+            let config =
+                HooksConfig::new(hooks_dir, absolute_work_dir, merged_sandbox.permission_mode);
 
             if let Err(e) = setup_hooks_for_worktree(&self.config.repo_root, &config) {
                 eprintln!("Warning: Failed to set up hooks for knowledge stage '{stage_id}': {e}");

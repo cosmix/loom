@@ -7,14 +7,8 @@ use tempfile::TempDir;
 
 /// Test helper: build a HooksConfig with sensible defaults (AcceptEdits)
 /// so existing assertions hold.
-fn test_config(hooks: PathBuf, stage: &str, session: &str, work: PathBuf) -> HooksConfig {
-    HooksConfig::new(
-        hooks,
-        stage.to_string(),
-        session.to_string(),
-        work,
-        PermissionMode::AcceptEdits,
-    )
+fn test_config(hooks: PathBuf, work: PathBuf) -> HooksConfig {
+    HooksConfig::new(hooks, work, PermissionMode::AcceptEdits)
 }
 
 mod config_tests {
@@ -62,26 +56,17 @@ mod config_tests {
     fn test_hooks_config_new() {
         let config = super::test_config(
             PathBuf::from("/path/to/hooks"),
-            "my-stage",
-            "session-123",
             PathBuf::from("/path/to/.work"),
         );
 
         assert_eq!(config.hooks_dir, PathBuf::from("/path/to/hooks"));
-        assert_eq!(config.stage_id, "my-stage");
-        assert_eq!(config.session_id, "session-123");
         assert_eq!(config.work_dir, PathBuf::from("/path/to/.work"));
         assert_eq!(config.permission_mode, PermissionMode::AcceptEdits);
     }
 
     #[test]
     fn test_hooks_config_script_path() {
-        let config = super::test_config(
-            PathBuf::from("/hooks"),
-            "stage",
-            "session",
-            PathBuf::from("/work"),
-        );
+        let config = super::test_config(PathBuf::from("/hooks"), PathBuf::from("/work"));
 
         assert_eq!(
             config.script_path(HookEvent::SessionStart),
@@ -95,15 +80,10 @@ mod config_tests {
 
     #[test]
     fn test_hooks_config_build_command() {
-        let config = super::test_config(
-            PathBuf::from("/hooks"),
-            "test-stage",
-            "test-session",
-            PathBuf::from("/work"),
-        );
+        let config = super::test_config(PathBuf::from("/hooks"), PathBuf::from("/work"));
 
-        // build_command now returns just the script path
-        // Environment variables are set via env section in settings.json
+        // build_command returns just the script path; hooks read session
+        // identity from the process env exported by the wrapper script
         let cmd = config.build_command(HookEvent::SessionStart);
         assert_eq!(cmd, "/hooks/session-start.sh");
 
@@ -113,12 +93,7 @@ mod config_tests {
 
     #[test]
     fn test_hooks_config_to_settings_hooks() {
-        let config = super::test_config(
-            PathBuf::from("/hooks"),
-            "stage",
-            "session",
-            PathBuf::from("/work"),
-        );
+        let config = super::test_config(PathBuf::from("/hooks"), PathBuf::from("/work"));
 
         let hooks = config.to_settings_hooks();
         // Should have hook events: SessionStart, PostToolUse, PreCompact, SessionEnd, Stop
@@ -235,12 +210,7 @@ mod generator_tests {
 
     #[test]
     fn test_generate_hooks_settings_new() {
-        let config = super::test_config(
-            PathBuf::from("/hooks"),
-            "stage",
-            "session",
-            PathBuf::from("/work"),
-        );
+        let config = super::test_config(PathBuf::from("/hooks"), PathBuf::from("/work"));
 
         let settings = generate_hooks_settings(&config, None).unwrap();
 
@@ -259,19 +229,43 @@ mod generator_tests {
         assert!(settings["hooks"]["SessionEnd"].is_array());
         assert!(settings["hooks"]["Stop"].is_array());
 
-        // Check environment variables
-        assert_eq!(settings["env"]["LOOM_STAGE_ID"], json!("stage"));
-        assert_eq!(settings["env"]["LOOM_SESSION_ID"], json!("session"));
+        // Check environment variables: only the stable LOOM_WORK_DIR is
+        // persisted; per-session identity comes from the wrapper script env.
+        assert_eq!(settings["env"]["LOOM_WORK_DIR"], json!("/work"));
+        let env = settings["env"].as_object().unwrap();
+        assert!(!env.contains_key("LOOM_STAGE_ID"));
+        assert!(!env.contains_key("LOOM_SESSION_ID"));
+        assert!(!env.contains_key("LOOM_MAIN_AGENT_PID"));
+    }
+
+    #[test]
+    fn test_generate_hooks_settings_scrubs_stale_session_identity() {
+        // Older loom versions persisted stage/session IDs in the env block;
+        // regenerating settings must remove them so they can never shadow the
+        // wrapper script's fresh exports.
+        let config = super::test_config(PathBuf::from("/hooks"), PathBuf::from("/work"));
+
+        let existing = json!({
+            "env": {
+                "LOOM_STAGE_ID": "stale-stage",
+                "LOOM_SESSION_ID": "stale-session",
+                "LOOM_MAIN_AGENT_PID": "12345",
+                "KEEP_ME": "yes"
+            }
+        });
+
+        let settings = generate_hooks_settings(&config, Some(&existing)).unwrap();
+        let env = settings["env"].as_object().unwrap();
+        assert!(!env.contains_key("LOOM_STAGE_ID"));
+        assert!(!env.contains_key("LOOM_SESSION_ID"));
+        assert!(!env.contains_key("LOOM_MAIN_AGENT_PID"));
+        assert_eq!(env["KEEP_ME"], json!("yes"));
+        assert_eq!(env["LOOM_WORK_DIR"], json!("/work"));
     }
 
     #[test]
     fn test_generate_hooks_settings_merge_existing() {
-        let config = super::test_config(
-            PathBuf::from("/hooks"),
-            "stage",
-            "session",
-            PathBuf::from("/work"),
-        );
+        let config = super::test_config(PathBuf::from("/hooks"), PathBuf::from("/work"));
 
         let existing = json!({
             "someCustomSetting": true,
@@ -298,12 +292,7 @@ mod generator_tests {
         let temp_dir = TempDir::new().unwrap();
         let worktree_path = temp_dir.path();
 
-        let config = super::test_config(
-            PathBuf::from("/hooks"),
-            "test-stage",
-            "test-session",
-            PathBuf::from("/work"),
-        );
+        let config = super::test_config(PathBuf::from("/hooks"), PathBuf::from("/work"));
 
         setup_hooks_for_worktree(worktree_path, &config).unwrap();
 
@@ -319,7 +308,11 @@ mod generator_tests {
         let content = std::fs::read_to_string(&settings_path).unwrap();
         let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
 
-        assert_eq!(settings["env"]["LOOM_STAGE_ID"], json!("test-stage"));
+        assert_eq!(settings["env"]["LOOM_WORK_DIR"], json!("/work"));
+        assert!(!settings["env"]
+            .as_object()
+            .unwrap()
+            .contains_key("LOOM_STAGE_ID"));
         assert!(settings["hooks"].is_object());
         assert!(settings["hooks"]["PostToolUse"].is_array());
     }
@@ -340,12 +333,7 @@ mod generator_tests {
 
     #[test]
     fn test_generate_hooks_merges_with_global_hooks() {
-        let config = super::test_config(
-            PathBuf::from("/hooks"),
-            "stage",
-            "session",
-            PathBuf::from("/work"),
-        );
+        let config = super::test_config(PathBuf::from("/hooks"), PathBuf::from("/work"));
 
         // Existing settings with global hooks
         let existing = json!({
@@ -431,13 +419,7 @@ mod generator_tests {
             (PermissionMode::Plan, "plan"),
             (PermissionMode::BypassPermissions, "bypassPermissions"),
         ] {
-            let config = HooksConfig::new(
-                PathBuf::from("/hooks"),
-                "stage".to_string(),
-                "session".to_string(),
-                PathBuf::from("/work"),
-                mode,
-            );
+            let config = HooksConfig::new(PathBuf::from("/hooks"), PathBuf::from("/work"), mode);
 
             let settings = generate_hooks_settings(&config, None).unwrap();
             assert_eq!(
@@ -454,8 +436,6 @@ mod generator_tests {
         // block in settings.json is passed through untouched.
         let config = HooksConfig::new(
             PathBuf::from("/hooks"),
-            "stage".to_string(),
-            "session".to_string(),
             PathBuf::from("/work"),
             PermissionMode::Auto,
         );
@@ -473,12 +453,7 @@ mod generator_tests {
 
     #[test]
     fn test_generate_hooks_no_duplication() {
-        let config = super::test_config(
-            PathBuf::from("/hooks"),
-            "stage",
-            "session",
-            PathBuf::from("/work"),
-        );
+        let config = super::test_config(PathBuf::from("/hooks"), PathBuf::from("/work"));
 
         // First generation
         let settings1 = generate_hooks_settings(&config, None).unwrap();

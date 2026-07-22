@@ -96,14 +96,14 @@ pub struct HookCommand {
 /// Configuration for loom hooks.
 ///
 /// This structure defines all hooks that loom sets up for Claude Code sessions.
+///
+/// Deliberately carries NO per-session identity (stage ID, session ID): those
+/// env vars are exported by the session wrapper script only, never persisted
+/// in settings files, so they can never go stale across sessions.
 #[derive(Debug, Clone)]
 pub struct HooksConfig {
     /// Path to the loom hooks directory
     pub hooks_dir: PathBuf,
-    /// Stage ID for this session
-    pub stage_id: String,
-    /// Session ID for this session
-    pub session_id: String,
     /// Path to the .work directory
     pub work_dir: PathBuf,
     /// Resolved Claude Code permission mode for this session.
@@ -112,17 +112,9 @@ pub struct HooksConfig {
 
 impl HooksConfig {
     /// Create a new hooks configuration.
-    pub fn new(
-        hooks_dir: PathBuf,
-        stage_id: String,
-        session_id: String,
-        work_dir: PathBuf,
-        permission_mode: PermissionMode,
-    ) -> Self {
+    pub fn new(hooks_dir: PathBuf, work_dir: PathBuf, permission_mode: PermissionMode) -> Self {
         Self {
             hooks_dir,
-            stage_id,
-            session_id,
             work_dir,
             permission_mode,
         }
@@ -138,9 +130,10 @@ impl HooksConfig {
 
     /// Build the command string for a hook event
     ///
-    /// Returns just the script path. Environment variables (LOOM_STAGE_ID,
-    /// LOOM_SESSION_ID, LOOM_WORK_DIR) are set via the `env` section in
-    /// settings.json and automatically passed by Claude Code to hooks.
+    /// Returns just the script path. Hooks read LOOM_STAGE_ID / LOOM_SESSION_ID /
+    /// LOOM_WORK_DIR from the process environment, which the session wrapper
+    /// script exports before `exec claude` (settings files only carry the
+    /// stable LOOM_WORK_DIR — see `generate_hooks_settings`).
     pub fn build_command(&self, event: HookEvent) -> String {
         let script = self.script_path(event);
         script.display().to_string()

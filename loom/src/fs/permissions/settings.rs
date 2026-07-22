@@ -29,6 +29,32 @@ use std::path::Path;
 use super::constants::LOOM_PERMISSIONS;
 use super::hooks::{configure_loom_hooks, install_loom_hooks, install_loom_hooks_to};
 
+/// Per-session identity env vars that must NEVER be persisted in settings files.
+///
+/// These are set dynamically by the session wrapper script (`export LOOM_...`
+/// before `exec claude`) so they always reflect the actual running session.
+/// Settings-file `env` blocks override the process environment, so a persisted
+/// value from an earlier session silently shadows the wrapper's fresh exports:
+/// `loom memory` files entries under the wrong stage, hooks heartbeat the wrong
+/// session, and commit-filter misidentifies the main agent.
+pub const SESSION_IDENTITY_ENV_KEYS: &[&str] =
+    &["LOOM_MAIN_AGENT_PID", "LOOM_STAGE_ID", "LOOM_SESSION_ID"];
+
+/// Remove per-session identity env vars from a settings document.
+///
+/// Returns `true` if any key was removed. Missing or non-object `env` blocks
+/// are left untouched.
+pub fn scrub_session_identity_env(settings: &mut Value) -> bool {
+    let Some(env) = settings.get_mut("env").and_then(|v| v.as_object_mut()) else {
+        return false;
+    };
+    let mut removed = false;
+    for key in SESSION_IDENTITY_ENV_KEYS {
+        removed |= env.remove(*key).is_some();
+    }
+    removed
+}
+
 /// Ensure `.claude/settings.json` has loom permissions configured
 ///
 /// This function:
@@ -199,6 +225,14 @@ pub fn ensure_loom_hooks_local(repo_root: &Path) -> Result<()> {
         false
     };
 
+    // Drop stale per-session identity env vars left behind by older loom
+    // versions (they used to be written here by knowledge-stage spawns and
+    // would shadow the wrapper script's fresh exports in every later session).
+    let stale_env_removed = scrub_session_identity_env(&mut settings);
+    let settings_obj = settings
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("settings.local.json must be a JSON object"))?;
+
     // Disable Claude Code's worktree isolation for subagents in the main repo.
     //
     // Knowledge stages (and interactive sessions) run in the main checkout
@@ -219,7 +253,7 @@ pub fn ensure_loom_hooks_local(repo_root: &Path) -> Result<()> {
     };
 
     // Write back if we made any changes
-    if hooks_configured || env_configured || worktree_configured {
+    if hooks_configured || env_configured || worktree_configured || stale_env_removed {
         let content = serde_json::to_string_pretty(&settings)
             .context("Failed to serialize settings.local.json to JSON")?;
 
@@ -234,6 +268,9 @@ pub fn ensure_loom_hooks_local(repo_root: &Path) -> Result<()> {
         }
         if worktree_configured {
             println!("  Disabled Claude Code worktree isolation in .claude/settings.local.json");
+        }
+        if stale_env_removed {
+            println!("  Removed stale session env vars from .claude/settings.local.json");
         }
     } else {
         println!("  Hooks and env vars already configured in .claude/settings.local.json");
