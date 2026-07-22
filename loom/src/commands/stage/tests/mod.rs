@@ -12,6 +12,9 @@ mod complete;
 #[cfg(test)]
 mod complete_router;
 
+#[cfg(test)]
+mod progressive_complete;
+
 // Shared test utilities
 use crate::models::stage::{Stage, StageStatus};
 use std::fs;

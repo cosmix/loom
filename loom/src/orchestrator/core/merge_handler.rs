@@ -1,8 +1,11 @@
 //! Merge session handling and auto-merge logic
 
+use std::path::Path;
+
 use anyhow::{Context, Result};
 
 use crate::git::branch::branch_name_for_stage;
+use crate::git::cleanup::{cleanup_after_merge, needs_cleanup, CleanupConfig};
 use crate::git::merge::{check_merge_state, MergeState};
 use crate::git::merge::{get_conflicting_files_from_status, verify_merge_succeeded};
 use crate::models::session::{Session, SessionType};
@@ -494,7 +497,18 @@ impl Orchestrator {
         // MergeConflict/MergeBlocked — even though Completed is a terminal state.
         // This would spawn a spurious resolver session while the dependent stage was
         // already started by sync_graph_with_stage_files.
+        //
+        // This branch also owns the DEFERRED worktree/branch cleanup for such
+        // stages. `loom stage complete` intentionally skips `cleanup_after_merge`
+        // when it runs from inside the worktree it would delete — removing the
+        // live agent session's cwd breaks every remaining Claude Code hook spawn
+        // for that session (Stop, SessionEnd, the trailing PostToolUse all fail
+        // with `posix_spawn '/bin/sh'` ENOENT once their cwd is gone). By the
+        // time this branch runs, cleanup is safe: the session has already exited
+        // (or this is a startup retry / prior-run stage), so nothing depends on
+        // the worktree still existing.
         if stage.merged {
+            cleanup_merged_stage_resources(stage_id, &self.config.repo_root);
             return true;
         }
 
@@ -1152,6 +1166,47 @@ impl Orchestrator {
     }
 }
 
+/// Remove the worktree and branch left behind for a stage that is already
+/// merged.
+///
+/// Reached from `try_auto_merge`'s `stage.merged` short-circuit — the case
+/// where `loom stage complete` (running inside the worktree) merged the
+/// stage but deliberately skipped its own cleanup to avoid deleting its own
+/// cwd mid-session. It also covers the daemon-startup one-shot merge retry
+/// (`recovery.rs`), which can reach an already-merged stage left over from a
+/// prior run. Idempotent: `cleanup_worktree` no-ops when the worktree
+/// directory is already gone, and branch deletion uses non-forced
+/// `git branch -d`, so calling this on an already-clean stage is a safe
+/// no-op — checked up front via `needs_cleanup` to avoid log noise.
+///
+/// Touches ONLY git resources (worktree directory + branch). Never mutates
+/// stage state — the merge already happened, so failure here must not change
+/// `try_auto_merge`'s `true` return.
+fn cleanup_merged_stage_resources(stage_id: &str, repo_root: &Path) {
+    if !needs_cleanup(stage_id, repo_root) {
+        return;
+    }
+
+    match cleanup_after_merge(stage_id, repo_root, &CleanupConfig::quiet()) {
+        Ok(result) if result.any_cleanup_done() => {
+            tracing::info!(
+                stage_id = %stage_id,
+                worktree_removed = result.worktree_removed,
+                branch_deleted = result.branch_deleted,
+                "Deferred post-merge cleanup removed leftover worktree/branch resources"
+            );
+        }
+        Ok(_) => {}
+        Err(e) => {
+            tracing::warn!(
+                stage_id = %stage_id,
+                error = %e,
+                "Deferred post-merge cleanup failed for already-merged stage"
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -1284,5 +1339,115 @@ loom:
         let yaml_content = crate::plan::parser::extract_yaml_metadata(plan_content).unwrap();
         let metadata = crate::plan::parser::parse_and_validate(&yaml_content).unwrap();
         assert_eq!(metadata.loom.auto_merge, None);
+    }
+
+    /// Run `git` in `root` with ambient global/system config neutralized.
+    ///
+    /// Mirrors `git::merge::mod::tests::isolated_git`: a global
+    /// `commit.gpgsign=true` with no configured key (or other ambient config)
+    /// can break a fresh-repo commit; pinning `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM`
+    /// to nonexistent paths makes these tests depend only on the repo's own
+    /// local config.
+    fn isolated_git(root: &std::path::Path, args: &[&str]) -> std::process::Output {
+        std::process::Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
+            .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .output()
+            .unwrap()
+    }
+
+    /// Run a setup `git` command and assert it succeeded, surfacing stderr on
+    /// failure rather than letting it silently fall through to a confusing
+    /// assertion several lines down.
+    fn git_ok(root: &std::path::Path, args: &[&str]) {
+        let out = isolated_git(root, args);
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    #[test]
+    fn test_cleanup_merged_stage_resources_removes_worktree_and_branch() {
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+
+        git_ok(root, &["init", "-b", "main"]);
+        git_ok(root, &["config", "user.email", "t@t.com"]);
+        git_ok(root, &["config", "user.name", "t"]);
+        std::fs::write(root.join("a.txt"), "seed").unwrap();
+        git_ok(root, &["add", "a.txt"]);
+        git_ok(root, &["commit", "-m", "seed"]);
+
+        let stage_id = "cleanup-stage";
+        let worktree_path = root.join(".worktrees").join(stage_id);
+        git_ok(
+            root,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "loom/cleanup-stage",
+                worktree_path.to_str().unwrap(),
+            ],
+        );
+
+        assert!(
+            worktree_path.exists(),
+            "worktree fixture must exist before cleanup"
+        );
+        assert!(
+            isolated_git(
+                root,
+                &["rev-parse", "--verify", "refs/heads/loom/cleanup-stage"]
+            )
+            .status
+            .success(),
+            "branch fixture must exist before cleanup"
+        );
+
+        super::cleanup_merged_stage_resources(stage_id, root);
+
+        assert!(
+            !worktree_path.exists(),
+            "worktree directory must be removed by deferred cleanup"
+        );
+        assert!(
+            !isolated_git(
+                root,
+                &["rev-parse", "--verify", "refs/heads/loom/cleanup-stage"]
+            )
+            .status
+            .success(),
+            "branch must be deleted by deferred cleanup"
+        );
+    }
+
+    #[test]
+    fn test_cleanup_merged_stage_resources_noop_when_already_clean() {
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+
+        git_ok(root, &["init", "-b", "main"]);
+        git_ok(root, &["config", "user.email", "t@t.com"]);
+        git_ok(root, &["config", "user.name", "t"]);
+        std::fs::write(root.join("a.txt"), "seed").unwrap();
+        git_ok(root, &["add", "a.txt"]);
+        git_ok(root, &["commit", "-m", "seed"]);
+
+        // No worktree, no branch for this stage id exists anywhere - the
+        // early `needs_cleanup` check should skip cleanup entirely, and the
+        // call must not error or create anything.
+        super::cleanup_merged_stage_resources("already-clean-stage", root);
+
+        assert!(!root.join(".worktrees").join("already-clean-stage").exists());
     }
 }
