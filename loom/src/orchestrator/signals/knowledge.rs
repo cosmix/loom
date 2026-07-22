@@ -53,7 +53,7 @@ fn format_knowledge_signal_content(
     let mut content = String::new();
 
     // Header with session ID
-    content.push_str(&format!("# Signal: {}\n\n", &session.id));
+    content.push_str(&format!("# Signal: {}\n\n", session.id));
 
     // Knowledge-specific stable prefix
     content.push_str(&generate_knowledge_stable_prefix());
@@ -76,7 +76,7 @@ fn format_knowledge_signal_content(
 
     // Assignment section
     content.push_str("## Assignment\n\n");
-    content.push_str(&format!("{}: ", &stage.name));
+    content.push_str(&format!("{}: ", stage.name));
     if let Some(desc) = &stage.description {
         content.push_str(desc);
     } else {
@@ -123,7 +123,7 @@ fn format_knowledge_signal_content(
             .push_str("2. Document key architectural patterns in doc/loom/knowledge/patterns.md\n");
         content.push_str("3. Document coding conventions in doc/loom/knowledge/conventions.md\n");
         content.push_str("4. Verify acceptance criteria are met\n");
-        content.push_str(&format!("5. Run `loom stage complete {}`\n", &stage.id));
+        content.push_str(&format!("5. Run `loom stage complete {}`\n", stage.id));
     } else {
         for (i, task) in tasks.iter().enumerate() {
             content.push_str(&format!("{}. {task}\n", i + 1));

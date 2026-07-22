@@ -301,13 +301,9 @@ Do not manually edit these files unless you know what you're doing.
             // Read the symlink target
             if let Ok(link_target) = fs::read_link(&self.root) {
                 // If the symlink is relative, resolve it against the parent directory
+                // (the parent of .work, where the symlink is located)
                 let resolved = if link_target.is_relative() {
-                    // Get parent of .work (where the symlink is located)
-                    if let Some(parent) = self.root.parent() {
-                        parent.join(&link_target)
-                    } else {
-                        return None;
-                    }
+                    self.root.parent()?.join(&link_target)
                 } else {
                     link_target
                 };

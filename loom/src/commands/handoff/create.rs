@@ -89,7 +89,7 @@ pub fn execute(
         } else {
             "environment"
         },
-        &trigger
+        trigger
     );
     let goals_with_trigger = format!("{}{}", content.goals, trigger_note);
     content = content.with_goals(goals_with_trigger);

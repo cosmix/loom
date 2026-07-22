@@ -15,20 +15,20 @@ pub fn format_recovery_signal(
     let mut signal = String::new();
 
     // Header
-    signal.push_str(&format!("# Recovery Signal: {}\n\n", &content.session_id));
+    signal.push_str(&format!("# Recovery Signal: {}\n\n", content.session_id));
 
     // Recovery context
     signal.push_str("## Recovery Context\n\n");
     signal
         .push_str("**This is a RECOVERY session.** The previous session encountered an issue.\n\n");
-    signal.push_str(&format!("- **Reason**: {}\n", &content.reason));
+    signal.push_str(&format!("- **Reason**: {}\n", content.reason));
     signal.push_str(&format!(
         "- **Previous Session**: {}\n",
-        &content.previous_session_id
+        content.previous_session_id
     ));
     signal.push_str(&format!(
         "- **Recovery Attempt**: #{}\n",
-        &content.recovery_attempt
+        content.recovery_attempt
     ));
     signal.push_str(&format!(
         "- **Detected At**: {}\n",
@@ -76,20 +76,20 @@ pub fn format_recovery_signal(
 
     // Target information
     signal.push_str("## Target\n\n");
-    signal.push_str(&format!("- **Session**: {}\n", &content.session_id));
-    signal.push_str(&format!("- **Stage**: {}\n", &content.stage_id));
+    signal.push_str(&format!("- **Session**: {}\n", content.session_id));
+    signal.push_str(&format!("- **Stage**: {}\n", content.stage_id));
     if let Some(ref plan_id) = stage.plan_id {
         signal.push_str(&format!("- **Plan**: {plan_id}\n"));
     }
     if let Some(ref worktree) = stage.worktree {
         signal.push_str(&format!("- **Worktree**: {worktree}\n"));
     }
-    signal.push_str(&format!("- **Branch**: loom/{}\n", &content.stage_id));
+    signal.push_str(&format!("- **Branch**: loom/{}\n", content.stage_id));
     signal.push('\n');
 
     // Assignment from stage
     signal.push_str("## Assignment\n\n");
-    signal.push_str(&format!("{}\n\n", &stage.name));
+    signal.push_str(&format!("{}\n\n", stage.name));
     if let Some(ref desc) = stage.description {
         signal.push_str(&format!("{desc}\n\n"));
     }

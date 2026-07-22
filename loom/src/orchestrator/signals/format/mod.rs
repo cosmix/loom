@@ -64,7 +64,7 @@ pub fn format_signal_with_metrics(
     embedded_context: &EmbeddedContext,
 ) -> FormattedSignal {
     // Build each section separately for metrics
-    let header = format!("# Signal: {}\n\n", &session.id);
+    let header = format!("# Signal: {}\n\n", session.id);
     // Select stable prefix based on stage type (shared with the recovery path)
     let stable_prefix = stable_prefix_for(stage.stage_type);
     let semi_stable = sections::format_semi_stable_section(embedded_context, stage.stage_type);

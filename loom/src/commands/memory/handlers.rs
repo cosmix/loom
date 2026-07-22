@@ -375,7 +375,7 @@ pub fn show(stage_id: Option<String>, all: bool) -> Result<()> {
 
     println!("{}", "═".repeat(60));
     println!("{}", format!("Memory Journal: {stage}").bold());
-    println!("{} {}", "Stage:".dimmed(), &journal.stage_id);
+    println!("{} {}", "Stage:".dimmed(), journal.stage_id);
     println!("{} entries", journal.entries.len());
     println!("{}", "═".repeat(60));
 

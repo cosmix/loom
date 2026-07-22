@@ -393,15 +393,15 @@ pub(super) fn format_dynamic_section(
 
     // Target section (session-specific)
     content.push_str("## Target\n\n");
-    content.push_str(&format!("- **Session**: {}\n", &session.id));
-    content.push_str(&format!("- **Stage**: {}\n", &stage.id));
+    content.push_str(&format!("- **Session**: {}\n", session.id));
+    content.push_str(&format!("- **Stage**: {}\n", stage.id));
     if let Some(plan_id) = &stage.plan_id {
         content.push_str(&format!(
             "- **Plan**: {plan_id} (overview embedded below)\n"
         ));
     }
-    content.push_str(&format!("- **Worktree**: {}\n", &worktree.path.display()));
-    content.push_str(&format!("- **Branch**: {}\n", &worktree.branch));
+    content.push_str(&format!("- **Worktree**: {}\n", worktree.path.display()));
+    content.push_str(&format!("- **Branch**: {}\n", worktree.branch));
 
     // Add working_dir and computed execution path
     let working_dir = stage.working_dir.as_deref().unwrap_or(".");
@@ -437,7 +437,7 @@ pub(super) fn format_dynamic_section(
     // Add worktree root directory reminder (defense-in-depth)
     content.push_str(&format!(
         "**IMPORTANT:** Before running `loom stage complete`, ensure you are at the worktree root: `cd {}`\n\n",
-        &worktree.path.display()
+        worktree.path.display()
     ));
 
     // Worktree Isolation section with explicit boundaries
@@ -494,7 +494,7 @@ pub(super) fn format_dynamic_section(
 
     // Assignment section
     content.push_str("## Assignment\n\n");
-    content.push_str(&format!("{}: ", &stage.name));
+    content.push_str(&format!("{}: ", stage.name));
     if let Some(desc) = &stage.description {
         content.push_str(desc);
     } else {
