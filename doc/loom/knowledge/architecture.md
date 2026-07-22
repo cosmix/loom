@@ -670,7 +670,7 @@ Set by wrapper script (pid_tracking.rs:463-479) before `exec claude`:
 | `LOOM_WORKTREE_PATH` | Absolute worktree path (worktree sessions only) |
 | `LOOM_MERGE_SESSION=1` | Set for merge resolution sessions only |
 
-**LOOM_MAIN_AGENT_PID gotcha:** Must NOT be in settings.json env block (generator.rs explicitly removes it). Must be set by wrapper script as `export LOOM_MAIN_AGENT_PID=$$` so it reflects the actual Claude process PID. Stale value → commit-filter.sh misidentifies main agent as subagent.
+**Per-session identity gotcha (LOOM_MAIN_AGENT_PID, LOOM_STAGE_ID, LOOM_SESSION_ID):** Must NOT be in ANY settings-file env block — settings `env` overrides the process environment, so a persisted value from an earlier session shadows the wrapper's fresh exports (wrong-stage `loom memory` entries, heartbeats for the wrong session, commit-filter misidentifying the main agent). The wrapper script is the ONLY writer; `fs/permissions/settings.rs::scrub_session_identity_env()` strips these keys wherever settings are generated, copied, or merged (`generate_hooks_settings`, `create_worktree_settings`, worktree settings.local.json copy, `refresh_worktree_settings_local`, `ensure_loom_hooks_local`). Only the stable `LOOM_WORK_DIR` is persisted in settings env. `refresh_worktree_settings_local` merges main-repo permissions INTO the worktree's own settings (worktree base wins for env/hooks/defaultMode).
 
 ### Hook Embedding (constants.rs)
 

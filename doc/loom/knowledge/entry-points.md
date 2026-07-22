@@ -270,13 +270,11 @@ Internal modules: `extraction.rs` (YAML block extraction, plan name), `validatio
 
 **Settings placement:** Session hooks → `<worktree>/.claude/settings.local.json`. Global hooks (commit-filter, git-add-guard, worktree-isolation) configured via `fs/permissions.rs:configure_loom_hooks()`.
 
-**Env vars injected via settings.json env block:**
+**Env vars injected via settings env block:**
 
-- `LOOM_STAGE_ID` — current stage ID
-- `LOOM_SESSION_ID` — current session ID
-- `LOOM_WORK_DIR` — path to `.work/` directory
+- `LOOM_WORK_DIR` — path to `.work/` directory (the ONLY loom var persisted; stable per repo)
 
-**LOOM_MAIN_AGENT_PID:** Explicitly REMOVED from settings.json env in `generator.rs`. Must be set dynamically by the wrapper script (`export LOOM_MAIN_AGENT_PID=$$`) so it reflects the actual Claude process PID. A stale value from a previous session would cause commit-filter.sh to misidentify the main agent as a subagent.
+**Per-session identity (LOOM_MAIN_AGENT_PID, LOOM_STAGE_ID, LOOM_SESSION_ID):** Explicitly REMOVED from all settings env blocks (`scrub_session_identity_env` in `fs/permissions/settings.rs`). Set ONLY by the wrapper script exports so they always reflect the running session — settings env overrides process env, so persisted values from an earlier session would shadow the fresh exports (see mistakes.md 2026-07-22).
 
 **Hooks discovery:** `find_hooks_dir()` checks `$LOOM_HOOKS_DIR` env first, then `~/.claude/hooks/loom/`. Returns `None` if not installed.
 
