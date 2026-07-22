@@ -277,6 +277,16 @@ fn render_stage_section(stage: &StageInfo, entries: &[&MemoryEntry]) -> String {
 /// `ai_summary` opts into a headless Claude Haiku (`claude -p`) summary of the
 /// plan. It is off by default so `loom review` never silently incurs headless
 /// API charges; without it the plan's first paragraph is used as the summary.
+/// Resolve where the review document should be written.
+///
+/// Inside a loom worktree this is the WORKTREE root, not the main repo:
+/// `.work` is a symlink to the main repo's state dir, so resolving through it
+/// (as `main_project_root()` does) would silently write into the main repo's
+/// `doc/plans/` — invisible from the worktree that ran the command.
+fn resolve_output_root(cwd: &Path, project_root: &Path) -> PathBuf {
+    find_worktree_root_from_cwd(cwd).unwrap_or_else(|| project_root.to_path_buf())
+}
+
 pub fn execute(ai_summary: bool) -> Result<()> {
     let work_dir = get_work_dir()?;
 
@@ -413,8 +423,11 @@ pub fn execute(ai_summary: bool) -> Result<()> {
 
     doc.push('\n');
 
-    // Write to doc/plans/REVIEW-{plan_id}.md
-    let plans_dir = project_root.join("doc").join("plans");
+    // Write to doc/plans/REVIEW-{plan_id}.md in the CURRENT checkout: the
+    // worktree's doc/plans/ when run inside a worktree, else the main repo's.
+    let cwd = env::current_dir().context("Failed to get current directory")?;
+    let output_root = resolve_output_root(&cwd, &project_root);
+    let plans_dir = output_root.join("doc").join("plans");
     fs::create_dir_all(&plans_dir).context("Failed to create doc/plans directory")?;
 
     let output_filename = format!("REVIEW-{}.md", plan_id);
@@ -427,7 +440,7 @@ pub fn execute(ai_summary: bool) -> Result<()> {
         "{} Review document written to {}",
         "✓".green().bold(),
         output_path
-            .strip_prefix(&project_root)
+            .strip_prefix(&output_root)
             .unwrap_or(&output_path)
             .display()
             .to_string()
@@ -435,4 +448,26 @@ pub fn execute(ai_summary: bool) -> Result<()> {
     );
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_output_root_inside_worktree() {
+        let cwd = Path::new("/repo/.worktrees/my-stage/loom/src");
+        let project_root = PathBuf::from("/repo");
+        assert_eq!(
+            resolve_output_root(cwd, &project_root),
+            PathBuf::from("/repo/.worktrees/my-stage")
+        );
+    }
+
+    #[test]
+    fn test_resolve_output_root_in_main_repo() {
+        let cwd = Path::new("/repo/loom/src");
+        let project_root = PathBuf::from("/repo");
+        assert_eq!(resolve_output_root(cwd, &project_root), project_root);
+    }
 }
