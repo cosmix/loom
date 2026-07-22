@@ -276,3 +276,7 @@ Agent guidance lives in the channel that delivers it closest to the decision poi
 - **CLAUDE.md.template** — only cross-cutting rules and the 5-item hard-stop tier (stated verbatim at top AND bottom; middle of a long file is a retrieval dead zone). Do not restate what a hook, signal, or skill already delivers — duplicated guidance drifts and dilutes.
 
 When adding new guidance, pick the channel first; the template is the channel of last resort.
+
+## Git Push Requires Explicit User Request
+
+Never `git push` unless the user explicitly asks — commit locally and stop. "Fix the CI failure" does NOT imply pushing to make CI green; the user decides when commits leave the machine. (Learned 2026-07-22: pushed after fixing a red CI run on the theory that CI-green was the deliverable — user rejected: "i didn't ask you to push.")
