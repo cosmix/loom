@@ -2,9 +2,22 @@
 description: Pressure-test a plan with an agent team
 argument-hint: [plan-path]
 ---
-read doc/loom/knowledge. then read $1 (the plan file) and use an agent team to explore the codebase. Your task is to pressure-test the plan: hunt for omissions, wrong assumptions, missing wiring, unhandled edge cases, and any step an executor could not complete from the plan alone. Validate every finding against the actual code BEFORE acting on it.
 
-Update the plan in place with the validated findings.
+read doc/loom/knowledge. then read $1 (the plan file) and use an agent team to explore the codebase. Your task is to pressure-test the plan: hunt for omissions, wrong assumptions, missing wiring, unhandled edge cases, and any step an executor could not complete from the plan alone. Validate every finding against the actual code BEFORE acting on it — cite file:line evidence; drop any finding you cannot ground.
+
+Cover ALL of these dimensions, assigning each to at least one agent. The first two are the highest-yield failure classes on record.
+
+1. CROSS-PLAN CONTRACTS. List the sibling plans in the plan's directory (PLAN-*, IN_PROGRESS-*, DONE-*) that share files, symbols, or seams with this plan, and read them. For every upstream surface this plan consumes, verify the exact symbol/signature/exporting module against committed code first, else against the sibling's stage YAML (artifacts/wiring/acceptance) — NEVER against the sibling's prose: a capability promised only in a sibling's overview is built by no stage; flag it as a blocking gap, never assume it. For every downstream consumer plan, check that the names/accessors/seams it expects are ones this plan actually provides. Check file ownership: flag any path this plan writes that a sibling stage's files:/artifacts: also owns, and any bare file dropped into a shared module directory instead of a disjoint namespace. Check module placement against lint/import boundaries a sibling plan enforces. Where this plan needs a seam no sibling builds, the fix is an explicit amendment flagged as a blocking dependency — not a conveniently assumed interface.
+
+2. PROSE ⇄ FRONTMATTER COVERAGE. For every capability the plan's prose promises ("ships X", "exposes Y", a public-contract section), grep the plan's own loom YAML: it must appear in exactly one stage's artifacts: and be proven by a wiring/acceptance entry. A prose-only deliverable lets every stage complete green while the promise is never built — treat it as top severity. Also check the reverse: YAML that contradicts the prose, and any stage whose acceptance can only be met by editing files missing from that stage's files:.
+
+3. CLAIM GROUNDING. Every symbol, path, signature, config option, library convention (UV/axis/order/defaults — read the installed source), third-party API shape and rate limit, and package/version/peer-graph fact — verify against the installed source, the live registry, or the actual config, never memory. For every specced function, check its inputs actually carry what its stated behavior and output type require. Flag edits anchored by line number instead of symbol.
+
+4. VERIFICATION HONESTY. For each acceptance/wiring gate: would a plausible-WRONG implementation still pass? Does the gate exercise what it claims? (A production build cannot verify a module nothing imports; a bundler neither type-checks nor compiles shader graphs; a grep proves existence, not behavior; a test of an in-memory value proves nothing about the emitted artifact.) Does every code stage run the repo's FULL canonical gate verbatim rather than a scoped subset?
+
+5. EXECUTABILITY & LIFECYCLE. Sandbox allow_write covers every path acceptance commands write (the lockfile by its real name, build output dirs); working_dir is right; anything shipped as an engine/driver/controller has a stage owning its composition-root call site with an executable wiring proof; runtime lifecycle decisions (ownership, scheduling, cancellation, invalidation, dispose, budget scope and ordering) are settled in the plan, not deferred to integration-verify.
+
+Rank findings by severity: blocks execution > silently ships broken > under-specified > polish. Update the plan in place with the validated findings.
 
 ⚠️ THE PLAN MUST STAY SELF-CONTAINED. A downstream agent executes this plan reading ONLY the plan file — it sees none of this conversation and none of your scratch files. Fold every fix directly into the plan; never push required detail into a separate document the executor will not read.
 
