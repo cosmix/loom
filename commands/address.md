@@ -5,6 +5,8 @@ argument-hint: [plan-path]
 
 read the review of your plan. It is at codex-<basename of $1> in the SAME directory as the plan (for example, when $1 is doc/plans/PLAN-foo.md the review is doc/plans/codex-PLAN-foo.md). Read $1 (the plan file) alongside it.
 
+⚠️ IF THAT REVIEW FILE DOES NOT EXIST, STOP. It means the reviewer failed to produce one. Reply saying exactly that and change NOTHING — not the plan, not planning-omissions.md. Do NOT substitute a review of your own: this command's only job is to fold in someone else's findings, and an unreviewed edit pass on the plan is worse than no pass at all.
+
 Work through each point in the review. Validate each point against the ACTUAL code and the sibling plans BEFORE accepting it — reviews are sometimes written against a stale draft (line references drift; a point may already be folded in) and are sometimes wrong. If a point is valid, fix the plan to address it. If a point is not valid or already addressed, explain why in your reply — not in the plan.
 
 When an accepted fix touches a contract another plan provides or consumes (symbol names, signatures, file ownership, seams), fold the fix in AND state the required sibling-plan amendment explicitly in the plan as a blocking note — never silently diverge from a sibling.
