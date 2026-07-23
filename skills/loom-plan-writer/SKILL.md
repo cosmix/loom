@@ -68,6 +68,9 @@ Before any stage description, `acceptance`, `artifacts`, `wiring`, or `wiring_te
 □ Every message / limit / line / count / status code / external behavior /
   package dependency is READ from its source, never recalled.
 □ No claim rests on memory, a sibling repo, or a plausible name.
+□ Every claim about a SIBLING PLAN's surface (upstream symbol, consumer seam,
+  file owner) passed the Cross-Plan Contract Protocol — verified against
+  committed code or the sibling's stage YAML, never its prose.
 ```
 
 **HIGH-FREQUENCY TRAPS** (each is a logged, repeated failure):
@@ -81,6 +84,10 @@ Before any stage description, `acceptance`, `artifacts`, `wiring`, or `wiring_te
 7. **"Out of scope / follow-up"** → DECOMPOSE it. On a shared/generic surface a half-cut is a correctness hole, not a clean defer. A thing you noticed in passing is not a thing you handled.
 8. **Line numbers as edit anchors** → anchor every edit by SYMBOL + a short snippet; line numbers are advisory (they drifted in every logged pressure pass). Sequential stages editing one file make later stages' absolute anchors guaranteed-stale — say so in the plan. Re-read any deletion RANGE edge-to-edge (a one-line overshoot deletes a keep-line), and when an edit SUPERSEDES existing code, say what to DELETE — leaving the old branch double-writes.
 9. **"Typechecks" ≠ "bound"** for vendored / FFI / wasm bindings (a curated `.d.ts` over-declares) → any API path unexercised at runtime anywhere in the repo must be SPIKED — EVERY novel path the plan rests on, not just the scariest one — and each prescribed call form must cite an in-repo runtime precedent (file:line).
+10. **Dependency / toolchain / provider facts from memory** → NEVER encode "package X ships types," "version line Y is current," or "the provider's API returns Z" from memory. Curl the registry (`registry.npmjs.org/<pkg>/<ver>` → `types`/`exports`/`peerDependencies`), read the installed source, and re-check third-party API docs (schema AND rate limits) AT PLANNING TIME. Verify the peer graph CLOSES before pinning a version set — "latest of each" is not a compatible set (logged: a plan forbade `@types/three` on a false memory; another paired Vite 6 with a plugin that peers `vite@^8`).
+11. **Library conventions assumed (UV/axis/order/defaults)** → read the INSTALLED library source for any convention a design leans on, and test at LANDMARKS (poles, origin, antimeridian, a known-answer point) — range and algebraic-invariance checks pass with a flipped convention (logged: an upside-down globe behind a green UV-range test).
+12. **A signature is not a mechanism** → for every function the plan specs, work BACKWARD from the promised behavior: the INPUTS must carry what the behavior and OUTPUT type require (an id-set filter that never receives the id set; a batch stamped with a version it was never passed). Give every cross-format field ("timestamp: number") a defined per-source decoder, and every network/persisted payload an explicit runtime parser — a static type validates nothing at runtime.
+13. **Runtime lifecycle deferred to "integration will catch it"** → ownership, completion-based scheduling (not overlapping timers), cancellation, retry taxonomy, invalidation/generation guards, idempotent `dispose()`, and a resource budget's SCOPE (global vs per-X) and ORDERING (evict/reserve BEFORE allocate) are plan-level design decisions. Settle them in the plan; an unsettled lifecycle ships an unowned leak or a stale-data race.
 
 ### Blast Radius Protocol (enum / union / shared type / required field)
 
@@ -133,6 +140,21 @@ For test-infra and migration plans, the ZEROTH claim is **"does it even import a
 - Before writing a build/test command into `acceptance`, confirm it EXISTS and does what you think (does `build` type-check, or only bundle?). Read the actual `package.json` scripts / Makefile / cargo aliases.
 - Apply any gotcha you cite to the plan's OWN mechanics and to EVERY case family touching the same resolver.
 
+### Cross-Plan Contract Protocol (sibling plans in doc/plans/)
+
+When the plan is part of a multi-plan program (sibling `PLAN-*` / `IN_PROGRESS-*` / `DONE-*` files sharing one tree), cross-plan claims are a top logged failure class: plans modelled their siblings from their own assumptions instead of the siblings' real text and committed code. Before writing any claim that touches another plan:
+
+1. **Enumerate the siblings.** List every plan that owns files, symbols, or seams this plan touches — upstream (you consume it), downstream (it consumes you), and neighbors sharing a module directory. Read them.
+2. **Committed code beats plan prose; stage YAML beats overview prose.** Verify an upstream surface in this order: committed code (if the sibling merged) → the sibling's stage `artifacts:`/`wiring:`/`acceptance:` → nothing else. A capability named only in a sibling's overview prose is built by NO stage — treat it as MISSING and record a required amendment. (Logged: `createTileUploader` was "load-bearing" prose in one plan, appeared in no stage's artifacts, the plan closed green without it, and the consumer plan stalled at zero code.)
+3. **Cite real symbols, never plausible ones.** Every upstream type/function this plan names must be quoted from the verified surface with its exact name, signature, and exporting module (`CityRecord` not `City`; `bindingFor(id)` not "returns a handle"; `wDayMaster` not `wDay`). Prose paraphrases drift; a wiring grep is satisfiable by the wrong symbol.
+4. **Contract line + first-stage fail-fast.** Every cross-plan dependency gets a contract line in the plan — exporting module, symbol, signature — plus a one-line grep against COMMITTED CODE proving it (e.g. `rg -n "export function createTileUploader" src/renderer/tiles`) in the FIRST dependent stage's acceptance. A plan should fail on its first stage when its premise is false, not four stages in at integration-verify. Never grep sibling plan files from acceptance (they get renamed/archived) — grep the code.
+5. **Disjoint file ownership.** Before claiming any path, check every sibling's `files:`/`artifacts:` for it. Never land bare files in a shared module directory a sibling owns — carve a disjoint namespace (`src/data/weather/`, not a second `src/data/types.ts`).
+6. **Read the consumer's real contract.** When this plan hands work to a downstream engine (or consumes one), pin that engine's ACTUAL public seam from its plan + code: cache keys, injection points, and the variance axes its consumers need (content version, time, params). If the needed seam does not exist, state the required amendment to the other plan as an explicit BLOCKING dependency — never silently assume a convenient interface.
+7. **The owner reconciles names.** The plan that OWNS a shared contract reads its consumers and either matches their expected names/accessors or exports a reconciling alias/helper (`City = CityRecord`, `getCityById`) — don't leave each consumer to paper over the gap independently.
+8. **Honor enforced boundaries.** Read the merged lint/import-boundary config before choosing module homes and wiring seams — a file placement that violates a sibling-enforced zone fails this plan's own gates. Cross-zone construction/registration belongs to the composition root, in a stage whose `files:` includes it.
+9. **Re-base on current code.** Names, paths, and seams move between plan-writing and execution. Anything the knowledge files mark SUPERSEDED must not appear in a stage's instructions; re-verify every "edit the call in X" against today's tree before the plan ships.
+10. **Discovery must amend the graph.** When knowledge-bootstrap or a verify stage is told to check a cross-plan premise, pair the check with a named remediation ("if absent: build it under this stage, in the owning module's territory") and re-point dependents — a blocker entry that leaves the graph unchanged is a stall, not a fix.
+
 ---
 
 ## 2. Workflow: Explore → Write → Validate → STOP
@@ -144,6 +166,7 @@ Skipping exploration causes duplicate code, poor reuse, AND the #1 failure above
 1. Spawn `Explore` subagents over related modules — find patterns to reuse, integration points, conventions.
 2. Read `doc/loom/knowledge/*.md` (architecture first) — learn past mistakes.
 3. Have each explorer return, for every symbol the plan will CHANGE, its full importer/consumer list flagged compiler-caught vs SILENT; and for every behavior the plan will ASSERT, the quoted implementation. Flag any claim that could NOT be verified against the code.
+4. In a multi-plan program, read the sibling plans (and the COMMITTED code of merged ones) before designing stages — the Cross-Plan Contract Protocol (Section 1) governs every claim about them.
 
 ### Output location
 
@@ -218,6 +241,11 @@ Captures codebase understanding before implementation. `stage_type: knowledge` (
 `stage_type: knowledge-distill`, model sonnet (`reasoning_effort: xhigh`). Curates all stage memories into permanent knowledge and updates user-facing docs. Reads the plan, `loom memory show --all`, and current knowledge; synthesizes mistakes as actionable prevention rules, patterns, decisions, conventions via `loom knowledge update`; runs `loom review` to prune stale entries; updates README/CONTRIBUTING for changed behavior (only relevant sections). **Context discipline (200k window):** on a large plan, delegate memory/diff gathering to read-only subagents that return compact summaries; stay the sole writer of knowledge files. **Skip ONLY if** the plan produces no new knowledge worth preserving (rare).
 
 Full YAML for all three bookends is in the canonical template (Section 10).
+
+### Wiring stages (engines, drivers, shared integration files)
+
+- **A plan that ships anything constructed and driven at runtime** (an engine, driver, controller, streamer) **needs a stage that OWNS its production call site.** That stage's `files:` includes the real composition-root/bootstrap/loop file, and its verification proves the thing is reached through the boot chain — an executable wiring test that drives the real loop, not a grep and not a unit test calling `update()` directly. Mock-green modules with no production call site are the exact failure integration-verify exists to catch; don't leave the call site to it (logged twice: a tile streamer and a lighting driver that nothing ever ticked).
+- **When more than one stage would touch a single pre-existing integration file** (bootstrap, a shared material, the app shell), add ONE serial wiring stage that exclusively owns every pre-existing seam; the parallel stages create new leaf modules only.
 
 ---
 
@@ -346,15 +374,22 @@ These catch the "tests pass but the feature is never wired up" failure loom exis
 
 Pair every `wiring` entry with a behavioral `acceptance` command (or a `wiring_tests` entry) where one exists — observable behavior is the strongest wiring proof.
 
+**⛔ Prose promises MUST land in the YAML — a deliverable named only in prose is built by NOBODY.** Loom's gates see only `acceptance`/`artifacts`/`wiring`/`wiring_tests`; a capability that lives in the overview alone lets every stage complete green while the promise is never written. (Logged: a plan called an uploader "load-bearing" in prose, assigned it to no stage, closed green — and stalled its consumer plan at zero code.) Mechanics:
+
+- **Write the overview LAST, derived from the stage graph** — never the reverse. Prose describing work no stage owns is the single highest-value thing to lint for.
+- For every capability the prose names ("ships X", "exposes Y", a public-contract section), grep your OWN plan: the symbol must appear in exactly ONE stage's `artifacts:` AND be proven by a `wiring:` pattern or behavioral `acceptance` entry. Zero YAML hits outside the prose = plan defect.
+- **Stage completion is not interface completion.** "All stages Completed" implies "all promised symbols exist" ONLY if each promised export is encoded as an artifact plus a consumer-side proof — encode it.
+- If a stage's acceptance can only be met by editing file X, X belongs in that stage's `files:` — a read-only list that excludes the seam converts a 3-line edit into a blocker.
+
 **Realizability — a prescribed check must be able to PROVE what it claims.** Grounding claims about code (Section 1) is half the job; the tests/acceptance the plan PRESCRIBES must themselves be grounded. A green check that verifies nothing is worse than none — it reads as "covered." Every `acceptance`/`wiring_tests` command, and every test a stage description prescribes, must clear four gates:
 
 1. **Expressible** — the existing harness can already do this. "Stub the response," "intercept the request," "seed this store" are NOT free — confirm the suite already has that mechanism, or the plan must add it as explicit work.
-2. **Executes the code under test** — the runtime that runs the check actually loads the code being asserted. A value baked only by the prod bundler is undefined under the unit runner; an inline script the module graph never imports is never executed; a symbol defined for one package is absent in another that also runs the file. If the code lives outside the harness's normal load path, the "test" is a grep — say so and add a real one.
+2. **Executes the code under test** — the runtime that runs the check actually loads the code being asserted. A value baked only by the prod bundler is undefined under the unit runner; an inline script the module graph never imports is never executed; a symbol defined for one package is absent in another that also runs the file. If the code lives outside the harness's normal load path, the "test" is a grep — say so and add a real one. Corollaries (each a logged failure): a production build cannot verify a module nothing in the entry graph imports (tree-shaken out — the test runner that loads it is the real proof); a bundler neither type-checks nor compiles shader/TSL graphs (`build` proves bundling only); a round-trip test on the raw in-memory value proves nothing about the emitted artifact — decode the emitted bytes.
 3. **Assertion strength matches the claim** — a substring/contains check cannot guard a "byte-unchanged / identical" contract (use exact-equality); a presence check cannot guard behavior. **A `wiring` grep proves the call site EXISTS, not that the logic is correct** — any change with real logic needs a check that RUNS it.
 4. **Actually selected** — the command runs the NEW artifact. A test file a CI filter (`--grep @smoke`, a path glob, a tag) never selects is dead coverage; an asset/CSS defect only `build` catches means `build` belongs in `acceptance`. **For EACH artifact a stage produces, ensure at least one acceptance command would FAIL if that artifact were broken.**
 5. **Grounded like a code claim** — a cited test precedent ("mirror how X is tested") must EXIST in the named file (grep it, never assume); the fixture must DISCRIMINATE — a plausible-WRONG implementation must fail it (a golden case where right and wrong agree proves nothing) — and must drive the specific BRANCH making the asserted call; and the test targets the layer where the behavior actually LIVES (find the implementing file before naming the test file).
 
-**Per-stage gate coverage — the producing stage gets its own signal.** Each stage's `acceptance` must include every repo-wide gate (lint, typecheck, FULL test suite, build/bundle budget) that would catch defects in the files THAT stage writes; deferring lint/typecheck to a downstream dependent stage means the defect surfaces where it wasn't written (a logged #1 recurring failure). If a stage edits file X, its acceptance runs the command that exercises X — a spike that edits a shared test file runs the full test command, not only its own subsystem's.
+**Per-stage gate coverage — the producing stage gets its own signal.** Each stage's `acceptance` must include every repo-wide gate (lint, typecheck, FULL test suite, build/bundle budget) that would catch defects in the files THAT stage writes; deferring lint/typecheck to a downstream dependent stage means the defect surfaces where it wasn't written (a logged #1 recurring failure). If a stage edits file X, its acceptance runs the command that exercises X — a spike that edits a shared test file runs the full test command, not only its own subsystem's. **Copy the repo's FULL canonical gate VERBATIM** — read the real scripts (`package.json` / Makefile / cargo aliases) and use them: frozen-lockfile install, typecheck across ALL configs, lint with warnings-as-errors, format-check, full tests, build. Scoped subsets (`eslint src/foo`, a single-config `tsc --noEmit`, lint without `--max-warnings=0`, skipping `format:check`) under-cover the stage's own files — a logged repeat failure across four plans.
 
 ---
 
@@ -468,6 +503,8 @@ loom:
 ```
 
 Per-stage `sandbox:` overrides are allowed (e.g. `enabled: false`, or extra `allow_write`).
+
+**Walk the writes.** For every acceptance command in every stage, list the paths it writes and confirm each is inside `allow_write`: build outputs (`dist/**`, `.vite/**`, `target/**`), caches, and the lockfile by its REAL name — read the repo, don't assume (`bun.lock` vs `bun.lockb` bit three logged plans). A blocked write can exit 0 (Section 9) — the stage "passes" while nothing landed.
 
 ---
 
@@ -682,6 +719,8 @@ description: |
 
 ```text
 □ Every seam the plan asserts about is READ (Section 1 checklist passed)
+□ Cross-plan: sibling surfaces verified against committed code / stage YAML (never prose); a contract line + first-stage fail-fast grep per upstream dependency; file ownership disjoint across sibling plans; required sibling amendments stated as BLOCKING dependencies
+□ Every prose-promised capability appears in exactly ONE stage's artifacts + a consumer-side wiring/acceptance proof; overview written LAST, derived from the stage graph
 □ Reuse claims pass the Reuse & Precedent Protocol; paralleled flows diffed against the model's FULL body
 □ Destructive paths: derived state traced from the render root, ALL entry paths + replay channels enumerated, guard at the mutation
 □ Blast radius includes LITERAL-member grep + whole-doc-tree sweep (counts, deferrals, Help/About → UI stage)
@@ -689,12 +728,13 @@ description: |
 □ knowledge-bootstrap first · integration-verify second-to-last · knowledge-distill last
 □ Every stage: model + reasoning_effort: xhigh + stage_type + working_dir set
 □ Standard/IV stages: acceptance OR ≥1 goal-backward check (artifacts/wiring/wiring_tests/dead_code_check); wiring targets the CONSUMER; no leftover `truths:` block
-□ Every stage's acceptance carries the gates covering its OWN files (lint/typecheck/full test — not deferred downstream)
-□ Every prescribed check is realizable (expressible · executes the code · right strength · selected · grounded)
+□ Every stage's acceptance carries the repo's FULL canonical gate covering its OWN files (not a scoped subset, not deferred downstream)
+□ Every prescribed check is realizable (expressible · executes the code · right strength · selected · grounded); no gate claims to prove what its inputs don't exercise
+□ Engines/drivers have a stage owning the composition-root call site; ≤1 stage owns each pre-existing integration file; lifecycle decisions settled in the plan
 □ Sonnet stages are SMALL + detailed (paths/signatures/patterns/wiring) or decomposed
 □ No file overlap between subagents; shared types in a foundation step
 □ Acceptance commands: YAML single-quoted, rg not grep, paths relative to working_dir
-□ Sandbox configured; network is a struct
+□ Sandbox configured; network is a struct; allow_write covers every path acceptance commands write (real lockfile name, build outputs)
 □ Self-consistency sweep done (prose ↔ YAML); reassuring adjectives backed by file:line + test
 □ loom plan verify passes → tell the user → STOP (do not implement)
 ```
