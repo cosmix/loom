@@ -137,7 +137,7 @@ Three systems: **Facts** (.work/facts.toml, cross-stage KV), **Memory** (.work/m
 
 Three verification layers: **Truths** (shell commands, exit 0, extended: exit_code, stdout_contains, stderr_empty). **Artifacts** (files must exist, stub detection blocks TODO/FIXME/unimplemented!/todo!/pass/raise NotImplementedError). **Wiring** (grep patterns verify code connections). Required for `stage_type: standard` only. Limits: max 20 truths, 100 artifacts.
 
-Before/after stage checks: before_stage runs AFTER worktree creation, BEFORE Executing (advisory). after_stage runs in complete.rs (blocking). Both use TruthCheck definitions.
+Before/after stage checks: before_stage runs AFTER worktree creation, BEFORE Executing — blocking (failed check → stage Blocked, no session spawned), and only while the workspace is pristine (skipped once the stage branch/worktree holds prior work). after_stage runs in complete.rs (blocking). Both use TruthCheck definitions.
 
 Regression tests: `bug_fix: true` requires `regression_test` with file path and must_contain patterns. Bidirectional validation.
 
@@ -207,7 +207,7 @@ Four verification layers: **Artifacts** (files must exist, stub detection blocks
 
 Truths were removed as a standalone verification layer and unified into the acceptance field as AcceptanceCriterion::Extended(TruthCheck). Required for `stage_type: standard` and `integration-verify` — must have acceptance OR goal-backward checks.
 
-Before/after stage checks: before_stage runs AFTER worktree creation, BEFORE Executing (advisory). after_stage runs in complete.rs (blocking). Both use TruthCheck definitions via verify_truth_checks() in truths.rs.
+Before/after stage checks: before_stage runs AFTER worktree creation, BEFORE Executing — blocking, and skipped on re-spawns where prior work already exists (see architecture.md). after_stage runs in complete.rs (blocking). Both use TruthCheck definitions via verify_truth_checks() in truths.rs.
 
 ## AcceptanceCriterion Design Pattern
 

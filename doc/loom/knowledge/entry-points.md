@@ -573,7 +573,10 @@ Used by all four NativeBackend spawn methods before building the claude command 
 | `plan/schema/types.rs:100-261` | `StageDefinition`: `before_stage: Vec<TruthCheck>` (221), `after_stage: Vec<TruthCheck>` (226), `code_review: Option<CodeReviewConfig>` (261) |
 | `plan/schema/types.rs:100-111` | `CodeReviewConfig`: `dimensions: Vec<String>`, `require_all: bool` |
 | `commands/init/plan_setup.rs:280-281` | Copies before_stage + after_stage to Stage; does NOT copy code_review |
-| `orchestrator/core/stage_executor.rs:219-256` | Executes before_stage checks BEFORE session spawn; failure → stage Blocked |
+| `orchestrator/core/stage_executor.rs::before_stage_gate_passed` | Executes before_stage checks BEFORE session spawn; failure → stage Blocked. Skips the checks when `find_prior_stage_work` shows the workspace already holds work |
+| `verify/before_after.rs::find_prior_stage_work` | Pristine-workspace probe: commits on `loom/<id>` beyond base, or non-scaffold worktree changes → `Some(evidence)` (skip the gate) |
+| `git/branch/status.rs::list_working_tree_changes` | `git status --porcelain` paths INCLUDING untracked (`has_uncommitted_changes` excludes them) |
+| `git/worktree/settings.rs::is_worktree_scaffold_path` | Discounts loom-planted `.work` / `.claude/` / `CLAUDE.md` when judging whether a worktree holds agent work |
 | `commands/stage/complete.rs:847-866` | Executes after_stage checks AFTER acceptance criteria; failure → stage stays Executing |
 | `verify/before_after.rs` | `run_before_stage_checks()` + `run_after_stage_checks()` — both delegate to `verify_truth_checks()` |
 | `verify/goal_backward/truths.rs:16-134` | `verify_truth_checks(checks, working_dir)` → `Vec<VerificationGap>`, 30s timeout per check |

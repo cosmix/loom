@@ -592,11 +592,13 @@ SHA-256 of stable prefix text → first 16 hex chars → `SignalMetrics::stable_
 | `after_stage` | `Vec<TruthCheck>` | ✅ Yes (plan_setup.rs:281) | ✅ Yes | commands/stage/complete.rs:847-866 |
 | `code_review` | `Option<CodeReviewConfig>` | ❌ NOT on Stage struct | ✅ Partial | signals/generate.rs reads from plan for IV signal |
 
-**`before_stage` execution (stage_executor.rs:219-256):**
+**`before_stage` execution (`stage_executor.rs::before_stage_gate_passed`):**
 
 - Runs after worktree creation, BEFORE session spawn
+- **Gated on a pristine workspace.** `verify::before_after::find_prior_stage_work(stage_branch, base_branch, repo_root, worktree_path)` runs first; if it finds commits on `loom/<stage-id>` beyond the resolved base, or non-scaffold changes in the worktree, the checks are SKIPPED (logged at `info`) and the spawn proceeds. `before_stage` is a delta-proof ("the feature does not exist yet"), which is only meaningful on the first attempt — re-running it on a re-spawn (orphan recovery, `loom stage retry`, crash retry) fails on the previous attempt's own work and blocks the stage before any session exists to finish it (unrecoverable loop; see mistakes.md 2026-07-27)
+- Loom's own worktree scaffolding (`.work`, `.claude/`, root `CLAUDE.md`) is discounted via `git::worktree::is_worktree_scaffold_path` — it is present from the first spawn, and in repos that don't gitignore it, counting it would disable the gate entirely
 - Calls `crate::verify::before_after::run_before_stage_checks(&stage.before_stage, &check_dir)`
-- On failure gaps: stage → `Blocked` (FailureType::TestFailure), session NOT spawned
+- On failure gaps: stage → `Blocked` (FailureType::TestFailure), session NOT spawned. `TestFailure` is not auto-retryable (`should_auto_retry`), so the stage rests Blocked until an operator runs `loom stage retry`
 - On errors (infrastructure): prints warning, continues anyway (advisory)
 - TruthCheck timeout: 30 seconds (hardcoded in truths.rs:13)
 
