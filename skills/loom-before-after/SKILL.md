@@ -44,7 +44,8 @@ For a bug fix the direction inverts: the reproducer "passing" means the bug is s
 
 Both are `Vec<TruthCheck>`; the plan author writes them. Exact lifecycle:
 
-- **`before_stage`** runs **after worktree creation, BEFORE the session spawns**. On a failed check → stage goes **Blocked**, session is **not** spawned (you asserted a pre-condition that didn't hold). Infrastructure errors are advisory (warn + continue). 30-s timeout per check.
+- **`before_stage`** runs **after worktree creation, BEFORE the session spawns**, and **only while the stage's workspace is pristine**. On a failed check → stage goes **Blocked**, session is **not** spawned (you asserted a pre-condition that didn't hold). Infrastructure errors are advisory (warn + continue). 30-s timeout per check.
+  - **Skipped on re-spawns.** If the stage branch already has commits beyond its base, or the worktree has changes, loom logs `Skipping before-stage checks` and spawns anyway. A pre-condition asserting "the feature is absent" is *expected* to fail once an earlier attempt built it, so re-running it after orphan recovery / `loom stage retry` / crash retry would block the stage on its own progress with no session able to finish the work. Write pre-conditions for a virgin workspace; do not rely on them re-running.
 - **`after_stage`** runs during **`loom stage complete`, AFTER `acceptance` passes**. On failure → stage **stays Executing**; the agent must fix and re-complete. 30-s timeout.
 
 `TruthCheck` fields: `command` (required), `exit_code` (default 0), `stdout_contains`, `stdout_not_contains`, `stderr_empty`, `description`.
