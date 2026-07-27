@@ -15,6 +15,24 @@ use std::path::Path;
 use crate::hooks::{setup_hooks_for_worktree, HooksConfig};
 use crate::plan::schema::PermissionMode;
 
+/// Whether a repo-relative path is worktree scaffolding loom itself creates.
+///
+/// `create_worktree` plants `.work` (symlink), `.claude/` (dir with a CLAUDE.md
+/// symlink and generated settings) and — when the checkout has none — a root
+/// `CLAUDE.md` symlink. Repos that gitignore these see nothing; repos that do
+/// not see them as untracked. Callers reading `git status` to judge whether a
+/// worktree holds *agent work* must discount them either way.
+///
+/// Keep this in sync with the scaffold `create_worktree` writes.
+pub fn is_worktree_scaffold_path(path: &str) -> bool {
+    let path = path.trim_end_matches('/');
+    path == ".work"
+        || path == "CLAUDE.md"
+        || path == ".claude"
+        || path.starts_with(".claude/")
+        || path.starts_with(".work/")
+}
+
 /// Creates or restores the .work symlink in a worktree.
 ///
 /// Used during worktree creation and merge failure recovery.
@@ -555,6 +573,38 @@ pub fn cleanup_worktree_settings(worktree_path: &Path) {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn test_is_worktree_scaffold_path() {
+        // Everything create_worktree plants, in the shapes git reports it.
+        for scaffold in [
+            ".work",
+            ".work/",
+            ".claude",
+            ".claude/",
+            ".claude/settings.local.json",
+            ".claude/CLAUDE.md",
+            "CLAUDE.md",
+        ] {
+            assert!(
+                is_worktree_scaffold_path(scaffold),
+                "{scaffold} should be recognized as scaffolding"
+            );
+        }
+
+        // Agent work must never be discounted as scaffolding.
+        for work in [
+            "src/feature.rs",
+            "docs/CLAUDE.md",
+            ".workflows/ci.yml",
+            "claude.md",
+        ] {
+            assert!(
+                !is_worktree_scaffold_path(work),
+                "{work} should NOT be treated as scaffolding"
+            );
+        }
+    }
 
     #[test]
     fn test_extract_permissions() {

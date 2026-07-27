@@ -216,43 +216,10 @@ impl StageExecutor for Orchestrator {
             }
         };
 
-        // Run before-stage checks if configured (verify pre-conditions in fresh worktree)
-        if !stage.before_stage.is_empty() {
-            let check_dir = match &stage.working_dir {
-                Some(wd) if wd != "." && !wd.is_empty() => worktree.path.join(wd),
-                _ => worktree.path.clone(),
-            };
-
-            println!("  Running before-stage checks for '{stage_id}'...");
-            match crate::verify::before_after::run_before_stage_checks(
-                &stage.before_stage,
-                &check_dir,
-            ) {
-                Ok(gaps) if !gaps.is_empty() => {
-                    for gap in &gaps {
-                        eprintln!("  ✗ Before-stage: {}", gap.description);
-                        eprintln!("    → {}", gap.suggestion);
-                    }
-                    eprintln!("Before-stage verification failed for '{stage_id}' - pre-conditions not met");
-
-                    if stage.try_mark_blocked().is_ok() {
-                        stage.failure_info = Some(FailureInfo {
-                            failure_type: FailureType::TestFailure,
-                            detected_at: Utc::now(),
-                            evidence: gaps.iter().map(|g| g.description.clone()).collect(),
-                        });
-                        self.save_stage(&stage)?;
-                    }
-                    return Ok(());
-                }
-                Ok(_) => {
-                    println!("  ✓ Before-stage checks passed for '{stage_id}'");
-                }
-                Err(e) => {
-                    eprintln!("Warning: Before-stage checks errored for '{stage_id}': {e}");
-                    // Continue anyway - before-stage is advisory, don't block on errors
-                }
-            }
+        // Run before-stage checks if configured (verify pre-conditions in a
+        // pristine worktree). Blocks the stage when they fail.
+        if !self.before_stage_gate_passed(&mut stage, &worktree.path, resolved.branch_name())? {
+            return Ok(());
         }
 
         // Worktree created successfully - NOW mark as Executing
@@ -635,6 +602,85 @@ impl Orchestrator {
                 });
                 let _ = self.save_stage(&reloaded);
                 let _ = self.graph.mark_status(stage_id, StageStatus::Blocked);
+            }
+        }
+    }
+
+    /// Run the stage's `before_stage` pre-condition gate before spawning.
+    ///
+    /// The gate is a delta-proof: it asserts the feature does NOT exist yet, so
+    /// it only holds on the stage's first attempt. Every later spawn — orphan
+    /// recovery, `loom stage retry`, crash retry — reuses the same worktree and
+    /// branch, where the previous attempt's work is still sitting. Re-running
+    /// the gate there fails on that work and marks the stage `Blocked` *before*
+    /// a session is spawned, so nothing can finish the work and the next retry
+    /// repeats the failure forever. Skip the gate once the workspace holds work.
+    ///
+    /// # Returns
+    /// `Ok(true)` if the spawn may proceed, `Ok(false)` if the stage was marked
+    /// `Blocked` because a pre-condition did not hold.
+    fn before_stage_gate_passed(
+        &mut self,
+        stage: &mut Stage,
+        worktree_path: &std::path::Path,
+        base_branch: &str,
+    ) -> Result<bool> {
+        if stage.before_stage.is_empty() {
+            return Ok(true);
+        }
+
+        let stage_id = stage.id.clone();
+        let stage_branch = git::branch_name_for_stage(&stage_id);
+        if let Some(evidence) = crate::verify::before_after::find_prior_stage_work(
+            &stage_branch,
+            base_branch,
+            &self.config.repo_root,
+            worktree_path,
+        ) {
+            println!("  Skipping before-stage checks for '{stage_id}': {evidence}");
+            tracing::info!(
+                stage_id = %stage_id,
+                evidence = %evidence,
+                "Skipping before-stage pre-conditions: workspace already holds work from a previous attempt"
+            );
+            return Ok(true);
+        }
+
+        let check_dir = match &stage.working_dir {
+            Some(wd) if wd != "." && !wd.is_empty() => worktree_path.join(wd),
+            _ => worktree_path.to_path_buf(),
+        };
+
+        println!("  Running before-stage checks for '{stage_id}'...");
+        match crate::verify::before_after::run_before_stage_checks(&stage.before_stage, &check_dir)
+        {
+            Ok(gaps) if !gaps.is_empty() => {
+                for gap in &gaps {
+                    eprintln!("  ✗ Before-stage: {}", gap.description);
+                    eprintln!("    → {}", gap.suggestion);
+                }
+                eprintln!(
+                    "Before-stage verification failed for '{stage_id}' - pre-conditions not met"
+                );
+
+                if stage.try_mark_blocked().is_ok() {
+                    stage.failure_info = Some(FailureInfo {
+                        failure_type: FailureType::TestFailure,
+                        detected_at: Utc::now(),
+                        evidence: gaps.iter().map(|g| g.description.clone()).collect(),
+                    });
+                    self.save_stage(stage)?;
+                }
+                Ok(false)
+            }
+            Ok(_) => {
+                println!("  ✓ Before-stage checks passed for '{stage_id}'");
+                Ok(true)
+            }
+            Err(e) => {
+                eprintln!("Warning: Before-stage checks errored for '{stage_id}': {e}");
+                // Continue anyway - before-stage is advisory, don't block on errors
+                Ok(true)
             }
         }
     }

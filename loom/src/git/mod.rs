@@ -35,7 +35,7 @@ pub use branch::{
     branch_exists, branch_name_for_stage, cleanup_merged_branches, create_branch, current_branch,
     default_branch, delete_branch, get_branch_head, get_uncommitted_changes_summary,
     has_uncommitted_changes, is_branch_merged, list_branches, list_loom_branches,
-    stage_id_from_branch, BranchInfo,
+    list_working_tree_changes, stage_id_from_branch, BranchInfo,
 };
 
 pub use cleanup::{

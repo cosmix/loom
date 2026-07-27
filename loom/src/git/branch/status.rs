@@ -41,6 +41,42 @@ pub fn has_uncommitted_changes(repo_root: &Path) -> Result<bool> {
     Ok(has_changes)
 }
 
+/// List every locally changed path in the working tree
+///
+/// Unlike [`has_uncommitted_changes`], untracked files ARE included — a new
+/// module an agent added is untracked, and that is exactly the case callers
+/// asking "has work happened here?" care about. Files ignored by `.gitignore` /
+/// `.git/info/exclude` are excluded by git itself.
+///
+/// Paths are as git reports them, relative to the repository root; untracked
+/// directories are reported collapsed (`some/dir/`). For renames only the
+/// destination path is returned.
+///
+/// # Arguments
+/// * `repo_root` - Path to the git repository or worktree root
+///
+/// # Returns
+/// * `Ok(paths)` - changed paths, empty when the working tree is pristine
+/// * `Err` if the git command fails
+pub fn list_working_tree_changes(repo_root: &Path) -> Result<Vec<String>> {
+    let output = run_git(&["status", "--porcelain"], repo_root)?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("git status failed: {stderr}");
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    Ok(stdout
+        .lines()
+        .filter(|line| line.len() > 3)
+        // Porcelain v1: "XY path" — or "XY old -> new" for renames/copies.
+        .map(|line| match line[3..].split_once(" -> ") {
+            Some((_, destination)) => destination.to_string(),
+            None => line[3..].to_string(),
+        })
+        .collect())
+}
+
 /// Get a summary of uncommitted changes for display
 ///
 /// Returns a human-readable summary of staged and unstaged changes.
@@ -182,6 +218,82 @@ mod tests {
 
         // Untracked files should NOT be considered uncommitted changes
         assert!(!has_uncommitted_changes(repo_path).unwrap());
+    }
+
+    #[test]
+    fn test_list_working_tree_changes_clean_repo() {
+        let temp_dir = init_test_repo();
+
+        assert!(list_working_tree_changes(temp_dir.path())
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn test_list_working_tree_changes_includes_untracked() {
+        let temp_dir = init_test_repo();
+        let repo_path = temp_dir.path();
+
+        std::fs::write(repo_path.join("new_module.rs"), "fn feature() {}").unwrap();
+
+        // An agent's brand-new file is untracked but is real work — unlike
+        // has_uncommitted_changes, this must see it.
+        assert_eq!(
+            list_working_tree_changes(repo_path).unwrap(),
+            vec!["new_module.rs".to_string()]
+        );
+        assert!(!has_uncommitted_changes(repo_path).unwrap());
+    }
+
+    #[test]
+    fn test_list_working_tree_changes_includes_modified() {
+        let temp_dir = init_test_repo();
+        let repo_path = temp_dir.path();
+
+        std::fs::write(repo_path.join("file1.txt"), "modified content").unwrap();
+
+        assert_eq!(
+            list_working_tree_changes(repo_path).unwrap(),
+            vec!["file1.txt".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_list_working_tree_changes_reports_rename_destination() {
+        let temp_dir = init_test_repo();
+        let repo_path = temp_dir.path();
+
+        Command::new("git")
+            .args(["mv", "file1.txt", "renamed.txt"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        assert_eq!(
+            list_working_tree_changes(repo_path).unwrap(),
+            vec!["renamed.txt".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_list_working_tree_changes_omits_ignored_files() {
+        let temp_dir = init_test_repo();
+        let repo_path = temp_dir.path();
+
+        std::fs::write(repo_path.join(".gitignore"), "generated.txt\n").unwrap();
+        Command::new("git")
+            .args(["add", ".gitignore"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "Add gitignore"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+        std::fs::write(repo_path.join("generated.txt"), "build artifact").unwrap();
+
+        assert!(list_working_tree_changes(repo_path).unwrap().is_empty());
     }
 
     #[test]

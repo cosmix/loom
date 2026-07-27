@@ -25,4 +25,6 @@ pub use operations::{
     branch_exists, create_branch, current_branch, default_branch, delete_branch, list_branches,
     list_loom_branches, resolve_target_branch,
 };
-pub use status::{get_uncommitted_changes_summary, has_uncommitted_changes};
+pub use status::{
+    get_uncommitted_changes_summary, has_uncommitted_changes, list_working_tree_changes,
+};
