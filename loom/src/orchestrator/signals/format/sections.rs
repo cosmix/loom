@@ -21,14 +21,24 @@ pub(super) fn format_semi_stable_section(
     // Knowledge reference via CLI (not embedded to save context tokens)
     if embedded_context.knowledge_has_content {
         content.push_str("## Knowledge Base\n\n");
-        content.push_str("**Curated knowledge is available.** Read it BEFORE starting work:\n\n");
+        content.push_str("**Curated knowledge is available.** Read it BEFORE starting work. The knowledge base is either flat (tier-1 files only) or hierarchical (an `INDEX.md` map plus per-category tier-2 topic files) — check which layout applies:\n\n");
+        content.push_str("- **`doc/loom/knowledge/INDEX.md` exists (hierarchical)**: run `loom knowledge show` for the index first, then read the tier-1 file for your area, then drill into `category/topic` files ONLY for what you actually touch.\n");
+        content.push_str(
+            "- **`INDEX.md` absent (flat)**: read the tier-1 files below directly — this is today's behavior.\n\n",
+        );
         content.push_str("```bash\n");
-        content.push_str("loom knowledge show              # Show all knowledge\n");
-        content.push_str("loom knowledge show architecture # Architecture overview\n");
-        content.push_str("loom knowledge show entry-points # Key entry points\n");
-        content.push_str("loom knowledge show patterns     # Architectural patterns\n");
-        content.push_str("loom knowledge show conventions  # Coding conventions\n");
-        content.push_str("loom knowledge show mistakes     # Lessons learned\n");
+        content.push_str(
+            "loom knowledge show                    # Show all knowledge (or the INDEX, if hierarchical)\n",
+        );
+        content
+            .push_str("loom knowledge show architecture       # Architecture overview (tier-1)\n");
+        content.push_str("loom knowledge show entry-points       # Key entry points (tier-1)\n");
+        content
+            .push_str("loom knowledge show patterns           # Architectural patterns (tier-1)\n");
+        content.push_str("loom knowledge show conventions        # Coding conventions (tier-1)\n");
+        content.push_str("loom knowledge show mistakes           # Lessons learned (tier-1)\n");
+        content
+            .push_str("loom knowledge show <category>/<slug>  # Drill into a tier-2 topic file\n");
         content.push_str("```\n\n");
     }
 
@@ -234,7 +244,11 @@ pub(super) fn format_semi_stable_section(
             content.push_str("| Key entry point | `loom knowledge update entry-points \"## Section\\n\\n- path/file.rs - description\"` |\n");
             content.push_str("| Architectural pattern | `loom knowledge update patterns \"## Pattern Name\\n\\n- How it works\"` |\n");
             content.push_str("| Coding convention | `loom knowledge update conventions \"## Convention\\n\\n- Details\"` |\n");
-            content.push_str("| Mistake/lesson | `loom knowledge update mistakes \"## What happened\\n\\n- Details\"` |\n\n");
+            content.push_str("| Mistake/lesson | `loom knowledge update mistakes \"## What happened\\n\\n- Details\"` |\n");
+            content.push_str("| Detail too long for a tier-1 file | `loom knowledge update <category>/<slug> \"## Section\\n\\n- Details\"` |\n");
+            content.push_str(
+                "| Regenerate the index (always run last) | `loom knowledge index` |\n\n",
+            );
             content.push_str(
                 "**For long content, use stdin:** `loom knowledge update <file> - <<'EOF'`\n\n",
             );
@@ -329,8 +343,11 @@ pub(super) fn format_semi_stable_section(
         .push_str("**When to use a SUBAGENT HIERARCHY (coordinators → workers, 2-LEVEL CAP):**\n");
     content.push_str("- >~6 independent worker tasks, or results would bloat your context\n");
     content.push_str("- Work clusters into DISJOINT file territories\n");
-    content.push_str("- Each coordinator subagent owns one territory, spawns sonnet workers BY TYPE, verifies its subtree, returns a compact summary\n");
+    content.push_str("- Each coordinator subagent owns one territory, spawns sonnet workers BY TYPE, runs at most ONE narrowly-scoped check, returns a compact summary\n");
     content.push_str("- Workers NEVER spawn subagents\n\n");
+    content.push_str("**When to use a `loom-advisor` (fable):**\n");
+    content.push_str("- On a second failure on the same task, spawn one instead of a blind retry — narrow scope, full detail supplied by the orchestrator, advice returned\n");
+    content.push_str("- Read-only: it diagnoses and recommends a next step; it never writes\n\n");
     content.push_str("**When to use AGENT TEAMS (~7x cost):**\n");
     content.push_str("- Tasks require discussion or iterative discovery\n");
     content.push_str("- Work scope may expand during execution\n");

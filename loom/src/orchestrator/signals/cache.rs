@@ -89,6 +89,14 @@ fn append_subagent_restrictions(content: &mut String, agents_role: &str) {
     content.push_str(
         "- ⛔ **NEVER use auto-memory** — do NOT call Write/Edit on `~/.claude/projects/*/memory/` files. Use `loom memory` only.\n",
     );
+    content.push_str("\nVERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:\n");
+    content
+        .push_str("- Do NOT verify your work. No full build, no full test suite, no linter, no\n");
+    content.push_str("  formatter, no type-checker, and never a repeated or looping check.\n");
+    content.push_str("- AT MOST ONE narrowly-scoped check over the files YOU wrote (e.g.\n");
+    content.push_str("  `cargo test <your_module>::`), run ONCE. Skip it if you are unsure.\n");
+    content.push_str("- Report instead: files changed, assumptions made, anything unresolved.\n");
+    content.push_str("  The MAIN AGENT compiles, tests, lints, and fixes.\n\n");
     content.push_str(agents_role);
 }
 
@@ -151,7 +159,9 @@ fn append_execution_rules_intro(content: &mut String) {
 /// Append anti-slop forcing-function (understand-first ladder + banned list)
 fn append_anti_slop_guidance(content: &mut String) {
     content.push_str("**UNDERSTAND-FIRST LADDER (before writing code):**\n\n");
-    content.push_str("1. Read `doc/loom/knowledge/` fully; if absent or sparse for your area, build it (`loom knowledge bootstrap`) BEFORE implementing.\n");
+    content.push_str("1. Read `doc/loom/knowledge/` before implementing; if absent or sparse for your area, build it (`loom knowledge bootstrap`) first. The knowledge base is either flat (tier-1 files only) or hierarchical (an `INDEX.md` map plus per-category tier-2 topic files) — check which layout applies:\n");
+    content.push_str("   - **`doc/loom/knowledge/INDEX.md` exists (hierarchical)**: run `loom knowledge show` for the index first, then read the tier-1 summary file for your area, then drill into `category/topic` files ONLY for what you actually touch.\n");
+    content.push_str("   - **`INDEX.md` absent (flat)**: read the tier-1 files directly — this is today's behavior.\n");
     content.push_str(
         "2. Map the area: call paths, data flow, every caller/consumer; know the blast radius.\n",
     );
@@ -261,6 +271,7 @@ pub fn generate_stable_prefix() -> String {
     content.push_str("**USE THE TASK TOOL** to spawn parallel subagents for multi-part work:\n");
     content.push_str("- Independent file changes, multiple components, tests + implementation → spawn parallel subagents\n");
     content.push_str("- Match subagent type to the work: execution → `loom-software-engineer` (sonnet), judgment → `loom-senior-software-engineer` (opus)\n");
+    content.push_str("- **DEBUGGING OR REPEATED FAILURE**: on a second failure on the same task, spawn a `loom-advisor` (fable) subagent instead of a blind retry — narrow scope, full detail supplied by the orchestrator, advice returned\n");
     content.push_str("- Pattern: `Task(subagent_type=\"loom-software-engineer\", prompt=\"...\")` - send MULTIPLE in ONE message\n");
     content.push_str(
         "- Skills: /loom-auth, /loom-testing, /loom-ci-cd, /loom-logging-observability\n\n",
@@ -270,7 +281,7 @@ pub fn generate_stable_prefix() -> String {
     content.push_str("- For more than ~6 independent worker tasks, split into 2-4 coordinator subagents, each owning a DISJOINT file territory and spawning its own workers (requires Claude Code >= 2.1.172)\n");
     content.push_str("- Loom policy caps the tree at 2 levels: main agent → coordinators → workers. Workers NEVER spawn subagents.\n");
     content.push_str("- Spawn workers BY AGENT TYPE (loom-software-engineer = sonnet); untyped workers inherit the MAIN session model\n");
-    content.push_str("- Coordinators verify their territory (scoped tests) and return COMPACT summaries; the main agent verifies globally and commits\n");
+    content.push_str("- Coordinators run AT MOST ONE narrowly-scoped check over the files their workers wrote (e.g. `cargo test <your_module>::`), run ONCE, skipped if unsure, and return COMPACT summaries; the main agent compiles, tests, lints, and fixes\n");
     content.push_str(
         "- ~6 or fewer tasks → plain flat subagents; do NOT add a hierarchy for small work\n\n",
     );
@@ -460,6 +471,7 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     content.push_str("- Run tests, linting, and build checks in parallel where possible\n");
     content.push_str("- Pattern: `Task(subagent_type=\"loom-code-reviewer\", prompt=\"...\")` - send MULTIPLE in ONE message\n");
     content.push_str("- Agents: `loom-code-reviewer` (REQUIRED for code review — read-only, focused on quality/security/architecture), `loom-senior-software-engineer` (for fixing review findings, complex judgment), `loom-software-engineer` (for test fixes, simple patches), `Explore`\n");
+    content.push_str("- **DEBUGGING OR REPEATED FAILURE**: on a second failure on the same task, spawn a `loom-advisor` (fable) subagent instead of a blind retry — narrow scope, full detail supplied by the orchestrator, advice returned\n");
     content.push_str(
         "- Skills: /loom-security-audit (REQUIRED for security review), /loom-testing, /loom-auth, /loom-ci-cd, /loom-logging-observability\n\n",
     );
@@ -467,7 +479,16 @@ pub fn generate_integration_verify_stable_prefix() -> String {
 
     append_subagent_restrictions(
         &mut content,
-        "- Subagents fix issues and report results; main agent handles git\n\n",
+        "- Subagents fix issues and report results; main agent handles git\n\n\
+         ⚠️ **INTEGRATION-VERIFY OVERRIDE — the no-verify rule above does NOT apply here:**\n\n\
+         - The \"VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS\" rule is written for\n  \
+         implementation-stage subagents. IV review/verification subagents are the OPPOSITE\n  \
+         case: their entire purpose is to run the FULL build, the FULL test suite, and the\n  \
+         FULL linter, and to report every warning and failure — that IS their job here.\n\n\
+         - When you spawn a build/test/sandbox verifier or a functional verifier for this\n  \
+         integration-verify stage, tell it explicitly to run the complete suite (e.g.\n  \
+         `cargo build`, `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt --check`)\n  \
+         and read all stderr — not a narrowly-scoped, single, skip-if-unsure check.\n\n",
     );
 
     content.push_str("**Completion:**\n");
@@ -566,6 +587,12 @@ pub fn generate_knowledge_distill_stable_prefix() -> String {
     content.push_str("   - `mistakes` — errors made, written as ACTIONABLE PREVENTION RULES: what was misleading, how to detect it, what to do instead. If 2+ stages hit the same mistake, it is a systemic issue — document the root cause\n");
     content.push_str("   - `stack` — new dependencies, tooling changes\n");
     content.push_str("   - `concerns` — tech debt introduced, known issues\n");
+    content.push_str("   **Tier routing:** each section above stays SHORT (a tier-1 file is a summary, not an archive).\n");
+    content.push_str(
+        "   - Section under ~40 lines → write it inline into the tier-1 file, as above.\n",
+    );
+    content.push_str("   - Section longer than ~40 lines → write it to a topic file instead: `loom knowledge update <category>/<slug> \"...\"`, then leave a 2-4 line summary plus a link to that topic file in the tier-1 file.\n");
+    content.push_str("   - ALWAYS finish distillation with `loom knowledge index` to regenerate `INDEX.md` — run it LAST, after every other `loom knowledge update` call.\n");
     content.push_str("5. DO NOT blindly copy memory entries — synthesize and curate\n");
     content.push_str("6. Remove or update stale knowledge entries — if a mistake has been fixed, a pattern replaced, or an entry-point renamed, update or delete the old entry. Stale entries mislead future agents\n");
     content.push_str("7. Generate review document: `loom review`\n\n");
@@ -890,6 +917,17 @@ mod tests {
         assert!(prefix.contains("Understand before acting; do not guess."));
         assert!(prefix.contains("UNDERSTAND-FIRST LADDER"));
         assert!(prefix.contains("BANNED — self-reject"));
+        // Layout-aware knowledge reading protocol (flat vs hierarchical INDEX.md)
+        assert!(prefix.contains("doc/loom/knowledge/INDEX.md"));
+        assert!(prefix.contains("hierarchical"));
+        // Subagent no-verify rule (implementation stages do not verify their own work)
+        assert!(prefix.contains("VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS"));
+        assert!(prefix.contains("AT MOST ONE narrowly-scoped check"));
+        // Regression guard: the IV-only carve-out must NOT leak into the standard
+        // prefix. If this ever fails, the override was hoisted into the shared
+        // append_subagent_restrictions body and every implementation subagent is
+        // now wrongly told to run full build/test/lint suites.
+        assert!(!prefix.contains("INTEGRATION-VERIFY OVERRIDE"));
     }
 
     #[test]
@@ -933,8 +971,13 @@ mod tests {
         // Exhaustive mapping requirement
         assert!(prefix.contains("Exhaustively map"));
         assert!(prefix.contains("leave no major area unmapped"));
+        // Layout-aware knowledge reading protocol (flat vs hierarchical INDEX.md)
+        assert!(prefix.contains("doc/loom/knowledge/INDEX.md"));
         // Documentation stage: emits only markdown, so NO code-review block
         assert!(!prefix.contains("Mini Adversarial Code Review"));
+        // Pins the fact that this prefix never calls append_subagent_restrictions,
+        // so it must not carry the implementation-stage no-verify rule.
+        assert!(!prefix.contains("VERIFICATION IS THE MAIN AGENT'S JOB"));
     }
 
     #[test]
@@ -1014,6 +1057,15 @@ mod tests {
         // Anti-slop forcing-function
         assert!(prefix.contains("Understand before acting; do not guess."));
         assert!(prefix.contains("UNDERSTAND-FIRST LADDER"));
+        // Layout-aware knowledge reading protocol (flat vs hierarchical INDEX.md)
+        assert!(prefix.contains("doc/loom/knowledge/INDEX.md"));
+        // IV subagents restore full-suite verification: the no-verify rule is present
+        // (inherited from the shared subagent-restrictions body) AND explicitly
+        // overridden for this stage type by the carve-out tail.
+        assert!(prefix.contains("VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS"));
+        assert!(prefix.contains("INTEGRATION-VERIFY OVERRIDE"));
+        assert!(prefix.contains("does NOT apply here"));
+        assert!(prefix.contains("cargo clippy -- -D warnings"));
     }
 
     #[test]
@@ -1054,6 +1106,14 @@ mod tests {
         // Anti-slop forcing-function
         assert!(prefix.contains("Understand before acting; do not guess."));
         assert!(prefix.contains("UNDERSTAND-FIRST LADDER"));
+        // Layout-aware knowledge reading protocol (flat vs hierarchical INDEX.md)
+        assert!(prefix.contains("doc/loom/knowledge/INDEX.md"));
+        // Tier routing: distillation must regenerate the index last
+        assert!(prefix.contains("loom knowledge index"));
+        assert!(prefix.contains("Tier routing"));
+        // Pins the fact that this prefix never calls append_subagent_restrictions,
+        // so it must not carry the implementation-stage no-verify rule.
+        assert!(!prefix.contains("VERIFICATION IS THE MAIN AGENT'S JOB"));
     }
 
     #[test]
