@@ -18,27 +18,11 @@
 
 ## Phantom Merges: merged=true Without Verification
 
-**Mistake:** `try_auto_merge()` set `merged=true` without verifying the commit was in target branch history. Merge verification errors fell through to `merged=true` fallback. Agents also edited `.work/` files directly.
-**Fix:** Use `is_ancestor_of()` to verify merge before setting `merged=true`. Treat verification errors as `MergeBlocked`. Never edit `.work/` files directly.
+`merged=true` is a contract with the dependency scheduler — every phantom-merge incident came
+from writing it without verifying git ancestry. Six related lessons (defensive "assume merged"
+branches, `--force-unsafe`, helpers that abort active merges, merge-conflict session lifecycle).
 
-## Phantom Merges from Defensive "Assume Merged" Branches (2026-04-15)
-
-**What happened:** Seven daemon-side code paths wrote `merged: true` to escape an earlier respawn-loop bug without verifying git ancestry. A user lost real work: stage `oauth-hardening` was marked merged but its commits stayed stranded on `loom/oauth-hardening`; a downstream stage then worktreed off main and produced overlapping, incomplete code. Smoking gun log: `Completed stage has no completed_commit, assuming merged stage_id=integration-verify`.
-
-**Misleading signal:** The original respawn-loop bug (commit `1af9827`, see `doc/merge-resolve-bug-notes.md`) was patched by force-writing `merged=true` when stage was already Completed — the rationale "stage's work is done, don't revert to MergeBlocked" looked defensible. Similarly, seven separate sites used "assume already merged" / "legacy stage" / "avoid stuck-in-MergeBlocked loops" as justification for lying about merge state.
-
-**Why it broke:** `merged=true` is a contract with the dependency scheduler. Dependents satisfy their deps by reading `dep.merged`. Lying about it silently propagates broken state across the DAG: dependents spawn with a wrong base branch, their commits overlap partially with the unmerged dep, progressive merge fails downstream.
-
-**Prevention — INVARIANT:** **Daemon-side automated paths MUST NEVER write `merged: true` without git ancestry verification (`is_ancestor_of` returning `Ok(true)`).** The only exemptions are explicit user intent: `loom stage complete --force-unsafe --assume-merged`, `loom stage merge --resolved`, knowledge stages (no branch by design), and `loom worktree remove` cleanup.
-
-**Detection rules for future work:**
-
-- Any `stage.merged = true` write outside the exemption list is a phantom-merge candidate. Must be preceded by a git-verified `is_ancestor_of(completed_commit, target_branch)` returning `Ok(true)`.
-- "Stage is Completed (terminal), can't go back" is NOT a license to write merged=true. `Completed + !merged` is a valid resting place — `spawn_merge_resolution_sessions` only acts on `MergeConflict`/`MergeBlocked`, so no respawn loop results.
-- Dependency scheduling must cross-check ancestry (`are_all_dependencies_satisfied` in `verify/transitions/state.rs`), not trust the `merged` flag alone. Knowledge stages are the only exemption.
-- `loom repair` catches stages with `merged: true` whose commit is not in the target branch — run on suspected phantom merges.
-
-**Fix (implemented in this change):** Seven writer sites (recovery.rs, merge_handler.rs × 5, progressive_complete.rs) now leave `Completed + !merged` as the resting state instead of lying. `check_merge_state` returns `Unknown` for non-knowledge stages whose merged flag can't be ancestry-verified. `are_all_dependencies_satisfied` cross-checks ancestry per dep. `start_stage` adds a spawn-time defense-in-depth check. A one-shot retry on daemon start handles the `--no-verify`-then-restart case. `loom repair` detects and reverts phantom merges. Status UI renders `Completed + !merged` as yellow "unmerged" with a hint to run `loom stage merge <id>`.
+→ [Phantom Merges](mistakes/phantom-merges.md)
 
 ## Binary: PATH vs target/debug/loom
 
@@ -66,53 +50,34 @@
 
 ## Source vs Installed: Editing Wrong File
 
-**Mistake:** Edited `~/.claude/hooks/loom/` (installed copy) instead of `hooks/` (source). Lost on reinstall.
-**Fix:** Always edit in project's `hooks/` directory.
+Seven lessons on what a large removal or rename leaves behind — straggler initializers, stale
+comments, stale docs, duplicate modules, and files outside the assignment table that no subagent
+owned. Prevention is always the same: grep the whole workspace for the symbol, not just the
+files in your assignment.
 
-## Module Refactoring: Duplicate Files
-
-**Mistake:** Splitting `tests.rs` into `tests/mod.rs` without deleting original caused E0761.
-**Fix:** When refactoring `foo.rs` to `foo/mod.rs`, DELETE the original file.
+→ [Refactor Stragglers](mistakes/refactor-stragglers.md)
 
 ## Goal-Backward Verification: False Negatives
 
 **Mistake:** (1) `cargo test 2>&1 | tail -1` fails due to trailing newline. (2) `pub fn foo` pattern misses `pub(super) fn foo`.
 **Fix:** Filter for target line first, then check. Use regex `pub.*fn foo` to match all visibility modifiers.
 
-## Permission Sync: Three Related Bugs
-
-**Mistake:** (1) `copy_file_with_shared_lock` overwrote worktree permissions instead of merging. (2) Permissions with parent-relative or worktree paths filtered out. (3) Sync skipped when acceptance failed.
-**Fix:** (1) Merge both sets before writing. (2) Transform to portable relative paths. (3) Sync unconditionally before checking acceptance.
-
 ## Sandbox: Contradictory Path Rules
 
-**Mistake:** `merge_config()` added `doc/loom/knowledge/**` to both `allow_write` and `deny_write`.
-**Fix:** Removed auto-add. Knowledge writes go through `loom` CLI (outside sandbox). Same path must never appear in both.
+Eight lessons on sandbox path rules, permission sync, `excludedCommands` matching,
+`defaultMode` being silently ignored, and settings env leaking between the main repo and its
+worktrees. Recurring root cause: settings are *merged* from several sources, so a rule is only
+as good as the last writer.
 
-## Merge Handler: Inline Branch Names
-
-**Mistake:** 8 instances of `format!("loom/{}")` instead of `branch_name_for_stage()`.
-**Fix:** Always use `branch_name_for_stage()` for branch name construction.
+→ [Sandbox & Settings](mistakes/sandbox-and-settings.md)
 
 ## Test Code: Struct Init Without Default
 
-**Mistake:** Stage struct tests use explicit constructors without `..Default::default()`. Adding new fields breaks ~10 locations.
-**Fix:** Use `..Stage::default()` pattern. Also check `tests/` directory (not just `src/`) when adding fields.
+Lint and test-discipline lessons: `--all-targets` is required to lint test modules, ambient git
+config leaks into shelling tests, `TODO` in a string literal trips the stub checker, and a
+reviewer's behaviour claim must be checked against the diff before acting on it.
 
-## Timing: Missing Accumulation on Exit Transitions
-
-**Mistake:** `accumulate_attempt_time` not called on `NeedsHandoff`/`BudgetExceeded`, permanently losing execution time.
-**Fix:** Call `accumulate_attempt_time` on ALL exit transitions, not just `Completed`.
-
-## Debug Output in Production
-
-**Mistake:** `eprintln!` with `Debug:` prefix left in production code.
-**Fix:** Use `tracing` crate with proper log levels.
-
-## Test Environment Race Condition
-
-**Mistake:** `test_loom_terminal_env_var_takes_precedence` uses `std::env::set_var` without `serial_test`.
-**Fix:** Use `#[serial]` attribute on tests that modify environment variables.
+→ [Testing & Lint](mistakes/testing-and-lint.md)
 
 ## Daemon Module Visibility
 
@@ -166,12 +131,6 @@
 
 **How to avoid:** When removing fields from serde structs, consider adding deprecation warnings via custom deserializer for at least one release cycle. Not done here because project CLAUDE.md says no backwards compatibility needed.
 
-## Stale References After Field Removal
-
-**What happened:** After removing truths/truth_checks fields, stale references remained in comments (complete.rs:393), e2e test fixtures (plans.rs), README.md, skill files, and knowledge files.
-
-**How to avoid:** When removing a struct field, grep the ENTIRE project (not just src/) for references. Include: tests/, doc/, skills/, README, knowledge files, comments, YAML fixtures.
-
 ## gawk vs POSIX awk (2026-03-31)
 
 **What happened:** Initial `_common.sh` used gawk-specific `match()` with array capture (3rd argument), which failed with syntax errors on standard awk and macOS default awk.
@@ -197,75 +156,6 @@
 **Prevention:** Use `project_root()` (cwd-relative) for file writes that should respect worktree isolation. Use `main_project_root()` only for accessing shared state (`.work/`). Always run `loom knowledge update` from the worktree root, not a subdirectory.
 **Fix:** Replaced all `main_project_root()` calls in knowledge commands and map.rs with `project_root()`. Updated signal content to require commits for knowledge stages. Removed commit-guard.sh bypass for knowledge stages.
 
-## Merge Conflict Session Lifecycle: Original Session Continued Running (2026-04-16)
-
-**What happened:** When `loom stage complete` detected a merge conflict during progressive merge, the original execution session continued running instead of exiting. Three coordinated issues prevented clean handoff to the resolution session:
-
-1. `complete_with_merge()` returned `Ok(false)` on merge conflict, which propagated back to `complete.rs:623` without error — the session stayed alive
-2. `commit-guard.sh` (Stop hook) set `stage_incomplete=1` for `MergeConflict` status, blocking the session from exiting even if it tried
-3. `spawn_merge_resolution_sessions()` didn't kill the stale original session, leaving a zombie process that blocked merge resolver spawning
-
-**Why:** The `Ok(false)` return was designed for "merge didn't succeed but keep running" — wrong mental model. Merge conflict means "your work is done, hand off to resolver." The commit-guard didn't distinguish between "stage still executing" and "stage waiting for merge resolution." And session cleanup assumed sessions would exit on their own.
-
-**Prevention:**
-
-- When adding new terminal/handoff stage statuses, always update: (1) `complete_with_merge` return behavior, (2) `commit-guard.sh` case statement, (3) `detection.rs` normal-exit matches, (4) `spawn_merge_resolution_sessions` cleanup logic
-- Use `bail\!()` not `Ok(false)` when the session MUST exit — `Ok(false)` leaves the caller alive
-- Test the full lifecycle: stage completes → merge conflicts → original session exits → resolver spawns → resolver resolves
-
-**Fix:** Four-part coordinated change:
-
-- `progressive_complete.rs`: Changed `Ok(false)` to `bail\!()` for Conflict and Blocked arms, forcing session exit with clear message
-- `commit-guard.sh`: Changed MergeConflict case to allow session exit (no longer sets stage_incomplete)
-- `merge_handler.rs`: Added `kill_session()` call for stale Stage sessions before spawning merge resolver
-- `merge.rs`: Added "Inherited Responsibilities" section to merge signal explaining resolver owns the stage
-
-## Stale Documentation After Adding Enum Variants (2026-04-16)
-
-**What happened:** After adding KnowledgeDistill as the 4th StageType variant, three stale references remained: entry-points.md said 3 variants (should be 4), SKILL.md said Integration Verify Stage (Last) (now second-to-last), and sections.rs comment said integration-verify only (code had moved to KnowledgeDistill block).
-
-**Why:** The implementation stage focused on Rust code changes and missed docs/comments that reference counts or ordering.
-
-**Prevention:** When adding a new enum variant that changes ordering or counts, search all knowledge files for old counts, search skills for ordering claims, and search source comments for stale stage-type references.
-
-## Phantom Merges from `--force-unsafe` Shortcuts (2026-04-27)
-
-**What happened:** `loom stage complete --no-verify --force-unsafe --assume-merged` (and a related `--force-unsafe` alone path) wrote `merged: true` without ever verifying git ancestry. Three concrete failure modes:
-
-1. **Phantom merge via `--assume-merged`.** `complete.rs::handle_force_unsafe_completion` set `merged = true` regardless of git reality, re-introducing the phantom-merge class via a user shortcut.
-2. **Stuck `Completed + !merged` with active merge.** With `--force-unsafe` alone after a previous resolver session died mid-merge (`.git/MERGE_HEAD` set), the daemon retry called `merge_stage`, which failed; the next resolver ran `get_conflicting_files_from_status`, which destructively `git merge --abort`ed the existing active merge.
-3. **`loom stage complete` on a `MergeConflict` stage.** Ran the full acceptance + goal-backward + progressive-merge pipeline, none of which is the resolver's job.
-
-**Misleading signal:** Both `--force-unsafe` shortcuts looked defensible because they were "explicit user intent". But `--force-unsafe --assume-merged` made `merged: true` a contract violation: the dependency scheduler reads `dep.merged` and queues dependents as if the work landed. Cross-references the existing 2026-04-15 `Phantom Merges from Defensive "Assume Merged" Branches` entry — this is the user-shortcut variant of the same class.
-
-**Why it broke:** Three preconditions all had to be wrong simultaneously: (a) no attribution check tied `MERGE_HEAD` to a specific stage, (b) `--assume-merged` skipped ancestry verification, (c) helpers that mutate git state (`merge_stage`, `get_conflicting_files_from_status`) had no guard against running over an in-progress merge. Together they made the active merge invisible to recovery.
-
-**Prevention — Routing-and-Attribution INVARIANT:** *An active merge on disk may block or guide recovery, but it must not mutate a stage unless loom can attribute that merge to that stage.*
-
-- `MERGE_HEAD` in the main repo is global. Every state-machine mutation triggered by detection must come with proof of attribution: orphaned `SessionType::Merge` metadata, `MERGE_HEAD` commit matching `loom/<stage-id>` HEAD, or `completed_commit` match. Without attribution, refuse — never mutate.
-- `--force-unsafe --assume-merged` must verify ancestry via `verify_merge_succeeded` before writing `merged=true`.
-- `--force-unsafe` alone must refuse if an attributed active merge exists for THIS stage (would orphan MERGE_HEAD).
-- Routing must be a pure read-only function (`route_complete_for_conflicts`) — persistence happens only on the success path so refusal preserves stage state.
-
-**Fix (this change):**
-
-- New module `git/merge/in_progress.rs` is the single source of truth for `MERGE_HEAD` detection.
-- New module `orchestrator/merge_attribution.rs` ties active merges to specific stages via session metadata, branch HEAD, or `completed_commit`.
-- `route_complete_for_conflicts` (in `commands/stage/complete.rs`) is the new pure routing seam — read-only, never mutates.
-- `merge_verify::verify_or_derive_completed_commit` shared helper enforces ancestry for `--assume-merged` and `loom stage merge --resolved`.
-- Daemon recovery runs `reconcile_main_repo_active_merge` BEFORE `sync_graph_with_stage_files` and BEFORE `recover_orphaned_sessions` so attribution sees session metadata before recovery deletes it.
-- `sync_graph_with_stage_files` re-verifies `Completed + merged=true` non-knowledge stages, deriving from branch HEAD when missing and reverting `merged=false` when unverifiable.
-
-## Helpers That Abort Active Merges (2026-04-27)
-
-**What happened:** `merge_stage` and `get_conflicting_files_from_status` both ran `git merge --abort` on the repo as part of their normal flow (cleanup after success, abort the test merge). When invoked while a real merge was already in progress, they destroyed the user's resolution work.
-
-**Misleading signal:** Both helpers acquire `MergeLock` at entry, so concurrent loom-driven merges are serialized. The bug is not concurrency — it's that the helpers don't distinguish "no merge in progress" from "a merge IS in progress that I didn't start".
-
-**Prevention:** Helpers that mutate git merge state MUST refuse with `require_no_active_merge` when `MERGE_HEAD` is set on the repo path they're running in. Never silently `git merge --abort`. Defense in depth: even if attribution misses an active merge upstream, the guard surfaces an error instead of corrupting state.
-
-**Fix:** Added `require_no_active_merge(repo_root)` helper in `git/merge/mod.rs`; called from `merge_stage` and `get_conflicting_files_from_status` after acquiring the merge lock. Both bail with a distinct error pointing at the path where the merge is in progress.
-
 ## Stale Acceptance Criteria Referencing External Plan Files
 
 **What happened:** An `integration-verify` stage had an acceptance criterion `cargo run -- plan verify ../doc/plans/DONE-PLAN-cwd-knowledge-resolution.md`. That plan file was deleted during housekeeping (`doc: remove completed plans`) AFTER the stage was authored but BEFORE it ran. The criterion failed at execution time with a file-not-found error, requiring `--no-verify` to complete.
@@ -286,27 +176,11 @@
 
 ## Session Identity: Backend Metadata Must Be Persisted
 
-**Mistake:** Relying on transient session state to route kill/liveness calls after a daemon restart.
+Session identity, liveness routing, spawn-site coverage, and the struct-literal blast radius of
+adding a session field. Recurring root cause: a session fact derived at one call site instead of
+persisted and read back through the shared service.
 
-**Why:** Sessions are reconstructed from `.work/sessions/<id>.md` on daemon restart. Any field not in the session file is lost.
-
-**Prevention:** Add `#[serde(default)]` to backend-related session fields and ensure they are set before the session is written to disk.
-
-## Liveness: Monitor Must Route Through LivenessService
-
-**Mistake:** Monitoring thread reads the PID from the session file and calls `kill -0 <pid>` directly.
-
-**Prevention:** Always route session liveness through `LivenessService::is_alive(session)`. Never `kill -0` directly in the monitor.
-
-**Fix:** `LivenessService` added in `orchestrator/liveness.rs`, wrapping `Arc<NativeBackend>`. The monitor thread holds the `LivenessService`, not a raw backend handle.
-
-## Run-Path Coverage: All Spawn Sites Must Use the Shared Backend
-
-**Mistake:** Wiring a session-spawning change into the main orchestrator loop but forgetting the other spawn paths: foreground mode, daemon startup, merge resolver spawner, continuation (handoff) spawner, auto-merge spawner.
-
-**Why:** Sessions are spawned from multiple entry points beyond the main orchestrator. Each missed path drifts from the shared `Arc<NativeBackend>` the orchestrator holds.
-
-**Prevention:** When changing session spawning, `rg` for all `spawn_session\|spawn_merge_session\|spawn_knowledge_session` call sites before considering the work done. Typically 5+ sites: orchestrator main loop, foreground spawner, merge_handler, continuation, auto_merge.
+→ [Sessions & Liveness](mistakes/sessions-and-liveness.md)
 
 ## toml_edit vs toml: Different Use Cases
 
@@ -315,14 +189,6 @@
 **Why:** `toml_edit::Item` doesn't implement full `serde::Deserialize` for complex nested structures the same way `toml::Value` does.
 
 **Prevention:** Use `toml_edit` for writes (round-trip safe). Use `toml` (re-parse the full file with `toml::Value`, then `try_into::<T>()` on the section) for typed reads of nested structures.
-
-## Adding Session Fields: ~15-20 Struct Literal Breakages
-
-**Mistake:** Adding a field to `Session` struct and expecting `cargo build` to guide you to all the breakages. Test files in `tests/` are not compiled by default and may not show breakages until `cargo test`.
-
-**Why:** Rust requires all struct fields to be initialized in struct literals (unless `..Default::default()` spread is used). `Session` is constructed explicitly in ~15-20 locations across `src/` and `tests/`.
-
-**Prevention:** Use `..Session::default()` spread in all struct literals. When adding fields to Session/Stage/LoomConfig, run `cargo test --all` (not just `cargo build`) to catch `tests/` breakages. Alternatively, write a context-aware patch script.
 
 ## macOS GUI App CLI Not on PATH — Detection-Spawn Mismatch (2026-04-27)
 
@@ -339,80 +205,6 @@
 
 **Fix:** `Self::Ghostty` arm in `emulator.rs:build_command()` is now cfg-gated; macOS reassigns `command = Command::new("open")` and uses `open -na Ghostty --args --working-directory=... --title=... -e bash -c CMD`. Linux behavior unchanged. `binary()` still returns `"ghostty"` (correct for Linux PATH lookup and for any macOS user with a manual shim). Tests `test_ghostty_build_command_macos` and `test_ghostty_build_command_linux` are cfg-gated so each runs on its target platform.
 
-## Clippy --all-targets Required to Catch Test-Module Lints (2026-05-12)
-
-**What happened:** `cargo clippy -- -D warnings` (without `--all-targets`) did not compile test modules, so a style lint in `src/hooks/generator.rs` (items after a test module) went undetected during per-stage acceptance and only surfaced at integration-verify.
-
-**Why:** `cargo clippy` without `--all-targets` compiles only the default target (lib + bin). Test code (`#[cfg(test)] mod tests { ... }`) is in a different target and requires `--all-targets` to be included.
-
-**Prevention:** Stage acceptance criteria that include a clippy check should always use:
-
-```bash
-cargo clippy --all-targets -- -D warnings
-```
-
-Not `cargo clippy -- -D warnings`. The `--workspace` flag is also useful in monorepos.
-
-## Reviewer False Alarm: Verify Behavior Changes Against the Diff (2026-05-12)
-
-**What happened:** An integration-verify reviewer flagged a "HIGH native regression" in `hooks/generator.rs`, claiming the new backend match arm introduced double-firing of global hooks on native worktrees. The claim was false — the native branch was already unconditionally calling `configure_loom_hooks(obj)` before the change; the new commit only added the container arm.
-
-**Why:** The reviewer analyzed the stage description's framing rather than the actual diff. The description said "branching on config.backend" which sounds like it changes native behavior; the diff showed the native arm was structurally identical to the pre-existing unconditional call.
-
-**Prevention:** When a reviewer asserts a behavior change, verify against the actual diff:
-
-```bash
-git show <commit>~1 -- <file>  # before
-git show <commit> -- <file>    # after
-```
-
-Do not trust verbal descriptions of what a commit does — always compare before/after diffs directly.
-
-## Session Liveness: Use tracking_key, Not stage_id
-
-**What happened:** `kill_session` and `is_session_alive` in `orchestrator/terminal/native/mod.rs` used `format!("loom-{stage_id}")` for window titles and bare `stage_id` for PID key lookups. This worked for standard stages but silently missed merge sessions, knowledge sessions, and base-conflict sessions whose spawns use prefixed tracking keys.
-
-**Why:** Standard stages dominate the mental model; their PID key and stage_id happen to align. But `Session.tracking_key` is the canonical OS-level resource identifier — it encodes the prefix/suffix needed for non-standard session types.
-
-**Prevention:** Any OS-resource lookup keyed on a session (window title, PID file, process name) MUST use `session.tracking_key`, not `stage_id` or `format!("loom-{stage_id}")`. Verify by running a merge-resolver or knowledge session and checking that kill/liveness correctly targets it.
-
-**Fix:** `native/mod.rs` updated to use `session.tracking_key` in all OS lookups.
-
-## Parallel Deletion Stages: Straggler Files Outside Assignment Tables
-
-**What happened:** After a parallel subagent deletion stage (`remove-container-keep-scaffolding`), 7 files remained with stale container references because they were not assigned to any subagent: `commands/mod.rs`, `completions/dynamic/tests.rs`, `plan/schema/mod.rs`, `commands/handoff/create.rs`, `commands/stage/tests/session.rs`, `orchestrator/preflight.rs`. These caused compile failures discovered only at integration-verify.
-
-**Why:** Parallel subagent deletion scopes by files owned — files that re-export, import, or reference the deleted code but weren't explicitly in the ownership table are silently missed. Test files (`#[cfg(test)]`) are especially prone since `cargo build` doesn't compile them.
-
-**Prevention:**
-
-- After any parallel deletion stage, the MAIN AGENT must run `cargo build && cargo test --no-run` (not just `cargo build`) — test-only files don't appear in a lib build.
-- Before assigning subagents, run `rg` for the target symbols across the ENTIRE tree including `tests/`, `mod.rs` re-exports, and completions.
-
-## Struct Field Removal: Straggler Initializers Across Workspace
-
-**What happened:** Removing a struct field (e.g., removing the `execution` field from `LoomConfig`) left ~25 straggler struct literal initializers across test fixtures, core modules, and examples. Each was an explicit `execution: None` / `execution_backend: None` / `backend: Default::default()` that subagents missed because they only searched within their assigned file set.
-
-**Why:** Rust requires all struct fields in literals unless `..Default::default()` spread is used. In a workspace with many test fixtures, explicit literals far outnumber `Default` spreads.
-
-**Prevention:** After removing a struct field, the main agent MUST `rg` the WHOLE tree (including `tests/`) for `<field_name>:` before considering the work done. Do not rely on per-subagent grep scoped to owned files.
-
-**Fix:** Used `..LoomConfig::default()` spread in all new struct literals going forward.
-
-## Stale Code Comments After Large Structural Removals
-
-**What happened:** The container backend removal (`remove-container-keep-scaffolding` + `collapse-backend-scaffolding`) correctly deleted code but left stale references in comments across 7+ files: `monitor/{core,handlers,detection}.rs` referenced `dispatcher`, `daemon/server/client.rs` had admin-token rationale citing containers, `commands/stage/{complete,knowledge_complete}.rs` had isolated-git/container comments. These were caught only at `integration-verify`.
-
-**Why:** The stage that owned doc cleanup (`strip-container-docs`) ran `rg` for identifiers and string literals but did not search comments or table cells. Comments describing removed concepts stay syntactically valid and compile fine.
-
-**Prevention:** A stage that owns cleanup of a removed concept must `rg` the whole tree for:
-
-1. Identifier names (already done)
-2. Human-readable name/framing in comments and docstrings (often missed)
-3. Table cells in markdown files, knowledge docs, and SKILL.md files
-
-Use `rg -i "container\|docker\|dispatcher" loom/src/ --include="*.rs"` to catch all forms.
-
 ## Aggregated Wiring Re-Verification: Double-Applied working_dir
 
 **What happened:** `run_aggregated_wiring_reverification` in `commands/stage/complete.rs` was called with `acceptance_dir` (already resolved to `worktree_root + integration-verify.working_dir`) and then joined each prior stage's `working_dir` on top, producing paths like `loom/loom/src/...`. The wiring check reported "Wiring source file missing" for every prior stage.
@@ -422,54 +214,6 @@ Use `rg -i "container\|docker\|dispatcher" loom/src/ --include="*.rs"` to catch 
 **Prevention — Detection rule:** Any code path that loops over prior stages and builds a source-file path MUST start from `worktree_root`, then join the per-stage `working_dir`. Never start from an already-resolved `acceptance_dir`.
 
 **Fix:** Changed call site to pass `worktree_root` (from `StageExecutionPaths`) through `run_verification_phase` into the aggregated re-verifier; each stage's `working_dir` is joined against the worktree root.
-
-## Knowledge Prose Staleness After Sandbox/Permission-Mode Changes (2026-05-14)
-
-**What happened:** After changing `default_mode_for()` in `sandbox/config.rs` to return `AcceptEdits` for Standard and IntegrationVerify stages (previously `Auto`), three knowledge file locations still referenced the old `auto` default:
-
-1. `architecture.md` — Security Model section said `Standard/IntegrationVerify → auto`
-2. `entry-points.md` — Remote Control §1 table said `Standard / IntegrationVerify → Auto`
-3. `patterns.md` — Sandbox permission_mode Resolution table showed `auto` for both types
-
-These stale entries would have misled future agents into using `permission_mode: auto` when the default at the time was `accept-edits`. (Note: the default was later reverted back to `auto` for all four stage types on 2026-07-01 — see architecture.md / patterns.md — so this entry stands only as a staleness lesson, not a statement of the current default.)
-
-**Why:** The implementation stage correctly updated Rust source + tests, but did not search knowledge files for old values. Knowledge files are not compiled, so no tool catches the mismatch.
-
-**Prevention:** After changing any `default_mode_for()`-style constant or sandbox default:
-
-1. `rg -l "auto\|Auto" doc/loom/knowledge/` — find knowledge files with the old value
-2. Update each stale entry with `loom knowledge replace-section` or direct Edit
-3. Verify with `rg "permission.mode" doc/loom/knowledge/` that all entries agree
-
-**Generalization:** Any plan that changes an enumerated default (permission modes, stage-type behavior, config field defaults) MUST include a step that searches `doc/loom/knowledge/` for old values and corrects them. This applies even when the code change is a single-line constant update.
-
-## Sandbox excludedCommands: Bare Names Are Matched Exactly, Not as Prefixes (2026-05-26)
-
-**What happened:** Every worktree stage failed at `loom stage complete` with `Read-only file system (os error 30)` writing to `.work/sessions/`, `.work/signals/`, and `.work/stages/`. `.work` is a symlink resolving to the main repo (outside the worktree), so the OS sandbox treats it as read-only. The loom CLI was supposed to be exempt because `default_excluded_commands()` returns `["loom", "git"]`, but the exemption never applied.
-
-**Why:** Claude Code's sandbox matcher (`pK8`/`XR_` in the binary) classifies each `excludedCommands` entry:
-
-- `"loom:*"` → **prefix** → matches `loom` AND `loom <anything>`
-- `"loom *"` → **wildcard** → matches `loom <anything>` (NOT bare `loom`)
-- `"loom"`   → **exact** → matches ONLY the literal command line `loom` with zero args
-
-`generate_settings_json` emitted bare `"loom"`, classified as **exact**, so `loom stage complete <id>` never matched and ran *inside* the sandbox → EROFS. This regression surfaced on Linux once Claude Code (v2.1.150) enforced the native bubblewrap sandbox; the code's macOS-era comment misattributed it to "excludedCommands does NOT bypass OS-level filesystem restrictions."
-
-**Prevention:** `sandbox.excludedCommands` entries must use the prefix form `"<cmd>:*"` (or a `*` wildcard) to exempt a command's subcommands. A bare program name only exempts the argument-less invocation. Verify sandbox-matcher assumptions against the actual Claude Code binary (`rg -a` the unstripped ELF at `~/.local/share/claude/versions/<ver>`), not docs alone — the exact-match rule is undocumented.
-
-**Fix:** Added `to_exclude_pattern()` in `sandbox/settings.rs` that appends `:*` to any entry lacking a glob/`:*`, applied when emitting `sandbox.excludedCommands`. `permissions.allow` `Bash(loom *)` entries use a different matcher and were already correct.
-
-## Worktree-Isolation Hooks Gated on LOOM_STAGE_ID, Which Leaks Into Plain Sessions (2026-05-28)
-
-**What happened:** `worktree-isolation.sh` (and `worktree-file-guard.sh`) decided "are we in a loom worktree?" solely via `if [[ -z "${LOOM_STAGE_ID:-}" ]]; then exit 0; fi`. `LOOM_STAGE_ID` is exported into the worktree session's shell (pid_tracking.rs) and persists in the user's interactive shell environment afterward. A normal Claude Code session in the **main** repo on `main` then had `LOOM_STAGE_ID` still set, so the hook activated and blocked ordinary commands — e.g. any Bash command line merely *containing* the substring `.worktrees/` (like an `rg`/`ls` that references another stage's dir) was rejected as "cross-worktree access," even though the session was nowhere near a worktree.
-
-**Misleading signal:** `LOOM_STAGE_ID` being set *looks* like proof you're executing a stage. It isn't — env vars outlive the process that set them. The hook even had a comment acknowledging `LOOM_STAGE_ID` "can be stale" but still used it as the activation gate.
-
-**Why:** Worktree membership is a property of **location** (`<repo>/.worktrees/<stage-id>/`), not of an env var. Gating on an env var that leaks conflates "a loom run happened in this shell once" with "this command is running inside a worktree right now."
-
-**Prevention:** Decide worktree membership from the working directory (cwd inside `.worktrees/<stage>/`), or from `LOOM_WORKTREE_PATH` only when it points at an existing `.worktrees/` dir. Never gate isolation enforcement on `LOOM_STAGE_ID` alone. Derive the current stage from the worktree path (`basename`), not from the possibly-stale env var.
-
-**Fix:** Added `loom_current_worktree()` to `hooks/_common.sh` (returns the worktree root by cwd/`LOOM_WORKTREE_PATH`, else non-zero). Both `worktree-isolation.sh` and `worktree-file-guard.sh` now gate on it and derive the stage from the path. `worktree-file-guard.sh` now also sources `_common.sh`. Remember to reinstall hooks (`install.sh`) after editing — the runtime copy lives at `~/.claude/hooks/loom/`, separate from the repo source (see "Source vs Installed: Editing Wrong File").
 
 ## Stage-File Lost Updates: Whole-Stage Save Reverts Concurrent Writers (A-5, 2026-06-09)
 
@@ -483,18 +227,6 @@ These stale entries would have misled future agents into using `permission_mode:
 
 **Detection rule:** any `load_stage(); …; save_stage()` pair where the `…` can run while the daemon/dispute-thread/another-CLI is live is a lost-update candidate. Especially when `…` contains a multi-minute step (acceptance, verification, git merge) or increments a counter read from the in-memory stage (`fix_attempts += 1`, `dispute_count += 1`).
 
-## Worktree-Relative Escape Deny Rules Leak Into Main-Repo settings.local.json (2026-06-02)
-
-**What happened:** The default sandbox config (`default_deny_read`/`default_deny_write` in `plan/schema/types.rs`) bakes in worktree-escape rules — `../../**` and `../.worktrees/**`. The **worktree** settings generator, `sandbox::write_settings(config, target)`, was being pointed at the **main repo root** by two callers: `commands/repair.rs::fix_sandbox_settings` (`loom repair --fix`) and `orchestrator/core/stage_executor.rs:438` (knowledge-stage spawns, which run in the main checkout). At a worktree (`.worktrees/<stage>/`) `../..` is the repo root — the intended isolation boundary — but at the repo root `../..` is the repo's **parent**, typically `$HOME`. So `Read(../../**)` denied all of `$HOME` (including `~/.gitconfig` → git lost its identity → commits failed) and `Write(../../**)` denied writes across the whole home dir.
-
-**Misleading signal:** The bug is invisible inside worktrees, because there the exact same string is *correct*. It only bites when Claude runs at the repo root (interactive sessions, knowledge stages). A prior partial fix made `generate_settings_json` filter `Read(../…)` (because it also leaks into the macOS OS sandbox), which silenced the git-read symptom — but the **Write side was never filtered** (a comment called it "harmless," true only in a worktree), so `Write(../../**)` survived and kept denying `$HOME` writes. Three fossils prove an old file was written by an older binary: tilde-*expanded* creds (`Read(/home/u/.ssh/**)`), the un-filtered `Read(../../**)`, and bare `excludedCommands: ["loom"]`.
-
-**Why:** Path-traversal rules are *relative to wherever `settings.local.json` lives*. They are meaningful only in a worktree. Reusing the worktree-shaped generator for the main repo writes rules that resolve to a completely different (and dangerous) location. Worktree-ness is a property of **location**, not something the generator should assume — same root lesson as the `LOOM_STAGE_ID` hook bug above.
-
-**Prevention:** Before writing path-traversal deny/allow rules, ask "relative to *which* directory will Claude Code resolve these?" Never emit `../`-based rules into a settings file that can live at the repo root. A worktree never *depends* on inheriting these from main — it regenerates them relative to itself at spawn (`write_settings(worktree.path)`), the create-time copy + refresh union only *adds*, and the worktree hooks enforce isolation independently. So stripping them from the main repo is safe.
-
-**Fix:** `sandbox/settings.rs::write_settings` now computes `target_is_worktree(path)` (a `.worktrees` path component, or a symlinked `.work`) and calls `strip_worktree_escape_denies(&mut config)` for non-worktree targets, so the rules are emitted *only* where `../..` means the repo root. This guards every main-repo caller at once. `merge_existing_permissions(.., is_worktree)` also scrubs stale `Write(../…)`/`.worktrees` entries from an already-polluted main file (the Read-side filter was already unconditional). The fold-back path (`fs/permissions/sync.rs`) already drops `../`/`.worktrees` via `transform_worktree_path`, so it needed no change.
-
 ## Verifying "Dead Schema" Claims Before Writing Code (2026-06-15)
 
 **What happened:** Plan PLAN-anti-slop-thoroughness described `before_stage` as "dormant / parsed-but-never-run." Stage 3 Subagent 1 was tasked to wire it. It verified the claim against `stage_executor.rs:219-256` and found `before_stage` was already fully wired — runs pre-spawn, blocks session on failure. The task was a no-op.
@@ -504,28 +236,6 @@ These stale entries would have misled future agents into using `permission_mode:
 **Prevention:** Before implementing "wire X" or "add execution of Y," run `rg "before_stage\|after_stage\|<field>" loom/src/` to verify the current execution path. Check `stage_executor.rs` (pre-spawn), `complete.rs` (post-acceptance), `generate.rs` (signal), `plan_setup.rs` (copy). Only skip after confirming absence, not trusting the plan text.
 
 **Fix:** Skipped the no-op task; verified the actual dormant field (code_review) and wired it instead.
-
-## TODO in Rust String Literals Triggers ArtifactStub Checker (2026-06-15)
-
-**What happened:** A Rust format string inside a `push_str()` call contained the word "TODO" as a reference to a future task in the documentation text it was generating (not actual stub code). `loom stage complete` rejected it with an ArtifactStub error, blocking completion.
-
-**Misleading signal:** The word appeared in a prompt or documentation string — semantically it was text content, not a code stub. The ArtifactStub checker scans the raw file content without context.
-
-**Prevention:** Before completing a stage, scan your own format strings and string literals with `rg "TODO|FIXME|unimplemented" loom/src/<your-file>`. If the word appears as content in a string (e.g., as part of documentation text), rephrase to avoid the keyword — "fix later", "outstanding item", "remaining task", or similar.
-
-**Fix:** Rephrased the string literal to avoid the TODO keyword.
-
-## Git-Shelling Tests Must Isolate Ambient Config and Assert Setup Steps (2026-06-15)
-
-**What happened:** `git::merge::tests::merge_stage_refuses_when_merge_head_set` passed locally but failed on CI with `MERGE_HEAD must be set` at the *setup* assertion. The setup used a `run` closure that called `Command::new("git")…output().unwrap()` — `.unwrap()` only catches spawn failure, not a non-zero exit. So when an ambient git config broke a setup commit, every step silently no-op'd and the failure only surfaced lines later as a confusing MERGE_HEAD assertion. Reproduced exactly by setting `commit.gpgsign=true` (no key) in the global config: the seed commit fails → `checkout main` fails → the "merge" runs on the wrong branch → no conflict → no MERGE_HEAD.
-
-**Misleading signal:** "Passes locally, fails in CI" on a pure-logic test that *must* be deterministic. The panic points at the symptom (`MERGE_HEAD` absent), not the cause (a swallowed setup-commit failure several lines up). Tests that shell out to `git` inherit the runner's global/system config — `commit.gpgsign`, `core.hooksPath`, templates — none of which exist on a clean dev box.
-
-**Why:** Two compounding defects: (1) the helper discarded git exit status, so setup failures were invisible; (2) the repo was not isolated from ambient git config, so a hostile global setting could break commits/merges. Note `#[serial]` only serializes against other `#[serial]` tests — the merge tests are non-serial and run alongside `repository.rs`'s `GIT_CONFIG_GLOBAL`-mutating tests, another reason to pin config per-Command rather than rely on the process environment.
-
-**Prevention:** Any test that shells out to `git` must (a) assert each setup command's exit status and surface stderr — never `output().unwrap()` and drop the status; and (b) neutralize ambient config by setting `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM` to nonexistent paths and `GIT_CONFIG_NOSYSTEM=1` on the `Command` (so it survives a polluted process env too). Set identity via local config. ~10 test files here use the same `init_repo`/`run_git` shape (`in_progress.rs`, `merge_attribution.rs`, `recovery.rs`, `merge_verify.rs`, …); the asserting ones at least fail loudly, but none isolate ambient config — port the `isolated_git`/`git_ok` helpers from `git/merge/mod.rs` if they ever flake.
-
-**Fix:** Added `isolated_git`/`git_ok` helpers in `git/merge/mod.rs` tests: every setup step asserts success, the conflicting merge dumps stdout/stderr if MERGE_HEAD is absent, and all invocations run with global/system config disabled. Verified green under a forced-`gpgsign` global config that previously reproduced the failure.
 
 ## Vendored slash-command / Codex skill must consume the plan arg verbatim (no `doc/plans/` prefix)
 
@@ -550,18 +260,6 @@ These stale entries would have misled future agents into using `permission_mode:
 
 **What happened:** The implement-pressure signal omitted the plan's inline slash-command and codex-skill bodies. Canonical sources had to be recovered from `~/.claude/commands/*.md` (Read tool) and `~/.codex/skills/pressure/SKILL.md` (Bash `cat` — `worktree-file-guard.sh` ALLOWS the Read tool on `~/.claude/` but BLOCKS it on `~/.codex/`). The installed copies were also STALE.
 **Prevention:** When a stage depends on file bodies that live outside the worktree, do not trust the signal to inline them or the installed copies to be current — recover from the authoritative source and treat installed versions as suspect.
-
-## settings.local.json `defaultMode: "auto"` is silently ignored — must pass `--permission-mode` on the CLI (2026-07-01)
-
-**What happened:** Every loom stage was supposed to start in `auto` permission mode (the default for all four stage types), but sessions actually started in `default` mode and prompted for every action — defeating autonomous execution. Loom set the mode ONLY by writing `permissions.defaultMode: "auto"` into each worktree's `.claude/settings.local.json` (via `generate_settings_json` / `apply_default_mode`, and again via the hooks generator). Nothing passed `--permission-mode` on the `claude` command line.
-
-**Misleading signal:** The value `"auto"` is correct — `claude --help` lists it among `--permission-mode` choices (`acceptEdits`, `auto`, `bypassPermissions`, `default`, `dontAsk`, `plan`), and `apply_default_mode` emitted the right camelCase string. Loom's own tests asserted `defaultMode: "auto"` was present in the generated JSON, so the settings file *looked* correct. The bug was the DELIVERY MECHANISM, not the value.
-
-**Why it broke:** Claude Code v2.1.142+ **deliberately ignores `permissions.defaultMode: "auto"` when it comes from project or local settings** (`.claude/settings.json` / `.claude/settings.local.json`) — a security measure so a checked-in repo cannot grant itself auto mode. Auto from those files is dropped silently (no error), and the session falls back to `default`. `auto` is honored ONLY from the `--permission-mode` CLI startup flag, `~/.claude/settings.json` (user settings), or managed settings. (This gating is specific to `auto`; `acceptEdits`/`plan`/`default` ARE honored from local settings, which is why the bug hid — only auto was affected.) Confirmed against the installed binary (v2.1.197) and the official docs (code.claude.com/docs/en/permission-modes).
-
-**Prevention:** To make a loom-spawned session START in a given permission mode, pass `--permission-mode <mode>` on the `claude` CLI (done in `build_claude_command`, resolved in the unified `spawn()` from `merge_config(read_plan_sandbox, stage.sandbox, stage.stage_type)`). Do NOT rely on `settings.local.json` `defaultMode` for `auto`. When a Claude Code setting "isn't taking effect," check the docs for file-scope gating (project/local vs user/managed) before assuming loom emits it wrong — the value can be right while the *source file* is ignored. Note `auto` also has account/model/provider requirements (Opus 4.6+/Sonnet 4.6+, enabled on the account); an unsupported account falls back regardless of how the mode is requested.
-
-**Fix:** `build_claude_command` now emits `--permission-mode {mode}` (before the positional prompt) using the resolved mode; `settings.local.json` still carries `defaultMode` (harmless, honored for non-auto modes). Unit test `build_claude_command_passes_permission_mode_before_prompt`.
 
 ## Interactive Claude cannot be captured or made to auto-exit without risking API billing
 
@@ -619,21 +317,6 @@ These stale entries would have misled future agents into using `permission_mode:
 **Prevention:** When a CI clippy failure doesn't reproduce locally, check `rustup check` FIRST — if stable has moved, `rustup update stable` and re-run before hunting for any other cause. Most new-lint fallout is machine-applicable: `cargo clippy --fix --all-targets --allow-dirty`, then review the diff (non-trivial rewrites like `question_mark` can leave awkward leftover blocks worth hand-cleaning).
 **Fix:** Updated local stable to 1.97.1, applied `cargo clippy --fix`, hand-simplified the `?`-operator rewrite in `fs/work_dir.rs`, verified clippy + fmt + full test suite green.
 
-## Claude Code Applies the MAIN Repo's settings.local.json env to Worktree Sessions (2026-07-23)
-
-**What happened:** After the 2026-07-22 identity-scrub fix shipped, worktree sessions on kairos still ran with `LOOM_STAGE_ID=knowledge-bootstrap`: all 1,476 tool events and every lifecycle hook event across the whole 5-stage run carried the FIRST stage's identity, and the only heartbeat file written was `knowledge-bootstrap.json`. Verified live on the `knowledge-distill` session: the claude process env (via `/proc/<pid>/environ`) had the CORRECT wrapper-exported IDs, and the worktree's own settings files were clean (env = `LOOM_WORK_DIR` only) — yet its SessionStart hook logged the stale pair, which existed in exactly one file on the machine: the MAIN repo's `.claude/settings.local.json`.
-
-**Why (two compounding causes):**
-
-1. Claude Code (observed on v2.1.217) applies the **main repository's** `.claude/settings.local.json` `env` block to sessions running in **linked worktrees**. Settings env overrides process env, so the wrapper's correct exports are shadowed by whatever the main-repo file carries. Scrubbing the worktree-side settings files (the whole thrust of the 2026-07-22 fix) is therefore necessary but NOT sufficient. The per-repo values prove the source: the loom repo's sessions get loom's stale pair, kairos sessions get kairos's — a user/managed file can't produce repo-specific values.
-2. Nothing in the run path heals a previously polluted main file: `ensure_loom_hooks_local` self-heals only on `loom init`/`loom repair`, and the permission fold-back (`fs/permissions/sync.rs`) rewrites the main `.claude/settings.local.json` mid-run (observed mtime seconds before a spawn) while leaving the stale `env` block intact. Pre-fix pollution therefore persists indefinitely. The main repo's committed-scope `.claude/settings.json` can carry the same pollution from even older loom versions and is never scrubbed by any path.
-
-**Misleading signals:** clean worktree settings + correct wrapper exports made all spawn-side code look exonerated. `rg` over `.claude/` silently skipped `settings.local.json` because it is gitignored — use `rg -uu` when searching ignored config files. Sandboxed diagnosis shells run in a PID namespace, so `ps -p <host-pid>` / `/proc/<pid>/...` false-negatives made live processes look dead.
-
-**Prevention:** Treat the MAIN repo's `.claude/settings.json` and `.claude/settings.local.json` as env sources for ALL sessions, including worktree ones. Per-session identity must be scrubbed from the main-repo settings files in the RUN path — at daemon startup and in every code path that rewrites those files (the sync fold-back especially) — not only on `loom init`/`repair`.
-
-**Fix:** three-site run-path healing. (1) `scrub_main_repo_settings_identity(repo_root)` (`fs/permissions/settings.rs`) scrubs BOTH main-repo settings files, called from `prepare_repo_for_run` (`commands/run/checks.rs`) so every `loom run` — background and foreground — heals before spawning; (2) `merge_permissions_with_lock` (`fs/permissions/sync.rs`) scrubs while holding the fold-back lock, so every stage completion re-heals mid-run; (3) `migrate_hooks_to_local` (`ensure_loom_permissions`) drops identity keys from `settings.json` on init/repair. `LOOM_WORK_DIR` is stable per-repo and deliberately survives.
-
 ## Delta-Proof `before_stage` Gate Re-Run on Every Re-Spawn Deadlocks the Stage (2026-07-27)
 
 **What happened:** `start_stage` ran a stage's `before_stage` truth checks on *every* spawn attempt. Those checks are delta-proofs — they assert the feature does NOT exist yet. After a session was interrupted mid-stage (leaving its implementation in the worktree/branch), orphan recovery re-queued the stage, the checks re-ran, found the feature present, and marked the stage `Blocked` with `FailureType::TestFailure` **before spawning any session**. Since no session ever ran, nothing could finish or commit the work, and `loom stage retry` / the next `loom run` reproduced the identical failure forever. The stage could not self-heal.
@@ -645,3 +328,36 @@ These stale entries would have misled future agents into using `permission_mode:
 **Prevention — detection rule:** any check whose *expected* outcome changes once the stage does its work (delta-proofs, "feature absent" assertions, baseline captures) must be gated on evidence that no work exists yet — not merely placed before the spawn. Before adding a blocking check to a spawn path, ask what it does on attempt #2. And a blocking transition that happens *before* a session is spawned deserves extra scrutiny: nothing downstream can clear it, so a wrong block is permanent, not merely slow.
 
 **Fix:** `stage_executor.rs::before_stage_gate_passed` calls `verify::before_after::find_prior_stage_work` first and skips the checks (logging the evidence) when the stage branch has commits beyond its resolved base or the worktree has non-scaffold changes. Loom's own worktree scaffolding (`.work`, `.claude/`, root `CLAUDE.md`) is discounted via `git::worktree::is_worktree_scaffold_path` — otherwise, in a repo that doesn't gitignore those, the very first spawn would look "dirty" and silently disable the gate. Note `git::has_uncommitted_changes` excludes untracked files and was useless here (a brand-new module is untracked); `list_working_tree_changes` was added for the "has anyone worked here?" question.
+
+## Hooks: Shell Command Matchers (2026-07-28)
+
+Token-based Bash matchers repeatedly shipped with bypasses because separators that are *glued*
+to a neighbour never become tokens. Also: forgeable `glob | head -1` privilege lookups, env
+leakage into simulated process trees, and three Bash traps (`&` in `${//}` replacements,
+`errexit` under `||`, ERE `\b`).
+
+→ [Shell Command Matchers](mistakes/shell-command-matchers.md)
+
+## Doctrine, Acceptance Criteria, and Cross-Surface Drift (2026-07-28)
+
+A grep for one phrase proves presence, never agreement — the lesson behind a doctrine block that
+silently drifted across three surfaces while every criterion passed. Also: exceptions must live
+in the block that gets *copied*, sweep for retired phrasing, and never make a stage read
+canonical text out of `doc/plans/`.
+
+→ [Doctrine & Acceptance](mistakes/doctrine-and-acceptance.md)
+
+## Verification Harnesses and Stale Binaries (2026-07-28)
+
+When every check in a suite fails at once, suspect the harness: a hardcoded `/tmp` redirect in a
+read-only sandbox failed 13 criteria that were all actually fine. Also: the PATH binary does not
+contain your plan's changes, and a silent review subagent is a failed delegation.
+
+→ [Verification Harnesses](mistakes/verification-harness.md)
+
+## Knowledge CLI and Filesystem Invariants (2026-07-28)
+
+Invariants belong in the filesystem constructor, not the CLI handler that calls it; sibling-file
+refreshes must happen outside the directory lock; `update` appends, so retries duplicate.
+
+→ [Knowledge CLI Invariants](mistakes/knowledge-cli-invariants.md)

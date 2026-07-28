@@ -170,86 +170,10 @@ This is a logically defensible design (commits exist, don't burn tokens redoing 
 
 ## Daemon Singleton Not Enforced: Two `loom run` Processes Alive Concurrently (2026-05-13)
 
-**Observed:** During the `autonomous-criteria-adjudication` plan's `integration-verify` stage, `loom status` (static) reported `○ daemon stopped` even though the orchestrator log (`.work/orchestrator.log`) was still being appended every ~5 seconds. `loom status --live` was still connected in another terminal. `ps -eo pid,etime,cmd | rg 'loom run'` revealed **two** daemon processes:
+Nothing enforces a single daemon: a second `loom run` attaches to the same `.work/` and both
+poll, spawn, and merge. Full reproduction, impact analysis, and the proposed pidfile fix.
 
-```text
-  64657    11:19:57  loom run    # started ~06:30 UTC
-1038911    01:39:24  loom run    # started ~16:11 UTC (lock mtime 16:13:18 UTC)
-```
-
-State files in `.work/`:
-
-| File | State |
-|------|-------|
-| `orchestrator.sock` | **MISSING** |
-| `orchestrator.pid` | **MISSING** |
-| `orchestrator.lock` | Present, contains `1038911` (no newline), mtime 16:13:18 UTC |
-| `orchestrator.log` | Actively growing; first dated entry is 16:13:18 UTC (matches lock mtime), no startup banner for the 06:30 daemon survives in the file |
-
-`loom status` (static) thinks the daemon is down because it talks to `orchestrator.sock`, which no longer exists. `loom status --live` in another terminal was bound earlier and is still rendering stale state; new clients can't connect.
-
-**Why this matters for the user-visible "stuck integration-verify" symptom:** With the IPC socket gone, the daemon is invisible to the operator. The stage status (`status: executing`, `started_at` 19h ago) looked frozen because no fresh updates were rendered via the static command, and the dashboard's TUI was reading a cache. Meanwhile the agent inside the container was genuinely stuck on a hung cargo test (separate concern), but the operator couldn't tell whether the daemon or the agent was at fault.
-
-**Probable cause (best hypothesis):** A second `loom run` was invoked while the first was still alive — likely as an operator recovery action after the stage looked stalled. The startup path:
-
-1. Rewrote `.work/orchestrator.lock` to the new PID (1038911) without verifying the old PID was actually dead, OR the lock-acquire path uses a non-blocking `flock` that succeeded because the old process had released its lock (e.g., on a SIGSTOP/SIGTSTP, or a dropped guard in a code path that doesn't re-acquire).
-2. Bound a new socket at `.work/orchestrator.sock` — succeeded because either (a) the old socket file had been removed by a `loom stop` that failed to kill the process, or (b) `unlink + bind` is unconditional in the daemon startup path.
-3. Did NOT find an existing PID file (or failed-soft on its presence) and did NOT signal/kill the old daemon.
-
-Result: two competing daemons sharing the same `.work/` state, the older one inert or only partially functional, the newer one doing most of the work. The socket file went missing later (a third event we have no log evidence for — possibly `loom stop` was issued against the new daemon, removing the socket but leaving both processes alive because `loom stop` over a since-disconnected socket is a no-op or because both daemons trapped the signal and ignored it).
-
-**What's needed:**
-
-1. **`loom run` must enforce singleton invariant at startup.** Before claiming the lock or binding the socket, walk these in order: (a) read `orchestrator.pid` if present, (b) `kill -0 <pid>` to test liveness, (c) if alive AND its argv matches `loom run`, refuse to start with a clear `error: daemon already running (pid N)` message and exit non-zero. Do NOT delete state files in this path.
-2. **PID file must be written on every successful startup and removed on clean shutdown.** Current state shows `orchestrator.pid` missing despite an active daemon — either it was never written, or it was deleted by a parallel/cleanup path. Both bugs deserve their own probe.
-3. **Socket file existence and the daemon's aliveness should be reconciled by `loom status`.** When the static command can't connect to the socket but a `loom run` process matches in `ps`, report something more useful than "daemon stopped" — e.g., `daemon process N alive, socket missing — try 'loom repair'`.
-4. **`loom repair` should detect duplicate daemons and offer to kill the older one** (preferring the one whose PID matches `orchestrator.lock`). Today `loom repair` doesn't appear to scan for this.
-5. **Investigate whether the orchestrator-log file descriptor is held by both daemons.** Multiple writers to a single file with `O_APPEND` is benign per POSIX, but if either daemon does `truncate + write_at(0)` (i.e., overwrites with `O_TRUNC`), the other daemon's writes are silently lost. The log's first surviving line being timestamped to the newer daemon's startup suggests truncation happened.
-6. **Suppress the `[Polling...]` TUI status line from the orchestrator-log file.** The log currently contains hundreds of these lines (visible interleaved with real WARN entries) — the TUI subscriber output is leaking into the daemon's stderr/stdout sink. Logs should only contain structured tracing output, not the TUI dashboard.
-
-**Detection rules for future incidents:**
-
-- `pgrep -af 'loom run'` returning more than one row is always wrong. Add a `loom repair` check.
-- `loom status` reporting "daemon stopped" while `.work/orchestrator.log` is being actively appended to is always wrong — either the daemon is alive (bug: stale socket cleanup) or the log is being written by a stale child process (bug: orphaned background work).
-- `orchestrator.pid` missing while any `loom run` process exists is always wrong.
-
-**Where to look in code:**
-
-- `daemon/server/lifecycle.rs` — daemonization, socket binding, PID file write. Check the order of: lock-acquire → PID-file-write → socket-bind. Each step must be atomic or roll back the previous on failure.
-- `commands/run/mod.rs` — `loom run` entry point. Check whether it consults `orchestrator.pid` + `kill -0` before forking.
-- `commands/stop.rs` — `loom stop` must ALWAYS kill the underlying process before deleting socket/pid. Verify there's no path where the socket is removed but the process survives.
-- `commands/repair.rs` — extend with a "duplicate daemon" detector and a "socket-vs-process mismatch" detector.
-- `daemon/server/core.rs` — confirm `unlink(socket_path)` before `bind` is guarded by a process-liveness check on the prior owner.
-
-**Concrete evidence captured at time of writing:**
-
-```text
-$ ps -eo pid,etime,cmd | rg 'loom run'
-  64657    11:19:57  loom run
-1038911    01:39:24  loom run
-
-$ cat .work/orchestrator.lock
-1038911
-
-$ ls .work/orchestrator.sock .work/orchestrator.pid
-ls: .work/orchestrator.sock: No such file or directory
-ls: .work/orchestrator.pid: No such file or directory
-
-$ stat .work/orchestrator.log | rg Modify
-Modify: 2026-05-13 20:50:35 +0300   # still growing every poll cycle
-
-$ head -10 .work/orchestrator.log
-Loaded base_branch from config: main
-Warning: Failed to parse skill file ...
-Warning: Failed to parse skill file ...
-Warning: Failed to parse skill file ...
-Orchestrator started, spawning ready stages...
-[K2026-05-13T16:13:18.544430Z  WARN ... Recovering orphaned stage stage_id=integration-verify status=Blocked
-2026-05-13T16:13:18.544458Z  WARN ... Failed to transition to NeedsHandoff during orphan recovery, bypassing
-...
-```
-
-First dated log line is `2026-05-13T16:13:18.544430Z` — within 1s of the lock file's mtime. The 06:30 daemon's earlier log entries (10 hours of operation) are not present in this file; either the log was truncated at the second startup, or the first daemon was writing to a different sink (e.g., it had `eprintln!` redirected on stdout but the new daemon repointed the log fd).
+→ [Daemon Singleton Not Enforced](concerns/daemon-singleton.md)
 
 ## loom plan verify: Missing bypass-permissions Sandbox Validation (2026-05-14)
 
@@ -311,3 +235,63 @@ Repo-root resolution is now inlined in three places: `commands/knowledge/spawn.r
 **Fix direction:** Worktree removal must not happen while the session whose cwd it is can still run hooks. Move `cleanup_after_merge` out of the agent-run CLI success path and into the daemon, after `kill_session` in `handle_stage_completed` (`orchestrator/core/completion_handler.rs:44`) — the daemon already owns session teardown there, and `stage_executor.rs:390` shows precedent for daemon-side `remove_worktree`. The daemon's `try_auto_merge` path needs the same audit.
 
 **RESOLVED (2026-07-22):** Two-part fix. (1) `commands/stage/progressive_complete.rs::should_defer_cleanup(cwd, repo_root, stage_id)` — `complete_with_merge` now skips `cleanup_after_merge` when the process cwd is inside the worktree it would delete (cwd-based detection, NOT env vars, per the stale-`LOOM_STAGE_ID` lesson; unverifiable cwd fails toward defer). (2) `orchestrator/core/merge_handler.rs::cleanup_merged_stage_resources(stage_id, repo_root)` — `try_auto_merge`'s `stage.merged` short-circuit (reached from `handle_stage_completed` after `kill_session`, and from the recovery one-shot retry) now performs the deferred cleanup, gated on `needs_cleanup` and never mutating stage state. Residual (accepted): the daemon proceeds from `kill_session` to cleanup within the same tick, so SessionEnd hooks that run during SIGTERM teardown can still race the removal — a far smaller window than the old guaranteed Stop-hook failure. Manual `loom stage complete` with no daemon running and cwd inside the worktree defers cleanup that nothing will pick up until the next daemon start (`recovery.rs` retry path) or `loom worktree remove` — the CLI prints that hint.
+
+## Knowledge Signals Never Teach Tier-2 (2026-07-28)
+
+`orchestrator/signals/` generates `loom knowledge update <tier-1-file>` guidance, and the
+knowledge-distill prefix mentions `loom knowledge index`, but **no prefix teaches the
+`category/slug` tier-2 form**. Verified functionally: tier-2 works
+(`loom knowledge update patterns/lock-ordering` creates the file and the index picks it up) — it
+is simply never advertised to an orchestrated knowledge stage.
+
+Consequence: the hierarchy grows only through the interactive `bootstrap`/`gc` paths, not during
+`loom run`. Not a defect in what landed; follow-up stage material.
+
+## `loom knowledge` Has No Delete-Section Verb (2026-07-28)
+
+`update` appends and `replace-section` replaces, but nothing removes a section. Consolidating
+several tier-1 sections into one tier-2 topic therefore cannot be completed with the CLI alone —
+the migration in this plan replaced the lead section with a summary and had to strip the
+remaining N-1 headings with an external script. A `loom knowledge drop-section` (or a
+`replace-section --delete`) would close the gap.
+
+## Tier-2 Topic Blurbs Cannot Be Set From the CLI (2026-07-28)
+
+A new topic is seeded with a fixed scaffold — a title derived from the slug and the blurb
+"Topic notes for the `<category>` knowledge area" — and user content is appended *after* it.
+`scan_topics` harvests the **first** `#` and `>` lines for the INDEX.md table, so the generic
+seeded blurb always wins and every topic reads identically in the index unless the file is edited
+afterwards. The index's Blurb column is its main routing signal, so this directly costs
+navigability. Wanted: a `--blurb` flag, or have the scaffold defer to a leading `>` line in the
+supplied content.
+
+## Remote Install Silently Ships Zero Hooks (PRE-EXISTING, 2026-07-28)
+
+`install.sh::install_hooks_remote` fetches each hook from `${GITHUB_RELEASES}/<name>`, but
+`.github/workflows/release.yml` publishes **no hook assets**, and the fetch loop swallows
+failures (`2>/dev/null`, no error check). The remote install path therefore installs no hooks
+while reporting success — every hook shipped this way is dead on remote installs.
+
+**Detection:** exit 0 from the remote installer is not evidence hooks landed; list
+`~/.claude/hooks/loom/` after installing.
+
+## `loom plan verify` False-Positive Cargo Warning for Subdirectory Crates (2026-07-28)
+
+For this repo layout the verifier emits "Acceptance criterion uses cargo but Cargo.toml not found
+at `<project root>`" — 15 times in one run — because it probes `<root>/Cargo.toml` while the crate
+lives at `<root>/loom/Cargo.toml` and every criterion already passes
+`--manifest-path loom/Cargo.toml`. 0 errors, 19 warnings, exit 0. Noise for any repo whose crate
+is in a subdirectory. Fix: honour an explicit `--manifest-path` before warning.
+
+## No-Verify Doctrine Block Carries Only a Rust Example (2026-07-28)
+
+The doctrine block must stay byte-identical across the signal, the template, and the hook's
+refusal message, so it carries a single scoped-command example — a `cargo` one. A blocked Python
+or Go subagent is shown a Rust example. `hooks/subagent-verify-guard.sh` is at the 400-line cap
+with no slack, so the fix is to append language-specific examples **after** the pinned block as
+explicitly hook-local guidance, the same way the `BLOCKED:` framing line already sits outside it.
+
+## Dead Configurability: `analyze_gc_metrics_with_promoted` (2026-07-28)
+
+No caller passes a non-default `max_promoted_blocks`. Pre-existing and kept deliberately —
+Engineering Discipline C says record pre-existing dead code rather than delete it as a drive-by.
