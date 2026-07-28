@@ -15,6 +15,8 @@ use super::types::{DependencyStatus, EmbeddedContext, SignalUpdates};
 // Submodules with additional tests
 #[path = "tests_cache.rs"]
 mod tests_cache;
+#[path = "tests_doctrine.rs"]
+mod tests_doctrine;
 #[path = "tests_merge.rs"]
 mod tests_merge;
 #[path = "tests_working_dir.rs"]
