@@ -295,3 +295,22 @@ explicitly hook-local guidance, the same way the `BLOCKED:` framing line already
 
 No caller passes a non-default `max_promoted_blocks`. Pre-existing and kept deliberately —
 Engineering Discipline C says record pre-existing dead code rather than delete it as a drive-by.
+
+## Generated INDEX.md Is Not markdownlint-Clean — Permanent Commit Churn (2026-07-28)
+
+`fs/knowledge/index.rs::generate_index` emits each `### <category>` sub-heading of the Tier 2
+section **immediately after the previous table row, with no blank line before it**, which
+violates MD022 (headings surrounded by blank lines). The repo's pre-commit hook runs
+`markdownlint-cli2 --fix`, which inserts the blank lines and re-stages the file.
+
+The result is a loop: the generator writes non-compliant markdown → the pre-commit hook fixes it
+→ the next `loom knowledge index` overwrites the fix → the following commit's hook fixes it
+again. Every commit that touches the knowledge base shows a spurious `INDEX.md` diff.
+
+Observed on this repository with 22 topics across 5 categories; harmless semantically, since
+both forms render identically and the staleness check only looks for substrings.
+
+**Fix:** emit `\n### {category}\n` — a blank line before each category sub-heading — in
+`generate_index`, and add a regression test asserting the generated index is markdownlint-clean.
+Until then, prefer the linted form: let the pre-commit hook be the last writer, and do not
+re-run `loom knowledge index` after committing unless topics actually changed.

@@ -14,7 +14,7 @@
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 322 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 363 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 61 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 297 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 316 |
 
 ## Tier 2 — Topics
 
