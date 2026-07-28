@@ -34,6 +34,12 @@ pub const HOOK_PREFER_MODERN_TOOLS: &str = include_str!("../../../../hooks/prefe
 /// CommitFilter hook - blocks forbidden patterns in git commits (e.g., Claude attribution)
 pub const HOOK_COMMIT_FILTER: &str = include_str!("../../../../hooks/commit-filter.sh");
 
+/// SubagentVerifyGuard hook - blocks a subagent from running project-wide verification
+/// (bare `cargo test`/`clippy`/`build`, etc.); scoped runs and integration-verify
+/// stage subagents are still allowed. Runs as a global PreToolUse:Bash hook.
+pub const HOOK_SUBAGENT_VERIFY_GUARD: &str =
+    include_str!("../../../../hooks/subagent-verify-guard.sh");
+
 /// SkillTrigger hook - suggests skills based on prompt keywords (UserPromptSubmit)
 pub const HOOK_SKILL_TRIGGER: &str = include_str!("../../../../hooks/skill-trigger.sh");
 
@@ -71,6 +77,7 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("ask-user-post.sh", HOOK_ASK_USER_POST),
     ("prefer-modern-tools.sh", HOOK_PREFER_MODERN_TOOLS),
     ("commit-filter.sh", HOOK_COMMIT_FILTER),
+    ("subagent-verify-guard.sh", HOOK_SUBAGENT_VERIFY_GUARD),
     ("git-add-guard.sh", HOOK_GIT_ADD_GUARD),
     ("worktree-isolation.sh", HOOK_WORKTREE_ISOLATION),
     ("worktree-file-guard.sh", HOOK_WORKTREE_FILE_GUARD),

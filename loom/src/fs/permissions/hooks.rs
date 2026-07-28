@@ -28,6 +28,10 @@ fn loom_hooks_config_for_dir(hooks_dir: &str) -> Value {
             },
             {
                 "matcher": "Bash",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/subagent-verify-guard.sh")}]
+            },
+            {
+                "matcher": "Bash",
                 "hooks": [{"type": "command", "command": format!("{hooks_dir}/git-add-guard.sh")}]
             },
             {
