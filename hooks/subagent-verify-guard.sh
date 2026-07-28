@@ -116,26 +116,26 @@ TOKENS=($STRIPPED)
 set +f
 NTOK=${#TOKENS[@]}
 
+# block <reason> - refuse the tool call and print the doctrine on stderr.
+#
+# Everything below the "BLOCKED" framing line is the SHARED no-verify doctrine,
+# byte-identical to the copies in loom/src/orchestrator/signals/cache.rs
+# (append_subagent_restrictions) and CLAUDE.md.template (Rule 5 and worker
+# preambles) - a subagent meets the same words in its signal, in CLAUDE.md, and
+# here at the tool boundary. Reword one and you must reword all three;
+# loom/tests/integration/doctrine_cross_surface.rs fails if they drift.
 block() {
 	loom_debug "DEBUG: BLOCKED - $1"
 	cat >&2 <<'EOF'
 ⛔ BLOCKED: Subagent attempting project-wide verification.
 
-VERIFICATION IS THE MAIN AGENT'S JOB, NOT YOURS.
-
-You are a SUBAGENT (spawned via Task tool). Do NOT run the project-wide build,
-test, lint, format, or typecheck suite - not to "check your work", not "just
-once at the end".
-
-- Run AT MOST ONE narrowly-scoped check covering only the files you changed
-  (`cargo test <filter>`, `cargo test --test <name>`, `cargo test -p <pkg>`,
-  `pytest <path>`, `go test ./pkg/...`, `bun test <path>`), and only when it
-  genuinely informs your work.
-- The main agent runs the full suite ONCE, after every subagent reports, and
-  owns every failure it finds. Duplicate full runs cost minutes of wall-clock
-  and tokens, and surface failures that are not yours to fix.
-- Report what you changed and what you did NOT verify. "Not verified" is a
-  correct and expected report - it is never a reason to run the full suite.
+VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:
+- Do NOT verify your work. No full build, no full test suite, no linter, no
+  formatter, no type-checker, and never a repeated or looping check.
+- AT MOST ONE narrowly-scoped check over the files YOU wrote (e.g.
+  `cargo test <your_module>::`), run ONCE. Skip it if you are unsure.
+- Report instead: files changed, assumptions made, anything unresolved.
+  The MAIN AGENT compiles, tests, lints, and fixes.
 EOF
 	exit 2
 }
