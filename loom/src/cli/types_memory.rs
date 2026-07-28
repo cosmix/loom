@@ -92,7 +92,7 @@ pub enum KnowledgeCommands {
 
     /// Spawn Claude session to explore and populate knowledge files
     Bootstrap {
-        /// Model to use for the Claude session (e.g., "sonnet", "opus")
+        /// Model for the Claude session (default: "opus" — bootstrap is judgement-heavy)
         #[arg(long)]
         model: Option<String>,
 
