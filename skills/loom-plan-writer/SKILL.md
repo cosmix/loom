@@ -221,15 +221,19 @@ graph LR
 
 ### knowledge-bootstrap (first)
 
-Captures codebase understanding before implementation. `stage_type: knowledge` (may write `doc/loom/knowledge/**`). It should: run `loom knowledge check`; if coverage < 50% or architecture incomplete, run `loom map --deep` (structural baseline without burning context); then spawn parallel `Explore` subagents for entry-points, patterns, conventions, each returning `loom knowledge update <file> "..."` commands. Review existing `mistakes.md` before completing. **Use `loom knowledge` CLI, never Write/Edit on knowledge files.**
+Captures codebase understanding before implementation. `stage_type: knowledge`, model opus (`reasoning_effort: xhigh`) — may write `doc/loom/knowledge/**`. It should: run `loom knowledge check`; if coverage < 50% or architecture incomplete, run `loom map --deep` (structural baseline without burning context); then spawn parallel `Explore` subagents for entry-points, patterns, conventions, each returning `loom knowledge update <file> "..."` commands (tier routing below). Review existing `mistakes.md` before completing. **Use `loom knowledge` CLI, never Write/Edit on knowledge files.**
 
 **Skip ONLY if** `doc/loom/knowledge/` is already populated AND `loom knowledge check` shows coverage ≥ 50%.
+
+### Knowledge tier routing (bootstrap & distill)
+
+`doc/loom/knowledge/` may be FLAT (tier-1 files only) or HIERARCHICAL (tier-1 summaries plus tier-2 topic files under per-category directories, e.g. `architecture/signal-generation.md`, `mistakes/phantom-merges.md`). Detect which with ONE predicate: hierarchical iff `doc/loom/knowledge/INDEX.md` exists at the root. Route every finding by size: something that fits in roughly 40 lines or fewer goes INLINE into the tier-1 file (`architecture.md`, `entry-points.md`, `patterns.md`, `conventions.md`, `mistakes.md`, `stack.md`, `concerns.md`); anything larger goes to `loom knowledge update <category>/<slug>`, leaving a 2-4 line summary plus a link in the tier-1 file. `loom knowledge index` (regenerates `INDEX.md`) is ALWAYS the mandatory final step after any knowledge write, in both layouts. **This does not change the boilerplate acceptance criterion `rg -q "## " doc/loom/knowledge/architecture.md`** — it still works under BOTH layouts because a tier-1 summary file keeps its `##` headings even when it links out to tier-2 detail. Do not "fix" that criterion to look for `INDEX.md` instead.
 
 ### integration-verify (second-to-last)
 
 > ⚠️ **TESTS PASSING ≠ FEATURE WORKING.** We have had MANY cases where all tests pass, code compiles, but the feature is NEVER WIRED UP. This stage is the gate that catches it.
 
-`stage_type: integration-verify`, model opus (auto). It runs AFTER all feature stages and must:
+`stage_type: integration-verify`, model opus (`reasoning_effort: xhigh`) — the same universal default as every other stage (Section 4). It runs AFTER all feature stages and must:
 
 - **Build & test** with ZERO tolerance — fix ALL warnings/lints/failures, nothing is "pre-existing."
 - **Code review** — spawn parallel `loom-code-reviewer` subagents (security via `/loom-security-audit`; architecture; test coverage); fix all findings with an engineer agent (reviewer is read-only). (The 6-dimension mini adversarial review is already injected at the signal layer — don't restate it. To require specific dimensions, use plan-level `code_review` config, not prose.)
@@ -238,7 +242,7 @@ Captures codebase understanding before implementation. `stage_type: knowledge` (
 
 ### knowledge-distill (last)
 
-`stage_type: knowledge-distill`, model sonnet (`reasoning_effort: xhigh`). Curates all stage memories into permanent knowledge and updates user-facing docs. Reads the plan, `loom memory show --all`, and current knowledge; synthesizes mistakes as actionable prevention rules, patterns, decisions, conventions via `loom knowledge update`; runs `loom review` to prune stale entries; updates README/CONTRIBUTING for changed behavior (only relevant sections). **Context discipline (200k window):** on a large plan, delegate memory/diff gathering to read-only subagents that return compact summaries; stay the sole writer of knowledge files. **Skip ONLY if** the plan produces no new knowledge worth preserving (rare).
+`stage_type: knowledge-distill`, model opus (`reasoning_effort: xhigh`). Curates all stage memories into permanent knowledge and updates user-facing docs. Reads the plan, `loom memory show --all`, and current knowledge; synthesizes mistakes as actionable prevention rules, patterns, decisions, conventions via `loom knowledge update`, following the same tier-routing rule as knowledge-bootstrap (above); runs `loom knowledge index` last, then `loom review` to prune stale entries; updates README/CONTRIBUTING for changed behavior (only relevant sections). **Context discipline (200k window):** on a large plan, delegate memory/diff gathering to read-only subagents that return compact summaries; stay the sole writer of knowledge files. **Skip ONLY if** the plan produces no new knowledge worth preserving (rare).
 
 Full YAML for all three bookends is in the canonical template (Section 10).
 
@@ -251,16 +255,30 @@ Full YAML for all three bookends is in the canonical template (Section 10).
 
 ## 4. Model Selection Per Stage (REQUIRED)
 
-> ⚠️ **EVERY stage MUST set `model` and `reasoning_effort: "xhigh"`.** Pick the model by the KIND of work — do not reach for opus every time. Sonnet 5 is faster, far cheaper, and near-equal on well-scoped development; opus earns its cost on judgment-heavy work. The planner's job is to convert as much of the plan as possible into detailed sonnet-executable stages and concentrate opus where it changes the outcome. Keep every sonnet stage SMALL (its 200k window is the binding constraint).
+> ⚠️ **EVERY stage MUST set `model: "opus"` and `reasoning_effort: "xhigh"`.** There is no per-stage sonnet/haiku choice — every stage's main agent is an opus orchestrator. Model choice does not disappear; it MOVES DOWN to the subagents each stage spawns.
 
-| Model | When |
-| ----- | ---- |
-| **`sonnet`** (default for development) | Development against a DETAILED spec: implementing to explicit paths/signatures, tests, refactors applying an existing pattern, boilerplate/scaffolding/config, migrations/sweeps — kept SMALL or decomposed. |
-| **`opus`** (judgment-heavy work) | Architecture and design (multi-file/multi-module work, new abstractions/data models), bug hunting and fixes, optimization/improvement passes, heavy engineering/algorithmic work, adversarial pressure-testing, code/security review (integration-verify), ambiguous requirements — and anything you cannot spec to sonnet-level detail. |
+BLOCK-B — model allocation playbook:
 
-**Larger stages: opus orchestrates, sonnet executes.** When a stage is too big for one sonnet session but the work itself is development (not a hard category above), do NOT flip the whole stage to opus-does-everything. Set `model: "opus"` and write the stage as a THIN ORCHESTRATOR: the opus session decomposes, spawns `loom-software-engineer` (sonnet) workers — flat, or 2-level with coordinators for >~6 tasks (CLAUDE.md Rule 6c) — then integrates and verifies. Opus does decomposition, integration, and judgment; sonnet does the development. A stage where opus itself writes the bulk of the code should be a hard-category stage.
+```text
+1. ORCHESTRATION IS ALWAYS OPUS. Every stage's main agent is opus. The
+   orchestrator does NOT implement — it decomposes the work, hands each
+   subagent full context, then verifies and commits. That is all.
+2. IMPLEMENTATION IS ALWAYS DELEGATED, to as FEW subagents as the work
+   allows: haiku (rare — trivial mechanical edits), sonnet (the common
+   case), opus (genuinely challenging work). Spawn BY AGENT TYPE.
+3. DEBUGGING OR REPEATED FAILURE → spawn a `loom-advisor` (fable) subagent:
+   narrow scope, full detail supplied by the orchestrator, advice returned.
+   Do not let an implementer thrash on the same failure twice.
+```
 
-**Sonnet follows what you write literally — it does not infer intent, resolve ambiguity, or discover integration points.** A vague sonnet stage guesses wrong, picks the wrong pattern, or leaves stubs, costing more in rework than the token savings. Every `sonnet` stage description MUST include:
+Consequences for how you write a plan:
+
+- **EVERY stage sets `model: "opus"` in its YAML.** There is no per-stage sonnet/haiku choice any more — the stage's main agent is always an opus orchestrator.
+- **The haiku/sonnet/opus decision MOVES DOWN to the subagent level**, made by the orchestrator AT SPAWN TIME — not by the plan author in YAML. The orchestrator picks per subagent assignment: haiku for trivial mechanical edits, sonnet for the common development-to-spec case, opus for genuinely challenging work.
+- **"Keep sonnet stages small" becomes "keep each subagent's assignment small."** A stage can be as large as the work genuinely requires; what must stay small is each individual subagent's task — that is what earns it a cheap model and keeps it inside its own context budget.
+- **ESCALATION RULE: two failures on the same task ⇒ spawn a `loom-advisor` (fable) subagent, NOT a blind retry.** This replaces any earlier guidance to retry a failing subagent with a bigger model — diagnose first (narrow scope, full detail, advice returned), then re-dispatch with whatever the advisor recommends.
+
+**The plan author still writes to sonnet-level detail — it now feeds the opus orchestrator's decomposition, not a sonnet agent's own literal execution.** Subagents follow what THEY are told literally; they don't infer intent, resolve ambiguity, or discover integration points. A vague stage description makes the orchestrator guess at decomposition, pick the wrong pattern for a subagent, or hand a subagent an underspecified task that produces stubs. Every stage description MUST include enough detail for the orchestrator to turn it into precise subagent assignments:
 
 1. Exact file paths to create/modify (not globs).
 2. Function/struct signatures to implement (name, params, return).
@@ -269,12 +287,13 @@ Full YAML for all three bookends is in the canonical template (Section 10).
 5. Integration wiring — which `mod.rs`/registry/route/test to update.
 6. Error-handling approach — which error type, how to propagate, what to log.
 
-**If you cannot write that level of detail, that is usually a planning gap — go back and ground the seam (Section 1), then write it.** Use opus when the detail genuinely cannot be known in advance (novel area, unclear blast radius, exploratory work) — not as a substitute for planning effort.
+**If you cannot write that level of detail, that is usually a planning gap — go back and ground the seam (Section 1), then write it.** The orchestrator's own judgment can absorb some ambiguity a directly-executing subagent could not, but an underspecified stage still costs more in orchestrator decomposition time and subagent rework than the planning effort saves.
 
 ```yaml
-# GOOD sonnet stage — everything needed to implement correctly
+# GOOD stage description — everything a sonnet subagent needs, handed to it
+# by the opus orchestrator; small enough to be ONE subagent's task
 - id: add-retry-logic
-  model: "sonnet"
+  model: "opus"
   reasoning_effort: "xhigh"
   description: |
     Add retry logic to HttpClient in src/http/client.rs.
@@ -286,24 +305,28 @@ Full YAML for all three bookends is in the canonical template (Section 10).
        (client.rs:78-95) in a retry loop catching 429 and 5xx.
     3. Wire `pub mod retry;` into src/http/mod.rs.
     4. Use thiserror for errors, matching src/http/error.rs.
+    Spawn ONE loom-software-engineer (sonnet) subagent with this same detail;
+    verify and commit.
 ```
 
-**Keep sonnet stages small — decompose, don't up-model for headroom.** A sonnet stage that takes on too much hits loom's 65% budget (~130k) and compacts — an uncached re-read that is slow, expensive, and degrades quality (the cheap model becomes the expensive, worse one). There is NO 1M sonnet escape hatch here. Two levers, in order: (1) scope the stage to a bounded slice — if a description grows past ~130k of working context, split into more stages; (2) decompose with a subagent hierarchy (Section 5) so the sonnet main agent stays a THIN COORDINATOR — subagents burn their own (discarded) context and return compact summaries. A sonnet stage with no subagent/hierarchy assignments is a red flag: it will do the work in the main context and compact. **Do NOT switch to opus merely to buy context for bulk work — restructure it (sonnet thin-coordinator, or the opus-orchestrator pattern above where sonnet workers still do the development). Opus is for hardness and orchestration judgment, not for doing bulk work itself.**
+**Keep each subagent's assignment small — decompose, don't up-model for headroom.** A subagent that takes on too much hits its own context budget and compacts — an uncached re-read that is slow, expensive, and degrades quality (the cheap model becomes the expensive, worse one). Two levers, in order: (1) scope each subagent's task to a bounded slice — if an assignment grows past ~130k of working context, split it into more subagents; (2) decompose with a subagent hierarchy (Section 5) so the orchestrator (and any coordinator subagent) stays a THIN COORDINATOR at every level — workers burn their own (discarded) context and return compact summaries. **An opus stage with no subagent assignments — where the orchestrator does the bulk of the implementation itself — is a red flag:** it defeats the point of ALWAYS-DELEGATED implementation and risks the same compaction failure, at a higher cost per token.
 
-**Bookend defaults:** integration-verify → opus (auto). knowledge-bootstrap → sonnet, opus if the codebase is large/unfamiliar and strategic. knowledge-distill → sonnet (delegate gathering on large plans).
+**Bookend defaults:** knowledge-bootstrap, integration-verify, and knowledge-distill are all `model: "opus"` — the same universal default as every other stage (Section 3).
 
 ---
 
 ## 5. Parallelization Strategy
 
 > ⚠️ **STAGES ARE EXPENSIVE** — each creates a worktree, spawns a session, costs real time and tokens. STRONGLY prefer subagents within ONE stage over additional stages.
+>
+> ⚠️ **BIAS TOWARD AS FEW SUBAGENTS AS POSSIBLE.** Fewer, larger-context subagents with well-scoped disjoint file territories beat many tiny ones — every subagent spin-up costs coordination overhead and a slice of context, and a well-specified subagent can absorb more work than a narrowly-scoped one. Before fanning out, ask whether ONE subagent (or a small number, each owning a whole disjoint territory) can do it; split further only when file territories are naturally disjoint or a single subagent's assignment would blow its own context budget.
 
 Pick by criteria (not a ranking):
 
 | Files overlap? | Inter-agent comms needed? | >~6 worker tasks? | Solution |
 | -------------- | ------------------------- | ----------------- | -------- |
-| NO | NO | NO | Same stage, **parallel subagents (flat)** |
-| NO | NO | YES | Same stage, **2-level hierarchy** (CLAUDE.md Rule 6c) |
+| NO | NO | NO | Same stage, **parallel subagents (flat, as FEW as the work allows)** |
+| NO | NO | YES | Same stage, **2-level hierarchy** (CLAUDE.md Rule 6c) — only once flat fan-out would exceed ~6 tasks |
 | NO | YES | Any | Same stage, **agent team** (wide/exploratory only) |
 | YES | Any | Any | **Separate stages** (loom merges) |
 | ≳10 homogeneous units, or adversarial verification | — | — | **`ultracode: true`** on the stage |
@@ -315,7 +338,7 @@ Pick by criteria (not a ranking):
 - **Q3 — Does later work need a verification checkpoint on this first?** YES → separate stage (quality gate).
 - All NO → **MERGE into one stage with parallel subagents.**
 
-Classic mistake: 4 stages each editing an independent config file → should be 1 stage with 4 subagents (~1× cost, 1 merge, no conflict risk vs ~4×, 4 merges).
+Classic mistake: 4 stages each editing an independent config file → should be 1 stage with as few subagents as the file territories require (often 1-2 subagents each owning multiple files, not one subagent per file) — ~1× cost, 1 merge, no conflict risk vs ~4×, 4 merges.
 
 ### Subagent file exclusivity (CRITICAL)
 
@@ -341,7 +364,7 @@ Match agent type to work: execution → `loom-software-engineer` (pins sonnet); 
 
 ### Hierarchies, teams, ultracode
 
-- **2-level hierarchy** (main → coordinators → workers; workers NEVER spawn subagents) — for >~6 well-defined tasks in 2–4 DISJOINT file territories. Use an `EXECUTION PLAN - HIERARCHICAL` block: coordinator territories, nested worker file lists, a per-coordinator `Verify:` command, and the statements "Territories are DISJOINT" and "Workers NEVER spawn subagents." Coordinators AND workers default to sonnet — spawn workers BY AGENT TYPE or an untyped worker inherits the (possibly opus) main model. On a larger or harder territory, an opus coordinator orchestrating sonnet workers is the right shape (judgment at the seam, cheap execution at the leaves) — workers stay sonnet either way. Mechanics/preambles: CLAUDE.md Rule 6c.
+- **2-level hierarchy** (main → coordinators → workers; workers NEVER spawn subagents) — for >~6 well-defined tasks in 2–4 DISJOINT file territories. Use an `EXECUTION PLAN - HIERARCHICAL` block: coordinator territories, nested worker file lists, an OPTIONAL per-coordinator `Verify:` line — AT MOST ONE narrowly-scoped check over the files that coordinator's workers wrote, run ONCE, skipped if the coordinator is unsure; it is not a substitute for real verification, which stays the stage's main agent's job (full compile/test/lint) — plus the statements "Territories are DISJOINT" and "Workers NEVER spawn subagents." Coordinator and worker model follows BLOCK-B (haiku rare/trivial, sonnet the common case, opus genuinely challenging) picked per task — not a blanket sonnet default that skips that judgment call. Spawn workers BY AGENT TYPE or an untyped worker inherits the (now always opus) main model. On a larger or harder territory, an opus coordinator orchestrating sonnet workers is a common shape (judgment at the seam, cheap execution at the leaves), chosen per task rather than by rote. Mechanics/preambles: CLAUDE.md Rule 6c.
 - **Ultracode** (`ultracode: true`) — licenses the stage's session for Workflow orchestration (scripted fan-out/verify over tens of agents). Only for ≳10 homogeneous units OR a high-stakes multi-perspective verification gate; the plan author MUST justify it in one sentence in the description. Not for ordinary implementation.
 - **Agent teams** — wide, exploratory scope needing inter-agent comms or dynamic task discovery (~7× whole-job cost; CLAUDE.md Rule 6b). Don't use for concrete file-partitioned work.
 
@@ -407,8 +430,8 @@ loom:
     - id: stage-id                 # unique kebab-case
       name: "Stage Name"
       stage_type: standard         # knowledge | standard | integration-verify | knowledge-distill (lowercase)
-      model: "sonnet"              # REQUIRED — sonnet for development to a detailed spec; opus for architecture/bugs/optimization/algorithms (Section 4)
-      reasoning_effort: "xhigh"    # REQUIRED on both models
+      model: "opus"                 # REQUIRED — every stage is an opus orchestrator now; subagent model choice happens at spawn time (Section 4)
+      reasoning_effort: "xhigh"    # REQUIRED on every stage
       description: |               # full task spec; NO triple backticks inside
         What this stage accomplishes.
         Use parallel subagents and skills to maximize performance.
@@ -560,7 +583,7 @@ loom:
     - id: knowledge-bootstrap
       name: "Bootstrap Knowledge Base"
       stage_type: knowledge
-      model: "sonnet"
+      model: "opus"
       reasoning_effort: "xhigh"
       description: |
         Explore codebase and populate doc/loom/knowledge/.
@@ -568,10 +591,15 @@ loom:
         Run loom knowledge check; if coverage <50% run loom map --deep.
         Spawn parallel Explore subagents (entry-points, patterns, conventions),
         each returning loom knowledge update commands. Review mistakes.md first.
+        TIER ROUTING: findings ~40 lines or fewer go inline in the tier-1 file;
+        larger findings go via loom knowledge update <category>/<slug> with a
+        2-4 line tier-1 summary + link. Detect layout via INDEX.md at the
+        knowledge root (present = hierarchical). Run loom knowledge index LAST.
         Use loom knowledge CLI, NOT Write/Edit. NEVER Claude Code auto-memory.
       dependencies: []
       acceptance:
         - "loom knowledge check --min-coverage 50"
+        # works under both flat and hierarchical layouts — tier-1 files keep ## headings
         - 'rg -q "## " doc/loom/knowledge/architecture.md'
         - 'rg -q "## " doc/loom/knowledge/entry-points.md'
       files: ["doc/loom/knowledge/**"]
@@ -583,7 +611,7 @@ loom:
     - id: stage-a
       name: "Feature A"
       stage_type: standard
-      model: "sonnet"
+      model: "opus"
       reasoning_effort: "xhigh"
       description: |
         Implement feature A. [Exact paths, signatures, patterns to follow,
@@ -600,7 +628,7 @@ loom:
     - id: stage-b
       name: "Feature B"
       stage_type: standard
-      model: "sonnet"
+      model: "opus"
       reasoning_effort: "xhigh"
       description: |
         Implement feature B. [Detailed spec as above.]
@@ -650,7 +678,7 @@ loom:
     - id: knowledge-distill
       name: "Knowledge Distillation"
       stage_type: knowledge-distill
-      model: "sonnet"
+      model: "opus"
       reasoning_effort: "xhigh"
       description: |
         Curate all stage memories into permanent knowledge; update user docs.
@@ -659,11 +687,15 @@ loom:
         subagents; stay the sole writer of knowledge files.
         Read plan + loom memory show --all + doc/loom/knowledge/*.md.
         Curate mistakes (prevention rules), patterns, decisions, conventions via
-        loom knowledge update; run loom review, prune stale entries.
+        loom knowledge update. TIER ROUTING: findings ~40 lines or fewer go
+        inline in the tier-1 file; larger findings go via loom knowledge update
+        <category>/<slug> with a 2-4 line tier-1 summary + link. Run
+        loom knowledge index LAST, then loom review to prune stale entries.
         Update README/CONTRIBUTING for changed behavior (relevant sections only);
         if nothing user-facing changed, skip but record WHY in memory.
       dependencies: ["integration-verify"]
       acceptance:
+        # works under both flat and hierarchical layouts — tier-1 files keep ## headings
         - 'rg -q "## " doc/loom/knowledge/architecture.md'
         - 'rg -q "## " doc/loom/knowledge/patterns.md'
       files: ["doc/loom/knowledge/**", "README.md", "CONTRIBUTING.md"]
@@ -704,13 +736,14 @@ description: |
     Coordinator A — REST (loom-software-engineer, sonnet):
       Territory: src/api/rest/**
       Workers: A1 users.rs · A2 orders.rs · A3 billing.rs · A4 tests/api/rest/
-      Verify: cargo test --test rest_api
+      Verify (optional, ONE scoped check, skip if unsure): cargo test --test rest_api
     Coordinator B — GraphQL (loom-software-engineer, sonnet):
       Territory: src/api/graphql/**
       Workers: B1 queries.rs · B2 mutations.rs · B3 subscriptions.rs · B4 tests/
-      Verify: cargo test --test graphql
+      Verify (optional, ONE scoped check, skip if unsure): cargo test --test graphql
   Territories are DISJOINT. Workers NEVER spawn subagents.
-  Coordinators return compact summaries only. Main agent verifies globally.
+  Coordinators return compact summaries only. The stage's main agent runs the
+  full build/test/lint gate — a coordinator's scoped check never substitutes for it.
 ```
 
 ---
@@ -726,12 +759,12 @@ description: |
 □ Blast radius includes LITERAL-member grep + whole-doc-tree sweep (counts, deferrals, Help/About → UI stage)
 □ Edits anchored by symbol; decisions settled to ONE value (no "maybe edit" conditionals); every prose task/file has exactly one owner; prose ordering = DAG edges
 □ knowledge-bootstrap first · integration-verify second-to-last · knowledge-distill last
-□ Every stage: model + reasoning_effort: xhigh + stage_type + working_dir set
+□ Every stage: model: "opus" + reasoning_effort: xhigh + stage_type + working_dir set
 □ Standard/IV stages: acceptance OR ≥1 goal-backward check (artifacts/wiring/wiring_tests/dead_code_check); wiring targets the CONSUMER; no leftover `truths:` block
 □ Every stage's acceptance carries the repo's FULL canonical gate covering its OWN files (not a scoped subset, not deferred downstream)
 □ Every prescribed check is realizable (expressible · executes the code · right strength · selected · grounded); no gate claims to prove what its inputs don't exercise
 □ Engines/drivers have a stage owning the composition-root call site; ≤1 stage owns each pre-existing integration file; lifecycle decisions settled in the plan
-□ Sonnet stages are SMALL + detailed (paths/signatures/patterns/wiring) or decomposed
+□ Every stage description is SMALL + detailed (paths/signatures/patterns/wiring) enough for the opus orchestrator to decompose into subagent assignments, or explicitly decomposed via hierarchy (Section 5)
 □ No file overlap between subagents; shared types in a foundation step
 □ Acceptance commands: YAML single-quoted, rg not grep, paths relative to working_dir
 □ Sandbox configured; network is a struct; allow_write covers every path acceptance commands write (real lockfile name, build outputs)
