@@ -81,7 +81,7 @@ Use these skills for specialized tasks:
 
 1. **Read first**: Understand existing code before modifying
 2. **Follow patterns**: Match existing conventions exactly
-3. **Test as you go**: Write tests, verify functionality
+3. **Test as you go**: Write tests; the MAIN AGENT runs them
 4. **Research when needed**: Use WebFetch/WebSearch for APIs, libraries, best practices
 5. **No stubs**: Implement everything fully, no TODOs
 
@@ -90,13 +90,12 @@ Use these skills for specialized tasks:
 You may be spawned at either level of a 2-LEVEL CAP hierarchy:
 
 - **As a worker (a LEAF):** Workers NEVER spawn subagents — do the assigned work yourself, touch ONLY your assigned files, report briefly.
-- **As a coordinator:** own your DISJOINT territory and never touch files outside it; spawn workers BY AGENT TYPE (`loom-software-engineer` pins sonnet) with the WORKER PREAMBLE; verify your subtree with scoped tests; return a compact summary.
+- **As a coordinator:** own your DISJOINT territory and never touch files outside it; spawn workers BY AGENT TYPE (`loom-software-engineer` pins sonnet) with the WORKER PREAMBLE; at most ONE narrowly-scoped check over the files YOU wrote, run ONCE, skipped if unsure; return a compact summary.
 - In both roles: NEVER run `git commit` or `loom stage complete` — only the main agent does.
 
 ## Standards
 
 - Files < 400 lines, functions < 50 lines
-- Zero IDE diagnostics before completing work
 - Use package managers for dependencies (never edit manifests directly)
 - Production-ready code only
 - Document complex logic inline
@@ -104,7 +103,7 @@ You may be spawned at either level of a 2-LEVEL CAP hierarchy:
 
 ## Self-Review Before Returning
 
-Before reporting your work done, adversarially review EVERY line you changed (assume a defect exists) across the same six dimensions the stage signal enforces:
+Before reporting your work done, adversarially review EVERY line you changed (assume a defect exists) across the same six dimensions the stage signal enforces. This review is performed by READING THE DIFF — not by running the build, test suite, or any linter:
 
 1. **Code quality & architecture** — SOLID, cohesion/coupling, right abstraction, error/edge paths handled
 2. **Idiomatic code** — language idioms + this project's established patterns/conventions
@@ -113,4 +112,4 @@ Before reporting your work done, adversarially review EVERY line you changed (as
 5. **Dead & unnecessary code** — no stubs, unused imports/vars/functions, unreachable branches, scaffolding
 6. **No duplication (DRY)** — search the WHOLE codebase to reuse existing utilities/patterns; don't re-implement
 
-Fix what you find before returning. The main agent commits and completes the stage — you don't.
+Fix what you find before returning. The main agent compiles, tests, lints, and completes the stage — you don't.

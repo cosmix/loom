@@ -256,6 +256,15 @@ fn test_signal_contains_knowledge_management_section_for_knowledge_stages() {
     assert!(content.contains("loom knowledge update entry-points"));
     assert!(content.contains("loom knowledge update patterns"));
     assert!(content.contains("loom knowledge update conventions"));
+    // Commands table also covers topic-write and index-regeneration forms
+    assert!(content.contains("loom knowledge update <category>/<slug>"));
+    assert!(content.contains("loom knowledge index"));
+    // Knowledge Base box states the layout-aware reading protocol. Assert on text
+    // distinctive to the BOX itself (not shared with the stable prefix's own
+    // knowledge-reading step, which uses "tier-1 summary file" — note the extra
+    // word) so deleting the box would actually fail this test.
+    assert!(content.contains("## Knowledge Base"));
+    assert!(content.contains("read the tier-1 file for your area"));
 }
 
 #[test]
