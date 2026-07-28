@@ -1,25 +1,23 @@
 #!/usr/bin/env bash
 # subagent-verify-guard.sh - PreToolUse hook blocking full-suite runs by SUBAGENTS
 #
-# Verification is the MAIN AGENT's job. A subagent that runs the full build /
-# test / lint / typecheck suite burns minutes of wall-clock and tokens, and
-# surfaces failures it was never asked to own. This hook enforces that at the
-# tool boundary: project-wide runners are blocked, narrowly-scoped runs
-# (a test filter, a single test target, a path) are allowed.
+# Verification is the MAIN AGENT's job: a subagent running the full build/test/
+# lint/typecheck suite burns wall-clock and tokens and surfaces failures it was
+# never asked to own. Project-wide runners are blocked at the tool boundary,
+# narrowly-scoped runs (a filter, one test target, a path) allowed.
 #
-# The MAIN AGENT IS NEVER AFFECTED - the hook acts only when `loom_is_subagent`
+# The MAIN AGENT IS NEVER AFFECTED: the hook acts only when `loom_is_subagent`
 # (hooks/_common.sh) proves LOOM_MAIN_AGENT_PID is a LIVE ancestor with another
-# Claude process in between. integration-verify stages are carved out: their
-# review subagents are supposed to run the full suite. There is deliberately NO
-# escape-hatch env var - an opt-out would defeat the hook's entire purpose
+# Claude process between. integration-verify stages are carved out below (their
+# review subagents are supposed to run the full suite). There is deliberately NO
+# escape-hatch env var - an opt-out would defeat the whole purpose
 # (commit-filter.sh already treats unsetting the detection gate as evasion).
 #
 # SECURITY NOTE (best-effort, defense-in-depth): matching is token-based, not a
-# shell parser, so a runner hidden inside a quoted string (`bash -c "cargo
-# test"`) or built by substitution is not seen. The rules are deliberately
-# CONSERVATIVE - an unrecognised command is allowed, because a false block
-# strands a subagent mid-task. The durable guarantee is doctrinal (the signal
-# and CLAUDE.md tell subagents not to verify); this hook raises the cost.
+# shell parser, so a runner hidden in a quoted string (`bash -c "cargo test"`)
+# or built by substitution is not seen. Rules are CONSERVATIVE - an unrecognised
+# command is allowed, since a false block strands a subagent mid-task; the
+# durable guarantee is doctrinal, and this hook only raises the cost.
 #
 # Input: JSON from stdin - {"tool_name": "Bash", "tool_input": {"command": ...}}
 # Exit codes: 0 = allow, 2 = block with guidance on stderr
@@ -62,13 +60,12 @@ loom_is_subagent || exit 0
 # carve-out that only ever RELAXES the hook. Do not "fix" this into a gate.
 #
 # AMBIGUITY IS FAIL-SAFE: stage files carry a depth prefix (02-<id>.md), so the
-# glob can match more than once. Taking the first match would let a planted
-# `00-<id>.md` claiming integration-verify grant the carve-out over the real
-# file - and a hook built with no escape hatch must not ship a cheap one.
-# Picking the match whose `id:` agrees is no defence either, since whoever
-# writes the decoy writes its `id:` too. So: exactly ONE match may be
-# consulted; duplicates, a missing file, or one that does not declare
-# integration-verify all fall through to the checks below.
+# glob can match more than once. Taking the first would let a planted
+# `00-<id>.md` claiming integration-verify beat the real file, and a hook with
+# no escape hatch must not ship a cheap one. Preferring the match whose `id:`
+# agrees is no defence either - whoever writes the decoy writes its `id:`. So:
+# exactly ONE match may be consulted; duplicates, a missing file, or one not
+# declaring integration-verify all fall through to the checks below.
 STAGE_ID="${LOOM_STAGE_ID:-}"
 WORK_DIR="${LOOM_WORK_DIR:-}"
 if [[ -n "$STAGE_ID" && -n "$WORK_DIR" ]]; then
@@ -100,16 +97,24 @@ if [[ -z "$STRIPPED" ]]; then
 	exit 0
 fi
 
-# Normalize before splitting. A NEWLINE separates two commands exactly as `;`
-# does, but IFS word splitting eats it, which would leave every line after the
-# first unreachable (multi-line Bash calls are routine). And `(`/`)` cling to
-# their neighbours, so `(cd loom && cargo test)` tokenises as `test)`.
-STRIPPED=${STRIPPED//$'\n'/ ; }
+# Normalize before splitting. IFS splitting breaks on WHITESPACE only, so a
+# metacharacter written without surrounding spaces stays glued to its neighbour
+# and no separator is ever seen: `echo hi; cargo test` leaves the runner at a
+# non-command position and `cargo test;` hides the subcommand behind `test;`.
+# A newline separates commands just as `;` does, but splitting eats it. A lone
+# `&` is deliberately NOT padded - that would split `2>&1` into `2>` and `1`,
+# and `1` would read as a test filter, reopening a bypass closed here. The `\&`
+# below is required: an unescaped `&` in a ${//} replacement expands to the text
+# that matched, so ` && ` would produce ` &&&& `.
+STRIPPED=${STRIPPED//$'\n'/;}
+STRIPPED=${STRIPPED//&&/ \&\& }
+STRIPPED=${STRIPPED//;/ ; }
+STRIPPED=${STRIPPED//|/ | }
 STRIPPED=${STRIPPED//\(/ \( }
 STRIPPED=${STRIPPED//\)/ \) }
 
-# Split into tokens with globbing disabled (a `*` must not expand against the
-# cwd). Quotes stay attached, so `rg "cargo test"` never matches a command word.
+# Split with globbing off (a `*` must not expand against the cwd). Quotes stay
+# attached to their token, so `rg "cargo test"` never matches a command word.
 set -f
 # shellcheck disable=SC2206
 TOKENS=($STRIPPED)
@@ -119,11 +124,10 @@ NTOK=${#TOKENS[@]}
 # block <reason> - refuse the tool call and print the doctrine on stderr.
 #
 # Everything below the "BLOCKED" framing line is the SHARED no-verify doctrine,
-# byte-identical to the copies in loom/src/orchestrator/signals/cache.rs
-# (append_subagent_restrictions) and CLAUDE.md.template (Rule 5 and worker
-# preambles) - a subagent meets the same words in its signal, in CLAUDE.md, and
-# here at the tool boundary. Reword one and you must reword all three;
-# loom/tests/integration/doctrine_cross_surface.rs fails if they drift.
+# byte-identical to the copies in loom/src/orchestrator/signals/cache.rs and
+# CLAUDE.md.template - a subagent meets the same words in its signal, in
+# CLAUDE.md, and here. Reword one and you must reword all three:
+# loom/src/orchestrator/signals/tests_doctrine.rs fails if they drift.
 block() {
 	loom_debug "DEBUG: BLOCKED - $1"
 	cat >&2 <<'EOF'
@@ -146,9 +150,7 @@ is_redirect_op() {
 	[[ -n "$1" ]] || return 1
 	case "$1" in
 	*[!0-9\<\>\&]*) return 1 ;; # not made purely of redirection characters
-	esac
-	case "$1" in
-	*\&[0-9]*) return 1 ;; # `2>&1` - the target is part of the token
+	*\&[0-9]*) return 1 ;;      # `2>&1` - the target is part of the token
 	*[\<\>]*) return 0 ;;
 	esac
 	return 1
@@ -157,10 +159,8 @@ is_redirect_op() {
 # tok_kind <token> - sets TOK_KIND to sep | redirop | redir | word.
 #
 # A redirection is NEVER a positional argument. `cargo test 2>&1 | tail -50` is
-# a FULL-SUITE run, and CLAUDE.md rule 14 (pipe tests through tail) makes that
-# the likeliest invocation in this repo; reading `2>&1` as a test filter would
-# wave it through. Every argument scanner routes tokens through here so they
-# all agree on separators and redirections.
+# a FULL-SUITE run, and CLAUDE.md rule 14 (pipe tests through tail) makes it the
+# likeliest invocation here; reading `2>&1` as a filter would wave it through.
 TOK_KIND=""
 tok_kind() {
 	case "$1" in
@@ -179,8 +179,8 @@ tok_kind() {
 #   bare   - only flags, or nothing: the project-wide default run
 #
 # Stops at the next separator, so `cargo test -p loom && cargo build` is judged
-# one command at a time. Flags taking a separate value (--manifest-path <path>,
-# -k <expr>) consume it, so the value is not read as a positional.
+# one command at a time. Flags taking a separate value (--manifest-path <path>)
+# consume it, so it is not read as a positional.
 scan_args() {
 	local i="$1" skip=0 tok
 	while [[ $i -lt $NTOK ]]; do
@@ -232,7 +232,7 @@ block_on_word() {
 		i=$((i + 1))
 		tok_kind "$tok"
 		if [[ "$TOK_KIND" == sep ]]; then break; fi
-		# `make docs > test.log` - a redirection target is a filename, not a goal
+		# `make docs > test.log`: a redirection target is a filename, not a goal
 		if [[ "$TOK_KIND" == redirop ]]; then i=$((i + 1)); continue; fi
 		if [[ "$TOK_KIND" == redir ]]; then continue; fi
 		case "$tok" in -j | -C | -f | --directory) i=$((i + 1)); continue ;; esac
@@ -276,8 +276,7 @@ block_unless_scoped() {
 	return 0
 }
 
-# tsc: -p/--project and -b/--build typecheck the whole project, and so does a
-# bare `tsc`. Only an explicit file list is scoped.
+# tsc: -p/-b and a bare `tsc` typecheck everything; only a file list is scoped.
 check_tsc() {
 	block_on_word "$1" "-p --project -b --build -w --watch" "tsc whole-project"
 	if [[ -z "$(first_positional "$1" "--outDir --outFile --target -t --module --lib --rootDir")" ]]; then
@@ -341,9 +340,9 @@ check_command() {
 	return 0
 }
 
-# Walk the token stream, inspecting only tokens in COMMAND POSITION (start of
-# the command line or just after a separator). This keeps mentions inside
-# arguments - `rg cargo doc/`, `echo make test` - from being treated as runs.
+# Walk the token stream, inspecting only tokens in COMMAND POSITION (line start
+# or just after a separator), so mentions inside arguments - `rg cargo doc/`,
+# `echo make test` - are never treated as runs.
 DQ='"'
 SQ="'"
 i=0
@@ -353,9 +352,9 @@ while [[ $i -lt $NTOK ]]; do
 	TOK="${TOKENS[$i]}"
 
 	# The splitter does not parse quotes, so a separator inside a quoted
-	# argument (`rg "x && cargo build -v" src/`) would otherwise start a fake
-	# command - and a quoted multi-line message would turn its prose lines into
-	# commands. Every token inside an open quote is inert until it closes.
+	# argument (`rg "x && cargo build -v" src/`) would start a fake command, and
+	# a quoted multi-line message would turn its prose into commands. Every
+	# token inside an open quote is inert until it closes.
 	if [[ -n "$in_quote" ]]; then
 		case "$TOK" in
 		*"$in_quote"*) in_quote="" ;;
