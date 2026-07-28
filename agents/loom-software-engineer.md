@@ -81,7 +81,7 @@ Use these skills for specialized tasks:
 
 1. **Read first**: Understand existing code before modifying
 2. **Follow patterns**: Match existing conventions exactly
-3. **Test as you go**: Write tests; the MAIN AGENT runs them
+3. **Write tests, do not run the suite**: tests ship with the code; the MAIN AGENT runs them
 4. **Research when needed**: Use WebFetch/WebSearch for APIs, libraries, best practices
 5. **No stubs**: Implement everything fully, no TODOs
 

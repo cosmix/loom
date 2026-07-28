@@ -31,8 +31,11 @@ pub fn execute(model: Option<String>, skip_map: bool, quick: bool) -> Result<()>
         println!("  {} Codebase mapped", "✓".green());
     }
 
-    // Spawn Claude session
-    let effective_model = model.unwrap_or_else(|| "sonnet".to_string());
+    // Spawn Claude session. Bootstrap explores an unfamiliar codebase and
+    // decides what is worth recording, which is the same judgement `gc` needs
+    // and the same job `StageType::Knowledge` now does on opus - so default to
+    // opus here too rather than leaving the three defaults disagreeing.
+    let effective_model = model.unwrap_or_else(|| "opus".to_string());
 
     // Build prompts (model is embedded so subagents use the same model).
     // NOTE: knowledge file contents are deliberately NOT embedded in the prompt.
