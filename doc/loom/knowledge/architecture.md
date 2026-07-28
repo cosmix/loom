@@ -10,138 +10,25 @@ Loom is a Rust CLI (~15K lines) for orchestrating parallel Claude Code sessions 
 
 ## Directory Structure
 
-```text
-loom/src/
-  main.rs, lib.rs          # CLI entry (clap), module exports
-  commands/                 # CLI implementations (~4K lines)
-    init/, run/, stage/ (complete, merge, merge_resolver, merge_verify, ...),
-    status/, merge/, memory/, knowledge/, track/, runner/
-  daemon/server/            # Background daemon (~1.5K lines)
-    core.rs, lifecycle.rs, protocol.rs, status.rs, client.rs, orchestrator.rs
-  orchestrator/             # Core engine (~4K lines)
-    core/                   # Main loop, stage executor, persistence, recovery
-    terminal/               # NativeBackend — host OS terminal spawning
-      native/               # Host OS terminal spawning (11+ emulators)
-    monitor/                # Session health, heartbeat, failure tracking
-    liveness.rs             # LivenessService — session liveness probe
-    signals/                # Signal generation (Manus format, cache, CRUD)
-    continuation/           # Context handoff management
-    progressive_merge/      # Merge orchestration + lock
-    auto_merge.rs
-    merge_attribution.rs    # Attribute global MERGE_HEAD to a stage; reconcile
-  models/                   # Domain models (~1K lines)
-    stage/ (types, transitions, methods)
-    session/ (types, methods)
-  plan/                     # Plan parsing (~1.5K lines)
-    parser.rs, schema/ (types, validation), graph/ (DAG builder)
-  fs/                       # File operations (~500 lines)
-    work_dir.rs, knowledge.rs, memory.rs
-  git/                      # Git operations (~800 lines)
-    worktree/ (base, operations), merge/ (mod, in_progress, lock, status), branch/
-  verify/                   # Acceptance + goal-backward verification (~600 lines)
-    criteria/, transitions/, goal_backward/
-  sandbox/                  # Claude Code sandbox config generation
-    config.rs, settings.rs
-  hooks/                    # Hook script definitions
-  parser/frontmatter.rs     # Canonical YAML frontmatter extraction
-  validation.rs             # Input validation (IDs, names)
-  completions/              # Shell completion (custom scripts + dynamic engine + install)
-  process/                  # PID liveness checking
+Full `loom/src/` module tree with one-line responsibilities per directory, plus the `.work/`
+state layout and the repo-root asset directories (`hooks/`, `agents/`, `skills/`, `codex/`).
 
-.work/                      # Runtime state (gitignored)
-  config.toml, stages/*.md, sessions/*.md, signals/*.md,
-  handoffs/*.md, orchestrator.sock, orchestrator.pid
-```
+→ [Directory Structure](architecture/directory-structure.md)
 
 ## Core Abstractions
 
-### ExecutionGraph (plan/graph/builder.rs)
+The load-bearing types — `ExecutionGraph`, `Stage`, `Session`, `Orchestrator`, `TerminalBackend`,
+`KnowledgeDir` — together with the end-to-end data flow from plan parse to merge, and the
+file-ownership rules that say which process may write which `.work/` file.
 
-DAG of stages with dependency tracking. `get_ready()` returns stages with all deps satisfied (status == Completed AND merged == true). Cycle detection via DFS at build time.
-
-### Stage State Machine (models/stage/)
-
-```text
-WaitingForDeps --> Queued --> Executing --> Completed --> Verified
-                     |            |
-                     v            +--> Blocked, NeedsHandoff, WaitingForInput,
-                  Skipped              MergeConflict, CompletedWithFailures, MergeBlocked, NeedsHumanReview
-```
-
-12 variants total. Terminal states: Completed, Skipped. Transitions validated in transitions.rs. See [patterns.md -- State Machine Pattern](patterns.md#state-machine-pattern).
-
-**Documented state-machine bypasses:** Two paths intentionally bypass `try_transition`:
-
-1. **`--force-unsafe`** (`handle_force_unsafe_completion`) — sets `Status::Completed` from any state. Manual recovery only.
-2. **Phantom-merge revert** (`reconcile_main_repo_active_merge` and `complete()`'s `RevertAndSpawnResolver` arm) — flips a `Completed + merged=true` stage back to `MergeConflict + merged=false + merge_conflict=true` when an active main-repo merge is attributed to that stage. The bypass is necessary because `Completed` is terminal; `try_transition` would refuse, but this is exactly the case the bypass is designed for. All such mutations are logged at `error` level.
-
-### StageType Enum (plan/schema/types.rs)
-
-- **Standard** (default) -- Regular implementation stages, require goal-backward verification
-- **Knowledge** -- No worktree, commits required (directly to main), auto merged=true, exploration focus
-- **IntegrationVerify** -- Second-to-last quality gate combining code review AND functional verification
-- **KnowledgeDistill** -- Final stage, runs after integration-verify, curates session memories into permanent knowledge (worktree stage, sonnet default)
-
-Signal generation has 4 stable prefix generators in cache.rs (standard, knowledge, integration-verify, knowledge-distill).
-
-### Session Lifecycle (models/session/)
-
-States: Spawning -> Running -> Completed | Crashed | ContextExhausted | Paused. Tracks PID, terminal window ID, context usage %, timestamps.
-
-### NativeBackend (orchestrator/terminal/)
-
-Concrete type for spawning Claude Code in terminal windows.
-
-- **NativeBackend** (`orchestrator/terminal/native/`) — spawns Claude Code in a host terminal. Supports 11+ emulators via `TerminalEmulator` enum. PID tracking via wrapper scripts writing to `.work/pids/`.
-
-**LivenessService** (`orchestrator/liveness.rs`) — replaces scattered `kill -0` checks. Delegates to `NativeBackend::is_session_alive()` for session liveness probes.
-
-## Data Flow
-
-### Plan Execution Flow
-
-```text
-1. loom init doc/plans/PLAN-foo.md
-   --> Parse plan, create .work/, write stage files
-
-2. loom run
-   --> Spawn daemon (or foreground) --> orchestrator loop
-
-3. Orchestrator loop (5s poll):
-   Load stage files --> Build ExecutionGraph --> Find ready stages
-   --> Create worktree + signal --> Spawn session --> Monitor via LivenessService
-
-4. Agent reads signal, executes, runs: loom stage complete <id>
-
-5. Progressive merge into main branch (dependency order)
-```
-
-### IPC Protocol (daemon/server/protocol.rs)
-
-Unix socket at `.work/orchestrator.sock`. Messages: Status, Stop, Subscribe. Length-prefixed JSON (4-byte big-endian, max 10MB). Daemon polls status every 1 second for subscribers.
-
-## File Ownership
-
-| Directory             | Owner Module                     | Purpose              |
-| --------------------- | -------------------------------- | -------------------- |
-| `.work/stages/`       | orchestrator/core/persistence.rs | Stage state          |
-| `.work/sessions/`     | orchestrator/core/persistence.rs | Session state        |
-| `.work/signals/`      | orchestrator/signals/            | Agent assignments    |
-| `.work/handoffs/`     | orchestrator/continuation/       | Context dumps        |
-| `.work/config.toml`   | commands/init/, commands/run/    | Plan reference       |
-| `.worktrees/`         | git/worktree/                    | Isolated workspaces  |
-| `doc/loom/knowledge/` | fs/knowledge.rs                  | Persistent learnings |
+→ [Core Abstractions, Data Flow & File Ownership](architecture/core-abstractions.md)
 
 ## Worktree Isolation (4-Layer Defense)
 
 1. **Git layer** -- Separate worktrees at `.worktrees/<stage-id>/` with branch `loom/<stage-id>`. Symlinks: `.work` -> shared state, `.claude/CLAUDE.md` -> instructions, root `CLAUDE.md` -> project guidance.
 2. **Sandbox layer** -- MergedSandboxConfig (sandbox/config.rs) generates `settings.local.json` with filesystem deny/allow, network domains, excluded commands. Knowledge writes via `loom knowledge update` CLI only.
 3. **Signal layer** -- Four stage-type-specific stable prefix generators in cache.rs (standard, knowledge, integration-verify, knowledge-distill). Include isolation rules and subagent restrictions.
-4. **Hook layer** -- commit-guard.sh blocks exit without commit. commit-filter.sh blocks subagent git operations via LOOM_MAIN_AGENT_PID/PPID comparison.
-
-## Subagent Isolation
-
-Three-layer defense: documentation (CLAUDE.md Rule 5), signal injection (cache.rs prefix), hook enforcement (commit-filter.sh). Detection: wrapper script exports LOOM_MAIN_AGENT_PID; hook compares PPID to detect subagent context.
+4. **Hook layer** -- commit-guard.sh blocks exit without commit. commit-filter.sh blocks subagent git operations and subagent-verify-guard.sh blocks subagent full-suite verification, both gated on `loom_is_subagent()` (live-ancestor `LOOM_MAIN_AGENT_PID` plus an intervening Claude process — not a PPID comparison).
 
 ## Layering Violations (Known Issues)
 
@@ -278,14 +165,11 @@ Two write sites, both targeting `settings.local.json` (never the committed
 
 ## Hook System Architecture (hooks/)
 
-The `hooks/` module provides Claude Code hooks integration for session lifecycle management. It is a **top-level module** — currently imported by `orchestrator/` and `git/worktree/`, which is a known layering violation (both should import a stable hooks interface instead).
+The `hooks/` scripts, how they are embedded and installed, the SessionStart
+`hookSpecificOutput` contract, and the enforcement layers that keep subagents inside their
+lane (`commit-filter.sh`, `subagent-verify-guard.sh`, the worktree guards).
 
-**Layering:** `hooks/` is used by `orchestrator/core/stage_executor.rs` (worktree hook setup) and `git/worktree/settings.rs` (settings injection). The intended fix is to extract hooks as a fully independent top-level module with no reverse imports.
-
-**Global vs session hooks distinction:**
-
-- **Global hooks** (commit-filter.sh, git-add-guard.sh, worktree-isolation.sh, prefer-modern-tools.sh): written once by `loom init` into the main repo's `.claude/settings.local.json` via `fs/permissions.rs`. Persist across all sessions.
-- **Session hooks** (session-start.sh, post-tool-use.sh, pre-compact.sh, session-end.sh, learning-validator.sh): generated fresh per-session by `hooks/generator.rs:generate_hooks_settings()`. Merged into worktree's `settings.local.json` with duplicate detection.
+→ [Hook System](architecture/hook-system.md)
 
 ## Monitor Subsystem (orchestrator/monitor/)
 
@@ -331,29 +215,6 @@ commands/status/
 **Data flow (static mode):** `collect_status_data()` loads plan name, stage list (with status/context), session list, merge state, and progress counts into a single `StatusData`. Renderers receive `StatusData` and write to `impl Write`.
 
 **TUI mode:** `ui::run_tui(work_path)` subscribes to the daemon's Unix socket (`orchestrator.sock`) and re-renders on each update. Requires daemon running; errors with hint if not.
-
-## Soft Signals
-
-Soft signals are advisory per-session notices persisted to disk so that dedup survives daemon restarts. File: `.work/monitor/soft-signals.jsonl` (JSONL, append-only, no compaction).
-
-**Schema (single variant today):**
-
-```json
-{"kind":"possibly_stuck","session_id":"s1","stage_id":"my-stage","recent_events":10,"failure_count":9,"failure_ratio":0.9,"emitted_at":"<RFC3339>","expires_at":"<RFC3339>"}
-```
-
-**Decay window:** `DECAY_WINDOW_SECS = 120` — signals expire 120 seconds after they are written. `read_active(work_dir, now)` filters out expired signals. `read_active_for_session(work_dir, now, session_id)` further filters by session.
-
-**Detection pipeline:**
-
-1. `post-tool-use.sh` appends rows to `.work/tool-events.jsonl` on every tool call.
-2. `orchestrator/monitor/tool_analysis::analyze_session()` reads the last 50 events for a session and computes `ToolAnalysis`.
-3. Stuck criteria: `recent_failure_count >= 5 (STUCK_MIN_EVENTS)` AND `failure_ratio >= 0.80 (STUCK_FAILURE_RATIO)` within a 60-second rolling window (`STUCK_WINDOW_SECS`). Failure-shaped events: `is_error == true` OR `output_bytes == Some(0)`.
-4. On detection, monitor emits `MonitorEvent::PossiblyStuck`; the event handler calls `soft_signals::append(work_dir, &signal)`.
-5. `daemon/server/status.rs::collect_status()` calls `soft_signals::read_active_for_session()` to derive `Stage.is_possibly_stuck` at read time (never persisted to stage files — `#[serde(skip)]`).
-6. Static `loom status` reads via `commands/status/data.rs::collect_status_data()` using the same helper.
-
-**Key files:** `orchestrator/monitor/soft_signals.rs` (schema + I/O), `orchestrator/monitor/tool_analysis.rs` (analysis), `orchestrator/monitor/detection.rs` (event emission), `daemon/server/status.rs` (status derivation).
 
 ## Orchestrator Main-Loop Tick Sequence (Exact Call Order)
 
@@ -426,161 +287,19 @@ Plans are loaded ONCE at daemon startup via `build_execution_graph()` → `Execu
 
 ## Remote Control Module (loom/src/remote_control.rs)
 
-Claude Code's `--remote-control` flag lets the loom orchestrator drive Claude sessions programmatically. It exits non-zero when prerequisites are unmet, so it must be gated by a preflight check before use.
+Capability detection, preflight, and resolution for driving external agent binaries; the
+permission-mode plumbing that decides how a spawned session is allowed to act.
 
-**Key types:**
-
-- `RemoteControlMode` (`auto` | `off`) — operator-facing switch persisted in `.work/config.toml [remote_control]`.
-- `RemoteControlConfig` — the persisted config struct (single `mode` field).
-- `RemoteControlStatus` (`Enabled` | `Disabled { reason }`) — preflight result.
-
-**Key functions:**
-
-| Function | Purpose |
-|----------|---------|
-| `preflight(claude_path)` | Combines version probe + auth-eligibility heuristic |
-| `claude_supports_remote_control(path)` | Version gate only (>= 2.1.51) |
-| `remote_control_eligible()` | Auth heuristic: no disqualifying env var + `~/.claude/.credentials.json` present |
-| `resolve(work_dir)` | Per-spawn gate: checks mode, marker, and memoized preflight |
-| `run_startup_preflight(path, work_dir)` | Advisory startup warning if disabled |
-| `write_unsupported_marker(work_dir)` | Writes `.work/remote_control-unsupported` |
-
-**Resolution model (in order):**
-
-1. `mode == off` → false (skip)
-2. `.work/remote_control-unsupported` marker exists → false
-3. Memoized `preflight()` (runs `claude --version` once per process) → true/false
-
-**Fallback / fast-fail path (crash_handler.rs):**
-
-If a native session crashes within 15 seconds of creation while `resolve()` is true, the crash handler writes `.work/remote_control-unsupported` and logs a warning. The existing retry/backoff then respawns the session; on the retry, `resolve()` returns false (marker present) so `--remote-control` is omitted.
-
-**Config persistence:**
-
-`fs/work_dir.rs` exposes `read_remote_control_config()` / `write_remote_control_config()` using the `[remote_control]` section of `.work/config.toml`. Pattern mirrors `read_plan_sandbox` / `write_plan_sandbox`.
-
-**Auth disqualifying env vars (Remote Control requires claude.ai login):**
-
-`ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, `CLAUDE_CODE_USE_FOUNDRY`
+→ [Remote Control Module](architecture/remote-control.md)
 
 ## Signal Generation Pipeline (orchestrator/signals/) [DETAILED]
 
-The signal system assembles agent prompt files in a **4-section Manus KV-cache pattern** for token efficiency.
+How a stage signal is assembled: the stable-prefix cache keyed by stage type, the shared
+`append_*` helpers that compose each block, per-stage-type prefixes, and the soft-signal
+escalation path. This is the runtime channel for agent doctrine — change it and every
+running stage changes.
 
-### Call Hierarchy
-
-```text
-generate_signal_with_skills() [generate.rs]
-  └─ build_signal_context()           # assembles EmbeddedContext
-       └─ build_embedded_context_with_stage_and_session()
-            ├─ reads handoff (V1 prose / V2 structured)
-            ├─ read_plan_overview()
-            ├─ KnowledgeDir::has_content()
-            └─ format_memory_for_signal(last 10 entries only)
-  └─ format_signal_content() [format/mod.rs]
-       └─ format_signal_with_metrics()
-            ├─ select stable prefix from cache.rs (by stage type)
-            ├─ format_semi_stable_section() [sections.rs:15]
-            ├─ format_dynamic_section() [sections.rs:382]
-            ├─ format_recitation_section() [sections.rs:665]
-            └─ SignalMetrics::from_sections() → SHA-256 hash first 16 hex chars
-```
-
-Knowledge stages use a SEPARATE path: `generate_knowledge_signal()` [knowledge.rs:23].
-
-### Four Stable-Prefix Generators (cache.rs)
-
-All generators are composed from shared `append_*` helpers and produce immutable KV-cached text.
-
-| Generator | Function | Line | Stage Type |
-|-----------|----------|------|------------|
-| Standard | `generate_stable_prefix()` | 174 | `StageType::Standard` |
-| Integration-Verify | `generate_integration_verify_stable_prefix()` | 313 | `StageType::IntegrationVerify` |
-| Knowledge-Distill | `generate_knowledge_distill_stable_prefix()` | 447 | `StageType::KnowledgeDistill` |
-| Knowledge | `generate_knowledge_stable_prefix()` | 527 | `StageType::Knowledge` |
-
-**Standard prefix section order (approx lines 174-310):**
-
-1. Worktree Context header
-2. Isolation Boundaries (3 bullets)
-3. `append_path_boundaries()` — ALLOWED/FORBIDDEN paths table
-4. working_dir reminder
-5. Execution Rules header
-6. Worktree Isolation detail
-7. Delegation & Efficiency (subagents + hierarchies + agent teams)
-8. `append_subagent_restrictions()` — NO commit/complete/add-A rules
-9. `append_completion_rules()`
-10. `append_adversarial_review()` — Mini Adversarial Code Review (6 dimensions)
-11. Dedicated Silent Failure Check block (Standard only; IV has its own section)
-12. Stage Memory guidance
-13. `append_git_staging_full()` (Standard ONLY; IV/KnowledgeDistill use `append_git_staging_rules()`)
-14. `append_common_footer()`
-
-**Integration-Verify key differences:** ZERO TOLERANCE box at top; no full git-staging box; now requires agent teams (MUST).
-
-**Knowledge-Distill:** Mission = curate memories → knowledge; includes documentation update reminder.
-
-**Knowledge prefix key differences:** No worktree; COMMITS REQUIRED; "Your Mission = build briefing document"; 6-step workflow; agent teams for bootstrap.
-
-### Shared append_* Helpers (cache.rs:51-169)
-
-| Helper | Lines | Content | Used By |
-|--------|-------|---------|---------|
-| `append_path_boundaries()` | 54-63 | ALLOWED/FORBIDDEN paths table | Standard, IV, KnowledgeDistill |
-| `append_subagent_restrictions()` | 66-93 | NO git/loom/add-A rules; memory recording guide | Standard (233), IV (424) |
-| `append_completion_rules()` | 96-102 | Acceptance, handoff, no retry rules | Standard (254), IV (433), KnowledgeDistill (515) |
-| `append_isolation_boundaries_simple()` | 108-113 | 2-bullet version | IV (408), KnowledgeDistill (508) |
-| `append_execution_rules_intro()` | 119-124 | "Follow CLAUDE.md" short header | IV (412), KnowledgeDistill (512), Knowledge (594) |
-| `append_common_footer()` | 127-142 | Binary usage, state files, context recovery | ALL 4 prefixes |
-| `append_git_staging_full()` | 145-160 | Full staging rules + danger box | Standard only |
-| `append_git_staging_rules()` | 162-169 | Shorter version | IV, KnowledgeDistill |
-
-**Adding a new helper:** Follow same `fn append_xxx(content: &mut String)` pattern. Place in the "Shared content blocks" cluster (lines 51-169). Call it explicitly from each generator where wanted — it's NOT auto-injected.
-
-### Semi-Stable Section (format/sections.rs:15-378)
-
-Changes per **stage type**, not per session. Key sub-sections:
-
-- **Knowledge reference box** (lines 22-32): `loom knowledge show` commands if knowledge exists
-- **Stage-type-aware reminder box** (lines 35-140): Knowledge/IV/KnowledgeDistill → "KNOWLEDGE UPDATES REQUIRED"; Standard → "SESSION MEMORY REQUIRED"
-- **Knowledge management section** (lines 142-290): If knowledge empty → 4-step exploration order; if present → "Extend as you work"
-- **Delegation Choices** (lines 319-345): Subagents vs. Hierarchy vs. Agent Teams decision
-- **Ultracode License** (lines 347-362): Gated on `embedded_context.ultracode`
-- **Sandbox Restrictions** (lines 365-368): Sandbox summary if present
-- **Skill Recommendations** (lines 370-374): Skill index matches
-
-### Dynamic Section (format/sections.rs:382-661)
-
-Per-session content. Includes Target (session/stage/plan IDs, working_dir, execution path), Plan Overview, Assignment, Dependency Status + Outputs, Handoff Content, Acceptance Criteria, Goal-Backward Verification (artifacts, wiring, wiring_tests, dead_code).
-
-### Recitation Section (format/sections.rs:665-765)
-
-End of signal for maximum attention. Includes: Compaction Imminent warning (≥75% usage), Context Budget Warning, Immediate Tasks, Stage Memory (with PROMINENT WARNING if empty).
-
-### EmbeddedContext Struct (types.rs:24-50)
-
-Single container flowing through all 4 sections:
-
-```rust
-pub struct EmbeddedContext {
-    pub handoff_content: Option<String>,      // V1 prose handoff
-    pub parsed_handoff: Option<HandoffV2>,    // V2 structured handoff
-    pub plan_overview: Option<String>,
-    pub knowledge_has_content: bool,
-    pub memory_content: Option<String>,       // Last 10 entries
-    pub skill_recommendations: Vec<SkillMatch>,
-    pub context_budget: Option<f32>,
-    pub context_usage: Option<f32>,
-    pub sandbox_summary: Option<SandboxSummary>,
-    pub cross_stage_summary: Option<String>,  // IV/KnowledgeDistill only
-    pub wiring_checklist: Option<String>,     // IV/KnowledgeDistill only
-    pub ultracode: bool,
-}
-```
-
-### Caching
-
-SHA-256 of stable prefix text → first 16 hex chars → `SignalMetrics::stable_prefix_hash`. Cache invalidated whenever the stable prefix Rust code changes. Semi-stable, dynamic, recitation sections are always regenerated.
+→ [Signal Generation Pipeline](architecture/signal-generation.md)
 
 ## before_stage / after_stage / code_review Schema Fields — Execution Status
 
@@ -616,93 +335,6 @@ SHA-256 of stable prefix text → first 16 hex chars → `SignalMetrics::stable_
 - Still NOT consumed during acceptance, completion, or goal-backward verification
 - `plan/schema/mod.rs` re-exports `CodeReviewConfig` for use in generate.rs
 
-## Hook System — Session-Start Behavior and hookSpecificOutput Pattern
-
-### session-start.sh Behavior (Updated 2026-06-15)
-
-- Captures stdin into a variable (not drained) using cross-platform gtimeout/timeout/cat, 1s timeout
-- Validates LOOM_STAGE_ID, LOOM_SESSION_ID, LOOM_WORK_DIR — silently exits if missing
-- Writes initial heartbeat: `.work/heartbeat/<LOOM_STAGE_ID>.json`
-- Logs SessionStart event to `.work/hooks/events.jsonl`
-- **Parses `.source` field from stdin JSON**: when `.source == "compact"` or `"resume"`, emits `hookSpecificOutput.additionalContext` JSON with a re-anchor pointer (signal file path), redirecting the agent back to its signal after context compaction or resume
-- Stdin must be captured (not drained with `>/dev/null`) so the source field can be parsed — same pattern as `post-tool-use.sh`
-
-**Compaction recovery flow (current):**
-
-```text
-pre-compact.sh phase 1 → blocks compaction + creates handoff
-pre-compact.sh phase 2 → allows compaction
-Claude Code emits SessionStart with source="compact"
-session-start.sh → parses source → emits hookSpecificOutput additionalContext re-anchor
-```
-
-### hookSpecificOutput JSON Pattern
-
-Used by hooks to inject context into Claude's next turn:
-
-```json
-{
-  "hookSpecificOutput": {
-    "hookEventName": "<EventType>",
-    "additionalContext": "<string content>"
-  }
-}
-```
-
-**Examples:**
-
-- `prefer-modern-tools.sh` (lines 100-101): PreToolUse warning about grep usage
-- `skill-trigger.sh` (lines 286-291): UserPromptSubmit skill suggestions
-- `session-start.sh`: SessionStart re-anchor pointer on compact/resume source
-
-**Why JSON over plain text:** Claude Code has reliability issues with plain-text stdout from certain hook types (see issue claude-code#13912); JSON additionalContext is more reliable for context injection.
-
-**Construction:** Always use `jq -nc --arg ctx "..."  '{hookSpecificOutput: {hookEventName: "...", additionalContext: $ctx}}'` — never manually escape JSON strings.
-
-### LOOM_* Env Vars Available to All Hooks
-
-Set by wrapper script (pid_tracking.rs:463-479) before `exec claude`:
-
-| Variable | Purpose |
-|----------|---------|
-| `LOOM_SESSION_ID` | Current session ID |
-| `LOOM_STAGE_ID` | Current stage ID |
-| `LOOM_WORK_DIR` | Absolute path to `.work/` |
-| `LOOM_MAIN_AGENT_PID` | Process PID (set dynamically, NOT in settings.json) |
-| `LOOM_WORKTREE_PATH` | Absolute worktree path (worktree sessions only) |
-| `LOOM_MERGE_SESSION=1` | Set for merge resolution sessions only |
-
-**Per-session identity gotcha (LOOM_MAIN_AGENT_PID, LOOM_STAGE_ID, LOOM_SESSION_ID):** Must NOT be in ANY settings-file env block — settings `env` overrides the process environment, so a persisted value from an earlier session shadows the wrapper's fresh exports (wrong-stage `loom memory` entries, heartbeats for the wrong session, commit-filter misidentifying the main agent). The wrapper script is the ONLY writer; `fs/permissions/settings.rs::scrub_session_identity_env()` strips these keys wherever settings are generated, copied, or merged (`generate_hooks_settings`, `create_worktree_settings`, worktree settings.local.json copy, `refresh_worktree_settings_local`, `ensure_loom_hooks_local`). Only the stable `LOOM_WORK_DIR` is persisted in settings env. `refresh_worktree_settings_local` merges main-repo permissions INTO the worktree's own settings (worktree base wins for env/hooks/defaultMode). **Claude Code applies the MAIN repo's settings env to sessions in linked worktrees** (observed v2.1.217), so worktree-side scrubbing alone is insufficient — the run path heals the main files too: `scrub_main_repo_settings_identity()` at `loom run` startup (`prepare_repo_for_run`) and `scrub_session_identity_env()` inside the sync fold-back (`merge_permissions_with_lock`), which rewrites the main settings.local.json on every stage completion (see mistakes.md 2026-07-23).
-
-### Hook Embedding (constants.rs)
-
-All 15 hooks embedded via `include_str!()` at compile time. `install_loom_hooks()` writes them to `~/.claude/hooks/loom/` with mode 0o755. Hooks are NOT read from disk by loom at runtime.
-
-## Shared append_* Helpers (cache.rs:51-169)
-
-### Shared append_* Helpers (cache.rs:51-~180)
-
-| Helper | Lines | Content | Used By |
-|--------|-------|---------|---------|
-| `append_path_boundaries()` | 54-63 | ALLOWED/FORBIDDEN paths table | Standard, IV, KnowledgeDistill |
-| `append_subagent_restrictions()` | 66-93 | NO git/loom/add-A rules; memory recording guide | Standard (233), IV (424) |
-| `append_completion_rules()` | 96-102 | Acceptance, handoff, no retry rules | Standard (254), IV (433), KnowledgeDistill (515) |
-| `append_isolation_boundaries_simple()` | 108-113 | 2-bullet version | IV (408), KnowledgeDistill (508) |
-| `append_execution_rules_intro()` | 119-124 | "Follow CLAUDE.md" short header | IV (412), KnowledgeDistill (512), Knowledge (594) |
-| `append_common_footer()` | 127-142 | Binary usage, state files, context recovery | ALL 4 prefixes |
-| `append_git_staging_full()` | 145-160 | Full staging rules + danger box | Standard only |
-| `append_git_staging_rules()` | 162-169 | Shorter version | IV, KnowledgeDistill |
-| `append_anti_slop_guidance()` | ~171+ | ZERO TOLERANCE anti-slop rules box | ALL 4 prefixes (after exec-rules intro, before Delegation) |
-| `append_adversarial_review()` | ~104-122 | Mini adversarial code review — 6 dimensions (quality/architecture·SOLID, idiomatic, security, wiring, dead code, DRY across whole codebase) + a closing "tests actually exercise the change" check | Standard (replaces old "Self-Review" block), IV (after Mission). **Code-producing prefixes ONLY** — NOT knowledge or knowledge-distill (both emit only markdown). NOTE: silent-failure detection is NOT in this helper — Standard has its own dedicated block right after the call; IV has its own `SILENT FAILURE DETECTION` section |
-
-**Adding a new helper:** Follow same `fn append_xxx(content: &mut String)` pattern. Place in the "Shared content blocks" cluster (lines 51-~180). Call it explicitly from each generator where wanted — it's NOT auto-injected.
-
-**Per-stage code review:** The mandatory mini adversarial code review lives in `append_adversarial_review()` (`pub(crate)`) and is injected into the two code-producing stable prefixes (Standard, IntegrationVerify). It supersedes the older standard-prefix "Self-Review Before Completion" block. Documentation stages (Knowledge, KnowledgeDistill) deliberately omit it — they produce only markdown, so there is no code to review; the cache tests negative-assert its absence there.
-
-**Stable prefix selection — single source of truth:** `cache::stable_prefix_for(stage_type)` is the ONE place that maps stage type → prefix generator (explicit 4-arm match). Both the regular path (`format/mod.rs::format_signal_with_metrics`) and the recovery path (`recovery_format.rs`) call it, so they can never drift.
-
-**Resume-path coverage (important):** The review (and all execution guidance) must reach a stage no matter which signal spawns it. Three paths: (1) regular spawn + automatic crash retry → `format_signal_with_metrics()` → `stable_prefix_for()`; (2) continuation/handoff → `generate_signal()` → same path; (3) **manual recovery** (`loom stage recover`, `loom stage retry`) → `recovery_format.rs::format_recovery_signal()`. The recovery signal is built outside the KV-cache path; it now embeds the FULL stable prefix via `stable_prefix_for(stage.stage_type)` (replacing its old hand-rolled "## Worktree Context" stub), so a resumed stage gets the same rules — review, subagent restrictions, git-staging, anti-slop, completion — as a fresh spawn, correctly gated by stage type (Knowledge/KnowledgeDistill prefixes carry no review). Tests: `recovery.rs::test_generate_recovery_signal` (Standard → review + subagent restrictions + execution rules present) and `test_recovery_signal_omits_review_for_documentation_stage` (KnowledgeDistill → no review).
-
 ## load_stage_definition_from_plan — Centralized Plan Lookup
 
 Centralized in `plan/parser/mod.rs` (re-exported via `plan/mod.rs`). Previously lived in `commands/verify.rs`.
@@ -734,3 +366,12 @@ Supporting pieces:
 - `loom/src/codex.rs` — `find_codex_path()` binary resolver, mirrors `claude::find_claude_path` (which::which, then candidate install paths favoring ~/.bun/bin; spawned children may not inherit PATH so resolve eagerly).
 - Vendored agent assets (installed LOCALLY by install.sh): `commands/{pressure,address,distill}.md` → `~/.claude/commands/`; `codex/skills/pressure/SKILL.md` → `~/.codex/skills/pressure/`.
 - Wiring: `Commands::Pressure` in cli/types.rs:195, dispatched in cli/dispatch.rs:178; `pressure` registered in dynamic completions with `--rounds`/`--dry-run`.
+
+## Tiered Knowledge Base (`fs/knowledge/`, `commands/knowledge/`)
+
+Two-tier curated knowledge: generated `INDEX.md`, tier-1 summary files, and tier-2 topics at
+`<category>/<slug>.md`. Layout is `Hierarchical` **iff** `INDEX.md` exists. Covers module split,
+target parsing, index generation, the audit rules (orphan vs broken-link link forms disagree),
+thresholds, the `check.rs` coverage blast radius, opt-in migration, and lock ordering.
+
+→ [Knowledge Hierarchy](architecture/knowledge-hierarchy.md)

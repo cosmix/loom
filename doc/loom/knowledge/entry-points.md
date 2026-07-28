@@ -155,12 +155,10 @@ Total: 22 visible commands + 1 hidden (complete for dynamic completions). Dispat
 
 ## Hooks
 
-- `hooks/*.sh` - Shell scripts (commit-guard.sh, commit-filter.sh, etc.)
-- `fs/permissions/hooks.rs` - install_loom_hooks()
-- `fs/permissions/settings.rs` - ensure_loom_permissions(), create_worktree_settings()
-- `fs/permissions/constants.rs` - Embedded hook scripts via include_str!()
-- `orchestrator/hooks/config.rs` - HookEvent enum
-- `orchestrator/hooks/generator.rs` - setup_hooks_for_worktree()
+The full hook roster — every script in `hooks/`, the event it binds to, what it blocks — plus
+`hooks/_common.sh`'s shared helpers and the registration sites a new hook must be added to.
+
+→ [Hook Entry Points](entry-points/hooks.md)
 
 ## Schema-to-Runtime Conversion
 
@@ -213,10 +211,6 @@ Three files to add a new subcommand:
 - `verify/baseline/` - Change impact detection (capture, compare)
 - `verify/before_after.rs` - Before/after stage checks using TruthCheck definitions
 
-## Shared Hook Utility
-
-- `hooks/_common.sh` - Source guard + `strip_embedded_content()` — sourced by all PreToolUse hooks. MUST be installed alongside hooks (in `~/.claude/hooks/loom/`). Registered in `constants.rs` as `HOOK_COMMON`.
-
 ## Plan Validation Functions (plan/schema/validation.rs)
 
 Key public functions for `loom plan verify` to call:
@@ -248,37 +242,6 @@ Internal modules: `extraction.rs` (YAML block extraction, plan name), `validatio
 - `ExecutionGraph::update_ready_status()` → returns stage IDs that became `Queued`
 - Cycle detection: `cycle/mod.rs` uses recursive DFS with `visiting` / `visited` sets; returns `Err` with cycle path on detection
 - `plan/graph/loader.rs` has `build_execution_graph()` that loads stage files from `.work/stages/` and calls `ExecutionGraph::build()`
-
-## Hook System (loom/src/hooks/)
-
-- `hooks/mod.rs` - Module root; re-exports `HookEvent`, `HooksConfig`, `generate_hooks_settings`, `setup_hooks_for_worktree`, `find_hooks_dir`
-- `hooks/config.rs` - `HookEvent` enum (6 variants) + `HooksConfig` struct + `to_settings_hooks()`
-- `hooks/generator.rs` - `generate_hooks_settings()` (merge session hooks into settings.json), `setup_hooks_for_worktree()`, `find_hooks_dir()`
-- `hooks/events.rs` - `log_hook_event()`, `read_recent_events()`, event log CRUD
-- `hooks/validators/` - Validator scripts for PreToolUse hooks (commit-filter, git-add-guard, worktree-isolation, prefer-modern-tools)
-
-**6 hook events:**
-
-| Event | Script | Purpose |
-| --- | --- | --- |
-| `SessionStart` | `session-start.sh` | Initial heartbeat |
-| `PostToolUse` | `post-tool-use.sh` | Heartbeat update after every tool call |
-| `PreCompact` | `pre-compact.sh` | Trigger handoff before context compaction |
-| `SessionEnd` | `session-end.sh` | Cleanup on normal exit |
-| `Stop` | `learning-validator.sh` | Memory usage check on stop |
-| `PreferModernTools` | `prefer-modern-tools.sh` | Suggest fd/rg over find/grep in Bash |
-
-**Settings placement:** Session hooks → `<worktree>/.claude/settings.local.json`. Global hooks (commit-filter, git-add-guard, worktree-isolation) configured via `fs/permissions.rs:configure_loom_hooks()`.
-
-**Env vars injected via settings env block:**
-
-- `LOOM_WORK_DIR` — path to `.work/` directory (the ONLY loom var persisted; stable per repo)
-
-**Per-session identity (LOOM_MAIN_AGENT_PID, LOOM_STAGE_ID, LOOM_SESSION_ID):** Explicitly REMOVED from all settings env blocks (`scrub_session_identity_env` in `fs/permissions/settings.rs`). Set ONLY by the wrapper script exports so they always reflect the running session — settings env overrides process env, so persisted values from an earlier session would shadow the fresh exports (see mistakes.md 2026-07-22). Because Claude Code applies the MAIN repo's settings env to worktree sessions, the main-repo files are also healed in the run path: `scrub_main_repo_settings_identity` at `loom run` startup and inside the `sync.rs` fold-back (see mistakes.md 2026-07-23).
-
-**Hooks discovery:** `find_hooks_dir()` checks `$LOOM_HOOKS_DIR` env first, then `~/.claude/hooks/loom/`. Returns `None` if not installed.
-
-**Permissions:** Absolute paths use `//` prefix in allow entries (e.g., `Read(//home/user/.work/signals/**)`). Single `/` means project-relative — wrong for `.work/` which resolves outside the worktree due to symlink.
 
 ## Status Command (commands/status/)
 
@@ -435,96 +398,10 @@ Stage 2/3 adds alongside: `dispute_count`, `evidence_rounds`, `amendments_applie
 
 ## Remote Control & Permission Mode Integration Points
 
-> **Note:** Any references to a "container backend" or `BackendType` elsewhere in these knowledge
-> files are **stale** — the container backend was removed in commits 5bcf5d8 / c2f16bb.
-> All session spawning is now done exclusively through the native backend.
+Every file and call site involved in remote-control capability detection and permission-mode
+resolution, with line references.
 
-### 1. PermissionMode enum — import and defaults
-
-- `loom/src/sandbox/config.rs:1-4` — `use crate::plan::schema::{..., PermissionMode, StageType, ...}` (no `BackendType` in scope anywhere in this file)
-- `loom/src/sandbox/config.rs:49-54` — `default_mode_for(stage_type: StageType) -> PermissionMode`
-  - ALL stage types (Knowledge, KnowledgeDistill, Standard, IntegrationVerify) → `Auto`
-- `loom/src/sandbox/config.rs:60-95` — `merge_config(plan, stage, stage_type)` — precedence: stage > plan > `default_mode_for`
-- `loom/src/sandbox/config.rs:102-112` — `validate_config(merged)` — rejects `BypassPermissions` unconditionally
-- `loom/src/sandbox/config.rs:461-475` — `test_default_mode_for_stage_type`
-- `loom/src/sandbox/config.rs:478-511` — `test_merge_config_permission_mode_precedence`
-
-### 2. permission mode delivery — TWO mechanisms (settings file is NOT enough for `auto`)
-
-- `loom/src/sandbox/settings.rs:15-26` — `apply_default_mode(settings, mode)` maps loom's kebab-case `PermissionMode` to Claude's camelCase wire format (`"acceptEdits"`, `"bypassPermissions"`, etc.); called at the end of `generate_settings_json()` so every generated `settings.local.json` carries a `permissions.defaultMode`.
-- **⚠️ The settings file is IGNORED for `auto`.** Claude Code v2.1.142+ deliberately ignores `permissions.defaultMode: "auto"` when it comes from **project/local** settings (`.claude/settings.json` / `.claude/settings.local.json`) — a repo cannot grant itself auto mode. Only the `--permission-mode` **CLI startup flag** (or user/managed settings) is honored. So the authoritative delivery is the CLI flag emitted in `build_claude_command` (§3), NOT the settings file. The `defaultMode` in settings.local.json is still emitted (harmless; honored for non-`auto` modes) but is redundant given the flag. See mistakes.md "settings.local.json `defaultMode: auto` is silently ignored".
-
-### 3. Claude command-build sites (NativeBackend)
-
-All four public `spawn_*` methods funnel through the single unified `spawn()` in `loom/src/orchestrator/terminal/native/mod.rs`, which calls the shared `build_claude_command()`. Command shape: `{claude} --model {m} --effort {e} --permission-mode {mode} {prompt}[ --remote-control]`.
-
-- **`--permission-mode {mode}`** is resolved inside `spawn()` via `merge_config(read_plan_sandbox(work_dir), stage.sandbox, stage.stage_type).permission_mode` → `.as_settings_value()`. Reads the SAME `[plan_sandbox]` snapshot that `OrchestratorConfig.sandbox_config` loads from, so the CLI flag and the generated settings file never disagree. `validate_config` rejects `bypass-permissions`, so it never reaches the flag.
-- Model/effort policy: `spawn_session` / `spawn_knowledge_session` use `stage.effective_model()` + `stage.effective_reasoning_effort()`; `spawn_merge_session` / `spawn_base_conflict_session` hardcode `opus` / `xhigh`.
-
-All four call `pid_tracking::create_wrapper_script()` before `spawn_in_terminal()`.
-
-### 4. Wrapper script — PID tracking template
-
-`loom/src/orchestrator/terminal/native/pid_tracking.rs`:
-
-- `create_wrapper_script()` — lines 250–368
-- Wrapper `format\!()` template — lines 321–350
-- Key template lines:
-  - `:332` — `export LOOM_MAIN_AGENT_PID=$$` (set to shell's own PID before exec)
-  - `:337` — `echo $$ > {pid_file}` (writes PID to `.work/pids/{stage_id}.pid`)
-  - `:340` — `exec {claude_cmd}` (replaces shell with claude process)
-- Template also exports: `LOOM_SESSION_ID`, `LOOM_STAGE_ID`, `LOOM_WORK_DIR`, `LOOM_WORKTREE_PATH`, `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`
-
-### 5. Centralized .work/config.toml API
-
-`loom/src/fs/work_dir.rs` (block starting at line 328):
-
-| Function | Lines | Notes |
-|----------|-------|-------|
-| `read_config(work_dir)` | 356–366 | Returns `toml_edit::DocumentMut` (preserves comments) |
-| `write_config(work_dir, doc)` | 370–381 | Writes doc back; caller must hold any lock |
-| `read_section<T>()` (private) | 383–402 | Reads a named `[section]` as typed `T: DeserializeOwned` |
-| `write_section<T>()` (private) | 404–429 | Writes typed value into named section, preserving rest |
-| `read_plan_sandbox(work_dir)` | 435–437 | Public: reads `[plan_sandbox]` → `Option<SandboxConfig>` |
-| `write_plan_sandbox(work_dir, sandbox)` | 440–442 | Public: writes `[plan_sandbox]` |
-
-**Pattern to mirror for new sections:** add a `const SECTION_NAME: &str = "my_section"` at the top, then two public functions calling `read_section` / `write_section`.
-
-### 6. Plan init — where config.toml sections are written
-
-`loom/src/commands/init/plan_setup.rs`:
-
-- `initialize_with_plan()` — lines 27–214
-- `[plan]` table written via `toml_edit` at lines 139–157 (`work_dir::read_config` + `doc.insert("plan", ...)` + `work_dir::write_config`)
-- `[plan_sandbox]` snapshot written at lines 160–162 (`work_dir::write_plan_sandbox`)
-
-### 7. Run command entry points
-
-- `loom/src/commands/run/mod.rs:31-84` — `execute_background()` — daemonizes orchestrator; calls `DaemonServer::with_config(...).start()`
-- `loom/src/commands/run/foreground.rs:17-36` — `execute()` — public entry for `--foreground`; marks plan in-progress then calls `execute_foreground()`
-- `loom/src/commands/run/foreground.rs:39-end` — `execute_foreground()` (private) — builds `OrchestratorConfig` (includes `sandbox_config: plan_sandbox` from `build_execution_graph`)
-
-### 8. Crash handler — failure classification and retry
-
-`loom/src/orchestrator/core/crash_handler.rs:15-137` — `handle_session_crashed()`:
-
-- Line 49 — `classify_failure(&reason)` (from `orchestrator/retry.rs`)
-- Line 65 — `should_auto_retry(&failure_type, stage.retry_count, max)` (default max = 3)
-- Lines 90–110 — best-effort permission sync from crashed session's worktree
-- Line 114 — `stage.try_mark_blocked()` → saves stage → marks graph `Blocked`
-
-### 9. Claude binary resolution
-
-`loom/src/claude.rs:10-33` — `find_claude_path() -> Result<PathBuf>`:
-
-1. `which::which("claude")` (uses current PATH)
-2. `~/.claude/local/claude` (official Claude Code install location)
-3. `~/.local/bin/claude`
-4. `~/.cargo/bin/claude`
-5. `/usr/local/bin/claude`
-6. `/opt/homebrew/bin/claude`
-
-Used by all four NativeBackend spawn methods before building the claude command string.
+→ [Remote Control & Permission Mode](entry-points/remote-control.md)
 
 ## Signal Generation — Key Files and Line References
 
@@ -542,28 +419,6 @@ Used by all four NativeBackend spawn methods before building the claude command 
 | `orchestrator/signals/crud.rs` | Signal file CRUD | — |
 
 **Insertion point for new shared helper:** `cache.rs` lines 51-169 (the "Shared content blocks" cluster). Call it from each of the 4 generator functions.
-
-## Hook Scripts — What Each Does
-
-| Script | Hook Type | Key Behavior |
-|--------|-----------|-------------|
-| `session-start.sh` | SessionStart | Writes initial heartbeat; captures stdin and parses `.source` field; on `source == "compact"` or `"resume"` emits `hookSpecificOutput.additionalContext` JSON re-anchor pointer |
-| `post-tool-use.sh` | PostToolUse | Updates heartbeat; logs to `.work/tool-events.jsonl`; no longer checks compaction-recovery markers (removed) |
-| `pre-compact.sh` | PreCompact | Block-then-allow: first call exits 2 (blocks) + creates pending flag + calls `loom handoff`; second call exits 0 (allows); does NOT create a recovery marker file |
-| `session-end.sh` | SessionEnd | Creates handoff if stage not completed |
-| `learning-validator.sh` | Stop | Advisory check for session memory usage |
-| `commit-guard.sh` | Stop (global) | Blocks exit if uncommitted changes or stage still Executing |
-| `prefer-modern-tools.sh` | PreToolUse:Bash | Emits `hookSpecificOutput.additionalContext` JSON warning to use `rg`/`fd` instead |
-| `commit-filter.sh` | PreToolUse:Bash | Blocks subagent git commits via LOOM_MAIN_AGENT_PID process tree check; blocks Claude attribution |
-| `git-add-guard.sh` | PreToolUse:Bash | Blocks `git add -A`, `git add .`, `git add .work` |
-| `worktree-isolation.sh` | PreToolUse:Bash/Edit/Write | Blocks cross-worktree ops and path traversal |
-| `worktree-file-guard.sh` | PreToolUse:Read/Glob/Grep | Blocks file tool paths outside worktree |
-| `skill-trigger.sh` | UserPromptSubmit | Scores keywords, emits skill suggestions as `hookSpecificOutput.additionalContext` |
-| `ask-user-pre.sh` | PreToolUse:AskUserQuestion | Marks stage WaitingForInput |
-| `ask-user-post.sh` | PostToolUse:AskUserQuestion | Resumes stage |
-| `_common.sh` | Utility | `strip_embedded_content()` (prevents false-positive matches in commit messages), `loom_current_worktree()` (worktree detection by directory, NOT just env var) |
-
-**Worktree detection gotcha:** `_common.sh:loom_current_worktree()` checks TWO conditions — current directory contains `.worktrees/` AND `LOOM_WORKTREE_PATH` points into `.worktrees/` with the directory existing. LOOM_STAGE_ID alone is insufficient (it leaks into plain sessions from prior runs).
 
 ## TruthCheck / before_stage / after_stage / code_review
 
@@ -589,3 +444,34 @@ Used by all four NativeBackend spawn methods before building the claude command 
 - `commands/{pressure,address,distill}.md` — vendored Claude slash commands (source for `~/.claude/commands/`).
 - `codex/skills/pressure/SKILL.md` — vendored Codex pressure skill (source for `~/.codex/skills/pressure/`).
 - `install.sh` — `install_commands()` (~line 336) and `install_codex_skill()` (~line 356), called only in the LOCAL (non-curl-pipe) branch of `main()` (~line 619).
+
+## Tiered Knowledge Base (2026-07-28)
+
+| Path | Role |
+| --- | --- |
+| `loom/src/fs/knowledge/types.rs` | `KnowledgeFile`, `KnowledgeTarget`, `KnowledgeLayout`, tier-1 alias table |
+| `loom/src/fs/knowledge/dir.rs` | `KnowledgeDir` — initialize, append, replace-section, layout detection |
+| `loom/src/fs/knowledge/index.rs` | `scan_topics`, `generate_index`, `write_index` |
+| `loom/src/fs/knowledge/gc.rs` | audit metrics, oversized sections, orphan and broken-link detection, thresholds |
+| `loom/src/fs/knowledge/summary.rs`, `templates.rs` | signal summary; tier-1/tier-2 scaffolds |
+| `loom/src/commands/knowledge/mod.rs` | subcommand dispatch — `show`, `update`, `replace-section`, `init`, `list`, `check`, `audit`, `gc`, `bootstrap`, **`index`** |
+| `loom/src/commands/knowledge/check.rs` | `architecture_coverage_text()` — folds tier-2 `architecture/` topics into `src/` coverage |
+| `loom/src/cli/types_memory.rs` | clap definitions for the knowledge subcommands |
+
+`loom knowledge index` regenerates `INDEX.md` and, on a flat directory, creates it — which is
+what flips the layout to hierarchical. See
+[Knowledge Hierarchy](architecture/knowledge-hierarchy.md).
+
+## Subagent Verification Guard (2026-07-28)
+
+| Path | Role |
+| --- | --- |
+| `hooks/subagent-verify-guard.sh` | PreToolUse:Bash guard — blocks project-wide verification for subagents (400 lines, at the Rule 17 cap) |
+| `hooks/_common.sh` | `loom_is_subagent()` — the shared detection gate |
+| `loom/src/orchestrator/signals/tests_doctrine.rs` | pins the doctrine blocks byte-for-byte across signal, template, and hook |
+| `loom/tests/integration/hooks_subagent_verify_guard.rs` | harness: process-tree construction, env scrubbing, payload building |
+| `loom/tests/integration/hooks_subagent_verify_guard_cases.rs` | `BLOCK_CASES` / `ALLOW_CASES` table data |
+| `loom/tests/integration/hooks_subagent_verify_guard_carveout.rs` | integration-verify carve-out **refusal** directions (decoy, wrong type, missing) |
+
+Split into three files because they grow for different reasons; wired with `#[path]` submodules
+so the children reach the parent's private helpers via `use super::*` without widening visibility.

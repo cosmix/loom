@@ -6,45 +6,9 @@
 
 ## Table of Contents
 
-- [Architectural Patterns](#architectural-patterns)
-  - [Table of Contents](#table-of-contents)
-  - [State Machine Pattern](#state-machine-pattern)
-  - [File-Based State Pattern](#file-based-state-pattern)
-  - [Signal Generation Pattern](#signal-generation-pattern)
-  - [Progressive Merge Pattern](#progressive-merge-pattern)
-  - [Daemon IPC Pattern](#daemon-ipc-pattern)
-  - [Polling Orchestration Pattern](#polling-orchestration-pattern)
-  - [Monitoring Patterns](#monitoring-patterns)
-  - [Hook Patterns](#hook-patterns)
-  - [TUI Patterns](#tui-patterns)
-  - [Knowledge Systems Pattern](#knowledge-systems-pattern)
-  - [Stage Completion Pattern](#stage-completion-pattern)
-  - [Goal-Backward Verification Pattern](#goal-backward-verification-pattern)
-  - [Error Handling Pattern](#error-handling-pattern)
-  - [Security Patterns](#security-patterns)
-  - [Process Management Pattern](#process-management-pattern)
-  - [Merge Anti-Respawn Pattern](#merge-anti-respawn-pattern)
-  - [Permission Sync Pattern](#permission-sync-pattern)
-  - [Sandbox Config Merging](#sandbox-config-merging)
-  - [Directory Hierarchy Pattern](#directory-hierarchy-pattern)
-  - [Three-Layer Guidance Reinforcement](#three-layer-guidance-reinforcement)
-  - [Stage Necessity Test](#stage-necessity-test)
-  - [Bootstrap Mode](#bootstrap-mode)
-  - [Field Propagation Checklist](#field-propagation-checklist)
-  - [Goal-Backward Verification Pattern \[UPDATED\]](#goal-backward-verification-pattern-updated)
-  - [AcceptanceCriterion Design Pattern](#acceptancecriterion-design-pattern)
-  - [Hook Content-Stripping Pattern](#hook-content-stripping-pattern)
-  - [Hook Content-Stripping Pattern (Updated 2026-03-31)](#hook-content-stripping-pattern-updated-2026-03-31)
-  - [Merge Recovery Flow \[UPDATED 2026-04-27\]](#merge-recovery-flow-updated-2026-04-27)
-  - [Attribution-Aware Recovery (2026-04-27)](#attribution-aware-recovery-2026-04-27)
-  - [Pure Routing Helper (2026-04-27)](#pure-routing-helper-2026-04-27)
-  - [macOS GUI App Launch Pattern (2026-04-27)](#macos-gui-app-launch-pattern-2026-04-27)
-  - [CLI Subcommand Registration Pattern](#cli-subcommand-registration-pattern)
-  - [AcceptanceCriterion Untagged Enum](#acceptancecriterion-untagged-enum)
-  - [Plan Validation Tier Separation (loom init contract)](#plan-validation-tier-separation-loom-init-contract)
-  - [Session Identity: Setter + Clearer Must Travel Together](#session-identity-setter--clearer-must-travel-together)
-
----
+Superseded by the generated index. Run `loom knowledge show` or open
+[INDEX.md](INDEX.md) for the current tier-1 / tier-2 map — a hand-maintained
+table of contents goes stale the moment a topic is added.
 
 ## State Machine Pattern
 
@@ -91,7 +55,7 @@ Uses Manus KV-cache optimization with four sections:
 
 Four stage-type-specific prefix generators: standard, knowledge, integration-verify, knowledge-distill. Six signal types: Regular, Knowledge, Recovery, Merge, MergeConflict, BaseConflict. Signals are self-contained via `EmbeddedContext` struct.
 
-KnowledgeDistill prefix: focuses on memory reading and knowledge curation; includes `loom memory show --all` and `loom knowledge update` guidance; always uses sonnet.
+KnowledgeDistill prefix: focuses on memory reading and knowledge curation; includes `loom memory show --all` and `loom knowledge update` guidance. The stage itself runs on **opus** (every `StageType` defaults to opus); it is the *spot-read subagents* the prefix tells the main agent to delegate to that are sonnet.
 
 **Data flow:** Stage Ready -> start_stage() -> create worktree -> Session.new() -> build_signal_context() -> format_signal_content() -> write_signal_file() -> spawn Claude Code.
 
@@ -115,7 +79,7 @@ Main loop polls every 5 seconds: sync graph from stage files, sync queued status
 
 Hooks receive data via **stdin JSON**. Read with `timeout 1 cat`. Response: exit 0 = allow, exit 2 = block (stderr shown). Advanced JSON response supports `permissionDecision: allow/deny/ask` with `updatedInput`.
 
-**Key hooks**: commit-guard.sh (Stop) blocks exit without commit; commit-filter.sh (PreToolUse:Bash) blocks subagent commits; prefer-modern-tools.sh blocks grep/find; post-tool-use.sh updates heartbeat; pre-compact.sh triggers handoff; session-start/end.sh handle lifecycle.
+**Key hooks**: commit-guard.sh (Stop) blocks exit without commit; commit-filter.sh (PreToolUse:Bash) blocks subagent commits; subagent-verify-guard.sh (PreToolUse:Bash) blocks subagent full-suite verification; plans-path-guard.sh (PreToolUse:Edit/Write) blocks plan writes outside `doc/plans/`; prefer-modern-tools.sh blocks grep/find; post-tool-use.sh updates heartbeat; pre-compact.sh triggers handoff; session-start/end.sh handle lifecycle.
 
 **Subagent detection**: Wrapper script exports `LOOM_MAIN_AGENT_PID`. Hook compares `$PPID`. Subagents blocked from: git commit, git add -A/., loom stage complete.
 
@@ -220,52 +184,11 @@ Serde tries variants in order: strings match Simple first, objects fail Simple t
 
 ## Hook Content-Stripping Pattern
 
-Hooks that validate bash commands must strip embedded text content before
-pattern matching. The strip_embedded_content() function (in hooks/\_common.sh
-for shell, validators/bash.rs for Rust) removes:
+How hooks strip heredoc bodies and `-m` message text before pattern-matching a command, so a
+rule that merely *mentions* a forbidden flag is not blocked — plus the known limits of that
+stripping.
 
-1. Heredoc bodies (awk state machine tracking <<MARKER to MARKER)
-2. -m / --message quoted content (sed replacements)
-
-Each hook sources \_common.sh via: source "$(dirname "$0")/\_common.sh"
-
-Full hook inventory (13 scripts in hooks/):
-
-- PreToolUse: worktree-isolation.sh, commit-filter.sh, git-add-guard.sh,
-  prefer-modern-tools.sh, worktree-file-guard.sh
-- PostToolUse: post-tool-use.sh, ask-user-post.sh
-- Stop: commit-guard.sh, learning-validator.sh
-- SessionStart: session-start.sh
-- SessionEnd: session-end.sh
-- PreCompact: pre-compact.sh
-- UserPromptSubmit: skill-trigger.sh, ask-user-pre.sh
-
-## Hook Content-Stripping Pattern (Updated 2026-03-31)
-
-All PreToolUse hooks that match command patterns MUST use `strip_embedded_content()` before pattern matching to prevent false positives from keywords appearing inside commit messages or heredoc bodies.
-
-**Architecture:**
-
-- `_common.sh` provides `strip_embedded_content()` (shared across all shell hooks)
-- `loom/src/hooks/validators/bash.rs` provides Rust equivalent `strip_embedded_content()`
-- Phase 1: awk state machine strips heredoc bodies (`<<MARKER` to `^MARKER$`)
-- Phase 2: sed strips `-m`/`--message` quoted content
-
-**Usage pattern:**
-
-1. Source `_common.sh` at top of hook
-2. Call `stripped=$(strip_embedded_content "$cmd")`
-3. Use `$stripped` for pattern detection (git -C, .worktrees/, ../../, grep, find)
-4. Use original `$cmd` for patterns that MUST match message body (e.g., Co-Authored-By)
-
-**Commit-filter dual-check:**
-
-- STRIPPED_COMMAND for detecting `git commit` (prevents "commit" in messages from triggering)
-- ORIGINAL COMMAND for Co-Authored-By check (anchor `^` prevents mid-line false positives)
-
-**Security posture:** All stripping failures result in false positives (overly strict), never bypasses (permissive). This is the correct safety direction for development hooks.
-
-**Hooks using this pattern:** worktree-isolation.sh, commit-filter.sh, git-add-guard.sh, prefer-modern-tools.sh
+→ [Hook Content-Stripping](patterns/hook-content-stripping.md)
 
 ## Merge Recovery Flow [UPDATED 2026-04-27]
 
@@ -544,93 +467,19 @@ Add parallel handling for `NeedsAdjudication` that fires the worker thread inste
 
 ## Remote Control Capability/Preflight/Resolve Pattern (2026-05-14)
 
-`--remote-control` requires claude >= 2.1.51 AND claude.ai login auth (no disqualifying env var, `~/.claude/.credentials.json` present). Because the flag exits non-zero on failure, it must never be passed unconditionally.
+The three-phase shape for driving an external agent binary: detect capability, preflight the
+environment, then resolve the concrete invocation. Keeps unsupported combinations failing
+early with an actionable message instead of mid-run.
 
-**Three-function split:**
-
-| Function | What it does | When to call |
-|----------|-------------|--------------|
-| `preflight(path)` | Runs `claude --version` + auth eligibility check | Startup advisory only |
-| `resolve(work_dir)` | Per-spawn gate (mode + marker + memoized preflight) | Called at every spawn site |
-| `write_unsupported_marker(work_dir)` | Writes `.work/remote_control-unsupported` | Called by crash_handler on fast-fail |
-
-**`resolve()` check order (all cheap):**
-
-1. `[remote_control] mode = off` in `.work/config.toml` → false (operator opted out)
-2. `.work/remote_control-unsupported` marker exists → false (mid-run fast-fail)
-3. Memoized `preflight()` via `OnceLock` (runs `claude --version` at most once per process) → true/false
-
-**Fast-fail fallback (crash_handler.rs):**
-
-- Session crashes within 15 seconds of creation while `resolve()` is true → write unsupported marker → retry with `--remote-control` omitted.
-- No new retry code path: the existing exponential-backoff retry handles it; `resolve()` returning false is the only change.
-
-**`build_claude_command()` helper (native/mod.rs):**
-
-Pure function shared by all four spawn sites (`spawn_session`, `spawn_merge_session`, `spawn_base_conflict_session`, `spawn_knowledge_session`). Signature:
-
-```rust
-fn build_claude_command(
-    claude_path: &str,
-    model: &str,
-    effort: &str,
-    remote_control_enabled: bool,
-    escaped_prompt: &str,
-) -> String
-```
-
-Appends `--remote-control` before the prompt positional only when `remote_control_enabled` is true. Call `resolve(work_dir)` to compute the flag, then pass the bool into this helper.
-
-**OnceLock memoization note:**
-
-`cached_preflight_enabled()` uses a process-lifetime `OnceLock<bool>`. This is intentional: `claude --version` output is invariant for the lifetime of a daemon process. Config (`mode`) and the marker file are re-read on every `resolve()` call (both cheap) so operator changes or crash-handler writes take effect immediately without restarting the daemon.
+→ [Remote Control Pattern](patterns/remote-control.md)
 
 ## Subagent Hierarchy + Ultracode Guidance (2026-06-12)
 
-Loom teaches a 2-level subagent hierarchy (main agent → coordinator subagents → worker subagents) for large well-defined fan-out, and a per-stage `ultracode: bool` flag that licenses Workflow orchestration. The guidance is mirrored across multiple surfaces that MUST stay consistent.
+When to fan out flat, when to use a 2-level coordinator→worker hierarchy, and when to reach
+for agent teams; the model mix for each; and the file-exclusivity rule that makes parallel
+subagents safe. Also carries the no-verify doctrine subagents inherit.
 
-**Capability facts:**
-
-- Nested subagents are supported since Claude Code 2.1.172 (changelog: "Sub-agents can now spawn their own sub-agents (up to 5 levels deep)"); empirically confirmed 2026-06-12 on 2.1.175 (a subagent spawned a nested Explore agent, no flags needed). On older versions the Task tool is simply absent one level down; the coordinator does the work itself.
-- The platform allows 5 levels; **loom caps trees at 2 by policy** (auditable file-exclusivity, bounded cost/failure blast radius), enforced via the WORKER PREAMBLE prose, not code.
-- The `tools:` frontmatter in `agents/*.md` governs capability: `loom-software-engineer` and `loom-senior-software-engineer` list `Task` (can coordinate); `loom-code-reviewer` does not (always a leaf).
-- **Model-inheritance trap:** a nested worker spawned WITHOUT an agent type defaults to the MAIN session model — on an `opus` stage that silently makes every worker opus. Hence "spawn workers BY AGENT TYPE" on every surface.
-- **Ultracode licensing:** Claude Code's Workflow tool requires explicit opt-in; the documented trigger is the literal keyword `ultracode` in the session's prompt. Loom controls every spawned session's initial prompt, so `stage.ultracode` injects the keyword at spawn (`orchestrator/terminal/native/mod.rs`, `SessionType::Stage` prompt arm).
-
-**Canonical keyword table (wording changes must update ALL listed surfaces):**
-
-| Exact phrase | Must appear in |
-| --- | --- |
-| `2-LEVEL CAP` | CLAUDE.md.template (Rule 6c), SKILL.md (§4 + hierarchical-blocks subsection), cache.rs, sections.rs, agents/loom-software-engineer.md, agents/loom-senior-software-engineer.md |
-| `Workers NEVER spawn subagents` | CLAUDE.md.template (Rule 6c + Critical Reminders), SKILL.md, cache.rs, sections.rs, agents/loom-software-engineer.md |
-| `DISJOINT` (phrasing may vary: territories / file territory / worker file sets) | all hierarchy surfaces |
-| `compact summary` (any case) | coordinator preamble, SKILL.md, cache.rs, sections.rs |
-| `BY AGENT TYPE` | CLAUDE.md.template, signals (cache.rs); "BY TYPE" in sections.rs |
-| `ultracode` | CLAUDE.md.template (Parallelization Strategy), SKILL.md (ULTRACODE STAGES), plan/schema/types.rs, sections.rs, native/mod.rs |
-| Threshold | `more than ~6 independent worker tasks` → hierarchy; `~6 or fewer` → flat (all decision surfaces) |
-
-**Surface inventory:**
-
-1. `CLAUDE.md.template` — Rule 6c (decision table, criteria, COORDINATOR/WORKER PREAMBLEs), Rule 6/6b/7 amendments, Parallelization Strategy rows, Ultracode Stages subsection, Critical Reminders item 5
-2. `skills/loom-plan-writer/SKILL.md` — §4 criteria-keyed strategies block (1/2/2a/2b/3 — deliberately NOT a ranking), decision table `>~6 worker tasks?` column, HIERARCHICAL EXECUTION PLAN BLOCKS subsection, ULTRACODE STAGES subsection, §5 description requirements, Example 5 (flat-12 vs 3×4 honest cost comparison)
-3. `orchestrator/signals/cache.rs` — standard stable prefix only ("Subagent Hierarchies (2-LEVEL CAP)" block); knowledge/IV/knowledge-distill prefixes untouched (3 of 4 prefix hashes unchanged)
-4. `orchestrator/signals/format/sections.rs` — semi-stable "## Delegation Choices" (three-way: flat / hierarchy / teams; replaced the old "## Agent Teams" header) + gated "## Ultracode Mode" section
-5. `orchestrator/terminal/native/mod.rs` — spawn-prompt ultracode keyword (Stage sessions only; merge/knowledge spawns don't need it)
-6. `agents/loom-software-engineer.md` (## Delegation: worker/coordinator roles), `agents/loom-senior-software-engineer.md` (hierarchy line in "What you define")
-
-**Pinning tests:** `cache.rs::test_generate_stable_prefix_contains_required_sections` (hierarchy asserts), `tests_cache.rs::test_signal_contains_delegation_choices_three_way` (incl. negative assert on the old `## Agent Teams` header), `tests_cache.rs::test_signal_ultracode_section_gated`, `plan/schema/tests/ultracode_tests.rs` (parse/default/advisory), `commands/init/tests.rs` (definition→stage propagation).
-
-**Consistency greps (run after any wording change):**
-
-```bash
-rg -n "2-LEVEL CAP" CLAUDE.md.template skills/loom-plan-writer/SKILL.md loom/src/orchestrator/signals/ agents/
-rg -n "Workers NEVER spawn subagents" CLAUDE.md.template skills/loom-plan-writer/SKILL.md loom/src/orchestrator/signals/ agents/loom-software-engineer.md
-rg -n "BY AGENT TYPE" CLAUDE.md.template loom/src/orchestrator/signals/
-rg -n "ultracode" CLAUDE.md.template skills/loom-plan-writer/SKILL.md loom/src/plan/schema/types.rs loom/src/orchestrator/signals/
-rg -n "HIERARCHY SECOND" skills/   # must be ZERO hits (criteria-keyed, not ranked)
-```
-
-**Watch item:** whether Claude Code hooks (PreToolUse etc.) fire identically for depth-2 subagents is undocumented upstream. Loom's `commit-filter.sh` detection walks the process tree (nearest claude ancestor vs `LOOM_MAIN_AGENT_PID`) and is depth-agnostic by construction, but re-verify on major Claude Code upgrades.
+→ [Subagent Hierarchy](patterns/subagent-hierarchy.md)
 
 ## Synchronous Foreground Agent Driver (`loom pressure`)
 
@@ -641,3 +490,37 @@ A second execution model distinct from the daemon/worktree orchestrator: `loom p
 - **Sibling-report naming + pre-delete guard:** the Codex review is written to `codex-<basename>` next to the plan. The report is deleted at the START of every round so that if Codex fails to write a fresh review, the following `/address` cannot silently read the previous round's stale report; a final delete cleans up after the last round.
 - **Repo-relative invocation, not cwd-relative:** `resolve_plan_path` derives the agent argument via `fs_path.strip_prefix(repo_root)` (repo-relative when under the repo, else absolute) because children run with `current_dir(repo_root)`, not the user's shell cwd. It gates on `is_file()` (not `exists()`, which is true for dirs) and falls back to `doc/plans/<arg>` only when the raw path is absent AND does not already start with `doc/plans/` (double-prefix guard).
 - **Visible exit classification:** `classify_code` maps `0`→continue, `130`/`2`/`None`→abort, other→warn — but the abort/warn handlers PRINT the child label + exit code, so a headless failure (e.g. a codex clap usage error exiting 2) is surfaced rather than mistaken for a clean Ctrl+C interrupt.
+
+## Doctrine Blocks, Fail-Safe Gates, and Shell Matchers (2026-07-28)
+
+Guidance that must appear byte-identically on several surfaces needs an equality test, not N
+greps; privilege lookups from state files must treat ambiguity as refusal; and shell-command
+classification in a hook has a specific normalise-then-tokenise shape.
+
+→ [Doctrine & Fail-Safe Patterns](patterns/doctrine-cross-surface.md)
+
+## Tiered Knowledge Hierarchy (2026-07-28)
+
+The knowledge base is **two-tier**. Tier-1 files (`architecture.md`, `patterns.md`, …) hold
+short summaries that link out; tier-2 topics live at `<category>/<slug>.md` and hold the detail.
+`INDEX.md` is generated and is the single layout predicate — a directory is hierarchical **iff**
+`INDEX.md` exists.
+
+Reading protocol: index first, then the tier-1 summary for your area, then only the tier-2
+topics you actually touch. Writing protocol: a tier-1 section that grows past ~40 lines is spilled
+into a topic and replaced by a 2-4 line summary plus a relative link.
+
+The link form matters — `[Title](category/slug.md)` in a **tier-1** file is the only form that
+satisfies both audit checks. See [Knowledge Hierarchy](architecture/knowledge-hierarchy.md) for
+the mechanics and the audit rules.
+
+## Model Playbook: Orchestration Is Always Opus (2026-07-28)
+
+Every `StageType` now defaults to **opus** (`models/stage/types.rs::default_model`), with
+`default_reasoning_effort()` returning `xhigh` whenever the effective model is opus. Judgement-
+heavy orchestration work — planning, distillation, review, verification — is never downgraded to
+save tokens.
+
+Savings come from **delegation, not downgrade**: an opus main agent spawns sonnet subagents by
+agent type (`loom-software-engineer`) for well-scoped gathering and execution. A knowledge stage
+runs on opus and delegates its code spot-reads to sonnet; the two facts are easy to conflate.
