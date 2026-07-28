@@ -30,19 +30,28 @@ pub enum StageType {
 impl StageType {
     /// Fallback model when the plan does not specify one.
     /// Plans SHOULD always set `model` explicitly per stage — the plan writer
-    /// chooses opus vs sonnet based on whether the stage is architectural
-    /// (needs judgment) or execution-focused (detailed instructions).
-    /// This fallback is a safety net, not the intended path.
+    /// picks the model per the playbook below. This fallback is a safety net,
+    /// not the intended path.
+    ///
+    /// Under the model playbook, every stage's MAIN AGENT is an opus orchestrator:
+    /// it reads context, plans the work, and delegates implementation to subagents
+    /// (sonnet workers for well-scoped execution, opus workers only where judgment
+    /// is required). Model choice for the actual implementation work happens at
+    /// the subagent level, not here — so the main-agent default is opus across
+    /// every stage type, regardless of how "lightweight" that stage type used to
+    /// look in isolation.
     pub fn default_model(&self) -> &'static str {
         match self {
-            // Knowledge stages are lightweight exploration — sonnet suffices
-            StageType::Knowledge => "sonnet",
+            // Knowledge stages: the main agent orchestrates exploration and
+            // delegates to Explore/sonnet subagents, curating their findings itself.
+            StageType::Knowledge => "opus",
             // KnowledgeDistill curates ALL stage memories into permanent knowledge:
             // a context-heavy, judgment-laden reduce step. Opus (1M window) absorbs the
             // accumulated memory volume and synthesizes/dedupes better than sonnet. The
             // agent may delegate information-gathering to cheaper sonnet subagents.
             StageType::KnowledgeDistill => "opus",
-            // Standard and integration-verify stages default to opus
+            // Standard and integration-verify stages: the main agent orchestrates
+            // and delegates implementation/review work to subagents.
             StageType::Standard | StageType::IntegrationVerify => "opus",
         }
     }
