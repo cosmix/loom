@@ -208,113 +208,23 @@ fn check_subagent_case(
 // =============================================================================
 // Table-driven: project-wide runners are blocked, scoped runs are allowed.
 //
-// Each list below is hand-verified against the CORRECT (intended) behaviour
-// of the hook, per the "REGRESSION" cases in particular: those exercise
-// tokenizer edge cases (shell redirection, embedded newlines, subshells,
-// quoted separators) that were found to still misclassify commands after
-// the initial implementation. Failures here collect into one combined
-// panic message instead of stopping at the first mismatch, so a single run
-// shows the full pass/fail picture while the hook's own fixes land
-// concurrently in a sibling file.
+// The cases themselves live in `hooks_subagent_verify_guard_cases.rs` (read its
+// module docs before editing one). Failures collect into a single combined
+// panic instead of stopping at the first mismatch, so one run shows the whole
+// pass/fail picture rather than one case at a time.
 // =============================================================================
+
+#[path = "hooks_subagent_verify_guard_cases.rs"]
+mod cases;
 
 #[test]
 fn subagent_block_and_allow_table() {
     let dir = temp_dir_no_claude();
     let hook_path = install_hook(dir.path());
 
-    let block_cases: &[(&str, &str)] = &[
-        ("cargo test", "bare cargo test"),
-        (
-            "cargo test --manifest-path loom/Cargo.toml",
-            "manifest-path alone is not a scope",
-        ),
-        ("cargo test --all", "explicit --all"),
-        ("cargo build", "cargo build is project-wide in any form"),
-        ("cargo clippy", "cargo clippy is project-wide in any form"),
-        ("cargo fmt", "cargo fmt is project-wide in any form"),
-        (
-            "cd loom && cargo clippy --all-targets",
-            "clippy after a cd prefix",
-        ),
-        (
-            "env RUST_LOG=debug cargo test",
-            "env-prefixed bare cargo test",
-        ),
-        ("pytest", "bare pytest"),
-        ("go test ./...", "go test walks the whole module"),
-        ("make test", "make test"),
-        ("npm run build", "npm run build with no path"),
-        // --- Regressions: tokenizer edge cases, expected to still fail
-        // until the concurrent hook fix lands (do not weaken - re-run) ---
-        (
-            "cargo test 2>&1 | tail -50",
-            "REGRESSION: stdout/stderr redirection must not count as a scope",
-        ),
-        (
-            "cargo test > out.log",
-            "REGRESSION: output redirection must not count as a scope",
-        ),
-        (
-            "cd loom\ncargo test",
-            "REGRESSION: newline-separated command must still be inspected",
-        ),
-        (
-            "echo \"x\"\ncargo clippy",
-            "REGRESSION: newline after a quoted echo must not hide cargo clippy",
-        ),
-        (
-            "cargo nextest run",
-            "REGRESSION: cargo nextest run is project-wide like cargo test",
-        ),
-        (
-            "cargo test --doc",
-            "REGRESSION: --doc runs every doc-test in the crate, not scoped",
-        ),
-        (
-            "(cd loom && cargo test)",
-            "REGRESSION: a subshell must not hide cargo test",
-        ),
-        (
-            "go build ./...",
-            "REGRESSION: go build walks the whole module",
-        ),
-        ("go vet ./...", "REGRESSION: go vet walks the whole module"),
-    ];
-
-    let allow_cases: &[(&str, &str)] = &[
-        ("cargo test signals::", "scoped filter"),
-        (
-            "cargo test --manifest-path loom/Cargo.toml --test integration hooks_",
-            "scoped --test with a filter",
-        ),
-        ("cargo test -p loom", "scoped package"),
-        (
-            r#"rg "cargo test" doc/"#,
-            "a quoted mention inside an rg pattern is not a command",
-        ),
-        (
-            "echo make test",
-            "make/test as echo arguments, not a real make invocation",
-        ),
-        ("pytest tests/test_foo.py", "scoped pytest path"),
-        ("go test ./pkg/...", "scoped go package"),
-        (
-            r#"git commit -m "add cargo test for X""#,
-            "git commit is not a verification runner",
-        ),
-        ("ls -la", "unrelated command"),
-        // --- Regressions ---
-        (
-            "make docs\ncargo test --test parser",
-            "REGRESSION: a preceding unrelated make target must not blame make \
-             for the scoped cargo test that follows on the next line",
-        ),
-        (
-            r#"rg "x && cargo build -v" src/"#,
-            "REGRESSION: a quoted && inside an rg pattern must not reset command position",
-        ),
-    ];
+    // Tables live in a companion file; see its module docs before editing.
+    let block_cases = cases::BLOCK_CASES;
+    let allow_cases = cases::ALLOW_CASES;
 
     let mut failures = Vec::new();
     for (command, label) in block_cases {
