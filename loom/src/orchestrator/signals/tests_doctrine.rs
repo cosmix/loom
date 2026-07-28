@@ -15,22 +15,62 @@
 //! others contradict - and a subagent obeying the wrong copy is blocked by the
 //! hook with no allowed alternative. These tests pin the copies together.
 //!
-//! The static surfaces are embedded with `include_str!`, so renaming or moving
-//! one of them is a COMPILE error rather than a silently-skipped test.
+//! The two singular surfaces are embedded with `include_str!`, so renaming or
+//! moving either is a COMPILE error rather than a silently-skipped test. The
+//! `agents/` roster is scanned instead, because it grows.
+//!
+//! BLOCK-A's ABSENCE from the knowledge and knowledge-distill prefixes is
+//! already pinned by `cache.rs`'s own unit tests; this file covers only the
+//! cross-surface agreement no single module can check.
 
-// BLOCK-A's ABSENCE from the knowledge and knowledge-distill prefixes is
-// already pinned by cache.rs's own unit tests; this file covers only the
-// cross-surface agreement no single module can check.
+use std::fs;
+use std::path::{Path, PathBuf};
+
 use super::super::cache::{generate_integration_verify_stable_prefix, generate_stable_prefix};
 use crate::fs::permissions::constants::HOOK_SUBAGENT_VERIFY_GUARD;
 
 const CLAUDE_MD_TEMPLATE: &str = include_str!("../../../../CLAUDE.md.template");
 const PLAN_WRITER_SKILL: &str = include_str!("../../../../skills/loom-plan-writer/SKILL.md");
-const AGENT_SOFTWARE_ENGINEER: &str = include_str!("../../../../agents/loom-software-engineer.md");
-const AGENT_SENIOR_SOFTWARE_ENGINEER: &str =
-    include_str!("../../../../agents/loom-senior-software-engineer.md");
-const AGENT_CODE_REVIEWER: &str = include_str!("../../../../agents/loom-code-reviewer.md");
-const AGENT_ADVISOR: &str = include_str!("../../../../agents/loom-advisor.md");
+
+/// Repo root, resolved from the crate directory at compile time.
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("loom/ always has a parent - the repo root")
+        .to_path_buf()
+}
+
+/// Every `agents/*.md` file, read at run time.
+///
+/// Deliberately a DIRECTORY SCAN rather than a hand-written `include_str!` list:
+/// the agent roster grows (this plan alone added `loom-advisor.md`), and a list
+/// maintained by hand would quietly stop covering the newest file - which is
+/// exactly the surface most likely to be written from a stale template.
+fn agent_definitions() -> Vec<(String, String)> {
+    let dir = repo_root().join("agents");
+    let mut found: Vec<(String, String)> = fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()))
+        .map(|entry| entry.expect("readable dir entry").path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "md"))
+        .map(|path| {
+            let text = fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+            (
+                format!("agents/{}", path.file_name().unwrap().to_string_lossy()),
+                text,
+            )
+        })
+        .collect();
+    found.sort();
+
+    assert!(
+        !found.is_empty(),
+        "no agent definitions found in {} - a directory scan that silently \
+         matches nothing is a test that silently checks nothing",
+        dir.display()
+    );
+    found
+}
 
 /// BLOCK-A - the no-verify rule, verbatim. Every surface must carry this text
 /// byte for byte; `hooks/subagent-verify-guard.sh` prefixes it with a hook-only
@@ -72,19 +112,20 @@ const RETIRED_PHRASES: &[&str] = &[
     concat!("Zero IDE ", "diagnostics"),
 ];
 
-/// Static guidance surfaces pasted into subagent prompts, as (label, text).
-fn guidance_surfaces() -> Vec<(&'static str, &'static str)> {
-    vec![
-        ("CLAUDE.md.template", CLAUDE_MD_TEMPLATE),
-        ("skills/loom-plan-writer/SKILL.md", PLAN_WRITER_SKILL),
-        ("agents/loom-software-engineer.md", AGENT_SOFTWARE_ENGINEER),
+/// Every static guidance surface pasted into a subagent prompt, as (label, text).
+fn guidance_surfaces() -> Vec<(String, String)> {
+    let mut surfaces = vec![
         (
-            "agents/loom-senior-software-engineer.md",
-            AGENT_SENIOR_SOFTWARE_ENGINEER,
+            "CLAUDE.md.template".to_string(),
+            CLAUDE_MD_TEMPLATE.to_string(),
         ),
-        ("agents/loom-code-reviewer.md", AGENT_CODE_REVIEWER),
-        ("agents/loom-advisor.md", AGENT_ADVISOR),
-    ]
+        (
+            "skills/loom-plan-writer/SKILL.md".to_string(),
+            PLAN_WRITER_SKILL.to_string(),
+        ),
+    ];
+    surfaces.extend(agent_definitions());
+    surfaces
 }
 
 #[test]
@@ -123,9 +164,8 @@ fn block_b_agrees_across_every_surface() {
 
 #[test]
 fn no_guidance_surface_still_tells_a_subagent_to_verify() {
-    let signal_prefix = generate_stable_prefix();
     let mut surfaces = guidance_surfaces();
-    surfaces.push(("signal stable prefix", signal_prefix.as_str()));
+    surfaces.push(("signal stable prefix".to_string(), generate_stable_prefix()));
 
     let mut leftovers = Vec::new();
     for (label, text) in surfaces {
