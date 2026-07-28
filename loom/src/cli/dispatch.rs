@@ -122,6 +122,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
             KnowledgeCommands::Update { file, content } => knowledge::update(file, content),
             KnowledgeCommands::Init => knowledge::init(),
             KnowledgeCommands::List => knowledge::list(),
+            KnowledgeCommands::Index => knowledge::index(),
             KnowledgeCommands::Check {
                 min_coverage,
                 src_path,
@@ -129,9 +130,9 @@ pub fn dispatch(command: Commands) -> Result<()> {
             } => knowledge::check::check(min_coverage, src_path, quiet),
             KnowledgeCommands::Audit {
                 max_file_lines,
-                max_total_lines,
+                max_topic_lines,
                 quiet,
-            } => knowledge::audit::audit(max_file_lines, max_total_lines, quiet),
+            } => knowledge::audit::audit(max_file_lines, max_topic_lines, quiet),
             KnowledgeCommands::Gc {
                 model,
                 dry_run,

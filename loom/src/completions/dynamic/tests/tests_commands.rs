@@ -54,6 +54,23 @@ fn test_complete_subcommands_knowledge() {
     assert!(results.contains(&"bootstrap".to_string()));
     assert!(results.contains(&"check".to_string()));
     assert!(results.contains(&"gc".to_string()));
+    assert!(results.contains(&"index".to_string()));
+}
+
+#[test]
+fn test_complete_subcommands_knowledge_index_prefix() {
+    let results = complete_subcommands("knowledge", "in").unwrap();
+    assert!(results.contains(&"index".to_string()));
+    assert!(results.contains(&"init".to_string()));
+}
+
+#[test]
+fn test_complete_flags_knowledge_audit() {
+    let results = complete_flags(&["knowledge", "audit"], "").unwrap();
+    assert!(results.contains(&"--max-file-lines".to_string()));
+    assert!(results.contains(&"--max-topic-lines".to_string()));
+    assert!(results.contains(&"--quiet".to_string()));
+    assert!(!results.contains(&"--max-total-lines".to_string()));
 }
 
 #[test]

@@ -1,7 +1,7 @@
 //! Memory and knowledge CLI command types
 
 use clap::Subcommand;
-use loom::fs::knowledge::{DEFAULT_MAX_FILE_LINES, DEFAULT_MAX_TOTAL_LINES};
+use loom::fs::knowledge::{DEFAULT_MAX_TIER1_LINES, DEFAULT_MAX_TOPIC_LINES};
 use loom::validation::{clap_id_validator, clap_knowledge_content_validator};
 
 #[derive(Subcommand)]
@@ -42,6 +42,9 @@ pub enum KnowledgeCommands {
     /// List all knowledge files
     List,
 
+    /// Regenerate the knowledge INDEX.md (creates it on a flat knowledge dir)
+    Index,
+
     /// Check knowledge completeness and src/ coverage
     Check {
         /// Minimum coverage percentage required (default: 50)
@@ -59,13 +62,13 @@ pub enum KnowledgeCommands {
 
     /// Analyze knowledge files for size, duplicates, and curated blocks
     Audit {
-        /// Max lines per file before compaction is recommended
-        #[arg(long, default_value_t = DEFAULT_MAX_FILE_LINES)]
+        /// Max lines per tier-1 summary file before compaction is recommended
+        #[arg(long, default_value_t = DEFAULT_MAX_TIER1_LINES)]
         max_file_lines: usize,
 
-        /// Max total lines before compaction is recommended
-        #[arg(long, default_value_t = DEFAULT_MAX_TOTAL_LINES)]
-        max_total_lines: usize,
+        /// Max lines per tier-2 topic file before compaction is recommended
+        #[arg(long, default_value_t = DEFAULT_MAX_TOPIC_LINES)]
+        max_topic_lines: usize,
 
         /// Only show metrics, skip compaction instructions
         #[arg(short, long)]
