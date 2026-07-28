@@ -18,7 +18,12 @@ These five are restated verbatim at the end of this file. Everything below is bi
 
 ## KNOWLEDGE-FIRST
 
-If `doc/loom/knowledge/` exists, read ALL files there before any other work — including before exploring the code. Order: `architecture.md`, then `entry-points.md`, then the rest. CLAUDE.md governs process; the knowledge files describe the actual system. Recording knowledge: Rule 12; routing: hard stop 2.
+If `doc/loom/knowledge/` exists, read it before any other work — including before exploring the code. Layout detection is one predicate: hierarchical iff `doc/loom/knowledge/INDEX.md` exists at the root.
+
+- **Hierarchical** (`INDEX.md` present): read the index first (`loom knowledge show`), then the tier-1 summary file for your area, then drill into `category/topic` tier-2 files ONLY for what you touch.
+- **Flat** (no `INDEX.md`): read all tier-1 files — `architecture.md`, then `entry-points.md`, then the rest.
+
+CLAUDE.md governs process; the knowledge files describe the actual system. Recording knowledge: Rule 12; routing: hard stop 2.
 
 ---
 
@@ -71,7 +76,7 @@ Commits follow [Conventional Commits](https://www.conventionalcommits.org/): `ty
 
 ### 5. SUBAGENT RESTRICTIONS
 
-Subagents never run `git commit`, `loom stage complete`, or `git add -A`/`git add .` (hard stop 3) — subagent commits cause lost work. Subagents write code, run tests, and report; the main agent owns all git operations.
+Subagents never run `git commit`, `loom stage complete`, or `git add -A`/`git add .` (hard stop 3) — subagent commits cause lost work. Subagents write code and report; the main agent owns verification and all git operations.
 
 Include as the first lines of EVERY subagent prompt:
 
@@ -82,7 +87,18 @@ SUBAGENT RESTRICTIONS - YOU ARE A SUBAGENT:
 - NEVER run git commit - the main agent will commit your work
 - NEVER run loom stage complete - the main agent will complete the stage
 - NEVER run git add -A or git add . - the main agent handles staging
-- DO write code, run tests, and report results back
+- DO write code and report results back
+
+VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:
+- Do NOT verify your work. No full build, no full test suite, no linter, no
+  formatter, no type-checker, and never a repeated or looping check.
+- AT MOST ONE narrowly-scoped check over the files YOU wrote (e.g.
+  `cargo test <your_module>::`), run ONCE. Skip it if you are unsure.
+- Report instead: files changed, assumptions made, anything unresolved.
+  The MAIN AGENT compiles, tests, lints, and fixes.
+- EXCEPTION - integration-verify stages: if you were spawned to review or
+  verify for an integration-verify stage, IGNORE this block; running the
+  FULL build, test suite, and linter IS your job.
 
 MEMORY RECORDING - REQUIRED (write advice to your future self):
 - Mistakes IMMEDIATELY: loom memory note "mistake: tried X because [misleading signal]. Failed because Y. Prevention: [detection rule]. Fix: Z"
@@ -122,7 +138,7 @@ Loom caps agent trees at TWO levels: main agent → coordinators → workers. Wo
 
 Use a hierarchy when ALL hold: the work is well-defined enough for sonnet workers; it splits into 2-4 disjoint file territories; each territory has 2+ worker tasks; flat fan-out would mean the main agent authoring more than ~6 prompts, absorbing N raw results, or serializing waves. Do not use one when: total worker tasks ≤ ~6 (flat is simpler and cheaper), territories share files (separate stages), cross-territory iteration is needed (teams), or the work is sequential.
 
-Model mix: coordinators AND workers default to sonnet — spawn workers BY AGENT TYPE (`loom-software-engineer` pins sonnet); an untyped worker inherits the main session model, silently making every worker opus on an opus stage. Opus coordinator only when integrating its territory needs architectural judgment.
+Model mix: implementation is delegated to as FEW subagents as the work allows — haiku (rare, trivial mechanical edits), sonnet (the common case), opus (genuinely challenging work) — spawn workers BY AGENT TYPE (`loom-software-engineer` pins sonnet); an untyped worker inherits the main session model, silently making every worker opus on an opus stage. Opus coordinator only when integrating its territory needs architectural judgment.
 
 COORDINATOR PREAMBLE — first lines of every coordinator prompt (standalone; do not prepend Rule 5's):
 
@@ -135,7 +151,7 @@ COORDINATOR ROLE - YOU ARE A SUBAGENT COORDINATING WORKERS (ONE LEVEL ONLY):
 - Spawn workers via the Task tool BY AGENT TYPE (loom-software-engineer = sonnet); include the WORKER PREAMBLE as the first lines of EVERY worker prompt; spawn independent workers in ONE message
 - Workers NEVER spawn subagents - they are LEAVES (loom caps the tree at 2 levels)
 - Delegate implementation; write at most small glue/fixes within your territory
-- Before returning: verify your subtree (scoped build/tests covering YOUR territory only)
+- AT MOST ONE narrowly-scoped check over the files your workers wrote (e.g. `cargo test <your_module>::`), run ONCE; skip it if you are unsure. The MAIN AGENT compiles, tests, lints, and fixes.
 - Return a COMPACT summary: files changed, verification command + result, failures/blockers, insights. No file dumps, no diffs.
 - NEVER run git commit, git add -A/., or loom stage complete - only the main agent does
 - Record insights via loom memory note/decision; NEVER use Claude Code auto-memory
@@ -147,21 +163,42 @@ WORKER PREAMBLE — Rule 5 preamble first, then append:
 WORKER RESTRICTIONS - YOU ARE A LEAF AGENT:
 - NEVER spawn subagents (Task tool) - the hierarchy is capped at 2 levels; do the work yourself
 - Touch ONLY your assigned files: [FILES]
-- Return a short report: what changed, test results, anything surprising
+- Return a short report: what changed, anything surprising, anything unresolved
+
+VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:
+- Do NOT verify your work. No full build, no full test suite, no linter, no
+  formatter, no type-checker, and never a repeated or looping check.
+- AT MOST ONE narrowly-scoped check over the files YOU wrote (e.g.
+  `cargo test <your_module>::`), run ONCE. Skip it if you are unsure.
+- Report instead: files changed, assumptions made, anything unresolved.
+  The MAIN AGENT compiles, tests, lints, and fixes.
 ```
 
 ### 7. SKILLS, AGENTS, AND MODEL CHOICE
 
 Check available skills and agents before implementing; the prompt-submit hook surfaces matching `/loom-*` skills — invoke the best match before writing code.
 
-| Agent                           | Model  | Use for                                                                                       |
-| ------------------------------- | ------ | --------------------------------------------------------------------------------------------- |
-| `loom-software-engineer`        | Sonnet | Well-scoped execution: implementation to detailed instructions, tests, refactors, boilerplate |
-| `loom-senior-software-engineer` | Opus   | Architecture, complex debugging, security-sensitive code, cross-cutting refactors, ambiguity  |
-| `loom-code-reviewer`            | —      | Read-only code/security/architecture review                                                   |
-| `Explore`                       | —      | Codebase exploration                                                                          |
+| Agent                           | Model  | Use for                                                                                                                                                           |
+| ------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `loom-software-engineer`        | Sonnet | Well-scoped execution: implementation to detailed instructions, tests, refactors, boilerplate                                                                     |
+| `loom-senior-software-engineer` | Opus   | Architecture, complex debugging, security-sensitive code, cross-cutting refactors, ambiguity                                                                      |
+| `loom-code-reviewer`            | —      | Read-only code/security/architecture review                                                                                                                       |
+| `Explore`                       | —      | Codebase exploration                                                                                                                                              |
+| `loom-advisor`                  | Fable  | Read-only advisory for debugging and repeated failures — receives full detail from the orchestrator, returns a diagnosis and a concrete next step, writes nothing |
 
-Model choice: default to sonnet for well-scoped execution; reserve opus for work that needs it — architecture (multi-file/multi-module design), bug hunting and complex debugging, optimization and improvement passes, heavy algorithmic work, security-sensitive code, review/verification gates, and anything uncertain. Sonnet is far cheaper and near-equal on well-scoped execution — earn that by writing SMALL, detailed sonnet tasks (exact paths, signatures, patterns to match, explicit steps, per-step acceptance) and by decomposing larger work via Rule 6c rather than escalating to opus for context headroom. If a sonnet agent fails twice on the same task, retry with opus. Plan authors: the full per-stage model rubric lives in `/loom-plan-writer`.
+Model allocation:
+
+1. ORCHESTRATION IS ALWAYS OPUS. Every stage's main agent is opus. The
+   orchestrator does NOT implement — it decomposes the work, hands each
+   subagent full context, then verifies and commits. That is all.
+2. IMPLEMENTATION IS ALWAYS DELEGATED, to as FEW subagents as the work
+   allows: haiku (rare — trivial mechanical edits), sonnet (the common
+   case), opus (genuinely challenging work). Spawn BY AGENT TYPE.
+3. DEBUGGING OR REPEATED FAILURE → spawn a `loom-advisor` (fable) subagent:
+   narrow scope, full detail supplied by the orchestrator, advice returned.
+   Do not let an implementer thrash on the same failure twice.
+
+Keep each subagent's assignment small — exact paths, signatures, patterns to match, explicit steps, per-step acceptance — and decompose larger work via Rule 6c rather than escalating to opus for context headroom. Plan authors: the full per-stage model rubric lives in `/loom-plan-writer`.
 
 ### 8. NATIVE TOOLS AND CODE FORMATTING
 
@@ -193,7 +230,7 @@ Always use `loom` from PATH, never `target/debug/loom` (version mismatches). Nev
 
 ### 12. PROJECT KNOWLEDGE
 
-Files in `doc/loom/knowledge/`: `architecture.md` (components, data flow), `entry-points.md` (key files), `patterns.md`, `conventions.md`, `mistakes.md` (lessons), `stack.md` (deps/tooling), `concerns.md` (tech debt).
+Files in `doc/loom/knowledge/`: `architecture.md` (components, data flow), `entry-points.md` (key files), `patterns.md`, `conventions.md`, `mistakes.md` (lessons), `stack.md` (deps/tooling), `concerns.md` (tech debt). These tier-1 files are summaries plus pointers, not exhaustive detail: when a topic outgrows its tier-1 section (roughly 40+ lines), move the detail to a tier-2 topic file `<category>/<slug>.md` (e.g. `architecture/signal-generation.md`, `mistakes/phantom-merges.md`) and leave a 2-4 line summary plus link behind in tier-1.
 
 Updating (interactive/ad-hoc): Write/Edit knowledge files directly when you find something worth preserving — mistakes, decisions plus rationale, reusable patterns, conventions. Record each mistake as an actionable prevention rule:
 
@@ -206,7 +243,7 @@ Updating (interactive/ad-hoc): Write/Edit knowledge files directly when you find
 **Fix:** [What to do instead]
 ```
 
-Do not record ephemera, procedural steps, or anything derivable from git history or the code. During loom execution, use the `loom memory`/`loom knowledge` CLI as your signal instructs — do not edit knowledge files directly.
+Do not record ephemera, procedural steps, or anything derivable from git history or the code. During loom execution, use the `loom memory`/`loom knowledge` CLI as your signal instructs — do not edit knowledge files directly: `loom knowledge update <category>/<slug>` writes a tier-2 topic file; `loom knowledge index` regenerates `INDEX.md` and is always the last step after knowledge writes.
 
 ### 13. SILENT FAILURE DETECTION
 
