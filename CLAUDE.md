@@ -2,7 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**⚠️ KNOWLEDGE-FIRST:** If `doc/loom/knowledge/` exists, read ALL files there BEFORE doing any work — they are your primary source of truth for understanding this codebase. Read `architecture.md` first, then `entry-points.md`, then the rest.
+**⚠️ KNOWLEDGE-FIRST:** If `doc/loom/knowledge/` exists, read it BEFORE doing any work — it is your primary source of truth for understanding this codebase. Layout detection is one predicate: hierarchical iff `doc/loom/knowledge/INDEX.md` exists at the root.
+
+- **Hierarchical** (`INDEX.md` present): read the index first (`loom knowledge show`), then the tier-1 summary file for your area, then drill into `category/topic` tier-2 files ONLY for what you touch.
+- **Flat** (no `INDEX.md`): read all tier-1 files — `architecture.md`, then `entry-points.md`, then the rest.
 
 ## Project Overview
 
