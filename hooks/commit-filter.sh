@@ -32,10 +32,8 @@ set -euo pipefail
 
 source "$(dirname "$0")/_common.sh"
 
-debug() {
-	[[ "${COMMIT_FILTER_DEBUG:-}" == "1" ]] || return 0
-	echo "$@" >&2
-}
+# Debug tracing comes from _common.sh (`loom_debug`), gated on
+# LOOM_HOOK_DEBUG=1 or the legacy COMMIT_FILTER_DEBUG=1.
 
 # Read JSON input from stdin (Claude Code passes tool info via stdin)
 # Use gtimeout (macOS with coreutils) or timeout (Linux), or just cat
@@ -48,8 +46,8 @@ else
 	INPUT_JSON=$(cat 2>/dev/null || true)
 fi
 
-debug "=== $(date) ==="
-debug "INPUT_JSON: $INPUT_JSON"
+loom_debug "=== $(date) ==="
+loom_debug "INPUT_JSON: $INPUT_JSON"
 
 # Parse tool_name and tool_input from JSON using jq
 TOOL_NAME=$(echo "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
@@ -69,10 +67,10 @@ if [[ -n "$COMMAND" ]]; then
 	STRIPPED_COMMAND=$(strip_embedded_content "$COMMAND")
 fi
 
-debug "TOOL_NAME: $TOOL_NAME"
-debug "COMMAND: $COMMAND"
-debug "STRIPPED_COMMAND: $STRIPPED_COMMAND"
-debug "---"
+loom_debug "TOOL_NAME: $TOOL_NAME"
+loom_debug "COMMAND: $COMMAND"
+loom_debug "STRIPPED_COMMAND: $STRIPPED_COMMAND"
+loom_debug "---"
 
 # Only check Bash tool uses
 if [[ "$TOOL_NAME" != "Bash" ]]; then
@@ -113,7 +111,7 @@ if references_git_or_loom; then
 	fi
 
 	if [[ -n "$EVASION_REASON" ]]; then
-		debug "DEBUG: BLOCKED - anti-evasion: $EVASION_REASON"
+		loom_debug "DEBUG: BLOCKED - anti-evasion: $EVASION_REASON"
 		cat >&2 <<EOF
 ⛔ BLOCKED: git/loom command uses an isolation-bypass pattern.
 Reason: $EVASION_REASON
@@ -130,168 +128,20 @@ fi
 # Block git commits from subagents (per ISSUES.md #3)
 # Main agent sets LOOM_MAIN_AGENT_PID in wrapper script
 # Subagents inherit this var but run under a different Claude process
+#
+# Detection lives in _common.sh (`loom_is_subagent`) so that every hook needing
+# "am I a subagent?" shares one depth-agnostic implementation.
+if loom_is_subagent; then
+	# Check if this is a git commit or loom stage complete command.
+	# Direct form: `git ... commit|add -A|add .`. Indirection form:
+	# a variable assigned to git/commit then expanded (`c=commit; git $c`,
+	# `g=git; $g commit`). `[[:space:]]` covers TAB/newline separators.
+	if echo "$STRIPPED_COMMAND" | grep -qiE 'git[[:space:]]+.*\b(commit|add[[:space:]]+-A|add[[:space:]]+\.)\b' ||
+		{ echo "$STRIPPED_COMMAND" | grep -qiE '=[[:space:]]*["'"'"']?(git|commit)([[:space:]"'"'"';]|$)' &&
+			echo "$STRIPPED_COMMAND" | grep -qiE '(git|\$[A-Za-z_][A-Za-z0-9_]*)[[:space:]]+\$?[A-Za-z_]'; }; then
+		loom_debug "DEBUG: BLOCKED - Subagent attempting git operation"
 
-# Check if a PID is in our ancestor chain
-# Returns 0 if found, 1 if not
-is_ancestor() {
-	local target_pid="$1"
-	local current_pid="$$"
-
-	while [[ "$current_pid" != "1" && "$current_pid" != "0" && -n "$current_pid" ]]; do
-		if [[ "$current_pid" == "$target_pid" ]]; then
-			return 0
-		fi
-
-		# Get parent PID
-		if [[ -r "/proc/$current_pid/stat" ]]; then
-			current_pid=$(awk '{print $4}' "/proc/$current_pid/stat" 2>/dev/null || true)
-		else
-			current_pid=$(ps -o ppid= -p "$current_pid" 2>/dev/null | tr -d ' ' || true)
-		fi
-	done
-
-	return 1
-}
-
-# Find the nearest Claude Code process ancestor
-# Returns its PID if found, empty string if not found
-find_nearest_claude_ancestor() {
-	local current_pid="$$"
-
-	while [[ "$current_pid" != "1" && "$current_pid" != "0" && -n "$current_pid" ]]; do
-		# Check if this process is Claude Code
-		local cmdline=""
-		if [[ -r "/proc/$current_pid/cmdline" ]]; then
-			# Linux: read cmdline (null-separated)
-			cmdline=$(tr '\0' ' ' <"/proc/$current_pid/cmdline" 2>/dev/null || true)
-		else
-			# macOS: use ps
-			cmdline=$(ps -o command= -p "$current_pid" 2>/dev/null || true)
-		fi
-
-		# Claude Code runs as node with "claude" in the binary/args
-		# Exclude matches that are just hook scripts (paths containing .claude/hooks)
-		if echo "$cmdline" | grep -qi "claude"; then
-			if echo "$cmdline" | grep -q "\.claude/hooks"; then
-				# This is a hook script, not Claude Code - skip it
-				debug "DEBUG: Skipping PID $current_pid - hook script: $cmdline"
-			else
-				echo "$current_pid"
-				return 0
-			fi
-		fi
-
-		# Get parent PID
-		if [[ -r "/proc/$current_pid/stat" ]]; then
-			current_pid=$(awk '{print $4}' "/proc/$current_pid/stat" 2>/dev/null || true)
-		else
-			current_pid=$(ps -o ppid= -p "$current_pid" 2>/dev/null | tr -d ' ' || true)
-		fi
-	done
-
-	echo ""
-	return 1
-}
-
-# Count Claude processes between two PIDs (exclusive of start, inclusive of end)
-# Returns the count. If end PID is not found, returns 999.
-count_claude_processes_between() {
-	local start_pid="$1"
-	local end_pid="$2"
-	local count=0
-
-	local current_pid="$start_pid"
-	# Move to parent first (start is exclusive)
-	if [[ -r "/proc/$current_pid/stat" ]]; then
-		current_pid=$(awk '{print $4}' "/proc/$current_pid/stat" 2>/dev/null || true)
-	else
-		current_pid=$(ps -o ppid= -p "$current_pid" 2>/dev/null | tr -d ' ' || true)
-	fi
-
-	while [[ "$current_pid" != "1" && "$current_pid" != "0" && -n "$current_pid" ]]; do
-		if [[ "$current_pid" == "$end_pid" ]]; then
-			echo "$count"
-			return 0
-		fi
-
-		# Check if this process is Claude Code (not a hook script)
-		local cmdline=""
-		if [[ -r "/proc/$current_pid/cmdline" ]]; then
-			cmdline=$(tr '\0' ' ' <"/proc/$current_pid/cmdline" 2>/dev/null || true)
-		else
-			cmdline=$(ps -o command= -p "$current_pid" 2>/dev/null || true)
-		fi
-
-		if echo "$cmdline" | grep -qi "claude" && ! echo "$cmdline" | grep -q "\.claude/hooks"; then
-			((count++))
-		fi
-
-		# Get parent PID
-		if [[ -r "/proc/$current_pid/stat" ]]; then
-			current_pid=$(awk '{print $4}' "/proc/$current_pid/stat" 2>/dev/null || true)
-		else
-			current_pid=$(ps -o ppid= -p "$current_pid" 2>/dev/null | tr -d ' ' || true)
-		fi
-	done
-
-	echo "999" # End PID not found
-	return 0  # Don't return 1 - it triggers set -e and skips attribution check
-}
-
-if [[ -n "${LOOM_MAIN_AGENT_PID:-}" ]]; then
-	# First, validate that LOOM_MAIN_AGENT_PID is actually in our ancestor chain
-	# If it's not, it's stale (from a previous session) and should be ignored
-	if ! is_ancestor "$LOOM_MAIN_AGENT_PID"; then
-		debug "DEBUG: LOOM_MAIN_AGENT_PID=$LOOM_MAIN_AGENT_PID is NOT in ancestor chain - stale value, ignoring"
-	else
-		# Find the nearest Claude ancestor in our process tree
-		NEAREST_CLAUDE=$(find_nearest_claude_ancestor)
-
-		debug "DEBUG: LOOM_MAIN_AGENT_PID=$LOOM_MAIN_AGENT_PID, PPID=$PPID, NEAREST_CLAUDE=$NEAREST_CLAUDE"
-
-		# Check if this is a subagent
-		# Main agent: NEAREST_CLAUDE == LOOM_MAIN_AGENT_PID (same process after exec)
-		# Subagent: NEAREST_CLAUDE != LOOM_MAIN_AGENT_PID (different Claude process)
-		#
-		# IMPORTANT: After `exec claude`, the wrapper PID IS the Claude process PID.
-		# So for a main agent, NEAREST_CLAUDE == LOOM_MAIN_AGENT_PID.
-		#
-		# Process tree for main agent:
-		#   wrapper (exec'd) → now Claude (LOOM_MAIN_AGENT_PID == NEAREST_CLAUDE)
-		#   Claude count: 0 (same process)
-		#
-		# Process tree for subagent:
-		#   wrapper → Claude (main) → ... → Claude (subagent = NEAREST_CLAUDE)
-		#   NEAREST_CLAUDE != LOOM_MAIN_AGENT_PID
-		if [[ -n "$NEAREST_CLAUDE" ]]; then
-			# Fast path: if NEAREST_CLAUDE == LOOM_MAIN_AGENT_PID, we ARE the main agent
-			# This happens because the wrapper uses `exec claude` which replaces the
-			# shell process with Claude, inheriting the PID
-			if [[ "$NEAREST_CLAUDE" == "$LOOM_MAIN_AGENT_PID" ]]; then
-				CLAUDE_COUNT=0
-				debug "DEBUG: Fast path - NEAREST_CLAUDE == LOOM_MAIN_AGENT_PID (same process after exec)"
-			else
-				CLAUDE_COUNT=$(count_claude_processes_between "$NEAREST_CLAUDE" "$LOOM_MAIN_AGENT_PID")
-				debug "DEBUG: Claude processes between NEAREST_CLAUDE and LOOM_MAIN_AGENT_PID: $CLAUDE_COUNT"
-			fi
-
-			if [[ "$CLAUDE_COUNT" == "0" ]]; then
-				# Main agent - no other Claude process between us and the wrapper
-				debug "DEBUG: Main agent detected - no intermediate Claude processes"
-			else
-				# Subagent - there's another Claude process in between (the main agent)
-				debug "DEBUG: Subagent detected - $CLAUDE_COUNT intermediate Claude process(es)"
-
-				# Check if this is a git commit or loom stage complete command.
-				# Direct form: `git ... commit|add -A|add .`. Indirection form:
-				# a variable assigned to git/commit then expanded (`c=commit; git $c`,
-				# `g=git; $g commit`). `[[:space:]]` covers TAB/newline separators.
-				if echo "$STRIPPED_COMMAND" | grep -qiE 'git[[:space:]]+.*\b(commit|add[[:space:]]+-A|add[[:space:]]+\.)\b' ||
-					{ echo "$STRIPPED_COMMAND" | grep -qiE '=[[:space:]]*["'"'"']?(git|commit)([[:space:]"'"'"';]|$)' &&
-						echo "$STRIPPED_COMMAND" | grep -qiE '(git|\$[A-Za-z_][A-Za-z0-9_]*)[[:space:]]+\$?[A-Za-z_]'; }; then
-					debug "DEBUG: BLOCKED - Subagent attempting git operation"
-
-					cat >&2 <<'EOF'
+		cat >&2 <<'EOF'
 ⛔ BLOCKED: Subagent attempting git operation.
 
 You are a SUBAGENT (spawned via Task tool). Per CLAUDE.md rules:
@@ -300,19 +150,20 @@ You are a SUBAGENT (spawned via Task tool). Per CLAUDE.md rules:
 
 Your job is to:
 1. Write code to your assigned files
-2. Run tests to verify your work
-3. Report results back to the main agent
-4. Let the main agent handle ALL git operations
+2. Run AT MOST ONE narrowly-scoped check covering only what you changed
+   (`cargo test <filter>`, `cargo test --test <name>`) - never the full suite
+3. Report what you changed, and what you did NOT verify
+4. Let the main agent handle ALL git operations and the full verification run
 
 The main agent will commit your work after all subagents complete.
 EOF
-					exit 2
-				fi
+		exit 2
+	fi
 
-				if echo "$COMMAND" | grep -qiE 'loom[[:space:]]+stage[[:space:]]+complete'; then
-					debug "DEBUG: BLOCKED - Subagent attempting loom stage complete"
+	if echo "$COMMAND" | grep -qiE 'loom[[:space:]]+stage[[:space:]]+complete'; then
+		loom_debug "DEBUG: BLOCKED - Subagent attempting loom stage complete"
 
-					cat >&2 <<'EOF'
+		cat >&2 <<'EOF'
 ⛔ BLOCKED: Subagent attempting to complete stage.
 
 You are a SUBAGENT (spawned via Task tool). Per CLAUDE.md rules:
@@ -325,10 +176,7 @@ Your job is to:
 
 The main agent will complete the stage after all subagents finish.
 EOF
-					exit 2
-				fi
-			fi
-		fi
+		exit 2
 	fi
 fi
 
@@ -341,7 +189,7 @@ fi
 # "commit" inside message text; require "commit" as a standalone word)
 # Match "git ... commit" allowing options like -c between git and commit
 if echo "$STRIPPED_COMMAND" | grep -qiE 'git[[:space:]]+.*\bcommit\b'; then
-	debug "DEBUG: Detected git commit command"
+	loom_debug "DEBUG: Detected git commit command"
 
 	BLOCKED_REASON=""
 
@@ -404,7 +252,7 @@ if echo "$STRIPPED_COMMAND" | grep -qiE 'git[[:space:]]+.*\bcommit\b'; then
 	fi
 
 	if [[ -n "$BLOCKED_REASON" ]]; then
-		debug "DEBUG: BLOCKED - $BLOCKED_REASON"
+		loom_debug "DEBUG: BLOCKED - $BLOCKED_REASON"
 
 		# Output guidance to stderr and block
 		cat >&2 <<EOF
@@ -431,5 +279,5 @@ EOF
 fi
 
 # Command is allowed
-debug "Allowing command"
+loom_debug "Allowing command"
 exit 0
