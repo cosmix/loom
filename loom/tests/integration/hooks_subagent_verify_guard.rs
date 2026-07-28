@@ -29,9 +29,10 @@
 //! those leaked values point at a REAL stage file, the integration-verify
 //! carve-out spuriously fires, and every "must be blocked" case in this file
 //! silently turns into a false pass. `run_hook_in_tree` explicitly clears
-//! both vars before applying any `extra_env` the caller supplies, so only
-//! `subagent_in_integration_verify_stage_allowed` (which sets them back
-//! deliberately) ever exercises the carve-out.
+//! both vars before applying any `extra_env` the caller supplies, so the only
+//! tests that exercise the carve-out are the ones that set them back
+//! deliberately: `subagent_in_integration_verify_stage_allowed` here, and the
+//! refusal cases in the `carveout` submodule.
 
 use loom::fs::permissions::constants::{HOOK_COMMON, HOOK_SUBAGENT_VERIFY_GUARD};
 use std::fs;
@@ -301,6 +302,9 @@ fn subagent_in_integration_verify_stage_allowed() {
         "a subagent inside an integration-verify stage must not be blocked; stderr={stderr}"
     );
 }
+
+#[path = "hooks_subagent_verify_guard_carveout.rs"]
+mod carveout;
 
 // =============================================================================
 // Non-vacuous message-stripping check: the "&&" lives INSIDE the quoted -m
