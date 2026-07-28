@@ -150,13 +150,14 @@ loom stage output remove <stage-id> <key>
 ### Knowledge / Memory
 
 ```bash
-loom knowledge show [file]
-loom knowledge update <file> <content>
+loom knowledge show [target]                 # target: a tier-1 file, or <category>/<slug>; no arg shows INDEX.md
+loom knowledge update <target> <content>     # e.g. `patterns` (tier 1) or `architecture/merge-flow` (tier 2)
 loom knowledge init
+loom knowledge index                                                         # Regenerate INDEX.md (creates it on a flat dir)
 loom knowledge list
 loom knowledge check [--min-coverage N] [--src-path <path>] [--quiet]
-loom knowledge audit [--max-file-lines N] [--max-total-lines N] [--quiet]   # Report size/duplicate/promoted-block issues
-loom knowledge gc [--model NAME] [--dry-run] [--quick]                       # Spawn Claude to compact (dedupe, summarize, drop stale)
+loom knowledge audit [--max-file-lines N] [--max-topic-lines N] [--quiet]   # Report structural issues (oversized sections, broken links, orphans)
+loom knowledge gc [--model NAME] [--dry-run] [--quick]                       # Spawn Claude to restructure (extract, dedupe, relink)
 loom knowledge bootstrap [--model <name>] [--skip-map] [--quick]             # --quick uses headless `claude -p` (see Billing note)
 
 loom memory note <text> [--stage <id>]
@@ -169,6 +170,10 @@ loom memory show [--stage <id>] [--all]
 ```
 
 `loom knowledge bootstrap` launches a Claude-driven exploration session that populates `doc/loom/knowledge/`. By default it runs a deep `loom map` pass first, then starts Claude with permission to update knowledge files via `loom knowledge update`.
+
+Knowledge is **tiered**: a generated `INDEX.md` (tier 0) maps the seven curated summary files (tier 1), which link out to per-category topic files (tier 2, e.g. `architecture/merge-flow.md`). Tier-1 files stay navigable summaries; detail lives in topics. The index is regenerated automatically on every knowledge write, and by `loom knowledge index`.
+
+Knowledge directories created before the hierarchy existed stay **flat** and keep working unchanged — nothing migrates them behind your back. `loom knowledge audit` will advise it, and `loom knowledge index` (structure only) or `loom knowledge gc` (a Claude session that extracts oversized sections into topics and relinks them) performs the opt-in upgrade.
 
 ### Other Commands
 
