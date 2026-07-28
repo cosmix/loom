@@ -108,12 +108,20 @@ fn build_system_prompt(model: &str) -> String {
          ## Rules\n\n\
          1. Use `loom knowledge update <file> - <<'EOF'\\n<content>\\nEOF` for long content (heredoc syntax)\n\
          2. Use `loom knowledge update <file> \"<content>\"` for short content\n\
-         3. Valid files: architecture, entry-points, patterns, conventions, mistakes, stack, concerns\n\
-         4. Be specific: include file paths with line numbers (e.g., `src/auth.ts:45-80`)\n\
-         5. Focus on PATTERNS and RELATIONSHIPS, not just listing files\n\
-         6. Go BEYOND the auto loom map — exhaustively map ALL components and their relationships, not just what `loom map` surfaces automatically\n\
-         7. Each knowledge update should add a complete section with a ## heading\n\
-         8. When spawning Agent subagents, ALWAYS set model: \"{model}\" so they use the same model\n\n\
+         3. Valid tier-1 files: architecture, entry-points, patterns, conventions, mistakes, stack, concerns\n\
+         4. Tier routing: a finding under ~40 lines goes directly in the tier-1 file, e.g. \
+         `loom knowledge update patterns \"...\"`. Anything larger goes to a tier-2 topic via \
+         `loom knowledge update <category>/<slug> - <<'EOF'...EOF` (e.g. `architecture/merge-flow`) \
+         PLUS a 2-4 line summary and a relative markdown link added to the tier-1 file so it \
+         stays navigable.\n\
+         5. Tier-1 files stay navigable summaries; tier-2 files hold the detail.\n\
+         6. Be specific: include file paths with line numbers (e.g., `src/auth.ts:45-80`)\n\
+         7. Focus on PATTERNS and RELATIONSHIPS, not just listing files\n\
+         8. Go BEYOND the auto loom map — exhaustively map ALL components and their relationships, not just what `loom map` surfaces automatically\n\
+         9. Each knowledge update should add a complete section with a ## heading\n\
+         10. When spawning Agent subagents, ALWAYS set model: \"{model}\" so they use the same model\n\
+         11. The mandatory final step is `loom knowledge index` — run it after all updates so \
+         INDEX.md reflects every tier-1 and tier-2 file you wrote\n\n\
          ## Existing Knowledge\n\n\
          The knowledge files already exist at doc/loom/knowledge/ and may contain prior \
          findings. BEFORE writing, Read the file you intend to update so you do NOT \
@@ -124,7 +132,8 @@ fn build_system_prompt(model: &str) -> String {
          - Patterns and conventions -> patterns.md, conventions.md\n\
          - Stack and entry points -> stack.md, entry-points.md\n\
          - Concerns and tech debt -> concerns.md\n\n\
-         After agents complete, do a final synthesis pass on architecture.md to confirm no major area was left unmapped — if gaps exist, spawn additional exploration before completing.\n",
+         After agents complete, do a final synthesis pass on architecture.md to confirm no major area was left unmapped — if gaps exist, spawn additional exploration before completing. \
+         Finish with `loom knowledge index`.\n",
     )
 }
 
@@ -141,8 +150,14 @@ fn build_initial_prompt(model: &str) -> String {
          and key entry point files. Write to stack.md and entry-points.md.\n\n\
          Agent 4 - Concerns: Find technical debt, fixme markers, security concerns, \
          and architectural issues. Write to concerns.md.\n\n\
+         Tier routing: keep each tier-1 file (architecture.md, patterns.md, etc.) a navigable \
+         summary — findings under ~40 lines go directly into the tier-1 file. Anything larger \
+         goes into a tier-2 topic (`loom knowledge update <category>/<slug>`, e.g. \
+         `architecture/merge-flow`) plus a 2-4 line summary and a relative link back in the \
+         tier-1 file.\n\n\
          After all agents complete, do a final synthesis pass on architecture.md \
-         to confirm no major area was left unmapped and cross-cutting concerns are captured.",
+         to confirm no major area was left unmapped and cross-cutting concerns are captured. \
+         The mandatory final step is `loom knowledge index`.",
     )
 }
 
@@ -223,5 +238,27 @@ mod tests {
         assert!(prompt.contains("conventions.md"));
         assert!(prompt.contains("concerns.md"));
         assert!(prompt.contains("model: \"sonnet\""));
+    }
+
+    #[test]
+    fn test_build_system_prompt_tier_routing() {
+        let prompt = build_system_prompt("sonnet");
+        assert!(prompt.contains("Tier routing"));
+        assert!(prompt.contains("tier-2 topic"));
+        assert!(prompt.contains("loom knowledge update <category>/<slug>"));
+    }
+
+    #[test]
+    fn test_build_system_prompt_mandatory_index_step() {
+        let prompt = build_system_prompt("sonnet");
+        assert!(prompt.contains("loom knowledge index"));
+        assert!(prompt.contains("mandatory"));
+    }
+
+    #[test]
+    fn test_build_initial_prompt_tier_routing_and_index() {
+        let prompt = build_initial_prompt("sonnet");
+        assert!(prompt.contains("Tier routing"));
+        assert!(prompt.contains("loom knowledge index"));
     }
 }

@@ -1,7 +1,7 @@
 //! Knowledge check command - validate knowledge completeness and coverage.
 
 use crate::fs::knowledge::{
-    KnowledgeDir, KnowledgeFile, DEFAULT_MAX_FILE_LINES, DEFAULT_MAX_TOTAL_LINES,
+    KnowledgeDir, KnowledgeFile, DEFAULT_MAX_TIER1_LINES, DEFAULT_MAX_TOPIC_LINES,
 };
 use crate::fs::work_dir::WorkDir;
 use anyhow::{bail, Context, Result};
@@ -90,16 +90,19 @@ pub fn check(min_coverage: u8, src_path: Option<String>, quiet: bool) -> Result<
         print_check_results(&result);
 
         if let Ok(gc_metrics) =
-            knowledge.analyze_gc_metrics(DEFAULT_MAX_FILE_LINES, DEFAULT_MAX_TOTAL_LINES)
+            knowledge.analyze_gc_metrics(DEFAULT_MAX_TIER1_LINES, DEFAULT_MAX_TOPIC_LINES)
         {
             println!();
             println!("{}", "GC Analysis:".cyan().bold());
-            for file_metric in &gc_metrics.per_file {
+            for tier1 in &gc_metrics.tier1 {
                 println!(
                     "  {} {} lines",
-                    file_metric.file_type.filename(),
-                    file_metric.line_count,
+                    tier1.file_type.filename(),
+                    tier1.line_count
                 );
+            }
+            for topic in &gc_metrics.topics {
+                println!("  {} {} lines", topic.relative_path(), topic.line_count);
             }
             if gc_metrics.gc_recommended {
                 if let Some(first_reason) = gc_metrics.reasons.first() {
@@ -171,6 +174,35 @@ fn count_content_sections(content: &str) -> (bool, usize) {
     (section_count > 0, section_count)
 }
 
+/// Build the full architecture text used for src/ coverage matching:
+/// the tier-1 `architecture.md` summary plus every tier-2 topic filed
+/// under the `architecture/` category. Once a finding moves out of the
+/// tier-1 summary into a topic, coverage must still see it — otherwise
+/// every plan's `loom knowledge check --min-coverage` acceptance would
+/// start failing the moment architecture content is restructured.
+fn architecture_coverage_text(knowledge: &KnowledgeDir) -> String {
+    let arch_path = knowledge.file_path(KnowledgeFile::Architecture);
+    let mut content = if arch_path.exists() {
+        std::fs::read_to_string(&arch_path).unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    if let Ok(topics) = knowledge.list_topics() {
+        for topic in topics
+            .iter()
+            .filter(|t| t.category == KnowledgeFile::Architecture)
+        {
+            if let Ok(topic_content) = std::fs::read_to_string(&topic.path) {
+                content.push('\n');
+                content.push_str(&topic_content);
+            }
+        }
+    }
+
+    content
+}
+
 fn analyze_src_coverage(
     knowledge: &KnowledgeDir,
     project_root: &std::path::Path,
@@ -182,16 +214,14 @@ fn analyze_src_coverage(
         return Ok(None);
     }
 
-    let arch_path = knowledge.file_path(KnowledgeFile::Architecture);
-    let arch_content = if arch_path.exists() {
-        std::fs::read_to_string(&arch_path).unwrap_or_default()
-    } else {
+    let arch_content = architecture_coverage_text(knowledge);
+    if arch_content.is_empty() {
         return Ok(Some(SrcCoverageResult {
             src_directories,
             mentioned_directories: Vec::new(),
             coverage_percent: 0.0,
         }));
-    };
+    }
 
     let mentioned_directories: Vec<String> = src_directories
         .iter()
@@ -348,194 +378,5 @@ pub fn print_check_results(result: &KnowledgeCheckResult) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use serial_test::serial;
-    use std::fs;
-    use tempfile::TempDir;
-
-    #[test]
-    fn test_count_content_sections() {
-        let content = r#"# Architecture
-
-> This file is append-only
-
-## Component A
-
-Description here
-
-## Component B
-
-More description
-
-(Add patterns as you discover them)
-"#;
-        let (has_content, count) = count_content_sections(content);
-        assert!(has_content);
-        assert_eq!(count, 2);
-    }
-
-    #[test]
-    fn test_count_content_sections_empty() {
-        let content = r#"# Architecture
-
-> This file is append-only
-
-(Add patterns as you discover them)
-"#;
-        let (has_content, count) = count_content_sections(content);
-        assert!(!has_content);
-        assert_eq!(count, 0);
-    }
-
-    #[test]
-    fn test_is_directory_mentioned() {
-        let content = r#"
-## Directory Structure
-
-- commands/ - CLI command implementations
-- daemon/ - Background daemon
-- orchestrator/ - Core orchestration
-"#;
-        assert!(is_directory_mentioned("commands", content));
-        assert!(is_directory_mentioned("daemon", content));
-        assert!(is_directory_mentioned("orchestrator", content));
-        assert!(!is_directory_mentioned("nonexistent", content));
-    }
-
-    #[test]
-    fn test_is_directory_mentioned_various_formats() {
-        assert!(is_directory_mentioned("src", "located at src/lib.rs"));
-        assert!(is_directory_mentioned("models", "the `models` directory"));
-        assert!(is_directory_mentioned("utils", "the **utils** module"));
-        assert!(is_directory_mentioned("api", "## api\n\nAPI routes"));
-    }
-
-    #[test]
-    #[serial]
-    fn test_check_missing_directory() {
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let test_dir = temp_dir.path().to_path_buf();
-
-        let original_dir = std::env::current_dir().expect("Failed to get current dir");
-        std::env::set_current_dir(&test_dir).expect("Failed to change dir");
-
-        let result = check(50, None, true);
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("does not exist"));
-
-        std::env::set_current_dir(original_dir).expect("Failed to restore dir");
-    }
-
-    #[test]
-    #[serial]
-    fn test_check_empty_architecture() {
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let test_dir = temp_dir.path().to_path_buf();
-
-        let original_dir = std::env::current_dir().expect("Failed to get current dir");
-        std::env::set_current_dir(&test_dir).expect("Failed to change dir");
-
-        crate::commands::knowledge::init().expect("Failed to init knowledge");
-
-        let result = check(50, None, true);
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("architecture.md is empty"));
-
-        std::env::set_current_dir(original_dir).expect("Failed to restore dir");
-    }
-
-    #[test]
-    #[serial]
-    fn test_check_passes_with_content() {
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let test_dir = temp_dir.path().to_path_buf();
-
-        let original_dir = std::env::current_dir().expect("Failed to get current dir");
-        std::env::set_current_dir(&test_dir).expect("Failed to change dir");
-
-        crate::commands::knowledge::init().expect("Failed to init knowledge");
-        crate::commands::knowledge::update(
-            "architecture".to_string(),
-            Some("## Overview\n\nProject architecture here".to_string()),
-        )
-        .expect("Failed to update architecture");
-
-        let result = check(50, None, true);
-        assert!(result.is_ok());
-
-        std::env::set_current_dir(original_dir).expect("Failed to restore dir");
-    }
-
-    #[test]
-    #[serial]
-    fn test_check_coverage_calculation() {
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let test_dir = temp_dir.path().to_path_buf();
-
-        let src_dir = test_dir.join("src");
-        fs::create_dir_all(src_dir.join("commands")).unwrap();
-        fs::create_dir_all(src_dir.join("models")).unwrap();
-        fs::create_dir_all(src_dir.join("utils")).unwrap();
-        fs::create_dir_all(src_dir.join("daemon")).unwrap();
-
-        let original_dir = std::env::current_dir().expect("Failed to get current dir");
-        std::env::set_current_dir(&test_dir).expect("Failed to change dir");
-
-        crate::commands::knowledge::init().expect("Failed to init knowledge");
-        crate::commands::knowledge::update(
-            "architecture".to_string(),
-            Some("## Overview\n\n- commands/ - CLI\n- models/ - Data".to_string()),
-        )
-        .expect("Failed to update architecture");
-
-        let result = check(50, None, true);
-        assert!(result.is_ok());
-
-        let result = check(75, None, true);
-        assert!(result.is_err());
-
-        std::env::set_current_dir(original_dir).expect("Failed to restore dir");
-    }
-
-    #[test]
-    fn test_get_src_subdirectories() {
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let test_dir = temp_dir.path().to_path_buf();
-
-        let src_dir = test_dir.join("src");
-        fs::create_dir_all(src_dir.join("commands")).unwrap();
-        fs::create_dir_all(src_dir.join("models")).unwrap();
-        fs::create_dir_all(src_dir.join(".hidden")).unwrap();
-        fs::create_dir_all(src_dir.join("target")).unwrap();
-
-        let dirs = get_src_subdirectories(&test_dir, None).unwrap();
-        assert!(dirs.contains(&"commands".to_string()));
-        assert!(dirs.contains(&"models".to_string()));
-        assert!(!dirs.contains(&".hidden".to_string()));
-        assert!(!dirs.contains(&"target".to_string()));
-    }
-
-    #[test]
-    #[serial]
-    fn test_check_includes_gc_analysis() {
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let test_dir = temp_dir.path().to_path_buf();
-        let original_dir = std::env::current_dir().expect("Failed to get current dir");
-        std::env::set_current_dir(&test_dir).expect("Failed to change dir");
-
-        crate::commands::knowledge::init().expect("Failed to init knowledge");
-        crate::commands::knowledge::update(
-            "architecture".to_string(),
-            Some("## Overview\n\nProject architecture here".to_string()),
-        )
-        .expect("Failed to update architecture");
-
-        let result = check(50, None, false);
-        assert!(result.is_ok());
-
-        std::env::set_current_dir(original_dir).expect("Failed to restore dir");
-    }
-}
+#[path = "tests_check.rs"]
+mod tests;

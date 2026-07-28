@@ -1,4 +1,4 @@
-//! Knowledge GC command — spawn Claude session to compact knowledge files.
+//! Knowledge GC command — spawn Claude session to restructure knowledge files.
 
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -6,10 +6,10 @@ use std::process::Command;
 
 use crate::claude::find_claude_path;
 use crate::fs::knowledge::{
-    GcMetrics, KnowledgeDir, DEFAULT_MAX_FILE_LINES, DEFAULT_MAX_TOTAL_LINES,
+    GcMetrics, KnowledgeDir, KnowledgeLayout, DEFAULT_MAX_TIER1_LINES, DEFAULT_MAX_TOPIC_LINES,
 };
 
-/// Execute the knowledge gc command — compact knowledge files via Claude session.
+/// Execute the knowledge gc command — restructure knowledge files via Claude session.
 pub fn gc(model: Option<String>, dry_run: bool, quick: bool) -> Result<()> {
     let project_root = super::spawn::resolve_project_root()?;
     let knowledge = KnowledgeDir::new(&project_root);
@@ -22,11 +22,13 @@ pub fn gc(model: Option<String>, dry_run: bool, quick: bool) -> Result<()> {
         return Ok(());
     }
 
-    // Pre-check: bail early if nothing to compact.
-    let metrics = knowledge.analyze_gc_metrics(DEFAULT_MAX_FILE_LINES, DEFAULT_MAX_TOTAL_LINES)?;
+    let is_legacy = knowledge.layout() == KnowledgeLayout::Legacy;
+
+    // Pre-check: bail early if nothing to restructure.
+    let metrics = knowledge.analyze_gc_metrics(DEFAULT_MAX_TIER1_LINES, DEFAULT_MAX_TOPIC_LINES)?;
     if !metrics.gc_recommended {
         println!(
-            "{} Knowledge files are clean. Nothing to compact.",
+            "{} Knowledge files are clean. Nothing to restructure.",
             "✓".green().bold()
         );
         println!(
@@ -47,13 +49,13 @@ pub fn gc(model: Option<String>, dry_run: bool, quick: bool) -> Result<()> {
     // The session Reads and Edits those files directly — embedding them would be
     // redundant and, at scale, blows past Linux's 128 KiB per-argv-entry limit
     // (MAX_ARG_STRLEN), failing with "Argument list too long".
-    let system_prompt = build_gc_system_prompt(&effective_model, dry_run, &metrics);
-    let initial_prompt = build_gc_initial_prompt(&effective_model, dry_run);
+    let system_prompt = build_gc_system_prompt(&effective_model, dry_run, is_legacy, &metrics);
+    let initial_prompt = build_gc_initial_prompt(&effective_model, dry_run, is_legacy);
 
     // Sandbox: in dry-run, deny all writes.
     let settings_backup = super::spawn::write_knowledge_sandbox(&project_root, !dry_run)?;
 
-    let mode_label = if dry_run { "dry-run" } else { "compaction" };
+    let mode_label = if dry_run { "dry-run" } else { "restructuring" };
     println!(
         "\n{} Spawning Claude session ({})...\n",
         "→".cyan().bold(),
@@ -61,8 +63,9 @@ pub fn gc(model: Option<String>, dry_run: bool, quick: bool) -> Result<()> {
     );
     println!("  {} Model: {}", "→".cyan(), effective_model.cyan());
 
-    // Bash allowlist EXCLUDES `loom knowledge gc` to prevent recursion.
-    // In dry-run, also exclude update/replace-section to belt-and-suspenders the read-only mode.
+    // Bash allowlist EXCLUDES `loom knowledge gc` to prevent recursion. The
+    // non-dry-run branch adds `loom knowledge index` so the session can finish
+    // with the mandatory re-index step; the dry-run branch stays read-only.
     let bash_allow = if dry_run {
         "Bash(loom knowledge audit*),Bash(loom knowledge show*),Bash(loom knowledge list*)"
     } else {
@@ -70,7 +73,8 @@ pub fn gc(model: Option<String>, dry_run: bool, quick: bool) -> Result<()> {
          Bash(loom knowledge show*),\
          Bash(loom knowledge list*),\
          Bash(loom knowledge update*),\
-         Bash(loom knowledge replace-section*)"
+         Bash(loom knowledge replace-section*),\
+         Bash(loom knowledge index*)"
     };
 
     let tool_allow = if dry_run {
@@ -116,11 +120,11 @@ pub fn gc(model: Option<String>, dry_run: bool, quick: bool) -> Result<()> {
     }
 
     if !dry_run {
-        // Print post-compaction audit so user sees the result.
-        let post = knowledge.analyze_gc_metrics(DEFAULT_MAX_FILE_LINES, DEFAULT_MAX_TOTAL_LINES)?;
+        let post =
+            knowledge.analyze_gc_metrics(DEFAULT_MAX_TIER1_LINES, DEFAULT_MAX_TOPIC_LINES)?;
         println!();
-        println!("{}", "Post-compaction audit:".cyan().bold());
-        println!("  Total: {} lines", post.total_lines);
+        println!("{}", "Post-restructuring audit:".cyan().bold());
+        println!("  Total: {} lines (informational)", post.total_lines);
         if post.gc_recommended {
             println!("  {} Still recommends GC:", "⚠".yellow());
             for reason in &post.reasons {
@@ -139,19 +143,38 @@ pub fn gc(model: Option<String>, dry_run: bool, quick: bool) -> Result<()> {
 fn print_compaction_targets(metrics: &GcMetrics) {
     println!("{}", "Knowledge GC".bold());
     println!();
-    println!("{}", "Targets:".cyan().bold());
-    for file_metric in &metrics.per_file {
-        if file_metric.has_issues {
+    println!("{}", "Tier 1 targets:".cyan().bold());
+    for tier1 in &metrics.tier1 {
+        if tier1.has_issues {
             println!(
-                "  {} {} ({} lines, {} dups, {} promoted)",
+                "  {} {} ({} lines, {} dups, {} promoted, {} oversized sections)",
                 "⚠".yellow(),
-                file_metric.file_type.filename().cyan(),
-                file_metric.line_count,
-                file_metric.duplicate_headers.len(),
-                file_metric.promoted_block_count,
+                tier1.file_type.filename().cyan(),
+                tier1.line_count,
+                tier1.duplicate_headers.len(),
+                tier1.promoted_block_count,
+                tier1.oversized_sections.len(),
             );
         }
     }
+
+    let topic_issues: Vec<_> = metrics.topics.iter().filter(|t| t.has_issues).collect();
+    if !topic_issues.is_empty() {
+        println!();
+        println!("{}", "Tier 2 targets:".cyan().bold());
+        for topic in topic_issues {
+            let orphan = if topic.is_orphan { " [orphan]" } else { "" };
+            println!(
+                "  {} {} ({} lines, {} dups){}",
+                "⚠".yellow(),
+                topic.relative_path().cyan(),
+                topic.line_count,
+                topic.duplicate_headers.len(),
+                orphan,
+            );
+        }
+    }
+
     println!();
     println!("{}", "Reasons:".cyan().bold());
     for reason in &metrics.reasons {
@@ -159,72 +182,118 @@ fn print_compaction_targets(metrics: &GcMetrics) {
     }
 }
 
-fn build_gc_system_prompt(model: &str, dry_run: bool, metrics: &GcMetrics) -> String {
-    let targets: Vec<String> = metrics
-        .per_file
+fn build_gc_system_prompt(
+    model: &str,
+    dry_run: bool,
+    is_legacy: bool,
+    metrics: &GcMetrics,
+) -> String {
+    let tier1_targets: Vec<String> = metrics
+        .tier1
         .iter()
         .filter(|m| m.has_issues)
         .map(|m| {
             format!(
-                "- doc/loom/knowledge/{} ({} lines, {} duplicate headers, {} promoted blocks)",
+                "- doc/loom/knowledge/{} ({} lines, {} duplicate headers, {} promoted blocks, {} oversized sections)",
                 m.file_type.filename(),
                 m.line_count,
                 m.duplicate_headers.len(),
                 m.promoted_block_count,
+                m.oversized_sections.len(),
             )
         })
         .collect();
 
+    let topic_targets: Vec<String> = metrics
+        .topics
+        .iter()
+        .filter(|m| m.has_issues)
+        .map(|m| {
+            format!(
+                "- doc/loom/knowledge/{} ({} lines, {} duplicate headers{})",
+                m.relative_path(),
+                m.line_count,
+                m.duplicate_headers.len(),
+                if m.is_orphan {
+                    ", orphaned — nothing links to it"
+                } else {
+                    ""
+                },
+            )
+        })
+        .collect();
+
+    let migration_clause = if is_legacy {
+        "## Legacy Migration\n\n\
+         This knowledge directory is currently FLAT (legacy layout, no INDEX.md). \
+         This GC run performs the migration into the tiered hierarchy: as you extract \
+         oversized sections, create the tier-2 topic files under the matching category \
+         directory (e.g. `architecture/merge-flow.md`) via `loom knowledge update \
+         architecture/merge-flow`, then finish with `loom knowledge index` to generate \
+         INDEX.md for the first time.\n\n"
+    } else {
+        ""
+    };
+
     let mode_clause = if dry_run {
         "## Mode: DRY-RUN\n\n\
          You are in DRY-RUN mode. You MUST NOT write or edit any files. \
-         Instead, produce a clear textual diff/proposal showing exactly what you would change \
-         in each file, then stop. Sandbox enforces this — write attempts will be denied."
+         Instead, produce a clear textual diff/proposal showing exactly what you would \
+         restructure in each file, then stop. Sandbox enforces this — write attempts will be denied."
     } else {
-        "## Mode: COMPACT\n\n\
+        "## Mode: RESTRUCTURE\n\n\
          Edit knowledge files directly via Edit/Write. After all changes, run \
-         `loom knowledge audit` to verify the metrics improved."
+         `loom knowledge index` to regenerate INDEX.md, then `loom knowledge audit` to \
+         verify the metrics improved."
     };
 
-    let targets_str = if targets.is_empty() {
-        "(no specific targets — full review)".to_string()
+    let tier1_str = if tier1_targets.is_empty() {
+        "(no tier-1 files flagged)".to_string()
     } else {
-        targets.join("\n")
+        tier1_targets.join("\n")
+    };
+    let topic_str = if topic_targets.is_empty() {
+        String::new()
+    } else {
+        format!("\n\n## Tier-2 Targets\n\n{}", topic_targets.join("\n"))
     };
 
     format!(
-        "You are a senior software architect compacting curated knowledge files.\n\n\
+        "You are a senior software architect restructuring curated knowledge files into \
+         a tiered hierarchy.\n\n\
          ## Your Goal\n\n\
-         Compact the knowledge files at doc/loom/knowledge/ by:\n\
-         1. Merging duplicate headers into single consolidated sections\n\
-         2. Summarizing curated/promoted memory blocks into concise knowledge\n\
-         3. Removing content that is no longer accurate or has been superseded\n\
-         4. Reducing total size while preserving every meaningful insight\n\n\
+         Restructure the knowledge files at doc/loom/knowledge/ by:\n\
+         1. Extracting oversized tier-1 sections into tier-2 topic files \
+         (`<category>/<slug>.md`), replacing each with a 2-4 line summary plus a \
+         relative markdown link to the new topic\n\
+         2. Merging duplicate headers into single consolidated sections\n\
+         3. Repairing broken links and adopting orphan topics by linking them from the \
+         right tier-1 file\n\
+         4. Deleting only genuinely stale content — never a recorded lesson\n\
+         5. Finishing with `loom knowledge index` to keep INDEX.md current\n\n\
          ## Hard Rules\n\n\
-         - DO NOT delete a section unless you are confident the information is stale, \
-         duplicated elsewhere, or no longer accurate. When unsure: KEEP IT.\n\
-         - DO NOT change the file structure — top-level headers (## Architecture, etc.) stay.\n\
-         - DO NOT invent new content. Only condense, dedupe, and remove stale.\n\
+         - NEVER delete a lesson to hit a line count — EXTRACT it into a tier-2 topic \
+         instead. Recorded mistakes, gotchas, and prevention rules are the highest-value \
+         content in the knowledge base; condense wording, never drop the lesson.\n\
+         - DO NOT invent new content. Only restructure, dedupe, and remove genuinely stale material.\n\
          - File paths with line numbers are precious context — preserve them.\n\
-         - DO NOT remove information that helps loom-spawned agents self-improve: \
-         recorded mistakes, gotchas, prevention rules, root-cause analyses, and \
-         hard-won lessons. This is the highest-value content in the knowledge base — \
-         condense its wording if verbose, but never drop the lesson itself.\n\
-         - Use `loom knowledge audit` to verify your work; do NOT run `loom knowledge gc` (recursion).\n\n\
-         ## Targets (these files need work)\n\n\
-         {targets_str}\n\n\
+         - There is no total-lines budget. `Total: N lines` in the audit is informational \
+         only — never restructure just to reduce it.\n\
+         - Use `loom knowledge audit` to verify your work; do NOT run `loom knowledge gc` (recursion).\n\
+         - The mandatory final step is `loom knowledge index`.\n\n\
+         {migration_clause}\
+         ## Tier-1 Targets\n\n\
+         {tier1_str}{topic_str}\n\n\
          {mode_clause}\n\n\
          ## Strategy\n\n\
          CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 is set — use an agent team for this \
-         work, not fire-and-forget subagents. Compaction needs coordination: teammates \
-         must surface content that belongs in a different file, and you must reconcile \
-         overlapping edits. Create a team with one teammate per knowledge file that \
-         needs work (use model \"{model}\" for every teammate), assign each teammate its \
-         file, and have them report cross-file moves back to you. YOU are the team lead: \
-         you own the final cross-file synthesis pass and you shut down ALL teammates \
-         before finishing. After teammates finish, do a final cross-file pass to check \
-         for content that should move between files (e.g., a pattern in architecture.md \
-         that belongs in patterns.md).\n\n\
+         work, not fire-and-forget subagents. Restructuring needs coordination: teammates \
+         must surface content that belongs in a different tier-1 file or a shared topic, \
+         and you must reconcile overlapping edits. Create a team with one teammate per \
+         knowledge file that needs work (use model \"{model}\" for every teammate), assign \
+         each teammate its file, and have them report cross-file moves back to you. YOU \
+         are the team lead: you own the final cross-file synthesis pass, the final \
+         `loom knowledge index` run, and you shut down ALL teammates before finishing.\n\n\
          When spawning teammates or Agent subagents, ALWAYS use model: \"{model}\".\n\n\
          ## Knowledge Files\n\n\
          The knowledge files are at doc/loom/knowledge/ — Read them directly. \
@@ -232,146 +301,30 @@ fn build_gc_system_prompt(model: &str, dry_run: bool, metrics: &GcMetrics) -> St
     )
 }
 
-fn build_gc_initial_prompt(model: &str, dry_run: bool) -> String {
+fn build_gc_initial_prompt(model: &str, dry_run: bool, is_legacy: bool) -> String {
     let action = if dry_run {
-        "Produce a textual diff proposal for each file. Do NOT write."
+        "Produce a textual restructuring proposal for each file. Do NOT write."
     } else {
-        "Compact the files via Edit/Write. Then run `loom knowledge audit` and report metrics."
+        "Restructure the files via Edit/Write, extracting oversized sections into tier-2 \
+         topics. Then run `loom knowledge index` and report the new metrics."
+    };
+    let migration_note = if is_legacy {
+        " This directory is still flat (legacy) — this run migrates it into the tiered \
+         hierarchy as you extract topics."
+    } else {
+        ""
     };
     format!(
-        "Compact the knowledge files at doc/loom/knowledge/. \
+        "Restructure the knowledge files at doc/loom/knowledge/.{migration_note} \
          Create an agent team (model \"{model}\" for every teammate) — one teammate per \
-         file that needs work — to dedupe headers, summarize promoted blocks, and remove \
-         stale content. Preserve recorded mistakes, gotchas, and prevention rules that \
-         help loom-spawned agents self-improve — condense wording, never drop the lesson. \
-         As team lead, do the final cross-file synthesis pass and shut down all teammates. \
-         {action}",
+         file that needs work — to extract oversized sections into tier-2 topics, dedupe \
+         headers, repair broken links, and remove genuinely stale content. NEVER delete a \
+         recorded mistake, gotcha, or prevention rule to hit a line count — extract it \
+         instead. As team lead, do the final cross-file synthesis pass, run `loom \
+         knowledge index`, and shut down all teammates. {action}",
     )
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::fs::knowledge::{FileGcMetrics, KnowledgeFile};
-    use serial_test::serial;
-    use tempfile::TempDir;
-
-    fn setup_test_env() -> (TempDir, std::path::PathBuf) {
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let test_dir = temp_dir.path().to_path_buf();
-        (temp_dir, test_dir)
-    }
-
-    fn fake_metrics_recommended() -> GcMetrics {
-        GcMetrics {
-            total_lines: 1000,
-            per_file: vec![FileGcMetrics {
-                file_type: KnowledgeFile::Architecture,
-                line_count: 500,
-                duplicate_headers: vec!["## Overview".to_string()],
-                promoted_block_count: 5,
-                has_issues: true,
-            }],
-            gc_recommended: true,
-            reasons: vec!["architecture.md exceeds 200 lines (500)".to_string()],
-        }
-    }
-
-    #[test]
-    fn test_gc_system_prompt_dry_run_includes_dry_run_clause() {
-        let metrics = fake_metrics_recommended();
-        let prompt = build_gc_system_prompt("sonnet", true, &metrics);
-        assert!(prompt.contains("DRY-RUN"));
-        assert!(prompt.contains("MUST NOT write"));
-        assert!(!prompt.contains("Mode: COMPACT"));
-    }
-
-    #[test]
-    fn test_gc_system_prompt_compact_mode() {
-        let metrics = fake_metrics_recommended();
-        let prompt = build_gc_system_prompt("sonnet", false, &metrics);
-        assert!(prompt.contains("Mode: COMPACT"));
-        assert!(prompt.contains("Edit knowledge files directly"));
-        assert!(!prompt.contains("DRY-RUN"));
-    }
-
-    #[test]
-    fn test_gc_system_prompt_includes_targets() {
-        let metrics = fake_metrics_recommended();
-        let prompt = build_gc_system_prompt("sonnet", false, &metrics);
-        assert!(prompt.contains("architecture.md"));
-        assert!(prompt.contains("500 lines"));
-    }
-
-    #[test]
-    fn test_gc_system_prompt_recursion_warning() {
-        let metrics = fake_metrics_recommended();
-        let prompt = build_gc_system_prompt("sonnet", false, &metrics);
-        assert!(prompt.contains("do NOT run `loom knowledge gc`"));
-    }
-
-    #[test]
-    fn test_gc_system_prompt_does_not_embed_file_contents() {
-        // Regression: the gc system prompt must NOT embed knowledge file
-        // contents — that overflows Linux's per-argv-entry limit.
-        let metrics = fake_metrics_recommended();
-        let prompt = build_gc_system_prompt("sonnet", false, &metrics);
-        assert!(!prompt.contains("Existing Knowledge"));
-        assert!(prompt.contains("Read them directly"));
-    }
-
-    #[test]
-    fn test_gc_initial_prompt_embeds_model() {
-        let prompt = build_gc_initial_prompt("opus", false);
-        assert!(prompt.contains("model \"opus\""));
-        assert!(prompt.contains("Compact the files via Edit/Write"));
-    }
-
-    #[test]
-    fn test_gc_initial_prompt_dry_run() {
-        let prompt = build_gc_initial_prompt("sonnet", true);
-        assert!(prompt.contains("Do NOT write"));
-    }
-
-    #[test]
-    fn test_gc_initial_prompt_uses_agent_team() {
-        let prompt = build_gc_initial_prompt("opus", false);
-        assert!(prompt.contains("agent team"));
-    }
-
-    #[test]
-    fn test_gc_system_prompt_uses_agent_team() {
-        let metrics = fake_metrics_recommended();
-        let prompt = build_gc_system_prompt("opus", false, &metrics);
-        assert!(prompt.contains("agent team"));
-        assert!(prompt.contains("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"));
-    }
-
-    #[test]
-    fn test_gc_system_prompt_protects_self_improvement_content() {
-        // Recorded mistakes / gotchas / prevention rules are the highest-value
-        // content — GC must condense but never drop them.
-        let metrics = fake_metrics_recommended();
-        let prompt = build_gc_system_prompt("opus", false, &metrics);
-        assert!(prompt.contains("self-improve"));
-        assert!(prompt.contains("prevention rules"));
-    }
-
-    #[test]
-    #[serial]
-    fn test_gc_bails_when_clean() {
-        // When knowledge is clean (no GC recommended), gc() must return Ok
-        // without attempting to spawn Claude. We can't easily intercept the
-        // spawn, so we just ensure the early-return path executes without error
-        // on an initialized-but-empty knowledge dir.
-        let (_temp_dir, test_dir) = setup_test_env();
-        let original_dir = std::env::current_dir().expect("Failed to get current dir");
-        std::env::set_current_dir(&test_dir).expect("Failed to change dir");
-
-        crate::commands::knowledge::init().expect("Failed to init knowledge");
-        let result = gc(None, true, true);
-        assert!(result.is_ok());
-
-        std::env::set_current_dir(original_dir).expect("Failed to restore dir");
-    }
-}
+#[path = "tests_gc.rs"]
+mod tests;
