@@ -19,6 +19,12 @@ cargo clippy --all-targets -- -D warnings      # No lint warnings
 cargo audit                                    # No security vulnerabilities
 ```
 
+> **Who runs these:** you, or the main agent of a loom session. When loom is driving, these are
+> exactly the commands `hooks/subagent-verify-guard.sh` blocks for **subagents** — a subagent may
+> run at most one narrowly-scoped check on the files it changed, and the main agent owns
+> whole-project verification. `integration-verify` stages are carved out and run the full suite.
+> See "Verification Is the Main Agent's Job" in the README.
+
 ## Code Standards
 
 - **File size limit:** 400 lines max

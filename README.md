@@ -175,6 +175,12 @@ Knowledge is **tiered**: a generated `INDEX.md` (tier 0) maps the seven curated 
 
 Knowledge directories created before the hierarchy existed stay **flat** and keep working unchanged — nothing migrates them behind your back. `loom knowledge audit` will advise it, and `loom knowledge index` (structure only) or `loom knowledge gc` (a Claude session that extracts oversized sections into topics and relinks them) performs the opt-in upgrade.
 
+**Reading protocol** — read the index first, then the tier-1 summary for the area you are working in, then only the tier-2 topics you actually touch. Loading the whole base defeats the point of tiering.
+
+**Writing protocol** — when a tier-1 section grows past roughly 40 lines, move its body into a topic with `loom knowledge update <category>/<slug>` and leave a 2-4 line summary plus a relative link behind. Write the link as `[Title](category/slug.md)` in a tier-1 file: that is the one form `loom knowledge audit` accepts for both its orphan check and its broken-link check.
+
+There is **no aggregate line budget** across the knowledge base — `loom knowledge audit` prints the total for information only. The limits that matter are per-file (`--max-file-lines`, default 250) and per-topic (`--max-topic-lines`, default 500), because structure is what degrades retrieval, not size.
+
 ### Other Commands
 
 ```bash
@@ -294,6 +300,17 @@ loom:
 
 For `standard` and `integration-verify` stages, acceptance criteria or at least one goal-backward check must be defined.
 
+### Verification Is the Main Agent's Job
+
+Subagents do not verify. A subagent may run **at most one narrowly-scoped check** covering the files it just changed; project-wide builds, full test suites, and repo-wide lint or typecheck runs belong to the main agent — the only party that can see the whole tree and act on the result.
+
+This is enforced, not just advised: `hooks/subagent-verify-guard.sh` (a `PreToolUse:Bash` hook) blocks project-wide runners — `cargo build`, `cargo test`, `make test`, `tsc`, `go build` and friends — when the caller is detected as a subagent. Scoped invocations pass, quoted mentions are ignored, and unrecognised commands are always allowed: a false block would strand a subagent mid-task.
+
+Two things worth knowing:
+
+- **`integration-verify` stages are carved out.** That stage type exists to run the complete suite, so its subagents may. The carve-out is read from the stage file and fails safe — an ambiguous or missing stage file means no relaxation.
+- **There is deliberately no opt-out environment variable.** The main agent is never affected, so an escape hatch would only serve to defeat the rule.
+
 ## Sandbox Configuration
 
 Loom supports plan-level defaults plus stage-level overrides.
@@ -384,7 +401,14 @@ project/
 │   ├── signals/
 │   └── handoffs/
 ├── .worktrees/
-└── doc/plans/
+├── doc/plans/
+└── doc/loom/knowledge/
+    ├── INDEX.md            # generated tier-0 map
+    ├── architecture.md     # tier-1 summaries
+    ├── patterns.md
+    ├── ...
+    └── architecture/       # tier-2 topics, one directory per category
+        └── merge-flow.md
 ```
 
 ## Shell Completions
