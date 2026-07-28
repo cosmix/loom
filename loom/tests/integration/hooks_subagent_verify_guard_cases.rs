@@ -158,6 +158,15 @@ pub const ALLOW_CASES: &[(&str, &str)] = &[
         "REGRESSION: padding a glued `;` must not make a quoted one a separator",
     ),
     (
+        r#"rg "cargo|npm" src/"#,
+        "REGRESSION: an alternation regex is the commonest quoted `|`; padding \
+         `|` must leave the word after it inert rather than in command position",
+    ),
+    (
+        r#"jq -r ".a|.b" file.json"#,
+        "REGRESSION: a quoted `|` in a jq filter is not a pipe",
+    ),
+    (
         r#"echo "a;cargo test""#,
         "REGRESSION: a `;` inside quotes must leave the following word inert",
     ),
