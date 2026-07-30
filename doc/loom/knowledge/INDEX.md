@@ -8,13 +8,13 @@
 
 | File | Description | Lines |
 | --- | --- | --- |
-| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 377 |
-| [entry-points.md](entry-points.md) | Key files agents should read first | 477 |
-| [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 526 |
+| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 378 |
+| [entry-points.md](entry-points.md) | Key files agents should read first | 488 |
+| [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 534 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 322 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 363 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 373 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 61 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 316 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 314 |
 
 ## Tier 2 — Topics
 
@@ -24,18 +24,16 @@
 | --- | --- | --- | --- |
 | [architecture/core-abstractions.md](architecture/core-abstractions.md) | Core Abstractions | ExecutionGraph, Stage, Session, Orchestrator, TerminalBackend — plus data flow and .work/ file ownership. | 82 |
 | [architecture/directory-structure.md](architecture/directory-structure.md) | Directory Structure | Full loom/src module tree, the .work/ state layout, and the repo-root asset directories. | 48 |
-| [architecture/hook-system.md](architecture/hook-system.md) | Hook System | Hook embedding and install, the SessionStart hookSpecificOutput contract, and the two subagent enforcement hooks. | 98 |
+| [architecture/hook-system.md](architecture/hook-system.md) | Hook System | Hook embedding and install, the SessionStart hookSpecificOutput contract, and the two subagent enforcement hooks. | 110 |
 | [architecture/knowledge-hierarchy.md](architecture/knowledge-hierarchy.md) | Knowledge Hierarchy | Tier-1/tier-2 knowledge mechanics: layout predicate, target parsing, INDEX.md generation, audit link rules, coverage blast radius, opt-in migration, lock ordering. | 122 |
 | [architecture/remote-control.md](architecture/remote-control.md) | Remote Control | Capability detection, preflight and resolution for driving external agent binaries. | 42 |
-| [architecture/signal-generation.md](architecture/signal-generation.md) | Signal Generation | How a stage signal is assembled: stable-prefix cache, shared append_* helpers, per-stage-type prefixes, soft signals. | 170 |
-
+| [architecture/signal-generation.md](architecture/signal-generation.md) | Signal Generation | How a stage signal is assembled: stable-prefix cache, shared append_* helpers, per-stage-type prefixes, soft signals. | 157 |
 ### entry-points
 
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
 | [entry-points/hooks.md](entry-points/hooks.md) | Hooks | Every hook script and the event it binds to, _common.sh's seven helpers, and the registration sites a new hook needs. | 94 |
 | [entry-points/remote-control.md](entry-points/remote-control.md) | Remote Control | Files and call sites for remote-control capability detection and permission-mode resolution. | 96 |
-
 ### patterns
 
 | Topic | Title | Blurb | Lines |
@@ -44,12 +42,12 @@
 | [patterns/hook-content-stripping.md](patterns/hook-content-stripping.md) | Hook Content Stripping | Stripping heredoc bodies and -m text before matching, the full hook inventory, and the limits of that stripping. | 62 |
 | [patterns/remote-control.md](patterns/remote-control.md) | Remote Control | The detect-capability, preflight, resolve-invocation shape for external agent binaries. | 46 |
 | [patterns/subagent-hierarchy.md](patterns/subagent-hierarchy.md) | Subagent Hierarchy | Flat fan-out vs 2-level coordinator hierarchy vs agent teams: when to use each, model mix, file exclusivity. | 50 |
-
 ### mistakes
 
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
 | [mistakes/doctrine-and-acceptance.md](mistakes/doctrine-and-acceptance.md) | Doctrine And Acceptance | Why a one-phrase grep proves presence but never agreement, and how doctrine drifts across surfaces unnoticed. | 77 |
+| [mistakes/knowledge-base-drift.md](mistakes/knowledge-base-drift.md) | Knowledge Base Drift | How the knowledge base itself goes stale: plan-authoring notes frozen as architecture facts, `[UPDATED]` duplicates, and invented CLI surface. | 100 |
 | [mistakes/knowledge-cli-invariants.md](mistakes/knowledge-cli-invariants.md) | Knowledge Cli Invariants | Invariants belong in the fs constructor, not the CLI handler; lock ordering for sibling refreshes; update appends. | 67 |
 | [mistakes/phantom-merges.md](mistakes/phantom-merges.md) | Phantom Merges | Six lessons on writing merged=true without verifying git ancestry — the costliest recurring failure class in loom. | 93 |
 | [mistakes/refactor-stragglers.md](mistakes/refactor-stragglers.md) | Refactor Stragglers | What a large removal or rename leaves behind: straggler initializers, stale comments, stale docs, duplicate modules. | 62 |
@@ -58,7 +56,6 @@
 | [mistakes/shell-command-matchers.md](mistakes/shell-command-matchers.md) | Shell Command Matchers | Separators that never become tokens, forgeable glob lookups, env leakage in hook tests, and three Bash traps. | 124 |
 | [mistakes/testing-and-lint.md](mistakes/testing-and-lint.md) | Testing And Lint | Lint and test discipline: --all-targets, ambient git config in shelling tests, the stub checker, and reviewer claims. | 64 |
 | [mistakes/verification-harness.md](mistakes/verification-harness.md) | Verification Harness | When every check fails at once, suspect the harness; the PATH binary is not your build; silent subagents are failed delegations. | 48 |
-
 ### concerns
 
 | Topic | Title | Blurb | Lines |

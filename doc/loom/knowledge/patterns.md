@@ -91,21 +91,23 @@ Two modes: **static** (one-time print) and **live** (real-time via daemon socket
 
 ## Knowledge Systems Pattern
 
-Three systems: **Facts** (.work/facts.toml, cross-stage KV), **Memory** (.work/memory/{session}.md, session journal), **Knowledge** (doc/loom/knowledge/, permanent). Memory placed in signal recitation section for max LLM attention. Promotion: `loom memory promote`. Knowledge is append-only. Protected files marked with `<!-- .loom-protected -->`. Knowledge commands use `project_root()` (cwd-relative) so worktree agents write to their worktree, not the main repo.
+Three systems, in ascending order of permanence:
+
+| System | Location | Lifetime | Written by |
+| --- | --- | --- | --- |
+| **Memory** | `.work/memory/{session}.md` | The run | `loom memory note\|decision\|change\|question` |
+| **Stage outputs** | `outputs: Vec<StageOutput>` on the stage file (key / value / description) | The run; read by dependent stages | `loom stage output set` |
+| **Knowledge** | `doc/loom/knowledge/` (tiered) | Permanent | `loom knowledge update` (stage execution) or direct Write/Edit (interactive) |
+
+Memory is placed in the signal's recitation section for maximum LLM attention. The promotion path from memory to knowledge is the **`knowledge-distill` stage**, which reads `loom memory show --all` and curates — there is no `loom memory promote` command.
+
+`loom knowledge update` appends; `loom knowledge replace-section` is the one verb that overwrites in place (there is still no delete verb — see concerns.md). Knowledge commands resolve through `WorkDir::project_root()` (cwd-relative), so a worktree agent writes to its own worktree rather than the main repo.
+
+**Corrected 2026-07-30:** an earlier version of this section claimed a `.work/facts.toml` cross-stage KV store, a `loom memory promote` command, and `<!-- .loom-protected -->` file markers. None of the three exist in the codebase. Cross-stage KV is `loom stage output`; "Discovered Facts" survives only as a HandoffV2 field and a signal sub-section.
 
 ## Stage Completion Pattern
 
 **Regular stages**: Load stage, run acceptance criteria (unless --no-verify), sync worktree permissions, run task verifications, progressive merge, mark Completed, trigger dependents. **Knowledge stages**: No worktree, commits required (directly to main), auto merged=true, skips merge. Acceptance commands: 5-min timeout, support `${WORKTREE}`, `${PROJECT_ROOT}`, `${STAGE_ID}` variables.
-
-## Goal-Backward Verification Pattern
-
-Three verification layers: **Truths** (shell commands, exit 0, extended: exit_code, stdout_contains, stderr_empty). **Artifacts** (files must exist, stub detection blocks TODO/FIXME/unimplemented!/todo!/pass/raise NotImplementedError). **Wiring** (grep patterns verify code connections). Required for `stage_type: standard` only. Limits: max 20 truths, 100 artifacts.
-
-Before/after stage checks: before_stage runs AFTER worktree creation, BEFORE Executing — blocking (failed check → stage Blocked, no session spawned), and only while the workspace is pristine (skipped once the stage branch/worktree holds prior work). after_stage runs in complete.rs (blocking). Both use TruthCheck definitions.
-
-Regression tests: `bug_fix: true` requires `regression_test` with file path and must_contain patterns. Bidirectional validation.
-
-Advisory stderr warning detection: detect_stderr_warnings() in runner.rs scans for 9 suspicious patterns (connection refused, blocked, EACCES, etc.) after acceptance. Warnings only, no pass/fail change.
 
 ## Error Handling Pattern
 
@@ -165,13 +167,19 @@ Before creating stages: Q1: Does it create code another imports? Q2: Does it wri
 
 When adding new fields to StageDefinition: (1) plan/schema/types.rs, (2) models/stage/types.rs + Default, (3) commands/init/plan_setup.rs mapping, (4) plan/schema/tests/mod.rs make_stage(), (5) ALL test files constructing Stage, (6) validation.rs rules, (7) fs/stage_loading.rs, plan/graph/tests.rs, models/stage/methods.rs.
 
-## Goal-Backward Verification Pattern [UPDATED]
+## Goal-Backward Verification Pattern
 
 Four verification layers: **Artifacts** (files must exist, stub detection blocks TODO/FIXME/unimplemented\!/todo\!/pass/raise NotImplementedError). **Wiring** (grep patterns verify code connections). **Wiring Tests** (runtime commands with success criteria). **Dead Code Check** (command + fail/ignore patterns).
 
-Truths were removed as a standalone verification layer and unified into the acceptance field as AcceptanceCriterion::Extended(TruthCheck). Required for `stage_type: standard` and `integration-verify` — must have acceptance OR goal-backward checks.
+**Truths is NOT a layer here.** It was removed as a standalone goal-backward layer and unified into the acceptance field as `AcceptanceCriterion::Extended(TruthCheck)`. A duplicate section claiming "Three verification layers: Truths, Artifacts, Wiring" was deleted from this file on 2026-07-30. Required for `stage_type: standard` and `integration-verify` — must have acceptance OR goal-backward checks.
 
-Before/after stage checks: before_stage runs AFTER worktree creation, BEFORE Executing — blocking, and skipped on re-spawns where prior work already exists (see architecture.md). after_stage runs in complete.rs (blocking). Both use TruthCheck definitions via verify_truth_checks() in truths.rs.
+Validation limits (`plan/schema/validation.rs`): max 100 artifacts; max 20 `before_stage` checks; max 20 `after_stage` checks.
+
+Before/after stage checks: before_stage runs AFTER worktree creation, BEFORE Executing — blocking (failed check → stage Blocked, no session spawned), and only while the workspace is pristine (skipped once the stage branch/worktree holds prior work; see architecture.md). after_stage runs in complete.rs (blocking). Both use TruthCheck definitions via `verify_truth_checks()` in truths.rs.
+
+Regression tests: `bug_fix: true` requires `regression_test` with file path and must_contain patterns. Bidirectional validation.
+
+Advisory stderr warning detection: `detect_stderr_warnings()` in runner.rs scans for 9 suspicious patterns (connection refused, blocked, EACCES, etc.) after acceptance. Warnings only, no pass/fail change.
 
 ## AcceptanceCriterion Design Pattern
 

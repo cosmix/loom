@@ -21,25 +21,30 @@
 | `sessions`    | `commands/sessions.rs`        | List/kill active sessions                    |
 | `worktree`    | `commands/worktree_cmd.rs`    | List/clean/remove worktrees                  |
 | `graph`       | `commands/graph/mod.rs`       | Show execution graph                         |
-| `hooks`       | `commands/hooks.rs`           | Hook install/list                            |
 | `stage`       | `commands/stage/`             | Stage lifecycle (15+ subcommands)            |
 | `handoff`     | `commands/handoff/create.rs`  | Create handoff files                         |
 | `knowledge`   | `commands/knowledge/mod.rs`   | Manage codebase knowledge                    |
 | `memory`      | `commands/memory/handlers.rs` | Session memory journal                       |
 | `review`      | `commands/review/mod.rs`      | Generate review docs from memories           |
-| `sandbox`     | `commands/sandbox/`           | Suggest/apply sandbox config                 |
 | `self-update` | `commands/self_update/mod.rs` | Update loom binary                           |
 | `clean`       | `commands/clean.rs`           | Clean up resources                           |
 | `repair`      | `commands/repair.rs`          | Fix workspace issues                         |
 | `map`         | `commands/map.rs`             | Codebase structure analysis                  |
+| `pressure`    | `commands/pressure/mod.rs`    | Plan pressure-testing driver (Claude + Codex) |
 | `diagnose`    | `commands/diagnose.rs`        | Stage failure diagnosis                      |
 | `plan verify` | `commands/plan/verify.rs`     | Validate plan file without side effects      |
-| `verify`      | `commands/verify.rs`          | Goal-backward verification                   |
-| `check`       | `commands/check.rs`           | Goal-backward verification (alias)           |
+| `check`       | `commands/verify.rs`          | Goal-backward verification (`verify::execute`) |
+| `skill-index` | `commands/skill_index.rs`     | Build skill keyword index for skill-trigger  |
 | `completions` | `commands/completions/mod.rs` | Shell completions (custom scripts + dynamic) |
 | `complete`    | Hidden (dynamic completions)  | Backend for shell tab completions            |
 
-Total: 22 visible commands + 1 hidden (complete for dynamic completions). Dispatch: `cli/dispatch.rs` match-based, two-level for nested commands.
+Total: 23 visible commands + 1 hidden (`complete`, for dynamic completions). Dispatch: `cli/dispatch.rs` match-based, two-level for nested commands.
+
+**Three commands that do NOT exist** (an earlier version of this table listed all three — verify against `cli/dispatch.rs` before citing one):
+
+- `loom hooks` — there is no `commands/hooks.rs`. Hook install lives in `fs/permissions/hooks.rs` and runs as part of `loom init` / `loom repair --fix`.
+- `loom sandbox` — there is no `commands/sandbox/`. Sandbox config generation lives in `sandbox/config.rs` + `sandbox/settings.rs`, driven by the plan.
+- `loom verify` — there is no top-level `verify` command and no `commands/check.rs`. `commands/verify.rs::execute` is the shared implementation reached via `loom check`; `loom stage verify` and `loom plan verify` are separate subcommands.
 
 ## Orchestrator Core
 
@@ -122,15 +127,6 @@ Total: 22 visible commands + 1 hidden (complete for dynamic completions). Dispat
 - `commands/stage/merge_verify.rs` - `verify_or_derive_completed_commit` (read-only ancestry check shared by `--assume-merged` and `--resolved`).
 - `orchestrator/merge_attribution.rs` - `attribute_main_repo_merge` and `reconcile_main_repo_active_merge` (free functions; the daemon-recovery test seam — no `Orchestrator` instance required).
 
-## Verification System
-
-- `verify/criteria/runner.rs` - Acceptance criteria execution (run_acceptance) + detect_stderr_warnings()
-- `verify/criteria/executor.rs` - Single criterion with timeout
-- `verify/goal_backward/mod.rs` - Goal-backward verification (truths, artifacts, wiring)
-- `verify/transitions/state.rs` - Atomic stage status changes
-- `verify/baseline/` - Change impact detection (capture, compare)
-- `verify/before_after.rs` - Before/after stage checks using TruthCheck definitions
-
 ## Terminal Backend
 
 - `orchestrator/terminal/mod.rs` - terminal module root; re-exports `TerminalEmulator`
@@ -201,7 +197,7 @@ Three files to add a new subcommand:
 - `.work/signals/{session-id}.md` - Agent instruction signals
 - `doc/plans/PLAN-*.md` - Plan definition files
 
-## Verification System [UPDATED]
+## Verification System
 
 - `verify/criteria/runner.rs` - Acceptance criteria execution: handles AcceptanceCriterion::Simple (5min) and Extended (30s + output checks) + detect_stderr_warnings()
 - `verify/criteria/executor.rs` - Single criterion with timeout, SIGKILL on timeout
@@ -310,7 +306,8 @@ pub struct ToolEvent {
 `plan/graph/loader.rs:56` — `build_graph_impl()`:
 
 - **Lines 60-86**: Prefers `.work/stages/` over plan file. If stages_dir exists with .md files → load from `fs::load_stages_from_work_dir()` + recover sandbox from `.work/config.toml [plan_sandbox]`. Falls back to parsing plan file only if stages_dir is empty/missing.
-- This means plan-file amendments are NOT automatically reflected until stages_dir is absent (i.e., fresh init). Plan-amendment stage MUST update `.work/stages/<id>.md` files in addition to the plan file.
+- This means plan-file edits are NOT automatically reflected until stages_dir is absent (i.e., fresh init).
+- **`plan/amendment.rs` honors this** — a runtime amendment rewrites the plan file **and** the target stage's `.work/stages/<n>-<id>.md` under the same lock. This is a shipped guarantee, not an outstanding requirement (an earlier version of this bullet read as a TODO for a future "plan-amendment stage"). Any *other* code path that edits a plan file at runtime must do the same, or the daemon keeps serving the old criteria.
 
 ## Plan Schema — StageDefinition Amendable Fields
 
@@ -379,11 +376,25 @@ Adjudicator HTTP client should mirror this pattern with `user_agent("loom-adjudi
 
 `commands/stage/dispute_criteria.rs:16` — `dispute_criteria(stage_id, reason) -> Result<()>`:
 
-- Only accepts stages in `Executing` or `CompletedWithFailures` state
-- `CompletedWithFailures` → two-step: → `Executing` → `NeedsHumanReview`
-- `Executing` → direct `NeedsHumanReview`
-- Stores reason in `stage.review_reason: Option<String>`
-- Stage 2 replaces this with structured `DisputeRequest` RPC payload + `NeedsAdjudication` state
+**Shipped 2026-07-30 — this section previously described the pre-adjudication behavior (direct transition to `NeedsHumanReview`) and called the structured version "Stage 2". The structured version is what is in the tree.**
+
+`commands/stage/dispute_criteria.rs` is now a **thin RPC client**, not a state mutator:
+
+```rust
+pub fn dispute_criteria(
+    stage_id: String,
+    criterion_index: usize,
+    reason: String,
+    evidence_commit: Option<String>,
+    failure_output_path: Option<PathBuf>,
+) -> Result<()>
+```
+
+- CLI: `loom stage dispute-criteria <stage-id> --criterion-index N --reason <text> [--evidence-commit <sha>] [--failure-output <path>]`
+- Reads `.work/user.token`, sends `Request::DisputeCriteria` over the daemon socket. The **daemon** writes `.work/disputes/<stage>/<n>/request.md` and transitions the stage to `NeedsAdjudication`, then returns the allocated id.
+- `--failure-output` is a path; the client loads it and truncates to 4KB on a UTF-8 char boundary.
+- The agent never writes `verdict.md` or `applied.marker` — both are daemon-only.
+- Server-side handler: `daemon/server/dispute.rs`. On-disk schema: `models/dispute.rs`.
 
 ## Fix Attempts Counter — Current Usage
 
@@ -394,7 +405,7 @@ Adjudicator HTTP client should mirror this pattern with `user_agent("loom-adjudi
 - Default max: 3 (via `get_effective_max_fix_attempts()` in methods.rs)
 - Warning printed when limit reached with hint to `loom stage dispute-criteria`
 
-Stage 2/3 adds alongside: `dispute_count`, `evidence_rounds`, `amendments_applied` fields.
+Alongside it on the `Stage` struct (all shipped): `dispute_count` (600), `evidence_rounds` (603), `amendments_applied` (606).
 
 ## Remote Control & Permission Mode Integration Points
 

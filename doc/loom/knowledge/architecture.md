@@ -41,16 +41,6 @@ Known violations:
 - git/worktree imports orchestrator (hook config) -- fix: extract hooks/ as top-level
 - models imports plan/schema (WiringCheck, StageType) -- fix: move types to models/
 
-## Goal-Backward Verification (verify/goal_backward/)
-
-Three verification layers for standard stages:
-
-- **truths** -- Shell commands returning exit 0 (30s timeout, extended criteria: stdout_contains, stderr_empty)
-- **artifacts** -- Files must exist with real implementation (stub detection: TODO, FIXME, unimplemented!, todo!)
-- **wiring** -- Regex patterns verifying code connections in source files
-
-Returns: GoalBackwardResult::Passed | GapsFound | HumanNeeded. Storage: `.work/verifications/<stage-id>.json`.
-
 ## Context Budget Enforcement
 
 Stages define context_budget (1-100%, default 65%, max 75%). Monitor tracks Green (<50%), Yellow (50-64%), Red (65%+). BudgetExceeded event triggers auto-handoff.
@@ -118,9 +108,9 @@ KnowledgeFile enum: Architecture, EntryPoints, Patterns, Conventions, Mistakes, 
 6. If verification: add verify function in verify/goal_backward/ and call from run_goal_backward_verification()
 7. Check ALL test files constructing Stage directly (src/ AND tests/ directories)
 
-## Goal-Backward Verification (verify/goal_backward/) [UPDATED]
+## Goal-Backward Verification (verify/goal_backward/)
 
-Four verification layers for standard stages (truths removed, merged into acceptance):
+Four verification layers for standard stages. **`truths` is NOT one of them** — it was removed from goal-backward and merged into acceptance. A duplicate section listing `truths` as a goal-backward layer was deleted from this file on 2026-07-30; if you see that claim anywhere else, it is stale.
 
 - **artifacts** -- Files must exist with real implementation (stub detection: TODO, FIXME, unimplemented\!, todo\!)
 - **wiring** -- Regex patterns verifying code connections in source files
@@ -221,44 +211,45 @@ commands/status/
 Main loop at `orchestrator/core/orchestrator.rs:258-376` — 5s poll cycle (100ms chunks for shutdown responsiveness):
 
 ```text
-1. reconcile_and_update_graph()        [recovery.rs:149-177]  — catch phantom merges pre-sync
-2. sync_graph_with_stage_files()       [recovery.rs:179-567]  — disk → in-memory graph
-3. sync_queued_status_to_files()       [recovery.rs:569-593]  — graph Queued → disk
-4. spawn_merge_resolution_sessions()   [merge_handler.rs:637-758] — detect/spawn merge resolvers
-5. *** INSERT: check_pending_disputes() + apply_pending_verdicts() HERE ***
-6. start_ready_stages()                [stage_executor.rs:64-86]  — worktrees + sessions for Queued
-7. monitor.poll() → handle_events()   [event_handler.rs:308-311]  — completion/crash events
+1. reconcile_and_update_graph()              [recovery.rs]       — catch phantom merges pre-sync
+2. sync_graph_with_stage_files()             [recovery.rs]       — disk → in-memory graph
+3. sync_queued_status_to_files()             [recovery.rs]       — graph Queued → disk
+4. check_pending_disputes()                  [adjudicator]       — scan .work/disputes for new requests
+5. apply_pending_verdicts()                  [adjudicator]       — apply ready verdicts, re-queue stages
+6. drain_completed_adjudicator_workers()     [adjudicator]       — reap finished worker threads
+7. spawn_merge_resolution_sessions()         [merge_handler.rs]  — detect/spawn merge resolvers
+8. start_ready_stages()                      [stage_executor.rs] — worktrees + sessions for Queued
+9. monitor.poll() → handle_events()          [event_handler.rs]  — completion/crash events
 ```
 
-Insertion point for adjudicator hooks: after step 4 (merge resolution) and BEFORE step 6 (start_ready_stages) so re-queued stages from verdicts are picked up in the same cycle.
+**Corrected 2026-07-30.** This section previously carried a plan-authoring note — `*** INSERT: check_pending_disputes() + apply_pending_verdicts() HERE ***` — proposing an insertion point *after* merge resolution. The adjudicator hooks shipped and sit **before** merge resolution (steps 4-6), not after. The ordering property that matters is unchanged and still holds: verdicts are applied before `start_ready_stages()`, so a stage re-queued by a verdict is picked up in the same cycle.
 
-No mpsc channels currently — entirely polling-based. The dispute adjudicator adds the first worker-thread + mpsc pattern. See patterns.md § Worker Thread + mpsc Pattern.
+The same three calls also run once during startup init, after `refresh_ready_status()` / `sync_queued_status_to_files()`. All three are idempotent and cheap no-ops when no disputes exist on disk.
 
-## Stage State Machine — NeedsAdjudication (New Variant)
+The adjudicator is the codebase's first worker-thread + mpsc pattern; the rest of the loop remains polling-based. See patterns.md § Worker Thread + mpsc Pattern.
 
-Current 12-variant enum (`models/stage/types.rs`):
+## Stage State Machine — 13 Variants
+
+`StageStatus` (`models/stage/types.rs`) has **13** variants. `NeedsAdjudication` shipped and is wired into `transitions.rs`, the graph renderer, and the daemon dispute handler — an earlier version of this section described it as a proposed 13th addition to a 12-variant enum.
 
 ```text
 WaitingForDeps → Queued → Executing → Completed/Skipped (terminal)
                   |           |
                   v           +→ Blocked, NeedsHandoff, WaitingForInput,
                Skipped           MergeConflict, CompletedWithFailures,
-                                  MergeBlocked, NeedsHumanReview
+                                 MergeBlocked, NeedsHumanReview,
+                                 NeedsAdjudication
 ```
 
-Autonomous adjudication adds `NeedsAdjudication` as a new NON-TERMINAL variant:
+Transitions FROM `NeedsAdjudication` (`transitions.rs`) — note it can loop to itself:
 
-```text
-Executing → NeedsAdjudication → Queued   (accept verdict re-queues)
-                              → NeedsHumanReview  (exhaust budget or disabled API key)
-```
+- `Queued` — verdict applied, stage re-queued
+- `NeedsAdjudication` — evidence loop (another round on the same dispute)
+- `NeedsHumanReview` — dispute budget exhausted OR `ANTHROPIC_API_KEY` not set
 
-Transitions FROM `NeedsAdjudication` (to be added to `transitions.rs`):
+`CompletedWithFailures` also transitions into `NeedsAdjudication` (dispute filed after a failed completion) and into `NeedsHumanReview` (budget escalation).
 
-- `Queued` — accept/reject verdict processed, stage re-queued
-- `NeedsHumanReview` — dispute budget exhausted OR ANTHROPIC_API_KEY not set
-
-## Dispute Directory Structure (New, Stage 2+)
+## Dispute Directory Structure (Shipped)
 
 `.work/disputes/<stage_id>/<n>/` — per-dispute directory (numbered from 1):
 
@@ -271,19 +262,29 @@ Transitions FROM `NeedsAdjudication` (to be added to `transitions.rs`):
 
 Request.md is written by the daemon handler on behalf of the agent's RPC call. Trust boundary: same pattern as `loom memory note`.
 
-## Plan Versioning (New, Stage 3+)
+## Plan Versioning / Runtime Amendment (Shipped — `plan/amendment.rs`)
 
-`.work/plan_versions/` directory for amendment audit trail:
+Runtime plan amendment exists and is reachable from an `Accept` adjudication verdict. `.work/plan_versions/` is its audit trail:
 
-- `.work/plan_versions/.lock` — file lock (serializes amendments)
+- `.work/plan_versions/.lock` — `flock` (serializes amendments)
 - `.work/plan_versions/<n>.md` — snapshot of full plan content after amendment n
 - `.work/plan_versions/audit.md` — O_APPEND atomic rows (amendment log)
 
-Plan amendment 6-step atomic flow: acquire lock → compute new content → write snapshot → append audit → atomic rename plan file → release lock. Recovery: on daemon startup scan audit.md, verify plan file matches latest snapshot.
+**The write set is TWO files, not one — this is the trap.** Under the lock, an amendment writes the snapshot, appends the audit row, replaces the live plan file via `safe_replace_outside_workdir`, **and rewrites the target stage's `.work/stages/<n>-<id>.md`**. The last step is not optional: `plan/graph/loader.rs` prefers `.work/stages/` over the plan file, so amending only the plan would leave `sync_graph_with_stage_files` serving the old criteria forever. (An earlier version of this section described a 6-step flow ending at "atomic rename plan file", omitting the stage-file write.)
 
-## Plan Immutability Invariant (CURRENTLY ENFORCED; Plan-Amendment Stage Relaxes It)
+The proposed value is deserialized into the **real** `AcceptanceCriterion` / `WiringCheck` types before anything is written, so a malformed patch fails fast rather than corrupting the plan. A per-stage cap (default 3, `loom.adjudication.max_amendments_per_stage`) bounds runaway adjudication.
 
-Plans are loaded ONCE at daemon startup via `build_execution_graph()` → `ExecutionGraph::build()`. No reload mechanism exists. The in-memory `graph: ExecutionGraph` field in `Orchestrator` (orchestrator.rs:87) holds all state. Plan file mutations are ONLY via `try_auto_merge()` (stage file changes, not plan structure). The `plan-amendment` stage deliberately relaxes this invariant — ONLY `acceptance`/`wiring` arrays on a single stage are amendable; DAG topology, dependencies, IDs are never changed.
+**Recovery** — `verify_plan_versions_consistency()`, called from orchestrator startup, handles three divergences:
+
+| On disk | Action |
+| --- | --- |
+| Snapshot written, audit row missing | Orphaned snapshot — removed so the next amendment can claim the id |
+| Audit row appended, plan file still old | Re-apply the snapshot to plan + stage file (catch-up commit) |
+| Plan + audit in sync, stage file stale | Re-apply just the stage-file update |
+
+## Plan Immutability Invariant (Narrowed, Not Removed)
+
+Plans are loaded ONCE at daemon startup via `build_execution_graph()` → `ExecutionGraph::build()`; there is no general reload mechanism, and the in-memory `graph: ExecutionGraph` on `Orchestrator` holds all state. Amendment is the one sanctioned mutation path and it is deliberately narrow: **only the `acceptance` and `wiring` arrays on a single stage**. Stage IDs, dependencies, `working_dir`, DAG topology, and plan structure are never amendable — so the graph the daemon loaded at startup stays topologically valid for the life of the run.
 
 ## Remote Control Module (loom/src/remote_control.rs)
 

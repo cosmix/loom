@@ -181,9 +181,9 @@ poll, spawn, and merge. Full reproduction, impact analysis, and the proposed pid
 
 **Recommended fix:** Thread `validate_config` into `commands/plan/verify.rs` so the same validation that blocks `loom init` is surfaced early at plan-authoring time.
 
-## code_review Schema Field — TRULY DORMANT (2026-06-15)
-
 ## code_review Schema Field — Wired for Signal Generation Only (updated 2026-06-15)
+
+> An empty duplicate heading, "code_review Schema Field — TRULY DORMANT", sat directly above this one and was removed on 2026-07-30. "Truly dormant" was superseded the same day it was written — the field reaches IV signals. This section is the accurate one.
 
 `StageDefinition.code_review` (`plan/schema/types.rs:261`) is parsed by serde and now surfaced to integration-verify agent signals, but **still not stored on the Stage struct and not consumed by acceptance, completion, or goal-backward verification**.
 
@@ -199,8 +199,6 @@ poll, spawn, and merge. Full reproduction, impact analysis, and the proposed pid
 1. Add `code_review: Option<CodeReviewConfig>` to Stage struct (`models/stage/types.rs`)
 2. Copy field in `create_stage_from_definition()` (`plan_setup.rs`)
 3. Consider consuming during acceptance or completion (currently not enforced)
-
-## PLAN-anti-slop-thoroughness: before_stage Wired vs. Plan Description
 
 ## before_stage Already Wired — Plan PLAN-anti-slop-thoroughness Was Wrong
 

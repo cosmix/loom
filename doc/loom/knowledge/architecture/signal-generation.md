@@ -61,20 +61,9 @@ All generators are composed from shared `append_*` helpers and produce immutable
 
 **Knowledge prefix key differences:** No worktree; COMMITS REQUIRED; "Your Mission = build briefing document"; 6-step workflow; agent teams for bootstrap.
 
-### Shared append_* Helpers (cache.rs:51-169)
+### Shared append_* Helpers
 
-| Helper | Lines | Content | Used By |
-|--------|-------|---------|---------|
-| `append_path_boundaries()` | 54-63 | ALLOWED/FORBIDDEN paths table | Standard, IV, KnowledgeDistill |
-| `append_subagent_restrictions()` | 66-93 | NO git/loom/add-A rules; memory recording guide | Standard (233), IV (424) |
-| `append_completion_rules()` | 96-102 | Acceptance, handoff, no retry rules | Standard (254), IV (433), KnowledgeDistill (515) |
-| `append_isolation_boundaries_simple()` | 108-113 | 2-bullet version | IV (408), KnowledgeDistill (508) |
-| `append_execution_rules_intro()` | 119-124 | "Follow CLAUDE.md" short header | IV (412), KnowledgeDistill (512), Knowledge (594) |
-| `append_common_footer()` | 127-142 | Binary usage, state files, context recovery | ALL 4 prefixes |
-| `append_git_staging_full()` | 145-160 | Full staging rules + danger box | Standard only |
-| `append_git_staging_rules()` | 162-169 | Shorter version | IV, KnowledgeDistill |
-
-**Adding a new helper:** Follow same `fn append_xxx(content: &mut String)` pattern. Place in the "Shared content blocks" cluster (lines 51-169). Call it explicitly from each generator where wanted — it's NOT auto-injected.
+The full table lives in the `## Shared append_* Helpers (cache.rs:51-~180)` section below — an abridged copy that predated `append_anti_slop_guidance()` and `append_adversarial_review()` was deleted from this spot on 2026-07-30. Consult the one table; do not re-inline a second.
 
 ### Semi-Stable Section (format/sections.rs:15-378)
 
@@ -121,9 +110,7 @@ pub struct EmbeddedContext {
 
 SHA-256 of stable prefix text → first 16 hex chars → `SignalMetrics::stable_prefix_hash`. Cache invalidated whenever the stable prefix Rust code changes. Semi-stable, dynamic, recitation sections are always regenerated.
 
-## Shared append_* Helpers (cache.rs:51-169)
-
-### Shared append_* Helpers (cache.rs:51-~180)
+## Shared append_* Helpers (cache.rs:51-~180)
 
 | Helper | Lines | Content | Used By |
 |--------|-------|---------|---------|

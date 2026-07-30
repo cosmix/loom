@@ -361,3 +361,13 @@ Invariants belong in the filesystem constructor, not the CLI handler that calls 
 refreshes must happen outside the directory lock; `update` appends, so retries duplicate.
 
 → [Knowledge CLI Invariants](mistakes/knowledge-cli-invariants.md)
+
+## Knowledge Base Drift — The Base Itself Goes Stale (2026-07-30)
+
+Four repeatable failure modes found in this knowledge base: plan-authoring notes frozen as
+architecture facts ("New, Stage 2+", `*** INSERT ... HERE ***`) after the feature shipped;
+`[UPDATED]` sections that appended rather than replaced, leaving the stale copy on top;
+invented CLI commands (`loom hooks`, `loom sandbox`, `loom verify`) inferred from module names;
+and features documented that were never built (`.work/facts.toml`, `loom memory promote`).
+
+→ [Knowledge Base Drift](mistakes/knowledge-base-drift.md)

@@ -73,9 +73,21 @@ Set by wrapper script (pid_tracking.rs:463-479) before `exec claude`:
 
 ### Hook Embedding (constants.rs)
 
-All **17** Claude Code hooks are embedded via `include_str!()` at compile time (consts in `fs/permissions/constants.rs`, table at `LOOM_HOOKS`). `install_loom_hooks()` writes them to `~/.claude/hooks/loom/` with mode 0o755. Hooks are NOT read from disk by loom at runtime.
+`LOOM_HOOKS` (`fs/permissions/constants.rs`) holds **17 entries**, each embedded via `include_str!()` at compile time. `install_loom_hooks()` writes them to `~/.claude/hooks/loom/` with mode 0o755. Hooks are NOT read from disk by loom at runtime.
 
-`git-pre-commit-hook.sh` is the one top-level script deliberately excluded from `LOOM_HOOKS`: it is appended to `.git/hooks/pre-commit` by `loom init`, not installed into `~/.claude/hooks/loom/`. So `hooks/` holds 18 top-level scripts = 16 Claude Code hooks + the `_common.sh` library + 1 git-side hook (29 files including `hooks/tests/`).
+**Do not read "17 entries" as "17 hooks."** The arithmetic, verified against `ls hooks/*.sh` and the `LOOM_HOOKS` table:
+
+```text
+18 top-level scripts in hooks/
+ −1  git-pre-commit-hook.sh   (excluded from LOOM_HOOKS; appended to .git/hooks/pre-commit by loom init)
+ ───
+ 17  LOOM_HOOKS entries installed to ~/.claude/hooks/loom/
+ −1  _common.sh               (a sourced library, not a registered hook)
+ ───
+ 16  actual Claude Code hooks
+```
+
+So: **16 Claude Code hooks + 1 shared library + 1 git-side hook = 18 scripts** (29 files including `hooks/tests/`). An earlier version of this file said "All 17 Claude Code hooks are embedded" in one paragraph and "16 Claude Code hooks" in the next; the second was right.
 
 ## Subagent Isolation
 
