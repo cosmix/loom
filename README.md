@@ -1,22 +1,87 @@
 # Loom
 
-Loom is an agent orchestration system for Claude Code. It coordinates AI agent sessions across git worktrees, enabling parallel task execution with crash recovery, context handoffs, and structured verification.
+Loom is an agent orchestration system for Claude Code. You write a plan; loom executes it — stages run in parallel across isolated git worktrees, completion is gated by checks loom runs itself rather than by the agent's own account of its work, and what each session learns is captured and distilled into a knowledge base the next session reads first.
 
 ## What Loom Solves
 
-- Context exhaustion in long agent sessions
-- Lost execution state when sessions crash or end
-- Manual handoff/restart overhead
-- Weak coordination across multi-stage work
+Autonomous agent work fails in a small number of predictable ways. Loom answers each with a mechanism, not a paragraph of prompt.
+
+| Failure mode                            | What actually happens                                                                | Loom's answer                                                                                                                                                                                          |
+| --------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **False completion**                    | Tests were never run, the module was written but never imported, the fix is a `TODO` | Loom runs the acceptance criteria itself, then checks artifacts for stubs, wiring for real integration, and dead-code patterns for orphaned work. The bypass flags need a token the agent cannot read. |
+| **Instruction drift**                   | Rules decay the moment they scroll out of attention                                  | Shell hooks enforce the load-bearing rules deterministically — commit discipline, staging scope, worktree boundaries, subagent limits — outside the model's control.                                   |
+| **Amnesia**                             | Every session rediscovers the same architecture and repeats the same mistakes        | A per-stage memory journal feeds a distillation stage that curates permanent, tiered knowledge; later sessions read it before touching code.                                                           |
+| **Cost scaling with tokens, not value** | Expensive models doing cheap work; re-reading everything, every time                 | Judgment stays on an orchestrator; bulk implementation is delegated to cheap subagents. Signals are laid out for KV-cache reuse and knowledge is tiered, so agents load only what they need.           |
+| **Context exhaustion**                  | The session degrades into an expensive compaction loop                               | Context budgets are monitored per stage; a handoff is written *before* compaction and the resumed session is re-anchored to its assignment.                                                            |
+| **Lost runs**                           | A crashed or hung session takes the work with it                                     | All state is files under `.work/`. The daemon detects dead and hung sessions, classifies the failure, and retries or escalates.                                                                        |
+| **Serialization**                       | Multi-stage work runs one-at-a-time, or collides on the same files                   | A dependency DAG schedules independent stages concurrently in separate worktrees, with progressive auto-merge and dedicated conflict-resolution sessions.                                              |
 
 ## Key Capabilities
 
-- Persistent orchestration state in `.work/`
-- Git worktree isolation for parallel stage execution
-- Stage-aware signals and recovery flows
-- Goal-backward verification (`artifacts`, `wiring`, `wiring_tests`, `dead_code_check`)
-- Plan-level and stage-level sandbox controls
-- Optional agent teams guidance in stage signals
+### Deterministic guardrails
+
+The rules that matter are not left to the model. Loom installs **16 Claude Code hooks** and a git `pre-commit` hook that fire regardless of what an agent intends:
+
+- `commit-guard.sh` blocks a session from ending with uncommitted work or a stage still `Executing`
+- `git-add-guard.sh` blocks `git add -A` / `git add .`; `git-pre-commit-hook.sh` blocks commits containing `.work` or `.worktrees`
+- `worktree-isolation.sh` / `worktree-file-guard.sh` block cross-worktree writes, reads, and path traversal
+- `commit-filter.sh` blocks subagent git operations (a subagent commit loses the main agent's work) and blocks AI attribution in commit messages
+- `subagent-verify-guard.sh` blocks subagents from running project-wide build/test/lint suites, so verification stays with the one agent that can see the whole tree — with `integration-verify` stages carved out, and no opt-out environment variable
+- `pre-compact.sh` blocks compaction, writes a handoff, then allows it; `session-start.sh` re-anchors the resumed agent to its signal file
+- `plans-path-guard.sh` keeps plans in `doc/plans/` where loom and git can see them
+
+Subagent detection is a live process-tree ancestry check, not a PPID comparison. See [Verification Is the Main Agent's Job](#verification-is-the-main-agents-job).
+
+### Verification that outlives the agent's opinion
+
+`loom stage complete` is not a self-report. Loom executes the stage's acceptance criteria in-process and refuses completion on failure, leaving the stage `Executing` so the agent must fix and retry. On top of that, goal-backward verification asks whether the *outcome* exists:
+
+- **`artifacts`** — files exist and contain real implementation (stub detection rejects `TODO`, `FIXME`, `unimplemented!`, `todo!`, `pass`, `NotImplementedError`)
+- **`wiring`** — regex proof that new code is actually referenced: module registered, route mounted, component rendered
+- **`wiring_tests`** — runtime commands proving the integration behaves
+- **`dead_code_check`** — command output patterns catching code that exists but is never called
+- **`before_stage` / `after_stage`** — pre-spawn and post-acceptance gates; a failed pre-check blocks the stage before a session is even spawned
+
+The escape hatches (`--no-verify`, `--force-unsafe`, `--assume-merged`) require the daemon's `.work/admin.token`, which the generated sandbox explicitly denies agents read access to. An agent cannot authorize its own bypass.
+
+### Knowledge capture and distillation
+
+Loom treats what agents learn as a first-class artifact with a pipeline, not a scratch file.
+
+1. **Capture** — during execution, agents record to a per-stage journal: `loom memory note` (gotchas, mistakes-with-prevention), `decision` (with rationale), `change`, `question`. The journal is injected into the *recitation* section at the end of the next signal, where model attention is highest.
+2. **Distill** — a `knowledge-distill` stage runs at the end of a plan, reads every stage memory, and curates it into permanent knowledge — mistakes rewritten as actionable prevention rules, decisions with their rationale, reusable patterns and conventions.
+3. **Retrieve** — the result is a **tiered** base under `doc/loom/knowledge/`: a generated `INDEX.md`, seven tier-1 summaries, and tier-2 topic files. Agents read the index, then the summary for their area, then only the topics they touch — so the base can grow without every session paying to load it.
+
+`loom knowledge check` reports coverage, `audit` reports structural rot (oversized sections, broken links, orphans), `gc` restructures, and `loom map` seeds the base from static analysis. Details: [Knowledge System](#knowledge-system).
+
+### Cost control by construction
+
+Loom's savings come from **delegation, not downgrade**:
+
+- **Orchestration is always Opus at `xhigh` effort.** Every stage's main agent plans, decomposes, verifies, and commits — the judgment-heavy work that is worst to economize on.
+- **Implementation is always delegated** to the cheapest subagent that can do the job (Haiku for trivial mechanical edits, Sonnet for the common case, Opus only for genuinely hard work), spawned by agent type so the choice is explicit rather than inherited.
+- **Signals are built for cache reuse.** Each signal is a four-section layout with a per-stage-type stable prefix that is byte-identical across sessions, so the large doctrine block is a cache hit rather than a re-read.
+- **Context budgets prevent compaction**, which is the expensive failure: an uncached re-read that costs more and produces worse work.
+- **Tiered knowledge and a skill index** keep the working set small — at most 5 matched skills are injected per stage, out of 61 installed.
+- **Orchestrated sessions are interactive**, billing against your Claude subscription. The handful of headless `claude -p` paths are opt-in flags, off by default (see the Billing note below).
+
+Per-stage `model`, `reasoning_effort`, and `ultracode` fields let you override any of this explicitly.
+
+### Parallel execution and progressive merge
+
+Stages form a dependency DAG; everything independent runs at once, each in its own worktree (`.worktrees/<stage-id>`, branch `loom/<stage-id>`). Completed stages merge back progressively under a file lock, and a real conflict spawns a dedicated resolution session rather than stalling the run.
+
+### Crash recovery and liveness
+
+All orchestration state is plain files in `.work/`, so nothing is lost when a process dies. The daemon polls every 5s, tracks PID liveness and per-session heartbeats, flags hung sessions after 300s, and classifies failures across ten types into retryable (exponential backoff) and needs-diagnosis. Tool-call telemetry drives a stuck-session signal when a session's recent calls are overwhelmingly failures. Orphaned sessions are recovered on daemon restart.
+
+### Sandboxing and plan hardening
+
+Plan-level defaults and per-stage overrides control filesystem reads/writes, network domains, and permission mode ([Sandbox Configuration](#sandbox-configuration)). Before you spend anything, `loom plan verify` validates a plan with no side effects, and `loom pressure` hardens it through adversarial review rounds run by two different model families.
+
+### Human-in-the-loop where it matters
+
+Thirteen stage states make "needs a person" a first-class outcome rather than a hang: `WaitingForInput` (raised automatically when an agent asks a question), `NeedsHumanReview`, `Blocked`, `MergeConflict`. Operators get `loom stage hold/release/skip/retry/human-review`, and an agent that believes a criterion is wrong can escalate with `loom stage dispute-criteria` instead of quietly weakening it.
 
 ## Platform Support
 
@@ -75,15 +140,15 @@ loom stop
 
 ### What Gets Installed
 
-| Location                     | Contents                                             |
-| ---------------------------- | ---------------------------------------------------- |
-| `~/.claude/agents/loom-*.md` | Specialized subagents (per-item, non-destructive)    |
-| `~/.claude/skills/loom-*/`   | Domain knowledge modules (per-item, non-destructive) |
+| Location                     | Contents                                                  |
+| ---------------------------- | --------------------------------------------------------- |
+| `~/.claude/agents/loom-*.md` | 4 specialized subagents (per-item, non-destructive)       |
+| `~/.claude/skills/loom-*/`   | 61 domain knowledge modules (per-item, non-destructive)   |
 | `~/.claude/commands/*.md`    | Loom slash commands (`/pressure`, `/address`, `/distill`) |
-| `~/.claude/hooks/loom/`      | Session lifecycle hooks                              |
-| `~/.claude/CLAUDE.md`        | Orchestration rules                                  |
-| `~/.codex/skills/pressure/`  | Codex pressure-testing skill (`$pressure`)           |
-| `~/.local/bin/loom`          | Loom CLI                                             |
+| `~/.claude/hooks/loom/`      | 16 lifecycle and guardrail hooks + shared library         |
+| `~/.claude/CLAUDE.md`        | Orchestration rules                                       |
+| `~/.codex/skills/pressure/`  | Codex pressure-testing skill (`$pressure`)                |
+| `~/.local/bin/loom`          | Loom CLI                                                  |
 
 > The `~/.claude/commands/` and `~/.codex/skills/pressure/` entries are installed only by the local `install.sh` (cloned repo); the `curl | bash` install does not ship them yet.
 
@@ -94,6 +159,26 @@ loom stop
 3. Run `loom run` to start daemon + orchestrator.
 4. Track progress with `loom status --live`.
 5. Recover, verify, merge, or retry stages as needed.
+
+### Stage Lifecycle
+
+```text
+WaitingForDeps → Queued → Executing → Completed
+```
+
+Everything else is an explicit, inspectable outcome rather than a hang:
+
+| State                   | Meaning                                                                |
+| ----------------------- | ---------------------------------------------------------------------- |
+| `Blocked`               | A `before_stage` check or an explicit block stopped the stage          |
+| `NeedsHandoff`          | Context budget exceeded; a handoff was written                         |
+| `WaitingForInput`       | The agent asked a question (raised automatically by the AskUser hooks) |
+| `MergeConflict`         | Auto-merge hit a real conflict; a resolution session is spawned        |
+| `MergeBlocked`          | Merge cannot proceed (e.g. another merge is in progress)               |
+| `CompletedWithFailures` | Work finished but acceptance did not pass                              |
+| `NeedsHumanReview`      | Escalated to a person                                                  |
+| `NeedsAdjudication`     | A disputed acceptance criterion is awaiting a verdict                  |
+| `Skipped`               | Explicitly skipped                                                     |
 
 ## CLI Reference
 
@@ -135,8 +220,10 @@ loom stage retry <stage-id> [--force] [--context <message>]
 loom stage merge [stage-id] [--resolved]
 loom stage verify <stage-id> [--no-reload] [--dry-run]
 loom stage human-review <stage-id> [--approve|--force-complete|--reject <reason>]
-loom stage dispute-criteria <stage-id> <reason>
+loom stage dispute-criteria <stage-id> --criterion-index N --reason <text> [--evidence-commit <sha>] [--failure-output <path>]
 ```
+
+`loom stage dispute-criteria` is the sanctioned way for an agent to challenge a criterion it believes is wrong or impossible, instead of quietly weakening it. The daemon writes `request.md` and moves the stage to `NeedsAdjudication`; the verdict is daemon-written and never authored by the agent.
 
 ### Stage Outputs
 
@@ -169,17 +256,7 @@ loom memory list [--stage <id>] [--entry-type <type>]
 loom memory show [--stage <id>] [--all]
 ```
 
-`loom knowledge bootstrap` launches a Claude-driven exploration session that populates `doc/loom/knowledge/`. By default it runs a deep `loom map` pass first, then starts Claude with permission to update knowledge files via `loom knowledge update`.
-
-Knowledge is **tiered**: a generated `INDEX.md` (tier 0) maps the seven curated summary files (tier 1), which link out to per-category topic files (tier 2, e.g. `architecture/merge-flow.md`). Tier-1 files stay navigable summaries; detail lives in topics. The index is regenerated automatically on every knowledge write, and by `loom knowledge index`.
-
-Knowledge directories created before the hierarchy existed stay **flat** and keep working unchanged — nothing migrates them behind your back. `loom knowledge audit` will advise it, and `loom knowledge index` (structure only) or `loom knowledge gc` (a Claude session that extracts oversized sections into topics and relinks them) performs the opt-in upgrade.
-
-**Reading protocol** — read the index first, then the tier-1 summary for the area you are working in, then only the tier-2 topics you actually touch. Loading the whole base defeats the point of tiering.
-
-**Writing protocol** — when a tier-1 section grows past roughly 40 lines, move its body into a topic with `loom knowledge update <category>/<slug>` and leave a 2-4 line summary plus a relative link behind. Write the link as `[Title](category/slug.md)` in a tier-1 file: that is the one form `loom knowledge audit` accepts for both its orphan check and its broken-link check.
-
-There is **no aggregate line budget** across the knowledge base — `loom knowledge audit` prints the total for information only. The limits that matter are per-file (`--max-file-lines`, default 250) and per-topic (`--max-topic-lines`, default 500), because structure is what degrades retrieval, not size.
+See [Knowledge System](#knowledge-system) for how these fit together.
 
 ### Other Commands
 
@@ -260,26 +337,29 @@ loom:
 
 ### Stage Fields
 
-| Field                              | Required               | Notes                                                                                                         |
-| ---------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `id`                               | Yes                    | Stage identifier                                                                                              |
-| `name`                             | Yes                    | Human-readable title                                                                                          |
-| `working_dir`                      | Yes                    | Relative execution directory (`.` allowed)                                                                    |
-| `description`                      | No                     | Optional summary                                                                                              |
-| `dependencies`                     | No                     | Upstream stage IDs                                                                                            |
-| `acceptance`                       | Conditionally required | Shell criteria (strings or extended objects with stdout_contains etc.)                                        |
-| `setup`                            | No                     | Setup commands                                                                                                |
-| `files`                            | No                     | File glob scope                                                                                               |
-| `stage_type`                       | No                     | `standard` (default), `knowledge`, `integration-verify`                                                       |
-| `artifacts` / `wiring`             | Conditionally required | Required for `standard` and `integration-verify` (acceptance OR goal-backward)                                |
-| `wiring_tests` / `dead_code_check` | No                     | Extended verification                                                                                         |
-| `before_stage`                     | No                     | Pre-spawn checks (TruthCheck list); stage → Blocked if any fail                                               |
-| `after_stage`                      | No                     | Post-acceptance checks (TruthCheck list); completion fails if any fail                                        |
-| `code_review`                      | No                     | `integration-verify` only: `dimensions` (string list) and `require_all` (bool); rendered as checklist in agent signal |
-| `context_budget`                   | No                     | Context threshold (%) for handoff                                                                             |
-| `sandbox`                          | No                     | Per-stage sandbox override                                                                                    |
-| `sandbox.permission_mode`          | No                     | `auto`, `accept-edits`, `bypass-permissions`, `plan`, `default` (resolves: stage > plan > stage-type default) |
-| `execution_mode`                   | No                     | `single` (default) or `team` hint                                                                             |
+| Field                              | Required               | Notes                                                                                                                                      |
+| ---------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                               | Yes                    | Stage identifier                                                                                                                           |
+| `name`                             | Yes                    | Human-readable title                                                                                                                       |
+| `working_dir`                      | Yes                    | Relative execution directory (`.` allowed)                                                                                                 |
+| `description`                      | No                     | Optional summary                                                                                                                           |
+| `dependencies`                     | No                     | Upstream stage IDs                                                                                                                         |
+| `acceptance`                       | Conditionally required | Shell criteria (strings or extended objects with stdout_contains etc.)                                                                     |
+| `setup`                            | No                     | Setup commands                                                                                                                             |
+| `files`                            | No                     | File glob scope                                                                                                                            |
+| `stage_type`                       | No                     | `standard` (default), `knowledge`, `integration-verify`, `knowledge-distill`                                                               |
+| `artifacts` / `wiring`             | Conditionally required | Required for `standard` and `integration-verify` (acceptance OR goal-backward)                                                             |
+| `wiring_tests` / `dead_code_check` | No                     | Extended verification                                                                                                                      |
+| `before_stage`                     | No                     | Pre-spawn checks (TruthCheck list); stage → Blocked if any fail                                                                            |
+| `after_stage`                      | No                     | Post-acceptance checks (TruthCheck list); completion fails if any fail                                                                     |
+| `code_review`                      | No                     | `integration-verify` only: `dimensions` (string list) and `require_all` (bool); rendered as checklist in agent signal                      |
+| `model`                            | No                     | Model for this stage's main agent (default `opus` for every stage type)                                                                    |
+| `reasoning_effort`                 | No                     | `low`, `medium`, `high`, `xhigh`, `max` (default `xhigh` on opus, `high` otherwise)                                                        |
+| `ultracode`                        | No                     | License this stage for large multi-agent fan-out; per-stage opt-in (default `false`)                                                       |
+| `context_budget`                   | No                     | Context threshold (%) for handoff (default 65%, hard maximum 75%)                                                                          |
+| `sandbox`                          | No                     | Per-stage sandbox override                                                                                                                 |
+| `sandbox.permission_mode`          | No                     | `auto` (default), `accept-edits`, `plan`, `default` — resolves stage > plan > stage-type default; `bypass-permissions` is rejected at init |
+| `execution_mode`                   | No                     | `single` (default) or `team` hint                                                                                                          |
 
 ### Stage Type Behavior
 
@@ -300,6 +380,16 @@ loom:
 
 For `standard` and `integration-verify` stages, acceptance criteria or at least one goal-backward check must be defined.
 
+### Verification Is Enforced, Not Self-Reported
+
+`loom stage complete` is the only way a stage finishes, and it runs the acceptance criteria itself before doing anything else. If they fail, the stage stays `Executing` — the agent must fix the work and re-run, and `fix_attempts` is incremented so repeated failures surface rather than accumulate silently. `after_stage` checks then run post-acceptance, and goal-backward verification runs before the progressive merge.
+
+Artifact verification treats a stub as a failure: a file that exists but contains `TODO`, `FIXME`, `unimplemented!`, `todo!`, a bare `pass`, or `raise NotImplementedError` does not count as delivered.
+
+The three bypass flags — `--no-verify`, `--force-unsafe`, `--assume-merged` — are gated on the daemon's admin capability, which requires reading `.work/admin.token`. The generated sandbox settings deny agents read access to that file, so an agent cannot authorize its own bypass; a human operating outside the sandbox can.
+
+An agent that genuinely believes a criterion is wrong or impossible has a sanctioned path — `loom stage dispute-criteria` — rather than an incentive to weaken it.
+
 ### Verification Is the Main Agent's Job
 
 Subagents do not verify. A subagent may run **at most one narrowly-scoped check** covering the files it just changed; project-wide builds, full test suites, and repo-wide lint or typecheck runs belong to the main agent — the only party that can see the whole tree and act on the result.
@@ -310,6 +400,87 @@ Two things worth knowing:
 
 - **`integration-verify` stages are carved out.** That stage type exists to run the complete suite, so its subagents may. The carve-out is read from the stage file and fails safe — an ambiguous or missing stage file means no relaxation.
 - **There is deliberately no opt-out environment variable.** The main agent is never affected, so an escape hatch would only serve to defeat the rule.
+
+## Knowledge System
+
+Loom's answer to "every session starts from zero" is a three-stage pipeline: capture during execution, distill at the end of a plan, retrieve cheaply forever after.
+
+### 1. Capture — session memory
+
+While a stage runs, its agent journals to `.work/memory/<session>.md`:
+
+```bash
+loom memory note "gotcha: worktree exclude lives at <worktree>/.git/info/exclude, not <dir>/.git/..."
+loom memory decision "centralized plan lookup in plan/parser" --context "avoids an orchestrator→commands layering violation"
+```
+
+Entries are typed (`note`, `decision`, `change`, `question`). The most recent are embedded in the *recitation* section at the end of the next signal — the position with the highest model attention — so a later stage inherits an earlier stage's hard-won detail instead of rediscovering it.
+
+Memory is deliberately cheap and disposable. It is a working journal, not the deliverable.
+
+### 2. Distill — memories become knowledge
+
+A `knowledge-distill` stage runs at the end of a plan and performs the reduce step: it reads every stage memory, dedupes, and curates the survivors into permanent knowledge. Mistakes are rewritten as actionable prevention rules rather than anecdotes:
+
+```markdown
+## [Short description]
+
+**What happened:** ...
+**Why:** [root cause]
+**Prevention:** [how to detect it earlier]
+**Fix:** [what to do instead]
+```
+
+Procedural noise ("spawned agents", "ran tests") and anything recoverable from git history is dropped. `loom review` turns the same memories into a human-readable code-review document.
+
+### 3. Retrieve — a tiered base agents can afford to read
+
+Knowledge lives in `doc/loom/knowledge/` and is **tiered**: a generated `INDEX.md` (tier 0) maps the seven curated summary files (tier 1), which link out to per-category topic files (tier 2, e.g. `architecture/merge-flow.md`). Tier-1 files stay navigable summaries; detail lives in topics. The index is regenerated automatically on every knowledge write, and by `loom knowledge index`.
+
+**Reading protocol** — read the index first, then the tier-1 summary for the area you are working in, then only the tier-2 topics you actually touch. Loading the whole base defeats the point of tiering.
+
+**Writing protocol** — when a tier-1 section grows past roughly 40 lines, move its body into a topic with `loom knowledge update <category>/<slug>` and leave a 2-4 line summary plus a relative link behind. Write the link as `[Title](category/slug.md)` in a tier-1 file: that is the one form `loom knowledge audit` accepts for both its orphan check and its broken-link check.
+
+There is **no aggregate line budget** across the knowledge base — `loom knowledge audit` prints the total for information only. The limits that matter are per-file (`--max-file-lines`, default 250) and per-topic (`--max-topic-lines`, default 500), because structure is what degrades retrieval, not size.
+
+### Bootstrapping and maintenance
+
+| Command                    | Role                                                                                            |
+| -------------------------- | ----------------------------------------------------------------------------------------------- |
+| `loom map [--deep]`        | Static analysis pass — project type, dependencies, entry points, structure — with no agent cost |
+| `loom knowledge bootstrap` | Claude-driven exploration that populates the base (runs a deep `loom map` first by default)     |
+| `loom knowledge check`     | Coverage of `src/` by the knowledge base                                                        |
+| `loom knowledge audit`     | Structural rot: oversized sections, broken links, orphaned topics                               |
+| `loom knowledge gc`        | A Claude session that extracts oversized sections into topics and relinks them                  |
+| `loom knowledge index`     | Regenerate `INDEX.md` — always the last step after knowledge writes                             |
+
+Knowledge directories created before the hierarchy existed stay **flat** and keep working unchanged — nothing migrates them behind your back. `loom knowledge audit` will advise it, and `loom knowledge index` (structure only) or `loom knowledge gc` performs the opt-in upgrade.
+
+Knowledge writes are protected by the sandbox defaults: agents update knowledge through `loom knowledge ...`, never by editing the files directly.
+
+## Model Allocation
+
+Every stage's main agent is an **orchestrator**, and orchestration is never economized:
+
+| Stage type           | Default model | Default effort |
+| -------------------- | ------------- | -------------- |
+| `standard`           | `opus`        | `xhigh`        |
+| `knowledge`          | `opus`        | `xhigh`        |
+| `integration-verify` | `opus`        | `xhigh`        |
+| `knowledge-distill`  | `opus`        | `xhigh`        |
+
+The orchestrator decomposes the work, hands each subagent full context, then verifies and commits. It does not implement. Implementation is delegated to as few subagents as the work allows, each spawned **by agent type** so the model choice is explicit:
+
+| Agent                           | Model  | Use for                                                                    |
+| ------------------------------- | ------ | -------------------------------------------------------------------------- |
+| `loom-software-engineer`        | Sonnet | The common case: implementation to detailed instructions, tests, refactors |
+| `loom-senior-software-engineer` | Opus   | Architecture, complex debugging, security-sensitive or cross-cutting work  |
+| `loom-code-reviewer`            | Opus   | Read-only code, security, and architecture review                          |
+| `loom-advisor`                  | Fable  | Diagnosis after a repeated failure — advice returned, nothing written      |
+
+This is why savings come from delegation rather than downgrade: an untyped subagent silently inherits the stage's Opus model, making every worker expensive. Two failures on the same task should produce a `loom-advisor` diagnosis, not a blind retry at a larger model.
+
+Override per stage with `model` and `reasoning_effort` (`low`, `medium`, `high`, `xhigh`, `max`). `ultracode: true` licenses a stage for large multi-agent fan-out; it is per-stage opt-in so the cost decision stays explicit.
 
 ## Sandbox Configuration
 
