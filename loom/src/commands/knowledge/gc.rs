@@ -54,6 +54,7 @@ pub fn gc(model: Option<String>, dry_run: bool, quick: bool) -> Result<()> {
 
     // Sandbox: in dry-run, deny all writes.
     let settings_backup = super::spawn::write_knowledge_sandbox(&project_root, !dry_run)?;
+    super::spawn::arm_sandbox_restore(&project_root, settings_backup.clone());
 
     let mode_label = if dry_run { "dry-run" } else { "restructuring" };
     println!(
@@ -62,6 +63,17 @@ pub fn gc(model: Option<String>, dry_run: bool, quick: bool) -> Result<()> {
         mode_label
     );
     println!("  {} Model: {}", "→".cyan(), effective_model.cyan());
+    if quick {
+        // -p is Claude Code's print mode: it emits nothing until the whole turn
+        // finishes, so an unannounced multi-minute silence reads as a hang.
+        println!(
+            "  {} Headless (--quick): no output until the session finishes. \
+             Restructuring the knowledge base takes several minutes — drop \
+             {} to watch it work interactively.",
+            "→".cyan(),
+            "--quick".cyan()
+        );
+    }
 
     // Bash allowlist EXCLUDES `loom knowledge gc` to prevent recursion. The
     // non-dry-run branch adds `loom knowledge index` so the session can finish
@@ -77,10 +89,14 @@ pub fn gc(model: Option<String>, dry_run: bool, quick: bool) -> Result<()> {
          Bash(loom knowledge index*)"
     };
 
+    // Both prompts mandate an agent team, so the team tools must be allowed too —
+    // `Agent` alone only covers fire-and-forget subagents.
+    let team_allow = "Agent,TeamCreate,SendMessage,TaskCreate,TaskList,TaskUpdate,TaskGet";
+
     let tool_allow = if dry_run {
-        format!("Read,Glob,Grep,{},Agent", bash_allow)
+        format!("Read,Glob,Grep,{},{}", bash_allow, team_allow)
     } else {
-        format!("Read,Glob,Grep,Edit,Write,{},Agent", bash_allow)
+        format!("Read,Glob,Grep,Edit,Write,{},{}", bash_allow, team_allow)
     };
 
     let mut cmd = Command::new(&claude_path);

@@ -47,6 +47,7 @@ pub fn execute(model: Option<String>, skip_map: bool, quick: bool) -> Result<()>
 
     // Write sandbox settings to restrict Claude's access
     let settings_backup = super::spawn::write_knowledge_sandbox(&project_root, true)?;
+    super::spawn::arm_sandbox_restore(&project_root, settings_backup.clone());
 
     println!(
         "\n{} Spawning Claude session for knowledge exploration...\n",
