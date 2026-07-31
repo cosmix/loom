@@ -312,3 +312,43 @@ both forms render identically and the staleness check only looks for substrings.
 `generate_index`, and add a regression test asserting the generated index is markdownlint-clean.
 Until then, prefer the linted form: let the pre-commit hook be the last writer, and do not
 re-run `loom knowledge index` after committing unless topics actually changed.
+
+## Per-Stage Sandbox `Write(path)` Rules Are Inert (2026-07-31)
+
+Claude Code's file permission check consults **only** `Edit(path)` rules. A `Write(path)` rule
+parses, prints a startup warning, and is then ignored — so a `Write(**)` deny permits every write
+it was written to block. The warning is easy to miss because it scrolls past during session
+startup:
+
+```text
+Permission deny rule (.claude/settings.local.json): Write(**) is not matched by file
+permission checks — only Edit(path) rules are. Use Edit(**) instead.
+```
+
+`sandbox/settings.rs` builds the sandbox for **every worktree stage session** and emits `Write(...)`
+in both its allow and deny lists, so per-stage write restrictions likely do not enforce what they
+claim. The repo's own committed `.claude/settings.json` carries `Write(.work/**)` for the same
+reason and warns on every session start. The knowledge spawn path was fixed in
+`commands/knowledge/spawn.rs` (2026-07-31); `sandbox/settings.rs` was left alone deliberately —
+it means reworking the core stage sandbox model and updating many exact-string test assertions.
+
+**Detection:** grep for `Write(` in generated settings. Any rule meant to gate file access must be
+`Edit(...)`; `Edit` covers all file-editing tools, `Write` covers none of them.
+
+**Caution when fixing:** deny beats allow, so a blanket `Edit(**)` deny cannot be paired with a
+narrower `Edit(<dir>/**)` allow — the deny wins and blocks the directory the session needs. Scope
+blanket denies to read-only modes only.
+
+## GC Flags Tier-1 Files for Section Extraction With No Oversized Sections (2026-07-31)
+
+`analyze_gc_metrics` flags a tier-1 file whenever its **total** exceeds `DEFAULT_MAX_TIER1_LINES`
+(250), independently of whether any individual section exceeds the section threshold. All six
+tier-1 files here currently report `0 oversized sections` yet appear as extraction targets, and
+the GC system prompt's first instruction is "Extract oversized tier-1 sections into tier-2 topic
+files" — sections the analyzer itself says do not exist.
+
+The agent is left to invent a split with no guidance on where the seams are, which is exactly the
+condition under which a restructuring run drops content.
+
+**Fix:** when a file is over budget but has no oversized section, say so in the prompt and ask for
+a split proposal by topic cohesion instead of naming a section-extraction target that isn't there.
