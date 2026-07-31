@@ -35,8 +35,12 @@ pub(super) fn resolve_project_root() -> Result<PathBuf> {
 
 /// Write sandbox settings for a knowledge-scoped Claude session.
 ///
-/// When `allow_writes` is false (dry-run), Write is denied entirely.
+/// When `allow_writes` is false (dry-run), every file edit is denied.
 /// Returns original `.claude/settings.local.json` content for restoration.
+///
+/// Rules are expressed as `Edit(path)`, never `Write(path)`: Claude Code's file
+/// permission check only consults `Edit` rules, so a `Write(**)` deny parses
+/// cleanly, prints a warning, and permits every write it was meant to block.
 pub(super) fn write_knowledge_sandbox(
     project_root: &Path,
     allow_writes: bool,
@@ -56,15 +60,23 @@ pub(super) fn write_knowledge_sandbox(
     };
 
     let allow = if allow_writes {
-        serde_json::json!([
-            "Write(doc/loom/knowledge/**)",
-            "Edit(doc/loom/knowledge/**)",
-            "Bash(loom *)"
-        ])
+        serde_json::json!(["Edit(doc/loom/knowledge/**)", "Bash(loom *)"])
     } else {
         // Dry-run: no write/edit permission anywhere.
         serde_json::json!(["Bash(loom *)"])
     };
+
+    let mut deny = vec![
+        "Read(~/.ssh/**)",
+        "Read(~/.aws/**)",
+        "Read(~/.config/gcloud/**)",
+        "Read(~/.gnupg/**)",
+    ];
+    if !allow_writes {
+        // Deny takes precedence over allow, so this blanket rule is only safe in
+        // dry-run — in write mode it would also block the knowledge directory.
+        deny.push("Edit(**)");
+    }
 
     let settings = serde_json::json!({
         "sandbox": {
@@ -74,13 +86,7 @@ pub(super) fn write_knowledge_sandbox(
         },
         "permissions": {
             "allow": allow,
-            "deny": [
-                "Read(~/.ssh/**)",
-                "Read(~/.aws/**)",
-                "Read(~/.config/gcloud/**)",
-                "Read(~/.gnupg/**)",
-                "Write(**)"
-            ]
+            "deny": deny
         }
     });
 
@@ -89,6 +95,20 @@ pub(super) fn write_knowledge_sandbox(
     std::fs::write(&settings_path, content).context("Failed to write sandbox settings")?;
 
     Ok(backup)
+}
+
+/// Restore the caller's settings if loom is interrupted mid-session.
+///
+/// Ctrl-C reaches the whole foreground process group, so loom dies alongside the
+/// Claude session and never reaches its post-spawn restore — leaving the caller's
+/// `.claude/settings.local.json` permanently replaced by the sandbox stub.
+/// Registering here closes that window; the handler also covers SIGTERM.
+pub(super) fn arm_sandbox_restore(project_root: &Path, backup: Option<String>) {
+    let root = project_root.to_path_buf();
+    let _ = ctrlc::set_handler(move || {
+        let _ = restore_sandbox_settings(&root, backup.clone());
+        std::process::exit(130);
+    });
 }
 
 /// Restore original settings after a knowledge session completes.
@@ -105,3 +125,7 @@ pub(super) fn restore_sandbox_settings(project_root: &Path, backup: Option<Strin
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests_spawn.rs"]
+mod tests;
