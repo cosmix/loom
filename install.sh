@@ -272,16 +272,17 @@ confirm_overwrites() {
 	local found_other=()
 	[[ -d "$CODEX_DIR/skills/pressure" ]] && found_other+=("~/.codex/skills/pressure")
 
-	if [[ ${#found[@]} -eq 0 ]] && [[ ${#found_other[@]} -eq 0 ]]; then
+	# bash 3.2 (macOS) treats empty-array expansion as unbound under `set -u`
+	if [[ ${#found[@]-0} -eq 0 ]] && [[ ${#found_other[@]-0} -eq 0 ]]; then
 		return 0
 	fi
 
 	echo ""
 	warn "existing loom files may be updated:"
-	for item in "${found[@]}"; do
+	for item in ${found[@]+"${found[@]}"}; do
 		echo -e "     ${D}~/.claude/$item${N}"
 	done
-	for item in "${found_other[@]}"; do
+	for item in ${found_other[@]+"${found_other[@]}"}; do
 		echo -e "     ${D}$item${N}"
 	done
 	echo ""
@@ -557,7 +558,8 @@ cleanup_backups() {
 		backups+=("$file")
 	done < <(find "$CLAUDE_DIR" -maxdepth 2 -name "*.bak.${TIMESTAMP}" -print0 2>/dev/null)
 
-	if [[ ${#backups[@]} -eq 0 ]]; then
+	# bash 3.2 (macOS) treats empty-array expansion as unbound under `set -u`
+	if [[ ${#backups[@]-0} -eq 0 ]]; then
 		return 0
 	fi
 
