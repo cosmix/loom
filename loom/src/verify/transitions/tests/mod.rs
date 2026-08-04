@@ -10,6 +10,8 @@ fn create_test_stage(id: &str, name: &str, status: StageStatus) -> Stage {
 }
 
 #[cfg(test)]
+mod dependency_block_reasons;
+#[cfg(test)]
 mod dependency_satisfaction;
 #[cfg(test)]
 mod dependency_satisfaction_real_git;

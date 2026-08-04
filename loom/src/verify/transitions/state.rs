@@ -178,6 +178,123 @@ pub fn trigger_dependents(
 ///
 /// # Returns
 /// `true` if all dependencies are satisfied per the rules above, `false` otherwise.
+/// Why a stage cannot be scheduled, and whether waiting will fix it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DependencyBlock {
+    /// The dependency that is holding the stage back (the first one found).
+    pub dependency: String,
+    /// Human-readable explanation, e.g. "Completed but not merged".
+    pub detail: String,
+    /// `true` when the orchestrator will resolve this on its own (a dep still
+    /// running, or completed and awaiting auto-merge). `false` when it needs a
+    /// human — the stage will otherwise sit Queued indefinitely, which is
+    /// exactly the situation that reads as a hang.
+    pub self_resolving: bool,
+}
+
+/// Explain why `stage`'s dependencies are not satisfied.
+///
+/// Returns `None` when they *are* satisfied. This is the diagnostic twin of
+/// [`are_all_dependencies_satisfied`]: same predicate, but it reports the
+/// first blocking dependency instead of a bare `false`. Callers run it only on
+/// the cold path (after the boolean check already said "no"), so the extra
+/// stage-file reads cost nothing in the common case.
+pub fn describe_dependency_block(
+    stage: &Stage,
+    work_dir: &Path,
+    repo_root: &Path,
+    target_branch: &str,
+) -> Result<Option<DependencyBlock>> {
+    for dep_id in &stage.dependencies {
+        let dep_stage = match load_stage(dep_id, work_dir) {
+            Ok(s) => s,
+            Err(e) => {
+                return Ok(Some(DependencyBlock {
+                    dependency: dep_id.clone(),
+                    detail: format!("stage file could not be read ({e})"),
+                    self_resolving: false,
+                }));
+            }
+        };
+
+        // Statuses the orchestrator moves through on its own vs. those that
+        // stay put until someone intervenes. Getting this split right is the
+        // whole point: "waiting for a merge" and "blocked forever behind a
+        // skipped dependency" look identical from the outside otherwise.
+        let (detail, self_resolving) = match dep_stage.status {
+            StageStatus::Completed => {
+                if !dep_stage.merged {
+                    ("Completed but not merged yet".to_string(), true)
+                } else if dep_stage.stage_type == StageType::Knowledge {
+                    continue; // Satisfied: knowledge stages skip the ancestry check.
+                } else {
+                    match dep_stage.completed_commit {
+                        None => (
+                            "marked merged but has no completed_commit, so the merge \
+                             cannot be verified"
+                                .to_string(),
+                            false,
+                        ),
+                        Some(ref commit) => {
+                            match is_ancestor_of(commit, target_branch, repo_root) {
+                                Ok(true) => continue, // Satisfied.
+                                Ok(false) => (
+                                    format!(
+                                        "marked merged but commit {} is not in {} \
+                                         (phantom merge)",
+                                        &commit[..commit.len().min(8)],
+                                        target_branch
+                                    ),
+                                    false,
+                                ),
+                                Err(e) => (format!("merge ancestry check failed ({e})"), false),
+                            }
+                        }
+                    }
+                }
+            }
+            StageStatus::WaitingForDeps
+            | StageStatus::Queued
+            | StageStatus::Executing
+            | StageStatus::NeedsHandoff
+            | StageStatus::WaitingForInput => (format!("still {:?}", dep_stage.status), true),
+            // A resolver session may already be running for these, so the
+            // daemon can still clear them without help — but often will not.
+            StageStatus::MergeConflict | StageStatus::MergeBlocked => (
+                format!("{:?} — needs merge resolution", dep_stage.status),
+                false,
+            ),
+            StageStatus::Blocked | StageStatus::CompletedWithFailures => (
+                format!(
+                    "{:?} — retry or fix it to unblock this stage",
+                    dep_stage.status
+                ),
+                false,
+            ),
+            StageStatus::NeedsHumanReview | StageStatus::NeedsAdjudication => (
+                format!("{:?} — awaiting a verdict", dep_stage.status),
+                false,
+            ),
+            // A skipped stage never becomes Completed+merged, so nothing
+            // downstream of it can ever run. Say so plainly.
+            StageStatus::Skipped => (
+                "Skipped — dependents can never become ready; skip them too or \
+                 re-run the dependency"
+                    .to_string(),
+                false,
+            ),
+        };
+
+        return Ok(Some(DependencyBlock {
+            dependency: dep_id.clone(),
+            detail,
+            self_resolving,
+        }));
+    }
+
+    Ok(None)
+}
+
 pub fn are_all_dependencies_satisfied(
     stage: &Stage,
     work_dir: &Path,
