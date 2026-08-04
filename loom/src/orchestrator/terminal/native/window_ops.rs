@@ -5,7 +5,45 @@
 #[cfg(target_os = "macos")]
 use crate::orchestrator::terminal::emulator::{escape_applescript_string, TerminalEmulator};
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-use std::process::Command;
+use std::process::{Command, Output};
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use std::time::Duration;
+
+/// Wall-clock bound for a single window-management command.
+///
+/// These are interactive-speed operations — a window manager or terminal app
+/// that has not answered in five seconds is not going to. The bound matters
+/// because every one of these calls runs on the orchestrator's single poll
+/// thread during session teardown: an unbounded call there stops all
+/// orchestration, not just the teardown. See [`crate::process::run_bounded`].
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+const WINDOW_OP_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Run a window-management command under [`WINDOW_OP_TIMEOUT`].
+///
+/// Returns `None` when the command could not be spawned or outlived the
+/// deadline. Both are logged: a window that would not close is the difference
+/// between a tidy teardown and an orphaned agent process, so it must not pass
+/// silently.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn bounded_window_command(command: &mut Command, description: &str) -> Option<Output> {
+    match crate::process::run_bounded(command, WINDOW_OP_TIMEOUT) {
+        Ok(crate::process::BoundedOutput::Completed(output)) => Some(output),
+        Ok(crate::process::BoundedOutput::TimedOut) => {
+            tracing::warn!(
+                command = %description,
+                timeout_secs = WINDOW_OP_TIMEOUT.as_secs(),
+                "Window command exceeded its deadline and was killed; \
+                 falling back to PID-based teardown"
+            );
+            None
+        }
+        Err(e) => {
+            tracing::warn!(command = %description, error = %e, "Window command failed to run");
+            None
+        }
+    }
+}
 
 /// Close a window by its title using wmctrl or xdotool (Linux).
 ///
@@ -20,9 +58,10 @@ pub fn close_window_by_title(title: &str) -> bool {
     if which::which("wmctrl").is_ok() {
         // `-F` makes `-c` match the FULL window name exactly (not a substring),
         // so closing `loom-auth` never closes `loom-auth-tests`.
-        let output = Command::new("wmctrl").args(["-F", "-c", title]).output();
+        let mut command = Command::new("wmctrl");
+        command.args(["-F", "-c", title]);
 
-        if let Ok(out) = output {
+        if let Some(out) = bounded_window_command(&mut command, "wmctrl -c") {
             if out.status.success() {
                 return true;
             }
@@ -35,11 +74,10 @@ pub fn close_window_by_title(title: &str) -> bool {
         // only the exact title matches (`^loom-auth$` won't match
         // `loom-auth-tests`). The title is regex-escaped first.
         let anchored = format!("^{}$", regex_escape(title));
-        let search_output = Command::new("xdotool")
-            .args(["search", "--name", &anchored])
-            .output();
+        let mut search = Command::new("xdotool");
+        search.args(["search", "--name", &anchored]);
 
-        if let Ok(out) = search_output {
+        if let Some(out) = bounded_window_command(&mut search, "xdotool search") {
             if out.status.success() {
                 let stdout = String::from_utf8_lossy(&out.stdout);
                 // xdotool returns one window ID per line
@@ -47,11 +85,10 @@ pub fn close_window_by_title(title: &str) -> bool {
                     let window_id = window_id.trim();
                     if !window_id.is_empty() {
                         // Send close request to the window
-                        let close_result = Command::new("xdotool")
-                            .args(["windowclose", window_id])
-                            .output();
+                        let mut close = Command::new("xdotool");
+                        close.args(["windowclose", window_id]);
 
-                        if close_result.is_ok() {
+                        if bounded_window_command(&mut close, "xdotool windowclose").is_some() {
                             return true;
                         }
                     }
@@ -84,20 +121,20 @@ fn regex_escape(s: &str) -> String {
     out
 }
 
-/// Helper function to execute AppleScript and return a boolean result
+/// Helper function to execute AppleScript and return a boolean result.
+///
+/// Bounded by [`WINDOW_OP_TIMEOUT`]. `osascript` sends an Apple Event and will
+/// wait forever on the receiving app: a first-run TCC Automation prompt (which
+/// a detached daemon cannot surface), a "close window with running processes?"
+/// modal, or a wedged terminal all park the call indefinitely. Unbounded, that
+/// freezes the orchestrator's poll loop.
 #[cfg(target_os = "macos")]
 fn execute_applescript_bool(script: &str) -> bool {
-    Command::new("osascript")
-        .arg("-e")
-        .arg(script)
-        .output()
-        .map(|out| {
-            if out.status.success() {
-                String::from_utf8_lossy(&out.stdout).trim() == "true"
-            } else {
-                false
-            }
-        })
+    let mut command = Command::new("osascript");
+    command.arg("-e").arg(script);
+
+    bounded_window_command(&mut command, "osascript")
+        .map(|out| out.status.success() && String::from_utf8_lossy(&out.stdout).trim() == "true")
         .unwrap_or(false)
 }
 
@@ -264,9 +301,10 @@ pub fn window_exists_by_title(title: &str) -> bool {
         // The title is everything after the first three whitespace-separated
         // columns; compare it EXACTLY so `loom-auth` doesn't match
         // `loom-auth-tests`.
-        let output = Command::new("wmctrl").arg("-l").output();
+        let mut command = Command::new("wmctrl");
+        command.arg("-l");
 
-        if let Ok(out) = output {
+        if let Some(out) = bounded_window_command(&mut command, "wmctrl -l") {
             if out.status.success() {
                 let stdout = String::from_utf8_lossy(&out.stdout);
                 for line in stdout.lines() {
@@ -284,11 +322,10 @@ pub fn window_exists_by_title(title: &str) -> bool {
     if which::which("xdotool").is_ok() {
         // Anchor the regex so only the exact title matches.
         let anchored = format!("^{}$", regex_escape(title));
-        let search_output = Command::new("xdotool")
-            .args(["search", "--name", &anchored])
-            .output();
+        let mut search = Command::new("xdotool");
+        search.args(["search", "--name", &anchored]);
 
-        if let Ok(out) = search_output {
+        if let Some(out) = bounded_window_command(&mut search, "xdotool search") {
             if out.status.success() {
                 let stdout = String::from_utf8_lossy(&out.stdout);
                 // xdotool returns one window ID per line

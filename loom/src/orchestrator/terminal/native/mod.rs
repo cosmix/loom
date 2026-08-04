@@ -8,11 +8,10 @@ mod pid_tracking;
 mod spawner;
 mod window_ops;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use shell_escape::escape;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use crate::claude::find_claude_path;
 use crate::models::session::{Session, SessionType};
@@ -418,20 +417,12 @@ impl NativeBackend {
         };
 
         if let Some(pid) = pid_to_kill {
-            // Send SIGTERM to the process
-            let output = Command::new("kill")
-                .arg("-TERM")
-                .arg(pid.to_string())
-                .output()
-                .context("Failed to kill session process")?;
-
-            if !output.status.success() {
-                // Process might already be dead, which is fine
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                if !stderr.contains("No such process") {
-                    bail!("Failed to kill process {pid}: {stderr}");
-                }
-            }
+            // Signal directly rather than shelling out to `kill(1)`: a syscall
+            // cannot block, whereas a fork+exec on the orchestrator's poll
+            // thread is one more way for teardown to stall scheduling.
+            // A process that is already gone is a success, not a failure.
+            crate::process::terminate(pid)
+                .with_context(|| format!("Failed to terminate session process {pid}"))?;
         }
 
         // Clean up tracking files regardless of whether a process was signaled.
