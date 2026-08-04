@@ -13,6 +13,7 @@ use crate::commands::status::ui::theme::{StatusColors, Theme};
 use crate::commands::status::ui::tree_widget::TreeWidget;
 use crate::daemon::{CompletionSummary, StageInfo};
 use crate::models::stage::Stage;
+use crate::orchestrator::scheduling_report::{Alert, Severity};
 use crate::utils::format_elapsed;
 
 /// Render compact header with logo and inline progress.
@@ -49,6 +50,38 @@ pub fn render_compact_header(
 
     let header = Paragraph::new(lines);
     frame.render_widget(header, area);
+}
+
+/// Render the scheduler alert band (loop stalls, stages queued too long).
+///
+/// Sits directly under the header so a stalled scheduler is the first thing
+/// read. Renders nothing when there is nothing wrong, leaving the row to act
+/// as the spacer it replaced.
+pub fn render_scheduler_alerts(frame: &mut Frame, area: Rect, alerts: &[Alert]) {
+    if alerts.is_empty() {
+        return;
+    }
+
+    let lines: Vec<Line> = alerts
+        .iter()
+        .map(|alert| {
+            let (marker, color) = match alert.severity {
+                Severity::Critical => ("\u{2716} ", StatusColors::BLOCKED),
+                Severity::Warning => ("! ", StatusColors::PENDING),
+                Severity::Info => ("\u{00b7} ", StatusColors::EXECUTING),
+            };
+            let style = match alert.severity {
+                Severity::Critical => Style::default().fg(color).add_modifier(Modifier::BOLD),
+                _ => Style::default().fg(color),
+            };
+            Line::from(vec![
+                Span::styled(format!("   {marker}"), style),
+                Span::styled(alert.text.clone(), style),
+            ])
+        })
+        .collect();
+
+    frame.render_widget(Paragraph::new(lines), area);
 }
 
 /// Create a compact progress bar string.

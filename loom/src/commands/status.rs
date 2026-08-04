@@ -11,9 +11,25 @@ use crate::fs::work_dir::WorkDir;
 use anyhow::Result;
 use colored::Colorize;
 
+use crate::orchestrator::scheduling_report::{self, Alert, Severity};
 use diagnostics::{check_directory_structure, check_parsing_errors};
 use display::count_files;
 use validation::{validate_markdown_files, validate_references};
+
+/// Print the scheduler alerts (loop stalls, stages queued too long).
+///
+/// Shares [`scheduling_report::alerts`] with the live TUI so the two dashboards
+/// cannot disagree about what counts as stuck.
+fn print_scheduler_alerts(alerts: &[Alert]) {
+    for alert in alerts {
+        let (marker, text) = match alert.severity {
+            Severity::Critical => ("✖".red(), alert.text.as_str().red()),
+            Severity::Warning => ("!".yellow(), alert.text.as_str().yellow()),
+            Severity::Info => ("·".dimmed(), alert.text.as_str().dimmed()),
+        };
+        println!("   {marker} {text}");
+    }
+}
 
 /// Show the status dashboard with context health
 pub fn execute(live: bool, compact: bool, verbose: bool) -> Result<()> {
@@ -78,7 +94,27 @@ fn execute_static(work_dir: &WorkDir, verbose: bool) -> Result<()> {
     // run together visually. ProcessOnly is surfaced distinctly (A-16): the
     // daemon process is alive but the IPC socket is missing/unreachable, so the
     // operator gets an actionable hint instead of a misleading "stopped".
+    // A live socket only proves the daemon's server thread is up. The
+    // orchestrator loop runs on a separate thread and can stop turning (a
+    // wedged subprocess during teardown, a hung git call) while the socket
+    // keeps answering — stages then sit Queued indefinitely and "daemon
+    // running" actively misleads. Alerts report the loop and the scheduler
+    // separately from the socket.
+    let alerts = scheduling_report::alerts(
+        work_dir.root(),
+        matches!(daemon_status, DaemonStatus::Running),
+    );
+    let loop_stalled = alerts.iter().any(|a| a.severity == Severity::Critical);
+
     match daemon_status {
+        DaemonStatus::Running if loop_stalled => {
+            println!(
+                "   {} {}        {}",
+                "●".red(),
+                "daemon running, orchestrator loop stalled".red(),
+                "see below".dimmed()
+            );
+        }
         DaemonStatus::Running => {
             println!(
                 "   {} {}        {}",
@@ -104,6 +140,7 @@ fn execute_static(work_dir: &WorkDir, verbose: bool) -> Result<()> {
             );
         }
     }
+    print_scheduler_alerts(&alerts);
     println!();
 
     // Progress bar with stage counts.

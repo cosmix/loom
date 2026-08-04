@@ -23,7 +23,7 @@ use super::daemon_client::{connect, is_socket_disconnected, subscribe};
 use super::event_handler::{handle_key_event, handle_mouse_event, KeyEventResult};
 use super::renderer::{
     render_activity_log, render_compact_footer, render_compact_header, render_completion,
-    render_tree_graph, stage_info_to_stage,
+    render_scheduler_alerts, render_tree_graph, stage_info_to_stage,
 };
 use super::state::{GraphState, LiveStatus, TuiActivityLog};
 use crate::commands::status::render::print_completion_summary;
@@ -31,6 +31,7 @@ use crate::daemon::{
     read_auth_token, read_message, write_message, CompletionSummary, Request, Response,
 };
 use crate::fs::work_dir::load_config;
+use crate::orchestrator::scheduling_report::{self, Alert};
 use crate::plan::parser::extract_plan_name;
 
 /// Poll timeout for event loop (100ms for responsive UI).
@@ -44,6 +45,15 @@ const ACTIVITY_MIN_HEIGHT: u16 = 5;
 
 /// Maximum height for the activity log area.
 const ACTIVITY_MAX_HEIGHT: u16 = 10;
+
+/// Maximum rows the scheduler alert band may occupy.
+///
+/// Bounded so a plan with many blocked stages cannot crowd out the graph; the
+/// static `loom status` prints the full list.
+const ALERT_MAX_HEIGHT: u16 = 4;
+
+/// How often the alert files are re-read from `.work/`.
+const ALERT_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 
 /// TUI application state.
 pub struct TuiApp {
@@ -63,6 +73,16 @@ pub struct TuiApp {
     cleaned_up: bool,
     /// Extracted plan name from the plan file.
     plan_name: Option<String>,
+    /// Scheduler alerts (loop stall, stages queued too long).
+    ///
+    /// Read from `.work/` rather than from the daemon socket on purpose: the
+    /// condition being reported may be a daemon whose scheduler thread has
+    /// stopped, and its broadcaster would happily keep sending the last
+    /// healthy-looking snapshot. A detector that depends on the component it
+    /// is watching is not a detector.
+    alerts: Vec<Alert>,
+    /// When the alert files were last read, for throttling.
+    alerts_refreshed_at: Option<Instant>,
 }
 
 impl TuiApp {
@@ -97,6 +117,8 @@ impl TuiApp {
             completion_received_at: None,
             cleaned_up: false,
             plan_name,
+            alerts: Vec::new(),
+            alerts_refreshed_at: None,
         })
     }
 
@@ -136,7 +158,7 @@ impl TuiApp {
         })
         .context("Failed to set Ctrl+C handler")?;
 
-        let result = self.run_event_loop(&mut stream);
+        let result = self.run_event_loop(&mut stream, work_path);
 
         let token = read_auth_token(std::path::Path::new(".work")).unwrap_or_default();
         let _ = write_message(&mut stream, &Request::Unsubscribe { auth_token: token });
@@ -153,9 +175,29 @@ impl TuiApp {
         result
     }
 
+    /// Refresh scheduler alerts from `.work/`, at most once per second.
+    ///
+    /// The event loop spins every ~50ms; the alert files change at the
+    /// orchestrator's 5s poll rate, so re-reading them per frame would be
+    /// twenty times the I/O for the same answer.
+    fn refresh_alerts(&mut self, work_path: &Path) {
+        let due = self
+            .alerts_refreshed_at
+            .is_none_or(|at| at.elapsed() >= ALERT_REFRESH_INTERVAL);
+        if !due {
+            return;
+        }
+
+        // The TUI only runs against a live daemon, so the stall check applies.
+        self.alerts = scheduling_report::alerts(work_path, true);
+        self.alerts_refreshed_at = Some(Instant::now());
+    }
+
     /// Main event loop - returns on quit or daemon disconnect.
-    fn run_event_loop(&mut self, stream: &mut UnixStream) -> Result<()> {
+    fn run_event_loop(&mut self, stream: &mut UnixStream, work_path: &Path) -> Result<()> {
         while self.running.load(Ordering::SeqCst) {
+            self.refresh_alerts(work_path);
+
             if self.exiting {
                 self.last_error = Some("Exiting...".to_string());
                 self.render()?;
@@ -303,6 +345,11 @@ impl TuiApp {
         let activity_log = &self.activity_log;
         let plan_name = self.plan_name.as_deref();
 
+        // The alert band replaces the header spacer: one line when quiet, one
+        // line per alert (capped) when the scheduler has something to say.
+        let alerts = &self.alerts;
+        let alert_height = (alerts.len() as u16).clamp(1, ALERT_MAX_HEIGHT);
+
         self.terminal.draw(|frame| {
             let area = frame.area();
 
@@ -310,13 +357,15 @@ impl TuiApp {
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Length(5),               // Header (logo + progress)
-                    Constraint::Length(1),               // Spacer
+                    Constraint::Length(alert_height),    // Scheduler alerts / spacer
                     Constraint::Min(6),                  // Graph (adaptive, takes remaining)
                     Constraint::Length(1),               // Spacer
                     Constraint::Length(activity_height), // Activity log
                     Constraint::Length(1),               // Footer
                 ])
                 .split(area);
+
+            render_scheduler_alerts(frame, chunks[1], alerts);
 
             render_compact_header(
                 frame,
