@@ -8,10 +8,12 @@ pub mod monitor;
 pub mod notify;
 pub mod progressive_merge;
 pub mod retry;
+pub mod scheduling_report;
 pub mod signals;
 pub mod skip;
 pub mod spawner;
 pub mod terminal;
+pub mod tick;
 
 pub use auto_merge::{attempt_auto_merge, is_auto_merge_enabled, AutoMergeResult};
 pub use continuation::{
