@@ -15,6 +15,7 @@ use crate::models::stage::StageStatus;
 use crate::models::worktree::Worktree;
 use crate::orchestrator::adjudication::AdjudicatorRegistry;
 use crate::orchestrator::monitor::{Monitor, MonitorConfig};
+use crate::orchestrator::tick;
 use crate::plan::schema::SandboxConfig;
 use crate::plan::ExecutionGraph;
 use crate::skills::SkillIndex;
@@ -118,6 +119,18 @@ pub struct Orchestrator {
     /// Adjudicator registry — owns worker threads + completion channel.
     /// Disabled (workers never spawn) when `ANTHROPIC_API_KEY` is unset.
     pub(super) adjudicators: AdjudicatorRegistry,
+    /// Why each ready-but-unstarted stage did not spawn on the current tick.
+    ///
+    /// `start_stage` records its decline reason here and clears the entry when
+    /// the stage does spawn; `start_ready_stages` serialises the map to
+    /// `.work/scheduling.json` at the end of every pass. Populated fresh each
+    /// tick, so it never reports a reason that has since gone away.
+    pub(super) spawn_blocks: HashMap<String, crate::orchestrator::scheduling_report::BlockReason>,
+    /// When each stage was first seen ready-but-unstarted, for "queued for X".
+    ///
+    /// In-memory only: a daemon restart is a fresh scheduling attempt, so
+    /// resetting the clock is the honest reading.
+    pub(super) queued_since: HashMap<String, DateTime<Utc>>,
 }
 
 impl Orchestrator {
@@ -193,6 +206,8 @@ impl Orchestrator {
             verified_merged: HashSet::new(),
             spawn_skip_logged: HashSet::new(),
             adjudicators,
+            spawn_blocks: HashMap::new(),
+            queued_since: HashMap::new(),
         })
     }
 
@@ -295,6 +310,13 @@ impl Orchestrator {
                 }
             }
 
+            // Stamp loop liveness. The daemon's socket thread answers `loom
+            // status` independently of this loop, so without a tick a frozen
+            // scheduler is indistinguishable from a healthy idle one — stages
+            // simply stay Queued forever. The phase is recorded per section so
+            // a stall report names where it stopped.
+            tick::record(&self.config.work_dir, tick::Phase::Sync);
+
             // Reconcile main-repo active merge BEFORE sync each iteration.
             // This catches `--no-verify --force-unsafe` produced phantom
             // merges and any state-divergence that a manual git operation
@@ -327,6 +349,8 @@ impl Orchestrator {
                 .context("Failed to spawn merge resolution sessions")?;
             total_sessions_spawned += merge_sessions_spawned;
 
+            tick::record(&self.config.work_dir, tick::Phase::Spawning);
+
             let started = self
                 .start_ready_stages()
                 .context("Failed to start ready stages")?;
@@ -345,6 +369,8 @@ impl Orchestrator {
                 // Collect stage IDs BEFORE handle_events() to avoid missing completed stages
                 // that get removed from active_sessions during event handling
                 let stage_ids: Vec<String> = self.active_sessions.keys().cloned().collect();
+
+                tick::record(&self.config.work_dir, tick::Phase::Events);
 
                 let events = self
                     .monitor
@@ -417,6 +443,8 @@ impl Orchestrator {
                 }
             }
 
+            tick::record(&self.config.work_dir, tick::Phase::Idle);
+
             // Use shorter sleep intervals to check shutdown flag more frequently
             let poll_interval = self.config.poll_interval;
             let check_interval = Duration::from_millis(100);
@@ -440,6 +468,12 @@ impl Orchestrator {
         // the next daemon run for up to INFLIGHT_TIMEOUT_SECS, blocking
         // re-spawn of the same dispute.
         self.shutdown_adjudicators(Instant::now() + Duration::from_secs(5));
+
+        // The loop is done turning; drop the tick and the scheduling report so
+        // a later `loom status` cannot read a stopped daemon's last state as a
+        // live stall or a live block.
+        tick::clear(&self.config.work_dir);
+        crate::orchestrator::scheduling_report::clear(&self.config.work_dir);
 
         // Restore terminal state before returning (clears \r-based status line)
         cleanup_terminal();

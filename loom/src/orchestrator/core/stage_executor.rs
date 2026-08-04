@@ -11,12 +11,39 @@ use crate::hooks::{find_hooks_dir, setup_hooks_for_worktree, HooksConfig};
 use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus, StageType};
+use crate::orchestrator::scheduling_report::{self, BlockReason, BlockedStage, SchedulingReport};
 use crate::orchestrator::signals::{
     generate_knowledge_signal, generate_signal_with_skills, DependencyStatus,
 };
 
 use super::persistence::Persistence;
 use super::Orchestrator;
+
+impl Orchestrator {
+    /// Publish the current tick's "why isn't this stage running" snapshot to
+    /// `.work/scheduling.json` for the dashboards to read.
+    ///
+    /// Written every pass, including when nothing is blocked — an empty report
+    /// is the signal that the previous complaint has cleared.
+    fn publish_scheduling_report(&self) {
+        let mut blocked: Vec<BlockedStage> = self
+            .spawn_blocks
+            .iter()
+            .filter_map(|(stage_id, reason)| {
+                Some(BlockedStage {
+                    stage_id: stage_id.clone(),
+                    queued_since: *self.queued_since.get(stage_id)?,
+                    reason: reason.clone(),
+                })
+            })
+            .collect();
+
+        // Stable order so the dashboards do not reshuffle between frames.
+        blocked.sort_by(|a, b| a.stage_id.cmp(&b.stage_id));
+
+        scheduling_report::write(&self.config.work_dir, &SchedulingReport { blocked });
+    }
+}
 
 /// Trait for stage execution operations
 pub(super) trait StageExecutor: Persistence {
@@ -32,25 +59,64 @@ pub(super) trait StageExecutor: Persistence {
 
 impl StageExecutor for Orchestrator {
     fn start_ready_stages(&mut self) -> Result<usize> {
-        let ready_stages = self.graph.ready_stages();
-        let available_slots = self
-            .config
-            .max_parallel_sessions
-            .saturating_sub(self.active_sessions.len());
+        let running = self.active_sessions.len();
+        let available_slots = self.config.max_parallel_sessions.saturating_sub(running);
 
-        // Collect stage IDs first to avoid borrow checker issues
-        let stage_ids: Vec<String> = ready_stages
+        // Every ready stage, in scheduling order — not just the ones that fit
+        // in the available slots. The overflow is what the concurrency-limit
+        // reason is built from, and it was previously invisible: `.take()`
+        // silently dropped it, so a stage held back by a busy slot looked
+        // exactly like a stage held back by a broken dependency.
+        let ready_ids: Vec<String> = self
+            .graph
+            .ready_stages()
             .iter()
-            .take(available_slots)
             .map(|node| node.id.clone())
             .collect();
 
-        let mut started = 0;
-        for stage_id in stage_ids {
-            self.start_stage(&stage_id)
-                .with_context(|| format!("Failed to start stage: {stage_id}"))?;
-            started += 1;
+        // Start a fresh pass: reasons are re-derived every tick so a cleared
+        // condition disappears from the report immediately.
+        self.spawn_blocks.clear();
+        let now = Utc::now();
+        for stage_id in &ready_ids {
+            self.queued_since.entry(stage_id.clone()).or_insert(now);
         }
+
+        let (schedulable, overflow) = ready_ids.split_at(available_slots.min(ready_ids.len()));
+
+        for stage_id in overflow {
+            self.spawn_blocks.insert(
+                stage_id.clone(),
+                BlockReason::ConcurrencyLimit {
+                    running,
+                    max: self.config.max_parallel_sessions,
+                },
+            );
+        }
+
+        let mut started = 0;
+        for stage_id in schedulable {
+            let before = self.active_sessions.len();
+            self.start_stage(stage_id)
+                .with_context(|| format!("Failed to start stage: {stage_id}"))?;
+
+            // `start_stage` returns Ok(()) whether it spawned or declined, so
+            // the session count is what distinguishes the two. Knowledge
+            // stages register a session too, so this holds for every path that
+            // actually launched an agent.
+            if self.active_sessions.len() > before {
+                started += 1;
+                self.queued_since.remove(stage_id.as_str());
+                self.spawn_blocks.remove(stage_id.as_str());
+            }
+        }
+
+        // Drop bookkeeping for stages that are no longer ready (started,
+        // completed, blocked, or re-parked) so "queued for X" never counts
+        // time from a previous life.
+        self.queued_since.retain(|id, _| ready_ids.contains(id));
+
+        self.publish_scheduling_report();
 
         Ok(started)
     }
@@ -68,6 +134,8 @@ impl StageExecutor for Orchestrator {
 
         // Skip if stage is held
         if stage.held {
+            self.spawn_blocks
+                .insert(stage_id.to_string(), BlockReason::Held);
             return Ok(());
         }
 
@@ -97,12 +165,39 @@ impl StageExecutor for Orchestrator {
         ) {
             Ok(true) => {}
             Ok(false) => {
+                // Cold path only: name the offending dependency so the report
+                // can say "waiting on X because Y" instead of a bare refusal.
+                let reason = match crate::verify::transitions::describe_dependency_block(
+                    &stage,
+                    &self.config.work_dir,
+                    &self.config.repo_root,
+                    &target_branch,
+                ) {
+                    Ok(Some(block)) => BlockReason::Dependency {
+                        dependency: block.dependency,
+                        detail: block.detail,
+                        self_resolving: block.self_resolving,
+                    },
+                    // The two checks disagreed (a stage file changed between
+                    // them). Report it plainly rather than inventing a cause.
+                    Ok(None) => BlockReason::DependencyCheckFailed {
+                        detail: "dependencies reported unsatisfied but no blocking \
+                                 dependency was found; state changed mid-check"
+                            .to_string(),
+                    },
+                    Err(e) => BlockReason::DependencyCheckFailed {
+                        detail: format!("{e}"),
+                    },
+                };
+
                 if self.spawn_skip_logged.insert(stage_id.to_string()) {
                     tracing::error!(
                         stage_id = %stage_id,
+                        reason = %reason.describe(),
                         "Refusing to spawn: dependencies not truly satisfied (likely phantom merge in deps). Run `loom repair` to investigate."
                     );
                 }
+                self.spawn_blocks.insert(stage_id.to_string(), reason);
                 return Ok(());
             }
             Err(e) => {
@@ -113,6 +208,12 @@ impl StageExecutor for Orchestrator {
                         "Refusing to spawn: dependency satisfaction check errored"
                     );
                 }
+                self.spawn_blocks.insert(
+                    stage_id.to_string(),
+                    BlockReason::DependencyCheckFailed {
+                        detail: format!("{e}"),
+                    },
+                );
                 return Ok(());
             }
         }
@@ -182,7 +283,22 @@ impl StageExecutor for Orchestrator {
             }
             Err(BaseBranchError::SchedulingNotReady(msg)) => {
                 // Transient — skip this cycle, retry on the next poll.
-                eprintln!("Stage '{stage_id}' skipped due to scheduling error (will retry): {msg}");
+                //
+                // Logged once per stage per daemon run: this fires on every
+                // 5-second poll for as long as the condition holds, and an
+                // unbounded print here buries the log (and the operator) under
+                // thousands of identical lines while the stage sits Queued.
+                if self.spawn_skip_logged.insert(stage_id.to_string()) {
+                    tracing::warn!(
+                        stage_id = %stage_id,
+                        reason = %msg,
+                        "Stage skipped due to scheduling error; will retry each poll"
+                    );
+                }
+                self.spawn_blocks.insert(
+                    stage_id.to_string(),
+                    BlockReason::SchedulingNotReady { detail: msg },
+                );
                 return Ok(());
             }
             Err(BaseBranchError::Other(e)) => {
