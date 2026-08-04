@@ -217,7 +217,16 @@ impl ExecutionGraph {
     /// Mark a stage as queued for execution.
     ///
     /// Used to reset orphaned/blocked stages back to queued state.
-    /// Only succeeds if all dependencies are completed.
+    /// Only succeeds if all dependencies are completed AND merged.
+    ///
+    /// The `merged` requirement matches [`scheduling::update_ready_status`]
+    /// exactly, and must stay matched. When it did not, a stage file that said
+    /// `Queued` (written out-of-process by `loom stage complete`'s
+    /// `trigger_dependents`) could push a node into `Queued` here while a
+    /// dependency was still unmerged in the graph. The node then appeared in
+    /// `ready_stages()` every tick, and `resolve_base_branch` refused it every
+    /// tick as a scheduling error — a stage stuck in `Queued` forever with no
+    /// state change to explain it.
     pub fn mark_queued(&mut self, stage_id: &str) -> Result<()> {
         // First check dependencies
         let deps = {
@@ -228,7 +237,7 @@ impl ExecutionGraph {
             node.dependencies.clone()
         };
 
-        // Verify all dependencies are completed
+        // Verify all dependencies are completed and merged
         for dep in &deps {
             if let Some(dep_node) = self.nodes.get(dep) {
                 if dep_node.status != StageStatus::Completed {
@@ -237,6 +246,13 @@ impl ExecutionGraph {
                         stage_id,
                         dep,
                         dep_node.status
+                    );
+                }
+                if !dep_node.merged {
+                    bail!(
+                        "Cannot mark '{}' as ready: dependency '{}' is Completed but not merged",
+                        stage_id,
+                        dep
                     );
                 }
             }

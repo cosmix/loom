@@ -450,6 +450,35 @@ impl Recovery for Orchestrator {
                                 stage.id,
                                 e
                             );
+
+                            // The file says Queued but the graph disagrees —
+                            // dependencies are not satisfied here yet. Park the
+                            // node at WaitingForDeps so `update_ready_status`
+                            // can promote it once they are.
+                            //
+                            // Without this the node keeps whatever status it
+                            // held (NeedsHandoff after a handoff re-queue,
+                            // Blocked after a crash), and `update_ready_status`
+                            // only ever promotes from WaitingForDeps — so the
+                            // graph and the file disagree forever and the stage
+                            // never runs, which is the exact shape of the bug
+                            // this sync is meant to repair.
+                            let needs_reset = self
+                                .graph
+                                .get_node(&stage.id)
+                                .is_some_and(|n| n.status != StageStatus::WaitingForDeps);
+                            if needs_reset {
+                                if let Err(e) = self
+                                    .graph
+                                    .force_status(&stage.id, StageStatus::WaitingForDeps)
+                                {
+                                    tracing::warn!(
+                                        stage_id = %stage.id,
+                                        error = %e,
+                                        "Failed to park unschedulable stage at WaitingForDeps"
+                                    );
+                                }
+                            }
                         }
                     }
                     StageStatus::Executing => {

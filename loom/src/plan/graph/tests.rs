@@ -222,6 +222,55 @@ fn test_leaf_stages_multiple_leaves() {
 }
 
 #[test]
+fn test_mark_queued_rejects_completed_but_unmerged_dependency() {
+    // Regression: a stage file saying `Queued` (written out-of-process by
+    // `loom stage complete`'s trigger_dependents) used to force the node into
+    // Queued here even though the dependency was not merged in the graph. The
+    // node then sat in ready_stages() forever while resolve_base_branch
+    // refused it every poll — a stage stuck in Queued with nothing to explain
+    // it. mark_queued must agree with update_ready_status.
+    let stages = vec![
+        make_stage("dep", vec![], None),
+        make_stage("dependent", vec!["dep"], None),
+    ];
+
+    let mut graph = ExecutionGraph::build(stages).unwrap();
+    graph.mark_completed("dep").unwrap();
+
+    let err = graph
+        .mark_queued("dependent")
+        .expect_err("an unmerged dependency must not satisfy mark_queued");
+    assert!(
+        err.to_string().contains("not merged"),
+        "error should name the unmerged dependency, got: {err}"
+    );
+    assert!(graph.ready_stages().is_empty());
+}
+
+#[test]
+fn test_mark_queued_accepts_completed_and_merged_dependency() {
+    let stages = vec![
+        make_stage("dep", vec![], None),
+        make_stage("dependent", vec!["dep"], None),
+    ];
+
+    let mut graph = ExecutionGraph::build(stages).unwrap();
+    graph.mark_completed("dep").unwrap();
+    graph.mark_merged("dep").unwrap();
+
+    // mark_merged already promotes the dependent; re-queueing (the orphan/
+    // handoff recovery path) must still succeed.
+    graph.mark_executing("dependent").unwrap();
+    graph
+        .mark_queued("dependent")
+        .expect("a completed and merged dependency satisfies mark_queued");
+
+    let ready = graph.ready_stages();
+    assert_eq!(ready.len(), 1);
+    assert_eq!(ready[0].id, "dependent");
+}
+
+#[test]
 fn test_leaf_stages_all_independent() {
     // All independent stages (no dependencies) - all are leaves
     let stages = vec![
