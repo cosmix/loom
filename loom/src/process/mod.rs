@@ -2,9 +2,107 @@
 //!
 //! This module provides common process management functions used across the codebase.
 
+use anyhow::{Context, Result};
 use nix::errno::Errno;
-use nix::sys::signal::kill;
+use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
+use std::process::{Command, Output, Stdio};
+use std::time::Duration;
+use wait_timeout::ChildExt;
+
+/// Outcome of a subprocess run under a wall-clock bound.
+#[derive(Debug)]
+pub enum BoundedOutput {
+    /// The child exited on its own before the deadline.
+    Completed(Output),
+    /// The deadline elapsed first; the child was killed and reaped.
+    TimedOut,
+}
+
+impl BoundedOutput {
+    /// The child's output, or `None` if it was killed at the deadline.
+    pub fn completed(self) -> Option<Output> {
+        match self {
+            BoundedOutput::Completed(output) => Some(output),
+            BoundedOutput::TimedOut => None,
+        }
+    }
+}
+
+/// Run a command to completion under a wall-clock bound, killing it if the
+/// deadline elapses.
+///
+/// # Why this exists
+///
+/// The orchestrator's poll loop is single-threaded: it syncs stage state,
+/// spawns ready stages, and handles session teardown in one sequence. A
+/// subprocess that never returns therefore does not merely fail one
+/// operation — it stops *all* orchestration, silently, with no further log
+/// output, while the daemon's socket thread keeps answering `loom status`
+/// as if everything were healthy.
+///
+/// Window management is the dangerous case. On macOS `osascript` sends an
+/// Apple Event and blocks with no timeout of its own: a TCC Automation
+/// prompt (which a detached daemon cannot surface), a terminal-side modal,
+/// or an unresponsive terminal app all park the call indefinitely. Linux is
+/// less exposed — the `wmctrl`/`xdotool` paths are `which`-guarded and no-op
+/// when the tools are absent — but an unresponsive X server can stall them
+/// the same way.
+///
+/// Every external command issued from the orchestrator loop must therefore be
+/// bounded. A timed-out teardown is a warning; an unbounded one is a hang.
+///
+/// # Output size
+///
+/// stdout/stderr are piped but only drained after the child exits, so a child
+/// that writes more than the OS pipe buffer (~64KB) before exiting will block
+/// on write and be killed at the deadline. That is acceptable here: this
+/// helper is for control commands with negligible output. Use
+/// `verify::criteria::executor` for commands whose output matters.
+pub fn run_bounded(command: &mut Command, timeout: Duration) -> Result<BoundedOutput> {
+    let mut child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("Failed to spawn {:?}", command.get_program()))?;
+
+    match child
+        .wait_timeout(timeout)
+        .with_context(|| format!("Failed to wait for {:?}", command.get_program()))?
+    {
+        Some(_) => {
+            let output = child.wait_with_output().with_context(|| {
+                format!("Failed to collect output of {:?}", command.get_program())
+            })?;
+            Ok(BoundedOutput::Completed(output))
+        }
+        None => {
+            // Deadline elapsed. Kill and reap so the child does not linger as
+            // a zombie for the lifetime of the daemon.
+            let _ = child.kill();
+            let _ = child.wait();
+            Ok(BoundedOutput::TimedOut)
+        }
+    }
+}
+
+/// Send `SIGTERM` to a process.
+///
+/// Returns `Ok(true)` when the signal was delivered, `Ok(false)` when the
+/// process no longer exists (`ESRCH` — already gone, which is a success for
+/// every caller here), and `Err` for any other failure.
+///
+/// Prefer this over shelling out to `kill(1)`: it cannot block, and it avoids
+/// a fork+exec on a path that runs for every session teardown.
+pub fn terminate(pid: u32) -> Result<bool> {
+    let pid_i32 = i32::try_from(pid).with_context(|| format!("PID {pid} exceeds i32::MAX"))?;
+
+    match kill(Pid::from_raw(pid_i32), Signal::SIGTERM) {
+        Ok(()) => Ok(true),
+        Err(Errno::ESRCH) => Ok(false),
+        Err(e) => Err(anyhow::anyhow!("Failed to signal process {pid}: {e}")),
+    }
+}
 
 /// Check if a process with the given PID is alive
 ///
@@ -103,6 +201,62 @@ mod tests {
             result,
             "PID 0 (kernel) should be detected as alive via EPERM"
         );
+    }
+
+    #[test]
+    fn test_run_bounded_returns_output_when_command_completes() {
+        let mut cmd = Command::new("echo");
+        cmd.arg("loom");
+
+        let output = run_bounded(&mut cmd, Duration::from_secs(10))
+            .expect("echo should run")
+            .completed()
+            .expect("echo should complete well inside the deadline");
+
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "loom");
+    }
+
+    #[test]
+    fn test_run_bounded_kills_command_that_outlives_deadline() {
+        let mut cmd = Command::new("sleep");
+        cmd.arg("60");
+
+        let started = std::time::Instant::now();
+        let outcome =
+            run_bounded(&mut cmd, Duration::from_millis(200)).expect("sleep should spawn");
+
+        assert!(
+            matches!(outcome, BoundedOutput::TimedOut),
+            "a 60s sleep must not report completion under a 200ms bound"
+        );
+        // The whole point is that the caller regains control promptly.
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "run_bounded returned after {:?}; it must not wait for the child",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn test_terminate_reports_missing_process_without_error() {
+        // ESRCH is success-with-nothing-to-do, not a failure.
+        assert!(!terminate(999999999).expect("ESRCH must not error"));
+    }
+
+    #[test]
+    fn test_terminate_signals_live_process() {
+        let mut child = Command::new("sleep")
+            .arg("60")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("sleep should spawn");
+
+        assert!(terminate(child.id()).expect("signal should be delivered"));
+
+        let status = child.wait().expect("child should be reapable");
+        assert!(!status.success(), "SIGTERM'd sleep should not exit cleanly");
     }
 
     #[test]
