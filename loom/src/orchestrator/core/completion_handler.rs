@@ -38,10 +38,36 @@ impl Orchestrator {
             }
         }
 
-        // Clean up session first
+        // Clean up session first.
+        //
+        // Every step here is best-effort and must stay that way. Teardown
+        // touches the outside world (signal files, the terminal's window
+        // manager, the agent process); the merge and the graph update below
+        // are what let DEPENDENT stages run. Propagating a teardown error
+        // aborts this handler before `try_auto_merge`, and because
+        // `StageCompleted` is edge-triggered off a status change
+        // (monitor/detection.rs), it never fires again for this stage — the
+        // dependents then sit Queued until the daemon is restarted. Leaving a
+        // stale signal file or an unkilled agent is strictly cheaper than
+        // stalling the plan, so log and continue.
         if let Some(session) = self.active_sessions.remove(stage_id) {
-            remove_signal(&session.id, &self.config.work_dir)?;
-            let _ = self.native.kill_session(&session);
+            if let Err(e) = remove_signal(&session.id, &self.config.work_dir) {
+                tracing::warn!(
+                    stage_id = %stage_id,
+                    session_id = %session.id,
+                    error = %e,
+                    "Failed to remove signal during completion; continuing with merge"
+                );
+            }
+            if let Err(e) = self.native.kill_session(&session) {
+                tracing::warn!(
+                    stage_id = %stage_id,
+                    session_id = %session.id,
+                    error = %e,
+                    "Failed to kill session during completion; the agent process may \
+                     still be running. Continuing with merge."
+                );
+            }
         }
 
         self.active_worktrees.remove(stage_id);
