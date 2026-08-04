@@ -24,6 +24,18 @@ branches, `--force-unsafe`, helpers that abort active merges, merge-conflict ses
 
 → [Phantom Merges](mistakes/phantom-merges.md)
 
+## Orchestrator Loop: Unbounded Subprocess Freezes All Scheduling
+
+**Mistake:** Session teardown (`handle_stage_completed` → `kill_session` → window close) shelled out with `Command::output()` and no timeout, on the orchestrator's single poll thread. On macOS that call is `osascript`, which blocks indefinitely on a TCC Automation prompt, a terminal modal, or an unresponsive terminal app. One user's daemon froze there for 10 hours: the dependent stage sat `Queued`, no `.work/` file was written, and nothing appeared in the log.
+**Why it hid:** the daemon's socket thread is separate, so `loom status` kept reporting "● daemon running". Restarting fixed it, which reads as a transient glitch rather than a hang.
+**Prevention:** every external command issued from the poll loop goes through `process::run_bounded`. Teardown steps are best-effort — never `?` between removing the session and `try_auto_merge`, because `StageCompleted` is edge-triggered and never fires twice for the same stage. Check `.work/orchestrator.tick`: a stale tick with a live daemon means the loop is stuck, and the second line names the phase.
+**Note:** Linux is less exposed only by accident — its `wmctrl`/`xdotool` paths are `which`-guarded and no-op when the tools are absent. The structure was the bug, not the platform.
+
+## Diagnostics: Restart Destroys the Evidence
+
+**Mistake:** `.work/orchestrator.log` was opened with `File::create`, truncating it on every `loom run`. Restarting the daemon is the standard response to a stuck orchestrator, so the log of the run that got stuck was destroyed at exactly the moment it was needed.
+**Fix:** rotate to `orchestrator.log.prev` on start. When diagnosing a stall after a restart, read the `.prev` file — the live log only covers the recovery run.
+
 ## Binary: PATH vs target/debug/loom
 
 **Mistake:** Agents invoked stale `target/debug/loom` instead of the installed version from PATH.
