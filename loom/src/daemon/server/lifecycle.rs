@@ -216,7 +216,14 @@ impl DaemonServer {
         fs::set_permissions(&user_path, Permissions::from_mode(0o600))
             .context("Failed to set user token file permissions")?;
 
-        // Redirect stdout and stderr to log file
+        // Redirect stdout and stderr to log file.
+        //
+        // Preserve the previous run's log first. Restarting the daemon is the
+        // standard response to a stuck orchestrator, so truncating here
+        // destroys the only record of *why* it got stuck at exactly the moment
+        // an operator goes looking for it. Keeping one generation costs one
+        // rename and bounds growth at two files.
+        rotate_log(&self.log_path);
         let log_file = File::create(&self.log_path).context("Failed to create log file")?;
 
         // Close stdin and redirect stdout/stderr to log file
@@ -527,6 +534,21 @@ impl DaemonServer {
         }
         Ok(())
     }
+}
+
+/// Move the existing daemon log aside to `<log>.prev`, keeping exactly one
+/// previous generation.
+///
+/// Best-effort: if the rename fails the caller still truncates and starts a
+/// fresh log, which is the pre-existing behaviour. Losing history is a
+/// diagnostic regression, not a reason to refuse to start the daemon.
+fn rotate_log(log_path: &Path) {
+    if !log_path.exists() {
+        return;
+    }
+
+    let previous = log_path.with_extension("log.prev");
+    let _ = fs::rename(log_path, previous);
 }
 
 impl Drop for DaemonServer {
