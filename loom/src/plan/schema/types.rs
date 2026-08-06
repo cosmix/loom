@@ -264,6 +264,11 @@ pub struct StageDefinition {
     /// per-stage opt-in keeps the cost decision explicit.
     #[serde(default)]
     pub ultracode: bool,
+    /// Which agent lane routine implementation is delegated to.
+    /// `claude` (default) keeps the sonnet/haiku subagent lane;
+    /// `codex` routes to the codex:codex-rescue plugin subagent.
+    #[serde(default)]
+    pub implementer: Implementer,
 }
 
 impl StageDefinition {
@@ -275,6 +280,12 @@ impl StageDefinition {
             || self.dead_code_check.is_some()
     }
 }
+
+/// Agent lane a stage delegates routine implementation to.
+///
+/// Re-exported from models::stage for backward compatibility.
+/// The canonical definition is in crate::models::stage::Implementer.
+pub use crate::models::stage::Implementer;
 
 /// Wiring check to verify component connections.
 ///

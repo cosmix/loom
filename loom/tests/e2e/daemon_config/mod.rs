@@ -19,7 +19,7 @@ mod parallel_sessions;
 mod stale_project_execution;
 mod tests;
 
-use loom::plan::schema::StageDefinition;
+use loom::plan::schema::{Implementer, StageDefinition};
 
 /// Create a basic stage definition for testing
 pub fn create_stage_def(id: &str, name: &str, deps: Vec<String>) -> StageDefinition {
@@ -50,5 +50,6 @@ pub fn create_stage_def(id: &str, name: &str, deps: Vec<String>) -> StageDefinit
         reasoning_effort: None,
         code_review: None,
         ultracode: false,
+        implementer: Implementer::Claude,
     }
 }

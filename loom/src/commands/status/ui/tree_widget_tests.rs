@@ -1,4 +1,5 @@
 use super::*;
+use crate::models::stage::Implementer;
 use chrono::Utc;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -64,6 +65,7 @@ fn make_stage(id: &str, deps: Vec<&str>, status: StageStatus) -> Stage {
         reasoning_effort: None,
         is_possibly_stuck: false,
         ultracode: false,
+        implementer: Implementer::Claude,
     }
 }
 

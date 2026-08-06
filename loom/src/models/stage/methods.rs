@@ -1,7 +1,7 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 
-use super::types::{AcceptanceCriterion, Stage, StageOutput, StageStatus, StageType};
+use super::types::{AcceptanceCriterion, Implementer, Stage, StageOutput, StageStatus, StageType};
 
 /// Maximum disputes a single stage may file before further requests
 /// are refused (escalation goes through `NeedsHumanReview`).
@@ -72,6 +72,7 @@ impl Stage {
             reasoning_effort: None,
             is_possibly_stuck: false,
             ultracode: false,
+            implementer: Implementer::Claude,
         }
     }
 

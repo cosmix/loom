@@ -293,5 +293,6 @@ pub(crate) fn create_stage_from_definition(stage_def: &StageDefinition, plan_id:
         reasoning_effort: stage_def.reasoning_effort.clone(),
         is_possibly_stuck: false,
         ultracode: stage_def.ultracode,
+        implementer: stage_def.implementer,
     }
 }

@@ -10,8 +10,8 @@ mod tests;
 pub use detect::{detect_stage_type, detect_stage_type_from_id_name};
 pub use types::{
     AcceptanceCriterion, AdjudicationConfig, ChangeImpactConfig, ChangeImpactPolicy,
-    CodeReviewConfig, DeadCodeCheck, FilesystemConfig, LinuxConfig, LoomConfig, LoomMetadata,
-    NetworkConfig, PermissionMode, RegressionTest, SandboxConfig, StageDefinition,
+    CodeReviewConfig, DeadCodeCheck, FilesystemConfig, Implementer, LinuxConfig, LoomConfig,
+    LoomMetadata, NetworkConfig, PermissionMode, RegressionTest, SandboxConfig, StageDefinition,
     StageSandboxConfig, StageType, SuccessCriteria, TruthCheck, ValidationError, WiringCheck,
     WiringTest, ALLOWED_REASONING_EFFORTS,
 };

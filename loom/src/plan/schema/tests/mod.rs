@@ -2,6 +2,7 @@
 
 mod acceptance_tests;
 mod auto_merge_tests;
+mod implementer_tests;
 mod knowledge_recommendations_tests;
 mod reasoning_effort_tests;
 mod regression_test_tests;
@@ -10,7 +11,7 @@ mod ultracode_tests;
 mod validation_tests;
 
 use super::types::{
-    AcceptanceCriterion, LoomConfig, LoomMetadata, SandboxConfig, StageDefinition,
+    AcceptanceCriterion, Implementer, LoomConfig, LoomMetadata, SandboxConfig, StageDefinition,
     StageSandboxConfig, StageType,
 };
 
@@ -44,6 +45,7 @@ pub(crate) fn make_stage(id: &str, name: &str) -> StageDefinition {
         reasoning_effort: None,
         code_review: None,
         ultracode: false,
+        implementer: Implementer::Claude,
     }
 }
 
