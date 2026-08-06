@@ -1,6 +1,6 @@
 use crate::handoff::git_handoff::GitHistory;
 use crate::handoff::schema::HandoffV2;
-use crate::models::stage::StageOutput;
+use crate::models::stage::{Implementer, StageOutput};
 use crate::skills::SkillMatch;
 
 /// Summary of sandbox restrictions for signal display
@@ -47,6 +47,8 @@ pub struct EmbeddedContext {
     pub wiring_checklist: Option<String>,
     /// Whether the stage is licensed for ultracode Workflow orchestration
     pub ultracode: bool,
+    /// Which agent lane routine implementation is delegated to
+    pub implementer: Implementer,
 }
 
 #[derive(Debug, Clone)]

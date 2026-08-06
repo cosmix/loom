@@ -610,6 +610,9 @@ fn build_signal_context(
     // Propagate the ultracode license so the semi-stable section can gate on it
     embedded_context.ultracode = stage.ultracode;
 
+    // Propagate the implementer lane so the semi-stable section can gate on it
+    embedded_context.implementer = stage.implementer;
+
     // Build integration-verify and knowledge-distill enrichments
     if matches!(
         stage.stage_type,

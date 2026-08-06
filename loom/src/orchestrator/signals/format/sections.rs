@@ -1,6 +1,7 @@
+use crate::codex::{CODEX_IMPLEMENTER_EFFORT, CODEX_IMPLEMENTER_MODEL};
 use crate::handoff::git_handoff::{format_git_history_markdown, GitHistory};
 use crate::models::session::Session;
-use crate::models::stage::{Stage, StageType};
+use crate::models::stage::{Implementer, Stage, StageType};
 use crate::models::worktree::Worktree;
 use crate::skills::SkillMatch;
 
@@ -361,6 +362,11 @@ pub(super) fn format_semi_stable_section(
     content.push_str("- Keep your own context for coordination (aim for <40% utilization)\n");
     content.push_str("- Delegate implementation, do not implement yourself\n");
     content.push_str("- Shut down all teammates before completing the stage\n\n");
+
+    // Codex implementer doctrine (semi-stable - gated on the stage's implementer lane)
+    if embedded_context.implementer == Implementer::Codex {
+        content.push_str(&format_codex_implementers_section());
+    }
 
     // Ultracode license (semi-stable - gated on the stage's ultracode flag)
     if embedded_context.ultracode {
@@ -778,6 +784,50 @@ pub(super) fn format_recitation_section(
     content.push_str("- `loom memory change \"file.rs - description\"` - Record a file change\n");
     content.push_str("- `loom memory list` - Review your stage entries\n");
     content.push_str("- `loom memory show --all` - Show all stage memories\n\n");
+
+    content
+}
+
+/// Format the codex-implementer doctrine block.
+///
+/// Emitted only for stages whose `implementer` is [`Implementer::Codex`], leaving
+/// the semi-stable section of a claude-lane signal unchanged. The model and effort
+/// are interpolated from [`CODEX_IMPLEMENTER_MODEL`] / [`CODEX_IMPLEMENTER_EFFORT`]
+/// rather than repeated as literals — one source of truth for the lane's settings.
+fn format_codex_implementers_section() -> String {
+    let mut content = String::new();
+
+    content.push_str("## Codex Implementers\n\n");
+    content.push_str("This stage delegates ROUTINE IMPLEMENTATION to Codex through the official OpenAI plugin.\n");
+    content.push_str("Verification does NOT move - see below.\n\n");
+    content.push_str(
+        "- Spawn implementation work with the Agent tool, subagent_type: \"codex:codex-rescue\".\n",
+    );
+    content.push_str(&format!(
+        "- State the model and effort IN THE PROMPT TEXT, e.g. \"--model {CODEX_IMPLEMENTER_MODEL} --effort {CODEX_IMPLEMENTER_EFFORT} <task>\".\n"
+    ));
+    content.push_str("  The wrapper forwards --model/--effort ONLY when the request names them.\n");
+    content.push_str("- codex:codex-rescue is write-capable by default; do not ask for read-only when you want edits.\n");
+    content.push_str("- PARALLEL FAN-OUT: you may run up to 6 codex implementers at once, each owning a DISJOINT file set,\n");
+    content.push_str("  with the same file-ownership table you would write for sonnet subagents. Two codex agents writing\n");
+    content.push_str("  one file is lost work, exactly as with any other subagent.\n");
+    content.push_str("- Run parallel codex implementers in the FOREGROUND. Do NOT fan out --background jobs: the plugin\n");
+    content.push_str("  tracks jobs in a shared state file written without a lock, and a background result is fetched\n");
+    content.push_str("  through the very record a concurrent write can drop. Foreground results come back through stdout\n");
+    content.push_str("  and do not depend on it.\n");
+    content.push_str("- A foreground codex run is ONE long Bash call: no PostToolUse fires, so the loom heartbeat goes\n");
+    content.push_str("  stale and the daemon prints a spurious \"appears hung\" warning after 300s. That warning is\n");
+    content.push_str("  ADVISORY ONLY - nothing is killed or retried. Ignore it.\n");
+    content.push_str("- Codex REPLACES sonnet/haiku for routine implementation. It does NOT replace opus (architecture,\n");
+    content.push_str("  algorithms, cross-cutting refactors, security-sensitive code) or loom-advisor (fable) on a second\n");
+    content.push_str("  failure on the same task.\n");
+    content.push_str("- VERIFICATION STAYS WITH YOU (opus). Codex subagents implement and report; they never verify, never\n");
+    content.push_str("  commit, and never run loom stage complete (Rule 5). YOU run the full build/test/lint gate, YOU run\n");
+    content.push_str("  the six-dimension mini adversarial code review, and YOU commit. Never accept a codex agent's own\n");
+    content.push_str(
+        "  claim that its work is correct, and never have codex review its own output - use\n",
+    );
+    content.push_str("  loom-code-reviewer or your own reading.\n\n");
 
     content
 }

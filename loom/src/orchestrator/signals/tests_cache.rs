@@ -3,7 +3,8 @@
 use std::fs;
 use tempfile::TempDir;
 
-use crate::models::stage::StageType;
+use crate::codex::CODEX_IMPLEMENTER_MODEL;
+use crate::models::stage::{Implementer, StageType};
 
 use super::super::cache::{compute_hash, generate_stable_prefix, SignalMetrics};
 use super::super::format::{format_signal_content, format_signal_with_metrics};
@@ -329,6 +330,46 @@ fn test_signal_ultracode_section_gated() {
     let content = fs::read_to_string(&signal_path).unwrap();
     assert!(content.contains("## Ultracode Mode"));
     assert!(content.contains("Workflow tool"));
+}
+
+#[test]
+fn test_signal_codex_implementers_section_gated() {
+    let temp_dir = TempDir::new().unwrap();
+    let work_dir = temp_dir.path().join(".work");
+    fs::create_dir_all(&work_dir).unwrap();
+
+    let session = create_test_session();
+    let worktree = create_test_worktree();
+
+    // Default stage (claude lane): no codex doctrine. This negative assert is the
+    // load-bearing half — it proves existing plans are unaffected by the new lane.
+    let stage = create_test_stage();
+    let (signal_path, _) =
+        generate_signal_with_metrics(&session, &stage, &worktree, &[], None, None, &work_dir)
+            .unwrap();
+    let content = fs::read_to_string(&signal_path).unwrap();
+    assert!(!content.contains("## Codex Implementers"));
+
+    // Codex-routed stage: section present (lane propagates stage → context → signal)
+    let mut codex_stage = create_test_stage();
+    codex_stage.implementer = Implementer::Codex;
+    let mut session2 = create_test_session();
+    session2.id = "session-codex".to_string();
+    let (signal_path, _) = generate_signal_with_metrics(
+        &session2,
+        &codex_stage,
+        &worktree,
+        &[],
+        None,
+        None,
+        &work_dir,
+    )
+    .unwrap();
+    let content = fs::read_to_string(&signal_path).unwrap();
+    assert!(content.contains("## Codex Implementers"));
+    assert!(content.contains("codex:codex-rescue"));
+    // Model comes from the shared constant, not a second literal
+    assert!(content.contains(CODEX_IMPLEMENTER_MODEL));
 }
 
 #[test]
