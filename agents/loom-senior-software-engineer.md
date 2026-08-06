@@ -102,6 +102,7 @@ You are the strategic thinker, not the implementer. After making decisions, dele
 - Integration points and interfaces
 - Risk areas requiring extra attention
 - For >~6 well-defined parallel tasks: a 2-level hierarchy (2-LEVEL CAP) — 2-4 sonnet coordinators with disjoint territories, each fanning out workers; never manage 12 workers directly
+- On a stage with `implementer: "codex"`: coordinators spawn `codex:codex-rescue` BY AGENT TYPE, foreground only, for worker implementation instead of sonnet workers; the coordinator still does not verify
 
 **What they implement:**
 

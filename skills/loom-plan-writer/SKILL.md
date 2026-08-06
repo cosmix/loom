@@ -263,13 +263,39 @@ BLOCK-B — model allocation playbook:
 1. ORCHESTRATION IS ALWAYS OPUS. Every stage's main agent is opus. The
    orchestrator does NOT implement — it decomposes the work, hands each
    subagent full context, then verifies and commits. That is all.
-2. IMPLEMENTATION IS ALWAYS DELEGATED, to as FEW subagents as the work
-   allows: haiku (rare — trivial mechanical edits), sonnet (the common
-   case), opus (genuinely challenging work). Spawn BY AGENT TYPE.
+2. IMPLEMENTATION IS ALWAYS DELEGATED, to as FEW subagents as the work allows. Routine
+   implementation goes to codex:codex-rescue (gpt-5.6-luna, xhigh) on stages with
+   implementer: "codex", else to sonnet (loom-software-engineer); haiku stays rare and trivial.
+   Genuinely challenging work stays opus. Verification NEVER delegates - the opus orchestrator
+   verifies and commits. Spawn BY AGENT TYPE.
 3. DEBUGGING OR REPEATED FAILURE → spawn a `loom-advisor` (fable) subagent:
    narrow scope, full detail supplied by the orchestrator, advice returned.
    Do not let an implementer thrash on the same failure twice.
 ```
+
+### Codex Implementers (ASK THE USER)
+
+BEFORE writing any stage YAML, ask the user ONCE with AskUserQuestion: "Route routine
+implementation to Codex (gpt-5.6-luna, xhigh) instead of sonnet/haiku subagents?" with options
+"Codex implementers" and "Claude implementers (sonnet/haiku)". Never assume — the default is
+Claude.
+
+If the user picks Codex:
+
+1. Check it is installed: `claude plugin list --json`.
+2. If missing, ask permission, then run BOTH `claude plugin marketplace add openai/codex-plugin-cc`
+   and `claude plugin install codex@openai-codex --scope user`. SCOPE MUST BE user OR project —
+   NEVER local. Local scope writes `.claude/settings.local.json`, which loom regenerates per
+   worktree, dropping `enabledPlugins`.
+3. If the user declines the install, fall back to Claude implementers and SAY SO. Never write
+   `implementer: "codex"` for a plugin that is not installed.
+4. Set `implementer: "codex"` on standard stages whose work is routine implementation. LEAVE IT
+   OFF (default `"claude"`) for stages that are mostly architecture, algorithmic or debugging
+   work, and for knowledge / knowledge-distill / integration-verify stages.
+5. In those stages' descriptions, name the subagent and the fan-out explicitly, e.g. "Spawn N
+   `codex:codex-rescue` subagents in the FOREGROUND, each with `--model gpt-5.6-luna --effort
+   xhigh` and a DISJOINT file set; verify and commit yourself."
+6. Omitting the field is always safe: existing plans without it run unchanged on the Claude lane.
 
 Consequences for how you write a plan:
 
@@ -333,12 +359,19 @@ Pick by criteria (not a ranking):
 
 ### Stage Necessity Test (before creating ANY stage beyond the bookends)
 
-- **Q1 — Does another stage import/call/extend code this stage creates?** YES → separate stages (code dependency).
+Each stage costs a worktree, a session, a merge, and a FULL re-run of the acceptance gate. Three stages that could have been one cost roughly 3× and produce 3 merges. Default to ONE stage and make every extra stage earn itself.
+
+- **Q1 — Does another stage need this stage's code MERGED before it can start?** YES → separate stages. Only a MERGE-ORDER dependency counts: the dependent work must run against merged, gate-passed code. A COMPILE-ORDER dependency is NOT a Q1 yes — if subagent B merely needs a type or signature subagent A writes, that is a FOUNDATION STEP inside ONE stage (see Subagent file exclusivity below), never a second stage.
 - **Q2 — Does another stage write files this stage also writes?** YES → separate stages (file conflict).
-- **Q3 — Does later work need a verification checkpoint on this first?** YES → separate stage (quality gate).
+- **Q3 — Does later work need a verification checkpoint on this first?** YES → separate stage (quality gate). "It would be tidy to verify here" is not a checkpoint — name what would go undetected without it.
+- **Q4 — Would the combined work blow a single session's context budget?** YES → split. Estimate honestly: a large mechanical sweep is cheap in context; a wide cross-cutting redesign is not.
 - All NO → **MERGE into one stage with parallel subagents.**
 
-Classic mistake: 4 stages each editing an independent config file → should be 1 stage with as few subagents as the file territories require (often 1-2 subagents each owning multiple files, not one subagent per file) — ~1× cost, 1 merge, no conflict risk vs ~4×, 4 merges.
+EVERY non-bookend stage MUST name, in the plan prose, which of Q1-Q4 forced it into existence. A stage that cannot cite one is fragmentation — merge it. Write that justification AS you add the stage, not afterwards; a stage graph rationalised at the end always reads as necessary.
+
+Classic mistakes:
+- 4 stages each editing an independent config file → 1 stage with as few subagents as the file territories require.
+- A cohesive feature split BY LAYER (schema / runtime / doctrine, or model / service / controller) because each layer imports the one before it. Every one of those is a compile-order dependency, so they all answer NO to Q1: one stage, a foundation step for the shared contract, then parallel subagents over disjoint files. This is the most common fragmentation there is, because "B imports A" feels like a stage boundary when it is only a compile ordering.
 
 ### Subagent file exclusivity (CRITICAL)
 
@@ -432,6 +465,7 @@ loom:
       stage_type: standard         # knowledge | standard | integration-verify | knowledge-distill (lowercase)
       model: "opus"                 # REQUIRED — every stage is an opus orchestrator now; subagent model choice happens at spawn time (Section 4)
       reasoning_effort: "xhigh"    # REQUIRED on every stage
+      implementer: "codex"         # OPTIONAL - "codex" | "claude" (default "claude" if omitted)
       description: |               # full task spec; NO triple backticks inside
         What this stage accomplishes.
         Use parallel subagents and skills to maximize performance.
@@ -705,7 +739,7 @@ loom:
 <!-- END loom METADATA -->
 ````
 
-**Merge vs. separate stages** — independent file changes belong in ONE stage with parallel subagents (worktree + session + merge ×1), NOT one stage each (×N cost, N merges, conflict risk). Separate stages only for code dependency, file overlap, or a verification checkpoint (Section 5).
+**Merge vs. separate stages** — independent file changes belong in ONE stage with parallel subagents (worktree + session + merge ×1), NOT one stage each (×N cost, N merges, conflict risk). Separate stages only when the Stage Necessity Test (Section 5) forces it: a merge-order dependency, file overlap, a named verification checkpoint, or a context-budget overflow. A compile-order dependency is a foundation step, not a stage boundary.
 
 **Sequential stages when files overlap** — two edits to the SAME file can't run in parallel; chain them with `dependencies` so loom serializes the worktrees (no merge conflict):
 
@@ -759,7 +793,9 @@ description: |
 □ Blast radius includes LITERAL-member grep + whole-doc-tree sweep (counts, deferrals, Help/About → UI stage)
 □ Edits anchored by symbol; decisions settled to ONE value (no "maybe edit" conditionals); every prose task/file has exactly one owner; prose ordering = DAG edges
 □ knowledge-bootstrap first · integration-verify second-to-last · knowledge-distill last
+□ Every non-bookend stage cites which Stage Necessity question (Q1-Q4) forced it; compile-order dependencies resolved with a foundation step, not a stage split
 □ Every stage: model: "opus" + reasoning_effort: xhigh + stage_type + working_dir set
+□ Codex opt-in asked and answered; implementer: set only where routine implementation is delegated, only if the plugin is installed, and never on bookend stages
 □ Standard/IV stages: acceptance OR ≥1 goal-backward check (artifacts/wiring/wiring_tests/dead_code_check); wiring targets the CONSUMER; no leftover `truths:` block
 □ Every stage's acceptance carries the repo's FULL canonical gate covering its OWN files (not a scoped subset, not deferred downstream)
 □ Every prescribed check is realizable (expressible · executes the code · right strength · selected · grounded); no gate claims to prove what its inputs don't exercise
