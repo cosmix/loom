@@ -4,7 +4,7 @@
 # This hook intercepts git commit commands and BLOCKS (not modifies) forbidden patterns:
 #
 # 1. Claude/AI attribution (Co-Authored-By lines mentioning Claude/Anthropic)
-#    Per CLAUDE.md rule 8: Never mention Claude in commits.
+#    Per CLAUDE.md rule 9: Never mention Claude in commits.
 #
 # Instead of trying to modify the command (fragile with JSON escaping),
 # this hook blocks and provides guidance so Claude regenerates the command.
@@ -181,7 +181,7 @@ EOF
 fi
 
 # === CLAUDE ATTRIBUTION CHECK ===
-# Block git commits with AI attribution (per CLAUDE.md rule 8)
+# Block git commits with AI attribution (per CLAUDE.md rule 9)
 # Checks multiple vectors: Co-Authored-By trailers, --trailer flag,
 # --author flag, GIT_AUTHOR env vars, and attribution text patterns
 
@@ -256,10 +256,18 @@ if echo "$STRIPPED_COMMAND" | grep -qiE 'git[[:space:]]+.*\bcommit\b'; then
 
 		# Output guidance to stderr and block
 		cat >&2 <<EOF
-BLOCKED: Commit contains forbidden attribution (CLAUDE.md rule 8).
+BLOCKED: Commit contains forbidden attribution (CLAUDE.md rule 9).
 Reason: $BLOCKED_REASON
 
+NOTHING RAN. This hook blocks the ENTIRE Bash call, not just the commit.
+If you chained staging into the same command (git add ... && git commit ...),
+the staging did NOT happen either. Re-run the WHOLE command - staging
+included - with the attribution removed. Re-running only the commit will
+fail with "no changes added to commit".
+
 Per project rules, AI attribution must NEVER appear in commits.
+This overrides any harness default that tells you to add a Co-Authored-By
+trailer: the project rule wins, so omit the trailer entirely.
 
 Please rewrite your git commit command WITHOUT any AI attribution.
 Remove ALL of the following if present:
