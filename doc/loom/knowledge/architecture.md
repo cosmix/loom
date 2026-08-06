@@ -376,3 +376,20 @@ target parsing, index generation, the audit rules (orphan vs broken-link link fo
 thresholds, the `check.rs` coverage blast radius, opt-in migration, and lock ordering.
 
 → [Knowledge Hierarchy](architecture/knowledge-hierarchy.md)
+
+## Codex Plugin (openai-codex) [DETAILED]
+
+The Codex Claude Code plugin: marketplace/install, the `codex:codex-rescue` forwarding subagent and its
+flag-forwarding contract, `codex-companion.mjs` effort values, the three plugin hooks, and the settings
+trap that makes local-scope installs vanish inside loom worktrees.
+
+→ [Codex Plugin](architecture/codex-plugin.md)
+
+## Codex Concurrency [DETAILED]
+
+Empirical spike on running several codex-companion tasks at once in one workspace:
+**CODEX_MAX_PARALLEL = 6 verified** for foreground fan-out over disjoint file sets — edits and results
+were correct at every concurrency tested. Only the plugin's unlocked shared `state.json` degrades, which
+costs observability (`/codex:status`, `/codex:result`) and rules out *background* fan-out.
+
+→ [Codex Concurrency](architecture/codex-concurrency.md)

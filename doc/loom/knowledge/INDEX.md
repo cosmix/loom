@@ -8,13 +8,13 @@
 
 | File | Description | Lines |
 | --- | --- | --- |
-| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 378 |
+| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 395 |
 | [entry-points.md](entry-points.md) | Key files agents should read first | 488 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 534 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 322 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 373 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 385 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 61 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 314 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 354 |
 
 ## Tier 2 — Topics
 
@@ -22,6 +22,8 @@
 
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
+| [architecture/codex-concurrency.md](architecture/codex-concurrency.md) | Codex Concurrency | Topic notes for the architecture knowledge area. | 68 |
+| [architecture/codex-plugin.md](architecture/codex-plugin.md) | Codex Plugin | Topic notes for the architecture knowledge area. | 69 |
 | [architecture/core-abstractions.md](architecture/core-abstractions.md) | Core Abstractions | ExecutionGraph, Stage, Session, Orchestrator, TerminalBackend — plus data flow and .work/ file ownership. | 82 |
 | [architecture/directory-structure.md](architecture/directory-structure.md) | Directory Structure | Full loom/src module tree, the .work/ state layout, and the repo-root asset directories. | 48 |
 | [architecture/hook-system.md](architecture/hook-system.md) | Hook System | Hook embedding and install, the SessionStart hookSpecificOutput contract, and the two subagent enforcement hooks. | 110 |
