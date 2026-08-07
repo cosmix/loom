@@ -44,3 +44,5 @@ doc/plans/REVIEW-*
 .worktrees/
 .worktrees
 ISSUES.md
+
+data/*
