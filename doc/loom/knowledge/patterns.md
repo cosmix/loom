@@ -157,7 +157,18 @@ Scope rule: code stages ONLY. Documentation stages (`knowledge`, `knowledge-dist
 
 ## Stage Necessity Test
 
-Before creating stages: Q1: Does it create code another imports? Q2: Does it write files another writes? Q3: Does it need a verification checkpoint? If ALL NO -> merge into one stage with parallel subagents.
+Before creating ANY stage beyond the bookends, it must answer YES to one of four questions
+(`skills/loom-plan-writer/SKILL.md:388`) and the plan prose must NAME which one:
+
+- **Q1** — does another stage need this stage's code *merged* before it can start? Only a
+  MERGE-ORDER dependency counts. "B imports A" is compile-order → foundation step in ONE stage.
+- **Q2** — does another stage write files this stage also writes? (file conflict)
+- **Q3** — does later work need a verification checkpoint on this first? Name what would go
+  undetected without it; "it would be tidy" is not a checkpoint.
+- **Q4** — would the combined work blow a single session's context budget?
+
+All NO → merge into ONE stage with parallel subagents over disjoint files. See
+[Stage Fragmentation](mistakes.md) for the detection rule and the cost of getting this wrong.
 
 ## Bootstrap Mode
 

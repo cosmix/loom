@@ -352,3 +352,56 @@ condition under which a restructuring run drops content.
 
 **Fix:** when a file is over budget but has no oversized section, say so in the prompt and ask for
 a split proposal by topic cohesion instead of naming a section-extraction target that isn't there.
+
+## Long Codex Runs Starve the Loom Heartbeat (2026-08-07)
+
+A foreground `codex:codex-rescue` run is ONE Bash tool call that blocks until codex returns. The
+session heartbeat (`.work/heartbeat/<stage-id>.json`) is refreshed by exactly two writers, both
+shell hooks — `hooks/session-start.sh:61-72` (initial) and `hooks/post-tool-use.sh:66-91` (after
+every tool use), registered at `loom/src/hooks/config.rs:47-48`. No Rust production code writes a
+heartbeat (`write_heartbeat`, `monitor/heartbeat.rs:264`, has only test callers). PostToolUse cannot
+fire until the Bash call returns, so a codex run longer than the stage's budget makes the daemon
+print `appears hung` for a stage that is perfectly healthy.
+
+Budget: `DEFAULT_HUNG_TIMEOUT_SECS = 300` (`monitor/heartbeat.rs:21`), overridable per stage with
+`subagent_timeout_secs` → `Stage::effective_subagent_timeout_secs()` (`models/stage/methods.rs:107-110`),
+resolved at `monitor/detection.rs:475-488`. `MonitorConfig::hung_timeout` (`monitor/config.rs:17,29`)
+is only the fallback for a session whose stage cannot be resolved by id.
+
+**`MonitorEvent::SessionHung` is ADVISORY ONLY.** One emit site (`monitor/detection.rs:505-511`),
+one match arm (`orchestrator/core/event_handler.rs:187-209`) that is a `clear_status_line()` plus a
+single `eprintln!` — the code carries the comment *"ADVISORY ONLY: nothing is killed and nothing is
+retried."* It warns ONCE per session (dedupe set `reported_hung_sessions`, `detection.rs:48`,
+cleared on a fresh beat at `:456-457` and on `Healthy` at `:521`). Contrast the siblings that DO
+act: `SessionCrashed` (`event_handler.rs:153`), `SessionNeedsHandoff` (kills + re-queues, `:110`),
+`BudgetExceeded` (`:218`). Nothing kills, retries, or transitions a stage on SessionHung — the
+warning is noise, not damage.
+
+**Mitigation is doctrine, not a monitor change.** Keep each codex task bounded, and set
+`subagent_timeout_secs` on stages that legitimately block for longer. CLAUDE.md Rule 6 now caps any
+single bounded check at 300s and tells the orchestrator to re-arm rather than wait open-endedly.
+
+**Deliberately OUT OF SCOPE: raising `MonitorConfig::hung_timeout`.** A global raise would blind the
+monitor to genuinely dead sessions on every other stage in order to silence a cosmetic warning on
+one lane, and the per-stage override already covers the real case. Do NOT "fix" this by editing the
+default — it was considered and rejected as disproportionate.
+
+## `loom status` "Stale" Badge Is Not Stage-Aware (2026-08-07)
+
+Two independent 300s constants with different consumers:
+
+- **detection** — `orchestrator::monitor::heartbeat::DEFAULT_HUNG_TIMEOUT_SECS`
+  (`monitor/heartbeat.rs:21`), per-stage overridable via `subagent_timeout_secs`.
+- **display** — `models::constants::STALENESS_THRESHOLD_SECS` (`models/constants.rs:37`), hardcoded
+  at `commands/status/data/collector.rs:49` and `commands/status/render/activity.rs:21`.
+
+`subagent_timeout_secs` reroutes only the detection one. A stage with `subagent_timeout_secs: 900`
+stays healthy to the orchestrator until 900s but renders `Stale` / "session may be hung" in
+`loom status` from 301s — which can push an operator into intervening on a healthy stage.
+
+Flagged twice (implementation, then confirmed by integration-verify) and NOT fixed on purpose:
+`determine_activity_status(session, staleness_secs)` takes no `Stage`, so making it stage-aware
+means threading the effective timeout through that call site AND the render path — a status
+subsystem change with its own test surface, unrelated to the codex lane. Fix if picked up later:
+pass `Stage::effective_subagent_timeout_secs()` into `determine_activity_status` and the activity
+renderer instead of the constant.

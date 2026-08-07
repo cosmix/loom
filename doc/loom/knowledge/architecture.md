@@ -107,6 +107,12 @@ KnowledgeFile enum: Architecture, EntryPoints, Patterns, Conventions, Mistakes, 
 5. If goal-check: update has_any_goal_checks() in BOTH StageDefinition and Stage
 6. If verification: add verify function in verify/goal_backward/ and call from run_goal_backward_verification()
 7. Check ALL test files constructing Stage directly (src/ AND tests/ directories)
+8. If the field reaches the agent: copy it onto `EmbeddedContext` (orchestrator/signals/types.rs) and
+   emit it from BOTH format/sections.rs AND recovery_format.rs — the recovery signal embeds only the
+   stable prefix, so a gated section missing there vanishes on any retry
+9. Add the two backwards-compat tests (plan YAML without the key; legacy `.work/stages/*.md` without
+   the key) — see [Additive Schema Fields](conventions.md); `#[serde(default)]` is the only migration
+10. If it is user-facing, add a row to the README Stage Fields table
 
 ## Goal-Backward Verification (verify/goal_backward/)
 
@@ -379,17 +385,22 @@ thresholds, the `check.rs` coverage blast radius, opt-in migration, and lock ord
 
 ## Codex Plugin (openai-codex) [DETAILED]
 
-The Codex Claude Code plugin: marketplace/install, the `codex:codex-rescue` forwarding subagent and its
-flag-forwarding contract, `codex-companion.mjs` effort values, the three plugin hooks, and the settings
-trap that makes local-scope installs vanish inside loom worktrees.
+The Codex Claude Code plugin: marketplace/install and scope rules, the `codex:codex-rescue` forwarding
+subagent and its flag-forwarding contract, `codex-companion.mjs` effort values, the three plugin hooks,
+and what loom shipped to drive it — the per-stage `implementer` field (`claude` | `codex`), the gated
+`## Codex Implementers` signal section on both the normal and recovery paths, and the two-key settings
+carry-forward that lets a plugin install survive loom's per-worktree settings rebuild.
 
 → [Codex Plugin](architecture/codex-plugin.md)
 
 ## Codex Concurrency [DETAILED]
 
-Empirical spike on running several codex-companion tasks at once in one workspace:
-**CODEX_MAX_PARALLEL = 6 verified** for foreground fan-out over disjoint file sets — edits and results
-were correct at every concurrency tested. Only the plugin's unlocked shared `state.json` degrades, which
-costs observability (`/codex:status`, `/codex:result`) and rules out *background* fan-out.
+Empirical spike on running several codex-companion tasks at once in one workspace: **foreground fan-out
+over disjoint file sets is verified safe to 6** — edits and results were correct at every concurrency
+tested. Only the plugin's unlocked shared `state.json` degrades, which costs observability
+(`/codex:status`, `/codex:result`) and rules out *background* fan-out. Note the cap of 6 is a doctrine
+number carried as a literal in the signal prose; there is **no `CODEX_MAX_PARALLEL` constant in the
+code**. The page also records what execution did NOT prove: no stage has yet run with
+`implementer: "codex"`.
 
 → [Codex Concurrency](architecture/codex-concurrency.md)

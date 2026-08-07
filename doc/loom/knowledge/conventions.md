@@ -320,3 +320,62 @@ relaxation".
 ## Git Push Requires Explicit User Request
 
 Never `git push` unless the user explicitly asks — commit locally and stop. "Fix the CI failure" does NOT imply pushing to make CI green; the user decides when commits leave the machine. (Learned 2026-07-22: pushed after fixing a red CI run on the theory that CI-green was the deliverable — user rejected: "i didn't ask you to push.")
+
+## Claude Code Plugin Scope in Loom Repos (2026-08-07)
+
+Enable Claude Code plugins at **user or project scope** — `claude plugin install codex@openai-codex --scope user`.
+Scope decides the file: user → `~/.claude/settings.json`, project → `.claude/settings.json`,
+local → `.claude/settings.local.json`. That last file is the one loom REBUILDS from scratch on every
+stage spawn (`sandbox::write_settings`, `sandbox/settings.rs:77`, called from
+`orchestrator/core/stage_executor.rs:373` and `:584`, and from `loom repair --fix`).
+
+**Nuance that shipped 2026-08-07 — do not over-read the old "local scope vanishes" rule.**
+`preserve_unowned_keys` (`sandbox/settings.rs:587`) now carries a two-key allowlist across every
+regeneration:
+
+```rust
+const PRESERVED_SETTINGS_KEYS: [&str; 2] = ["enabledPlugins", "extraKnownMarketplaces"];
+```
+
+Plugin enablement at local scope therefore *survives* — verified by driving the real `write_settings`
+over a seeded file twice. The user/project rule still stands, for a different reason than before:
+the carve-out is exactly two keys, so local scope is safe **only** for plugins and **only** by
+special case. Everything else you put in that file (`env`, custom `hooks`, ...) is still dropped on
+the next spawn — see [Sandbox & Settings](mistakes/sandbox-and-settings.md).
+
+Verify inside a worktree after a stage starts; never assume:
+
+```bash
+rg -n "enabledPlugins" .claude/settings.local.json
+claude plugin list --json
+```
+
+## Additive Schema Fields: `#[serde(default)]`, Never a Migration (2026-08-07)
+
+Loom is pre-release: **no backwards-compatibility shims and no migration routines.** A new stage
+field is added additively, and `#[serde(default)]` alone carries every existing plan file and every
+in-flight `.work/stages/*.md` — there is no version stamp and no upgrade pass. The shape as shipped
+for `implementer` and `subagent_timeout_secs`:
+
+- Plan schema `StageDefinition` (`plan/schema/types.rs:267`) — `#[serde(default)]`; add
+  `skip_serializing_if = "Option::is_none"` for `Option` fields (`:272`) so re-serialized plans stay clean.
+- Runtime `Stage` (`models/stage/types.rs:673`) — `#[serde(default)]`, so a stage file written
+  before the field existed still loads mid-run.
+- Prefer a **closed enum over a string**: `Implementer` (`models/stage/types.rs:135`) derives
+  `Default` + `#[serde(rename_all = "kebab-case")]`, so a typo is a parse ERROR (`unknown variant
+  'bogus-lane', expected 'claude' or 'codex'`), never a silent fallback. Pin `Display` to the serde
+  spelling with a test (`plan/schema/tests/implementer_tests.rs:91`).
+- Propagate along the existing chain — see [Adding New Plan Fields Checklist](architecture.md):
+  plan → `create_stage_from_definition` (`commands/init/plan_setup.rs:296`) → signal
+  `EmbeddedContext` (`orchestrator/signals/generate.rs:613`).
+
+**Guard it with the `implementer_backwards_compat*` pair** — copy these two tests verbatim in shape
+for any new field (`loom/tests/integration/implementer_backwards_compat.rs:47,102`):
+
+1. `*_plan_yaml_without_field_parses` — parse plan markdown whose YAML has NO such key; assert every
+   stage gets the default.
+2. `*_stage_file_without_field_loads` — write legacy `.work/stages/*.md` frontmatter with no such
+   key, call `load_stage()`, assert it loads and defaults.
+
+Schema-only tests are not enough: they never touch the state files already on disk, which is exactly
+where a non-defaulted field breaks a running plan.
