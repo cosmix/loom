@@ -79,6 +79,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-v2-
 
+      - name: Install tmux
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y tmux
+
       - name: Run tests
         working-directory: loom
         run: ${{ matrix.test_cmd }}
