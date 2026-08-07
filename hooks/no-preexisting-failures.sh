@@ -29,12 +29,8 @@
 
 set -euo pipefail
 
+# Debug tracing comes from _common.sh (`loom_debug`), gated on LOOM_HOOK_DEBUG=1.
 source "$(dirname "$0")/_common.sh"
-
-debug() {
-	[[ "${LOOM_HOOK_DEBUG:-}" == "1" || "${NO_PREEXISTING_FAILURES_DEBUG:-}" == "1" ]] || return 0
-	echo "$@" >&2
-}
 
 if command -v gtimeout &>/dev/null; then
 	INPUT_JSON=$(gtimeout 1 cat 2>/dev/null || true)
@@ -61,7 +57,7 @@ if [[ -z "$HAYSTACK" ]]; then
 	exit 0
 fi
 
-debug "=== no-preexisting-failures: tool=$TOOL_NAME ==="
+loom_debug "=== no-preexisting-failures: tool=$TOOL_NAME ==="
 
 # Each pattern names a way of saying "this red result is not mine to fix".
 # Anchored on a failure word so that "pre-existing behaviour" or "pre-existing
@@ -86,11 +82,11 @@ check "(known|expected|acceptable|benign|harmless)[[:space:]]+${FAILWORD}" "norm
 check "(environmental|flaky|transient|intermittent)[[:space:]]+${FAILWORD}" "attributing a failure to the environment"
 
 if [[ -z "$MATCHED" ]]; then
-	debug "no excuse phrasing found"
+	loom_debug "no excuse phrasing found"
 	exit 0
 fi
 
-debug "WARN: $MATCHED"
+loom_debug "WARN: $MATCHED"
 
 read -r -d '' MSG <<'EOF' || true
 LOOM_HOOK_WARN: STOP - you are about to record a failure as somebody else's problem.

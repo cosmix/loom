@@ -273,8 +273,19 @@ fn match_process_to_terminal(process_name: &str) -> Option<TerminalEmulator> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
+
+    // LOOM_TERMINAL / TERMINAL / TERM_PROGRAM are process-global, but cargo runs
+    // the tests in this binary on parallel threads. Every test below either
+    // mutates or reads them through `detect_terminal`, so they must not overlap:
+    // without `#[serial]`, `test_term_program_env_var_detection` can remove
+    // LOOM_TERMINAL and set TERM_PROGRAM=iTerm.app in the window between another
+    // test's `set_var("LOOM_TERMINAL", ...)` and its `detect_terminal()` call,
+    // which then falls through to the TERM_PROGRAM branch and returns the wrong
+    // emulator (observed: expected Ghostty, got ITerm2).
 
     #[test]
+    #[serial]
     fn test_detect_terminal_finds_something() {
         // This test may fail in minimal environments without any terminal
         // but should pass on most development machines
@@ -309,6 +320,7 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
+    #[serial]
     fn test_loom_terminal_env_var_takes_precedence() {
         // Test that LOOM_TERMINAL environment variable takes precedence over all other detection
         // Save and clear any existing LOOM_TERMINAL
@@ -341,6 +353,7 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
+    #[serial]
     fn test_term_program_env_var_detection() {
         // Save existing env vars
         let original_loom = std::env::var("LOOM_TERMINAL").ok();
@@ -379,6 +392,7 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
+    #[serial]
     fn test_loom_terminal_env_var_invalid() {
         // Test that invalid LOOM_TERMINAL falls back to regular detection
         std::env::set_var("LOOM_TERMINAL", "invalid-terminal-name");
