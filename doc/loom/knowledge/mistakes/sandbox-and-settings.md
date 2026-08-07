@@ -98,3 +98,44 @@ These stale entries would have misled future agents into using `permission_mode:
 **Prevention:** Treat the MAIN repo's `.claude/settings.json` and `.claude/settings.local.json` as env sources for ALL sessions, including worktree ones. Per-session identity must be scrubbed from the main-repo settings files in the RUN path — at daemon startup and in every code path that rewrites those files (the sync fold-back especially) — not only on `loom init`/`repair`.
 
 **Fix:** three-site run-path healing. (1) `scrub_main_repo_settings_identity(repo_root)` (`fs/permissions/settings.rs`) scrubs BOTH main-repo settings files, called from `prepare_repo_for_run` (`commands/run/checks.rs`) so every `loom run` — background and foreground — heals before spawning; (2) `merge_permissions_with_lock` (`fs/permissions/sync.rs`) scrubs while holding the fold-back lock, so every stage completion re-heals mid-run; (3) `migrate_hooks_to_local` (`ensure_loom_permissions`) drops identity keys from `settings.json` on init/repair. `LOOM_WORK_DIR` is stable per-repo and deliberately survives.
+
+## Worktree Settings Are a Whole-Object Rebuild — Unemitted Keys Vanish (2026-08-07)
+
+**What happened:** `.claude/settings.local.json` is not merged, it is REBUILT.
+`generate_settings_json` (`sandbox/settings.rs:246`) starts from `json!({})` and assigns exactly
+three top-level keys — `sandbox` (`:367`), `permissions` (`:435`, always present via
+`apply_default_mode` at `:440`), and `worktree` (`:452`) — then `write_settings` overwrites the
+whole file (`:197`). Only two things survive from the previous contents: `permissions.allow`/`deny`
+(`merge_existing_permissions`, `:187`) and the two-key allowlist
+`PRESERVED_SETTINGS_KEYS = ["enabledPlugins", "extraKnownMarketplaces"]` (`:580`, applied at `:191`).
+Every other top-level key — `env`, user-authored `hooks`, `hasTrustDialogAccepted`, anything another
+Claude Code feature wrote there — is silently dropped. This happens in worktrees AND in the main
+repo root (`stage_executor.rs:373` and `:584`, `commands/repair.rs:879`).
+
+**Why:** the rebuild is deliberate — loom owns the sandbox and permission blocks and must not
+inherit drift from a previous run. But it makes the file hostile to every *other* writer, and it
+fails silently: no warning, no diff, the key is simply gone on the next stage spawn.
+
+**Prevention (detection rule):** when a Claude Code feature configured through settings works in the
+main repo but NOT inside a loom worktree, do not debug the feature — check whether
+`generate_settings_json` emits that key at all:
+
+```bash
+rg -n '"<yourKey>"' loom/src/sandbox/settings.rs      # emitted anywhere?
+rg -n "PRESERVED_SETTINGS_KEYS" loom/src/sandbox/settings.rs   # or carried forward?
+```
+
+Neither hit means the key is dropped every spawn, and no amount of re-configuring the feature will
+survive.
+
+**Fix:** either add the key to `PRESERVED_SETTINGS_KEYS` (a foreign key loom carries forward) or
+emit it from `generate_settings_json` (a key loom owns). `preserve_unowned_keys` skips any key the
+generated object already contains (`:595`), so generated always wins — the allowlist can never be
+used to smuggle privileges past loom's own sandbox/permission blocks. Negative-control tests at
+`settings.rs:1695-1742` pin exactly that: `enabledPlugins` and `extraKnownMarketplaces` carry
+forward, a seeded `env` key and an arbitrary unknown key are both dropped.
+
+**Related trap:** `git/worktree/settings.rs:97-104` copies the main repo's `.claude/settings.local.json`
+wholesale into a new worktree *before* the rebuild, so a main-repo local-scope key appears to
+propagate — then loses everything outside the allowlist on the first stage spawn. The copy is not
+evidence that the key survives.

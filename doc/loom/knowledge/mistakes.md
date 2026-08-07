@@ -76,9 +76,10 @@ files in your assignment.
 
 ## Sandbox: Contradictory Path Rules
 
-Eight lessons on sandbox path rules, permission sync, `excludedCommands` matching,
-`defaultMode` being silently ignored, and settings env leaking between the main repo and its
-worktrees. Recurring root cause: settings are *merged* from several sources, so a rule is only
+Nine lessons on sandbox path rules, permission sync, `excludedCommands` matching, `defaultMode`
+being silently ignored, settings env leaking between the main repo and its worktrees, and the
+whole-object rebuild of `.claude/settings.local.json` that silently drops any top-level key loom
+does not emit. Recurring root cause: settings are *merged* from several sources, so a rule is only
 as good as the last writer.
 
 → [Sandbox & Settings](mistakes/sandbox-and-settings.md)
@@ -383,3 +384,28 @@ invented CLI commands (`loom hooks`, `loom sandbox`, `loom verify`) inferred fro
 and features documented that were never built (`.work/facts.toml`, `loom memory promote`).
 
 → [Knowledge Base Drift](mistakes/knowledge-base-drift.md)
+
+## Stage Fragmentation: Compile-Order Is Not a Stage Boundary (2026-08-07)
+
+**What happened:** the most common loom plan-authoring error is splitting ONE cohesive feature into
+one stage per architectural layer (schema → runtime → doctrine → tests) because each layer imports
+the one before it. This plan deliberately did not: the whole codex-implementer feature shipped as a
+SINGLE standard stage between the knowledge/integration-verify bookends, with a foundation edit
+followed by parallel subagents over disjoint files.
+
+**Why:** "B imports A" is a COMPILE-ORDER dependency, and one stage resolves it for free by writing
+A first — that is a foundation step, not a stage boundary. Only a MERGE-ORDER dependency is a real
+boundary: the dependent work must run against *merged, gate-passed* code. Each extra stage costs a
+worktree, a session, a merge, and a FULL re-run of the acceptance gate.
+
+**Prevention (detection rule):** if a plan has one stage per architectural layer of a single feature
+and their `files:` sets are DISJOINT, it is fragmented — merge them. Disjoint file sets are evidence
+*for* merging (parallel subagents can own them), not against it. `/loom-plan-writer` now enforces
+this: the Stage Necessity Test (`skills/loom-plan-writer/SKILL.md:388`) requires every non-bookend
+stage to name which of Q1-Q4 forced it, the validation checklist re-checks that at `:825`, and
+`:771` states outright that a compile-order dependency is a foundation step, not a stage split. A
+stage that cannot cite a question is fragmentation.
+
+**Fix:** one stage, foundation edit first, then fan out. Derive the foundation sweep from
+`cargo build`, never from the plan's hand-counted file table — in execution the foundation step had
+to fix three `Stage` struct literals, not the one the plan named, before fan-out could compile.
