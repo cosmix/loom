@@ -245,6 +245,12 @@ fn test_complete_flags_pressure() {
 }
 
 #[test]
+fn test_complete_commands_includes_attach() {
+    let results = complete_commands("").unwrap();
+    assert!(results.contains(&"attach".to_string()));
+}
+
+#[test]
 fn test_pressure_has_no_subcommands() {
     assert!(!has_subcommands("pressure"));
 }
