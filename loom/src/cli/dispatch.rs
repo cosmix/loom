@@ -14,19 +14,24 @@ use super::types::{
 
 pub fn dispatch(command: Commands) -> Result<()> {
     match command {
-        Commands::Init { plan_path, clean } => init::execute(Some(PathBuf::from(plan_path)), clean),
+        Commands::Init {
+            plan_path,
+            clean,
+            backend,
+        } => init::execute(Some(PathBuf::from(plan_path)), clean, backend),
         Commands::Run {
             manual,
             max_parallel,
             foreground,
             watch,
             no_merge,
+            backend,
         } => {
             let auto_merge = !no_merge;
             if foreground {
-                run::execute(manual, max_parallel, watch, auto_merge)
+                run::execute(manual, max_parallel, watch, auto_merge, backend)
             } else {
-                run::execute_background(manual, max_parallel, watch, auto_merge)
+                run::execute_background(manual, max_parallel, watch, auto_merge, backend)
             }
         }
         Commands::Status {

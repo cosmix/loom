@@ -66,7 +66,11 @@ impl Orchestrator {
             if let Some(session) = &crashed_session {
                 let crashed_fast =
                     (Utc::now() - session.created_at).num_seconds() <= FAST_FAIL_WINDOW_SECS;
-                if crashed_fast && crate::remote_control::resolve(&self.config.work_dir) {
+                // A tmux hosting failure must not be misattributed to Remote Control.
+                if crashed_fast
+                    && session.backend == crate::models::session::SessionBackendKind::Native
+                    && crate::remote_control::resolve(&self.config.work_dir)
+                {
                     let _ = crate::remote_control::write_unsupported_marker(&self.config.work_dir);
                     clear_status_line();
                     eprintln!(

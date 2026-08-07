@@ -4,8 +4,10 @@ use crate::fs::permissions::{ensure_loom_permissions, migrate_legacy_trust};
 use crate::fs::work_dir::WorkDir;
 use crate::fs::work_integrity::validate_work_dir_state;
 use crate::git::install_pre_commit_hook;
+use crate::models::session::SessionBackendKind;
 use anyhow::{bail, Result};
 use colored::Colorize;
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
 use super::cleanup::{
@@ -58,7 +60,9 @@ impl Drop for InitGuard {
 /// # Arguments
 /// * `plan_path` - Optional path to a plan file to initialize with
 /// * `clean` - If true, clean up stale resources before initialization
-pub fn execute(plan_path: Option<PathBuf>, clean: bool) -> Result<()> {
+/// * `backend` - Terminal backend for sessions (native|tmux); `None` prompts
+///   interactively on a TTY, or defaults to native otherwise
+pub fn execute(plan_path: Option<PathBuf>, clean: bool, backend: Option<String>) -> Result<()> {
     let repo_root = std::env::current_dir()?;
     let repo_bootstrap = crate::git::ensure_repo_ready_for_worktrees(&repo_root)?;
 
@@ -73,7 +77,7 @@ pub fn execute(plan_path: Option<PathBuf>, clean: bool) -> Result<()> {
     println!("{}", "─".repeat(40).dimmed());
 
     prune_stale_worktrees(&repo_root)?;
-    cleanup_orphaned_sessions()?;
+    cleanup_orphaned_sessions(&repo_root)?;
 
     if clean {
         cleanup_work_directory(&repo_root)?;
@@ -148,7 +152,8 @@ pub fn execute(plan_path: Option<PathBuf>, clean: bool) -> Result<()> {
     }
 
     if let Some(path) = plan_path {
-        let stage_count = initialize_with_plan(&work_dir, &path)?;
+        let terminal_backend = resolve_backend_choice(backend)?;
+        let stage_count = initialize_with_plan(&work_dir, &path, terminal_backend)?;
         print_summary(Some(&path), stage_count);
     } else {
         print_summary(None, 0);
@@ -158,6 +163,57 @@ pub fn execute(plan_path: Option<PathBuf>, clean: bool) -> Result<()> {
     guard.disarm();
 
     Ok(())
+}
+
+/// Resolve the terminal backend choice for `loom init`.
+///
+/// Precedence: an explicit `--backend` flag always wins (clap's
+/// `value_parser` already constrains it to "native"/"tmux"). Otherwise, on
+/// an interactive terminal, prompt the operator. Otherwise (programmatic
+/// init, non-TTY) default to native so init never hangs.
+fn resolve_backend_choice(flag: Option<String>) -> Result<SessionBackendKind> {
+    let kind = if let Some(value) = flag {
+        match value.as_str() {
+            "native" => SessionBackendKind::Native,
+            "tmux" => SessionBackendKind::Tmux,
+            other => bail!("Invalid terminal backend: {other}"),
+        }
+    } else if std::io::stdin().is_terminal() && std::io::stdout().is_terminal() {
+        prompt_backend_choice()?
+    } else {
+        SessionBackendKind::Native
+    };
+
+    if kind == SessionBackendKind::Tmux && which::which("tmux").is_err() {
+        eprintln!(
+            "  {} tmux backend selected but tmux was not found on PATH - install tmux \
+             before running `loom run`, or re-run `loom init` with `--backend native`",
+            "!".yellow().bold()
+        );
+    }
+
+    Ok(kind)
+}
+
+/// Interactively prompt for the terminal backend, re-prompting on invalid input.
+fn prompt_backend_choice() -> Result<SessionBackendKind> {
+    loop {
+        print!("Terminal backend for sessions [native/tmux] (native): ");
+        std::io::stdout().flush().ok();
+
+        let mut response = String::new();
+        let bytes_read = std::io::stdin().read_line(&mut response)?;
+        if bytes_read == 0 {
+            // EOF - default to native.
+            return Ok(SessionBackendKind::Native);
+        }
+
+        match response.trim().to_ascii_lowercase().as_str() {
+            "" | "native" => return Ok(SessionBackendKind::Native),
+            "tmux" => return Ok(SessionBackendKind::Tmux),
+            _ => println!("  Please enter 'native' or 'tmux'."),
+        }
+    }
 }
 
 fn print_repo_bootstrap(repo_bootstrap: crate::git::RepoBootstrapResult) {

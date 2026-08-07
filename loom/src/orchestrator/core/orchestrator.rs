@@ -26,7 +26,7 @@ use super::persistence::Persistence;
 use super::recovery::Recovery;
 use super::stage_executor::StageExecutor;
 use crate::orchestrator::liveness::LivenessService;
-use crate::orchestrator::terminal::native::NativeBackend;
+use crate::orchestrator::terminal::backend::SessionBackend;
 
 /// Configuration for the orchestrator
 #[derive(Debug, Clone)]
@@ -86,8 +86,9 @@ pub struct Orchestrator {
     pub(super) monitor: Monitor,
     /// Track reported crashes to avoid duplicate messages
     pub(super) reported_crashes: HashSet<String>,
-    /// Native terminal backend — spawns and kills sessions.
-    pub(super) native: Arc<NativeBackend>,
+    /// Session backend (native or tmux, selected by the persisted `[terminal]`
+    /// config) — spawns and kills sessions.
+    pub(super) backend: Arc<SessionBackend>,
     /// Liveness probe (shared with the monitor thread).
     pub(super) liveness: LivenessService,
     /// Skill index for generating skill recommendations in signals
@@ -144,8 +145,8 @@ impl Orchestrator {
 
         let mut monitor = Monitor::new(monitor_config);
 
-        let native = Arc::new(NativeBackend::new(config.work_dir.clone())?);
-        let liveness = LivenessService::new(Arc::clone(&native));
+        let backend = Arc::new(SessionBackend::from_config(config.work_dir.clone())?);
+        let liveness = LivenessService::new(Arc::clone(&backend));
         monitor.set_liveness(liveness.clone());
 
         // Load skill index if skill routing is enabled
@@ -198,7 +199,7 @@ impl Orchestrator {
             active_worktrees: HashMap::new(),
             monitor,
             reported_crashes: HashSet::new(),
-            native,
+            backend,
             liveness,
             skill_index,
             detected_languages,

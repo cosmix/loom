@@ -14,6 +14,7 @@ pub mod merge;
 pub mod parallel;
 pub mod sequential;
 pub mod sessions;
+pub mod tmux_backend;
 pub mod uncommitted_changes;
 
 pub use fixtures::*;

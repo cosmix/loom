@@ -37,6 +37,10 @@ pub enum Commands {
         /// (removes old .work/, prunes worktrees, kills orphaned sessions)
         #[arg(long)]
         clean: bool,
+
+        /// Terminal backend for sessions (native|tmux); skips the interactive prompt
+        #[arg(long, value_parser = ["native", "tmux"])]
+        backend: Option<String>,
     },
 
     /// Run stages from a plan (starts orchestrator in background)
@@ -60,6 +64,10 @@ pub enum Commands {
         /// Disable auto-merge of completed stages (merge is enabled by default)
         #[arg(long)]
         no_merge: bool,
+
+        /// Terminal backend for sessions (native|tmux); persisted to the [terminal] section of the loom config
+        #[arg(long, value_parser = ["native", "tmux"])]
+        backend: Option<String>,
     },
 
     /// Show dashboard with context health

@@ -457,7 +457,7 @@ impl StageExecutor for Orchestrator {
             // stage in Executing on disk; subsequent `loom run` invocations
             // poll forever because Executing stages are never re-spawned.
             match self
-                .native
+                .backend
                 .spawn_session(&stage, &worktree, session, &signal_path)
             {
                 Ok(spawned) => {
@@ -649,7 +649,7 @@ impl StageExecutor for Orchestrator {
         let spawned_session = if !self.config.manual_mode {
             // Spawn session in the main repo directory (not a worktree)
             let spawned = self
-                .native
+                .backend
                 .spawn_knowledge_session(&stage, session, &signal_path, &self.config.repo_root)
                 .with_context(|| {
                     format!("Failed to spawn knowledge session for stage: {stage_id}")

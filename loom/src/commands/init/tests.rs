@@ -3,6 +3,7 @@
 use super::cleanup::{cleanup_work_directory, prune_stale_worktrees};
 use super::plan_setup::{create_stage_from_definition, initialize_with_plan};
 use crate::fs::work_dir::WorkDir;
+use crate::models::session::SessionBackendKind;
 use crate::models::stage::{
     Implementer, Implementers, Stage, StageStatus, StageType as ModelStageType,
 };
@@ -332,7 +333,7 @@ fn test_initialize_with_plan_nonexistent_file() {
 
     let nonexistent_path = temp_dir.path().join("nonexistent.md");
 
-    let result = initialize_with_plan(&work_dir, &nonexistent_path);
+    let result = initialize_with_plan(&work_dir, &nonexistent_path, SessionBackendKind::Native);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("does not exist"));
@@ -378,7 +379,7 @@ fn test_initialize_with_plan_creates_config() {
 
     let plan_path = create_test_plan(temp_dir.path(), vec![stage_def]);
 
-    let result = initialize_with_plan(&work_dir, &plan_path);
+    let result = initialize_with_plan(&work_dir, &plan_path, SessionBackendKind::Native);
 
     assert!(result.is_ok());
 
@@ -462,7 +463,7 @@ fn test_initialize_with_plan_creates_stage_files() {
 
     let plan_path = create_test_plan(temp_dir.path(), stages);
 
-    let result = initialize_with_plan(&work_dir, &plan_path);
+    let result = initialize_with_plan(&work_dir, &plan_path, SessionBackendKind::Native);
 
     assert!(result.is_ok());
 
@@ -519,7 +520,7 @@ fn test_initialize_with_plan_invalid_yaml() {
     )
     .unwrap();
 
-    let result = initialize_with_plan(&work_dir, &invalid_plan);
+    let result = initialize_with_plan(&work_dir, &invalid_plan, SessionBackendKind::Native);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("parse"));
@@ -538,7 +539,9 @@ fn test_prune_stale_worktrees_does_not_fail() {
 fn test_cleanup_orphaned_sessions_does_not_fail() {
     use super::cleanup::cleanup_orphaned_sessions;
 
-    let result = cleanup_orphaned_sessions();
+    let temp_dir = TempDir::new().unwrap();
+
+    let result = cleanup_orphaned_sessions(temp_dir.path());
 
     assert!(result.is_ok());
 }

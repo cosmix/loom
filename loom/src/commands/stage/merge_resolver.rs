@@ -13,7 +13,7 @@ use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::continuation::save_session;
 use crate::orchestrator::signals::{find_live_merge_session_for_stage, generate_merge_signal};
-use crate::orchestrator::terminal::native::NativeBackend;
+use crate::orchestrator::terminal::backend::SessionBackend;
 
 /// Result of attempting to spawn a merge resolver session.
 pub enum MergeResolverResult {
@@ -27,7 +27,7 @@ pub enum MergeResolverResult {
 
 /// Spawn a merge conflict resolver session from the CLI.
 ///
-/// When the daemon is not running, this spawns a native terminal session
+/// When the daemon is not running, this spawns a session through the configured backend
 /// to resolve merge conflicts. If the daemon IS running, it returns early
 /// since the daemon handles merge resolution automatically.
 ///
@@ -68,9 +68,9 @@ pub fn spawn_merge_resolver(
         return Ok(MergeResolverResult::AlreadyRunning { session_id });
     }
 
-    // Construct a native backend for spawning the merge session.
-    let native = NativeBackend::new(work_dir.to_path_buf())
-        .context("Failed to construct native backend for merge resolver")?;
+    // Construct the configured session backend for spawning the merge session.
+    let backend = SessionBackend::from_config(work_dir.to_path_buf())
+        .context("Failed to construct session backend for merge resolver")?;
 
     // Get the source branch name for this stage
     let source_branch = branch_name_for_stage(&stage.id);
@@ -91,8 +91,8 @@ pub fn spawn_merge_resolver(
     )
     .context("Failed to generate merge signal")?;
 
-    // Spawn the merge session via the native backend.
-    let spawned_session = native
+    // Spawn the merge session via the configured session backend.
+    let spawned_session = backend
         .spawn_merge_session(stage, session, &signal_path, repo_root)
         .context("Failed to spawn merge resolver session")?;
 
