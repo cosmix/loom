@@ -1,6 +1,6 @@
 //! Formatting for recovery signal markdown files.
 
-use crate::models::stage::{Implementer, Stage};
+use crate::models::stage::Stage;
 
 use super::cache::stable_prefix_for;
 use super::format::{format_codex_implementers_section, format_subagent_timeout_section};
@@ -80,8 +80,8 @@ pub fn format_recovery_signal(
     // the gated block here too, or a resumed codex stage reads a pointer to a
     // section that is not present and loses foreground-only fan-out, the
     // concurrency cap, and "verification stays with you".
-    if stage.implementer == Implementer::Codex {
-        signal.push_str(&format_codex_implementers_section());
+    if stage.implementers.includes_codex() {
+        signal.push_str(&format_codex_implementers_section(&stage.implementers));
     }
 
     // Same reasoning for the response budget: it is a gated SEMI-STABLE block, so

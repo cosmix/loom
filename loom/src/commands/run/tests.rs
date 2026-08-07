@@ -5,7 +5,7 @@ use super::graph_loader::build_execution_graph;
 use crate::fs::work_dir::WorkDir;
 use crate::orchestrator::OrchestratorResult;
 use crate::plan::schema::{
-    Implementer, LoomConfig, LoomMetadata, SandboxConfig, StageDefinition, StageSandboxConfig,
+    Implementers, LoomConfig, LoomMetadata, SandboxConfig, StageDefinition, StageSandboxConfig,
     StageType,
 };
 use std::fs;
@@ -67,7 +67,7 @@ fn setup_work_dir_with_plan(temp_dir: &TempDir) -> (PathBuf, WorkDir) {
         reasoning_effort: None,
         code_review: None,
         ultracode: false,
-        implementer: Implementer::Claude,
+        implementers: Implementers::default(),
         subagent_timeout_secs: None,
     };
 

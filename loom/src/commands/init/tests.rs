@@ -3,7 +3,9 @@
 use super::cleanup::{cleanup_work_directory, prune_stale_worktrees};
 use super::plan_setup::{create_stage_from_definition, initialize_with_plan};
 use crate::fs::work_dir::WorkDir;
-use crate::models::stage::{Implementer, Stage, StageStatus, StageType as ModelStageType};
+use crate::models::stage::{
+    Implementer, Implementers, Stage, StageStatus, StageType as ModelStageType,
+};
 use crate::plan::schema::{
     AcceptanceCriterion, LoomConfig, LoomMetadata, SandboxConfig, StageDefinition,
     StageSandboxConfig, StageType,
@@ -67,7 +69,7 @@ fn test_create_stage_from_definition_no_dependencies() {
         reasoning_effort: None,
         code_review: None,
         ultracode: false,
-        implementer: Implementer::Claude,
+        implementers: Implementers::default(),
         subagent_timeout_secs: None,
     };
 
@@ -89,18 +91,27 @@ fn test_create_stage_from_definition_no_dependencies() {
     let ultracode_stage = create_stage_from_definition(&ultracode_def, "plan-001");
     assert!(ultracode_stage.ultracode);
 
-    // The implementer lane propagates from the definition to the stage model
+    // The implementer lanes propagate from the definition to the stage model,
+    // preserving preference ORDER — the first lane is what routine work reaches
+    // for, so a reordering here would silently retarget every stage's subagents.
     assert_eq!(
-        stage.implementer,
+        stage.implementers.preferred(),
         Implementer::Claude,
-        "implementer defaults to Claude"
+        "implementers defaults to the Claude lane"
     );
-    let codex_def = StageDefinition {
-        implementer: Implementer::Codex,
+    assert!(!stage.implementers.includes_codex());
+
+    let mixed_def = StageDefinition {
+        implementers: Implementers::new(vec![Implementer::Codex, Implementer::Claude]),
         ..stage_def.clone()
     };
-    let codex_stage = create_stage_from_definition(&codex_def, "plan-001");
-    assert_eq!(codex_stage.implementer, Implementer::Codex);
+    let mixed_stage = create_stage_from_definition(&mixed_def, "plan-001");
+    assert!(
+        mixed_stage.implementers.is_mixed(),
+        "a mixed lane list must survive definition → stage"
+    );
+    assert_eq!(mixed_stage.implementers.preferred(), Implementer::Codex);
+    assert!(mixed_stage.implementers.includes_claude());
 
     // The subagent response budget propagates the same way. Omitted stays None
     // so the built-in default applies; an explicit value reaches the runtime
@@ -146,7 +157,7 @@ fn test_create_stage_from_definition_with_dependencies() {
         reasoning_effort: None,
         code_review: None,
         ultracode: false,
-        implementer: Implementer::Claude,
+        implementers: Implementers::default(),
         subagent_timeout_secs: None,
     };
 
@@ -220,7 +231,7 @@ fn test_serialize_stage_to_markdown_minimal() {
         reasoning_effort: None,
         is_possibly_stuck: false,
         ultracode: false,
-        implementer: Implementer::Claude,
+        implementers: Implementers::default(),
         subagent_timeout_secs: None,
     };
 
@@ -296,7 +307,7 @@ fn test_serialize_stage_to_markdown_with_all_fields() {
         reasoning_effort: None,
         is_possibly_stuck: false,
         ultracode: false,
-        implementer: Implementer::Claude,
+        implementers: Implementers::default(),
         subagent_timeout_secs: None,
     };
 
@@ -361,7 +372,7 @@ fn test_initialize_with_plan_creates_config() {
         reasoning_effort: None,
         code_review: None,
         ultracode: false,
-        implementer: Implementer::Claude,
+        implementers: Implementers::default(),
         subagent_timeout_secs: None,
     };
 
@@ -414,7 +425,7 @@ fn test_initialize_with_plan_creates_stage_files() {
             reasoning_effort: None,
             code_review: None,
             ultracode: false,
-            implementer: Implementer::Claude,
+            implementers: Implementers::default(),
             subagent_timeout_secs: None,
         },
         StageDefinition {
@@ -444,7 +455,7 @@ fn test_initialize_with_plan_creates_stage_files() {
             reasoning_effort: None,
             code_review: None,
             ultracode: false,
-            implementer: Implementer::Claude,
+            implementers: Implementers::default(),
             subagent_timeout_secs: None,
         },
     ];

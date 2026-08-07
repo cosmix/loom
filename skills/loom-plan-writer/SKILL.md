@@ -264,10 +264,11 @@ BLOCK-B — model allocation playbook:
    orchestrator does NOT implement — it decomposes the work, hands each
    subagent full context, then verifies and commits. That is all.
 2. IMPLEMENTATION IS ALWAYS DELEGATED, to as FEW subagents as the work allows. Routine
-   implementation goes to codex:codex-rescue (gpt-5.6-luna, xhigh) on stages with
-   implementer: "codex", else to sonnet (loom-software-engineer); haiku stays rare and trivial.
-   Genuinely challenging work stays opus. Verification NEVER delegates - the opus orchestrator
-   verifies and commits. Spawn BY AGENT TYPE.
+   implementation goes to codex:codex-rescue (gpt-5.6-luna, xhigh) when the stage lists codex
+   in implementers, else to sonnet (loom-software-engineer); haiku stays rare and trivial.
+   Genuinely challenging work stays opus. A stage MIXES lanes freely: choose the lane PER
+   SUBAGENT by what that piece of work needs, never once for the whole stage. Verification
+   NEVER delegates - the opus orchestrator verifies and commits. Spawn BY AGENT TYPE.
 3. DEBUGGING OR REPEATED FAILURE → spawn a `loom-advisor` (fable) subagent:
    narrow scope, full detail supplied by the orchestrator, advice returned.
    Do not let an implementer thrash on the same failure twice.
@@ -286,6 +287,14 @@ implementation to Codex (gpt-5.6-luna, xhigh) instead of sonnet/haiku subagents?
 "Codex implementers" and "Claude implementers (sonnet/haiku)". Never assume — the default is
 Claude.
 
+**`implementers` is a LIST of licensed lanes, not a mode switch.** It names which lanes a stage's
+orchestrator may spawn subagents from, in preference order — the first is what routine
+implementation reaches for. Listing a lane makes it AVAILABLE, never mandatory: the orchestrator
+still chooses per subagent by what each piece of work needs. `["codex", "claude"]` is the normal
+shape for an implementation stage that sends routine work to codex while keeping sonnet for tests
+and opus for the hard parts. Do NOT write a bare scalar (`implementers: codex`) — it fails to
+parse, and an empty list fails validation.
+
 If the user picks Codex:
 
 1. Check it is installed: `claude plugin list --json`.
@@ -296,14 +305,20 @@ If the user picks Codex:
    `extraKnownMarketplaces` through that rebuild, but it is a two-key allowlist over a
    regenerated file, not a general guarantee — user and project scope are not rewritten at all.
 3. If the user declines the install, fall back to Claude implementers and SAY SO. Never write
-   `implementer: "codex"` for a plugin that is not installed.
-4. Set `implementer: "codex"` on standard stages whose work is routine implementation. LEAVE IT
-   OFF (default `"claude"`) for stages that are mostly architecture, algorithmic or debugging
-   work, and for knowledge / knowledge-distill / integration-verify stages.
+   codex into `implementers` for a plugin that is not installed.
+4. List codex in `implementers` on standard stages whose work includes routine implementation.
+   Put it FIRST (`["codex", "claude"]`) when routine implementation is the bulk of the stage;
+   put it second (`["claude", "codex"]`) when the stage is mostly architecture or debugging but
+   still has a routine slice worth delegating. LEAVE IT OFF (default `["claude"]`) for stages
+   that are entirely judgment work, and for knowledge / knowledge-distill / integration-verify
+   stages — preflight warns if codex appears on any of those.
 5. In those stages' descriptions, name the subagent and the fan-out explicitly, e.g. "Spawn N
    `codex:codex-rescue` subagents in the FOREGROUND, each with `--model gpt-5.6-luna --effort
-   xhigh` and a DISJOINT file set; verify and commit yourself."
-6. Omitting the field is always safe: existing plans without it run unchanged on the Claude lane.
+   xhigh` and a DISJOINT file set; verify and commit yourself." When a stage mixes lanes, say
+   which work goes to which lane, and put EVERY subagent — both lanes — in ONE file-ownership
+   table. File exclusivity is enforced across lanes: a codex agent and a sonnet agent writing the
+   same file is lost work exactly as two agents in one lane would be.
+6. Omitting the field is always safe: a stage without it runs on the Claude lane.
 7. NEVER put a `.work/` path in a codex stage's `files:` list or its description. Codex runs with
    sandbox `workspace-write` and approval policy `never` — it edits anything under the git root
    without asking, and in a worktree `.work/` is a SYMLINK to state shared with every parallel
@@ -499,7 +514,7 @@ loom:
       stage_type: standard         # knowledge | standard | integration-verify | knowledge-distill (lowercase)
       model: "opus"                 # REQUIRED — every stage is an opus orchestrator now; subagent model choice happens at spawn time (Section 4)
       reasoning_effort: "xhigh"    # REQUIRED on every stage
-      implementer: "codex"         # OPTIONAL - "codex" | "claude" (default "claude" if omitted)
+      implementers: ["codex", "claude"]  # OPTIONAL - licensed lanes, first = preferred for routine work (default ["claude"])
       subagent_timeout_secs: 900   # OPTIONAL - per-subagent response budget (default 300 if omitted)
       description: |               # full task spec; NO triple backticks inside
         What this stage accomplishes.
@@ -830,7 +845,7 @@ description: |
 □ knowledge-bootstrap first · integration-verify second-to-last · knowledge-distill last
 □ Every non-bookend stage cites which Stage Necessity question (Q1-Q4) forced it; compile-order dependencies resolved with a foundation step, not a stage split
 □ Every stage: model: "opus" + reasoning_effort: xhigh + stage_type + working_dir set
-□ Codex opt-in asked and answered; implementer: set only where routine implementation is delegated, only if the plugin is installed, and never on bookend stages
+□ Codex opt-in asked and answered; `implementers:` lists codex only where routine implementation is delegated, only if the plugin is installed, and never on bookend stages; every list is a non-empty YAML sequence with no repeated lane
 □ Standard/IV stages: acceptance OR ≥1 goal-backward check (artifacts/wiring/wiring_tests/dead_code_check); wiring targets the CONSUMER; no leftover `truths:` block
 □ Every stage's acceptance carries the repo's FULL canonical gate covering its OWN files (not a scoped subset, not deferred downstream)
 □ Every prescribed check is realizable (expressible · executes the code · right strength · selected · grounded); no gate claims to prove what its inputs don't exercise

@@ -3,7 +3,7 @@
 use crate::validation::validate_id;
 
 use super::types::{
-    FilesystemConfig, LoomMetadata, NetworkConfig, SandboxConfig, StageSandboxConfig,
+    FilesystemConfig, Implementer, LoomMetadata, NetworkConfig, SandboxConfig, StageSandboxConfig,
     ValidationError,
 };
 
@@ -230,6 +230,36 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
                 message: "Stage name cannot be empty".to_string(),
                 stage_id: Some(stage.id.clone()),
             });
+        }
+
+        // `implementers: []` is not "the default" — it names zero lanes to
+        // delegate to, which no stage can execute. Omitting the key is how a
+        // plan asks for the default (`["claude"]`); an explicit empty list is
+        // a mistake worth failing on rather than silently reinterpreting.
+        if stage.implementers.is_empty() {
+            errors.push(ValidationError {
+                message: "implementers cannot be an empty list. Omit the key for the \
+                          default [\"claude\"], or name the lanes this stage may use."
+                    .to_string(),
+                stage_id: Some(stage.id.clone()),
+            });
+        }
+
+        // Order carries meaning (first = preferred for routine implementation),
+        // so a repeat makes the preference ambiguous rather than emphatic.
+        let mut seen_lanes: Vec<Implementer> = Vec::new();
+        for lane in &stage.implementers {
+            if seen_lanes.contains(lane) {
+                errors.push(ValidationError {
+                    message: format!(
+                        "implementers lists '{lane}' more than once. Each lane may appear \
+                         at most once; order sets which lane routine implementation prefers."
+                    ),
+                    stage_id: Some(stage.id.clone()),
+                });
+            } else {
+                seen_lanes.push(*lane);
+            }
         }
 
         // Validate working_dir to prevent path traversal
@@ -647,10 +677,12 @@ pub fn validate_structural_preflight(
             }
         }
 
-        // implementer: codex on knowledge-shaped or verification-gate stages is likely
-        // unintended: those stages lean on Claude-native `loom memory`/`loom knowledge`
-        // curation and adversarial review judgment, not routine delegated implementation.
-        if stage.implementer == super::types::Implementer::Codex {
+        // Licensing the codex lane on a knowledge-shaped or verification-gate stage is
+        // likely unintended: those stages lean on Claude-native `loom memory`/`loom
+        // knowledge` curation and adversarial review judgment, not routine delegated
+        // implementation. Warn on the lane being licensed at all, not just preferred —
+        // an available lane on such a stage is an invitation to misroute the work.
+        if stage.implementers.includes_codex() {
             let type_name = match stage.stage_type {
                 super::types::StageType::Knowledge => Some("knowledge"),
                 super::types::StageType::KnowledgeDistill => Some("knowledge-distill"),
@@ -659,9 +691,9 @@ pub fn validate_structural_preflight(
             };
             if let Some(type_name) = type_name {
                 warnings.push(format!(
-                    "Stage '{}': implementer: codex on a {} stage is likely unintended. \
-                     Codex delegates routine implementation work, not knowledge curation \
-                     or adversarial verification judgment.",
+                    "Stage '{}': listing codex in implementers on a {} stage is likely \
+                     unintended. Codex handles routine implementation work, not knowledge \
+                     curation or adversarial verification judgment.",
                     stage.id, type_name
                 ));
             }

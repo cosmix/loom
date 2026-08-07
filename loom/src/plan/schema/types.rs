@@ -264,11 +264,13 @@ pub struct StageDefinition {
     /// per-stage opt-in keeps the cost decision explicit.
     #[serde(default)]
     pub ultracode: bool,
-    /// Which agent lane routine implementation is delegated to.
-    /// `claude` (default) keeps the sonnet/haiku subagent lane;
-    /// `codex` routes to the codex:codex-rescue plugin subagent.
+    /// Which agent lanes this stage may spawn subagents from, in preference
+    /// order — the first is the lane to reach for on routine implementation.
+    /// Defaults to `["claude"]`; list `["codex", "claude"]` for a stage that
+    /// sends routine work to codex while keeping Claude subagents available
+    /// for the parts that call for them.
     #[serde(default)]
-    pub implementer: Implementer,
+    pub implementers: Implementers,
     /// How long (seconds) this stage's session may go without a heartbeat before
     /// the orchestrator flags it as silent. `None` means the built-in default
     /// (`DEFAULT_HUNG_TIMEOUT_SECS`, 300s). Raise it for stages whose subagents
@@ -289,11 +291,11 @@ impl StageDefinition {
     }
 }
 
-/// Agent lane a stage delegates routine implementation to.
+/// Agent lanes a stage may delegate implementation work to.
 ///
-/// Re-exported so `StageDefinition` and the runtime `Stage` name the same type.
-/// The canonical definition is in crate::models::stage::Implementer.
-pub use crate::models::stage::Implementer;
+/// Re-exported so `StageDefinition` and the runtime `Stage` name the same types.
+/// The canonical definitions are in crate::models::stage.
+pub use crate::models::stage::{Implementer, Implementers};
 
 /// Wiring check to verify component connections.
 ///

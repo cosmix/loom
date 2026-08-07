@@ -143,7 +143,7 @@ impl Persistence for Orchestrator {
 mod persistence_tests {
     use super::*;
     use crate::plan::graph::ExecutionGraph;
-    use crate::plan::schema::{Implementer, StageDefinition};
+    use crate::plan::schema::{Implementers, StageDefinition};
 
     struct TestPersistence {
         work_dir: std::path::PathBuf,
@@ -187,7 +187,7 @@ mod persistence_tests {
             reasoning_effort: None,
             code_review: None,
             ultracode: false,
-            implementer: Implementer::Claude,
+            implementers: Implementers::default(),
             subagent_timeout_secs: None,
         }
     }

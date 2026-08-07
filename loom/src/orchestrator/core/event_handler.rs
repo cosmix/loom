@@ -337,7 +337,7 @@ impl Orchestrator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::stage::{Implementer, Stage, StageStatus};
+    use crate::models::stage::{Implementers, Stage, StageStatus};
     use crate::plan::schema::{StageDefinition, StageSandboxConfig};
     use crate::plan::ExecutionGraph;
 
@@ -369,7 +369,7 @@ mod tests {
             reasoning_effort: None,
             code_review: None,
             ultracode: false,
-            implementer: Implementer::Claude,
+            implementers: Implementers::default(),
             subagent_timeout_secs: None,
         }];
         ExecutionGraph::build(stages).unwrap()

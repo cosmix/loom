@@ -12,7 +12,7 @@ mod ultracode_tests;
 mod validation_tests;
 
 use super::types::{
-    AcceptanceCriterion, Implementer, LoomConfig, LoomMetadata, SandboxConfig, StageDefinition,
+    AcceptanceCriterion, Implementers, LoomConfig, LoomMetadata, SandboxConfig, StageDefinition,
     StageSandboxConfig, StageType,
 };
 
@@ -46,7 +46,7 @@ pub(crate) fn make_stage(id: &str, name: &str) -> StageDefinition {
         reasoning_effort: None,
         code_review: None,
         ultracode: false,
-        implementer: Implementer::Claude,
+        implementers: Implementers::default(),
         subagent_timeout_secs: None,
     }
 }

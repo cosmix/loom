@@ -132,7 +132,7 @@ impl PermissionMode {
     }
 }
 
-/// Agent lane a stage delegates routine implementation to.
+/// A single agent lane a stage may delegate implementation work to.
 ///
 /// Serialized as kebab-case in YAML (`claude`, `codex`). A closed enum rather
 /// than a validated string: serde rejects unknown variants on its own, and the
@@ -140,10 +140,11 @@ impl PermissionMode {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Implementer {
-    /// Delegate implementation to the sonnet/haiku Claude subagent lane.
+    /// The Claude subagent lane (sonnet/haiku for routine work, opus for
+    /// judgment, fable for advisory and design).
     #[default]
     Claude,
-    /// Delegate implementation to the `codex:codex-rescue` plugin subagent.
+    /// The `codex:codex-rescue` plugin subagent lane.
     Codex,
 }
 
@@ -154,6 +155,85 @@ impl std::fmt::Display for Implementer {
             Implementer::Codex => "codex",
         };
         write!(f, "{s}")
+    }
+}
+
+/// The set of agent lanes a stage is licensed to spawn subagents from.
+///
+/// A stage mixes lanes freely: routine implementation may go to codex while
+/// tests go to sonnet and an architectural call stays with opus. Order is
+/// meaningful — the FIRST lane is the one to reach for on routine
+/// implementation ([`Implementers::preferred`]) — but every listed lane is
+/// available for the parts of the stage that call for it.
+///
+/// Serialized transparently as a YAML sequence (`["codex", "claude"]`), so a
+/// stage declares lanes the same way it declares any other list. An omitted
+/// key defaults to `["claude"]`: the Claude lane is the harness the session
+/// already runs in, so it needs no opt-in. Codex does — it needs a plugin, and
+/// it needs the safety doctrine that [`Implementers::includes_codex`] gates.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Implementers(Vec<Implementer>);
+
+impl Default for Implementers {
+    fn default() -> Self {
+        Self(vec![Implementer::Claude])
+    }
+}
+
+impl Implementers {
+    /// Build a lane set from an ordered list.
+    pub fn new(lanes: Vec<Implementer>) -> Self {
+        Self(lanes)
+    }
+
+    /// The lane to reach for on ROUTINE implementation work — the first listed.
+    ///
+    /// Falls back to [`Implementer::Claude`] for an empty set. Validation
+    /// rejects an explicitly empty list, so the fallback only covers a value
+    /// constructed in code rather than parsed from a plan.
+    pub fn preferred(&self) -> Implementer {
+        self.0.first().copied().unwrap_or_default()
+    }
+
+    /// Whether the codex lane is licensed for this stage.
+    ///
+    /// This is the gate for the codex safety doctrine: any stage that may
+    /// spawn even ONE codex subagent has to carry the blast-radius rules,
+    /// whether or not codex is its preferred lane.
+    pub fn includes_codex(&self) -> bool {
+        self.0.contains(&Implementer::Codex)
+    }
+
+    /// Whether the Claude subagent lane is licensed for this stage.
+    pub fn includes_claude(&self) -> bool {
+        self.0.contains(&Implementer::Claude)
+    }
+
+    /// Whether more than one lane is licensed.
+    pub fn is_mixed(&self) -> bool {
+        self.0.len() > 1
+    }
+
+    /// True when no lane is listed at all — an invalid state that validation rejects.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl<'a> IntoIterator for &'a Implementers {
+    type Item = &'a Implementer;
+    type IntoIter = std::slice::Iter<'a, Implementer>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl std::fmt::Display for Implementers {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let rendered: Vec<String> = self.0.iter().map(|l| l.to_string()).collect();
+        write!(f, "{}", rendered.join(", "))
     }
 }
 
@@ -670,10 +750,10 @@ pub struct Stage {
     /// (multi-agent fan-out). Copied from the plan's StageDefinition.
     #[serde(default)]
     pub ultracode: bool,
-    /// Which agent lane routine implementation is delegated to.
-    /// Copied from the plan's StageDefinition.
+    /// Which agent lanes this stage may spawn subagents from, in preference
+    /// order. Copied from the plan's StageDefinition.
     #[serde(default)]
-    pub implementer: Implementer,
+    pub implementers: Implementers,
     /// How long (seconds) this stage's session may go without a heartbeat before
     /// the orchestrator flags it as silent. Copied from the plan's StageDefinition;
     /// `None` means the built-in default. Resolve it through
@@ -1069,7 +1149,7 @@ impl Default for Stage {
             reasoning_effort: None,
             is_possibly_stuck: false,
             ultracode: false,
-            implementer: Implementer::Claude,
+            implementers: Implementers::default(),
             subagent_timeout_secs: None,
         }
     }

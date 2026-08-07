@@ -610,8 +610,8 @@ fn build_signal_context(
     // Propagate the ultracode license so the semi-stable section can gate on it
     embedded_context.ultracode = stage.ultracode;
 
-    // Propagate the implementer lane so the semi-stable section can gate on it
-    embedded_context.implementer = stage.implementer;
+    // Propagate the licensed implementer lanes so the semi-stable section can gate on them
+    embedded_context.implementers = stage.implementers.clone();
 
     // Propagate the subagent response budget, but only when the plan set one.
     // The orchestrator measures every stage against

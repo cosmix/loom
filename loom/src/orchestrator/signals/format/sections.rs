@@ -1,7 +1,7 @@
 use crate::codex::{CODEX_IMPLEMENTER_EFFORT, CODEX_IMPLEMENTER_MODEL};
 use crate::handoff::git_handoff::{format_git_history_markdown, GitHistory};
 use crate::models::session::Session;
-use crate::models::stage::{Implementer, Stage, StageType};
+use crate::models::stage::{Implementers, Stage, StageType};
 use crate::models::worktree::Worktree;
 use crate::skills::SkillMatch;
 
@@ -363,9 +363,12 @@ pub(super) fn format_semi_stable_section(
     content.push_str("- Delegate implementation, do not implement yourself\n");
     content.push_str("- Shut down all teammates before completing the stage\n\n");
 
-    // Codex implementer doctrine (semi-stable - gated on the stage's implementer lane)
-    if embedded_context.implementer == Implementer::Codex {
-        content.push_str(&format_codex_implementers_section());
+    // Codex implementer doctrine (semi-stable - gated on codex being one of the
+    // stage's licensed lanes, whether or not it is the preferred one)
+    if embedded_context.implementers.includes_codex() {
+        content.push_str(&format_codex_implementers_section(
+            &embedded_context.implementers,
+        ));
     }
 
     // Per-subagent response budget (semi-stable - gated on an explicit plan value).
@@ -800,18 +803,46 @@ pub(super) fn format_recitation_section(
 
 /// Format the codex-implementer doctrine block.
 ///
-/// Emitted only for stages whose `implementer` is [`Implementer::Codex`], leaving
-/// the semi-stable section of a claude-lane signal unchanged. The model and effort
-/// are interpolated from [`CODEX_IMPLEMENTER_MODEL`] / [`CODEX_IMPLEMENTER_EFFORT`]
-/// rather than repeated as literals — one source of truth for the lane's settings.
-pub(crate) fn format_codex_implementers_section() -> String {
+/// Emitted for any stage whose licensed lanes include [`Implementer::Codex`] —
+/// gated on [`Implementers::includes_codex`], NOT on codex being the preferred
+/// lane. A stage that spawns even one codex subagent needs the blast-radius
+/// rules below, so a mixed stage carries them exactly as a codex-first stage
+/// does. The model and effort are interpolated from [`CODEX_IMPLEMENTER_MODEL`]
+/// / [`CODEX_IMPLEMENTER_EFFORT`] rather than repeated as literals — one source
+/// of truth for the lane's settings.
+pub(crate) fn format_codex_implementers_section(implementers: &Implementers) -> String {
     let mut content = String::new();
 
     content.push_str("## Codex Implementers\n\n");
-    content.push_str("This stage delegates ROUTINE IMPLEMENTATION to Codex through the official OpenAI plugin.\n");
-    content.push_str("Verification does NOT move - see below.\n\n");
+    content.push_str(&format!(
+        "Implementation lanes licensed for this stage: {implementers}.\n"
+    ));
+
+    // The lane list is a per-SUBAGENT choice, not a per-stage mode. Say so
+    // explicitly: the failure this wording exists to prevent is an orchestrator
+    // reading one listed lane as "every subagent must be codex".
+    if implementers.is_mixed() {
+        content.push_str(&format!(
+            "This stage MIXES lanes. Choose the lane PER SUBAGENT, not once for the whole stage:\n\
+             reach for {} first on routine implementation, and use the other lane wherever the work\n\
+             calls for it. A single stage spawning codex implementers for one file set and\n\
+             loom-software-engineer (sonnet) subagents for another is the intended shape, not a\n\
+             contradiction.\n",
+            implementers.preferred()
+        ));
+    } else {
+        content.push_str(
+            "Codex is the lane for this stage's routine implementation. The Claude escalation paths\n\
+             below still apply - they are not implementation lanes and never needed listing.\n",
+        );
+    }
     content.push_str(
-        "- Spawn implementation work with the Agent tool, subagent_type: \"codex:codex-rescue\".\n",
+        "Regardless of the list: YOU (the orchestrator) are opus, opus keeps the work that needs\n\
+         architectural judgment, and loom-advisor (fable) is always available on a second failure.\n\
+         Verification does NOT move - see below.\n\n",
+    );
+    content.push_str(
+        "- Spawn codex implementation work with the Agent tool, subagent_type: \"codex:codex-rescue\".\n",
     );
     content.push_str(&format!(
         "- State the model and effort IN THE PROMPT TEXT, e.g. \"--model {CODEX_IMPLEMENTER_MODEL} --effort {CODEX_IMPLEMENTER_EFFORT} <task>\".\n"
@@ -821,6 +852,10 @@ pub(crate) fn format_codex_implementers_section() -> String {
     content.push_str("- PARALLEL FAN-OUT: you may run up to 6 codex implementers at once, each owning a DISJOINT file set,\n");
     content.push_str("  with the same file-ownership table you would write for sonnet subagents. Two codex agents writing\n");
     content.push_str("  one file is lost work, exactly as with any other subagent.\n");
+    content.push_str("- MIXED FAN-OUT: codex and Claude subagents may run in the SAME wave. File ownership is what keeps\n");
+    content.push_str("  them apart, and it is enforced across lanes, not within one - a codex agent and a sonnet agent\n");
+    content.push_str("  writing one file is lost work just as surely as two codex agents. Put every subagent from every\n");
+    content.push_str("  lane in ONE file-ownership table, and note each row's lane so you know which rules apply to it.\n");
     content.push_str("- Run parallel codex implementers in the FOREGROUND. Do NOT fan out --background jobs: the plugin\n");
     content.push_str("  tracks jobs in a shared state file written without a lock, and a background result is fetched\n");
     content.push_str("  through the very record a concurrent write can drop. Foreground results come back through stdout\n");
@@ -846,9 +881,13 @@ pub(crate) fn format_codex_implementers_section() -> String {
     content.push_str("      run git at all, and check `git status --short` after each run: anything staged, committed\n");
     content.push_str("      or touched outside that agent's assigned file set is YOUR problem to find, because no\n");
     content.push_str("      hook will.\n");
-    content.push_str("- Codex REPLACES sonnet/haiku for routine implementation. It does NOT replace opus (architecture,\n");
-    content.push_str("  algorithms, cross-cutting refactors, security-sensitive code) or loom-advisor (fable) on a second\n");
-    content.push_str("  failure on the same task.\n");
+    content.push_str("- WHAT CODEX IS FOR: routine implementation - the work sonnet/haiku would otherwise take. It does\n");
+    content.push_str("  NOT take opus work (architecture, algorithms, cross-cutting refactors, security-sensitive code),\n");
+    content.push_str("  loom-advisor (fable) on a second failure on the same task, or fable's visual/design work. Route\n");
+    content.push_str("  each piece of work by what the work needs; the lane list says what is available, not what is\n");
+    content.push_str("  mandatory. Sending a task to codex because the stage lists codex - rather than because the task\n");
+    content
+        .push_str("  is routine implementation - is the misread this section exists to prevent.\n");
     content.push_str("- VERIFICATION STAYS WITH YOU (opus). Codex subagents implement and report; they never verify, never\n");
     content.push_str("  commit, and never run loom stage complete (Rule 5). YOU run the full build/test/lint gate, YOU run\n");
     content.push_str("  the six-dimension mini adversarial code review, and YOU commit. Never accept a codex agent's own\n");

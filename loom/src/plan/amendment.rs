@@ -1064,7 +1064,7 @@ mod tests {
     //! exercise the full `apply_amendment` flow live under
     //! `plan::tests::amendment`.
     use super::*;
-    use crate::plan::schema::Implementer;
+    use crate::plan::schema::Implementers;
 
     #[test]
     fn audit_row_round_trip_via_markdown() {
@@ -1149,7 +1149,7 @@ mod tests {
             reasoning_effort: None,
             code_review: None,
             ultracode: false,
-            implementer: Implementer::Claude,
+            implementers: Implementers::default(),
             subagent_timeout_secs: None,
         };
         assert_eq!(current_field_len(&def, AmendmentField::Acceptance), 2);

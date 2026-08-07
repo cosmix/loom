@@ -4,7 +4,7 @@ use std::fs;
 use tempfile::TempDir;
 
 use crate::codex::CODEX_IMPLEMENTER_MODEL;
-use crate::models::stage::{Implementer, StageType};
+use crate::models::stage::{Implementer, Implementers, StageType};
 
 use super::super::cache::{compute_hash, generate_stable_prefix, SignalMetrics};
 use super::super::format::{format_signal_content, format_signal_with_metrics};
@@ -352,7 +352,7 @@ fn test_signal_codex_implementers_section_gated() {
 
     // Codex-routed stage: section present (lane propagates stage → context → signal)
     let mut codex_stage = create_test_stage();
-    codex_stage.implementer = Implementer::Codex;
+    codex_stage.implementers = Implementers::new(vec![Implementer::Codex]);
     let mut session2 = create_test_session();
     session2.id = "session-codex".to_string();
     let (signal_path, _) = generate_signal_with_metrics(
@@ -384,6 +384,44 @@ fn test_signal_codex_implementers_section_gated() {
         content.contains("git status --short"),
         "the codex block must tell the orchestrator to diff-check after each \
          run; no hook covers codex's own shell commands"
+    );
+
+    // Mixed stage: codex is licensed but NOT preferred. The doctrine must still
+    // appear — this is the case an `implementer == Codex` equality gate silently
+    // dropped, leaving a stage that can spawn codex agents with none of the
+    // rules for them — and it must tell the orchestrator to choose per subagent
+    // rather than read one listed lane as a whole-stage mode.
+    let mut mixed_stage = create_test_stage();
+    mixed_stage.implementers = Implementers::new(vec![Implementer::Claude, Implementer::Codex]);
+    let mut session3 = create_test_session();
+    session3.id = "session-mixed".to_string();
+    let (signal_path, _) = generate_signal_with_metrics(
+        &session3,
+        &mixed_stage,
+        &worktree,
+        &[],
+        None,
+        None,
+        &work_dir,
+    )
+    .unwrap();
+    let content = fs::read_to_string(&signal_path).unwrap();
+    assert!(
+        content.contains("## Codex Implementers"),
+        "a mixed stage must carry the codex doctrine even when codex is secondary"
+    );
+    assert!(
+        content.contains("claude, codex"),
+        "the block must name every licensed lane, in preference order"
+    );
+    assert!(
+        content.contains("PER SUBAGENT"),
+        "a mixed stage must be told the lane is a per-subagent choice, not a \
+         whole-stage mode"
+    );
+    assert!(
+        content.contains("MIXED FAN-OUT"),
+        "a mixed stage must get the cross-lane file-ownership rule"
     );
 }
 
@@ -535,7 +573,7 @@ fn test_recovery_signal_carries_codex_implementers_section() {
     // without an explicit emit here a resumed stage would lose the whole lane's
     // rules while the stable prefix still points at them.
     let mut codex_stage = create_test_stage();
-    codex_stage.implementer = Implementer::Codex;
+    codex_stage.implementers = Implementers::new(vec![Implementer::Codex]);
     let signal = format_recovery_signal(&content, &codex_stage, &embedded);
     assert!(
         signal.contains("## Codex Implementers"),
@@ -544,4 +582,21 @@ fn test_recovery_signal_carries_codex_implementers_section() {
     assert!(signal.contains("codex:codex-rescue"));
     assert!(signal.contains("FOREGROUND"));
     assert!(signal.contains(CODEX_IMPLEMENTER_MODEL));
+
+    // A MIXED stage recovers with the doctrine too. The gate is "codex is
+    // licensed", not "codex is preferred" — a stage that reaches for sonnet
+    // first but may still spawn one codex agent needs the blast-radius rules
+    // just as much, and this is the case a `== Codex` equality check dropped.
+    let mut mixed_stage = create_test_stage();
+    mixed_stage.implementers = Implementers::new(vec![Implementer::Claude, Implementer::Codex]);
+    let signal = format_recovery_signal(&content, &mixed_stage, &embedded);
+    assert!(
+        signal.contains("## Codex Implementers"),
+        "a recovered MIXED stage must receive the codex doctrine even though \
+         codex is not its preferred lane"
+    );
+    assert!(
+        signal.contains(".work/") && signal.contains("git status --short"),
+        "the mixed-stage block must carry the same blast-radius warnings"
+    );
 }

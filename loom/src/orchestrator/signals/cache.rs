@@ -270,7 +270,7 @@ pub fn generate_stable_prefix() -> String {
     content.push_str("**Delegation & Efficiency (CRITICAL):**\n\n");
     content.push_str("**USE THE TASK TOOL** to spawn parallel subagents for multi-part work:\n");
     content.push_str("- Independent file changes, multiple components, tests + implementation → spawn parallel subagents\n");
-    content.push_str("- Match subagent type to the work: execution → `loom-software-engineer` (sonnet), judgment → `loom-senior-software-engineer` (opus). A stage may instead route its routine implementation to a codex implementer — when it does, a `Codex Implementers` section below carries the rules for that lane\n");
+    content.push_str("- Match subagent type to the work, PER SUBAGENT: execution → `loom-software-engineer` (sonnet), judgment → `loom-senior-software-engineer` (opus). A stage may also license the codex lane for routine implementation — when it does, a `Codex Implementers` section below carries that lane's rules and names every lane licensed for the stage. Licensing a lane never makes it mandatory: a stage mixes lanes freely, choosing per subagent by what the work needs\n");
     content.push_str("- **DEBUGGING OR REPEATED FAILURE**: on a second failure on the same task, spawn a `loom-advisor` (fable) subagent instead of a blind retry — narrow scope, full detail supplied by the orchestrator, advice returned\n");
     content.push_str("- Pattern: `Task(subagent_type=\"loom-software-engineer\", prompt=\"...\")` - send MULTIPLE in ONE message\n");
     content.push_str(

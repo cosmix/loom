@@ -88,10 +88,11 @@ const BLOCK_B: &str = "1. ORCHESTRATION IS ALWAYS OPUS. Every stage's main agent
    orchestrator does NOT implement — it decomposes the work, hands each
    subagent full context, then verifies and commits. That is all.
 2. IMPLEMENTATION IS ALWAYS DELEGATED, to as FEW subagents as the work allows. Routine
-   implementation goes to codex:codex-rescue (gpt-5.6-luna, xhigh) on stages with
-   implementer: \"codex\", else to sonnet (loom-software-engineer); haiku stays rare and trivial.
-   Genuinely challenging work stays opus. Verification NEVER delegates - the opus orchestrator
-   verifies and commits. Spawn BY AGENT TYPE.
+   implementation goes to codex:codex-rescue (gpt-5.6-luna, xhigh) when the stage lists codex
+   in implementers, else to sonnet (loom-software-engineer); haiku stays rare and trivial.
+   Genuinely challenging work stays opus. A stage MIXES lanes freely: choose the lane PER
+   SUBAGENT by what that piece of work needs, never once for the whole stage. Verification
+   NEVER delegates - the opus orchestrator verifies and commits. Spawn BY AGENT TYPE.
 3. DEBUGGING OR REPEATED FAILURE → spawn a `loom-advisor` (fable) subagent:
    narrow scope, full detail supplied by the orchestrator, advice returned.
    Do not let an implementer thrash on the same failure twice.";

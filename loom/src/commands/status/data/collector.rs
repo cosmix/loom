@@ -304,7 +304,7 @@ pub fn collect_status_data(work_dir: &WorkDir) -> Result<StatusData> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::stage::{Implementer, StageType};
+    use crate::models::stage::{Implementers, StageType};
     use chrono::Utc;
 
     fn make_test_stage(id: &str, status: StageStatus) -> Stage {
@@ -368,7 +368,7 @@ mod tests {
             reasoning_effort: None,
             is_possibly_stuck: false,
             ultracode: false,
-            implementer: Implementer::Claude,
+            implementers: Implementers::default(),
             subagent_timeout_secs: None,
         }
     }

@@ -6,7 +6,7 @@ use std::process::Command;
 use tempfile::TempDir;
 
 use loom::plan::graph::ExecutionGraph;
-use loom::plan::schema::{Implementer, StageDefinition};
+use loom::plan::schema::{Implementers, StageDefinition};
 
 /// Test helper: Create a temporary git repository with initial commit
 pub fn init_test_repo() -> TempDir {
@@ -115,7 +115,7 @@ pub fn build_test_graph(stages: Vec<(&str, Vec<&str>)>) -> ExecutionGraph {
             reasoning_effort: None,
             code_review: None,
             ultracode: false,
-            implementer: Implementer::Claude,
+            implementers: Implementers::default(),
             subagent_timeout_secs: None,
         })
         .collect();

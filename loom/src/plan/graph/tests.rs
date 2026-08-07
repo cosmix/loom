@@ -1,7 +1,7 @@
 //! Tests for the execution graph
 
 use super::*;
-use crate::plan::schema::{Implementer, StageDefinition, StageSandboxConfig};
+use crate::plan::schema::{Implementers, StageDefinition, StageSandboxConfig};
 
 fn make_stage(id: &str, deps: Vec<&str>, group: Option<&str>) -> StageDefinition {
     StageDefinition {
@@ -31,7 +31,7 @@ fn make_stage(id: &str, deps: Vec<&str>, group: Option<&str>) -> StageDefinition
         reasoning_effort: None,
         code_review: None,
         ultracode: false,
-        implementer: Implementer::Claude,
+        implementers: Implementers::default(),
         subagent_timeout_secs: None,
     }
 }

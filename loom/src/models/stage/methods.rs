@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 
 use crate::orchestrator::monitor::heartbeat::DEFAULT_HUNG_TIMEOUT_SECS;
 
-use super::types::{AcceptanceCriterion, Implementer, Stage, StageOutput, StageStatus, StageType};
+use super::types::{AcceptanceCriterion, Implementers, Stage, StageOutput, StageStatus, StageType};
 
 /// Maximum disputes a single stage may file before further requests
 /// are refused (escalation goes through `NeedsHumanReview`).
@@ -74,7 +74,7 @@ impl Stage {
             reasoning_effort: None,
             is_possibly_stuck: false,
             ultracode: false,
-            implementer: Implementer::Claude,
+            implementers: Implementers::default(),
             subagent_timeout_secs: None,
         }
     }
