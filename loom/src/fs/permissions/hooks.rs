@@ -65,6 +65,18 @@ fn loom_hooks_config_for_dir(hooks_dir: &str) -> Value {
             {
                 "matcher": "Grep",
                 "hooks": [{"type": "command", "command": format!("{hooks_dir}/worktree-file-guard.sh")}]
+            },
+            {
+                "matcher": "Bash",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/no-preexisting-failures.sh")}]
+            },
+            {
+                "matcher": "Write",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/no-preexisting-failures.sh")}]
+            },
+            {
+                "matcher": "Edit",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/no-preexisting-failures.sh")}]
             }
         ],
         "PostToolUse": [

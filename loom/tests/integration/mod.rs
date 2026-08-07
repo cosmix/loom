@@ -10,6 +10,7 @@ pub mod dependency_simple;
 pub mod helpers;
 pub mod hooks_commit_filter;
 pub mod hooks_git_add_guard;
+pub mod hooks_no_preexisting_failures;
 pub mod hooks_subagent_verify_guard;
 pub mod implementer_backwards_compat;
 pub mod merge_conflict_recovery;

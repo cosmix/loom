@@ -21,8 +21,12 @@ fn test_hooks_config_structure() {
     // 11. Read: worktree-file-guard.sh
     // 12. Glob: worktree-file-guard.sh
     // 13. Grep: worktree-file-guard.sh
+    // Appended last so the positional assertions below stay stable:
+    // 14. Bash: no-preexisting-failures.sh
+    // 15. Write: no-preexisting-failures.sh
+    // 16. Edit: no-preexisting-failures.sh
     let pre_tool = hooks_obj.get("PreToolUse").unwrap().as_array().unwrap();
-    assert_eq!(pre_tool.len(), 13);
+    assert_eq!(pre_tool.len(), 16);
     // First hook: AskUserQuestion matcher with ask-user-pre.sh
     assert_eq!(pre_tool[0]["matcher"], "AskUserQuestion");
     assert!(pre_tool[0]["hooks"][0]["command"]
