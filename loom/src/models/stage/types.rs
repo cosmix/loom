@@ -132,6 +132,31 @@ impl PermissionMode {
     }
 }
 
+/// Agent lane a stage delegates routine implementation to.
+///
+/// Serialized as kebab-case in YAML (`claude`, `codex`). A closed enum rather
+/// than a validated string: serde rejects unknown variants on its own, and the
+/// closed set gives compile-time exhaustiveness at every match site.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Implementer {
+    /// Delegate implementation to the sonnet/haiku Claude subagent lane.
+    #[default]
+    Claude,
+    /// Delegate implementation to the `codex:codex-rescue` plugin subagent.
+    Codex,
+}
+
+impl std::fmt::Display for Implementer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Implementer::Claude => "claude",
+            Implementer::Codex => "codex",
+        };
+        write!(f, "{s}")
+    }
+}
+
 /// Per-stage sandbox configuration (overrides plan-level defaults)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StageSandboxConfig {
@@ -645,6 +670,16 @@ pub struct Stage {
     /// (multi-agent fan-out). Copied from the plan's StageDefinition.
     #[serde(default)]
     pub ultracode: bool,
+    /// Which agent lane routine implementation is delegated to.
+    /// Copied from the plan's StageDefinition.
+    #[serde(default)]
+    pub implementer: Implementer,
+    /// How long (seconds) this stage's session may go without a heartbeat before
+    /// the orchestrator flags it as silent. Copied from the plan's StageDefinition;
+    /// `None` means the built-in default. Resolve it through
+    /// [`Stage::effective_subagent_timeout_secs`] rather than reading it directly.
+    #[serde(default)]
+    pub subagent_timeout_secs: Option<u64>,
 }
 
 /// Status of a stage in the execution lifecycle.
@@ -1034,6 +1069,8 @@ impl Default for Stage {
             reasoning_effort: None,
             is_possibly_stuck: false,
             ultracode: false,
+            implementer: Implementer::Claude,
+            subagent_timeout_secs: None,
         }
     }
 }

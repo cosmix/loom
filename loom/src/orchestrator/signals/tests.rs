@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 use crate::models::session::Session;
-use crate::models::stage::{Stage, StageStatus, StageType};
+use crate::models::stage::{Implementer, Stage, StageStatus, StageType};
 use crate::models::worktree::Worktree;
 use crate::plan::schema::{AcceptanceCriterion, CodeReviewConfig};
 
@@ -232,6 +232,8 @@ fn test_format_signal_content_with_embedded_context() {
         cross_stage_summary: None,
         wiring_checklist: None,
         ultracode: false,
+        implementer: Implementer::Claude,
+        subagent_timeout_secs: None,
     };
 
     let content = format_signal_content(

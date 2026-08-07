@@ -158,6 +158,40 @@ fn try_openat2(_dirfd: RawFd, _path: &[u8], _flags: i32, _mode: u32) -> Result<O
     Ok(None)
 }
 
+/// Bounded retries for a racing `O_CREAT` open. Small: the window is a single
+/// lookup, so a loser converges in one or two attempts.
+const CREATE_RACE_RETRIES: u32 = 8;
+
+/// `openat`, retrying a spurious `ENOENT` from a concurrent create.
+///
+/// On macOS an `O_CREAT` open can fail with `ENOENT` when several threads
+/// create the same name at once: a loser's path lookup observes the entry
+/// mid-creation and reports it missing, even though the file exists moments
+/// later. Verified with 16 concurrent appenders to one file - 1-9 of them
+/// failed per run, while the same run against a pre-created file never failed.
+///
+/// Only `ENOENT` on an `O_CREAT` open is retried. A symlink rejection
+/// (`ELOOP` on Linux, `ENOTDIR` on macOS, both from `O_NOFOLLOW`) is never
+/// retried, so this module's refusal to traverse symlinks is unchanged - as is
+/// `EEXIST` from `O_EXCL`, which is a meaningful answer rather than a race.
+fn openat_retrying_create_race(dirfd: RawFd, path: &CString, flags: i32, mode: u32) -> i32 {
+    // SAFETY: dirfd is a valid dirfd; path is NUL-terminated.
+    let mut fd = unsafe { libc::openat(dirfd, path.as_ptr(), flags, mode) };
+    if flags & libc::O_CREAT == 0 {
+        return fd;
+    }
+    let mut attempts = 0;
+    while fd < 0
+        && attempts < CREATE_RACE_RETRIES
+        && io::Error::last_os_error().raw_os_error() == Some(libc::ENOENT)
+    {
+        attempts += 1;
+        // SAFETY: same invariants as the first call.
+        fd = unsafe { libc::openat(dirfd, path.as_ptr(), flags, mode) };
+    }
+    fd
+}
+
 /// Portable `openat`-walk: open each intermediate directory component with
 /// `O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC`, then open the final component with
 /// the caller's flags. Refuses every symlink along the way (kernel returns
@@ -181,8 +215,7 @@ fn portable_open_walk(
                 0,
             )
         };
-        // SAFETY: cur is a valid dirfd; c is NUL-terminated.
-        let fd = unsafe { libc::openat(cur, c.as_ptr(), flags, mode) };
+        let fd = openat_retrying_create_race(cur, &c, flags, mode);
         if fd < 0 {
             let err = io::Error::last_os_error();
             let path = String::from_utf8_lossy(comp).into_owned();
@@ -775,16 +808,23 @@ mod tests {
         let dirfd = safe_open_dirfd(tmp.path()).unwrap();
         let err = safe_locked_write_in_workdir(dirfd.as_raw_fd(), Path::new("link/file.txt"), b"x")
             .unwrap_err();
-        let s = format!("{:#}", err);
+        let s = format!("{:#}", err).to_ascii_lowercase();
         assert!(
             s.contains("symbolic link")
-                || s.contains("Too many levels of symbolic links")
-                || s.contains("ELOOP")
+                || s.contains("too many levels of symbolic links")
+                || s.contains("eloop")
                 || s.contains("loop")
-                || s.contains("EXDEV")
-                || s.contains("not permitted"),
+                || s.contains("exdev")
+                || s.contains("not permitted")
+                // macOS: O_NOFOLLOW|O_DIRECTORY on a symlink yields ENOTDIR
+                // rather than Linux's ELOOP. The symlink is refused either
+                // way; only the errno differs. Matches the wording already
+                // accepted by rejects_intermediate_symlink_portable_path.
+                || s.contains("not a directory"),
             "expected intermediate-symlink rejection, got: {s}"
         );
+        // Refusal must be real: nothing may be created through the symlink.
+        assert!(!real_dir.join("file.txt").exists());
     }
 
     #[test]

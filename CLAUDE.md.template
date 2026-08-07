@@ -126,6 +126,10 @@ File exclusivity: each subagent gets exclusive write access to its files — two
 
 Hierarchical EXECUTION PLANs: spawn the COORDINATORS (not workers) in one message; each spawns its own workers (Rule 6c).
 
+**Never wait on a subagent open-endedly. 300s is the hard ceiling on any single check.** A subagent that has gone quiet is indistinguishable from one that is working, so waiting for it to speak is not a plan — arm a bounded check that fires either way. Any watcher, poll loop, or background wait you set MUST have a deadline of **300s or less** (`subagent_timeout_secs` overrides the per-stage budget; 300s is the built-in default and the ceiling for one check). Re-arm if you need longer — a re-armed 300s check reports progress five times where a single 25-minute wait reports nothing.
+
+The check must terminate on BOTH branches — success AND deadline — and report which one fired. A watcher that only greps for the success marker stays silent through a stall, and silence reads exactly like work in progress. Include a liveness signal (did anything change on disk?) so "slow" and "dead" are distinguishable. On the deadline branch: take the work over or re-assign it; never assume it landed.
+
 ### 6b. AGENT TEAMS (WHEN AVAILABLE)
 
 Teams add inter-agent messaging, shared task lists, and dynamic work claiming, at roughly 7x whole-job cost. Use ONLY when work is wide and exploratory and genuinely needs inter-agent communication or dynamic task discovery — never for concrete assignments with clear file ownership (use Rule 6 or 6c).
@@ -138,7 +142,7 @@ Loom caps agent trees at TWO levels: main agent → coordinators → workers. Wo
 
 Use a hierarchy when ALL hold: the work is well-defined enough for sonnet workers; it splits into 2-4 disjoint file territories; each territory has 2+ worker tasks; flat fan-out would mean the main agent authoring more than ~6 prompts, absorbing N raw results, or serializing waves. Do not use one when: total worker tasks ≤ ~6 (flat is simpler and cheaper), territories share files (separate stages), cross-territory iteration is needed (teams), or the work is sequential.
 
-Model mix: implementation is delegated to as FEW subagents as the work allows — haiku (rare, trivial mechanical edits), sonnet (the common case), opus (genuinely challenging work) — spawn workers BY AGENT TYPE (`loom-software-engineer` pins sonnet); an untyped worker inherits the main session model, silently making every worker opus on an opus stage. Opus coordinator only when integrating its territory needs architectural judgment.
+Model mix: implementation is delegated to as FEW subagents as the work allows — haiku (rare, trivial mechanical edits), sonnet or codex:codex-rescue (the common case — codex only on stages with `implementer: "codex"`, foreground only), opus (genuinely challenging work) — spawn workers BY AGENT TYPE (`loom-software-engineer` pins sonnet); an untyped worker inherits the main session model, silently making every worker opus on an opus stage. Opus coordinator only when integrating its territory needs architectural judgment.
 
 COORDINATOR PREAMBLE — first lines of every coordinator prompt (standalone; do not prepend Rule 5's):
 
@@ -185,15 +189,18 @@ Check available skills and agents before implementing; the prompt-submit hook su
 | `loom-code-reviewer`            | —      | Read-only code/security/architecture review                                                                                                                       |
 | `Explore`                       | —      | Codebase exploration                                                                                                                                              |
 | `loom-advisor`                  | Fable  | Read-only advisory for debugging and repeated failures — receives full detail from the orchestrator, returns a diagnosis and a concrete next step, writes nothing |
+| `codex:codex-rescue`             | gpt-5.6-luna | Routine implementation on stages with `implementer: "codex"` - plugin subagent; state `--model gpt-5.6-luna --effort xhigh` in the prompt; write-capable by default; foreground only; never verifies |
 
 Model allocation:
 
 1. ORCHESTRATION IS ALWAYS OPUS. Every stage's main agent is opus. The
    orchestrator does NOT implement — it decomposes the work, hands each
    subagent full context, then verifies and commits. That is all.
-2. IMPLEMENTATION IS ALWAYS DELEGATED, to as FEW subagents as the work
-   allows: haiku (rare — trivial mechanical edits), sonnet (the common
-   case), opus (genuinely challenging work). Spawn BY AGENT TYPE.
+2. IMPLEMENTATION IS ALWAYS DELEGATED, to as FEW subagents as the work allows. Routine
+   implementation goes to codex:codex-rescue (gpt-5.6-luna, xhigh) on stages with
+   implementer: "codex", else to sonnet (loom-software-engineer); haiku stays rare and trivial.
+   Genuinely challenging work stays opus. Verification NEVER delegates - the opus orchestrator
+   verifies and commits. Spawn BY AGENT TYPE.
 3. DEBUGGING OR REPEATED FAILURE → spawn a `loom-advisor` (fable) subagent:
    narrow scope, full detail supplied by the orchestrator, advice returned.
    Do not let an implementer thrash on the same failure twice.

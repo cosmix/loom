@@ -12,7 +12,7 @@ use super::state::TuiActivityLog;
 use crate::commands::status::ui::theme::{StatusColors, Theme};
 use crate::commands::status::ui::tree_widget::TreeWidget;
 use crate::daemon::{CompletionSummary, StageInfo};
-use crate::models::stage::Stage;
+use crate::models::stage::{Implementer, Stage};
 use crate::orchestrator::scheduling_report::{Alert, Severity};
 use crate::utils::format_elapsed;
 
@@ -165,6 +165,8 @@ pub fn stage_info_to_stage(info: &StageInfo) -> Stage {
         reasoning_effort: None,
         is_possibly_stuck: info.is_possibly_stuck,
         ultracode: false,
+        implementer: Implementer::Claude,
+        subagent_timeout_secs: None,
     }
 }
 

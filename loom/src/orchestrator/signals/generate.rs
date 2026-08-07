@@ -610,6 +610,15 @@ fn build_signal_context(
     // Propagate the ultracode license so the semi-stable section can gate on it
     embedded_context.ultracode = stage.ultracode;
 
+    // Propagate the implementer lane so the semi-stable section can gate on it
+    embedded_context.implementer = stage.implementer;
+
+    // Propagate the subagent response budget, but only when the plan set one.
+    // The orchestrator measures every stage against
+    // `effective_subagent_timeout_secs()`; the signal only *tells* the agent
+    // about it when the plan made a deliberate choice worth acting on.
+    embedded_context.subagent_timeout_secs = stage.subagent_timeout_secs;
+
     // Build integration-verify and knowledge-distill enrichments
     if matches!(
         stage.stage_type,

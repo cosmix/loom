@@ -263,7 +263,7 @@ mod tests {
 
     #[test]
     fn test_determine_recovery_reason() {
-        use crate::models::stage::{Stage, StageStatus, StageType};
+        use crate::models::stage::{Implementer, Stage, StageStatus, StageType};
         use chrono::Utc;
 
         let mut stage = Stage {
@@ -326,6 +326,8 @@ mod tests {
             reasoning_effort: None,
             is_possibly_stuck: false,
             ultracode: false,
+            implementer: Implementer::Claude,
+            subagent_timeout_secs: None,
         };
 
         // No reason - should be Manual

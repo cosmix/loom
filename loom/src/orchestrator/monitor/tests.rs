@@ -730,3 +730,73 @@ fn test_possibly_stuck_not_emitted_for_only_old_events() {
         "Old isolated events must not satisfy the heuristic"
     );
 }
+
+#[test]
+fn test_hung_detection_honors_per_stage_subagent_timeout() {
+    use tempfile::TempDir;
+
+    use crate::orchestrator::liveness::LivenessService;
+    use crate::orchestrator::monitor::heartbeat::{
+        write_heartbeat, Heartbeat, HeartbeatWatcher, DEFAULT_HUNG_TIMEOUT_SECS,
+    };
+
+    let temp_dir = TempDir::new().unwrap();
+    let work_dir = temp_dir.path().to_path_buf();
+
+    let config = MonitorConfig {
+        work_dir: work_dir.clone(),
+        ..Default::default()
+    };
+    // Hung detection only fires for a session whose process is still alive;
+    // without a liveness source the probe returns None and the arm is skipped.
+    let handlers = Handlers::new(config.clone(), Some(LivenessService::fixed_for_tests(true)));
+
+    // A heartbeat 400s old: past the 300s built-in default, well inside a 900s
+    // budget. The same on-disk state must read differently per stage.
+    let mut heartbeat = Heartbeat::new("slow-stage".to_string(), "session-1".to_string());
+    heartbeat.timestamp = chrono::Utc::now() - chrono::Duration::seconds(400);
+    write_heartbeat(&work_dir, &heartbeat).unwrap();
+
+    let mut session = Session::new();
+    session.id = "session-1".to_string();
+    session.status = SessionStatus::Running;
+    session.stage_id = Some("slow-stage".to_string());
+
+    let mut stage = Stage {
+        id: "slow-stage".to_string(),
+        subagent_timeout_secs: Some(900),
+        ..Default::default()
+    };
+
+    let mut watcher = HeartbeatWatcher::new();
+    let mut detection = Detection::new();
+
+    // A stage that declared a 900s budget is not flagged at 400s of silence.
+    let events = detection.detect_heartbeat_events(
+        &[session.clone()],
+        &[stage.clone()],
+        &mut watcher,
+        &config,
+        &handlers,
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, MonitorEvent::SessionHung { .. })),
+        "an explicit 900s budget must suppress the 400s-silence warning, got: {events:?}"
+    );
+
+    // The identical heartbeat under the built-in default IS flagged, and the
+    // event reports the budget it was measured against.
+    stage.subagent_timeout_secs = None;
+    let events =
+        detection.detect_heartbeat_events(&[session], &[stage], &mut watcher, &config, &handlers);
+    let reported = events
+        .iter()
+        .find_map(|e| match e {
+            MonitorEvent::SessionHung { timeout_secs, .. } => Some(*timeout_secs),
+            _ => None,
+        })
+        .expect("a stage on the built-in default must be flagged after 400s of silence");
+    assert_eq!(reported, DEFAULT_HUNG_TIMEOUT_SECS);
+}

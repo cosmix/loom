@@ -646,6 +646,26 @@ pub fn validate_structural_preflight(
                 ));
             }
         }
+
+        // implementer: codex on knowledge-shaped or verification-gate stages is likely
+        // unintended: those stages lean on Claude-native `loom memory`/`loom knowledge`
+        // curation and adversarial review judgment, not routine delegated implementation.
+        if stage.implementer == super::types::Implementer::Codex {
+            let type_name = match stage.stage_type {
+                super::types::StageType::Knowledge => Some("knowledge"),
+                super::types::StageType::KnowledgeDistill => Some("knowledge-distill"),
+                super::types::StageType::IntegrationVerify => Some("integration-verify"),
+                _ => None,
+            };
+            if let Some(type_name) = type_name {
+                warnings.push(format!(
+                    "Stage '{}': implementer: codex on a {} stage is likely unintended. \
+                     Codex delegates routine implementation work, not knowledge curation \
+                     or adversarial verification judgment.",
+                    stage.id, type_name
+                ));
+            }
+        }
     }
 
     // Cross-stage wiring coverage: warn when artifact coverage is absent across the DAG.

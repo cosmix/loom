@@ -6,6 +6,7 @@
 use loom::models::stage::Stage;
 use loom::orchestrator::{Orchestrator, OrchestratorConfig};
 use loom::plan::graph::ExecutionGraph;
+use loom::plan::schema::Implementer;
 use loom::plan::schema::SandboxConfig;
 use loom::plan::schema::StageDefinition;
 use std::time::Duration;
@@ -83,6 +84,8 @@ fn test_auto_merge_config_cascade() {
         reasoning_effort: None,
         code_review: None,
         ultracode: false,
+        implementer: Implementer::Claude,
+        subagent_timeout_secs: None,
     };
 
     assert_eq!(stage_with_auto_merge.auto_merge, Some(true));
@@ -115,6 +118,8 @@ fn test_auto_merge_config_cascade() {
         reasoning_effort: None,
         code_review: None,
         ultracode: false,
+        implementer: Implementer::Claude,
+        subagent_timeout_secs: None,
     };
 
     assert_eq!(stage_without_override.auto_merge, None);

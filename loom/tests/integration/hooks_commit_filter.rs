@@ -389,5 +389,10 @@ fn hook_contains_blocking_logic() {
 #[test]
 fn hook_has_user_friendly_message() {
     assert!(HOOK_COMMIT_FILTER.contains("BLOCKED"));
-    assert!(HOOK_COMMIT_FILTER.contains("CLAUDE.md rule 8"));
+    // Attribution is rule 9; rule 8 is native tools/formatting.
+    assert!(HOOK_COMMIT_FILTER.contains("CLAUDE.md rule 9"));
+    // The block kills the whole Bash call, so a chained `git add` is lost too.
+    // Without this, the agent retries the commit alone and hits "no changes
+    // added to commit" - the recurring second failure this guidance prevents.
+    assert!(HOOK_COMMIT_FILTER.contains("NOTHING RAN"));
 }

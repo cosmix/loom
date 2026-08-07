@@ -1,7 +1,9 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 
-use super::types::{AcceptanceCriterion, Stage, StageOutput, StageStatus, StageType};
+use crate::orchestrator::monitor::heartbeat::DEFAULT_HUNG_TIMEOUT_SECS;
+
+use super::types::{AcceptanceCriterion, Implementer, Stage, StageOutput, StageStatus, StageType};
 
 /// Maximum disputes a single stage may file before further requests
 /// are refused (escalation goes through `NeedsHumanReview`).
@@ -72,6 +74,8 @@ impl Stage {
             reasoning_effort: None,
             is_possibly_stuck: false,
             ultracode: false,
+            implementer: Implementer::Claude,
+            subagent_timeout_secs: None,
         }
     }
 
@@ -92,6 +96,17 @@ impl Stage {
         }
         let model = self.effective_model();
         self.stage_type.default_reasoning_effort(model)
+    }
+
+    /// Returns the effective subagent response budget for this stage, in seconds.
+    /// Uses the plan's explicit override if set, otherwise the built-in default.
+    ///
+    /// This is the single resolution point for the budget — the orchestrator's
+    /// heartbeat check and the signal generator both call it, so a stage can
+    /// never be measured against one threshold while being told another.
+    pub fn effective_subagent_timeout_secs(&self) -> u64 {
+        self.subagent_timeout_secs
+            .unwrap_or(DEFAULT_HUNG_TIMEOUT_SECS)
     }
 
     pub fn generate_id(name: &str) -> String {

@@ -56,6 +56,11 @@ pub const HOOK_WORKTREE_ISOLATION: &str = include_str!("../../../../hooks/worktr
 /// Validates target paths are within worktree boundary using LOOM_WORKTREE_PATH
 pub const HOOK_WORKTREE_FILE_GUARD: &str = include_str!("../../../../hooks/worktree-file-guard.sh");
 
+/// NoPreexistingFailures hook - advisory pushback when an agent writes off a
+/// red gate as pre-existing/flaky/environmental (CLAUDE.md rule 15)
+pub const HOOK_NO_PREEXISTING_FAILURES: &str =
+    include_str!("../../../../hooks/no-preexisting-failures.sh");
+
 /// PlansPathGuard hook - blocks Write/Edit of plan files under .claude/plans paths
 /// Fires in ALL sessions (plan mode runs interactively); redirects to doc/plans/
 pub const HOOK_PLANS_PATH_GUARD: &str = include_str!("../../../../hooks/plans-path-guard.sh");
@@ -82,6 +87,7 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("worktree-isolation.sh", HOOK_WORKTREE_ISOLATION),
     ("worktree-file-guard.sh", HOOK_WORKTREE_FILE_GUARD),
     ("plans-path-guard.sh", HOOK_PLANS_PATH_GUARD),
+    ("no-preexisting-failures.sh", HOOK_NO_PREEXISTING_FAILURES),
     // Skill suggestion hooks
     ("skill-trigger.sh", HOOK_SKILL_TRIGGER),
 ];

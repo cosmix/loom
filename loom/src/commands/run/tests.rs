@@ -5,7 +5,8 @@ use super::graph_loader::build_execution_graph;
 use crate::fs::work_dir::WorkDir;
 use crate::orchestrator::OrchestratorResult;
 use crate::plan::schema::{
-    LoomConfig, LoomMetadata, SandboxConfig, StageDefinition, StageSandboxConfig, StageType,
+    Implementer, LoomConfig, LoomMetadata, SandboxConfig, StageDefinition, StageSandboxConfig,
+    StageType,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -66,6 +67,8 @@ fn setup_work_dir_with_plan(temp_dir: &TempDir) -> (PathBuf, WorkDir) {
         reasoning_effort: None,
         code_review: None,
         ultracode: false,
+        implementer: Implementer::Claude,
+        subagent_timeout_secs: None,
     };
 
     let plan_path = create_test_plan(temp_dir.path(), vec![stage_def]);

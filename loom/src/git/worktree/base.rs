@@ -197,7 +197,7 @@ pub fn resolve_base_branch(
 mod tests {
     use super::*;
     use crate::plan::graph::ExecutionGraph;
-    use crate::plan::schema::{StageDefinition, StageSandboxConfig};
+    use crate::plan::schema::{Implementer, StageDefinition, StageSandboxConfig};
     use std::process::Command;
     use tempfile::TempDir;
 
@@ -304,6 +304,8 @@ mod tests {
                 reasoning_effort: None,
                 code_review: None,
                 ultracode: false,
+                implementer: Implementer::Claude,
+                subagent_timeout_secs: None,
             })
             .collect();
 

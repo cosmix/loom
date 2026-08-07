@@ -104,29 +104,23 @@ pub enum HeartbeatStatus {
     NoHeartbeat,
 }
 
-/// Watches heartbeat files and tracks session health
+/// Watches heartbeat files and tracks session health.
+///
+/// The watcher holds no timeout of its own: the staleness threshold is
+/// per-stage (`Stage::subagent_timeout_secs`) and one watcher serves every
+/// stage, so callers resolve the budget and pass it to
+/// [`HeartbeatWatcher::check_session_hung`].
 #[derive(Debug)]
 pub struct HeartbeatWatcher {
     /// Cached heartbeats by stage ID
     heartbeats: HashMap<String, Heartbeat>,
-    /// Timeout for considering a session hung
-    hung_timeout: Duration,
 }
 
 impl HeartbeatWatcher {
-    /// Create a new heartbeat watcher with default timeout
+    /// Create a new heartbeat watcher
     pub fn new() -> Self {
         Self {
             heartbeats: HashMap::new(),
-            hung_timeout: Duration::from_secs(DEFAULT_HUNG_TIMEOUT_SECS),
-        }
-    }
-
-    /// Create with custom hung timeout
-    pub fn with_timeout(timeout: Duration) -> Self {
-        Self {
-            heartbeats: HashMap::new(),
-            hung_timeout: timeout,
         }
     }
 
@@ -191,6 +185,11 @@ impl HeartbeatWatcher {
 
     /// Check if a session is hung based on heartbeat staleness.
     ///
+    /// `timeout` is the stage's response budget, resolved by the caller via
+    /// [`Stage::effective_subagent_timeout_secs`]. It is a parameter rather than
+    /// watcher state because the threshold is per-stage while one watcher serves
+    /// every stage.
+    ///
     /// `session_id` is the ID of the session currently occupying the stage.
     /// Heartbeat files are keyed by stage ID, so a heartbeat written by a
     /// previous session for the same stage can linger after that session
@@ -198,7 +197,14 @@ impl HeartbeatWatcher {
     /// session we are checking, it belongs to a stale/previous session and
     /// must NOT flag the fresh session as hung — treat it as `NoHeartbeat`
     /// (the fresh session has simply not written its own heartbeat yet).
-    pub fn check_session_hung(&self, stage_id: &str, session_id: &str) -> HeartbeatStatus {
+    ///
+    /// [`Stage::effective_subagent_timeout_secs`]: crate::models::stage::Stage::effective_subagent_timeout_secs
+    pub fn check_session_hung(
+        &self,
+        stage_id: &str,
+        session_id: &str,
+        timeout: Duration,
+    ) -> HeartbeatStatus {
         match self.heartbeats.get(stage_id) {
             None => HeartbeatStatus::NoHeartbeat,
             Some(heartbeat) if heartbeat.session_id != session_id => {
@@ -206,7 +212,7 @@ impl HeartbeatWatcher {
                 HeartbeatStatus::NoHeartbeat
             }
             Some(heartbeat) => {
-                if heartbeat.is_stale(self.hung_timeout) {
+                if heartbeat.is_stale(timeout) {
                     let age = heartbeat.age();
                     HeartbeatStatus::Hung {
                         stale_duration_secs: age.num_seconds().max(0) as u64,
@@ -226,11 +232,6 @@ impl HeartbeatWatcher {
     /// Get all cached heartbeats
     pub fn all_heartbeats(&self) -> &HashMap<String, Heartbeat> {
         &self.heartbeats
-    }
-
-    /// Set the hung timeout
-    pub fn set_timeout(&mut self, timeout: Duration) {
-        self.hung_timeout = timeout;
     }
 }
 
@@ -370,11 +371,12 @@ mod tests {
 
     #[test]
     fn test_heartbeat_watcher_check_hung() {
-        let mut watcher = HeartbeatWatcher::with_timeout(Duration::from_secs(60));
+        let budget = Duration::from_secs(60);
+        let mut watcher = HeartbeatWatcher::new();
 
         // No heartbeat
         assert_eq!(
-            watcher.check_session_hung("unknown", "session-1"),
+            watcher.check_session_hung("unknown", "session-1", budget),
             HeartbeatStatus::NoHeartbeat
         );
 
@@ -383,27 +385,28 @@ mod tests {
         watcher.heartbeats.insert("stage-1".to_string(), hb);
 
         assert_eq!(
-            watcher.check_session_hung("stage-1", "session-1"),
+            watcher.check_session_hung("stage-1", "session-1", budget),
             HeartbeatStatus::Healthy
         );
 
         // A heartbeat from a different session for the same stage must not
         // flag the current session — treated as NoHeartbeat.
         assert_eq!(
-            watcher.check_session_hung("stage-1", "session-2"),
+            watcher.check_session_hung("stage-1", "session-2", budget),
             HeartbeatStatus::NoHeartbeat
         );
 
-        // Add an old heartbeat (simulate by setting timeout to 0)
-        watcher.set_timeout(Duration::from_secs(0));
-        match watcher.check_session_hung("stage-1", "session-1") {
+        // The same cached heartbeat read against a zero budget is Hung — the
+        // threshold is the caller's, not the watcher's.
+        let zero = Duration::from_secs(0);
+        match watcher.check_session_hung("stage-1", "session-1", zero) {
             HeartbeatStatus::Hung { .. } => (),
             other => panic!("Expected Hung, got {other:?}"),
         }
 
         // Stale-session guard still wins even when the cached heartbeat is old.
         assert_eq!(
-            watcher.check_session_hung("stage-1", "session-2"),
+            watcher.check_session_hung("stage-1", "session-2", zero),
             HeartbeatStatus::NoHeartbeat
         );
     }

@@ -203,7 +203,7 @@ pub fn build_merge_report(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::stage::{Stage, StageStatus, StageType};
+    use crate::models::stage::{Implementer, Stage, StageStatus, StageType};
     use chrono::Utc;
 
     fn make_test_stage(id: &str) -> Stage {
@@ -267,6 +267,8 @@ mod tests {
             reasoning_effort: None,
             is_possibly_stuck: false,
             ultracode: false,
+            implementer: Implementer::Claude,
+            subagent_timeout_secs: None,
         }
     }
 

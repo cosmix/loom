@@ -3,6 +3,12 @@
 use anyhow::{bail, Result};
 use std::path::PathBuf;
 
+/// Model used when a stage delegates implementation to Codex.
+pub const CODEX_IMPLEMENTER_MODEL: &str = "gpt-5.6-luna";
+
+/// Reasoning effort used for Codex implementation runs.
+pub const CODEX_IMPLEMENTER_EFFORT: &str = "xhigh";
+
 /// Find the absolute path to the codex binary.
 ///
 /// Mirrors [`crate::claude::find_claude_path`]: try `which::which` first (uses

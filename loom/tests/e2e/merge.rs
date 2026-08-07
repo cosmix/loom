@@ -1,7 +1,7 @@
 //! E2E tests for auto-merge workflow
 
 use chrono::Utc;
-use loom::models::stage::{Stage, StageStatus};
+use loom::models::stage::{Implementer, Stage, StageStatus};
 use loom::orchestrator::auto_merge::is_auto_merge_enabled;
 use loom::plan::schema::{LoomMetadata, StageDefinition};
 
@@ -67,6 +67,8 @@ fn create_test_stage(id: &str, auto_merge: Option<bool>) -> Stage {
         reasoning_effort: None,
         is_possibly_stuck: false,
         ultracode: false,
+        implementer: Implementer::Claude,
+        subagent_timeout_secs: None,
     }
 }
 

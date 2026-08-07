@@ -3,7 +3,7 @@
 use super::cleanup::{cleanup_work_directory, prune_stale_worktrees};
 use super::plan_setup::{create_stage_from_definition, initialize_with_plan};
 use crate::fs::work_dir::WorkDir;
-use crate::models::stage::{Stage, StageStatus, StageType as ModelStageType};
+use crate::models::stage::{Implementer, Stage, StageStatus, StageType as ModelStageType};
 use crate::plan::schema::{
     AcceptanceCriterion, LoomConfig, LoomMetadata, SandboxConfig, StageDefinition,
     StageSandboxConfig, StageType,
@@ -67,6 +67,8 @@ fn test_create_stage_from_definition_no_dependencies() {
         reasoning_effort: None,
         code_review: None,
         ultracode: false,
+        implementer: Implementer::Claude,
+        subagent_timeout_secs: None,
     };
 
     let stage = create_stage_from_definition(&stage_def, "plan-001");
@@ -82,10 +84,37 @@ fn test_create_stage_from_definition_no_dependencies() {
     // The ultracode license propagates from the definition to the stage model
     let ultracode_def = StageDefinition {
         ultracode: true,
-        ..stage_def
+        ..stage_def.clone()
     };
     let ultracode_stage = create_stage_from_definition(&ultracode_def, "plan-001");
     assert!(ultracode_stage.ultracode);
+
+    // The implementer lane propagates from the definition to the stage model
+    assert_eq!(
+        stage.implementer,
+        Implementer::Claude,
+        "implementer defaults to Claude"
+    );
+    let codex_def = StageDefinition {
+        implementer: Implementer::Codex,
+        ..stage_def.clone()
+    };
+    let codex_stage = create_stage_from_definition(&codex_def, "plan-001");
+    assert_eq!(codex_stage.implementer, Implementer::Codex);
+
+    // The subagent response budget propagates the same way. Omitted stays None
+    // so the built-in default applies; an explicit value reaches the runtime
+    // Stage, which is what the orchestrator measures the session against.
+    assert_eq!(
+        stage.subagent_timeout_secs, None,
+        "subagent_timeout_secs defaults to None"
+    );
+    let budgeted_def = StageDefinition {
+        subagent_timeout_secs: Some(1800),
+        ..stage_def
+    };
+    let budgeted_stage = create_stage_from_definition(&budgeted_def, "plan-001");
+    assert_eq!(budgeted_stage.subagent_timeout_secs, Some(1800));
 }
 
 #[test]
@@ -117,6 +146,8 @@ fn test_create_stage_from_definition_with_dependencies() {
         reasoning_effort: None,
         code_review: None,
         ultracode: false,
+        implementer: Implementer::Claude,
+        subagent_timeout_secs: None,
     };
 
     let stage = create_stage_from_definition(&stage_def, "plan-002");
@@ -189,6 +220,8 @@ fn test_serialize_stage_to_markdown_minimal() {
         reasoning_effort: None,
         is_possibly_stuck: false,
         ultracode: false,
+        implementer: Implementer::Claude,
+        subagent_timeout_secs: None,
     };
 
     let content = serialize_stage_to_markdown(&stage).unwrap();
@@ -263,6 +296,8 @@ fn test_serialize_stage_to_markdown_with_all_fields() {
         reasoning_effort: None,
         is_possibly_stuck: false,
         ultracode: false,
+        implementer: Implementer::Claude,
+        subagent_timeout_secs: None,
     };
 
     let content = serialize_stage_to_markdown(&stage).unwrap();
@@ -326,6 +361,8 @@ fn test_initialize_with_plan_creates_config() {
         reasoning_effort: None,
         code_review: None,
         ultracode: false,
+        implementer: Implementer::Claude,
+        subagent_timeout_secs: None,
     };
 
     let plan_path = create_test_plan(temp_dir.path(), vec![stage_def]);
@@ -377,6 +414,8 @@ fn test_initialize_with_plan_creates_stage_files() {
             reasoning_effort: None,
             code_review: None,
             ultracode: false,
+            implementer: Implementer::Claude,
+            subagent_timeout_secs: None,
         },
         StageDefinition {
             id: "stage-2".to_string(),
@@ -405,6 +444,8 @@ fn test_initialize_with_plan_creates_stage_files() {
             reasoning_effort: None,
             code_review: None,
             ultracode: false,
+            implementer: Implementer::Claude,
+            subagent_timeout_secs: None,
         },
     ];
 

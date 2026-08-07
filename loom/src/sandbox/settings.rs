@@ -186,6 +186,10 @@ pub fn write_settings(config: &MergedSandboxConfig, worktree_path: &Path) -> Res
     // Merge existing permissions into the new settings
     merge_existing_permissions(&mut settings_json, &existing_settings, is_worktree);
 
+    // Carry forward top-level keys loom doesn't own (e.g. plugin enablement)
+    // that would otherwise be discarded by the from-scratch regeneration above.
+    preserve_unowned_keys(&mut settings_json, &existing_settings);
+
     // Write settings file with pretty formatting
     let settings_string = serde_json::to_string_pretty(&settings_json)
         .context("Failed to serialize settings JSON")?;
@@ -566,6 +570,33 @@ fn merge_existing_permissions(
 
             // Replace array with deduplicated permissions
             *new_deny_arr = all_deny.into_iter().map(|s| json!(s)).collect();
+        }
+    }
+}
+
+/// Top-level settings keys that `generate_settings_json` does not emit and
+/// that must therefore be carried forward from the existing file, or they
+/// are silently dropped on every regeneration.
+const PRESERVED_SETTINGS_KEYS: [&str; 2] = ["enabledPlugins", "extraKnownMarketplaces"];
+
+/// Carry forward top-level settings keys loom does not own.
+///
+/// `generate_settings_json` rebuilds the file from scratch, so any
+/// key it does not emit is lost. Plugin enablement lives in
+/// `enabledPlugins` / `extraKnownMarketplaces` and must survive.
+fn preserve_unowned_keys(new_settings: &mut Value, existing: &Value) {
+    let Some(existing_obj) = existing.as_object() else {
+        return;
+    };
+    let Some(new_obj) = new_settings.as_object_mut() else {
+        return;
+    };
+    for key in PRESERVED_SETTINGS_KEYS {
+        if new_obj.contains_key(key) {
+            continue;
+        }
+        if let Some(value) = existing_obj.get(key) {
+            new_obj.insert(key.to_string(), value.clone());
         }
     }
 }
@@ -1658,5 +1689,124 @@ mod tests {
         );
         // Legitimate knowledge write-protection is preserved.
         assert!(deny_strs.contains(&"Write(doc/loom/knowledge/**)"));
+    }
+
+    #[test]
+    fn test_preserve_unowned_keys_carries_enabled_plugins() {
+        let existing = json!({
+            "enabledPlugins": { "codex": true }
+        });
+        let mut new_settings = json!({
+            "sandbox": { "enabled": true }
+        });
+
+        preserve_unowned_keys(&mut new_settings, &existing);
+
+        assert_eq!(new_settings["enabledPlugins"], json!({ "codex": true }));
+    }
+
+    #[test]
+    fn test_preserve_unowned_keys_carries_extra_known_marketplaces() {
+        let existing = json!({
+            "extraKnownMarketplaces": { "codex-marketplace": "https://example.com" }
+        });
+        let mut new_settings = json!({
+            "sandbox": { "enabled": true }
+        });
+
+        preserve_unowned_keys(&mut new_settings, &existing);
+
+        assert_eq!(
+            new_settings["extraKnownMarketplaces"],
+            json!({ "codex-marketplace": "https://example.com" })
+        );
+    }
+
+    #[test]
+    fn test_preserve_unowned_keys_noop_when_absent() {
+        let existing = json!({
+            "sandbox": { "enabled": false }
+        });
+        let mut new_settings = json!({
+            "sandbox": { "enabled": true }
+        });
+
+        preserve_unowned_keys(&mut new_settings, &existing);
+
+        assert!(new_settings.get("enabledPlugins").is_none());
+        assert!(new_settings.get("extraKnownMarketplaces").is_none());
+        assert_eq!(new_settings["sandbox"]["enabled"], true);
+    }
+
+    #[test]
+    fn test_preserve_unowned_keys_does_not_override_generated_keys() {
+        // A stale/user `sandbox` key in the existing file must never clobber
+        // the freshly generated one - only keys ABSENT from new_settings are
+        // carried over.
+        let existing = json!({
+            "sandbox": { "enabled": false }
+        });
+        let mut new_settings = json!({
+            "sandbox": { "enabled": true }
+        });
+
+        preserve_unowned_keys(&mut new_settings, &existing);
+
+        assert_eq!(new_settings["sandbox"]["enabled"], true);
+    }
+
+    #[test]
+    fn test_write_settings_round_trip_preserves_enabled_plugins() {
+        use tempfile::TempDir;
+
+        // The bug this guards against: write_settings regenerates the whole
+        // file from scratch, so a plugin enabled at local scope (enabledPlugins)
+        // used to vanish from every worktree on the next regeneration.
+        let temp_dir = TempDir::new().unwrap();
+        let worktree_path = temp_dir.path();
+
+        let claude_dir = worktree_path.join(".claude");
+        fs::create_dir_all(&claude_dir).unwrap();
+        let settings_path = claude_dir.join("settings.local.json");
+
+        let existing_settings = json!({
+            "enabledPlugins": { "codex": true },
+            "extraKnownMarketplaces": { "codex-marketplace": "https://example.com" },
+            "permissions": {
+                "allow": ["Read(~/.ssh/config)"]
+            }
+        });
+        fs::write(
+            &settings_path,
+            serde_json::to_string_pretty(&existing_settings).unwrap(),
+        )
+        .unwrap();
+
+        let config = MergedSandboxConfig {
+            enabled: true,
+            auto_allow: true,
+            allow_unsandboxed_escape: false,
+            excluded_commands: vec![],
+            filesystem: FilesystemConfig::default(),
+            network: NetworkConfig::default(),
+            linux: LinuxConfig::default(),
+            permission_mode: PermissionMode::Auto,
+        };
+
+        write_settings(&config, worktree_path).unwrap();
+
+        let result: Value =
+            serde_json::from_str(&fs::read_to_string(&settings_path).unwrap()).unwrap();
+
+        assert_eq!(
+            result["enabledPlugins"],
+            json!({ "codex": true }),
+            "enabledPlugins must survive settings regeneration, got: {result:?}"
+        );
+        assert_eq!(
+            result["extraKnownMarketplaces"],
+            json!({ "codex-marketplace": "https://example.com" }),
+            "extraKnownMarketplaces must survive settings regeneration, got: {result:?}"
+        );
     }
 }

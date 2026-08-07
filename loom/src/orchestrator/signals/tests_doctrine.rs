@@ -87,9 +87,11 @@ const BLOCK_A: &str = "VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:
 const BLOCK_B: &str = "1. ORCHESTRATION IS ALWAYS OPUS. Every stage's main agent is opus. The
    orchestrator does NOT implement — it decomposes the work, hands each
    subagent full context, then verifies and commits. That is all.
-2. IMPLEMENTATION IS ALWAYS DELEGATED, to as FEW subagents as the work
-   allows: haiku (rare — trivial mechanical edits), sonnet (the common
-   case), opus (genuinely challenging work). Spawn BY AGENT TYPE.
+2. IMPLEMENTATION IS ALWAYS DELEGATED, to as FEW subagents as the work allows. Routine
+   implementation goes to codex:codex-rescue (gpt-5.6-luna, xhigh) on stages with
+   implementer: \"codex\", else to sonnet (loom-software-engineer); haiku stays rare and trivial.
+   Genuinely challenging work stays opus. Verification NEVER delegates - the opus orchestrator
+   verifies and commits. Spawn BY AGENT TYPE.
 3. DEBUGGING OR REPEATED FAILURE → spawn a `loom-advisor` (fable) subagent:
    narrow scope, full detail supplied by the orchestrator, advice returned.
    Do not let an implementer thrash on the same failure twice.";
@@ -160,6 +162,23 @@ fn block_b_agrees_across_every_surface() {
              byte-identical wherever it appears. Expected to find:\n{BLOCK_B}"
         );
     }
+
+    // BLOCK-B names the codex lane's model and effort as prose literals, so
+    // equality with the surfaces above is not enough: editing the constants in
+    // codex.rs would leave every surface agreeing on a RETIRED model and this
+    // test still green. Pin the prose to the constants the signal interpolates.
+    assert!(
+        BLOCK_B.contains(crate::codex::CODEX_IMPLEMENTER_MODEL),
+        "BLOCK-B must name CODEX_IMPLEMENTER_MODEL ({}); update every surface \
+         when the constant changes",
+        crate::codex::CODEX_IMPLEMENTER_MODEL
+    );
+    assert!(
+        BLOCK_B.contains(crate::codex::CODEX_IMPLEMENTER_EFFORT),
+        "BLOCK-B must name CODEX_IMPLEMENTER_EFFORT ({}); update every surface \
+         when the constant changes",
+        crate::codex::CODEX_IMPLEMENTER_EFFORT
+    );
 }
 
 #[test]

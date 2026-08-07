@@ -3,7 +3,8 @@
 use std::fs;
 use tempfile::TempDir;
 
-use crate::models::stage::StageType;
+use crate::codex::CODEX_IMPLEMENTER_MODEL;
+use crate::models::stage::{Implementer, StageType};
 
 use super::super::cache::{compute_hash, generate_stable_prefix, SignalMetrics};
 use super::super::format::{format_signal_content, format_signal_with_metrics};
@@ -332,6 +333,141 @@ fn test_signal_ultracode_section_gated() {
 }
 
 #[test]
+fn test_signal_codex_implementers_section_gated() {
+    let temp_dir = TempDir::new().unwrap();
+    let work_dir = temp_dir.path().join(".work");
+    fs::create_dir_all(&work_dir).unwrap();
+
+    let session = create_test_session();
+    let worktree = create_test_worktree();
+
+    // Default stage (claude lane): no codex doctrine. This negative assert is the
+    // load-bearing half — it proves existing plans are unaffected by the new lane.
+    let stage = create_test_stage();
+    let (signal_path, _) =
+        generate_signal_with_metrics(&session, &stage, &worktree, &[], None, None, &work_dir)
+            .unwrap();
+    let content = fs::read_to_string(&signal_path).unwrap();
+    assert!(!content.contains("## Codex Implementers"));
+
+    // Codex-routed stage: section present (lane propagates stage → context → signal)
+    let mut codex_stage = create_test_stage();
+    codex_stage.implementer = Implementer::Codex;
+    let mut session2 = create_test_session();
+    session2.id = "session-codex".to_string();
+    let (signal_path, _) = generate_signal_with_metrics(
+        &session2,
+        &codex_stage,
+        &worktree,
+        &[],
+        None,
+        None,
+        &work_dir,
+    )
+    .unwrap();
+    let content = fs::read_to_string(&signal_path).unwrap();
+    assert!(content.contains("## Codex Implementers"));
+    assert!(content.contains("codex:codex-rescue"));
+    // Model comes from the shared constant, not a second literal
+    assert!(content.contains(CODEX_IMPLEMENTER_MODEL));
+
+    // Blast-radius restrictions. Codex runs workspace-write with approval
+    // policy "never", so these two are the only thing standing between it and
+    // shared state: `.work/` is a symlink out of the worktree, and loom's
+    // hooks never see commands codex runs inside its own session.
+    assert!(
+        content.contains(".work/"),
+        "the codex block must warn off .work/ - a write through that symlink \
+         escapes worktree isolation into state shared with every stage"
+    );
+    assert!(
+        content.contains("git status --short"),
+        "the codex block must tell the orchestrator to diff-check after each \
+         run; no hook covers codex's own shell commands"
+    );
+}
+
+#[test]
+fn test_signal_subagent_timeout_section_gated() {
+    let temp_dir = TempDir::new().unwrap();
+    let work_dir = temp_dir.path().join(".work");
+    fs::create_dir_all(&work_dir).unwrap();
+
+    let session = create_test_session();
+    let worktree = create_test_worktree();
+
+    // Stage with no explicit budget: nothing emitted. This negative assert is the
+    // load-bearing half — it proves plans written before the field existed get a
+    // byte-identical signal.
+    let stage = create_test_stage();
+    let (signal_path, _) =
+        generate_signal_with_metrics(&session, &stage, &worktree, &[], None, None, &work_dir)
+            .unwrap();
+    let content = fs::read_to_string(&signal_path).unwrap();
+    assert!(!content.contains("## Subagent Response Budget"));
+
+    // Stage with an explicit budget: the block appears and names the value
+    // (budget propagates stage → context → signal).
+    let mut budgeted_stage = create_test_stage();
+    budgeted_stage.subagent_timeout_secs = Some(900);
+    let mut session2 = create_test_session();
+    session2.id = "session-budgeted".to_string();
+    let (signal_path, _) = generate_signal_with_metrics(
+        &session2,
+        &budgeted_stage,
+        &worktree,
+        &[],
+        None,
+        None,
+        &work_dir,
+    )
+    .unwrap();
+    let content = fs::read_to_string(&signal_path).unwrap();
+    assert!(content.contains("## Subagent Response Budget"));
+    assert!(
+        content.contains("900s"),
+        "the block must name the stage's own budget, not a hardcoded default"
+    );
+    assert!(
+        content.contains("ADVISORY"),
+        "the block must say the orchestrator side never kills or retries, or the \
+         agent will assume something else handles a silent subagent"
+    );
+}
+
+#[test]
+fn test_recovery_signal_carries_subagent_timeout_section() {
+    use super::super::recovery_format::format_recovery_signal;
+    use super::super::recovery_types::RecoverySignalContent;
+
+    let content = RecoverySignalContent::for_crash(
+        "session-recovered".to_string(),
+        "budgeted-stage".to_string(),
+        "session-crashed".to_string(),
+        None,
+        1,
+    );
+    let embedded = EmbeddedContext::default();
+
+    // No explicit budget: nothing emitted, exactly as before the field existed.
+    let stage = create_test_stage();
+    let signal = format_recovery_signal(&content, &stage, &embedded);
+    assert!(!signal.contains("## Subagent Response Budget"));
+
+    // The recovery signal embeds only the STABLE PREFIX, so without an explicit
+    // emit here a resumed stage would be measured against a budget it was never
+    // told about.
+    let mut budgeted_stage = create_test_stage();
+    budgeted_stage.subagent_timeout_secs = Some(900);
+    let signal = format_recovery_signal(&content, &budgeted_stage, &embedded);
+    assert!(
+        signal.contains("## Subagent Response Budget"),
+        "a recovered stage must still be told its response budget"
+    );
+    assert!(signal.contains("900s"));
+}
+
+#[test]
 fn test_stable_prefix_hash_changes_with_session() {
     // The stable prefix includes the session header, so different sessions
     // will have different hashes (but the execution rules portion is stable)
@@ -374,4 +510,38 @@ fn test_stable_prefix_hash_changes_with_session() {
         - formatted2.metrics.stable_prefix_bytes as i64)
         .abs();
     assert!(size_diff < 100, "Stable prefix size should be similar");
+}
+
+#[test]
+fn test_recovery_signal_carries_codex_implementers_section() {
+    use super::super::recovery_format::format_recovery_signal;
+    use super::super::recovery_types::RecoverySignalContent;
+
+    let content = RecoverySignalContent::for_crash(
+        "session-recovered".to_string(),
+        "codex-stage".to_string(),
+        "session-crashed".to_string(),
+        None,
+        1,
+    );
+    let embedded = EmbeddedContext::default();
+
+    // Default (claude) stage: no codex doctrine, exactly as before this lane existed.
+    let stage = create_test_stage();
+    let signal = format_recovery_signal(&content, &stage, &embedded);
+    assert!(!signal.contains("## Codex Implementers"));
+
+    // Codex stage: the recovery signal is built OUTSIDE the semi-stable path, so
+    // without an explicit emit here a resumed stage would lose the whole lane's
+    // rules while the stable prefix still points at them.
+    let mut codex_stage = create_test_stage();
+    codex_stage.implementer = Implementer::Codex;
+    let signal = format_recovery_signal(&content, &codex_stage, &embedded);
+    assert!(
+        signal.contains("## Codex Implementers"),
+        "a recovered codex stage must still receive the codex doctrine"
+    );
+    assert!(signal.contains("codex:codex-rescue"));
+    assert!(signal.contains("FOREGROUND"));
+    assert!(signal.contains(CODEX_IMPLEMENTER_MODEL));
 }

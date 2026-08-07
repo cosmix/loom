@@ -73,8 +73,21 @@ check_dangerous_patterns() {
     normalized=$(echo "$stripped" | tr -s ' ')
     debug "Checking command: $normalized"
 
-    # Pattern 1: git add -A or git add --all (anywhere in command)
-    if [[ "$normalized" =~ git[[:space:]]+add[[:space:]].*(-A|--all) ]]; then
+    # Arguments belonging to ONE `git add` invocation: everything up to a command
+    # separator or end of line.
+    #
+    # This bound is load-bearing. In bash's =~ a `.` matches newlines, so an
+    # unbounded `.*` lets text from a LATER line satisfy these patterns - and
+    # strip_embedded_content only removes single-line -m bodies, so a multi-line
+    # commit message survives into the scan. The result was that staging specific
+    # files was blocked whenever the message body happened to contain "-A" (as in
+    # "Co-Authored-By") or the string ".work", with a diagnostic naming patterns
+    # the command never used.
+    local args=$'[^;&|\n]*'
+
+    # Pattern 1: git add -A or git add --all (flag must be its own token, so a
+    # path like src/-Analysis.rs or a word like Co-Authored does not match)
+    if [[ "$normalized" =~ git[[:space:]]+add${args}[[:space:]](-A|--all)([[:space:]]|[;\&\|]|$) ]]; then
         debug "BLOCKED by Pattern 1: git add -A/--all"
         return 1
     fi
@@ -92,7 +105,7 @@ check_dangerous_patterns() {
     # Match .work ONLY as a standalone argument (not as substring of longer name)
     # .work must be followed by: space, forward slash, or end of string
     # This prevents false positives for: .workspace, .working, .workdir, etc.
-    if [[ "$normalized" =~ git[[:space:]]+add[[:space:]].*\.work([[:space:]]|/|$) ]]; then
+    if [[ "$normalized" =~ git[[:space:]]+add${args}\.work([[:space:]]|/|[;\&\|]|$) ]]; then
         debug "BLOCKED by Pattern 3: .work directory"
         return 1
     fi
