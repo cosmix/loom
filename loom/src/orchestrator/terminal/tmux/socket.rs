@@ -63,6 +63,17 @@ pub fn list_loom_sockets(work_dir: &Path) -> Vec<LoomSocket> {
         let Some(session_id) = name.strip_prefix("loom-") else {
             continue;
         };
+        // The per-repo overview viewer socket (see
+        // `commands::attach::viewer_socket_name`, `loom-view-<8 hex>`) is not
+        // a session socket at all, so it can never be session-attributed.
+        // Without this skip it decodes to session id `view-<hex>`, which
+        // never has a session file, so `loom clean`/`loom init` would report
+        // it as an "unattributable tmux socket left untouched" — a warning
+        // meant for another checkout's live session, not loom's own viewer.
+        // Nothing currently reaps this socket; that is a known limitation.
+        if session_id.starts_with("view-") {
+            continue;
+        }
         let attributed = work_dir
             .join("sessions")
             .join(format!("{session_id}.md"))
@@ -223,6 +234,30 @@ mod tests {
         assert!(
             !stranger_sockets[0].attributed,
             "an unrelated work dir must never attribute another work dir's socket"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn list_loom_sockets_ignores_the_overview_viewer_socket() {
+        let socket_dir = TempDir::new().unwrap();
+        let _guard = TmuxTmpDirGuard::set(socket_dir.path());
+        let tmux_socket_dir = loom_socket_dir();
+        std::fs::create_dir_all(&tmux_socket_dir).unwrap();
+
+        // This repo's own overview viewer socket, named by
+        // `commands::attach::viewer_socket_name`. It must never show up as an
+        // unattributable session socket.
+        std::fs::write(tmux_socket_dir.join("loom-view-deadbeef"), "").unwrap();
+
+        let work_dir = TempDir::new().unwrap();
+        std::fs::create_dir_all(work_dir.path().join("sessions")).unwrap();
+
+        let sockets = list_loom_sockets(work_dir.path());
+
+        assert!(
+            sockets.is_empty(),
+            "the overview viewer socket must be skipped, not reported as unattributed"
         );
     }
 

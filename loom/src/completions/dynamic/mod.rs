@@ -173,7 +173,7 @@ fn complete_after_command(cwd: &Path, prefix: &str, cmd: &str) -> Result<Vec<Str
         // falls back to native path completion
         "init" | "pressure" => Ok(Vec::new()),
         "completions" => complete_shell_types(prefix),
-        "check" | "diagnose" | "resume" => complete_stage_ids(cwd, prefix),
+        "attach" | "check" | "diagnose" | "resume" => complete_stage_ids(cwd, prefix),
         _ => Ok(Vec::new()),
     }
 }

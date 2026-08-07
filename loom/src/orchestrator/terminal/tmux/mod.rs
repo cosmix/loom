@@ -79,7 +79,7 @@ fn new_session_argv(socket: &str, session_name: &str, cwd: &Path, command: &Path
 /// creation itself is denied — a sandbox/seccomp condition no CI runner can be
 /// relied on to reproduce. Testing the decision directly is what keeps the
 /// rule honest.
-fn evaluate_new_session(socket: &str, status_success: bool, stderr: &str) -> Result<()> {
+pub(crate) fn evaluate_new_session(socket: &str, status_success: bool, stderr: &str) -> Result<()> {
     if !status_success || !stderr.trim().is_empty() {
         anyhow::bail!("tmux new-session failed for socket '{socket}': {stderr}");
     }

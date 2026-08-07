@@ -4,6 +4,7 @@ use anyhow::Result;
 
 /// All top-level loom commands.
 const TOP_LEVEL_COMMANDS: &[&str] = &[
+    "attach",
     "check",
     "clean",
     "completions",

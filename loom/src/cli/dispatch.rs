@@ -1,7 +1,8 @@
 use anyhow::Result;
 use loom::commands::{
-    clean, diagnose, graph, handoff, init, knowledge, map, memory, plan, pressure, repair, resume,
-    review, run, self_update, sessions, skill_index, stage, status, stop, verify, worktree_cmd,
+    attach, clean, diagnose, graph, handoff, init, knowledge, map, memory, plan, pressure, repair,
+    resume, review, run, self_update, sessions, skill_index, stage, status, stop, verify,
+    worktree_cmd,
 };
 use loom::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use std::path::PathBuf;
@@ -44,6 +45,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
             SessionsCommands::List => sessions::list(),
             SessionsCommands::Kill { session_ids, stage } => sessions::kill(session_ids, stage),
         },
+        Commands::Attach { stage_id } => attach::execute(stage_id),
         Commands::Worktree { command } => match command {
             WorktreeCommands::List => worktree_cmd::list(),
             WorktreeCommands::Remove { stage_id } => worktree_cmd::remove(stage_id),
