@@ -98,6 +98,13 @@ pub enum Commands {
         command: SessionsCommands,
     },
 
+    /// Attach to loom sessions (tmux backend only)
+    Attach {
+        /// Stage id to attach to directly; omit for a tiled overview
+        #[arg(value_parser = clap_id_validator)]
+        stage_id: Option<String>,
+    },
+
     /// Manage git worktrees
     Worktree {
         #[command(subcommand)]

@@ -1,3 +1,4 @@
+pub mod attach;
 pub mod clean;
 pub mod common;
 pub mod diagnose;
