@@ -271,6 +271,12 @@ BLOCK-B — model allocation playbook:
 3. DEBUGGING OR REPEATED FAILURE → spawn a `loom-advisor` (fable) subagent:
    narrow scope, full detail supplied by the orchestrator, advice returned.
    Do not let an implementer thrash on the same failure twice.
+4. HEAVY VISUAL/DESIGN WORK → spawn FABLE subagents. Icon creation, SVG
+   illustration, logo/brand assets, dashboard and UI/UX design, design-system
+   and theming work all go to fable (pass the model override explicitly at
+   spawn — no loom agent type pins fable for implementation). Routine UI
+   wiring to an existing design stays sonnet per rule 2; fable is for work
+   whose quality hinges on visual/design judgment, not for plumbing.
 ```
 
 ### Codex Implementers (ASK THE USER)
@@ -328,7 +334,7 @@ how long an agent may sit blocked on one check.
 Consequences for how you write a plan:
 
 - **EVERY stage sets `model: "opus"` in its YAML.** There is no per-stage sonnet/haiku choice any more — the stage's main agent is always an opus orchestrator.
-- **The haiku/sonnet/opus decision MOVES DOWN to the subagent level**, made by the orchestrator AT SPAWN TIME — not by the plan author in YAML. The orchestrator picks per subagent assignment: haiku for trivial mechanical edits, sonnet for the common development-to-spec case, opus for genuinely challenging work.
+- **The haiku/sonnet/opus/fable decision MOVES DOWN to the subagent level**, made by the orchestrator AT SPAWN TIME — not by the plan author in YAML. The orchestrator picks per subagent assignment: haiku for trivial mechanical edits, sonnet for the common development-to-spec case, opus for genuinely challenging work, fable for heavy visual/design work including icon creation (BLOCK-B rule 4).
 - **"Keep sonnet stages small" becomes "keep each subagent's assignment small."** A stage can be as large as the work genuinely requires; what must stay small is each individual subagent's task — that is what earns it a cheap model and keeps it inside its own context budget.
 - **ESCALATION RULE: two failures on the same task ⇒ spawn a `loom-advisor` (fable) subagent, NOT a blind retry.** This replaces any earlier guidance to retry a failing subagent with a bigger model — diagnose first (narrow scope, full detail, advice returned), then re-dispatch with whatever the advisor recommends.
 
@@ -425,7 +431,7 @@ Match agent type to work: execution → `loom-software-engineer` (pins sonnet); 
 
 ### Hierarchies, teams, ultracode
 
-- **2-level hierarchy** (main → coordinators → workers; workers NEVER spawn subagents) — for >~6 well-defined tasks in 2–4 DISJOINT file territories. Use an `EXECUTION PLAN - HIERARCHICAL` block: coordinator territories, nested worker file lists, an OPTIONAL per-coordinator `Verify:` line — AT MOST ONE narrowly-scoped check over the files that coordinator's workers wrote, run ONCE, skipped if the coordinator is unsure; it is not a substitute for real verification, which stays the stage's main agent's job (full compile/test/lint) — plus the statements "Territories are DISJOINT" and "Workers NEVER spawn subagents." Coordinator and worker model follows BLOCK-B (haiku rare/trivial, sonnet the common case, opus genuinely challenging) picked per task — not a blanket sonnet default that skips that judgment call. Spawn workers BY AGENT TYPE or an untyped worker inherits the (now always opus) main model. On a larger or harder territory, an opus coordinator orchestrating sonnet workers is a common shape (judgment at the seam, cheap execution at the leaves), chosen per task rather than by rote. Mechanics/preambles: CLAUDE.md Rule 6c.
+- **2-level hierarchy** (main → coordinators → workers; workers NEVER spawn subagents) — for >~6 well-defined tasks in 2–4 DISJOINT file territories. Use an `EXECUTION PLAN - HIERARCHICAL` block: coordinator territories, nested worker file lists, an OPTIONAL per-coordinator `Verify:` line — AT MOST ONE narrowly-scoped check over the files that coordinator's workers wrote, run ONCE, skipped if the coordinator is unsure; it is not a substitute for real verification, which stays the stage's main agent's job (full compile/test/lint) — plus the statements "Territories are DISJOINT" and "Workers NEVER spawn subagents." Coordinator and worker model follows BLOCK-B (haiku rare/trivial, sonnet the common case, opus genuinely challenging, fable for heavy visual/design work) picked per task — not a blanket sonnet default that skips that judgment call. Spawn workers BY AGENT TYPE or an untyped worker inherits the (now always opus) main model. On a larger or harder territory, an opus coordinator orchestrating sonnet workers is a common shape (judgment at the seam, cheap execution at the leaves), chosen per task rather than by rote. Mechanics/preambles: CLAUDE.md Rule 6c.
 - **Ultracode** (`ultracode: true`) — licenses the stage's session for Workflow orchestration (scripted fan-out/verify over tens of agents). Only for ≳10 homogeneous units OR a high-stakes multi-perspective verification gate; the plan author MUST justify it in one sentence in the description. Not for ordinary implementation.
 - **Agent teams** — wide, exploratory scope needing inter-agent comms or dynamic task discovery (~7× whole-job cost; CLAUDE.md Rule 6b). Don't use for concrete file-partitioned work.
 
