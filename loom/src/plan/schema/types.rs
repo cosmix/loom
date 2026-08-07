@@ -269,6 +269,14 @@ pub struct StageDefinition {
     /// `codex` routes to the codex:codex-rescue plugin subagent.
     #[serde(default)]
     pub implementer: Implementer,
+    /// How long (seconds) this stage's session may go without a heartbeat before
+    /// the orchestrator flags it as silent. `None` means the built-in default
+    /// (`DEFAULT_HUNG_TIMEOUT_SECS`, 300s). Raise it for stages whose subagents
+    /// legitimately go quiet for long stretches — a foreground codex run or a
+    /// long mechanical sweep fires no PostToolUse hook while it works. The check
+    /// is ADVISORY: it reports a silent session, it never kills or retries one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subagent_timeout_secs: Option<u64>,
 }
 
 impl StageDefinition {

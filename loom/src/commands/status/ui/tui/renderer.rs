@@ -166,6 +166,7 @@ pub fn stage_info_to_stage(info: &StageInfo) -> Stage {
         is_possibly_stuck: info.is_possibly_stuck,
         ultracode: false,
         implementer: Implementer::Claude,
+        subagent_timeout_secs: None,
     }
 }
 

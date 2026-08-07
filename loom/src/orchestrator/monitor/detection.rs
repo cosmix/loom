@@ -2,6 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::time::Duration;
 
 use crate::models::constants::DEFAULT_CONTEXT_BUDGET;
 use crate::models::session::{Session, SessionStatus};
@@ -418,10 +419,21 @@ impl Detection {
         events
     }
 
-    /// Detect heartbeat-based events (heartbeat updates, hung sessions)
+    /// Detect heartbeat-based events (heartbeat updates, silent sessions).
+    ///
+    /// The silence check is deterministic: it compares the poll loop's own tick
+    /// against the timestamp recorded in the heartbeat file. Nothing sleeps here
+    /// and nothing shells out, so the check cannot itself wedge the loop.
+    ///
+    /// `stages` supplies the per-stage response budget
+    /// ([`Stage::effective_subagent_timeout_secs`]); a session whose stage is not
+    /// in the list falls back to the monitor-wide default.
+    ///
+    /// [`Stage::effective_subagent_timeout_secs`]: crate::models::stage::Stage::effective_subagent_timeout_secs
     pub fn detect_heartbeat_events(
         &mut self,
         sessions: &[Session],
+        stages: &[Stage],
         heartbeat_watcher: &mut HeartbeatWatcher,
         config: &MonitorConfig,
         handlers: &Handlers,
@@ -457,10 +469,23 @@ impl Detection {
                 None => continue,
             };
 
+            // Resolve this stage's response budget. One watcher serves every
+            // stage, so the threshold is passed per check rather than held on
+            // the watcher.
+            let timeout_secs = stages
+                .iter()
+                .find(|s| s.id == *stage_id)
+                .map(|s| s.effective_subagent_timeout_secs())
+                .unwrap_or_else(|| config.hung_timeout.as_secs());
+
             // Check heartbeat status for this stage. Pass the session ID so a
             // stale heartbeat left by a previous session for the same stage
             // does not flag this fresh session as hung (treated as NoHeartbeat).
-            let heartbeat_status = heartbeat_watcher.check_session_hung(stage_id, &session.id);
+            let heartbeat_status = heartbeat_watcher.check_session_hung(
+                stage_id,
+                &session.id,
+                Duration::from_secs(timeout_secs),
+            );
 
             match heartbeat_status {
                 HeartbeatStatus::Hung {
@@ -481,6 +506,7 @@ impl Detection {
                                     session_id: session.id.clone(),
                                     stage_id: Some(stage_id.clone()),
                                     stale_duration_secs,
+                                    timeout_secs,
                                     last_activity,
                                 });
 

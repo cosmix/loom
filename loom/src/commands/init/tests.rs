@@ -68,6 +68,7 @@ fn test_create_stage_from_definition_no_dependencies() {
         code_review: None,
         ultracode: false,
         implementer: Implementer::Claude,
+        subagent_timeout_secs: None,
     };
 
     let stage = create_stage_from_definition(&stage_def, "plan-001");
@@ -96,10 +97,24 @@ fn test_create_stage_from_definition_no_dependencies() {
     );
     let codex_def = StageDefinition {
         implementer: Implementer::Codex,
-        ..stage_def
+        ..stage_def.clone()
     };
     let codex_stage = create_stage_from_definition(&codex_def, "plan-001");
     assert_eq!(codex_stage.implementer, Implementer::Codex);
+
+    // The subagent response budget propagates the same way. Omitted stays None
+    // so the built-in default applies; an explicit value reaches the runtime
+    // Stage, which is what the orchestrator measures the session against.
+    assert_eq!(
+        stage.subagent_timeout_secs, None,
+        "subagent_timeout_secs defaults to None"
+    );
+    let budgeted_def = StageDefinition {
+        subagent_timeout_secs: Some(1800),
+        ..stage_def
+    };
+    let budgeted_stage = create_stage_from_definition(&budgeted_def, "plan-001");
+    assert_eq!(budgeted_stage.subagent_timeout_secs, Some(1800));
 }
 
 #[test]
@@ -132,6 +147,7 @@ fn test_create_stage_from_definition_with_dependencies() {
         code_review: None,
         ultracode: false,
         implementer: Implementer::Claude,
+        subagent_timeout_secs: None,
     };
 
     let stage = create_stage_from_definition(&stage_def, "plan-002");
@@ -205,6 +221,7 @@ fn test_serialize_stage_to_markdown_minimal() {
         is_possibly_stuck: false,
         ultracode: false,
         implementer: Implementer::Claude,
+        subagent_timeout_secs: None,
     };
 
     let content = serialize_stage_to_markdown(&stage).unwrap();
@@ -280,6 +297,7 @@ fn test_serialize_stage_to_markdown_with_all_fields() {
         is_possibly_stuck: false,
         ultracode: false,
         implementer: Implementer::Claude,
+        subagent_timeout_secs: None,
     };
 
     let content = serialize_stage_to_markdown(&stage).unwrap();
@@ -344,6 +362,7 @@ fn test_initialize_with_plan_creates_config() {
         code_review: None,
         ultracode: false,
         implementer: Implementer::Claude,
+        subagent_timeout_secs: None,
     };
 
     let plan_path = create_test_plan(temp_dir.path(), vec![stage_def]);
@@ -396,6 +415,7 @@ fn test_initialize_with_plan_creates_stage_files() {
             code_review: None,
             ultracode: false,
             implementer: Implementer::Claude,
+            subagent_timeout_secs: None,
         },
         StageDefinition {
             id: "stage-2".to_string(),
@@ -425,6 +445,7 @@ fn test_initialize_with_plan_creates_stage_files() {
             code_review: None,
             ultracode: false,
             implementer: Implementer::Claude,
+            subagent_timeout_secs: None,
         },
     ];
 

@@ -25,12 +25,16 @@ pub enum MonitorEvent {
         stage_id: Option<String>,
         crash_report_path: Option<PathBuf>,
     },
-    /// Session is hung (PID alive but no heartbeat for extended period)
+    /// Session is hung (PID alive but no heartbeat for its response budget)
     SessionHung {
         session_id: String,
         stage_id: Option<String>,
         /// How long since last heartbeat in seconds
         stale_duration_secs: u64,
+        /// The response budget that was exceeded, in seconds. Per-stage
+        /// (`subagent_timeout_secs`) or the built-in default — reported so the
+        /// warning names the threshold it was measured against.
+        timeout_secs: u64,
         /// Last known activity from heartbeat
         last_activity: Option<String>,
     },

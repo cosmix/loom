@@ -188,6 +188,7 @@ impl Orchestrator {
                 session_id,
                 stage_id,
                 stale_duration_secs,
+                timeout_secs,
                 last_activity,
             } => {
                 clear_status_line();
@@ -199,8 +200,11 @@ impl Orchestrator {
                     .as_ref()
                     .map(|a| format!(", last: {a}"))
                     .unwrap_or_default();
+                // ADVISORY ONLY: nothing is killed and nothing is retried. Naming
+                // the budget tells the operator whether to raise the stage's
+                // `subagent_timeout_secs` or go look at the session.
                 eprintln!(
-                        "Warning: Session '{session_id}'{stage_info} appears hung (no heartbeat for {stale_duration_secs}s{activity_info})"
+                        "Warning: Session '{session_id}'{stage_info} appears hung (no heartbeat for {stale_duration_secs}s, budget {timeout_secs}s{activity_info})"
                     );
             }
             MonitorEvent::HeartbeatReceived {
@@ -366,6 +370,7 @@ mod tests {
             code_review: None,
             ultracode: false,
             implementer: Implementer::Claude,
+            subagent_timeout_secs: None,
         }];
         ExecutionGraph::build(stages).unwrap()
     }

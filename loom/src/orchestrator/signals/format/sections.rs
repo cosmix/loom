@@ -368,6 +368,16 @@ pub(super) fn format_semi_stable_section(
         content.push_str(&format_codex_implementers_section());
     }
 
+    // Per-subagent response budget (semi-stable - gated on an explicit plan value).
+    // The orchestrator measures the stage against this budget from the outside, so
+    // the session has to be told the same number or it is held to a deadline it
+    // cannot see.
+    if let Some(timeout_secs) = embedded_context.subagent_timeout_secs {
+        content.push_str(&super::helpers::format_subagent_timeout_section(
+            timeout_secs,
+        ));
+    }
+
     // Ultracode license (semi-stable - gated on the stage's ultracode flag)
     if embedded_context.ultracode {
         content.push_str("## Ultracode Mode\n\n");

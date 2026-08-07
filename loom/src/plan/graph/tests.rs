@@ -32,6 +32,7 @@ fn make_stage(id: &str, deps: Vec<&str>, group: Option<&str>) -> StageDefinition
         code_review: None,
         ultracode: false,
         implementer: Implementer::Claude,
+        subagent_timeout_secs: None,
     }
 }
 

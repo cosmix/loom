@@ -307,6 +307,24 @@ If the user picks Codex:
    Code's Bash tool, not commands codex runs inside its own session, so for the codex lane those
    rules are prose rather than enforcement and the orchestrator is the only backstop.
 
+### Subagent response budget (`subagent_timeout_secs`)
+
+Optional, seconds, default **300**. It is how long a stage may go without a heartbeat before the
+orchestrator flags it, and the same number is written into the stage's signal so the session knows
+the budget it is being held to.
+
+Set it from how long the work legitimately goes quiet, not from how long you hope it takes. A wide
+mechanical sweep, a large test run, or a FOREGROUND codex run is one long tool call that emits
+nothing while it works — codex stages in particular should raise it, since a foreground run posts no
+intermediate output at all. A stage of small edits should leave it alone.
+
+Two things it does NOT do. It never kills or retries anything — the check is advisory, it prints a
+warning and recovery stays with the orchestrating agent. And it does not license an open-ended wait:
+whatever the budget, **a single watcher or poll check must still have a deadline of 300s or less**
+and must terminate on both the success and the deadline branch (CLAUDE.md Rule 6). Re-arm to wait
+longer. Raising this field widens the budget the orchestrator measures against; it does not widen
+how long an agent may sit blocked on one check.
+
 Consequences for how you write a plan:
 
 - **EVERY stage sets `model: "opus"` in its YAML.** There is no per-stage sonnet/haiku choice any more — the stage's main agent is always an opus orchestrator.
@@ -476,6 +494,7 @@ loom:
       model: "opus"                 # REQUIRED — every stage is an opus orchestrator now; subagent model choice happens at spawn time (Section 4)
       reasoning_effort: "xhigh"    # REQUIRED on every stage
       implementer: "codex"         # OPTIONAL - "codex" | "claude" (default "claude" if omitted)
+      subagent_timeout_secs: 900   # OPTIONAL - per-subagent response budget (default 300 if omitted)
       description: |               # full task spec; NO triple backticks inside
         What this stage accomplishes.
         Use parallel subagents and skills to maximize performance.

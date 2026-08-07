@@ -13,7 +13,8 @@ mod sections;
 pub use helpers::format_dependency_table;
 pub use sections::format_skill_recommendations;
 // The recovery signal is built outside the semi-stable path but still needs the
-// codex lane's rules; see recovery_format.rs.
+// codex lane's rules and the stage's response budget; see recovery_format.rs.
+pub(crate) use helpers::format_subagent_timeout_section;
 pub(crate) use sections::format_codex_implementers_section;
 
 // Re-export for external use

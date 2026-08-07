@@ -3,7 +3,7 @@
 use crate::models::stage::{Implementer, Stage};
 
 use super::cache::stable_prefix_for;
-use super::format::format_codex_implementers_section;
+use super::format::{format_codex_implementers_section, format_subagent_timeout_section};
 use super::recovery_types::RecoverySignalContent;
 use super::types::EmbeddedContext;
 
@@ -82,6 +82,13 @@ pub fn format_recovery_signal(
     // concurrency cap, and "verification stays with you".
     if stage.implementer == Implementer::Codex {
         signal.push_str(&format_codex_implementers_section());
+    }
+
+    // Same reasoning for the response budget: it is a gated SEMI-STABLE block, so
+    // a resumed stage would otherwise be held to a budget it was never told about
+    // while the orchestrator keeps measuring it against exactly that budget.
+    if let Some(timeout_secs) = stage.subagent_timeout_secs {
+        signal.push_str(&format_subagent_timeout_section(timeout_secs));
     }
 
     // Target information

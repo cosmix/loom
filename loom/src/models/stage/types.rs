@@ -674,6 +674,12 @@ pub struct Stage {
     /// Copied from the plan's StageDefinition.
     #[serde(default)]
     pub implementer: Implementer,
+    /// How long (seconds) this stage's session may go without a heartbeat before
+    /// the orchestrator flags it as silent. Copied from the plan's StageDefinition;
+    /// `None` means the built-in default. Resolve it through
+    /// [`Stage::effective_subagent_timeout_secs`] rather than reading it directly.
+    #[serde(default)]
+    pub subagent_timeout_secs: Option<u64>,
 }
 
 /// Status of a stage in the execution lifecycle.
@@ -1064,6 +1070,7 @@ impl Default for Stage {
             is_possibly_stuck: false,
             ultracode: false,
             implementer: Implementer::Claude,
+            subagent_timeout_secs: None,
         }
     }
 }

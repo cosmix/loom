@@ -294,5 +294,6 @@ pub(crate) fn create_stage_from_definition(stage_def: &StageDefinition, plan_id:
         is_possibly_stuck: false,
         ultracode: stage_def.ultracode,
         implementer: stage_def.implementer,
+        subagent_timeout_secs: stage_def.subagent_timeout_secs,
     }
 }

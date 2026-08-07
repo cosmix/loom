@@ -233,6 +233,7 @@ fn test_format_signal_content_with_embedded_context() {
         wiring_checklist: None,
         ultracode: false,
         implementer: Implementer::Claude,
+        subagent_timeout_secs: None,
     };
 
     let content = format_signal_content(

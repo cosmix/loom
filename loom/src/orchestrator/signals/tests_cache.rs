@@ -388,6 +388,86 @@ fn test_signal_codex_implementers_section_gated() {
 }
 
 #[test]
+fn test_signal_subagent_timeout_section_gated() {
+    let temp_dir = TempDir::new().unwrap();
+    let work_dir = temp_dir.path().join(".work");
+    fs::create_dir_all(&work_dir).unwrap();
+
+    let session = create_test_session();
+    let worktree = create_test_worktree();
+
+    // Stage with no explicit budget: nothing emitted. This negative assert is the
+    // load-bearing half — it proves plans written before the field existed get a
+    // byte-identical signal.
+    let stage = create_test_stage();
+    let (signal_path, _) =
+        generate_signal_with_metrics(&session, &stage, &worktree, &[], None, None, &work_dir)
+            .unwrap();
+    let content = fs::read_to_string(&signal_path).unwrap();
+    assert!(!content.contains("## Subagent Response Budget"));
+
+    // Stage with an explicit budget: the block appears and names the value
+    // (budget propagates stage → context → signal).
+    let mut budgeted_stage = create_test_stage();
+    budgeted_stage.subagent_timeout_secs = Some(900);
+    let mut session2 = create_test_session();
+    session2.id = "session-budgeted".to_string();
+    let (signal_path, _) = generate_signal_with_metrics(
+        &session2,
+        &budgeted_stage,
+        &worktree,
+        &[],
+        None,
+        None,
+        &work_dir,
+    )
+    .unwrap();
+    let content = fs::read_to_string(&signal_path).unwrap();
+    assert!(content.contains("## Subagent Response Budget"));
+    assert!(
+        content.contains("900s"),
+        "the block must name the stage's own budget, not a hardcoded default"
+    );
+    assert!(
+        content.contains("ADVISORY"),
+        "the block must say the orchestrator side never kills or retries, or the \
+         agent will assume something else handles a silent subagent"
+    );
+}
+
+#[test]
+fn test_recovery_signal_carries_subagent_timeout_section() {
+    use super::super::recovery_format::format_recovery_signal;
+    use super::super::recovery_types::RecoverySignalContent;
+
+    let content = RecoverySignalContent::for_crash(
+        "session-recovered".to_string(),
+        "budgeted-stage".to_string(),
+        "session-crashed".to_string(),
+        None,
+        1,
+    );
+    let embedded = EmbeddedContext::default();
+
+    // No explicit budget: nothing emitted, exactly as before the field existed.
+    let stage = create_test_stage();
+    let signal = format_recovery_signal(&content, &stage, &embedded);
+    assert!(!signal.contains("## Subagent Response Budget"));
+
+    // The recovery signal embeds only the STABLE PREFIX, so without an explicit
+    // emit here a resumed stage would be measured against a budget it was never
+    // told about.
+    let mut budgeted_stage = create_test_stage();
+    budgeted_stage.subagent_timeout_secs = Some(900);
+    let signal = format_recovery_signal(&content, &budgeted_stage, &embedded);
+    assert!(
+        signal.contains("## Subagent Response Budget"),
+        "a recovered stage must still be told its response budget"
+    );
+    assert!(signal.contains("900s"));
+}
+
+#[test]
 fn test_stable_prefix_hash_changes_with_session() {
     // The stable prefix includes the session header, so different sessions
     // will have different hashes (but the execution rules portion is stable)

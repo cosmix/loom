@@ -268,6 +268,7 @@ mod tests {
             is_possibly_stuck: false,
             ultracode: false,
             implementer: Implementer::Claude,
+            subagent_timeout_secs: None,
         }
     }
 

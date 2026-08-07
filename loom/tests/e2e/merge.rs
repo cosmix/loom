@@ -68,6 +68,7 @@ fn create_test_stage(id: &str, auto_merge: Option<bool>) -> Stage {
         is_possibly_stuck: false,
         ultracode: false,
         implementer: Implementer::Claude,
+        subagent_timeout_secs: None,
     }
 }
 

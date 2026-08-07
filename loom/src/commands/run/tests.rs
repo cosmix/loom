@@ -68,6 +68,7 @@ fn setup_work_dir_with_plan(temp_dir: &TempDir) -> (PathBuf, WorkDir) {
         code_review: None,
         ultracode: false,
         implementer: Implementer::Claude,
+        subagent_timeout_secs: None,
     };
 
     let plan_path = create_test_plan(temp_dir.path(), vec![stage_def]);

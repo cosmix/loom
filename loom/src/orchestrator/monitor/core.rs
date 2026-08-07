@@ -36,7 +36,10 @@ impl Monitor {
             tracing::warn!("Failed to compact soft-signals.jsonl at startup: {e}");
         }
 
-        let heartbeat_watcher = HeartbeatWatcher::with_timeout(config.hung_timeout);
+        // The staleness threshold lives on the stage, not the watcher —
+        // `config.hung_timeout` is only the fallback for a session whose stage
+        // cannot be resolved, and detection.rs applies it there.
+        let heartbeat_watcher = HeartbeatWatcher::new();
         Self {
             handlers: Handlers::new(config.clone(), None),
             detection: Detection::new(),
@@ -68,6 +71,7 @@ impl Monitor {
         // Poll for heartbeat updates and detect hung sessions
         events.extend(self.detection.detect_heartbeat_events(
             &sessions,
+            &stages,
             &mut self.heartbeat_watcher,
             &self.config,
             &self.handlers,

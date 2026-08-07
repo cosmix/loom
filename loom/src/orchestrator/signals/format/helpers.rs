@@ -3,6 +3,35 @@ use crate::models::stage::Stage;
 
 use super::super::types::DependencyStatus;
 
+/// Format the per-subagent response-budget block.
+///
+/// Emitted only for stages that set `subagent_timeout_secs` explicitly, so a
+/// plan that never opts in gets a byte-identical signal to before this field
+/// existed. It lives here rather than in `sections.rs` because both the
+/// semi-stable path and the recovery path emit it, and `sections.rs` is already
+/// well over the file-size ceiling.
+///
+/// The block states the budget and what to DO when it elapses. The orchestrator
+/// side is advisory — it prints a warning and nothing more — so the only thing
+/// that can actually act on a silent subagent is the agent holding the stage.
+pub(crate) fn format_subagent_timeout_section(timeout_secs: u64) -> String {
+    let mut content = String::new();
+
+    content.push_str("## Subagent Response Budget\n\n");
+    content.push_str(&format!(
+        "Every subagent you spawn must report back within {timeout_secs}s. Do not sit waiting on a\n"
+    ));
+    content.push_str(
+        "silent one past that: re-assign its file set to a fresh subagent or take the work over\n",
+    );
+    content.push_str(
+        "yourself. The orchestrator watches the same budget from the outside, but its check is\n",
+    );
+    content.push_str("ADVISORY - it prints a warning and never kills or retries anything, so recovery is yours.\n\n");
+
+    content
+}
+
 /// Format a table showing dependency status for inclusion in signals
 pub fn format_dependency_table(deps: &[DependencyStatus]) -> String {
     let mut table = String::new();

@@ -188,6 +188,7 @@ mod persistence_tests {
             code_review: None,
             ultracode: false,
             implementer: Implementer::Claude,
+            subagent_timeout_secs: None,
         }
     }
 

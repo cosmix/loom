@@ -49,6 +49,7 @@ pub(crate) fn create_valid_stage(id: &str, name: &str) -> StageDefinition {
         code_review: None,
         ultracode: false,
         implementer: Implementer::Claude,
+        subagent_timeout_secs: None,
     }
 }
 

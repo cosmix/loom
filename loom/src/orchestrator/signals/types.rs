@@ -49,6 +49,10 @@ pub struct EmbeddedContext {
     pub ultracode: bool,
     /// Which agent lane routine implementation is delegated to
     pub implementer: Implementer,
+    /// Per-subagent response budget in seconds, when the stage sets one
+    /// explicitly. `None` leaves the built-in default in force and emits
+    /// nothing — the signal only spends tokens on a budget the plan chose.
+    pub subagent_timeout_secs: Option<u64>,
 }
 
 #[derive(Debug, Clone)]

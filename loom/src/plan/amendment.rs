@@ -1150,6 +1150,7 @@ mod tests {
             code_review: None,
             ultracode: false,
             implementer: Implementer::Claude,
+            subagent_timeout_secs: None,
         };
         assert_eq!(current_field_len(&def, AmendmentField::Acceptance), 2);
         assert_eq!(current_field_len(&def, AmendmentField::Wiring), 0);
