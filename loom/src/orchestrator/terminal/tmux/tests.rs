@@ -69,7 +69,7 @@ fn new_session_argv_escapes_dollar_and_semicolon() {
 }
 
 #[test]
-fn is_session_alive_false_for_dead_pid_regardless_of_tmux_state() {
+fn tmux_liveness_ignores_running_server_when_pid_is_dead() {
     // No tmux server exists for this socket at all, and the PID is
     // bogus. The point is that is_session_alive never asks tmux —
     // it must return false purely from the (absent/dead) PID evidence.

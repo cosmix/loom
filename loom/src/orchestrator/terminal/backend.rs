@@ -334,7 +334,7 @@ mod tests {
     }
 
     #[test]
-    fn fallback_marker_present_forces_native_lane() {
+    fn fallback_marker_forces_native_lane() {
         let temp = TempDir::new().unwrap();
         write_fallback_marker(temp.path());
         let backend = test_backend(temp.path().to_path_buf(), SessionBackendKind::Tmux, || true);

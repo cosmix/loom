@@ -138,7 +138,7 @@ fn tmux_spawn_lifecycle_reaches_a_live_pid_and_teardown_clears_it() {
 /// must still report `Err`, not `Ok`.
 #[test]
 #[serial]
-fn spawn_in_tmux_errors_when_socket_dir_is_unwritable() {
+fn spawn_in_tmux_errs_when_socket_dir_is_unwritable() {
     use std::os::unix::fs::PermissionsExt;
 
     let unwritable_parent = TempDir::new().unwrap();
