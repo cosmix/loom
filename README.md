@@ -355,7 +355,7 @@ loom:
 | `code_review`                      | No                     | `integration-verify` only: `dimensions` (string list) and `require_all` (bool); rendered as checklist in agent signal                      |
 | `model`                            | No                     | Model for this stage's main agent (default `opus` for every stage type)                                                                    |
 | `reasoning_effort`                 | No                     | `low`, `medium`, `high`, `xhigh`, `max` (default `xhigh` on opus, `high` otherwise)                                                        |
-| `implementer`                      | No                     | `claude` (default) or `codex`; routes routine implementation to the codex:codex-rescue plugin subagent                                     |
+| `implementers`                     | No                     | Licensed agent lanes as a list, first = preferred for routine work: `["codex", "claude"]`. Default `["claude"]`. Listing a lane makes it available, not mandatory — a stage mixes lanes per subagent |
 | `ultracode`                        | No                     | License this stage for large multi-agent fan-out; per-stage opt-in (default `false`)                                                       |
 | `subagent_timeout_secs`            | No                     | Seconds of tool silence before the monitor warns `appears hung` (default 300); advisory only                                               |
 | `context_budget`                   | No                     | Context threshold (%) for handoff (default 65%, hard maximum 75%)                                                                          |

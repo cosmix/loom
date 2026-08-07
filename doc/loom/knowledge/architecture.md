@@ -387,9 +387,11 @@ thresholds, the `check.rs` coverage blast radius, opt-in migration, and lock ord
 
 The Codex Claude Code plugin: marketplace/install and scope rules, the `codex:codex-rescue` forwarding
 subagent and its flag-forwarding contract, `codex-companion.mjs` effort values, the three plugin hooks,
-and what loom shipped to drive it — the per-stage `implementer` field (`claude` | `codex`), the gated
-`## Codex Implementers` signal section on both the normal and recovery paths, and the two-key settings
-carry-forward that lets a plugin install survive loom's per-worktree settings rebuild.
+and what loom shipped to drive it — the per-stage `implementers` LIST (licensed lanes in preference
+order, default `["claude"]`; membership licenses a lane, order picks the routine-work default, and a
+stage mixes lanes per subagent), the `## Codex Implementers` signal section gated on codex
+MEMBERSHIP on both the normal and recovery paths, and the two-key settings carry-forward that lets a
+plugin install survive loom's per-worktree settings rebuild.
 
 → [Codex Plugin](architecture/codex-plugin.md)
 
@@ -400,7 +402,7 @@ over disjoint file sets is verified safe to 6** — edits and results were corre
 tested. Only the plugin's unlocked shared `state.json` degrades, which costs observability
 (`/codex:status`, `/codex:result`) and rules out *background* fan-out. Note the cap of 6 is a doctrine
 number carried as a literal in the signal prose; there is **no `CODEX_MAX_PARALLEL` constant in the
-code**. The page also records what execution did NOT prove: no stage has yet run with
-`implementer: "codex"`.
+code**. The page also records what execution did NOT prove: no stage has yet run with codex listed
+in `implementers`.
 
 → [Codex Concurrency](architecture/codex-concurrency.md)

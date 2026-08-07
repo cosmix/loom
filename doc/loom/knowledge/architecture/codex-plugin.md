@@ -60,32 +60,46 @@ The Stop gate is **OPT-IN**: `main()` returns early unless `config.stopReviewGat
 `STOP_REVIEW_TIMEOUT_MS = 15 * 60 * 1000` (`:16`). When it does run and fails it emits
 `{"decision":"block", ...}` (`:169`). loom also binds Stop via `commit-guard.sh` — **both run**.
 
-## What loom shipped for this lane (2026-08-07)
+## What loom shipped for this lane
 
-The per-stage `implementer` field routes a stage's routine implementation work to codex instead of
-Claude subagents. Three moving parts:
+The per-stage `implementers` field names which agent lanes a stage may spawn subagents from.
+Three moving parts:
 
-1. **The field.** `Implementer` enum (`models/stage/types.rs:135`), `claude` (default) | `codex`,
-   `#[serde(rename_all = "kebab-case")]`, closed — an unknown value is a parse error. Carried on
-   `StageDefinition` (`plan/schema/types.rs:267`) and `Stage` (`models/stage/types.rs:673`), both
-   `#[serde(default)]`; copied at `commands/init/plan_setup.rs:296` and onto the signal's
-   `EmbeddedContext` at `orchestrator/signals/generate.rs:613`. There is NO `Stage::implementer()`
-   accessor — every consumer compares the public field. `plan/schema/validation.rs:650-668` WARNS
-   (does not reject) when `implementer: codex` is set on a knowledge, knowledge-distill, or
-   integration-verify stage.
-2. **The gated signal block.** `format_codex_implementers_section()`
-   (`orchestrator/signals/format/sections.rs:807`) emits `## Codex Implementers`, gated on
-   `embedded_context.implementer == Implementer::Codex` at `sections.rs:366-369`. It lives in the
-   **semi-stable** section (regenerated per stage), NOT the stable prefix — the stable prefix only
-   forward-references it (`cache.rs:273`). The recovery path emits it too
-   (`recovery_format.rs:78-85`), which was a real gap fixed by `d1530e0c`; without it a recovered or
-   retried codex stage loses its whole doctrine block. Model/effort are interpolated from
-   `CODEX_IMPLEMENTER_MODEL = "gpt-5.6-luna"` and `CODEX_IMPLEMENTER_EFFORT = "xhigh"`
-   (`loom/src/codex.rs:7,10`) rather than hardcoded, and `tests_doctrine.rs:171-181` asserts BLOCK-B
-   contains both — so changing `codex.rs` without updating the prose surfaces fails the build.
-   Verified end to end: a codex-lane signal contains `## Codex Implementers`, a claude-lane signal
-   generated into the same work dir does not.
-3. **Settings carry-forward.** `PRESERVED_SETTINGS_KEYS` / `preserve_unowned_keys`
+1. **The field.** `Implementer` enum (`models/stage/types.rs:135`), `claude` | `codex`,
+   `#[serde(rename_all = "kebab-case")]`, closed — an unknown value is a parse error. It is held by
+   `Implementers` (`models/stage/types.rs`), a `#[serde(transparent)]` newtype over
+   `Vec<Implementer>` whose `Default` is `vec![Claude]`. Carried on `StageDefinition`
+   (`plan/schema/types.rs`) and `Stage` (`models/stage/types.rs`), both `#[serde(default)]`; copied
+   at `commands/init/plan_setup.rs` and onto the signal's `EmbeddedContext` at
+   `orchestrator/signals/generate.rs`. Query it through `includes_codex()` / `includes_claude()` /
+   `preferred()` / `is_mixed()` — never by comparing the whole list, which is what made the original
+   scalar design wrong.
+2. **ORDER IS THE PREFERENCE, MEMBERSHIP IS THE LICENSE.** These are two different questions and
+   the code must not conflate them:
+   - `preferred()` (first element) = the lane routine implementation reaches for.
+   - `includes_codex()` = whether the codex safety doctrine must be emitted.
+
+   Gating doctrine on the *preference* rather than on *membership* is a real bug: a stage listing
+   `["claude", "codex"]` may still spawn a codex subagent, and would then run with none of the
+   blast-radius rules. That is exactly the hole the original `implementer == Codex` equality check
+   left, and `tests_cache.rs` now pins both the mixed-signal and mixed-recovery cases against it.
+
+   Validation (`plan/schema/validation.rs`) REJECTS an empty list and a repeated lane (order would
+   be ambiguous), and WARNS when codex is listed on a knowledge, knowledge-distill, or
+   integration-verify stage — on membership, not preference, for the same reason.
+3. **The gated signal block.** `format_codex_implementers_section(&Implementers)`
+   (`orchestrator/signals/format/sections.rs`) emits `## Codex Implementers`, gated on
+   `includes_codex()`. It names every licensed lane, and on a mixed stage tells the orchestrator to
+   choose the lane PER SUBAGENT and to keep ONE file-ownership table across lanes (cross-lane
+   collisions lose work exactly as same-lane ones do). It lives in the **semi-stable** section
+   (regenerated per stage), NOT the stable prefix — the stable prefix only forward-references it
+   (`cache.rs`). The recovery path emits it too (`recovery_format.rs`), which was a real gap fixed
+   by `d1530e0c`; without it a recovered or retried codex stage loses its whole doctrine block.
+   Model/effort are interpolated from `CODEX_IMPLEMENTER_MODEL = "gpt-5.6-luna"` and
+   `CODEX_IMPLEMENTER_EFFORT = "xhigh"` (`loom/src/codex.rs:7,10`) rather than hardcoded, and
+   `tests_doctrine.rs` asserts BLOCK-B contains both — so changing `codex.rs` without updating the
+   prose surfaces fails the build.
+4. **Settings carry-forward.** `PRESERVED_SETTINGS_KEYS` / `preserve_unowned_keys`
    (`sandbox/settings.rs:580,587`) — see the scope section below.
 
 Do NOT confuse `gpt-5.6-luna` (`codex.rs:7`, the implementer lane) with `gpt-5.6-sol`

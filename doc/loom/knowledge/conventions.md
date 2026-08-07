@@ -355,27 +355,37 @@ claude plugin list --json
 Loom is pre-release: **no backwards-compatibility shims and no migration routines.** A new stage
 field is added additively, and `#[serde(default)]` alone carries every existing plan file and every
 in-flight `.work/stages/*.md` — there is no version stamp and no upgrade pass. The shape as shipped
-for `implementer` and `subagent_timeout_secs`:
+for `implementers` and `subagent_timeout_secs`:
 
-- Plan schema `StageDefinition` (`plan/schema/types.rs:267`) — `#[serde(default)]`; add
-  `skip_serializing_if = "Option::is_none"` for `Option` fields (`:272`) so re-serialized plans stay clean.
-- Runtime `Stage` (`models/stage/types.rs:673`) — `#[serde(default)]`, so a stage file written
+- Plan schema `StageDefinition` (`plan/schema/types.rs`) — `#[serde(default)]`; add
+  `skip_serializing_if = "Option::is_none"` for `Option` fields so re-serialized plans stay clean.
+- Runtime `Stage` (`models/stage/types.rs`) — `#[serde(default)]`, so a stage file written
   before the field existed still loads mid-run.
 - Prefer a **closed enum over a string**: `Implementer` (`models/stage/types.rs:135`) derives
   `Default` + `#[serde(rename_all = "kebab-case")]`, so a typo is a parse ERROR (`unknown variant
   'bogus-lane', expected 'claude' or 'codex'`), never a silent fallback. Pin `Display` to the serde
-  spelling with a test (`plan/schema/tests/implementer_tests.rs:91`).
+  spelling with a test (`plan/schema/tests/implementer_tests.rs`).
 - Propagate along the existing chain — see [Adding New Plan Fields Checklist](architecture.md):
-  plan → `create_stage_from_definition` (`commands/init/plan_setup.rs:296`) → signal
-  `EmbeddedContext` (`orchestrator/signals/generate.rs:613`).
+  plan → `create_stage_from_definition` (`commands/init/plan_setup.rs`) → signal
+  `EmbeddedContext` (`orchestrator/signals/generate.rs`).
 
-**Guard it with the `implementer_backwards_compat*` pair** — copy these two tests verbatim in shape
-for any new field (`loom/tests/integration/implementer_backwards_compat.rs:47,102`):
+**Model a per-stage capability as a SET, not a scalar, when more than one value can be true at
+once.** `implementer` shipped as a single enum, which silently asserted that every subagent in a
+stage came from one lane; real stages mix codex and Claude subagents. The fix was `Implementers`, a
+`#[serde(transparent)]` newtype over `Vec<Implementer>` with `Default = [Claude]`, where MEMBERSHIP
+licenses a lane and ORDER picks the default for routine work. Before adding an enum-valued stage
+field, ask whether a stage could legitimately want two of its values simultaneously — if yes, ship
+the list on day one, and gate any safety doctrine on `contains`, never on equality with the
+preferred value. Validation must then reject the two shapes a list admits and a scalar could not:
+the empty list and a repeated element.
 
-1. `*_plan_yaml_without_field_parses` — parse plan markdown whose YAML has NO such key; assert every
+**Guard the default with the `implementer_defaults` pair** — copy these two tests verbatim in shape
+for any new field (`loom/tests/integration/implementer_defaults.rs`):
+
+1. `*_plan_yaml_without_field_*` — parse plan markdown whose YAML has NO such key; assert every
    stage gets the default.
-2. `*_stage_file_without_field_loads` — write legacy `.work/stages/*.md` frontmatter with no such
-   key, call `load_stage()`, assert it loads and defaults.
+2. `*_stage_file_without_field_*` — write `.work/stages/*.md` frontmatter with no such key, call
+   `load_stage()`, assert it loads and defaults.
 
 Schema-only tests are not enough: they never touch the state files already on disk, which is exactly
 where a non-defaulted field breaks a running plan.
