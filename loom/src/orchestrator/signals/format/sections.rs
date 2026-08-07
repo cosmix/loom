@@ -848,6 +848,44 @@ pub(crate) fn format_codex_implementers_section(implementers: &Implementers) -> 
         "- State the model and effort IN THE PROMPT TEXT, e.g. \"--model {CODEX_IMPLEMENTER_MODEL} --effort {CODEX_IMPLEMENTER_EFFORT} <task>\".\n"
     ));
     content.push_str("  The wrapper forwards --model/--effort ONLY when the request names them.\n");
+    content.push_str("- STATE AN EXPLICIT BASH TIMEOUT IN THE PROMPT TEXT, e.g. \"make your single Bash call with an\n");
+    content.push_str("  explicit timeout of 900000 ms\". The wrapper makes ONE Bash call and never raises the tool's\n");
+    content.push_str("  120s default, so any longer codex run is backgrounded by the harness. When that happens the id\n");
+    content.push_str("  the wrapper hands back is a CLAUDE CODE task id, not a codex job id - `codex-companion.mjs\n");
+    content.push_str("  result <that id>` will not resolve it. Recover a stranded run with `codex-companion.mjs status\n");
+    content.push_str("  --all` to get the real `task-*` id, and cancel runaways with `codex-companion.mjs cancel <id>`.\n");
+    content.push_str("- SCOPE THE PROMPT OR IT WILL READ THE WHOLE KNOWLEDGE BASE. Codex does not run in Claude Code and\n");
+    content.push_str("  never sees its tools: the OpenAI harness is shell-based BY DESIGN, so it reads by running perl/sed\n");
+    content.push_str("  and writes by applying patches. That is not a misconfiguration and you cannot swap it for Read/Edit.\n");
+    content.push_str("  The consequence is that reading is SLOW - it pages files in 160-line chunks - while it inherits\n");
+    content.push_str("  CLAUDE.md's knowledge-first rule. Left to itself it sweeps all of doc/loom/knowledge/ first: measured at\n");
+    content.push_str("  9m45s and still going on a four-question lookup, versus 54s for the same question once scoped.\n");
+    content.push_str(
+        "  Name the exact files it may open, and say plainly: do NOT read CLAUDE.md, do NOT read\n",
+    );
+    content.push_str(
+        "  doc/loom/knowledge/, do NOT explore the repo, work only from what is named here.\n",
+    );
+    content.push_str("- THEREFORE YOU MUST FORCE-FEED IT. Forbidding exploration only works if you REPLACE what the\n");
+    content.push_str("  exploration would have found - otherwise you have traded a slow agent for an ignorant one. It is\n");
+    content.push_str(&format!(
+        "  {CODEX_IMPLEMENTER_MODEL}, not an opus orchestrator: it will not infer your conventions, notice an\n"
+    ));
+    content.push_str("  adjacent helper it should reuse, or work out the shape you had in mind. Every codex prompt carries,\n");
+    content.push_str("  inline and in full:\n");
+    content.push_str("    * the exact file paths it owns (write) and may read, with nothing left to discovery;\n");
+    content.push_str("    * exact symbol names and full signatures for anything it must call, implement or match - paste\n");
+    content.push_str("      the signature, do not describe it;\n");
+    content.push_str("    * the surrounding pattern to imitate, pasted as a snippet, when it must match existing style;\n");
+    content.push_str(
+        "    * every constraint that would otherwise live in knowledge or convention files;\n",
+    );
+    content.push_str(
+        "    * step-by-step instructions with per-step acceptance, not a goal to figure out;\n",
+    );
+    content.push_str("    * the exact command that proves its slice works.\n");
+    content.push_str("  If the prompt is short, it is almost certainly underspecified. A codex prompt that would fit a\n");
+    content.push_str("  sonnet subagent is too thin - sonnet reads the repo to fill gaps, and you have just forbidden that.\n");
     content.push_str("- codex:codex-rescue is write-capable by default; do not ask for read-only when you want edits.\n");
     content.push_str("- PARALLEL FAN-OUT: you may run up to 6 codex implementers at once, each owning a DISJOINT file set,\n");
     content.push_str("  with the same file-ownership table you would write for sonnet subagents. Two codex agents writing\n");

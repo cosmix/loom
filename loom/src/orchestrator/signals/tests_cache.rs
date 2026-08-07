@@ -386,6 +386,26 @@ fn test_signal_codex_implementers_section_gated() {
          run; no hook covers codex's own shell commands"
     );
 
+    // Two operational failure modes measured against the real plugin. Both are
+    // silent: the run still "works", it just costs minutes or strands its
+    // result, so nothing surfaces them except this doctrine.
+    assert!(
+        content.contains("900000"),
+        "the codex block must tell the orchestrator to state an explicit Bash \
+         timeout; the wrapper never raises the 120s default and the harness \
+         then backgrounds the run"
+    );
+    assert!(
+        content.contains("status\n  --all") || content.contains("status --all"),
+        "the codex block must name the recovery path for a backgrounded run - \
+         the id the wrapper returns is a Claude Code task id, not a codex job id"
+    );
+    assert!(
+        content.contains("doc/loom/knowledge/"),
+        "the codex block must tell the orchestrator to forbid the knowledge \
+         sweep: a shell-only agent pages the whole base before starting"
+    );
+
     // Mixed stage: codex is licensed but NOT preferred. The doctrine must still
     // appear — this is the case an `implementer == Codex` equality gate silently
     // dropped, leaving a stage that can spawn codex agents with none of the

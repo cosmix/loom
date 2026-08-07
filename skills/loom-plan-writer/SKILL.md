@@ -314,10 +314,34 @@ If the user picks Codex:
    stages — preflight warns if codex appears on any of those.
 5. In those stages' descriptions, name the subagent and the fan-out explicitly, e.g. "Spawn N
    `codex:codex-rescue` subagents in the FOREGROUND, each with `--model gpt-5.6-luna --effort
-   xhigh` and a DISJOINT file set; verify and commit yourself." When a stage mixes lanes, say
-   which work goes to which lane, and put EVERY subagent — both lanes — in ONE file-ownership
-   table. File exclusivity is enforced across lanes: a codex agent and a sonnet agent writing the
-   same file is lost work exactly as two agents in one lane would be.
+   xhigh`, an explicit Bash timeout of 900000 ms, and a DISJOINT file set; verify and commit
+   yourself." When a stage mixes lanes, say which work goes to which lane, and put EVERY subagent —
+   both lanes — in ONE file-ownership table. File exclusivity is enforced across lanes: a codex
+   agent and a sonnet agent writing the same file is lost work exactly as two agents in one lane
+   would be.
+
+   **⚠️ CODEX UNITS MUST BE SPECIFIED TO EXHAUSTION — THIS IS THE PLAN AUTHOR'S JOB, NOT THE
+   ORCHESTRATOR'S.** A codex subagent is `gpt-5.6-luna` with a shell and nothing else: no Read
+   tool, no repo exploration (the signal forbids it, because an unscoped codex agent spends ten
+   minutes paging `doc/loom/knowledge/` through `perl` before it starts). It will not infer your
+   conventions, spot a helper it should reuse, or reconstruct the design you had in mind. Whatever
+   you leave out, it invents.
+
+   So a codex unit's YAML detail block must contain, inline:
+
+   - Exact file paths it owns and may read — nothing left to discovery.
+   - Exact symbol names and **full signatures**, pasted, for everything it calls, implements or
+     matches. Never "mirror the existing helper" — paste the helper.
+   - The surrounding pattern as a **snippet** whenever it must match existing style.
+   - Every constraint that would otherwise live in a knowledge or conventions file.
+   - Numbered steps with per-step acceptance, not a goal to work toward.
+   - The exact command that proves the slice works.
+
+   Calibration: a codex unit's spec runs **longer** than the sonnet equivalent, often much longer.
+   If a codex block is about as long as the one next to it for a sonnet subagent, it is
+   underspecified — sonnet reads the repo to fill gaps and codex has been told not to. Route work
+   to codex only when it can be enumerated to that depth; anything requiring judgment or discovery
+   belongs on sonnet or opus regardless of which lane the stage prefers.
 6. Omitting the field is always safe: a stage without it runs on the Claude lane.
 7. NEVER put a `.work/` path in a codex stage's `files:` list or its description. Codex runs with
    sandbox `workspace-write` and approval policy `never` — it edits anything under the git root
@@ -846,6 +870,8 @@ description: |
 □ Every non-bookend stage cites which Stage Necessity question (Q1-Q4) forced it; compile-order dependencies resolved with a foundation step, not a stage split
 □ Every stage: model: "opus" + reasoning_effort: xhigh + stage_type + working_dir set
 □ Codex opt-in asked and answered; `implementers:` lists codex only where routine implementation is delegated, only if the plugin is installed, and never on bookend stages; every list is a non-empty YAML sequence with no repeated lane
+□ Every codex unit is specified to exhaustion — exact paths, pasted signatures, pattern snippets, numbered steps with per-step acceptance, and the command that proves it. A codex block no longer than its sonnet neighbour is underspecified: codex is forbidden from exploring the repo, so anything you omit it invents
+□ Every codex subagent prompt states an explicit Bash timeout (900000 ms) alongside `--model gpt-5.6-luna --effort xhigh`; without it the wrapper's single Bash call hits the 120s default and the harness backgrounds the run
 □ Standard/IV stages: acceptance OR ≥1 goal-backward check (artifacts/wiring/wiring_tests/dead_code_check); wiring targets the CONSUMER; no leftover `truths:` block
 □ Every stage's acceptance carries the repo's FULL canonical gate covering its OWN files (not a scoped subset, not deferred downstream)
 □ Every prescribed check is realizable (expressible · executes the code · right strength · selected · grounded); no gate claims to prove what its inputs don't exercise
