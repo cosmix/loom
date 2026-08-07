@@ -44,7 +44,7 @@ pub fn retry(stage_id: String, force: bool, context: Option<String>) -> Result<(
     // Defense-in-depth: refuse to spawn a parallel session only if the recorded
     // session is genuinely still alive. A stale session *file* left behind by a
     // crashed/orphaned session must not force `--force` (C-22): probe liveness
-    // via the native backend (PID), not file existence.
+    // via the configured session backend, not file existence.
     if let Some(ref session_id) = stage.session {
         if session_is_live(work_dir, session_id) {
             eprintln!(
@@ -236,12 +236,12 @@ pub fn retry(stage_id: String, force: bool, context: Option<String>) -> Result<(
 
 /// Probe whether a recorded session is genuinely still running.
 ///
-/// Returns `true` only if the session file parses AND the native backend
+/// Returns `true` only if the session file parses AND the configured session backend
 /// reports the session alive (PID-based). A missing/unparseable file or a dead
 /// process returns `false` — a stale session file must not block retry (C-22).
 fn session_is_live(work_dir: &Path, session_id: &str) -> bool {
     use crate::models::session::Session;
-    use crate::orchestrator::terminal::native::NativeBackend;
+    use crate::orchestrator::terminal::backend::SessionBackend;
     use crate::parser::frontmatter::parse_from_markdown;
 
     let session_path = work_dir.join("sessions").join(format!("{session_id}.md"));
@@ -251,7 +251,7 @@ fn session_is_live(work_dir: &Path, session_id: &str) -> bool {
     let Ok(session) = parse_from_markdown::<Session>(&content, "Session") else {
         return false;
     };
-    let Ok(backend) = NativeBackend::new(work_dir.to_path_buf()) else {
+    let Ok(backend) = SessionBackend::from_config(work_dir.to_path_buf()) else {
         return false;
     };
     // A probe error is treated as "not live": the worst case is creating a

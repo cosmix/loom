@@ -45,6 +45,7 @@ pub use signals::{
 // Re-export crash reporting from spawner (until migrated to separate module)
 pub use spawner::{generate_crash_report, CrashReport};
 // Re-export terminal functions (replaces legacy spawner exports)
+pub use terminal::backend::SessionBackend;
 pub use terminal::native::NativeBackend;
 // Re-export hooks infrastructure from top-level hooks module
 pub use crate::hooks::{

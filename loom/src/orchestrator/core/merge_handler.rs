@@ -608,7 +608,7 @@ impl Orchestrator {
             &self.config.repo_root,
             &self.config.work_dir,
             &target_branch,
-            &self.native,
+            &self.backend,
         ) {
             Ok(AutoMergeResult::Success {
                 files_changed,
@@ -893,7 +893,7 @@ impl Orchestrator {
                 // Kill the original session to prevent zombie processes.
                 // When loom stage complete detected a merge conflict, the Stage session
                 // may still be running -- actively terminate it.
-                let kill_result = self.native.kill_session(&stale_session);
+                let kill_result = self.backend.kill_session(&stale_session);
                 if let Err(e) = &kill_result {
                     tracing::debug!(
                         session_id = %stale_session_id,
@@ -1138,7 +1138,7 @@ impl Orchestrator {
 
         // Spawn the merge resolution session.
         let spawned_session = self
-            .native
+            .backend
             .spawn_merge_session(stage, session, &signal_path, &self.config.repo_root)
             .context("Failed to spawn merge resolution session")?;
 

@@ -28,7 +28,7 @@ use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::models::worktree::Worktree;
 use crate::orchestrator::signals::{generate_signal, DependencyStatus};
-use crate::orchestrator::terminal::native::NativeBackend;
+use crate::orchestrator::terminal::backend::SessionBackend;
 
 /// Configuration for session continuation
 #[derive(Debug, Clone)]
@@ -86,9 +86,9 @@ pub fn continue_session(
     .context("Failed to generate signal for continuation")?;
 
     if config.auto_spawn {
-        let native = NativeBackend::new(work_dir.to_path_buf())
-            .context("Failed to construct native backend for continuation")?;
-        session = native
+        let backend = SessionBackend::from_config(work_dir.to_path_buf())
+            .context("Failed to construct session backend for continuation")?;
+        session = backend
             .spawn_session(stage, worktree, session, &signal_path)
             .context("Failed to spawn session for continuation")?;
     }

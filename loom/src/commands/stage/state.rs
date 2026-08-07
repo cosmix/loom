@@ -6,7 +6,7 @@ use std::path::Path;
 use crate::fs::session_files::find_session_file;
 use crate::models::session::Session;
 use crate::models::stage::StageStatus;
-use crate::orchestrator::terminal::native::NativeBackend;
+use crate::orchestrator::terminal::backend::SessionBackend;
 use crate::parser::frontmatter::parse_from_markdown;
 use crate::verify::transitions::{load_stage, save_stage};
 
@@ -54,11 +54,11 @@ pub fn reset(stage_id: String, hard: bool, kill_session: bool) -> Result<()> {
                                 .context("Failed to parse session")
                         })
                         .and_then(|session| {
-                            NativeBackend::new(work_dir.to_path_buf())
-                                .context("Failed to construct native backend")
-                                .and_then(|native| {
-                                    if native.is_session_alive(&session)? {
-                                        native.kill_session(&session)?;
+                            SessionBackend::from_config(work_dir.to_path_buf())
+                                .context("Failed to construct session backend")
+                                .and_then(|backend| {
+                                    if backend.is_session_alive(&session)? {
+                                        backend.kill_session(&session)?;
                                         println!("  Killed session '{session_id}'");
                                     } else {
                                         println!("  Session '{session_id}' already terminated");

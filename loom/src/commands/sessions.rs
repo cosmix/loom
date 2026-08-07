@@ -7,7 +7,7 @@ use crate::commands::common::find_work_dir;
 use crate::fs::session_files::find_session_file;
 use crate::fs::worktree_files::find_sessions_for_stage;
 use crate::models::session::Session;
-use crate::orchestrator::terminal::native::NativeBackend;
+use crate::orchestrator::terminal::backend::SessionBackend;
 use crate::parser::frontmatter::parse_from_markdown;
 
 /// List all sessions
@@ -126,13 +126,13 @@ fn kill_single_session(work_dir: &std::path::Path, session_id: &str) -> Result<(
     let session: Session = parse_from_markdown(&content, "Session")
         .context("Failed to parse session from markdown")?;
 
-    // Use the native backend for kill/liveness — all sessions are native.
-    let native = NativeBackend::new(work_dir.to_path_buf())
-        .with_context(|| "Failed to construct native backend for session kill")?;
+    // Kill/liveness route through the configured session backend, which dispatches on the session's recorded backend.
+    let backend = SessionBackend::from_config(work_dir.to_path_buf())
+        .with_context(|| "Failed to construct session backend for session kill")?;
 
-    if native.is_session_alive(&session)? {
+    if backend.is_session_alive(&session)? {
         println!("  Killing session...");
-        native.kill_session(&session)?;
+        backend.kill_session(&session)?;
         println!("  Session killed successfully");
     } else {
         println!("  Session already terminated");

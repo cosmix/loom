@@ -59,7 +59,7 @@ impl Orchestrator {
                     "Failed to remove signal during completion; continuing with merge"
                 );
             }
-            if let Err(e) = self.native.kill_session(&session) {
+            if let Err(e) = self.backend.kill_session(&session) {
                 tracing::warn!(
                     stage_id = %stage_id,
                     session_id = %session.id,
