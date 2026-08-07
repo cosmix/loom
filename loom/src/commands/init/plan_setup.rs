@@ -3,6 +3,7 @@
 use crate::fs::stage_files::stage_file_path;
 use crate::fs::work_dir::{self, WorkDir};
 use crate::git::branch::current_branch;
+use crate::models::session::{SessionBackendKind, TerminalConfig};
 use crate::models::stage::{Stage, StageStatus};
 use crate::plan::graph::levels::compute_all_levels;
 use crate::plan::parser::parse_plan;
@@ -24,7 +25,11 @@ use toml_edit::{value, Item, Table};
 
 /// Initialize with a plan file
 /// Returns the number of stages created
-pub fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<usize> {
+pub fn initialize_with_plan(
+    work_dir: &WorkDir,
+    plan_path: &Path,
+    terminal_backend: SessionBackendKind,
+) -> Result<usize> {
     if !plan_path.exists() {
         anyhow::bail!("Plan file does not exist: {}", plan_path.display());
     }
@@ -168,6 +173,16 @@ pub fn initialize_with_plan(work_dir: &WorkDir, plan_path: &Path) -> Result<usiz
         &crate::remote_control::RemoteControlConfig::default(),
     )
     .context("Failed to persist remote control config")?;
+
+    // Persist the resolved [terminal] section so the operator has a
+    // documented, editable toggle in .work/config.toml from the start.
+    work_dir::write_terminal_config(
+        work_dir.root(),
+        &TerminalConfig {
+            backend: terminal_backend,
+        },
+    )
+    .context("Failed to persist terminal config")?;
 
     println!(
         "  {} Config saved {}",

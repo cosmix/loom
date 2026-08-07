@@ -83,6 +83,7 @@ pub fn complete_subcommands(parent: &str, prefix: &str) -> Result<Vec<String>> {
 pub fn complete_flags(command_path: &[&str], prefix: &str) -> Result<Vec<String>> {
     let flags: &[&str] = match command_path {
         ["run"] => &[
+            "--backend",
             "--foreground",
             "--manual",
             "--max-parallel",
@@ -90,7 +91,7 @@ pub fn complete_flags(command_path: &[&str], prefix: &str) -> Result<Vec<String>
             "--watch",
         ],
         ["status"] => &["--compact", "--live", "--verbose"],
-        ["init"] => &["--clean"],
+        ["init"] => &["--backend", "--clean"],
         ["clean"] => &["--all", "--sessions", "--state", "--worktrees"],
         ["repair"] => &["--fix"],
         ["map"] => &["--deep", "--focus", "--overwrite"],

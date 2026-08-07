@@ -148,6 +148,7 @@ fn test_loom_run_fails_with_staged_changes() {
         None,  // max_parallel
         false, // watch
         true,  // auto_merge
+        None,  // backend
     );
 
     // Restore original directory
@@ -195,6 +196,7 @@ fn test_loom_run_fails_with_mixed_changes() {
         None,  // max_parallel
         false, // watch
         true,  // auto_merge
+        None,  // backend
     );
 
     // Restore original directory
@@ -268,6 +270,7 @@ fn test_loom_run_fails_with_modified_tracked_files() {
         None,  // max_parallel
         false, // watch
         true,  // auto_merge
+        None,  // backend
     );
 
     // Restore original directory

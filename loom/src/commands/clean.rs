@@ -11,6 +11,9 @@ use crate::git::branch::{commits_ahead_of, list_loom_branches, resolve_target_br
 use crate::git::cleanup::{
     cleanup_all_base_branches, cleanup_multiple_stages, prune_worktrees, CleanupConfig,
 };
+use crate::orchestrator::terminal::tmux::{
+    kill_socket_server, list_loom_sockets, socket_session_is_alive,
+};
 
 /// Statistics for cleanup operations
 #[derive(Default)]
@@ -72,7 +75,7 @@ pub fn execute(all: bool, worktrees: bool, sessions: bool, state: bool) -> Resul
     if clean_all || sessions {
         println!("\n{}", "Sessions".bold());
         println!("{}", "─".repeat(40).dimmed());
-        stats.sessions_killed = clean_sessions()?;
+        stats.sessions_killed = clean_sessions(&repo_root)?;
     }
 
     // Clean state directory
@@ -385,16 +388,59 @@ fn clean_worktrees(repo_root: &Path) -> Result<(usize, usize)> {
     Ok((worktrees_removed, branches_removed))
 }
 
-/// No-op placeholder for the --sessions flag.
+/// Reaps orphaned loom tmux sessions for the `--sessions` flag.
 ///
-/// Session termination is now handled exclusively by `loom sessions kill`.
-/// This function exists so the flag remains accepted without error.
-fn clean_sessions() -> Result<usize> {
+/// LIVE session termination is now handled exclusively by `loom sessions
+/// kill` — this deliberately does NOT touch running sessions. It only reaps
+/// orphaned tmux sockets attributed to THIS repo's work dir whose session is
+/// no longer alive; unattributable sockets (which may belong to another
+/// checkout or user) are reported but left untouched. See
+/// `commands::init::cleanup::cleanup_orphaned_sessions` for the same
+/// orphan-only, this-repo-only sweep run at `loom init`.
+fn clean_sessions(repo_root: &Path) -> Result<usize> {
     println!(
         "  {} --sessions no longer terminates sessions; use 'loom sessions kill'",
         "─".dimmed()
     );
-    Ok(0)
+
+    let work_dir = repo_root.join(".work");
+    let mut reaped = 0;
+    let mut unattributed = 0;
+
+    for socket in list_loom_sockets(&work_dir) {
+        if !socket.attributed {
+            unattributed += 1;
+            continue;
+        }
+
+        if socket_session_is_alive(&work_dir, &socket.session_id) {
+            continue;
+        }
+
+        kill_socket_server(&socket.path);
+        let _ = fs::remove_file(&socket.path);
+        reaped += 1;
+    }
+
+    if reaped > 0 {
+        println!(
+            "  {} Reaped {} orphaned tmux session{}",
+            "✓".green().bold(),
+            reaped,
+            if reaped == 1 { "" } else { "s" }
+        );
+    }
+
+    if unattributed > 0 {
+        println!(
+            "  {} {} unattributable tmux socket{} left untouched",
+            "─".dimmed(),
+            unattributed,
+            if unattributed == 1 { "" } else { "s" }
+        );
+    }
+
+    Ok(reaped)
 }
 
 /// Remove the .work/ state directory
