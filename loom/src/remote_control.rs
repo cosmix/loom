@@ -139,11 +139,14 @@ pub fn claude_supports_remote_control(claude_path: &Path) -> bool {
 /// Returns `Err` with a non-secret reason — naming only the offending
 /// environment variable, never its value — when:
 ///   * a disqualifying auth env var is set, or
-///   * no disqualifying var is set but `~/.claude/.credentials.json` is
-///     missing (no claude.ai login found).
+///   * no disqualifying var is set but neither `~/.claude/.credentials.json`
+///     nor (on macOS) a "Claude Code-credentials" Keychain entry is found (no
+///     claude.ai login found).
 ///
-/// Returns `Ok(())` when the credentials file exists and no disqualifying
-/// env var is set.
+/// Returns `Ok(())` when either the credentials file or the macOS Keychain
+/// entry is present and no disqualifying env var is set. On macOS, Claude
+/// Code stores credentials in the Keychain instead of the file, so both
+/// locations must be checked.
 pub fn remote_control_eligible() -> Result<(), String> {
     for var in DISQUALIFYING_ENV_VARS {
         if std::env::var_os(var).is_some() {
@@ -157,11 +160,52 @@ pub fn remote_control_eligible() -> Result<(), String> {
         .map(|h| h.join(".claude").join(".credentials.json").exists())
         .unwrap_or(false);
 
-    if credentials_present {
+    if credentials_present || macos_keychain_has_credentials() {
         Ok(())
     } else {
-        Err("claude.ai login not found (~/.claude/.credentials.json missing)".to_string())
+        Err(
+            "claude.ai login not found (no ~/.claude/.credentials.json and no macOS Keychain entry)"
+                .to_string(),
+        )
     }
+}
+
+/// Pure builder for the macOS Keychain lookup argv.
+///
+/// Shared by [`macos_keychain_has_credentials`] (so the actual command can
+/// never drift from what is tested) and asserted directly by
+/// `keychain_probe_argv_is_exact` below. Deliberately excludes `-w`, which
+/// would print the stored secret to stdout — this lookup only ever checks
+/// for the entry's existence.
+pub(crate) fn keychain_probe_argv() -> (&'static str, [&'static str; 3]) {
+    (
+        "security",
+        ["find-generic-password", "-s", "Claude Code-credentials"],
+    )
+}
+
+/// Whether a "Claude Code-credentials" entry exists in the macOS Keychain.
+///
+/// Never surfaces the secret value: `security find-generic-password` (no
+/// `-w`) only communicates success/failure via its exit status, and both
+/// stdout and stderr are discarded here.
+///
+/// Always `false` off macOS. The gate is a runtime `cfg!` rather than a
+/// `#[cfg]` pair so the body — and therefore [`keychain_probe_argv`] — is
+/// compiled on every platform; under `#[cfg]` the probe builder would have no
+/// non-test caller on Linux and trip `dead_code` under `-D warnings`.
+fn macos_keychain_has_credentials() -> bool {
+    if !cfg!(target_os = "macos") {
+        return false;
+    }
+    let (program, args) = keychain_probe_argv();
+    Command::new(program)
+        .args(args)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
 
 /// Combine the version probe and the auth-eligibility heuristic into a single
@@ -407,6 +451,19 @@ mod tests {
         )
         .unwrap();
         assert!(!resolve(work_dir));
+    }
+
+    #[test]
+    fn keychain_probe_argv_is_exact() {
+        let (program, args) = keychain_probe_argv();
+        assert_eq!(program, "security");
+        assert_eq!(args[0], "find-generic-password");
+        assert_eq!(args[1], "-s");
+        assert_eq!(args[2], "Claude Code-credentials");
+        assert!(
+            !args.contains(&"-w"),
+            "must never pass -w: it prints the secret to stdout"
+        );
     }
 
     #[test]
