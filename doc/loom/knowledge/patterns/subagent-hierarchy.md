@@ -27,12 +27,12 @@ Loom teaches a 2-level subagent hierarchy (main agent → coordinator subagents 
 | `compact summary` (any case) | coordinator preamble, SKILL.md, cache.rs, sections.rs |
 | `BY AGENT TYPE` | CLAUDE.md.template, signals (cache.rs); "BY TYPE" in sections.rs |
 | `ultracode` | CLAUDE.md.template (Parallelization Strategy), SKILL.md (ULTRACODE STAGES), plan/schema/types.rs, sections.rs, native/mod.rs |
-| `codex:codex-rescue` | CLAUDE.md.template (Rule 6c model mix, Rule 7 agent table, Model allocation item 2), SKILL.md (BLOCK-B + codex subsection), sections.rs (`format_codex_implementers_section`), tests_doctrine.rs `BLOCK_B`, agents/loom-software-engineer.md, agents/loom-senior-software-engineer.md, plan/schema/types.rs + models/stage/types.rs doc comments |
+| `loom-codex-forwarder` (since 2026-08-07; `codex:codex-rescue` survives only in "never spawn directly" caveats) | CLAUDE.md.template (Rule 6c model mix, Rule 7 agent table, Model allocation item 2), SKILL.md (BLOCK-B + codex subsection), sections.rs (`format_codex_implementers_section`), tests_doctrine.rs `BLOCK_B` + `codex_forward_sentinel_agrees_across_surfaces`, agents/loom-codex-forwarder.md, agents/loom-software-engineer.md, agents/loom-senior-software-engineer.md, hooks/codex-forward-guard.sh, plan/schema/types.rs + models/stage/types.rs doc comments |
 | Threshold | `more than ~6 independent worker tasks` → hierarchy; `~6 or fewer` → flat (all decision surfaces) |
 
 **Surface inventory:**
 
-1. `CLAUDE.md.template` — Rule 6c (decision table, criteria, COORDINATOR/WORKER PREAMBLEs, model mix incl. the codex lane), Rule 6/6b/7 amendments (Rule 7 agent table has a `codex:codex-rescue` row), Rule 6 bounded-wait paragraph, Parallelization Strategy rows, Ultracode Stages subsection, Critical Reminders item 5
+1. `CLAUDE.md.template` — Rule 6c (decision table, criteria, COORDINATOR/WORKER PREAMBLEs, model mix incl. the codex lane), Rule 6/6b/7 amendments (Rule 7 agent table has a `loom-codex-forwarder` row), Rule 6 bounded-wait paragraph, Parallelization Strategy rows, Ultracode Stages subsection, Critical Reminders item 5
 2. `skills/loom-plan-writer/SKILL.md` — §4 criteria-keyed strategies block (1/2/2a/2b/3 — deliberately NOT a ranking), decision table `>~6 worker tasks?` column, HIERARCHICAL EXECUTION PLAN BLOCKS subsection, ULTRACODE STAGES subsection, §5 description requirements, Example 5 (flat-12 vs 3×4 honest cost comparison), the codex install/scope subsection (`:276-298`)
 3. `orchestrator/signals/cache.rs` — standard stable prefix only ("Subagent Hierarchies (2-LEVEL CAP)" block); knowledge/IV/knowledge-distill prefixes untouched (3 of 4 prefix hashes unchanged). Its forward reference to the codex block must spell the section name WITHOUT `##` (see pinning tests)
 4. `orchestrator/signals/format/sections.rs` — semi-stable "## Delegation Choices" (three-way: flat / hierarchy / teams; replaced the old "## Agent Teams" header), gated "## Ultracode Mode", and gated "## Codex Implementers" (`format_codex_implementers_section`, `:807`)
@@ -52,7 +52,7 @@ rg -n "2-LEVEL CAP" CLAUDE.md.template skills/loom-plan-writer/SKILL.md loom/src
 rg -n "Workers NEVER spawn subagents" CLAUDE.md.template skills/loom-plan-writer/SKILL.md loom/src/orchestrator/signals/ agents/loom-software-engineer.md
 rg -n "BY AGENT TYPE" CLAUDE.md.template loom/src/orchestrator/signals/
 rg -n "ultracode" CLAUDE.md.template skills/loom-plan-writer/SKILL.md loom/src/plan/schema/types.rs loom/src/orchestrator/signals/
-rg -n "codex:codex-rescue" CLAUDE.md.template skills/loom-plan-writer/SKILL.md loom/src/orchestrator/signals/ agents/
+rg -n "loom-codex-forwarder" CLAUDE.md.template skills/loom-plan-writer/SKILL.md loom/src/orchestrator/signals/ agents/ hooks/
 rg -n "HIERARCHY SECOND" skills/   # must be ZERO hits (criteria-keyed, not ranked)
 ```
 

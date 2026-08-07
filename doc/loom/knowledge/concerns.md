@@ -355,7 +355,7 @@ a split proposal by topic cohesion instead of naming a section-extraction target
 
 ## Long Codex Runs Starve the Loom Heartbeat (2026-08-07)
 
-A foreground `codex:codex-rescue` run is ONE Bash tool call that blocks until codex returns. The
+A foreground codex-lane run (`loom-codex-forwarder`) is ONE Bash tool call that blocks until codex returns. The
 session heartbeat (`.work/heartbeat/<stage-id>.json`) is refreshed by exactly two writers, both
 shell hooks — `hooks/session-start.sh:61-72` (initial) and `hooks/post-tool-use.sh:66-91` (after
 every tool use), registered at `loom/src/hooks/config.rs:47-48`. No Rust production code writes a

@@ -22,11 +22,18 @@ claude plugin list [--json]
 
 ## The codex-rescue subagent
 
+**Loom stages no longer spawn this agent directly** — see "The loom-codex-forwarder lane"
+below. The plugin wrapper's contract is documented here because the forwarder wraps the same
+companion runtime and the hook pins BOTH agent types.
+
 Spawn via the Agent tool with `subagent_type: "codex:codex-rescue"`.
 
 Its frontmatter (`agents/codex-rescue.md`) declares `model: sonnet`, `tools: Bash`. **That sonnet is the
 THIN FORWARDING WRAPPER, not the implementing model** — the real work runs in Codex behind the companion
-script. Do not read that `sonnet` as the quality tier of the result.
+script. Do not read that `sonnet` as the quality tier of the result. **The `tools: Bash` line is
+inert:** plugin agents' `tools:` field is ignored by design
+(code.claude.com/docs/en/sub-agents#available-tools), so this wrapper actually runs with a full
+toolset — the mechanism behind the rogue-wrapper incident.
 
 Wrapper contract (all from `agents/codex-rescue.md`):
 
@@ -46,6 +53,42 @@ Wrapper contract (all from `agents/codex-rescue.md`):
 reasoning effort / session id) to **stderr** on every healthy run. Loom's silent-failure detector
 flags that `sandbox` substring as a possible block; it is benign. Judge a run by the echoed model
 line and the actual reply, not by the presence of `sandbox` in stderr.
+
+## The loom-codex-forwarder lane (2026-08-07)
+
+Loom's doctrine now spawns `subagent_type: "loom-codex-forwarder"` for all codex implementation
+work, never the plugin agent directly. The rogue-wrapper incident (see
+[Codex Lane Rogue Wrapper](../mistakes/codex-lane-rogue-wrapper.md)) showed the plugin agent's
+`tools: Bash` frontmatter is not enforced for in-process subagents: a wrapper holding a codex
+prompt implemented all the edits itself on sonnet and nothing surfaced it. Three shipped layers:
+
+1. **`agents/loom-codex-forwarder.md`** — loom-owned forwarding shim (sonnet, `tools: Bash`),
+   installed by `install.sh` with the other `loom-*` agents. Unlike the plugin wrapper, its
+   `tools:` allowlist IS hard-enforced — user-scope agents enforce the field, plugin agents
+   ignore it by design (code.claude.com/docs/en/sub-agents#available-tools) — so Edit/Read are
+   blocked at the harness level and the hook only has to police Bash-shaped escapes. Contract: resolve the companion by
+   glob (`~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`, highest
+   version — `${CLAUDE_PLUGIN_ROOT}` is unset outside plugin agents), ONE Bash call, `--write`
+   plus `--model`/`--effort` exactly as the prompt states, stdout verbatim followed by a
+   `--- LOOM-CODEX-EVIDENCE ---` trailer (`exit:` code + newest `state/*/jobs/*.json` paths).
+   On failure: report verbatim prefixed `LOOM-CODEX-FORWARD-ERROR`, never implement.
+2. **`hooks/codex-forward-guard.sh`** — PreToolUse on Bash/Edit/Write/Read/Task/Agent. Primary
+   gate: payload `agent_type` ∈ {`loom-codex-forwarder`, `codex:codex-rescue`} → only a Bash
+   command containing `codex-companion.mjs` passes; everything else exits 2 with forwarding
+   doctrine on stderr. Fallback gate: `transcript_path` under `*/subagents/agent-*.jsonl` whose
+   opening bytes carry `LOOM-CODEX-FORWARD-ONLY`. Fail-open everywhere else. `loom_is_subagent`
+   was unusable here — it is process-tree based and returns false for in-process subagents.
+3. **Signal doctrine** (`format_codex_implementers_section`, also emitted on the recovery path):
+   spawn the forwarder by type, put `CODEX_FORWARD_SENTINEL` (`loom/src/codex.rs`) as the codex
+   prompt's FIRST line, and accept a codex report only with the evidence trailer — verify the
+   newest listed job record for the worktree exists with `phase: done`. A report without the
+   trailer, or edits with no matching record, is a failed delegation: revert and respawn, or
+   keep only after a full review.
+
+Cross-surface pins: `tests_doctrine.rs::codex_forward_sentinel_agrees_across_surfaces` ties the
+sentinel constant to the hook script and the agent definition, and requires CLAUDE.md.template
+and the plan-writer SKILL to name the forwarder; `tests_cache.rs` pins the generated section to
+carry the sentinel, the trailer name, and the `loom-codex-forwarder` spawn line.
 
 ## Hooks (hooks/hooks.json)
 

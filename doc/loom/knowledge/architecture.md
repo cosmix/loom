@@ -385,8 +385,9 @@ thresholds, the `check.rs` coverage blast radius, opt-in migration, and lock ord
 
 ## Codex Plugin (openai-codex) [DETAILED]
 
-The Codex Claude Code plugin: marketplace/install and scope rules, the `codex:codex-rescue` forwarding
-subagent and its flag-forwarding contract, `codex-companion.mjs` effort values, the three plugin hooks,
+The Codex Claude Code plugin: marketplace/install and scope rules, the `loom-codex-forwarder` lane
+(loom's own shim — the plugin's `codex:codex-rescue` is never spawned directly since the 2026-08-07
+rogue-wrapper incident) and its flag-forwarding contract, `codex-companion.mjs` effort values, the three plugin hooks,
 and what loom shipped to drive it — the per-stage `implementers` LIST (licensed lanes in preference
 order, default `["claude"]`; membership licenses a lane, order picks the routine-work default, and a
 stage mixes lanes per subagent), the `## Codex Implementers` signal section gated on codex

@@ -437,3 +437,11 @@ that hides, because the common cases still look right.
 tells the orchestrator to choose per subagent. Validation rejects the two shapes only a list admits:
 empty, and a repeated lane (which would make the preference ambiguous). See
 [Codex Plugin](architecture/codex-plugin.md) for the wiring.
+
+## Codex Lane Rogue Wrapper (2026-08-07)
+
+A `codex:codex-rescue` spawn received a codex prompt and implemented all 26 edits itself on
+sonnet instead of forwarding — plugin agents' `tools:` field is ignored by design (user-scope
+agents DO enforce it), `loom_is_subagent()` returns false for in-process subagents, and the
+report was indistinguishable from a real forward. Now pinned by `hooks/codex-forward-guard.sh` + the `loom-codex-forwarder` agent + the
+evidence-trailer acceptance rule. Full detail: [Codex Lane Rogue Wrapper](mistakes/codex-lane-rogue-wrapper.md).

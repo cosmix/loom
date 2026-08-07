@@ -63,6 +63,7 @@
 | `worktree-isolation.sh` | PreToolUse:Bash/Edit/Write | Blocks cross-worktree ops and path traversal |
 | `worktree-file-guard.sh` | PreToolUse:Read/Glob/Grep | Blocks file tool paths outside worktree |
 | `plans-path-guard.sh` | PreToolUse:Edit/Write | **Unconditional** (fires in interactive sessions too) — blocks plan writes under `.claude/plans/` or `.claude/projects/*/plans/`, redirecting to `doc/plans/PLAN-*.md` |
+| `codex-forward-guard.sh` | PreToolUse:Bash/Edit/Write/Read/Task/Agent | Pins codex forwarders to forwarding: when payload `agent_type` is `loom-codex-forwarder`/`codex:codex-rescue` (or, fallback, the subagent transcript carries `LOOM-CODEX-FORWARD-ONLY`), only a Bash call containing `codex-companion.mjs` is allowed. Fail-open for everyone else; does NOT use `loom_is_subagent` (false for in-process subagents) |
 | `git-pre-commit-hook.sh` | git `pre-commit` | Blocks commits containing `.work` or `.worktrees`; appended to `.git/hooks/pre-commit` by `loom init`, not installed to `~/.claude/hooks/loom/` |
 | `skill-trigger.sh` | UserPromptSubmit | Scores keywords, emits skill suggestions as `hookSpecificOutput.additionalContext` |
 | `ask-user-pre.sh` | PreToolUse:AskUserQuestion | Marks stage WaitingForInput |

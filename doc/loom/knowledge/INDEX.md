@@ -8,11 +8,11 @@
 
 | File | Description | Lines |
 | --- | --- | --- |
-| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 406 |
+| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 409 |
 | [entry-points.md](entry-points.md) | Key files agents should read first | 488 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 545 |
-| [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 381 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 411 |
+| [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 391 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 447 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 61 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 407 |
 
@@ -22,8 +22,8 @@
 
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
-| [architecture/codex-concurrency.md](architecture/codex-concurrency.md) | Codex Concurrency | Topic notes for the architecture knowledge area. | 101 |
-| [architecture/codex-plugin.md](architecture/codex-plugin.md) | Codex Plugin | Topic notes for the architecture knowledge area. | 113 |
+| [architecture/codex-concurrency.md](architecture/codex-concurrency.md) | Codex Concurrency | Topic notes for the architecture knowledge area. | 102 |
+| [architecture/codex-plugin.md](architecture/codex-plugin.md) | Codex Plugin | Topic notes for the architecture knowledge area. | 164 |
 | [architecture/core-abstractions.md](architecture/core-abstractions.md) | Core Abstractions | ExecutionGraph, Stage, Session, Orchestrator, TerminalBackend — plus data flow and .work/ file ownership. | 82 |
 | [architecture/directory-structure.md](architecture/directory-structure.md) | Directory Structure | Full loom/src module tree, the .work/ state layout, and the repo-root asset directories. | 48 |
 | [architecture/hook-system.md](architecture/hook-system.md) | Hook System | Hook embedding and install, the SessionStart hookSpecificOutput contract, and the two subagent enforcement hooks. | 110 |
@@ -34,7 +34,7 @@
 
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
-| [entry-points/hooks.md](entry-points/hooks.md) | Hooks | Every hook script and the event it binds to, _common.sh's seven helpers, and the registration sites a new hook needs. | 94 |
+| [entry-points/hooks.md](entry-points/hooks.md) | Hooks | Every hook script and the event it binds to, _common.sh's seven helpers, and the registration sites a new hook needs. | 95 |
 | [entry-points/remote-control.md](entry-points/remote-control.md) | Remote Control | Files and call sites for remote-control capability detection and permission-mode resolution. | 96 |
 ### patterns
 
@@ -43,11 +43,12 @@
 | [patterns/doctrine-cross-surface.md](patterns/doctrine-cross-surface.md) | Doctrine Cross Surface | Pinning multi-surface guidance with equality tests, ambiguity-equals-fail-safe privilege lookups, and token-based shell classification. | 67 |
 | [patterns/hook-content-stripping.md](patterns/hook-content-stripping.md) | Hook Content Stripping | Stripping heredoc bodies and -m text before matching, the full hook inventory, and the limits of that stripping. | 62 |
 | [patterns/remote-control.md](patterns/remote-control.md) | Remote Control | The detect-capability, preflight, resolve-invocation shape for external agent binaries. | 46 |
-| [patterns/subagent-hierarchy.md](patterns/subagent-hierarchy.md) | Subagent Hierarchy | Flat fan-out vs 2-level coordinator hierarchy vs agent teams: when to use each, model mix, file exclusivity. | 58 |
+| [patterns/subagent-hierarchy.md](patterns/subagent-hierarchy.md) | Subagent Hierarchy | Flat fan-out vs 2-level coordinator hierarchy vs agent teams: when to use each, model mix, file exclusivity. | 59 |
 ### mistakes
 
 | Topic | Title | Blurb | Lines |
 | --- | --- | --- | --- |
+| [mistakes/codex-lane-rogue-wrapper.md](mistakes/codex-lane-rogue-wrapper.md) | Codex Lane Rogue Wrapper | Topic notes for the mistakes knowledge area. | 44 |
 | [mistakes/doctrine-and-acceptance.md](mistakes/doctrine-and-acceptance.md) | Doctrine And Acceptance | Why a one-phrase grep proves presence but never agreement, and how doctrine drifts across surfaces unnoticed. | 77 |
 | [mistakes/knowledge-base-drift.md](mistakes/knowledge-base-drift.md) | Knowledge Base Drift | How the knowledge base itself goes stale: plan-authoring notes frozen as architecture facts, `[UPDATED]` duplicates, and invented CLI surface. | 100 |
 | [mistakes/knowledge-cli-invariants.md](mistakes/knowledge-cli-invariants.md) | Knowledge Cli Invariants | Invariants belong in the fs constructor, not the CLI handler; lock ordering for sibling refreshes; update appends. | 67 |
