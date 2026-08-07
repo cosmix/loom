@@ -285,8 +285,10 @@ If the user picks Codex:
 1. Check it is installed: `claude plugin list --json`.
 2. If missing, ask permission, then run BOTH `claude plugin marketplace add openai/codex-plugin-cc`
    and `claude plugin install codex@openai-codex --scope user`. SCOPE MUST BE user OR project —
-   NEVER local. Local scope writes `.claude/settings.local.json`, which loom regenerates per
-   worktree, dropping `enabledPlugins`.
+   NEVER local. Local scope writes `.claude/settings.local.json`, the one file loom rebuilds from
+   scratch per worktree. `preserve_unowned_keys` now carries `enabledPlugins` and
+   `extraKnownMarketplaces` through that rebuild, but it is a two-key allowlist over a
+   regenerated file, not a general guarantee — user and project scope are not rewritten at all.
 3. If the user declines the install, fall back to Claude implementers and SAY SO. Never write
    `implementer: "codex"` for a plugin that is not installed.
 4. Set `implementer: "codex"` on standard stages whose work is routine implementation. LEAVE IT
@@ -296,6 +298,14 @@ If the user picks Codex:
    `codex:codex-rescue` subagents in the FOREGROUND, each with `--model gpt-5.6-luna --effort
    xhigh` and a DISJOINT file set; verify and commit yourself."
 6. Omitting the field is always safe: existing plans without it run unchanged on the Claude lane.
+7. NEVER put a `.work/` path in a codex stage's `files:` list or its description. Codex runs with
+   sandbox `workspace-write` and approval policy `never` — it edits anything under the git root
+   without asking, and in a worktree `.work/` is a SYMLINK to state shared with every parallel
+   stage. That is the one write inside the boundary that escapes it.
+8. Write the stage description so it tells its codex subagents NOT to run `git` at all, and tells
+   the orchestrator to check `git status --short` after each codex run. Loom's hooks guard Claude
+   Code's Bash tool, not commands codex runs inside its own session, so for the codex lane those
+   rules are prose rather than enforcement and the orchestrator is the only backstop.
 
 Consequences for how you write a plan:
 

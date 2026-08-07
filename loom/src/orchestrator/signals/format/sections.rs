@@ -820,6 +820,22 @@ pub(crate) fn format_codex_implementers_section() -> String {
     content.push_str("- A foreground codex run is ONE long Bash call: no PostToolUse fires, so the loom heartbeat goes\n");
     content.push_str("  stale and the daemon prints a spurious \"appears hung\" warning after 300s. That warning is\n");
     content.push_str("  ADVISORY ONLY - nothing is killed or retried. Ignore it.\n");
+    content.push_str("- BLAST RADIUS. Codex runs with sandbox `workspace-write` and approval policy `never`: it edits\n");
+    content.push_str("  anything under the git root without asking. In a loom worktree the git root IS the worktree,\n");
+    content.push_str(
+        "  so that is your isolation boundary - with two holes you must cover yourself:\n",
+    );
+    content.push_str("    * NEVER give a codex agent a path under `.work/`. It is a SYMLINK to orchestration state\n");
+    content.push_str("      shared with every parallel stage; a write through it escapes worktree isolation and\n");
+    content.push_str(
+        "      corrupts other stages. `.work/` is yours via the loom CLI only (Rule 11).\n",
+    );
+    content.push_str("    * Loom's PreToolUse hooks (commit-filter, git-add-guard, the subagent guards) intercept\n");
+    content.push_str("      CLAUDE CODE's Bash tool. They do NOT see commands codex runs inside its own session, so\n");
+    content.push_str("      for codex those rules are prose, not enforcement. Tell every codex subagent it must not\n");
+    content.push_str("      run git at all, and check `git status --short` after each run: anything staged, committed\n");
+    content.push_str("      or touched outside that agent's assigned file set is YOUR problem to find, because no\n");
+    content.push_str("      hook will.\n");
     content.push_str("- Codex REPLACES sonnet/haiku for routine implementation. It does NOT replace opus (architecture,\n");
     content.push_str("  algorithms, cross-cutting refactors, security-sensitive code) or loom-advisor (fable) on a second\n");
     content.push_str("  failure on the same task.\n");

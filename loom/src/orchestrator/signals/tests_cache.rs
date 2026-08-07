@@ -370,6 +370,21 @@ fn test_signal_codex_implementers_section_gated() {
     assert!(content.contains("codex:codex-rescue"));
     // Model comes from the shared constant, not a second literal
     assert!(content.contains(CODEX_IMPLEMENTER_MODEL));
+
+    // Blast-radius restrictions. Codex runs workspace-write with approval
+    // policy "never", so these two are the only thing standing between it and
+    // shared state: `.work/` is a symlink out of the worktree, and loom's
+    // hooks never see commands codex runs inside its own session.
+    assert!(
+        content.contains(".work/"),
+        "the codex block must warn off .work/ - a write through that symlink \
+         escapes worktree isolation into state shared with every stage"
+    );
+    assert!(
+        content.contains("git status --short"),
+        "the codex block must tell the orchestrator to diff-check after each \
+         run; no hook covers codex's own shell commands"
+    );
 }
 
 #[test]
