@@ -63,6 +63,7 @@ fn test_session_to_markdown() {
         merge_source_branch: None,
         merge_target_branch: None,
         tracking_key: String::new(),
+        backend: Default::default(),
     };
 
     let content = session_to_markdown(&session);
@@ -157,6 +158,7 @@ fn test_cleanup_session_resources() {
         merge_source_branch: None,
         merge_target_branch: None,
         tracking_key: String::new(),
+        backend: Default::default(),
     };
 
     let session_content = session_to_markdown(&session);

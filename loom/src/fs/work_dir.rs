@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use toml_edit::DocumentMut;
 
 use crate::fs::knowledge::KnowledgeDir;
+use crate::models::session::TerminalConfig;
 use crate::plan::schema::SandboxConfig;
 use crate::remote_control::RemoteControlConfig;
 
@@ -343,6 +344,7 @@ Do not manually edit these files unless you know what you're doing.
 
 const PLAN_SANDBOX_SECTION: &str = "plan_sandbox";
 const REMOTE_CONTROL_SECTION: &str = "remote_control";
+const TERMINAL_SECTION: &str = "terminal";
 
 fn config_path(work_dir: &Path) -> PathBuf {
     work_dir.join("config.toml")
@@ -498,6 +500,19 @@ pub fn read_remote_control_config(work_dir: &Path) -> Result<RemoteControlConfig
 /// Persist the Remote Control config (`[remote_control]`).
 pub fn write_remote_control_config(work_dir: &Path, config: &RemoteControlConfig) -> Result<()> {
     write_section(work_dir, REMOTE_CONTROL_SECTION, config)
+}
+
+/// Read the persisted terminal backend config (`[terminal]`).
+///
+/// A missing section yields `TerminalConfig::default()` (backend = native),
+/// so callers always get a usable value.
+pub fn read_terminal_config(work_dir: &Path) -> Result<TerminalConfig> {
+    Ok(read_section(work_dir, TERMINAL_SECTION)?.unwrap_or_default())
+}
+
+/// Persist the terminal backend config (`[terminal]`).
+pub fn write_terminal_config(work_dir: &Path, config: &TerminalConfig) -> Result<()> {
+    write_section(work_dir, TERMINAL_SECTION, config)
 }
 
 #[cfg(test)]
@@ -716,6 +731,30 @@ mod tests {
         assert!(after.contains("source_path = \"a\""));
         assert!(after.contains("# Header"));
         assert!(after.contains("[plan_sandbox]"));
+    }
+
+    #[test]
+    fn write_then_read_terminal_config_round_trip() {
+        let temp = TempDir::new().unwrap();
+        let work = init_work(&temp);
+        let config = TerminalConfig {
+            backend: crate::models::session::SessionBackendKind::Tmux,
+        };
+        write_terminal_config(&work, &config).unwrap();
+        let back = read_terminal_config(&work).unwrap();
+        assert_eq!(back, config);
+    }
+
+    #[test]
+    fn read_terminal_config_defaults_when_section_missing() {
+        let temp = TempDir::new().unwrap();
+        let work = init_work(&temp);
+        let config = read_terminal_config(&work).unwrap();
+        assert_eq!(config, TerminalConfig::default());
+        assert_eq!(
+            config.backend,
+            crate::models::session::SessionBackendKind::Native
+        );
     }
 
     #[test]

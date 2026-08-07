@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::Utc;
 use std::path::PathBuf;
 
-use super::types::{Session, SessionStatus, SessionType};
+use super::types::{Session, SessionBackendKind, SessionStatus, SessionType};
 use crate::models::constants::{CONTEXT_CRITICAL_THRESHOLD, DEFAULT_CONTEXT_LIMIT};
 
 impl Session {
@@ -24,6 +24,7 @@ impl Session {
             merge_source_branch: None,
             merge_target_branch: None,
             tracking_key: String::new(),
+            backend: SessionBackendKind::default(),
         }
     }
 

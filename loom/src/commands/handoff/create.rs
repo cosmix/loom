@@ -109,6 +109,7 @@ pub fn execute(
         merge_source_branch: None,
         merge_target_branch: None,
         tracking_key: String::new(),
+        backend: Default::default(),
     };
 
     // Generate the handoff file

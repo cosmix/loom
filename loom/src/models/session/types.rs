@@ -55,6 +55,39 @@ impl std::fmt::Display for SessionStatus {
     }
 }
 
+/// Which terminal backend hosts a session's Claude process.
+///
+/// Persisted on the session file so kill/liveness routing survives a daemon
+/// restart (the session is reconstructed from `.work/sessions/<id>.md`).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum SessionBackendKind {
+    /// Native terminal emulator window (today's default).
+    #[default]
+    Native,
+    /// Headless tmux server, one per session.
+    Tmux,
+}
+
+impl std::fmt::Display for SessionBackendKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SessionBackendKind::Native => write!(f, "native"),
+            SessionBackendKind::Tmux => write!(f, "tmux"),
+        }
+    }
+}
+
+/// Persisted `[terminal]` section of `.work/config.toml`.
+///
+/// A documented, editable toggle: operators may flip `backend` by hand between
+/// runs, exactly like the `[remote_control]` section.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct TerminalConfig {
+    #[serde(default)]
+    pub backend: SessionBackendKind,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub id: String,
@@ -83,4 +116,9 @@ pub struct Session {
     /// May be empty for legacy sessions or sessions created before assignment.
     #[serde(default)]
     pub tracking_key: String,
+    /// Which backend actually hosts this session's process. Set at spawn time
+    /// to the lane actually used (not the configured preference), so kill and
+    /// liveness dispatch correctly after a daemon restart.
+    #[serde(default)]
+    pub backend: SessionBackendKind,
 }
