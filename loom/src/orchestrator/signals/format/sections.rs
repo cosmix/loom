@@ -1,4 +1,4 @@
-use crate::codex::{CODEX_IMPLEMENTER_EFFORT, CODEX_IMPLEMENTER_MODEL};
+use crate::codex::{CODEX_FORWARD_SENTINEL, CODEX_IMPLEMENTER_EFFORT, CODEX_IMPLEMENTER_MODEL};
 use crate::handoff::git_handoff::{format_git_history_markdown, GitHistory};
 use crate::models::session::Session;
 use crate::models::stage::{Implementers, Stage, StageType};
@@ -842,8 +842,16 @@ pub(crate) fn format_codex_implementers_section(implementers: &Implementers) -> 
          Verification does NOT move - see below.\n\n",
     );
     content.push_str(
-        "- Spawn codex implementation work with the Agent tool, subagent_type: \"codex:codex-rescue\".\n",
+        "- Spawn codex implementation work with the Agent tool, subagent_type: \"loom-codex-forwarder\" -\n\
+         loom's own forwarding shim. Do NOT spawn the plugin's codex:codex-rescue directly: plugin\n\
+         agents' tools restriction is ignored by design, and such an unrestricted wrapper has been\n\
+         observed implementing the task itself on sonnet instead of forwarding - a silent lane downgrade.\n",
     );
+    content.push_str(&format!(
+        "- THE FIRST LINE of every codex prompt is exactly \"{CODEX_FORWARD_SENTINEL}\". The\n\
+         codex-forward-guard hook keys on that token to block a forwarder that reads or edits instead\n\
+         of forwarding. Never put the token in a prompt for any other lane.\n"
+    ));
     content.push_str(&format!(
         "- State the model and effort IN THE PROMPT TEXT, e.g. \"--model {CODEX_IMPLEMENTER_MODEL} --effort {CODEX_IMPLEMENTER_EFFORT} <task>\".\n"
     ));
@@ -886,7 +894,7 @@ pub(crate) fn format_codex_implementers_section(implementers: &Implementers) -> 
     content.push_str("    * the exact command that proves its slice works.\n");
     content.push_str("  If the prompt is short, it is almost certainly underspecified. A codex prompt that would fit a\n");
     content.push_str("  sonnet subagent is too thin - sonnet reads the repo to fill gaps, and you have just forbidden that.\n");
-    content.push_str("- codex:codex-rescue is write-capable by default; do not ask for read-only when you want edits.\n");
+    content.push_str("- loom-codex-forwarder forwards with --write by default; do not ask for read-only when you want edits.\n");
     content.push_str("- PARALLEL FAN-OUT: you may run up to 6 codex implementers at once, each owning a DISJOINT file set,\n");
     content.push_str("  with the same file-ownership table you would write for sonnet subagents. Two codex agents writing\n");
     content.push_str("  one file is lost work, exactly as with any other subagent.\n");
@@ -926,6 +934,14 @@ pub(crate) fn format_codex_implementers_section(implementers: &Implementers) -> 
     content.push_str("  mandatory. Sending a task to codex because the stage lists codex - rather than because the task\n");
     content
         .push_str("  is routine implementation - is the misread this section exists to prevent.\n");
+    content.push_str("- ACCEPT A CODEX REPORT ONLY WITH EVIDENCE. A genuine forward returns codex stdout followed by a\n");
+    content.push_str("  \"--- LOOM-CODEX-EVIDENCE ---\" trailer listing companion state jobs/*.json paths. Verify the\n");
+    content.push_str("  newest record for THIS worktree exists and its \"phase\" is \"done\". A report with no trailer -\n");
+    content.push_str("  or edits in the tree with no matching job record - is a FAILED delegation: the wrapper did the\n");
+    content.push_str("  work itself. Treat those edits as output from an unknown lane: revert and respawn the forwarder,\n");
+    content.push_str(
+        "  or keep them only after reviewing them as strictly as you would review sonnet output.\n",
+    );
     content.push_str("- VERIFICATION STAYS WITH YOU (opus). Codex subagents implement and report; they never verify, never\n");
     content.push_str("  commit, and never run loom stage complete (Rule 5). YOU run the full build/test/lint gate, YOU run\n");
     content.push_str("  the six-dimension mini adversarial code review, and YOU commit. Never accept a codex agent's own\n");

@@ -88,7 +88,7 @@ const BLOCK_B: &str = "1. ORCHESTRATION IS ALWAYS OPUS. Every stage's main agent
    orchestrator does NOT implement — it decomposes the work, hands each
    subagent full context, then verifies and commits. That is all.
 2. IMPLEMENTATION IS ALWAYS DELEGATED, to as FEW subagents as the work allows. Routine
-   implementation goes to codex:codex-rescue (gpt-5.6-luna, xhigh) when the stage lists codex
+   implementation goes to loom-codex-forwarder (gpt-5.6-luna, xhigh) when the stage lists codex
    in implementers, else to sonnet (loom-software-engineer); haiku stays rare and trivial.
    Genuinely challenging work stays opus. A stage MIXES lanes freely: choose the lane PER
    SUBAGENT by what that piece of work needs, never once for the whole stage. Verification
@@ -180,6 +180,56 @@ fn block_b_agrees_across_every_surface() {
          when the constant changes",
         crate::codex::CODEX_IMPLEMENTER_EFFORT
     );
+}
+
+#[test]
+fn codex_forward_sentinel_agrees_across_surfaces() {
+    use crate::codex::CODEX_FORWARD_SENTINEL;
+    use crate::fs::permissions::constants::HOOK_CODEX_FORWARD_GUARD;
+
+    // The hook enforces exactly the token the signal doctrine mandates. The
+    // signal side is pinned in tests_cache.rs (the generated section contains
+    // the constant); this side pins the shell literal to the same constant.
+    assert!(
+        HOOK_CODEX_FORWARD_GUARD.contains(CODEX_FORWARD_SENTINEL),
+        "hooks/codex-forward-guard.sh must grep for CODEX_FORWARD_SENTINEL \
+         ({CODEX_FORWARD_SENTINEL}); a hook keyed on a drifted token enforces \
+         nothing"
+    );
+
+    let (_, forwarder) = agent_definitions()
+        .into_iter()
+        .find(|(label, _)| label == "agents/loom-codex-forwarder.md")
+        .expect(
+            "agents/loom-codex-forwarder.md must exist - the signal doctrine \
+             spawns codex work by that agent type",
+        );
+    for needle in [
+        CODEX_FORWARD_SENTINEL,
+        "codex-companion.mjs",
+        "LOOM-CODEX-EVIDENCE",
+    ] {
+        assert!(
+            forwarder.contains(needle),
+            "agents/loom-codex-forwarder.md must mention {needle:?} - the \
+             forwarder contract, the hook, and the signal doctrine describe \
+             one protocol"
+        );
+    }
+
+    // The playbook surfaces route codex work through the forwarder, never a
+    // direct spawn of the plugin wrapper (whose tools restriction is not
+    // enforced on this spawn path - observed implementing instead of
+    // forwarding, 2026-08-07).
+    for (label, text) in [
+        ("CLAUDE.md.template", CLAUDE_MD_TEMPLATE),
+        ("skills/loom-plan-writer/SKILL.md", PLAN_WRITER_SKILL),
+    ] {
+        assert!(
+            text.contains("loom-codex-forwarder"),
+            "{label} must route codex work through loom-codex-forwarder"
+        );
+    }
 }
 
 #[test]

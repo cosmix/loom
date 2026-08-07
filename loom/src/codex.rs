@@ -9,6 +9,15 @@ pub const CODEX_IMPLEMENTER_MODEL: &str = "gpt-5.6-luna";
 /// Reasoning effort used for Codex implementation runs.
 pub const CODEX_IMPLEMENTER_EFFORT: &str = "xhigh";
 
+/// Sentinel that MUST be the first line of every codex-lane subagent prompt.
+///
+/// `hooks/codex-forward-guard.sh` greps the calling subagent's transcript for
+/// this exact token and, when present, blocks every tool call except the single
+/// Bash invocation of codex-companion.mjs - pinning the forwarder to forwarding.
+/// The literal in the hook script and in `agents/loom-codex-forwarder.md` must
+/// stay byte-identical to this constant; `tests_doctrine.rs` pins all three.
+pub const CODEX_FORWARD_SENTINEL: &str = "LOOM-CODEX-FORWARD-ONLY";
+
 /// Find the absolute path to the codex binary.
 ///
 /// Mirrors [`crate::claude::find_claude_path`]: try `which::which` first (uses

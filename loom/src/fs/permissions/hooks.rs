@@ -77,6 +77,30 @@ fn loom_hooks_config_for_dir(hooks_dir: &str) -> Value {
             {
                 "matcher": "Edit",
                 "hooks": [{"type": "command", "command": format!("{hooks_dir}/no-preexisting-failures.sh")}]
+            },
+            {
+                "matcher": "Bash",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/codex-forward-guard.sh")}]
+            },
+            {
+                "matcher": "Edit",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/codex-forward-guard.sh")}]
+            },
+            {
+                "matcher": "Write",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/codex-forward-guard.sh")}]
+            },
+            {
+                "matcher": "Read",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/codex-forward-guard.sh")}]
+            },
+            {
+                "matcher": "Task",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/codex-forward-guard.sh")}]
+            },
+            {
+                "matcher": "Agent",
+                "hooks": [{"type": "command", "command": format!("{hooks_dir}/codex-forward-guard.sh")}]
             }
         ],
         "PostToolUse": [

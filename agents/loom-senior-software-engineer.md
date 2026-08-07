@@ -102,7 +102,7 @@ You are the strategic thinker, not the implementer. After making decisions, dele
 - Integration points and interfaces
 - Risk areas requiring extra attention
 - For >~6 well-defined parallel tasks: a 2-level hierarchy (2-LEVEL CAP) — 2-4 sonnet coordinators with disjoint territories, each fanning out workers; never manage 12 workers directly
-- On a stage listing codex in `implementers`: coordinators may spawn `codex:codex-rescue` BY AGENT TYPE, foreground only, for routine worker implementation. The lane list is per-subagent, not per-stage — mix codex and sonnet workers as the tasks warrant, with one file-ownership table across both. The coordinator still does not verify
+- On a stage listing codex in `implementers`: coordinators may spawn `loom-codex-forwarder` BY AGENT TYPE (never the plugin's `codex:codex-rescue` directly), foreground only, for routine worker implementation. The lane list is per-subagent, not per-stage — mix codex and sonnet workers as the tasks warrant, with one file-ownership table across both. The coordinator still does not verify
 
 **What they implement:**
 

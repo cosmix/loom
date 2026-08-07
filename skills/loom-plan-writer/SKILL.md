@@ -264,7 +264,7 @@ BLOCK-B — model allocation playbook:
    orchestrator does NOT implement — it decomposes the work, hands each
    subagent full context, then verifies and commits. That is all.
 2. IMPLEMENTATION IS ALWAYS DELEGATED, to as FEW subagents as the work allows. Routine
-   implementation goes to codex:codex-rescue (gpt-5.6-luna, xhigh) when the stage lists codex
+   implementation goes to loom-codex-forwarder (gpt-5.6-luna, xhigh) when the stage lists codex
    in implementers, else to sonnet (loom-software-engineer); haiku stays rare and trivial.
    Genuinely challenging work stays opus. A stage MIXES lanes freely: choose the lane PER
    SUBAGENT by what that piece of work needs, never once for the whole stage. Verification
@@ -313,9 +313,12 @@ If the user picks Codex:
    that are entirely judgment work, and for knowledge / knowledge-distill / integration-verify
    stages — preflight warns if codex appears on any of those.
 5. In those stages' descriptions, name the subagent and the fan-out explicitly, e.g. "Spawn N
-   `codex:codex-rescue` subagents in the FOREGROUND, each with `--model gpt-5.6-luna --effort
+   `loom-codex-forwarder` subagents in the FOREGROUND, each with `--model gpt-5.6-luna --effort
    xhigh`, an explicit Bash timeout of 900000 ms, and a DISJOINT file set; verify and commit
-   yourself." When a stage mixes lanes, say which work goes to which lane, and put EVERY subagent —
+   yourself." (The forwarder is loom's own shim; never spawn the plugin's `codex:codex-rescue`
+   directly — plugin agents' tools restriction is ignored by design, so that wrapper runs
+   unrestricted. The orchestrator's signal carries the sentinel and evidence-trailer protocol;
+   plans do not need to restate it.) When a stage mixes lanes, say which work goes to which lane, and put EVERY subagent —
    both lanes — in ONE file-ownership table. File exclusivity is enforced across lanes: a codex
    agent and a sonnet agent writing the same file is lost work exactly as two agents in one lane
    would be.

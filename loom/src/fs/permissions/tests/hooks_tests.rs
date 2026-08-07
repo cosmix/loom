@@ -25,8 +25,9 @@ fn test_hooks_config_structure() {
     // 14. Bash: no-preexisting-failures.sh
     // 15. Write: no-preexisting-failures.sh
     // 16. Edit: no-preexisting-failures.sh
+    // 17-22. Bash/Edit/Write/Read/Task/Agent: codex-forward-guard.sh
     let pre_tool = hooks_obj.get("PreToolUse").unwrap().as_array().unwrap();
-    assert_eq!(pre_tool.len(), 16);
+    assert_eq!(pre_tool.len(), 22);
     // First hook: AskUserQuestion matcher with ask-user-pre.sh
     assert_eq!(pre_tool[0]["matcher"], "AskUserQuestion");
     assert!(pre_tool[0]["hooks"][0]["command"]
@@ -105,6 +106,23 @@ fn test_hooks_config_structure() {
         .as_str()
         .unwrap()
         .contains("worktree-file-guard.sh"));
+
+    // codex-forward-guard.sh must cover every tool a rogue forwarder reached
+    // for (Read/Edit and non-companion Bash on 2026-08-07) plus Write and both
+    // subagent-spawn tool names. Registration is asserted by matcher rather
+    // than position so the earlier positional pins stay stable.
+    for tool in ["Bash", "Edit", "Write", "Read", "Task", "Agent"] {
+        let found = pre_tool.iter().any(|entry| {
+            entry["matcher"] == *tool
+                && entry["hooks"][0]["command"]
+                    .as_str()
+                    .is_some_and(|c| c.contains("codex-forward-guard.sh"))
+        });
+        assert!(
+            found,
+            "codex-forward-guard.sh not registered as PreToolUse hook for matcher '{tool}'"
+        );
+    }
 
     // Check PostToolUse hooks (only AskUserQuestion for resume in global config)
     // Session-specific post-tool-use.sh (Bash) is merged at worktree creation

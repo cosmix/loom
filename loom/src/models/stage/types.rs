@@ -144,7 +144,9 @@ pub enum Implementer {
     /// judgment, fable for advisory and design).
     #[default]
     Claude,
-    /// The `codex:codex-rescue` plugin subagent lane.
+    /// The codex implementation lane: spawned as `loom-codex-forwarder`, a
+    /// loom-owned shim over the codex plugin's companion runtime (never the
+    /// plugin's `codex:codex-rescue` directly).
     Codex,
 }
 

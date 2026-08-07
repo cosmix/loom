@@ -228,6 +228,8 @@ install_hooks_remote() {
 		"worktree-isolation.sh"
 		"worktree-file-guard.sh"
 		"plans-path-guard.sh"
+		"no-preexisting-failures.sh"
+		"codex-forward-guard.sh"
 	)
 
 	for hook in "${all_hooks[@]}"; do
@@ -415,6 +417,8 @@ install_hooks() {
 		"worktree-isolation.sh"
 		"worktree-file-guard.sh"
 		"plans-path-guard.sh"
+		"no-preexisting-failures.sh"
+		"codex-forward-guard.sh"
 	)
 
 	if [[ -d "$SCRIPT_DIR/hooks" ]]; then

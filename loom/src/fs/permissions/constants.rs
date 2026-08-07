@@ -65,6 +65,12 @@ pub const HOOK_NO_PREEXISTING_FAILURES: &str =
 /// Fires in ALL sessions (plan mode runs interactively); redirects to doc/plans/
 pub const HOOK_PLANS_PATH_GUARD: &str = include_str!("../../../../hooks/plans-path-guard.sh");
 
+/// CodexForwardGuard hook - pins a codex forwarder subagent (transcript carries
+/// the LOOM-CODEX-FORWARD-ONLY sentinel) to its single codex-companion.mjs Bash
+/// call; blocks every other tool call so the wrapper cannot implement the task
+/// itself. Fail-open for every other agent.
+pub const HOOK_CODEX_FORWARD_GUARD: &str = include_str!("../../../../hooks/codex-forward-guard.sh");
+
 /// All loom hook scripts with their filenames (installed to ~/.claude/hooks/loom/)
 /// All hooks are installed to the loom/ subdirectory to keep them separate from user hooks.
 pub const LOOM_HOOKS: &[(&str, &str)] = &[
@@ -88,6 +94,7 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("worktree-file-guard.sh", HOOK_WORKTREE_FILE_GUARD),
     ("plans-path-guard.sh", HOOK_PLANS_PATH_GUARD),
     ("no-preexisting-failures.sh", HOOK_NO_PREEXISTING_FAILURES),
+    ("codex-forward-guard.sh", HOOK_CODEX_FORWARD_GUARD),
     // Skill suggestion hooks
     ("skill-trigger.sh", HOOK_SKILL_TRIGGER),
 ];

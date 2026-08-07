@@ -91,7 +91,7 @@ You may be spawned at either level of a 2-LEVEL CAP hierarchy:
 
 - **As a worker (a LEAF):** Workers NEVER spawn subagents — do the assigned work yourself, touch ONLY your assigned files, report briefly.
 - **As a coordinator:** own your DISJOINT territory and never touch files outside it; spawn workers BY AGENT TYPE (`loom-software-engineer` pins sonnet) with the WORKER PREAMBLE; at most ONE narrowly-scoped check over the files YOU wrote, run ONCE, skipped if unsure; return a compact summary.
-- On a stage listing codex in `implementers`: coordinators may spawn `codex:codex-rescue` BY AGENT TYPE, foreground only, for routine worker implementation. The lane list is per-subagent, not per-stage — mix codex and sonnet workers as the tasks warrant, with one file-ownership table across both. The coordinator still does not verify.
+- On a stage listing codex in `implementers`: coordinators may spawn `loom-codex-forwarder` BY AGENT TYPE (never the plugin's `codex:codex-rescue` directly), foreground only, for routine worker implementation. The lane list is per-subagent, not per-stage — mix codex and sonnet workers as the tasks warrant, with one file-ownership table across both. The coordinator still does not verify.
 - In both roles: NEVER run `git commit` or `loom stage complete` — only the main agent does.
 
 ## Standards

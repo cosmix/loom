@@ -30,6 +30,10 @@ run_test "session-start: compact source emits re-anchor" "$SCRIPT_DIR/session-st
 run_test "plans-path-guard: blocks ~/.claude/plans write" "$SCRIPT_DIR/plans-path-guard-blocks-claude-plans.sh"
 run_test "plans-path-guard: blocks ~/.claude/projects/*/plans edit" "$SCRIPT_DIR/plans-path-guard-blocks-project-plans.sh"
 run_test "plans-path-guard: allows doc/plans and other .claude paths" "$SCRIPT_DIR/plans-path-guard-allows-doc-plans.sh"
+run_test "codex-forward-guard: agent_type gate pins both shim types" "$SCRIPT_DIR/codex-forward-guard-agent-type.sh"
+run_test "codex-forward-guard: blocks Edit by a forwarder" "$SCRIPT_DIR/codex-forward-guard-blocks-edit.sh"
+run_test "codex-forward-guard: companion Bash allowed, other Bash blocked" "$SCRIPT_DIR/codex-forward-guard-bash-companion-only.sh"
+run_test "codex-forward-guard: plain subagents, main sessions, no-path all untouched" "$SCRIPT_DIR/codex-forward-guard-ignores-others.sh"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

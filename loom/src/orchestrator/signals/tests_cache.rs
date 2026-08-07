@@ -367,7 +367,12 @@ fn test_signal_codex_implementers_section_gated() {
     .unwrap();
     let content = fs::read_to_string(&signal_path).unwrap();
     assert!(content.contains("## Codex Implementers"));
-    assert!(content.contains("codex:codex-rescue"));
+    assert!(content.contains("subagent_type: \"loom-codex-forwarder\""));
+    // The sentinel the codex-forward-guard hook keys on must be mandated here,
+    // interpolated from the same constant the hook is pinned against.
+    assert!(content.contains(crate::codex::CODEX_FORWARD_SENTINEL));
+    // A report is only accepted with the companion-job evidence trailer.
+    assert!(content.contains("LOOM-CODEX-EVIDENCE"));
     // Model comes from the shared constant, not a second literal
     assert!(content.contains(CODEX_IMPLEMENTER_MODEL));
 
@@ -599,7 +604,8 @@ fn test_recovery_signal_carries_codex_implementers_section() {
         signal.contains("## Codex Implementers"),
         "a recovered codex stage must still receive the codex doctrine"
     );
-    assert!(signal.contains("codex:codex-rescue"));
+    assert!(signal.contains("subagent_type: \"loom-codex-forwarder\""));
+    assert!(signal.contains(crate::codex::CODEX_FORWARD_SENTINEL));
     assert!(signal.contains("FOREGROUND"));
     assert!(signal.contains(CODEX_IMPLEMENTER_MODEL));
 
