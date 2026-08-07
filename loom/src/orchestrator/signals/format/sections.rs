@@ -794,7 +794,7 @@ pub(super) fn format_recitation_section(
 /// the semi-stable section of a claude-lane signal unchanged. The model and effort
 /// are interpolated from [`CODEX_IMPLEMENTER_MODEL`] / [`CODEX_IMPLEMENTER_EFFORT`]
 /// rather than repeated as literals — one source of truth for the lane's settings.
-fn format_codex_implementers_section() -> String {
+pub(crate) fn format_codex_implementers_section() -> String {
     let mut content = String::new();
 
     content.push_str("## Codex Implementers\n\n");
@@ -815,6 +815,8 @@ fn format_codex_implementers_section() -> String {
     content.push_str("  tracks jobs in a shared state file written without a lock, and a background result is fetched\n");
     content.push_str("  through the very record a concurrent write can drop. Foreground results come back through stdout\n");
     content.push_str("  and do not depend on it.\n");
+    content.push_str("- Do NOT use --resume-last under fan-out. It resolves \"the last job\" out of that same shared\n");
+    content.push_str("  state file and can attach to a sibling's thread. Use fresh runs.\n");
     content.push_str("- A foreground codex run is ONE long Bash call: no PostToolUse fires, so the loom heartbeat goes\n");
     content.push_str("  stale and the daemon prints a spurious \"appears hung\" warning after 300s. That warning is\n");
     content.push_str("  ADVISORY ONLY - nothing is killed or retried. Ignore it.\n");

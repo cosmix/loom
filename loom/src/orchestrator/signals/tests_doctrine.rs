@@ -162,6 +162,23 @@ fn block_b_agrees_across_every_surface() {
              byte-identical wherever it appears. Expected to find:\n{BLOCK_B}"
         );
     }
+
+    // BLOCK-B names the codex lane's model and effort as prose literals, so
+    // equality with the surfaces above is not enough: editing the constants in
+    // codex.rs would leave every surface agreeing on a RETIRED model and this
+    // test still green. Pin the prose to the constants the signal interpolates.
+    assert!(
+        BLOCK_B.contains(crate::codex::CODEX_IMPLEMENTER_MODEL),
+        "BLOCK-B must name CODEX_IMPLEMENTER_MODEL ({}); update every surface \
+         when the constant changes",
+        crate::codex::CODEX_IMPLEMENTER_MODEL
+    );
+    assert!(
+        BLOCK_B.contains(crate::codex::CODEX_IMPLEMENTER_EFFORT),
+        "BLOCK-B must name CODEX_IMPLEMENTER_EFFORT ({}); update every surface \
+         when the constant changes",
+        crate::codex::CODEX_IMPLEMENTER_EFFORT
+    );
 }
 
 #[test]

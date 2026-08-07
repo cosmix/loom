@@ -283,7 +283,7 @@ impl StageDefinition {
 
 /// Agent lane a stage delegates routine implementation to.
 ///
-/// Re-exported from models::stage for backward compatibility.
+/// Re-exported so `StageDefinition` and the runtime `Stage` name the same type.
 /// The canonical definition is in crate::models::stage::Implementer.
 pub use crate::models::stage::Implementer;
 

@@ -86,3 +86,18 @@ fn implementer_codex_on_standard_stage_does_not_warn() {
         "standard stages must not trigger the implementer advisory, got: {warnings:?}"
     );
 }
+
+#[test]
+fn implementer_display_matches_serde_representation() {
+    // conventions.md requires Display to mirror the serde form. Nothing else
+    // calls Display today, so without this the two could silently diverge and
+    // a log line would disagree with the value written to a stage file.
+    for variant in [Implementer::Claude, Implementer::Codex] {
+        let serialized = serde_yaml::to_string(&variant).expect("serialize implementer");
+        assert_eq!(
+            variant.to_string(),
+            serialized.trim(),
+            "Display for {variant:?} must match its serde representation"
+        );
+    }
+}

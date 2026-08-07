@@ -416,3 +416,37 @@ fn test_stable_prefix_hash_changes_with_session() {
         .abs();
     assert!(size_diff < 100, "Stable prefix size should be similar");
 }
+
+#[test]
+fn test_recovery_signal_carries_codex_implementers_section() {
+    use super::super::recovery_format::format_recovery_signal;
+    use super::super::recovery_types::RecoverySignalContent;
+
+    let content = RecoverySignalContent::for_crash(
+        "session-recovered".to_string(),
+        "codex-stage".to_string(),
+        "session-crashed".to_string(),
+        None,
+        1,
+    );
+    let embedded = EmbeddedContext::default();
+
+    // Default (claude) stage: no codex doctrine, exactly as before this lane existed.
+    let stage = create_test_stage();
+    let signal = format_recovery_signal(&content, &stage, &embedded);
+    assert!(!signal.contains("## Codex Implementers"));
+
+    // Codex stage: the recovery signal is built OUTSIDE the semi-stable path, so
+    // without an explicit emit here a resumed stage would lose the whole lane's
+    // rules while the stable prefix still points at them.
+    let mut codex_stage = create_test_stage();
+    codex_stage.implementer = Implementer::Codex;
+    let signal = format_recovery_signal(&content, &codex_stage, &embedded);
+    assert!(
+        signal.contains("## Codex Implementers"),
+        "a recovered codex stage must still receive the codex doctrine"
+    );
+    assert!(signal.contains("codex:codex-rescue"));
+    assert!(signal.contains("FOREGROUND"));
+    assert!(signal.contains(CODEX_IMPLEMENTER_MODEL));
+}

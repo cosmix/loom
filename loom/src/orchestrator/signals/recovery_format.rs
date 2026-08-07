@@ -1,8 +1,9 @@
 //! Formatting for recovery signal markdown files.
 
-use crate::models::stage::Stage;
+use crate::models::stage::{Implementer, Stage};
 
 use super::cache::stable_prefix_for;
+use super::format::format_codex_implementers_section;
 use super::recovery_types::RecoverySignalContent;
 use super::types::EmbeddedContext;
 
@@ -73,6 +74,15 @@ pub fn format_recovery_signal(
     // review. The recovery signal is built outside the KV-cache path, so without
     // this a resumed stage would miss ALL of that guidance, not just the review.
     signal.push_str(&stable_prefix_for(stage.stage_type));
+
+    // The codex lane's rules live in the SEMI-STABLE section, which this signal
+    // does not embed — and the stable prefix above forward-references them. Emit
+    // the gated block here too, or a resumed codex stage reads a pointer to a
+    // section that is not present and loses foreground-only fan-out, the
+    // concurrency cap, and "verification stays with you".
+    if stage.implementer == Implementer::Codex {
+        signal.push_str(&format_codex_implementers_section());
+    }
 
     // Target information
     signal.push_str("## Target\n\n");
